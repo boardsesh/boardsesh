@@ -70,6 +70,8 @@ export type SprayTrainingDecision = {
 
 type SprayTrainingReviewDialogProps = {
   item: SprayTrainingQueueItemData | null;
+  /** The loaded walls ran out and the next page is on its way: stay open on a spinner. */
+  loadingNext: boolean;
   /** 1-based position in the loaded list, for "3 of 24". */
   position: number;
   total: number;
@@ -98,6 +100,7 @@ export function isShortcutBlockedTarget(target: EventTarget | null): boolean {
 
 export default function SprayTrainingReviewDialog({
   item,
+  loadingNext,
   position,
   total,
   busy,
@@ -279,8 +282,13 @@ export default function SprayTrainingReviewDialog({
   const stats = item ? summariseStats(item.stats) : null;
 
   return (
-    <Dialog fullScreen open={item !== null} onClose={onClose} aria-labelledby="spray-training-review-title">
-      {item && stats && (
+    <Dialog
+      fullScreen
+      open={item !== null || loadingNext}
+      onClose={onClose}
+      aria-labelledby="spray-training-review-title"
+    >
+      {(item !== null || loadingNext) && (
         <Box
           sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: themeTokens.semantic.background }}
         >
@@ -299,202 +307,218 @@ export default function SprayTrainingReviewDialog({
               <CloseIcon />
             </IconButton>
             <Typography id="spray-training-review-title" variant="h6" sx={{ flex: 1, fontWeight: 600 }}>
-              {t('sprayTraining.review.title', { version: item.versionNumber })}
+              {item
+                ? t('sprayTraining.review.title', { version: item.versionNumber })
+                : t('sprayTraining.review.loadingNext')}
             </Typography>
-            <IconButton onClick={onPrevious} aria-label={t('sprayTraining.review.previous')} disabled={position <= 1}>
-              <ChevronLeftIcon />
-            </IconButton>
-            <Typography variant="body2" sx={{ color: themeTokens.neutral[500] }}>
-              {t('sprayTraining.review.position', { current: position, total })}
-            </Typography>
-            <IconButton onClick={onNext} aria-label={t('sprayTraining.review.next')} disabled={position >= total}>
-              <ChevronRightIcon />
-            </IconButton>
+            {item && (
+              <>
+                <IconButton
+                  onClick={onPrevious}
+                  aria-label={t('sprayTraining.review.previous')}
+                  disabled={position <= 1}
+                >
+                  <ChevronLeftIcon />
+                </IconButton>
+                <Typography variant="body2" sx={{ color: themeTokens.neutral[500] }}>
+                  {t('sprayTraining.review.position', { current: position, total })}
+                </Typography>
+                <IconButton onClick={onNext} aria-label={t('sprayTraining.review.next')} disabled={position >= total}>
+                  <ChevronRightIcon />
+                </IconButton>
+              </>
+            )}
           </Box>
 
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: { xs: 'column', md: 'row' },
-              overflow: 'auto',
-            }}
-          >
-            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
-              {photoAvailable ? (
-                <Box
-                  sx={{
-                    position: 'relative',
-                    width: `min(100%, calc((100vh - ${PHOTO_VERTICAL_CHROME_PX}px) * ${photoWidth / photoHeight}))`,
-                    aspectRatio: `${photoWidth} / ${photoHeight}`,
-                  }}
-                >
-                  <Box
-                    // One element per wall: the last wall's photo cannot stay painted under this one's marks.
-                    key={item.versionId}
-                    component="img"
-                    src={photoUrl}
-                    alt={t('sprayTraining.review.photoAlt')}
-                    onLoad={() => setPhotoOnScreen(true)}
-                    onError={() => {
-                      setFailedPhotoUrl(photoUrl);
-                      setPhotoOnScreen(false);
-                    }}
-                    sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
-                  />
-                  {photoLoaded ? (
-                    <SprayHoldOverlay
-                      marks={marks}
-                      photoWidth={photoWidth}
-                      photoHeight={photoHeight}
-                      hiddenKinds={effectiveHidden}
-                    />
-                  ) : (
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <CircularProgress size={20} aria-label={t('sprayTraining.review.photoLoading')} />
-                    </Box>
-                  )}
-                </Box>
-              ) : (
-                <Typography sx={{ color: themeTokens.neutral[500] }}>{t('sprayTraining.review.noPhoto')}</Typography>
-              )}
-            </Box>
-
+          {item && stats ? (
             <Box
               sx={{
-                width: { xs: '100%', md: VERDICT_COLUMN_WIDTH_PX },
-                flexShrink: 0,
-                p: 2,
+                flex: 1,
+                minHeight: 0,
                 display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-                borderLeft: { md: 1 },
-                borderColor: themeTokens.semantic.separator,
+                flexDirection: { xs: 'column', md: 'row' },
+                overflow: 'auto',
               }}
             >
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  // Nobody but its owner was meant to see a private wall, so it stands out.
-                  color={item.visibility === 'PRIVATE' ? 'warning' : 'default'}
-                  label={visibilityLabel(item.visibility)}
-                />
-                <Chip size="small" label={t('sprayTraining.card.holds', { total: stats.holdCount })} />
-                <Chip size="small" label={t('sprayTraining.card.edited', { percent: stats.editedPercent })} />
-                <Chip size="small" label={t('sprayTraining.card.accepted', { percent: stats.acceptedPercent })} />
-                <Chip size="small" label={t('sprayTraining.card.deleted', { total: stats.deletedSuggestions })} />
-              </Box>
-              {item.unmappableHoldCount > 0 && (
-                <Typography variant="body2" sx={{ color: themeTokens.neutral[500] }}>
-                  {t('sprayTraining.review.unmappable', { total: item.unmappableHoldCount })}
-                </Typography>
-              )}
-              {item.detectionModelVersion && (
-                <Typography variant="body2" sx={{ color: themeTokens.neutral[500] }}>
-                  {t('sprayTraining.review.model', { version: item.detectionModelVersion })}
-                </Typography>
-              )}
-
-              <Box>
-                <FormControlLabel
-                  control={<Switch checked={marksVisible} onChange={() => setMarksVisible((visible) => !visible)} />}
-                  label={t('sprayTraining.review.showMarks')}
-                />
-                <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }}>
-                  {t('sprayTraining.review.legend')}
-                </Typography>
-                {LEGEND_KINDS.filter((kind) => (kindCounts.get(kind) ?? 0) > 0).map((kind) => {
-                  const look = SPRAY_OVERLAY_STYLES[kind];
-                  return (
-                    <Box key={kind} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
+                {photoAvailable ? (
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      width: `min(100%, calc((100vh - ${PHOTO_VERTICAL_CHROME_PX}px) * ${photoWidth / photoHeight}))`,
+                      aspectRatio: `${photoWidth} / ${photoHeight}`,
+                    }}
+                  >
+                    <Box
+                      // One element per wall: the last wall's photo cannot stay painted under this one's marks.
+                      key={item.versionId}
+                      component="img"
+                      src={photoUrl}
+                      alt={t('sprayTraining.review.photoAlt')}
+                      onLoad={() => setPhotoOnScreen(true)}
+                      onError={() => {
+                        setFailedPhotoUrl(photoUrl);
+                        setPhotoOnScreen(false);
+                      }}
+                      sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
+                    />
+                    {photoLoaded ? (
+                      <SprayHoldOverlay
+                        marks={marks}
+                        photoWidth={photoWidth}
+                        photoHeight={photoHeight}
+                        hiddenKinds={effectiveHidden}
+                      />
+                    ) : (
                       <Box
-                        aria-hidden="true"
                         sx={{
-                          width: themeTokens.spacing[5],
-                          height: themeTokens.spacing[5],
-                          borderRadius: '50%',
-                          border: `${Math.max(2, look.strokeWidth)}px ${look.dashed ? 'dashed' : 'solid'} ${look.stroke}`,
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
                         }}
-                      />
-                      <FormControlLabel
-                        sx={{ flex: 1, m: 0 }}
-                        control={
-                          <Switch size="small" checked={!hiddenKinds.has(kind)} onChange={() => toggleKind(kind)} />
-                        }
-                        label={`${kindLabel(kind)} (${kindCounts.get(kind)})`}
-                      />
-                    </Box>
-                  );
-                })}
-              </Box>
-
-              <FormControl size="small" fullWidth>
-                <InputLabel id="spray-training-reason-label">{t('sprayTraining.review.reason')}</InputLabel>
-                <Select
-                  labelId="spray-training-reason-label"
-                  label={t('sprayTraining.review.reason')}
-                  value={reason}
-                  open={reasonOpen}
-                  onOpen={() => setReasonOpen(true)}
-                  onClose={() => setReasonOpen(false)}
-                  onChange={(event) => setReason(event.target.value as SprayTrainingRejectReason | '')}
-                >
-                  {SPRAY_REJECT_REASONS.map((rejectReason) => (
-                    <MenuItem key={rejectReason} value={rejectReason}>
-                      {reasonLabel(rejectReason)}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <TextField
-                size="small"
-                multiline
-                minRows={2}
-                label={t('sprayTraining.review.notes')}
-                value={notes}
-                onChange={(event) => setNotes(event.target.value.slice(0, SPRAY_REVIEW_NOTES_MAX))}
-                helperText={`${notes.length}/${SPRAY_REVIEW_NOTES_MAX}`}
-              />
-
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                <Button
-                  variant="contained"
-                  onClick={approve}
-                  disabled={busy || !photoLoaded || item.review.status === 'APPROVED'}
-                  sx={{ textTransform: 'none' }}
-                >
-                  {t('sprayTraining.review.approve')}
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  onClick={reject}
-                  disabled={busy || photoLoading || reason === ''}
-                  sx={{ textTransform: 'none' }}
-                >
-                  {t('sprayTraining.review.reject')}
-                </Button>
-                {item.review.status !== 'UNREVIEWED' && (
-                  <Button onClick={backToUnreviewed} disabled={busy} sx={{ textTransform: 'none' }}>
-                    {t('sprayTraining.review.backToUnreviewed')}
-                  </Button>
+                      >
+                        <CircularProgress size={20} aria-label={t('sprayTraining.review.photoLoading')} />
+                      </Box>
+                    )}
+                  </Box>
+                ) : (
+                  <Typography sx={{ color: themeTokens.neutral[500] }}>{t('sprayTraining.review.noPhoto')}</Typography>
                 )}
               </Box>
-              <Typography variant="caption" sx={{ color: themeTokens.neutral[500] }}>
-                {t('sprayTraining.review.shortcuts')}
-              </Typography>
+
+              <Box
+                sx={{
+                  width: { xs: '100%', md: VERDICT_COLUMN_WIDTH_PX },
+                  flexShrink: 0,
+                  p: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  borderLeft: { md: 1 },
+                  borderColor: themeTokens.semantic.separator,
+                }}
+              >
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    // Nobody but its owner was meant to see a private wall, so it stands out.
+                    color={item.visibility === 'PRIVATE' ? 'warning' : 'default'}
+                    label={visibilityLabel(item.visibility)}
+                  />
+                  <Chip size="small" label={t('sprayTraining.card.holds', { total: stats.holdCount })} />
+                  <Chip size="small" label={t('sprayTraining.card.edited', { percent: stats.editedPercent })} />
+                  <Chip size="small" label={t('sprayTraining.card.accepted', { percent: stats.acceptedPercent })} />
+                  <Chip size="small" label={t('sprayTraining.card.deleted', { total: stats.deletedSuggestions })} />
+                </Box>
+                {item.unmappableHoldCount > 0 && (
+                  <Typography variant="body2" sx={{ color: themeTokens.neutral[500] }}>
+                    {t('sprayTraining.review.unmappable', { total: item.unmappableHoldCount })}
+                  </Typography>
+                )}
+                {item.detectionModelVersion && (
+                  <Typography variant="body2" sx={{ color: themeTokens.neutral[500] }}>
+                    {t('sprayTraining.review.model', { version: item.detectionModelVersion })}
+                  </Typography>
+                )}
+
+                <Box>
+                  <FormControlLabel
+                    control={<Switch checked={marksVisible} onChange={() => setMarksVisible((visible) => !visible)} />}
+                    label={t('sprayTraining.review.showMarks')}
+                  />
+                  <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }}>
+                    {t('sprayTraining.review.legend')}
+                  </Typography>
+                  {LEGEND_KINDS.filter((kind) => (kindCounts.get(kind) ?? 0) > 0).map((kind) => {
+                    const look = SPRAY_OVERLAY_STYLES[kind];
+                    return (
+                      <Box key={kind} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          aria-hidden="true"
+                          sx={{
+                            width: themeTokens.spacing[5],
+                            height: themeTokens.spacing[5],
+                            borderRadius: '50%',
+                            border: `${Math.max(2, look.strokeWidth)}px ${look.dashed ? 'dashed' : 'solid'} ${look.stroke}`,
+                          }}
+                        />
+                        <FormControlLabel
+                          sx={{ flex: 1, m: 0 }}
+                          control={
+                            <Switch size="small" checked={!hiddenKinds.has(kind)} onChange={() => toggleKind(kind)} />
+                          }
+                          label={`${kindLabel(kind)} (${kindCounts.get(kind)})`}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Box>
+
+                <FormControl size="small" fullWidth>
+                  <InputLabel id="spray-training-reason-label">{t('sprayTraining.review.reason')}</InputLabel>
+                  <Select
+                    labelId="spray-training-reason-label"
+                    label={t('sprayTraining.review.reason')}
+                    value={reason}
+                    open={reasonOpen}
+                    onOpen={() => setReasonOpen(true)}
+                    onClose={() => setReasonOpen(false)}
+                    onChange={(event) => setReason(event.target.value as SprayTrainingRejectReason | '')}
+                  >
+                    {SPRAY_REJECT_REASONS.map((rejectReason) => (
+                      <MenuItem key={rejectReason} value={rejectReason}>
+                        {reasonLabel(rejectReason)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <TextField
+                  size="small"
+                  multiline
+                  minRows={2}
+                  label={t('sprayTraining.review.notes')}
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value.slice(0, SPRAY_REVIEW_NOTES_MAX))}
+                  helperText={`${notes.length}/${SPRAY_REVIEW_NOTES_MAX}`}
+                />
+
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    onClick={approve}
+                    disabled={busy || !photoLoaded || item.review.status === 'APPROVED'}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    {t('sprayTraining.review.approve')}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    onClick={reject}
+                    disabled={busy || photoLoading || reason === ''}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    {t('sprayTraining.review.reject')}
+                  </Button>
+                  {item.review.status !== 'UNREVIEWED' && (
+                    <Button onClick={backToUnreviewed} disabled={busy} sx={{ textTransform: 'none' }}>
+                      {t('sprayTraining.review.backToUnreviewed')}
+                    </Button>
+                  )}
+                </Box>
+                <Typography variant="caption" sx={{ color: themeTokens.neutral[500] }}>
+                  {t('sprayTraining.review.shortcuts')}
+                </Typography>
+              </Box>
             </Box>
-          </Box>
+          ) : (
+            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <CircularProgress size={20} />
+            </Box>
+          )}
         </Box>
       )}
     </Dialog>

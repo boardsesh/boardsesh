@@ -25,6 +25,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
 
 vi.mock('@boardsesh/graphql/operations', () => ({
   GET_SPRAY_TRAINING_QUEUE: 'GET_SPRAY_TRAINING_QUEUE',
+  GET_SPRAY_TRAINING_TOTALS: 'GET_SPRAY_TRAINING_TOTALS',
   SET_SPRAY_TRAINING_REVIEW: 'SET_SPRAY_TRAINING_REVIEW',
 }));
 
@@ -83,6 +84,11 @@ function queueResponse(
 
 function reviewResponse(versionId: string, status: SprayTrainingReviewStatus) {
   return { setSprayTrainingReview: { versionId, review: { status, reason: null, notes: null, reviewedAt: null } } };
+}
+
+/** What graphql-request throws when the backend answers with an `extensions.code`. */
+function graphqlFailure(code: string) {
+  return Object.assign(new Error(code), { response: { errors: [{ message: code, extensions: { code } }] } });
 }
 
 function reviewCalls() {
@@ -478,6 +484,116 @@ describe('SprayTrainingPanel photo links', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('SprayTrainingPanel drained page', () => {
+  it('reads the next page when every loaded wall is decided and keeps the dialog on the first new wall', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true, unreviewed: 2 }));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    let releaseNextPage: (page: unknown) => void = () => undefined;
+    mockRequest.mockImplementationOnce(() => new Promise((resolve) => (releaseNextPage = resolve)));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
+    // A wall is still waiting, so the queue is not empty and the dialog holds its place.
+    expect(screen.queryByText('Nothing here')).toBeNull();
+    expect(within(screen.getByRole('dialog')).getByText('Loading more walls')).toBeTruthy();
+
+    releaseNextPage(queueResponse([makeItem('v2', 2)]));
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Wall version 2')).toBeTruthy());
+    expect(screen.queryByText('Nothing here')).toBeNull();
+    expect(mockRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('says the tab is empty once the last wall of the last page is decided', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    expect(await screen.findByText('Nothing here')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes the dialog on the retry prompt when the next page fails to load', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true, unreviewed: 2 }));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    mockRequest.mockRejectedValueOnce(new Error('offline'));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Nothing here')).toBeNull();
+    // One failed read, not a retry loop.
+    expect(mockRequest).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('SprayTrainingPanel refused verdicts', () => {
+  it('takes a wall that left the training set off the screen and says why', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+
+    mockRequest.mockRejectedValueOnce(graphqlFailure('SPRAY_TRAINING_NOT_ELIGIBLE'));
+    mockRequest.mockResolvedValueOnce({
+      sprayTrainingQueue: { totals: { unreviewed: 1, approved: 0, rejected: 0 } },
+    });
+    fireEvent.keyDown(window, { key: 'a' });
+
+    expect(await screen.findByText('Not saved. This wall is no longer available as training data.')).toBeTruthy();
+    expect(screen.queryByText("Couldn't save the review")).toBeNull();
+    // Gone from the grid, and the dialog has moved on like after any verdict.
+    expect(screen.queryByRole('button', { name: 'Review wall version 1', hidden: true })).toBeNull();
+    expect(within(dialog).getByText('Wall version 2')).toBeTruthy();
+    expect(within(dialog).getByAltText(PHOTO_ALT).getAttribute('src')).toBe('https://photos.example/v2.jpg');
+    // The counts come from the server: nothing was approved, one wall is left.
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_TOTALS', { status: 'UNREVIEWED' }),
+    );
+    expect(await screen.findByRole('button', { name: 'Unreviewed (1)', hidden: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approved (0)', hidden: true })).toBeTruthy();
+  });
+
+  it('counts the wall out itself when the server totals cannot be read', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    mockRequest.mockRejectedValueOnce(graphqlFailure('SPRAY_TRAINING_NOT_ELIGIBLE'));
+    mockRequest.mockRejectedValueOnce(new Error('offline'));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    expect(await screen.findByRole('button', { name: 'Unreviewed (1)', hidden: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approved (0)', hidden: true })).toBeTruthy();
+  });
+
+  it('keeps the wall in place when the save fails for any other reason', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+
+    mockRequest.mockRejectedValueOnce(graphqlFailure('INTERNAL_SERVER_ERROR'));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    expect(await screen.findByText("Couldn't save the review")).toBeTruthy();
+    expect(within(dialog).getByText('Wall version 1')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Unreviewed (2)', hidden: true })).toBeTruthy();
+    expect(mockRequest).toHaveBeenCalledTimes(2);
   });
 });
 
