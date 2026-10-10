@@ -797,3 +797,237 @@ finished the period shown as final. Mark the current, unfinished period.
 | #2644 PRs B and C ship | PostHog capture needs consent: people-based counts drop to the consenting subset (see "Active users") |
 
 None of these repairs past data. Annotate them; do not backfill.
+
+## Growth dashboard extension: October 2026
+
+Dashboard [Growth: monthly baseline](https://us.posthog.com/project/412845/dashboard/2170056)
+adds engagement distribution, newcomer progression, acquisition retention and
+contribution reporting. Reusable HogQL definitions live in
+`scripts/posthog/growth-queries.ts`. This extension uses existing events and
+adds no product tracking.
+
+| Insight | Content |
+| ------- | ------- |
+| Who comes back: board-day distribution | Bucket sizes, population shares, returners and the overall weighted rate. |
+| Weighted retention: adjacent 28-day windows | Completed board and app return rates on the fixed grid. |
+| Newcomer activation: 28-day preview and 56-day funnel | Ordered registration-to-board-day progression with eligible counts. |
+| Acquisition quality: first-touch sources | Independent activation outcomes, observation maturity and source quality. |
+| Acquisition cohorts: app retention | Weekly acquisition cohorts returning with a screen view. |
+| Acquisition cohorts: board retention | Weekly acquisition cohorts returning with a successful board send. |
+| Acquisition cohorts: engagement contribution | Completed-period contribution history and shares of the active base. |
+
+The first two extend existing insights; the other five are additions. The Apple
+Ads status text card describes missing inputs without inventing acquisition or
+cost figures. Existing activity tiles stay on the dashboard.
+
+### Shared population, dates and identity
+
+All product activity uses native production events and excludes internal cohort
+`295337`. Count canonical PostHog `person_id`, not event `distinct_id`, devices,
+accounts or reported installs. A merged person is counted once; the unresolved
+identity splits described above remain a measurement limit.
+
+Calendar reporting uses a fixed 28-day UTC grid anchored to **2026-10-09
+00:00:00 UTC**. Intervals include their start and exclude their end. Each
+retention observation compares a preceding period with the following,
+non-overlapping period. Publish it only after both periods have ended. The
+historical trend advances one 28-day period per point; adjacent observations
+reuse a period as the previous point's return period and the next point's
+starting period, so trend points are not independent samples.
+
+Native production tags begin on 2026-07-25. Omit retention comparisons whose
+preceding period starts before that date: those intervals contain days before
+this population was recorded. On this grid, **2026-10-09 is currently the only
+fully covered, completed retention point**. The trend gains its next point on
+2026-11-06; it must not fill earlier points with incomplete legacy coverage.
+
+Default activity reporting covers 168 days. The daily view retains activity
+from the latest fixed-grid boundary minus 168 days, so the raw refresh can cover
+up to 195 days and never truncates the oldest complete reporting period.
+
+The newcomer registry retains up to 365 days of acquisitions and their native
+activity. This allows all six 28-day age intervals to mature before people age
+out; source-quality totals cover this same acquisition horizon. Older or unclean
+people remain in the existing/unclassified contribution group. The versioned
+`ACQUISITION_HISTORY_DAYS` constant can extend longer comparisons. Each matrix
+has at most 53 weeks × 6 intervals, within its explicit 400-row bound.
+
+Event scans are bounded by dates and event names. Newcomer first-ever checks inspect
+older events only for candidate identities; they must still check every library
+and environment. The
+`growth_native_person_days` view aggregates daily activity;
+`growth_native_newcomers` holds first-ever acquisition, cohorts and milestones.
+Both shared views are materialized and refresh daily. Show the refresh time
+and do not label incomplete periods as final.
+
+### Engagement distribution and weighted retention
+
+A board-active day is a UTC calendar date with at least one `Climb Sent to Board
+Success`. Multiple sends on one date count as one day. A successful Bluetooth
+connection alone does not count. Buckets are mutually exclusive: 1, 2–3, 4–7
+and 8+ days in the preceding period.
+
+The bucket table shows unique people, share of all preceding-period board-active
+people, returning people and return percentage. A return is at least one
+successful send in the following period, irrespective of its frequency. The
+overall row and trend use **sum(returners) / sum(previous-period people)**;
+averaging the four bucket percentages gives the wrong denominator.
+
+Verified baseline: preceding **2026-08-14 to 2026-09-11**, return
+**2026-09-11 to 2026-10-09**, all endpoints at midnight UTC.
+
+| Previous board-active days | People | Population share | Returned | Return percentage |
+| -------------------------- | -----: | ---------------: | -------: | ----------------: |
+| 1 | 870 | 42.88% | 343 | 39.43% |
+| 2–3 | 678 | 33.42% | 437 | 64.45% |
+| 4–7 | 371 | 18.28% | 299 | 80.59% |
+| 8+ | 110 | 5.42% | 107 | 97.27% |
+| All board-active people | 2,029 | 100% | 1,186 | **58.45%** |
+
+Reconcile these totals with the existing activity and return insights using the
+same population and exact dates. The app-retention comparison retains its own
+app-active denominator: people with at least one `$screen` in the preceding
+period, returning with at least one `$screen` in the following period.
+
+### Newcomer progression and observation maturity
+
+Use first-ever newcomers as defined above, starting **2026-09-07**, after the
+documented throwaway-identity regime. Require a first native production `$screen`
+and exclude events before it. Exclude people whose first-entry app version is
+2.3.0 or 2.3.1. Android candidates use verified released store builds
+`2001018` (2.4.0) and `2001108` (2.5.0); maintain that allowlist after confirming
+new releases. Newly observed 2.6 builds are not yet verified and do not qualify.
+Phantoms and internal people are excluded. Do not replace the first-ever test
+with the first production-tagged event or count a returning account's fresh
+installation as an acquisition.
+
+The six-stage progression is first app screen, registration, first successful
+board send, second distinct board-active day, fourth distinct board-active day,
+then a successful send during days 28–55. Registration and board-day milestones
+must occur during days 0–27 and in that order. Day 0 is the UTC calendar day of
+the first screen; activity on that day still has to occur at or after the first
+screen's timestamp. The ordered funnel counts distinct board days after
+registration, beginning with the first qualifying send. Show each stage's
+people, percentage of entrants, and percentage of the previous stage. The
+completed funnel includes only newcomers
+whose entire 56-day window has elapsed. A separate first-28-day preview includes
+the first five stages for completed first periods; the full funnel remains
+pending until its 56-day observations mature.
+
+Registration evidence is `Signup Completed`, or `is_new_account = true` on
+`Login Succeeded` / `Login Account Age Resolved`, deduplicated per person.
+Recover missing evidence from a valid `person.properties.first_seen_at` account
+creation timestamp: shared `buildCohortPersonProperties` writes it with
+`$set_once`. Explicit registration evidence takes precedence when it conflicts
+with that property. Invalid, missing or out-of-window evidence remains unknown;
+an old account timestamp must not turn a returning account into a new sign-up.
+
+Show people with no successful send, plus overlapping subcounts with observed
+`Climb Search Performed` browsing or `Bluetooth Connection Success` without a
+send. Missing send evidence means **no observed successful board send**, not
+proof that the person has never climbed. Browsing and connection success do not
+count as board activation or retention. Keep the existing spray-wall activation
+definition separate: spray walls cannot emit successful Bluetooth board sends.
+
+As of **2026-10-10**, no clean newcomer cohort has a completed 56-day observation.
+Do not publish a zero retention rate for those pending cohorts.
+
+### Acquisition quality and cohort retention
+
+Group newcomers by acquisition week (Monday UTC). Retention periods are relative
+to each person's acquisition day, not calendar reporting buckets. App retention
+requires `$screen`; board retention requires `Climb Sent to Board Success`.
+Both matrices show full cohort size and retention percentage. Their linked
+“Acquisition retention: eligible and retained cohort counts” table shows the
+exact eligible and retained people for each 28-day age period. A cell's denominator includes only people whose full
+period has elapsed; immature cells are pending. People with no board day remain
+in the eligible board-retention denominator.
+
+Source comparisons show newcomers, registration conversion, first-send
+conversion, 2+ first-period board-day conversion, exact Day-28 app and board
+retention, days-28–55 app and board retention, and mean first-period board-active
+days. Mean board days includes zero-day people. Source conversions measure
+independent outcomes among all eligible newcomers; board outcomes do not require
+the ordered funnel's registration stage. First-period outcomes use newcomers
+with a completed first 28-day period; exact Day 28 requires completion
+of that UTC day, and subsequent-period retention requires all 56 days. Label
+app and board return definitions separately.
+
+First-touch attribution chooses the earliest meaningful acquisition-linked web
+landing or timestamp-matched install evidence, independently of later campaign
+interactions. Play attribution is eligible only when immutable
+`install_begin_timestamp` is within the 24 hours
+before `first_native_at`, the earliest native production event (not the first
+screen). Older-install referrers remain unknown for this acquisition. The live
+www schema does not yet carry UTM event properties; parse verified
+`$current_url` at the earliest linked landing when it carries meaningful attribution for initial tags and
+use acquisition-linked referrer evidence. Do not assume UTM event properties
+exist or assign an unrelated later web campaign to a native acquisition. Keep
+the evidence and campaign fields beside the derived source.
+Sources are verified Reddit/community, known organic store discovery, Apple
+Ads, direct/unknown, and other identifiable sources. Known Android organic
+discovery is distinct from unknown iOS acquisition. A missing referrer, iOS
+device, store-button click or App Store campaign aggregate proves neither an
+organic install nor an Apple Ads acquisition.
+
+### Contribution and Apple Ads readiness
+
+The cohort-contribution table groups by acquisition cohort and completed
+calendar activity period. It shows board-active people and their share of all
+board-active people in the same period, board-active person-days, successful
+board sends, `Tick Logged` events, submitted grade ratings, submitted quality
+ratings and `Climb Created` events. These are observed contribution counts,
+not unique published climb or database-record counts. Tick events with
+`hasDifficulty = true` or `hasQuality = true` count the respective rating
+submissions. Report draft creations separately; a creation event does not prove
+publication, and later draft publication cannot yet be counted reliably.
+
+The Apple Ads status card prepares the dashboard without fabricated metrics.
+The proposed **A$500/month** is a budget, not observed spend. Keep actual AUD
+spend, store-reported installs, attributed first opens and product outcomes
+separate until reliable person-level attribution exists. Future costs divide
+matching campaign/cohort spend by attributed installs, registrations, first
+board-active people, people reaching 2+ board days, or retained board-active
+people in days 28–55. Retained-user costs use only mature acquisition cohorts.
+Campaign, keyword and country breakdowns require corresponding attribution and
+cost evidence; country on an activity event alone is not ad targeting evidence.
+
+Missing inputs and known limits:
+
+1. Person-level Apple Ads attribution, campaign/keyword/country evidence, and
+   actual AUD spend and install reports are unavailable.
+2. iOS has no install referrer; reliable anonymous web-to-iOS acquisition joins
+   and known organic App Store attribution are unavailable.
+3. Remaining unresolved registration evidence and historical phantom identities
+   can undercount registration or split people. Validate evidence coverage.
+4. Unique published-climb identifiers and draft-to-publication evidence are
+   missing. Creation-event counts must not be called unique published climbs.
+5. Completed 56-day clean newcomer cohorts do not yet exist. Older acquisition
+   regimes and incomplete windows must not fill the gap.
+
+### Versioning and validation
+
+Export the reproducible definitions with
+`vp exec node --import tsx scripts/posthog/export-growth-dashboard.ts`. The export
+includes two materialized views, four existing-insight updates, five dashboard
+additions and three saved detail insights. `deployment.json` records their live
+IDs; use updates for those IDs rather than creating duplicate insights. Read
+`latest_history_id` before a view update and pass it as `edited_history_id`.
+After changing a view, run a full refresh and check its status before forcing
+insight refreshes. Preserve dashboard membership and all existing tiles.
+
+Export synthetic integration queries with the same command plus `--fixtures`.
+Execute those queries through PostHog, then refresh `fixture-validation.json`
+with each query's SHA-256 and returned rows. The local test verifies that the
+current exact HogQL matches the executed query and checks bucket edges, stale
+refresh boundaries, distinct dates, registration ordering, invalid account
+dates, first-touch precedence and 28/29/56-day observation maturity. It uses
+recorded synthetic SQL results; it does not contact live PostHog during CI.
+`live-validation.json` records the independent count reconciliation.
+
+As of 10 October: 452 clean newcomers have complete first-28 observations;
+394 registered, 201 sent a climb, and 121 reached two board-active days. The
+ordered registration-first funnel has 198 first senders, 119 two-day users and
+63 four-day users. Those smaller counts reflect its registration prerequisite.
+No one has a mature 56-day observation yet. Latest-period contribution totals
+reconcile to all 2,387 board-active people.

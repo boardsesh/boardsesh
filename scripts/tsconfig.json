@@ -14,6 +14,7 @@
     "types": ["node"]
   },
   "include": [
+    "posthog/**/*.ts",
     "__tests__/expo-sqlite-native-finalize.test.ts",
     "r2-frozen-reader.ts",
     "r2-frozen-reader.test.ts",
