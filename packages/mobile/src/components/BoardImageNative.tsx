@@ -60,6 +60,13 @@ type BoardImageNativeProps = {
   recyclingKey?: string;
   style?: ViewStyle;
   /**
+   * Hold the board photo back until the holds have painted, so a board that
+   * opens onto a climb nobody has rendered yet appears whole instead of as a bare
+   * wall the holds then fade onto. Ignored when the overlay is already rendered
+   * or cannot come at all. See `LayeredClimbImage`.
+   */
+  revealWithOverlay?: 'each-climb' | 'first-paint';
+  /**
    * Drop the holds overlay's cross-fade for this render — forwarded to
    * LayeredClimbImage. The play-drawer carousel sets it on the current board while
    * committing a swipe so the new climb's (already-cached) holds swap instantly
@@ -145,6 +152,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   backgroundVariant,
   recyclingKey,
   style,
+  revealWithOverlay,
   suppressOverlayTransition,
   overlayTestID,
   renderSettingsOverride,
@@ -157,6 +165,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   const {
     overlayUri,
     overlayLoadKey,
+    overlayImmediate,
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,
@@ -205,7 +214,12 @@ const BoardImageNative = React.memo(function BoardImageNative({
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={recyclingKey}
-        suppressOverlayTransition={suppressOverlayTransition}
+        // Nothing to wait for when the holds are already rendered, when there are
+        // none to draw, or when the renderer is gone and the fallback draws them.
+        revealWithOverlay={frames && !overlayImmediate && !rendererUnavailable ? revealWithOverlay : undefined}
+        // An overlay that was ready when the board took this climb has nothing to
+        // fade from; see `overlayImmediate`.
+        suppressOverlayTransition={suppressOverlayTransition || overlayImmediate}
         overlayTestID={overlayTestID}
         // A bridge only makes sense while a replacement is on its way. Empty
         // frames render nothing at all — `useNativeClimbRender` returns before

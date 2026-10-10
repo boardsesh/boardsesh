@@ -286,6 +286,13 @@ type NativeClimbRenderResult = {
    * including a regeneration that writes back to the same file:// URI.
    */
   overlayLoadKey: string | null;
+  /**
+   * True when the overlay was already rendered the moment this surface took the
+   * climb, so the holds are in the same commit as everything else. Pass it to
+   * `suppressOverlayTransition`: a cross-fade from nothing would put the bare
+   * board on screen for 150ms that it never had to be there.
+   */
+  overlayImmediate: boolean;
   /** Exact-attempt callbacks consumed by LayeredClimbImage's overlay Image. */
   onOverlayLoad: (loadKey: string | null) => void;
   onOverlayError: (event: { error: string }, loadKey: string | null) => void;
@@ -2143,6 +2150,36 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     const existing = getRenderedOverlay(currentCacheKey);
     return existing ? { key: currentCacheKey, entry: existing, loadAttempt: 0 } : null;
   });
+  // A recycled list row keeps this hook instance and hands it a new climb. Left
+  // to the effect below, an overlay that is ALREADY in the index reaches state
+  // one commit late: the row first commits with no overlay at all (the key guard
+  // on `overlayUri`), then commits again with it, and the image fades up from
+  // nothing. That is a bare board followed by the holds flashing in on every
+  // recycled row of a scroll, for a picture that was on disk the whole time.
+  // Adopting the entry during render (React re-runs this render before it
+  // commits anything) lands the new climb's holds in the same commit as its name.
+  //
+  // `overlayArrivalRef` records, once per key, whether the overlay was there the
+  // moment this surface took the climb. The view layer skips the cross-fade when
+  // it was: nothing was ever shown without the holds, so there is nothing to
+  // fade from.
+  //
+  // Only on a key CHANGE. State for the current key can legitimately hold no
+  // overlay while the index still has one — a decode that failed for good
+  // withholds its entry on purpose — and re-adopting on every render would put
+  // that failed image straight back.
+  const overlayArrivalRef = useRef<{ key: string; immediate: boolean } | null>(null);
+  if (overlayArrivalRef.current === null) {
+    // First render of this instance: the state initializer consulted the index.
+    overlayArrivalRef.current = {
+      key: currentCacheKey,
+      immediate: nativeRender?.key === currentCacheKey && nativeRender.entry != null,
+    };
+  } else if (overlayArrivalRef.current.key !== currentCacheKey) {
+    const existing = flatFrames ? getRenderedOverlay(currentCacheKey) : undefined;
+    overlayArrivalRef.current = { key: currentCacheKey, immediate: existing !== undefined };
+    if (existing) setNativeRender({ key: currentCacheKey, entry: existing, loadAttempt: 0 });
+  }
   const [verifiedOverlay, setVerifiedOverlay] = useState<{
     cacheKey: string;
     uri: string;
@@ -3065,6 +3102,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   return {
     overlayUri,
     overlayLoadKey,
+    overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,

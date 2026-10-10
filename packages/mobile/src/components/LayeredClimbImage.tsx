@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Platform, View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet, type ColorValue } from 'react-native';
 import { Image } from 'expo-image';
 import type { ImageErrorEventData } from 'expo-image';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
@@ -59,6 +59,23 @@ type LayeredClimbImageProps = {
   suppressOverlayTransition?: boolean;
   recyclingKey?: string;
   /**
+   * Keep the board photo hidden until the holds overlay has painted, so the two
+   * arrive together instead of "bare board, then the holds flash in".
+   *
+   * - `'each-climb'` re-hides whenever `recyclingKey` changes. For a recycled
+   *   list row, where every climb change is a different picture.
+   * - `'first-paint'` hides only until the first overlay this instance paints.
+   *   For the play board: a swipe to the next climb must keep the photo up.
+   *
+   * Leave it unset when the overlay is already rendered (the hook's
+   * `overlayImmediate`) or cannot come at all (no frames, no renderer): there is
+   * nothing to wait for. If no overlay paints within `OVERLAY_REVEAL_TIMEOUT_MS`
+   * the photo is shown anyway, so a failed render still looks like a board.
+   */
+  revealWithOverlay?: 'each-climb' | 'first-paint';
+  /** Solid block drawn in place of the stack while `revealWithOverlay` holds it back. */
+  revealPlaceholderColor?: ColorValue;
+  /**
    * testID for the holds-overlay layer. Only rendered once the async overlay PNG
    * is ready, so screenshot/e2e flows can anchor on "the lit climb has rendered"
    * (the full-size play view sets this; thumbnails leave it unset).
@@ -98,6 +115,13 @@ type LayeredClimbImageProps = {
   emptyOverlayFallback?: ReactNode;
 };
 
+/**
+ * How long `revealWithOverlay` waits for the holds before showing the photo on
+ * its own. A thumbnail render plus decode is well under 150ms on a 2021 phone,
+ * so this only ever fires for a render that failed or is stuck in a long queue.
+ */
+const OVERLAY_REVEAL_TIMEOUT_MS = 600;
+
 export function backgroundImageUri(path: string): string {
   if (Platform.OS === 'web' || path.includes('://')) return path;
   return `file://${path}`;
@@ -128,6 +152,8 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   dimBackground,
   suppressOverlayTransition,
   recyclingKey,
+  revealWithOverlay,
+  revealPlaceholderColor,
   overlayTestID,
   retainPreviousOverlayFor,
   underOverlay,
@@ -191,6 +217,26 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     onOverlayMounted?.(overlayImageMounted ? overlayMountedKey : null);
     return () => onOverlayMounted?.(null);
   }, [onOverlayMounted, overlayImageMounted, overlayMountedKey]);
+  // What `revealWithOverlay` has already let through. `key` is the climb for
+  // 'each-climb' and a constant for 'first-paint', so one comparison serves both.
+  const [revealed, setRevealed] = useState<{ key: string | null } | null>(null);
+  const revealIdentity = revealWithOverlay === 'each-climb' ? (recyclingKey ?? null) : null;
+  // 'first-paint' is about the instance, not the climb: once this stack has been
+  // on screen at all — because an overlay painted, or because the first climb's
+  // overlay was already rendered and the caller never asked to wait — a later
+  // climb must not blank it.
+  const everShownRef = useRef(false);
+  const awaitingOverlay =
+    revealWithOverlay === 'each-climb'
+      ? revealed === null || revealed.key !== revealIdentity
+      : revealWithOverlay === 'first-paint' && revealed === null && !everShownRef.current;
+  if (!awaitingOverlay && !hidden) everShownRef.current = true;
+  useEffect(() => {
+    if (!awaitingOverlay) return;
+    const timer = setTimeout(() => setRevealed({ key: revealIdentity }), OVERLAY_REVEAL_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [awaitingOverlay, revealIdentity]);
+  const concealed = awaitingOverlay ? styles.concealed : null;
   const bridgeOverlay =
     retainPreviousOverlayFor != null &&
     retainedOverlay?.identity === retainPreviousOverlayFor &&
@@ -217,7 +263,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
         <Image
           key={path}
           source={{ uri: backgroundImageUri(path) }}
-          style={styles.layer}
+          style={concealed ? [styles.layer, concealed] : styles.layer}
           contentFit="contain"
           // `memory`, not `memory-disk`: every layer in this stack is already a
           // file on disk that we own (bundled board photos, the renderer's
@@ -274,7 +320,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
         <Image
           key={overlayLoadKey ?? overlayUri}
           source={{ uri: overlayUri }}
-          style={styles.layer}
+          style={concealed ? [styles.layer, concealed] : styles.layer}
           contentFit="contain"
           recyclingKey={recyclingKey}
           cachePolicy="memory"
@@ -288,6 +334,12 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           onLoad={() => {
             const emittingLoadKey = overlayLoadKey ?? null;
             const latestAttempt = latestOverlayAttemptRef.current;
+            // The holds are on the layer now: let the photo through with them.
+            // Guarded like the marker below, so a late event from the previous
+            // climb's image cannot reveal a row whose own overlay is still out.
+            if (revealWithOverlay != null && latestAttempt.uri === overlayUri) {
+              setRevealed((previous) => (previous?.key === revealIdentity ? previous : { key: revealIdentity }));
+            }
             if (retainPreviousOverlayFor != null && latestAttempt.uri === overlayUri) {
               setRetainedOverlay((previous) =>
                 previous?.uri === overlayUri && previous.identity === retainPreviousOverlayFor
@@ -303,6 +355,12 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           onError={(event) => onOverlayError?.(event, overlayLoadKey ?? null)}
         />
       )}
+      {awaitingOverlay && revealPlaceholderColor ? (
+        <View
+          testID="layered-climb-image-reveal-placeholder"
+          style={[styles.layer, styles.revealPlaceholder, { backgroundColor: revealPlaceholderColor }]}
+        />
+      ) : null}
       {/* Screenshot/e2e anchor — see overlayPainted above. Transparent, full-bleed
           (so it has on-screen bounds Maestro can see), and pointer-transparent. */}
       {overlayTestID && overlayPainted && <View testID={overlayTestID} style={styles.layer} pointerEvents="none" />}
@@ -344,5 +402,13 @@ const styles = StyleSheet.create({
   },
   mirrored: {
     transform: [{ scaleX: -1 }],
+  },
+  // Hidden, not unmounted: the images still load, which is what ends the wait.
+  concealed: {
+    opacity: 0,
+  },
+  // Same weight as the skeleton row's thumbnail block (ClimbListRowSkeleton).
+  revealPlaceholder: {
+    opacity: 0.55,
   },
 });

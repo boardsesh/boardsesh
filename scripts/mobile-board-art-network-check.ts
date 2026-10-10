@@ -65,7 +65,8 @@ const RULES: readonly Rule[] = [
   },
   {
     name: 'image-prefetch',
-    message: 'Do not prefetch board art with React Native Image.prefetch; resolve bundled assets instead.',
+    message:
+      'Do not prefetch board art with Image.prefetch; resolve bundled assets instead. To decode a file already on the phone, use warmBoardArtMemory.',
     test: (lineText) => lineText.includes('Image.prefetch'),
   },
   {
@@ -98,6 +99,33 @@ const SVG_IMAGE_LOCAL_FILE_EXEMPTIONS: ReadonlySet<string> = new Set([
   'packages/mobile/src/components/spray-wall/FlattenedSprayPhoto.tsx',
 ]);
 const LOCAL_FILE_GUARD_STATEMENT = /^[ \t]*if \(!isLocalFileUri\(photoUri\)\) return null;[ \t]*$/m;
+
+/**
+ * The one place `Image.prefetch` is allowed: decoding board art that is already
+ * a file on the phone into expo-image's memory cache, so a list row or the play
+ * board paints its holds on the frame it mounts (`docs/react-native-performance.md`,
+ * rule 6). It is never a download. Read with comments stripped, the file must:
+ *
+ * - narrow its input with the exact statement
+ *   `const localUris = uris.filter(isLocalFileUri);`
+ * - define that predicate as exactly `return uri.startsWith('file://');`
+ * - hand every `Image.prefetch(` call exactly `localUris`, the filtered list;
+ * - contain no http(s) literal.
+ */
+const IMAGE_PREFETCH_LOCAL_FILE_EXEMPTIONS: ReadonlySet<string> = new Set([
+  'packages/mobile/src/lib/board-render/warm-board-art-memory.ts',
+]);
+const LOCAL_URI_FILTER_STATEMENT = /^[ \t]*const localUris = uris\.filter\(isLocalFileUri\);[ \t]*$/m;
+const LOCAL_URI_PREDICATE_STATEMENT = /^[ \t]*return uri\.startsWith\('file:\/\/'\);[ \t]*$/m;
+
+function isExemptLocalImagePrefetchFile(sourceFile: SourceFile): boolean {
+  if (!IMAGE_PREFETCH_LOCAL_FILE_EXEMPTIONS.has(sourceFile.path)) return false;
+  const code = stripComments(sourceFile.text);
+  if (!LOCAL_URI_FILTER_STATEMENT.test(code) || !LOCAL_URI_PREDICATE_STATEMENT.test(code)) return false;
+  if (/https?:\/\//.test(code)) return false;
+  const prefetchCalls = code.match(/Image\.prefetch\([^,)]*/g) ?? [];
+  return prefetchCalls.length > 0 && prefetchCalls.every((call) => call === 'Image.prefetch(localUris');
+}
 
 /** Source with block and line comments removed (`://` in a string is kept). */
 function stripComments(text: string): string {
@@ -162,10 +190,12 @@ export function findMobileBoardArtNetworkViolations(sourceFiles: readonly Source
   for (const sourceFile of sourceFiles) {
     const lines = sourceFile.text.split(/\r?\n/);
     const localSvgImageFile = isExemptLocalSvgImageFile(sourceFile);
+    const localImagePrefetchFile = isExemptLocalImagePrefetchFile(sourceFile);
     lines.forEach((lineText, lineIndex) => {
       for (const rule of RULES) {
         if (!rule.test(lineText)) continue;
         if (rule.name === 'svg-image-background' && localSvgImageFile) continue;
+        if (rule.name === 'image-prefetch' && localImagePrefetchFile) continue;
         violations.push({
           path: sourceFile.path,
           line: lineIndex + 1,

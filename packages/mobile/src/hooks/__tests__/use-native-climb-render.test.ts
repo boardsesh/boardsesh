@@ -61,6 +61,7 @@ vi.mock('../../../modules/board-renderer/src/index', () => {
 });
 
 import { overlayNameMatchesScope } from '../../lib/cache-sweep-plan';
+import { RENDERED_OVERLAYS_MAX } from '../../lib/overlay-index';
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 
 const {
@@ -485,15 +486,21 @@ describe('renderedOverlays warm-up from disk cache', () => {
   });
 
   it('bounds the sync cache and promotes reads in LRU order', () => {
-    for (let entryIndex = 0; entryIndex < 200; entryIndex++) {
+    for (let entryIndex = 0; entryIndex < RENDERED_OVERLAYS_MAX; entryIndex++) {
       _cacheRenderedOverlayForTests(`key-${entryIndex}`, `file:///overlay-${entryIndex}.png`);
     }
     _getRenderedOverlayForTests('key-0');
-    _cacheRenderedOverlayForTests('key-200', 'file:///overlay-200.png');
+    _cacheRenderedOverlayForTests('key-overflow', 'file:///overlay-overflow.png');
 
-    expect(_renderedOverlaysForTests.size).toBe(200);
+    expect(_renderedOverlaysForTests.size).toBe(RENDERED_OVERLAYS_MAX);
     expect(_renderedOverlaysForTests.has('key-0')).toBe(true);
     expect(_renderedOverlaysForTests.has('key-1')).toBe(false);
+  });
+
+  // One scroll session used to outgrow the index (it was 200): every list row
+  // is an entry, and so is every row warmed ahead of the scroll.
+  it('remembers more overlays than a long scroll session renders', () => {
+    expect(RENDERED_OVERLAYS_MAX).toBeGreaterThanOrEqual(1000);
   });
 
   it('only loads PNGs whose name starts with the current RENDERER_VERSION prefix', () => {

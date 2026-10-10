@@ -11,7 +11,7 @@ import {
   Platform,
   type ColorValue,
 } from 'react-native';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
@@ -39,6 +39,13 @@ import { getTallWideScope } from '@boardsesh/board-constants';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
+import { shouldFetchNextPage } from '../../../src/lib/climb-list-pagination';
+import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
+import { PlayBoardPrewarmHost } from '../../../src/components/play-drawer/PlayBoardPrewarmHost';
+import {
+  ClimbListThumbnailPrewarmWindow,
+  createLastVisibleRowStore,
+} from '../../../src/components/ClimbListScrollAhead';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
@@ -151,6 +158,9 @@ import { timing } from '../../../src/theme/animations';
 import { ScreenshotSmokeMarker } from '../../../src/components/ScreenshotSmokeMarker';
 
 const PAGE_SIZE = 30;
+// Any part of a row on screen counts: this feeds pagination and thumbnail
+// prewarming, not an impression counter.
+const CLIMB_LIST_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
 // Soft character budget for the glass filter-summary title: include whole filter
 // parts up to roughly two wrapped lines before collapsing the rest into "+N more".
 // It only decides *when* to summarise — the title's `numberOfLines={2}` +
@@ -725,6 +735,8 @@ function ClimbListInner() {
     // the same board loads, instead of swapping the list to skeleton rows.
   } = useInfiniteSearchClimbs(searchInput, searchReady, { keepPreviousResults: true });
   const isLoadingMoreRef = useRef(false);
+  // The last row on screen, kept out of this screen's state on purpose.
+  const lastVisibleRowStore = useMemo(() => createLastVisibleRowStore(), []);
   // Read by the row handlers: a stale row belongs to the previous search, so a
   // tap on it must not open, queue or seed a swipe track from the old results.
   // A ref keeps those handlers (and so renderClimbItem) stable across the flip.
@@ -752,7 +764,10 @@ function ClimbListInner() {
       return;
     }
     climbListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [searchScrollKey]);
+    // Back at the top: the row index from the previous search would otherwise
+    // read as "near the end" of the new first page and fetch its second page.
+    lastVisibleRowStore.set(0);
+  }, [searchScrollKey, lastVisibleRowStore]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.
@@ -916,23 +931,74 @@ function ClimbListInner() {
     void refetch();
   }, [refetch]);
 
+  // Pagination state read by `maybeFetchNextPage`, which is called from list
+  // callbacks and must not change identity (a new one re-renders the FlashList).
+  const paginationState = {
+    hasNextPage,
+    isPlaceholderData,
+    isLoading: isClimbsLoading,
+    isFetchingNextPage,
+    isRefetching,
+    loadedCount: visibleClimbs.length,
+  };
+  const paginationStateRef = useRef(paginationState);
+  paginationStateRef.current = paginationState;
+  // An end-reached report that could not be acted on when it arrived; see
+  // `shouldFetchNextPage` for why it has to be remembered.
+  const endReachedPendingRef = useRef(false);
+
+  /**
+   * Fetch the next page if `shouldFetchNextPage` says so. One page per call,
+   * never a drain: the `isLoadingMoreRef` latch holds until that page settles.
+   */
+  const maybeFetchNextPage = useCallback(() => {
+    const shouldFetch = shouldFetchNextPage({
+      ...paginationStateRef.current,
+      fetchInFlight: isLoadingMoreRef.current,
+      lastVisibleIndex: lastVisibleRowStore.get(),
+      endReachedPending: endReachedPendingRef.current,
+      pageSize: PAGE_SIZE,
+    });
+    if (!shouldFetch) return;
+    endReachedPendingRef.current = false;
+    isLoadingMoreRef.current = true;
+    void fetchNextPage().finally(() => {
+      isLoadingMoreRef.current = false;
+    });
+  }, [fetchNextPage, lastVisibleRowStore]);
+
   const handleEndReached = useCallback(() => {
-    // No paging off placeholder rows: their `hasNextPage` belongs to the previous
-    // search, and the new search has no first page to page from yet.
-    if (
-      hasNextPage &&
-      !isPlaceholderData &&
-      !isClimbsLoading &&
-      !isFetchingNextPage &&
-      !isRefetching &&
-      !isLoadingMoreRef.current
-    ) {
-      isLoadingMoreRef.current = true;
-      void fetchNextPage().finally(() => {
-        isLoadingMoreRef.current = false;
-      });
-    }
-  }, [fetchNextPage, hasNextPage, isPlaceholderData, isClimbsLoading, isFetchingNextPage, isRefetching]);
+    endReachedPendingRef.current = true;
+    maybeFetchNextPage();
+  }, [maybeFetchNextPage]);
+
+  const handleViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken<Climb>[] }) => {
+      let lastVisibleIndex = -1;
+      for (const viewable of viewableItems) {
+        if (viewable.index != null && viewable.index > lastVisibleIndex) lastVisibleIndex = viewable.index;
+      }
+      if (lastVisibleIndex < 0) return;
+      lastVisibleRowStore.set(lastVisibleIndex);
+      maybeFetchNextPage();
+    },
+    [lastVisibleRowStore, maybeFetchNextPage],
+  );
+
+  // Ask again whenever the list becomes free: a page landed (there may be more
+  // to fetch already — a flick outruns one page), or a refetch finished that was
+  // in the way when the climber reached the end.
+  useEffect(() => {
+    maybeFetchNextPage();
+  }, [
+    maybeFetchNextPage,
+    hasNextPage,
+    isPlaceholderData,
+    isClimbsLoading,
+    isFetchingNextPage,
+    isRefetching,
+    visibleClimbs,
+  ]);
 
   // The search the swipe track pages against, frozen at selection (issue #5402).
   // See `useFrozenSearchBasis` for why it must not follow the live filters.
@@ -986,6 +1052,9 @@ function ClimbListInner() {
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       if (isPlaceholderDataRef.current) return;
+      // First, before the navigation work below: the play drawer needs ~110ms to
+      // mount and measure, and this render fits inside that.
+      requestPlayBoardPrewarm({ boardName: boardName as BoardName, layoutId, sizeId, setIds }, climb.frames);
       blurSearchInputs();
       // This tap IS the selection, so it is the one moment the swipe track may be
       // re-derived. Capture before either branch: the view-only branch seeds a
@@ -1006,7 +1075,18 @@ function ClimbListInner() {
       // of the lighting setting.
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
-    [activateClimbListClimb, blurSearchInputs, searchBasis, isSharedSession, lightOnClimbTap, openPlayDrawer],
+    [
+      activateClimbListClimb,
+      blurSearchInputs,
+      searchBasis,
+      isSharedSession,
+      lightOnClimbTap,
+      openPlayDrawer,
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+    ],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active
@@ -1971,6 +2051,8 @@ function ClimbListInner() {
           keyExtractor={keyExtractor}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
+          onViewableItemsChanged={handleViewableItemsChanged}
+          viewabilityConfig={CLIMB_LIST_VIEWABILITY}
           // The header is transparent on every path now, so the chrome owns the top
           // inset and the list pads manually by the measured chrome height. Leaving
           // this 'automatic' would double-inset under the (invisible) native header.
@@ -2084,6 +2166,19 @@ function ClimbListInner() {
             ) : null
           }
         />
+        {/* Renders nothing. Not for placeholder rows: they belong to the previous
+            search and are about to be replaced. */}
+        <PlayBoardPrewarmHost />
+        {hasBoardConfig && !isPlaceholderData ? (
+          <ClimbListThumbnailPrewarmWindow
+            store={lastVisibleRowStore}
+            climbs={visibleClimbs}
+            boardName={boardName as BoardName}
+            layoutId={layoutId}
+            sizeId={sizeId}
+            setIds={setIds}
+          />
+        ) : null}
       </View>
 
       {/* Placed before the chrome so the tint sits under it. See PlaceholderTint. */}

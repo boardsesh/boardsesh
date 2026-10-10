@@ -300,6 +300,17 @@ vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
   ClimbListRowSkeleton: () => createElement('div', { 'data-skeleton-row': 'true' }),
 }));
 
+// Both draw nothing: they warm board renders ahead of the scroll and at a tap.
+// Mocked so this screen test does not pull the native render hook in.
+vi.mock('../../../../src/components/ClimbListScrollAhead', () => ({
+  ClimbListThumbnailPrewarmWindow: () => null,
+  createLastVisibleRowStore: () => ({ get: () => 0, set: () => {}, subscribe: () => () => {} }),
+}));
+
+vi.mock('../../../../src/components/play-drawer/PlayBoardPrewarmHost', () => ({
+  PlayBoardPrewarmHost: () => null,
+}));
+
 vi.mock('../../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-activity-indicator': 'true' }),
 }));

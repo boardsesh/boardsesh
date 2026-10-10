@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
+import { warmBoardArtMemory } from '../lib/board-render/warm-board-art-memory';
+import { useTheme } from '../providers/theme-provider';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
@@ -13,6 +15,64 @@ import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metric
  * board image fills the cell instead of letterboxing to ~40px wide.
  */
 export { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH };
+
+/**
+ * Overlay + background width for a thumbnail cell: ~5× the cell width (≥400px,
+ * covering the default 76px cell at up to ~3× DPR and a ~100px hero cell at ~4×)
+ * so expo-image never has to downscale a ~1080px source on the main thread while
+ * scrolling. One function, because the width is part of the overlay cache key:
+ * the thumbnail and its prewarm below have to ask for the same PNG.
+ */
+function thumbnailRenderWidth(cellWidth: number): number {
+  return Math.max(400, Math.round(cellWidth * 5));
+}
+
+type ClimbListThumbnailPrewarmProps = {
+  frames: string;
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+};
+
+/**
+ * Renders a list thumbnail's holds overlay before its row exists, and decodes it
+ * into expo-image's memory cache. Draws nothing.
+ *
+ * A row that mounts onto a climb nobody has rendered yet shows the bare board
+ * until the native render, the PNG decode and a cross-fade have all finished —
+ * the "board first, holds flash in later" a fast scroll is full of. The climbs
+ * list mounts one of these for each loaded climb just past the viewport, so by
+ * the time the row arrives the overlay is an index hit and a memory-cache hit,
+ * and it paints with the board.
+ *
+ * `prefetch` puts the render at the scheduler's idle-only rank: it never takes a
+ * slot from a thumbnail somebody can already see.
+ */
+export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailPrewarm({
+  frames,
+  boardName,
+  layoutId,
+  sizeId,
+  setIds,
+}: ClimbListThumbnailPrewarmProps) {
+  const { overlayUri } = useNativeClimbRender({
+    frames,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    // Must match ClimbListThumbnail's call exactly, or this warms a PNG no row
+    // ever looks up.
+    filledStyle: true,
+    renderWidth: thumbnailRenderWidth(THUMBNAIL_WIDTH),
+    prefetch: true,
+  });
+  useEffect(() => {
+    if (overlayUri) warmBoardArtMemory([overlayUri]);
+  }, [overlayUri]);
+  return null;
+});
 
 type ClimbListThumbnailProps = {
   frames: string;
@@ -49,11 +109,13 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   mirrored,
   size,
 }: ClimbListThumbnailProps) {
+  const { systemColors } = useTheme();
   const cellWidth = size?.width ?? THUMBNAIL_WIDTH;
   const cellHeight = size?.height ?? THUMBNAIL_HEIGHT;
   const {
     overlayUri,
     overlayLoadKey,
+    overlayImmediate,
     onOverlayLoad,
     onOverlayError,
     backgroundPaths,
@@ -66,11 +128,7 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     sizeId,
     setIds,
     filledStyle: true,
-    // Render the overlay + resolve the background at ~5× the cell width (≥400px,
-    // covering the default 76px cell at up to ~3× DPR and a ~100px hero cell at
-    // ~4×) so expo-image never has to downscale a ~1080px source on the main
-    // thread while scrolling.
-    renderWidth: Math.max(400, Math.round(cellWidth * 5)),
+    renderWidth: thumbnailRenderWidth(cellWidth),
   });
 
   return (
@@ -85,6 +143,13 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={frames}
+        // Never cross-fade the holds in over a visible board. Either the overlay
+        // was already rendered when the row took this climb (a revisit, or a row
+        // the list warmed ahead of the scroll) and it paints with the board, or
+        // it was not and the whole thumbnail is held back until it has.
+        suppressOverlayTransition
+        revealWithOverlay={frames.length > 0 && !overlayImmediate ? 'each-climb' : undefined}
+        revealPlaceholderColor={systemColors.fill}
       />
     </View>
   );

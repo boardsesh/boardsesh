@@ -85,11 +85,22 @@ unbounded drain-until-`hasMore` loop quietly fetches and mounts the entire catal
 
 **Examples in this repo:**
 
-- `packages/mobile/app/(tabs)/climbs/index.tsx` — `FlashList` with `onEndReached` +
-  `onEndReachedThreshold={0.5}`. Crucially, `handleEndReached` (lines 488–495) is gated on
-  `hasNextPage && !isClimbsLoading && !isFetchingNextPage && !isRefetching && !isLoadingMoreRef.current`
-  — it fetches exactly one page per end-reached and the `isLoadingMoreRef` latch prevents a
-  re-entrant drain. There is no "loop until hasMore" anywhere.
+- `packages/mobile/app/(tabs)/climbs/index.tsx` — `FlashList`, paged by `shouldFetchNextPage`
+  (`packages/mobile/src/lib/climb-list-pagination.ts`). It fetches exactly one page per call and
+  the `isLoadingMoreRef` latch prevents a re-entrant drain; there is no "loop until hasMore"
+  anywhere. Two things it does that a bare `onEndReached` does not, both measured on an
+  iPhone 13 Pro against production (a page of 30 takes about 2.2 s to come back):
+  - **It looks ahead by rows, not by half a screen.** The next page is requested once 20 loaded
+    climbs remain below the last row on screen (40 once a second page is loaded). The first page
+    alone does not trigger it, so opening the tab is still one search. With the old
+    `onEndReachedThreshold={0.5}` every scroll past 30 climbs parked on skeleton rows.
+  - **A dropped end-reached is remembered.** FlashList reports the end once per content size. If
+    that call lands while a refetch is running (a sync invalidating the search is enough) it used
+    to be discarded, and the list sat at its last row until the climber scrolled away and back —
+    80 s in one capture. The request is now kept and honoured when the list is free; an effect
+    re-asks on every fetch-state change. The last visible row comes from `onViewableItemsChanged`
+    through a store (`createLastVisibleRowStore`), never screen state: one state update per row
+    scrolled would re-render the whole screen.
 - `packages/mobile/src/components/play-drawer/BetaVideosSection.tsx` and queue lists use the Gorhom
   `BottomSheetFlatList` so the virtualization cooperates with the sheet's scroll gesture.
 - `packages/mobile/src/components/play-drawer/LogbookSection.tsx` sits inside the play drawer's plain
@@ -238,7 +249,7 @@ remote URL.
 **Why:** The removed SVG background renderer parsed the frames string, built an SVG hold overlay,
 and painted N `<Circle>`s in `react-native-svg` on every render, on top of a remote image fetch for
 board art that should be on disk. The native path renders the holds once into a cached PNG (deduped
-by cache key, warmed from disk on launch — see the generation-tracked, 200-entry JS LRU and
+by cache key, warmed from disk on launch — see the generation-tracked, 1500-entry JS LRU and
 `warmupRenderedOverlaysOnce` in `use-native-climb-render.ts`) and stacks
 it over bundled background images via `expo-image` with `cachePolicy="memory"`, so a scrolled-
 past climb is an instant cache hit with zero network and zero per-row SVG work. It also satisfies
@@ -259,6 +270,35 @@ failure classes (a present-file remount consumes the same budget as a missing-fi
 replenished only after the exact replacement's `onLoad`.
 The Android session notification has no expo-image callback, so it opts into synchronous file
 preflight, withholds a missing path, and keys native notification refreshes on the same generation.
+
+**The holds arrive with the board, never after it.** A native thumbnail render takes about 12 ms
+on an iPhone 13 Pro, yet every list row used to show its bare board first and fade the holds in
+150 ms later — on a cache hit as much as on a miss. Four pieces keep that from coming back:
+
+- **An index hit is adopted during render.** A recycled FlashList row keeps its hook instance and
+  gets a new climb. `useNativeClimbRender` looks the new key up while rendering and sets state
+  there, so the row's first commit for that climb already carries the overlay. Left to the effect,
+  the row committed once with no overlay and again with it.
+- **No cross-fade onto a visible board.** The hook returns `overlayImmediate` (the overlay was
+  rendered when the surface took the climb); `BoardImageNative` and `ClimbListThumbnail` pass it to
+  `suppressOverlayTransition`. expo-image applies its `transition` to memory-cache hits too.
+- **Rows are warmed before they mount.** `ClimbListThumbnailPrewarmWindow`
+  (`ClimbListScrollAhead.tsx`) mounts a `ClimbListThumbnailPrewarm` for the 24 loaded climbs below
+  the viewport: a `prefetch`-rank render, then `warmBoardArtMemory` decodes the PNG into
+  expo-image's memory cache. In a 465-row cold scroll 93% of rows found their overlay already
+  rendered. `warmBoardArtMemory` is the only caller of `Image.prefetch` the board-art network
+  guard allows, and it drops anything that is not a `file://` URI.
+- **A late overlay holds the photo back.** When the overlay is not ready (a page landed right
+  under the finger), `LayeredClimbImage`'s `revealWithOverlay` keeps the stack at opacity 0 behind
+  a skeleton-coloured block until the overlay's `onLoad`, with a 600 ms fallback so a failed
+  render still shows a board. `'each-climb'` for list rows; `'first-paint'` for the play board,
+  where a swipe to the next climb must keep the photo up.
+
+The play board gets the same treatment from the tap: `requestPlayBoardPrewarm`
+(`lib/board-render/play-board-prewarm.ts`) starts the play-size render in `handleClimbPress`, using
+the overlay width the carousel measured on its last open, so the render runs during the ~110 ms
+the drawer needs to mount and measure. `PlayBoardPrewarmHost` ranks it `full` — somebody is about
+to look at it — not `prefetch`.
 
 **Cache key shape (`buildCacheKey` in `use-native-climb-render.ts`):**
 `v<RENDERER_VERSION>_<style>_w<width>_<board>_<layout>_<size>_<setIds>_<framesHash>`. Each token is
