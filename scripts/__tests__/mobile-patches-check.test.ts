@@ -303,6 +303,17 @@ describe('checkPatchesApplied', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('cannot read patched file');
   });
+
+  it('rejects forbidden source even when every positive sentinel survives', () => {
+    const rules = [{ ...RULES[0], forbiddenSubstrings: ['.isEnabled'] }];
+    const env = makeEnv({
+      versions: { [PKG]: '4.25.2' },
+      files: { [`${PKG}::${FILE}`]: `${PATCHED_SOURCE}\nPostHogSDK.shared.isEnabled()` },
+    });
+    expect(checkPatchesApplied(rules, env).errors).toEqual([
+      expect.stringContaining('contains forbidden source ".isEnabled"'),
+    ]);
+  });
 });
 
 // The @expo/ui shape: a SCOPED package, so the key carries two `@` and the
@@ -1362,5 +1373,175 @@ describe('the shipped buildFromSource list', () => {
     expect(sourceBuildChain(pkg, { buildFromSource, readSpmConfig })).toBe(
       `${pkg} → expo-modules-core (buildFromSource)`,
     );
+  });
+});
+
+describe('the shipped native privacy patches', () => {
+  const expectedKeys: Readonly<Record<string, string>> = {
+    'posthog-react-native-session-replay': 'posthog-react-native-session-replay@1.6.0',
+  };
+  const privacyRules = REAL_RULES.filter((rule) => rule.package in expectedKeys);
+  const mobilePackageJson = resolve(import.meta.dirname, '../../packages/mobile/package.json');
+  const installed = createNodeEnv(
+    mobilePackageJson,
+    Object.fromEntries(Object.values(expectedKeys).map((key) => [key, `patches/${key}.patch`])),
+  );
+
+  it.each(Object.entries(expectedKeys))('guards the exact %s patch on both native platforms', (pkg, key) => {
+    const packageRules = privacyRules.filter((rule) => rule.package === pkg);
+    expect(packageRules.some((rule) => rule.file.startsWith('ios/'))).toBe(true);
+    expect(packageRules.some((rule) => rule.file.startsWith('android/'))).toBe(true);
+    expect(packageRules.every((rule) => rule.patchedKey === key)).toBe(true);
+    expect(UNGUARDED_PATCHES[key]).toBeUndefined();
+  });
+
+  it('checks installed source, including replay JS entrypoints and its hidden package manifest', () => {
+    expect(installed.readInstalledVersion('posthog-react-native-session-replay')).toBe('1.6.0');
+    expect(
+      privacyRules.filter((rule) => rule.package === 'posthog-react-native-session-replay').map((rule) => rule.file),
+    ).toEqual(expect.arrayContaining(['src/index.tsx', 'lib/module/index.js', 'lib/commonjs/index.js']));
+    expect(checkPatchesApplied(privacyRules, installed)).toEqual({ checked: privacyRules.length, errors: [] });
+  });
+
+  it('rejects private replay SDK isEnabled calls even when lifecycle guards survive', () => {
+    const rule = privacyRules.find(
+      (candidate) => candidate.package === 'posthog-react-native-session-replay' && candidate.file.endsWith('.swift'),
+    );
+    expect(rule?.forbiddenSubstrings).toContain('.isEnabled');
+    const source = installed.readInstalledFile(rule!.package, rule!.file);
+    const result = checkPatchesApplied([rule!], {
+      ...installed,
+      readInstalledFile: () => `${source}\nPostHogSDK.shared.isEnabled()`,
+    });
+    expect(result.errors).toEqual([expect.stringContaining('contains forbidden source ".isEnabled"')]);
+  });
+
+  it.each(Object.entries(expectedKeys))('rejects %s version drift before inspecting its source', (pkg) => {
+    const result = checkPatchesApplied(
+      privacyRules.filter((rule) => rule.package === pkg),
+      {
+        ...installed,
+        readInstalledVersion: () => '999.0.0',
+      },
+    );
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.every((error) => error.includes('version drift'))).toBe(true);
+  });
+
+  it.each([
+    [
+      'posthog-react-native-session-replay',
+      'src/index.tsx',
+      'return PosthogReactNativeSessionReplay.setOptOut(optedOut, projectToken);',
+    ],
+    ['posthog-react-native-session-replay', 'lib/module/index.js', 'export const reset = identify;'],
+    ['posthog-react-native-session-replay', 'lib/commonjs/index.js', 'exports.setOptOut = setOptOut;'],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.mm',
+      'RCT_EXTERN_METHOD(setOptOut:(BOOL)optedOut',
+    ],
+    ['posthog-react-native-session-replay', 'ios/PosthogReactNativeSessionReplay.swift', 'sealed = true'],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'self.config = nil\n        PostHogSessionManager.shared.setSessionId(sessionIdStr)',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'private var nativeInitialized = false',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'nativeInitialized = false\n            config = nil',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'nativeInitialized = true\n        setIdentify',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'guard consentAllowed, nativeInitialized else',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'private var forwardingTask: URLSessionDataTask?',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'configuration.urlSessionConfiguration = transport?.configuration()',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'let config = PostHogConfig(projectToken: nextTransport.storageToken, host: host)',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'if request.httpMethod == "POST" { throw URLError(.cannotDecodeContentData) }',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'guard consentAllowed, let storageManager = config?.storageManager else',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'try manager.removeItem(at: folder)',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+      'File(context.cacheDir, "boardsesh-consent-replay")',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+      '!location.deleteRecursively()',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+      'retiredPermission?.set(false)',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+      'synchronized(consentLock) {',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+      'config.replayStoragePrefix = File(generationRoot, "snapshots").absolutePath',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+      'if (!consentAllowed || recordingGeneration != consentGeneration.get()) return@Runnable',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+      'if (consentAllowed) setIdentify(savedConfig?.cachePreferences, distinctId, anonymousId)',
+    ],
+  ])('rejects a partial privacy patch missing %s/%s: %s', (pkg, file, fragment) => {
+    const rule = privacyRules.find((candidate) => candidate.package === pkg && candidate.file === file);
+    expect(rule).toBeDefined();
+    const original = installed.readInstalledFile(pkg, file);
+    expect(original).toContain(fragment);
+    const result = checkPatchesApplied([rule!], {
+      ...installed,
+      readInstalledFile: () => original.replaceAll(fragment, ''),
+    });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
   });
 });

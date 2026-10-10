@@ -1,17 +1,13 @@
 'use client';
 
-// Stamps a `kiosk: true` PostHog super property on kiosk routes, so events
-// from 24/7 gym TVs are distinguishable from real climbers in every funnel.
-// Session-scoped on purpose: a persistent super property would permanently
-// mark a gym owner who previews the kiosk in their everyday browser. The TV
-// re-registers on every load (and reloads daily), so nothing is lost.
+// Kiosk display health carries only non-personal operational properties.
 
 import { useEffect } from 'react';
-import { registerSessionSuperProperties } from '@/app/lib/analytics';
+import { captureKioskPageLoad } from '@/app/lib/kiosk-telemetry';
 
 export default function KioskAnalytics() {
   useEffect(() => {
-    registerSessionSuperProperties({ kiosk: true });
+    captureKioskPageLoad();
   }, []);
   return null;
 }

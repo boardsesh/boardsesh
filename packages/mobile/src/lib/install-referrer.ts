@@ -2,6 +2,7 @@ import { installReferrerNative, type NativeInstallReferrerResult } from '../../m
 import { setPersonProperties, track } from './analytics';
 import { reportError } from './error-reporting';
 import { getPreference, setPreference } from './preference-store';
+import { isProductAnalyticsGranted } from './consent-state';
 
 // Android-only: Play Install Referrer is a Play Store mechanism with no iOS
 // equivalent in this PR (an iOS equivalent — SKAdNetwork / Apple Search Ads
@@ -14,6 +15,8 @@ import { getPreference, setPreference } from './preference-store';
 export const INSTALL_ATTRIBUTED_EVENT = 'Install Attributed';
 
 const INSTALL_REFERRER_FETCHED_KEY = 'installReferrerFetched';
+const INSTALL_REFERRER_RESULT_KEY = 'installReferrerResult';
+const INSTALL_REFERRER_PUBLISHED_KEY = 'installReferrerPublished';
 
 // In-memory guard against a concurrent overlapping call — e.g. if the mount
 // effect that drives this ever re-fires (remount, fast refresh) before the
@@ -85,7 +88,10 @@ export async function maybeFetchAndAttachInstallReferrer(
   fetchInFlight = true;
   try {
     const alreadyFetched = await getPreference<boolean>(INSTALL_REFERRER_FETCHED_KEY);
-    if (alreadyFetched) return;
+    if (alreadyFetched) {
+      await publishStoredInstallReferrer();
+      return;
+    }
 
     const result = await fetchNative();
     // Mark fetched regardless of a clean outcome (success or a resolved null,
@@ -94,9 +100,25 @@ export async function maybeFetchAndAttachInstallReferrer(
     // every future launch has little value. A thrown exception below skips
     // this write, so a transient failure (e.g. SERVICE_UNAVAILABLE) does retry
     // on the next launch.
+    if (result) await setPreference(INSTALL_REFERRER_RESULT_KEY, result);
     await setPreference(INSTALL_REFERRER_FETCHED_KEY, true);
     if (!result) return;
+    await publishStoredInstallReferrer();
+  } catch (error) {
+    reportError(error);
+  } finally {
+    fetchInFlight = false;
+  }
+}
 
+let publicationInFlight = false;
+export async function publishStoredInstallReferrer(): Promise<void> {
+  if (!isProductAnalyticsGranted() || publicationInFlight) return;
+  publicationInFlight = true;
+  try {
+    if (await getPreference<boolean>(INSTALL_REFERRER_PUBLISHED_KEY)) return;
+    const result = await getPreference<NativeInstallReferrerResult>(INSTALL_REFERRER_RESULT_KEY);
+    if (!result || !isProductAnalyticsGranted()) return;
     const parsed = parseInstallReferrer(result.installReferrer);
     const installChannel = classifyInstallChannel(parsed);
     // Person properties are written for every install, whatever its channel —
@@ -129,12 +151,13 @@ export async function maybeFetchAndAttachInstallReferrer(
         install_channel: installChannel,
       });
     }
+    await setPreference(INSTALL_REFERRER_PUBLISHED_KEY, true);
   } catch (error) {
     // Must never throw — this runs fire-and-forget at startup. Still reported
     // so a broken preference store / PostHog init doesn't fail this pipeline
     // invisibly.
     reportError(error);
   } finally {
-    fetchInFlight = false;
+    publicationInFlight = false;
   }
 }

@@ -69,8 +69,8 @@ let sessionInboundCampaign: InboundCampaign | null | undefined;
  * Read ONCE, from the URL the first caller sees, and held in memory for the
  * life of the document: the tagged URL is the landing page, and a client-side
  * navigation to `/gyms` afterwards must not turn the visit into an untagged
- * one. `AnalyticsClient` fires the first `$pageview` on mount, so in practice
- * the first caller always runs on the landing URL.
+ * one. `AnalyticsClient` snapshots the landing URL on mount independently of
+ * consent; event emission still waits for Allow.
  *
  * Memory, not storage: a full page load (a locale switch, a hard reload on a
  * later page) starts over from that page's URL. Persisting it would mean a new

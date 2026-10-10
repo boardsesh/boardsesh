@@ -17,6 +17,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { invalidateConsentAccount, updateConsentState } from '../../../src/lib/consent-state';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn(), setPersonProperties: vi.fn() }));
 const auth = vi.hoisted(() => ({ register: vi.fn() }));
@@ -123,6 +125,7 @@ vi.mock('../../../src/components/Text', () => ({
 import RegisterScreen from '../register';
 
 beforeEach(() => {
+  grantAnalyticsForTest();
   analytics.track.mockClear();
   analytics.setPersonProperties.mockClear();
   auth.register.mockReset();
@@ -152,6 +155,25 @@ async function fillAndSubmit() {
 }
 
 describe('RegisterScreen analytics', () => {
+  it('preserves signup conversion and properties through delayed consent-account resolution', async () => {
+    auth.register.mockImplementation(async () => {
+      invalidateConsentAccount();
+      return { success: true };
+    });
+    await fillAndSubmit();
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+    expect(analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.SignupCompleted)).toHaveLength(0);
+    await act(async () => {
+      updateConsentState({ authSettled: true, accountResolved: true, accountId: 'new-user', sdkReady: true });
+    });
+    const conversions = analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.SignupCompleted);
+    expect(conversions).toHaveLength(1);
+    expect(analytics.setPersonProperties).toHaveBeenCalledExactlyOnceWith(undefined, {
+      signup_at: (conversions[0][2].timestamp as Date).toISOString(),
+      signup_auth_method: 'credentials',
+    });
+  });
+
   it('fires SignupCompleted + first-touch person properties alongside LoginSucceeded on success', async () => {
     auth.register.mockResolvedValue({ success: true });
 
@@ -166,11 +188,15 @@ describe('RegisterScreen analytics', () => {
         screen: 'register',
       }),
     );
-    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
-      auth_method: 'credentials',
-      provider: 'email',
-      flow: 'native',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      SHARED_EVENTS.SignupCompleted,
+      {
+        auth_method: 'credentials',
+        provider: 'email',
+        flow: 'native',
+      },
+      { timestamp: expect.any(Date) },
+    );
     expect(analytics.setPersonProperties).toHaveBeenCalledWith(undefined, {
       signup_at: expect.any(String),
       signup_auth_method: 'credentials',
@@ -199,12 +225,16 @@ describe('RegisterScreen analytics', () => {
     await fillAndSubmit();
 
     await waitFor(() =>
-      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
-        auth_method: 'credentials',
-        provider: 'email',
-        flow: 'web',
-        requires_verification: true,
-      }),
+      expect(analytics.track).toHaveBeenCalledWith(
+        SHARED_EVENTS.SignupCompleted,
+        {
+          auth_method: 'credentials',
+          provider: 'email',
+          flow: 'web',
+          requires_verification: true,
+        },
+        { timestamp: expect.any(Date) },
+      ),
     );
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.any(Object));
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object));
@@ -277,12 +307,16 @@ describe('RegisterScreen analytics', () => {
     await fillAndSubmit();
 
     await waitFor(() =>
-      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
-        auth_method: 'credentials',
-        provider: 'email',
-        flow: 'native',
-        requires_verification: false,
-      }),
+      expect(analytics.track).toHaveBeenCalledWith(
+        SHARED_EVENTS.SignupCompleted,
+        {
+          auth_method: 'credentials',
+          provider: 'email',
+          flow: 'native',
+          requires_verification: false,
+        },
+        { timestamp: expect.any(Date) },
+      ),
     );
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.any(Object));
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object));

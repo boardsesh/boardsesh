@@ -101,6 +101,8 @@ export interface PatchRule {
   patchedKey: string;
   /** Optional negative assertions scoped to a single method body. */
   forbiddenInMethod?: readonly ForbiddenInMethod[];
+  /** Source fragments that must not occur anywhere in this patched file. */
+  forbiddenSubstrings?: readonly string[];
 }
 
 /**
@@ -131,6 +133,112 @@ export const RULES: readonly PatchRule[] = [
       'moduleRegistry.post(event: .appContextDestroys)',
     ],
     patchedKey: 'expo-modules-core@57.0.21',
+  },
+  // Pin the callable source and both distributed JS entrypoints: exporting a
+  // type alone cannot stop recording in a compiled native replay SDK.
+  ...(['src/index.tsx', 'lib/module/index.js', 'lib/commonjs/index.js'] as const).map((file) => ({
+    package: 'posthog-react-native-session-replay',
+    file,
+    sentinels: [
+      'return PosthogReactNativeSessionReplay.setOptOut(optedOut, projectToken);',
+      file === 'lib/commonjs/index.js' ? 'exports.setOptOut = setOptOut;' : 'export function setOptOut(',
+      file === 'lib/commonjs/index.js' ? 'exports.reset = identify;' : 'export const reset = identify;',
+    ],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
+  })),
+  {
+    package: 'posthog-react-native-session-replay',
+    file: 'ios/PosthogReactNativeSessionReplay.mm',
+    sentinels: ['RCT_EXTERN_METHOD(setOptOut:(BOOL)optedOut', 'withProjectToken:(NSString)projectToken'],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
+  },
+  {
+    package: 'posthog-react-native-session-replay',
+    file: 'ios/PosthogReactNativeSessionReplay.swift',
+    sentinels: [
+      'private var consentAllowed = false',
+      'private var nativeInitialized = false',
+      'self.storageToken = publicToken + "-boardsesh-replay-" + UUID().uuidString',
+      'let config = PostHogConfig(projectToken: nextTransport.storageToken, host: host)',
+      'configuration.urlSessionConfiguration = transport?.configuration()',
+      'configuration.protocolClasses = [ReplayConsentURLProtocol.self]',
+      'private var forwardingTask: URLSessionDataTask?',
+      'forwardingTask = pending',
+      'forwardingTask?.cancel()',
+      'request.url?.scheme == "https" || request.url?.scheme == "http"',
+      `guard let identifier = request.value(forHTTPHeaderField: ReplayConsentTransport.header),
+              let transport = ReplayConsentTransport.find(identifier) else {`,
+      'if request.httpMethod == "POST" { throw URLError(.cannotDecodeContentData) }',
+      'if transport.add(pending, identifier: taskId) { pending.resume() }',
+      'guard !sealed else { return false }',
+      'sealed = true',
+      'pending.forEach { $0.cancel() }',
+      `transport?.retire()
+            PostHogSDK.shared.optOut()
+            PostHogSDK.shared.stopSessionRecording()
+            PostHogSDK.shared.close()
+            nativeInitialized = false
+            config = nil`,
+      `transport?.retire()
+        PostHogSDK.shared.close()
+        nativeInitialized = false
+        self.config = nil
+        PostHogSessionManager.shared.setSessionId(sessionIdStr)
+        transport = nextTransport`,
+      `guard let storageManager = self.config?.storageManager else {
+            transport?.retire()
+            transport = nil
+            self.config = nil`,
+      `do { try purgeCache(projectToken) }
+        catch {
+            transport?.retire()
+            transport = nil`,
+      `nativeInitialized = true
+        setIdentify(storageManager, distinctId: distinctId, anonymousId: anonymousId)`,
+      'if !nativeInitialized {',
+      'guard consentAllowed, nativeInitialized else { resolve(nil); return }',
+      'if manager.fileExists(atPath: project.path) { try manager.removeItem(at: project) }',
+      'folder.lastPathComponent.hasPrefix(token + "-boardsesh-replay-") { try manager.removeItem(at: folder) }',
+      'if manager.fileExists(atPath: location.path) { try manager.removeItem(at: location) }',
+      '"posthog.queueFolder", "posthog.queue.plist"',
+      'guard consentAllowed, !(sdkOptions["optOut"] as? Bool ?? true) else',
+      'guard consentAllowed, let storageManager = config?.storageManager else',
+      'guard consentAllowed, !publicProjectToken.isEmpty else',
+    ],
+    forbiddenSubstrings: ['.isEnabled'],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
+  },
+  {
+    package: 'posthog-react-native-session-replay',
+    file: 'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+    sentinels: [
+      '@Volatile private var consentAllowed = false',
+      'if (changed) consentGeneration.incrementAndGet()',
+      'retiredPermission?.set(false)',
+      'activeTransport?.dispatcher?.cancelAll()',
+      `UiThreadUtil.runOnUiThread(Runnable {
+      try {
+        synchronized(consentLock) {`,
+      `if (!permission.get() || !consentAllowed) throw IOException("Replay consent withdrawn")
+        chain.proceed(compressed)`,
+      '"boardsesh-consent-replay/${UUID.randomUUID()}"',
+      'config.storagePrefix = File(generationRoot, "events").absolutePath',
+      'config.replayStoragePrefix = File(generationRoot, "snapshots").absolutePath',
+      'config.addBeforeSend { event -> if (permission.get() && consentAllowed) event else null }',
+      'if (!consentAllowed || initializationGeneration != consentGeneration.get()) return@Runnable',
+      'if (!consentAllowed || recordingGeneration != consentGeneration.get()) return@Runnable',
+      'if (consentAllowed) setIdentify(savedConfig?.cachePreferences, distinctId, anonymousId)',
+      `if (!consentAllowed) return
+    cachePreferences?.let { preferences ->`,
+      'savedConfig = savedConfig?.let { copyReplayConfig(it) }',
+      'File(context.cacheDir, "boardsesh-consent-replay")',
+      'if (location.exists() && !location.deleteRecursively()) throw IOException("Replay cache purge failed")',
+      `PostHog.close()
+            nativeInitialized = false
+            purgeCache(if (apiKey.isEmpty()) savedConfig?.apiKey ?: "" else apiKey)`,
+      'context.getSharedPreferences("posthog-android-$apiKey", 0).edit().clear().commit()',
+    ],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
   },
   ...(['src/SQLiteDatabase.ts', 'build/SQLiteDatabase.js'] as const).map((file) => ({
     package: 'expo-sqlite',
@@ -714,6 +822,13 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 
     // (5) Shape assertions: a symbol can survive a re-keyed patch while the
     //     dangerous line it replaced comes back with it.
+    const forbiddenFragments = (rule.forbiddenSubstrings ?? []).filter((fragment) => source.includes(fragment));
+    if (forbiddenFragments.length > 0) {
+      errors.push(
+        `${rule.package}: ${rule.file} contains forbidden source ${forbiddenFragments.map((fragment) => `"${fragment}"`).join(', ')}. ` +
+          `Re-verify patches/${rule.patchedKey}.patch against the installed native SDK API.`,
+      );
+    }
     for (const forbidden of rule.forbiddenInMethod ?? []) {
       const body = extractObjCMethodBody(source, forbidden.method);
       if (body === null) {
@@ -740,7 +855,35 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 /** Real-filesystem env used when the script runs for real. */
 export function createNodeEnv(mobilePackageJson: string, patchedDependencies: Record<string, string>): PatchCheckEnv {
   const requireFromMobile = createRequire(mobilePackageJson);
-  const resolvePackageJson = (pkg: string) => requireFromMobile.resolve(`${pkg}/package.json`);
+  const packageManifests = new Map<string, string>();
+  const resolvePackageJson = (pkg: string): string => {
+    const cached = packageManifests.get(pkg);
+    if (cached) return cached;
+    let manifest: string;
+    try {
+      manifest = requireFromMobile.resolve(`${pkg}/package.json`);
+    } catch {
+      // Some native packages hide package.json through their exports map.
+      // Resolve the same entry mobile uses, then verify the containing package
+      // name rather than guessing a workspace/store node_modules path.
+      let directory = dirname(requireFromMobile.resolve(pkg));
+      while (true) {
+        const candidate = resolve(directory, 'package.json');
+        if (existsSync(candidate)) {
+          const candidateManifest = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string };
+          if (candidateManifest.name === pkg) {
+            manifest = candidate;
+            break;
+          }
+        }
+        const parent = dirname(directory);
+        if (parent === directory) throw new Error(`Cannot locate package.json for resolved package '${pkg}'`);
+        directory = parent;
+      }
+    }
+    packageManifests.set(pkg, manifest);
+    return manifest;
+  };
   return {
     patchedDependencies,
     readInstalledVersion(pkg) {

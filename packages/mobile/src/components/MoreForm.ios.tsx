@@ -46,6 +46,7 @@ import {
   frame,
   listRowInsets,
   listRowSeparator,
+  disabled as disabledModifier,
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
@@ -131,7 +132,14 @@ function renderRow(row: MoreRow, accent: string) {
       // Two Text children → title + subtitle (SwiftUI styles the second secondary
       // and folds both into the VoiceOver label). Brand on-track tint.
       return (
-        <Toggle key={row.key} isOn={row.value} onIsOnChange={row.onValueChange} modifiers={[tint(accent)]}>
+        <Toggle
+          key={row.key}
+          isOn={row.value}
+          onIsOnChange={(next) => {
+            if (!row.disabled) row.onValueChange(next);
+          }}
+          modifiers={[tint(accent), disabledModifier(row.disabled ?? false)]}
+        >
           <Text>{row.label}</Text>
           {row.subtitle ? <Text>{row.subtitle}</Text> : null}
         </Toggle>

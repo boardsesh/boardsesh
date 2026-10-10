@@ -30,6 +30,15 @@ const withoutComments = (source: string): string =>
     .filter((line) => !line.trimStart().startsWith('#'))
     .join('\n');
 
+function jobBlock(workflow: string, jobName: string): string {
+  const jobsStart = workflow.indexOf('\njobs:\n');
+  const start = workflow.indexOf(`\n  ${jobName}:\n`, jobsStart);
+  expect(jobsStart).toBeGreaterThanOrEqual(0);
+  expect(start, jobName).toBeGreaterThan(jobsStart);
+  const nextJobOffset = workflow.slice(start + 1).search(/\n  [a-zA-Z0-9_-]+:\n/);
+  return nextJobOffset < 0 ? workflow.slice(start) : workflow.slice(start, start + 1 + nextJobOffset);
+}
+
 describe.each(ADMIN_WORKFLOWS)('%s', (name) => {
   const source = readWorkflow(name);
   const code = withoutComments(source);
@@ -232,7 +241,28 @@ describe('mobile-ota-unlock.yml', () => {
     expect(production).toContain('node scripts/mobile-ota-unlock-wait.mjs');
     expect(production).toContain("!inputs.stage_for_production_deploy && steps.unlock_runtimes.outcome == 'success'");
     expect(production).toContain("(inputs.stage_for_production_deploy || steps.unlock.outcome == 'success')");
-    expect(production).not.toContain('secrets.OTA_ADMIN');
+    // Staging now verifies an empty beta branch with a separate trusted job.
+    // The installed resolver/publisher and every other job still get no login.
+    const capture = jobBlock(production, 'capture-staging-baselines');
+    expect(production.replace(capture, '')).not.toContain('OTA_ADMIN');
+    expect(capture).toContain('environment: ota-stable-release');
+    expect(capture).toContain('if: inputs.stage_for_production_deploy');
+    expect(capture).toMatch(/if: github.ref != 'refs\/heads\/main'\n\s+run: exit 1/);
+    expect(capture.indexOf("if: github.ref != 'refs/heads/main'")).toBeLessThan(capture.indexOf('actions/checkout@'));
+    expect(capture).toContain('ref: ${{ github.sha }}');
+    expect(capture).not.toMatch(/\b(vp|pnpm|npm|yarn)\s+(install|ci|i|add|dlx|exec)\b|npx |setup-vp|EOO_TOKEN/);
+    for (const action of capture.matchAll(/uses:\s*(\S+)/g)) {
+      expect(action[1]).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/);
+    }
+    const adminSteps = capture.split(/^ {6}- /m).filter((step) => step.includes('OTA_ADMIN'));
+    expect(adminSteps).toHaveLength(1);
+    expect(adminSteps[0]).toContain('name: Capture authenticated early baseline');
+    expect(adminSteps[0]).toContain('OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}');
+    expect(adminSteps[0]).toContain('OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}');
+    expect(adminSteps[0].indexOf('::add-mask::$OTA_ADMIN_EMAIL')).toBeGreaterThan(0);
+    expect(adminSteps[0].indexOf('::add-mask::$OTA_ADMIN_EMAIL')).toBeLessThan(
+      adminSteps[0].indexOf('node --experimental-strip-types scripts/mobile-ota-promote.ts'),
+    );
     const backport = withoutComments(readWorkflow('mobile-ota-backport.yml'));
     expect(backport).toContain('mobile-ota-unlock-wait.mjs');
     expect(backport).not.toContain('secrets.OTA_ADMIN');
@@ -347,8 +377,15 @@ describe('release behaviour', () => {
       expect(code, name).not.toContain('ota-rollout-proof');
     }
     const production = withoutComments(readWorkflow('mobile-ota-production.yml'));
-    expect(production).toContain('scripts/mobile-ota-promote.ts --capture-baseline --branch pr-beta');
-    expect(production).toContain('--out ota-stage/early-baseline.json');
+    const capture = jobBlock(production, 'capture-staging-baselines');
+    expect(capture).toContain(
+      'scripts/mobile-ota-promote.ts --capture-baseline --branch pr-beta --verify-empty-target',
+    );
+    expect(capture).toContain('--out early-baseline.json');
+    expect(capture).toContain('early_baseline: ${{ steps.capture.outputs.early_baseline }}');
+    const publisher = jobBlock(production, 'publish');
+    expect(publisher).toContain('EARLY_BASELINE: ${{ needs.capture-staging-baselines.outputs.early_baseline }}');
+    expect(publisher).toContain('printf \'%s\' "$EARLY_BASELINE" > ota-stage/early-baseline.json');
     const deployment = withoutComments(readWorkflow('production-deploy.yml'));
     expect(deployment).toContain("vars.OTA_STABLE_RELEASE_ENABLED != 'true'");
     expect(deployment).toContain('scripts/mobile-ota-promote-track.ts ota-stage');

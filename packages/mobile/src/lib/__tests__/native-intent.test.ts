@@ -1,3 +1,4 @@
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getShareExtensionKeyMock = vi.fn();
@@ -121,3 +122,5 @@ describe('redirectSystemPath', () => {
     );
   });
 });
+
+beforeEach(() => grantAnalyticsForTest());

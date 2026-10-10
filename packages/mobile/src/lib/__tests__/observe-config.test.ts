@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import {
   OBSERVE_DEFAULT_SAMPLE_RATE,
   OBSERVE_INTEGRATIONS,
+  OBSERVE_FILTERED_ROUTE_PARAMS,
   buildObserveConfig,
   parseObserveSampleRate,
   resolveObserveDispatchEnabled,
+  isFirstPartyObserveEndpointConfigured,
 } from '../observe-config';
+
+// Exercise the installed SDK's pure helpers without importing its internal
+// native types into the application TypeScript project.
+const observePackageRoot = dirname(createRequire(import.meta.url).resolve('expo-observe/package.json'));
+type NavigationConfig = (typeof OBSERVE_INTEGRATIONS)['expo-router'];
+type NavigationHelpers = {
+  getNavigationMetricParams: (config: NavigationConfig, params: Record<string, unknown>, url: string) => unknown;
+  getNavigationRouteParams: (config: NavigationConfig, params: Record<string, unknown>) => unknown;
+};
+const { getNavigationMetricParams, getNavigationRouteParams } = (await import(
+  /* @vite-ignore */ join(observePackageRoot, 'src/integrations/navigationConfig.ts')
+)) as NavigationHelpers;
+const { buildRoutePattern } = (await import(
+  /* @vite-ignore */ join(observePackageRoot, 'src/integrations/expo-router/routeName.ts')
+)) as { buildRoutePattern: (segments: string[]) => string };
 
 describe('parseObserveSampleRate', () => {
   // PostHog hands back a string, and the value is typed by hand in a dashboard.
@@ -44,9 +63,7 @@ describe('parseObserveSampleRate', () => {
 });
 
 describe('resolveObserveDispatchEnabled', () => {
-  it('treats an unresolved flag as the shipped default, not as off', () => {
-    // A device that never reaches PostHog must keep reporting rather than go
-    // permanently quiet — the failure mode docs/feature-flags.md calls out.
+  it('uses enabled diagnostics after the flag bag resolves without a kill', () => {
     expect(resolveObserveDispatchEnabled(undefined)).toBe(true);
     expect(resolveObserveDispatchEnabled(null)).toBe(true);
   });
@@ -56,7 +73,7 @@ describe('resolveObserveDispatchEnabled', () => {
     expect(resolveObserveDispatchEnabled(true)).toBe(true);
   });
 
-  it('treats a stray string as enabled rather than silently disabling', () => {
+  it('retains diagnostics for malformed flags rather than hiding errors', () => {
     expect(resolveObserveDispatchEnabled('true')).toBe(true);
     expect(resolveObserveDispatchEnabled('')).toBe(true);
   });
@@ -76,8 +93,8 @@ describe('buildObserveConfig', () => {
 
   it('applies the shipped defaults when given no overrides', () => {
     const config = buildObserveConfig();
-    expect(config.sampleRate).toBe(OBSERVE_DEFAULT_SAMPLE_RATE);
-    expect(config.dispatchingEnabled).toBe(true);
+    expect(config.sampleRate).toBe(1);
+    expect(config.dispatchingEnabled).toBe(false);
   });
 
   it('applies overrides', () => {
@@ -95,6 +112,98 @@ describe('buildObserveConfig', () => {
   });
 
   it('enables the expo-router integration, which is what produces the timings', () => {
-    expect(OBSERVE_INTEGRATIONS['expo-router']).toBe(true);
+    expect(OBSERVE_INTEGRATIONS['expo-router']).toEqual({ filteredParams: OBSERVE_FILTERED_ROUTE_PARAMS });
+  });
+});
+
+describe('Observe router metadata with the pinned public SDK', () => {
+  it.each([
+    {
+      route: '/climbs/holds',
+      params: {
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '2',
+        setIds: '3',
+        angle: '40',
+        holdsFilter: '{"selected":[1,2]}',
+        heatmapSearch: '{"searchText":"private search","filters":{"setter":["person"]}}',
+      },
+    },
+    {
+      route: '/climbs/setters',
+      params: { setters: '["person"]', countInput: '{"name":"private search","setter":["person"]}' },
+    },
+    {
+      route: '/climbs/create',
+      params: {
+        forkFrames: 'hold-data',
+        forkName: 'personal climb name',
+        forkDescription: 'personal text',
+        forkCharacteristics: '["no matching"]',
+        forkParentUuid: 'parent-id',
+        editClimbUuid: 'private-climb-id',
+      },
+    },
+    {
+      route: '/moderation',
+      params: { proposalUuid: 'proposal-id', climbUuid: 'climb-id', boardType: 'kilter' },
+    },
+    {
+      route: '/climbs/climb-id',
+      params: { climbUuid: 'climb-id', activationIntent: 'one-time-intent' },
+    },
+  ])('removes content and search payloads from $route timings', ({ route, params }) => {
+    const integration = OBSERVE_INTEGRATIONS['expo-router'];
+    expect(getNavigationMetricParams(integration, params, route)).toEqual({ routeParams: {}, urlHidden: true });
+    expect(getNavigationRouteParams(integration, params)).toEqual({ routeParams: {}, urlHidden: true });
+  });
+
+  it('retains normalized timing routes without user or session IDs or their resolved URL', () => {
+    const integration = OBSERVE_INTEGRATIONS['expo-router'];
+    const params = { userId: 'account-secret', sessionId: 'session-secret', mode: 'followers' };
+    expect(buildRoutePattern(['users', '[userId]'])).toBe('/users/[userId]');
+    expect(getNavigationMetricParams(integration, params, '/users/account-secret')).toEqual({
+      routeParams: { mode: 'followers' },
+      urlHidden: true,
+    });
+    expect(getNavigationRouteParams(integration, params)).toEqual({
+      routeParams: { mode: 'followers' },
+      urlHidden: true,
+    });
+  });
+
+  it('removes auth reset credentials from navigation metrics', () => {
+    expect(
+      getNavigationMetricParams(
+        OBSERVE_INTEGRATIONS['expo-router'],
+        {
+          token: 'reset-secret',
+          email: 'person@example.com',
+        },
+        '/auth/reset-password',
+      ),
+    ).toEqual({ routeParams: {}, urlHidden: true });
+  });
+});
+
+describe('first-party Observe endpoint', () => {
+  it('accepts explicit self-hosted ingest configuration', () => {
+    expect(isFirstPartyObserveEndpointConfigured('https://ota.boardsesh.com/observe/app-id')).toBe(true);
+    expect(isFirstPartyObserveEndpointConfigured('http://localhost:3000/observe/app-id')).toBe(true);
+  });
+  it('rejects the SDK fallback and missing or malformed endpoints', () => {
+    for (const endpoint of [
+      undefined,
+      null,
+      '',
+      'invalid',
+      'https://o.expo.dev',
+      'https://o.expo.dev/observe/app-id',
+      'https://ota.boardsesh.com/manifest',
+      'http://ota.boardsesh.com/observe/app-id',
+      'https://user:password@ota.boardsesh.com/observe/app-id',
+    ])
+      expect(isFirstPartyObserveEndpointConfigured(endpoint)).toBe(false);
   });
 });

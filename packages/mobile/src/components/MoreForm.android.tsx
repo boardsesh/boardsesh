@@ -221,7 +221,14 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               </Text>
             ) : null}
           </Column>
-          <Switch value={row.value} onCheckedChange={row.onValueChange} colors={colors.switchColors} />
+          <Switch
+            value={row.value}
+            enabled={!row.disabled}
+            onCheckedChange={(next) => {
+              if (!row.disabled) row.onValueChange(next);
+            }}
+            colors={colors.switchColors}
+          />
         </Row>
       );
     case 'segmented':

@@ -1,3 +1,5 @@
+import { getConsentSnapshot } from '../../lib/consent-state';
+import { useConsentSettled } from '../../lib/consent-hooks';
 import { useEffect, useRef, useState } from 'react';
 import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -51,6 +53,8 @@ export function BoardLookStepGate({
   const topSegmentRef = useRef<string | undefined>(segments[0]);
   topSegmentRef.current = segments[0];
 
+  const consentSettled = useConsentSettled();
+  ready = ready && consentSettled;
   const { settings, loaded: settingsLoaded } = useBoardRenderSettings();
   const [armed, setArmed] = useState(false);
   const [stepSeen, setStepSeen] = useState<boolean | undefined>(undefined);
@@ -166,7 +170,7 @@ export function BoardLookStepGate({
     // decision above substitutes `false` for it, which could show the step over
     // a deep-link landing, so hold until it has actually answered.
     if (!present || !armed || pushedRef.current || launchedByDeepLink === undefined) return;
-    if (decision !== 'show') return;
+    if (decision !== 'show' || !getConsentSnapshot().settled) return;
     pushedRef.current = true;
     router.push({ pathname: '/onboarding', params: { step: 'board-look' } });
   }, [present, armed, decision, launchedByDeepLink]);

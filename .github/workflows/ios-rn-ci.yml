@@ -35,6 +35,9 @@ env:
   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
   EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  # Generate the app-owned Sentry callbacks for real native typechecking. This
+  # compile-only app never launches; the collector is local, never Sentry.
+  EXPO_PUBLIC_SENTRY_DSN: http://ci-compiler@127.0.0.1:1/1
 
 jobs:
   gate:
@@ -101,11 +104,18 @@ jobs:
           EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
           EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
           EOF
 
       - name: Expo prebuild (generate ios/)
         working-directory: packages/mobile
         run: vp exec expo prebuild --platform ios --clean --no-install
+
+      - name: Require generated native Sentry callbacks
+        run: |
+          grep -Fq 'RNSentrySDK.start(configureOptions:' packages/mobile/ios/Boardsesh/AppDelegate.swift
+          grep -Fq 'options.beforeSend = ' packages/mobile/ios/Boardsesh/AppDelegate.swift
+          grep -Fq "$EXPO_PUBLIC_SENTRY_DSN" packages/mobile/ios/Boardsesh/AppDelegate.swift
 
       # Key on the native inputs that decide the Pods, NOT ios/Podfile.lock: there
       # is no committed ios/ (CNG — `expo prebuild` generates it), and this step
@@ -143,14 +153,16 @@ jobs:
       # -derivedDataPath is pinned here (and on both test steps below, so they keep
       # sharing these build products instead of rebuilding into the default
       # DerivedData) to give the ABI check a deterministic path to the .app.
-      - name: Build the app (compiles Pods + patched native modules)
+      # Release also typechecks startup inside #if !DEBUG, including our native
+      # Sentry callbacks. The standalone Swift unit target below stays Debug.
+      - name: Build the Release app (compiles startup + Pods + patched native modules)
         run: |
           set -o pipefail
           build() {
             xcodebuild build \
               -workspace "$WORKSPACE_PATH" \
               -scheme Boardsesh \
-              -configuration Debug \
+              -configuration Release \
               -destination 'generic/platform=iOS Simulator' \
               -derivedDataPath packages/mobile/ios/build \
               ARCHS=arm64 \
@@ -189,7 +201,7 @@ jobs:
       # may log a file only inside a batched "Compiling\ A.swift,\ B.swift <paths>"
       # line (ExpoModulesCore's Exception.swift does), so anchor on the package
       # path rather than the bare filename — @expo/ui has its own ImageView.swift.
-      - name: Assert the patched native module really compiled
+      - name: Assert app startup and patched native modules really compiled
         run: |
           status=0
           check() {
@@ -202,6 +214,7 @@ jobs:
             fi
           }
           check 'RNScreens RNSScrollViewFinder.mm' 'RNSScrollViewFinder'
+          check 'AppDelegate native startup' 'SwiftCompile normal [a-z0-9_]+ .*/Boardsesh/AppDelegate\.swift'
           check 'ExpoModulesCore Exception.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-modules-core/ios/Core/Exceptions/Exception\.swift'
           check 'ExpoImage ImageView.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-image/ios/ImageView\.swift'
           check 'ExpoSQLite SQLiteModule.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-sqlite/ios/SQLiteModule\.swift'
@@ -226,7 +239,7 @@ jobs:
       # archive. Debug vs Release is irrelevant — the frameworks are prebuilt
       # either way.
       - name: Check embedded framework ABI
-        run: vp run mobile:abi-check -- --app packages/mobile/ios/build/Build/Products/Debug-iphonesimulator/Boardsesh.app
+        run: vp run mobile:abi-check -- --app packages/mobile/ios/build/Build/Products/Release-iphonesimulator/Boardsesh.app
 
       - name: Add RN Swift test target
         run: node scripts/prepare-rn-ios-tests.mjs

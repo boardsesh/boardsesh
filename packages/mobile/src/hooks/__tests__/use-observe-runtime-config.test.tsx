@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import {
@@ -9,6 +9,8 @@ import {
 } from '../../providers/feature-flags-provider';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../../lib/observe-runtime';
 import { useObserveRuntimeConfig } from '../use-observe-runtime-config';
+import { updateConsentState } from '../../lib/consent-state';
+import { grantAnalyticsForTest, grantedConsent } from '../../../test/consent-fixture';
 
 const appStateMock = vi.hoisted(() => {
   type State = 'active' | 'background' | 'inactive' | 'unknown' | 'extension';
@@ -49,6 +51,8 @@ vi.mock('react-native', () => ({
 // observe-config.test.ts's contract; this file is about what actually reaches
 // the SDK, including the case that matters most — flags that have not resolved.
 
+beforeEach(() => grantAnalyticsForTest());
+
 afterEach(() => {
   cleanup();
   resetObserveRuntimeForTests();
@@ -74,11 +78,10 @@ function renderWithFlags(flags: FeatureFlags, staticFlagsAreFinal = true) {
 
 describe('useObserveRuntimeConfig', () => {
   it('keeps full-rate configuration but waits to flush while flags are unresolved', () => {
-    // The cold-start case, and the one that must not go quiet: a device that
-    // never reaches PostHog has to keep reporting.
+    // Preserve startup timings while the functional flag bag is unresolved.
     const { configure, dispatchEvents } = renderWithFlags({}, false);
 
-    expect(configure).toHaveBeenCalledWith({ dispatchingEnabled: true, sampleRate: 1 });
+    expect(configure).toHaveBeenCalledWith({ dispatchingEnabled: false, sampleRate: 1 });
     expect(dispatchEvents).not.toHaveBeenCalled();
   });
 
@@ -93,6 +96,18 @@ describe('useObserveRuntimeConfig', () => {
     expect(configure).toHaveBeenCalledTimes(2);
     expect(dispatchEvents).toHaveBeenCalledOnce();
     expect(configure.mock.invocationCallOrder.at(-1)).toBeLessThan(dispatchEvents.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps diagnostics enabled when product Analytics is denied', () => {
+    updateConsentState({ record: { ...grantedConsent, analytics: 'denied' } });
+    const { configure, dispatchEvents } = renderWithFlags({});
+    expect(configure).toHaveBeenLastCalledWith({ dispatchingEnabled: true, sampleRate: 1 });
+    expect(dispatchEvents).toHaveBeenCalledOnce();
+    act(() => {
+      appStateMock.emit('background');
+      appStateMock.emit('active');
+    });
+    expect(dispatchEvents).toHaveBeenCalledTimes(2);
   });
 
   it('applies the kill switch', () => {

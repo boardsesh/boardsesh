@@ -66,6 +66,12 @@ export type FeatureFlagDefinition = {
 
 export const FEATURE_FLAG_DEFINITIONS = [
   {
+    key: 'privacy-consent-step-kill',
+    label: 'Privacy step kill switch',
+    description: 'Suppresses the privacy step and disables product analytics.',
+    defaultEnabled: false,
+  },
+  {
     key: 'personal-grades',
     label: 'Personal grades',
     description:
@@ -124,7 +130,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'observe-dispatch-enabled',
     label: 'Observe telemetry dispatch',
     description:
-      'Emergency kill switch for expo-observe. Off stops the app dispatching metrics, logs and error reports to updates.boardsesh.com; pending ones are marked sent and discarded. Manifest polling and OTA updates are unaffected.',
+      'Emergency kill switch for first-party Observe diagnostics. Off disables SDK dispatch of metrics, logs and error reports to updates.boardsesh.com. The Analytics choice does not control diagnostics. Manifest polling and OTA updates are unaffected.',
   },
   {
     key: 'observe-sample-rate',
@@ -323,7 +329,7 @@ export function FeatureFlagsProvider({
       if (!mounted) return;
       setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
       const requestId = readPosthogFeatureFlagsRequestId();
-      if (requestId !== undefined && requestId !== cachedRequestIdRef.current) setFresh(true);
+      setFresh(requestId !== undefined && requestId !== cachedRequestIdRef.current);
     };
 
     refreshFlags();

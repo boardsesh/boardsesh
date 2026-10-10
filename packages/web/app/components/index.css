@@ -367,3 +367,9 @@ input:autofill {
 [class*='drop-indicator'] {
   background-color: var(--color-primary) !important;
 }
+
+/* Cached HTML contains the same banner for every browser; the pre-paint cookie mirror hides answered choices. */
+html[data-consent='granted'] .analytics-consent-banner,
+html[data-consent='denied'] .analytics-consent-banner {
+  display: none;
+}

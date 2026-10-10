@@ -100,18 +100,30 @@ export function applyChunkLoadFingerprint<T extends FingerprintableEvent>(
 if (isSentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
+    // App startup installs native privacy callbacks through RNSentrySDK's
+    // supported configureOptions API. Reinitializing here would replace them.
+    // Requires the next native binary; this change is not an old-binary OTA.
+    autoInitializeNativeSdk: false,
     // production for store/TestFlight bundles; 'preview' for pr-* OTA bundles so
     // their crashes are filterable out of the prod view. See resolveAppEnvironment
     // (shared with PostHog — app-environment.ts).
     environment: resolveAppEnvironment(),
     tracesSampleRate: 0.1,
+    sendDefaultPii: false,
     // Drop the benign @expo/ui Android sheet "No handler registered" unhandled rejection
     // (partialExpand/expand on a binary whose native layer predates the method). Scoped
     // to that exact signature so every other rejection still reports. See
     // isExpoUiSheetNoHandlerRejection above.
     beforeSend(event, hint) {
       if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
+      delete event.user;
+      if (event.contexts?.device) delete event.contexts.device.id;
       return applyChunkLoadFingerprint(event, hint?.originalException);
+    },
+    beforeSendTransaction(event) {
+      delete event.user;
+      if (event.contexts?.device) delete event.contexts.device.id;
+      return event;
     },
     // Explicit so a future option change can't silently turn either off. Native
     // crash handling persists SIGABRT / native exceptions across the crash and
@@ -140,6 +152,10 @@ if (isSentryEnabled) {
     // Hardcoding release here (e.g. "2.0.0" without dist) would mismatch the
     // uploaded artifacts and break symbolication.
   });
+  // Native options no longer receive this bundle's init options. Synchronize
+  // the environment through the supported scope bridge so preview OTAs keep
+  // their native errors out of production; pre-JS errors use the build value.
+  Sentry.setTag('boardsesh_environment', resolveAppEnvironment());
 }
 
 // Sentry tags must be primitives; coerce non-scalar values to a readable string

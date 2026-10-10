@@ -31,6 +31,7 @@ vi.mock('../../error-reporting', () => ({
 }));
 
 vi.mock('../../env', () => ({ BACKEND_URL: 'https://api.test' }));
+vi.mock('../../client-platform', () => ({ CLIENT_PLATFORM: 'web' }));
 
 const { CLIENT_IDENTITY } = vi.hoisted(() => ({ CLIENT_IDENTITY: 'boardsesh-mobile-web/2.6.0 (web)' }));
 vi.mock('../../client-identity.web', () => ({ getClientIdentityHeaderValue: () => CLIENT_IDENTITY }));
@@ -157,6 +158,7 @@ describe('Expo web GraphQL WebSocket auth', () => {
     await expect(connectionParams()()).resolves.toEqual({
       authToken: 'browser-jwe',
       clientIdentity: CLIENT_IDENTITY,
+      clientPlatform: 'web',
     });
     expect(ensureFreshTokenMock).toHaveBeenCalledTimes(1);
     expect(getAuthTokenMock).toHaveBeenCalledTimes(1);
@@ -306,6 +308,7 @@ describe('Expo web GraphQL WebSocket auth', () => {
     expect(messagesOfType(firstSocket, 'connection_init')[0]?.payload).toEqual({
       authToken: 'rejected-jwe',
       clientIdentity: CLIENT_IDENTITY,
+      clientPlatform: 'web',
     });
     firstSocket.receive({ type: 'connection_ack' });
     await vi.waitFor(() => expect(messagesOfType(firstSocket, 'subscribe')).toHaveLength(1));
@@ -324,6 +327,7 @@ describe('Expo web GraphQL WebSocket auth', () => {
     expect(messagesOfType(secondSocket, 'connection_init')[0]?.payload).toEqual({
       authToken: 'fresh-jwe',
       clientIdentity: CLIENT_IDENTITY,
+      clientPlatform: 'web',
     });
     secondSocket.receive({ type: 'connection_ack' });
     await vi.waitFor(() => expect(messagesOfType(secondSocket, 'subscribe')).toHaveLength(1));

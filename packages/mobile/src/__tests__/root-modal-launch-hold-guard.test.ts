@@ -103,6 +103,7 @@ describe('root modal routes and the launch update gate', () => {
       'moderation/spray-walls',
       'onboarding',
       'play',
+      'privacy-consent',
       'qa/brief',
       'qa/pick',
       'send-recovery',

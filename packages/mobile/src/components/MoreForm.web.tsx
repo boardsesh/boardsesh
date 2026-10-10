@@ -103,10 +103,15 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
           key={row.key}
           title={row.label}
           description={row.subtitle}
-          onPress={() => row.onValueChange(!row.value)}
+          disabled={row.disabled}
+          style={row.disabled ? styles.disabledToggle : undefined}
+          onPress={() => {
+            if (!row.disabled) row.onValueChange(!row.value);
+          }}
           accessibilityRole="switch"
-          accessibilityState={{ checked: row.value }}
-          right={() => <Switch value={row.value} pointerEvents="none" />}
+          aria-checked={row.value}
+          aria-disabled={row.disabled ?? false}
+          right={() => <Switch value={row.value} disabled={row.disabled} pointerEvents="none" />}
         />
       );
     case 'segmented':
@@ -221,6 +226,7 @@ export function MoreForm({ model }: MoreFormProps) {
 
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
+    disabledToggle: { opacity: 0.4 },
     scroll: {
       flex: 1,
     },

@@ -1,3 +1,6 @@
+import { deferConsentDestination } from '../lib/consent-navigation';
+import { useConsentSettled } from '../lib/consent-hooks';
+import { getConsentSnapshot } from '../lib/consent-state';
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import * as Linking from 'expo-linking';
 import { useRouter, type Href } from 'expo-router';
@@ -119,6 +122,7 @@ export function parseJoinSessionId(url: string): string | null {
  * Router has already opened the route, so this provider leaves them alone.
  */
 export function DeepLinkProvider({ children }: { children: ReactNode }) {
+  const consentSettled = useConsentSettled();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
 
@@ -129,6 +133,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
 
   const navigateToJoin = useCallback(
     (sessionId: string) => {
+      if (deferConsentDestination(`/join/${sessionId}`)) return;
       // navigate (not push): Expo Router's built-in linking already routes a
       // tapped/launched join link to this modal when authenticated. navigate
       // reuses that existing instance (same route + params) instead of stacking
@@ -141,7 +146,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
 
   const handleSessionId = useCallback(
     async (sessionId: string) => {
-      if (isAuthenticatedRef.current) {
+      if (isAuthenticatedRef.current && getConsentSnapshot().settled) {
         navigateToJoin(sessionId);
         return;
       }
@@ -158,11 +163,11 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   );
 
   const navigateToLegacyPreviewDestination = useCallback(() => {
-    router.navigate('/changelog');
+    if (!deferConsentDestination('/changelog')) router.navigate('/changelog');
   }, [router]);
 
   const handleLegacyPreview = useCallback(async () => {
-    if (isAuthenticatedRef.current) {
+    if (isAuthenticatedRef.current && getConsentSnapshot().settled) {
       navigateToLegacyPreviewDestination();
       return;
     }
@@ -227,7 +232,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   // received while signed out that we stashed above). Clears the stash on
   // consume so it fires exactly once.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !consentSettled) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -245,13 +250,13 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, navigateToJoin]);
+  }, [isAuthenticated, navigateToJoin, consentSettled]);
 
   // Preserve retired /preview/pr-N links through the auth gate. The original
   // route no longer exists, so replay the safe What's New destination after
   // login. Preview selection is available from More and the user drawer.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !consentSettled) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -267,7 +272,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, navigateToLegacyPreviewDestination]);
+  }, [isAuthenticated, navigateToLegacyPreviewDestination, consentSettled]);
 
   // Open the board or climb a signed-out link pointed at, once, after sign-in.
   // The stored path is checked again before it reaches the router: it has to be
@@ -276,7 +281,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
   // The read is handed to the onboarding gate as a promise (`board-link-replay`)
   // so the first-board picker is never pushed over the climb it opens.
   useEffect(() => {
-    if (!isAuthenticated || RELAXES_ANONYMOUS_ROUTES) {
+    if (!isAuthenticated || !consentSettled || RELAXES_ANONYMOUS_ROUTES) {
       clearBoardLinkReplay();
       return;
     }
@@ -291,7 +296,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
         // No `cancelled` check from here: the stash is already gone, so backing
         // out now would lose the climb for good. Same as the join replay above.
         // `boardPath` is a validated app path; typed routes can't know that.
-        router.navigate(boardPath as Href);
+        if (!deferConsentDestination(boardPath)) router.navigate(boardPath as Href);
         return true;
       } catch (error) {
         if (__DEV__) console.warn('[deep-link] failed to consume pending board link', error);
@@ -303,7 +308,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, consentSettled]);
 
   return <>{children}</>;
 }

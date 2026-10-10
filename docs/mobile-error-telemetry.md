@@ -18,10 +18,46 @@ dev never sends), owns the global `ErrorUtils` handler, and exposes `captureToSe
 and `wrapWithSentry`. `app/_layout.tsx` imports it first (init before any other
 module side-effect) and wraps the root with `wrapWithSentry`.
 
+## Privacy and release boundary
+
+Product analytics, session replay and publishing install attribution require a current Allow
+choice. Self-hosted Observe provides first-party performance/error diagnostics independently of
+that choice, controlled by its existing dispatch and sampling flags. SDK installation/session
+identifiers support update health; the app assigns no account identity to Observe. Anonymous launch health reports are described in `docs/mobile-ota-updates.md`.
+Sentry crash, app-hang and ANR reporting continues with `sendDefaultPii: false`: JavaScript error
+and transaction hooks remove `user` and persistent device IDs. The app-owned Expo plugin
+`packages/mobile/plugins/with-sentry-native-privacy.js` initializes the native SDK through the
+documented `RNSentrySDK` configuration callbacks, removing native event users and device IDs
+without patching Sentry. Android has separate error and transaction callbacks; the Apple
+`beforeSend` callback covers both. No account identity is assigned to Sentry.
+
+JavaScript sets `autoInitializeNativeSdk: false` so it cannot replace those native callbacks.
+Native startup uses the configured DSN and a fixed production environment, keeps crash/ANR/app-hang
+handling, and lets Sentry detect release/dist. The preview environment remains a JS-only input so
+preview OTAs share the store binary's fingerprint. The supported scope bridge supplies the current bundle's
+`boardsesh_environment` tag so native events from a preview OTA retain the preview environment.
+Pre-JavaScript events use the native build environment. Development builds and builds without a
+DSN do not initialize Sentry natively.
+
+This redaction applies to errors and transactions, not every envelope item. Native release-health
+sessions keep the SDK's existing defaults and can contain an installation identifier. Already
+serialized cached envelopes may bypass event callbacks; this change does not rewrite or delete
+legacy caches. `sendDefaultPii: false` alone does not remove the native installation identifiers.
+See Sentry's [native initialization guide](https://docs.sentry.io/platforms/react-native/manual-setup/native-init/)
+and [app-start configuration guide](https://docs.sentry.io/platforms/react-native/manual-setup/app-start-error-capture/).
+
+These native changes ship in the next store release from `main`. The current store binary cannot
+receive this change as an OTA; there is no backport. Before release, compile both native targets
+and inspect denied/granted/withdrawn traffic on devices, including queued replay uploads and a
+cold-start crash upload. The 30-day legacy-client grace period starts when that release is available
+in the stores. Disabling Sentry organization IP storage and enabling the legacy PostHog drop
+transformation are later operational changes requiring explicit confirmation. Historical PostHog
+person deletion is separate P2 work.
+
 ## What's automatic
 
 `Sentry.init` installs the JS error integrations (**uncaught exceptions** and
-**unhandled promise rejections**) and the **native** crash handler. The global
+**unhandled promise rejections**); the Expo-generated app startup installs the **native** crash handler. The global
 `ErrorUtils` wrapper (`global-error-capture.ts`) and the Expo Router `ErrorBoundary`
 (`app/_layout.tsx`) both report through `reportError`. Crashes and render errors land
 in Sentry with no extra work.

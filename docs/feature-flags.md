@@ -102,6 +102,26 @@ every render, and still fails closed when PostHog does.
 
 ## Mobile flags
 
+`privacy-consent-step-kill: true` suppresses the privacy step and disables product analytics,
+replay and attribution publishing. First-party Observe diagnostics remain independent. The choice stays saved. Product capture waits until
+the flag resolution gate completes (cached values or the existing two-second timeout), as well as
+local consent, settled authentication and current-account consent synchronization. Turning the
+kill switch off asks users with no choice before tracking resumes.
+
+Before consent, one SDK client serves functional flags from memory through the first-party proxy.
+Signed-in targeting uses only the current settled account ID; signed-out users use a launch-only
+identifier. Requests omit cookies and remove persisted anonymous/device identifiers and person
+or group traits. Feature-flag reads never emit `$feature_flag_called`. Consented anonymous users
+retain their SDK identity and bucketing. An unresolved signed-in account cannot opt the product
+client in, even when the local choice says Allow; flags still work while account sync is offline.
+
+Self-hosted Observe is first-party operational diagnostics, independent of the analytics choice.
+Dispatch stays off until the functional flags resolve; startup sampling remains `1` so launch
+timings are retained. The dispatch kill switch and sample-rate flag use the public SDK configuration
+API. No native purge or SDK patch is required. JavaScript dispatch stays disabled without an
+embedded self-hosted endpoint. Every new native build embeds that endpoint because the native
+SDK can dispatch before JavaScript and otherwise falls back to Expo's ingestion service.
+
 Mobile has its own catalog and its own provider — none of the web machinery above
 (server flags, `FEATURE_FLAG_OVERRIDES`, the `/api/internal/feature-flags`
 diagnostic) applies on native. The whole surface lives in three files:

@@ -13,10 +13,8 @@ import { configureObserve, dispatchObserveEvents } from '../lib/observe-runtime'
  * settings that ARE safe to change at runtime, and `buildObserveConfig` passes
  * the same integrations constant back so the integration never looks toggled.
  *
- * Flags resolve asynchronously, so a cold start always collects at the shipped
- * default for a moment. That is intended per docs/feature-flags.md — an
- * unresolved flag reads as the shipped default rather than as "off", so a device
- * that never reaches PostHog keeps reporting instead of going quiet forever.
+ * First-party diagnostics do not depend on the optional Analytics choice.
+ * Startup sampling preserves timings; dispatch waits for resolved flags.
  *
  * A no-op when no runtime is registered (node tests, Expo web).
  *
@@ -33,9 +31,10 @@ export function useObserveRuntimeConfig(): void {
   const appStateSubscription = useRef<NativeEventSubscription | null>(null);
 
   useEffect(() => {
+    const dispatchingEnabled = flagsResolved && resolveObserveDispatchEnabled(dispatchFlag);
     configureObserve({
-      dispatchingEnabled: resolveObserveDispatchEnabled(dispatchFlag),
-      sampleRate: parseObserveSampleRate(sampleRateFlag),
+      dispatchingEnabled,
+      sampleRate: flagsResolved ? parseObserveSampleRate(sampleRateFlag) : 1,
     });
     // Keep configuration before the first flush in the same effect. Flag updates
     // reconfigure the SDK without replacing the listener or flushing again.

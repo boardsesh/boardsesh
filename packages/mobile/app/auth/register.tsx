@@ -15,6 +15,7 @@ import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { Text } from '../../src/components/Text';
 import { track, setPersonProperties } from '../../src/lib/analytics';
+import { createConsentBoundAnalyticsRunner } from '../../src/lib/consent-bound-analytics';
 import { useTrackLoginSucceeded } from '../../src/lib/login-analytics';
 import { webApiUrl } from '../../src/lib/env';
 import { reportError } from '../../src/lib/error-reporting';
@@ -121,17 +122,27 @@ export default function RegisterScreen() {
     try {
       const result = await register(trimmedEmail, values.password, values.name.trim() || undefined);
       if (result.success) {
-        setPersonProperties(undefined, {
-          signup_at: new Date().toISOString(),
-          signup_auth_method: 'credentials',
+        const signedUpAt = new Date();
+        const captureWhenReady = createConsentBoundAnalyticsRunner();
+        captureWhenReady(() => {
+          setPersonProperties(undefined, {
+            signup_at: signedUpAt.toISOString(),
+            signup_auth_method: 'credentials',
+          });
         });
 
         if (result.authenticated === false) {
-          track(SHARED_EVENTS.SignupCompleted, {
-            ...loginProviderProperties('credentials'),
-            flow: authFlow,
-            requires_verification: result.requiresVerification,
-          });
+          captureWhenReady(() =>
+            track(
+              SHARED_EVENTS.SignupCompleted,
+              {
+                ...loginProviderProperties('credentials'),
+                flow: authFlow,
+                requires_verification: result.requiresVerification,
+              },
+              { timestamp: signedUpAt },
+            ),
+          );
           const verificationEmailNeedsResend =
             Platform.OS === 'web' && result.requiresVerification && 'emailSent' in result && result.emailSent === false;
           setRegistrationNextStep(
@@ -150,7 +161,13 @@ export default function RegisterScreen() {
           is_registration: true,
           screen: 'register',
         });
-        track(SHARED_EVENTS.SignupCompleted, { ...loginProviderProperties('credentials'), flow: authFlow });
+        captureWhenReady(() =>
+          track(
+            SHARED_EVENTS.SignupCompleted,
+            { ...loginProviderProperties('credentials'), flow: authFlow },
+            { timestamp: signedUpAt },
+          ),
+        );
         // AuthProvider flips isAuthenticated and the auth-group Redirect lands the
         // new user in the app — same auto-login path as signInWithCredentials.
         return;

@@ -142,23 +142,17 @@ const CODE_SIGNING_CERT_PATH = './certs/certificate.pem';
 // Resolves the expo-observe ingest endpoint, read by the SDK from
 // `extra.eas.observe.endpointUrl`.
 //
-// Derived from EXPO_UPDATES_URL rather than hardcoded, so the telemetry and the
-// manifest can never point at different servers: one env var moves both. Gated
-// on the same two conditions as the self-hosted updates path below — an
-// EAS-hosted build has no server of ours to report to, and neither does a build
-// with no server URL. Those builds simply collect nothing.
+// A configured updates origin also hosts diagnostics. Every other build uses
+// Boardsesh's own collector, including EAS-hosted updates. Always bake this in:
+// the native SDK can dispatch before JS and otherwise falls back to Expo ingest.
 //
 // The path is `/observe/{APP_ID}`; xprem's ingest router mounts
 // `/observe/{APP_ID}/{PROJECT_ID}/v1/{logs,metrics}` and ignores PROJECT_ID
 // (internal/router/routes_ingest.go), which the SDK appends.
 //
 // Exported for unit tests, like resolveUpdatesConfig.
-export function resolveObserveEndpoint(otaAppId: string): string | undefined {
-  if (process.env.EAS_BUILD) return undefined;
-
-  const selfHostUrl = process.env.EXPO_UPDATES_URL;
-  if (!selfHostUrl) return undefined;
-
+export function resolveObserveEndpoint(otaAppId: string): string {
+  const selfHostUrl = process.env.EXPO_UPDATES_URL || 'https://updates.boardsesh.com';
   return `${new URL(selfHostUrl).origin}/observe/${otaAppId}`;
 }
 
@@ -345,8 +339,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     ? [['@react-native-google-signin/google-signin', { iosUrlScheme: googleIosUrlScheme }]]
     : [];
 
-  // Telemetry ingest for expo-observe. Undefined on EAS-hosted and
-  // no-server builds, which is what keeps them from reporting anywhere.
+  // First-party diagnostics ingest is embedded for every native build.
   const observeEndpointUrl = resolveObserveEndpoint(OTA_APP_ID);
 
   return {
@@ -842,6 +835,18 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // The auth token is supplied via the SENTRY_AUTH_TOKEN env var in CI
       // (never committed); url defaults to https://sentry.io/ (US region).
       ['@sentry/react-native/expo', { organization: 'boardsesh', project: 'boardsesh' }],
+      // Configure public native callbacks in our generated app startup code.
+      // JS leaves native initialization alone so it cannot replace them.
+      [
+        './plugins/with-sentry-native-privacy',
+        {
+          dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+          // Preview is a JS-only OTA tag. Reading its variable here would change
+          // the fingerprint and prevent preview bundles reaching store binaries.
+          // The supported scope bridge updates native events after JS starts.
+          environment: 'production',
+        },
+      ],
     ],
     extra: {
       ...config.extra,

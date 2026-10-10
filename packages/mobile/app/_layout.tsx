@@ -51,6 +51,8 @@ import { ShareTargetProvider } from '../src/providers/share-target-provider';
 import { TabBarHeightProvider } from '../src/providers/tab-bar-height-provider';
 import { BottomChromeMetricsProvider } from '../src/hooks/use-bottom-chrome-metrics';
 import { FeatureFlagsProvider, type FeatureFlags } from '../src/providers/feature-flags-provider';
+import { ConsentProvider } from '../src/providers/consent-provider';
+import { ConsentGate } from '../src/components/onboarding/ConsentGate';
 import { useObserveRuntimeConfig } from '../src/hooks/use-observe-runtime-config';
 import { MobileBoardPresenceProvider } from '../src/providers/board-presence-provider';
 import { SheetPresentationProvider } from '../src/providers/sheet-presentation-provider';
@@ -680,10 +682,11 @@ function RootLayout() {
           app. It owns the single PostHog client; manual events go through the
           imperative wrapper in src/lib/analytics. No-ops (renders children
           untouched) in dev / when no key is configured. */}
-        <AnalyticsProvider>
-          <I18nProvider>
-            <QueryProvider>
-              {/* NOTHING below this line may take a prop computed from RootLayout
+        <ConsentProvider>
+          <AnalyticsProvider>
+            <I18nProvider>
+              <QueryProvider>
+                {/* NOTHING below this line may take a prop computed from RootLayout
                 state. SQLiteProvider (inside DatabaseProvider) is memo()'d with a
                 comparator that ignores `children`, so RootLayout's re-renders
                 stop here and every prop created below keeps its FIRST-render
@@ -691,41 +694,42 @@ function RootLayout() {
                 four launch gates from 2.2.0 until #5654. Share such state through
                 a context provided above this line, like LaunchReadyProvider.
                 Guarded by root-layout-memo-freeze-guard.test.ts. */}
-              <DatabaseProvider>
-                <ThemeProvider>
-                  <MaterialThemeProvider>
-                    {/* Inside MaterialThemeProvider (Paper Portal host) and above every
+                <DatabaseProvider>
+                  <ThemeProvider>
+                    <MaterialThemeProvider>
+                      {/* Inside MaterialThemeProvider (Paper Portal host) and above every
                     provider that may call useConfirm (incl. Bluetooth). */}
-                    <DialogProvider>
-                      {/* The env bag pins a key or two; PostHog still answers for
+                      <DialogProvider>
+                        {/* The env bag pins a key or two; PostHog still answers for
                         the rest, kill switches included, so it is not final. */}
-                      <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS} staticFlagsAreFinal={false}>
-                        {/* First child on purpose: publishes the offline-engine flag to the
+                        <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS} staticFlagsAreFinal={false}>
+                          {/* First child on purpose: publishes the offline-engine flag to the
                           non-React store before any later sibling's query effects run. */}
-                        <OfflineEngineFlagSync />
-                        {/* Drives the connectivity store: NetInfo, transport-failure
+                          <OfflineEngineFlagSync />
+                          {/* Drives the connectivity store: NetInfo, transport-failure
                           counting and the backend probe. Sits beside
                           OfflineEngineFlagSync because both publish into non-React
                           stores that later siblings read. Null render. */}
-                        <ConnectivityBridge />
-                        {/* Applies Observe flags, then flushes persisted telemetry on
+                          <ConnectivityBridge />
+                          {/* Applies Observe flags, then flushes persisted telemetry on
                           foreground transitions once PostHog resolves. Null render. */}
-                        <ObserveRuntimeConfigSync />
-                        <AuthProvider onReady={onAuthReady}>
-                          <PartyProfileProvider>
-                            {/* Stamps the active board's gym on every event. Null render. */}
-                            <AnalyticsGymProperties />
-                            {/* Records board opens, which order "Your boards". Null render. */}
-                            <BoardOpenRecorder />
-                            <ConnectionSettingsProvider>
-                              <ToastProvider>
-                                <ClimbActionsDataWrapper>
-                                  <QueueSnackbarProvider>
-                                    <QueueProvider>
-                                      <BoardAdapterWrapper>
-                                        <PlaylistsAdapterWrapper>
-                                          <BoardProviderWrapper>
-                                            {/* BottomSheetModalProvider sits inside the board
+                          <ObserveRuntimeConfigSync />
+                          <AuthProvider onReady={onAuthReady}>
+                            <PartyProfileProvider>
+                              <ConsentGate />
+                              {/* Stamps the active board's gym on every event. Null render. */}
+                              <AnalyticsGymProperties />
+                              {/* Records board opens, which order "Your boards". Null render. */}
+                              <BoardOpenRecorder />
+                              <ConnectionSettingsProvider>
+                                <ToastProvider>
+                                  <ClimbActionsDataWrapper>
+                                    <QueueSnackbarProvider>
+                                      <QueueProvider>
+                                        <BoardAdapterWrapper>
+                                          <PlaylistsAdapterWrapper>
+                                            <BoardProviderWrapper>
+                                              {/* BottomSheetModalProvider sits inside the board
                                     providers (gorhom's BottomSheetModal portals
                                     PlayDrawer → QuickTickBar here, so the host
                                     must be able to see BoardAdapter/BoardProvider
@@ -736,7 +740,7 @@ function RootLayout() {
                                     exist before the picker mounts or gorhom
                                     throws "BottomSheetModalInternalContext
                                     cannot be null". */}
-                                            {/* Board presence ("now on the wall") owns the
+                                              {/* Board presence ("now on the wall") owns the
                                     connected boardId + the wall feed. Wraps
                                     BottomSheetModalProvider so gorhom-portaled
                                     sheets (PlayDrawer, BoardSheet) — which render
@@ -745,27 +749,27 @@ function RootLayout() {
                                     Also OUTSIDE BluetoothProviderWrapper /
                                     DrawerHostProvider so the BLE flow + Board sheet
                                     can use it. */}
-                                            <MobileBoardPresenceProvider>
-                                              {/* Serializes every native bottom-sheet present/dismiss so two
+                                              <MobileBoardPresenceProvider>
+                                                {/* Serializes every native bottom-sheet present/dismiss so two
                                               never overlap on the same presenter — the iOS UIKit deadlock
                                               that froze the whole UI. Ancestor of every sheet (BLE, drawer
                                               host, user drawer). See sheet-presentation-provider.tsx. */}
-                                              <SheetPresentationProvider>
-                                                <BottomSheetModalProvider>
-                                                  <BluetoothProviderWrapper>
-                                                    {/* Drives the Rogue workout timer paired to the active
+                                                <SheetPresentationProvider>
+                                                  <BottomSheetModalProvider>
+                                                    <BluetoothProviderWrapper>
+                                                      {/* Drives the Rogue workout timer paired to the active
                                                   board. Inside BluetoothProviderWrapper so it can gate
                                                   on the board LED connection (only the wall driver owns
                                                   the timer). */}
-                                                    <RogueTimerProvider>
-                                                      {/* One BLE controls sheet (Re-light / Turn off /
+                                                      <RogueTimerProvider>
+                                                        {/* One BLE controls sheet (Re-light / Turn off /
                                                   Disconnect) shared by the play-drawer lightbulb and
                                                   the persistent bar's board control. Wraps
                                                   DrawerHostProvider (which renders PlayDrawer as a
                                                   sibling of its children) so both the drawer and the
                                                   bar descend from it. */}
-                                                      <BleControlSheetProvider>
-                                                        {/* Reads the bottom-chrome geometry inputs (insets, route,
+                                                        <BleControlSheetProvider>
+                                                          {/* Reads the bottom-chrome geometry inputs (insets, route,
                                                           variant, presence, native-bar capability) ONCE and shares the
                                                           memoized result with every consumer below. Mounted ABOVE
                                                           DrawerHostProvider because that provider renders the queue /
@@ -773,79 +777,88 @@ function RootLayout() {
                                                           siblings of its children; a lower mount left those snackbars
                                                           outside the context so useBottomChromeMetrics() threw and
                                                           white-screened every install that took the OTA. #2565. */}
-                                                        <BottomChromeMetricsProvider>
-                                                          <LogbookDeleteProvider>
-                                                            <DrawerHostProvider>
-                                                              <DeepLinkProvider>
-                                                                <ShareTargetProvider>
-                                                                  <TabBarHeightProvider>
-                                                                    <UserDrawerProvider>
-                                                                      <NavigationScopePublisher />
-                                                                      <ThemedNavigation>
-                                                                        <Stack
-                                                                          // Root scenes keep the opaque, theme-aware nav background so a dark
-                                                                          // backstop sits behind the tab screens (the tab stacks paint their own
-                                                                          // transparent content over it). glassStackScreenOptions' transparent
-                                                                          // contentStyle would expose the light window background at the top of the
-                                                                          // screen in dark mode, where the floating chrome leaves it uncovered.
-                                                                          // The header props still apply to root-level pushed screens (session, about).
-                                                                          screenOptions={{
-                                                                            ...glassStackScreenOptions,
-                                                                            headerShown: false,
-                                                                            contentStyle: undefined,
-                                                                          }}
-                                                                          initialRouteName="index"
-                                                                        >
-                                                                          <Stack.Screen name="index" />
-                                                                          <Stack.Screen name="(tabs)" />
-                                                                          <Stack.Screen
-                                                                            name="auth"
-                                                                            options={{
+                                                          <BottomChromeMetricsProvider>
+                                                            <LogbookDeleteProvider>
+                                                              <DrawerHostProvider>
+                                                                <DeepLinkProvider>
+                                                                  <ShareTargetProvider>
+                                                                    <TabBarHeightProvider>
+                                                                      <UserDrawerProvider>
+                                                                        <NavigationScopePublisher />
+                                                                        <ThemedNavigation>
+                                                                          <Stack
+                                                                            // Root scenes keep the opaque, theme-aware nav background so a dark
+                                                                            // backstop sits behind the tab screens (the tab stacks paint their own
+                                                                            // transparent content over it). glassStackScreenOptions' transparent
+                                                                            // contentStyle would expose the light window background at the top of the
+                                                                            // screen in dark mode, where the floating chrome leaves it uncovered.
+                                                                            // The header props still apply to root-level pushed screens (session, about).
+                                                                            screenOptions={{
+                                                                              ...glassStackScreenOptions,
                                                                               headerShown: false,
-                                                                              gestureEnabled: false,
+                                                                              contentStyle: undefined,
                                                                             }}
-                                                                          />
-                                                                          {/* Public climber profiles + climber search, pushed from any
+                                                                            initialRouteName="index"
+                                                                          >
+                                                                            <Stack.Screen
+                                                                              name="privacy-consent"
+                                                                              options={{
+                                                                                presentation: 'transparentModal',
+                                                                                headerShown: false,
+                                                                                gestureEnabled: false,
+                                                                                animation: 'none',
+                                                                              }}
+                                                                            />
+                                                                            <Stack.Screen name="index" />
+                                                                            <Stack.Screen name="(tabs)" />
+                                                                            <Stack.Screen
+                                                                              name="auth"
+                                                                              options={{
+                                                                                headerShown: false,
+                                                                                gestureEnabled: false,
+                                                                              }}
+                                                                            />
+                                                                            {/* Public climber profiles + climber search, pushed from any
                                                           tab (tappable avatars, the Home search action). */}
-                                                                          <Stack.Screen name="users/[userId]/index" />
-                                                                          {/* A climber's full beta-video grid — the "See all" target of
+                                                                            <Stack.Screen name="users/[userId]/index" />
+                                                                            {/* A climber's full beta-video grid — the "See all" target of
                                                           the profile beta shelf. Sets its own solid header. */}
-                                                                          <Stack.Screen name="users/[userId]/beta" />
-                                                                          {/* Headerless push — hides the tab bar like the other pushed
+                                                                            <Stack.Screen name="users/[userId]/beta" />
+                                                                            {/* Headerless push — hides the tab bar like the other pushed
                                                           screens, with its own in-body search bar. NOT a modal: a native
                                                           modal presentation traps the root play drawer beneath it when a
                                                           climb is opened from a profile pushed off search. */}
-                                                                          <Stack.Screen
-                                                                            name="users/search"
-                                                                            options={{ headerShown: false }}
-                                                                          />
-                                                                          <Stack.Screen name="users/connections" />
-                                                                          {/* Settings and every one of its sub-pages — a
+                                                                            <Stack.Screen
+                                                                              name="users/search"
+                                                                              options={{ headerShown: false }}
+                                                                            />
+                                                                            <Stack.Screen name="users/connections" />
+                                                                            {/* Settings and every one of its sub-pages — a
                                                           destination of its own, pushed over the tabs like
                                                           about/changelog, NOT a branch of the You tab. It lived at
                                                           `(tabs)/profile/more`, where opening it left
                                                           `more` on the You tab's stack: the next tap on You reopened
                                                           Settings instead of the profile. app/settings/_layout.tsx
                                                           owns the headers for the whole stack. */}
-                                                                          <Stack.Screen
-                                                                            name="settings"
-                                                                            options={{ headerShown: false }}
-                                                                          />
-                                                                          <Stack.Screen
-                                                                            name="join/[sessionId]"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: false,
-                                                                            }}
-                                                                          />
-                                                                          <Stack.Screen
-                                                                            name="share-beta"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: false,
-                                                                            }}
-                                                                          />
-                                                                          {/* Board selection is a modal off the Climbs capsule /
+                                                                            <Stack.Screen
+                                                                              name="settings"
+                                                                              options={{ headerShown: false }}
+                                                                            />
+                                                                            <Stack.Screen
+                                                                              name="join/[sessionId]"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: false,
+                                                                              }}
+                                                                            />
+                                                                            <Stack.Screen
+                                                                              name="share-beta"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: false,
+                                                                              }}
+                                                                            />
+                                                                            {/* Board selection is a modal off the Climbs capsule /
                                                       no-board CTA — board switching is rare, so it doesn't
                                                       earn a tab. Its own _layout owns the headers.
 
@@ -855,14 +868,14 @@ function RootLayout() {
                                                       cover is decided here from the entry screen. iPad
                                                       never mounts NativeTabs, so rule 2 of
                                                       docs/mobile-sheets-vs-routes.md is not in play. */}
-                                                                          <Stack.Screen
-                                                                            name="boards"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: false,
-                                                                            }}
-                                                                          />
-                                                                          {/* The moderation feed — ONE root modal, not a copy in each
+                                                                            <Stack.Screen
+                                                                              name="boards"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: false,
+                                                                              }}
+                                                                            />
+                                                                            {/* The moderation feed — ONE root modal, not a copy in each
                                                       tab stack. The play drawer's Community section links into
                                                       it, and /play is itself a root transparentModal, so a push
                                                       aimed at a tab stack lands BENEATH the player (dead tap,
@@ -871,21 +884,21 @@ function RootLayout() {
                                                       and the drawer all push the same route. app/moderation.tsx
                                                       titles itself on its own Stack.Screen, the way
                                                       about/changelog/scout do. */}
-                                                                          <Stack.Screen
-                                                                            name="moderation"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: true,
-                                                                            }}
-                                                                          />
-                                                                          <Stack.Screen
-                                                                            name="moderation/spray-walls"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: true,
-                                                                            }}
-                                                                          />
-                                                                          {/* The walkthrough, now reached only from Settings'
+                                                                            <Stack.Screen
+                                                                              name="moderation"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: true,
+                                                                              }}
+                                                                            />
+                                                                            <Stack.Screen
+                                                                              name="moderation/spray-walls"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: true,
+                                                                              }}
+                                                                            />
+                                                                            {/* The walkthrough, now reached only from Settings'
                                                       replay rows (OnboardingGate opens the first-board
                                                       picker at /boards instead, #5654). A full-screen cover
                                                       over the live tabs: transparentModal with the opaque
@@ -894,16 +907,16 @@ function RootLayout() {
                                                       docs/mobile-sheets-vs-routes.md). Gesture disabled
                                                       because each step's only way on is its own CTA, and
                                                       each swallows Android back too. */}
-                                                                          <Stack.Screen
-                                                                            name="onboarding"
-                                                                            options={{
-                                                                              presentation: 'transparentModal',
-                                                                              headerShown: false,
-                                                                              gestureEnabled: false,
-                                                                              animation: 'fade',
-                                                                            }}
-                                                                          />
-                                                                          {/* Full-screen "now playing" player. A modal VC so the
+                                                                            <Stack.Screen
+                                                                              name="onboarding"
+                                                                              options={{
+                                                                                presentation: 'transparentModal',
+                                                                                headerShown: false,
+                                                                                gestureEnabled: false,
+                                                                                animation: 'fade',
+                                                                              }}
+                                                                            />
+                                                                            {/* Full-screen "now playing" player. A modal VC so the
                                                       sub-drawers / queue / share sheet opened from inside it stack
                                                       ABOVE it (the FullWindowOverlay it replaced sat in a higher
                                                       window, so native sheets rendered behind). transparentModal —
@@ -915,7 +928,7 @@ function RootLayout() {
                                                       opaque backing (see app/play.tsx) so the live tabs screen
                                                       doesn't show through the glass. Custom pull-down dismiss; covers
                                                       the tab bar. */}
-                                                                          {/* User drawer as a route, not an RN-core <Modal>. A
+                                                                            {/* User drawer as a route, not an RN-core <Modal>. A
                                                       single native presentation system, so it no longer
                                                       collides with the @expo/ui FeedbackSheet (the
                                                       dual-presentation freeze, issue #3211). transparentModal
@@ -924,122 +937,122 @@ function RootLayout() {
                                                       runs its OWN reanimated slide (app/user-drawer.tsx).
                                                       gestureEnabled off so the only dismiss is the panel's
                                                       own animated close (backdrop tap / a row). */}
-                                                                          {/* Crowdsourced QA (tester-only). Plain modals: each
+                                                                            {/* Crowdsourced QA (tester-only). Plain modals: each
                                                       screen paints its own header so it reads as a
                                                       self-contained prompt rather than a pushed settings
                                                       page, and a swipe-dismiss on the picker is a Skip. */}
-                                                                          <Stack.Screen
-                                                                            name="qa/pick"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: false,
-                                                                            }}
-                                                                          />
-                                                                          <Stack.Screen
-                                                                            name="qa/brief"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: false,
-                                                                            }}
-                                                                          />
-                                                                          {/* One-time "sends we lost are on their way" notice
+                                                                            <Stack.Screen
+                                                                              name="qa/pick"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: false,
+                                                                              }}
+                                                                            />
+                                                                            <Stack.Screen
+                                                                              name="qa/brief"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: false,
+                                                                              }}
+                                                                            />
+                                                                            {/* One-time "sends we lost are on their way" notice
                                                       (#5335). A plain modal, like the QA screens: it paints
                                                       its own body and a swipe-dismiss is a perfectly good
                                                       way to close it. */}
-                                                                          <Stack.Screen
-                                                                            name="send-recovery"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: false,
-                                                                            }}
-                                                                          />
-                                                                          <Stack.Screen
-                                                                            name="account"
-                                                                            options={{
-                                                                              presentation: 'modal',
-                                                                              headerShown: false,
-                                                                            }}
-                                                                          />
-                                                                          <Stack.Screen
-                                                                            name="user-drawer"
-                                                                            options={{
-                                                                              presentation: 'transparentModal',
-                                                                              headerShown: false,
-                                                                              gestureEnabled: false,
-                                                                              animation: 'none',
-                                                                            }}
-                                                                          />
-                                                                          <Stack.Screen
-                                                                            name="play"
-                                                                            options={{
-                                                                              presentation: 'transparentModal',
-                                                                              headerShown: false,
-                                                                              // Native interactive dismiss OFF — it lives outside
-                                                                              // RNGH so it couldn't negotiate with the board
-                                                                              // swipe/pinch (only fired on the grabber). A custom
-                                                                              // RNGH pull-down (use-drawer-dismiss-gesture) drives
-                                                                              // dismissal from the whole surface instead.
-                                                                              gestureEnabled: false,
-                                                                              animation: 'slide_from_bottom',
-                                                                            }}
-                                                                          />
-                                                                        </Stack>
-                                                                      </ThemedNavigation>
-                                                                      <PersistentQueueBar />
-                                                                      <OfflineSyncBridge />
-                                                                      <OwnedSprayWallsOfflinePin />
-                                                                      {/* Rest timer runtime (#5378): renders nothing, and mounts
+                                                                            <Stack.Screen
+                                                                              name="send-recovery"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: false,
+                                                                              }}
+                                                                            />
+                                                                            <Stack.Screen
+                                                                              name="account"
+                                                                              options={{
+                                                                                presentation: 'modal',
+                                                                                headerShown: false,
+                                                                              }}
+                                                                            />
+                                                                            <Stack.Screen
+                                                                              name="user-drawer"
+                                                                              options={{
+                                                                                presentation: 'transparentModal',
+                                                                                headerShown: false,
+                                                                                gestureEnabled: false,
+                                                                                animation: 'none',
+                                                                              }}
+                                                                            />
+                                                                            <Stack.Screen
+                                                                              name="play"
+                                                                              options={{
+                                                                                presentation: 'transparentModal',
+                                                                                headerShown: false,
+                                                                                // Native interactive dismiss OFF — it lives outside
+                                                                                // RNGH so it couldn't negotiate with the board
+                                                                                // swipe/pinch (only fired on the grabber). A custom
+                                                                                // RNGH pull-down (use-drawer-dismiss-gesture) drives
+                                                                                // dismissal from the whole surface instead.
+                                                                                gestureEnabled: false,
+                                                                                animation: 'slide_from_bottom',
+                                                                              }}
+                                                                            />
+                                                                          </Stack>
+                                                                        </ThemedNavigation>
+                                                                        <PersistentQueueBar />
+                                                                        <OfflineSyncBridge />
+                                                                        <OwnedSprayWallsOfflinePin />
+                                                                        {/* Rest timer runtime (#5378): renders nothing, and mounts
                                                             its queue/session subscriptions only once the flag is on
                                                             AND a climber has armed the timer. Sits inside
                                                             QueueProvider so it can advance the queue. */}
-                                                                      <RestTimerRuntime />
-                                                                      {/* One-time tip floating above the tab bar / accessory bar,
+                                                                        <RestTimerRuntime />
+                                                                        {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
                                                             presence globally and overlays both the native (iOS 26) and
                                                             JS bottom-bar variants. */}
-                                                                      <AccessoryOnboardingTip />
-                                                                      {/* iOS 26 only: the one-time "tap the magnifier to get
+                                                                        <AccessoryOnboardingTip />
+                                                                        {/* iOS 26 only: the one-time "tap the magnifier to get
                                                             back to your climbs" tip for new accounts (#5654). A
                                                             root sibling of the tip above, which it waits behind
                                                             because both float in the same place. */}
-                                                                      <ClimbsTabReturnTip />
-                                                                      {/* The rest-timer pill (#5378): a root overlay pinned at
+                                                                        <ClimbsTabReturnTip />
+                                                                        {/* The rest-timer pill (#5378): a root overlay pinned at
                                                             bottomChrome.restTimerBottom, the anchor the bottom-chrome
                                                             reserve is computed against. A sibling of the tip above for
                                                             the same reason — it must float over BOTH the iOS 26 UIKit
                                                             platter and the JS queue bar. It brings its own sheet; the
                                                             play drawer mounts a second copy so that sheet can present
                                                             above the /play modal. */}
-                                                                      <RootRestTimerPillHost />
-                                                                      {/* The one app-wide "we can't reach the server"
+                                                                        <RootRestTimerPillHost />
+                                                                        {/* The one app-wide "we can't reach the server"
                                                             banner (#4862). A root sibling like the tip above so
                                                             it survives navigation and floats over every route;
                                                             it publishes its own height so the bottom-chrome
                                                             geometry can lift the FABs and list tails clear of
                                                             it. Waits on the launch-ready context like
                                                             OnboardingGate, so it never paints over the splash. */}
-                                                                      <ConnectivityBanner />
-                                                                      <OnboardingGate />
-                                                                      <PrivacyOnboardingGate />
-                                                                      <PrivacySyncBridge />
-                                                                      {/* The connect-step test's (#5654) always-mounted half:
+                                                                        <ConnectivityBanner />
+                                                                        <OnboardingGate />
+                                                                        <PrivacyOnboardingGate />
+                                                                        <PrivacySyncBridge />
+                                                                        {/* The connect-step test's (#5654) always-mounted half:
                                                             binds its store to the signed-in account, records this
                                                             phone's first connect and shows the one-time
                                                             confirmation. Renders nothing. Inside the Bluetooth
                                                             and dialog providers, which it reads. */}
-                                                                      <FirstConnectHost />
-                                                                      {/* Asks a tester to try a PR preview (or shows what to
+                                                                        <FirstConnectHost />
+                                                                        {/* Asks a tester to try a PR preview (or shows what to
                                                             test on the one already running). No-op for everyone
                                                             else. A first run outranks it through the seen flag
                                                             it waits for, not through mount order. */}
-                                                                      <QaTesterGate />
-                                                                      {/* Brings the OTA branch pin in line with the "Get updates
+                                                                        <QaTesterGate />
+                                                                        {/* Brings the OTA branch pin in line with the "Get updates
                                                             early" choice once flags and branch surfing are ready: in
                                                             the background, after first interactions, never a reload.
                                                             No request when they already agree. Beside QaTesterGate
                                                             because it reads the signed-in profile too. Null render. */}
-                                                                      <EarlyUpdatesLaunchSync />
-                                                                      {/* Tells a climber the one-time #5335 recovery found sends
+                                                                        <EarlyUpdatesLaunchSync />
+                                                                        {/* Tells a climber the one-time #5335 recovery found sends
                                                             of theirs that never reached the server. Silent for
                                                             everyone else, which is almost everyone. It and
                                                             QaTesterGate run side by side, and neither outranks
@@ -1053,67 +1066,68 @@ function RootLayout() {
                                                             finishes inside one frame could still stack both
                                                             modals; that takes a tester with owed sends, and each
                                                             dismisses normally. */}
-                                                                      <SendRecoveryGate />
-                                                                      {/* Tester-only diagnostic for the Android-16 edge-to-edge
+                                                                        <SendRecoveryGate />
+                                                                        {/* Tester-only diagnostic for the Android-16 edge-to-edge
                                                             touch-dead bug; a root sibling (stays tappable while the
                                                             <Stack> hit-region is frozen). No-op unless built with
                                                             EXPO_PUBLIC_FREEZE_DEBUG=1. */}
-                                                                      <FreezeDebugOverlay />
-                                                                      {/* Live bottom-chrome geometry readout (dev / preview /
+                                                                        <FreezeDebugOverlay />
+                                                                        {/* Live bottom-chrome geometry readout (dev / preview /
                                                             pr-channel + settings toggle). Inside the metrics provider
                                                             so it reads the same derived values consumers position with. */}
-                                                                      <BottomChromeDebugOverlay />
-                                                                      {/* Root-sampled window inset for bottom-docked sheets —
+                                                                        <BottomChromeDebugOverlay />
+                                                                        {/* Root-sampled window inset for bottom-docked sheets —
                                                             here (outside the tabs) useSafeAreaInsets IS the window's. */}
-                                                                      <WindowInsetPublisher />
-                                                                    </UserDrawerProvider>
-                                                                  </TabBarHeightProvider>
-                                                                  <AnalyticsScreenTracker />
-                                                                  <ImageCacheTabSweeper />
-                                                                  <OtaUpdateTracker />
-                                                                  <LowPowerModeTracker />
-                                                                  <InstallReferrerTracker />
-                                                                  <KeychainNamespaceMigration />
-                                                                </ShareTargetProvider>
-                                                              </DeepLinkProvider>
-                                                            </DrawerHostProvider>
-                                                          </LogbookDeleteProvider>
-                                                          {/* Carries the toast offset up to ToastProvider, whose
-                                                          overlay stays above BottomSheetModalProvider (so gorhom's
-                                                          web portal host cannot paint over a toast). Must sit
-                                                          inside BottomChromeMetricsProvider. Null render. */}
-                                                          <ToastOffsetPublisher />
-                                                        </BottomChromeMetricsProvider>
-                                                      </BleControlSheetProvider>
-                                                    </RogueTimerProvider>
-                                                  </BluetoothProviderWrapper>
-                                                </BottomSheetModalProvider>
-                                              </SheetPresentationProvider>
-                                            </MobileBoardPresenceProvider>
-                                          </BoardProviderWrapper>
-                                        </PlaylistsAdapterWrapper>
-                                      </BoardAdapterWrapper>
-                                    </QueueProvider>
-                                  </QueueSnackbarProvider>
-                                </ClimbActionsDataWrapper>
-                              </ToastProvider>
-                            </ConnectionSettingsProvider>
-                          </PartyProfileProvider>
-                        </AuthProvider>
-                      </FeatureFlagsProvider>
-                    </DialogProvider>
-                  </MaterialThemeProvider>
-                </ThemeProvider>
-              </DatabaseProvider>
-            </QueryProvider>
-            {/* The launch update gate's stand-in for the splash. A sibling of
+                                                                        <WindowInsetPublisher />
+                                                                      </UserDrawerProvider>
+                                                                    </TabBarHeightProvider>
+                                                                    <AnalyticsScreenTracker />
+                                                                    <ImageCacheTabSweeper />
+                                                                    <OtaUpdateTracker />
+                                                                    <LowPowerModeTracker />
+                                                                    <InstallReferrerTracker />
+                                                                    <KeychainNamespaceMigration />
+                                                                  </ShareTargetProvider>
+                                                                </DeepLinkProvider>
+                                                              </DrawerHostProvider>
+                                                            </LogbookDeleteProvider>
+                                                            {/* Carries the toast offset up to ToastProvider, whose
+                                                            overlay stays above BottomSheetModalProvider (so gorhom's
+                                                            web portal host cannot paint over a toast). Must sit
+                                                            inside BottomChromeMetricsProvider. Null render. */}
+                                                            <ToastOffsetPublisher />
+                                                          </BottomChromeMetricsProvider>
+                                                        </BleControlSheetProvider>
+                                                      </RogueTimerProvider>
+                                                    </BluetoothProviderWrapper>
+                                                  </BottomSheetModalProvider>
+                                                </SheetPresentationProvider>
+                                              </MobileBoardPresenceProvider>
+                                            </BoardProviderWrapper>
+                                          </PlaylistsAdapterWrapper>
+                                        </BoardAdapterWrapper>
+                                      </QueueProvider>
+                                    </QueueSnackbarProvider>
+                                  </ClimbActionsDataWrapper>
+                                </ToastProvider>
+                              </ConnectionSettingsProvider>
+                            </PartyProfileProvider>
+                          </AuthProvider>
+                        </FeatureFlagsProvider>
+                      </DialogProvider>
+                    </MaterialThemeProvider>
+                  </ThemeProvider>
+                </DatabaseProvider>
+              </QueryProvider>
+              {/* The launch update gate's stand-in for the splash. A sibling of
               QueryProvider, outside <DatabaseProvider>, and inside I18nProvider
               for its one line of copy. Drawn last, it covers and blocks the
               tree. It reads the gate itself, so download progress re-renders
               this leaf and nothing else. */}
-            <LaunchUpdateGatePlaceholder />
-          </I18nProvider>
-        </AnalyticsProvider>
+              <LaunchUpdateGatePlaceholder />
+            </I18nProvider>
+          </AnalyticsProvider>
+        </ConsentProvider>
         {/* Initialize preview eligibility without mounting xprem's floating picker:
           its edge touch target can intercept climb-search interactions (#5287).
           The QA screens use xprem's branch APIs directly and wait for this

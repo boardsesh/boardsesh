@@ -171,3 +171,7 @@ describe('SettingsPageContent', () => {
     expect(mockShowMessage).toHaveBeenCalledWith(tFromCatalog('settings', 'loading.profileError'), 'error');
   });
 });
+
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: true, openChoices: vi.fn() }),
+}));

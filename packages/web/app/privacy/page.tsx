@@ -36,6 +36,9 @@ export default async function PrivacyPolicyPage() {
         <Prose>
           <strong>{t('privacy.collect.productAnalyticsLabel')}</strong> {t('privacy.collect.productAnalyticsBody')}
         </Prose>
+        <Prose>
+          <strong>{t('privacy.collect.serviceStatsLabel')}</strong> {t('privacy.collect.serviceStatsBody')}
+        </Prose>
       </PageSection>
 
       <PageSection title={t('privacy.bluetooth.title')}>
@@ -49,9 +52,13 @@ export default async function PrivacyPolicyPage() {
 
       <PageSection title={t('privacy.thirdParty.title')}>
         <Prose>
-          <strong>{t('privacy.thirdParty.vercelLabel')}</strong> {t('privacy.thirdParty.vercelBody')}
-          <Link href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">
-            {t('privacy.thirdParty.vercelLink')}
+          <strong>{t('privacy.thirdParty.hostingLabel')}</strong> {t('privacy.thirdParty.hostingBody')}
+          <Link href="https://railway.com/legal/privacy" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.hostingLink')}
+          </Link>
+          {' / '}
+          <Link href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.cloudflareLink')}
           </Link>
           .
         </Prose>
@@ -63,12 +70,31 @@ export default async function PrivacyPolicyPage() {
           .
         </Prose>
         <Prose>
+          <strong>{t('privacy.thirdParty.sentryLabel')}</strong> {t('privacy.thirdParty.sentryBody')}
+          <Link href="https://sentry.io/privacy/" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.sentryLink')}
+          </Link>
+          .
+        </Prose>
+        <Prose>
+          <strong>{t('privacy.thirdParty.expoLabel')}</strong> {t('privacy.thirdParty.expoBody')}
+          <Link href="https://docs.expo.dev/eas/observe/configuration/" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.expoLink')}
+          </Link>
+          .
+        </Prose>
+        <Prose>
           <strong>{t('privacy.thirdParty.auroraLabel')}</strong> {t('privacy.thirdParty.auroraBody')}
           <Link href="https://auroraclimbing.com" target="_blank" rel="noopener">
             {t('privacy.thirdParty.auroraLink')}
           </Link>
           {t('privacy.thirdParty.auroraBodyEnd')}
         </Prose>
+      </PageSection>
+
+      <PageSection title={t('privacy.choices.title')}>
+        <Prose>{t('privacy.choices.storageBody')}</Prose>
+        <Prose>{t('privacy.choices.changeBody')}</Prose>
       </PageSection>
 
       <PageSection title={t('privacy.sharing.title')}>

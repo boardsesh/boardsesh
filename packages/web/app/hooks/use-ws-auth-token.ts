@@ -26,10 +26,10 @@ async function fetchWsAuthToken(): Promise<WsAuthResponse> {
  * is automatically re-fetched when the user logs in or out.
  */
 export function useWsAuthToken(enabled = true) {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['wsAuthToken', status],
+    queryKey: ['wsAuthToken', status, session?.user.id ?? null, session?.authSessionId ?? null],
     queryFn: async () => {
       const result = await fetchWsAuthToken();
       // A logged-in NextAuth session must yield a token. A null here is a

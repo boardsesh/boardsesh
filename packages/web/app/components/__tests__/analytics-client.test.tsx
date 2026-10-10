@@ -1,6 +1,7 @@
 import { render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import AnalyticsClient from '../analytics-client';
+import { __resetSessionInboundCampaignForTests, getSessionInboundCampaign } from '@/app/lib/inbound-campaign';
 
 type VitalMetric = {
   name: string;
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   pageview: vi.fn(),
   track: vi.fn(),
   vitalCallbacks: [] as Array<(metric: VitalMetric) => void>,
+  granted: true,
 }));
 let pathname = '/';
 
@@ -39,11 +41,36 @@ vi.mock('web-vitals', () => ({
 describe('AnalyticsClient', () => {
   beforeEach(() => {
     pathname = '/';
+    mocks.granted = true;
+    __resetSessionInboundCampaignForTests();
+    window.history.replaceState(null, '', '/');
     mocks.capturePosthog.mockClear();
     mocks.pageview.mockClear();
     mocks.track.mockClear();
     mocks.vitalCallbacks.length = 0;
     vi.useRealTimers();
+  });
+
+  it('keeps landing tags in memory when consent follows navigation', () => {
+    mocks.granted = false;
+    pathname = '/about';
+    window.history.replaceState(null, '', '/about?utm_source=google&utm_medium=cpc&utm_campaign=launch&gclid=click');
+    const view = render(<AnalyticsClient />);
+    expect(mocks.pageview).not.toHaveBeenCalled();
+    expect(mocks.capturePosthog).not.toHaveBeenCalled();
+    pathname = '/privacy';
+    window.history.replaceState(null, '', '/privacy');
+    view.rerender(<AnalyticsClient />);
+    expect(mocks.pageview).not.toHaveBeenCalled();
+    mocks.granted = true;
+    view.rerender(<AnalyticsClient />);
+    expect(mocks.pageview).toHaveBeenCalledWith('/privacy');
+    expect(getSessionInboundCampaign()).toEqual({
+      utm_source: 'google',
+      utm_medium: 'cpc',
+      utm_campaign: 'launch',
+      gclid: 'click',
+    });
   });
 
   it('sends path-only PostHog pageviews', async () => {
@@ -140,3 +167,9 @@ describe('AnalyticsClient', () => {
     );
   });
 });
+
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: mocks.granted, openChoices: vi.fn() }),
+}));
+
+vi.mock('@/app/lib/consent', () => ({ hasAnalyticsConsent: () => mocks.granted }));

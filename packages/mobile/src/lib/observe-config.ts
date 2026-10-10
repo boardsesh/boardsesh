@@ -17,17 +17,74 @@ import { resolveAppEnvironment } from './app-environment';
  * same value. Handing back a fresh object literal each time is exactly the bug
  * that assertion exists to catch.
  */
-export const OBSERVE_INTEGRATIONS: ObserveIntegrationsConfig = { 'expo-router': true };
+// The router supplies normalized route names, but its params and resolved URL
+// otherwise include account/resource identifiers and auth links. The public
+// filter removes these params and hides the resolved URL whenever one occurs.
+export const OBSERVE_FILTERED_ROUTE_PARAMS = [
+  'userId',
+  'username',
+  'email',
+  'token',
+  'code',
+  'sessionId',
+  'resourceId',
+  'entityId',
+  'boardUuid',
+  'board_slug',
+  'gymUuid',
+  'wallUuid',
+  'wall',
+  'climbUuid',
+  'climb_segment',
+  'playlist_uuid',
+  'link',
+  'returnTo',
+  'origin',
+  'resetOf',
+  'reviewCandidate',
+  'versionId',
+  'board_name',
+  'layout_id',
+  'size_id',
+  'set_ids',
+  'angle',
+  'type',
+  // Native picker/editor routes carry serialized searches and user content.
+  // Hiding the resolved URL does not remove other params in the SDK filter.
+  'heatmapSearch',
+  'countInput',
+  'setters',
+  'holdsFilter',
+  'zoneBox',
+  'zoneMode',
+  'forkFrames',
+  'forkName',
+  'forkDescription',
+  'forkCharacteristics',
+  'forkParentUuid',
+  'editClimbUuid',
+  'proposalUuid',
+  'activationIntent',
+  'boardName',
+  'boardType',
+  'layoutId',
+  'sizeId',
+  'setIds',
+  'seedBoardName',
+  'seedLayoutId',
+  'seedSizeId',
+  'seedSetIds',
+];
+export const OBSERVE_INTEGRATIONS: ObserveIntegrationsConfig = {
+  'expo-router': { filteredParams: OBSERVE_FILTERED_ROUTE_PARAMS },
+};
 
 /**
- * Shipped defaults, in force until PostHog resolves the flags.
- *
- * Full sampling: the store fleet is the population we want, and the rate can be
- * dialled back from PostHog without a build if the volume proves too high.
- * `docs/railway.md` records the measured growth this trades against.
+ * First-party performance diagnostics are independent of product analytics.
+ * Record startup metrics immediately; dispatch waits for the functional flags.
  */
 export const OBSERVE_DEFAULT_SAMPLE_RATE = 1;
-export const OBSERVE_DEFAULT_DISPATCHING_ENABLED = true;
+export const OBSERVE_DEFAULT_DISPATCHING_ENABLED = false;
 
 export type ObserveRuntimeOverrides = {
   dispatchingEnabled?: boolean;
@@ -72,20 +129,30 @@ function clampSampleRate(value: number): number {
 /**
  * Resolve the dispatch flag.
  *
- * Only an explicit off disables dispatch: PostHog leaves a flag `undefined`
- * until it resolves, and a device that never reaches PostHog would otherwise
- * stop reporting permanently — the failure mode docs/feature-flags.md calls out.
- *
- * The string `'false'` counts as off too. A boolean flag resolves to a real
- * boolean, but the same key typed as a multivariate flag in the dashboard would
- * arrive as a string, and a kill switch that silently ignores someone typing
- * "false" into it is the wrong way round for a kill switch to fail.
+ * Once flags resolve, only an explicit false (boolean or variant) disables
+ * first-party diagnostics. The startup configuration separately waits for flags.
  */
 export function resolveObserveDispatchEnabled(raw: unknown): boolean {
-  // `null` alongside `undefined` for the same reason parseObserveSampleRate
-  // takes both: the flag bag never holds one today, and the two must not drift
-  // apart if the shipped default ever flips to off.
-  if (raw === undefined || raw === null) return OBSERVE_DEFAULT_DISPATCHING_ENABLED;
-  if (raw === false || raw === 'false') return false;
-  return true;
+  return raw !== false && raw !== 'false';
+}
+
+/** Permit JS dispatch only for an explicit first-party endpoint in app configuration. */
+export function isFirstPartyObserveEndpointConfigured(candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false;
+  try {
+    const endpoint = new URL(candidate);
+    return (
+      (endpoint.protocol === 'https:' ||
+        (endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname))) &&
+      endpoint.hostname !== 'expo.dev' &&
+      !endpoint.hostname.endsWith('.expo.dev') &&
+      !endpoint.username &&
+      !endpoint.password &&
+      !endpoint.search &&
+      !endpoint.hash &&
+      /^\/observe\/[A-Za-z0-9_-]+\/?$/.test(endpoint.pathname)
+    );
+  } catch {
+    return false;
+  }
 }

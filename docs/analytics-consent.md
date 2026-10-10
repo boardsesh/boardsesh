@@ -2,8 +2,9 @@
 
 Boardsesh asks before it runs product analytics, on the web and in the app,
 and stores the answer on the device and on the account. Tracking issue #2644.
-This page covers the shared model and the backend half (PR A). The web banner
-and privacy policy (PR B) and the app's privacy step (PR C) build on it.
+This page covers the shared consent model, account synchronization, backend
+statistics, web banner and privacy policy. The app shares the model and account
+synchronizer.
 
 ## The record
 
@@ -80,7 +81,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | --- | --- | --- |
 | PostHog capture and identify (web, app) | Consent | Only after "Allow" (PRs B and C). Feature flags still resolve without consent. |
 | PostHog session replay | Consent | Off unless analytics is granted. |
-| EAS Observe | Consent | Dispatch only when granted. |
+| Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
 | Android install-referrer attribution | Consent | `Install Attributed` is sent only after a grant. |
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
@@ -143,3 +144,99 @@ Manual runs: `scheduler run snapshot-active-users`, or POST to the backend
 ```json
 {"query":"mutation { snapshotActiveUsers { day dailyActiveUsers weeklyActiveUsers monthlyActiveUsers captured } }"}
 ```
+
+
+## Account synchronization
+
+`createConsentSyncCoordinator` in `@boardsesh/consent` owns the merge and retry
+rules for both clients. The platform injects transport and storage. Every server
+response belongs to an account epoch; a response from a previous sign-in cannot
+change the active account or device. A new decision changes the device choice
+immediately, then is persisted as a pending write under that account before the
+network request. Offline withdrawals survive restart. Pending decisions are
+pushed before old account answers are merged, so changing No thanks to Allow
+is not immediately undone by the old account denial.
+
+The coordinator retains the precise last-server `decidedAt` for compare-and-set.
+The browser cookie rounds to whole seconds and is never used as a server token.
+A pending grant keeps the token from when it was decided; a retry does not fetch
+a newer denial and pretend that the old grant was based on it. Reads append
+nothing when device and account already agree. Pending records are validated
+before storage can restore an analytics grant.
+
+## Website and browser app
+
+The website renders the same banner and analytics components for every request.
+A pre-paint script reads the current, valid `boardsesh-consent` cookie and sets
+`html[data-consent]`; CSS hides answered banners before hydration. Request
+cookies never determine cached HTML. The one-year cookie uses Path=/,
+SameSite=Lax and Secure on HTTPS, with Domain=.boardsesh.com on the production
+origins. Local development and previews use host-only cookies. The browser app
+reads the same cookie through its platform storage adapter. Since browser
+broadcast channels do not cross origins, returning to a tab re-reads the cookie
+and synchronizes the signed-in account.
+
+The banner offers Allow and No thanks with equal weight and a privacy-policy
+link. Privacy choices in the footer reopens it, as does the Analytics settings
+card. Embed and kiosk routes do not show a banner. Embeds never send product
+analytics. Kiosks send only an operational Kiosk Page Loaded event with a random
+ID per event and an allowlist of non-personal properties; they have no SDK
+identifier, full URL or referrer.
+
+Website PostHog starts opted out with memory persistence so flags still work.
+Signed-in flag evaluation may use the account ID without identify/capture.
+Allow replaces the client with a persisted instance and opts in; product
+identify is allowed only then. Withdrawal blocks capture and retries immediately,
+opts out, discards all four SDK event/log queues, resets identity, opts out again,
+and clears old ph_* storage. The retired transport is disabled and pending
+requests are aborted before shutdown. `posthog-js-lite` 4.10.4 does not expose a
+persistence setter; instance replacement also rebinds every flag subscriber.
+`@posthog/core` 1.48.8 preserves queues during reset and flushes buffered events
+even while opted out, so optOut plus shutdown alone is insufficient.
+
+An authenticated account must resolve before a stored grant can enable capture;
+auth loading and account switches temporarily block product analytics. Every
+capture and transport check re-reads the shared cookie, so a background tab
+respects a withdrawal from the other origin without waiting for focus.
+On anonymous-to-signed-in transitions, a temporary authority check preserves
+the already-consented acquisition identity and queued conversions while
+blocking transport. Functional flags use a separate memory client during the
+hold. A denial, sign-out or change away from an authenticated account discards
+that identity and queue. The landing campaign is snapshotted in document memory
+before navigation, so a later Allow retains the original tags without emitting
+pre-consent events or persisting the campaign.
+An external cookie grant blocks capture before notifying SDK subscribers and
+requires a fresh consent read for the current authenticated account; the cookie
+cannot authorize a different account. Signed-out visitors can accept a shared
+grant immediately. Account responses also re-read the cookie before merging so
+a delayed grant cannot overwrite a newer withdrawal.
+Pageviews, vitals collection and vitals flushing check consent explicitly.
+Withdrawing discards the buffered metrics. Reset on sign-out reapplies the
+existing device opt state and web super properties. HTTP GraphQL requests send
+x-boardsesh-platform: web so signed-in first-party activity remains counted.
+
+The backend PostHog proxy strips client IP and HTTP User-Agent headers from
+flags and capture traffic. Granted analytics explicitly supplies its consented
+user-agent event property; operational events use minimal payloads.
+Functional flag requests retain allowlisted OS, app version/build, namespace,
+and device-type properties without analytics consent. The proxy overwrites
+GeoIP properties with only a current, edge-verified country and sets
+`geoip_disable: true`, so neither the backend location nor stale account GeoIP
+can decide region targeting. Unknown or untrusted country resolves as `XX`.
+The trust boundary and header prerequisite are in `docs/cloudflare.md`.
+
+Pending consent restoration preserves a newer withdrawal, including equal
+timestamps rounded to cookie seconds. A rapid No thanks → Allow rebases its
+pending grant only onto its own successful withdrawal; a later withdrawal from
+another device still wins the backend comparison. Mobile flag freshness belongs
+to the current account and auth generation, so another account's response cannot
+remove early-update membership. SDK startup and reset restore current connectivity
+and remembered OTA super properties after asynchronous consent initialization.
+
+Mobile signup/login conversions taken with an existing Allow can wait up to
+two minutes for account consent and SDK identity to resolve. This bounded,
+memory-only work belongs to the authentication epoch and keeps the conversion's
+original timestamp. A withdrawal, kill switch or account replacement discards
+it; later Allow never replays a conversion taken without consent.
+
+Consent copy and equal-choice controls follow the [EDPB consent guidelines](https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202005_consent_en.pdf). Declining does not limit the app, and withdrawal uses the same two-choice controls.

@@ -1,4 +1,6 @@
 import { GraphQLClient } from 'graphql-request';
+import { CLIENT_PLATFORM_HEADER } from '@boardsesh/shared-schema';
+import { CLIENT_PLATFORM } from '../client-platform';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { authenticatedFetch } from '../auth-interceptor';
 import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
@@ -117,7 +119,9 @@ type InspectedResponse = {
  * graphql-request already turns those into a `ClientError` without throwing.
  */
 async function fetchAndInspect(url: string | URL | Request, options: RequestInit): Promise<InspectedResponse> {
-  const response = await authenticatedFetch(url, options);
+  const headers = new Headers(options.headers);
+  headers.set(CLIENT_PLATFORM_HEADER, CLIENT_PLATFORM);
+  const response = await authenticatedFetch(url, { ...options, headers });
   if (!response.ok) {
     // A 4xx is the server answering (and refusing); a 5xx is the server failing.
     return { response, serverFailure: response.status >= 500 };

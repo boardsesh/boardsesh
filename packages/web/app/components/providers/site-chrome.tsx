@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import ConsentBanner from '../consent/consent-banner';
 import { StatsFilterBridgeProvider } from '../stats-filter-bridge/stats-filter-bridge-context';
 import { ProfileHeaderShareProvider } from '../profile-header-bridge/profile-header-bridge-context';
 import PlaylistsAdapterProvider from './playlists-adapter-provider';
@@ -35,6 +36,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
           <MarketingHeader />
           {children}
           <SiteFooter />
+          <ConsentBanner />
         </PlaylistsAdapterProvider>
       </ProfileHeaderShareProvider>
     </StatsFilterBridgeProvider>

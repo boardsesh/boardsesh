@@ -14,6 +14,32 @@
 // Wired via the `posthog-react-native` alias in packages/mobile/vite.config.ts.
 
 export class PostHog {
+  constructor(_apiKey?: string, _options?: unknown) {}
+  fetch(
+    _url: string,
+    _options: RequestInit,
+  ): Promise<{ status: number; text(): Promise<string>; json(): Promise<unknown> }> {
+    return Promise.resolve({ status: 200, text: async () => '', json: async () => ({}) });
+  }
+  getDistinctId(): string {
+    return '';
+  }
+  getAnonymousId(): string {
+    return '';
+  }
+  optIn(): Promise<void> {
+    return Promise.resolve();
+  }
+  optOut(): Promise<void> {
+    return Promise.resolve();
+  }
+  ready(): Promise<void> {
+    return Promise.resolve();
+  }
+  setPersistedProperty(): void {}
+  getPersistedProperty<T>(): T | undefined {
+    return undefined;
+  }
   capture(): void {}
   captureException(): void {}
   identify(): void {}
@@ -36,6 +62,16 @@ export class PostHog {
     return Promise.resolve();
   }
 }
+
+export const PostHogPersistedProperty = {
+  Queue: 'queue',
+  AiQueue: 'ai_queue',
+  AiCaptureQueue: 'ai_capture_queue',
+  LogsQueue: 'logs_queue',
+  DistinctId: 'distinct_id',
+  OptedOut: 'opted_out',
+  FeatureFlagDetails: 'feature_flag_details',
+};
 
 export const PostHogProvider = ({ children }: { children?: unknown }) => children;
 

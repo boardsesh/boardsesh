@@ -1,5 +1,6 @@
 'use client';
 
+import ConsentSettingsCard from '@/app/components/consent/consent-settings-card';
 import React, { useState, useEffect, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import MuiDivider from '@mui/material/Divider';
@@ -149,6 +150,8 @@ export default function SettingsPageContent() {
           width: '100%',
         }}
       >
+        <ConsentSettingsCard />
+        <MuiDivider sx={{ my: 2 }} />
         <SetPasswordSection
           hasPassword={profile?.hasPassword ?? false}
           userEmail={profile?.email || session?.user?.email || ''}

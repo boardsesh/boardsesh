@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 //
 // The component is wiring only: when it adopts the running pin, when it starts
 // a sync, and with what. The policy is `decideEarlyUpdatesSync`
@@ -129,3 +131,6 @@ describe('EarlyUpdatesLaunchSync', () => {
     expect(syncEarlyUpdates).not.toHaveBeenCalled();
   });
 });
+
+import { grantAnalyticsForTest } from '../../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

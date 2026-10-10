@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { grantedConsent } from '../../../test/consent-fixture';
+import { updateConsentState } from '../consent-state';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   captureToObserve,
   configureObserve,
@@ -12,6 +15,17 @@ afterEach(() => {
 });
 
 describe('observe-runtime slot', () => {
+  it('keeps first-party errors and flushes available after product Analytics is denied', async () => {
+    updateConsentState({ record: { ...grantedConsent, analytics: 'denied' } });
+    const reportError = vi.fn();
+    const dispatchEvents = vi.fn(async () => undefined);
+    setObserveRuntime({ configure: vi.fn(), reportError, dispatchEvents });
+    const error = new Error('diagnostic');
+    captureToObserve(error);
+    await dispatchObserveEvents();
+    expect(reportError).toHaveBeenCalledWith(error);
+    expect(dispatchEvents).toHaveBeenCalledOnce();
+  });
   it('is a no-op before the SDK registers', async () => {
     // The normal state under test and on Expo web. Must not throw, because
     // error-reporting calls straight through it.
@@ -97,3 +111,5 @@ describe('observe-runtime slot', () => {
     expect(dispatchEvents).not.toHaveBeenCalled();
   });
 });
+
+beforeEach(() => grantAnalyticsForTest());
