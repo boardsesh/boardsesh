@@ -256,7 +256,13 @@ describe('--flow smoke', () => {
   it('gives the bundle the smoke ping URL, and only for the smoke', () => {
     const smoke = buildScreenshotEnv(parseArgs(['--flow', 'smoke']), { NODE_ENV: 'test' });
     expect(smoke.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL).toBe(`http://localhost:${SCREENSHOT_READY_PORT}/smoke`);
-    const store = buildScreenshotEnv(parseArgs(['--flow', 'app-store']), { NODE_ENV: 'test' });
+    const store = buildScreenshotEnv(
+      parseArgs(['--flow', 'app-store']),
+      { NODE_ENV: 'test' },
+      null,
+      '2026-09-08T12:00:00Z',
+      8090,
+    );
     expect(store.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL).toBeUndefined();
   });
 
