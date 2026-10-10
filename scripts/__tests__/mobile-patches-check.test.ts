@@ -80,6 +80,16 @@ finalizeStatementWithErrorPreservation(statement, failure);
     {
       file: 'ios/SQLiteModule.swift',
       source: `
+  private let moduleQueue: DispatchQueue
+  OnAppContextDestroys {
+      closeAllDatabases()
+  }
+  OnDestroy {
+      closeAllDatabases()
+  }
+  DispatchQueue.getSpecific(key: moduleQueueKey)
+  moduleQueue.async(flags: .barrier, execute: closeDatabases)
+  moduleQueue.sync(flags: .barrier, execute: closeDatabases)
   private func finalize(statement: NativeStatement, database: NativeDatabase) throws {
     let result = exsqlite3_finalize(statement.pointer)
     statement.isFinalized = true
@@ -160,6 +170,51 @@ finalizeStatementWithErrorPreservation(statement, failure);
     });
 
     expect(result.errors).toEqual([expect.stringContaining(`${file} is missing`)]);
+  });
+});
+
+describe('the shipped Expo runtime teardown guards', () => {
+  const coreRule = REAL_RULES.find((rule) => rule.package === 'expo-modules-core')!;
+  const source = `
+private var hasPostedAppContextDestroys = false
+if isModuleRegistryInitialized {
+      for module in moduleRegistry {
+      }
+}
+postAppContextDestroysOnce()
+    _runtime = nil
+private func postAppContextDestroysOnce() {
+  guard !hasPostedAppContextDestroys else { return }
+  hasPostedAppContextDestroys = true
+  moduleRegistry.post(event: .appContextDestroys)
+}
+`;
+
+  function checkSource(installedSource: string, version = '57.0.21') {
+    return checkPatchesApplied(
+      [coreRule],
+      makeEnv({
+        patchedDependencies: { [coreRule.patchedKey]: `patches/${coreRule.patchedKey}.patch` },
+        versions: { 'expo-modules-core': version },
+        files: { [`expo-modules-core::${coreRule.file}`]: installedSource },
+      }),
+    );
+  }
+
+  it('pins the core version and delivery before runtime release', () => {
+    expect(checkSource(source).errors).toEqual([]);
+    expect(checkSource(source, '57.0.22').errors).toEqual([expect.stringContaining('version drift')]);
+    expect(
+      checkSource(source.replace('postAppContextDestroysOnce()\n    _runtime = nil', '_runtime = nil')).errors,
+    ).toEqual([expect.stringContaining('is missing')]);
+  });
+
+  it('rejects moving the guard after reentrant lifecycle listeners', () => {
+    const unsafeSource = source.replace(
+      'hasPostedAppContextDestroys = true\n  moduleRegistry.post(event: .appContextDestroys)',
+      'moduleRegistry.post(event: .appContextDestroys)\n  hasPostedAppContextDestroys = true',
+    );
+    expect(checkSource(unsafeSource).errors).toHaveLength(1);
   });
 });
 

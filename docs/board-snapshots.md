@@ -1027,6 +1027,13 @@ pre-import empty result set.
   exercising ATTACH/temp-table/PRAGMA state inside a transaction must be file-backed — the
   in-memory double's same-connection transactions are what let this bug ship at 100% test green.
 
+- **Native reload cleanup**: an iOS runtime replacement must close the old
+  runtime's SQLite connections, including an in-progress exclusive transaction.
+  Otherwise an abandoned writer can block the replacement runtime indefinitely;
+  retrying on another connection cannot release it. See
+  [SQLite locks across runtime reloads](sqlite-runtime-reload.md) for the Kilter
+  reproduction, native lifecycle contract, and required rebuilt-client checks.
+
 - **`EXPO_PUBLIC_SNAPSHOT_BASE_URL`** (`packages/mobile/src/lib/env.ts`) — base URL for
   `<base>/manifest.json`; each manifest entry carries its own absolute artifact URL, so this constant is
   only used for the manifest fetch. There is deliberately **no production fallback**: if the env var is
