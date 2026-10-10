@@ -211,6 +211,13 @@ describe('handleNativeAuthRegister', () => {
     expect(userValues.email).toBe('new@example.com');
     expect(userValues.name).toBe('Crusher');
     expect(userValues.emailVerified).toBeInstanceOf(Date);
+    expect(body.userId).toBe(userValues.id);
+    expect(body.accountCreation).toEqual({
+      userId: userValues.id,
+      provider: 'email',
+      accountCreated: true,
+      createdAt: (userValues.createdAt as Date).toISOString(),
+    });
   });
 
   it.each(['0', '1'])('gates new account privacy defaults with controls enabled=%s', async (flag) => {

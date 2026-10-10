@@ -23,6 +23,7 @@ import { CLIENT_IDENTITY_CONNECTION_PARAM, UNKNOWN_CLIENT } from '@boardsesh/sha
 import { recordContextOperation, resolveClientIdentity } from '../services/client-usage';
 import { logger } from '../utils/logger';
 import { recordUserActivity, resolveActivityPlatform, type ActivityPlatform } from '../services/user-activity';
+import { sanitizeAppleAdsGraphqlError } from '../graphql/apple-ads-token-privacy';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -396,6 +397,11 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         }
       },
       onSubscribe: (_ctx: ServerContext, _id: string, payload) => {
+        // Block this HTTP-only credential before parsing/coercing a document;
+        // graphql-ws otherwise sends its original validation errors to clients.
+        if (payload.query.includes('exchangeAppleAdsAttribution')) {
+          return [new GraphQLError('Apple Ads attribution requires HTTP')];
+        }
         if (DEBUG) {
           logger.info(`Subscription started: ${payload.operationName || 'anonymous'}`);
         }
@@ -410,11 +416,12 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         }
       },
       onError: (_ctx: ServerContext, _id: string, _payload, errors) => {
-        logger.error('GraphQL error:', errors);
+        const safeErrors = errors.map(sanitizeAppleAdsGraphqlError);
+        logger.error('GraphQL error:', safeErrors);
         // Only report errors that wrap an internal exception. GraphQLError
         // instances without `originalError` are validation/parse/auth/depth
         // errors triggered by malformed client input — noisy, not actionable.
-        for (const err of errors) {
+        for (const err of safeErrors) {
           if (err instanceof GraphQLError && !err.originalError) continue;
           Sentry.captureException(err, { tags: { source: 'graphql-ws' } });
         }

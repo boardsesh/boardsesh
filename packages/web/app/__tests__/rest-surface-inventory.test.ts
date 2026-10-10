@@ -1,5 +1,5 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 38
+ * The standing inventory oracle for issue #1889 (REST surface audit: 39
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
  * its prewarm cron were retired).
@@ -44,7 +44,7 @@ const API_ROOT = join(WEB_ROOT, 'app', 'api');
 type Verdict = 'keep-external' | 'keep-caller';
 
 const VERDICTS: Record<string, Verdict> = {
-  // --- /api/auth/* (8) — session/OAuth/registration, called by www and by
+  // --- /api/auth/* (9) — session/OAuth/registration, called by www and by
   // the mobile app's web auth path (and, for resend-verification, the native
   // store fleet too via the plain app/auth/register.tsx). ---
   'app/api/auth/[...nextauth]/route.ts': 'keep-caller',
@@ -55,6 +55,9 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/auth/resend-verification/route.ts': 'keep-caller',
   'app/api/auth/verify-email/route.ts': 'keep-caller',
   'app/api/auth/native/callback/route.ts': 'keep-caller',
+  // Browser-context attempt cookie binds genuine creation proof to the current
+  // OAuth flow. NextAuth owns this HttpOnly cookie, so this bridge stays on www.
+  'app/api/auth/native/attempt/route.ts': 'keep-caller',
 
   // --- /api/health (1) — Railway's healthcheck target (railway.web.toml).
   // Polled by the platform on every deploy and periodically after; nothing
@@ -251,6 +254,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(38);
+    expect(derived.size).toBe(39);
   });
 });

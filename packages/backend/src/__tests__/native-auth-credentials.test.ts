@@ -168,7 +168,8 @@ describe('handleNativeAuthCredentials', () => {
 
   it('returns JWT + refresh token for valid email + password', async () => {
     const passwordHash = await hash('correct-horse', 10);
-    queueSelect([{ userId: 'user-1', passwordHash }]);
+    const createdAt = new Date('2025-01-01T00:00:00.000Z');
+    queueSelect([{ userId: 'user-1', passwordHash, createdAt }]);
 
     const req = makeRequest({
       method: 'POST',
@@ -185,6 +186,13 @@ describe('handleNativeAuthCredentials', () => {
     expect(body.refreshToken).toBeDefined();
     expect(typeof body.refreshToken).toBe('string');
     expect(body.expiresAt).toBeDefined();
+    expect(body.userId).toBe('user-1');
+    expect(body.accountCreation).toEqual({
+      userId: 'user-1',
+      provider: 'email',
+      accountCreated: false,
+      createdAt: createdAt.toISOString(),
+    });
   });
 
   it('lower-cases and trims the submitted email before lookup', async () => {

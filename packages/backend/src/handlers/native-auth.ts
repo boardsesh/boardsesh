@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { compare, hash } from 'bcryptjs';
+import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
 import { eq, and, isNull, lt, or, isNotNull, sql } from 'drizzle-orm';
 import { mobileRefreshTokens, users, userCredentials, accounts, userProfiles } from '@boardsesh/db/schema/auth';
 import { notificationDevices } from '@boardsesh/db/schema/app';
@@ -291,9 +292,13 @@ type TransferPayload = {
   nextPath: string;
   iat: number;
   exp: number;
+  accountCreation?: unknown;
+  authSessionId?: unknown;
+  attemptId?: unknown;
+  provider?: unknown;
 };
 
-function verifyTransferToken(token: string): { userId: string } | null {
+function verifyTransferToken(token: string): { userId: string; accountCreation?: AccountCreationReceipt } | null {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) {
     logger.warn('[NativeAuth] NEXTAUTH_SECRET not configured');
@@ -347,7 +352,27 @@ function verifyTransferToken(token: string): { userId: string } | null {
     return null;
   }
 
-  return { userId: payload.userId };
+  const receipt = parseAccountCreationReceipt(payload.accountCreation);
+  const accountCreation =
+    receipt?.userId === payload.userId &&
+    receipt.provider === payload.provider &&
+    typeof payload.authSessionId === 'string' &&
+    payload.authSessionId.length > 0 &&
+    typeof payload.attemptId === 'string' &&
+    /^[0-9a-f]{32}$/.test(payload.attemptId)
+      ? receipt
+      : undefined;
+  return { userId: payload.userId, ...(accountCreation ? { accountCreation } : {}) };
+}
+
+function accountCreationReceipt(
+  userId: string,
+  accountCreated: boolean,
+  provider: AccountCreationReceipt['provider'],
+  createdAt: Date,
+): AccountCreationReceipt | undefined {
+  if (!(createdAt instanceof Date) || !Number.isFinite(createdAt.getTime())) return undefined;
+  return { userId, accountCreated, provider, createdAt: createdAt.toISOString() };
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +386,7 @@ async function generateTokenPair(
   jwt: string;
   refreshToken: string;
   expiresAt: string;
+  userId: string;
 }> {
   const signingSecret = getSigningSecret();
   if (!signingSecret) {
@@ -388,6 +414,7 @@ async function generateTokenPair(
   });
 
   return {
+    userId,
     jwt,
     refreshToken,
     expiresAt: jwtExpiresAt.toISOString(),
@@ -479,7 +506,10 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   try {
     const tokenPair = await generateTokenPair(verified.userId);
     logger.info(`[NativeAuth] Token exchange successful for user ${verified.userId}`);
-    sendJson(res, 200, tokenPair);
+    sendJson(res, 200, {
+      ...tokenPair,
+      ...(verified.accountCreation ? { accountCreation: verified.accountCreation } : {}),
+    });
   } catch (error) {
     logger.error('[NativeAuth] Token generation failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
@@ -544,6 +574,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
       .select({
         userId: users.id,
         passwordHash: userCredentials.passwordHash,
+        createdAt: users.createdAt,
       })
       .from(users)
       .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
@@ -589,10 +620,12 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
       return;
     }
 
-    const authenticatedUserId = credentialCandidates[matchingCredentialIndexes[0]].userId;
+    const authenticatedUser = credentialCandidates[matchingCredentialIndexes[0]];
+    const authenticatedUserId = authenticatedUser.userId;
     const tokenPair = await generateTokenPair(authenticatedUserId);
     logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
-    sendJson(res, 200, tokenPair);
+    const accountCreation = accountCreationReceipt(authenticatedUserId, false, 'email', authenticatedUser.createdAt);
+    sendJson(res, 200, { ...tokenPair, ...(accountCreation ? { accountCreation } : {}) });
   } catch (error) {
     logger.error('[NativeAuth] Credentials sign-in failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
@@ -715,8 +748,10 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
 
     const result = await db.transaction(async (tx) => {
       const newUserId = crypto.randomUUID();
+      const createdAt = new Date();
       await tx.insert(users).values({
         id: newUserId,
+        createdAt,
         email: normalizedEmail,
         name: trimmedName ?? normalizedEmail.split('@')[0],
         emailVerified: emailVerificationEnabled ? null : new Date(),
@@ -732,11 +767,15 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
         })
         .onConflictDoNothing();
       const tokenPair = await generateTokenPair(newUserId, tx);
-      return { userId: newUserId, tokenPair };
+      return {
+        userId: newUserId,
+        tokenPair,
+        accountCreation: accountCreationReceipt(newUserId, true, 'email', createdAt),
+      };
     });
 
     logger.info(`[NativeAuth] Registration successful for user ${result.userId}`);
-    sendJson(res, 201, result.tokenPair);
+    sendJson(res, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
   } catch (error) {
     // Race: a concurrent request created this email between the pre-check and
     // insert. PostgreSQL unique-violation code is '23505'. NOTE: users.email has
@@ -907,7 +946,12 @@ function parseForwardedName(value: unknown): ForwardedName | undefined {
 }
 
 type FindOrCreateResult =
-  | { status: 'ok'; tokenPair: { jwt: string; refreshToken: string; expiresAt: string }; userId: string }
+  | {
+      status: 'ok';
+      tokenPair: Awaited<ReturnType<typeof generateTokenPair>>;
+      userId: string;
+      accountCreation?: AccountCreationReceipt;
+    }
   | { status: 'no_email' };
 
 /**
@@ -927,14 +971,20 @@ async function findOrCreateOAuthUser(
   return db.transaction(async (tx) => {
     // 1. Link by the provider's stable subject id.
     const linkedRows = await tx
-      .select({ userId: accounts.userId })
+      .select({ userId: accounts.userId, createdAt: users.createdAt })
       .from(accounts)
+      .innerJoin(users, eq(users.id, accounts.userId))
       .where(and(eq(accounts.provider, provider), eq(accounts.providerAccountId, identity.sub)))
       .limit(1);
     const linked = linkedRows[0];
     if (linked) {
       const tokenPair = await generateTokenPair(linked.userId, tx);
-      return { status: 'ok', tokenPair, userId: linked.userId };
+      return {
+        status: 'ok',
+        tokenPair,
+        userId: linked.userId,
+        accountCreation: accountCreationReceipt(linked.userId, false, provider, linked.createdAt),
+      };
     }
 
     const normalizedEmail = identity.email ? identity.email.trim().toLowerCase() : null;
@@ -948,7 +998,7 @@ async function findOrCreateOAuthUser(
     // through to creation, which anchors on the provider sub instead.
     if (normalizedEmail && identity.emailVerified) {
       const matchedRows = await tx
-        .select({ id: users.id, emailVerified: users.emailVerified })
+        .select({ id: users.id, emailVerified: users.emailVerified, createdAt: users.createdAt })
         .from(users)
         .where(eq(users.email, normalizedEmail))
         .limit(1);
@@ -962,7 +1012,12 @@ async function findOrCreateOAuthUser(
           await tx.update(users).set({ emailVerified: new Date() }).where(eq(users.id, matched.id));
         }
         const tokenPair = await generateTokenPair(matched.id, tx);
-        return { status: 'ok', tokenPair, userId: matched.id };
+        return {
+          status: 'ok',
+          tokenPair,
+          userId: matched.id,
+          accountCreation: accountCreationReceipt(matched.id, false, provider, matched.createdAt),
+        };
       }
     }
 
@@ -975,8 +1030,10 @@ async function findOrCreateOAuthUser(
     }
 
     const newUserId = crypto.randomUUID();
+    const createdAt = new Date();
     await tx.insert(users).values({
       id: newUserId,
+      createdAt,
       email: normalizedEmail,
       name: resolveDisplayName(identity, forwardedName),
       emailVerified: identity.emailVerified ? new Date() : null,
@@ -992,7 +1049,12 @@ async function findOrCreateOAuthUser(
       .onConflictDoNothing();
     await tx.insert(accounts).values({ userId: newUserId, type: 'oauth', provider, providerAccountId: identity.sub });
     const tokenPair = await generateTokenPair(newUserId, tx);
-    return { status: 'ok', tokenPair, userId: newUserId };
+    return {
+      status: 'ok',
+      tokenPair,
+      userId: newUserId,
+      accountCreation: accountCreationReceipt(newUserId, true, provider, createdAt),
+    };
   });
 }
 
@@ -1060,7 +1122,10 @@ export async function handleNativeAuthOAuth(req: IncomingMessage, res: ServerRes
       return;
     }
     logger.info(`[NativeAuth] ${provider} sign-in successful for user ${result.userId}`);
-    sendJson(res, 200, result.tokenPair);
+    sendJson(res, 200, {
+      ...result.tokenPair,
+      ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
+    });
   } catch (error) {
     logger.error('[NativeAuth] OAuth sign-in failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });

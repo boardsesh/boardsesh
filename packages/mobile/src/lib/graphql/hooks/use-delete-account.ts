@@ -7,6 +7,9 @@ import {
   type DeleteAccountMutationResponse,
 } from '@boardsesh/graphql/operations/account';
 import { getHttpClient } from '../client';
+import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../../auth-store';
+import { userIdFromJwt } from '../../jwt-user-id';
+import { forgetSignupConversion } from '../../signup-conversion';
 
 /**
  * Count of the signed-in user's published climbs, surfaced in the
@@ -35,7 +38,25 @@ export function useDeleteAccountInfo(options?: { enabled?: boolean }) {
 export function useDeleteAccount() {
   return useMutation({
     mutationFn: async (variables: DeleteAccountMutationVariables) => {
+      const credentialGeneration = captureAuthCredentialGeneration();
+      let deletingUserId: string | undefined;
+      try {
+        deletingUserId = userIdFromJwt(await getAuthToken());
+      } catch {
+        // Marker cleanup is best-effort; the mutation still authenticates server-side.
+      }
+      if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
+        throw new Error('Account credentials changed before account deletion');
+      }
       const response = await getHttpClient().request<DeleteAccountMutationResponse>(DELETE_ACCOUNT, variables);
+      if (
+        response.deleteAccount === true &&
+        deletingUserId &&
+        isAuthCredentialGenerationCurrent(credentialGeneration)
+      ) {
+        // A delayed/rejected local delete must not block sign-out after server deletion.
+        void forgetSignupConversion(deletingUserId).catch(() => {});
+      }
       return response.deleteAccount;
     },
   });

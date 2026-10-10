@@ -15,21 +15,57 @@ function NativeStartInner() {
   const params = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
   const submitted = useRef(false);
+  const preparing = useRef(false);
   const provider = params.get('provider');
   const callbackUrl = params.get('callbackUrl') ?? '/';
 
   useEffect(() => {
-    if (submitted.current) return;
+    if (submitted.current || preparing.current) return;
     if (!provider || !ALLOWED_PROVIDERS.has(provider)) return;
+    preparing.current = true;
 
-    void getCsrfToken().then((csrfToken: string | undefined) => {
-      if (!csrfToken || !formRef.current || submitted.current) return;
-      submitted.current = true;
+    const prepareAttempt = async () => {
+      try {
+        const callback = new URL(callbackUrl, window.location.origin);
+        const attemptId = callback.searchParams.get('attemptId');
+        if (
+          callback.origin === window.location.origin &&
+          callback.pathname === '/api/auth/native/callback' &&
+          attemptId &&
+          /^[0-9a-f]{32}$/.test(attemptId) &&
+          (provider === 'apple' || provider === 'google')
+        ) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3000);
+          try {
+            await fetch('/api/auth/native/attempt', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ attemptId, provider }),
+              credentials: 'same-origin',
+              signal: controller.signal,
+            });
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
+      } catch {
+        // Missing attribution proof must never block the OAuth fallback.
+      }
+      return getCsrfToken();
+    };
+    void prepareAttempt()
+      .then((csrfToken: string | undefined) => {
+        if (!csrfToken || !formRef.current || submitted.current) return;
+        submitted.current = true;
 
-      const input = formRef.current.querySelector<HTMLInputElement>('input[name="csrfToken"]');
-      if (input) input.value = csrfToken;
-      formRef.current.submit();
-    });
+        const input = formRef.current.querySelector<HTMLInputElement>('input[name="csrfToken"]');
+        if (input) input.value = csrfToken;
+        formRef.current.submit();
+      })
+      .finally(() => {
+        preparing.current = false;
+      });
   }, [provider, callbackUrl]);
 
   if (!provider || !ALLOWED_PROVIDERS.has(provider)) {

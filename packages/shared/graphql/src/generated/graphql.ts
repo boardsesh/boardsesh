@@ -318,6 +318,44 @@ export type AppFeedbackStatusCounts = {
  */
 export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
 
+/** Campaign identifiers verified against Apple's AdServices API, never its raw response. */
+export type AppleAdsAttribution = {
+  __typename?: 'AppleAdsAttribution';
+  adGroupId: Scalars['String']['output'];
+  adId?: Maybe<Scalars['String']['output']>;
+  campaignId: Scalars['String']['output'];
+  claimType?: Maybe<Scalars['String']['output']>;
+  conversionType: Scalars['String']['output'];
+  countryOrRegion?: Maybe<Scalars['String']['output']>;
+  keywordId?: Maybe<Scalars['String']['output']>;
+  orgId: Scalars['String']['output'];
+  supplyPlacement?: Maybe<Scalars['String']['output']>;
+};
+
+export type AppleAdsAttributionResult = {
+  __typename?: 'AppleAdsAttributionResult';
+  attribution?: Maybe<AppleAdsAttribution>;
+  retryAfterSeconds?: Maybe<Scalars['Int']['output']>;
+  /** not_ready, unavailable or rate_limited; null for terminal outcomes. */
+  retryReason?: Maybe<Scalars['String']['output']>;
+  status: AppleAdsAttributionStatus;
+};
+
+export type AppleAdsAttributionStatus =
+  | 'ATTRIBUTED'
+  | 'CONSENT_REQUIRED'
+  | 'INVALID_TOKEN'
+  | 'RETRYABLE'
+  | 'TEST'
+  | 'UNATTRIBUTED';
+
+export type AppleAdsConsentInput = {
+  analytics: Scalars['String']['input'];
+  decidedAt: Scalars['String']['input'];
+  source: Scalars['String']['input'];
+  version: Scalars['Int']['input'];
+};
+
 /** Pagination input for ascent feeds. */
 export type AscentFeedInput = {
   /** When true, only include benchmark climbs */
@@ -4149,6 +4187,14 @@ export type Mutation = {
    * the returned SessionSummary.
    */
   endSession?: Maybe<SessionSummary>;
+  /**
+   * Exchange an opaque iOS AdServices token only while analytics consent is
+   * granted. Anonymous HTTP callers supply their device answer; signed-in
+   * callers also respect the account's current answer. Nothing is persisted
+   * or published by this mutation. UNATTRIBUTED means Apple found no matching
+   * ad record, not that the install is organic.
+   */
+  exchangeAppleAdsAttribution: AppleAdsAttributionResult;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
   /** Follow a gym. */
@@ -4889,6 +4935,12 @@ export type MutationEndSessionArgs = {
   notes?: InputMaybe<Scalars['String']['input']>;
   sessionId: Scalars['ID']['input'];
   timezone?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationExchangeAppleAdsAttributionArgs = {
+  consent: AppleAdsConsentInput;
+  token: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -11699,6 +11751,33 @@ export type SetAnalyticsConsentMutation = {
   };
 };
 
+export type ExchangeAppleAdsAttributionMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+  consent: AppleAdsConsentInput;
+}>;
+
+export type ExchangeAppleAdsAttributionMutation = {
+  __typename?: 'Mutation';
+  exchangeAppleAdsAttribution: {
+    __typename?: 'AppleAdsAttributionResult';
+    status: AppleAdsAttributionStatus;
+    retryAfterSeconds?: number | null;
+    retryReason?: string | null;
+    attribution?: {
+      __typename?: 'AppleAdsAttribution';
+      orgId: string;
+      campaignId: string;
+      adGroupId: string;
+      keywordId?: string | null;
+      adId?: string | null;
+      conversionType: string;
+      claimType?: string | null;
+      countryOrRegion?: string | null;
+      supplyPlacement?: string | null;
+    } | null;
+  };
+};
+
 export type GetBetaLinksQueryVariables = Exact<{
   boardType: Scalars['String']['input'];
   climbUuid: Scalars['String']['input'];
@@ -16727,6 +16806,78 @@ export const SetAnalyticsConsentDocument = {
     },
   ],
 } as unknown as DocumentNode<SetAnalyticsConsentMutation, SetAnalyticsConsentMutationVariables>;
+export const ExchangeAppleAdsAttributionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ExchangeAppleAdsAttribution' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'consent' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'AppleAdsConsentInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'exchangeAppleAdsAttribution' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'token' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'consent' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'consent' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'retryAfterSeconds' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'retryReason' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'attribution' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'orgId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'campaignId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'adGroupId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'keywordId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'adId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'conversionType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'claimType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'countryOrRegion' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'supplyPlacement' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ExchangeAppleAdsAttributionMutation, ExchangeAppleAdsAttributionMutationVariables>;
 export const GetBetaLinksDocument = {
   kind: 'Document',
   definitions: [

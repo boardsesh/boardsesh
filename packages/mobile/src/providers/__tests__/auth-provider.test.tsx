@@ -4,7 +4,8 @@ import { renderHook, render, screen, waitFor, act } from '@testing-library/react
 import { useEffect, type ReactNode } from 'react';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { grantAnalyticsForTest } from '../../../test/consent-fixture';
-import { updateConsentState } from '../../lib/consent-state';
+import { getConsentSnapshot, updateConsentState } from '../../lib/consent-state';
+import { notifyAnalyticsIdentityChanged } from '../../lib/analytics-identity-events';
 
 const redirectMock = vi.hoisted(() => vi.fn());
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
@@ -200,10 +201,15 @@ const resetAnalyticsMock = vi.hoisted(() => vi.fn());
 // Whether the PostHog SDK is pinned to a person. The signed-out cold-start path
 // only resets when it is; the sign-out paths reset regardless.
 const isAnalyticsPinnedToAPersonMock = vi.hoisted(() => vi.fn(() => false));
+const analyticsCaptureMock = vi.hoisted(() => vi.fn(() => true));
+const analyticsIdentityMock = vi.hoisted(() => vi.fn((): { distinctId: string; anonymousId: string } | null => null));
 vi.mock('../../lib/analytics', () => ({
   isAnalyticsPinnedToAPerson: isAnalyticsPinnedToAPersonMock,
   reset: resetAnalyticsMock,
   track: (...args: unknown[]) => trackMock(...args),
+  capture: analyticsCaptureMock,
+  getAnalyticsIdentity: analyticsIdentityMock,
+  setPersonProperties: vi.fn(),
 }));
 
 // Sign-out is about to DELETE the whole outbox (dead letters included). The
@@ -416,6 +422,7 @@ vi.mock('../../lib/auth-interceptor', () => ({
 }));
 
 import { AuthProvider, useAuth } from '../auth-provider';
+import { commitVerifiedAuthResult, getVerifiedAuthResult } from '../../lib/verified-auth-result';
 import {
   clearSprayWallRegistry,
   getSprayWall,
@@ -826,6 +833,152 @@ describe('AuthProvider.register', () => {
 
     expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeRegistration);
   });
+
+  it('does not commit an earlier auth response under another committed credential owner', async () => {
+    const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
+    const newerOwner = '45642f07-423c-49e1-854e-814beaa0df64';
+    const token = `header.${btoa(JSON.stringify({ sub: newerOwner })).replace(/=/g, '')}.signature`;
+    getAuthTokenMock.mockResolvedValue(token);
+    authRegisterMock.mockResolvedValue({
+      success: true,
+      userId,
+      accountCreation: { userId, accountCreated: true, provider: 'email', createdAt: '2026-10-10T00:00:00.000Z' },
+    });
+    const queryClient = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    await act(async () => {
+      await result.current.register('new@example.com', 'password');
+    });
+    expect(getVerifiedAuthResult()).toBeNull();
+  });
+
+  it('publishes verified auth metadata only for its committed token owner', async () => {
+    const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
+    const accountCreation = { userId, accountCreated: true, provider: 'email', createdAt: '2026-10-10T00:00:00.000Z' };
+    getAuthTokenMock.mockResolvedValue(`header.${btoa(JSON.stringify({ sub: userId })).replace(/=/g, '')}.signature`);
+    authRegisterMock.mockResolvedValue({ success: true, userId, accountCreation });
+    const queryClient = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    await act(async () => {
+      await result.current.register('new@example.com', 'password');
+    });
+    expect(getVerifiedAuthResult()).toEqual({ userId, accountCreation });
+  });
+
+  it('preserves a pending verified signup through a same-credential foreground check', async () => {
+    grantAnalyticsForTest();
+    analyticsCaptureMock.mockClear();
+    analyticsIdentityMock.mockReturnValue(null);
+    const userId = 'ad8e1685-6073-45db-b20c-06d99d92ff86';
+    const createdAt = '2026-10-10T00:00:00.000Z';
+    const accountCreation = { userId, accountCreated: true, provider: 'email', createdAt };
+    getAuthTokenMock.mockResolvedValue(`header.${btoa(JSON.stringify({ sub: userId })).replace(/=/g, '')}.signature`);
+    authRegisterMock.mockResolvedValue({ success: true, userId, accountCreation });
+    const queryClient = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    try {
+      await act(async () => {
+        await result.current.register('new@example.com', 'password');
+      });
+      updateConsentState({ accountId: userId, accountResolved: true, authSettled: true, sdkReady: false });
+      const creationEpoch = getConsentSnapshot().authEpoch;
+      expect(getVerifiedAuthResult()).toEqual({ userId, accountCreation });
+      expect(analyticsCaptureMock).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.refreshAuthState();
+      });
+
+      expect(getConsentSnapshot().authEpoch).toBe(creationEpoch);
+      expect(getVerifiedAuthResult()).toEqual({ userId, accountCreation });
+      expect(analyticsCaptureMock).not.toHaveBeenCalled();
+      analyticsIdentityMock.mockReturnValue({ distinctId: userId, anonymousId: 'anonymous' });
+      updateConsentState({ sdkReady: true });
+      notifyAnalyticsIdentityChanged();
+      await waitFor(() => expect(analyticsCaptureMock).toHaveBeenCalledOnce());
+      expect(analyticsCaptureMock).toHaveBeenCalledWith(
+        'Signup Completed',
+        expect.objectContaining({ provider: 'email', flow: 'native' }),
+        { uuid: userId, timestamp: new Date(createdAt) },
+      );
+      await act(async () => {
+        await result.current.refreshAuthState();
+      });
+      expect(analyticsCaptureMock).toHaveBeenCalledOnce();
+    } finally {
+      analyticsIdentityMock.mockReturnValue(null);
+    }
+  });
+
+  it.each(['denied', 'withdrawn'] as const)(
+    'does not replay signup when %s before a delayed auth check resolves',
+    async (choice) => {
+      grantAnalyticsForTest();
+      analyticsCaptureMock.mockClear();
+      const userId = 'ad8e1685-6073-45db-b20c-06d99d92ff85';
+      const token = `header.${btoa(JSON.stringify({ sub: userId })).replace(/=/g, '')}.signature`;
+      getAuthTokenMock.mockResolvedValue(token);
+      authRegisterMock.mockResolvedValue({
+        success: true,
+        userId,
+        accountCreation: { userId, accountCreated: true, provider: 'email', createdAt: '2026-10-10T00:00:00.000Z' },
+      });
+      const queryClient = new QueryClient();
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryClientProvider>
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      if (choice === 'denied')
+        updateConsentState({
+          record: { analytics: 'denied', version: 1, decidedAt: '2026-10-10T00:00:00.000Z', source: 'ios' },
+        });
+      let finishCheck: (token: string) => void = () => {};
+      getAuthTokenMock.mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            finishCheck = resolve;
+          }),
+      );
+      const readsBefore = getAuthTokenMock.mock.calls.length;
+      const registration = result.current.register('new@example.com', 'password');
+      await vi.waitFor(() => expect(getAuthTokenMock.mock.calls.length).toBeGreaterThan(readsBefore));
+      if (choice === 'withdrawn')
+        updateConsentState({
+          record: { analytics: 'denied', version: 1, decidedAt: '2026-10-10T00:00:00.000Z', source: 'ios' },
+        });
+      grantAnalyticsForTest();
+      analyticsIdentityMock.mockReturnValue({ distinctId: userId, anonymousId: 'anonymous' });
+      await act(async () => {
+        finishCheck(token);
+        await registration;
+      });
+      updateConsentState({ accountId: userId, accountResolved: true, authSettled: true, sdkReady: true });
+      expect(getVerifiedAuthResult()?.userId).toBe(userId);
+      expect(analyticsCaptureMock).not.toHaveBeenCalled();
+      analyticsIdentityMock.mockReturnValue(null);
+    },
+  );
 });
 
 // The signed-out screens mount profile readers too, and the backend answers a
@@ -1629,6 +1782,46 @@ describe('AuthProvider sign-out offline data wipe', () => {
 
     await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
     expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  it('clears verified metadata synchronously when a 401 forces sign-out', async () => {
+    await renderSignedIn();
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+    expect(typeof forceSignOut).toBe('function');
+    commitVerifiedAuthResult({ userId: '602c83bf-e090-4c90-9f7e-000000000040' });
+    // The interceptor removes the rejected credential before invoking its hook.
+    getAuthTokenMock.mockResolvedValue(null);
+
+    act(() => {
+      forceSignOut?.();
+      expect(getVerifiedAuthResult()).toBeNull();
+    });
+
+    await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
+  });
+
+  it('clears verified metadata before confirmed sign-out cleanup finishes', async () => {
+    const result = await renderSignedIn();
+    let finishCleanup: () => void = () => {};
+    clearUserDataMock.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishCleanup = resolve;
+      }),
+    );
+    commitVerifiedAuthResult({ userId: '602c83bf-e090-4c90-9f7e-000000000041' });
+    getAuthTokenMock.mockResolvedValue(null);
+
+    const refresh = result.current.refreshAuthState();
+    try {
+      await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(getVerifiedAuthResult()).toBeNull();
+    } finally {
+      await act(async () => {
+        finishCleanup();
+        await refresh;
+      });
+    }
   });
 
   // The database cleanup is the one step here that is EXPECTED to fail — a

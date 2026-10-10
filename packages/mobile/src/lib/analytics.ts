@@ -8,6 +8,7 @@ import { reregisterActiveGym } from './analytics-gym';
 import { reregisterLowPowerMode } from './analytics-low-power-mode';
 import { reregisterConnectStepArm } from './analytics-connect-step-arm';
 import { isProductAnalyticsGranted } from './consent-state';
+import { notifyAnalyticsIdentityChanged } from './analytics-identity-events';
 import { applyPosthogConsent, subscribePosthogInitialized, clearPosthogQueues } from './posthog-client';
 import { applySessionReplayConsent } from './session-replay-consent';
 import {
@@ -278,7 +279,12 @@ const analytics = createAnalytics(() => (isProductAnalyticsGranted() ? getClient
   onDebug: __DEV__ ? (name, properties) => console.info('[analytics]', name, properties ?? {}) : undefined,
 });
 
-export const { track, identify, setPersonProperties } = analytics;
+export const { track, capture, setPersonProperties } = analytics;
+export const identify: typeof analytics.identify = (distinctId, properties) => {
+  const forwarded = analytics.identify(distinctId, properties);
+  if (forwarded) notifyAnalyticsIdentityChanged();
+  return forwarded;
+};
 
 /**
  * Stamp the board-render A/B state (issue #2202) as PostHog super properties,
@@ -342,6 +348,7 @@ export function reset(): boolean {
   if (client) {
     client.reset([]);
     clearPosthogQueues(client);
+    notifyAnalyticsIdentityChanged();
   }
   const didReset = client !== null;
   void applyPosthogConsent().catch(() => {});

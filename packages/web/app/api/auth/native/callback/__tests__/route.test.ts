@@ -1,8 +1,12 @@
-import { describe, expect, it, vi, beforeEach } from 'vite-plus/test';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
 import { getServerSession } from 'next-auth/next';
-import { issueNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
+import {
+  issueNativeOAuthTransferToken,
+  issueNativeOAuthAttempt,
+  NATIVE_OAUTH_ATTEMPT_COOKIE,
+} from '@/app/lib/auth/native-oauth-transfer';
 
 // Mock dependencies before importing the route handler
 vi.mock('next-auth/next', () => ({
@@ -13,7 +17,8 @@ vi.mock('@/app/lib/auth/auth-options', () => ({
   authOptions: {},
 }));
 
-vi.mock('@/app/lib/auth/native-oauth-transfer', () => ({
+vi.mock('@/app/lib/auth/native-oauth-transfer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/lib/auth/native-oauth-transfer')>()),
   issueNativeOAuthTransferToken: vi.fn(),
 }));
 
@@ -38,7 +43,82 @@ async function extractDeepLink(response: Response): Promise<string> {
 describe('GET /api/auth/native/callback', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('NEXTAUTH_SECRET', 'native-attempt-test-secret');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-10T00:00:00.000Z'));
   });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it('signs the exact receipt only for a matching fresh browser attempt and auth session', async () => {
+    const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
+    const attemptId = 'a'.repeat(32);
+    const accountCreation = {
+      userId,
+      accountCreated: true,
+      provider: 'apple' as const,
+      createdAt: '2026-10-10T00:00:00.000Z',
+    };
+    const marker = issueNativeOAuthAttempt({ attemptId, provider: 'apple' });
+    vi.advanceTimersByTime(1);
+    mockedGetServerSession.mockResolvedValue({
+      user: { id: userId },
+      authSessionId: 'login-1',
+      nativeOAuthCreationProof: {
+        authSessionId: 'login-1',
+        provider: 'apple',
+        signedInAt: Date.now(),
+        accountCreation,
+      },
+      expires: '2026-10-11',
+    });
+    mockedIssueToken.mockReturnValue('signed-transfer');
+    const request = new NextRequest(
+      `http://localhost:3000/api/auth/native/callback?provider=apple&attemptId=${attemptId}`,
+      { headers: { Cookie: `${NATIVE_OAUTH_ATTEMPT_COOKIE}=${marker}` } },
+    );
+    const response = await GET(request);
+    expect(mockedIssueToken).toHaveBeenCalledWith({
+      userId,
+      nextPath: '/',
+      accountCreation,
+      authSessionId: 'login-1',
+      provider: 'apple',
+      attemptId,
+    });
+    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
+  });
+
+  it.each(['old-session', 'same-millisecond-session', 'wrong-provider', 'wrong-session', 'wrong-attempt'] as const)(
+    'authenticates without signup proof for %s',
+    async (mismatch) => {
+      const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
+      const attemptId = 'a'.repeat(32);
+      const marker = issueNativeOAuthAttempt({ attemptId, provider: 'apple' });
+      vi.advanceTimersByTime(1);
+      mockedGetServerSession.mockResolvedValue({
+        user: { id: userId },
+        authSessionId: 'login-1',
+        expires: '2026-10-11',
+        nativeOAuthCreationProof: {
+          authSessionId: mismatch === 'wrong-session' ? 'old-login' : 'login-1',
+          provider: mismatch === 'wrong-provider' ? 'google' : 'apple',
+          signedInAt: Date.now() - (mismatch === 'old-session' ? 2 : mismatch === 'same-millisecond-session' ? 1 : 0),
+          accountCreation: { userId, accountCreated: true, provider: 'apple', createdAt: '2026-10-10T00:00:00.000Z' },
+        },
+      });
+      mockedIssueToken.mockReturnValue('signed-transfer');
+      const requestedAttempt = mismatch === 'wrong-attempt' ? 'b'.repeat(32) : attemptId;
+      await GET(
+        new NextRequest(`http://localhost:3000/api/auth/native/callback?provider=apple&attemptId=${requestedAttempt}`, {
+          headers: { Cookie: `${NATIVE_OAUTH_ATTEMPT_COOKIE}=${marker}` },
+        }),
+      );
+      expect(mockedIssueToken).toHaveBeenCalledWith({ userId, nextPath: '/' });
+    },
+  );
 
   it('returns HTML redirect with error when session is missing', async () => {
     mockedGetServerSession.mockResolvedValue(null);

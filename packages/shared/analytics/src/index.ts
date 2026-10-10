@@ -19,6 +19,7 @@ export {
   type ReconcileAnalyticsIdentityInput,
 } from './reconcile-identity';
 export { SHARED_EVENTS, type SharedEventKey, type SharedEventName } from './events';
+export { parseAccountCreationReceipt, type AccountCreationReceipt } from './account-creation';
 // Props shared by more than one event, built in one place so the emitters agree.
 export {
   ANALYTICS_BOARD_TYPES,

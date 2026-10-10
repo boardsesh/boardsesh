@@ -12,6 +12,7 @@ import { createConsentPosthogStorage } from './consent-posthog-storage';
 import { posthogStorageBackend } from './posthog-storage-backend';
 import { BACKEND_URL } from './env';
 import { isAnalyticsGranted } from '@boardsesh/consent';
+import { notifyAnalyticsIdentityChanged } from './analytics-identity-events';
 import { applySessionReplayConsent } from './session-replay-consent';
 import { applyNativeReplayPrivacy } from './replay-privacy';
 import { isDevBuild } from './is-dev-build';
@@ -366,6 +367,7 @@ export async function applyPosthogConsent(): Promise<void> {
         initializingIdentity = true;
         try {
           client.identify(accountId);
+          notifyAnalyticsIdentityChanged();
         } finally {
           initializingIdentity = false;
         }

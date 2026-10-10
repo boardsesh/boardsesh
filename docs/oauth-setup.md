@@ -515,7 +515,31 @@ curl http://localhost:3000/api/auth/providers-config
 
 ---
 
-## Native App Authentication (Capacitor)
+## Expo native browser fallback and signup proof
+
+The Expo app normally exchanges Apple/Google identity tokens directly with
+the backend. Browser fallback opens `/auth/native-start` with a random attempt
+ID and provider in its callback URL. The start page first posts to
+`/api/auth/native/attempt` **inside the external browser**, setting a signed
+HttpOnly attempt cookie in the same cookie jar NextAuth uses. A request from
+the native networking stack would put that cookie in the wrong jar.
+
+NextAuth records its verified `isNewUser` outcome, provider and sign-in time
+in the session. `/api/auth/native/callback` includes account-creation proof
+in the signed transfer only when that session matches the current attempt,
+provider and two-minute expiry, and its sign-in happened after the attempt
+started. It consumes the attempt cookie. The backend verifies the transfer
+and receipt owner before returning JWTs with optional creation metadata.
+
+Stale sessions, expired attempts and older binaries can still authenticate;
+their creation outcome stays unknown rather than being inferred from account
+age. The native auth provider verifies the committed JWT owner before
+publishing a consented signup. Stable account-based event UUIDs prevent
+duplicate conversions; attribution arriving later only enriches the person.
+See [analytics consent](./analytics-consent.md) for withdrawal and account
+replacement behavior.
+
+## Legacy Native App Authentication (Capacitor)
 
 OAuth in the Capacitor WebView requires special handling because the WebView and the external browser (Chrome Custom Tab / SFSafariViewController) have **separate cookie jars**. Calling `signIn()` from the WebView would set OAuth state cookies that the external browser never sees, breaking the callback.
 

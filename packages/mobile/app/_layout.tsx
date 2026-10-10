@@ -109,6 +109,7 @@ import { BoardOpenRecorder } from '../src/components/board-activity/BoardOpenRec
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { LowPowerModeTracker } from '../src/components/analytics/LowPowerModeTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
+import { AppleAdsAttributionTracker } from '../src/components/analytics/AppleAdsAttributionTracker';
 import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceMigration';
 import { PrivacySyncBridge } from '../src/components/privacy/PrivacySyncBridge';
 import { PrivacyOnboardingGate } from '../src/components/privacy/PrivacyOnboardingGate';
@@ -1086,6 +1087,7 @@ function RootLayout() {
                                                                     <OtaUpdateTracker />
                                                                     <LowPowerModeTracker />
                                                                     <InstallReferrerTracker />
+                                                                    <AppleAdsAttributionTracker />
                                                                     <KeychainNamespaceMigration />
                                                                   </ShareTargetProvider>
                                                                 </DeepLinkProvider>

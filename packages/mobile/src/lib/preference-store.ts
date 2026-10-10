@@ -14,7 +14,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /** Read a JSON-serialized preference. Returns null when the key is missing or the
- *  stored payload fails to parse.
+ *  stored payload fails to parse. With strictParsing, a present key must contain
+ *  valid, non-null JSON; corrupt or decoded-null records reject instead.
  *
  *  A storage-read REJECTION is intentionally NOT swallowed here — it propagates so
  *  a one-time-load store can distinguish "read failed" (e.g. iOS denying the
@@ -24,12 +25,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  *  its call sites must `.catch`, so the rejection never floats into error tracking.
  *  See session-recording-preference.ts / dimension-lock-store.ts /
  *  grade-format-preference.ts for the pattern (#3610). */
-export async function getPreference<T>(key: string): Promise<T | null> {
+export async function getPreference<T>(
+  key: string,
+  { strictParsing = false }: { strictParsing?: boolean } = {},
+): Promise<T | null> {
   const raw = await AsyncStorage.getItem(key);
   if (raw === null) return null;
   try {
-    return JSON.parse(raw) as T;
-  } catch {
+    const parsedPreference = JSON.parse(raw) as T | null;
+    if (strictParsing && parsedPreference === null) throw new Error('Stored preference record was null');
+    return parsedPreference;
+  } catch (parseError) {
+    // Ownership records must distinguish corruption from a missing key.
+    // Their callers own rejection handling and must fail closed.
+    if (strictParsing) throw parseError;
     return null;
   }
 }

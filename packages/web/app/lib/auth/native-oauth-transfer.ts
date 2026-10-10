@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
 
 const NATIVE_OAUTH_TRANSFER_TTL_SECONDS = 120;
 const CLOCK_SKEW_TOLERANCE_SECONDS = 5;
@@ -8,6 +9,10 @@ type NativeOAuthTransferPayload = {
   nextPath: string;
   iat: number;
   exp: number;
+  accountCreation?: AccountCreationReceipt;
+  authSessionId?: string;
+  attemptId?: string;
+  provider?: 'apple' | 'google';
 };
 
 const base64UrlEncode = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
@@ -24,13 +29,30 @@ const getNativeOAuthSecret = (): string => {
 
 const sanitizeNextPath = (nextPath: string): string => (nextPath.startsWith('/') ? nextPath : '/');
 
-export const issueNativeOAuthTransferToken = ({ userId, nextPath }: { userId: string; nextPath: string }): string => {
+export const issueNativeOAuthTransferToken = ({
+  userId,
+  nextPath,
+  accountCreation,
+  authSessionId,
+  attemptId,
+  provider,
+}: {
+  userId: string;
+  nextPath: string;
+  accountCreation?: AccountCreationReceipt;
+  authSessionId?: string;
+  attemptId?: string;
+  provider?: 'apple' | 'google';
+}): string => {
   const now = Math.floor(Date.now() / 1000);
   const payload: NativeOAuthTransferPayload = {
     userId,
     nextPath: sanitizeNextPath(nextPath),
     iat: now,
     exp: now + NATIVE_OAUTH_TRANSFER_TTL_SECONDS,
+    ...(accountCreation && authSessionId && attemptId && provider
+      ? { accountCreation, authSessionId, attemptId, provider }
+      : {}),
   };
 
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
@@ -39,7 +61,9 @@ export const issueNativeOAuthTransferToken = ({ userId, nextPath }: { userId: st
   return `${encodedPayload}.${signature}`;
 };
 
-export const verifyNativeOAuthTransferToken = (token: string): { userId: string; nextPath: string } | null => {
+export const verifyNativeOAuthTransferToken = (
+  token: string,
+): { userId: string; nextPath: string; accountCreation?: AccountCreationReceipt } | null => {
   let secret: string;
   try {
     secret = getNativeOAuthSecret();
@@ -90,8 +114,61 @@ export const verifyNativeOAuthTransferToken = (token: string): { userId: string;
     return null;
   }
 
+  const receipt = parseAccountCreationReceipt(payload.accountCreation);
+  const verifiedReceipt =
+    receipt?.userId === payload.userId &&
+    receipt.provider === payload.provider &&
+    typeof payload.authSessionId === 'string' &&
+    payload.authSessionId.length > 0 &&
+    typeof payload.attemptId === 'string' &&
+    /^[0-9a-f]{32}$/.test(payload.attemptId)
+      ? receipt
+      : undefined;
   return {
     userId: payload.userId,
     nextPath: sanitizeNextPath(payload.nextPath),
+    ...(verifiedReceipt ? { accountCreation: verifiedReceipt } : {}),
   };
 };
+
+export const NATIVE_OAUTH_ATTEMPT_COOKIE = 'boardsesh-native-oauth-attempt';
+export type NativeOAuthAttempt = { attemptId: string; provider: 'apple' | 'google'; startedAt: number };
+
+/** Functional OAuth correlation only; this marker carries no account or campaign identity. */
+export function issueNativeOAuthAttempt(attempt: Omit<NativeOAuthAttempt, 'startedAt'>): string {
+  const encodedPayload = base64UrlEncode(
+    JSON.stringify({ ...attempt, startedAt: Date.now(), kind: 'native-oauth-attempt' }),
+  );
+  const signature = crypto.createHmac('sha256', getNativeOAuthSecret()).update(encodedPayload).digest('base64url');
+  return `${encodedPayload}.${signature}`;
+}
+
+export function verifyNativeOAuthAttempt(token: string | undefined): NativeOAuthAttempt | null {
+  if (!token || token.length > 2048) return null;
+  try {
+    const segments = token.split('.');
+    if (segments.length !== 2 || !segments[0] || !segments[1]) return null;
+    const signature = Buffer.from(segments[1]);
+    const expected = Buffer.from(
+      crypto.createHmac('sha256', getNativeOAuthSecret()).update(segments[0]).digest('base64url'),
+    );
+    if (signature.length !== expected.length || !crypto.timingSafeEqual(signature, expected)) return null;
+    const decoded: unknown = JSON.parse(base64UrlDecode(segments[0]));
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return null;
+    const attempt = decoded as Record<string, unknown>;
+    if (
+      attempt.kind !== 'native-oauth-attempt' ||
+      typeof attempt.attemptId !== 'string' ||
+      !/^[0-9a-f]{32}$/.test(attempt.attemptId) ||
+      (attempt.provider !== 'apple' && attempt.provider !== 'google') ||
+      typeof attempt.startedAt !== 'number' ||
+      !Number.isSafeInteger(attempt.startedAt) ||
+      attempt.startedAt > Date.now() ||
+      Date.now() - attempt.startedAt > NATIVE_OAUTH_TRANSFER_TTL_SECONDS * 1000
+    )
+      return null;
+    return { attemptId: attempt.attemptId, provider: attempt.provider, startedAt: attempt.startedAt };
+  } catch {
+    return null;
+  }
+}

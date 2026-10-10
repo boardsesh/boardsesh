@@ -124,25 +124,32 @@ export default function RegisterScreen() {
       if (result.success) {
         const signedUpAt = new Date();
         const captureWhenReady = createConsentBoundAnalyticsRunner();
-        captureWhenReady(() => {
-          setPersonProperties(undefined, {
-            signup_at: signedUpAt.toISOString(),
-            signup_auth_method: 'credentials',
+        // The auth provider owns verified receipts, including OAuth creations.
+        // The browser registration endpoint independently proves email creation.
+        // Native responses without a valid receipt leave creation unknown.
+        const hasCreationReceipt = 'accountCreation' in result && result.accountCreation !== undefined;
+        const useLegacyWebSignup = Platform.OS === 'web' && !hasCreationReceipt;
+        if (useLegacyWebSignup)
+          captureWhenReady(() => {
+            setPersonProperties(undefined, {
+              signup_at: signedUpAt.toISOString(),
+              signup_auth_method: 'credentials',
+            });
           });
-        });
 
         if (result.authenticated === false) {
-          captureWhenReady(() =>
-            track(
-              SHARED_EVENTS.SignupCompleted,
-              {
-                ...loginProviderProperties('credentials'),
-                flow: authFlow,
-                requires_verification: result.requiresVerification,
-              },
-              { timestamp: signedUpAt },
-            ),
-          );
+          if (useLegacyWebSignup)
+            captureWhenReady(() =>
+              track(
+                SHARED_EVENTS.SignupCompleted,
+                {
+                  ...loginProviderProperties('credentials'),
+                  flow: authFlow,
+                  requires_verification: result.requiresVerification,
+                },
+                { timestamp: signedUpAt },
+              ),
+            );
           const verificationEmailNeedsResend =
             Platform.OS === 'web' && result.requiresVerification && 'emailSent' in result && result.emailSent === false;
           setRegistrationNextStep(
@@ -161,13 +168,14 @@ export default function RegisterScreen() {
           is_registration: true,
           screen: 'register',
         });
-        captureWhenReady(() =>
-          track(
-            SHARED_EVENTS.SignupCompleted,
-            { ...loginProviderProperties('credentials'), flow: authFlow },
-            { timestamp: signedUpAt },
-          ),
-        );
+        if (useLegacyWebSignup)
+          captureWhenReady(() =>
+            track(
+              SHARED_EVENTS.SignupCompleted,
+              { ...loginProviderProperties('credentials'), flow: authFlow },
+              { timestamp: signedUpAt },
+            ),
+          );
         // AuthProvider flips isAuthenticated and the auth-group Redirect lands the
         // new user in the app — same auto-login path as signInWithCredentials.
         return;
