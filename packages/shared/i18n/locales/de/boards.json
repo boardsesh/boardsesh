@@ -451,7 +451,8 @@
     "sprayTraining": {
       "label": "Hilf beim Training der Grifferkennung",
       "description": "Wir nutzen das Foto dieser Wand und die Griffe, die du markierst, um der App beizubringen, Griffe zu erkennen. Ein*e Boardsesh-Admin prüft sie vorher. Die Trainingskopie bleibt privat.",
-      "updateError": "„Hilf beim Training der Grifferkennung“ konnte nicht geändert werden. Versuch es nochmal."
+      "updateError": "„Hilf beim Training der Grifferkennung“ konnte nicht geändert werden. Versuch es nochmal.",
+      "loadError": "„Hilf beim Training der Grifferkennung“ konnte nicht geladen werden. Schließ diesen Bildschirm und öffne ihn nochmal."
     }
   },
   "boardEntity": {

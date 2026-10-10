@@ -451,7 +451,8 @@
     "sprayTraining": {
       "label": "Aider à entraîner la détection des prises",
       "description": "On utilise la photo de ce mur et les prises que tu marques pour apprendre à l'app à repérer les prises. Un admin Boardsesh les vérifie d'abord. La copie d'entraînement reste privée.",
-      "updateError": "Impossible de modifier « Aider à entraîner la détection des prises ». Réessaie."
+      "updateError": "Impossible de modifier « Aider à entraîner la détection des prises ». Réessaie.",
+      "loadError": "Impossible de charger « Aider à entraîner la détection des prises ». Ferme cet écran et rouvre-le."
     }
   },
   "boardEntity": {

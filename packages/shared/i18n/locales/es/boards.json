@@ -451,7 +451,8 @@
     "sprayTraining": {
       "label": "Ayuda a entrenar la detección de presas",
       "description": "Usamos la foto de este muro y las presas que marques para enseñar a la app a encontrar presas. Un admin de Boardsesh las revisa antes. La copia de entrenamiento se mantiene privada.",
-      "updateError": "No se pudo cambiar «Ayuda a entrenar la detección de presas». Inténtalo de nuevo."
+      "updateError": "No se pudo cambiar «Ayuda a entrenar la detección de presas». Inténtalo de nuevo.",
+      "loadError": "No se pudo cargar «Ayuda a entrenar la detección de presas». Cierra esta pantalla y vuelve a abrirla."
     }
   },
   "boardEntity": {

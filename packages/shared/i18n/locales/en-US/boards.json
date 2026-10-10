@@ -451,7 +451,8 @@
     "sprayTraining": {
       "label": "Help train hold finding",
       "description": "We use this wall's photo and the holds you mark to teach the app to spot holds. A Boardsesh admin checks them first. The training copy stays private.",
-      "updateError": "Couldn't change “Help train hold finding”. Try again."
+      "updateError": "Couldn't change “Help train hold finding”. Try again.",
+      "loadError": "Couldn't load “Help train hold finding”. Close this screen and open it again."
     }
   },
   "boardEntity": {
