@@ -56,7 +56,7 @@ const QUEUE_RATE_LIMIT = 60;
 const REVIEW_RATE_LIMIT = 120;
 const DEFAULT_QUEUE_PAGE = 25;
 
-export const SPRAY_TRAINING_CODES = {
+const SPRAY_TRAINING_CODES = {
   notEligible: 'SPRAY_TRAINING_NOT_ELIGIBLE',
 } as const;
 
@@ -86,7 +86,7 @@ export const SPRAY_TRAINING_CODES = {
  * that stamp too, so the owner's "no" on the wall they still see reaches the
  * older photos of it.
  */
-export function trainingEligibleCondition(): SQL {
+function trainingEligibleCondition(): SQL {
   const newerVersion = alias(dbSchema.sprayWallVersions, 'newer_training_version');
   return and(
     isNotNull(dbSchema.sprayWalls.trainingConsentAt),
@@ -119,7 +119,6 @@ const eligibleVersionColumns = {
   version: dbSchema.sprayWallVersions,
   wallId: dbSchema.sprayWalls.id,
   wallUuid: dbSchema.sprayWalls.boardUuid,
-  resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
   trainingConsentAt: dbSchema.sprayWalls.trainingConsentAt,
   isPublic: dbSchema.userBoards.isPublic,
   isUnlisted: dbSchema.userBoards.isUnlisted,
@@ -539,9 +538,9 @@ export const sprayTrainingMutations = {
 
 /** Every export lives under this prefix in the PRIVATE bucket. */
 export const SPRAY_TRAINING_EXPORT_PREFIX = 'spray-training/exports/';
-export const SPRAY_TRAINING_EXPORT_SCHEMA_VERSION = 1;
+const SPRAY_TRAINING_EXPORT_SCHEMA_VERSION = 1;
 /** How many complete exports are kept. The ML fetch reads the newest. */
-export const SPRAY_TRAINING_EXPORTS_KEPT = 2;
+const SPRAY_TRAINING_EXPORTS_KEPT = 2;
 /** The `sync_daemon_leases` row that keeps two export runs apart. */
 export const SPRAY_TRAINING_EXPORT_LEASE = 'spray-training-export';
 /**
@@ -552,21 +551,21 @@ export const SPRAY_TRAINING_EXPORT_LEASE = 'spray-training-export';
  * while it is still writing. This bound is what keeps such a run inside the
  * lease's TTL below.
  */
-export const SPRAY_TRAINING_EXPORT_DEADLINE_MS = 12 * 60 * 1000;
+const SPRAY_TRAINING_EXPORT_DEADLINE_MS = 12 * 60 * 1000;
 /**
  * The lease outlives the deadline by eight minutes, so a run that crashed
  * without releasing it frees the slot long before the next tick six hours
  * later, and a live run can never lose it while it is still allowed to write.
  */
-export const SPRAY_TRAINING_EXPORT_LEASE_TTL_MS = 20 * 60 * 1000;
+const SPRAY_TRAINING_EXPORT_LEASE_TTL_MS = 20 * 60 * 1000;
 /** Points in the polygon a circle-only hold is exported as. */
 const CIRCLE_POLYGON_POINTS = 24;
 const EXPORT_CACHE_CONTROL = 'private, no-store';
 
-export type SprayTrainingSplit = 'train' | 'valid' | 'eval';
+type SprayTrainingSplit = 'train' | 'valid' | 'eval';
 
 /** Why a run wrote nothing. LOCKED is the one the scheduler treats as a failure. */
-export type SprayTrainingExportSkipReason = 'LOCKED' | 'UNCHANGED' | 'NOTHING_TO_EXPORT';
+type SprayTrainingExportSkipReason = 'LOCKED' | 'UNCHANGED' | 'NOTHING_TO_EXPORT';
 
 export type SprayTrainingExportResult = {
   exportId: string | null;
@@ -858,7 +857,7 @@ async function listStoredExports(): Promise<Array<{ exportId: string; keys: stri
     .sort((first, second) => (first.exportId < second.exportId ? 1 : first.exportId > second.exportId ? -1 : 0));
 }
 
-export type ExportSprayTrainingDatasetOptions = {
+type ExportSprayTrainingDatasetOptions = {
   /** Injected so a test can mint distinct, ordered export ids. */
   now?: Date;
   /** How long the run may take before it stops writing. Injected by tests. */
