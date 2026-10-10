@@ -4,7 +4,8 @@ import { renderHook, render, screen, waitFor, act } from '@testing-library/react
 import { useEffect, type ReactNode } from 'react';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { grantAnalyticsForTest } from '../../../test/consent-fixture';
-import { updateConsentState } from '../../lib/consent-state';
+import { getConsentSnapshot, updateConsentState } from '../../lib/consent-state';
+import { notifyAnalyticsIdentityChanged } from '../../lib/analytics-identity-events';
 
 const redirectMock = vi.hoisted(() => vi.fn());
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
@@ -874,6 +875,57 @@ describe('AuthProvider.register', () => {
       await result.current.register('new@example.com', 'password');
     });
     expect(getVerifiedAuthResult()).toEqual({ userId, accountCreation });
+  });
+
+  it('preserves a pending verified signup through a same-credential foreground check', async () => {
+    grantAnalyticsForTest();
+    analyticsCaptureMock.mockClear();
+    analyticsIdentityMock.mockReturnValue(null);
+    const userId = 'ad8e1685-6073-45db-b20c-06d99d92ff86';
+    const createdAt = '2026-10-10T00:00:00.000Z';
+    const accountCreation = { userId, accountCreated: true, provider: 'email', createdAt };
+    getAuthTokenMock.mockResolvedValue(`header.${btoa(JSON.stringify({ sub: userId })).replace(/=/g, '')}.signature`);
+    authRegisterMock.mockResolvedValue({ success: true, userId, accountCreation });
+    const queryClient = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    try {
+      await act(async () => {
+        await result.current.register('new@example.com', 'password');
+      });
+      updateConsentState({ accountId: userId, accountResolved: true, authSettled: true, sdkReady: false });
+      const creationEpoch = getConsentSnapshot().authEpoch;
+      expect(getVerifiedAuthResult()).toEqual({ userId, accountCreation });
+      expect(analyticsCaptureMock).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.refreshAuthState();
+      });
+
+      expect(getConsentSnapshot().authEpoch).toBe(creationEpoch);
+      expect(getVerifiedAuthResult()).toEqual({ userId, accountCreation });
+      expect(analyticsCaptureMock).not.toHaveBeenCalled();
+      analyticsIdentityMock.mockReturnValue({ distinctId: userId, anonymousId: 'anonymous' });
+      updateConsentState({ sdkReady: true });
+      notifyAnalyticsIdentityChanged();
+      await waitFor(() => expect(analyticsCaptureMock).toHaveBeenCalledOnce());
+      expect(analyticsCaptureMock).toHaveBeenCalledWith(
+        'Signup Completed',
+        expect.objectContaining({ provider: 'email', flow: 'native' }),
+        { uuid: userId, timestamp: new Date(createdAt) },
+      );
+      await act(async () => {
+        await result.current.refreshAuthState();
+      });
+      expect(analyticsCaptureMock).toHaveBeenCalledOnce();
+    } finally {
+      analyticsIdentityMock.mockReturnValue(null);
+    }
   });
 
   it.each(['denied', 'withdrawn'] as const)(

@@ -220,6 +220,40 @@ describe('Apple Ads attribution lifecycle', () => {
     expect(harness.dependencies.publish).not.toHaveBeenCalled();
   });
 
+  it.each(['withdrawal', 'signout', 'replacement', 'anonymous withdrawal'] as const)(
+    'retries failed %s cleanup after storage recovers on foreground',
+    async (transition) => {
+      const harness = fixture(transition === 'anonymous withdrawal' ? null : OWNER);
+      const controller = createAppleAdsAttributionController(harness.dependencies);
+      await controller.reconcile();
+      expect(harness.stored().result).toEqual(ATTRIBUTED);
+      const write = harness.dependencies.write;
+      harness.dependencies.write = vi.fn(async () => {
+        throw new Error('Storage temporarily unavailable');
+      });
+      if (transition === 'signout') harness.account(null);
+      else if (transition === 'replacement') harness.account(OTHER);
+      else harness.deny();
+      await controller.reconcile();
+      expect(harness.stored().result).toEqual(ATTRIBUTED);
+
+      harness.dependencies.write = write;
+      await controller.reconcile();
+      expect(harness.stored().result).toBeNull();
+      expect(harness.stored().propertiesPublishedFor).toBeNull();
+      expect(harness.stored().ownerId).toBe(transition === 'anonymous withdrawal' ? null : OWNER);
+      expect(harness.stored().closed).toBe(transition === 'anonymous withdrawal');
+      expect(harness.dependencies.token).toHaveBeenCalledTimes(1);
+      expect(harness.dependencies.publish).toHaveBeenCalledTimes(1);
+      if (transition === 'anonymous withdrawal') {
+        harness.allow();
+        harness.account(OTHER);
+        await createAppleAdsAttributionController(harness.dependencies).reconcile();
+        expect(harness.dependencies.token).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
+
   it('bounds not-ready retries to three attempts five seconds apart', async () => {
     const harness = fixture();
     harness.dependencies.exchange = vi.fn(async () => RETRYABLE);

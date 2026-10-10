@@ -27,7 +27,7 @@ const oauth = vi.hoisted(() => ({
   signIn: vi.fn(async () => ({ success: true }) as unknown),
   setError: null as ((message: string | null) => void) | null,
 }));
-const platform = vi.hoisted(() => ({ os: 'android' as 'android' | 'web' }));
+const platform = vi.hoisted(() => ({ os: 'android' as 'android' | 'ios' | 'web' }));
 const fetchMock = vi.hoisted(() => vi.fn());
 
 vi.stubGlobal('fetch', fetchMock);
@@ -155,7 +155,7 @@ async function fillAndSubmit() {
 }
 
 describe('RegisterScreen analytics', () => {
-  it('preserves signup conversion and properties through delayed consent-account resolution', async () => {
+  it('does not infer native creation when missing proof later resolves an account', async () => {
     auth.register.mockImplementation(async () => {
       invalidateConsentAccount();
       return { success: true };
@@ -167,14 +167,12 @@ describe('RegisterScreen analytics', () => {
       updateConsentState({ authSettled: true, accountResolved: true, accountId: 'new-user', sdkReady: true });
     });
     const conversions = analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.SignupCompleted);
-    expect(conversions).toHaveLength(1);
-    expect(analytics.setPersonProperties).toHaveBeenCalledExactlyOnceWith(undefined, {
-      signup_at: (conversions[0][2].timestamp as Date).toISOString(),
-      signup_auth_method: 'credentials',
-    });
+    expect(conversions).toHaveLength(0);
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   });
 
-  it('fires SignupCompleted + first-touch person properties alongside LoginSucceeded on success', async () => {
+  it.each(['android', 'ios'] as const)('keeps %s signup creation unknown without a server receipt', async (os) => {
+    platform.os = os;
     auth.register.mockResolvedValue({ success: true });
 
     await fillAndSubmit();
@@ -188,13 +186,37 @@ describe('RegisterScreen analytics', () => {
         screen: 'register',
       }),
     );
+    expect(analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.SignupCompleted)).toHaveLength(0);
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    null,
+    {},
+    {
+      userId: '602c83bf-e090-4c90-9f7e-000000000080',
+      accountCreated: true,
+      provider: 'email',
+      createdAt: 'invalid-timestamp',
+    },
+  ])('does not infer native creation from invalid metadata %j', async (accountCreation) => {
+    auth.register.mockResolvedValue({ success: true, accountCreation });
+
+    await fillAndSubmit();
+
+    expect(analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.SignupCompleted)).toHaveLength(0);
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it('preserves the browser email-registration conversion without native receipt metadata', async () => {
+    platform.os = 'web';
+    auth.register.mockResolvedValue({ success: true });
+
+    await fillAndSubmit();
+
     expect(analytics.track).toHaveBeenCalledWith(
       SHARED_EVENTS.SignupCompleted,
-      {
-        auth_method: 'credentials',
-        provider: 'email',
-        flow: 'native',
-      },
+      { auth_method: 'credentials', provider: 'email', flow: 'web' },
       { timestamp: expect.any(Date) },
     );
     expect(analytics.setPersonProperties).toHaveBeenCalledWith(undefined, {
@@ -295,7 +317,7 @@ describe('RegisterScreen analytics', () => {
     expect(screen.queryByText('login.toasts.checkEmail')).toBeNull();
   });
 
-  it('reports a native anonymous registration with the native analytics flow', async () => {
+  it('keeps native anonymous registration creation unknown without proof', async () => {
     platform.os = 'android';
     auth.register.mockResolvedValue({
       success: true,
@@ -306,30 +328,16 @@ describe('RegisterScreen analytics', () => {
 
     await fillAndSubmit();
 
-    await waitFor(() =>
-      expect(analytics.track).toHaveBeenCalledWith(
-        SHARED_EVENTS.SignupCompleted,
-        {
-          auth_method: 'credentials',
-          provider: 'email',
-          flow: 'native',
-          requires_verification: false,
-        },
-        { timestamp: expect.any(Date) },
-      ),
-    );
+    expect(analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.SignupCompleted)).toHaveLength(0);
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.any(Object));
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object));
     expect(screen.getByText('login.toasts.loginAfterCreate')).toBeTruthy();
   });
 
   it('does not fire SignupCompleted through the OAuth sign-in path', async () => {
-    // register.tsx has exactly one SignupCompleted call site: the credentials
-    // onSubmit() success branch. OAuth registration goes through
-    // useNativeOAuthSignIn (already tagged is_registration: true on
-    // LoginSucceeded there, tested separately in
-    // use-native-oauth-sign-in.test.tsx) and must not also fire SignupCompleted
-    // — matching web, which has no OAuth-signup-distinct event either.
+    // Verified native creations are published by AuthProvider. Tapping an OAuth
+    // option must not add another screen-owned signup conversion.
     render(createElement(RegisterScreen));
 
     await act(async () => {

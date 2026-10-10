@@ -125,9 +125,11 @@ export default function RegisterScreen() {
         const signedUpAt = new Date();
         const captureWhenReady = createConsentBoundAnalyticsRunner();
         // The auth provider owns verified receipts, including OAuth creations.
-        // Keep the earlier email-only path for legacy backend/browser responses.
+        // The browser registration endpoint independently proves email creation.
+        // Native responses without a valid receipt leave creation unknown.
         const hasCreationReceipt = 'accountCreation' in result && result.accountCreation !== undefined;
-        if (!hasCreationReceipt)
+        const useLegacyWebSignup = Platform.OS === 'web' && !hasCreationReceipt;
+        if (useLegacyWebSignup)
           captureWhenReady(() => {
             setPersonProperties(undefined, {
               signup_at: signedUpAt.toISOString(),
@@ -136,17 +138,18 @@ export default function RegisterScreen() {
           });
 
         if (result.authenticated === false) {
-          captureWhenReady(() =>
-            track(
-              SHARED_EVENTS.SignupCompleted,
-              {
-                ...loginProviderProperties('credentials'),
-                flow: authFlow,
-                requires_verification: result.requiresVerification,
-              },
-              { timestamp: signedUpAt },
-            ),
-          );
+          if (useLegacyWebSignup)
+            captureWhenReady(() =>
+              track(
+                SHARED_EVENTS.SignupCompleted,
+                {
+                  ...loginProviderProperties('credentials'),
+                  flow: authFlow,
+                  requires_verification: result.requiresVerification,
+                },
+                { timestamp: signedUpAt },
+              ),
+            );
           const verificationEmailNeedsResend =
             Platform.OS === 'web' && result.requiresVerification && 'emailSent' in result && result.emailSent === false;
           setRegistrationNextStep(
@@ -165,7 +168,7 @@ export default function RegisterScreen() {
           is_registration: true,
           screen: 'register',
         });
-        if (!hasCreationReceipt)
+        if (useLegacyWebSignup)
           captureWhenReady(() =>
             track(
               SHARED_EVENTS.SignupCompleted,

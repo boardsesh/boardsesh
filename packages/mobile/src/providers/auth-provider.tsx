@@ -613,7 +613,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (!wasAuthenticated) void queryClient.invalidateQueries({ queryKey: ['profile'], exact: true });
       authStateRef.current = { ...authStateRef.current, isAuthenticated: true };
       setIsSessionUnavailable(false);
-      setIsAuthenticated(true);
+      // Rechecking the same credentials preserves pending account conversions.
+      // Credential mutations invalidate consent independently, before storage awaits.
+      if (!wasAuthenticated || authenticatedIdentityChanged) setIsAuthenticated(true);
+      else setAuthenticated(true);
       if (Platform.OS === 'web' && (pendingAuthTransportRestartRef.current || authenticatedIdentityChanged)) {
         pendingAuthTransportRestartRef.current = false;
         bumpAuthTransportRevision();

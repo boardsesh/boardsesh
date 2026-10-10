@@ -95,14 +95,26 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
   let rerun = false;
   let retryAt = 0;
   let writes = Promise.resolve();
+  let persistencePending = false;
+  let queuedWrites = 0;
 
   function persist(): Promise<void> {
+    persistencePending = true;
+    queuedWrites += 1;
     // Read the latest state when the write starts, rather than enqueueing a
     // captured payload that could resurrect attribution after withdrawal.
     writes = writes
       .catch(() => {})
       .then(async () => {
-        if (stored) await dependencies.write({ ...stored });
+        const pendingRecord = stored;
+        if (pendingRecord) {
+          await dependencies.write({ ...pendingRecord });
+          // A newer in-memory cleanup must remain dirty until it reaches disk.
+          if (stored === pendingRecord) persistencePending = false;
+        }
+      })
+      .finally(() => {
+        queuedWrites -= 1;
       });
     return writes;
   }
@@ -137,7 +149,9 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
         propertiesPublishedFor: null,
         closed: stored.closed || stored.ownerId === null,
       };
-      if (changed) void persist().catch(() => {});
+      // Retry failed cleanup on foreground even after the in-memory fields
+      // have been cleared. An in-flight write already owns the next attempt.
+      if (changed || (persistencePending && queuedWrites === 0)) void persist().catch(() => {});
       return;
     }
     // Seal the install as soon as auth proves its account, even while account
@@ -187,6 +201,7 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
       loaded = true;
     }
     observeAuthority();
+    if (persistencePending) await writes;
     if (disposed || !dependencies.authorityGranted()) return;
     if (!stored) {
       stored = {
