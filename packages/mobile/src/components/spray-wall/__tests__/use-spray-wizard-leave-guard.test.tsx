@@ -110,7 +110,8 @@ describe('native wizard exit protection', () => {
   it('keeps the train decision and stale-answer checks wired and footer exits use one guard', () => {
     const screen = readFileSync(resolve(mobileRoot, 'src/components/spray-wall/SprayWallWizardScreen.tsx'), 'utf8');
     expect(screen.includes('useSprayWizardLeaveGuard(confirmLeave)')).toBe(true);
-    expect(screen.includes('leaveDecision(state, readEditorLeaveState())')).toBe(true);
+    // The guard is also told about a training switch flip still on the wire.
+    expect(screen.includes('leaveDecision(state, readEditorLeaveState(), consentSavingNow())')).toBe(true);
     expect(screen.includes('leaveStillApplies(askedAt, stateRef.current, readEditorLeaveState())')).toBe(true);
     expect(screen.includes("'beforeRemove'")).toBe(false);
     const footer = screen.slice(screen.indexOf('  const goBack ='), screen.indexOf('  }, [state, router]);'));

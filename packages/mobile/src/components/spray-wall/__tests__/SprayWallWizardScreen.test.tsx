@@ -353,6 +353,16 @@ vi.mock('../SprayScanPhoto', () => ({
 /** Who is driving the flow. The fixtures' walls belong to `me`. */
 const viewer = vi.hoisted(() => ({ userId: 'me' as string | null }));
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => viewer.userId }));
+/** The walls with a training switch flip on the wire, as the mutation cache would answer. */
+const consentFlips = vi.hoisted(() => ({ savingFor: new Set<string>() }));
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => {
+  const isSaving = (wallUuid: string | null) => wallUuid != null && consentFlips.savingFor.has(wallUuid);
+  return {
+    // What a render sees, and what a press reads at the moment it lands.
+    useSprayWallTrainingConsentSaving: isSaving,
+    isSprayWallTrainingConsentSaving: (_queryClient: unknown, wallUuid: string | null) => isSaving(wallUuid),
+  };
+});
 // Online throughout: the upload-notice wording has its own suite (#5960).
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => connectivity.reason }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
@@ -460,6 +470,7 @@ beforeEach(() => {
   fetchVersionsMock.mockReset();
   guard.confirmLeave = null;
   viewer.userId = 'me';
+  consentFlips.savingFor.clear();
   editorProps.last = null;
   lookProps.last = null;
   nameSheet.last = null;

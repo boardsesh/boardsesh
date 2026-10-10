@@ -111,6 +111,10 @@ import {
   useUpdateSprayWallVisibility,
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
+import {
+  isSprayWallTrainingConsentSaving,
+  useSprayWallTrainingConsentSaving,
+} from '../../lib/spray/use-spray-wall-training-consent';
 import { SprayWallTrainingConsentRow } from './SprayWallTrainingConsentRow';
 import { viewerOwnsSprayWall } from '../board-discovery/spray-detail-rows';
 import { useViewerUserId } from '../../hooks/use-viewer-user-id';
@@ -295,6 +299,13 @@ export function SprayWallWizardScreen({
     addWallReducer,
     { skipsDetails: isReset, blocksOnResume: isReset || !!wallUuid },
     initialWizardState,
+  );
+  const wizardWallUuid = state.wall?.wallUuid ?? null;
+  const consentSaving = useSprayWallTrainingConsentSaving(wizardWallUuid);
+  const busy = isBusy(state) || consentSaving;
+  const consentSavingNow = useCallback(
+    () => isSprayWallTrainingConsentSaving(queryClient, wizardWallUuid),
+    [queryClient, wizardWallUuid],
   );
   // Offline mode, said on the photo step before an upload tries and fails
   // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
@@ -841,9 +852,11 @@ export function SprayWallWizardScreen({
   const [adjustFailed, setAdjustFailed] = useState(false);
 
   const openAdjust = useCallback(() => {
+    // The crop takes over the photo step's body, the training switch with it.
+    if (consentSavingNow()) return;
     setAdjustFailed(false);
     dispatch({ type: 'ADJUST_OPENED' });
-  }, []);
+  }, [consentSavingNow]);
 
   const applyPhotoEdit = useCallback(
     async (edit: WallPhotoEdit) => {
@@ -1290,7 +1303,7 @@ export function SprayWallWizardScreen({
    */
   const confirmLeave = useCallback(
     (onConfirm: () => void) => {
-      const decision = leaveDecision(state, readEditorLeaveState());
+      const decision = leaveDecision(state, readEditorLeaveState(), consentSavingNow());
       if (decision === 'block') return;
       if (decision === 'leave') {
         onConfirm();
@@ -1317,7 +1330,7 @@ export function SprayWallWizardScreen({
         { text: t('sprayWizard.leave.go'), onPress: confirmed },
       ]);
     },
-    [state, t, readEditorLeaveState],
+    [state, t, readEditorLeaveState, consentSavingNow],
   );
 
   // Native dismissal is held while the existing decision and stale-answer
@@ -1325,7 +1338,7 @@ export function SprayWallWizardScreen({
   useSprayWizardLeaveGuard(confirmLeave);
 
   const goBack = useCallback(() => {
-    if (isBusy(state)) return;
+    if (isBusy(state) || consentSavingNow()) return;
     // The photo step is the first, and `review`, `background` and `publish`
     // have no step behind them — the draft is on the server by then — so back
     // means leaving, which keeps the draft.
@@ -1334,7 +1347,7 @@ export function SprayWallWizardScreen({
       return;
     }
     dispatch({ type: 'BACK' });
-  }, [state, router]);
+  }, [state, router, consentSavingNow]);
 
   const candidateCount = state.detection.candidates.length;
   const onHoldsCommitted = useCallback(
@@ -1385,7 +1398,10 @@ export function SprayWallWizardScreen({
 
   // The X the layout draws, with the same leave guard behind it: it goes back
   // through the history, which `useSprayWizardLeaveGuard` intercepts.
-  const exitFlow = useCallback(() => exitSprayWizard(router, returnTo), [router, returnTo]);
+  const exitFlow = useCallback(() => {
+    if (consentSavingNow()) return;
+    exitSprayWizard(router, returnTo);
+  }, [consentSavingNow, router, returnTo]);
 
   // Editing and look steps draw their own header actions. The crop detour owns its edit, so
   // it sets Cancel and Done itself; the editor and the look step set their own
@@ -1403,12 +1419,15 @@ export function SprayWallWizardScreen({
   // says so. With the chevron leading there is no X: a German "Überspringen"
   // beside it would not fit at 375 pt. Leaving from those steps is a swipe down
   // through the same leave guard, or back to step 1's X.
-  const busy = isBusy(state);
+  //
+  // The X stays live through the machine's own requests: there, leaving is the
+  // guard's question to ask. A training switch flip holds the X as well, since
+  // it is over in seconds and its answer shows on this step.
   const headerLeading: HeaderLeadingAction | null = childOwnsHeader
     ? null
     : backStaysInFlow
       ? { kind: 'back', onPress: goBack, disabled: busy, accessibilityLabel: t('sprayWizard.back') }
-      : { kind: 'close', onPress: exitFlow };
+      : { kind: 'close', onPress: exitFlow, disabled: consentSaving };
 
   const publishRunning = state.publish.running;
   const detailsSaving = state.details.saving;
@@ -1422,9 +1441,9 @@ export function SprayWallWizardScreen({
     headerTrailing = {
       kind: 'forward',
       label: t('sprayWizard.next'),
-      onPress: () => dispatch({ type: 'PHOTO_CONFIRMED' }),
-      disabled: !photoPicked || waitingForResume,
-      loading: photoPicked && waitingForResume && resumeError == null,
+      onPress: () => { if (!consentSavingNow()) dispatch({ type: 'PHOTO_CONFIRMED' }); },
+      disabled: !photoPicked || waitingForResume || busy,
+      loading: consentSaving || (photoPicked && waitingForResume && resumeError == null),
       prominent: true,
     };
   } else if (state.step === 'anchors' && state.photo) {
@@ -1492,8 +1511,10 @@ export function SprayWallWizardScreen({
   const hardwareBackRef = useRef<() => boolean>(() => false);
   // On the crop detour it is the header's Cancel (the same `goBack` the crop
   // step's Cancel calls), never a way out of the flow. A tap while busy is
-  // swallowed: `goBack` refuses, and the stack must not pop either.
+  // swallowed: `goBack` refuses, and the stack must not pop either. A training
+  // switch flip swallows it on the X's steps too, as it holds the X.
   hardwareBackRef.current = () => {
+    if (consentSavingNow()) return true;
     if (!backStaysInFlow && state.step !== 'adjust') return false;
     goBack();
     return true;
@@ -1622,7 +1643,7 @@ export function SprayWallWizardScreen({
         invalid={state.anchorRejection != null}
         // A new wall's frame IS its first photo (version 1 defines it).
         qualityFrame={state.photo}
-        canClear={state.anchors != null && !isBusy(state)}
+        canClear={state.anchors != null && !busy}
         onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}
       />
     );

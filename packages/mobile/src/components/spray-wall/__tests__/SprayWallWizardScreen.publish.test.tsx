@@ -198,10 +198,7 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   SprayWallVisibilityField: () => null,
   SprayTrainingConsentField: () => null,
 }));
-vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({ useSprayWallTrainingConsent: () => ({ data: undefined }) }));
-vi.mock('../../CollapsibleSection', () => ({
-  CollapsibleSection: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
-}));
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({ useSprayWallTrainingConsentSaving: () => false, isSprayWallTrainingConsentSaving: () => false }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: undefined }) }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));

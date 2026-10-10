@@ -185,9 +185,7 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   SprayTrainingConsentField: () => null,
 }));
 vi.mock('../SprayWallTrainingConsentRow', () => ({ SprayWallTrainingConsentRow: () => null }));
-vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
-  useSprayWallTrainingConsent: () => ({ data: undefined }),
-}));
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({ useSprayWallTrainingConsentSaving: () => false, isSprayWallTrainingConsentSaving: () => false }));
 vi.mock('../../CollapsibleSection', () => ({
   CollapsibleSection: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
 }));
