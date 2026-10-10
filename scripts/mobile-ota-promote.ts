@@ -3,7 +3,7 @@
 /**
  * Promote the archived, already-exported main OTA to the existing production branch.
  * xprem cannot republish across branches. This speaks the same upload/finalize
- * protocol as eoas@3.2.4, but never runs Expo export again. That protocol changed
+ * protocol as eoas@3.2.6, but never runs Expo export again. That protocol changed
  * at 3.2.0: requestUploadUrl takes a `files` list (path, content hash, md5 cache
  * key and role) instead of `fileNames`, and a server on either side of that line
  * rejects the other shape, so this file moves with EOAS_PACKAGE_SPEC. The pipeline must first
