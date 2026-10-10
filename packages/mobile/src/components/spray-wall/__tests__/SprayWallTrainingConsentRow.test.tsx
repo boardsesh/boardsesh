@@ -3,7 +3,7 @@
 // The owner's "Help train hold finding" switch on an existing wall (SW-20,
 // #5471): read with the app's retry policy, flipped optimistically one flip at a
 // time, re-read after every flip, and a refusal that reaches the owner whether
-// or not the row is still on screen.
+// or not they are still looking at the row.
 import { createElement, type ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -15,6 +15,9 @@ import { sprayWallTrainingConsentQueryKey } from '../../../lib/spray/use-spray-w
 const readConsent = vi.hoisted(() => vi.fn());
 const writeConsent = vi.hoisted(() => vi.fn());
 const showToast = vi.hoisted(() => vi.fn());
+const alertMock = vi.hoisted(() => vi.fn());
+/** Whether the row's screen is the one in front, as `useIsFocused` answers. */
+const rowScreen = vi.hoisted(() => ({ isFocused: true }));
 /** The handler the field was last drawn with, for a tap that beats the next render. */
 const field = vi.hoisted(() => ({ onValueChange: null as null | ((next: boolean) => void) }));
 
@@ -28,6 +31,10 @@ vi.mock('../../../lib/graphql/client', async () => {
   };
 });
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-native', () => ({ Alert: { alert: alertMock } }));
+vi.mock('expo-router', () => ({ useIsFocused: () => rowScreen.isFocused }));
+// Not something the row may reach for: the toast overlay draws behind the boards
+// modal its owner is still inside after leaving Edit board.
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
 vi.mock('../../board-discovery/BoardMetaFields', () => ({
   SprayTrainingConsentField: ({
@@ -62,10 +69,14 @@ import { SprayWallTrainingConsentRow } from '../SprayWallTrainingConsentRow';
 function renderRow(props: { wallUuid?: string; isOwner?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0 } } });
   const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children);
-  const view = render(createElement(SprayWallTrainingConsentRow, { wallUuid: 'wall-1', isOwner: true, ...props }), {
-    wrapper,
-  });
-  return { ...view, client };
+  const row = () => createElement(SprayWallTrainingConsentRow, { wallUuid: 'wall-1', isOwner: true, ...props });
+  const view = render(row(), { wrapper });
+  /** Another screen is pushed over the row's, or popped off it again. */
+  const setScreenInFront = (isFocused: boolean) => {
+    rowScreen.isFocused = isFocused;
+    view.rerender(row());
+  };
+  return { ...view, client, setScreenInFront };
 }
 
 function deferred<T>() {
@@ -101,6 +112,8 @@ beforeEach(() => {
   readConsent.mockReset();
   writeConsent.mockReset();
   showToast.mockReset();
+  alertMock.mockReset();
+  rowScreen.isFocused = true;
   field.onValueChange = null;
 });
 
@@ -228,7 +241,7 @@ describe('SprayWallTrainingConsentRow', () => {
   });
 
   describe('a refused flip', () => {
-    it('flips back and says so inline while the row is on screen', async () => {
+    it('flips back and says so inline, and only inline, while the owner is looking at the row', async () => {
       readConsent.mockResolvedValue(storedConsent(true));
       const save = deferred<unknown>();
       writeConsent.mockReturnValueOnce(save.promise);
@@ -239,7 +252,7 @@ describe('SprayWallTrainingConsentRow', () => {
       await act(async () => save.reject(new Error('offline')));
       await waitFor(() => expect(switchInput().checked).toBe(true));
       expect(screen.getByTestId('error').textContent).toBe('mobile.sprayTraining.updateError');
-      // The row's hosts are modal routes: a toast would draw behind them.
+      expect(alertMock).not.toHaveBeenCalled();
       expect(showToast).not.toHaveBeenCalled();
     });
 
@@ -256,7 +269,7 @@ describe('SprayWallTrainingConsentRow', () => {
       await waitFor(() => expect(screen.queryByTestId('error')).toBeNull());
     });
 
-    it('says so in a toast when the row has left the screen by then', async () => {
+    it('says so in a native alert, never a toast, once the row has left the screen', async () => {
       readConsent.mockResolvedValue(storedConsent(true));
       const save = deferred<unknown>();
       writeConsent.mockReturnValueOnce(save.promise);
@@ -264,15 +277,47 @@ describe('SprayWallTrainingConsentRow', () => {
       fireEvent.click(await screen.findByTestId('switch'));
       await waitFor(() => expect(writeConsent).toHaveBeenCalledTimes(1));
 
-      // Save tapped, or the modal swiped away, with the flip still on the wire.
+      // Save or Back tapped on Edit board, with the flip still on the wire. The
+      // owner is on the boards picker now, still inside the boards modal.
       unmount();
       await act(async () => save.reject(new Error('timeout')));
 
-      await waitFor(() =>
-        expect(showToast).toHaveBeenCalledExactlyOnceWith('mobile.sprayTraining.updateError', 'error'),
-      );
+      await waitFor(() => expect(alertMock).toHaveBeenCalledExactlyOnceWith('mobile.sprayTraining.updateError'));
+      expect(showToast).not.toHaveBeenCalled();
       // And the cache is back on the value the wall still has.
       expect(client.getQueryData(sprayWallTrainingConsentQueryKey('wall-1'))).toBe(true);
+    });
+
+    it('says so in a native alert when another screen has been pushed over the row', async () => {
+      readConsent.mockResolvedValue(storedConsent(true));
+      const save = deferred<unknown>();
+      writeConsent.mockReturnValueOnce(save.promise);
+      const { setScreenInFront } = renderRow();
+      fireEvent.click(await screen.findByTestId('switch'));
+      await waitFor(() => expect(writeConsent).toHaveBeenCalledTimes(1));
+
+      // "Reset wall" on Edit board opens the wizard on top: the row is still
+      // mounted, on a screen nobody is looking at.
+      setScreenInFront(false);
+      await act(async () => save.reject(new Error('timeout')));
+
+      await waitFor(() => expect(alertMock).toHaveBeenCalledExactlyOnceWith('mobile.sprayTraining.updateError'));
+      await waitFor(() => expect(switchInput().checked).toBe(true));
+      expect(screen.queryByTestId('error')).toBeNull();
+      expect(showToast).not.toHaveBeenCalled();
+    });
+
+    it('says the next one inline again once its screen is back in front', async () => {
+      readConsent.mockResolvedValue(storedConsent(true));
+      writeConsent.mockRejectedValue(new Error('offline'));
+      const { setScreenInFront } = renderRow();
+      await screen.findByTestId('switch');
+      setScreenInFront(false);
+      setScreenInFront(true);
+
+      fireEvent.click(switchInput());
+      expect((await screen.findByTestId('error')).textContent).toBe('mobile.sprayTraining.updateError');
+      expect(alertMock).not.toHaveBeenCalled();
     });
   });
 });
