@@ -139,8 +139,10 @@ session, so it is cheaper to remove it than to keep it in case.
 
 ## The spray wall walkthrough
 
-`/help/spray-walls` carries one longer video (about 2 minutes, 720 x 1280) rather
-than a gesture clip. It is not in the clip table: it is rendered, not converted.
+`/help/spray-walls` carries a longer walkthrough rather than a gesture clip.
+Phones get the 720 x 1280 portrait cut; wider screens get a 1280 x 720 chapter
+layout with the same app footage and the owner-supplied photo. Neither version
+autoplays. These are rendered, not converted, so they stay out of the clip table.
 
 - **Stage:** `marketing/spray-walkthrough/`. The photo-tip scenes (portrait vs
   landscape, side-on, phone upright under an overhang, why skew costs holds) are
@@ -161,7 +163,12 @@ than a gesture clip. It is not in the clip table: it is rendered, not converted.
   `.boardsesh/spray-walkthrough/`, then `packages/web/public/videos/help/spray-walls-walkthrough.{mp4,webm}`
   and the poster `packages/web/public/images/help/clips/spray-walls-walkthrough.webp`.
   `-- --stills` writes a contact sheet of every scene; `-- --frame <n>` writes one frame.
-  Run `vp run generate:static-assets` after a new render.
+- **Landscape:** run `vp run video:spray-walkthrough:landscape` after the portrait
+  render. It composes that checked-in MP4 with five chapter panels, writes
+  `spray-walls-walkthrough-landscape.{mp4,webm}` plus a matching WebP poster,
+  and checks both videos against the 2 MB asset cap. Its chapter timings follow
+  the approved portrait cut; update them if that cut changes. Run
+  `vp run generate:static-assets` after either render.
 
 **Record from the current app source.** Note the commit and capture date with the
 walkthrough, then check that the same controls have reached production before

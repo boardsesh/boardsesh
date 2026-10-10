@@ -23,6 +23,15 @@ export default function SprayWallsContent() {
       lead={t('help.sprayWalls.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.sprayWalls.breadcrumb')} />}
     >
+      <PageSection title={t('help.sprayWalls.watch.title')}>
+        <HelpWalkthrough
+          name="spray-walls-walkthrough"
+          alt={t('help.sprayWalls.watch.videoAlt')}
+          caption={t('help.sprayWalls.watch.videoCaption')}
+        />
+        <Prose>{t('help.sprayWalls.watch.p1')}</Prose>
+      </PageSection>
+
       <PageSection title={t('help.sprayWalls.photo.title')}>
         <Prose>{t('help.sprayWalls.photo.p1')}</Prose>
         <ProseList>
@@ -46,15 +55,6 @@ export default function SprayWallsContent() {
             {t('help.sprayWalls.photo.exampleCaption')}
           </Typography>
         </Box>
-      </PageSection>
-
-      <PageSection title={t('help.sprayWalls.watch.title')}>
-        <HelpWalkthrough
-          name="spray-walls-walkthrough"
-          alt={t('help.sprayWalls.watch.videoAlt')}
-          caption={t('help.sprayWalls.watch.videoCaption')}
-        />
-        <Prose>{t('help.sprayWalls.watch.p1')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.sprayWalls.add.title')}>

@@ -62,25 +62,41 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
 /** A longer walkthrough shows a poster and controls without autoplay or looping. */
 export function HelpWalkthrough({ name, alt, caption }: { name: HelpWalkthroughName; alt: string; caption: string }) {
   const { t } = useTranslation('marketing');
-  const video = helpWalkthrough(name);
+  const { portrait, landscape } = helpWalkthrough(name);
 
   return (
     <Box component="figure" className={`${styles.figure} ${styles.walkthroughFigure}`}>
-      <Box className={frame.frame}>
+      <Box className={`${frame.frame} ${styles.landscapeFrame}`}>
         <video
-          className={`${styles.video} ${styles.walkthroughVideo}`}
-          poster={video.poster}
-          width={video.width}
-          height={video.height}
+          className={`${styles.video} ${styles.landscapeVideo}`}
+          poster={landscape.poster}
+          width={landscape.width}
+          height={landscape.height}
           aria-label={alt}
           muted
           playsInline
-          preload="metadata"
+          preload="none"
           controls
         >
-          {/* mp4 first: at two minutes it encodes smaller than the VP9 copy. */}
-          <source src={video.mp4} type="video/mp4" />
-          <source src={video.webm} type="video/webm" />
+          <source src={landscape.mp4} type="video/mp4" />
+          <source src={landscape.webm} type="video/webm" />
+          {t('help.clip.unsupported')}
+        </video>
+      </Box>
+      <Box className={`${frame.frame} ${styles.portraitFrame}`}>
+        <video
+          className={`${styles.video} ${styles.portraitVideo}`}
+          poster={portrait.poster}
+          width={portrait.width}
+          height={portrait.height}
+          aria-label={alt}
+          muted
+          playsInline
+          preload="none"
+          controls
+        >
+          <source src={portrait.mp4} type="video/mp4" />
+          <source src={portrait.webm} type="video/webm" />
           {t('help.clip.unsupported')}
         </video>
       </Box>

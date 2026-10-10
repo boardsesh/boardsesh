@@ -611,11 +611,13 @@ export default defineConfig({
         command: 'vp run video:record && vp run video:render',
         cache: false,
       },
-      // The /help/spray-walls walkthrough: marketing/spray-walkthrough/ rendered
-      // over three Android takes (runbook: docs/help-clips.md). `-- --stills`
-      // writes a contact sheet instead of the video.
+      // The /help/spray-walls walkthrough uses current iPhone takes.
       'video:spray-walkthrough': {
         command: 'tsx packages/web/scripts/render-spray-walkthrough.ts',
+        cache: false,
+      },
+      'video:spray-walkthrough:landscape': {
+        command: 'tsx packages/web/scripts/render-spray-walkthrough-landscape.ts',
         cache: false,
       },
       // Two-way i18n guard: catalog keys with no reference, code references with

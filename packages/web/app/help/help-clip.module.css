@@ -30,13 +30,40 @@
   line-height: 1.5;
 }
 
-/* A walkthrough is read rather than glanced at: its captions are part of the
-   picture, so it gets a little more width than a still beside it. */
+/* The wide cut extends beyond the prose measure so the recorded controls stay
+   readable. Phones see the portrait cut; both players defer video downloads. */
 .walkthroughFigure {
-  max-width: 360px;
+  max-width: none;
+  width: min(900px, calc(100vw - var(--spacing-8) - var(--spacing-8)));
+  margin-left: 50%;
+  transform: translateX(-50%);
 }
 
-/* The walkthrough renderer's 720 x 1280 output, not the converter's box. */
-.walkthroughVideo {
+.landscapeVideo {
+  aspect-ratio: 1280 / 720;
+}
+
+.portraitFrame {
+  display: none;
+}
+
+.portraitVideo {
   aspect-ratio: 720 / 1280;
+}
+
+@media (max-width: 760px), (max-width: 1000px) and (max-height: 500px) and (pointer: coarse) {
+  .walkthroughFigure {
+    max-width: 360px;
+    width: 100%;
+    margin-inline: auto;
+    transform: none;
+  }
+
+  .landscapeFrame {
+    display: none;
+  }
+
+  .portraitFrame {
+    display: block;
+  }
 }
