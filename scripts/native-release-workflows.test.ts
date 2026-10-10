@@ -198,7 +198,7 @@ describe('native release workflow contracts', () => {
     expect(android).toContain('softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65');
     expect(android).toContain('boardsesh-android-beta-arm64-v8a.apk');
     expect(android).toContain('Boardsesh Android Beta');
-    expect(android).toContain(`Signed Android beta from \`${releaseBranch}\``);
+    expect(android).toContain('Signed Android beta from `${{ github.ref_name }}`');
     expect(android).not.toContain(retiredAndroidPrereleaseName);
     expect(android).toContain('token: ${{ steps.tag_token.outputs.token }}');
     expect(android).toContain('tag_name: ${{ env.ANDROID_BUILD_TAG }}');

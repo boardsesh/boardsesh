@@ -177,6 +177,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read # Verify the published dev-client came from a successful build.
 
 env:
   # The branch that carries the store candidate, mirroring mobile-store-draft.yml.

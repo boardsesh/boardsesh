@@ -29,10 +29,20 @@ inputs:
       merely because the train already carries one.
     required: false
     default: main
+  comparison-mode:
+    description: >
+      base-branch preserves the PR gate. published-dev-client compares against
+      the latest successfully published Android dev APK, including manual runs.
+      API or fingerprint errors fail rather than starting an unneeded build.
+    required: false
+    default: base-branch
 outputs:
   should_build:
     description: 'true when the native build must run; false to skip it.'
-    value: ${{ steps.decide.outputs.should_build }}
+    value: ${{ steps.dev_decide.outputs.should_build || steps.decide.outputs.should_build }}
+  reused_release_url:
+    description: 'Compatible published dev APK when no rebuild is needed.'
+    value: ${{ steps.dev_decide.outputs.reused_release_url }}
 runs:
   using: composite
   steps:
@@ -49,8 +59,20 @@ runs:
         # internet. Measured on a bs-ci runner: 148s of a 210s job.
         cache: ${{ runner.environment == 'github-hosted' }}
 
+    - name: Compare with the published Android dev-client
+      id: dev_decide
+      if: inputs.comparison-mode == 'published-dev-client'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        vp install --frozen-lockfile
+        vp exec tsx scripts/mobile-android-dev-gate.ts
+
     - name: Decide whether to build
       id: decide
+      if: inputs.comparison-mode != 'published-dev-client'
       shell: bash
       env:
         PLATFORM: ${{ inputs.platform }}

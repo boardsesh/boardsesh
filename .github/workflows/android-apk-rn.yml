@@ -1001,7 +1001,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Boardsesh Android Beta v${{ env.BOARDSESH_MOBILE_VERSION }} (${{ env.VERSION_CODE }})
           body: |
-            Signed Android beta from `release/next` at commit `${{ github.sha }}`.
+            Signed Android beta from `${{ github.ref_name }}` at commit `${{ github.sha }}`.
 
             - Package: `com.boardsesh.app`
             - Architecture: arm64-v8a (modern physical Android devices)
