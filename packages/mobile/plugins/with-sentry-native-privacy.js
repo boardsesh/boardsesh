@@ -4,6 +4,12 @@ const { createRunOncePlugin, withAppDelegate, withMainApplication } = require('e
 // duplicate-JS-crash filtering) and chain these callbacks after native enrichment.
 // JS must use autoInitializeNativeSdk:false, otherwise its later initialization
 // replaces these callbacks. This changes generated app code, never SDK sources.
+//
+// iOS builds its options in code with RNSentryStart, the same steps
+// RNSentrySDK.start(configureOptions:) runs. That entry point reads the DSN from
+// a bundled sentry.options.json, and without the file it hands the callback nil
+// options: a segfault inside application(_:didFinishLaunchingWithOptions:), before
+// any crash handler exists. Android's RNSentrySDK.init starts without the file.
 const BEGIN = '// @generated begin boardsesh-sentry-privacy';
 const END = '// @generated end boardsesh-sentry-privacy';
 const ENVIRONMENT_TAG = 'boardsesh_environment';
@@ -64,8 +70,9 @@ function applySwiftSentryPrivacy(contents, options) {
   const block = [
     BEGIN,
     '#if !DEBUG',
-    'RNSentrySDK.start(configureOptions: { options in',
-    `  options.dsn = ${JSON.stringify(resolved.dsn)}`,
+    'do {',
+    `  let options = try RNSentryStart.createOptions(with: ["dsn": ${JSON.stringify(resolved.dsn)}])`,
+    '  RNSentryStart.update(withReactDefaults: options)',
     `  options.environment = ${JSON.stringify(resolved.environment)}`,
     '  options.sendDefaultPii = false',
     '  options.enableCrashHandler = true',
@@ -84,7 +91,11 @@ function applySwiftSentryPrivacy(contents, options) {
     '    }',
     '    return event',
     '  }',
-    '})',
+    '  RNSentryStart.update(withReactFinals: options)',
+    '  RNSentryStart.start(options: options)',
+    '} catch {',
+    '  NSLog("[Boardsesh] Native Sentry start skipped: %@", error.localizedDescription)',
+    '}',
     '#endif',
     END,
   ]

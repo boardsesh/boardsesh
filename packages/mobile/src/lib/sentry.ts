@@ -100,8 +100,8 @@ export function applyChunkLoadFingerprint<T extends FingerprintableEvent>(
 if (isSentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
-    // App startup installs native privacy callbacks through RNSentrySDK's
-    // supported configureOptions API. Reinitializing here would replace them.
+    // App startup installs native privacy callbacks through the SDK's public
+    // native start APIs. Reinitializing here would replace them.
     // Requires the next native binary; this change is not an old-binary OTA.
     autoInitializeNativeSdk: false,
     // production for store/TestFlight bundles; 'preview' for pr-* OTA bundles so

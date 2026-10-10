@@ -113,9 +113,15 @@ jobs:
 
       - name: Require generated native Sentry callbacks
         run: |
-          grep -Fq 'RNSentrySDK.start(configureOptions:' packages/mobile/ios/Boardsesh/AppDelegate.swift
+          grep -Fq 'RNSentryStart.start(options: options)' packages/mobile/ios/Boardsesh/AppDelegate.swift
           grep -Fq 'options.beforeSend = ' packages/mobile/ios/Boardsesh/AppDelegate.swift
           grep -Fq "$EXPO_PUBLIC_SENTRY_DSN" packages/mobile/ios/Boardsesh/AppDelegate.swift
+          # RNSentrySDK.start needs a bundled sentry.options.json. We ship none, and
+          # without it that call segfaults at launch (#6312).
+          if grep -Fq 'RNSentrySDK.start' packages/mobile/ios/Boardsesh/AppDelegate.swift; then
+            echo "::error::AppDelegate calls RNSentrySDK.start, which crashes launch without sentry.options.json"
+            exit 1
+          fi
 
       # Key on the native inputs that decide the Pods, NOT ios/Podfile.lock: there
       # is no committed ios/ (CNG — `expo prebuild` generates it), and this step
