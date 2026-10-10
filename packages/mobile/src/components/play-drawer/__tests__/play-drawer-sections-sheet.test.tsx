@@ -18,6 +18,13 @@ const preferences = vi.hoisted(() => ({
   setSection: vi.fn(),
   setAll: vi.fn(),
 }));
+const presentation = vi.hoisted(() => ({
+  platform: 'web',
+  iosBackgroundStyle: undefined as { backgroundColor: string } | undefined,
+}));
+vi.mock('../../use-ios-sheet-background-style', () => ({
+  useIosSheetBackgroundStyle: () => presentation.iosBackgroundStyle,
+}));
 vi.mock('../../../lib/play-drawer-sections-preference', () => ({
   PLAY_DRAWER_SECTION_IDS: [
     'logbook',
@@ -33,7 +40,11 @@ vi.mock('../../../lib/play-drawer-sections-preference', () => ({
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native', () => ({
-  Platform: { OS: 'web' },
+  Platform: {
+    get OS() {
+      return presentation.platform;
+    },
+  },
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
     createElement('div', { 'data-style': JSON.stringify(style) }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
@@ -119,14 +130,16 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     data,
     renderItem,
     ListFooterComponent,
+    style,
   }: {
     data: Array<{ id: PlayDrawerSectionId }>;
     renderItem: (entry: { item: { id: PlayDrawerSectionId }; index: number }) => ReactNode;
     ListFooterComponent?: ReactNode;
+    style?: unknown;
   }) =>
     createElement(
       'section',
-      { 'data-sheet-list': 'true' },
+      { 'data-sheet-list': 'true', 'data-style': JSON.stringify(style) },
       ...data.map((item, index) => createElement('div', { key: item.id }, renderItem({ item, index }))),
       createElement('footer', null, ListFooterComponent),
     ),
@@ -135,6 +148,8 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 import { PlayDrawerSectionsSheet } from '../PlayDrawerSectionsSheet';
 
 beforeEach(() => {
+  presentation.platform = 'web';
+  presentation.iosBackgroundStyle = undefined;
   preferences.sections = {
     logbook: true,
     climberLogs: true,
@@ -151,6 +166,34 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('PlayDrawerSectionsSheet', () => {
+  it('leaves broad content grounds unpainted on native Apple iOS sheets, retaining the inset group surface', () => {
+    presentation.platform = 'ios';
+    const screen = render(createElement(PlayDrawerSectionsSheet, { visible: true, onClose: vi.fn() }));
+    const controlsGround = screen.getByText('mobile.settings.climbDrawer.description').parentElement;
+    const list = screen.container.querySelector('[data-sheet-list]');
+    expect(controlsGround?.getAttribute('data-style')).not.toContain('backgroundColor');
+    expect(list?.getAttribute('data-style')).not.toContain('backgroundColor');
+    expect(screen.getAllByRole('switch')[0]?.parentElement?.getAttribute('data-style')).toContain(
+      '"backgroundColor":"surface"',
+    );
+  });
+
+  it.each([
+    { platform: 'ios', iosBackgroundStyle: { backgroundColor: 'material-sheet' } },
+    { platform: 'ios', iosBackgroundStyle: { backgroundColor: 'reduce-transparency-sheet' } },
+    { platform: 'android', iosBackgroundStyle: undefined },
+    { platform: 'web', iosBackgroundStyle: undefined },
+  ])('preserves grouped content for opaque iOS fallbacks and other platforms: %j', (mode) => {
+    presentation.platform = mode.platform;
+    presentation.iosBackgroundStyle = mode.iosBackgroundStyle;
+    const screen = render(createElement(PlayDrawerSectionsSheet, { visible: true, onClose: vi.fn() }));
+    const controlsGround = screen.getByText('mobile.settings.climbDrawer.description').parentElement;
+    expect(controlsGround?.getAttribute('data-style')).toContain('"backgroundColor":"grouped"');
+    expect(screen.container.querySelector('[data-sheet-list]')?.getAttribute('data-style')).toContain(
+      '"backgroundColor":"grouped"',
+    );
+  });
+
   it('pins equal text bulk actions above the virtualized switches and explains immediate choices', () => {
     const screen = render(createElement(PlayDrawerSectionsSheet, { visible: true, onClose: vi.fn() }));
     expect(screen.getByText('mobile.settings.climbDrawer.sheetTitle')).toBeTruthy();

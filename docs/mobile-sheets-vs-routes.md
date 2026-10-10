@@ -243,7 +243,12 @@ work and native QA before claiming that contract works on Android.
 
 Settings → Climb view and the eye button beside the player's ellipsis use the same seven visibility
 switches. The eye opens the **View options** sheet (`PlayDrawerSectionsSheet`)
-as a managed `ModalSheet` mounted inside the player, above `/play`. Show all and Hide all
+as a managed `ModalSheet` mounted inside the player, above `/play`. Its bulk actions
+remain outside the list scroll. On iOS with the Apple variant, the header controls and
+list leave their backgrounds unset so the native sheet material stays visible around
+the inset switch group. Only the grouped rows use an opaque semantic content surface;
+Material, Reduce Transparency, Android and web keep their grouped content background.
+Show all and Hide all
 stay together above the grouped switches, with 44-point targets and disabled states
 when every section already matches the action. Choices apply immediately; the close
 button dismisses the sheet without a save step. It remains reachable

@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, type ComponentType } from 'react';
-import { StyleSheet, View, type FlatListProps } from 'react-native';
+import { Platform, StyleSheet, View, type FlatListProps } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
@@ -7,6 +7,7 @@ import { SwitchRow } from '../SwitchRow';
 import { Button } from '../Button';
 import { Text } from '../Text';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 import {
   usePlayDrawerSectionControls,
   type PlayDrawerSectionControl,
@@ -69,6 +70,13 @@ export function PlayDrawerSectionsSheet({ visible, onClose }: { visible: boolean
     canShowAll,
   } = usePlayDrawerSectionControls();
   const { systemColors } = useTheme();
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
+  // Leave the surrounding sheet material visible on Apple's native sheet.
+  // Only the inset switch group needs its semantic opaque content surface.
+  const contentGround =
+    Platform.OS === 'ios' && iosBackgroundStyle === undefined
+      ? undefined
+      : { backgroundColor: systemColors.groupedBackground };
   const renderItem = useCallback(
     ({ item, index }: { item: PlayDrawerSectionControl; index: number }) => (
       <SectionRow
@@ -99,7 +107,7 @@ export function PlayDrawerSectionsSheet({ visible, onClose }: { visible: boolean
       header={
         <View>
           <SheetTopBar title={sheetTitle} leading={{ kind: 'close', onPress: onClose }} />
-          <View style={[styles.headerControls, { backgroundColor: systemColors.groupedBackground }]}>
+          <View style={[styles.headerControls, contentGround]}>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {description}
             </Text>
@@ -142,7 +150,7 @@ export function PlayDrawerSectionsSheet({ visible, onClose }: { visible: boolean
       }
     >
       <SheetFlatList
-        style={[styles.list, { backgroundColor: systemColors.groupedBackground }]}
+        style={[styles.list, contentGround]}
         contentContainerStyle={styles.listContent}
         data={controls}
         renderItem={renderItem}
