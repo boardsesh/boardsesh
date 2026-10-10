@@ -63,8 +63,9 @@ export default function SprayTrainingPanel() {
   const [totals, setTotals] = useState<SprayTrainingTotalsData>(EMPTY_TOTALS);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
-  // The offset that failed, so Retry re-requests the same page.
-  const [error, setError] = useState<number | null>(null);
+  // The offset of the read that failed. Retry does not reuse it: verdicts given
+  // since then have shortened the list, and the old offset would skip walls.
+  const [failedOffset, setFailedOffset] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // The dialog decided the last loaded wall while the queue goes on. It stays
   // open and lands on the first wall of the page being fetched.
@@ -83,7 +84,7 @@ export default function SprayTrainingPanel() {
       if (!token) return;
       const requestId = ++requestCounter.current;
       setLoading(true);
-      setError(null);
+      setFailedOffset(null);
       try {
         const client = createGraphQLHttpClient(token);
         const result = await client.request<GetSprayTrainingQueueQueryResponse, GetSprayTrainingQueueQueryVariables>(
@@ -104,7 +105,7 @@ export default function SprayTrainingPanel() {
       } catch (err) {
         if (requestId !== requestCounter.current) return;
         console.error('[SprayTrainingPanel] Failed to fetch queue:', err);
-        setError(offset);
+        setFailedOffset(offset);
       } finally {
         if (requestId === requestCounter.current) setLoading(false);
       }
@@ -173,18 +174,22 @@ export default function SprayTrainingPanel() {
   }, [token, earliestExpiry, itemCount, status, refreshAttempt]);
 
   // Deciding every loaded wall is not the end of the queue. Whatever emptied
-  // the list (a verdict, a refused one, a refresh), read the next page.
+  // the list (a verdict, a refused one, a refresh), read the next page. A
+  // "Load more" that failed earlier does not stand in the way: it asked for a
+  // page past walls that are gone now. Only a failed read of the top of the
+  // list is left to Retry, or this would ask again forever.
+  const topReadFailed = failedOffset === 0;
   useEffect(() => {
-    if (itemCount === 0 && hasMore && !loading && error === null) void fetchPage(0, status);
-  }, [itemCount, hasMore, loading, error, fetchPage, status]);
+    if (itemCount === 0 && hasMore && !loading && !topReadFailed) void fetchPage(0, status);
+  }, [itemCount, hasMore, loading, topReadFailed, fetchPage, status]);
 
   // The page the dialog was held open for has landed, or is not coming.
   const firstVersionId = items[0]?.versionId ?? null;
   useEffect(() => {
     if (!resumeReview) return;
     if (firstVersionId !== null) setSelectedId(firstVersionId);
-    if (firstVersionId !== null || !hasMore || error !== null) setResumeReview(false);
-  }, [resumeReview, firstVersionId, hasMore, error]);
+    if (firstVersionId !== null || !hasMore || topReadFailed) setResumeReview(false);
+  }, [resumeReview, firstVersionId, hasMore, topReadFailed]);
 
   const selectedIndex = items.findIndex((item) => item.versionId === selectedId);
   const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : null;
@@ -301,7 +306,7 @@ export default function SprayTrainingPanel() {
         </ToggleButton>
       </ToggleButtonGroup>
 
-      {error !== null && (
+      {failedOffset !== null && (
         <Alert
           severity="error"
           sx={{ mb: 2 }}
@@ -309,7 +314,7 @@ export default function SprayTrainingPanel() {
             <Button
               color="inherit"
               size="small"
-              onClick={() => fetchPage(error, status)}
+              onClick={() => fetchPage(items.length, status)}
               sx={{ textTransform: 'none' }}
             >
               {t('sprayTraining.retry')}
@@ -358,7 +363,7 @@ export default function SprayTrainingPanel() {
         })}
       </Box>
 
-      {items.length === 0 && !loading && error === null && !hasMore && (
+      {items.length === 0 && !loading && failedOffset === null && !hasMore && (
         <Typography variant="body2" sx={{ color: themeTokens.neutral[400], py: 2, textAlign: 'center' }}>
           {t('sprayTraining.empty')}
         </Typography>
