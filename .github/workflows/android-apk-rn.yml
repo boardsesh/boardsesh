@@ -10,12 +10,9 @@ name: Android Play Internal Deploy (React Native)
 
 on:
   push:
-    # Native store candidates are cut from the release train, not main. Regular
-    # (JS-only) work keeps landing on main; a PR that moves the native fingerprint
-    # targets release/next, and merging it there is what starts a store build.
-    # A workflow_dispatch from main is still allowed (a hotfix rebuild after a
-    # merge-back) — see the job gates below. docs/mobile-store-release.md.
-    branches: [release/next]
+    # Both release branches build replacements when the native fingerprint moves.
+    # JS-only pushes skip the native build; manual dispatch forces a rebuild.
+    branches: [main, release/next]
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
@@ -115,10 +112,8 @@ jobs:
   # binary via EXPO_UPDATES_FINGERPRINT_OVERRIDE and tags it, so binary-rv == tag
   # == the OTA-published rv by construction. See docs/mobile-ota-updates.md.
   gate:
-    # Automatic uploads come only from the release train; a manual dispatch may
-    # also come from main (the hotfix rebuild after a merge-back). Arbitrary refs
-    # never receive signing keys.
-    if: github.ref == 'refs/heads/release/next' || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next'))
+    # Only main and release/next may use Production signing credentials.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next'
     # The maps key affects the fingerprint, so both gate and build use the same
     # Production environment.
     environment: Production
@@ -966,12 +961,11 @@ jobs:
           GH_TOKEN: ${{ steps.tag_token.outputs.token }}
         run: |
           set -euo pipefail
-          # The release train publishes the beta; a manual dispatch from main (the
-          # post-merge-back hotfix rebuild) is trusted too. Nothing else is.
-          if [ "$GITHUB_REF" != 'refs/heads/release/next' ] && \
-             { [ "$GITHUB_REF" != 'refs/heads/main' ] || [ "$GITHUB_EVENT_NAME" != 'workflow_dispatch' ]; }; then
+          # Both trusted release branches publish the exact accepted beta APK.
+          if [ "$GITHUB_REF" != 'refs/heads/main' ] && \
+             [ "$GITHUB_REF" != 'refs/heads/release/next' ]; then
             echo 'publish=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::Only trusted release/next builds (or a main dispatch) publish the Android beta prerelease.'
+            echo '::notice::Only main and release/next builds publish the Android beta prerelease.'
             exit 0
           fi
 

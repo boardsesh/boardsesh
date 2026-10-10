@@ -1144,27 +1144,21 @@ it can't silently drop out of one channel (which would revert that channel to th
 
 ## Native releases and build gating
 
-Two branches, two jobs. `main` owns production OTA delivery to the **store
-fleet**; `release/next` — the release train — owns the automatic native TestFlight
-and Play-internal builds, and publishes OTAs to the binaries it produces. Regular
-changes target `main`; every change that moves the native fingerprint targets
-`release/next`. The PR-time OTA compatibility check enforces that: a
-fingerprint-moving PR into `main` fails its check-run unless it carries the
-`allow-native-on-main` label, because main no longer builds a replacement binary
-for it. The train's fingerprint tags (`fingerprint-<platform>-<hash>`) therefore
-come from `release/next` builds. Full lifecycle, including the sync and merge-back
-commands: `docs/mobile-store-release.md`.
+Both `main` and `release/next` automatically build TestFlight and Play-internal
+binaries when the native fingerprint changes. JS-only pushes skip native builds;
+manual dispatch can rebuild either branch. Native PRs into either branch are
+informational in the OTA compatibility check and require no waiver label.
+Screenshot and store-draft automation follow the build's source branch. Build
+numbers, upload concurrency and fingerprint tags remain global per platform.
+See `docs/mobile-store-release.md` for the release checklist and draft safeguards.
 
-A native change moves the fingerprint requested by production OTA, so installed
-binaries on the previous fingerprint stop receiving new bundles until users
-install the replacement store release. That gap closes at merge-back: once
-`release/next` merges into `main`, main's fingerprint equals the shipped binaries'
-again and main's publisher serves the new fleet. Prepare the version and localized
-release notes before the final native change (the version no longer moves the fingerprint, so
-bumping it alone starts no build; see [Version-only releases](#version-only-releases)),
-keep the release focused, and move
-both store builds through QA and review promptly. Keep backend changes compatible with the
-currently shipped app until the replacement has been adopted.
+`main` owns production OTA delivery to the store fleet. The train also publishes
+OTAs, but only when its native fingerprint differs from main's; this prevents
+the train's JS taking over main's runtime. A native change makes older installed
+binaries incompatible with later bundles. Users need the replacement store
+binary before they receive those OTAs. Prepare the version and localized release
+notes before the final native change and move the replacement through QA and review.
+Keep backend changes compatible with currently installed builds until adoption.
 
 **SDK 57 package refresh (October 2026).** Expo is exact-pinned to `57.0.27`,
 with the remaining Expo packages exact-pinned to that release's supported version
@@ -1175,9 +1169,9 @@ map. Six local Expo patches were rebased: `@expo/fingerprint`, `@expo/ui`,
 regression test guards that behavior and Swift initializer ordering. Keep
 `expo-modules-core` in `buildFromSource` so the image and SQLite patches still
 compile through its dependency cascade, and keep Observe's `expo-updates-interface`
-override at `57.0.1`. This refresh targets `main` under the current native-release exception:
-it requires the `allow-native-on-main` label and matching new iOS and Android native
-builds before users can receive OTAs with the new fingerprints.
+override at `57.0.1`. This refresh requires matching new iOS and Android native builds before users
+can receive OTAs with the new fingerprints. Both release branches now build those
+replacements automatically; no native-on-main waiver is required.
 
 ### GraphQL schema changes: installed builds keep querying old fields
 

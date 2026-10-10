@@ -5,10 +5,9 @@ name: Mobile OTA Compatibility (PR Signal)
 # the Expo runtimeVersion `fingerprint` for iOS + Android on the branch AND on
 # its PR's BASE branch (in one job, under identical env), then compares per
 # platform — equal = JS-only (ships OTA), different = native change (needs a new
-# binary). Mostly informational: the verdict lands as a sticky PR comment and an
-# "OTA compatibility" check-run. The ONLY blocking case is a native change
-# merging into `main`, which the release train exists to prevent (the
-# `allow-native-on-main` label waives it). See docs/mobile-ota-updates.md.
+# binary). Informational: the verdict lands as a sticky PR comment and an
+# "OTA compatibility" check-run. Both main and release/next automatically build
+# replacement binaries, so native changes need no waiver. See docs/mobile-ota-updates.md.
 #
 # Push-on-branch (not pull_request) so it has the token to comment + post a check
 # and — unlike a workflow_dispatch-only file — runs on its own feature branch
