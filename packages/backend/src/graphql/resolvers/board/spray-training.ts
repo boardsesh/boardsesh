@@ -567,7 +567,7 @@ type SprayTrainingSplit = 'train' | 'valid' | 'eval';
 /** Why a run wrote nothing. LOCKED is the one the scheduler treats as a failure. */
 type SprayTrainingExportSkipReason = 'LOCKED' | 'UNCHANGED' | 'NOTHING_TO_EXPORT';
 
-export type SprayTrainingExportResult = {
+type SprayTrainingExportResult = {
   exportId: string | null;
   imagesWritten: number;
   exportsRetired: number;
