@@ -1811,7 +1811,7 @@ async function runBootstrapPhase(params: {
       // write met, which does not add up across scopes of the same layout.
       phases.gradesLockMs = Math.max(phases.gradesLockMs ?? 0, gradesLockMs);
       for (const key of TABLE_CONFIGS.board_climb_grades.invalidateKeys) {
-        queryClient.invalidateQueries({ queryKey: key });
+        queryClient.invalidateQueries(scopedInvalidateFilters(key, scope));
       }
     } catch (error) {
       // A wipe rolls the transaction back; no checkpoint, nothing to count.
@@ -2643,7 +2643,7 @@ async function runBootstrapPhase(params: {
           // would keep serving the pre-import (empty) result set.
           for (const tableName of ['board_climbs', 'board_climb_stats'] as const) {
             for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
-              queryClient.invalidateQueries({ queryKey: key });
+              queryClient.invalidateQueries(scopedInvalidateFilters(key, scope));
             }
           }
           // Grades ride a second, small artifact and a second short exclusive

@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
+import { offlineBoardKeyForBoard, parseOfflineBoardKey, scopedInvalidateFilters } from '@boardsesh/offline-sync';
 import type { SearchClimbsQueryResponse } from '../../operations';
 
 const requestMock = vi.fn();
@@ -305,6 +306,70 @@ describe('useInfiniteSearchClimbs', () => {
       expect(result.current.data).toBeUndefined();
       expect(result.current.isPlaceholderData).toBe(false);
     });
+  });
+});
+
+// Issue #6302. A sync pull invalidates the search keys through
+// `scopedInvalidateFilters`, which reaches a list only when its key names the
+// board whose rows moved. A list whose key stopped matching its own offline
+// scope would never refresh after a sync, and nothing would fail. So this pins
+// the hook's real key to the scope key the downloads are stored under.
+describe('sync invalidation scope', () => {
+  const boards = [
+    { boardType: 'kilter', layoutId: 1, sizeId: 10 },
+    { boardType: 'moonboard', layoutId: 4, sizeId: 1 },
+    { boardType: 'spray', layoutId: 36, sizeId: 36 },
+  ];
+
+  it.each(boards)('refetches the $boardType list for its own scope and no other', async (board) => {
+    requestMock.mockReset();
+    requestMock.mockImplementation(async (_query: unknown, variables: { input: ClimbSearchInput }) => ({
+      searchClimbs: { climbs: [], hasMore: (variables.input.page ?? 0) < 2 },
+    }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, unmount } = renderHook(
+      () =>
+        useInfiniteSearchClimbs({
+          ...baseInput,
+          boardName: board.boardType,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+        }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    try {
+      await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+      await act(async () => {
+        await result.current.fetchNextPage();
+      });
+      await act(async () => {
+        await result.current.fetchNextPage();
+      });
+      await waitFor(() => expect(result.current.data?.pages).toHaveLength(3));
+      expect(requestMock).toHaveBeenCalledTimes(3);
+
+      // Rows landed for a wall this list does not show.
+      await act(async () => {
+        await queryClient.invalidateQueries(
+          scopedInvalidateFilters(['infiniteSearchClimbs'], { boardType: 'spray', layoutId: 999 }),
+        );
+      });
+      expect(requestMock).toHaveBeenCalledTimes(3);
+
+      // Rows landed for this board. One refetch re-reads all three loaded pages.
+      const ownScope = parseOfflineBoardKey(offlineBoardKeyForBoard(board));
+      expect(ownScope).not.toBeNull();
+      await act(async () => {
+        await queryClient.invalidateQueries(scopedInvalidateFilters(['infiniteSearchClimbs'], ownScope));
+      });
+      expect(requestMock).toHaveBeenCalledTimes(6);
+    } finally {
+      unmount();
+    }
   });
 });
 
