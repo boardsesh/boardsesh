@@ -480,6 +480,19 @@ describe('training consent on the wall', () => {
 
     expect((await setTrainingConsent(wall, true)).trainingConsent).toBe(true);
   });
+
+  it('keeps the date consent was given when on is stated again', async () => {
+    const { wall } = await createPublishedWall();
+    const given = (await wallRowOf(wall)).training_consent_at;
+    expect(given).not.toBeNull();
+
+    // An app saving the wall's settings sends the switch as it stands.
+    expect((await setTrainingConsent(wall, true)).trainingConsent).toBe(true);
+
+    // The stamp is part of the export's fingerprint: a new one on every save
+    // would rewrite the whole training export each time.
+    expect((await wallRowOf(wall)).training_consent_at).toBe(given);
+  });
 });
 
 /**
@@ -535,6 +548,24 @@ describe('training consent across a reset', () => {
     expect((await wallRowOf(clone)).training_consent_at).toBeNull();
     await publishFirstVersion(clone);
     expect(await queueVersionIds()).toEqual([]);
+  });
+
+  it('reaches a clone of a clone when the oldest wall is switched off', async () => {
+    // Three generations: the first wall (archived), the live one cloned from
+    // it, and an unfinished reset of that. A walk that stopped at the first
+    // wall's own clones would leave the youngest consented.
+    const first = await createPublishedWall();
+    const second = await startReset(first.wall);
+    await publishFirstVersion(second);
+    const third = await startReset(second);
+    for (const wall of [first.wall, second, third]) {
+      expect((await wallRowOf(wall)).training_consent_at).not.toBeNull();
+    }
+
+    await setTrainingConsent(first.wall, false);
+
+    expect((await wallRowOf(second)).training_consent_at).toBeNull();
+    expect((await wallRowOf(third)).training_consent_at).toBeNull();
   });
 
   it('switches the older walls off when a reset publishes with its clone off', async () => {
@@ -819,40 +850,58 @@ describe('eligibility', () => {
     expect(await queueVersionIds()).toEqual([versionId]);
   });
 
+  // Each test below first shows the version IS queued, then makes the one
+  // change it is about. Without that, a wall that was never consented would
+  // pass every one of them.
   it('leaves out a wall whose owner switched consent off', async () => {
-    await createPublishedWall({ trainingConsent: false });
+    const { wall, versionId } = await createPublishedWall();
+    expect(await queueVersionIds()).toEqual([versionId]);
+
+    await setTrainingConsent(wall, false);
     expect(await queueVersionIds()).toEqual([]);
   });
 
-  it('leaves out a draft', async () => {
+  it('leaves out a draft, and lists it once it is published', async () => {
     const wall = await createWall();
     const versionId = await createDraft(wall);
     await upsertHolds(wall, versionId, DEFAULT_HOLDS);
     expect(await queueVersionIds()).toEqual([]);
+
+    await publish(versionId);
+    expect(await queueVersionIds()).toEqual([versionId]);
   });
 
   it('leaves out a version whose photo was purged', async () => {
-    await createPublishedWall();
+    const { versionId } = await createPublishedWall();
+    expect(await queueVersionIds()).toEqual([versionId]);
+
     await db.execute(sql`UPDATE spray_wall_versions SET photo_key = NULL`);
     expect(await queueVersionIds()).toEqual([]);
   });
 
   it('leaves out a deleted wall and a deleted board', async () => {
-    const { wall } = await createPublishedWall();
-    const { wall: other } = await createPublishedWall();
-    await db.execute(sql`UPDATE spray_walls SET deleted_at = now() WHERE board_uuid = ${wall.uuid}`);
-    await db.execute(sql`UPDATE user_boards SET deleted_at = now() WHERE uuid = ${other.uuid}`);
+    const deletedWall = await createPublishedWall();
+    const deletedBoard = await createPublishedWall();
+    expect(await queueVersionIds()).toEqual([deletedWall.versionId, deletedBoard.versionId]);
+
+    await db.execute(sql`UPDATE spray_walls SET deleted_at = now() WHERE board_uuid = ${deletedWall.wall.uuid}`);
+    expect(await queueVersionIds()).toEqual([deletedBoard.versionId]);
+    await db.execute(sql`UPDATE user_boards SET deleted_at = now() WHERE uuid = ${deletedBoard.wall.uuid}`);
     expect(await queueVersionIds()).toEqual([]);
   });
 
   it('leaves out an admin-hidden wall', async () => {
-    await createPublishedWall();
+    const { versionId } = await createPublishedWall();
+    expect(await queueVersionIds()).toEqual([versionId]);
+
     await db.execute(sql`UPDATE spray_walls SET hidden_at = now()`);
     expect(await queueVersionIds()).toEqual([]);
   });
 
   it('leaves out a system-owned wall', async () => {
-    const { wall } = await createPublishedWall();
+    const { wall, versionId } = await createPublishedWall();
+    expect(await queueVersionIds()).toEqual([versionId]);
+
     await insertUser(SYSTEM_BOARD_OWNER_ID);
     await db.execute(sql`UPDATE user_boards SET owner_id = ${SYSTEM_BOARD_OWNER_ID} WHERE uuid = ${wall.uuid}`);
     expect(await queueVersionIds()).toEqual([]);

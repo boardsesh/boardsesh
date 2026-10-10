@@ -540,6 +540,24 @@ describe('an archived wall refuses writes, decided under the wall lock', () => {
     }
   });
 
+  it('resetSprayWall takes the account lock before the source wall lock, and both before it clones', () => {
+    // The other half of "no clone joins the family unseen". A reset holds the
+    // account lock from before it reads the source until it commits, so a family
+    // write that takes the same lock first either sees the finished clone or
+    // runs before the reset reads the consent it copies. Wall lock first would
+    // also invert the account-then-walls order every other path uses.
+    const body = functionBody(SPRAY_WALLS_SOURCE, 'resetSprayWall');
+    const transactionAt = body.indexOf('db.transaction(');
+    const accountLockAt = body.indexOf('lockSprayWallAccount(');
+    const wallLockAt = body.indexOf('lockWallForWrite(');
+    expect(transactionAt).toBeGreaterThanOrEqual(0);
+    expect(accountLockAt, 'resetSprayWall never takes the account lock').toBeGreaterThan(transactionAt);
+    expect(wallLockAt, 'the source wall is locked before the account').toBeGreaterThan(accountLockAt);
+    // The consent the clone copies is read from the source AFTER both locks.
+    expect(body.indexOf('source.wall.trainingConsentAt')).toBeGreaterThan(wallLockAt);
+    expect(body.indexOf('insertSprayWallRows(')).toBeGreaterThan(wallLockAt);
+  });
+
   it('a clone publishing with consent off clears the family under the source lock, with no new lock', () => {
     // `archiveResetSourceUnderLock` runs with the clone's lock held and takes
     // the source's. It must not take the account lock (walls are already held,
