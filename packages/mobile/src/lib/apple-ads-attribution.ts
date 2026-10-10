@@ -119,7 +119,7 @@ export function createNativeAppleAdsAttributionController() {
     authorityGranted: isConsentAuthorityGranted,
     publicationGranted: isProductAnalyticsGranted,
     identity: getAnalyticsIdentity,
-    read: () => getPreference<unknown>(APPLE_ADS_ATTRIBUTION_STORAGE_KEY),
+    read: () => getPreference<unknown>(APPLE_ADS_ATTRIBUTION_STORAGE_KEY, { strictParsing: true }),
     write: (record) => setPreference(APPLE_ADS_ATTRIBUTION_STORAGE_KEY, record),
     token: getAppleAdsAttributionToken,
     exchange: exchangeAppleAdsAttribution,
