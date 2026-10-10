@@ -52,6 +52,9 @@ const editorProps = vi.hoisted(() => ({
 }));
 const confirmDiscardMock = vi.hoisted(() => vi.fn());
 const resetWallMock = vi.hoisted(() => vi.fn());
+const createWallMock = vi.hoisted(() => vi.fn());
+/** The builder the name step hands its identity fields, so a test can name the wall. */
+const identityFields = vi.hoisted(() => ({ builder: null as null | { setName: (next: string) => void } }));
 const discardDraftMock = vi.hoisted(() => vi.fn(async () => true));
 const routerMock = vi.hoisted(() => ({
   back: vi.fn(),
@@ -206,7 +209,7 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
     listEnabled.walls.push(options?.enabled);
     return { ...wallsQuery.current, refetch: vi.fn() };
   },
-  useCreateSprayWall: () => ({ mutateAsync: vi.fn() }),
+  useCreateSprayWall: () => ({ mutateAsync: createWallMock }),
   useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   usePublishSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: vi.fn() }),
@@ -228,7 +231,10 @@ vi.mock('../../Button', () => ({
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('i') }));
 vi.mock('../../board-discovery/GymPickerSheet', () => ({ GymPickerSheet: () => null }));
 vi.mock('../../board-discovery/BoardMetaFields', () => ({
-  BoardIdentityFields: () => createElement('div', { 'data-testid': 'identity' }),
+  BoardIdentityFields: ({ builder }: { builder: { setName: (next: string) => void } }) => {
+    identityFields.builder = builder;
+    return createElement('div', { 'data-testid': 'identity' });
+  },
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
   SprayWallVisibilityField: () => null,
@@ -314,6 +320,29 @@ function mountWizard() {
   return { ...view, rerenderWizard: () => view.rerender(<SprayWallWizardScreen returnTo="/(tabs)/climbs" />) };
 }
 
+const PICKED_PHOTO = {
+  outcome: 'picked',
+  photo: {
+    uri: 'file:///wall.jpg',
+    width: 4032,
+    height: 3024,
+    base: { uri: 'file:///wall.jpg', width: 4032, height: 3024 },
+    original: { uri: 'file:///wall.heic', longSide: 4032 },
+    edit: null,
+  },
+};
+
+/** Pick a photo, so Next is live, and start listening for Android Back. */
+async function pickPhotoAndListen(view: { getByText: (text: string) => HTMLElement }) {
+  const wallPhoto = await import('../../../lib/spray/wall-photo');
+  vi.mocked(wallPhoto.pickWallPhotoFromLibrary).mockResolvedValue(
+    PICKED_PHOTO as unknown as Awaited<ReturnType<typeof wallPhoto.pickWallPhotoFromLibrary>>,
+  );
+  await act(async () => view.getByText('sprayWizard.photo.library').click());
+  alertMock.mockClear();
+  hardwareBack.focusEffect?.();
+}
+
 /** The buttons of the most recent `Alert.alert`, keyed by their label. */
 function lastAlertButton(label: string): { onPress: () => void } {
   const buttons = alertMock.mock.calls.at(-1)?.[2] as { text: string; onPress: () => void }[];
@@ -333,6 +362,8 @@ beforeEach(() => {
   resetSourceMock.mockReset();
   // Once-queued answers must not leak from one case into the next.
   resetWallMock.mockReset();
+  createWallMock.mockReset();
+  identityFields.builder = null;
   fetchVersionsMock.mockReset();
   guard.confirmLeave = null;
   viewer.userId = 'me';
@@ -447,6 +478,30 @@ describe('the photo step and Help train hold finding', () => {
     expect(getByText('sprayWizard.photo.title')).toBeTruthy();
     expect(getByTestId('server-consent').textContent).toBe('wall-1');
     expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
+
+  // The switch only draws once its read has answered, and on Android a tap
+  // anywhere on its row flips it and saves at once. Above the buttons, its
+  // arrival slid "Choose photo" out from under a thumb and took the tap itself.
+  it('draws that switch last on the step, so its arrival moves nothing that can be tapped', async () => {
+    fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const view = mountWizard();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+
+    const consentRow = () => view.getByTestId('server-consent');
+    const drawnBeforeTheRow = (element: Element) =>
+      (element.compareDocumentPosition(consentRow()) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.helpLink'))).toBe(true);
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.library'))).toBe(true);
+
+    // With a photo picked, the preview and its crop button come before it too.
+    await pickPhotoAndListen(view);
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.pickAnother'))).toBe(true);
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.adjust'))).toBe(true);
+    const buttons = [...view.container.querySelectorAll('button')];
+    expect(buttons.length).toBeGreaterThan(0);
+    expect(buttons.every(drawnBeforeTheRow)).toBe(true);
   });
 
   it('shows neither to somebody finishing a wall they can edit but do not own', async () => {
@@ -992,20 +1047,10 @@ describe('the header', () => {
 });
 
 // A flip of the training switch saves on the tap, outside the wizard's own
-// requests. Moving off the step while it is out would unmount the switch with
-// the wizard's modal still up, and a refusal would then toast behind it.
+// requests. Moving off the step while it is out would unmount the switch, and
+// a refusal would then land as an alert over a later step, with the switch out
+// of reach to try again.
 describe('while a training switch flip is saving', () => {
-  const PICKED_PHOTO = {
-    outcome: 'picked',
-    photo: {
-      uri: 'file:///wall.jpg',
-      width: 4032,
-      height: 3024,
-      base: { uri: 'file:///wall.jpg', width: 4032, height: 3024 },
-      original: { uri: 'file:///wall.heic', longSide: 4032 },
-      edit: null,
-    },
-  };
   const CLONE = {
     uuid: 'clone-1',
     layoutId: 8,
@@ -1016,17 +1061,6 @@ describe('while a training switch flip is saving', () => {
   };
 
   type Wizard = ReturnType<typeof mountWizard>;
-
-  /** Pick a photo, so Next is live, and start listening for Android Back. */
-  async function pickPhotoAndListen(view: Pick<Wizard, 'getByText'>) {
-    const wallPhoto = await import('../../../lib/spray/wall-photo');
-    vi.mocked(wallPhoto.pickWallPhotoFromLibrary).mockResolvedValue(
-      PICKED_PHOTO as unknown as Awaited<ReturnType<typeof wallPhoto.pickWallPhotoFromLibrary>>,
-    );
-    await act(async () => view.getByText('sprayWizard.photo.library').click());
-    alertMock.mockClear();
-    hardwareBack.focusEffect?.();
-  }
 
   /** The viewer's own unfinished wall, `wall-1`, on the photo step: a chevron leads. */
   async function resumedAtPhoto() {
@@ -1068,11 +1102,12 @@ describe('while a training switch flip is saving', () => {
 
   it('holds Next, the back chevron, Android Back and the crop on the step it was made on', async () => {
     const view = await resumedAtPhoto();
-    expect(header.trailing).toMatchObject({ label: 'sprayWizard.photo.next', disabled: false });
+    expect(header.trailing).toMatchObject({ label: 'sprayWizard.photo.next', disabled: false, loading: false });
     expect(header.leading).toMatchObject({ kind: 'back', disabled: false });
 
+    // Next spins, so the dead header has a reason on it.
     flipStarts(view, 'wall-1');
-    expect(header.trailing).toMatchObject({ label: 'sprayWizard.photo.next', disabled: true });
+    expect(header.trailing).toMatchObject({ label: 'sprayWizard.photo.next', disabled: true, loading: true });
     expect(header.leading).toMatchObject({ kind: 'back', disabled: true });
 
     // And none of them moves the flow if it is pressed anyway.
@@ -1096,7 +1131,7 @@ describe('while a training switch flip is saving', () => {
     expect(alertMock).toHaveBeenCalledTimes(1);
     expect(alertMock.mock.calls[0]?.[0]).toBe('sprayWizard.leave.title');
 
-    // Leaving is still the climber's call; the refusal then reaches them as a toast.
+    // Leaving is still the climber's call; a refusal then reaches them as an alert.
     act(() => lastAlertButton('sprayWizard.leave.go').onPress());
     expect(leave).toHaveBeenCalledTimes(1);
   });
@@ -1108,7 +1143,7 @@ describe('while a training switch flip is saving', () => {
     expect(header.leading?.disabled).toBe(true);
 
     flipSettles(view, 'wall-1');
-    expect(header.trailing?.disabled).toBe(false);
+    expect(header.trailing).toMatchObject({ disabled: false, loading: false });
     expect(header.leading?.disabled).toBe(false);
 
     // Nothing to ask about any more: this wall has no draft to keep.
@@ -1121,6 +1156,47 @@ describe('while a training switch flip is saving', () => {
     act(() => header.trailing?.onPress());
     expect(view.queryByText('sprayWizard.photo.title')).toBeNull();
     expect(pressHardwareBack()).toBe(true);
+    expect(view.getByText('sprayWizard.photo.title')).toBeTruthy();
+  });
+
+  it('holds Next on the name step as well, where a wall that was created shows its own switch', async () => {
+    // A new wall whose upload fails after `createSprayWall` has answered.
+    const photoUpload = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(photoUpload.uploadSprayWallPhoto).mockRejectedValue(new Error('offline'));
+    createWallMock.mockResolvedValue({
+      uuid: 'wall-9',
+      layoutId: 9,
+      viewerCanEdit: true,
+      board: { name: 'Garage wall', ownerId: 'me' },
+    });
+    setWalls({ data: [], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const view = mountWizard();
+    act(() => identityFields.builder?.setName('Garage wall'));
+    act(() => header.trailing?.onPress());
+    await pickPhotoAndListen(view);
+    act(() => header.trailing?.onPress());
+    // Past the corners: the wall is created, then the photo fails to upload.
+    await act(async () => header.trailing?.onPress());
+    expect(createWallMock).toHaveBeenCalledTimes(1);
+    expect(view.getByText('sprayWizard.upload.title')).toBeTruthy();
+
+    // Back, Back: the photo step, then the name step with the server's switch.
+    act(() => header.leading?.onPress());
+    act(() => header.leading?.onPress());
+    expect(view.queryByTestId('identity')).not.toBeNull();
+    expect(view.getByTestId('server-consent').textContent).toBe('wall-9');
+    expect(header.trailing).toMatchObject({ label: 'sprayWizard.meta.next', disabled: false, loading: false });
+
+    flipStarts(view, 'wall-9');
+    expect(header.trailing).toMatchObject({ label: 'sprayWizard.meta.next', disabled: true, loading: true });
+    expect(header.leading).toMatchObject({ kind: 'close', disabled: true });
+    act(() => header.trailing?.onPress());
+    expect(view.queryByTestId('identity')).not.toBeNull();
+    expect(view.queryByText('sprayWizard.photo.title')).toBeNull();
+
+    flipSettles(view, 'wall-9');
+    expect(header.trailing).toMatchObject({ label: 'sprayWizard.meta.next', disabled: false, loading: false });
+    act(() => header.trailing?.onPress());
     expect(view.getByText('sprayWizard.photo.title')).toBeTruthy();
   });
 

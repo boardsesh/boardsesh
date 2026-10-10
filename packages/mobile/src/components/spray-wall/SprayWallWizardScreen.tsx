@@ -265,11 +265,11 @@ export function SprayWallWizardScreen({
   /**
    * A flip of this wall's training switch counts as a request in flight, beside
    * the machine's own (`isBusy`). The switch saves on the tap, outside the
-   * machine, and moving off its step mid-flip would unmount it while the
-   * wizard's modal stays up: a refusal would then toast behind the modal, with
-   * the wall still opted in and nothing on screen to say so. So the flow holds
-   * the step until the flip settles, which is within the request deadline, and
-   * the answer shows inline where the owner is looking.
+   * machine, and moving off its step mid-flip would unmount it: a refusal would
+   * then reach the owner as an alert over some later step, with the wall still
+   * opted in and the switch out of reach to try again (a reset cannot go Back
+   * to it). So the flow holds the step until the flip settles, which is within
+   * the request deadline, and the answer shows inline beside the switch.
    *
    * `busy` is what the controls show. A handler asks `consentSavingNow`
    * instead: `busy` is one render behind the tap that started the flip, and a
@@ -1257,6 +1257,8 @@ export function SprayWallWizardScreen({
         if (!consentSavingNow()) dispatch({ type: 'META_DONE' });
       },
       disabled: !builder.canCreate || busy,
+      // The reason the header is holding still, on the action it is holding.
+      loading: consentSaving,
       prominent: true,
     };
   } else if (state.step === 'photo') {
@@ -1267,6 +1269,7 @@ export function SprayWallWizardScreen({
         if (!consentSavingNow()) dispatch({ type: 'PHOTO_CONFIRMED' });
       },
       disabled: state.photo == null || busy,
+      loading: consentSaving,
       prominent: true,
     };
   } else if (state.step === 'anchors' && state.photo) {
@@ -1556,15 +1559,12 @@ export function SprayWallWizardScreen({
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.tip')}
             </Text>
-            {/* Said where the photo is taken. A wall that already exists gets
-                the switch itself, for its owner: a reset cannot go Back to the
-                name step and its unfinished clone is in no board list, so this
-                is the only place the switch can be reached, and a resumed wall
-                landed here without passing it. A new wall's switch is on the
-                step before, so it gets the note, and only while that is on. */}
-            {state.wall ? (
-              <SprayWallTrainingConsentRow wallUuid={state.wall.wallUuid} isOwner={viewerOwnsWall} />
-            ) : builder.trainingConsent ? (
+            {/* Said where the photo is taken. A new wall's switch is on the
+                step before, so it gets a note, and only while that switch is
+                on. Both are known at the first render, so the note never
+                arrives late. A wall that already exists gets the switch itself,
+                at the end of this step. */}
+            {!state.wall && builder.trainingConsent ? (
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('sprayWizard.photo.trainingNote')}
               </Text>
@@ -1627,6 +1627,20 @@ export function SprayWallWizardScreen({
                   disabled={pickerBusy || busy}
                 />
               </View>
+            ) : null}
+            {/* A wall that already exists gets its training switch here, for
+                its owner: a reset cannot go Back to the name step and its
+                unfinished clone is in no board list, so this is the only place
+                the switch can be reached, and a resumed wall landed here
+                without passing it.
+
+                Last on the step, after everything that can be tapped. The row
+                draws only once its read has answered, and on Android a tap
+                anywhere on it flips the switch and saves at once. Any higher,
+                its arrival slides the photo buttons out from under a thumb
+                already on its way down, and takes the tap itself. */}
+            {state.wall ? (
+              <SprayWallTrainingConsentRow wallUuid={state.wall.wallUuid} isOwner={viewerOwnsWall} />
             ) : null}
           </>
         ) : null}
