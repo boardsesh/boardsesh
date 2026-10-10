@@ -2,11 +2,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SprayTrainingConsentField } from '../board-discovery/BoardMetaFields';
+import { isGraphqlValidationFailedError } from '../../lib/graphql/extract-error-message';
 import {
   useSetSprayWallTrainingConsent,
   useSprayWallTrainingConsent,
 } from '../../lib/spray/use-spray-wall-training-consent';
 import { useTrainingConsentRefusalNotice } from '../../lib/spray/use-training-consent-refusal-notice';
+
+/**
+ * What a press on the held row reaches. `disabled` already blocks the press on
+ * every platform (`SwitchRow`), so this is the second lock: a row with no answer
+ * on it must not be able to write one.
+ */
+function ignorePressOnHeldRow(): void {
+  // Nothing to flip yet.
+}
 
 /**
  * "Help train hold finding" on an existing wall (SW-20, #5471).
@@ -22,11 +32,19 @@ import { useTrainingConsentRefusalNotice } from '../../lib/spray/use-training-co
  * board), or it is still mounted under a screen pushed over it (Edit board's
  * "Reset wall" opens the wizard on top).
  *
- * Draws nothing until the server has answered with the owner's value, and
- * nothing after a read that failed: a switch drawn from a guess would write that
- * guess on the next tap. The caller's owner check decides whether to ask, and a
- * backend that predates the field, or a viewer it does not count as the owner,
- * leaves the row out rather than showing a switch that would only be refused.
+ * Holds its place from the first render. While the read is out it draws the
+ * same row, off and disabled, so its real height is there from the start and
+ * nothing under it moves when the answer lands. It used to arrive late, and on
+ * Android a tap anywhere on a switch row flips it and saves at once: a tap
+ * aimed at the control below could land on the arriving row. The held row
+ * cannot write. A read that failed keeps the held row rather than dropping it
+ * silently.
+ *
+ * Nothing at all for anybody but the owner. The caller's owner check decides
+ * whether to ask, and says no while it does not know who is signed in, so no
+ * place is held for a viewer who may turn out not to own the wall. A viewer the
+ * server does not count as the owner, or a backend that predates the field,
+ * loses the row once that answer is in.
  */
 export function SprayWallTrainingConsentRow({ wallUuid, isOwner }: { wallUuid: string; isOwner: boolean }) {
   const { t } = useTranslation('boards');
@@ -60,13 +78,23 @@ export function SprayWallTrainingConsentRow({ wallUuid, isOwner }: { wallUuid: s
     [setConsent],
   );
 
-  if (!isOwner || typeof consent.data !== 'boolean') return null;
+  if (!isOwner) return null;
+  const storedConsent = consent.data;
+  // Answered, and withheld: the server does not count this viewer as the owner.
+  if (storedConsent === null) return null;
+  const hasAnswer = typeof storedConsent === 'boolean';
+  // A backend that predates the field has no such switch. There is nothing to
+  // load from it, and so nothing it failed to load.
+  if (!hasAnswer && consent.isError && isGraphqlValidationFailedError(consent.error)) return null;
+
   return (
     <SprayTrainingConsentField
-      value={consent.data}
-      onValueChange={onValueChange}
-      disabled={isSaving}
-      errorMessage={error}
+      // Off while there is no answer: a dimmed, disabled, off switch reads as
+      // "not ready", and the real value replaces it in place.
+      value={storedConsent === true}
+      onValueChange={hasAnswer ? onValueChange : ignorePressOnHeldRow}
+      disabled={!hasAnswer || isSaving}
+      errorMessage={hasAnswer ? error : null}
     />
   );
 }

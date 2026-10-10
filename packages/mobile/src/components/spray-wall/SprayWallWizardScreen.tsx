@@ -1634,11 +1634,11 @@ export function SprayWallWizardScreen({
                 the switch can be reached, and a resumed wall landed here
                 without passing it.
 
-                Last on the step, after everything that can be tapped. The row
-                draws only once its read has answered, and on Android a tap
-                anywhere on it flips the switch and saves at once. Any higher,
-                its arrival slides the photo buttons out from under a thumb
-                already on its way down, and takes the tap itself. */}
+                Last on the step, after everything that can be tapped. On
+                Android a tap anywhere on the row flips the switch and saves at
+                once, so it stays clear of a thumb on its way to the photo
+                buttons. It holds its own place while its read is out, so it
+                moves nothing as the answer lands either. */}
             {state.wall ? (
               <SprayWallTrainingConsentRow wallUuid={state.wall.wallUuid} isOwner={viewerOwnsWall} />
             ) : null}

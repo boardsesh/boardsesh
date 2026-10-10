@@ -480,10 +480,10 @@ describe('the photo step and Help train hold finding', () => {
     expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
   });
 
-  // The switch only draws once its read has answered, and on Android a tap
-  // anywhere on its row flips it and saves at once. Above the buttons, its
-  // arrival slid "Choose photo" out from under a thumb and took the tap itself.
-  it('draws that switch last on the step, so its arrival moves nothing that can be tapped', async () => {
+  // On Android a tap anywhere on the switch's row flips it and saves at once.
+  // Above the buttons, the row arriving late slid "Choose photo" out from under
+  // a thumb and took the tap itself. It holds its place now, and stays down here.
+  it('draws that switch last on the step, clear of everything else that can be tapped', async () => {
     fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
     setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
     const view = mountWizard();

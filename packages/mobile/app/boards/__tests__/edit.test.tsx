@@ -712,6 +712,13 @@ describe('EditBoard — Help train hold finding', () => {
     expect(screen.queryByTestId('training-consent')).toBeNull();
   });
 
+  // No place is held for a viewer who may turn out not to own the wall.
+  it('leaves it out while it is not yet known who is signed in', () => {
+    state.profileId = null;
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('training-consent')).toBeNull();
+  });
+
   it('leaves it out on a catalogue board', () => {
     state.boardType = 'moonboard';
     render(createElement(EditBoard));

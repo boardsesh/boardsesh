@@ -64,16 +64,19 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../SwitchRow', () => ({
+  // A disabled row ignores the press, as every platform's SwitchRow does.
   SwitchRow: ({
     label,
     description,
     value,
     onValueChange,
+    disabled,
   }: {
     label: string;
     description?: string;
     value?: boolean;
     onValueChange?: (next: boolean) => void;
+    disabled?: boolean;
   }) =>
     createElement('div', null, [
       createElement('span', { key: 'label' }, label),
@@ -82,7 +85,10 @@ vi.mock('../../SwitchRow', () => ({
         key: 'toggle',
         'data-testid': `switch-${label}`,
         'data-value': String(!!value),
-        onClick: () => onValueChange?.(!value),
+        'data-disabled': String(!!disabled),
+        onClick: () => {
+          if (!disabled) onValueChange?.(!value);
+        },
       }),
     ]),
 }));
@@ -248,6 +254,23 @@ describe('SprayTrainingConsentField', () => {
     fireEvent.click(toggle);
     expect(onValueChange).toHaveBeenCalledExactlyOnceWith(false);
     expect(queryByText('mobile.sprayTraining.updateError')).toBeNull();
+  });
+
+  // How the row holds its place while its read is out: the same label and
+  // description, so the same height, with the switch off and unavailable.
+  it('draws a held row in full, off and disabled, and hands back no flip', () => {
+    const onValueChange = vi.fn();
+    const { getByText, getByTestId } = render(
+      <SprayTrainingConsentField value={false} onValueChange={onValueChange} disabled />,
+    );
+    expect(getByText('mobile.sprayTraining.label')).toBeTruthy();
+    expect(getByText('mobile.sprayTraining.description')).toBeTruthy();
+    const toggle = getByTestId('switch-mobile.sprayTraining.label');
+    expect(toggle.getAttribute('data-value')).toBe('false');
+    // `disabled` is what SwitchRow turns into the platform's unavailable state.
+    expect(toggle.getAttribute('data-disabled')).toBe('true');
+    fireEvent.click(toggle);
+    expect(onValueChange).not.toHaveBeenCalled();
   });
 
   it('says nothing to a screen reader while there is no refusal', () => {
