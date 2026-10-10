@@ -6,6 +6,15 @@ export const CATALOG_VIEWER_KEY = 'privacy:catalog-viewer:v1';
 type CatalogCredential = { generation: number; digest: string };
 let catalogEpoch = 0;
 let catalogBlocked = false;
+const credentialMismatchListeners = new Set<() => void>();
+
+/** A refreshed token needs fresh server authorization before using old downloads. */
+export function subscribeCatalogCredentialMismatch(listener: () => void): () => void {
+  credentialMismatchListeners.add(listener);
+  return () => {
+    credentialMismatchListeners.delete(listener);
+  };
+}
 export function beginCatalogInvalidation(): void {
   catalogEpoch += 1;
   catalogBlocked = true;
@@ -44,12 +53,16 @@ export async function stampCatalogViewer(
   viewerId: string,
   credential: CatalogCredential | null,
 ): Promise<void> {
-  if (!isCatalogCredentialCurrent(credential)) throw new Error('Account changed during catalogue revalidation');
+  if (!isCatalogCredentialCurrent(credential) || (await captureCatalogCredential())?.digest !== credential?.digest) {
+    throw new Error('Account changed during catalogue revalidation');
+  }
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
     CATALOG_VIEWER_KEY,
     JSON.stringify({ viewerId, credentialDigest: credential!.digest }),
   ]);
-  if (!isCatalogCredentialCurrent(credential)) throw new Error('Account changed during catalogue revalidation');
+  if (!isCatalogCredentialCurrent(credential) || (await captureCatalogCredential())?.digest !== credential?.digest) {
+    throw new Error('Account changed during catalogue revalidation');
+  }
 }
 
 /** Resolve only an identity already checked by the server for this exact credential. */
@@ -64,6 +77,18 @@ export async function getAuthorizedCatalogViewerId(db: SqlExecutor): Promise<str
     ]);
     if (!marker) return null;
     const parsed = JSON.parse(marker.value) as { viewerId?: unknown; credentialDigest?: unknown };
+    if (
+      parsed.credentialDigest !== credential.digest &&
+      isCatalogCredentialCurrent(credential) &&
+      isCatalogReadCurrent(epoch)
+    ) {
+      // A marker read can straddle token refresh without an account-generation
+      // change. Only the current read may request repair of this credential.
+      const currentCredential = await captureCatalogCredential();
+      if (currentCredential?.digest === credential.digest && isCatalogReadCurrent(epoch)) {
+        for (const listener of credentialMismatchListeners) listener();
+      }
+    }
     return typeof parsed.viewerId === 'string' &&
       parsed.viewerId.length > 0 &&
       parsed.credentialDigest === credential.digest &&

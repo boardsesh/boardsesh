@@ -59,6 +59,8 @@ const mocks = vi.hoisted(() => ({
   // failed, and what the active board's catalog looks like on this device.
   isOffline: false,
   searchFailed: false,
+  searchError: null as Error | null,
+  refetchClimbs: vi.fn(),
   // The previous search's rows standing in while a new one loads, and whether
   // the list query reports a background refetch.
   isPlaceholderData: false,
@@ -423,12 +425,13 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
     data: enabled ? { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] } : undefined,
     isLoading: enabled && mocks.isClimbsLoading,
     isError: mocks.searchFailed,
+    error: mocks.searchError,
     isFetchingNextPage: false,
     isRefetching: mocks.isRefetching,
     isPlaceholderData: mocks.isPlaceholderData,
     fetchNextPage: vi.fn(),
     hasNextPage: false,
-    refetch: vi.fn(),
+    refetch: mocks.refetchClimbs,
   }),
 }));
 
@@ -556,6 +559,8 @@ beforeEach(() => {
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
   mocks.isOffline = false;
   mocks.searchFailed = false;
+  mocks.searchError = null;
+  mocks.refetchClimbs.mockReset();
   mocks.offlineCatalog = null;
   mocks.searchParams = {};
   mocks.isSharedSession = false;
@@ -892,11 +897,32 @@ describe('ClimbList offline catalog empty states', () => {
   it('offers the download when the connection lies and the search fails', async () => {
     mocks.isOffline = false;
     mocks.searchFailed = true;
+    mocks.searchError = new Error('Network request failed');
     mocks.offlineCatalog = 'missing';
 
     const { findByText } = render(<ClimbList />);
 
     expect(await findByText('mobile.emptyState.offlineNoCatalog.title')).toBeTruthy();
+  });
+
+  it.each([
+    new Error('database is locked'),
+    new Error('Privacy revalidation is required before reading downloaded content'),
+    new Error('Invalid search input'),
+    Object.assign(new Error('Request superseded'), { name: 'AbortError' }),
+  ])('offers Retry for an online query error without promising a download: %s', async (error) => {
+    mocks.isOffline = false;
+    mocks.searchFailed = true;
+    mocks.searchError = error;
+    mocks.offlineCatalog = 'queued';
+
+    const { findByText, queryByText } = render(<ClimbList />);
+
+    expect(await findByText('mobile.offlineState.errorTitle')).toBeTruthy();
+    expect(queryByText('mobile.emptyState.offlineCatalogQueued.title')).toBeNull();
+    expect(queryByText('mobile.emptyState.offlineNoCatalog.title')).toBeNull();
+    fireEvent.click(await findByText('mobile.offlineState.retry'));
+    expect(mocks.refetchClimbs).toHaveBeenCalledOnce();
   });
 
   // A search that failed but returned rows from a previous page is not an empty

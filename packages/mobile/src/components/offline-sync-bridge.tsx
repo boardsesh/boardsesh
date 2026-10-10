@@ -8,7 +8,13 @@ import {
   stampLocalUserId,
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
-import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
+import {
+  startSyncScheduler,
+  triggerSync,
+  drainMutationQueue,
+  startBackgroundTracking,
+} from '../offline/offline-sync-adapter';
+import { subscribePrivacyRevalidation } from '../offline/privacy-revalidation';
 import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { getSetting } from '../settings';
@@ -199,24 +205,24 @@ export function OfflineSyncBridge() {
     // launch makes it late, this effect re-runs on the flip and starts then.
     if (!schemaReady) return undefined;
     try {
-      const stop = startSyncScheduler(
-        db,
-        queryClient,
-        graphqlFetch,
-        () => getSetting('syncEnabledBoards'),
-        () => drainMutationQueue(db, queryClient, graphqlFetch),
-        {
-          // Publish pull progress to the module-level store so the Settings
-          // screen can render "last synced" + live progress without
-          // prop-drilling. A missing build-time URL is the only reason the
-          // snapshot source is absent.
-          onProgress: setSyncProgress,
-          onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
-          onScopeDownloadComplete: notifyScopeDownloadComplete,
-          snapshotSource,
-        },
-      );
-      return stop;
+      const getEnabledBoards = () => getSetting('syncEnabledBoards');
+      const drainQueue = () => drainMutationQueue(db, queryClient, graphqlFetch);
+      const options = {
+        onProgress: setSyncProgress,
+        onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
+        onScopeDownloadComplete: notifyScopeDownloadComplete,
+        snapshotSource,
+      };
+      const stop = startSyncScheduler(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+      // Withdrawal clears completion markers and aborts an older pull. Wake the
+      // existing single-flight scheduler when authorized replay can start again.
+      const stopPrivacy = subscribePrivacyRevalidation(() => {
+        triggerSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
+      });
+      return () => {
+        stopPrivacy();
+        stop();
+      };
     } catch (error) {
       if (__DEV__) {
         console.warn('[OfflineSyncBridge] failed to start sync scheduler:', error);

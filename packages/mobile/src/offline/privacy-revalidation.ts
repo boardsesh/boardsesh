@@ -21,9 +21,32 @@ import {
   BOARD_DATA_TABLES,
   type OfflineDatabase,
 } from '@boardsesh/offline-sync';
+import { reportHandledError } from '../lib/error-reporting';
+
+export class PrivacyRevalidationDeferredError extends Error {
+  constructor() {
+    super('Catalogue authorization is waiting for a foreground connection');
+  }
+}
 
 let pendingRevalidation: Promise<void> | null = null;
-let pendingViewerId: string | null = null;
+let revalidationGeneration = 0;
+const revalidationListeners = new Set<() => void>();
+
+export function subscribePrivacyRevalidation(listener: () => void): () => void {
+  revalidationListeners.add(listener);
+  return () => {
+    revalidationListeners.delete(listener);
+  };
+}
+
+/** Withdraw synchronously, including when the schema is not ready yet. */
+export function requirePrivacyRevalidation(): void {
+  revalidationGeneration += 1;
+  beginGlobalPurge();
+  beginCatalogInvalidation();
+  revalidationFailed = true;
+}
 let revalidationFailed = false;
 const backgroundWriteRetry = {
   maxAttempts: OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
@@ -46,43 +69,63 @@ export function revalidatePrivateCatalog(
   db: OfflineDatabase,
   viewerId: string,
   enabledScopeKeys: readonly string[],
+  isCurrent: () => boolean = () => true,
+  canAuthorize: () => boolean = () => true,
 ): Promise<void> {
-  if (pendingRevalidation) {
-    if (pendingViewerId === viewerId) return pendingRevalidation;
-    return pendingRevalidation.catch(() => {}).then(() => revalidatePrivateCatalog(db, viewerId, enabledScopeKeys));
-  }
-  pendingViewerId = viewerId;
-  // Abort old responses before taking the write lock, and latch each catalogue
-  // namespace until the deletion commits. New pulls cannot write into that gap.
-  beginGlobalPurge();
-  beginCatalogInvalidation();
-  revalidationFailed = true;
+  requirePrivacyRevalidation();
+  const generation = revalidationGeneration;
+  const previous = pendingRevalidation;
+  const assertCurrent = () => {
+    if (generation !== revalidationGeneration || !isCurrent()) {
+      throw new Error('Catalogue revalidation was superseded');
+    }
+  };
   const releases = enabledScopeKeys.flatMap((scopeKey) => {
     const scope = parseOfflineBoardKey(scopeKey);
     return scope ? [beginScopePurge(purgeNamespaceKey(scope))] : [];
   });
   const task = (async () => {
+    if (previous) await previous.catch(() => {});
+    assertCurrent();
     // Persist withdrawal before contacting the server: an offline/crashed
     // revalidation cannot reopen the previous marker on the next launch.
     await runLocalWriteWithRetry(
       () => db.runAsync('DELETE FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY]),
       backgroundWriteRetry,
     );
-    const credential = await captureCatalogCredential();
+    assertCurrent();
+    if (!canAuthorize()) throw new PrivacyRevalidationDeferredError();
+    let credential = await captureCatalogCredential();
+    assertCurrent();
     const [{ getHttpClient }, { GET_PROFILE }] = await Promise.all([
       import('../lib/graphql/client'),
       import('../lib/graphql/operations'),
     ]);
-    const response = await getHttpClient().request<{ profile: { id: string } | null }>(GET_PROFILE);
-    if (response.profile?.id !== viewerId || !isCatalogCredentialCurrent(credential)) {
-      throw new Error('Account changed during catalogue authorization');
+    // The HTTP client may rotate an expiring token. Require a profile response
+    // across a stable credential; a rotation gets one fresh authorization read.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await getHttpClient().request<{ profile: { id: string } | null }>(GET_PROFILE);
+      assertCurrent();
+      if (response.profile?.id !== viewerId || !isCatalogCredentialCurrent(credential)) {
+        throw new Error('Account changed during catalogue authorization');
+      }
+      const afterResponse = await captureCatalogCredential();
+      assertCurrent();
+      if (!afterResponse || afterResponse.generation !== credential?.generation) {
+        throw new Error('Account changed during catalogue authorization');
+      }
+      if (afterResponse.digest === credential.digest) break;
+      if (attempt === 1) throw new Error('Credential kept changing during catalogue authorization');
+      credential = afterResponse;
     }
     // Retry a rolled-back transaction on a fresh connection/snapshot. Acquire
     // the writer lock before the layout SELECT so busy_timeout can be honored.
-    return runLocalWriteWithRetry(
+    await runLocalWriteWithRetry(
       () =>
         db.withExclusiveTransactionAsync(async (transaction) => {
+          assertCurrent();
           await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
+          assertCurrent();
           const layouts = await transaction.getAllAsync<{ board_type: string; layout_id: number }>(
             'SELECT DISTINCT board_type, layout_id FROM board_climbs WHERE layout_id IS NOT NULL',
           );
@@ -92,10 +135,12 @@ export function revalidatePrivateCatalog(
           // Stats/grades are keyed by climb rather than user, so remove them before
           // their author row. NULL author ids remain valid manufacturer catalogue data.
           const withdrawn = `((user_id IS NOT NULL AND user_id <> ?) OR (board_type = 'spray' AND user_id IS NULL))`;
-          // Drafts and queued writes may belong to a previous account after a failed
-          // handover cleanup. Preserve them, but do not authorize this catalogue for
-          // another viewer while those protected rows remain.
-          const replaceable = `${withdrawn} AND COALESCE(is_draft, 0) <> 1 AND NOT EXISTS (
+          // is_draft also arrives from server downloads. A positive sync_seq proves
+          // that copy is replaceable cache, unless a queued write still references
+          // it. Keep drafts without a server version as possible unsynced work from
+          // an older account, and keep access closed while those protected rows remain.
+          // The viewer's own rows are already excluded by `withdrawn` above.
+          const replaceable = `${withdrawn} AND (COALESCE(is_draft, 0) <> 1 OR COALESCE(sync_seq, 0) > 0) AND NOT EXISTS (
       SELECT 1 FROM pending_mutations mutation WHERE json_valid(mutation.payload) AND (
         json_extract(mutation.payload, '$.climbUuid') = board_climbs.uuid OR
         json_extract(mutation.payload, '$.uuid') = board_climbs.uuid
@@ -127,21 +172,41 @@ export function revalidatePrivateCatalog(
           if (preserved?.count) {
             await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY]);
           } else {
+            assertCurrent();
             await stampCatalogViewer(transaction, viewerId, credential);
           }
+          assertCurrent();
+          if (!isCatalogCredentialCurrent(credential)) throw new Error('Account changed during catalogue revalidation');
         }),
       backgroundWriteRetry,
     );
+    assertCurrent();
+    const completedCredential = await captureCatalogCredential();
+    assertCurrent();
+    if (!isCatalogCredentialCurrent(credential) || completedCredential?.digest !== credential?.digest) {
+      throw new Error('Account changed during catalogue revalidation');
+    }
   })();
-  pendingRevalidation = task
+  const completion = task
     .then(() => {
+      assertCurrent();
       revalidationFailed = false;
       finishCatalogInvalidation();
     })
     .finally(() => {
       releases.forEach((release) => release());
-      pendingRevalidation = null;
-      pendingViewerId = null;
+      if (pendingRevalidation === completion) pendingRevalidation = null;
+    })
+    .then(() => {
+      assertCurrent();
+      for (const listener of revalidationListeners) {
+        try {
+          listener();
+        } catch (error) {
+          reportHandledError(error, { tags: { source: 'privacy-revalidation-listener' } });
+        }
+      }
     });
-  return pendingRevalidation;
+  pendingRevalidation = completion;
+  return completion;
 }

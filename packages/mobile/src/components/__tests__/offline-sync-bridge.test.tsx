@@ -41,6 +41,15 @@ vi.mock('../../lib/analytics-offline-engine-state', () => ({
 // Native offline mode is baked on. The bridge still owns auth/schema lifecycle,
 // scheduler teardown, progress wiring, and notifications.
 
+const privacySync = vi.hoisted(() => ({ listener: undefined as (() => void) | undefined, trigger: vi.fn() }));
+vi.mock('../../offline/privacy-revalidation', () => ({
+  subscribePrivacyRevalidation: (listener: () => void) => {
+    privacySync.listener = listener;
+    return () => {
+      privacySync.listener = undefined;
+    };
+  },
+}));
 const startSyncSchedulerStop = vi.fn();
 const startSyncSchedulerMock = vi.fn(() => startSyncSchedulerStop);
 const notifyBootstrapMetadataChangedMock = vi.hoisted(() => vi.fn());
@@ -58,6 +67,7 @@ const startBackgroundTrackingMock = vi.fn(() => startBackgroundTrackingStop);
 // react-native — mock it so Rolldown's scan never parses the RN Flow entry).
 vi.mock('../../offline/offline-sync-adapter', () => ({
   startSyncScheduler: (...args: unknown[]) => startSyncSchedulerMock(...(args as [])),
+  triggerSync: (...args: unknown[]) => privacySync.trigger(...args),
   drainMutationQueue: (...args: unknown[]) => drainMutationQueueMock(...args),
   startBackgroundTracking: () => startBackgroundTrackingMock(),
 }));
@@ -259,6 +269,21 @@ afterEach(() => {
 // or a crash mid-sign-out). Without it, every user-scoped local read on the next
 // account reads the previous climber's data.
 describe('OfflineSyncBridge — local user-data owner stamp', () => {
+  it('replays enabled downloads after privacy repair and detaches on teardown', async () => {
+    const queryClient = makeQueryClient();
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+    act(() => privacySync.listener?.());
+    expect(privacySync.trigger).toHaveBeenCalledOnce();
+    const argumentsPassed = privacySync.trigger.mock.calls[0];
+    expect(argumentsPassed[0]).toBe(fakeDb);
+    expect(argumentsPassed[1]).toBe(queryClient);
+    expect(argumentsPassed.at(-1)).toEqual(getStartSyncSchedulerOptions());
+    view.unmount();
+    expect(privacySync.listener).toBeUndefined();
+    expect(startSyncSchedulerStop).toHaveBeenCalledOnce();
+  });
+
   it('claims a never-stamped device for the signed-in climber', async () => {
     assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);

@@ -52,7 +52,9 @@ const {
   recordOfflineReadUnavailable: vi.fn(),
 }));
 
-const catalog = vi.hoisted(() => ({ epoch: 0, allowed: true }));
+const catalog = vi.hoisted(() => ({ epoch: 0, allowed: true, repairRequired: false, privacyGeneration: 0 }));
+vi.mock('../../../offline/privacy-revalidation', () => ({ needsPrivacyRevalidation: () => catalog.repairRequired }));
+vi.mock('../../privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => catalog.privacyGeneration }));
 vi.mock('../../../offline/catalog-access', () => ({
   canReadPrivateCatalog: vi.fn(async () => catalog.allowed),
   captureCatalogReadEpoch: () => catalog.epoch,
@@ -184,6 +186,8 @@ afterEach(() => {
 
 beforeEach(() => {
   catalog.epoch = 0;
+  catalog.repairRequired = false;
+  catalog.privacyGeneration = 0;
   catalog.allowed = true;
   vi.clearAllMocks();
   connectivity.snapshot = { effectiveOffline: false, reason: null };
@@ -1585,6 +1589,79 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
 });
 
 describe('withdrawn downloaded catalogue reads', () => {
+  it('serves HTTP immediately while local privacy repair is pending or failed', async () => {
+    setOnline(true);
+    catalog.repairRequired = true;
+    const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(response.searchClimbs.climbs[0].uuid).toBe('net');
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('keeps local-only reads fail closed during repair (online=%s)', async (online) => {
+    setOnline(online);
+    catalog.repairRequired = true;
+    expect(
+      await offlineAwareRequest(SIMILAR_CLIMBS_QUERY, { input: { boardType: 'kilter', layoutId: 1, sizeId: 5 } }),
+    ).toEqual({ similarClimbs: [] });
+    expect(request).not.toHaveBeenCalled();
+    expect(getSimilarClimbsLocal).not.toHaveBeenCalled();
+  });
+
+  it('returns the offline fallback without waiting for a failed local repair', async () => {
+    setOnline(false);
+    catalog.repairRequired = true;
+    expect(await offlineAwareRequest(GET_CLIMB, climbVars)).toEqual({ climb: null });
+    expect(request).not.toHaveBeenCalled();
+    expect(getClimbLocal).not.toHaveBeenCalled();
+  });
+
+  it('never rescues a failed HTTP request with a withdrawn catalogue', async () => {
+    setOnline(true);
+    catalog.repairRequired = true;
+    request.mockRejectedValueOnce(new Error('network unavailable'));
+    await expect(offlineAwareRequest(GET_CLIMB, climbVars)).rejects.toThrow('network unavailable');
+    expect(getClimbLocal).not.toHaveBeenCalled();
+  });
+
+  it('discards a network response when credentials or privacy change while it is in flight', async () => {
+    setOnline(true);
+    catalog.repairRequired = true;
+    request.mockImplementationOnce(async () => {
+      catalog.privacyGeneration += 1;
+      return { climb: { uuid: 'withdrawn' } };
+    });
+    await expect(offlineAwareRequest(GET_CLIMB, climbVars)).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'Privacy changed during climb request',
+    });
+    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
+  });
+
+  it('discards an answer withdrawn while local network enrichment is pending', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    fillClimbRevisionNumbersLocal.mockImplementationOnce(async (_db: unknown, _board: string, climbs: unknown[]) => {
+      catalog.privacyGeneration += 1;
+      catalog.epoch += 1;
+      return climbs;
+    });
+    await expect(offlineAwareRequest(SEARCH_CLIMBS, { input: searchInput })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+  });
+
+  it('does not rescue an old failed request from a newly authorized catalogue', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    request.mockImplementationOnce(async () => {
+      catalog.epoch += 1;
+      throw new Error('old request failed');
+    });
+    await expect(offlineAwareRequest(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow('old request failed');
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
+  });
+
   it('discards a local result that finishes after privacy revalidation', async () => {
     setOnline(false);
     isBoardDownloadedLocally.mockResolvedValue(true);
