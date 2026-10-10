@@ -1,142 +1,103 @@
 #!/usr/bin/env bash
-# Records the three Android takes behind the /help/spray-walls walkthrough
-# (rendered by `vp run video:spray-walkthrough`; runbook in docs/help-clips.md).
+# Capture and assemble the current iPhone app takes for /help/spray-walls.
+# Source: d669419a6b (main 5992ed8e8005), captured 2026-10-10.
+# Run from a signed-in iPhone 17 Pro Max simulator on this checkout's Metro JS.
+# The supplied photo is marketing/spray-walkthrough/wall-photo.jpg.
 #
-#   scripts/spray-walkthrough-takes.sh create|review|later
+#   scripts/spray-walkthrough-takes.sh import-photo
+#   scripts/spray-walkthrough-takes.sh record create
+#   scripts/spray-walkthrough-takes.sh record create-rest
+#   scripts/spray-walkthrough-takes.sh record review
+#   scripts/spray-walkthrough-takes.sh record later
+#   scripts/spray-walkthrough-takes.sh assemble
+#   vp run video:spray-walkthrough -- --stills
+#   vp run video:spray-walkthrough
 #
-# Needs a running emulator with the dev client on Metro, signed in as the help
-# account, on the 1080x1920 display screenshot mode sets
-# (`vp run mobile:android-shots -- --backend prod`). The taps are coordinates on
-# that display, measured against the CC0 wall photo in
-# marketing/spray-walkthrough/wall-photo.jpg: a new photo, a different detection
-# result or a moved control means re-measuring them with `ui` below.
+# Press Ctrl-C to finish each recording. The simulator writes a valid MP4 on
+# SIGINT. Recordings and cut sources remain gitignored under .boardsesh/.
+# The edit manifest uses the assembled 30 fps clips, so the long picker,
+# scanning and navigation waits never become renderer frame extracts.
 #
-#   create  Boards → Spray wall → name → photo → corners → detected holds.
-#           Start on the Boards screen with the photo pushed to the gallery:
-#           adb push marketing/spray-walkthrough/wall-photo.jpg /sdcard/Pictures/
-#   review  Keep a maybe, add a hold, resize one, draw a missed one, pick a look.
-#           Run straight after `create`, on the review screen it ends on.
-#   later   Climbs → wall name → Edit holds → remove one, add one → Publish holds.
-#
-# Each take is written to .boardsesh/help-clips/raw/spray-<take>.mp4.
+# Current flow: Boards > Spray wall > name/angle > photo > optional corners >
+# hold detection > Select (Keep a maybe, selected-ring size controls) > Add
+# (Draw or Corners) > Done > background Photo > hold look > publish.
+# Later: activate the wall > Climbs > wall capsule > Edit holds > select an off
+# ring > Delete > Add mode > Publish holds. Select-mode empty taps do not add.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ADB="${ADB:-$HOME/.cache/boardsesh/android-sdk/platform-tools/adb}"
 RAW="$ROOT/.boardsesh/help-clips/raw"
-
-# Every visible node with text, content-desc or resource-id, with its bounds.
-ui() {
-  "$ADB" shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-  "$ADB" exec-out cat /sdcard/ui.xml | python3 -I -c '
-import sys, xml.etree.ElementTree as ET
-for node in ET.fromstring(sys.stdin.read()).iter("node"):
-    text, desc = node.get("text", ""), node.get("content-desc", "")
-    if text or desc:
-        print(node.get("bounds"), "text=%r desc=%r" % (text, desc))'
-}
-
-# Taps the centre of the first node whose text or content-desc contains $1.
-tap_label() {
-  local line
-  line="$(ui | grep -F -- "$1" | head -1)"
-  [ -n "$line" ] || { echo "spray-walkthrough-takes: '$1' is not on screen" >&2; exit 1; }
-  read -r x1 y1 x2 y2 < <(echo "$line" | sed -E 's/^\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/')
-  "$ADB" shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
-}
-
-tap() { "$ADB" shell input tap "$1" "$2"; }
-long_press() { "$ADB" shell input swipe "$1" "$2" "$1" "$2" 900; }
-
-# A drag the gesture handler sees as a pan: down, two steps, up.
-drag() {
-  "$ADB" shell "input motionevent DOWN $1 $2; sleep 0.3; \
-    input motionevent MOVE $((($1 * 2 + $3) / 3)) $((($2 * 2 + $4) / 3)); sleep 0.15; \
-    input motionevent MOVE $((($1 + $3 * 2) / 3)) $((($2 + $4 * 2) / 3)); sleep 0.15; \
-    input motionevent MOVE $3 $4; sleep 0.35; input motionevent UP $3 $4"
-  sleep 0.9
-}
-
-# One finger round an ellipse centred on ($1, $2) with radii ($3, $4).
-draw_loop() {
-  "$ADB" shell "$(python3 -I -c '
-import math, sys
-cx, cy, rx, ry = map(int, sys.argv[1:])
-points = [(round(cx + rx * math.cos(2 * math.pi * i / 28)), round(cy + ry * math.sin(2 * math.pi * i / 28))) for i in range(29)]
-steps = ["input motionevent DOWN %d %d" % points[0]] + ["input motionevent MOVE %d %d" % point for point in points[1:]]
-print("; ".join(steps + ["input motionevent UP %d %d" % points[-1]]))' "$1" "$2" "$3" "$4")"
-}
-
-take_create() {
-  sleep 1.5
-  tap 951 546; sleep 2.5                           # Spray wall tile
-  tap 540 702; sleep 1
-  "$ADB" shell input text "Home%swall"; sleep 1
-  "$ADB" shell input keyevent 111; sleep 1.5       # hide the keyboard
-  "$ADB" shell input swipe 540 1500 540 900 700; sleep 2
-  tap 195 1626; sleep 2.5                          # Pick a photo
-  tap 210 682; sleep 2.5                           # Choose a photo
-  tap_label "Photo taken on"; sleep 3
-  tap 132 1626; sleep 2.5                          # Next
-  "$ADB" shell input swipe 540 520 540 250 600; sleep 1.5
-  drag 141 516 66 456; drag 936 516 1014 456; drag 936 1308 1014 1380; drag 141 1308 66 1380
-  sleep 1
-  tap 240 1626                                     # Use these corners
-  for _ in $(seq 1 40); do
-    sleep 1
-    ui | grep -q "Pick a look" && break
-  done
-  sleep 4
-}
-
-take_review() {
-  sleep 2.5
-  tap 428 866; sleep 2.2                           # keep the dashed maybe on the big volume
-  tap 862 667; sleep 2.2                           # tap the wall to add a hold
-  long_press 600 900; sleep 1.8
-  tap 400 1631; sleep 1.0; tap 400 1631; sleep 1.8 # Bigger, twice
-  tap 668 1773; sleep 2.2                          # + add missing holds
-  draw_loop 832 1422 82 52; sleep 2.2              # round the bottom-right volume
-  tap_label "Done"; sleep 1.8
-  tap_label "Pick a look"; sleep 4.5
-  tap_label "Use Aura Outline"; sleep 4
-}
-
-take_later() {
-  sleep 2
-  tap 315 186; sleep 2.8                           # the wall's name opens its board sheet
-  tap_label "Add, move or delete"; sleep 5         # Edit holds
-  long_press 465 1099; sleep 1.8                   # the black hold
-  tap_label "Remove"; sleep 2.2
-  tap 105 1384; sleep 2.4                          # the bottom-left volume
-  tap_label "Publish holds"; sleep 6
-}
+SIMULATOR="${SPRAY_WALKTHROUGH_SIMULATOR:-C9C5B242-4950-4428-9B01-5D7272F977CE}"
+PHOTO="$ROOT/marketing/spray-walkthrough/wall-photo.jpg"
 
 record() {
   local name="$1"
-  shift
   mkdir -p "$RAW"
-  "$ADB" shell settings put system show_touches 1
-  "$ADB" shell rm -f /sdcard/take.mp4
-  "$ADB" shell screenrecord --bit-rate 16000000 --time-limit 180 /sdcard/take.mp4 &
-  local recorder=$!
-  sleep 1.5
-  "$@"
-  sleep 1
-  "$ADB" shell pkill -INT screenrecord || true
-  wait "$recorder" || true
-  sleep 2
-  "$ADB" pull /sdcard/take.mp4 "$RAW/$name.mp4" >/dev/null
-  echo "$RAW/$name.mp4"
+  xcrun simctl io "$SIMULATOR" recordVideo --codec h264 --force "$RAW/spray-$name.mp4"
+}
+
+# Trim and normalize each window, then concat without re-encoding. These source
+# windows were checked against the captured app UI; edit.json supplies captions.
+assemble_take() {
+  local name="$1"
+  shift
+  local cut_dir="$RAW/cuts/$name"
+  local list_file="$cut_dir/concat.txt"
+  local index=0
+  mkdir -p "$cut_dir"
+  : > "$list_file"
+  while (( $# > 0 )); do
+    local source="$1" start="$2" duration="$3"
+    shift 3
+    local clip="$cut_dir/$(printf '%02d' "$index").mp4"
+    ffmpeg -hide_banner -loglevel error -y -ss "$start" -i "$RAW/$source" \
+      -an -vf "setpts=PTS-STARTPTS,fps=30,scale=900:-2:flags=lanczos,tpad=stop_mode=clone:stop_duration=$duration,trim=duration=$duration,setpts=PTS-STARTPTS" \
+      -frames:v "$((duration * 30))" -c:v libx264 -preset veryfast -crf 21 \
+      -pix_fmt yuv420p -r 30 "$clip"
+    printf "file '%s'\n" "$clip" >> "$list_file"
+    index=$((index + 1))
+  done
+  ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i "$list_file" \
+    -c copy -movflags +faststart "$RAW/spray-$name-cut.mp4"
+  ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 \
+    "$RAW/spray-$name-cut.mp4"
+}
+
+assemble() {
+  # Boards/name, photo selection, optional corners, scan, first editor frame.
+  assemble_take create \
+    spray-create.mp4 26 4 \
+    spray-create.mp4 76 5 \
+    spray-create.mp4 198 5 \
+    spray-create-rest.mp4 15 5 \
+    spray-create-rest.mp4 57 5 \
+    spray-create-rest.mp4 69 6
+
+  # Keep a maybe; adjust a selected ring; Add a missed hold; background/look.
+  assemble_take review \
+    spray-review.mp4 21 5 \
+    spray-review.mp4 80 4 \
+    spray-review.mp4 101 5 \
+    spray-review.mp4 148 5 \
+    spray-review.mp4 163 5 \
+    spray-review.mp4 208 5 \
+    spray-review.mp4 221 5 \
+    spray-review.mp4 278 2 \
+    spray-review.mp4 312 5
+
+  # Live wall sheet, Edit holds, an already-off ring, Delete, Add, Publish.
+  assemble_take edit-later \
+    spray-edit-later.mp4 450 5 \
+    spray-edit-later.mp4 520 5 \
+    spray-edit-later.mp4 582 5 \
+    spray-edit-later.mp4 627 4 \
+    spray-edit-later.mp4 664 8 \
+    spray-edit-later.mp4 674 3
 }
 
 case "${1:-}" in
-  create) record spray-create take_create ;;
-  review) record spray-review take_review ;;
-  later) record spray-edit-later take_later ;;
-  ui) ui ;;
-  *)
-    echo "usage: $0 create|review|later|ui" >&2
-    exit 2
-    ;;
+  import-photo) xcrun simctl addmedia "$SIMULATOR" "$PHOTO" ;;
+  record) record "${2:?expected create, create-rest, review, or later}" ;;
+  assemble) assemble ;;
+  *) echo "usage: $0 import-photo|record <create|create-rest|review|later>|assemble" >&2; exit 2 ;;
 esac

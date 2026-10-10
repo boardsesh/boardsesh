@@ -860,42 +860,44 @@
         "subtitle": "Jeder Griff und jeder Boulder an deiner Wand sitzt auf einem einzigen Foto. Darum zählt die Aufnahme."
       },
       "watch": {
-        "title": "Erst mal anschauen",
-        "videoAlt": "Video: eine Spraywand fotografieren und ihre Griffe in der Boardsesh-App einrichten",
-        "videoCaption": "Das Foto, die Wand hinzufügen und Griffe korrigieren, in etwa zwei Minuten.",
+        "title": "Sieh dir den Ablauf an",
+        "videoAlt": "Video über das Hinzufügen einer Spraywand und das Bearbeiten ihrer Griffe in der Boardsesh-App",
+        "videoCaption": "Wand hinzufügen, Griffe prüfen, Darstellung wählen und später bearbeiten.",
         "p1": "Boardsesh findet die Griffe auf deinem Foto, und jeder Boulder an der Wand wird auf genau diesem Foto gesetzt. Ein gutes Foto heißt: weniger Griffe, die du von Hand korrigieren musst."
       },
       "photo": {
         "title": "Das Foto machen",
-        "p1": "Fotografiere die Wand, bevor du die App öffnest. Fünf Dinge machen den Unterschied:",
+        "p1": "Bevor du das Wandfoto auswählst oder aufnimmst, beachte diese fünf Punkte:",
         "square": "Stell dich frontal und mittig vor die Wand. Von der Seite aus werden die entfernten Griffe kleiner und rücken zusammen.",
         "portrait": "Halte das Handy im Hochformat. Du kletterst mit dem Handy hochkant, und ein Foto im Querformat schrumpft zu einem Streifen, auf dem die Griffe zu klein zum Antippen sind.",
         "tilt": "Neig das Handy im Winkel der Wand, sodass es parallel zur Wandfläche liegt. Im Überhang wirkt der obere Teil der Wand bei senkrecht gehaltenem Handy riesig, und der untere schrumpft.",
         "frame": "Hol die ganze Wand ins Bild, von oben bis unten und von Rand zu Rand.",
         "zoom": "Fotografiere bei 1x. Passt die Wand nicht drauf, geh lieber ein paar Schritte zurück, statt auf das Weitwinkelobjektiv zu wechseln.",
-        "why": "Warum das wichtig ist: Die Griff-Erkennung liest dein Foto so, wie es ist. Schräg fotografierte Griffe kommen klein und verzerrt raus, also werden mehr übersehen und du musst sie selbst hinzufügen."
+        "why": "Warum das wichtig ist: Die Griff-Erkennung liest dein Foto so, wie es ist. Schräg fotografierte Griffe kommen klein und verzerrt raus, also werden mehr übersehen und du musst sie selbst hinzufügen.",
+        "exampleAlt": "Dicht bestückte Spraywand, frontal fotografiert und mit der ganzen Kletterfläche im Bild",
+        "exampleCaption": "Nimm die ganze Wand auf, damit sich ihre Griffe leicht finden und markieren lassen."
       },
       "add": {
         "title": "Die Wand hinzufügen",
         "step1": "Öffne Boards und tippe auf Spraywand.",
         "step2": "Gib der Wand einen Namen und stell ihren Winkel ein. Nach dem Veröffentlichen ist der Winkel fest.",
-        "step3": "Wähle dein Foto aus oder nimm eins auf.",
-        "step4": "Zieh die vier Ringe auf die Ecken der Wand. Wenn du frontal fotografiert hast, kannst du das überspringen.",
-        "step5": "Boardsesh findet die Griffe. Das dauert ein paar Sekunden."
+        "step3": "Wähle ein Foto oder nimm eins auf. Mit Zuschneiden oder drehen kannst du die Ränder anpassen.",
+        "step4": "Markiere alle vier Wandecken, damit weitere Hintergründe möglich sind, sofern sich das Foto eignet; ohne Ecken bleibt nur das Foto.",
+        "step5": "Lass Boardsesh das Foto prüfen und sieh dir danach die Griffringe an."
       },
       "fix": {
         "title": "Griffe vor dem Veröffentlichen korrigieren",
         "p1": "Die Griffe, die Boardsesh gefunden hat, erscheinen als Kreise auf deinem Foto. Prüf sie, bevor jemand daran klettert.",
-        "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen, um ihn zu behalten.",
-        "toggle": "Tippe auf einen Kreis, um ihn auszuschalten. Tippe auf freie Wand, um einen Griff hinzuzufügen.",
-        "longPress": "Halte einen Kreis gedrückt für Größer, Kleiner, Umranden, Verbinden oder Entfernen. Umranden zeichnet den Umriss des Griffs neu, Verbinden macht aus zwei Kreisen einen Griff.",
-        "missed": "Einen Griff übersehen? Tippe auf + und zeichne mit einem Finger um ihn herum (Zeichnen) oder tippe auf seine Ecken (Ecken).",
-        "p2": "Wähle dann, wie deine Griffe leuchten, und veröffentliche. Die Wand landet bei deinen Boards, bereit für ihren ersten Boulder."
+        "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen und dann auf Behalten.",
+        "toggle": "Tippe auf einen Ring, um ihn auszuwählen. Tippe erneut, um den Griff auszuschalten; seinen Geisterring kannst du wieder einschalten oder löschen.",
+        "longPress": "Halte einen Ring gedrückt, um ihn zu verschieben. Halte eine freie Stelle der Wand gedrückt, um einen Griff zu setzen.",
+        "missed": "Fehlen mehrere Griffe? Wähle Hinzufügen. Zeichne um jeden Griff herum oder wähle Ecken und tippe die Punkte seines Umrisses an.",
+        "p2": "Tippe auf Look wählen. Wähle einen verfügbaren Hintergrund und dann die Griffbeleuchtung. Ohne markierte Ecken ist nur das Foto verfügbar. Veröffentliche die Wand."
       },
       "later": {
         "title": "Griffe später bearbeiten",
-        "p1": "Tippe oben im Tab Boulder auf den Namen der Wand, um ihre Übersicht zu öffnen, dann auf Griffe bearbeiten. Füge Griffe hinzu, schalte sie aus oder korrigiere sie wie vorher und tippe dann auf Griffe veröffentlichen.",
-        "p2": "Die Wand wurde umgeschraubt? Tippe in derselben Übersicht auf Neues Foto. Stell dich dorthin, wo du beim ersten Mal standest, und markiere die Ecken, damit das neue Foto zu den Bouldern passt, die schon an der Wand sind."
+        "p1": "Tippe unter Boards auf deine Spraywand, um sie zu aktivieren. Tippe auf den Tab Boulder mit der Lupe und dann oben auf den Wandnamen. Wähle Griffe bearbeiten und danach Griffe veröffentlichen.",
+        "p2": "Wurden die Griffe an der ganzen Wand geändert? Tippe in derselben Übersicht auf Wand zurücksetzen. Füge ein neues Foto hinzu und markiere die Griffe von vorn. Beim Veröffentlichen wird die alte Wand mit ihren Bouldern archiviert."
       },
       "next": {
         "title": "Weiterlesen",

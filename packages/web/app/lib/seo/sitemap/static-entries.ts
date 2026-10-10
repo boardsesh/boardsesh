@@ -37,7 +37,7 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
     lastModified: new Date('2026-09-19'),
   },
   // Spray walls: shooting the photo the hold finder reads, then fixing its holds.
-  { path: '/help/spray-walls', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-10-06') },
+  { path: '/help/spray-walls', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-10-09') },
   // /docs lost both Aurora proxy operations (plus the tag, the overview bullet and
   // three schemas) when W-25a deprecated them, then lost the "Retired endpoints"
   // card itself when W-25b deleted the URLs outright (410 -> 404).

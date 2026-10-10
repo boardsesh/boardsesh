@@ -114,6 +114,19 @@ body {
   border-radius: 14px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
+.photo-whole {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-color: #110a20;
+}
+.why-photo-frame {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  aspect-ratio: 1752 / 2047;
+  transform: translateX(-50%);
+}
 .phone {
   position: absolute;
   border-radius: 44px;

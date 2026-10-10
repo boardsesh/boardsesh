@@ -860,42 +860,44 @@
         "subtitle": "Cada presa y cada bloque de tu muro se marcan sobre una sola foto, así que la foto importa."
       },
       "watch": {
-        "title": "Míralo primero",
-        "videoAlt": "Vídeo que muestra cómo fotografiar un muro de spray y configurar sus presas en la app Boardsesh",
-        "videoCaption": "La foto, añadir el muro y corregir presas, en unos dos minutos.",
+        "title": "Mira el vídeo",
+        "videoAlt": "Vídeo sobre cómo añadir un muro de spray y editar sus presas en la app Boardsesh",
+        "videoCaption": "Añade el muro, revisa sus presas, elige su aspecto y edítalo después.",
         "p1": "Boardsesh encuentra las presas en tu foto, y cada bloque del muro se marca sobre esa misma foto. Una buena foto significa menos presas que corregir a mano."
       },
       "photo": {
         "title": "Cómo hacer la foto",
-        "p1": "Haz la foto antes de abrir la app. Cinco cosas marcan la diferencia:",
+        "p1": "Antes de elegir o hacer la foto del muro, ten en cuenta estas cinco cosas:",
         "square": "Ponte de frente al muro, alineado con su centro. Desde un lado, las presas lejanas encogen y se amontonan.",
         "portrait": "Sujeta el móvil en vertical. Escalas con el móvil en vertical, y una foto en horizontal se queda en una franja donde las presas son demasiado pequeñas para tocarlas.",
         "tilt": "Inclina el móvil según el ángulo del muro, para que quede paralelo a la pared. En un desplome, con el móvil recto la parte de arriba se agiganta y la de abajo se encoge.",
         "frame": "Encuadra el muro entero, de arriba abajo y de lado a lado.",
         "zoom": "Dispara a 1x. Si el muro no cabe, aléjate en lugar de cambiar al gran angular.",
-        "why": "Por qué importa: el detector de presas lee tu foto tal cual. Las presas fotografiadas de lado salen pequeñas y estiradas, así que se le escapan más y acabas añadiéndolas tú."
+        "why": "Por qué importa: el detector de presas lee tu foto tal cual. Las presas fotografiadas de lado salen pequeñas y estiradas, así que se le escapan más y acabas añadiéndolas tú.",
+        "exampleAlt": "Muro de spray cubierto de presas, fotografiado de frente con toda la superficie de escalada visible",
+        "exampleCaption": "Encuadra el muro entero para que sea fácil encontrar y marcar las presas."
       },
       "add": {
         "title": "Añadir el muro",
         "step1": "Abre Plafones y toca Muro spray.",
         "step2": "Ponle nombre al muro y elige su ángulo. El ángulo queda fijo al publicar.",
-        "step3": "Elige tu foto o haz una.",
-        "step4": "Arrastra los cuatro círculos a las esquinas del muro. Si disparaste de frente, puedes saltártelo.",
-        "step5": "Boardsesh encuentra las presas. Tarda unos segundos."
+        "step3": "Elige o haz una foto. Usa Recortar o girar si necesitas ajustar los bordes.",
+        "step4": "Marca las cuatro esquinas del muro para habilitar otros fondos si la foto lo permite; si las saltas, se usará la foto.",
+        "step5": "Deja que Boardsesh analice la foto y después revisa los círculos de las presas."
       },
       "fix": {
         "title": "Corregir presas antes de publicar",
         "p1": "Las presas que encontró Boardsesh aparecen como círculos sobre tu foto. Revísalas antes de que nadie escale en ellas.",
-        "maybe": "Los círculos discontinuos son presas dudosas. Toca una para conservarla.",
-        "toggle": "Toca un círculo para desactivarlo. Toca el muro vacío para añadir una presa.",
-        "longPress": "Mantén pulsado un círculo para Agrandar, Reducir, Trazar, Unir o Quitar. Trazar vuelve a dibujar el contorno de la presa, y Unir convierte dos círculos en una sola presa.",
-        "missed": "¿Falta una presa? Toca + y dibuja a su alrededor con un dedo (Dibujar) o toca sus esquinas (Esquinas).",
-        "p2": "Después elige cómo se iluminan tus presas y publica. El muro aparece en tus plafones, listo para su primer bloque."
+        "maybe": "Los círculos discontinuos son presas dudosas. Toca uno y luego Conservar.",
+        "toggle": "Toca un círculo para seleccionarlo. Tócalo otra vez para desactivarlo; podrás reactivar o eliminar su silueta.",
+        "longPress": "Mantén pulsado un círculo para moverlo. Mantén pulsada una zona vacía del muro para colocar una presa.",
+        "missed": "Si faltan varias presas, elige Añadir. Dibuja alrededor de cada una o elige Esquinas y toca los puntos de su contorno.",
+        "p2": "Toca Elegir el aspecto. Elige un fondo disponible y cómo se iluminan las presas. Sin las esquinas marcadas, solo puedes usar la foto. Publica el muro."
       },
       "later": {
         "title": "Editar presas más adelante",
-        "p1": "Toca el nombre del muro arriba en la pestaña Bloques para abrir su ficha y toca Editar presas. Añade, desactiva o corrige presas igual que antes y toca Publicar presas.",
-        "p2": "¿Has cambiado las presas del muro? Toca Nueva foto en la misma ficha. Ponte donde te pusiste la primera vez y marca las esquinas para que la foto nueva cuadre con los bloques que ya hay en el muro."
+        "p1": "En Plafones, toca tu muro de spray para activarlo. Toca la pestaña Bloques (la lupa) y luego el nombre del muro arriba. Toca Editar presas y termina con Publicar presas.",
+        "p2": "Si has cambiado las presas de todo el muro, toca Resetear este muro en la misma ficha. Añade una foto nueva y marca las presas desde cero. Al publicar el reemplazo, el muro anterior se archiva y conserva sus bloques."
       },
       "next": {
         "title": "Sigue por aquí",

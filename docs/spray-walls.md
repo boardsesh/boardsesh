@@ -16,6 +16,10 @@ below). [SW-17 (#5450)](https://github.com/boardsesh/boardsesh/issues/5450) adds
 the ops half: reporting a wall, hiding one, what happens to a deleted wall's
 photographs, the telemetry, and the flag rollout.
 
+![A densely set indoor spray wall photographed from the front](../packages/web/public/images/help/spray-wall-photo.webp)
+
+The photo above is the example used in the [climber's spray wall guide](https://www.boardsesh.com/help/spray-walls).
+
 **Sharing lands separately.**
 [SW-14 (#5447)](https://github.com/boardsesh/boardsesh/issues/5447) is in flight
 on the other stack and owns the visibility switch: private / unlisted with a link

@@ -1,16 +1,5 @@
 #!/usr/bin/env node
-/**
- * Renders the spray wall walkthrough on /help/spray-walls from the stage in
- * marketing/spray-walkthrough/.
- *
- * The app footage is three Android emulator takes in .boardsesh/help-clips/raw/
- * (spray-create, spray-review, spray-edit-later; how to record them is in
- * docs/help-clips.md). Each take is cut to 30 fps JPEG frames, the stage shows
- * them by frame number, and every frame of the video is a pure function of its
- * number: `window.renderAt(frame)` then a Chromium screenshot piped to ffmpeg.
- *
- * Usage: vp run video:spray-walkthrough [-- --stills] [--frame <n>] [--re-extract]
- */
+// Render the stage and three current-app takes; recording steps are in docs/help-clips.md.
 import { chromium, type Page } from '@playwright/test';
 import sharp from 'sharp';
 import { spawn, spawnSync } from 'node:child_process';
@@ -32,9 +21,9 @@ const FPS = 30;
 const STAGE = { width: 720, height: 1280 };
 const DEVICE_SCALE = 1.5; // 1080x1920 master
 const WEB = { width: 720, height: 1280 };
-/** scripts/check-large-files.mjs fails CI on any new file over 2 MB. */
+// scripts/check-large-files.mjs rejects new files over 2 MB.
 const LARGE_FILE_MB = 2;
-const FOOTAGE_WIDTH = 900; // the phone's screen is 548 CSS px, 822 device px
+const FOOTAGE_WIDTH = 900; // the iPhone's screen is 466 CSS px, 699 device px
 
 type Caption = { at: number; key: string };
 type EditTake = { id: string; file: string; segments: number[][]; captions: Caption[] };
@@ -276,7 +265,7 @@ function encodeWeb(master: string): void {
   const webm = resolve(VIDEO_DIR, `${NAME}.webm`);
   const input = ['-loglevel', 'error', '-y', '-i', master, '-vf', scale, '-an'];
   // Both CRFs are set to land under scripts/check-large-files.mjs's 2 MB cap
-  // for a ~2-minute cut (mp4 ~1.8 MB, webm ~1.85 MB); the app text stays legible.
+  // for the 142-second cut while keeping the app text legible.
   const h264 = [
     '-c:v',
     'libx264',
@@ -285,14 +274,14 @@ function encodeWeb(master: string): void {
     '-tune',
     'animation',
     '-crf',
-    '31',
+    '34',
     '-profile:v',
     'high',
     '-pix_fmt',
     'yuv420p',
   ];
   run('ffmpeg', [...input, ...h264, '-movflags', '+faststart', mp4]);
-  const vp9 = ['-c:v', 'libvpx-vp9', '-crf', '48', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2'];
+  const vp9 = ['-c:v', 'libvpx-vp9', '-crf', '54', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2'];
   run('ffmpeg', [...input, ...vp9, webm]);
   for (const file of [mp4, webm]) {
     const megabytes = statSync(file).size / 1e6;

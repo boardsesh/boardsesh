@@ -1,108 +1,40 @@
 {
-  "_comment": "Cuts into the raw takes in .boardsesh/help-clips/raw/<take>.mp4, at 30 fps. segments are [from, to, hold?] in take frames, played back to back; captions start at scene-local frames.",
+  "_comment": "Current iPhone app captured 2026-10-10 from d669419a6b (main 5992ed8e8005). Assemble fixed-30-fps clips from gitignored raw iOS recordings with scripts/spray-walkthrough-takes.sh assemble. Segments and captions are clip frames.",
   "takes": [
     {
       "id": "create",
-      "file": "spray-create.mp4",
-      "segments": [
-        [0, 90],
-        [150, 375],
-        [390, 465],
-        [510, 675],
-        [690, 880],
-        [1070, 1110],
-        [1110, 1230],
-        [1410, 1485],
-        [1560, 1665, 45]
-      ],
+      "file": "spray-create-cut.mp4",
+      "segments": [[0, 900]],
       "captions": [
-        {
-          "at": 0,
-          "key": "start"
-        },
-        {
-          "at": 90,
-          "key": "name"
-        },
-        {
-          "at": 315,
-          "key": "photo"
-        },
-        {
-          "at": 555,
-          "key": "corners"
-        },
-        {
-          "at": 785,
-          "key": "detect"
-        }
+        { "at": 0, "key": "start" },
+        { "at": 120, "key": "name" },
+        { "at": 270, "key": "photo" },
+        { "at": 420, "key": "corners" },
+        { "at": 570, "key": "detect" }
       ]
     },
     {
       "id": "review",
-      "file": "spray-review.mp4",
-      "segments": [
-        [0, 162],
-        [162, 240],
-        [240, 390],
-        [405, 585],
-        [810, 1035],
-        [1035, 1080, 30]
-      ],
+      "file": "spray-review-cut.mp4",
+      "segments": [[0, 1230]],
       "captions": [
-        {
-          "at": 0,
-          "key": "maybe"
-        },
-        {
-          "at": 162,
-          "key": "add"
-        },
-        {
-          "at": 240,
-          "key": "resize"
-        },
-        {
-          "at": 390,
-          "key": "draw"
-        },
-        {
-          "at": 570,
-          "key": "look"
-        },
-        {
-          "at": 795,
-          "key": "publish"
-        }
+        { "at": 0, "key": "maybe" },
+        { "at": 270, "key": "resize" },
+        { "at": 420, "key": "add" },
+        { "at": 870, "key": "background" },
+        { "at": 1020, "key": "publish" }
       ]
     },
     {
       "id": "later",
-      "file": "spray-edit-later.mp4",
-      "segments": [
-        [75, 270],
-        [270, 330],
-        [390, 585],
-        [585, 660],
-        [780, 945, 30]
-      ],
+      "file": "spray-edit-later-cut.mp4",
+      "segments": [[0, 900]],
       "captions": [
-        {
-          "at": 0,
-          "key": "open"
-        },
-        {
-          "at": 255,
-          "key": "remove"
-        },
-        {
-          "at": 450,
-          "key": "add"
-        },
-        {
-          "at": 525,
-          "key": "publish"
-        }
+        { "at": 0, "key": "open" },
+        { "at": 150, "key": "switchOff" },
+        { "at": 300, "key": "remove" },
+        { "at": 570, "key": "add" },
+        { "at": 720, "key": "publish" }
       ]
     }
   ]

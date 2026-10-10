@@ -39,67 +39,67 @@
     "create": {
       "start": {
         "title": "Start from Boards",
-        "body": "Tap Spray wall."
+        "body": "Tap Spray wall to make a wall from a photo."
       },
       "name": {
-        "title": "Name it, set the angle",
-        "body": "The angle is fixed once you publish."
+        "title": "Name it and set the angle",
+        "body": "Choose who can see it before you continue."
       },
       "photo": {
-        "title": "Choose your photo",
-        "body": "The one you shot square on, in portrait."
+        "title": "Choose your wall photo",
+        "body": "Use the square-on portrait shot with the whole wall in frame."
       },
       "corners": {
-        "title": "Mark the corners",
-        "body": "Drag the four rings onto the corners of the wall."
+        "title": "Check the four corners",
+        "body": "Pin them for other backgrounds, or skip a square-on shot."
       },
       "detect": {
         "title": "Boardsesh finds the holds",
-        "body": "It takes a few seconds."
+        "body": "Review the rings it draws over your photo."
       }
     },
     "review": {
       "maybe": {
-        "title": "Dashed rings are maybes",
-        "body": "Tap one to keep it."
-      },
-      "add": {
-        "title": "Tap the wall to add a hold",
-        "body": "A ring drops where you tap."
+        "title": "Keep the holds it nearly found",
+        "body": "Select a dashed ring, then tap Keep."
       },
       "resize": {
-        "title": "Press and hold to fix a ring",
-        "body": "Make it bigger or smaller, trace it, or remove it."
+        "title": "Adjust a selected ring",
+        "body": "Use the minus and plus controls below the wall."
       },
-      "draw": {
-        "title": "Missed one? Draw round it",
-        "body": "Tap +, then trace the hold with one finger."
+      "add": {
+        "title": "Switch to Add for missed holds",
+        "body": "Tap to drop a circle, or draw around its shape."
       },
-      "look": {
-        "title": "Pick how your holds light up",
-        "body": "Then publish, and the wall is on your boards."
+      "background": {
+        "title": "Check the wall background",
+        "body": "Photo is available when you skip pinning corners."
       },
       "publish": {
-        "title": "Your wall is set up",
-        "body": "Time to set the first climb."
+        "title": "Choose a hold look and publish",
+        "body": "Use Aura Outline to put the wall on your Boards."
       }
     },
     "later": {
       "open": {
-        "title": "Change holds any time",
-        "body": "Tap your wall's name, then Edit holds."
+        "title": "Edit holds after publishing",
+        "body": "On Climbs, open your wall and tap Edit holds."
+      },
+      "switchOff": {
+        "title": "Hold came off? Switch it off",
+        "body": "Select its ring, then tap Switch off."
       },
       "remove": {
-        "title": "Hold came off? Remove it",
-        "body": "Press and hold its ring, then tap Remove."
+        "title": "Delete a switched-off hold",
+        "body": "Select the ghost ring and tap Delete."
       },
       "add": {
-        "title": "New hold? Tap to add it",
-        "body": "Draw round it if it's an odd shape."
+        "title": "Add a new hold",
+        "body": "Switch to Add, then tap the wall or draw around it."
       },
       "publish": {
         "title": "Publish holds",
-        "body": "Do it when you're done editing."
+        "body": "Save the changes when the wall is ready."
       }
     }
   }

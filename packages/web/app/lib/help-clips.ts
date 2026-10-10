@@ -50,12 +50,7 @@ export function helpClip(name: HelpClipName): HelpClipSources {
   };
 }
 
-/**
- * Longer narrated walkthroughs, rendered by `packages/web/scripts/render-*-walkthrough.ts`
- * rather than the gesture-clip converter. They are a different box (720 x 1280,
- * 9:16) and a different length (minutes, not seconds), so they stay out of
- * `HelpClipName` and the converter's size guard.
- */
+/** Longer narrated walkthroughs have their own aspect ratio and converter. */
 export type HelpWalkthroughName = 'spray-walls-walkthrough';
 
 const WALKTHROUGH_WIDTH = 720;

@@ -59,14 +59,7 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
   );
 }
 
-/**
- * A walkthrough of a whole flow, minutes long, in the same frame.
- *
- * Unlike a gesture clip it never starts itself or loops: a two-minute video
- * playing silently on repeat is noise, and the reader needs to scrub back to the
- * step they missed. So it shows the poster and native controls from the start,
- * and the browser fetches only the metadata until they press play.
- */
+/** A longer walkthrough shows a poster and controls without autoplay or looping. */
 export function HelpWalkthrough({ name, alt, caption }: { name: HelpWalkthroughName; alt: string; caption: string }) {
   const { t } = useTranslation('marketing');
   const video = helpWalkthrough(name);

@@ -860,42 +860,44 @@
         "subtitle": "One photo of your wall is what every hold and climb is set on, so the shot matters."
       },
       "watch": {
-        "title": "Watch it first",
-        "videoAlt": "Walkthrough of photographing a spray wall and setting up its holds in the Boardsesh app",
-        "videoCaption": "The shot, adding the wall, and fixing holds, in about two minutes.",
+        "title": "Watch the walkthrough",
+        "videoAlt": "Walkthrough of adding a spray wall and editing its holds in the Boardsesh app",
+        "videoCaption": "Add a wall, review its holds, choose its look, and edit it later.",
         "p1": "Boardsesh finds the holds in your photo, and every climb on the wall is set on that same photo. A good shot means fewer holds to fix by hand."
       },
       "photo": {
         "title": "Taking the photo",
-        "p1": "Shoot the wall before you open the app. Five things make the difference:",
+        "p1": "Before you choose or take your wall photo, keep five things in mind:",
         "square": "Stand square on to the wall, in line with its middle. From off to one side, the far holds shrink and bunch up.",
         "portrait": "Hold the phone in portrait. You climb with the phone upright, and a landscape photo shrinks to a strip where the holds get too small to tap.",
         "tilt": "Tilt the phone to match the wall's angle, so it sits parallel to the wall face. On an overhang, a phone held straight up makes the top of the wall loom and the bottom shrink away.",
         "frame": "Get the whole wall in frame, top to bottom and side to side.",
         "zoom": "Shoot at 1x. If the wall doesn't fit, step back rather than switching to the wide lens.",
-        "why": "Why it matters: the hold finder reads your photo as it is. Holds shot at a skew come out small and stretched, so more of them get missed and you end up adding them yourself."
+        "why": "Why it matters: the hold finder reads your photo as it is. Holds shot at a skew come out small and stretched, so more of them get missed and you end up adding them yourself.",
+        "exampleAlt": "A densely set indoor spray wall photographed from the front, with the whole climbing surface visible",
+        "exampleCaption": "Keep the whole wall in frame so its holds are easy to find and mark."
       },
       "add": {
         "title": "Adding the wall",
         "step1": "Open Boards and tap Spray wall.",
         "step2": "Name the wall and set its angle. The angle is fixed once you publish.",
-        "step3": "Choose your photo, or take one.",
-        "step4": "Drag the four rings onto the wall's corners. If you shot square on, you can skip this.",
-        "step5": "Boardsesh finds the holds. It takes a few seconds."
+        "step3": "Choose or take a photo. Use Crop or rotate if its edges need tidying.",
+        "step4": "Pin the four wall corners to unlock other backgrounds if the photo allows; skip to keep the photo.",
+        "step5": "Let Boardsesh scan the photo, then review the hold rings."
       },
       "fix": {
         "title": "Fixing holds before you publish",
         "p1": "The holds Boardsesh found show as rings on your photo. Check them before anyone climbs on them.",
-        "maybe": "Dashed rings are maybes. Tap one to keep it.",
-        "toggle": "Tap a ring to switch it off. Tap bare wall to add a hold.",
-        "longPress": "Press and hold a ring for Bigger, Smaller, Trace, Join or Remove. Trace redraws the hold's outline, and Join makes two rings one hold.",
-        "missed": "Missed a hold? Tap +, then draw round it with one finger (Draw) or tap round its corners (Corners).",
-        "p2": "Then pick how your holds light up and publish. The wall lands on your boards, ready for its first climb."
+        "maybe": "Dashed rings are uncertain finds. Tap one, then tap Keep.",
+        "toggle": "Tap a ring to select it. Tap it again to switch it off; the ghost can be switched back on or deleted.",
+        "longPress": "Press and hold a ring to move it. Press and hold bare wall to place a new hold.",
+        "missed": "For several missed holds, choose Add. Draw round each hold, or choose Corners and tap round its outline.",
+        "p2": "Tap Pick a look. Choose an available background, then how your holds light up. Without corner pins, Photo is the only background. Publish the wall."
       },
       "later": {
         "title": "Editing holds later",
-        "p1": "Tap the wall's name at the top of the Climbs tab to open its board sheet, then tap Edit holds. Add, switch off or fix holds the same way as before, then tap Publish holds.",
-        "p2": "Reset the wall with new holds? Tap New photo in the same sheet. Stand where you stood the first time, then mark the corners so the new photo lines up with the climbs already on the wall."
+        "p1": "On Boards, tap your spray wall to make it active. Tap the magnifying-glass Climbs tab, then the wall name at the top. Tap Edit holds; finish with Publish holds.",
+        "p2": "If the holds have changed across the wall, tap Reset this wall in the same sheet. Add a new photo and mark holds from scratch. Publishing the replacement archives the old wall and keeps its climbs with it."
       },
       "next": {
         "title": "Keep going",

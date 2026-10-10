@@ -1,19 +1,19 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
+import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
-import { HelpShots, HelpWalkthrough } from '../help-clip';
+import { HelpWalkthrough } from '../help-clip';
+import styles from './spray-walls-content.module.css';
 
-/**
- * The mobile wizard's photo step links here ("How to shoot it"), so the photo
- * advice comes first: the hold finder reads the picture as it is, and a skewed
- * shot costs the climber every hold it misses. The editor labels quoted below
- * (Bigger, Trace, Join, Draw, Corners, Publish holds) are the app's own words.
- */
+/** The mobile wizard links here for photo advice and current editor gestures. */
 export default function SprayWallsContent() {
   const { t } = useTranslation('marketing');
 
@@ -23,17 +23,6 @@ export default function SprayWallsContent() {
       lead={t('help.sprayWalls.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.sprayWalls.breadcrumb')} />}
     >
-      <PageSection title={t('help.sprayWalls.watch.title')}>
-        <HelpShots>
-          <HelpWalkthrough
-            name="spray-walls-walkthrough"
-            alt={t('help.sprayWalls.watch.videoAlt')}
-            caption={t('help.sprayWalls.watch.videoCaption')}
-          />
-        </HelpShots>
-        <Prose>{t('help.sprayWalls.watch.p1')}</Prose>
-      </PageSection>
-
       <PageSection title={t('help.sprayWalls.photo.title')}>
         <Prose>{t('help.sprayWalls.photo.p1')}</Prose>
         <ProseList>
@@ -44,6 +33,28 @@ export default function SprayWallsContent() {
           <li>{t('help.sprayWalls.photo.zoom')}</li>
         </ProseList>
         <Prose>{t('help.sprayWalls.photo.why')}</Prose>
+        <Box component="figure" className={styles.photoFigure}>
+          <Image
+            src={resolveStaticAssetUrl('/images/help/spray-wall-photo.webp')}
+            alt={t('help.sprayWalls.photo.exampleAlt')}
+            width={1752}
+            height={2047}
+            sizes="(max-width: 760px) 100vw, 760px"
+            className={styles.photo}
+          />
+          <Typography component="figcaption" variant="body2" className={styles.photoCaption}>
+            {t('help.sprayWalls.photo.exampleCaption')}
+          </Typography>
+        </Box>
+      </PageSection>
+
+      <PageSection title={t('help.sprayWalls.watch.title')}>
+        <HelpWalkthrough
+          name="spray-walls-walkthrough"
+          alt={t('help.sprayWalls.watch.videoAlt')}
+          caption={t('help.sprayWalls.watch.videoCaption')}
+        />
+        <Prose>{t('help.sprayWalls.watch.p1')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.sprayWalls.add.title')}>

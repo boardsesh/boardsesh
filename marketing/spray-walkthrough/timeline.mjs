@@ -145,7 +145,7 @@ function buildStatic(stage, copy, photo, holds) {
       </div>
       <div id="good-result" style="position:absolute;inset:0">
         <div class="phone" style="left:200px;top:250px;width:320px;height:569px">
-          <div class="screen"><div class="photo" style="${photoStyle};inset:0;border-radius:0"></div></div>
+          <div class="screen"><div class="photo photo-whole" style="${photoStyle};inset:0;border-radius:0"></div></div>
         </div>
         <div class="badge good" id="good-badge" style="left:484px;top:214px">✓</div>
         <div class="caption" style="top:880px">${esc(copy.good.result)}</div>
@@ -155,7 +155,7 @@ function buildStatic(stage, copy, photo, holds) {
     <section class="scene" id="s-landscape">
       <div class="head"><div class="title">${esc(copy.landscape.title)}</div></div>
       <div class="phone" id="ls-good" style="left:56px;top:300px;width:280px;height:498px">
-        <div class="screen"><div class="photo" style="${photoStyle};inset:0;border-radius:0;box-shadow:none"></div></div>
+        <div class="screen"><div class="photo photo-whole" style="${photoStyle};inset:0;border-radius:0;box-shadow:none"></div></div>
       </div>
       <div class="phone" id="ls-bad" style="left:384px;top:300px;width:280px;height:498px">
         <div class="screen" style="display:grid;place-items:center">
@@ -192,13 +192,17 @@ function buildStatic(stage, copy, photo, holds) {
     <section class="scene" id="s-why">
       <div class="head"><div class="title">${esc(copy.why.title)}</div></div>
       <div style="position:absolute;left:44px;top:330px;width:300px;height:300px">
-        <div class="photo" style="${photoStyle};inset:0"></div>
-        ${ringsSvg('why-good-rings', holds, () => false)}
+        <div class="why-photo-frame">
+          <div class="photo" style="${photoStyle};inset:0"></div>
+          ${ringsSvg('why-good-rings', holds, () => false)}
+        </div>
       </div>
       <div style="position:absolute;left:376px;top:330px;width:300px;height:300px;perspective:700px">
         <div id="why-bad" style="position:absolute;inset:0;transform:rotateY(42deg) scale(0.92);transform-origin:20% 50%">
-          <div class="photo" style="${photoStyle};inset:0"></div>
-          ${ringsSvg('why-bad-rings', holds, (hold, index) => hold.x > 0.55 && index % 3 !== 0)}
+          <div class="why-photo-frame">
+            <div class="photo" style="${photoStyle};inset:0"></div>
+            ${ringsSvg('why-bad-rings', holds, (hold, index) => hold.x > 0.55 && index % 3 !== 0)}
+          </div>
         </div>
       </div>
       <div class="badge good" style="left:296px;top:296px" id="why-good-badge">✓</div>
@@ -229,7 +233,7 @@ function buildFootage(stage, take) {
     <section class="scene" id="s-${take.id}">
       <div class="caption" id="${take.id}-title" style="top:56px"></div>
       <div class="subcaption" id="${take.id}-body" style="top:112px"></div>
-      <div class="phone" style="left:76px;top:190px;width:568px;height:1010px">
+      <div class="phone" style="left:117px;top:180px;width:486px;height:1032px">
         <div class="screen"><img id="${take.id}-img" alt="" /></div>
       </div>
     </section>`,
@@ -441,7 +445,7 @@ export function renderAt(frame) {
   }
 }
 
-/** Adds the per-take frame lookup the stage reads; the renderer passes plain JSON. */
+// The renderer injects file:// frame URLs, so this stage is not standalone.
 function hydrateFootage(footage) {
   return footage.map((take) => ({
     ...take,
