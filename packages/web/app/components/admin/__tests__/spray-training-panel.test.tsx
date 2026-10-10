@@ -63,9 +63,14 @@ function makeItem(versionId: string, versionNumber: number): SprayTrainingQueueI
 
 function queueResponse(
   items: SprayTrainingQueueItemData[],
-  { hasMore = false, unreviewed = items.length }: { hasMore?: boolean; unreviewed?: number } = {},
+  {
+    hasMore = false,
+    unreviewed = items.length,
+    approved = 0,
+    rejected = 0,
+  }: { hasMore?: boolean; unreviewed?: number; approved?: number; rejected?: number } = {},
 ) {
-  return { sprayTrainingQueue: { hasMore, totals: { unreviewed, approved: 0, rejected: 0 }, items } };
+  return { sprayTrainingQueue: { hasMore, totals: { unreviewed, approved, rejected }, items } };
 }
 
 function reviewResponse(versionId: string, status: SprayTrainingReviewStatus) {
@@ -79,6 +84,19 @@ function graphqlFailure(code: string) {
 
 function reviewCalls() {
   return mockRequest.mock.calls.filter(([operation]) => operation === 'SET_SPRAY_TRAINING_REVIEW');
+}
+
+/** Renders the panel and moves to a reviewed tab holding the given walls. */
+async function renderOnTab(tabName: 'Approved' | 'Rejected', walls: SprayTrainingQueueItemData[]) {
+  const totals = {
+    approved: tabName === 'Approved' ? walls.length : 0,
+    rejected: tabName === 'Rejected' ? walls.length : 0,
+  };
+  mockRequest.mockResolvedValueOnce(queueResponse([], totals));
+  render(<SprayTrainingPanel />);
+  await screen.findByText('Nothing here');
+  mockRequest.mockResolvedValueOnce(queueResponse(walls, { unreviewed: 0, ...totals }));
+  fireEvent.click(screen.getByRole('button', { name: `${tabName} (${walls.length})` }));
 }
 
 function approveButton(dialog: HTMLElement) {
@@ -358,6 +376,51 @@ describe('SprayTrainingPanel photo on screen', () => {
     }
   });
 
+  it('waits for the photo again when its link comes back after going missing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const expiringIn = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString();
+      const opened = makeItem('v1', 1);
+      opened.photo = { ...opened.photo!, expiresAt: expiringIn(90) };
+      const neighbour = makeItem('v2', 2);
+      neighbour.photo = { ...neighbour.photo!, expiresAt: expiringIn(90) };
+      mockRequest.mockResolvedValueOnce(queueResponse([opened, neighbour]));
+      render(<SprayTrainingPanel />);
+      const dialog = await openWall(1);
+      expect(approveButton(dialog).disabled).toBe(false);
+
+      // First refresh: the backend could not sign this wall's photo. Its neighbour keeps the timer armed.
+      const unsigned = makeItem('v1', 1);
+      unsigned.photo = null;
+      const neighbourAgain = makeItem('v2', 2);
+      neighbourAgain.photo = { ...neighbourAgain.photo!, expiresAt: expiringIn(120) };
+      mockRequest.mockResolvedValueOnce(queueResponse([unsigned, neighbourAgain]));
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() => expect(within(dialog).getByText(NO_PHOTO)).toBeTruthy());
+
+      // Second refresh: the link is back, on a new image element that has shown nothing yet.
+      const resigned = makeItem('v1', 1);
+      resigned.photo = { ...resigned.photo!, url: 'https://photos.example/v1-resigned.jpg' };
+      mockRequest.mockResolvedValueOnce(queueResponse([resigned, makeItem('v2', 2)]));
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() =>
+        expect(within(dialog).getByAltText(PHOTO_ALT).getAttribute('src')).toBe(
+          'https://photos.example/v1-resigned.jpg',
+        ),
+      );
+
+      expect(approveButton(dialog).disabled).toBe(true);
+      expect(screen.queryByTestId('spray-hold-overlay')).toBeNull();
+      fireEvent.keyDown(window, { key: 'a' });
+      expect(reviewCalls()).toHaveLength(0);
+
+      finishPhotoLoad(dialog);
+      expect(approveButton(dialog).disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps Reject off while the photo is loading even with a reason chosen', async () => {
     const withReason = makeItem('v1', 1);
     withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null };
@@ -391,6 +454,26 @@ describe('SprayTrainingPanel photo on screen', () => {
     mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+  });
+
+  it('does not let a held Enter click a verdict button again', async () => {
+    const rejected = makeItem('v1', 1);
+    rejected.review = { status: 'REJECTED', reason: 'BAD_HOLDS', notes: null };
+    await renderOnTab('Rejected', [rejected]);
+    const dialog = await openWall(1);
+
+    for (const name of ['Approve (A)', 'Reject (R)', 'Back to unreviewed']) {
+      const verdictButton = within(dialog).getByRole<HTMLButtonElement>('button', { name });
+      expect(verdictButton.disabled).toBe(false);
+      const firstPress = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      const autoRepeat = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
+      fireEvent(verdictButton, firstPress);
+      fireEvent(verdictButton, autoRepeat);
+      // A browser clicks the focused button on Enter unless the keydown is cancelled.
+      expect(firstPress.defaultPrevented).toBe(false);
+      expect(autoRepeat.defaultPrevented).toBe(true);
+    }
+    expect(reviewCalls()).toHaveLength(0);
   });
 
   it.each([
@@ -439,6 +522,99 @@ describe('SprayTrainingPanel photo on screen', () => {
     expect(within(dialog).queryByText(NO_PHOTO)).toBeNull();
     finishPhotoLoad(dialog);
     expect(approveButton(dialog).disabled).toBe(false);
+  });
+});
+
+describe('SprayTrainingPanel notes', () => {
+  function notesField(dialog: HTMLElement) {
+    return within(dialog).getByLabelText<HTMLTextAreaElement>('Notes (optional)');
+  }
+
+  it.each([
+    ['leaves the rejection note behind when the field is untouched', null, null],
+    ['sends the note the reviewer typed for it', '  lighting is fine  ', 'lighting is fine'],
+  ])('an approval of a rejected wall %s', async (_label, typed, sent) => {
+    const rejected = makeItem('v1', 1);
+    rejected.review = { status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: 'too dark' };
+    await renderOnTab('Rejected', [rejected]);
+    const dialog = await openWall(1);
+    expect(notesField(dialog).value).toBe('too dark');
+
+    if (typed !== null) fireEvent.change(notesField(dialog), { target: { value: typed } });
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    fireEvent.click(approveButton(dialog));
+
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0][1]).toEqual({
+      input: { versionId: 'v1', status: 'APPROVED', reason: null, notes: sent },
+    });
+  });
+
+  it('a rejection of an approved wall leaves the approval note behind', async () => {
+    const approved = makeItem('v1', 1);
+    approved.review = { status: 'APPROVED', reason: null, notes: 'clean labels' };
+    await renderOnTab('Approved', [approved]);
+    const dialog = await openWall(1);
+
+    await pickReasonWithMouse(dialog, 'Photo quality');
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'REJECTED'));
+    fireEvent.click(rejectButton(dialog));
+
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0][1]).toEqual({
+      input: { versionId: 'v1', status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: null },
+    });
+  });
+
+  it('a rejection saved again keeps its own note', async () => {
+    const rejected = makeItem('v1', 1);
+    rejected.review = { status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: 'too dark' };
+    await renderOnTab('Rejected', [rejected]);
+    const dialog = await openWall(1);
+
+    await pickReasonWithMouse(dialog, 'Holds missing');
+    mockRequest.mockResolvedValueOnce({
+      setSprayTrainingReview: {
+        versionId: 'v1',
+        review: { status: 'REJECTED', reason: 'MISSING_HOLDS', notes: 'too dark' },
+      },
+    });
+    fireEvent.click(rejectButton(dialog));
+
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0][1]).toEqual({
+      input: { versionId: 'v1', status: 'REJECTED', reason: 'MISSING_HOLDS', notes: 'too dark' },
+    });
+  });
+
+  it('saves new notes on an approved wall in place, and has nothing to approve until they change', async () => {
+    const approved = makeItem('v1', 1);
+    approved.review = { status: 'APPROVED', reason: null, notes: 'clean labels' };
+    await renderOnTab('Approved', [approved]);
+    const dialog = await openWall(1);
+
+    expect(approveButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(reviewCalls()).toHaveLength(0);
+
+    fireEvent.change(notesField(dialog), { target: { value: 'clean labels, two holds added by hand' } });
+    expect(approveButton(dialog).disabled).toBe(false);
+    mockRequest.mockResolvedValueOnce({
+      setSprayTrainingReview: {
+        versionId: 'v1',
+        review: { status: 'APPROVED', reason: null, notes: 'clean labels, two holds added by hand' },
+      },
+    });
+    fireEvent.click(approveButton(dialog));
+
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0][1]).toEqual({
+      input: { versionId: 'v1', status: 'APPROVED', reason: null, notes: 'clean labels, two holds added by hand' },
+    });
+    // Saved in place: the wall stays on its tab and there is nothing left to approve.
+    await waitFor(() => expect(approveButton(dialog).disabled).toBe(true));
+    expect(within(dialog).getByText('Wall version 1')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approved (1)', hidden: true })).toBeTruthy();
   });
 });
 

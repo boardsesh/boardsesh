@@ -98,6 +98,15 @@ export function isShortcutBlockedTarget(target: EventTarget | null): boolean {
   return target.closest('[role=listbox],[role=option]') !== null;
 }
 
+/**
+ * A held Enter re-clicks the focused button on every auto-repeat. The verdict
+ * buttons are the same elements from one wall to the next, so without this the
+ * repeat decides the next wall the moment its button comes back on.
+ */
+function ignoreHeldKey(event: React.KeyboardEvent) {
+  if (event.repeat) event.preventDefault();
+}
+
 export default function SprayTrainingReviewDialog({
   item,
   loadingNext,
@@ -167,16 +176,32 @@ export default function SprayTrainingReviewDialog({
   const hasGeometry = photoWidth !== null && photoHeight !== null && photoWidth > 0 && photoHeight > 0;
   // A photo the browser could not fetch is as unavailable as one the backend could not sign.
   const photoAvailable = photoUrl !== null && hasGeometry && failedPhotoUrl !== photoUrl;
+  // No link, no size or a failed download takes the <img> away. Whatever
+  // replaces it for this same wall has to load before it counts as seen.
+  if (photoOnScreen && !photoAvailable) setPhotoOnScreen(false);
   const photoLoaded = photoAvailable && photoOnScreen;
   const photoLoading = photoAvailable && !photoLoaded;
+  const savedStatus = item?.review.status ?? null;
   const trimmedNotes = notes.trim();
-  const decisionNotes = trimmedNotes === '' ? undefined : trimmedNotes;
+  const notesChanged = trimmedNotes !== (item?.review.notes ?? '').trim();
+  // Approving an approved wall again is only good for saving new notes on it.
+  const nothingToApprove = savedStatus === 'APPROVED' && !notesChanged;
+
+  // The field opens on the notes of the saved verdict. They go out again with
+  // the same verdict, but a different verdict only carries what was typed for it.
+  const notesFor = useCallback(
+    (verdict: SprayTrainingReviewStatus) => {
+      if (trimmedNotes === '' || (verdict !== savedStatus && !notesChanged)) return undefined;
+      return trimmedNotes;
+    },
+    [trimmedNotes, savedStatus, notesChanged],
+  );
 
   const approve = useCallback(() => {
     // Approving means the reviewer saw the photo, so it has to be on screen.
-    if (!item || busy || !photoLoaded || item.review.status === 'APPROVED') return;
-    onDecide(item, { status: 'APPROVED', notes: decisionNotes });
-  }, [item, busy, photoLoaded, decisionNotes, onDecide]);
+    if (!item || busy || !photoLoaded || nothingToApprove) return;
+    onDecide(item, { status: 'APPROVED', notes: notesFor('APPROVED') });
+  }, [item, busy, photoLoaded, nothingToApprove, notesFor, onDecide]);
 
   const reject = useCallback(() => {
     // A photo that is gone is a reason to reject; one still loading is not ready for a verdict.
@@ -186,8 +211,8 @@ export default function SprayTrainingReviewDialog({
       setReasonOpen(true);
       return;
     }
-    onDecide(item, { status: 'REJECTED', reason, notes: decisionNotes });
-  }, [item, busy, photoLoading, reason, decisionNotes, onDecide]);
+    onDecide(item, { status: 'REJECTED', reason, notes: notesFor('REJECTED') });
+  }, [item, busy, photoLoading, reason, notesFor, onDecide]);
 
   const backToUnreviewed = useCallback(() => {
     if (!item || busy || item.review.status === 'UNREVIEWED') return;
@@ -356,10 +381,7 @@ export default function SprayTrainingReviewDialog({
                       src={photoUrl}
                       alt={t('sprayTraining.review.photoAlt')}
                       onLoad={() => setPhotoOnScreen(true)}
-                      onError={() => {
-                        setFailedPhotoUrl(photoUrl);
-                        setPhotoOnScreen(false);
-                      }}
+                      onError={() => setFailedPhotoUrl(photoUrl)}
                       sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
                     />
                     {photoLoaded ? (
@@ -489,7 +511,8 @@ export default function SprayTrainingReviewDialog({
                   <Button
                     variant="contained"
                     onClick={approve}
-                    disabled={busy || !photoLoaded || item.review.status === 'APPROVED'}
+                    onKeyDown={ignoreHeldKey}
+                    disabled={busy || !photoLoaded || nothingToApprove}
                     sx={{ textTransform: 'none' }}
                   >
                     {t('sprayTraining.review.approve')}
@@ -498,13 +521,19 @@ export default function SprayTrainingReviewDialog({
                     variant="outlined"
                     color="error"
                     onClick={reject}
+                    onKeyDown={ignoreHeldKey}
                     disabled={busy || photoLoading || reason === ''}
                     sx={{ textTransform: 'none' }}
                   >
                     {t('sprayTraining.review.reject')}
                   </Button>
                   {item.review.status !== 'UNREVIEWED' && (
-                    <Button onClick={backToUnreviewed} disabled={busy} sx={{ textTransform: 'none' }}>
+                    <Button
+                      onClick={backToUnreviewed}
+                      onKeyDown={ignoreHeldKey}
+                      disabled={busy}
+                      sx={{ textTransform: 'none' }}
+                    >
                       {t('sprayTraining.review.backToUnreviewed')}
                     </Button>
                   )}
