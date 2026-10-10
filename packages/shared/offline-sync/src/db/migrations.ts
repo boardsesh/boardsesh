@@ -30,6 +30,7 @@ import {
   BOARD_CLIMB_HOLD_SETS,
   HOLDS_INDEX_CLIMBS,
   INDEX_CLIMBS_SYNC_SEQ,
+  INDEX_STATS_ASCENTS,
   DEVICE_ONLY_STATEMENTS,
   SCHEMA_STATEMENTS,
   SPRAY_WALLS,
@@ -236,6 +237,22 @@ export const MIGRATIONS: Migration[] = [
     // 12: an artifact built before it is refused until the export rebuilds it.
     version: 12,
     statements: ['ALTER TABLE board_climbs ADD COLUMN retired_by_reset INTEGER;'],
+  },
+  {
+    // The climb list's default order as an index: one board at one angle, most
+    // ascents first (`idx_stats_ascents`, see schema.ts). `searchClimbsLocal`
+    // walks it for the default sort instead of filtering and sorting every climb
+    // on the board for each page.
+    //
+    // An index and nothing else, so the previous bundle reads the file exactly
+    // as before once it is allowed to open it. On a phone that already holds a
+    // download the build runs once, inside this migration: 0.4 s on an iPhone
+    // 13 Pro holding two Kilter boards (412,515 stats rows).
+    //
+    // In DEVICE_ONLY_STATEMENTS, so it does not move ARTIFACT_SCHEMA_VERSION:
+    // v13 clients keep importing v12 artifacts.
+    version: 13,
+    statements: [INDEX_STATS_ASCENTS],
   },
 ];
 

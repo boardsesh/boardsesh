@@ -394,7 +394,60 @@ describe('runMigrations', () => {
     });
     expect(
       (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
-    ).toBe(12);
+    ).toBe(LATEST_SCHEMA_VERSION);
+  });
+
+  it('v13 adds the ascents ranking index on stats, on fresh and on v12-stamped databases', async () => {
+    type IndexRow = { tbl_name: string; sql: string };
+    const rankingIndex = (database: ReturnType<typeof createTestDatabase>) =>
+      database.getFirstAsync<IndexRow>(
+        "SELECT tbl_name, sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_stats_ascents'",
+      );
+    const assertRankingIndex = async (database: ReturnType<typeof createTestDatabase>) => {
+      const index = await rankingIndex(database);
+      expect(index?.tbl_name).toBe('board_climb_stats');
+      // The column order, both DESC keys and the predicate are the contract: the
+      // climb list's ranked walk names this index, reads it front to back, and
+      // has to repeat the predicate word for word to be allowed to.
+      expect(index?.sql).toContain(
+        '(board_type, angle, ascensionist_count DESC, climb_uuid DESC) WHERE ascensionist_count > 0',
+      );
+    };
+
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    await assertRankingIndex(freshDb);
+
+    // Existing install stamped at v12 with a download already on disk: the
+    // migration indexes the rows that are there, and touches none of them.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await upgradedDb.execAsync('DROP INDEX idx_stats_ascents;');
+    await upgradedDb.execAsync(`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES
+        ('kilter', 'b', 40, 7), ('kilter', 'a', 40, 7), ('kilter', 'c', 40, 90), ('kilter', 'd', 40, NULL),
+        ('kilter', 'f', 40, 0), ('kilter', 'c', 45, 1), ('tension', 'e', 40, 500);
+    `);
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 12 WHERE id = 1');
+    expect(await rankingIndex(upgradedDb)).toBeNull();
+    await runMigrations(upgradedDb);
+
+    await assertRankingIndex(upgradedDb);
+    expect(
+      await upgradedDb.getAllAsync(
+        `SELECT climb_uuid, ascensionist_count FROM board_climb_stats INDEXED BY idx_stats_ascents
+         WHERE board_type = 'kilter' AND angle = 40 AND ascensionist_count > 0
+         ORDER BY ascensionist_count DESC, climb_uuid DESC`,
+      ),
+    ).toEqual([
+      { climb_uuid: 'c', ascensionist_count: 90 },
+      { climb_uuid: 'b', ascensionist_count: 7 },
+      { climb_uuid: 'a', ascensionist_count: 7 },
+    ]);
+    expect(await upgradedDb.getFirstAsync('SELECT COUNT(*) AS total FROM board_climb_stats')).toEqual({ total: 7 });
+    expect(
+      (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
+    ).toBe(LATEST_SCHEMA_VERSION);
   });
 
   it('keeps the device-only holds index tables out of SCHEMA_STATEMENTS', () => {
@@ -461,6 +514,13 @@ describe('ARTIFACT_SCHEMA_VERSION', () => {
   it('is not moved by device-only migrations (v8 spray_walls, v9 followed authors, v10 holds index)', () => {
     expect(artifactSchemaVersion(MIGRATIONS.filter((migration) => migration.version <= 7))).toBe(7);
     expect(artifactSchemaVersion(MIGRATIONS.filter((migration) => migration.version <= 10))).toBe(7);
+  });
+
+  it('is not moved by v13, whose index on board_climb_stats is a device-only statement', () => {
+    const ranking = MIGRATIONS.find((migration) => migration.version === 13);
+    expect(ranking?.statements.join(' ')).toMatch(/\bboard_climb_stats\b/);
+    expect(artifactSchemaVersion(MIGRATIONS.filter((migration) => migration.version <= 12))).toBe(12);
+    expect(artifactSchemaVersion(MIGRATIONS.filter((migration) => migration.version <= 13))).toBe(12);
   });
 
   it('moves when a migration changes an artifact table, and ignores device-only statements', () => {

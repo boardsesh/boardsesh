@@ -404,7 +404,8 @@ layout artifact but intentionally outside the enabled size.
   naming `board_climbs`, `board_climb_stats` or `board_climb_grades` (the same whole-word match the export
   uses to pick artifact DDL, minus `DEVICE_ONLY_STATEMENTS`). It is 12 today (`board_climbs.retired_by_reset`,
   #6024). It was 11 for the climb revision columns on `board_climbs` (#6023), and 7 (`missing_hold_count`) through v10: a migration that touches only
-  device-side tables (v8 spray walls, v9 followed authors, v10 holds index) raises
+  device-side tables (v8 spray walls, v9 followed authors, v10 holds index), or that adds only a
+  device-only statement to an artifact table (v13's ranking index on `board_climb_stats`), raises
   `LATEST_SCHEMA_VERSION` but not this, so older artifacts stay importable and downloads keep coming
   from the CDN. The required-columns check below remains the backstop: an artifact that lacks a
   configured client column is refused whatever version it is stamped with.
@@ -425,7 +426,9 @@ The same migration's `idx_climbs_sync_seq` index is on `board_climbs`. Matched b
 land in every artifact, where it is dead weight because the import copies rows out and never queries them by
 `sync_seq`. So it is listed in `DEVICE_ONLY_STATEMENTS`, which the export drops by exact text. The same list
 serves any future statement that the device needs on an artifact table but the artifact must not carry. It
-needs no format change, because an artifact never had these statements.
+needs no format change, because an artifact never had these statements. v13's `idx_stats_ascents`, the
+climb list's default order on `board_climb_stats`, is the second entry: the phone walks it for every page of
+the list, and nothing reads an artifact in that order.
 
 v10 changes no artifact table, so it does not move `ARTIFACT_SCHEMA_VERSION`. v10 clients import v9
 artifacts, and v9 clients import v10 ones. No staleness window applies.

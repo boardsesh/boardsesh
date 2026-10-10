@@ -352,6 +352,18 @@ function usesMyGrades(input: ClimbSearchInput): boolean {
 
 export type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
 
+/** The browsed angle's stats row for the outer climb. Binds: board_type, angle. */
+const BROWSED_STATS_JOIN = `LEFT JOIN board_climb_stats s
+    ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?`;
+
+/**
+ * The browsed angle's Boardsesh grade for the outer climb, when stats are not
+ * resolved across angles. Binds: board_type, angle. Shared with the ranked walk,
+ * which drives from the stats row and so joins only this half.
+ */
+const BROWSED_GRADES_JOIN = `LEFT JOIN board_climb_grades g
+    ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = ?`;
+
 export function buildJoinAndWhere(
   input: ClimbSearchInput,
   ownerUserId: string | null,
@@ -378,16 +390,13 @@ export function buildJoinAndWhere(
     ? [boardType, angle, boardType, boardType, angle]
     : [boardType, angle, boardType, angle];
   const joinSql = crossAngle
-    ? `LEFT JOIN board_climb_stats s
-    ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?
+    ? `${BROWSED_STATS_JOIN}
     LEFT JOIN board_climb_stats s_set
     ON s_set.climb_uuid = c.uuid AND s_set.board_type = ? AND s_set.angle = c.angle
     LEFT JOIN board_climb_grades g
     ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = COALESCE(s.angle, s_set.angle, ?)`
-    : `LEFT JOIN board_climb_stats s
-    ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?
-    LEFT JOIN board_climb_grades g
-    ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = ?`;
+    : `${BROWSED_STATS_JOIN}
+    ${BROWSED_GRADES_JOIN}`;
 
   const conditions: string[] = [];
   const whereBinds: Bind[] = [];
@@ -816,6 +825,136 @@ export function mapRowToClimb(
   };
 }
 
+// ---------------------------------------------------------------------------
+// The ranked walk: the default sort read off `idx_stats_ascents`.
+//
+// The full query below visits every listed climb on the board, runs two
+// json_each probes and a stats lookup on each, and sorts what is left, once per
+// page: on an iPhone 13 Pro with a Kilter download, 1.4 to 2.2 s for a page of
+// 30, whichever page is asked for.
+//
+// "Most ascents first" has the same order as `idx_stats_ascents` (on-device
+// migration v13), so the walk reads the browsed angle's stats rows in that
+// order, joins each climb, applies the same WHERE and stops at the row that
+// fills the page: 2 to 36 ms on the same phone, median 6.
+//
+// Why the two return the same rows. In the full order every climb somebody has
+// sent at this angle comes before every climb nobody has (a count of 0, then
+// NULL: DESC puts NULL last), and those first climbs are in (count DESC,
+// uuid DESC) order: the index's order. So what the walk yields is a PREFIX of
+// the full result. The walk therefore answers only when it produced the whole
+// `pageSize + 1` rows; a page that reaches the unsent climbs, or that the walk
+// could not fill, is handed to the full query unchanged.
+// ---------------------------------------------------------------------------
+
+const RANKED_WALK_INDEX = 'idx_stats_ascents';
+
+/**
+ * How many of the angle's stats rows one walk may read before it gives up, so a
+ * filter that keeps almost nothing costs a bounded extra and not a second pass
+ * over the board. On a laptop 12,000 rows is 31 ms, against the full query's
+ * 500 ms.
+ */
+const RANKED_WALK_MIN_BUDGET = 12_000;
+
+/**
+ * The budget grows with how deep the page is: this many stats rows per result
+ * row wanted. 25 means a filter that keeps at least 1 climb in 25 is answered by
+ * the walk at any depth. Measured in the 12,000 most-climbed Kilter rows at 40
+ * degrees: the default list keeps 97 in 100, a three-grade band 26 to 38.
+ */
+const RANKED_WALK_BUDGET_PER_WANTED_ROW = 25;
+
+/**
+ * Whether the walk can answer this search at all, and is worth trying.
+ *
+ * The first line is correctness: only the descending ascents sort on the
+ * browsed angle's own stats row has the index's order. The rest is cost. Each
+ * of these filters keeps a handful of climbs out of a whole board, so the walk
+ * would spend its budget and then run the full query anyway.
+ */
+function canWalkAscentsRanking(
+  input: ClimbSearchInput,
+  sortBy: string,
+  sortOrder: 'ASC' | 'DESC',
+  crossAngle: boolean,
+): boolean {
+  if (sortBy !== 'ascents' || sortOrder !== 'DESC' || crossAngle) return false;
+  if (hasNameQuery(input) || (input.setter && input.setter.length > 0) || input.onlyFollowedAuthors) return false;
+  // Projects are the climbs nobody has sent, which the index leaves out;
+  // benchmarks are a few hundred climbs per board.
+  if (input.projectsOnly || input.onlyBenchmarks) return false;
+  // Only the climber's own ticks.
+  if (input.showOnlyAttempted || input.showOnlyCompleted || input.onlyRatedByMe) return false;
+  const { anyHolds, notHolds } = parseHoldsFilter(input.holdsFilter);
+  return anyHolds.length === 0 && notHolds.length === 0;
+}
+
+type RankedWalkQuery = {
+  boardType: string;
+  angle: number;
+  selectSql: string;
+  selectBinds: Bind[];
+  whereSql: string;
+  whereBinds: Bind[];
+  pageSize: number;
+  offset: number;
+};
+
+/**
+ * One page off the ranking, or `null` when the walk could not produce all
+ * `pageSize + 1` rows and the full query has to answer instead.
+ */
+async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): Promise<LocalClimbRow[] | null> {
+  const { boardType, angle, pageSize, offset } = walk;
+  const wantedRows = offset + pageSize + 1;
+  const budget = Math.max(RANKED_WALK_MIN_BUDGET, wantedRows * RANKED_WALK_BUDGET_PER_WANTED_ROW);
+
+  // The stats row at rank `budget`, read from the index alone. The walk stops
+  // before it. No row means the whole angle is inside the budget.
+  const edge = await db.getFirstAsync<{ ascensionist_count: number; climb_uuid: string }>(
+    `SELECT ascensionist_count, climb_uuid
+    FROM board_climb_stats INDEXED BY ${RANKED_WALK_INDEX}
+    WHERE board_type = ? AND angle = ? AND ascensionist_count > 0
+    ORDER BY ascensionist_count DESC, climb_uuid DESC
+    LIMIT 1 OFFSET ?`,
+    [boardType, angle, budget],
+  );
+  const edgeSql = edge ? 'AND (s.ascensionist_count, s.climb_uuid) > (?, ?)' : '';
+  const edgeBinds: Bind[] = edge ? [edge.ascensionist_count, edge.climb_uuid] : [];
+
+  // CROSS JOIN pins the stats row as the outer loop, and INDEXED BY pins the
+  // index: either one left to the planner could turn this back into a sort.
+  // `ascensionist_count > 0` is the index's own predicate, spelled as its DDL
+  // spells it, which is what lets SQLite use a partial index here. The inner
+  // join on `c.uuid` (the primary key) yields one climb per stats row, so the
+  // tie-break on `s.climb_uuid` is the full query's `c.uuid`.
+  const query = `
+    SELECT
+      ${walk.selectSql}
+    FROM board_climb_stats s INDEXED BY ${RANKED_WALK_INDEX}
+    CROSS JOIN board_climbs c ON c.uuid = s.climb_uuid
+    ${BROWSED_GRADES_JOIN}
+    WHERE s.board_type = ? AND s.angle = ? AND s.ascensionist_count > 0 ${edgeSql}
+      AND ${walk.whereSql}
+    ORDER BY s.ascensionist_count DESC, s.climb_uuid DESC
+    LIMIT ? OFFSET ?
+  `;
+  const binds: Bind[] = [
+    ...walk.selectBinds,
+    boardType,
+    angle,
+    boardType,
+    angle,
+    ...edgeBinds,
+    ...walk.whereBinds,
+    pageSize + 1,
+    offset,
+  ];
+  const rows = await db.getAllAsync<LocalClimbRow>(query, binds);
+  return rows.length > pageSize ? rows : null;
+}
+
 export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<LocalSearchResult> {
   // One indexed sync_meta read per search. See `ownedTicks`.
   const ownerUserId = await getLocalUserId(db);
@@ -859,6 +998,43 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')}
     AND t.status = 'attempt' AND ${tickOnCurrentHoldsLocalSql('t')}) AS user_attempts`;
 
+  // One column list for both readers below, so a row means the same thing
+  // whichever of them produced it.
+  const selectSql = `c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
+      c.missing_hold_count, c.holds_revision_number, c.characteristics,
+      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
+      ${eff('ascensionist_count')} AS ascensionist_count,
+      ${eff('display_difficulty')} AS display_difficulty,
+      ${eff('difficulty_average')} AS difficulty_average,
+      ${eff('quality_average')} AS quality_average,
+      ${eff('benchmark_difficulty')} AS benchmark_difficulty,
+      ${eff('angle')} AS stats_angle,
+      COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
+      g.confidence AS boardsesh_confidence,
+      ${userAscentsSelect},
+      ${userAttemptsSelect}${popularSelect}${myGradeSelect}`;
+
+  const toResult = (rows: LocalClimbRow[]): LocalSearchResult => {
+    const hasMore = rows.length > pageSize;
+    const trimmed = hasMore ? rows.slice(0, pageSize) : rows;
+    const climbs = trimmed.map((row) => mapRowToClimb(row, boardType, input.layoutId, angle, useMyGrades));
+    return { climbs, hasMore };
+  };
+
+  if (canWalkAscentsRanking(input, sortBy, sortOrder, crossAngle)) {
+    const rankedRows = await readRankedWalkRows(db, {
+      boardType,
+      angle,
+      selectSql,
+      selectBinds,
+      whereSql,
+      whereBinds,
+      pageSize,
+      offset: page * pageSize,
+    });
+    if (rankedRows) return toResult(rankedRows);
+  }
+
   // Random uses the seeded mixer (order direction is meaningless); every other
   // sort uses its column + direction. Both keep the c.uuid DESC secondary tiebreak.
   const isRandom = sortBy === 'random';
@@ -872,19 +1048,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
   const query = `
     SELECT
-      c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
-      c.missing_hold_count, c.holds_revision_number, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
-      ${eff('ascensionist_count')} AS ascensionist_count,
-      ${eff('display_difficulty')} AS display_difficulty,
-      ${eff('difficulty_average')} AS difficulty_average,
-      ${eff('quality_average')} AS quality_average,
-      ${eff('benchmark_difficulty')} AS benchmark_difficulty,
-      ${eff('angle')} AS stats_angle,
-      COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
-      g.confidence AS boardsesh_confidence,
-      ${userAscentsSelect},
-      ${userAttemptsSelect}${popularSelect}${myGradeSelect}
+      ${selectSql}
     FROM board_climbs c
     ${joinSql}
     WHERE ${whereSql}
@@ -898,12 +1062,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   // rather than repeating that subquery and its three binds here.
   const orderBinds: Bind[] = isRandom ? [randomSeedBind] : [];
   const binds: Bind[] = [...selectBinds, ...joinBinds, ...whereBinds, ...orderBinds, pageSize + 1, page * pageSize];
-  const rows = await db.getAllAsync<LocalClimbRow>(query, binds);
-
-  const hasMore = rows.length > pageSize;
-  const trimmed = hasMore ? rows.slice(0, pageSize) : rows;
-  const climbs = trimmed.map((row) => mapRowToClimb(row, boardType, input.layoutId, angle, useMyGrades));
-  return { climbs, hasMore };
+  return toResult(await db.getAllAsync<LocalClimbRow>(query, binds));
 }
 
 export async function countClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<number> {
