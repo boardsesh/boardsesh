@@ -442,7 +442,7 @@
       "private": "Private",
       "unlisted": "Link only",
       "public": "Public",
-      "privateHint": "Only you can see it. With Help train hold finding on, the Boardsesh team may use the photo to improve hold finding.",
+      "privateHint": "Only you can see it. With “Help train hold finding” on, the Boardsesh team may use the photo to improve hold finding.",
       "unlistedHint": "Anyone with the link gets in. The wall isn't listed on the gym page and its photo stays off the open web.",
       "publicHint": "Anyone can find the wall. It shows on the gym page, its climbs turn up in the feed, and the wall photo goes on the open web.",
       "ownerOnlyError": "Only the climber who set this wall up can change who sees it. Your other changes saved.",
@@ -450,8 +450,8 @@
     },
     "sprayTraining": {
       "label": "Help train hold finding",
-      "description": "We use this wall's photo and the holds you mark to teach the app to spot holds. Someone on the Boardsesh team checks them first. Nobody else sees them.",
-      "updateError": "Couldn't change Help train hold finding. Try again."
+      "description": "We use this wall's photo and the holds you mark to teach the app to spot holds. A Boardsesh admin checks them first. The training copy stays private.",
+      "updateError": "Couldn't change “Help train hold finding”. Try again."
     }
   },
   "boardEntity": {
@@ -998,7 +998,7 @@
       "cameraDenied": "Boardsesh needs your camera to photograph a wall.",
       "failed": "That photo wouldn't open. Try another one.",
       "tip": "Stand back, face the wall square-on, fit all 4 corners in.",
-      "trainingNote": "Your photo and the holds you mark help teach the app to spot holds. Switch it off any time in the wall's settings."
+      "trainingNote": "Your photo and the holds you mark help teach the app to spot holds. Turn off “Help train hold finding” on the previous step, or any time under Edit board."
     },
     "adjust": {
       "title": "Crop and rotate",

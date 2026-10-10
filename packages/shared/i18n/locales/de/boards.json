@@ -442,7 +442,7 @@
       "private": "Privat",
       "unlisted": "Nur mit Link",
       "public": "Öffentlich",
-      "privateHint": "Nur du kannst sie sehen. Mit „Hilf beim Training der Grifferkennung“ an darf das Boardsesh-Team das Foto nutzen, um die Grifferkennung zu verbessern.",
+      "privateHint": "Nur du kannst es sehen. Ist „Hilf beim Training der Grifferkennung“ an, darf das Boardsesh-Team das Foto nutzen, um die Grifferkennung zu verbessern.",
       "unlistedHint": "Wer den Link hat, kommt rein. Das Board steht nicht auf der Seite der Halle und sein Foto bleibt aus dem offenen Web.",
       "publicHint": "Jede*r kann das Board finden. Es steht auf der Seite der Halle, seine Boulder landen im Feed, und das Foto vom Board geht ins offene Web.",
       "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer es sieht. Deine anderen Änderungen sind gespeichert.",
@@ -450,7 +450,7 @@
     },
     "sprayTraining": {
       "label": "Hilf beim Training der Grifferkennung",
-      "description": "Wir nutzen das Foto dieser Wand und die Griffe, die du markierst, um der App beizubringen, Griffe zu erkennen. Jemand aus dem Boardsesh-Team prüft sie vorher. Sonst sieht sie niemand.",
+      "description": "Wir nutzen das Foto dieser Wand und die Griffe, die du markierst, um der App beizubringen, Griffe zu erkennen. Ein*e Boardsesh-Admin prüft sie vorher. Die Trainingskopie bleibt privat.",
       "updateError": "„Hilf beim Training der Grifferkennung“ konnte nicht geändert werden. Versuch es nochmal."
     }
   },
@@ -998,7 +998,7 @@
       "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
       "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes.",
       "tip": "Geh ein Stück zurück, stell dich frontal zur Wand und hol alle 4 Ecken ins Bild.",
-      "trainingNote": "Dein Foto und die Griffe, die du markierst, helfen der App, Griffe zu erkennen. Du kannst das jederzeit in den Einstellungen der Wand ausschalten."
+      "trainingNote": "Dein Foto und die Griffe, die du markierst, helfen der App, Griffe zu erkennen. „Hilf beim Training der Grifferkennung“ kannst du im vorigen Schritt ausschalten oder jederzeit unter „Board bearbeiten“."
     },
     "adjust": {
       "title": "Zuschneiden und drehen",
