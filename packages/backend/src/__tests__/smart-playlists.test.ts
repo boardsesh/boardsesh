@@ -253,23 +253,21 @@ describe('smartPlaylist resolver', () => {
     expect(pageCalls.groupBy.length).toBe(1);
   });
 
-  it('PROJECTS aggregates the logbook per climb, then reads each climb row once', async () => {
+  it('PROJECTS groups the logbook per (board_type, climb_uuid) and keeps the climbs never sent', async () => {
     const ctx = makeCtx();
 
     mockDb.select.mockReturnValueOnce(makeChain([USER_ROW]).chain);
 
     // The page and the count each build the per-climb subquery first, then
-    // select from it: five selects with the user lookup. Behaviour (which
-    // climbs count as projects, before and after a hold moves) is asserted
-    // against a real database in climb-edit-in-place.test.ts.
-    const { chain: pageLoggedChain, calls: pageLoggedCalls } = makeChain([]);
-    mockDb.select.mockReturnValueOnce(pageLoggedChain);
+    // select from it: five selects with the user lookup. Which climbs come out
+    // is asserted against a real database in climb-edit-in-place.test.ts.
+    const { chain: pageProjectsChain, calls: pageProjectsCalls } = makeChain([]);
+    mockDb.select.mockReturnValueOnce(pageProjectsChain);
     const { chain: pageChain, calls: pageCalls } = makeChain([]);
     mockDb.select.mockReturnValueOnce(pageChain);
-    const { chain: countLoggedChain, calls: countLoggedCalls } = makeChain([]);
-    mockDb.select.mockReturnValueOnce(countLoggedChain);
-    const { chain: countChain, calls: countCalls } = makeChain([{ count: 0 }]);
-    mockDb.select.mockReturnValueOnce(countChain);
+    const { chain: countProjectsChain, calls: countProjectsCalls } = makeChain([]);
+    mockDb.select.mockReturnValueOnce(countProjectsChain);
+    mockDb.select.mockReturnValueOnce(makeChain([{ count: 0 }]).chain);
 
     await playlistQueries.smartPlaylist(
       null,
@@ -279,25 +277,19 @@ describe('smartPlaylist resolver', () => {
       ctx,
     );
 
-    for (const calls of [pageLoggedCalls, countLoggedCalls]) {
+    for (const calls of [pageProjectsCalls, countProjectsCalls]) {
       // The user's ticks, grouped on BOTH columns: a sent Kilter climb must not
       // stand in for a Tension climb that shares its uuid.
       expect(calls.from[0][0]).toBe(dbSchema.boardseshTicks);
       expect(calls.groupBy[0]).toEqual([dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType]);
-      expect(calls.as[0]).toEqual(['logged']);
-      // The climb row is not read per tick.
+      // No flash or send among the group's ticks.
+      expect(calls.having).toHaveLength(1);
+      expect(sqlText(calls.having[0][0])).toMatch(/NOT bool_or\(\s*IN \('flash', 'send'\)\)/);
+      expect(calls.as[0]).toEqual(['projects']);
+      // The climb row is not read at all.
       expect(calls.leftJoin).toHaveLength(0);
     }
-    for (const calls of [pageCalls, countCalls]) {
-      // One board_climbs lookup per logged climb, and the two-sided epoch test.
-      expect(calls.leftJoin).toHaveLength(1);
-      expect(calls.leftJoin[0][0]).toBe(dbSchema.boardClimbs);
-      // Only climbs whose holds have moved: the partial-index predicate.
-      expect(sqlText(calls.leftJoin[0][1])).toMatch(/ > 1/);
-      expect(calls.where).toHaveLength(1);
-      const rendered = sqlText(calls.where[0][0]);
-      expect(rendered).toMatch(/COALESCE\(, 0\) >= COALESCE\(, 1\)\s+AND NOT COALESCE\(, 0\) >= COALESCE\(, 1\)/);
-    }
+    expect(pageCalls.leftJoin).toHaveLength(0);
     expect(pageCalls.limit[0]).toEqual([20]);
     expect(pageCalls.offset[0]).toEqual([0]);
 
@@ -682,7 +674,7 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(result).toContainEqual({ type: 'LIKED_CLIMBS', count: 12 });
   });
 
-  it('CTE counts projects per (board_type, climb_uuid), reading each climb row once', async () => {
+  it('CTE counts projects per (board_type, climb_uuid)', async () => {
     // Pin the joint scoping: a kilter send must NOT exclude a tension climb
     // sharing the same UUID from the projects count. The pure SQL of the CTE is
     // what enforces this, so this test asserts on the SQL string rather than on
@@ -695,21 +687,12 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(mockDb.execute).toHaveBeenCalledTimes(2);
     const rendered = sqlText(countsSqlArg());
 
-    // The per-climb aggregate groups on both columns, and its join to the climb
-    // row matches both.
-    expect(rendered).toMatch(/FROM base\s+GROUP BY climb_uuid, board_type/);
     expect(rendered).toMatch(
-      /logged_climb\.board_type = logged\.board_type AND logged_climb\.uuid = logged\.climb_uuid/,
+      /SELECT DISTINCT climb_uuid, board_type\s+FROM base\s+WHERE status IN \('flash', 'send'\)/,
     );
-    // The join repeats the partial-index predicate, so it reads only the climbs
-    // whose holds have moved and never probes board_climbs once per climb.
-    expect(rendered).toMatch(/logged\.climb_uuid\s+AND logged_climb\.holds_revision_number > 1/);
-    // Tried on the current holds, and not sent on them (#6023).
-    expect(rendered).toMatch(
-      /COALESCE\(logged\.latest_revision, 0\) >= COALESCE\(logged_climb\.holds_revision_number, 1\)\s+AND NOT COALESCE\(logged\.latest_sent_revision, 0\) >= COALESCE\(logged_climb\.holds_revision_number, 1\)/,
-    );
-    // The base scan, shared by all three cards, does not read board_climbs.
-    expect(rendered.slice(0, rendered.indexOf('logged AS'))).not.toMatch(/JOIN/);
+    expect(rendered).toMatch(/sent\.climb_uuid = base\.climb_uuid\s+AND sent\.board_type = base\.board_type/);
+    // The logbook cards never read board_climbs.
+    expect(rendered).not.toMatch(/JOIN/);
   });
 
   it('appends RECOMMENDED_* counts when a board resolves', async () => {

@@ -211,11 +211,7 @@ describe('recomputeClimbStats', () => {
 
     // The aggregate rejects sentinel/impossible values instead of letting them
     // drag an owned climb's averages out of range.
-    // The quality average also carries the holds-epoch predicate (#6023); the
-    // difficulty average deliberately does not.
-    expect(sql).toMatch(
-      /AVG\(bt\.quality\) FILTER \(\s*WHERE bt\.quality BETWEEN 1 AND 5\s+AND COALESCE\(bt\.climb_revision, 1\) >= \(SELECT holds_epoch FROM epoch\)\s*\)\s+AS avg_quality/,
-    );
+    expect(sql).toMatch(/AVG\(bt\.quality\) FILTER \(WHERE bt\.quality BETWEEN 1 AND 5\)\s+AS avg_quality/);
     expect(sql).toMatch(/AVG\(bt\.difficulty\) FILTER \(WHERE bt\.difficulty > 1\)\s+AS avg_difficulty/);
 
     // difficulty/display are CASE-guarded on `graded OR derive_from_ticks`
@@ -267,9 +263,7 @@ describe('recomputeClimbStats', () => {
     expect(sql).toMatch(/DISTINCT ON \(bt\.user_id\)/);
     expect(sql).toContain("bt.origin     = 'native'");
     expect(sql).toContain('bt.quality <= 5');
-    expect(sql).toMatch(
-      /bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+AND COALESCE\(bt\.climb_revision, 1\) >= \(SELECT holds_epoch FROM epoch\)\s+ORDER BY/,
-    );
+    expect(sql).toMatch(/bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+ORDER BY/);
     expect(sql).toMatch(/ORDER BY bt\.user_id, bt\.climbed_at DESC, bt\.id DESC/);
   });
 
@@ -436,7 +430,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     kilterId?: string | null;
     kilterSyncedAt?: string | null;
     kilterDetachedAt?: string | null;
-    /** `climb_revision`; omitted is NULL, an imported or pre-column tick. */
+    /** `climb_revision`; omitted is NULL, like every tick saved today. */
     climbRevision?: number | null;
   };
 
@@ -2193,15 +2187,6 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(moonboard.tick_graded_at).toBeNull();
   });
 
-  // -------------------------------------------------------------------------
-  // The holds epoch (#6023)
-  //
-  // board_climbs.holds_revision_number is the revision at which a climb's holds
-  // last moved. The count, the FA and the quality aggregates read only ticks at
-  // or above it; a NULL tick revision reads as 1. The grade average reads every
-  // send. Each case runs the single-key and the bulk path on twin climbs and
-  // requires the same row from both.
-  // -------------------------------------------------------------------------
   describe('the climbers\u2019-vote grade rule, fenced to spray (#5971)', () => {
     async function seedGradeScale(boardType: string) {
       await db.execute(sql`
@@ -2263,246 +2248,36 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     });
   });
 
-  describe('the holds epoch (#6023)', () => {
+  // The holds-epoch rule (#6023) counted a tick only when its `climb_revision`
+  // reached `board_climbs.holds_revision_number`. The rule was removed and both
+  // columns are still in the table, so a climb with a stored epoch above 1 must
+  // compute like any other, on the single-key and the bulk path.
+  it('counts every tick on a climb whose stored holds epoch is above 1', async () => {
     const ANGLE = 40;
-
-    async function setHoldsEpoch(boardType: string, uuid: string, holdsEpoch: number) {
+    await seedUser('u-old', 'Olga');
+    await seedUser('u-legacy', 'Lena');
+    await seedUser('u-current', 'Cara');
+    const uuids = { single: 'EPOCH-IGNORED-SINGLE', bulk: 'EPOCH-IGNORED-BULK' };
+    for (const climbUuid of Object.values(uuids)) {
+      await seedClimb('kilter', climbUuid, 'u-old');
       await db.execute(sql`
-        UPDATE board_climbs
-           SET revision_number = GREATEST(revision_number, ${holdsEpoch}), holds_revision_number = ${holdsEpoch}
-         WHERE board_type = ${boardType} AND uuid = ${uuid}
+        UPDATE board_climbs SET revision_number = 3, holds_revision_number = 3
+         WHERE board_type = 'kilter' AND uuid = ${climbUuid}
       `);
+      const key = { boardType: 'kilter', climbUuid, angle: ANGLE, status: 'send' as const, origin: 'native' as const };
+      await seedTick({ ...key, userId: 'u-old', quality: 5, climbedAt: '2026-01-01 00:00:00', climbRevision: 1 });
+      await seedTick({ ...key, userId: 'u-legacy', quality: 1, climbedAt: '2026-02-01 00:00:00' });
+      await seedTick({ ...key, userId: 'u-current', quality: 3, climbedAt: '2026-03-01 00:00:00', climbRevision: 3 });
     }
 
-    type EpochTick = Omit<SeedTick, 'boardType' | 'climbUuid' | 'angle'>;
+    await recomputeClimbStatsCore(db, 'kilter', uuids.single, ANGLE);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: uuids.bulk, angle: ANGLE }]);
 
-    /** The same ticks on a `-SINGLE` and a `-BULK` climb, each recomputed by its own path. */
-    async function recomputeTwins(
-      boardType: string,
-      name: string,
-      setup: (uuid: string) => Promise<void>,
-      ticks: EpochTick[],
-    ) {
-      const singleUuid = `${name}-SINGLE`;
-      const bulkUuid = `${name}-BULK`;
-      for (const uuid of [singleUuid, bulkUuid]) {
-        await setup(uuid);
-        for (const tick of ticks) {
-          await seedTick({ ...tick, boardType, climbUuid: uuid, angle: ANGLE });
-        }
-      }
-      const recompute = async () => {
-        await recomputeClimbStatsCore(db, boardType, singleUuid, ANGLE);
-        await recomputeClimbStatsBulk(db, [{ boardType, climbUuid: bulkUuid, angle: ANGLE }]);
-        const single = await statsRow(boardType, singleUuid, ANGLE);
-        const bulk = await statsRow(boardType, bulkUuid, ANGLE);
-        // tick_graded_at is a wall-clock stamp, so compare whether it is set.
-        const comparable = (row: typeof single) => ({ ...row, tick_graded_at: row.tick_graded_at != null });
-        expect(comparable(bulk)).toEqual(comparable(single));
-        return single;
-      };
-      return { singleUuid, bulkUuid, recompute };
-    }
-
-    const MIXED_TICKS: EpochTick[] = [
-      // Revision 1 and NULL: both before the holds moved at revision 3.
-      {
-        userId: 'u-old',
-        status: 'send',
-        origin: 'native',
-        quality: 5,
-        difficulty: 20,
-        climbedAt: '2026-01-01 00:00:00',
-        climbRevision: 1,
-      },
-      {
-        userId: 'u-legacy',
-        status: 'send',
-        origin: 'native',
-        quality: 1,
-        difficulty: 10,
-        climbedAt: '2026-02-01 00:00:00',
-      },
-      // At the epoch, and past it.
-      {
-        userId: 'u-current',
-        status: 'send',
-        origin: 'native',
-        quality: 4,
-        difficulty: 14,
-        climbedAt: '2026-03-01 00:00:00',
-        climbRevision: 3,
-      },
-      {
-        userId: 'u-newer',
-        status: 'flash',
-        origin: 'native',
-        quality: 2,
-        climbedAt: '2026-04-01 00:00:00',
-        climbRevision: 4,
-      },
-      // An imported send on the old holds, then a native send on the new ones.
-      // The import no longer marks this climber as counted upstream.
-      { userId: 'u-returning', status: 'send', origin: 'kilter_pull', climbedAt: '2025-12-01 00:00:00' },
-      {
-        userId: 'u-returning',
-        status: 'send',
-        origin: 'native',
-        quality: 3,
-        climbedAt: '2026-05-01 00:00:00',
-        climbRevision: 3,
-      },
-    ];
-
-    beforeEach(async () => {
-      await seedUser('u-old', 'Olga');
-      await seedUser('u-legacy', 'Lena');
-      await seedUser('u-current', 'Cara');
-      await seedUser('u-newer', 'Nico');
-      await seedUser('u-returning', 'Remy');
-    });
-
-    it('counts, crowns and rates only ticks at or above the epoch, on an owned climb', async () => {
-      const { recompute } = await recomputeTwins(
-        'kilter',
-        'EPOCH-OWNED',
-        async (uuid) => {
-          await seedClimb('kilter', uuid, 'u-old');
-          await setHoldsEpoch('kilter', uuid, 3);
-        },
-        MIXED_TICKS,
-      );
-
-      const row = await recompute();
-      // Cara, Nico and Remy. Olga (revision 1) and Lena (NULL) sent other holds.
+    for (const climbUuid of Object.values(uuids)) {
+      const row = await statsRow('kilter', climbUuid, ANGLE);
       expect(Number(row.bs)).toBe(3);
-      expect(Number(row.total)).toBe(3);
-      // The first send on the current holds, not Remy's older import.
-      expect(row.fa).toBe('Cara');
-      expect(new Date(String(row.fa_at)).toISOString()).toBe('2026-03-01T00:00:00.000Z');
-      // AVG(4, 2, 3): the 5 and the 1 from the old holds are out.
+      expect(row.fa).toBe('Olga');
       expect(Number(row.quality)).toBeCloseTo(3, 5);
-      // The grade reads EVERY graded send: AVG(20, 10, 14).
-      expect(Number(row.difficulty)).toBeCloseTo(44 / 3, 5);
-      expect(Number(row.display_difficulty)).toBeCloseTo(44 / 3, 5);
-    });
-
-    it('counts a NULL-revision tick at epoch 1 and drops it at epoch 2, keeping the grade', async () => {
-      const legacyOnly = MIXED_TICKS.filter((tick) => tick.userId === 'u-legacy' || tick.userId === 'u-old');
-      const { singleUuid, bulkUuid, recompute } = await recomputeTwins(
-        'kilter',
-        'EPOCH-RESET',
-        async (uuid) => {
-          await seedClimb('kilter', uuid, 'u-old');
-        },
-        legacyOnly,
-      );
-
-      const before = await recompute();
-      expect(Number(before.bs)).toBe(2);
-      expect(before.fa).toBe('Olga');
-      expect(Number(before.quality)).toBeCloseTo(3, 5);
-      expect(Number(before.display_difficulty)).toBeCloseTo(15, 5);
-
-      await setHoldsEpoch('kilter', singleUuid, 2);
-      await setHoldsEpoch('kilter', bulkUuid, 2);
-
-      const after = await recompute();
-      expect(Number(after.bs)).toBe(0);
-      expect(Number(after.total)).toBe(0);
-      expect(after.fa).toBeNull();
-      expect(after.fa_at).toBeNull();
-      expect(after.quality).toBeNull();
-      // Not filtered: the climb keeps its tick-derived grade and stays in
-      // grade-filtered search.
-      expect(Number(after.display_difficulty)).toBeCloseTo(15, 5);
-      expect(Number(after.difficulty)).toBeCloseTo(15, 5);
-      expect(after.tick_graded_at).not.toBeNull();
-    });
-
-    it('filters the Boardsesh quality vote and leaves the manufacturer FA, on a non-owned climb', async () => {
-      const { recompute } = await recomputeTwins(
-        'kilter',
-        'EPOCH-CATALOG',
-        async (uuid) => {
-          await seedClimb('kilter', uuid, null);
-          await seedStats('kilter', uuid, ANGLE, {
-            upstream: 10,
-            faUsername: 'aurora-fa',
-            upstreamQuality: 3,
-            displayDifficulty: 18,
-          });
-          await setHoldsEpoch('kilter', uuid, 3);
-        },
-        MIXED_TICKS,
-      );
-
-      const row = await recompute();
-      expect(Number(row.bs)).toBe(3);
-      expect(Number(row.total)).toBe(13);
-      expect(row.fa).toBe('aurora-fa');
-      // One vote each from Cara (4), Nico (2) and Remy (3).
-      expect(Number(row.bs_quality_sum)).toBe(9);
-      expect(Number(row.bs_quality_count)).toBe(3);
-      // The catalogue grade is upstream's and untouched.
-      expect(Number(row.display_difficulty)).toBe(18);
-    });
-
-    it('computes a catalogue climb at epoch 1 exactly as it did before the epoch existed', async () => {
-      const { recompute } = await recomputeTwins(
-        'kilter',
-        'EPOCH-ONE',
-        async (uuid) => {
-          await seedClimb('kilter', uuid, null);
-          await seedStats('kilter', uuid, ANGLE, { upstream: 10, upstreamQuality: 3, displayDifficulty: 18 });
-        },
-        MIXED_TICKS,
-      );
-
-      const row = await recompute();
-      // Olga, Lena, Cara and Nico. Remy's import marks them as counted upstream,
-      // the rule from before #6023.
-      expect(Number(row.bs)).toBe(4);
-      expect(Number(row.total)).toBe(14);
-      // Latest native rating per climber: 5, 1, 4, 2 and Remy's 3.
-      expect(Number(row.bs_quality_sum)).toBe(15);
-      expect(Number(row.bs_quality_count)).toBe(5);
-    });
-
-    it('reads a key with no board_climbs row as epoch 1', async () => {
-      const { recompute } = await recomputeTwins(
-        'kilter',
-        'EPOCH-NO-CLIMB',
-        async (uuid) => {
-          // A stats row with no climb behind it: the seed would not create one,
-          // but the UPDATE still serves a row that exists.
-          await seedStats('kilter', uuid, ANGLE, { upstream: 2 });
-        },
-        MIXED_TICKS.filter((tick) => tick.userId === 'u-legacy' || tick.userId === 'u-newer'),
-      );
-
-      const row = await recompute();
-      // Lena's NULL revision and Nico's revision 4 both clear an epoch of 1.
-      expect(Number(row.bs)).toBe(2);
-      expect(Number(row.total)).toBe(4);
-    });
-
-    it('still seeds a row for a key whose only sends are on the old holds', async () => {
-      const { recompute } = await recomputeTwins(
-        'kilter',
-        'EPOCH-SEED',
-        async (uuid) => {
-          await seedClimb('kilter', uuid, 'u-old');
-          await setHoldsEpoch('kilter', uuid, 2);
-        },
-        MIXED_TICKS.filter((tick) => tick.userId === 'u-old'),
-      );
-
-      const row = await recompute();
-      expect(row).toBeDefined();
-      expect(Number(row.bs)).toBe(0);
-      expect(row.fa).toBeNull();
-      expect(Number(row.display_difficulty)).toBe(20);
-    });
+    }
   });
 });

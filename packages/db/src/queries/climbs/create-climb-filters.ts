@@ -17,7 +17,6 @@ import {
   userFavorites,
 } from '../../schema/index';
 import { hasNameQuery, type BoardRouteParams, type ClimbSearchParams } from './types';
-import { tickAliasOnCurrentHoldsSql, tickOnCurrentHoldsSql } from '../climb-stats/holds-epoch';
 import { followedAuthorCondition } from './followed-authors';
 import { climbHoldPlacementMatchSql } from './placement-match';
 import {
@@ -1027,14 +1026,6 @@ export const createClimbFilters = (
               )}]::int[]`,
         ];
 
-  // Every personal check below reads only ticks logged on the holds the climb
-  // has now (#6023, holds-epoch.ts): a send, an attempt or a rating from before
-  // a hold moved belongs to a different climb. The epoch is a column of the
-  // board_climbs row each subquery is already correlated to, so this adds a
-  // compare and no lookup. Epoch 1 (a climb whose holds never moved) passes
-  // every tick.
-  const tickOnCurrentHolds = tickOnCurrentHoldsSql(boardseshTicks.climbRevision, boardClimbs.holdsRevisionNumber);
-
   // Personal progress filter conditions
   const personalProgressConditions: SQL[] = [];
   if (searchParams.onlyFavorited && !userId) {
@@ -1068,7 +1059,6 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} = 'attempt'
-          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1082,7 +1072,6 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} IN ('flash', 'send')
-          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1097,7 +1086,6 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} = 'attempt'
-          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1111,7 +1099,6 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.status} IN ('flash', 'send')
-          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1136,7 +1123,6 @@ export const createClimbFilters = (
           AND ${boardseshTicks.boardType} = ${params.board_name}
           AND ${boardseshTicks.angle} = ${params.angle}
           AND ${boardseshTicks.quality} IS NOT NULL
-          AND ${tickOnCurrentHolds}
         )`,
       );
     }
@@ -1148,14 +1134,6 @@ export const createClimbFilters = (
       // and a climb the user never rated has no offending tick, so it stays
       // visible (pair with onlyRatedByMe to drop those too). The (climbed_at,
       // id) row comparison breaks same-timestamp ties by insertion order.
-      //
-      // The holds epoch (#6023) is tested on the offending rating only. On the
-      // superseding one it puts a reference to board_climbs, two query levels
-      // up, inside the inner NOT EXISTS, and with that Postgres stopped
-      // unnesting it (EXPLAIN on the dev DB): the per-candidate subplan
-      // described above came back.
-      // Nothing is lost: a rating newer than one on the current holds is on the
-      // current holds too, apart from a tick whose date was edited backwards.
       personalProgressConditions.push(
         sql`NOT EXISTS (
           SELECT 1 FROM ${boardseshTicks} AS rating_below
@@ -1165,7 +1143,6 @@ export const createClimbFilters = (
           AND rating_below.angle = ${params.angle}
           AND rating_below.quality IS NOT NULL
           AND rating_below.quality < ${searchParams.minUserRating}
-          AND ${tickAliasOnCurrentHoldsSql('rating_below', boardClimbs.holdsRevisionNumber)}
           AND NOT EXISTS (
             SELECT 1 FROM ${boardseshTicks} AS rating_newer
             WHERE rating_newer.climb_uuid = rating_below.climb_uuid

@@ -1115,8 +1115,7 @@ export type Climb = {
   framesPace?: Maybe<Scalars['Int']['output']>;
   /**
    * The revision at which this climb's holds last changed, as stored. Edits no
-   * longer move it. A tick whose `climbRevision` is at or above this number was
-   * climbed on the holds the climb has now.
+   * longer move it and the server no longer compares ticks against it.
    */
   holdsRevisionNumber?: Maybe<Scalars['Int']['output']>;
   /** Whether this climb is a draft (unpublished) */
@@ -1170,9 +1169,8 @@ export type Climb = {
   /**
    * The climb's stored revision number. Edits no longer move it, so it is 1 for
    * almost every climb and frozen at its last value for the few edited before
-   * revision history was retired. A client that logs a tick sends this back as
-   * `SaveTickInput.climbRevision`. Null on a fetch path that does not project
-   * the column.
+   * revision history was retired. The server no longer uses it. Null on a fetch
+   * path that does not project the column.
    */
   revisionNumber?: Maybe<Scalars['Int']['output']>;
   /** Username of the person who created this climb */
@@ -8389,7 +8387,7 @@ export type SaveTickInput = {
   boardType: Scalars['String']['input'];
   /** Specific board entity this tick is on, by uuid. When provided, takes precedence over (layoutId, sizeId, setIds) resolution and lets ticks attach to a board the climber doesn't own (e.g. a seeded gym board). */
   boardUuid?: InputMaybe<Scalars['String']['input']>;
-  /** The `Climb.revisionNumber` the client was showing when the climber logged this. Optional. When it is omitted, is below 1, or names a revision the climb has not reached, the server stores the revision that was live at climbedAt. No integer sent here fails the tick. */
+  /** Accepted and ignored: climb revisions were retired and a new tick stores none. Kept so a tick sent by an older app, or already queued offline, is not refused. No integer sent here fails the tick. */
   climbRevision?: InputMaybe<Scalars['Int']['input']>;
   /** Climb UUID */
   climbUuid: Scalars['String']['input'];
@@ -10294,7 +10292,7 @@ export type Tick = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at the tick's angle. Null when no grade row exists. Fills the gap only for ungraded ascents: the user's own tick grade always wins, and the UI keeps the legacy consensus when this is null or 'setter_only'. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
-  /** Which revision of the climb this was logged against: a `Climb.revisionNumber`, so 1 on a climb nobody has edited. Null when it is not known, which is every imported tick and every tick older than the field. Set once when the tick is saved; updateTick never changes it. */
+  /** Retired with climb revisions. The stored value: null on every imported tick and on every tick saved since the server stopped recording it; a number only on ticks saved while it did. */
   climbRevision?: Maybe<Scalars['Int']['output']>;
   /** UUID of the climb attempted */
   climbUuid: Scalars['String']['output'];
@@ -10503,11 +10501,11 @@ export type UpdateClimbInput = {
 export type UpdateClimbResult = {
   __typename?: 'UpdateClimbResult';
   createdAt?: Maybe<Scalars['String']['output']>;
-  /** The revision at which the holds last changed, after this save (`Climb.holdsRevisionNumber`). Equal to revisionNumber when this save moved a hold. */
+  /** The stored `Climb.holdsRevisionNumber`. A save no longer moves it. */
   holdsRevisionNumber?: Maybe<Scalars['Int']['output']>;
   isDraft: Scalars['Boolean']['output'];
   publishedAt?: Maybe<Scalars['String']['output']>;
-  /** The climb's revision after this save (`Climb.revisionNumber`). One higher than before when the save was a recorded edit, unchanged when it edited a draft or changed nothing. So the editing client can stamp its next tick without refetching the climb. */
+  /** The climb's stored revision (`Climb.revisionNumber`). A save no longer moves it. */
   revisionNumber?: Maybe<Scalars['Int']['output']>;
   uuid: Scalars['ID']['output'];
 };

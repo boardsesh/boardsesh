@@ -1354,8 +1354,8 @@ export const climbMutations = {
       createdAt: existing.createdAt,
       publishedAt: nextPublishedAt,
       isDraft: nextIsDraft,
-      // The stored numbers, which edits no longer move. An older client stamps
-      // its next tick with `revisionNumber` (#6023).
+      // The stored numbers, which edits no longer move. Returned for app
+      // bundles that still select them; saveTick ignores what they send back.
       revisionNumber: outcome.revisionNumber,
       holdsRevisionNumber: outcome.holdsRevisionNumber,
     };

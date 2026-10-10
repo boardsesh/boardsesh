@@ -98,11 +98,11 @@ export type Climb = {
   // off the wall. Spray walls only: null/undefined on every catalogue board, and
   // on any spray row a reset has never touched. Both mean intact.
   missingHoldCount?: number | null;
-  // `board_climbs.revision_number`: the climb's current revision, 1 when it has
-  // never been edited. Null/undefined on a fetch path that does not project it.
+  // `board_climbs.revision_number`, as stored; edits no longer move it.
+  // Null/undefined on a fetch path that does not project it.
   revisionNumber?: number | null;
-  // `board_climbs.holds_revision_number`: the revision at which the holds last
-  // changed. A tick at or above it was climbed on the holds the climb has now.
+  // `board_climbs.holds_revision_number`, as stored. The server no longer
+  // compares ticks against it.
   holdsRevisionNumber?: number | null;
 };
 

@@ -81,11 +81,10 @@ export const boardseshTicks = pgTable(
     boardType: text('board_type').notNull(), // 'kilter' or 'tension'
     climbUuid: text('climb_uuid').notNull(),
     // Which revision of the climb this tick was logged against (#6023): a
-    // `board_climbs.revision_number`, so 1 on a climb nobody has edited. NULL
-    // means unknown, which is every import and every tick older than the
-    // column. Stamped once by saveTick and never moved by updateTick. No
-    // foreign key to `board_climb_revisions`: revision rows are written lazily
-    // and pruned past the cap, so the number can outlive its row.
+    // `board_climbs.revision_number`. saveTick stamped it for a few days in
+    // October 2026 and no longer does, so it is NULL on every import, every
+    // older tick and every tick saved since. Nothing on the server reads it as
+    // a rule; `syncTicks` and the tick resolvers still return the stored value.
     climbRevision: integer('climb_revision'),
     angle: integer('angle').notNull(),
     isMirror: boolean('is_mirror').default(false),

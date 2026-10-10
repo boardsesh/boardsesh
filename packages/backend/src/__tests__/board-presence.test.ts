@@ -1463,40 +1463,6 @@ describe('board-presence resolvers', () => {
       expect(senders.map((sender) => sender.userId)).toEqual([...RECENT_SENDER_TEST_USER_IDS].reverse().slice(0, 5));
     });
 
-    it('leaves out a climber whose only send was before the holds last moved (#6023)', async () => {
-      const boardId = await makeBoard();
-      const climbedAt = '2026-07-06T10:00:00.000Z';
-      // The holds moved at revision 2. The shared climb goes back to its
-      // default afterwards so the other cases still read it at epoch 1.
-      await db.execute(sql`
-        UPDATE board_climbs SET revision_number = 3, holds_revision_number = 2
-        WHERE uuid = ${TEST_CLIMB_UUID} AND board_type = 'kilter'
-      `);
-      try {
-        await db.insert(dbSchema.boardseshTicks).values([
-          // No revision reads as revision 1: a send of the old holds.
-          tick({ uuid: `epoch-old-${Date.now()}`, userId: TEST_USER_ID, boardId, climbedAt }),
-          {
-            ...tick({ uuid: `epoch-new-${Date.now()}`, userId: SECOND_USER_ID, boardId, climbedAt }),
-            climbRevision: 2,
-          },
-        ]);
-
-        const senders = await boardPresenceQueries.boardClimbRecentSenders(
-          undefined,
-          { boardId, climbUuid: TEST_CLIMB_UUID, angle: 40 },
-          authCtx(),
-        );
-
-        expect(senders.map((sender) => sender.userId)).toEqual([SECOND_USER_ID]);
-      } finally {
-        await db.execute(sql`
-          UPDATE board_climbs SET revision_number = 1, holds_revision_number = 1
-          WHERE uuid = ${TEST_CLIMB_UUID} AND board_type = 'kilter'
-        `);
-      }
-    });
-
     it('matches only the canonical UUID when a climb has no aliases', async () => {
       // The alias fan-out is an `inArray` over a subquery. When that subquery is
       // empty the OR must degrade to the canonical equality alone — not match

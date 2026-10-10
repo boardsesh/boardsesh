@@ -90,15 +90,13 @@ export const climbTypeDefs = /* GraphQL */ `
     """
     The climb's stored revision number. Edits no longer move it, so it is 1 for
     almost every climb and frozen at its last value for the few edited before
-    revision history was retired. A client that logs a tick sends this back as
-    \`SaveTickInput.climbRevision\`. Null on a fetch path that does not project
-    the column.
+    revision history was retired. The server no longer uses it. Null on a fetch
+    path that does not project the column.
     """
     revisionNumber: Int
     """
     The revision at which this climb's holds last changed, as stored. Edits no
-    longer move it. A tick whose \`climbRevision\` is at or above this number was
-    climbed on the holds the climb has now.
+    longer move it and the server no longer compares ticks against it.
     """
     holdsRevisionNumber: Int
     """

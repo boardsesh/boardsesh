@@ -868,7 +868,7 @@ describe('reads through the executable schema', () => {
       `query ($input: ClimbLogsInput!) { climbLogs(input: $input) { items { climbRevision climbCurrentRevision } } }`,
       { input: { boardType: 'spray', climbUuid } },
     )) as { climbLogs: { items: Array<{ climbRevision: number | null; climbCurrentRevision: number | null }> } };
-    expect(logs.climbLogs.items).toEqual([{ climbRevision: 1, climbCurrentRevision: null }]);
+    expect(logs.climbLogs.items).toEqual([{ climbRevision: null, climbCurrentRevision: null }]);
 
     expect(
       await run(`query ($uuid: ID!) { sprayWall(uuid: $uuid) { climbEditPolicy viewerCanEditClimbs } }`, {

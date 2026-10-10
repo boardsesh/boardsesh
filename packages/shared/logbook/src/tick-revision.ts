@@ -5,10 +5,11 @@
  * the server), and each climb carries the version at which its holds last
  * moved (`holdsRevisionNumber`). Versions start at 1.
  *
- * "Does this tick still count as a send of the climb?" follows the server's
- * rule in `packages/db/src/queries/climb-stats/holds-epoch.ts`, where a tick
- * with no version is version 1. A tick the app cannot say anything about is a
- * third case and counts (see `isTickOnCurrentHolds`).
+ * "Does this tick still count as a send of the climb?" follows the rule the
+ * server used to apply, where a tick with no version is version 1. The server
+ * dropped the rule and no longer moves either number, so every climb's holds
+ * version is 1 and every tick counts. A tick the app cannot say anything about
+ * is a third case and counts (see `isTickOnCurrentHolds`).
  */
 
 type RevisionNumber = number | null | undefined;

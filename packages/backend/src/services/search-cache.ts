@@ -50,6 +50,11 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * (`isCacheableBoard` in the climbs resolver), so no cached page describes it,
  * and every cacheable board resolves exactly as before. The v8 note above
  * predates that exclusion.
+ *
+ * Not bumped for the removal of the holds-epoch rule (#6023) either. The rule
+ * only changed per-viewer sent / attempted filters, which were never part of a
+ * shared page, and search rows still carry the same two revision fields. No
+ * board is cacheable at the moment in any case (`isCacheableBoard`).
  */
 export const CACHE_VERSION = 'v10';
 

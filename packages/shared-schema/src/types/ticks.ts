@@ -7,9 +7,8 @@ export type Tick = {
   userId: string;
   boardType: string;
   climbUuid: string;
-  // `boardsesh_ticks.climb_revision`: the `Climb.revisionNumber` this was logged
-  // against, 1 on a never-edited climb. Null/undefined means unknown (imports,
-  // and every tick older than the column).
+  // `boardsesh_ticks.climb_revision`, as stored. Retired: null on every import
+  // and on every tick saved since the server stopped recording it.
   climbRevision?: number | null;
   angle: number;
   isMirror: boolean;
@@ -64,9 +63,8 @@ export type SaveTickInput = {
   uuid?: string;
   boardType: string;
   climbUuid: string;
-  // The `Climb.revisionNumber` the client was showing. Optional: the server
-  // falls back to the revision live at `climbedAt`, and no integer sent here
-  // fails the tick.
+  // Accepted and ignored: climb revisions were retired. Older app bundles and
+  // queued offline sends still carry it, and no integer sent here fails the tick.
   climbRevision?: number | null;
   angle: number;
   isMirror: boolean;

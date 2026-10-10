@@ -36,8 +36,7 @@ type StatsKeySql = { boardType: SQL; climbUuid: SQL; angle: SQL };
 /**
  * One vote per climber: the average of each climber's latest graded flash/send
  * at the key (max climbed_at, tie-break max id), NULL when nobody has graded it.
- * Detached ticks are out, as everywhere else in the recompute. Not filtered by
- * the holds epoch, for the same reason the tick average is not (see recompute.ts).
+ * Detached ticks are out, as everywhere else in the recompute.
  */
 export function climberVoteAverageSql(key: StatsKeySql): SQL {
   return sql`(
