@@ -22,7 +22,6 @@ const hold = (overrides: Partial<SprayTrainingHoldData> = {}): SprayTrainingHold
   outline: null,
   source: 'MANUAL',
   autoReview: null,
-  confidence: null,
   ...overrides,
 });
 
@@ -31,7 +30,6 @@ const candidate = (overrides: Partial<SprayTrainingCandidateData> = {}): SprayTr
   cx: 5,
   cy: 6,
   r: 7,
-  confidence: 0.5,
   outline: null,
   fate: 'DELETED',
   ...overrides,

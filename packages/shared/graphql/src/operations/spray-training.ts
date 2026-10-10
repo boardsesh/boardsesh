@@ -95,11 +95,8 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
       }
       items {
         versionId
-        wallUuid
         versionNumber
         visibility
-        createdAt
-        publishedAt
         photo {
           url
           thumbUrl
@@ -117,7 +114,6 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
           outline
           source
           autoReview
-          confidence
         }
         unmappableHoldCount
         candidates {
@@ -125,7 +121,6 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
           cx
           cy
           r
-          confidence
           outline
           fate
         }
@@ -179,7 +174,6 @@ export type SprayTrainingHoldData = {
   outline: number[] | null;
   source: SprayHoldSource;
   autoReview: SprayHoldAutoReview | null;
-  confidence: number | null;
 };
 
 /** A detector suggestion in photo pixels; `outline` is in units of `r`. */
@@ -188,7 +182,6 @@ export type SprayTrainingCandidateData = {
   cx: number;
   cy: number;
   r: number;
-  confidence: number;
   outline: number[] | null;
   fate: SprayTrainingCandidateFate;
 };
@@ -209,11 +202,8 @@ export type SprayTrainingStatsData = {
 
 export type SprayTrainingQueueItemData = {
   versionId: string;
-  wallUuid: string;
   versionNumber: number;
   visibility: SprayTrainingWallVisibility;
-  createdAt: string;
-  publishedAt: string | null;
   photo: SprayWallPhotoData | null;
   photoWidth: number | null;
   photoHeight: number | null;
