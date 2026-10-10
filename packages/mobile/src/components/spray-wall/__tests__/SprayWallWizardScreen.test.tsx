@@ -537,6 +537,22 @@ describe('the photo step and Help train hold finding', () => {
     expect(queryByTestId('server-consent')).toBeNull();
     expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
   });
+
+  it('shows neither when the wall comes back without an owner', async () => {
+    fetchVersionsMock.mockResolvedValue({
+      ...UNFINISHED_WALL,
+      board: { name: 'Garage wall', ownerId: null },
+      versions: [],
+    });
+    const { getByText, queryByText, queryByTestId } = render(
+      <SprayWallWizardScreen returnTo="/(tabs)/climbs" wallUuid="wall-1" />,
+    );
+    await act(async () => {});
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(queryByTestId('server-consent')).toBeNull();
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
 });
 
 describe('native back guard', () => {
