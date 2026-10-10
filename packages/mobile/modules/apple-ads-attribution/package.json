@@ -1,0 +1,8 @@
+{
+  "name": "@boardsesh/apple-ads-attribution-module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "First-party iOS AdServices attribution token bridge.",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

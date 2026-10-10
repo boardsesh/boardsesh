@@ -18,6 +18,7 @@ import { userQueries } from './users/queries';
 import { userMutations } from './users/mutations';
 import { userDataExportQueries, userDataExportMutations } from './users/data-export';
 import { analyticsConsentQueries, analyticsConsentMutations } from './users/analytics-consent';
+import { appleAdsAttributionMutations } from './users/apple-ads-attribution';
 import { activeUsersMutations } from './users/active-users';
 import { climbQueries } from './climbs/queries';
 import { climbMutations } from './climbs/mutations';
@@ -167,6 +168,7 @@ export const resolvers = {
     ...userMutations,
     ...userDataExportMutations,
     ...analyticsConsentMutations,
+    ...appleAdsAttributionMutations,
     ...activeUsersMutations,
     ...favoriteMutations,
     ...playlistMutations,

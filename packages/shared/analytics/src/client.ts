@@ -15,7 +15,7 @@ export type AnalyticsProperties = Record<string, AnalyticsPropertyValue>;
 // `PostHogCaptureOptions.timestamp`, which `prepareMessage` stamps in place of
 // "now"). It lets an event whose properties need an await still sort at the
 // moment it describes, so funnel order survives the wait.
-export type AnalyticsCaptureOptions = { timestamp?: Date };
+export type AnalyticsCaptureOptions = { timestamp?: Date; uuid?: string };
 
 export interface PostHogClient {
   capture(event: string, properties?: AnalyticsProperties, options?: AnalyticsCaptureOptions): void;

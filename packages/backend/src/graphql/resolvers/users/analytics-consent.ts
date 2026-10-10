@@ -132,11 +132,16 @@ export async function setAnalyticsConsentForUser(
   });
 }
 
+/** Read the account answer without caching, including when it changes during a request. */
+export async function readAnalyticsConsentForUser(userId: string): Promise<AnalyticsConsent | null> {
+  const latest = await readLatestConsent(db, userId);
+  return latest ? toAnalyticsConsent(latest) : null;
+}
+
 export const analyticsConsentQueries = {
   myAnalyticsConsent: async (_: unknown, _args: unknown, ctx: ConnectionContext): Promise<AnalyticsConsent | null> => {
     requireAuthenticated(ctx);
-    const latest = await readLatestConsent(db, ctx.userId!);
-    return latest ? toAnalyticsConsent(latest) : null;
+    return readAnalyticsConsentForUser(ctx.userId!);
   },
 };
 

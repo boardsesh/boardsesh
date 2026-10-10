@@ -2,6 +2,8 @@ import { deactivateNotificationDevice } from '../notifications/device-registrati
 import { markStartup } from '../lib/profiling/startup-profile';
 import { invalidateConsentAccount } from '../lib/consent-state';
 import { createConsentBoundAnalyticsRunner } from '../lib/consent-bound-analytics';
+import { commitVerifiedAuthResult, type VerifiedAuthResult } from '../lib/verified-auth-result';
+import { createSignupConsentLease, publishSignupConversion, type SignupConsentLease } from '../lib/signup-conversion';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
@@ -9,7 +11,8 @@ import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
 import { AppLoadingSplash } from '../components/AppLoadingSplash';
 import { resolveAuthSession, type AuthSessionResult } from '../lib/auth-session';
-import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
+import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
+import { userIdFromJwt } from '../lib/jwt-user-id';
 import { subscribeAuthTokenChanges } from '../lib/auth-token-events';
 import { bumpAuthTransportRevision } from '../lib/auth-transport-revision';
 import {
@@ -508,6 +511,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       { purgeOfflineBoards = false }: { purgeOfflineBoards?: boolean } = {},
     ): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
+      commitVerifiedAuthResult(null);
       updateNativeSessionDegraded(false);
       const exportCredentialGeneration = captureAuthCredentialGeneration();
       const previousStorageOwner = Platform.OS === 'web' ? authenticatedStorageOwnerRef.current : undefined;
@@ -892,24 +896,71 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     });
   }, [checkAuth, isNativeSessionDegraded]);
 
+  const commitSuccessfulAuthMetadata = useCallback(
+    async (
+      result: Partial<VerifiedAuthResult>,
+      credentialGeneration: number,
+      signupLease: SignupConsentLease,
+    ): Promise<void> => {
+      if (!isAuthCredentialGenerationCurrent(credentialGeneration) || !authStateRef.current.isAuthenticated) return;
+      if (!result.userId) return;
+      // A superseded SecureStore write can return success after another login.
+      // The server receipt proves creation; this decode only compares its owner
+      // against the credential actually committed on this device.
+      let currentToken: string | null;
+      try {
+        currentToken = await getAuthToken();
+      } catch {
+        return;
+      }
+      if (
+        !isAuthCredentialGenerationCurrent(credentialGeneration) ||
+        !authStateRef.current.isAuthenticated ||
+        userIdFromJwt(currentToken) !== result.userId
+      )
+        return;
+      const verifiedResult: VerifiedAuthResult = {
+        userId: result.userId,
+        ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
+      };
+      commitVerifiedAuthResult(verifiedResult);
+      if (verifiedResult.accountCreation) publishSignupConversion(verifiedResult.accountCreation, signupLease);
+    },
+    [],
+  );
+
+  const resolveSuccessfulAuth = useCallback(
+    async (result: Partial<VerifiedAuthResult>, resolveSession: () => Promise<void>): Promise<void> => {
+      const signupLease = createSignupConsentLease();
+      const credentialGeneration = captureAuthCredentialGeneration();
+      try {
+        await resolveSession();
+        await commitSuccessfulAuthMetadata(result, credentialGeneration, signupLease);
+      } finally {
+        signupLease.dispose();
+      }
+    },
+    [commitSuccessfulAuthMetadata],
+  );
+
   // Both native OAuth flows run their provider sheet, exchange the identity
   // token for our JWT pair, and — on success — re-run checkAuth so the provider
   // flips to the authenticated UI (matching signInWithCredentials).
   const signInWithApple = useCallback(async (): Promise<OAuthSignInResult> => {
     const result = await authSignInWithApple();
     if (result.success) {
-      await checkAuth();
+      await resolveSuccessfulAuth(result, checkAuth);
     }
     return result;
-  }, [checkAuth]);
+  }, [checkAuth, resolveSuccessfulAuth]);
 
   const signInWithGoogle = useCallback(async (): Promise<OAuthSignInResult> => {
     const result = await authSignInWithGoogle();
     if (result.success) {
-      await checkAuth();
+      await resolveSuccessfulAuth(result, checkAuth);
     }
     return result;
-  }, [checkAuth]);
+  }, [checkAuth, resolveSuccessfulAuth]);
 
   // Browser-based Google fallback for supported iOS presentation and Android
   // config failures. Same success contract as the native flow: re-run checkAuth
@@ -920,14 +971,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       try {
         const result = await authSignInWithGoogleWeb(isRegistration);
         if (result.success) {
-          await checkAuthAfterSuccessfulBrowserFallback();
+          await resolveSuccessfulAuth(result, checkAuthAfterSuccessfulBrowserFallback);
         }
         return result;
       } finally {
         await releaseBrowserFallbackAuthCheckSuppression();
       }
     },
-    [checkAuthAfterSuccessfulBrowserFallback, releaseBrowserFallbackAuthCheckSuppression],
+    [checkAuthAfterSuccessfulBrowserFallback, resolveSuccessfulAuth, releaseBrowserFallbackAuthCheckSuppression],
   );
 
   // Browser-based Apple fallback (native Sign in with Apple threw a non-cancel
@@ -939,25 +990,25 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       try {
         const result = await authSignInWithAppleWeb(isRegistration);
         if (result.success) {
-          await checkAuthAfterSuccessfulBrowserFallback();
+          await resolveSuccessfulAuth(result, checkAuthAfterSuccessfulBrowserFallback);
         }
         return result;
       } finally {
         await releaseBrowserFallbackAuthCheckSuppression();
       }
     },
-    [checkAuthAfterSuccessfulBrowserFallback, releaseBrowserFallbackAuthCheckSuppression],
+    [checkAuthAfterSuccessfulBrowserFallback, resolveSuccessfulAuth, releaseBrowserFallbackAuthCheckSuppression],
   );
 
   const signInWithCredentials = useCallback(
     async (email: string, password: string): Promise<CredentialsSignInResult> => {
       const result = await authSignInWithCredentials(email, password);
       if (result.success) {
-        await checkAuth();
+        await resolveSuccessfulAuth(result, checkAuth);
       }
       return result;
     },
-    [checkAuth],
+    [checkAuth, resolveSuccessfulAuth],
   );
 
   // Native registration auto-logs-in. Web registration may instead create the
@@ -967,11 +1018,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (email: string, password: string, name?: string): Promise<RegistrationResult> => {
       const result = await authRegisterWithCredentials(email, password, name);
       if (result.success && result.authenticated !== false) {
-        await checkAuth();
+        await resolveSuccessfulAuth(result, checkAuth);
       }
       return result;
     },
-    [checkAuth],
+    [checkAuth, resolveSuccessfulAuth],
   );
 
   // `method` distinguishes a plain Sign Out ('manual') from an account deletion
@@ -984,6 +1035,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const transitionEpoch = beginAuthTransition();
       updateNativeSessionDegraded(false);
       track(SHARED_EVENTS.Logout, { method });
+      commitVerifiedAuthResult(null);
       // BEFORE the drain, not just in `runSignedOutCleanup` further down. The
       // store holds `onlineManager` false while offline mode is on, so the
       // drainer's `if (!options.isOnline()) return;` would bail in microseconds
@@ -1070,6 +1122,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   const handleForcedSignOut = useCallback(() => {
     track(SHARED_EVENTS.Logout, { method: 'forced' });
+    commitVerifiedAuthResult(null);
     const transitionEpoch = beginAuthTransition();
     // The interceptor already confirmed this credential owner is anonymous.
     // Serialize its cleanup with session checks so a later login cannot be

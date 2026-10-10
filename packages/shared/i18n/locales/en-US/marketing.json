@@ -1026,7 +1026,7 @@
       "locationLabel": "Location.",
       "locationBody": "If you grant location permission, we use your approximate location to help you discover nearby Party Mode sessions. We do not track your location in the background or store location history.",
       "productAnalyticsLabel": "Product analytics.",
-      "productAnalyticsBody": "We use PostHog only after you allow analytics, for feature usage, page views, performance and optional session replay in the app. Signed-in analytics can be linked to your Boardsesh account. With your permission, Android install attribution may include the Play Store install referrer and campaign information. We do not use these data for ads.",
+      "productAnalyticsBody": "We use PostHog only after you allow analytics, for feature usage, page views, performance and optional session replay in the app. Signed-in analytics can be linked to your Boardsesh account. With your permission, Android install attribution may include the Play Store install referrer and campaign information. On iOS, we use Apple AdServices through our own backend to measure which Apple Ads campaigns lead to signups and climbing activity. We share validated campaign identifiers and download status with PostHog, never the attribution token. We do not use these data to show you ads.",
       "serviceStatsLabel": "First-party service statistics.",
       "serviceStatsBody": "We record a signed-in account’s active day and platform in our own database, regardless of analytics consent, under legitimate interest to understand service use. These rows are kept for 13 months. Only aggregate daily, weekly and monthly counts are sent to PostHog. Signed-out visitors are not included in these account-based active-user counts."
     },

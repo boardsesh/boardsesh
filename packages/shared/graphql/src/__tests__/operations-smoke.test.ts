@@ -10,6 +10,7 @@ import { parse } from 'graphql';
 // Add new operation modules to the table below as they land.
 
 const operationModules: Array<{ name: string; load: () => Promise<Record<string, unknown>> }> = [
+  { name: 'apple-ads-attribution', load: () => import('../operations/apple-ads-attribution') },
   { name: 'account', load: () => import('../operations/account') },
   { name: 'activity-feed', load: () => import('../operations/activity-feed') },
   { name: 'beta-links', load: () => import('../operations/beta-links') },

@@ -83,12 +83,27 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | PostHog session replay | Consent | Off unless analytics is granted. |
 | Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
 | Android install-referrer attribution | Consent | `Install Attributed` is sent only after a grant. |
+| iOS Apple Ads attribution | Consent | Native token acquisition, the first-party backend exchange with Apple, and campaign-linked PostHog publication require a current Allow. Tokens are never persisted or sent to diagnostics. |
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
 | OTA health ping | Legitimate interest | Anonymous, per launch (PR C). |
 
 ## Backend PostHog events are non-personal
+
+The Apple Ads exchange is `exchangeAppleAdsAttribution` on backend GraphQL,
+not a backend PostHog capture. Signed-in exchanges re-read account consent
+before and after contacting Apple; account denial overrides device Allow.
+The app independently checks current consent and the exact verified account's
+SDK identity before publishing normalized campaign fields.
+
+One install has one account owner. The app retains a minimal ownership marker
+across sign-out and withdrawal to prevent attribution reaching another account.
+Withdrawal clears cached campaign fields and cancels pending acquisition,
+publication and signup conversions. A later Allow can perform a fresh lookup
+for the same owner; it never restores discarded signup conversions. A withdrawn
+anonymous attribution attempt is consumed rather than assigned to a later
+account. See [Apple campaign reporting](./growth-metrics.md#apple-ads-ios).
 
 `captureBackendEvent` (`packages/backend/src/services/analytics/posthog.ts`)
 takes no distinct id. Every event gets its own random one,

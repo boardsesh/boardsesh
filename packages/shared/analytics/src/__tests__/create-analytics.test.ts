@@ -12,6 +12,14 @@ function fakeClient() {
 }
 
 describe('createAnalytics', () => {
+  it('forwards deduplication UUID and original timestamp through boolean capture', () => {
+    const fake = fakeClient();
+    const analytics = createAnalytics(() => fake.client);
+    const options = { timestamp: new Date('2026-10-10T00:00:00.000Z'), uuid: '602c83bf-e090-4c90-9f7e-08ca0b6b5dad' };
+    expect(analytics.capture('Signup Completed', { provider: 'apple', absent: undefined }, options)).toBe(true);
+    expect(fake.capture).toHaveBeenCalledWith('Signup Completed', { provider: 'apple' }, options);
+    expect(createAnalytics(() => null).capture('Signup Completed', {}, options)).toBe(false);
+  });
   it('forwards track to capture with undefined properties stripped', () => {
     const fake = fakeClient();
     const analytics = createAnalytics(() => fake.client);

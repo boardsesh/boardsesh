@@ -53,11 +53,10 @@ export const SHARED_EVENTS = {
   // Kept distinct from LoginFailed so the failure metric isn't inflated by cancels.
   LoginCancelled: 'Login Cancelled',
   Logout: 'Logout',
-  // Fired once, immediately after a NEW account is created via credentials
-  // (both platforms). OAuth registration is the same call as OAuth sign-in, so
-  // it has no event of its own: LoginSucceeded's `is_registration: true` marks
-  // the register screen, and on mobile `is_new_account` marks an account the
-  // sign-in itself just created. Web has no OAuth-signup event either. Kept distinct from
+  // Fired once for a genuine account creation. Native email, Apple and Google
+  // use the backend's verified creation receipt, user UUID and original creation
+  // timestamp. A returning provider login or email-account link is not a signup.
+  // Legacy browser email signup retains its original conversion. Kept distinct from
   // LoginSucceeded so "created an account" and "successfully authenticated"
   // stay separately measurable — web's signup can require email verification
   // and never reach a LoginSucceeded in that same session.

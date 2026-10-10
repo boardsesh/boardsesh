@@ -13,6 +13,7 @@ import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-tran
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
+import { parseAccountCreationReceipt } from '@boardsesh/analytics';
 
 // Must run before anything below reads NEXTAUTH_URL (the cookie block does, via
 // isSecureCookieContext/sessionCookieDomain) and before next-auth resolves the
@@ -366,6 +367,12 @@ export const authOptions: NextAuthOptions = {
       if (typeof token.authSessionId === 'string' && token.authSessionId) {
         session.authSessionId = token.authSessionId;
       }
+      if (
+        token.nativeOAuthCreationProof?.authSessionId === token.authSessionId &&
+        token.nativeOAuthCreationProof?.accountCreation.userId === token.sub
+      ) {
+        session.nativeOAuthCreationProof = token.nativeOAuthCreationProof;
+      }
       // Include user ID in session from JWT
       if (session?.user && token?.sub) {
         session.user.id = token.sub;
@@ -382,7 +389,7 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user, trigger, account, isNewUser }) {
       // Stable for one NextAuth login across cookie rotations and tabs, but new
       // for a later login even when it belongs to the same user. Existing JWTs
       // can reuse their standard jti so rollout does not force a sign-out.
@@ -392,6 +399,35 @@ export const authOptions: NextAuthOptions = {
       // Persist the OAuth access_token and user id to the token right after signin
       if (user) {
         token.id = user.id;
+        token.authSessionId = randomUUID();
+        delete token.nativeOAuthCreationProof;
+        // Only this completed provider sign-in knows whether its adapter created a user.
+        if ((account?.provider === 'apple' || account?.provider === 'google') && typeof isNewUser === 'boolean') {
+          try {
+            const createdRows = await getDb()
+              .select({ createdAt: schema.users.createdAt })
+              .from(schema.users)
+              .where(eq(schema.users.id, user.id))
+              .limit(1);
+            const createdAt = createdRows[0]?.createdAt;
+            const receipt = parseAccountCreationReceipt({
+              userId: user.id,
+              accountCreated: isNewUser,
+              provider: account.provider,
+              createdAt: createdAt instanceof Date ? createdAt.toISOString() : null,
+            });
+            if (receipt) {
+              token.nativeOAuthCreationProof = {
+                authSessionId: token.authSessionId,
+                provider: account.provider,
+                signedInAt: Date.now(),
+                accountCreation: receipt,
+              };
+            }
+          } catch {
+            // Attribution metadata is best-effort and never blocks authentication.
+          }
+        }
       }
 
       // Cache the userProfiles avatar/display name ON the token so the `session`

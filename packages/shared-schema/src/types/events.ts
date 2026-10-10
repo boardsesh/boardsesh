@@ -174,6 +174,8 @@ export type ConnectionContext = {
   participantId?: string;
   userId?: string;
   isAuthenticated?: boolean;
+  /** True when HTTP supplied an Authorization header, even when it failed verification. */
+  authCredentialProvided?: boolean;
   /** Verified bearer expiry in epoch milliseconds; never supplied by the client. */
   credentialExpiresAt?: number;
   // Set only by HTTP cron bearer authentication; never grants user access.
@@ -182,7 +184,7 @@ export type ConnectionContext = {
   // sets it in graphql/yoga.ts, WebSocket in websocket/setup.ts via
   // resolveWebSocketClientIp (issue #2863).
   clientIp?: string;
-  // Normalized address of the TCP peer for WebSocket upgrades. This is kept
+  // Normalized address of the TCP peer for HTTP requests and WebSocket upgrades. This is kept
   // separately from clientIp so a direct-origin caller cannot evade the
   // secondary rate-limit bucket by forging cf-connecting-ip (issue #4038).
   socketPeerIp?: string;

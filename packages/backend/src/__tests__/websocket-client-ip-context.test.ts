@@ -22,6 +22,13 @@ const { createdContexts } = vi.hoisted(() => ({
   >[],
 }));
 
+// graphql-ws checks returned errors with instanceof. Match its external Node
+// constructor instead of Vite's separate graphql/index.mjs module instance.
+vi.mock('graphql', async () => {
+  const { createRequire } = await import('node:module');
+  return createRequire(import.meta.url)('graphql') as typeof import('graphql');
+});
+
 vi.mock('../services/room-manager', () => ({
   roomManager: {
     registerClient: vi.fn().mockResolvedValue('participant-1'),
@@ -45,6 +52,7 @@ vi.mock('../graphql/context', async (importOriginal) => {
 
 import { setupWebSocketServer } from '../websocket/setup';
 import { getClientUsageSnapshotForTests, stopClientUsageReporter } from '../services/client-usage';
+import { logger } from '../utils/logger';
 
 const GRAPHQL_TRANSPORT_WS = 'graphql-transport-ws';
 
@@ -227,5 +235,41 @@ describe('WebSocket connection context client IP', () => {
       { clientName: 'boardsesh-web', clientVersion: '1.4.2', transport: 'ws', operations: 1 },
     ]);
     stopClientUsageReporter();
+  });
+
+  it('rejects a malformed Apple Ads document before its token reaches errors or logs', async () => {
+    const sentinelToken = 'private-adservices-token-sentinel';
+    const loggedErrors = vi.spyOn(logger, 'error');
+    try {
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS);
+        socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
+        socket.on('message', (message) => {
+          const messageText = decodeMessage(message);
+          const payload = JSON.parse(messageText) as { type?: unknown };
+          if (payload.type === 'connection_ack') {
+            socket.send(
+              JSON.stringify({
+                id: 'private-token-operation',
+                type: 'subscribe',
+                payload: {
+                  query: `mutation { exchangeAppleAdsAttribution(token: "${sentinelToken}", consent: {`,
+                },
+              }),
+            );
+          } else if (payload.type === 'error') {
+            socket.close(1000);
+            resolve(messageText);
+          }
+        });
+        socket.once('error', reject);
+        socket.once('close', () => reject(new Error('Socket closed before the fixed attribution rejection')));
+      });
+      expect(response).toContain('Apple Ads attribution requires HTTP');
+      expect(response).not.toContain(sentinelToken);
+      expect(JSON.stringify(loggedErrors.mock.calls)).not.toContain(sentinelToken);
+    } finally {
+      loggedErrors.mockRestore();
+    }
   });
 });

@@ -102,14 +102,14 @@ const mockedDatabase = db as unknown as {
 
 function createTransferToken(
   userId: string,
-  opts?: { expiresInSeconds?: number; secret?: string; issuedAt?: number },
+  opts?: { expiresInSeconds?: number; secret?: string; issuedAt?: number; creationProof?: Record<string, unknown> },
 ): string {
   const secret = opts?.secret ?? TEST_SECRET;
   const now = Math.floor(Date.now() / 1000);
   const iat = opts?.issuedAt ?? now;
   const exp = iat + (opts?.expiresInSeconds ?? 120);
 
-  const payload = { userId, nextPath: '/app', iat, exp };
+  const payload = { userId, nextPath: '/app', iat, exp, ...opts?.creationProof };
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
 
@@ -209,7 +209,35 @@ describe('handleNativeAuthExchange', () => {
     expect(body.refreshToken).toBeDefined();
     expect(typeof body.refreshToken).toBe('string');
     expect(body.expiresAt).toBeDefined();
+    expect(body.userId).toBe('user-abc');
+    expect(body.accountCreation).toBeUndefined();
   });
+
+  it.each(['valid', 'foreign-user', 'foreign-provider', 'missing-attempt'] as const)(
+    'preserves only signed bound browser creation proof: %s',
+    async (scenario) => {
+      const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
+      const accountCreation = {
+        userId: scenario === 'foreign-user' ? '45642f07-423c-49e1-854e-814beaa0df64' : userId,
+        accountCreated: true,
+        provider: 'apple',
+        createdAt: '2026-10-10T00:00:00.000Z',
+      };
+      const creationProof = {
+        accountCreation,
+        authSessionId: 'login-1',
+        provider: scenario === 'foreign-provider' ? 'google' : 'apple',
+        ...(scenario === 'missing-attempt' ? {} : { attemptId: 'a'.repeat(32) }),
+      };
+      const transferToken = createTransferToken(userId, { creationProof });
+      const req = makeRequest({ method: 'POST', body: { transferToken } });
+      const res = makeResponse();
+      await handleNativeAuthExchange(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+      expect(res.statusCode).toBe(200);
+      expect(parseBody(res).userId).toBe(userId);
+      expect(parseBody(res).accountCreation).toEqual(scenario === 'valid' ? accountCreation : undefined);
+    },
+  );
 
   it('returns 401 for an expired transfer token', async () => {
     // Token expired 60 seconds ago

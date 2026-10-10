@@ -7,7 +7,7 @@ import { schema } from './index';
 import { validateToken } from '../middleware/auth';
 import { authenticateCronBearer } from '../middleware/cron-auth';
 import type { AuthResult } from '../middleware/auth';
-import { resolveWebSocketClientIp } from '../websocket/client-ip';
+import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from '../websocket/client-ip';
 import { CLIENT_PLATFORM_HEADER, type ConnectionContext } from '@boardsesh/shared-schema';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
@@ -19,6 +19,7 @@ import { maskDatabaseError } from './mask-error';
 import { responseCompressionPlugin } from './response-compression';
 import { recordUserActivity, resolveActivityPlatform } from '../services/user-activity';
 import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usage';
+import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple-ads-token-privacy';
 
 async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
   if (!authHeader) return null;
@@ -92,8 +93,10 @@ export async function buildHttpConnectionContext({
     userId: authResult?.userId,
     credentialExpiresAt: authResult?.credentialExpiresAt,
     isAuthenticated: authResult !== null,
+    authCredentialProvided: authHeader !== null,
     isCronAuthenticated,
     clientIp,
+    socketPeerIp: resolveWebSocketSocketPeerIp(req),
     clientIdentity,
     clientIdentityRaw,
   };
@@ -121,6 +124,7 @@ export function createYogaInstance() {
       costLimitPlugin({ maxCost: 5000 }),
       responseCompressionPlugin(),
       clientUsagePlugin(),
+      appleAdsTokenPrivacyPlugin(),
     ],
     // Context function - extract auth and the trusted client IP from HTTP requests.
     // `req` is the Node request `server.ts` hands to `yoga.handle`; it carries the
@@ -138,20 +142,21 @@ export function createYogaInstance() {
     // Logging - suppress debug entirely (Yoga internals like "Parsing request" are noisy)
     logging: {
       debug: () => {},
-      info: (...args: unknown[]) => logger.info('[Yoga]', ...args),
-      warn: (...args: unknown[]) => logger.warn('[Yoga]', ...args),
+      info: (...args: unknown[]) => logger.info('[Yoga]', ...args.map(sanitizeAppleAdsLogArgument)),
+      warn: (...args: unknown[]) => logger.warn('[Yoga]', ...args.map(sanitizeAppleAdsLogArgument)),
       error: (...args: unknown[]) => {
+        const safeArgs = args.map(sanitizeAppleAdsLogArgument);
         // Stringify any Error in the splat before handing to logger.error so
         // the SentryWinstonTransport doesn't fire — this handler runs its own
         // noise-filtered capture loop below for client-input GraphQLErrors,
         // and we don't want the transport to bypass that filter.
-        const stringifiedArgs = args.map((arg) =>
+        const stringifiedArgs = safeArgs.map((arg) =>
           arg instanceof Error ? (arg.stack ?? `${arg.name}: ${arg.message}`) : arg,
         );
         logger.error('[Yoga]', ...stringifiedArgs);
         // Skip GraphQLErrors triggered purely by client input (no originalError):
         // validation, parse, depth/cost limit, auth — high volume, low signal.
-        for (const arg of args) {
+        for (const arg of safeArgs) {
           if (!(arg instanceof Error)) continue;
           if (arg instanceof GraphQLError && !arg.originalError) continue;
           // A resolver already reported this with finer-grained tags/context

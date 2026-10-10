@@ -365,7 +365,7 @@ number uses another one.
   client. PostHog's own "first time" filter has the same flaw.
 - Android newcomer cohorts take store builds only (`$app_build`; 2.5.0 is
   2001108). Test and Play pre-launch builds add people who almost never scan.
-- `Signup Completed` is email registration only. Apple and Google sign-ups show
+- Before 2.6.0, `Signup Completed` is email registration only. Apple and Google sign-ups show
   up as `is_new_account = true` on `Login Succeeded` or `Login Account Age
   Resolved` ("Counting sign-ups" below).
 - A database read of board-active (an account with a light or a tick) counts
@@ -450,9 +450,9 @@ These are separate counts. None of them is a funnel of the same people.
 
 Product analytics reports cover only people with a current Allow. Apple Ads'
 download, spend and acquisition-cost reports remain available independently of
-the Boardsesh analytics choice. We do not yet connect an Apple Ads campaign to
-a Boardsesh signup or later activity: the first-party AdServices integration is
-tracked in [#6285](https://github.com/boardsesh/boardsesh/issues/6285). App Store
+the Boardsesh analytics choice. From the 2.6.0 iOS binary, the first-party
+AdServices integration connects consenting campaign-attributed people to
+verified signups and later activity. App Store
 Connect campaign-link tokens below are a separate aggregate measurement.
 See [Apple's reporting definitions](https://ads.apple.com/app-store/help/reporting/0023-reporting-options-and-definitions).
 
@@ -462,10 +462,10 @@ See [Apple's reporting definitions](https://ads.apple.com/app-store/help/reporti
 | Landing source       | www `$pageview` and every www `track()` event: `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `gclid` | The tags on the URL the visit landed on. Absent on an untagged visit. See "Campaign params on www". |
 | Store clicks         | `App Install Click` (www and browser app), by `platform`, `source` and `placement` | Someone tapped a store button. Not an install. |
 | Android install source | person properties `install_source` / `install_medium` / `install_campaign`, classified with the expression below | From the Play Install Referrer, once per install. `campaign`, `organic` or `unknown`. |
-| iOS install source   | App Store Connect App Analytics, by campaign (`ct`)          | Aggregate download counts per campaign token. Nothing per person, and nothing in PostHog: Apple gives the app no referrer. Show iOS as unknown in PostHog; do not infer it. |
+| iOS install source   | Apple Ads `apple_ads_*` person properties from the 2.6.0 iOS binary; App Store Connect campaign tokens separately | AdServices can connect consented Apple Ads attribution to a person. App Store campaign-link tokens (`ct`) remain aggregate-only; missing attribution stays unknown. |
 | New-user activation  | the Activation funnel above                                 | Counts people, not installs.                                                                      |
 | Android link id      | `utm_content` inside person property `install_referrer_raw` ("Link ids on Android installs" below) | Which published link an install came from: on www, the button's `placement` ("Store links" below). Empty before the #6027 web deploy. |
-| Sign-ups             | `is_new_account = true` on `Login Succeeded` or `Login Account Age Resolved` ("Counting sign-ups" below) | New accounts, native only. |
+| Sign-ups             | `Signup Completed` from 2.6.0; historical `is_new_account` estimates separately ("Counting sign-ups" below) | Verified new accounts, native only; returning logins do not convert. |
 
 `App Install Click` comes from two populations: www, and the store prompt in the
 browser app (phone browsers only, on the signed-out climb view, the login screen
@@ -483,7 +483,7 @@ store links only, which carry `utm_source=boardsesh`, `utm_medium=browser-app`,
 Store campaign token `ct=browser-app-<surface>`, which App Analytics only shows
 once the link also carries the provider token (`pt`, not set yet).
 
-`Install Attributed` fires whenever the Play referrer has any `utm_*` param.
+On Android, `Install Attributed` fires whenever the Play referrer has any `utm_*` param.
 Play stamps organic installs too (`utm_source=google-play&utm_medium=organic`),
 so 584 of the 663 people who fired it from 2026-08-23 to 2026-09-19 were
 organic. It also fires on the first launch of an older install that never ran
@@ -518,6 +518,106 @@ A Google Ads install whose referrer carries only `gclid=…` and no `utm_*` read
 as `unknown` and fires no `Install Attributed`. Its raw referrer is kept in
 `install_referrer_raw`.
 
+### Apple Ads (iOS)
+
+The native token and response contract follows
+[Apple's AdServices Attribution API](https://ads.apple.com/adsdam/us/en_us/documents/help/0028-apple-ads-attribution-api/2025-03-25/AdServices-API-v3.pdf).
+
+This requires a new 2.6.0 iOS binary. An OTA cannot add the native AdServices
+module to an older binary; Android and browser targets do not acquire tokens.
+Only a current Allow starts acquisition and exchange. Tokens stay in memory,
+travel to our backend and Apple, and never enter logs, PostHog or disk.
+
+`Install Attributed` uses `attribution_provider = apple_ads` and the same
+allowlisted properties as the person's `$set_once` properties:
+
+| Property | Meaning |
+| --- | --- |
+| `apple_ads_attribution_status` | `attributed` or `unattributed`; Apple's negative result does not prove organic acquisition. |
+| `apple_ads_org_id`, `apple_ads_campaign_id`, `apple_ads_ad_group_id` | Required positive Apple IDs, represented as strings without numeric precision loss. |
+| `apple_ads_keyword_id`, `apple_ads_ad_id` | Optional positive IDs; absent when Apple does not supply them. |
+| `apple_ads_conversion_type`, `apple_ads_claim_type` | `Download`, `Redownload` or `PreOrder`; optional `Click` or `Impression`. |
+| `apple_ads_country_or_region`, `apple_ads_supply_placement` | Optional region and supported App Store placement. |
+
+Development dummy responses never publish. Invalid responses, exhausted
+retries, a missing native module and unanswered/declined consent leave the
+source unknown. There is no fallback from these outcomes to `organic`.
+The bounded retry sequence makes at most three exchanges with one token,
+waiting at least five seconds between attempts. Apple tokens expire after
+24 hours; a later foreground attempt obtains a fresh token after a cooldown.
+
+The install is assigned once to its first verified account. An anonymous
+publication can precede that assignment; signing in attaches person
+properties without repeating the install event. Signing out or switching
+accounts clears pending attribution and prevents transfer to another account.
+Withdrawal cancels outstanding work and clears campaign data, retaining only
+the ownership/deduplication marker. A late result can enrich an already-sent
+signup through person properties; it never sends that signup again.
+
+Use `attributed` people for a campaign conversion report. This HogQL example
+counts unique consenting production iOS people observed during the selected
+window, their verified signups in that window, and board activation within
+seven days of their first observed screen in that window. Replace both window
+bounds together. Include only the new binary's builds when comparing release
+cohorts; this query does not claim that its first observed screen is a new
+store install, nor that returning accounts are new users.
+
+```sql
+WITH campaign_people AS (
+  SELECT
+    person_id,
+    toString(person.properties.apple_ads_campaign_id) AS campaign_id,
+    minOrNullIf(timestamp, event = '$screen'
+      AND timestamp < '2026-11-01') AS first_open,
+    minOrNullIf(timestamp, event = 'Signup Completed'
+      AND timestamp < '2026-11-01') AS signup_at
+  FROM events
+  WHERE timestamp >= '2026-10-01' AND timestamp < '2026-11-08'
+    AND properties.$lib = 'posthog-react-native'
+    AND properties.environment = 'production'
+    AND properties.$os = 'iOS'
+    AND person.properties.attribution_provider = 'apple_ads'
+    AND person.properties.apple_ads_attribution_status = 'attributed'
+    AND person_id NOT IN COHORT 295337
+  GROUP BY person_id, campaign_id
+)
+SELECT
+  campaign_people.campaign_id,
+  uniqExactIf(campaign_people.person_id, first_open IS NOT NULL) AS observed_first_opens,
+  uniqExactIf(campaign_people.person_id, signup_at IS NOT NULL) AS verified_signups,
+  uniqExactIf(campaign_people.person_id,
+    activity.event = 'Climb Sent to Board Success'
+    AND activity.timestamp >= first_open
+    AND activity.timestamp < first_open + INTERVAL 7 DAY) AS board_active_in_7_days
+FROM campaign_people
+LEFT JOIN events AS activity ON activity.person_id = campaign_people.person_id
+WHERE activity.timestamp >= '2026-10-01' AND activity.timestamp < '2026-11-08'
+  AND activity.properties.$lib = 'posthog-react-native'
+  AND activity.properties.environment = 'production'
+  AND activity.properties.$os = 'iOS'
+GROUP BY campaign_people.campaign_id
+```
+
+For ad-group or keyword cuts, use the corresponding person properties. Keep
+absent keyword IDs in an unknown bucket rather than dropping those people.
+Use the separate spray-wall activation definition above for spray-wall crews.
+
+Apple Ads reports spend, taps, downloads and acquisition cost for all eligible
+campaign traffic. PostHog reports only consenting people whose attribution
+was available, and can identify accounts across installs. Do not divide Apple
+spend by these signup counts and label it Apple's acquisition cost. Show the
+two populations and their date windows separately; App Store `ct` links below
+are yet another aggregate measurement.
+
+Before closing #6285, record evidence from a real campaign and the released
+2.6.0 binary: one fresh attributed download, fresh email/Apple/Google signup
+including browser fallback, returning-account login without conversion,
+declined and withdrawn consent, and an account switch without transferred
+campaign properties. Check PostHog event UUIDs and account ownership, and
+confirm App Store privacy disclosures describe advertising measurement and
+product analytics. Simulator, mocked and TestFlight dummy responses prove
+code paths only; they do not prove real campaign attribution.
+
 ### Link ids on Android installs
 
 A store link can carry a link id in `utm_content` (#6027). The app's referrer
@@ -550,6 +650,17 @@ ORDER BY people DESC
 
 ### Counting sign-ups
 
+From the 2.6.0 integration for #6285, native `Signup Completed` covers verified
+email registration and genuinely new Apple/Google accounts, including browser
+OAuth fallback. The backend proves account creation; entering through the
+registration screen and an account younger than 24 hours are not proof. Its
+event UUID is stable per account and its timestamp is the account creation
+time. Current Allow and the verified account's SDK identity are required.
+Missing metadata from older clients/backends remains unknown.
+
+Use `Signup Completed` for the new campaign report above; keep the historical
+age-based read below for earlier builds. Do not union the two as event counts.
+
 PostHog could not count sign-ups before the #6027 mobile OTA. `is_new_account`
 on `Login Succeeded` was null whenever the account's creation time was not
 known within 5 s of sign-in, and on store version 2.5.0 that was 42% of logins
@@ -578,7 +689,7 @@ ORDER BY week
 ```
 
 - "New" means the account was at most 24 hours old at sign-in.
-- `Signup Completed` is email sign-up only. Apple and Google find or create the
+- Before 2.6.0, `Signup Completed` is email sign-up only. Apple and Google find or create the
   account in one step and fire no sign-up event, so `Signup Completed` alone
   undercounts by most of the total.
 - `account_age_read` on `Login Succeeded` says how the 5 s went: `ok`,

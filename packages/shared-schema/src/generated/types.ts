@@ -321,6 +321,44 @@ export type AppFeedbackStatusCounts = {
  */
 export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
 
+/** Campaign identifiers verified against Apple's AdServices API, never its raw response. */
+export type AppleAdsAttribution = {
+  __typename?: 'AppleAdsAttribution';
+  adGroupId: Scalars['String']['output'];
+  adId?: Maybe<Scalars['String']['output']>;
+  campaignId: Scalars['String']['output'];
+  claimType?: Maybe<Scalars['String']['output']>;
+  conversionType: Scalars['String']['output'];
+  countryOrRegion?: Maybe<Scalars['String']['output']>;
+  keywordId?: Maybe<Scalars['String']['output']>;
+  orgId: Scalars['String']['output'];
+  supplyPlacement?: Maybe<Scalars['String']['output']>;
+};
+
+export type AppleAdsAttributionResult = {
+  __typename?: 'AppleAdsAttributionResult';
+  attribution?: Maybe<AppleAdsAttribution>;
+  retryAfterSeconds?: Maybe<Scalars['Int']['output']>;
+  /** not_ready, unavailable or rate_limited; null for terminal outcomes. */
+  retryReason?: Maybe<Scalars['String']['output']>;
+  status: AppleAdsAttributionStatus;
+};
+
+export type AppleAdsAttributionStatus =
+  | 'ATTRIBUTED'
+  | 'CONSENT_REQUIRED'
+  | 'INVALID_TOKEN'
+  | 'RETRYABLE'
+  | 'TEST'
+  | 'UNATTRIBUTED';
+
+export type AppleAdsConsentInput = {
+  analytics: Scalars['String']['input'];
+  decidedAt: Scalars['String']['input'];
+  source: Scalars['String']['input'];
+  version: Scalars['Int']['input'];
+};
+
 /** Pagination input for ascent feeds. */
 export type AscentFeedInput = {
   /** When true, only include benchmark climbs */
@@ -4152,6 +4190,14 @@ export type Mutation = {
    * the returned SessionSummary.
    */
   endSession?: Maybe<SessionSummary>;
+  /**
+   * Exchange an opaque iOS AdServices token only while analytics consent is
+   * granted. Anonymous HTTP callers supply their device answer; signed-in
+   * callers also respect the account's current answer. Nothing is persisted
+   * or published by this mutation. UNATTRIBUTED means Apple found no matching
+   * ad record, not that the install is organic.
+   */
+  exchangeAppleAdsAttribution: AppleAdsAttributionResult;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
   /** Follow a gym. */
@@ -4892,6 +4938,12 @@ export type MutationEndSessionArgs = {
   notes?: InputMaybe<Scalars['String']['input']>;
   sessionId: Scalars['ID']['input'];
   timezone?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationExchangeAppleAdsAttributionArgs = {
+  consent: AppleAdsConsentInput;
+  token: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -11168,6 +11220,10 @@ export type ResolversTypes = ResolversObject<{
   AppFeedbackStatus: AppFeedbackStatus;
   AppFeedbackStatusCounts: ResolverTypeWrapper<AppFeedbackStatusCounts>;
   AppFeedbackTypeFilter: AppFeedbackTypeFilter;
+  AppleAdsAttribution: ResolverTypeWrapper<AppleAdsAttribution>;
+  AppleAdsAttributionResult: ResolverTypeWrapper<AppleAdsAttributionResult>;
+  AppleAdsAttributionStatus: AppleAdsAttributionStatus;
+  AppleAdsConsentInput: AppleAdsConsentInput;
   AscentFeedInput: AscentFeedInput;
   AscentFeedItem: ResolverTypeWrapper<AscentFeedItem>;
   AscentFeedResult: ResolverTypeWrapper<AscentFeedResult>;
@@ -11676,6 +11732,9 @@ export type ResolversParentTypes = ResolversObject<{
   AppFeedbackReport: AppFeedbackReport;
   AppFeedbackReporter: AppFeedbackReporter;
   AppFeedbackStatusCounts: AppFeedbackStatusCounts;
+  AppleAdsAttribution: AppleAdsAttribution;
+  AppleAdsAttributionResult: AppleAdsAttributionResult;
+  AppleAdsConsentInput: AppleAdsConsentInput;
   AscentFeedInput: AscentFeedInput;
   AscentFeedItem: AscentFeedItem;
   AscentFeedResult: AscentFeedResult;
@@ -12286,6 +12345,34 @@ export type AppFeedbackStatusCountsResolvers<
   new?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   resolved?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   wontFix?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppleAdsAttributionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppleAdsAttribution'] = ResolversParentTypes['AppleAdsAttribution'],
+> = ResolversObject<{
+  adGroupId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  adId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  campaignId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  claimType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  conversionType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  countryOrRegion?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  keywordId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  orgId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  supplyPlacement?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppleAdsAttributionResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppleAdsAttributionResult'] =
+    ResolversParentTypes['AppleAdsAttributionResult'],
+> = ResolversObject<{
+  attribution?: Resolver<Maybe<ResolversTypes['AppleAdsAttribution']>, ParentType, ContextType>;
+  retryAfterSeconds?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  retryReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['AppleAdsAttributionStatus'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14394,6 +14481,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationEndSessionArgs, 'sessionId'>
+  >;
+  exchangeAppleAdsAttribution?: Resolver<
+    ResolversTypes['AppleAdsAttributionResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationExchangeAppleAdsAttributionArgs, 'consent' | 'token'>
   >;
   followBoard?: Resolver<
     ResolversTypes['Boolean'],
@@ -17892,6 +17985,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   AppFeedbackReport?: AppFeedbackReportResolvers<ContextType>;
   AppFeedbackReporter?: AppFeedbackReporterResolvers<ContextType>;
   AppFeedbackStatusCounts?: AppFeedbackStatusCountsResolvers<ContextType>;
+  AppleAdsAttribution?: AppleAdsAttributionResolvers<ContextType>;
+  AppleAdsAttributionResult?: AppleAdsAttributionResultResolvers<ContextType>;
   AscentFeedItem?: AscentFeedItemResolvers<ContextType>;
   AscentFeedResult?: AscentFeedResultResolvers<ContextType>;
   AuroraCredential?: AuroraCredentialResolvers<ContextType>;

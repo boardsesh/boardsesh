@@ -43,6 +43,9 @@ function makeChain() {
     from() {
       return chain;
     },
+    innerJoin() {
+      return chain;
+    },
     where() {
       return chain;
     },
@@ -252,6 +255,13 @@ describe('handleNativeAuthOAuth', () => {
     expect(userValues.email).toBe('new@example.com');
     expect(userValues.name).toBe('New Person');
     expect(userValues.emailVerified).toBeInstanceOf(Date);
+    expect(body.userId).toBe(userValues.id);
+    expect(body.accountCreation).toEqual({
+      userId: userValues.id,
+      accountCreated: true,
+      provider: 'google',
+      createdAt: (userValues.createdAt as Date).toISOString(),
+    });
     const accountValues = insertsFor(accounts)[0].values as Record<string, unknown>;
     expect(accountValues).toMatchObject({ provider: 'google', providerAccountId: 'google-sub-1', type: 'oauth' });
   });
@@ -260,13 +270,20 @@ describe('handleNativeAuthOAuth', () => {
     jwtVerify.mockResolvedValueOnce({
       payload: { sub: 'google-sub-2', email: 'someone@example.com', email_verified: true },
     });
-    queueSelect([{ userId: 'existing-user' }]); // account link found by (provider, sub)
+    const createdAt = new Date('2025-01-01T00:00:00.000Z');
+    queueSelect([{ userId: 'existing-user', createdAt }]); // account link found by (provider, sub)
 
     const req = makeRequest({ method: 'POST', body: { provider: 'google', identityToken: 'tok' } });
     const res = makeResponse();
     await callHandler(req, res);
 
     expect(res.statusCode).toBe(200);
+    expect(parseBody(res).accountCreation).toEqual({
+      userId: 'existing-user',
+      provider: 'google',
+      accountCreated: false,
+      createdAt: createdAt.toISOString(),
+    });
     // Resolved via the sub link — no user/profile/account writes, only the
     // refresh-token insert from generateTokenPair.
     expect(insertsFor(users)).toHaveLength(0);
@@ -280,7 +297,8 @@ describe('handleNativeAuthOAuth', () => {
       payload: { sub: 'apple-sub-1', email: 'web-user@example.com', email_verified: true },
     });
     queueSelect([]); // no account link by sub
-    queueSelect([{ id: 'web-user', emailVerified: null }]); // matched by email
+    const createdAt = new Date('2025-01-01T00:00:00.000Z');
+    queueSelect([{ id: 'web-user', emailVerified: null, createdAt }]); // matched by email
 
     const req = makeRequest({
       method: 'POST',
@@ -290,6 +308,12 @@ describe('handleNativeAuthOAuth', () => {
     await callHandler(req, res);
 
     expect(res.statusCode).toBe(200);
+    expect(parseBody(res).accountCreation).toEqual({
+      userId: 'web-user',
+      provider: 'apple',
+      accountCreated: false,
+      createdAt: createdAt.toISOString(),
+    });
     // No new user — link the existing one.
     expect(insertsFor(users)).toHaveLength(0);
     expect(insertsFor(accounts)).toHaveLength(1);

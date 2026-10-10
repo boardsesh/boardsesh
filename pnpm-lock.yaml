@@ -177,6 +177,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1131.0
         version: 3.1131.0
+      '@boardsesh/analytics':
+        specifier: workspace:*
+        version: link:../shared/analytics
       '@boardsesh/aurora-sync':
         specifier: workspace:*
         version: link:../aurora-sync

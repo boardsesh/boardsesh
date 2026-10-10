@@ -496,6 +496,44 @@ describe('authOptions.callbacks.jwt', () => {
     expect(result.authSessionId).toBe('login-generation-1');
   });
 
+  it.each([true, false])('records exact OAuth account creation=%s from the adapter result', async (isNewUser) => {
+    const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
+    const createdAt = new Date('2026-10-10T00:00:00.000Z');
+    mockDbLimit.mockResolvedValueOnce([{ createdAt }]).mockResolvedValueOnce([]);
+    const result = await callJwt({
+      token: { sub: userId },
+      user: { id: userId },
+      account: { provider: 'apple', type: 'oauth', providerAccountId: 'apple-sub' },
+      isNewUser,
+    });
+    expect(result.nativeOAuthCreationProof).toEqual({
+      authSessionId: result.authSessionId,
+      provider: 'apple',
+      signedInAt: expect.any(Number),
+      accountCreation: { userId, provider: 'apple', accountCreated: isNewUser, createdAt: createdAt.toISOString() },
+    });
+  });
+
+  it('clears previous signup proof when a later login has no exact creation result', async () => {
+    const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
+    const result = await callJwt({
+      token: {
+        sub: userId,
+        authSessionId: 'old-session',
+        nativeOAuthCreationProof: {
+          authSessionId: 'old-session',
+          provider: 'apple',
+          signedInAt: Date.now(),
+          accountCreation: { userId, provider: 'apple', accountCreated: true, createdAt: '2026-10-10T00:00:00.000Z' },
+        },
+      },
+      user: { id: userId },
+      account: { provider: 'apple', type: 'oauth', providerAccountId: 'apple-sub' },
+    });
+    expect(result.nativeOAuthCreationProof).toBeUndefined();
+    expect(result.authSessionId).not.toBe('old-session');
+  });
+
   it('seeds preexisting JWTs from their standard jti', async () => {
     const result = await callJwt({ token: { sub: 'user-1', jti: 'existing-jti' } });
 

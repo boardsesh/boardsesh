@@ -124,12 +124,16 @@ export default function RegisterScreen() {
       if (result.success) {
         const signedUpAt = new Date();
         const captureWhenReady = createConsentBoundAnalyticsRunner();
-        captureWhenReady(() => {
-          setPersonProperties(undefined, {
-            signup_at: signedUpAt.toISOString(),
-            signup_auth_method: 'credentials',
+        // The auth provider owns verified receipts, including OAuth creations.
+        // Keep the earlier email-only path for legacy backend/browser responses.
+        const hasCreationReceipt = 'accountCreation' in result && result.accountCreation !== undefined;
+        if (!hasCreationReceipt)
+          captureWhenReady(() => {
+            setPersonProperties(undefined, {
+              signup_at: signedUpAt.toISOString(),
+              signup_auth_method: 'credentials',
+            });
           });
-        });
 
         if (result.authenticated === false) {
           captureWhenReady(() =>
@@ -161,13 +165,14 @@ export default function RegisterScreen() {
           is_registration: true,
           screen: 'register',
         });
-        captureWhenReady(() =>
-          track(
-            SHARED_EVENTS.SignupCompleted,
-            { ...loginProviderProperties('credentials'), flow: authFlow },
-            { timestamp: signedUpAt },
-          ),
-        );
+        if (!hasCreationReceipt)
+          captureWhenReady(() =>
+            track(
+              SHARED_EVENTS.SignupCompleted,
+              { ...loginProviderProperties('credentials'), flow: authFlow },
+              { timestamp: signedUpAt },
+            ),
+          );
         // AuthProvider flips isAuthenticated and the auth-group Redirect lands the
         // new user in the app — same auto-login path as signInWithCredentials.
         return;

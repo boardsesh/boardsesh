@@ -16,6 +16,7 @@ import { nativeSignInErrorCode } from './native-auth-analytics';
 import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL, WEB_BASE_URL } from './env';
 import { clientIdentityHeaders } from './client-identity';
+import { parseVerifiedAuthResult, type VerifiedAuthResult } from './verified-auth-result';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -47,7 +48,7 @@ type NativeAuthFailure = { success: false; status: number | null; error: string 
 // cancellation (no error shown), or a real failure carrying the server's
 // status/error (mapped to a translated message by the caller).
 export type OAuthSignInResult =
-  | { success: true }
+  | ({ success: true } & Partial<VerifiedAuthResult>)
   | { success: false; cancelled: true }
   | { success: false; redirecting: true }
   | NativeAuthFailure;
@@ -90,7 +91,7 @@ export async function oauthNativeSignIn(
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
-  return { success: true };
+  return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
 // CSPRNG nonce, as lowercase hex. We hand Apple SHA-256(nonce) and send the raw
@@ -253,7 +254,7 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
     return { success: false, status: response.status, error: 'invalid_response' };
   }
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
-  return { success: true };
+  return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
 /**
@@ -284,7 +285,8 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
  * failure) so the caller treats it exactly like the native path.
  */
 async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignInResult> {
-  const nativeCallbackUrl = `${WEB_BASE_URL}/api/auth/native/callback?next=${encodeURIComponent('/')}`;
+  const attemptId = generateNonce();
+  const nativeCallbackUrl = `${WEB_BASE_URL}/api/auth/native/callback?next=${encodeURIComponent('/')}&provider=${provider}&attemptId=${attemptId}`;
   const startUrl = `${WEB_BASE_URL}/auth/native-start?provider=${provider}&callbackUrl=${encodeURIComponent(nativeCallbackUrl)}`;
 
   // Register the Linking url-listener BEFORE opening the browser (raceBrowserSignIn
@@ -346,9 +348,9 @@ export function signInWithAppleWeb(_isRegistration = false): Promise<OAuthSignIn
   return signInWithProviderWeb('apple');
 }
 
-export type CredentialsSignInResult = { success: true } | NativeAuthFailure;
+export type CredentialsSignInResult = ({ success: true } & Partial<VerifiedAuthResult>) | NativeAuthFailure;
 export type RegistrationResult =
-  | { success: true; authenticated?: true }
+  | ({ success: true; authenticated?: true } & Partial<VerifiedAuthResult>)
   | { success: true; authenticated: false; requiresVerification: true }
   | { success: true; authenticated: false; requiresVerification: false; autoLoginUnavailable: true }
   | NativeAuthFailure;
@@ -382,7 +384,7 @@ export async function signInWithCredentials(email: string, password: string): Pr
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
-  return { success: true };
+  return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
 /**
@@ -425,7 +427,7 @@ export async function registerWithCredentials(
 
   const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
   await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
-  return { success: true };
+  return { success: true, ...parseVerifiedAuthResult(data) };
 }
 
 export type PasswordResetResult = { success: true } | NativeAuthFailure;
