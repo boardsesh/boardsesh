@@ -1998,7 +1998,16 @@ async function runBootstrapPhase(params: {
           // the same for a checkpointed scope so My Boards re-reads the row even
           // though this run did not mutate its markers.
           metadataSettled = true;
-          if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
+          // Only a cooldown may skip the crawl: the skip is a wait for the retry
+          // it scheduled. A `bootstrap-done` or `scope-complete` scope has no
+          // retry coming, yet it can be without a board checkpoint — a privacy
+          // revalidation resets them, and an empty table never writes one. Then
+          // `shouldSkipPagedPull` reads it as fresh and would skip it on every
+          // cycle, so the board never syncs again (issue #6306).
+          if (
+            verdict.reason === 'cooling-down' &&
+            shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })
+          ) {
             skipPagedPull.add(scope.scopeKey);
           }
           // RETRO-FIT (issue #4310): a scope with a COMPLETE climb catalog but
