@@ -14,7 +14,7 @@ CREATE TABLE "spray_wall_training_reviews" (
 ALTER TABLE "spray_wall_holds" ADD COLUMN "auto_review" "spray_hold_auto_review";--> statement-breakpoint
 ALTER TABLE "spray_wall_holds" ADD COLUMN "origin_detection_id" text;--> statement-breakpoint
 ALTER TABLE "spray_wall_holds" ADD COLUMN "origin_candidate_index" integer;--> statement-breakpoint
-ALTER TABLE "spray_walls" ADD COLUMN "training_consent_at" timestamp with time zone DEFAULT now();--> statement-breakpoint
+ALTER TABLE "spray_walls" ADD COLUMN "training_consent_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "spray_wall_training_reviews" ADD CONSTRAINT "spray_wall_training_reviews_version_id_spray_wall_versions_id_fk" FOREIGN KEY ("version_id") REFERENCES "public"."spray_wall_versions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "spray_wall_training_reviews" ADD CONSTRAINT "spray_wall_training_reviews_reviewed_by_users_id_fk" FOREIGN KEY ("reviewed_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "spray_wall_training_reviews_status_idx" ON "spray_wall_training_reviews" USING btree ("status","reviewed_at" DESC NULLS LAST);--> statement-breakpoint
