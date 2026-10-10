@@ -14,7 +14,30 @@ type UseQueueResolveClimbsParams = {
   dispatch: React.Dispatch<QueueAction>;
 };
 
-/** Reauthorize thin local references without changing list order or climbed angles. */
+/** One climb read the queue is waiting on, and the slots it fills. */
+type WantedRead = { climbUuid: string; angle: number; items: ClimbQueueItem[] };
+
+/**
+ * How long an applied answer keeps its read from being sent again. React can
+ * run an older commit's effect after a newer answer was dispatched, and that
+ * run still sees the slot thin; the answer is already on its way into state.
+ * Past this, a slot that is still thin was not fixed by the answer, and asking
+ * again is right.
+ */
+const APPLIED_ANSWER_GRACE_MS = 2000;
+
+/**
+ * Reauthorize thin local references without changing list order or climbed angles.
+ *
+ * A saved queue comes back as references only (`sanitizeQueueSnapshot`), so
+ * every launch resolves the whole queue through here, and each answer changes
+ * `queue` and re-runs the effect. A read is therefore identified by what it
+ * asks for, not by the run that sent it: a run sends only the reads nobody has
+ * sent yet, and an answer is applied to whichever slots want that read when it
+ * lands. Tying a read to its run instead made every answer throw away the
+ * others still on the wire and send them again: 112 reads to restore a queue of
+ * 15, where 15 will do.
+ */
 export function useQueueResolveClimbs({
   activeBoard,
   queue,
@@ -22,9 +45,26 @@ export function useQueueResolveClimbs({
   privacyRevocationGeneration,
   dispatch,
 }: UseQueueResolveClimbsParams): void {
-  const inFlight = useRef(new Map<string, symbol>());
+  // Reads on the wire (`pending`), and reads whose answer was just applied
+  // (the time it was). Outlives an effect run on purpose; see above.
+  const sent = useRef(new Map<string, 'pending' | number>());
+  // What the queue wants as of the latest run. An answer nothing wants any more
+  // (the slot left the queue, was resolved, moved to another angle, or belongs
+  // to another board or privacy generation) is dropped when it lands.
+  const wanted = useRef(new Map<string, WantedRead>());
+
+  useEffect(
+    () => () => {
+      wanted.current = new Map();
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (!activeBoard) return;
+    if (!activeBoard) {
+      wanted.current = new Map();
+      return;
+    }
     const generation = getPrivacyRevocationGeneration();
     const { boardType, layoutId, sizeId, setIds, angle } = activeBoard;
     const currentIndex = currentClimbQueueItem
@@ -34,7 +74,7 @@ export function useQueueResolveClimbs({
       currentClimbQueueItem && !queue.some((item) => item.uuid === currentClimbQueueItem.uuid)
         ? [...queue, currentClimbQueueItem]
         : queue;
-    const requests = new Map<string, { climbUuid: string; angle: number; items: ClimbQueueItem[] }>();
+    const requests = new Map<string, WantedRead>();
     items.forEach((item, index) => {
       const climb = item.climb;
       if (!climb?.uuid || isClimbResolved(climb)) return;
@@ -42,18 +82,27 @@ export function useQueueResolveClimbs({
       // until its board is active; never relabel it as this board's climb.
       if ((climb.boardType && climb.boardType !== boardType) || (climb.layoutId && climb.layoutId !== layoutId)) return;
       const targetAngle = index < currentIndex ? climb.angle : angle;
-      const key = JSON.stringify([climb.uuid, targetAngle]);
-      if (inFlight.current.has(key)) return;
+      // Everything the read's answer depends on. A change to any of it is a
+      // different read, so an answer to the old one finds nothing waiting.
+      const key = JSON.stringify([generation, boardType, layoutId, sizeId, setIds, climb.uuid, targetAngle]);
       const existing = requests.get(key);
       if (existing) existing.items.push(item);
       else requests.set(key, { climbUuid: climb.uuid, angle: targetAngle, items: [item] });
     });
-    if (!requests.size) return;
-    const token = Symbol('queue-resolution');
-    for (const key of requests.keys()) inFlight.current.set(key, token);
-    let cancelled = false;
-    void Promise.all(
-      [...requests].map(async ([key, request]) => {
+    wanted.current = requests;
+
+    // An applied answer whose slot no longer asks for it has done its job.
+    for (const [key, state] of sent.current) {
+      if (state !== 'pending' && !requests.has(key)) sent.current.delete(key);
+    }
+
+    for (const [key, request] of requests) {
+      const state = sent.current.get(key);
+      if (state === 'pending') continue;
+      if (state !== undefined && Date.now() - state < APPLIED_ANSWER_GRACE_MS) continue;
+      sent.current.set(key, 'pending');
+      let applied = false;
+      void (async () => {
         try {
           const response = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, {
             boardName: boardType,
@@ -63,14 +112,18 @@ export function useQueueResolveClimbs({
             angle: request.angle,
             climbUuid: request.climbUuid,
           });
+          // Read the slots now, not the ones this run saw: the queue may have
+          // been rebuilt since, and a slot keeps its newest `mirrored`.
+          const waiting = wanted.current.get(key);
           if (
-            cancelled ||
+            !waiting ||
             generation !== getPrivacyRevocationGeneration() ||
             !response.climb ||
             !isClimbResolved(response.climb)
           )
             return;
-          for (const item of request.items) {
+          applied = true;
+          for (const item of waiting.items) {
             const resolved = climbToQueueItem(response.climb, { uuid: item.uuid, suggested: item.suggested }).climb;
             dispatch({
               type: 'DELTA_REPLACE_QUEUE_ITEM',
@@ -83,15 +136,14 @@ export function useQueueResolveClimbs({
         } catch {
           // A denied or offline reference stays in its slot without copied details.
         } finally {
-          if (inFlight.current.get(key) === token) inFlight.current.delete(key);
+          // An answer that filled its slots keeps the read marked until a run
+          // sees them filled. Anything else frees it: a slot still thin is
+          // asked for again the next time the queue, the board or the privacy
+          // generation changes.
+          if (applied) sent.current.set(key, Date.now());
+          else sent.current.delete(key);
         }
-      }),
-    );
-    return () => {
-      cancelled = true;
-      for (const key of requests.keys()) {
-        if (inFlight.current.get(key) === token) inFlight.current.delete(key);
-      }
-    };
+      })();
+    }
   }, [queue, currentClimbQueueItem, activeBoard, dispatch, privacyRevocationGeneration]);
 }

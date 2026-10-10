@@ -330,6 +330,37 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     expect(fetchedUuids).toContain('climb-thin');
   });
 
+  it('reads each climb once when a saved queue of thin references is restored', async () => {
+    // A saved queue comes back as references only (queue-privacy.ts), so every
+    // launch resolves the whole queue. Each answer lands in its own task, a few
+    // milliseconds after the last, the way rows come back from SQLite.
+    let answered = 0;
+    http.request.mockImplementation(
+      (_query: string, variables: { climbUuid: string; angle: number }) =>
+        new Promise<{ climb: Climb }>((resolve) => {
+          answered += 1;
+          setTimeout(() => resolve({ climb: makeClimb(variables.climbUuid, variables.angle, 'V5') }), answered * 4);
+        }),
+    );
+
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    const restored = Array.from({ length: 15 }, (_unused, index) =>
+      makeItem(`slot-${index}`, makeThinClimb(`climb-${index}`)),
+    );
+    await act(async () => {
+      snapshots.at(-1)?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: restored } });
+    });
+
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue.every((item) => item.climb.name !== '')).toBe(true), {
+      timeout: 4000,
+    });
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.climb.name)).toEqual(
+      restored.map((item) => `Climb ${item.climb.uuid}`),
+    );
+    expect(http.request).toHaveBeenCalledTimes(15);
+  });
+
   it('leaves the placeholder in place and does not crash when resolution fails (offline)', async () => {
     // Simulate offline: the wrapped request rejects. offlineAwareRequest degrades
     // to plain HTTP with the offline engine off, so a network failure surfaces here.
@@ -401,29 +432,22 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
   });
 
-  it('re-fetches a still-thin item when the queue changes mid-resolve (in-flight race)', async () => {
-    // The first resolve fetch is held open so the queue can churn while it's in
-    // flight. That churn cancels the run; its result is then discarded. The fix
-    // must release the run's in-flight marker on cancel so the successor run
-    // re-fetches the still-thin uuid instead of skipping it as "already resolving"
-    // — without it, the row stays "Unknown Climb" until an unrelated queue change.
-    let releaseFirstFetch: (() => void) | undefined;
-    let fetchCount = 0;
-    http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => {
-      fetchCount += 1;
-      const result = { climb: makeClimb(variables.climbUuid, 25, 'V6') };
-      if (fetchCount === 1) {
-        return new Promise<{ climb: Climb }>((resolve) => {
-          releaseFirstFetch = () => resolve(result);
-        });
-      }
-      return result;
-    });
+  it('neither repeats nor discards a read still on the wire when the queue changes', async () => {
+    // A read belongs to what it asks for, not to the effect run that sent it.
+    // Tying it to the run meant every queue change threw away the reads still
+    // out and sent them again, and restoring a saved queue is one queue change
+    // per answer.
+    let releaseFetch: (() => void) | undefined;
+    http.request.mockImplementation(
+      (_query: string, variables: { climbUuid: string; angle: number }) =>
+        new Promise<{ climb: Climb }>((resolve) => {
+          releaseFetch = () => resolve({ climb: makeClimb(variables.climbUuid, 25, 'V6') });
+        }),
+    );
 
     const snapshots = renderProvider();
     await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
 
-    // Thin item lands → the first resolve fetch starts and hangs.
     await act(async () => {
       snapshots.at(-1)?.dispatch({
         type: 'UPDATE_QUEUE',
@@ -432,8 +456,55 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     });
     await waitFor(() => expect(http.request).toHaveBeenCalledTimes(1));
 
-    // Queue churns while that fetch is still in flight (a second, resolved item
-    // arrives). This cancels the in-flight resolve run.
+    // The queue changes while that read is out: a second, resolved item arrives,
+    // and the thin slot itself is rebuilt with a mirror flag.
+    await act(async () => {
+      snapshots.at(-1)?.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: {
+          queue: [
+            makeItem('q1', { ...makeThinClimb('climb-thin'), mirrored: true }),
+            makeItem('q2', makeClimb('climb-ok', 25, 'V4')),
+          ],
+        },
+      });
+    });
+    expect(http.request).toHaveBeenCalledTimes(1);
+    expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q1')?.climb.name).toBe('');
+
+    // The one answer lands and fills the slot as it is now.
+    await act(async () => {
+      releaseFetch?.();
+    });
+    await waitFor(() => {
+      const resolved = snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q1');
+      expect(resolved?.climb.name).toBe('Climb climb-thin');
+      expect(resolved?.climb.frames).toBe('p1r12');
+      expect(resolved?.climb.mirrored).toBe(true);
+    });
+    expect(http.request).toHaveBeenCalledTimes(1);
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
+  });
+
+  it('asks again for a climb whose read failed, the next time the queue changes', async () => {
+    // A failed read must free its marker, or the row stays "Unknown Climb" for
+    // as long as the slot is in the queue.
+    http.request.mockRejectedValueOnce(new Error('offline'));
+    http.request.mockImplementation(async (_query: string, variables: { climbUuid: string }) => ({
+      climb: makeClimb(variables.climbUuid, 25, 'V6'),
+    }));
+
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    await act(async () => {
+      snapshots.at(-1)?.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: [makeItem('q1', makeThinClimb('climb-thin'))] },
+      });
+    });
+    await waitFor(() => expect(http.request).toHaveBeenCalledTimes(1));
+    expect(snapshots.at(-1)?.state.queue[0].climb.name).toBe('');
+
     await act(async () => {
       snapshots.at(-1)?.dispatch({
         type: 'UPDATE_QUEUE',
@@ -443,20 +514,100 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
       });
     });
 
-    // The successor run re-fetches the still-thin uuid and hydrates it in place.
-    await waitFor(() => {
-      const resolved = snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q1');
-      expect(resolved?.climb.name).toBe('Climb climb-thin');
-      expect(resolved?.climb.frames).toBe('p1r12');
-    });
-    // Proof the successor actually re-fetched rather than skipping on a stale marker.
-    expect(fetchCount).toBeGreaterThanOrEqual(2);
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue[0].climb.name).toBe('Climb climb-thin'));
+    expect(http.request).toHaveBeenCalledTimes(2);
+  });
 
-    // Let the original (cancelled) fetch settle — its result is discarded, no crash.
+  it('drops an answer for a slot that left the queue, and reads the climb again if it comes back', async () => {
+    const releases: Array<() => void> = [];
+    http.request.mockImplementation(
+      (_query: string, variables: { climbUuid: string }) =>
+        new Promise<{ climb: Climb }>((resolve) => {
+          releases.push(() => resolve({ climb: makeClimb(variables.climbUuid, 25, 'V6') }));
+        }),
+    );
+
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    const kept = makeItem('kept', makeClimb('climb-ok', 25, 'V4'));
     await act(async () => {
-      releaseFirstFetch?.();
+      snapshots.at(-1)?.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: [kept, makeItem('q1', makeThinClimb('climb-thin'))] },
+      });
     });
-    expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q1')?.climb.name).toBe('Climb climb-thin');
+    await waitFor(() => expect(releases).toHaveLength(1));
+
+    // The slot is removed while its read is out; the answer then has nowhere to go.
+    await act(async () => {
+      snapshots.at(-1)?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [kept] } });
+    });
+    await act(async () => {
+      releases[0]();
+    });
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['kept']);
+
+    // The same reference comes back later: it is a new wait, so it is read again.
+    await act(async () => {
+      snapshots.at(-1)?.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: [kept, makeItem('q1-again', makeThinClimb('climb-thin'))] },
+      });
+    });
+    await waitFor(() => expect(releases).toHaveLength(2));
+    await act(async () => {
+      releases[1]();
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue[1].climb.name).toBe('Climb climb-thin'));
+  });
+
+  it('drops an answer read at an angle the board has since left, and reads at the new one', async () => {
+    const original = activeBoard.stored;
+    const releases: Array<{ angle: number; release: () => void }> = [];
+    http.request.mockImplementation(
+      (_query: string, variables: { climbUuid: string; angle: number }) =>
+        new Promise<{ climb: Climb }>((resolve) => {
+          releases.push({
+            angle: variables.angle,
+            release: () => resolve({ climb: makeClimb(variables.climbUuid, variables.angle, `V${variables.angle}`) }),
+          });
+        }),
+    );
+
+    try {
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+      const thin = makeItem('q1', makeThinClimb('climb-thin'));
+      await act(async () => {
+        snapshots.at(-1)?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [thin] } });
+      });
+      await waitFor(() => expect(releases.map((entry) => entry.angle)).toEqual([25]));
+
+      // The wall moves to 40 degrees while the 25-degree read is out. The slot
+      // is asked for at 40 (the regrade hook asks at the new angle too, so the
+      // count of 40-degree reads is not this hook's alone).
+      activeBoard.stored = { ...original, angle: 40 };
+      await act(async () => {
+        snapshots.at(-1)?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [thin] } });
+      });
+      await waitFor(() => expect(releases.some((entry) => entry.angle === 40)).toBe(true));
+      expect(releases.filter((entry) => entry.angle === 25)).toHaveLength(1);
+
+      // The 25-degree answer has nothing waiting for it any more.
+      await act(async () => {
+        releases[0].release();
+      });
+      expect(snapshots.at(-1)?.state.queue[0].climb.name).toBe('');
+
+      await act(async () => {
+        for (const entry of releases.slice(1)) entry.release();
+      });
+      await waitFor(() => expect(snapshots.at(-1)?.state.queue[0].climb.difficulty).toBe('V40'));
+      expect(snapshots.at(-1)?.state.queue[0].climb.angle).toBe(40);
+      expect(releases.filter((entry) => entry.angle === 25)).toHaveLength(1);
+    } finally {
+      activeBoard.stored = original;
+    }
   });
 
   // #3868: when setCurrentClimb lands on a thin item the broadcast is skipped
