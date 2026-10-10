@@ -85,7 +85,11 @@ type BoardFormProps = {
   currentBoardUuid?: string;
   /** A spray wall's background picker, drawn under its visibility rows. */
   sprayBackgroundSection?: ReactNode;
-  /** The owner's "Help train hold finding" switch, drawn right under visibility. Owner only. */
+  /**
+   * The owner's "Help train hold finding" switch. Drawn beside whichever control
+   * says who sees the wall: under the three-way one, or directly above the
+   * audience control once the privacy rollout has replaced it. Owner only.
+   */
   sprayTrainingSection?: ReactNode;
 };
 
@@ -380,13 +384,25 @@ export function BoardForm({
                 climber's photograph and the open web. The two switches that
                 carry it on a catalogue board are hidden below for spray: three
                 states expressed as two independent booleans made "unlisted and
-                public" reachable, which is a state nobody meant to pick. */}
+                public" reachable, which is a state nobody meant to pick.
+
+                The training switch is the other answer to "who sees my photo",
+                so it stays next to that control in both modes. With the privacy
+                rollout on, the audience control is drawn after this block, and
+                the switch goes last here to sit directly above it. */}
             {isSprayWall ? (
-              <>
-                {!privacySettings?.enabled ? <SprayWallVisibilityField builder={builder} /> : null}
-                {sprayTrainingSection}
-                {sprayBackgroundSection}
-              </>
+              privacySettings?.enabled ? (
+                <>
+                  {sprayBackgroundSection}
+                  {sprayTrainingSection}
+                </>
+              ) : (
+                <>
+                  <SprayWallVisibilityField builder={builder} />
+                  {sprayTrainingSection}
+                  {sprayBackgroundSection}
+                </>
+              )
             ) : null}
           </>
         ) : null}
