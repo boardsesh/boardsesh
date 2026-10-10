@@ -2037,7 +2037,11 @@ export type CreateSprayWallInput = {
   longitude?: InputMaybe<Scalars['Float']['input']>;
   /** What the climber calls the wall. Becomes the board name, the catalogue row names and the slug. */
   name: Scalars['String']['input'];
-  /** Let this wall's photo and marked holds help train hold finding. On when omitted. */
+  /**
+   * Let this wall's photo and marked holds help train hold finding. Off when
+   * omitted: only a client that showed the owner the switch can say yes, so
+   * the app sends it explicitly.
+   */
   trainingConsent?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
@@ -9781,8 +9785,10 @@ export type SprayWall = {
   sizeId: Scalars['Int']['output'];
   /**
    * Whether the owner lets this wall's photo and marked holds help train hold
-   * finding. On by default. The Boardsesh team checks a version before it is
-   * used, and nobody else sees it. Only ever non-null for the wall's OWNER.
+   * finding. The app turns it on for a new wall unless the owner switches it
+   * off. A wall that existed before the switch, or was created without stating
+   * it, starts off. A Boardsesh admin checks a version before it is used. Only
+   * ever non-null for the wall's OWNER.
    */
   trainingConsent?: Maybe<Scalars['Boolean']['output']>;
   uuid: Scalars['ID']['output'];

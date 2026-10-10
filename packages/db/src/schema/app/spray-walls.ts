@@ -281,17 +281,26 @@ export const sprayWalls = pgTable(
      * When the owner let this wall's photo and holds be used to train hold
      * finding, or NULL when they have not (SW-20, #5471).
      *
-     * On by default for every wall, private and link-only included: a new wall
-     * gets `now()`. Switching it off nulls it; switching it back on stamps a fresh
-     * `now()`, so the column always says when the CURRENT consent was given. Only
-     * the owner can change it (`updateSprayWall`, the same gate as visibility).
+     * NULL unless a client said yes. No column default and no backfill, on
+     * purpose: consent can only come from a client that showed the owner the
+     * switch. `createSprayWall` stamps `now()` only for `trainingConsent: true`
+     * (omitted and `false` both store NULL), and every wall that existed before
+     * this column did keeps NULL. Those walls were photographed under the
+     * promise that the photo stays in the owner's account.
      *
-     * Read by `trainingEligibleVersions()` in
+     * `updateSprayWall { trainingConsent: true }` stamps a fresh `now()` on the
+     * one wall it names, so the column always says when the CURRENT consent was
+     * given. `false` nulls it on that wall and on every wall of its reset family
+     * (the walls it was cloned from and every clone made from them): to the
+     * owner that is one physical wall. A reset clone starts with its source's
+     * choice. Only the owner can change it, through the same gate as visibility.
+     *
+     * Read by `trainingEligibleCondition()` in
      * `packages/backend/src/graphql/resolvers/board/spray-training.ts`: a wall with
      * NULL here never reaches the admin queue or an export, whatever review rows
      * it has, and the next export run retires any stored export that held it.
      */
-    trainingConsentAt: timestamp('training_consent_at', { withTimezone: true }).defaultNow(),
+    trainingConsentAt: timestamp('training_consent_at', { withTimezone: true }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     /**
@@ -694,7 +703,7 @@ export const sprayTrainingRejectReasonEnum = pgEnum('spray_training_reject_reaso
  * unreviewed; setting it back to unreviewed deletes the row.
  *
  * A row is necessary and never sufficient for export: the wall's consent and the
- * rest of `trainingEligibleVersions()` are re-checked on every read, so an
+ * rest of `trainingEligibleCondition()` are re-checked on every read, so an
  * approval outlives a consent switch-off without ever acting on it.
  */
 export const sprayWallTrainingReviews = pgTable(
@@ -780,5 +789,4 @@ export type SprayWallReport = typeof sprayWallReports.$inferSelect;
 export type SprayHoldAutoReview = (typeof sprayHoldAutoReviewEnum.enumValues)[number];
 export type SprayTrainingReviewStatus = (typeof sprayTrainingReviewStatusEnum.enumValues)[number];
 export type SprayTrainingRejectReason = (typeof sprayTrainingRejectReasonEnum.enumValues)[number];
-export type SprayWallTrainingReview = typeof sprayWallTrainingReviews.$inferSelect;
 export type NewSprayWallReport = typeof sprayWallReports.$inferInsert;

@@ -12,6 +12,8 @@ import { mapPoint } from '@boardsesh/spray-wall-geometry';
  * The acceptance rules are the ones a climber is promised, so they are asserted
  * on the export's actual files rather than on helper return values:
  *
+ *  - a wall is consented only when a client says so: created without the
+ *    switch, or before the switch existed, it is never queued or exported;
  *  - a wall whose owner never consented is never exported, approval or not;
  *  - switching consent off retires the stored export that held the wall, and
  *    the next export leaves it out;
@@ -152,12 +154,23 @@ const DEFAULT_HOLDS: HoldInput[] = [
   { cx: 520, cy: 560, r: 18 },
 ];
 
+/** `createSprayWall` with exactly this input: nothing about consent unless the test states it. */
+async function createWallWithInput(input: Record<string, unknown>, owner = OWNER): Promise<CreatedWall> {
+  return (await sprayWallMutations.createSprayWall({}, { input }, ctxFor(owner))) as CreatedWall;
+}
+
+/**
+ * A wall as the app's wizard creates it: the owner saw "Help train hold
+ * finding" and left it on, so the client SENDS `trainingConsent: true`. Stated
+ * here because the server never assumes it. A create that says nothing stores
+ * no consent (see "training consent at creation"), and most tests below need a
+ * consented wall to have anything to assert on.
+ */
 async function createWall(input: Record<string, unknown> = {}, owner = OWNER): Promise<CreatedWall> {
-  return (await sprayWallMutations.createSprayWall(
-    {},
-    { input: { name: `Wall ${uuidv4().slice(0, 6)}`, angle: 40, ...input } },
-    ctxFor(owner),
-  )) as CreatedWall;
+  return createWallWithInput(
+    { name: `Wall ${uuidv4().slice(0, 6)}`, angle: 40, trainingConsent: true, ...input },
+    owner,
+  );
 }
 
 async function createDraft(wall: CreatedWall, owner = OWNER): Promise<string> {
@@ -224,6 +237,38 @@ async function wallRowOf(wall: CreatedWall) {
     FROM spray_walls WHERE board_uuid = ${wall.uuid}
   `)) as unknown as Array<{ training_consent_at: string | null; archived_at: string | null; updated_at: string }>;
   return rows[0];
+}
+
+/**
+ * A published wall written the way every wall was before `training_consent_at`
+ * existed: its rows inserted directly, by code that never heard of the column,
+ * so nothing states consent and the row gets whatever the column defaults to.
+ */
+async function insertWallFromBeforeTheSwitch(): Promise<{ wall: CreatedWall; versionId: string }> {
+  // Far above anything `spray_wall_catalog_id_seq` hands out in one test.
+  const layoutId = 900_001;
+  const uuid = uuidv4();
+  await db.execute(sql`
+    INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name)
+    VALUES (${uuid}, ${`wall-${layoutId}`}, ${OWNER}, 'spray', ${layoutId}, ${layoutId}, '', 'Garage wall')
+  `);
+  const [wallRow] = (await db.execute(sql`
+    INSERT INTO spray_walls (board_uuid, layout_id, reference_width, reference_height, hold_count)
+    VALUES (${uuid}, ${layoutId}, 1200, 900, 0)
+    RETURNING id
+  `)) as unknown as Array<{ id: string }>;
+  const photoKey = sprayWallPhotoKey(uuid, registerUploadedPhoto(uuid));
+  const [versionRow] = (await db.execute(sql`
+    INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height,
+                                     homography, published_at)
+    VALUES (${Number(wallRow.id)}, 1, 'published', ${photoKey}, 1200, 900,
+            ${JSON.stringify([1, 0, 0, 0, 1, 0, 0, 0, 1])}::jsonb, now())
+    RETURNING id
+  `)) as unknown as Array<{ id: string }>;
+  await db.execute(
+    sql`UPDATE spray_walls SET current_version_id = ${Number(versionRow.id)} WHERE id = ${Number(wallRow.id)}`,
+  );
+  return { wall: { uuid, layoutId }, versionId: String(versionRow.id) };
 }
 
 async function wallIdOf(wall: CreatedWall): Promise<number> {
@@ -339,9 +384,78 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * Consent can only come from a client that showed the owner the switch. The
+ * server never fills it in: not when a create leaves the field out, and not for
+ * a wall that existed before the column did.
+ */
+describe('training consent at creation', () => {
+  const readAsOwner = async (wall: CreatedWall) =>
+    ((await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as { trainingConsent: boolean | null })
+      .trainingConsent;
+
+  it('stamps consent only for an explicit yes: an omitted field and a no both start off', async () => {
+    // An app that predates the switch never sends the field.
+    const unstated = await createWallWithInput({ name: 'Unstated', angle: 40 });
+    const declined = await createWallWithInput({ name: 'Declined', angle: 40, trainingConsent: false });
+    const agreed = await createWallWithInput({ name: 'Agreed', angle: 40, trainingConsent: true });
+
+    expect((await wallRowOf(unstated)).training_consent_at).toBeNull();
+    expect((await wallRowOf(declined)).training_consent_at).toBeNull();
+    expect((await wallRowOf(agreed)).training_consent_at).not.toBeNull();
+    // And what each owner reads back on their wall.
+    expect(await readAsOwner(unstated)).toBe(false);
+    expect(await readAsOwner(declined)).toBe(false);
+    expect(await readAsOwner(agreed)).toBe(true);
+  });
+
+  it('never queues or exports a wall created without stating consent, even with an approved review row', async () => {
+    const wall = await createWallWithInput({ name: 'Unstated', angle: 40 });
+    const versionId = await publishFirstVersion(wall);
+    // An approval that could only have got there by hand: the review mutation
+    // refuses a version that is not eligible.
+    await expect(review(versionId, 'APPROVED')).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_TRAINING_NOT_ELIGIBLE' },
+    });
+    await db.execute(sql`
+      INSERT INTO spray_wall_training_reviews (version_id, status, reviewed_by)
+      VALUES (${Number(versionId)}, 'approved', ${ADMIN})
+    `);
+
+    for (const status of ['UNREVIEWED', 'APPROVED', 'REJECTED']) {
+      expect(await queueVersionIds(status)).toEqual([]);
+    }
+    expect((await queue()).totals).toEqual({ unreviewed: 0, approved: 0, rejected: 0 });
+
+    expect(await exportSprayTrainingDataset({ now: RUN_1 })).toMatchObject({
+      exportId: null,
+      imagesWritten: 0,
+      skipped: true,
+      skippedReason: 'NOTHING_TO_EXPORT',
+    });
+    expect(exportKeys()).toEqual([]);
+  });
+
+  it('leaves a wall from before the switch out until its owner switches it on', async () => {
+    const { wall, versionId } = await insertWallFromBeforeTheSwitch();
+
+    // No column default and no backfill: the row never said yes, so it is a no.
+    expect((await wallRowOf(wall)).training_consent_at).toBeNull();
+    expect(await readAsOwner(wall)).toBe(false);
+    expect(await queueVersionIds()).toEqual([]);
+    await expect(review(versionId, 'APPROVED')).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_TRAINING_NOT_ELIGIBLE' },
+    });
+
+    // The owner opens the wall in an app that shows the switch, and says yes.
+    expect((await setTrainingConsent(wall, true)).trainingConsent).toBe(true);
+    expect(await queueVersionIds()).toEqual([versionId]);
+  });
+});
+
 describe('training consent on the wall', () => {
-  it('is on by default, readable only by the owner, and owner-only to change', async () => {
-    const { wall } = await createPublishedWall({ isPublic: true });
+  it('is readable only by the owner, and owner-only to change', async () => {
+    const { wall } = await createPublishedWall({ isPublic: true, trainingConsent: true });
 
     const asOwner = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
       trainingConsent: boolean | null;
@@ -361,11 +475,6 @@ describe('training consent on the wall', () => {
     expect((await wallRowOf(wall)).training_consent_at).toBeNull();
 
     expect((await setTrainingConsent(wall, true)).trainingConsent).toBe(true);
-  });
-
-  it('starts off when the climber switched it off at creation', async () => {
-    const wall = await createWall({ trainingConsent: false });
-    expect((await wallRowOf(wall)).training_consent_at).toBeNull();
   });
 });
 
@@ -407,6 +516,18 @@ describe('training consent across a reset', () => {
 
     expect((await wallRowOf(clone)).training_consent_at).toBeNull();
     // The reset finishes: the new photo was never consented, so it is not queued.
+    await publishFirstVersion(clone);
+    expect(await queueVersionIds()).toEqual([]);
+  });
+
+  it('starts a reset clone off when the wall it was cloned from never consented', async () => {
+    // A clone copies its source's choice. A source created without stating
+    // consent has none to copy, so the reset must not invent one.
+    const source = await createWallWithInput({ name: 'Unstated', angle: 40 });
+    await publishFirstVersion(source);
+    const clone = await startReset(source);
+
+    expect((await wallRowOf(clone)).training_consent_at).toBeNull();
     await publishFirstVersion(clone);
     expect(await queueVersionIds()).toEqual([]);
   });
@@ -595,12 +716,14 @@ describe('hold provenance edge cases', () => {
 
 describe('the user data export', () => {
   it('lists each owned spray wall with its training consent stamp', async () => {
-    const consenting = await createWall();
+    const consenting = await createWall({ trainingConsent: true });
     const declining = await createWall({ trainingConsent: false });
+    const unstated = await createWallWithInput({ name: 'Unstated', angle: 40 });
     const archive = await buildUserDataArchive(db, OWNER, 'spray', '2026-W40');
     const byUuid = new Map((archive.sprayWalls ?? []).map((wall) => [wall.uuid, wall]));
     expect(byUuid.get(consenting.uuid)?.trainingConsentAt).toEqual(expect.any(String));
     expect(byUuid.get(declining.uuid)?.trainingConsentAt).toBeNull();
+    expect(byUuid.get(unstated.uuid)?.trainingConsentAt).toBeNull();
   });
 });
 

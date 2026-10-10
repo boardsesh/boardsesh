@@ -3338,15 +3338,35 @@ reaches training, and how it leaves again.
 
 ### Consent
 
-`spray_walls.training_consent_at` is the "Help train hold finding" switch. On by
-default for every wall, private and link-only included: `createSprayWall` stamps
-`now()` unless the input says `trainingConsent: false`, and a reset clone copies
-the source's choice. `updateSprayWall { trainingConsent }` turns it off (NULL)
-or back on (a fresh `now()`; restating "on" keeps the old stamp). Only the
-owner can change it, through the same gate and error code as visibility
-(`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). `SprayWall.trainingConsent` answers the
-owner and is null for everybody else. The user data export lists each owned
-wall with its `trainingConsentAt`.
+`spray_walls.training_consent_at` is the "Help train hold finding" switch: the
+time the owner said yes, or NULL. **A wall is consented only when a client says
+so.** The column has no default and the migration backfills nothing.
+
+- `createSprayWall { trainingConsent: true }` stamps `now()`. An omitted field
+  and `false` both store NULL.
+- Every wall that existed when the column was added has NULL.
+- `updateSprayWall { trainingConsent: true }` stamps a fresh `now()` (restating
+  "on" keeps the old stamp); `false` nulls it.
+- A reset clone starts with its source's choice, yes or no.
+
+A client that shows the switch sends the owner's choice with the create. A
+client that does not, which is every app build from before the switch, sends
+nothing, and the wall starts off.
+
+**Why it is not on by default.** Spray walls have been open to every climber
+since #5949 (2026-10-03), before this switch existed. Those walls were
+photographed with the visibility picker saying "Only you. Your wall photo stays
+in your account." (`boards.sprayVisibility.privateHint`). A column default of
+`now()` would have opted every one of them in, private walls included, and
+treating an omitted field as yes would do the same to each wall an older app
+creates from here on. Neither owner was asked. Consent can only come from a
+client that showed the choice, so anything else is a no until the owner says
+otherwise.
+
+Only the owner can change it, through the same gate and error code as
+visibility (`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). `SprayWall.trainingConsent`
+answers the owner and is null for everybody else. The user data export lists
+each owned wall with its `trainingConsentAt`.
 
 **Off covers the whole physical wall; on covers one wall.** A reset clones a
 wall, so one physical wall is a family of rows linked by `reset_from_wall_id`:

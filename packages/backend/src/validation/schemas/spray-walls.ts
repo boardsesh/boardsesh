@@ -143,10 +143,10 @@ export const CreateSprayWallInputSchema = z.object({
   longitude: z.number().min(-180).max(180).optional().nullable(),
   hideLocation: z.boolean().optional(),
   climbEditPolicy: RetiredSprayClimbEditPolicySchema.optional(),
-  // "Help train hold finding" (SW-20, #5471). Only an explicit `false` creates
-  // a wall with the switch off: `createSprayWall` stamps `training_consent_at`
-  // for `true` and for an omitted field alike, so a client that never sends the
-  // field creates consented walls.
+  // "Help train hold finding" (SW-20, #5471). Off when omitted, because only a
+  // client that showed the owner the switch can say yes: `createSprayWall`
+  // stamps `training_consent_at` for an explicit `true` and stores NULL for
+  // `false` and for a client that never sends the field.
   trainingConsent: z.boolean().optional(),
   // `hasLeds` is deliberately ABSENT and must stay absent. A spray wall has no
   // firmware to encode for, and BLE suppression today is the per-row

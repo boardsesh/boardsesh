@@ -63,11 +63,11 @@
     },
     "boardsesh-user-walls": {
       "kind": "private",
-      "licence": "owner consent per wall (on by default, revocable), internal training only, never redistributed",
+      "licence": "owner consent per wall (given explicitly, revocable), internal training only, never redistributed",
       "redistributable": false,
       "url": null,
       "format": "coco",
-      "notes": "Climbers' own spray walls: the wall photo plus the holds its owner marked, for every wall whose owner left 'Help train hold finding' on and that a spray admin approved. The backend writes them daily to the private R2 bucket under spray-training/exports/<exportId>/ (train, valid, eval; eval is frozen per root wall and never trained on). Fetch with `python data/user_walls.py fetch`, which verifies every sha256 and deletes local exports the bucket has retired; train.py refuses a copy fetched more than 7 days ago. Never committed, never a fixture, never redistributed. Trained weights hold no photos and are not retracted when a wall leaves."
+      "notes": "Climbers' own spray walls: the wall photo plus the holds its owner marked, for every wall whose owner switched 'Help train hold finding' on and that a spray admin approved. The backend writes them every six hours to the private R2 bucket under spray-training/exports/<exportId>/ (train, valid, eval; eval is frozen per root wall and never trained on). Fetch with `python data/user_walls.py fetch`, which verifies every sha256 and deletes local exports the bucket has retired; train.py refuses a copy fetched more than 7 days ago. Never committed, never a fixture, never redistributed. Trained weights hold no photos and are not retracted when a wall leaves."
     },
     "spraywalls-web": {
       "kind": "manual",

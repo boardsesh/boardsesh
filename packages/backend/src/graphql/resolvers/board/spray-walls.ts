@@ -2051,7 +2051,7 @@ type NewSprayWallSettings = {
   renderSettings: SprayWallRow['renderSettings'];
   /** The wall this one is a reset clone of, or null for a fresh wall. */
   resetFromWallId: number | null;
-  /** "Help train hold finding": consented now, or null when the owner said no. */
+  /** "Help train hold finding": consented now, or null when the owner has not said yes. */
   trainingConsentAt: Date | null;
 };
 
@@ -2400,8 +2400,10 @@ export const sprayWallMutations = {
         pendingVisibility: pendingVisibilityColumns(validated),
         renderSettings: null,
         resetFromWallId: null,
-        // On unless the climber switched it off in the wizard (SW-20, #5471).
-        trainingConsentAt: validated.trainingConsent === false ? null : new Date(),
+        // Only an explicit yes (SW-20, #5471). Omitted is off, the same as
+        // `false`: consent can only come from a client that showed the owner
+        // the switch, and a client that predates the switch never sends it.
+        trainingConsentAt: validated.trainingConsent === true ? new Date() : null,
       }),
     );
 

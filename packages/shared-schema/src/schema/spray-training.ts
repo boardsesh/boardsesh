@@ -1,7 +1,8 @@
 /**
  * Spray wall training data (SW-20, #5471): the admin vetting queue over wall
- * versions whose owners left "Help train hold finding" on, and the scheduler's
- * export of the approved ones. See `docs/spray-walls.md`, "Training data".
+ * versions whose owners switched "Help train hold finding" on, and the
+ * scheduler's export of the approved ones. See `docs/spray-walls.md`,
+ * "Training data".
  */
 export const sprayTrainingTypeDefs = /* GraphQL */ `
   "An admin's verdict on one wall version as training data. UNREVIEWED is the absence of one."

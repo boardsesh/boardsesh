@@ -1,5 +1,5 @@
 {
-  "id": "e5847d6e-e095-4187-90f2-53c5e577d37b",
+  "id": "248ce10e-9d07-407e-a05b-3e402f360e81",
   "prevId": "7396788e-4007-4556-89c0-09c0fdb3abb3",
   "version": "7",
   "dialect": "postgresql",
@@ -15242,8 +15242,7 @@
           "name": "training_consent_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
