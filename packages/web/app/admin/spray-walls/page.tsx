@@ -32,6 +32,9 @@ export default async function AdminSprayWallsPage() {
   }
 
   if (!access.isAdmin) {
+    // `boardScopedOnly` is true for any board-scoped admin role this check did
+    // not accept. Here that can only be an admin of another board (a spray or
+    // global admin has `isAdmin`), which is who the spray-specific message is for.
     return (
       <I18nProvider locale={locale} namespaces={['common', 'admin']}>
         <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
