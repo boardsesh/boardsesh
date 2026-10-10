@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
@@ -2151,6 +2151,15 @@ describe('private spray social references and anonymous aggregates', () => {
     return outcome.data;
   }
 
+  /**
+   * The mixed session is a PUBLIC one on another board, holding a catalogue log
+   * beside the private wall's. It must not be attached to the wall's board: a
+   * session is readable only by people who can read every board it is attached
+   * to, and a tick is capped by its session (`tickPrivacyCondition`), so a
+   * session on the wall is hidden whole and takes its catalogue log with it.
+   * That is the block above's `world.sessionId`. This one asks what a session
+   * the viewer CAN open says about logs they cannot.
+   */
   async function restoreSession(): Promise<void> {
     await db
       .insert(dbSchema.boardSessions)
@@ -2159,13 +2168,18 @@ describe('private spray social references and anonymous aggregates', () => {
         boardPath: 'kilter/1/1/1/40',
         createdByUserId: OWNER,
         name: '6037 mixed session',
-        boardId: world.boardId,
+        isPublic: true,
         status: 'active',
         startedAt: new Date(),
         lastActivity: new Date(),
       })
       .onConflictDoNothing();
   }
+
+  // `setup.ts` truncates `board_sessions` before every test and the ticks keep
+  // their session id. A tick whose session row is missing is readable by its
+  // author alone, so every case here needs the row back, not only the feed ones.
+  beforeEach(restoreSession);
 
   beforeAll(async () => {
     await db.insert(dbSchema.boardClimbs).values({
@@ -2468,7 +2482,6 @@ describe('private spray social references and anonymous aggregates', () => {
   });
 
   it('keeps aggregate sends while hiding named private-only participants and their counts', async () => {
-    await restoreSession();
     const document =
       'query Privacy($input: ActivityFeedInput) { sessionGroupedFeed(input: $input) { sessions { sessionId totalSends tickCount participants { userId sends } } } }';
     for (const viewer of privacyViewers) {
@@ -2508,7 +2521,7 @@ describe('private spray social references and anonymous aggregates', () => {
       ).toEqual(card?.participants);
     }
   });
-  it('separates daily aggregate counts from named public/private-only activity', async () => {
+  it('counts only readable logs on one climber’s daily card and drops a private-only day', async () => {
     const document =
       'query Privacy($input: ActivityFeedInput) { sessionGroupedFeed(input: $input) { sessions { sessionId totalSends tickCount participants { userId sends } } } }';
     for (const viewer of privacyViewers) {
@@ -2533,8 +2546,14 @@ describe('private spray social references and anonymous aggregates', () => {
       const friendCard = friendAnswer.sessionGroupedFeed.sessions.find(
         (session) => session.sessionId === `daily:${FRIEND}:2026-10-03`,
       );
-      expect(ownerCard).toMatchObject({ totalSends: 2, tickCount: 2 });
-      expect(ownerCard?.participants).toEqual([{ userId: OWNER, sends: viewer.name === 'owner' ? 2 : 1 }]);
+      // A feed scoped to one climber (`userId`) counts only the logs the viewer
+      // may read (`tickPrivacyCondition`), unlike the unscoped feed above. A
+      // daily card is that one climber's day, so its totals are their count:
+      // totals that kept the private log would hand out the number the
+      // participant row withholds.
+      const readableSends = viewer.name === 'owner' ? 2 : 1;
+      expect(ownerCard).toMatchObject({ totalSends: readableSends, tickCount: readableSends });
+      expect(ownerCard?.participants).toEqual([{ userId: OWNER, sends: readableSends }]);
       if (viewer.name === 'owner') {
         expect(friendCard).toMatchObject({ totalSends: 1, tickCount: 1, participants: [{ userId: FRIEND, sends: 1 }] });
       } else {
