@@ -13,6 +13,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import { extractScreenshotIsland } from './lib/screenshot-island';
 import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
 import {
   findGooglePlayImageOffenders,
@@ -291,13 +292,15 @@ export async function frameShowcaseComposition(
   options: { labels?: readonly string[]; placement?: StoreCreativePlacement } = {},
 ): Promise<Buffer> {
   const boards = layout === 'store-boards';
-  if (sources.length !== (boards ? 3 : 1)) throw new Error(`Invalid showcase source count for ${layout}`);
+  const boardCount = options.placement ? 4 : 3;
+  if (sources.length !== (boards ? boardCount : 1)) throw new Error(`Invalid showcase source count for ${layout}`);
   const sourceSizes = sources.map(readPngDimensions);
   const sourceSize = sourceSizes[0];
   if (sourceSizes.some((size) => size.width !== sourceSize.width || size.height !== sourceSize.height))
     throw new Error('Showcase sources must come from the same capture device');
-  if (boards && options.labels?.length !== 3) throw new Error('Each board capture needs its own compatibility label');
-  if (options.placement && !boards) throw new Error('Creative placements require the three-board opening');
+  if (boards && options.labels?.length !== boardCount)
+    throw new Error('Each board capture needs its own compatibility label');
+  if (options.placement && !boards) throw new Error('Creative placements require the four-board opening');
   const { width, height } = options.placement ? STORE_CREATIVE_PLACEMENTS[options.placement] : sourceSize;
   const wide = width > height;
   const tablet = wide && !options.placement;
@@ -353,7 +356,34 @@ export async function frameShowcaseComposition(
   const panels: NativePanel[] = [];
   const aspect = sourceSize.height / sourceSize.width;
   const foreground: sharp.OverlayOptions[] = [];
-  if (boards) {
+  if (boards && options.placement) {
+    // Dedicated placements give all four boards equal, unobscured native panels.
+    // The spray photo is a required capture, never a fallback illustration.
+    const panelGap = width * 0.008;
+    const labelSize = Math.round(width * 0.016);
+    const labels = await Promise.all(
+      options.labels!.map((label) =>
+        renderShowcaseText(label, labelSize, Math.round((region.width - panelGap * 3) / 4), colors.label, {
+          bold: true,
+        }),
+      ),
+    );
+    const labelHeight = Math.max(...labels.map((label) => label.info.height));
+    const labelGap = height * 0.012;
+    const panelWidth = Math.min((region.width - panelGap * 3) / 4, (region.height - labelHeight - labelGap) / aspect);
+    const groupWidth = panelWidth * 4 + panelGap * 3;
+    const panelTop =
+      region.top + (region.height - panelWidth * aspect - labelHeight - labelGap) / 2 + labelHeight + labelGap;
+    for (let index = 0; index < sources.length; index++) {
+      const left = region.left + (region.width - groupWidth) / 2 + index * (panelWidth + panelGap);
+      panels.push({ raw: sources[index], left, top: panelTop, width: panelWidth });
+      foreground.push({
+        input: labels[index].data,
+        left: Math.round(left + (panelWidth - labels[index].info.width) / 2),
+        top: Math.round(panelTop - labelGap - labels[index].info.height),
+      });
+    }
+  } else if (boards) {
     // Lower the portrait foreground phone to expose more lit holds on both sides.
     // Fit its complete native footer even when translated copy makes the stage shorter.
     const foregroundDrop = wide ? 0.17 : 0.29;
@@ -416,19 +446,26 @@ export async function frameShowcaseComposition(
         },
       },
     );
+  } else if (layout === 'store-island') {
+    // Keep the actual native silhouette and contents; omit wallpaper and the
+    // decorative screenshot border. Center the Island on the complete canvas.
+    const island = await sharp(await extractScreenshotIsland(sources[0]))
+      .resize(Math.round(region.width))
+      .png()
+      .toBuffer({ resolveWithObject: true });
+    foreground.push({
+      input: island.data,
+      left: Math.round((width - island.info.width) / 2),
+      top: Math.round(Math.max(copyTop + copyHeight + height * 0.085, (height - island.info.height) / 2)),
+    });
   } else {
-    // The island is SpringBoard UI: enlarge its actual pixels instead of drawing controls.
-    // Both supported iPhones capture at 3×: the expanded Island occupies the
-    // same 160-point region. A screen-height fraction exposes app labels on Max.
-    const crop = layout === 'store-island' ? { top: 0, height: 480 / sourceSize.height } : undefined;
-    const panelWidth = Math.min(region.width, region.height / (aspect * (crop?.height ?? 1)));
-    const panelHeight = panelWidth * aspect * (crop?.height ?? 1);
+    const panelWidth = Math.min(region.width, region.height / aspect);
+    const panelHeight = panelWidth * aspect;
     panels.push({
       raw: sources[0],
       left: region.left + (region.width - panelWidth) / 2,
       top: region.top + (region.height - panelHeight) / 2,
       width: panelWidth,
-      crop,
     });
   }
   return paintFrame({

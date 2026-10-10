@@ -40,6 +40,8 @@ export interface ScreenshotCaption {
   description: string;
   /** Exact headline substring set in the showcase's italic display face. */
   emphasis?: string;
+  /** Localized board-kind label for dedicated creative placements. */
+  boardLabel?: string;
 }
 export type CaptionCatalog = Record<CaptionId, ScreenshotCaption>;
 
@@ -303,10 +305,13 @@ export function readCaptionCatalog(locale: CaptionLocale, root = PRESENTATION_RO
     ) {
       throw new Error(`Invalid screenshot emphasis ${locale}.${captionId}`);
     }
+    if (caption.boardLabel !== undefined && (typeof caption.boardLabel !== 'string' || !caption.boardLabel.trim()))
+      throw new Error(`Invalid screenshot board label ${locale}.${captionId}`);
     catalog[captionId] = {
       headline: caption.headline,
       description: caption.description,
       ...(typeof caption.emphasis === 'string' ? { emphasis: caption.emphasis } : {}),
+      ...(typeof caption.boardLabel === 'string' ? { boardLabel: caption.boardLabel } : {}),
     };
   }
   return catalog;

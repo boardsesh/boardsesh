@@ -4,7 +4,10 @@ The iPhone campaign carries the homepage showcase video's typography and board
 imagery into nine screenshots, plus separate Header and Search Results stills.
 Every app view comes from a real native capture. Compositing may frame, scale or
 enlarge those captures; it must not invent controls, change a board's identity,
-or use AI-generated screenshots.
+or use AI-generated screenshots. The Dynamic Island composition extracts the
+actual native black silhouette, retaining its captured controls, text and thumbnail
+while removing the surrounding SpringBoard wallpaper and decorative capture
+border; it centers that silhouette on an opaque canvas.
 
 ## Capture prerequisite and campaign order
 
@@ -57,6 +60,7 @@ are from that device. It requires these unframed source images:
 - `00-board-view.png`: Kilter.
 - `01-board-view-2.png`: Tension.
 - `10-moonboard-board-view.png`: MoonBoard.
+- `14-spray-board-view.png`: the permitted Home Spray Wall, showing Black Pearl.
 
 The output contains `header.png` at 3840 × 1646, `search-results.png` at
 3840 × 2560, and `creative-assets.json`. Both PNGs are opaque. The manifest
@@ -65,8 +69,9 @@ dimensions and hashes. Retain it with the review artifacts; it is not an image
 to upload to Apple. These dimensions follow Apple's
 [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications).
 
-Header and Search Results are independently composed from the three board
-captures, rather than resized copies of the portrait screenshot. The output
+Header and Search Results give all four board captures equal, unobscured panels
+with localized labels. The spray source is required; missing it fails export.
+These compositions are independent of the three-board portrait opening. The output
 directory must be separate from the inputs and outside
 `app-stores/apple/screenshots/`, so the screenshot uploader cannot confuse a
 creative placement with a device screenshot.
@@ -94,6 +99,10 @@ and describe compatibility without implying endorsement.
 5. Retain raw captures, source commit, build/fixture identity and manifests with the approved exports.
 
 Use the target release's UI and preserve the spray photograph's consent record.
+The Home Spray Wall and Black Pearl hold arrangement match the website video
+references `marketing/showcase-video/reference/ios/spray.jpg` and
+`marketing/showcase-video/reference/ios/boards-spray.jpg`; the fresh native
+`14-spray-board-view.png` supplies both the portrait spray shot and these placements.
 Existing showcase footage or website images are visual references, not proof
 that a fresh release capture has passed review. Keep URLs, other marketplace
 branding and donation messages out of the Apple compositions. Apple's

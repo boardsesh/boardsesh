@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { renderStoreCreatives, parseCreativeArguments } from '../app-store-creatives';
+import { extractScreenshotIsland } from '../lib/screenshot-island';
 import { frameShowcaseComposition, renderShowcaseText, STORE_CREATIVE_PLACEMENTS } from '../frame-screenshots';
 import {
   CAPTION_LOCALES,
@@ -33,40 +34,62 @@ async function capture(width = 1206, height = 2622): Promise<Buffer> {
     .toBuffer();
 }
 
+async function islandCapture(width = 1206, height = 2622): Promise<Buffer> {
+  return sharp(
+    Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100%" height="100%" fill="#ff0000"/>
+    <rect x="42" y="42" width="${width - 84}" height="450" rx="150" fill="black"/>
+    <rect x="250" y="400" width="200" height="40" fill="#00ff00"/>
+  </svg>`),
+  )
+    .png()
+    .toBuffer();
+}
+
 describe('multiboard App Store campaign', () => {
   it.each([
     [1206, 2622],
     [1320, 2868],
-  ])('keeps Island controls and excludes system labels at %i×%i', async (width, height) => {
-    const source = await sharp({ create: { width, height, channels: 3, background: '#ff0000' } })
-      .composite([
-        {
-          input: await sharp({ create: { width, height: 480, channels: 3, background: '#214736' } })
-            .png()
-            .toBuffer(),
-          left: 0,
-          top: 0,
-        },
-        {
-          input: await sharp({ create: { width: 200, height: 40, channels: 3, background: '#00ff00' } })
-            .png()
-            .toBuffer(),
-          left: 100,
-          top: 400,
-        },
-      ])
-      .png()
-      .toBuffer();
+  ])('centers native Island controls without wallpaper at %i×%i', async (width, height) => {
+    const source = await islandCapture(width, height);
+    const cutout = await extractScreenshotIsland(source);
+    const isolated = await sharp(cutout).raw().toBuffer({ resolveWithObject: true });
+    expect(isolated.info.channels).toBe(4);
+    expect(isolated.data[3]).toBe(0);
     const framed = await frameShowcaseComposition([source], readCaptionCatalog('en-US').storeIsland, 'store-island');
     const pixels = await sharp(framed).removeAlpha().raw().toBuffer();
     let controlPixels = 0;
-    let systemPixels = 0;
+    let wallpaperPixels = 0;
+    let left = width;
+    let right = 0;
+    let top = height;
+    let bottom = 0;
     for (let offset = 0; offset < pixels.length; offset += 3) {
       if (pixels[offset] === 0 && pixels[offset + 1] === 255 && pixels[offset + 2] === 0) controlPixels++;
-      if (pixels[offset] === 255 && pixels[offset + 1] === 0 && pixels[offset + 2] === 0) systemPixels++;
+      if (pixels[offset] === 255 && pixels[offset + 1] === 0 && pixels[offset + 2] === 0) wallpaperPixels++;
+      if (pixels[offset] === 0 && pixels[offset + 1] === 0 && pixels[offset + 2] === 0) {
+        const column = (offset / 3) % width;
+        const row = Math.floor(offset / 3 / width);
+        left = Math.min(left, column);
+        right = Math.max(right, column);
+        top = Math.min(top, row);
+        bottom = Math.max(bottom, row);
+      }
     }
     expect(controlPixels).toBeGreaterThan(1000);
-    expect(systemPixels).toBe(0);
+    expect(wallpaperPixels).toBe(0);
+    expect(Math.abs((left + right) / 2 - width / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs((top + bottom) / 2 - height / 2)).toBeLessThanOrEqual(1);
+  });
+
+  it('refuses an Island crop when the native silhouette is missing', async () => {
+    await expect(extractScreenshotIsland(await capture())).rejects.toThrow('silhouette is missing');
+    const blackScreen = await sharp({
+      create: { width: 1206, height: 2622, channels: 3, background: '#000000' },
+    })
+      .png()
+      .toBuffer();
+    await expect(extractScreenshotIsland(blackScreen)).rejects.toThrow('outline does not match');
   });
 
   it('keeps every native footer visible below a longer localized headline', async () => {
@@ -163,7 +186,8 @@ describe('multiboard App Store campaign', () => {
         [catalog.storeCrew, 'store-queue', undefined],
         [catalog.storeIsland, 'store-island', undefined],
       ] as const) {
-        const framed = await frameShowcaseComposition(labels ? [raw, raw, raw] : [raw], caption, layout, { labels });
+        const sources = labels ? [raw, raw, raw] : [layout === 'store-island' ? await islandCapture() : raw];
+        const framed = await frameShowcaseComposition(sources, caption, layout, { labels });
         expect(await sharp(framed).metadata()).toMatchObject({ width: 1206, height: 2622, hasAlpha: false });
       }
     },
@@ -174,8 +198,17 @@ describe('multiboard App Store campaign', () => {
     const input = directory();
     const output = directory();
     const raw = await capture();
-    const names = ['01-board-view-2.png', '00-board-view.png', '10-moonboard-board-view.png'];
-    for (const name of names) writeFileSync(join(input, name), raw);
+    const names = [
+      '01-board-view-2.png',
+      '00-board-view.png',
+      '10-moonboard-board-view.png',
+      '14-spray-board-view.png',
+    ];
+    for (const name of names.slice(0, 3)) writeFileSync(join(input, name), raw);
+    await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow(
+      '14-spray-board-view.png',
+    );
+    writeFileSync(join(input, names[3]), raw);
     const saved = await renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' });
     expect(saved.map((pathname) => pathname.slice(output.length + 1))).toEqual(['header.png', 'search-results.png']);
     for (const [placement, dimensions] of Object.entries(STORE_CREATIVE_PLACEMENTS)) {
@@ -207,7 +240,12 @@ describe('multiboard App Store campaign', () => {
     const input = directory();
     const output = directory();
     const raw = await capture(800, 1738);
-    for (const name of ['01-board-view-2.png', '00-board-view.png', '10-moonboard-board-view.png'])
+    for (const name of [
+      '01-board-view-2.png',
+      '00-board-view.png',
+      '10-moonboard-board-view.png',
+      '14-spray-board-view.png',
+    ])
       writeFileSync(join(input, name), raw);
     await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow();
     const blank = await sharp({
@@ -215,7 +253,12 @@ describe('multiboard App Store campaign', () => {
     })
       .png()
       .toBuffer();
-    for (const name of ['01-board-view-2.png', '00-board-view.png', '10-moonboard-board-view.png'])
+    for (const name of [
+      '01-board-view-2.png',
+      '00-board-view.png',
+      '10-moonboard-board-view.png',
+      '14-spray-board-view.png',
+    ])
       writeFileSync(join(input, name), blank);
     await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow(
       'likely blank',
@@ -229,6 +272,65 @@ describe('multiboard App Store campaign', () => {
     await expect(
       frameShowcaseComposition([native, native, native], readCaptionCatalog('en-US').storeBoards, 'store-boards'),
     ).rejects.toThrow('compatibility label');
+  });
+
+  it.each(['header', 'search-results'] as const)(
+    'preserves all four native footers in the %s placement',
+    async (placement) => {
+      const markers = ['#ff0000', '#00ff00', '#0000ff', '#ffff00'];
+      const sources = await Promise.all(
+        markers.map(async (color) =>
+          sharp({ create: { width: 1320, height: 2868, channels: 3, background: '#214736' } })
+            .composite([
+              {
+                input: await sharp({ create: { width: 1320, height: 100, channels: 3, background: color } })
+                  .png()
+                  .toBuffer(),
+                left: 0,
+                top: 2768,
+              },
+            ])
+            .png()
+            .toBuffer(),
+        ),
+      );
+      const labels = ['Tension', 'Kilter', 'MoonBoard', 'Plafón de spray'];
+      const framed = await frameShowcaseComposition(sources, readCaptionCatalog('es').storeBoards, 'store-boards', {
+        labels,
+        placement,
+      });
+      expect(await sharp(framed).metadata()).toMatchObject({
+        ...STORE_CREATIVE_PLACEMENTS[placement],
+        hasAlpha: false,
+      });
+      const pixels = await sharp(framed).removeAlpha().raw().toBuffer();
+      const counts = [0, 0, 0, 0];
+      const colors = [
+        [255, 0, 0],
+        [0, 255, 0],
+        [0, 0, 255],
+        [255, 255, 0],
+      ];
+      for (let offset = 0; offset < pixels.length; offset += 3) {
+        for (const [index, color] of colors.entries()) {
+          if (color.every((channel, channelIndex) => pixels[offset + channelIndex] === channel)) counts[index]++;
+        }
+      }
+      for (const count of counts) expect(count).toBeGreaterThan(1000);
+      await expect(
+        frameShowcaseComposition(sources.slice(0, 3), readCaptionCatalog('en-US').storeBoards, 'store-boards', {
+          labels: labels.slice(0, 3),
+          placement,
+        }),
+      ).rejects.toThrow('source count');
+    },
+    60_000,
+  );
+
+  it('localizes the required spray board label in every caption catalog', () => {
+    const labels = ['Spray wall', 'Plafón de spray', 'Mur de spray', 'Spraywall'];
+    for (const [index, locale] of CAPTION_LOCALES.entries())
+      expect(readCaptionCatalog(locale).storeSpray.boardLabel).toBe(labels[index]);
   });
 
   it('requires an explicit supported locale and capture device', () => {

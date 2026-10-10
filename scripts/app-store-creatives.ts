@@ -12,8 +12,12 @@ import {
   type CaptionLocale,
 } from './lib/screenshot-presentation';
 
-const OPENING_SOURCES = ['01-board-view-2.png', '00-board-view.png', '10-moonboard-board-view.png'] as const;
-const OPENING_LABELS = ['Tension', 'Kilter', 'MoonBoard'] as const;
+const OPENING_SOURCES = [
+  '01-board-view-2.png',
+  '00-board-view.png',
+  '10-moonboard-board-view.png',
+  '14-spray-board-view.png',
+] as const;
 
 export interface StoreCreativeOptions {
   input: string;
@@ -37,14 +41,18 @@ export async function renderStoreCreatives(options: StoreCreativeOptions): Promi
     if (capture.buffer.length < 61_440) offenders.push({ file: capture.name, reason: 'Raw capture is likely blank' });
   }
   if (offenders.length) throw new Error(offenders.map(({ file, reason }) => `${file}: ${reason}`).join('\n'));
-  const caption = readCaptionCatalog(options.locale).storeBoards;
+  const catalog = readCaptionCatalog(options.locale);
+  const caption = catalog.storeBoards;
+  const sprayLabel = catalog.storeSpray.boardLabel;
+  if (!sprayLabel) throw new Error(`Missing spray wall compatibility label for ${options.locale}`);
+  const labels = ['Tension', 'Kilter', 'MoonBoard', sprayLabel];
   const assets = [];
   for (const placement of ['header', 'search-results'] as const) {
     const buffer = await frameShowcaseComposition(
       captures.map(({ buffer }) => buffer),
       caption,
       'store-boards',
-      { labels: OPENING_LABELS, placement },
+      { labels, placement },
     );
     assets.push({ placement, buffer, file: `${placement}.png`, ...STORE_CREATIVE_PLACEMENTS[placement] });
   }
