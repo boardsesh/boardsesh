@@ -1,10 +1,12 @@
 /// <reference types="node" />
 
 /**
- * The xprem publish protocol, as eoas 3.2.5 speaks it: validate an Expo export on
+ * The xprem publish protocol, as eoas 3.2.6 speaks it: validate an Expo export on
  * disk, ask the server for an upload lease, send the files, finalize, and read
- * what a device is then served. One copy, shared by the two tools that publish
- * without running `expo export`:
+ * what a device is then served. One exception: 3.2.6 added an optional
+ * `sourcemap` item beside the `files` list, which this file does not send yet,
+ * so an update published here carries no source map. One copy, shared by the two
+ * tools that publish without running `expo export`:
  *
  *   - scripts/mobile-ota-promote.ts promotes main's archived export.
  *   - scripts/ota-rollout-proof.ts publishes synthetic updates to a scratch
