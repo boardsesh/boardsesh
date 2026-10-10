@@ -802,7 +802,47 @@ async function deleteExports(exports: ReadonlyArray<{ exportId: string; keys: re
   }
 }
 
-/** The stored exports, grouped by id, newest first. */
+/** How an export id is written: the instant it was minted, with `:` and `.` swapped for `-`. */
+const exportIdFor = (instant: Date) => instant.toISOString().replace(/[:.]/g, '-');
+
+/** The instant an export id names, or null for an id {@link exportIdFor} did not write. */
+function exportIdInstant(exportId: string): number | null {
+  const parts = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/.exec(exportId);
+  if (!parts) return null;
+  const instant = Date.parse(`${parts[1]}T${parts[2]}:${parts[3]}:${parts[4]}.${parts[5]}Z`);
+  return Number.isNaN(instant) ? null : instant;
+}
+
+/**
+ * The id for an export written now: this instant, or one millisecond after the
+ * newest stored export, whichever is later.
+ *
+ * "Newest" is by id everywhere: this file's skip compares the newest stored
+ * export's fingerprint, and the ML fetch mirrors the newest id. So an id minted
+ * BEHIND one already in the bucket (another backend replica's clock ran ahead)
+ * is never the newest. Each run would then find the older export on top, fail
+ * the fingerprint match and write a full export again, while the fetch kept
+ * reading the old content. An id that always sorts last cannot do that.
+ *
+ * Ids this code did not write are ignored: there is no instant to step past.
+ */
+function mintExportId(now: Date, storedExportIds: readonly string[]): string {
+  let instant = now.getTime();
+  for (const storedExportId of storedExportIds) {
+    const storedInstant = exportIdInstant(storedExportId);
+    if (storedInstant != null && storedInstant >= instant) instant = storedInstant + 1;
+  }
+  return exportIdFor(new Date(instant));
+}
+
+/**
+ * The stored exports, grouped by id, newest first.
+ *
+ * In code-point order, not `localeCompare`: that is the order `max()` gives the
+ * ML fetch (`ml/holds/data/user_walls.py`), and the two must name the same
+ * export as newest. A locale collation puts `a` before `Z`; code points do not.
+ * (The ids are ASCII, where UTF-16 code units and code points are one order.)
+ */
 async function listStoredExports(): Promise<Array<{ exportId: string; keys: string[] }>> {
   const objects = await listS3Objects('private', SPRAY_TRAINING_EXPORT_PREFIX);
   const byExport = new Map<string, string[]>();
@@ -815,7 +855,7 @@ async function listStoredExports(): Promise<Array<{ exportId: string; keys: stri
   }
   return [...byExport.entries()]
     .map(([exportId, keys]) => ({ exportId, keys }))
-    .sort((first, second) => second.exportId.localeCompare(first.exportId));
+    .sort((first, second) => (first.exportId < second.exportId ? 1 : first.exportId > second.exportId ? -1 : 0));
 }
 
 export type ExportSprayTrainingDatasetOptions = {
@@ -918,9 +958,10 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
   //    whose owner switched consent off. Sorted into two lists first and deleted
   //    in one call, so every stale manifest is gone before any export's files
   //    are (see `deleteExports`).
+  const storedExports = await listStoredExports();
   const stale: Array<{ exportId: string; keys: string[] }> = [];
   const kept: Array<StoredManifest & { keys: string[] }> = [];
-  for (const stored of await listStoredExports()) {
+  for (const stored of storedExports) {
     const manifestKey = manifestKeyOf(stored.exportId);
     const manifestBytes = stored.keys.includes(manifestKey) ? await readObjectBuffer(manifestKey) : null;
     const manifest = manifestBytes ? parseManifest(manifestBytes.toString('utf8')) : null;
@@ -955,8 +996,12 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
     };
   }
 
-  // 3. Write.
-  const exportId = now.toISOString().replace(/[:.]/g, '-');
+  // 3. Write. The id sorts after every export this run found, retired ones
+  //    included, so ids only ever move forward.
+  const exportId = mintExportId(
+    now,
+    storedExports.map((stored) => stored.exportId),
+  );
   const prefix = `${SPRAY_TRAINING_EXPORT_PREFIX}${exportId}/`;
   // `{ relative path: sha256 }`, every file but the manifest itself. The ML
   // fetch (`ml/holds/data/user_walls.py`) verifies each one.
