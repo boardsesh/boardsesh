@@ -80,7 +80,6 @@ const SPRAY_TRAINING_REVIEW_FIELDS = `
   status
   reason
   notes
-  reviewedAt
 `;
 
 /** One page of the queue. Community admins only (`spray`-scoped or global). */
@@ -100,8 +99,6 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
         photo {
           url
           thumbUrl
-          width
-          height
           expiresAt
         }
         photoWidth
@@ -127,16 +124,9 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
         detectionModelVersion
         stats {
           holdCount
-          manualHoldCount
-          autoHoldCount
           acceptedHoldCount
-          confirmedHoldCount
           editedHoldCount
-          candidateCount
-          keptCandidateCount
-          editedCandidateCount
           deletedCandidateCount
-          notShownCandidateCount
         }
         review {
           ${SPRAY_TRAINING_REVIEW_FIELDS}
@@ -179,7 +169,6 @@ export type SprayTrainingReviewData = {
   status: SprayTrainingReviewStatus;
   reason: SprayTrainingRejectReason | null;
   notes: string | null;
-  reviewedAt: string | null;
 };
 
 /** A saved hold in the version's PHOTO pixels; `outline` is in units of `r`. */
@@ -203,25 +192,25 @@ export type SprayTrainingCandidateData = {
   fate: SprayTrainingCandidateFate;
 };
 
+/** The four counts the queue cards show. The schema serves seven more. */
 export type SprayTrainingStatsData = {
   holdCount: number;
-  manualHoldCount: number;
-  autoHoldCount: number;
   acceptedHoldCount: number;
-  confirmedHoldCount: number;
   editedHoldCount: number;
-  candidateCount: number;
-  keptCandidateCount: number;
-  editedCandidateCount: number;
   deletedCandidateCount: number;
-  notShownCandidateCount: number;
 };
+
+/**
+ * The signed links alone. The photo's size comes from `photoWidth` and
+ * `photoHeight` on the item, the box the holds were projected into.
+ */
+export type SprayTrainingPhotoData = Pick<SprayWallPhotoData, 'url' | 'thumbUrl' | 'expiresAt'>;
 
 export type SprayTrainingQueueItemData = {
   versionId: string;
   versionNumber: number;
   visibility: SprayTrainingWallVisibility;
-  photo: SprayWallPhotoData | null;
+  photo: SprayTrainingPhotoData | null;
   photoWidth: number | null;
   photoHeight: number | null;
   holds: SprayTrainingHoldData[];

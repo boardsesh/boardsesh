@@ -42,10 +42,8 @@ function makeItem(versionId: string, versionNumber: number): SprayTrainingQueueI
     photo: {
       url: `https://photos.example/${versionId}.jpg`,
       thumbUrl: `https://photos.example/${versionId}-thumb.jpg`,
-      width: 800,
-      height: 600,
       expiresAt: FAR_FUTURE,
-    } as SprayTrainingQueueItemData['photo'],
+    },
     photoWidth: 800,
     photoHeight: 600,
     holds: [
@@ -58,20 +56,8 @@ function makeItem(versionId: string, versionNumber: number): SprayTrainingQueueI
       { index: 1, cx: 400, cy: 400, r: 10, outline: null, fate: 'NOT_SHOWN' },
     ],
     detectionModelVersion: 'v1',
-    stats: {
-      holdCount: 4,
-      manualHoldCount: 1,
-      autoHoldCount: 3,
-      acceptedHoldCount: 2,
-      confirmedHoldCount: 0,
-      editedHoldCount: 1,
-      candidateCount: 2,
-      keptCandidateCount: 0,
-      editedCandidateCount: 0,
-      deletedCandidateCount: 1,
-      notShownCandidateCount: 1,
-    },
-    review: { status: 'UNREVIEWED', reason: null, notes: null, reviewedAt: null },
+    stats: { holdCount: 4, acceptedHoldCount: 2, editedHoldCount: 1, deletedCandidateCount: 1 },
+    review: { status: 'UNREVIEWED', reason: null, notes: null },
   };
 }
 
@@ -83,7 +69,7 @@ function queueResponse(
 }
 
 function reviewResponse(versionId: string, status: SprayTrainingReviewStatus) {
-  return { setSprayTrainingReview: { versionId, review: { status, reason: null, notes: null, reviewedAt: null } } };
+  return { setSprayTrainingReview: { versionId, review: { status, reason: null, notes: null } } };
 }
 
 /** What graphql-request throws when the backend answers with an `extensions.code`. */
@@ -256,7 +242,7 @@ describe('SprayTrainingPanel', () => {
     mockRequest.mockResolvedValueOnce({
       setSprayTrainingReview: {
         versionId: 'v1',
-        review: { status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: 'too dark', reviewedAt: null },
+        review: { status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: 'too dark' },
       },
     });
     fireEvent.click(rejectButton(dialog));
@@ -374,7 +360,7 @@ describe('SprayTrainingPanel photo on screen', () => {
 
   it('keeps Reject off while the photo is loading even with a reason chosen', async () => {
     const withReason = makeItem('v1', 1);
-    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null };
     mockRequest.mockResolvedValueOnce(queueResponse([withReason]));
     render(<SprayTrainingPanel />);
     const dialog = await openWallUnloaded(1);
@@ -390,7 +376,7 @@ describe('SprayTrainingPanel photo on screen', () => {
   it('does not decide on a held key', async () => {
     const withReason = makeItem('v1', 1);
     // A saved reason, so a repeated R would reject at once if it got through.
-    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null };
     mockRequest.mockResolvedValueOnce(queueResponse([withReason, makeItem('v2', 2)]));
     render(<SprayTrainingPanel />);
     await openWall(1);
@@ -722,7 +708,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
 
   it('keeps a re-decided wall on its tab and updates it in place', async () => {
     const rejected = makeItem('v1', 1);
-    rejected.review = { status: 'REJECTED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    rejected.review = { status: 'REJECTED', reason: 'BAD_HOLDS', notes: null };
     mockRequest.mockResolvedValueOnce({
       sprayTrainingQueue: { hasMore: false, totals: { unreviewed: 0, approved: 0, rejected: 1 }, items: [] },
     });
@@ -737,7 +723,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
     mockRequest.mockResolvedValueOnce({
       setSprayTrainingReview: {
         versionId: 'v1',
-        review: { status: 'REJECTED', reason: 'BAD_HOLDS', notes: 'again', reviewedAt: null },
+        review: { status: 'REJECTED', reason: 'BAD_HOLDS', notes: 'again' },
       },
     });
     fireEvent.change(within(dialog).getByLabelText('Notes (optional)'), { target: { value: 'again' } });
@@ -751,7 +737,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
   it('ignores shortcuts typed in the notes field and while the reason menu is open', async () => {
     const withReason = makeItem('v1', 1);
     // A saved reason, so R would reject at once if the key got through.
-    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null };
     mockRequest.mockResolvedValueOnce(queueResponse([withReason]));
     render(<SprayTrainingPanel />);
     const dialog = await openWall(1);
@@ -788,7 +774,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
   it('leaves Cmd, Ctrl and Alt combinations to the browser', async () => {
     const withReason = makeItem('v1', 1);
     // A saved reason, so Cmd+R would reject at once if it were read as R.
-    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null };
     mockRequest.mockResolvedValueOnce(queueResponse([withReason]));
     render(<SprayTrainingPanel />);
     await openWall(1);
