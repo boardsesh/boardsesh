@@ -3,8 +3,8 @@
 
 Climbers' spray walls are the training data the detector is missing: every
 published wall is a photo plus a hold set its owner checked. The backend writes
-the walls whose owner left "Help train hold finding" on, and that a spray admin
-approved, to the PRIVATE bucket once a day:
+the walls whose owner has "Help train hold finding" on, and that a spray admin
+approved, to the PRIVATE bucket every six hours:
 
     spray-training/exports/<exportId>/
       train/v<versionId>.jpg            the wall photo, EXIF already stripped

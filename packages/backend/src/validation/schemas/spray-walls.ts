@@ -54,6 +54,27 @@ const SprayHoldSourceSchema = z
   .nullish()
   .transform((wireName) => SPRAY_HOLD_SOURCE_BY_WIRE_NAME[wireName ?? 'MANUAL']);
 
+/** GraphQL `SprayHoldAutoReview` → the `spray_hold_auto_review` pgEnum. */
+export const SPRAY_HOLD_AUTO_REVIEW_BY_WIRE_NAME = {
+  ACCEPTED: 'accepted',
+  CONFIRMED: 'confirmed',
+  EDITED: 'edited',
+} as const;
+
+/** The pgEnum value back as its GraphQL name. */
+export const SPRAY_HOLD_AUTO_REVIEW_WIRE_NAME = {
+  accepted: 'ACCEPTED',
+  confirmed: 'CONFIRMED',
+  edited: 'EDITED',
+} as const;
+
+// Omitted (undefined) and an explicit null mean different things: omitted keeps
+// what the hold records, null clears it. Both survive the transform.
+const SprayHoldAutoReviewSchema = z
+  .enum(['ACCEPTED', 'CONFIRMED', 'EDITED'])
+  .nullish()
+  .transform((wireName) => (wireName == null ? wireName : SPRAY_HOLD_AUTO_REVIEW_BY_WIRE_NAME[wireName]));
+
 /** Wire name ↔ stored value for a version's lifecycle, mirroring the pgEnum. */
 export const SPRAY_VERSION_STATUS_WIRE_NAME = {
   draft: 'DRAFT',
@@ -122,6 +143,11 @@ export const CreateSprayWallInputSchema = z.object({
   longitude: z.number().min(-180).max(180).optional().nullable(),
   hideLocation: z.boolean().optional(),
   climbEditPolicy: RetiredSprayClimbEditPolicySchema.optional(),
+  // "Help train hold finding" (SW-20, #5471). Off when omitted, because only a
+  // client that showed the owner the switch can say yes: `createSprayWall`
+  // stamps `training_consent_at` for an explicit `true` and stores NULL for
+  // `false` and for a client that never sends the field.
+  trainingConsent: z.boolean().optional(),
   // `hasLeds` is deliberately ABSENT and must stay absent. A spray wall has no
   // firmware to encode for, and BLE suppression today is the per-row
   // `has_leds` data rather than the board type (`scanFamilyForBoard('spray')`
@@ -170,6 +196,13 @@ export const SprayWallHoldInputSchema = z.object({
   source: SprayHoldSourceSchema,
   confidence: z.number().min(0).max(1).optional().nullable(),
   movedFromHoldId: z.number().int().positive().optional().nullable(),
+  // Provenance (SW-20, #5471). Shape only here: whether the detection belongs to
+  // this wall and the index is in range needs the database, and a bad pair is
+  // stored as NULL by the resolver rather than failing the save.
+  autoReview: SprayHoldAutoReviewSchema,
+  // Detection ids are opaque text keys; the cap only keeps a hostile string out.
+  originDetectionId: z.string().min(1).max(200).optional().nullable(),
+  originCandidateIndex: z.number().int().min(0).max(100_000).optional().nullable(),
 });
 
 export const UpsertSprayWallHoldsInputSchema = z.object({
@@ -247,6 +280,9 @@ export const UpdateSprayWallInputSchema = z
     // Accepted and ignored. Kept in the "something to update" count below, so an
     // older app flipping the retired toggle gets its wall back, not an error.
     climbEditPolicy: RetiredSprayClimbEditPolicySchema.optional(),
+    // Owner only, checked in the resolver beside visibility. Counts as a change
+    // in the refine below like every other field.
+    trainingConsent: z.boolean().optional(),
   })
   // An update that changes nothing is a client bug, and answering it with a
   // success teaches the client that its no-op worked.
@@ -371,3 +407,49 @@ export const SetSprayWallHiddenInputSchema = z.object({
 
 export type ReportSprayWallInput = z.infer<typeof ReportSprayWallInputSchema>;
 export type SetSprayWallHiddenInput = z.infer<typeof SetSprayWallHiddenInputSchema>;
+
+/** The vetting queue's tabs (SW-20, #5471). */
+export const SPRAY_TRAINING_REVIEW_STATUSES = ['UNREVIEWED', 'APPROVED', 'REJECTED'] as const;
+export type SprayTrainingReviewStatusWireName = (typeof SPRAY_TRAINING_REVIEW_STATUSES)[number];
+
+/** GraphQL `SprayTrainingRejectReason` → the `spray_training_reject_reason` pgEnum. */
+export const SPRAY_TRAINING_REJECT_REASON_BY_WIRE_NAME = {
+  BAD_HOLDS: 'bad_holds',
+  MISSING_HOLDS: 'missing_holds',
+  PHOTO_QUALITY: 'photo_quality',
+  NOT_A_WALL: 'not_a_wall',
+  PEOPLE_OR_PERSONAL_INFO: 'people_or_personal_info',
+  DUPLICATE: 'duplicate',
+  OTHER: 'other',
+} as const;
+export type SprayTrainingRejectReasonWireName = keyof typeof SPRAY_TRAINING_REJECT_REASON_BY_WIRE_NAME;
+
+/** One page of the queue. 25 is the ceiling: each item mints a presigned photo. */
+export const MAX_SPRAY_TRAINING_QUEUE_PAGE = 25;
+
+export const SprayTrainingQueueArgsSchema = z.object({
+  status: z.enum(SPRAY_TRAINING_REVIEW_STATUSES),
+  limit: z.number().int().min(1).max(MAX_SPRAY_TRAINING_QUEUE_PAGE).nullish(),
+  offset: z.number().int().min(0).max(1_000_000).nullish(),
+});
+
+export const SetSprayTrainingReviewInputSchema = z
+  .object({
+    versionId: BigIntIdSchema,
+    status: z.enum(SPRAY_TRAINING_REVIEW_STATUSES),
+    reason: z
+      .enum(
+        Object.keys(SPRAY_TRAINING_REJECT_REASON_BY_WIRE_NAME) as [
+          SprayTrainingRejectReasonWireName,
+          ...SprayTrainingRejectReasonWireName[],
+        ],
+      )
+      .nullish(),
+    notes: z.string().trim().max(500, 'Notes may be at most 500 characters').nullish(),
+  })
+  // Mirrors the table's CHECK: a rejection always says why, and nothing else
+  // carries a reason. Refused here so the admin gets a message, not a 500.
+  .refine((input) => (input.status === 'REJECTED') === (input.reason != null), {
+    message: 'A rejection needs a reason, and only a rejection takes one',
+    path: ['reason'],
+  });

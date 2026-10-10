@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { isValidCronExpression } from '../cron/expression';
+import { isValidCronExpression, parseCronExpression } from '../cron/expression';
 import { assertValidTimeZone } from '../cron/zoned-time';
 import { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from '../jobs/registry';
 import { refreshGymActivityStats } from '../jobs/refresh-gym-activity-stats';
 import { purgeSprayWallPhotos } from '../jobs/purge-spray-wall-photos';
 import { purgeUserActivity, snapshotActiveUsers } from '../jobs/active-users';
+import { exportSprayTraining } from '../jobs/export-spray-training';
 
 type VercelConfig = { crons?: { path: string; schedule: string }[] };
 
@@ -135,6 +136,32 @@ describe('job registry', () => {
     });
     expect(findJob('snapshot-active-users')?.webPath).toBeUndefined();
     expect(findJob('purge-user-activity')?.webPath).toBeUndefined();
+  });
+
+  it('runs the spray training export directly against GraphQL every six hours', () => {
+    // The schedule is the promise: a wall whose owner switches training off
+    // leaves every stored export within 24 hours, because each run retires
+    // before it writes. Six-hourly, so two failed runs in a row still keep it;
+    // a daily run would have no slack at all. 08:00 stays in the list, an hour
+    // after the 07:00 purge, and none of the four shares a tick with another job.
+    expect(findJob('export-spray-training')).toMatchObject({
+      schedule: '0 2,8,14,20 * * *',
+      timezone: 'UTC',
+      timeoutMs: 900_000,
+      run: exportSprayTraining,
+    });
+    expect(findJob('export-spray-training')?.webPath).toBeUndefined();
+
+    // Day-of-week is ignored on purpose: a job that only runs on Sundays still
+    // shares a tick on Sundays.
+    const exportSlots = parseCronExpression('0 2,8,14,20 * * *');
+    for (const otherJob of JOBS.filter((job) => job.name !== 'export-spray-training')) {
+      const otherSlots = parseCronExpression(otherJob.schedule);
+      const sharesTick =
+        [...exportSlots.hours].some((hour) => otherSlots.hours.has(hour)) &&
+        [...exportSlots.minutes].some((minute) => otherSlots.minutes.has(minute));
+      expect(sharesTick, `${otherJob.name} shares a tick with the export`).toBe(false);
+    }
   });
 
   it('gives the long jobs more than the 300s Vercel capped them at', () => {

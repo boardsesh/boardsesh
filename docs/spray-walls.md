@@ -65,8 +65,12 @@ the mobile render registry folds the version into its cache keys instead of into
 
 ## The tables
 
-Four side tables in `packages/db/src/schema/app/spray-walls.ts`, plus one column
-and two sequences.
+Seven tables in `packages/db/src/schema/app/spray-walls.ts`, plus one column
+and two sequences. The four below carry a wall and its holds. The other three
+are described where they are used: `spray_wall_detections` under "Recognition
+service and shared post-processing", `spray_wall_reports` under "Moderation",
+and `spray_wall_training_reviews` under "Training data: consent, vetting,
+export".
 
 | Table | Key | What it holds |
 | --- | --- | --- |
@@ -2820,8 +2824,11 @@ Migration 0258 adds both. Nothing is dropped or rewritten.
   made exactly like any new wall's. It copies the name, description, angle,
   location fields and the stored look (`render_settings`). The retired climb
   edit policy is not copied. The gym link and `hide_location` are copied as they were when the
-  reset started; a later change to the old wall does not follow. No photo,
-  version, hold or climb is copied.
+  reset started; a later change to the old wall does not follow. The training
+  consent choice is copied the same way: a clone of a wall with "Help train hold
+  finding" on starts on, with a fresh stamp, and a clone of a wall that is off
+  starts off (see "Training data: consent, vetting, export" for what happens to
+  it afterwards). No photo, version, hold or climb is copied.
 - **Visibility.** The old wall's visibility is parked on `pending_is_public` /
   `pending_is_unlisted`, so the clone is private until its first publish, like
   any new wall (#5513). At that publish the clone gets the NARROWER of the
@@ -3329,6 +3336,175 @@ photo previews are produced only inside the admin-authorized queue query.
 Reporting and review both read `climb-moderation-kill`; they wait for flag
 resolution before accepting actions. Signed preview URLs remain in memory,
 are refreshed when expired, and never enter persistent storage.
+
+## Training data: consent, vetting, export
+
+SW-20 (#5471). A published wall is a photo plus a set of holds a human checked,
+which is exactly what the hold detector lacks for spray walls. This is how that
+reaches training, and how it leaves again.
+
+### Consent
+
+`spray_walls.training_consent_at` is the "Help train hold finding" switch: the
+time the owner said yes, or NULL. **A wall is consented only when a client says
+so.** The column has no default and the migration backfills nothing.
+
+- `createSprayWall { trainingConsent: true }` stamps `now()`. An omitted field
+  and `false` both store NULL.
+- Every wall that existed when the column was added has NULL.
+- `updateSprayWall { trainingConsent: true }` stamps a fresh `now()` (restating
+  "on" keeps the old stamp); `false` nulls it.
+- A reset clone starts with its source's choice, yes or no.
+
+Server and app are two halves. The SERVER stores a yes only when a client
+sends `trainingConsent: true`. The APP's add-a-wall switch is on when the
+wizard opens, and the app sends whatever the owner leaves it at. A wall that
+existed before the switch, and a wall created by an app without it, is off
+until its owner turns it on.
+
+**Why the server never assumes a yes.** Spray walls have been open to every
+climber since #5949 (2026-10-03), before this switch existed. Those walls were
+photographed with the visibility picker saying "Only you. Your wall photo stays
+in your account." (`boards.sprayVisibility.privateHint`). A column default of
+`now()` would have opted every one of them in, private walls included, and
+treating an omitted field as yes would do the same to each wall an older app
+creates from here on. Neither owner was asked. Consent can only come from a
+client that showed the choice, so anything else is a no until the owner says
+otherwise.
+
+Only the owner can change it, through the same gate and error code as
+visibility (`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). `SprayWall.trainingConsent`
+answers the owner and is null for everybody else. The user data export lists
+each owned wall with its `trainingConsentAt`.
+
+**Off covers the whole physical wall; on covers one wall.** A reset clones a
+wall, so one physical wall is a family of rows linked by `reset_from_wall_id`:
+the archived walls it was reset from, the live one, and a clone whose reset is
+not finished yet. The live wall is its owner's answer for all of them. Three
+things take the whole family out, each in the transaction that does it, each
+reaching every ancestor up the chain and every clone made from any of those
+with no depth limit:
+
+1. **Off on any wall.** `updateSprayWall { trainingConsent: false }` on any wall
+   of the family nulls the stamp on all of them. Without that, the archived
+   wall's old photo would stay eligible after its owner said no on the wall they
+   can still see, and a clone started before the switch would publish its new
+   photo under consent it copied earlier.
+2. **Deleting the live wall.** `deleteSprayWall` on the published, unarchived
+   wall nulls the stamp on the rest of the family. Nothing the owner can see
+   says yes any more, so an archived photo may not either.
+3. **Publishing a reset whose clone is off.** The clone becomes the live wall at
+   its first publish (`archiveResetSourceUnderLock`). If its switch is off, the
+   wall it replaces and everything older lose their stamp. This is the case
+   where the wall had not said yes when the reset started, and the owner
+   switched the old wall on while the reset was in progress.
+
+Deleting an ARCHIVED wall removes that one photo and leaves the rest alone.
+So does deleting an UNFINISHED wall: that abandons a reset, and the wall it
+would have replaced is still live with the answer its owner gave on it.
+
+`trainingConsent: true` stamps only the wall it names. It never reaches back to
+consent an older photo again, so a family switched off and on again exports the
+wall that was switched on and nothing older.
+
+The first two open their transaction by taking the owner's account lock and
+then the lock of every wall in the family, highest id first
+(`lockResetFamilyForWrite`). The account lock is the one `resetSprayWall` holds
+while it clones, so no clone joins the family between the walk and the write.
+The order is the one a clone's first publish uses (clone, then source), so the
+two cannot deadlock. The third runs inside that publish, with the clone's and
+the source's locks already held, and takes no more: the clone is the newest
+wall of its family, and every path that holds more than one wall lock takes a
+family's newest wall first. Account deletion needs no family walk: it deletes
+every wall the account owns. In every case the other family rows keep their
+`updated_at`.
+
+### Hold provenance
+
+`spray_wall_holds` records what the climber did with each detector suggestion:
+`auto_review` (`accepted` < `confirmed` < `edited`, never downgraded) and
+`origin_detection_id` + `origin_candidate_index`, the suggestion it came from.
+A CHECK keeps both on `source = 'auto'` rows only. `upsertSprayWallHolds`
+validates every origin in one query (same wall, run `done`, index in range) and
+stores an invalid one as NULL rather than failing the save; the run must also be
+on the draft's own photo. An omitted field keeps what the hold records and an
+explicit null clears it. A moved hold inherits from its `movedFromHoldId`
+predecessor. It sets `edited`
+itself whenever an auto hold's centre, radius or outline moves by more than a
+pixel (a fiftieth of a radius for the outline), so an app that predates the
+fields still records a correction. Deleted suggestions need no table: a shown
+candidate that no alive hold points back at was dropped.
+
+### Eligibility and vetting
+
+`trainingEligibleCondition()` in `resolvers/board/spray-training.ts` is the one
+predicate the queue, the review mutation and the export share: consent set,
+version not a draft, photo key present, wall and board not deleted, wall not
+hidden, owner not the system owner, and the newest non-draft version for its
+`(wall, photo_key)` (a hold edit reuses its predecessor's photo). Being
+archived is not a test: an archived wall stays eligible while its own stamp is
+set, and it loses the stamp when consent is switched off on any wall of its
+reset family (see "Consent").
+
+Admins (`spray`-scoped or global) read `sprayTrainingQueue(status, limit ≤ 25,
+offset)`: the presigned photo, holds projected into photo pixels through the
+shared `mapCanonicalHoldsToPhoto`, one finished detector run's candidates with
+a fate (KEPT, EDITED, DELETED, NOT_SHOWN below `SPRAY_MAYBE_FLOOR`, or UNKNOWN
+when no hold records provenance), counts, and the verdict. The run is the one
+on the version's photo that the most of its holds point back at
+(`origin_detection_id`), or the newest finished run on that photo when no hold
+points at any (`pickDetection`); a later retry of the detector therefore does
+not turn every kept suggestion into a deleted one. No owner or wall name.
+`setSprayTrainingReview` writes one row per version in
+`spray_wall_training_reviews` (`approved`, or `rejected` with a reason);
+`UNREVIEWED` deletes it. A review row never exports anything on its own: the
+predicate is re-read every time.
+
+### The export
+
+`exportSprayTrainingDataset`, run every six hours (02:00, 08:00, 14:00 and
+20:00 UTC) by the scheduler's `export-spray-training` job
+([scheduler.md](./scheduler.md)). Six-hourly rather than daily so the 24-hour
+removal promise below survives two failed runs in a row; a run with nothing to
+retire and nothing new answers `skipped` after reading the approved set and the
+stored exports' manifests. One run at a time, through a `sync_daemon_leases`
+row (`spray-training-export`, 20-minute TTL) that holds no database connection
+while the run works on storage. A run meeting a live lease answers
+`skippedReason: LOCKED`, which the job reports as a failure. The backend stops
+a run at 12 minutes and writes no manifest if it has not finished. The
+scheduler's request ends well before that (100 seconds through the Cloudflare
+proxy, 300 in Node's `fetch`), so a slow run is reported as a failed job while
+the backend carries on; scheduler.md has the table. Reads are short separate
+queries, not one snapshot.
+
+1. **Retire.** Every stored export under `spray-training/exports/` in the
+   private bucket whose manifest names a version that is no longer eligible and
+   approved is deleted. So is any export with no manifest (a run that died).
+   Two passes: the `manifest.json` of every export that has to go, newest
+   first, and only then their other objects. The ML fetch mirrors the newest
+   export that has a manifest, so a delete that fails half-way must not leave
+   an older stale export as that one; after the first pass none of them is
+   readable. This is what makes switching consent off, deleting or hiding a
+   wall, or deleting an account reach stored exports within 24 hours.
+2. **Skip** when the approved, eligible set (version ids, review times, consent
+   stamps) matches the newest export's fingerprint.
+3. **Write** `<exportId>/`: `<split>/v<versionId>.jpg` (the stored, already
+   EXIF-free bytes), `<split>/_annotations.coco.json` (class `hold`; bbox and
+   polygon in photo pixels; circle-only holds as a 24-point polygon with
+   `mask_from_circle: true`; `train`, `valid` and `eval` always present, even
+   when empty),
+   `candidates.json`, and `manifest.json` LAST, listing every file's sha256.
+   Then only the newest two exports are kept. A version with any hold that does
+   not project onto its photo (the queue shows `unmappableHoldCount`), with no
+   holds, or with an unreadable photo is left out and counted under
+   `counts.skippedVersions`: a real hold missing from the labels would be
+   learned as background.
+
+The split is frozen per physical wall: `sha256('spray-split:' + root wall
+uuid)`, following `reset_from_wall_id` to the root however many resets deep
+that is, so reset clones share it;
+under 15 of 100 is `eval`, under 25 `valid`, the rest `train`. Manifests and
+COCO images name walls by 16-hex sha256 refs, never by uuid.
 
 ## Retention: what happens to a deleted wall's photographs
 

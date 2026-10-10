@@ -27,11 +27,15 @@ Expo SDK 57 / RN 0.86).
   backend splits them by **root wall**, so a reset clone always lands in the same
   split as the wall it was cloned from.
 - **Climbers' walls train only with their owner's consent, and leave when it
-  goes.** Every wall has a "Help train hold finding" switch, on by default. A wall
-  reaches the training export only with that switch on and a spray admin's
-  approval. `data/user_walls.py fetch` deletes every local export the bucket has
-  retired, and `train.py` refuses a copy fetched more than 7 days ago. These photos
-  are never committed, never a fixture and never redistributed.
+  goes.** Every wall has a "Help train hold finding" switch. The server stores a
+  yes only when a client sends one. The app's add-a-wall switch is on when the
+  wizard opens, and the app sends whatever the owner leaves it at. A wall that
+  existed before the switch, or was created by an app without it, is off until
+  its owner turns it on. A wall reaches the training export only with that
+  switch on and a spray admin's approval. `data/user_walls.py fetch` deletes
+  every local export the bucket has retired, and `train.py` refuses a copy
+  fetched more than 7 days ago. These photos are never committed, never a fixture
+  and never redistributed.
 - **The hand-labelled spray `eval` split stays the gate.** Climbers' labels start
   from the old model's suggestions, so a model scored only on them is partly
   scored on agreeing with its predecessor. See "Retrain runbook".
@@ -260,9 +264,11 @@ The manifest's `eval` section comes from the hand-labelled spray split, and
 the old model's suggestions. Holds marked `auto_review: accepted` are suggestions
 the climber kept as they were, so they agree with the old model by construction.
 A retrain scored only on the user-walls `eval` split is partly scored on agreeing
-with its predecessor. `fetch` prints the share of `accepted` holds (the backend's
-manifest counts them too); the higher it is, the less the user-walls number says
-on its own. The hand-labelled `eval` split has none of that bias, so it decides.
+with its predecessor. `fetch` prints the share of `accepted` holds, counted from
+each annotation's `attributes.auto_review` (the manifest's `counts` carry
+candidate fates, not hold reviews); the higher it is, the less the user-walls
+number says on its own. The hand-labelled `eval` split has none of that bias,
+so it decides.
 
 `fetch` also prints the share of holds whose polygon is a 24-point circle
 (`mask_from_circle`: the climber placed a circle and never traced an outline).
@@ -879,8 +885,8 @@ Label every hold as a box (a mask is a bonus), export COCO, and put it through
 
 The second private corpus is already labelled: every published spray wall is a
 photo plus the holds its owner placed and checked. The backend exports the walls
-whose owner left "Help train hold finding" on and that a spray admin approved,
-once a day, to the same private bucket:
+whose owner has "Help train hold finding" on and that a spray admin approved,
+every six hours, to the same private bucket:
 
 ```
 spray-training/exports/<exportId>/
@@ -931,7 +937,7 @@ table, is what `data/fetch.py` enforces.
 | CS152-SSL label set | CC BY 4.0 | labels are keyless; the images need a free Roboflow account |
 | xiaoxiae gym masks | CC BY-SA 4.0 | the only per-hold masks found; images need a Kaggle token |
 | Spray-wall photos from Discord | uploader consent, per photo | private bucket; fixtures only with `consent.redistribute` |
-| Climbers' spray walls (`boardsesh-user-walls`) | owner consent per wall (on by default, revocable), internal training only, never redistributed | private bucket → gitignored `.data/user-walls/`; **training data** and the second `eval` split; deleted locally on the next `fetch` after the bucket retires it; never committed, never a fixture. Weights trained on it hold no photos and are not retracted |
+| Climbers' spray walls (`boardsesh-user-walls`) | owner consent per wall (recorded only when a client sends the owner's yes, revocable), internal training only, never redistributed | private bucket → gitignored `.data/user-walls/`; **training data** and the second `eval` split; deleted locally on the next `fetch` after the bucket retires it; never committed, never a fixture. Weights trained on it hold no photos and are not retracted |
 
 Nothing AGPL is installed, imported or vendored here.
 

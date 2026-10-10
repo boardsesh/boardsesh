@@ -23,7 +23,7 @@ missed-occurrence issue.
 
 ## Job ownership
 
-All seven jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All eight jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -37,6 +37,7 @@ the route, Vercel and Railway both) reds CI.
 | `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | — (`overdue` on `/health/jobs`)        |
 | `snapshot-active-users`      | Backend `/graphql`: `snapshotActiveUsers`   | `20 0 * * *`   | 10 min      | — (`overdue` on `/health/jobs`)        |
 | `purge-user-activity`        | Backend `/graphql`: `purgeExpiredUserActivity` | `30 7 * * *` | 10 min    | — (`overdue` on `/health/jobs`)        |
+| `export-spray-training`      | Backend `/graphql`: `exportSprayTrainingDataset` | `0 2,8,14,20 * * *` | 15 min | — (`overdue` on `/health/jobs`)  |
 
 **`refresh-sitemap-climbs` is the one job that missed the migration.** Vercel
 fired it at `0 */6 * * *` from 2026-08-22 until the climb-sitemap pause deleted
@@ -128,6 +129,79 @@ Same failure handling as the other backend jobs: a non-2xx or GraphQL errors
 inside an HTTP 200 fail the run, and only 502/503 is retried once after two
 seconds. Deploy the backend before the scheduler, or list both in
 `SCHEDULER_DISABLED_JOBS` until it is out.
+
+### Spray wall training export
+
+`export-spray-training` writes the admin-approved spray wall training set to the
+private bucket under `spray-training/exports/<exportId>/` (see
+[spray-walls.md](./spray-walls.md) → "Training data: consent, vetting, export").
+Every six hours, at 02:00, 08:00, 14:00 and 20:00 UTC. The promise to a climber
+who switches "Help train hold finding" off is that their wall leaves every
+stored export within 24 hours: each run first deletes any export holding a
+version that is no longer eligible and approved, then keeps the newest two. A
+daily run would keep that promise with no slack (a switch flipped a second after
+the run read the walls waits 24 hours, and one failed run makes it 48). At six
+hours it survives two failed runs in a row. The 08:00 run is an hour after the
+photo purge, and no run shares a tick with another job (`registry.test.ts`
+asserts it).
+
+Most runs have nothing to do, and stop early. The backend takes the lease, reads
+the approved set, lists the export prefix and reads each stored export's
+manifest (two exports are kept). When none is stale and the fingerprint matches
+the newest, it answers `skipped: true` (`UNCHANGED`, or `NOTHING_TO_EXPORT` when
+nothing is approved) without downloading a photo, deleting or writing an
+object. Both are successful runs.
+
+The same shape as the purge: a cron-authenticated backend mutation, the same
+failure handling, 502/503 retried once (`runBackendCronMutation`). Overlap-safe
+with a lease row in `sync_daemon_leases` (`spray-training-export`, 20-minute
+TTL), not a lock held in a transaction, so the run pins no pooled connection
+while it works on storage. A second run meeting a live lease answers
+`skippedReason: LOCKED`, and the job treats that as a FAILED run. The lease
+lasts 20 minutes, so a tick that meets one found a run that began in that window
+and has not released it: one still going (started by hand, or by a request whose
+answer never arrived) or one that died. Either way that tick retired nothing.
+
+What a run copies is each approved version's `photo_key`: the base photo, at
+most 2048 px on its long side, re-encoded as JPEG when it was uploaded
+(`SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION` in `handlers/spray-wall-photos.ts`). The
+full-resolution copy is never exported.
+
+**How long a run really has.** Four limits apply, and the 15 minutes in the job
+table above is the one that never bites:
+
+| Limit | Value | What happens at it |
+| ----- | ----- | ------------------ |
+| Cloudflare proxy in front of `ws.boardsesh.com` | 100 s | The proxy answers 524. Not 502/503, so not retried: a failed run. Applies on the default `BOARDSESH_BACKEND_GRAPHQL_URL`. |
+| Node's built-in `fetch` (undici `headersTimeout`, never overridden here) | 300 s | `fetch failed`: a failed run. The first limit met on a URL that bypasses the proxy. |
+| Backend deadline (`SPRAY_TRAINING_EXPORT_DEADLINE_MS`) | 12 min | The run stops and writes no `manifest.json`. |
+| Job `timeoutMs` | 15 min | Never reached: the request has already ended at one of the first two. |
+
+The 100 s figure is the zone's origin cap, recorded for `updates.boardsesh.com`
+in [mobile-ota-updates.md](./mobile-ota-updates.md); `ws` is proxied on the same
+zone ([cloudflare.md](./cloudflare.md)). It has not been measured on this
+mutation.
+
+So a run that takes longer than 100 seconds (300 on a direct URL) is reported as
+failed while the backend keeps going: the resolver does not watch its request,
+and nothing cancels it. If it finishes inside 12 minutes its export is complete
+and readable, and only the job's report is wrong: `/health/jobs` shows
+`lastError` until the next tick, which answers `UNCHANGED` and clears it.
+Running the job again by hand before the backend has finished meets the lease
+and fails with `LOCKED`. A run cut off at the 12-minute deadline leaves a
+half-written export with no manifest, which the ML fetch ignores and the next
+run deletes.
+
+The scheduler's `fetch` is shared by every backend cron job and is deliberately
+left alone here. Until it changes, this job's real budget is the first limit in
+the table that applies (100 seconds on the default URL), not 15 minutes.
+
+Manual run: `scheduler run export-spray-training`, or POST to the backend
+`/graphql` with `Authorization: Bearer $CRON_SECRET`:
+
+```json
+{"query":"mutation { exportSprayTrainingDataset { exportId imagesWritten exportsRetired skipped skippedReason versionsSkipped durationMs } }"}
+```
 
 ### Gym activity backend cutover
 
@@ -287,7 +361,7 @@ canary: a dead ticker misses a six-hourly check-in within 6 hours (plus the
 5-minute margin), where the daily `cleanup` would take up to 24. A job opts in
 with `sentryMonitor: true` on its `JobDefinition`; `registry.test.ts` pins
 `refresh-sitemap-climbs` as the only one, so adding a second is a deliberate
-billing change. The other four jobs are watched through `overdue`, which an
+billing change. The other seven jobs are watched through `overdue`, which an
 external probe (the homelab's Prometheus blackbox exporter) alerts on. Their
 old monitors (`scheduler-cleanup`, `scheduler-profile-percentiles`,
 `scheduler-refresh-gym-activity-stats`, `scheduler-purge-spray-wall-photos`)

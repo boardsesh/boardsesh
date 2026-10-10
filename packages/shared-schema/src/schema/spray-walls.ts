@@ -19,6 +19,19 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   }
 
   """
+  What the climber did with a detector suggestion before saving it as an AUTO
+  hold. Ranked ACCEPTED < CONFIRMED < EDITED; a hold never moves down.
+  """
+  enum SprayHoldAutoReview {
+    "Kept as found, through accept-defaults or keep-maybes."
+    ACCEPTED
+    "A maybe the climber switched on by itself."
+    CONFIRMED
+    "Its shape changed after the detector drew it. The server also sets this whenever an AUTO hold's geometry moves."
+    EDITED
+  }
+
+  """
   Retired. A published spray climb follows the rule every board follows: only
   its setter edits it, within 24 hours of first publish. Every wall reads SETTER.
   """
@@ -71,6 +84,12 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     source: SprayHoldSource!
     "Detector confidence 0-1 for AUTO holds; null when a human drew it."
     confidence: Float
+    "What the climber did with the suggestion. Null for MANUAL holds and for AUTO holds saved without provenance."
+    autoReview: SprayHoldAutoReview
+    "The detection run the suggestion came from. Null for MANUAL holds."
+    originDetectionId: ID
+    "Index of the suggestion in that run's result.candidates."
+    originCandidateIndex: Int
   }
 
   "One photograph of the wall, with the geometry that maps it onto the canonical frame."
@@ -212,6 +231,16 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     unfinished.
     """
     replacedByWallUuid: ID
+    """
+    Whether this wall's photo and marked holds may help train hold finding. The
+    server stores a yes only when a client sends trainingConsent: true. The
+    app's add-a-wall switch is on when the wizard opens, and the app sends
+    whatever the owner leaves it at. A wall that existed before the switch, or
+    was created by an app without it, is off until its owner turns it on. A
+    Boardsesh admin checks a version before it is used. Only ever non-null for
+    the wall's OWNER.
+    """
+    trainingConsent: Boolean
   }
 
   "Where a version's generated wall looks are."
@@ -312,6 +341,13 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     hideLocation: Boolean
     "Accepted and ignored. Only a climb's setter edits it."
     climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
+    """
+    Let this wall's photo and marked holds help train hold finding. The server
+    stores a yes only for true; omitted and false both store a no. The app's
+    add-a-wall switch is on when the wizard opens, and the app sends whatever
+    the owner leaves it at.
+    """
+    trainingConsent: Boolean
   }
 
   "How many climbs on a wall use one hold. See \`sprayWallHoldUsage\`."
@@ -357,6 +393,21 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     source: SprayHoldSource
     confidence: Float
     movedFromHoldId: Int
+    """
+    What the climber did with the suggestion. AUTO holds only; ignored on MANUAL.
+    The server keeps the highest of this, the stored value and EDITED when the
+    geometry changed (against the stored hold, or the movedFromHoldId one), so
+    an omitted value never clears one. An explicit null does clear it.
+    """
+    autoReview: SprayHoldAutoReview
+    """
+    The detection run the suggestion came from, with originCandidateIndex. AUTO
+    holds only. A run of another wall, an unfinished run or an index out of range
+    is stored as null rather than failing the save. Omit both to keep what the
+    hold already records; send originDetectionId: null to clear it.
+    """
+    originDetectionId: ID
+    originCandidateIndex: Int
   }
 
   input UpsertSprayWallHoldsInput {
@@ -399,6 +450,14 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     angle: Int
     "Accepted and ignored. Only a climb's setter edits it."
     climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
+    """
+    Let this wall's photo and marked holds help train hold finding. Owner only,
+    like visibility. false switches it off for the whole physical wall: this
+    wall, every wall it was reset from and every reset clone made from any of
+    them. They leave the next training export, and stored exports that held one
+    of them are retired within 24 hours. true switches it on for this wall only.
+    """
+    trainingConsent: Boolean
   }
 
   input SetSprayWallRenderSettingsInput {

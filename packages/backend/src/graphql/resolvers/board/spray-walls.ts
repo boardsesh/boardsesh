@@ -78,6 +78,7 @@ import {
   sprayWallArtNeedsRequest,
   sprayWallArtView,
 } from '../../../services/spray-wall-art';
+import type { SprayWallHoldInput } from '../../../validation/schemas/spray-walls';
 import {
   CommitSprayWallVersionInputSchema,
   CreateSprayWallInputSchema,
@@ -88,6 +89,7 @@ import {
   SprayWallHoldUsageArgsSchema,
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
+  SPRAY_HOLD_AUTO_REVIEW_WIRE_NAME,
   SPRAY_VERSION_STATUS_WIRE_NAME,
   UpsertSprayWallHoldsInputSchema,
   UUIDSchema,
@@ -602,6 +604,9 @@ function toGraphQLHold(hold: SprayWallHoldRow, versionNumberById: Map<number, nu
     movedFromHoldId: hold.movedFromHoldId ?? null,
     source: hold.source === 'auto' ? 'AUTO' : 'MANUAL',
     confidence: hold.confidence ?? null,
+    autoReview: hold.autoReview == null ? null : SPRAY_HOLD_AUTO_REVIEW_WIRE_NAME[hold.autoReview],
+    originDetectionId: hold.originDetectionId ?? null,
+    originCandidateIndex: hold.originCandidateIndex ?? null,
   };
 }
 
@@ -716,6 +721,10 @@ async function toGraphQLWall(
       source && (await viewerCanSeeSprayWallByLayout(source.wall, source.board, userId)) ? source.board.uuid : null,
     replacedByWallUuid:
       successor && (await viewerMayFollowToSuccessor(loaded, successor, userId)) ? successor.board.uuid : null,
+    // The owner's own switch (SW-20, #5471). Null for everybody else, gym admins
+    // and community leaders included: whether a climber agreed to share their
+    // photo for training is theirs to know, and only they can change it.
+    trainingConsent: userId != null && board.ownerId === userId ? wall.trainingConsentAt != null : null,
   };
 }
 
@@ -1305,10 +1314,28 @@ const CARRY_OVER_BATCH_SIZE = 1000;
  *
  * The CLONE's lock is already held (the publish took it), and this takes the
  * SOURCE's. New wall first, then old wall, always. A clone is inserted after its
- * source exists, so its `bigserial` id is always the higher of the two, and
- * `deleteAccountSprayWalls` — the only other path that holds two wall locks at
- * once — walks walls by id DESCENDING to take them in the same order.
- * `resetSprayWall` holds the source's lock but never the clone's.
+ * source exists, so its `bigserial` id is always the higher of the two, and the
+ * only other paths that hold more than one wall lock at once take them by id
+ * DESCENDING, which is the same order: `deleteAccountSprayWalls`, and
+ * `lockResetFamilyForWrite` when an owner switches training consent off or
+ * deletes the live wall. `resetSprayWall` holds the source's lock but never the
+ * clone's.
+ *
+ * ## Training consent
+ *
+ * From this publish on, the clone is the wall its owner sees, so its "Help
+ * train hold finding" switch is their answer for the physical wall. A clone
+ * that publishes with the switch off takes the stamp off every older wall of
+ * the family: otherwise a source switched on while the reset was in progress is
+ * archived with its stamp, and its photo stays queued and exportable behind a
+ * live wall that reads off. Whether or not the source is archived by this call.
+ *
+ * This takes no lock beyond the two already held. The clone is the newest wall
+ * of its family (an unpublished wall cannot be reset, and its source hands out
+ * no second clone while it is unfinished), and every path that holds more than
+ * one wall lock takes a family's newest wall first. So nothing that could be
+ * holding one of these rows is ahead of this transaction, and no wall joins the
+ * family while the source's lock is held.
  *
  * ## What carries over
  *
@@ -1325,10 +1352,14 @@ const CARRY_OVER_BATCH_SIZE = 1000;
 async function archiveResetSourceUnderLock(
   tx: SprayWriteTransaction,
   sourceWallId: number,
-  successor: { boardUuid: string; layoutId: number },
+  successor: { boardUuid: string; layoutId: number; trainingConsented: boolean },
 ): Promise<void> {
   const successorBoardUuid = successor.boardUuid;
   await lockWallForWrite(tx, sourceWallId);
+
+  if (!successor.trainingConsented) {
+    await clearTrainingConsent(tx, await resetFamilyWallIds(tx, sourceWallId));
+  }
 
   const archivedAt = new Date();
   const [archived] = await tx
@@ -1501,6 +1532,7 @@ async function publishDraftUnderLock(
       pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
       pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
       resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
+      trainingConsentAt: dbSchema.sprayWalls.trainingConsentAt,
     })
     .from(dbSchema.sprayWalls)
     .where(and(eq(dbSchema.sprayWalls.id, wall.id), isNull(dbSchema.sprayWalls.deletedAt)))
@@ -1626,6 +1658,8 @@ async function publishDraftUnderLock(
     await archiveResetSourceUnderLock(tx, wallNow.resetFromWallId, {
       boardUuid: wallNow.boardUuid,
       layoutId: wall.layoutId,
+      // Read under this wall's lock above, which every consent write to it takes.
+      trainingConsented: wallNow.trainingConsentAt != null,
     });
   }
 
@@ -2041,6 +2075,8 @@ type NewSprayWallSettings = {
   renderSettings: SprayWallRow['renderSettings'];
   /** The wall this one is a reset clone of, or null for a fresh wall. */
   resetFromWallId: number | null;
+  /** "Help train hold finding": consented now, or null when the owner has not said yes. */
+  trainingConsentAt: Date | null;
 };
 
 /**
@@ -2137,10 +2173,174 @@ async function insertSprayWallRows(tx: SprayWriteTransaction, settings: NewSpray
       ...settings.pendingVisibility,
       renderSettings: settings.renderSettings,
       resetFromWallId: settings.resetFromWallId,
+      trainingConsentAt: settings.trainingConsentAt,
     })
     .returning();
 
   return { wall, board };
+}
+
+// ============================================
+// Hold provenance (SW-20, #5471)
+// ============================================
+
+type SprayHoldAutoReview = dbSchema.SprayHoldAutoReview;
+
+/** What one written hold records about the suggestion it came from. */
+type HoldProvenance = {
+  autoReview: SprayHoldAutoReview | null;
+  originDetectionId: string | null;
+  originCandidateIndex: number | null;
+};
+
+const NO_PROVENANCE: HoldProvenance = { autoReview: null, originDetectionId: null, originCandidateIndex: null };
+
+/** The ladder a hold only ever climbs: kept as found, switched on, reshaped. */
+const AUTO_REVIEW_RANK: Record<SprayHoldAutoReview, number> = { accepted: 1, confirmed: 2, edited: 3 };
+
+function strongerAutoReview(
+  first: SprayHoldAutoReview | null | undefined,
+  second: SprayHoldAutoReview | null | undefined,
+): SprayHoldAutoReview | null {
+  if (first == null) return second ?? null;
+  if (second == null) return first;
+  return AUTO_REVIEW_RANK[first] >= AUTO_REVIEW_RANK[second] ? first : second;
+}
+
+/**
+ * How far a resubmitted hold may drift from the stored one and still count as
+ * untouched: one canonical pixel for the centre and radius, a fiftieth of a
+ * radius for each outline coordinate.
+ *
+ * Not zero, because the app holds its holds in PHOTO pixels and maps them back to
+ * the canonical frame on every write, so an untouched hold can come back a pixel
+ * off after rounding. A real nudge is several pixels; calling a rounding error an
+ * edit would label every resaved hold as corrected.
+ */
+const GEOMETRY_TOLERANCE_PX = 1;
+const OUTLINE_TOLERANCE_RADII = 0.02;
+
+function holdGeometryChanged(sent: SprayWallHoldInput, stored: SprayWallHoldRow): boolean {
+  if (Math.abs(sent.cx - stored.cx) > GEOMETRY_TOLERANCE_PX) return true;
+  if (Math.abs(sent.cy - stored.cy) > GEOMETRY_TOLERANCE_PX) return true;
+  if (Math.abs(sent.r - stored.r) > GEOMETRY_TOLERANCE_PX) return true;
+  const sentOutline = sent.outline ?? null;
+  const storedOutline = stored.outline ?? null;
+  if (sentOutline == null || storedOutline == null) return sentOutline !== storedOutline;
+  if (sentOutline.length !== storedOutline.length) return true;
+  return sentOutline.some((coordinate, index) => Math.abs(coordinate - storedOutline[index]) > OUTLINE_TOLERANCE_RADII);
+}
+
+const originKey = (detectionId: string, candidateIndex: number) => `${detectionId}#${candidateIndex}`;
+
+/**
+ * Which `(detection, candidate)` pairs named in this batch are real: a run of THIS
+ * wall on THIS draft's photo that finished, and an index inside its candidate
+ * list. One query for the whole batch, whatever its size.
+ */
+async function validOriginKeys(
+  tx: SprayWriteTransaction,
+  wallId: number,
+  photoKey: string | null,
+  holds: readonly SprayWallHoldInput[],
+): Promise<Set<string>> {
+  const detectionIds = [
+    ...new Set(
+      holds.map((hold) => hold.originDetectionId).filter((detectionId): detectionId is string => detectionId != null),
+    ),
+  ];
+  // A draft with no photo has nothing a suggestion could have been found on.
+  if (detectionIds.length === 0 || photoKey == null) return new Set();
+
+  const runs = await tx
+    .select({
+      id: dbSchema.sprayWallDetections.id,
+      candidateCount: sql<number>`CASE WHEN jsonb_typeof(${dbSchema.sprayWallDetections.result} -> 'candidates') = 'array'
+        THEN jsonb_array_length(${dbSchema.sprayWallDetections.result} -> 'candidates') ELSE 0 END`,
+    })
+    .from(dbSchema.sprayWallDetections)
+    .where(
+      and(
+        eq(dbSchema.sprayWallDetections.wallId, wallId),
+        eq(dbSchema.sprayWallDetections.photoKey, photoKey),
+        eq(dbSchema.sprayWallDetections.status, 'done'),
+        inArray(dbSchema.sprayWallDetections.id, detectionIds),
+      ),
+    );
+  const candidateCounts = new Map(runs.map((run) => [run.id, Number(run.candidateCount)]));
+
+  const valid = new Set<string>();
+  for (const hold of holds) {
+    if (hold.originDetectionId == null || hold.originCandidateIndex == null) continue;
+    const candidateCount = candidateCounts.get(hold.originDetectionId);
+    if (candidateCount !== undefined && hold.originCandidateIndex < candidateCount) {
+      valid.add(originKey(hold.originDetectionId, hold.originCandidateIndex));
+    }
+  }
+  return valid;
+}
+
+/**
+ * The provenance to store for one written hold.
+ *
+ * `previous` is the row this write replaces: the stored row for an in-place edit,
+ * the superseded original for a correction of an inherited hold, the
+ * `movedFromHoldId` predecessor for a moved hold, nothing for a genuine addition.
+ *
+ * Each field distinguishes OMITTED from an explicit null. Omitted keeps what
+ * `previous` records, so an app that predates the fields never wipes them. An
+ * explicit null clears it (the editor merging two holds into one says the
+ * result came from no single suggestion).
+ *
+ *  - A MANUAL hold records none, whatever was sent: provenance is a fact about a
+ *    detector suggestion.
+ *  - A sent origin is kept when it validates and stored as NULL when it does not
+ *    (never a failed save: provenance is bookkeeping, the holds are the
+ *    climber's work).
+ *  - The review is the highest of what was sent, what `previous` had, and
+ *    `edited` when an auto hold's geometry moved from `previous`'s. The server
+ *    decides the last on its own so an older app's nudge still counts as a
+ *    correction. An explicit null review clears it and skips that rule.
+ */
+function resolveHoldProvenance(
+  hold: SprayWallHoldInput,
+  previous: SprayWallHoldRow | undefined,
+  validOrigins: ReadonlySet<string>,
+  wallId: number,
+): HoldProvenance {
+  if (hold.source !== 'auto') return NO_PROVENANCE;
+
+  const inherited = previous?.source === 'auto' ? previous : undefined;
+  let originDetectionId = inherited?.originDetectionId ?? null;
+  let originCandidateIndex = inherited?.originDetectionId == null ? null : (inherited.originCandidateIndex ?? null);
+  const originSent = hold.originDetectionId !== undefined || hold.originCandidateIndex !== undefined;
+  if (originSent) {
+    const sentValid =
+      hold.originDetectionId != null &&
+      hold.originCandidateIndex != null &&
+      validOrigins.has(originKey(hold.originDetectionId, hold.originCandidateIndex));
+    const explicitClear = hold.originDetectionId === null && hold.originCandidateIndex == null;
+    if (sentValid) {
+      originDetectionId = hold.originDetectionId!;
+      originCandidateIndex = hold.originCandidateIndex!;
+    } else {
+      if (!explicitClear) {
+        logger.debug('Dropped an invalid spray hold origin', {
+          wallId,
+          originDetectionId: hold.originDetectionId ?? null,
+          originCandidateIndex: hold.originCandidateIndex ?? null,
+        });
+      }
+      originDetectionId = null;
+      originCandidateIndex = null;
+    }
+  }
+
+  if (hold.autoReview === null) return { autoReview: null, originDetectionId, originCandidateIndex };
+  let autoReview = strongerAutoReview(hold.autoReview, inherited?.autoReview);
+  if (inherited && holdGeometryChanged(hold, inherited)) autoReview = 'edited';
+
+  return { autoReview, originDetectionId, originCandidateIndex };
 }
 
 // ============================================
@@ -2224,6 +2424,10 @@ export const sprayWallMutations = {
         pendingVisibility: pendingVisibilityColumns(validated),
         renderSettings: null,
         resetFromWallId: null,
+        // Only an explicit yes (SW-20, #5471). Omitted is off, the same as
+        // `false`: consent can only come from a client that showed the owner
+        // the switch, and a client that predates the switch never sends it.
+        trainingConsentAt: validated.trainingConsent === true ? new Date() : null,
       }),
     );
 
@@ -2374,6 +2578,9 @@ export const sprayWallMutations = {
         }),
         renderSettings: source.wall.renderSettings,
         resetFromWallId: source.wall.id,
+        // The owner's training choice carries over like the rest of the settings,
+        // stamped fresh because the clone's photo is a new one.
+        trainingConsentAt: source.wall.trainingConsentAt == null ? null : new Date(),
       });
       return { clone, created: true };
     });
@@ -2788,13 +2995,17 @@ export const sprayWallMutations = {
           validated.holds.map((hold) => hold.movedFromHoldId).filter((holdId): holdId is number => holdId != null),
         ),
       ];
+      // The predecessors themselves, kept: a moved hold inherits its provenance
+      // from the one it replaced (SW-20, #5471).
+      const movedFromById = new Map<number, SprayWallHoldRow>();
       if (movedFromIds.length > 0) {
         const known = await tx
-          .select({ holdId: dbSchema.sprayWallHolds.holdId })
+          .select()
           .from(dbSchema.sprayWallHolds)
           .where(
             and(eq(dbSchema.sprayWallHolds.wallId, wall.id), inArray(dbSchema.sprayWallHolds.holdId, movedFromIds)),
           );
+        for (const row of known) movedFromById.set(row.holdId, row);
         const knownIds = new Set(known.map((row) => row.holdId));
         const strayId = movedFromIds.find((holdId) => !knownIds.has(holdId));
         if (strayId != null) {
@@ -2852,6 +3063,23 @@ export const sprayWallMutations = {
       ];
       const newIds = await allocateHoldIds(tx, newRows.length);
 
+      // Provenance (SW-20, #5471): validated in one query, decided per hold. An
+      // addition has no previous row; a supersede inherits from the original it
+      // replaces; an in-place edit from its own stored row.
+      const validOrigins = await validOriginKeys(tx, wall.id, version.photoKey, validated.holds);
+      const newRowProvenance = newRows.map(({ hold, predecessorId }) =>
+        resolveHoldProvenance(
+          hold,
+          hold.id != null
+            ? aliveById.get(hold.id)
+            : predecessorId != null
+              ? movedFromById.get(predecessorId)
+              : undefined,
+          validOrigins,
+          wall.id,
+        ),
+      );
+
       if (newRows.length > 0) {
         // The catalogue pair every hold needs: one `board_holes` row and one
         // `board_placements` row SHARING the id, because a climb's frames string
@@ -2896,6 +3124,7 @@ export const sprayWallMutations = {
             movedFromHoldId: predecessorId,
             source: hold.source,
             confidence: hold.confidence ?? null,
+            ...newRowProvenance[index],
           })),
         );
       }
@@ -2936,6 +3165,7 @@ export const sprayWallMutations = {
             movedFromHoldId: hold.movedFromHoldId ?? null,
             source: hold.source,
             confidence: hold.confidence ?? null,
+            ...resolveHoldProvenance(hold, aliveById.get(hold.id!), validOrigins, wall.id),
             updatedAt: new Date(),
           })
           .where(and(eq(dbSchema.sprayWallHolds.wallId, wall.id), eq(dbSchema.sprayWallHolds.holdId, hold.id!)));
@@ -3310,6 +3540,12 @@ export const sprayWallMutations = {
     /** The public copy the tombstone orphans, deleted after the commit. */
     let orphanedPublicKey: string | null = null;
     await db.transaction(async (tx) => {
+      // Deleting the wall its owner sees switches training consent off on the
+      // rest of the reset family (below), which writes other walls' rows. Their
+      // locks come first, behind the owner's account lock, in the order
+      // `lockResetFamilyForWrite` documents. An archived wall has no such write
+      // and never stops being archived, so it takes only its own lock.
+      const familyWallIds = wall.archivedAt == null ? await lockResetFamilyForWrite(tx, board.ownerId, wall.id) : [];
       // The same wall lock every other writer takes: without it a publish in
       // flight would stamp `current_version_id` onto a wall this transaction is
       // deleting.
@@ -3329,11 +3565,33 @@ export const sprayWallMutations = {
       // reason: a window where the flag and the key disagree is a window where a
       // deleted wall's photo still resolves.
       const [wallNow] = await tx
-        .select({ publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey })
+        .select({
+          publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey,
+          archivedAt: dbSchema.sprayWalls.archivedAt,
+          currentVersionId: dbSchema.sprayWalls.currentVersionId,
+        })
         .from(dbSchema.sprayWalls)
         .where(eq(dbSchema.sprayWalls.id, wall.id))
         .limit(1);
       if (wallNow?.publicPhotoKey) orphanedPublicKey = wallNow.publicPhotoKey;
+
+      // The LIVE wall (published, not archived) is its owner's answer for the
+      // physical wall, older photos included. Once it is gone nothing the owner
+      // can see says yes any more, so every other wall of the family loses its
+      // stamp: without this an archived source stays queued and exportable
+      // behind a wall that no longer exists. This wall's own stamp is left: a
+      // deleted wall is ineligible whatever it says.
+      //
+      // Decided on the row as it is under the lock. Deleting an ARCHIVED wall
+      // removes that one photo and says nothing about the wall the owner still
+      // has. Nor does deleting an unfinished one: that abandons a reset, and
+      // the wall it would have replaced is still live with its own answer.
+      if (wallNow != null && wallNow.archivedAt == null && wallNow.currentVersionId != null) {
+        await clearTrainingConsent(
+          tx,
+          familyWallIds.filter((familyWallId) => familyWallId !== wall.id),
+        );
+      }
 
       await tx
         .update(dbSchema.sprayWalls)
@@ -3389,6 +3647,75 @@ function legacySprayAudience(
   return legacyResourceAudience(audience, requested);
 }
 
+/**
+ * Every wall in `wallId`'s reset family, itself included: the walls it was
+ * cloned from, back to the first one, and every clone made from any of them.
+ * To its owner that is one physical wall, photographed once per reset.
+ *
+ * Walked one generation at a time, both ways along `reset_from_wall_id`, until
+ * a pass finds no wall it has not seen. No depth cap: `family` is what ends the
+ * walk, and it ends it on a cycle too (only a hand-edited row could make one).
+ */
+async function resetFamilyWallIds(tx: SprayWriteTransaction, wallId: number): Promise<number[]> {
+  const family = new Set<number>([wallId]);
+  let frontier = [wallId];
+  while (frontier.length > 0) {
+    const linked = await tx
+      .select({ id: dbSchema.sprayWalls.id, resetFromWallId: dbSchema.sprayWalls.resetFromWallId })
+      .from(dbSchema.sprayWalls)
+      .where(or(inArray(dbSchema.sprayWalls.id, frontier), inArray(dbSchema.sprayWalls.resetFromWallId, frontier)));
+    const discovered: number[] = [];
+    for (const { id, resetFromWallId } of linked) {
+      for (const relatedWallId of [id, resetFromWallId]) {
+        if (relatedWallId != null && !family.has(relatedWallId)) {
+          family.add(relatedWallId);
+          discovered.push(relatedWallId);
+        }
+      }
+    }
+    frontier = discovered;
+  }
+  return [...family];
+}
+
+/**
+ * Switch "Help train hold finding" off on these walls. Only the stamp moves.
+ * `updated_at` is left alone: no document a device pulls carries this column,
+ * and on a deleted wall `updated_at` is the photo purge's fence against a late
+ * upload.
+ */
+async function clearTrainingConsent(tx: SprayWriteTransaction, wallIds: readonly number[]): Promise<void> {
+  if (wallIds.length === 0) return;
+  await tx
+    .update(dbSchema.sprayWalls)
+    .set({ trainingConsentAt: null })
+    .where(and(inArray(dbSchema.sprayWalls.id, [...wallIds]), isNotNull(dbSchema.sprayWalls.trainingConsentAt)));
+}
+
+/**
+ * Take every lock a write across a wall's reset family needs, and return the
+ * family's wall ids ({@link resetFamilyWallIds}).
+ *
+ * The owner's account lock first. `resetSprayWall` holds it for the whole
+ * clone, so a reset either commits before the walk below (and its clone is in
+ * the family) or starts after this transaction (and copies what it wrote): no
+ * wall joins the family unseen.
+ *
+ * Then each wall's lock, highest id first, the order `archiveResetSourceUnderLock`
+ * documents for every path holding more than one. A clone's first publish holds
+ * the clone, writes the clone's row, and then waits for its source's lock.
+ * Writing the clone's row from here while holding only the source's lock would
+ * wait on that publish while it waits on us.
+ */
+async function lockResetFamilyForWrite(tx: SprayWriteTransaction, ownerId: string, wallId: number): Promise<number[]> {
+  await lockSprayWallAccount(tx, ownerId);
+  const familyWallIds = await resetFamilyWallIds(tx, wallId);
+  for (const familyWallId of [...familyWallIds].sort((first, second) => second - first)) {
+    await lockWallForWrite(tx, familyWallId);
+  }
+  return familyWallIds;
+}
+
 async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privacyUpdate?: SprayResourcePrivacyUpdate) {
   requireAuthenticated(ctx);
   await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'updateSprayWall');
@@ -3412,6 +3739,14 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // quieter than making it public and exactly as far from private.
   if ((validated.isPublic !== undefined || validated.isUnlisted !== undefined) && board.ownerId !== ctx.userId) {
     throw new GraphQLError('Only the climber who set this wall up can change who can see it', {
+      extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
+    });
+  }
+  // Training consent (SW-20, #5471) is the same kind of decision as visibility:
+  // whether a photograph of somebody's home goes somewhere beyond the wall. Only
+  // the person who took it decides, so the same gate and the same code.
+  if (validated.trainingConsent !== undefined && board.ownerId !== ctx.userId) {
+    throw new GraphQLError('Only the climber who set this wall up can change whether it helps train hold finding', {
       extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
     });
   }
@@ -3513,9 +3848,16 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // never before, or a rolled-back demotion would leave a still-public wall
   // pointing at bytes that are gone.
   const orphanedPublicKeys: string[] = [];
+  // The wall's reset family, when this call switches training consent off for
+  // all of it (see the consent write below). Empty otherwise.
+  let revokedFamilyWallIds: number[] = [];
 
   try {
     await db.transaction(async (tx) => {
+      // Revoking consent writes every wall in the family, so it takes all of
+      // their locks, this wall's included, before anything else is locked.
+      revokedFamilyWallIds =
+        validated.trainingConsent === false ? await lockResetFamilyForWrite(tx, board.ownerId, wall.id) : [];
       await lockWallForWrite(tx, wall.id);
 
       // Re-read the published version under the lock. The check above is a fast
@@ -3557,6 +3899,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
           pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
           deletedAt: dbSchema.sprayWalls.deletedAt,
           resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
+          trainingConsentAt: dbSchema.sprayWalls.trainingConsentAt,
         })
         .from(dbSchema.sprayWalls)
         .where(eq(dbSchema.sprayWalls.id, wall.id))
@@ -3687,6 +4030,34 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
       }
 
+      // Off covers the whole physical wall, not this one row. A reset clones a
+      // wall, so the walls this one was reset from (archived, their old photos
+      // still stored) and any clone made from it (an unfinished reset, about to
+      // get a new photo) are the same wall to its owner. All of them lose the
+      // stamp here, in this transaction: otherwise an archived source's photo
+      // stays eligible after its owner said no on the live wall, and a clone
+      // started before the switch publishes with consent it copied earlier.
+      //
+      // Two more things take the whole family out, for the same reason, and
+      // they live where they happen: deleting the live wall (`deleteSprayWall`)
+      // and publishing a reset whose clone has the switch off
+      // (`archiveResetSourceUnderLock`). In all three the wall the owner sees
+      // no longer says yes, so no older photo of it may.
+      //
+      // On is this wall only. It never reaches back to consent an older photo
+      // again on the owner's behalf. It stamps `now()` only when it was off, so
+      // restating "on" keeps the date the consent was actually given (and
+      // leaves the training export's consent fingerprint alone).
+      if (validated.trainingConsent === false) {
+        wallUpdates.trainingConsentAt = null;
+        await clearTrainingConsent(
+          tx,
+          revokedFamilyWallIds.filter((familyWallId) => familyWallId !== wall.id),
+        );
+      } else if (validated.trainingConsent === true && wallNow?.trainingConsentAt == null) {
+        wallUpdates.trainingConsentAt = new Date();
+      }
+
       await tx.update(dbSchema.sprayWalls).set(wallUpdates).where(eq(dbSchema.sprayWalls.id, wall.id));
     });
   } catch (error) {
@@ -3705,6 +4076,9 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
     layoutId: wall.layoutId,
     userId: ctx.userId,
     fields: Object.keys(updates),
+    ...(validated.trainingConsent === undefined ? {} : { trainingConsent: validated.trainingConsent }),
+    // How many walls the revoke reached: this one plus its reset family.
+    ...(revokedFamilyWallIds.length > 1 ? { trainingConsentFamilyWalls: revokedFamilyWallIds.length } : {}),
   });
 
   const reloaded = await loadWall('uuid', validated.uuid);

@@ -6212,6 +6212,19 @@ enum SprayHoldSource {
 }
 
 """
+What the climber did with a detector suggestion before saving it as an AUTO
+hold. Ranked ACCEPTED < CONFIRMED < EDITED; a hold never moves down.
+"""
+enum SprayHoldAutoReview {
+  "Kept as found, through accept-defaults or keep-maybes."
+  ACCEPTED
+  "A maybe the climber switched on by itself."
+  CONFIRMED
+  "Its shape changed after the detector drew it. The server also sets this whenever an AUTO hold's geometry moves."
+  EDITED
+}
+
+"""
 Retired. A published spray climb follows the rule every board follows: only
 its setter edits it, within 24 hours of first publish. Every wall reads SETTER.
 """
@@ -6264,6 +6277,12 @@ type SprayWallHold {
   source: SprayHoldSource!
   "Detector confidence 0-1 for AUTO holds; null when a human drew it."
   confidence: Float
+  "What the climber did with the suggestion. Null for MANUAL holds and for AUTO holds saved without provenance."
+  autoReview: SprayHoldAutoReview
+  "The detection run the suggestion came from. Null for MANUAL holds."
+  originDetectionId: ID
+  "Index of the suggestion in that run's result.candidates."
+  originCandidateIndex: Int
 }
 
 "One photograph of the wall, with the geometry that maps it onto the canonical frame."
@@ -6405,6 +6424,16 @@ type SprayWall {
   unfinished.
   """
   replacedByWallUuid: ID
+  """
+  Whether this wall's photo and marked holds may help train hold finding. The
+  server stores a yes only when a client sends trainingConsent: true. The
+  app's add-a-wall switch is on when the wizard opens, and the app sends
+  whatever the owner leaves it at. A wall that existed before the switch, or
+  was created by an app without it, is off until its owner turns it on. A
+  Boardsesh admin checks a version before it is used. Only ever non-null for
+  the wall's OWNER.
+  """
+  trainingConsent: Boolean
 }
 
 "Where a version's generated wall looks are."
@@ -6505,6 +6534,13 @@ input CreateSprayWallInput {
   hideLocation: Boolean
   "Accepted and ignored. Only a climb's setter edits it."
   climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
+  """
+  Let this wall's photo and marked holds help train hold finding. The server
+  stores a yes only for true; omitted and false both store a no. The app's
+  add-a-wall switch is on when the wizard opens, and the app sends whatever
+  the owner leaves it at.
+  """
+  trainingConsent: Boolean
 }
 
 "How many climbs on a wall use one hold. See `sprayWallHoldUsage`."
@@ -6550,6 +6586,21 @@ input SprayWallHoldInput {
   source: SprayHoldSource
   confidence: Float
   movedFromHoldId: Int
+  """
+  What the climber did with the suggestion. AUTO holds only; ignored on MANUAL.
+  The server keeps the highest of this, the stored value and EDITED when the
+  geometry changed (against the stored hold, or the movedFromHoldId one), so
+  an omitted value never clears one. An explicit null does clear it.
+  """
+  autoReview: SprayHoldAutoReview
+  """
+  The detection run the suggestion came from, with originCandidateIndex. AUTO
+  holds only. A run of another wall, an unfinished run or an index out of range
+  is stored as null rather than failing the save. Omit both to keep what the
+  hold already records; send originDetectionId: null to clear it.
+  """
+  originDetectionId: ID
+  originCandidateIndex: Int
 }
 
 input UpsertSprayWallHoldsInput {
@@ -6592,6 +6643,14 @@ input UpdateSprayWallInput {
   angle: Int
   "Accepted and ignored. Only a climb's setter edits it."
   climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
+  """
+  Let this wall's photo and marked holds help train hold finding. Owner only,
+  like visibility. false switches it off for the whole physical wall: this
+  wall, every wall it was reset from and every reset clone made from any of
+  them. They leave the next training export, and stored exports that held one
+  of them are retired within 24 hours. true switches it on for this wall only.
+  """
+  trainingConsent: Boolean
 }
 
 input SetSprayWallRenderSettingsInput {
@@ -6654,6 +6713,222 @@ extend type Query {
 extend type Mutation {
   requestSprayWallDetection(input: RequestSprayWallDetectionInput!): SprayWallDetection!
   retrySprayWallDetection(id: ID!): SprayWallDetection!
+}
+
+"An admin's verdict on one wall version as training data. UNREVIEWED is the absence of one."
+enum SprayTrainingReviewStatus {
+  UNREVIEWED
+  APPROVED
+  REJECTED
+}
+
+"Why a version was kept out of the training set. A closed set; notes carry anything else."
+enum SprayTrainingRejectReason {
+  "Holds are drawn in the wrong place or the wrong shape."
+  BAD_HOLDS
+  "Real holds on the wall were never marked."
+  MISSING_HOLDS
+  "Blurred, dark, cropped or too angled to learn from."
+  PHOTO_QUALITY
+  "Not a climbing wall."
+  NOT_A_WALL
+  "A person, a face, an address or documents are in the frame."
+  PEOPLE_OR_PERSONAL_INFO
+  "The same wall and photo is already in the set."
+  DUPLICATE
+  OTHER
+}
+
+"""
+What happened to one detector suggestion.
+
+KEPT: a saved hold came from it and its shape was not changed. EDITED: a saved
+hold came from it and the climber changed its shape. DELETED: the editor
+showed it and no saved hold came from it. NOT_SHOWN: it scored below the
+editor's floor, so the climber never saw it. UNKNOWN: no hold on the version
+records where it came from (it was saved by an app that predates provenance),
+so kept and deleted cannot be told apart.
+"""
+enum SprayTrainingCandidateFate {
+  KEPT
+  EDITED
+  DELETED
+  NOT_SHOWN
+  UNKNOWN
+}
+
+"Who can see the wall a version belongs to."
+enum SprayTrainingWallVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+"One saved hold, projected into the version's PHOTO pixels."
+type SprayTrainingHold {
+  id: Int!
+  cx: Float!
+  cy: Float!
+  r: Float!
+  "Flat implicitly-closed ring in units of THIS (projected) radius, relative to the centre. Null draws the circle."
+  outline: [Float!]
+  source: SprayHoldSource!
+  autoReview: SprayHoldAutoReview
+  confidence: Float
+}
+
+"""
+One suggestion, in photo pixels, from the detector run the version is judged
+against: the finished run on its photo that the most of its holds point back
+at, or the newest finished run on that photo when no hold points at any.
+"""
+type SprayTrainingCandidate {
+  "Index into the run's result.candidates."
+  index: Int!
+  cx: Float!
+  cy: Float!
+  r: Float!
+  confidence: Float!
+  "Flat ring in units of r relative to the centre, as the detector sent it."
+  outline: [Float!]
+  fate: SprayTrainingCandidateFate!
+}
+
+type SprayTrainingStats {
+  holdCount: Int!
+  manualHoldCount: Int!
+  autoHoldCount: Int!
+  "AUTO holds kept as found (accept-defaults or keep-maybes)."
+  acceptedHoldCount: Int!
+  "AUTO holds the climber switched on one at a time."
+  confirmedHoldCount: Int!
+  "AUTO holds whose shape the climber changed."
+  editedHoldCount: Int!
+  candidateCount: Int!
+  keptCandidateCount: Int!
+  editedCandidateCount: Int!
+  deletedCandidateCount: Int!
+  notShownCandidateCount: Int!
+}
+
+type SprayTrainingReview {
+  status: SprayTrainingReviewStatus!
+  reason: SprayTrainingRejectReason
+  notes: String
+  reviewedAt: String
+}
+
+"""
+One wall version in the vetting queue. Carries no owner name and no wall name:
+the reviewer judges the photo and the holds, not the person.
+"""
+type SprayTrainingQueueItem {
+  versionId: ID!
+  wallUuid: ID!
+  versionNumber: Int!
+  visibility: SprayTrainingWallVisibility!
+  createdAt: String!
+  publishedAt: String
+  "Admin-only presigned photo; re-query after photo.expiresAt. Null when it cannot be signed."
+  photo: SprayWallPhoto
+  photoWidth: Int
+  photoHeight: Int
+  "Alive holds of this version in photo pixels."
+  holds: [SprayTrainingHold!]!
+  """
+  Holds whose canonical position does not project onto the photo, so they are
+  not in holds. A version with any is left out of the export even when
+  approved: a real hold missing from the labels would be learned as background.
+  """
+  unmappableHoldCount: Int!
+  candidates: [SprayTrainingCandidate!]!
+  "Model version of the detector run candidates come from, or null when the version has none."
+  detectionModelVersion: String
+  stats: SprayTrainingStats!
+  review: SprayTrainingReview!
+}
+
+type SprayTrainingTotals {
+  unreviewed: Int!
+  approved: Int!
+  rejected: Int!
+}
+
+type SprayTrainingQueue {
+  items: [SprayTrainingQueueItem!]!
+  hasMore: Boolean!
+  "Eligible versions per status, over the whole queue rather than this page."
+  totals: SprayTrainingTotals!
+}
+
+input SetSprayTrainingReviewInput {
+  versionId: ID!
+  "UNREVIEWED clears the verdict."
+  status: SprayTrainingReviewStatus!
+  "Required with REJECTED, refused otherwise."
+  reason: SprayTrainingRejectReason
+  "At most 500 characters."
+  notes: String
+}
+
+type SprayTrainingReviewResult {
+  versionId: ID!
+  review: SprayTrainingReview!
+}
+
+"Why an export run wrote nothing."
+enum SprayTrainingExportSkipReason {
+  "Another run holds the export lease. The scheduler job reports this as a failure."
+  LOCKED
+  "The approved, eligible set matches the newest export."
+  UNCHANGED
+  "Nothing is approved and eligible, or nothing approved could be exported."
+  NOTHING_TO_EXPORT
+}
+
+"What one export run did."
+type SprayTrainingExportResult {
+  "The export written on this run, or null when nothing changed or nothing is approved."
+  exportId: String
+  imagesWritten: Int!
+  """
+  Stored exports deleted on this run: any holding a version that is no longer
+  eligible and approved, any whose manifest is missing (a run that died
+  before writing it) or cannot be parsed, and any that fell out of the newest
+  two.
+  """
+  exportsRetired: Int!
+  "True when nothing was written; skippedReason says why."
+  skipped: Boolean!
+  skippedReason: SprayTrainingExportSkipReason
+  "Approved, eligible versions left out of this export: holds that do not project onto the photo, no holds, or an unreadable photo."
+  versionsSkipped: Int!
+  durationMs: Int!
+}
+
+extend type Query {
+  """
+  Wall versions eligible as training data, by review status. UNREVIEWED
+  lists the oldest version first, so the queue drains in arrival order;
+  APPROVED and REJECTED list the newest verdict first. Community admins only
+  (`spray`-scoped or global). At most 25 per page.
+  """
+  sprayTrainingQueue(status: SprayTrainingReviewStatus!, limit: Int, offset: Int): SprayTrainingQueue!
+}
+
+extend type Mutation {
+  """
+  Approve, reject or clear the verdict on one version. Community admins only
+  (`spray`-scoped or global). Refused for a version that is not eligible.
+  """
+  setSprayTrainingReview(input: SetSprayTrainingReviewInput!): SprayTrainingReviewResult!
+
+  """
+  Retire stale exports and write a new one of every approved, eligible version
+  to the private bucket. Cron-authenticated; the scheduler's
+  `export-spray-training` job is the only caller.
+  """
+  exportSprayTrainingDataset: SprayTrainingExportResult!
 }
 
 """

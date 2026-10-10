@@ -2037,6 +2037,13 @@ export type CreateSprayWallInput = {
   longitude?: InputMaybe<Scalars['Float']['input']>;
   /** What the climber calls the wall. Becomes the board name, the catalogue row names and the slug. */
   name: Scalars['String']['input'];
+  /**
+   * Let this wall's photo and marked holds help train hold finding. The server
+   * stores a yes only for true; omitted and false both store a no. The app's
+   * add-a-wall switch is on when the wizard opens, and the app sends whatever
+   * the owner leaves it at.
+   */
+  trainingConsent?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type CreateSprayWallVersionInput = {
@@ -4152,6 +4159,12 @@ export type Mutation = {
    * the returned SessionSummary.
    */
   endSession?: Maybe<SessionSummary>;
+  /**
+   * Retire stale exports and write a new one of every approved, eligible version
+   * to the private bucket. Cron-authenticated; the scheduler's
+   * `export-spray-training` job is the only caller.
+   */
+  exportSprayTrainingDataset: SprayTrainingExportResult;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
   /** Follow a gym. */
@@ -4513,6 +4526,11 @@ export type Mutation = {
    * Must be a participant of the session.
    */
   setSessionHealthKitWorkoutId: Scalars['Boolean']['output'];
+  /**
+   * Approve, reject or clear the verdict on one version. Community admins only
+   * (`spray`-scoped or global). Refused for a version that is not eligible.
+   */
+  setSprayTrainingReview: SprayTrainingReviewResult;
   /**
    * Hide or unhide a wall. Community admins only (`spray`-scoped or global).
    *
@@ -5312,6 +5330,11 @@ export type MutationSetSessionBoardSerialArgs = {
 export type MutationSetSessionHealthKitWorkoutIdArgs = {
   sessionId: Scalars['ID']['input'];
   workoutId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetSprayTrainingReviewArgs = {
+  input: SetSprayTrainingReviewInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6878,6 +6901,13 @@ export type Query = {
    */
   smartPlaylist: SmartPlaylistResult;
   /**
+   * Wall versions eligible as training data, by review status. UNREVIEWED
+   * lists the oldest version first, so the queue drains in arrival order;
+   * APPROVED and REJECTED list the newest verdict first. Community admins only
+   * (`spray`-scoped or global). At most 25 per page.
+   */
+  sprayTrainingQueue: SprayTrainingQueue;
+  /**
    * One spray wall by uuid (the `user_boards` uuid it is keyed on).
    *
    * Visible to the owner, to a member of the gym the wall is attached to, and to
@@ -7664,6 +7694,13 @@ export type QuerySimilarClimbsArgs = {
 /** Root query type for all read operations. */
 export type QuerySmartPlaylistArgs = {
   input: GetSmartPlaylistInput;
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayTrainingQueueArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  status: SprayTrainingReviewStatus;
 };
 
 /** Root query type for all read operations. */
@@ -9051,6 +9088,16 @@ export type SetContentAudienceInput = {
   privacyRevision: Scalars['Int']['input'];
 };
 
+export type SetSprayTrainingReviewInput = {
+  /** At most 500 characters. */
+  notes?: InputMaybe<Scalars['String']['input']>;
+  /** Required with REJECTED, refused otherwise. */
+  reason?: InputMaybe<SprayTrainingRejectReason>;
+  /** UNREVIEWED clears the verdict. */
+  status: SprayTrainingReviewStatus;
+  versionId: Scalars['ID']['input'];
+};
+
 export type SetSprayWallHiddenInput = {
   hidden: Scalars['Boolean']['input'];
   uuid: Scalars['ID']['input'];
@@ -9437,6 +9484,18 @@ export type SprayDetectionResult = {
   width: Scalars['Int']['output'];
 };
 
+/**
+ * What the climber did with a detector suggestion before saving it as an AUTO
+ * hold. Ranked ACCEPTED < CONFIRMED < EDITED; a hold never moves down.
+ */
+export type SprayHoldAutoReview =
+  /** Kept as found, through accept-defaults or keep-maybes. */
+  | 'ACCEPTED'
+  /** A maybe the climber switched on by itself. */
+  | 'CONFIRMED'
+  /** Its shape changed after the detector drew it. The server also sets this whenever an AUTO hold's geometry moves. */
+  | 'EDITED';
+
 /** Where a hold's geometry came from: a detector run, or a human's hand. */
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
@@ -9473,6 +9532,180 @@ export type SprayRemixSeed = {
    */
   suggestedHoldIds: Array<Scalars['Int']['output']>;
 };
+
+/**
+ * One suggestion, in photo pixels, from the detector run the version is judged
+ * against: the finished run on its photo that the most of its holds point back
+ * at, or the newest finished run on that photo when no hold points at any.
+ */
+export type SprayTrainingCandidate = {
+  __typename?: 'SprayTrainingCandidate';
+  confidence: Scalars['Float']['output'];
+  cx: Scalars['Float']['output'];
+  cy: Scalars['Float']['output'];
+  fate: SprayTrainingCandidateFate;
+  /** Index into the run's result.candidates. */
+  index: Scalars['Int']['output'];
+  /** Flat ring in units of r relative to the centre, as the detector sent it. */
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Float']['output'];
+};
+
+/**
+ * What happened to one detector suggestion.
+ *
+ * KEPT: a saved hold came from it and its shape was not changed. EDITED: a saved
+ * hold came from it and the climber changed its shape. DELETED: the editor
+ * showed it and no saved hold came from it. NOT_SHOWN: it scored below the
+ * editor's floor, so the climber never saw it. UNKNOWN: no hold on the version
+ * records where it came from (it was saved by an app that predates provenance),
+ * so kept and deleted cannot be told apart.
+ */
+export type SprayTrainingCandidateFate = 'DELETED' | 'EDITED' | 'KEPT' | 'NOT_SHOWN' | 'UNKNOWN';
+
+/** What one export run did. */
+export type SprayTrainingExportResult = {
+  __typename?: 'SprayTrainingExportResult';
+  durationMs: Scalars['Int']['output'];
+  /** The export written on this run, or null when nothing changed or nothing is approved. */
+  exportId?: Maybe<Scalars['String']['output']>;
+  /**
+   * Stored exports deleted on this run: any holding a version that is no longer
+   * eligible and approved, any whose manifest is missing (a run that died
+   * before writing it) or cannot be parsed, and any that fell out of the newest
+   * two.
+   */
+  exportsRetired: Scalars['Int']['output'];
+  imagesWritten: Scalars['Int']['output'];
+  /** True when nothing was written; skippedReason says why. */
+  skipped: Scalars['Boolean']['output'];
+  skippedReason?: Maybe<SprayTrainingExportSkipReason>;
+  /** Approved, eligible versions left out of this export: holds that do not project onto the photo, no holds, or an unreadable photo. */
+  versionsSkipped: Scalars['Int']['output'];
+};
+
+/** Why an export run wrote nothing. */
+export type SprayTrainingExportSkipReason =
+  /** Another run holds the export lease. The scheduler job reports this as a failure. */
+  | 'LOCKED'
+  /** Nothing is approved and eligible, or nothing approved could be exported. */
+  | 'NOTHING_TO_EXPORT'
+  /** The approved, eligible set matches the newest export. */
+  | 'UNCHANGED';
+
+/** One saved hold, projected into the version's PHOTO pixels. */
+export type SprayTrainingHold = {
+  __typename?: 'SprayTrainingHold';
+  autoReview?: Maybe<SprayHoldAutoReview>;
+  confidence?: Maybe<Scalars['Float']['output']>;
+  cx: Scalars['Float']['output'];
+  cy: Scalars['Float']['output'];
+  id: Scalars['Int']['output'];
+  /** Flat implicitly-closed ring in units of THIS (projected) radius, relative to the centre. Null draws the circle. */
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Float']['output'];
+  source: SprayHoldSource;
+};
+
+export type SprayTrainingQueue = {
+  __typename?: 'SprayTrainingQueue';
+  hasMore: Scalars['Boolean']['output'];
+  items: Array<SprayTrainingQueueItem>;
+  /** Eligible versions per status, over the whole queue rather than this page. */
+  totals: SprayTrainingTotals;
+};
+
+/**
+ * One wall version in the vetting queue. Carries no owner name and no wall name:
+ * the reviewer judges the photo and the holds, not the person.
+ */
+export type SprayTrainingQueueItem = {
+  __typename?: 'SprayTrainingQueueItem';
+  candidates: Array<SprayTrainingCandidate>;
+  createdAt: Scalars['String']['output'];
+  /** Model version of the detector run candidates come from, or null when the version has none. */
+  detectionModelVersion?: Maybe<Scalars['String']['output']>;
+  /** Alive holds of this version in photo pixels. */
+  holds: Array<SprayTrainingHold>;
+  /** Admin-only presigned photo; re-query after photo.expiresAt. Null when it cannot be signed. */
+  photo?: Maybe<SprayWallPhoto>;
+  photoHeight?: Maybe<Scalars['Int']['output']>;
+  photoWidth?: Maybe<Scalars['Int']['output']>;
+  publishedAt?: Maybe<Scalars['String']['output']>;
+  review: SprayTrainingReview;
+  stats: SprayTrainingStats;
+  /**
+   * Holds whose canonical position does not project onto the photo, so they are
+   * not in holds. A version with any is left out of the export even when
+   * approved: a real hold missing from the labels would be learned as background.
+   */
+  unmappableHoldCount: Scalars['Int']['output'];
+  versionId: Scalars['ID']['output'];
+  versionNumber: Scalars['Int']['output'];
+  visibility: SprayTrainingWallVisibility;
+  wallUuid: Scalars['ID']['output'];
+};
+
+/** Why a version was kept out of the training set. A closed set; notes carry anything else. */
+export type SprayTrainingRejectReason =
+  /** Holds are drawn in the wrong place or the wrong shape. */
+  | 'BAD_HOLDS'
+  /** The same wall and photo is already in the set. */
+  | 'DUPLICATE'
+  /** Real holds on the wall were never marked. */
+  | 'MISSING_HOLDS'
+  /** Not a climbing wall. */
+  | 'NOT_A_WALL'
+  | 'OTHER'
+  /** A person, a face, an address or documents are in the frame. */
+  | 'PEOPLE_OR_PERSONAL_INFO'
+  /** Blurred, dark, cropped or too angled to learn from. */
+  | 'PHOTO_QUALITY';
+
+export type SprayTrainingReview = {
+  __typename?: 'SprayTrainingReview';
+  notes?: Maybe<Scalars['String']['output']>;
+  reason?: Maybe<SprayTrainingRejectReason>;
+  reviewedAt?: Maybe<Scalars['String']['output']>;
+  status: SprayTrainingReviewStatus;
+};
+
+export type SprayTrainingReviewResult = {
+  __typename?: 'SprayTrainingReviewResult';
+  review: SprayTrainingReview;
+  versionId: Scalars['ID']['output'];
+};
+
+/** An admin's verdict on one wall version as training data. UNREVIEWED is the absence of one. */
+export type SprayTrainingReviewStatus = 'APPROVED' | 'REJECTED' | 'UNREVIEWED';
+
+export type SprayTrainingStats = {
+  __typename?: 'SprayTrainingStats';
+  /** AUTO holds kept as found (accept-defaults or keep-maybes). */
+  acceptedHoldCount: Scalars['Int']['output'];
+  autoHoldCount: Scalars['Int']['output'];
+  candidateCount: Scalars['Int']['output'];
+  /** AUTO holds the climber switched on one at a time. */
+  confirmedHoldCount: Scalars['Int']['output'];
+  deletedCandidateCount: Scalars['Int']['output'];
+  editedCandidateCount: Scalars['Int']['output'];
+  /** AUTO holds whose shape the climber changed. */
+  editedHoldCount: Scalars['Int']['output'];
+  holdCount: Scalars['Int']['output'];
+  keptCandidateCount: Scalars['Int']['output'];
+  manualHoldCount: Scalars['Int']['output'];
+  notShownCandidateCount: Scalars['Int']['output'];
+};
+
+export type SprayTrainingTotals = {
+  __typename?: 'SprayTrainingTotals';
+  approved: Scalars['Int']['output'];
+  rejected: Scalars['Int']['output'];
+  unreviewed: Scalars['Int']['output'];
+};
+
+/** Who can see the wall a version belongs to. */
+export type SprayTrainingWallVisibility = 'PRIVATE' | 'PUBLIC' | 'UNLISTED';
 
 /**
  * A climber's own wall: one runtime-created catalogue layout under the `spray`
@@ -9558,6 +9791,16 @@ export type SprayWall = {
   resetOfWallUuid?: Maybe<Scalars['ID']['output']>;
   /** Always equal to layoutId. Returned so a client never has to know the equality. */
   sizeId: Scalars['Int']['output'];
+  /**
+   * Whether this wall's photo and marked holds may help train hold finding. The
+   * server stores a yes only when a client sends trainingConsent: true. The
+   * app's add-a-wall switch is on when the wizard opens, and the app sends
+   * whatever the owner leaves it at. A wall that existed before the switch, or
+   * was created by an app without it, is off until its owner turns it on. A
+   * Boardsesh admin checks a version before it is used. Only ever non-null for
+   * the wall's OWNER.
+   */
+  trainingConsent?: Maybe<Scalars['Boolean']['output']>;
   uuid: Scalars['ID']['output'];
   /** Every version, newest first. Drafts are only visible to the owner. */
   versions: Array<SprayWallVersion>;
@@ -9678,6 +9921,8 @@ export type SprayWallDetectionInput = {
  */
 export type SprayWallHold = {
   __typename?: 'SprayWallHold';
+  /** What the climber did with the suggestion. Null for MANUAL holds and for AUTO holds saved without provenance. */
+  autoReview?: Maybe<SprayHoldAutoReview>;
   /** Detector confidence 0-1 for AUTO holds; null when a human drew it. */
   confidence?: Maybe<Scalars['Float']['output']>;
   cx: Scalars['Int']['output'];
@@ -9688,6 +9933,10 @@ export type SprayWallHold = {
   installedVersion: Scalars['Int']['output'];
   /** The hold this one replaced, when a reset review linked a move. */
   movedFromHoldId?: Maybe<Scalars['Int']['output']>;
+  /** Index of the suggestion in that run's result.candidates. */
+  originCandidateIndex?: Maybe<Scalars['Int']['output']>;
+  /** The detection run the suggestion came from. Null for MANUAL holds. */
+  originDetectionId?: Maybe<Scalars['ID']['output']>;
   /** Flat implicitly-closed ring [x0, y0, x1, y1, ...] in units of this hold's own radius, relative to its centre. Null falls back to the circle (cx, cy, r) describes. */
   outline?: Maybe<Array<Scalars['Float']['output']>>;
   r: Scalars['Int']['output'];
@@ -9705,11 +9954,26 @@ export type SprayWallHold = {
  * re-runs detection: it is the owner's wall.
  */
 export type SprayWallHoldInput = {
+  /**
+   * What the climber did with the suggestion. AUTO holds only; ignored on MANUAL.
+   * The server keeps the highest of this, the stored value and EDITED when the
+   * geometry changed (against the stored hold, or the movedFromHoldId one), so
+   * an omitted value never clears one. An explicit null does clear it.
+   */
+  autoReview?: InputMaybe<SprayHoldAutoReview>;
   confidence?: InputMaybe<Scalars['Float']['input']>;
   cx: Scalars['Int']['input'];
   cy: Scalars['Int']['input'];
   id?: InputMaybe<Scalars['Int']['input']>;
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+  originCandidateIndex?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * The detection run the suggestion came from, with originCandidateIndex. AUTO
+   * holds only. A run of another wall, an unfinished run or an index out of range
+   * is stored as null rather than failing the save. Omit both to keep what the
+   * hold already records; send originDetectionId: null to clear it.
+   */
+  originDetectionId?: InputMaybe<Scalars['ID']['input']>;
   /** Flat implicitly-closed ring in radius units, 3-150 points, every coordinate within 4 radii. */
   outline?: InputMaybe<Array<Scalars['Float']['input']>>;
   r: Scalars['Int']['input'];
@@ -10672,6 +10936,14 @@ export type UpdateSprayWallInput = {
   /** Reachable by uuid — the share link — and listed nowhere. */
   isUnlisted?: InputMaybe<Scalars['Boolean']['input']>;
   name?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Let this wall's photo and marked holds help train hold finding. Owner only,
+   * like visibility. false switches it off for the whole physical wall: this
+   * wall, every wall it was reset from and every reset clone made from any of
+   * them. They leave the next training export, and stored exports that held one
+   * of them are retired within 24 hours. true switches it on for this wall only.
+   */
+  trainingConsent?: InputMaybe<Scalars['Boolean']['input']>;
   uuid: Scalars['ID']['input'];
 };
 
@@ -11542,6 +11814,7 @@ export type ResolversTypes = ResolversObject<{
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
+  SetSprayTrainingReviewInput: SetSprayTrainingReviewInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
   SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
   SetterClimb: ResolverTypeWrapper<SetterClimb>;
@@ -11566,8 +11839,23 @@ export type ResolversTypes = ResolversObject<{
   SprayClimbEditPolicy: SprayClimbEditPolicy;
   SprayDetectionCandidate: ResolverTypeWrapper<SprayDetectionCandidate>;
   SprayDetectionResult: ResolverTypeWrapper<SprayDetectionResult>;
+  SprayHoldAutoReview: SprayHoldAutoReview;
   SprayHoldSource: SprayHoldSource;
   SprayRemixSeed: ResolverTypeWrapper<SprayRemixSeed>;
+  SprayTrainingCandidate: ResolverTypeWrapper<SprayTrainingCandidate>;
+  SprayTrainingCandidateFate: SprayTrainingCandidateFate;
+  SprayTrainingExportResult: ResolverTypeWrapper<SprayTrainingExportResult>;
+  SprayTrainingExportSkipReason: SprayTrainingExportSkipReason;
+  SprayTrainingHold: ResolverTypeWrapper<SprayTrainingHold>;
+  SprayTrainingQueue: ResolverTypeWrapper<SprayTrainingQueue>;
+  SprayTrainingQueueItem: ResolverTypeWrapper<SprayTrainingQueueItem>;
+  SprayTrainingRejectReason: SprayTrainingRejectReason;
+  SprayTrainingReview: ResolverTypeWrapper<SprayTrainingReview>;
+  SprayTrainingReviewResult: ResolverTypeWrapper<SprayTrainingReviewResult>;
+  SprayTrainingReviewStatus: SprayTrainingReviewStatus;
+  SprayTrainingStats: ResolverTypeWrapper<SprayTrainingStats>;
+  SprayTrainingTotals: ResolverTypeWrapper<SprayTrainingTotals>;
+  SprayTrainingWallVisibility: SprayTrainingWallVisibility;
   SprayWall: ResolverTypeWrapper<SprayWall>;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
   SprayWallArt: ResolverTypeWrapper<SprayWallArt>;
@@ -12013,6 +12301,7 @@ export type ResolversParentTypes = ResolversObject<{
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
+  SetSprayTrainingReviewInput: SetSprayTrainingReviewInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
   SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
   SetterClimb: SetterClimb;
@@ -12034,6 +12323,15 @@ export type ResolversParentTypes = ResolversObject<{
   SprayDetectionCandidate: SprayDetectionCandidate;
   SprayDetectionResult: SprayDetectionResult;
   SprayRemixSeed: SprayRemixSeed;
+  SprayTrainingCandidate: SprayTrainingCandidate;
+  SprayTrainingExportResult: SprayTrainingExportResult;
+  SprayTrainingHold: SprayTrainingHold;
+  SprayTrainingQueue: SprayTrainingQueue;
+  SprayTrainingQueueItem: SprayTrainingQueueItem;
+  SprayTrainingReview: SprayTrainingReview;
+  SprayTrainingReviewResult: SprayTrainingReviewResult;
+  SprayTrainingStats: SprayTrainingStats;
+  SprayTrainingTotals: SprayTrainingTotals;
   SprayWall: SprayWall;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
   SprayWallArt: SprayWallArt;
@@ -14395,6 +14693,7 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationEndSessionArgs, 'sessionId'>
   >;
+  exportSprayTrainingDataset?: Resolver<ResolversTypes['SprayTrainingExportResult'], ParentType, ContextType>;
   followBoard?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -14841,6 +15140,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationSetSessionHealthKitWorkoutIdArgs, 'sessionId' | 'workoutId'>
+  >;
+  setSprayTrainingReview?: Resolver<
+    ResolversTypes['SprayTrainingReviewResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetSprayTrainingReviewArgs, 'input'>
   >;
   setSprayWallHidden?: Resolver<
     ResolversTypes['SprayWallModerationResult'],
@@ -16187,6 +16492,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySmartPlaylistArgs, 'input'>
   >;
+  sprayTrainingQueue?: Resolver<
+    ResolversTypes['SprayTrainingQueue'],
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayTrainingQueueArgs, 'status'>
+  >;
   sprayWall?: Resolver<
     Maybe<ResolversTypes['SprayWall']>,
     ParentType,
@@ -17200,6 +17511,131 @@ export type SprayRemixSeedResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SprayTrainingCandidateResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingCandidate'] = ResolversParentTypes['SprayTrainingCandidate'],
+> = ResolversObject<{
+  confidence?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  cx?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  cy?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  fate?: Resolver<ResolversTypes['SprayTrainingCandidateFate'], ParentType, ContextType>;
+  index?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  outline?: Resolver<Maybe<Array<ResolversTypes['Float']>>, ParentType, ContextType>;
+  r?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingExportResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingExportResult'] =
+    ResolversParentTypes['SprayTrainingExportResult'],
+> = ResolversObject<{
+  durationMs?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  exportId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  exportsRetired?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  imagesWritten?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  skipped?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  skippedReason?: Resolver<Maybe<ResolversTypes['SprayTrainingExportSkipReason']>, ParentType, ContextType>;
+  versionsSkipped?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingHoldResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingHold'] = ResolversParentTypes['SprayTrainingHold'],
+> = ResolversObject<{
+  autoReview?: Resolver<Maybe<ResolversTypes['SprayHoldAutoReview']>, ParentType, ContextType>;
+  confidence?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  cx?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  cy?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  outline?: Resolver<Maybe<Array<ResolversTypes['Float']>>, ParentType, ContextType>;
+  r?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['SprayHoldSource'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingQueueResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingQueue'] = ResolversParentTypes['SprayTrainingQueue'],
+> = ResolversObject<{
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  items?: Resolver<Array<ResolversTypes['SprayTrainingQueueItem']>, ParentType, ContextType>;
+  totals?: Resolver<ResolversTypes['SprayTrainingTotals'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingQueueItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingQueueItem'] = ResolversParentTypes['SprayTrainingQueueItem'],
+> = ResolversObject<{
+  candidates?: Resolver<Array<ResolversTypes['SprayTrainingCandidate']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  detectionModelVersion?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  holds?: Resolver<Array<ResolversTypes['SprayTrainingHold']>, ParentType, ContextType>;
+  photo?: Resolver<Maybe<ResolversTypes['SprayWallPhoto']>, ParentType, ContextType>;
+  photoHeight?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  photoWidth?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  publishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  review?: Resolver<ResolversTypes['SprayTrainingReview'], ParentType, ContextType>;
+  stats?: Resolver<ResolversTypes['SprayTrainingStats'], ParentType, ContextType>;
+  unmappableHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  versionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  versionNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  visibility?: Resolver<ResolversTypes['SprayTrainingWallVisibility'], ParentType, ContextType>;
+  wallUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingReviewResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingReview'] = ResolversParentTypes['SprayTrainingReview'],
+> = ResolversObject<{
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  reason?: Resolver<Maybe<ResolversTypes['SprayTrainingRejectReason']>, ParentType, ContextType>;
+  reviewedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['SprayTrainingReviewStatus'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingReviewResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingReviewResult'] =
+    ResolversParentTypes['SprayTrainingReviewResult'],
+> = ResolversObject<{
+  review?: Resolver<ResolversTypes['SprayTrainingReview'], ParentType, ContextType>;
+  versionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingStatsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingStats'] = ResolversParentTypes['SprayTrainingStats'],
+> = ResolversObject<{
+  acceptedHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  autoHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  candidateCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  confirmedHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  deletedCandidateCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  editedCandidateCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  editedHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  keptCandidateCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  manualHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  notShownCandidateCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayTrainingTotalsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayTrainingTotals'] = ResolversParentTypes['SprayTrainingTotals'],
+> = ResolversObject<{
+  approved?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  rejected?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  unreviewed?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SprayWallResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayWall'] = ResolversParentTypes['SprayWall'],
@@ -17218,6 +17654,7 @@ export type SprayWallResolvers<
   replacedByWallUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   resetOfWallUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  trainingConsent?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   versions?: Resolver<Array<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
   viewerCanEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -17262,12 +17699,15 @@ export type SprayWallHoldResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayWallHold'] = ResolversParentTypes['SprayWallHold'],
 > = ResolversObject<{
+  autoReview?: Resolver<Maybe<ResolversTypes['SprayHoldAutoReview']>, ParentType, ContextType>;
   confidence?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   cx?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   cy?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   installedVersion?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   movedFromHoldId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  originCandidateIndex?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  originDetectionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   outline?: Resolver<Maybe<Array<ResolversTypes['Float']>>, ParentType, ContextType>;
   r?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   removedVersion?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
@@ -18121,6 +18561,15 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SprayDetectionCandidate?: SprayDetectionCandidateResolvers<ContextType>;
   SprayDetectionResult?: SprayDetectionResultResolvers<ContextType>;
   SprayRemixSeed?: SprayRemixSeedResolvers<ContextType>;
+  SprayTrainingCandidate?: SprayTrainingCandidateResolvers<ContextType>;
+  SprayTrainingExportResult?: SprayTrainingExportResultResolvers<ContextType>;
+  SprayTrainingHold?: SprayTrainingHoldResolvers<ContextType>;
+  SprayTrainingQueue?: SprayTrainingQueueResolvers<ContextType>;
+  SprayTrainingQueueItem?: SprayTrainingQueueItemResolvers<ContextType>;
+  SprayTrainingReview?: SprayTrainingReviewResolvers<ContextType>;
+  SprayTrainingReviewResult?: SprayTrainingReviewResultResolvers<ContextType>;
+  SprayTrainingStats?: SprayTrainingStatsResolvers<ContextType>;
+  SprayTrainingTotals?: SprayTrainingTotalsResolvers<ContextType>;
   SprayWall?: SprayWallResolvers<ContextType>;
   SprayWallArt?: SprayWallArtResolvers<ContextType>;
   SprayWallDetection?: SprayWallDetectionResolvers<ContextType>;
