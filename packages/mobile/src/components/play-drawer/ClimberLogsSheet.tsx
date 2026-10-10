@@ -25,8 +25,8 @@ import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
 import { Button } from '../Button';
 import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { ClimberLogBareRow, ClimberLogEarlierFoldRow, ClimberLogEarlierRow, ClimberLogRow } from './ClimberLogRow';
 import {
@@ -577,27 +577,11 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
       onClose={onClose}
       onFullyDismissed={handleFullyDismissed}
       header={
-        <View style={[styles.header, { borderBottomColor: systemColors.separator }]}>
-          <View style={styles.titles}>
-            <Text variant="title3" accessibilityRole="header" style={styles.title} numberOfLines={1}>
-              {t('mobile.climberLogs.title')}
-            </Text>
-            {subtitle ? (
-              <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
-                {subtitle}
-              </Text>
-            ) : null}
-          </View>
-          <PressableSurface
-            onPress={onClose}
-            feedback="opacity"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('actions.close')}
-            style={[styles.close, { backgroundColor: systemColors.fill }]}
-          >
-            <Icon name="close" size={18} color={systemColors.secondaryLabel} />
-          </PressableSurface>
-        </View>
+        <SheetTopBar
+          title={t('mobile.climberLogs.title')}
+          subtitle={subtitle ?? undefined}
+          leading={{ kind: 'close', onPress: onClose }}
+        />
       }
     >
       <SheetFlatList
@@ -618,28 +602,6 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  titles: {
-    flex: 1,
-    minWidth: 0,
-  },
-  title: {
-    fontWeight: '600',
-  },
-  close: {
-    width: MIN_TARGET,
-    height: MIN_TARGET,
-    borderRadius: MIN_TARGET / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   list: {
     flex: 1,
   },

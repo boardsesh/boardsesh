@@ -46,13 +46,35 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   },
 }));
 
-type SheetProps = { children?: ReactNode; header?: ReactNode; visible?: boolean; onFullyDismissed?: () => void };
+type SheetProps = {
+  children?: ReactNode;
+  header?: ReactNode;
+  visible?: boolean;
+  onFullyDismissed?: () => void;
+};
 const sheet = vi.hoisted(() => ({ props: null as SheetProps | null }));
 vi.mock('../../ModalSheet', () => ({
   ModalSheet: (props: SheetProps) => {
     sheet.props = props;
     return createElement('section', { 'data-visible': String(props.visible) }, props.header, props.children);
   },
+}));
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBar: ({
+    title,
+    subtitle,
+    leading,
+  }: {
+    title: string;
+    subtitle?: string;
+    leading?: { kind: string; onPress: () => void };
+  }) =>
+    createElement(
+      'header',
+      { 'data-testid': 'sheet-top-bar' },
+      createElement('button', { 'data-leading-kind': leading?.kind, onClick: leading?.onPress }, 'close'),
+      createElement('div', { 'data-testid': 'sheet-top-bar-center' }, title, subtitle),
+    ),
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -347,6 +369,19 @@ describe('ClimberLogsSheet', () => {
     expect(view.getByTestId('sheet-flat-list')).toBeTruthy();
     expect(rowUsers(view)).toHaveLength(2);
     expect(view.container.textContent).toContain('mobile.climberLogs.sheetSubtitle:{"name":"Slow Orbit","grade":"V3"}');
+  });
+
+  it('uses a centered header with a leading close button', () => {
+    const view = renderSheet();
+    const header = view.getByTestId('sheet-top-bar');
+    const close = header.querySelector('button');
+
+    expect(close?.getAttribute('data-leading-kind')).toBe('close');
+    expect(view.getByTestId('sheet-top-bar-center').textContent).toContain('mobile.climberLogs.title');
+    expect(view.getByTestId('sheet-top-bar-center').textContent).toContain('mobile.climberLogs.sheetSubtitle');
+    if (!close) throw new Error('Climber log sheet has no close button');
+    fireEvent.click(close);
+    expect(view.onClose).toHaveBeenCalledOnce();
   });
 
   it('only asks while it is open', () => {
