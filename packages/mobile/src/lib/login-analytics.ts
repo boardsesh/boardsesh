@@ -3,6 +3,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { SHARED_EVENTS, type AnalyticsEventProperties } from '@boardsesh/analytics';
 import { accountAgeHours, accountAgeMs } from './account-age';
 import { track } from './analytics';
+import { createConsentBoundAnalyticsRunner } from './consent-bound-analytics';
 import { getHttpClient } from './graphql/client';
 import { GET_PROFILE, type GetProfileQueryResponse } from './graphql/operations';
 
@@ -224,24 +225,29 @@ export function watchAccountCreatedAt(
  */
 export function trackLoginSucceeded(queryClient: QueryClient, properties: LoginSucceededProperties): void {
   const signedInAt = new Date();
+  const captureWhenReady = createConsentBoundAnalyticsRunner();
   const watch = watchAccountCreatedAt(queryClient);
   void watch.quick.then(({ createdAt, read }) => {
-    track(
-      SHARED_EVENTS.LoginSucceeded,
-      { ...properties, ...accountAgeProperties(createdAt, signedInAt.getTime()), account_age_read: read },
-      { timestamp: signedInAt },
+    captureWhenReady(() =>
+      track(
+        SHARED_EVENTS.LoginSucceeded,
+        { ...properties, ...accountAgeProperties(createdAt, signedInAt.getTime()), account_age_read: read },
+        { timestamp: signedInAt },
+      ),
     );
     if (createdAt) return;
     void watch.settled.then((lateCreatedAt) => {
       if (!lateCreatedAt) return;
-      track(
-        SHARED_EVENTS.LoginAccountAgeResolved,
-        {
-          ...properties,
-          ...accountAgeProperties(lateCreatedAt, signedInAt.getTime()),
-          resolved_after_ms: Date.now() - signedInAt.getTime(),
-        },
-        { timestamp: signedInAt },
+      captureWhenReady(() =>
+        track(
+          SHARED_EVENTS.LoginAccountAgeResolved,
+          {
+            ...properties,
+            ...accountAgeProperties(lateCreatedAt, signedInAt.getTime()),
+            resolved_after_ms: Date.now() - signedInAt.getTime(),
+          },
+          { timestamp: signedInAt },
+        ),
       );
     });
   });

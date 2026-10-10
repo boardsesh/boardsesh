@@ -117,6 +117,48 @@ describe('buildObserveConfig', () => {
 });
 
 describe('Observe router metadata with the pinned public SDK', () => {
+  it.each([
+    {
+      route: '/climbs/holds',
+      params: {
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '2',
+        setIds: '3',
+        angle: '40',
+        holdsFilter: '{"selected":[1,2]}',
+        heatmapSearch: '{"searchText":"private search","filters":{"setter":["person"]}}',
+      },
+    },
+    {
+      route: '/climbs/setters',
+      params: { setters: '["person"]', countInput: '{"name":"private search","setter":["person"]}' },
+    },
+    {
+      route: '/climbs/create',
+      params: {
+        forkFrames: 'hold-data',
+        forkName: 'personal climb name',
+        forkDescription: 'personal text',
+        forkCharacteristics: '["no matching"]',
+        forkParentUuid: 'parent-id',
+        editClimbUuid: 'private-climb-id',
+      },
+    },
+    {
+      route: '/moderation',
+      params: { proposalUuid: 'proposal-id', climbUuid: 'climb-id', boardType: 'kilter' },
+    },
+    {
+      route: '/climbs/climb-id',
+      params: { climbUuid: 'climb-id', activationIntent: 'one-time-intent' },
+    },
+  ])('removes content and search payloads from $route timings', ({ route, params }) => {
+    const integration = OBSERVE_INTEGRATIONS['expo-router'];
+    expect(getNavigationMetricParams(integration, params, route)).toEqual({ routeParams: {}, urlHidden: true });
+    expect(getNavigationRouteParams(integration, params)).toEqual({ routeParams: {}, urlHidden: true });
+  });
+
   it('retains normalized timing routes without user or session IDs or their resolved URL', () => {
     const integration = OBSERVE_INTEGRATIONS['expo-router'];
     const params = { userId: 'account-secret', sessionId: 'session-secret', mode: 'followers' };

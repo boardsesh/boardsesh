@@ -841,7 +841,10 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         './plugins/with-sentry-native-privacy',
         {
           dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
-          environment: process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT || 'production',
+          // Preview is a JS-only OTA tag. Reading its variable here would change
+          // the fingerprint and prevent preview bundles reaching store binaries.
+          // The supported scope bridge updates native events after JS starts.
+          environment: 'production',
         },
       ],
     ],

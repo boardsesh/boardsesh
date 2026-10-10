@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, it, expect, vi } from 'vite-plus/test'
 import type { PostHog } from 'posthog-js-lite';
 const harness = vi.hoisted(() => ({
   granted: false,
+  deviceGranted: null as boolean | null,
   change: (() => {}) as () => void,
   clients: [] as Array<PostHog>,
   constructors: vi.fn(),
@@ -10,7 +11,9 @@ const harness = vi.hoisted(() => ({
 vi.mock('../consent', () => ({
   hasAnalyticsConsent: () => harness.granted,
   getWebConsentRecord: () =>
-    harness.granted ? { analytics: 'granted', version: 1, source: 'web', decidedAt: '2026-10-08T00:00:00Z' } : null,
+    (harness.deviceGranted ?? harness.granted)
+      ? { analytics: 'granted', version: 1, source: 'web', decidedAt: '2026-10-08T00:00:00Z' }
+      : null,
   subscribeWebConsent: (listener: () => void) => {
     harness.change = listener;
     return () => {};
@@ -43,6 +46,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   harness.granted = false;
+  harness.deviceGranted = null;
   harness.clients.length = 0;
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'test');
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://posthog.test');
@@ -53,6 +57,64 @@ afterEach(() => {
   Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
 });
 describe('web analytics consent lifecycle', () => {
+  it('preserves consented acquisition and conversions through anonymous sign-in authority checks', async () => {
+    harness.granted = true;
+    harness.deviceGranted = true;
+    const analytics = await import('../analytics');
+    analytics.track('Signup Completed');
+    const acquisitionClient = harness.clients[0];
+    harness.granted = false;
+    harness.change();
+    analytics.setAnalyticsFlagAccountId('account-a');
+    expect(acquisitionClient.reset).not.toHaveBeenCalled();
+    expect(acquisitionClient.setPersistedProperty).not.toHaveBeenCalled();
+    analytics.track('While account is unresolved');
+    expect(acquisitionClient.capture).toHaveBeenCalledTimes(1);
+    await expect(
+      acquisitionClient.fetch('https://posthog.test/batch/', { method: 'POST', headers: {} }),
+    ).rejects.toThrow();
+    harness.granted = true;
+    harness.change();
+    analytics.identify('account-a');
+    analytics.track('After sign-in');
+    expect(acquisitionClient.identify).toHaveBeenCalledWith('account-a', undefined);
+    expect(acquisitionClient.capture).toHaveBeenLastCalledWith('After sign-in', undefined);
+    expect(acquisitionClient.reset).not.toHaveBeenCalled();
+    await acquisitionClient.fetch('https://posthog.test/batch/', { method: 'POST', headers: {} });
+    expect(harness.network).toHaveBeenCalledOnce();
+  });
+
+  it.each(['withdrawal', 'account-switch', 'sign-out'] as const)(
+    'discards suspended acquisition on %s instead of resuming another account queue',
+    async (transition) => {
+      harness.granted = true;
+      harness.deviceGranted = true;
+      const analytics = await import('../analytics');
+      analytics.setAnalyticsFlagAccountId('account-a');
+      analytics.track('Before authority hold');
+      const acquisitionClient = harness.clients[0];
+      const storageWrites = acquisitionClient.setPersistedProperty;
+      harness.granted = false;
+      harness.change();
+      if (transition === 'withdrawal') {
+        harness.deviceGranted = false;
+        harness.change();
+      } else {
+        analytics.setAnalyticsFlagAccountId(transition === 'account-switch' ? 'account-b' : null);
+      }
+      expect(acquisitionClient.reset).toHaveBeenCalled();
+      expect(storageWrites).toHaveBeenCalledWith('queue', null);
+      harness.deviceGranted = true;
+      harness.granted = true;
+      harness.change();
+      analytics.track('Later consent');
+      expect(acquisitionClient.capture).toHaveBeenCalledTimes(1);
+      await expect(
+        acquisitionClient.fetch('https://posthog.test/batch/', { method: 'POST', headers: {} }),
+      ).rejects.toThrow();
+    },
+  );
+
   it('keeps flags live in memory while every product entrypoint sends nothing', async () => {
     const analytics = await import('../analytics');
     analytics.readPosthogFeatureFlags(['gym-kiosk']);

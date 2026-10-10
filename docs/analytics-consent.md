@@ -198,6 +198,13 @@ An authenticated account must resolve before a stored grant can enable capture;
 auth loading and account switches temporarily block product analytics. Every
 capture and transport check re-reads the shared cookie, so a background tab
 respects a withdrawal from the other origin without waiting for focus.
+On anonymous-to-signed-in transitions, a temporary authority check preserves
+the already-consented acquisition identity and queued conversions while
+blocking transport. Functional flags use a separate memory client during the
+hold. A denial, sign-out or change away from an authenticated account discards
+that identity and queue. The landing campaign is snapshotted in document memory
+before navigation, so a later Allow retains the original tags without emitting
+pre-consent events or persisting the campaign.
 An external cookie grant blocks capture before notifying SDK subscribers and
 requires a fresh consent read for the current authenticated account; the cookie
 cannot authorize a different account. Signed-out visitors can accept a shared
@@ -225,5 +232,11 @@ another device still wins the backend comparison. Mobile flag freshness belongs
 to the current account and auth generation, so another account's response cannot
 remove early-update membership. SDK startup and reset restore current connectivity
 and remembered OTA super properties after asynchronous consent initialization.
+
+Mobile signup/login conversions taken with an existing Allow can wait up to
+two minutes for account consent and SDK identity to resolve. This bounded,
+memory-only work belongs to the authentication epoch and keeps the conversion's
+original timestamp. A withdrawal, kill switch or account replacement discards
+it; later Allow never replays a conversion taken without consent.
 
 Consent copy and equal-choice controls follow the [EDPB consent guidelines](https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202005_consent_en.pdf). Declining does not limit the app, and withdrawal uses the same two-choice controls.

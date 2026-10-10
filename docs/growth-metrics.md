@@ -448,6 +448,14 @@ on a spray wall, which is an accident of the layout table and not a classifier.
 
 These are separate counts. None of them is a funnel of the same people.
 
+Product analytics reports cover only people with a current Allow. Apple Ads'
+download, spend and acquisition-cost reports remain available independently of
+the Boardsesh analytics choice. We do not yet connect an Apple Ads campaign to
+a Boardsesh signup or later activity: the first-party AdServices integration is
+tracked in [#6285](https://github.com/boardsesh/boardsesh/issues/6285). App Store
+Connect campaign-link tokens below are a separate aggregate measurement.
+See [Apple's reporting definitions](https://ads.apple.com/app-store/help/reporting/0023-reporting-options-and-definitions).
+
 | Measure              | Event / property                                         | What it means                                                                                     |
 | -------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Landing visits       | www `$pageview`, by page group                             | Visits, after the crawler caveats above.                                                         |

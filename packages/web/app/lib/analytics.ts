@@ -21,6 +21,8 @@ const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 let posthogClient: PostHog | null = null;
 let posthogInitAttempted = false;
 let posthogPersisted = false;
+let suspendedPosthogClient: PostHog | null = null;
+const suspendedClients = new WeakSet<PostHog>();
 let flagAccountId: string | null = null;
 const featureFlagListeners = new Set<() => void>();
 let unsubscribeSdkFlags: (() => void) | null = null;
@@ -58,7 +60,7 @@ function installConsentTransport(client: PostHog): void {
   activeRequests.set(client, requests);
   client.fetch = async (url, options) => {
     const flagsRequest = /\/(flags|decide)\/?(?:\?|$)/.test(url);
-    if (retiredClients.has(client) || (!flagsRequest && !hasAnalyticsConsent())) {
+    if (retiredClients.has(client) || suspendedClients.has(client) || (!flagsRequest && !hasAnalyticsConsent())) {
       throw new Error('Analytics consent does not permit this request');
     }
     const controller = new AbortController();
@@ -80,20 +82,52 @@ function bindFeatureFlags(client: PostHog): void {
   featureFlagListeners.forEach((listener) => listener());
 }
 function refreshAnalyticsConsent(): void {
-  if (!isAnalyticsGranted(getWebConsentRecord())) clearPosthogStorage();
+  const deviceGranted = isAnalyticsGranted(getWebConsentRecord());
+  if (!deviceGranted) {
+    if (suspendedPosthogClient) {
+      retirePosthog(suspendedPosthogClient);
+      suspendedPosthogClient = null;
+    }
+    clearPosthogStorage();
+  }
   if (!posthogClient) return;
   if (posthogPersisted !== hasAnalyticsConsent()) {
     const oldClient = posthogClient;
     posthogClient = null;
-    retirePosthog(oldClient);
+    if (posthogPersisted && deviceGranted) {
+      // Account authority is temporarily unresolved. Keep events captured with
+      // consent and their anonymous acquisition identity, but stop transport.
+      suspendedPosthogClient = oldClient;
+      suspendedClients.add(oldClient);
+      activeRequests.get(oldClient)?.forEach((controller) => controller.abort());
+      void oldClient.optOut().catch(() => {});
+    } else {
+      retirePosthog(oldClient);
+    }
     if (!isAnalyticsGranted(getWebConsentRecord())) clearPosthogStorage();
     posthogInitAttempted = false;
+    if (hasAnalyticsConsent() && suspendedPosthogClient) {
+      posthogClient = suspendedPosthogClient;
+      suspendedPosthogClient = null;
+      suspendedClients.delete(posthogClient);
+      posthogPersisted = true;
+      void posthogClient.optIn().catch(() => {});
+      bindFeatureFlags(posthogClient);
+      posthogClient.reloadFeatureFlags();
+      return;
+    }
     getPosthog();
   }
 }
 subscribeWebConsent(refreshAnalyticsConsent);
 export function setAnalyticsFlagAccountId(accountId: string | null): void {
   if (flagAccountId === accountId) return;
+  // Only anonymous → signed-in may retain acquisition history. A sign-out or
+  // account switch must never resume the previous account's queued events.
+  if (flagAccountId !== null && suspendedPosthogClient) {
+    retirePosthog(suspendedPosthogClient);
+    suspendedPosthogClient = null;
+  }
   flagAccountId = accountId;
   if (!posthogClient || posthogPersisted) return;
   const oldClient = posthogClient;

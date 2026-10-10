@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { invalidateConsentAccount, updateConsentState } from '../consent-state';
+
+beforeEach(() => grantAnalyticsForTest());
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const graphql = vi.hoisted(() => ({ request: vi.fn() }));
@@ -267,6 +271,29 @@ describe('useTrackLoginSucceeded', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('keeps a fast profile conversion until account consent and SDK identity resolve', async () => {
+    invalidateConsentAccount();
+    graphql.request.mockResolvedValue({ profile: { createdAt: isoBeforeSignIn(20_000) } });
+    const { result } = renderTracker(createTestQueryClient());
+    await act(async () => {
+      result.current({ auth_method: 'apple', flow: 'native', screen: 'register' });
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(analytics.track).not.toHaveBeenCalled();
+    await act(async () => {
+      updateConsentState({ authSettled: true, accountResolved: true, accountId: 'new-user' });
+    });
+    expect(analytics.track).not.toHaveBeenCalled();
+    await act(async () => {
+      updateConsentState({ sdkReady: true });
+    });
+    expect(analytics.track).toHaveBeenCalledExactlyOnceWith(
+      'Login Succeeded',
+      expect.objectContaining({ auth_method: 'apple', is_new_account: true }),
+      { timestamp: SIGNED_IN_AT },
+    );
   });
 
   it('adds is_new_account and backdates the event to the moment sign-in succeeded', async () => {

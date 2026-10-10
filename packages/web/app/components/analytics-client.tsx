@@ -6,6 +6,7 @@ import { onCLS, onFCP, onINP, onLCP, type Metric } from 'web-vitals';
 import { useConsent } from './consent/consent-provider';
 import { hasAnalyticsConsent } from '@/app/lib/consent';
 import { capturePosthog, pageview } from '@/app/lib/analytics';
+import { getSessionInboundCampaign } from '@/app/lib/inbound-campaign';
 import {
   analyticsPathname,
   isAdminAnalyticsUrl,
@@ -71,6 +72,12 @@ export default function AnalyticsClient() {
   const { granted } = useConsent();
   const vitalsRegistered = useRef(false);
   const bufferRef = useRef<VitalsBuffer>({ metrics: new Map(), pageUrl: null, timerId: null });
+
+  useEffect(() => {
+    // Snapshot the landing URL in document memory before navigation can remove
+    // its tags. Event emission and SDK persistence still require consent.
+    getSessionInboundCampaign();
+  }, []);
 
   useEffect(() => {
     // web-vitals' on* callbacks attach document-lifetime listeners — guard so

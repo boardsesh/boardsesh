@@ -124,6 +124,25 @@ const grant = {
 };
 
 describe('enabled mobile SDK consent lifecycle', () => {
+  it('releases a pending signup only after the SDK switches to the resolved account', async () => {
+    const consent = await import('../consent-state');
+    consent.updateConsentState({ loaded: true, settled: true, flagsResolved: true, record: grant, authSettled: false });
+    const posthog = await import('../posthog-client');
+    await posthog.initializePosthogClient();
+    const { createConsentBoundAnalyticsRunner } = await import('../consent-bound-analytics');
+    const captureWhenReady = createConsentBoundAnalyticsRunner();
+    captureWhenReady(() => {
+      expect(consent.isProductAnalyticsGranted()).toBe(true);
+      sdk.events.push(`Signup Completed:${posthog.getPostHogClient()?.getDistinctId()}`);
+    });
+    expect(sdk.events).toEqual([]);
+    consent.updateConsentState({ authSettled: true, accountResolved: true, accountId: 'account-b' });
+    expect(sdk.events).toEqual([]);
+    await posthog.applyPosthogConsent();
+    expect(sdk.events).toEqual(['$identify', 'Signup Completed:account-b']);
+    consent.invalidateConsentAccount();
+  });
+
   it('restores OTA and connectivity context saved before delayed initialization and after identity reset', async () => {
     const { rememberOtaSuperProperties } = await import('../analytics-ota-context');
     const properties = { ota_update_id: 'running-update', ota_channel: 'production', ota_is_embedded: false };

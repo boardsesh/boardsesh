@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, render, screen, waitFor, act } from '@testing-library/react';
 import { useEffect, type ReactNode } from 'react';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { updateConsentState } from '../../lib/consent-state';
 
 const redirectMock = vi.hoisted(() => vi.fn());
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
@@ -1316,6 +1318,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
   });
 
   it('consumes a pending attempt after the returned web session is authenticated', async () => {
+    grantAnalyticsForTest();
     consumeWebOAuthReturnProviderMock.mockReturnValue({
       provider: 'apple',
       attemptId: 'attempt-apple-1',
@@ -1337,14 +1340,22 @@ describe('AuthProvider Expo-web OAuth completion', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    expect(trackMock).not.toHaveBeenCalled();
+    act(() => {
+      updateConsentState({ authSettled: true, accountResolved: true, accountId: 'user-1', sdkReady: true });
+    });
     await waitFor(() =>
-      expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
-        auth_method: 'apple',
-        provider: 'apple',
-        flow: 'web',
-        screen: 'register',
-        is_registration: true,
-      }),
+      expect(trackMock).toHaveBeenCalledWith(
+        'Login Succeeded',
+        {
+          auth_method: 'apple',
+          provider: 'apple',
+          flow: 'web',
+          screen: 'register',
+          is_registration: true,
+        },
+        { timestamp: expect.any(Date) },
+      ),
     );
     expect(consumeFreshOAuthPendingMock).toHaveBeenCalledTimes(1);
 

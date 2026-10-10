@@ -32,8 +32,9 @@ without patching Sentry. Android has separate error and transaction callbacks; t
 `beforeSend` callback covers both. No account identity is assigned to Sentry.
 
 JavaScript sets `autoInitializeNativeSdk: false` so it cannot replace those native callbacks.
-Native startup uses the same DSN and environment build inputs, keeps crash/ANR/app-hang handling,
-and lets Sentry detect release/dist. The supported scope bridge supplies the current bundle's
+Native startup uses the configured DSN and a fixed production environment, keeps crash/ANR/app-hang
+handling, and lets Sentry detect release/dist. The preview environment remains a JS-only input so
+preview OTAs share the store binary's fingerprint. The supported scope bridge supplies the current bundle's
 `boardsesh_environment` tag so native events from a preview OTA retain the preview environment.
 Pre-JavaScript events use the native build environment. Development builds and builds without a
 DSN do not initialize Sentry natively.

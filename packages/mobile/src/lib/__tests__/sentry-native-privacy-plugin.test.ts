@@ -1,8 +1,10 @@
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
+import type { ConfigContext } from 'expo/config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import createExpoConfig from '../../../app.config';
 
 const require = createRequire(import.meta.url);
 type NativeOptions = { dsn?: string; environment?: string };
@@ -48,6 +50,27 @@ afterEach(() => {
 });
 
 describe('supported native Sentry startup', () => {
+  it('keeps preview OTA tagging out of the native fingerprint config', () => {
+    vi.stubEnv('TAILSCALE_HOSTS', '');
+    vi.stubEnv('EAS_BUILD', '1');
+    vi.stubEnv('EXPO_PUBLIC_SENTRY_DSN', dsn);
+    const context = {
+      config: { name: 'Boardsesh', slug: 'boardsesh' },
+      projectRoot: fileURLToPath(new URL('../../..', import.meta.url)),
+    } as ConfigContext;
+    vi.stubEnv('EXPO_PUBLIC_SENTRY_ENVIRONMENT', undefined);
+    const storeConfig = createExpoConfig(context);
+    vi.stubEnv('EXPO_PUBLIC_SENTRY_ENVIRONMENT', 'preview');
+    const previewConfig = createExpoConfig(context);
+
+    // The fingerprint hashes the resolved config, including plugin options.
+    expect(previewConfig).toEqual(storeConfig);
+    expect(previewConfig.plugins).toContainEqual([
+      './plugins/with-sentry-native-privacy',
+      { dsn, environment: 'production' },
+    ]);
+  });
+
   it('supports the installed Expo native templates before their React Native startup', async () => {
     const archive = join(dirname(require.resolve('expo/package.json')), 'template.tgz');
     // Use Expo CLI's archive reader without spawning subprocesses in Vitest.
@@ -175,12 +198,5 @@ describe('supported native Sentry startup', () => {
     expect(options.beforeSendTransaction({ user: { id: 'account' } })).toEqual({});
     expect(plugin.applySwiftSentryPrivacy(swift, { dsn })).toContain(`event.tags?["${plugin.ENVIRONMENT_TAG}"]`);
     expect(plugin.applyKotlinSentryPrivacy(kotlin, { dsn })).toContain(`getTag("${plugin.ENVIRONMENT_TAG}")`);
-  });
-
-  it('registers app-owned startup with the existing DSN and environment build inputs', () => {
-    const config = readFileSync(new URL('../../../app.config.ts', import.meta.url), 'utf8');
-    expect(config).toContain("'./plugins/with-sentry-native-privacy'");
-    expect(config).toContain('dsn: process.env.EXPO_PUBLIC_SENTRY_DSN');
-    expect(config).toContain("environment: process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT || 'production'");
   });
 });
