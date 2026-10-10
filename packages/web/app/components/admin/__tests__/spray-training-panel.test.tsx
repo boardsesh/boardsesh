@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { SprayTrainingQueueItemData, SprayTrainingReviewStatus } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SprayTrainingPanel from '../spray-training-panel';
@@ -84,6 +84,39 @@ function graphqlFailure(code: string) {
 
 function reviewCalls() {
   return mockRequest.mock.calls.filter(([operation]) => operation === 'SET_SPRAY_TRAINING_REVIEW');
+}
+
+/** The next request stays unanswered until the test answers it. */
+function holdNextRequest() {
+  let answer: (response: unknown) => void = () => undefined;
+  let fail: (reason: unknown) => void = () => undefined;
+  mockRequest.mockImplementationOnce(
+    () =>
+      new Promise((resolve, reject) => {
+        answer = resolve;
+        fail = reject;
+      }),
+  );
+  return { resolve: (response: unknown) => answer(response), reject: (reason: unknown) => fail(reason) };
+}
+
+/** Lets an answer that just arrived run to the end, for asserting that it changed nothing. */
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/** The walls in the grid, in order, whether or not the dialog covers them. */
+function cardNames() {
+  return screen
+    .queryAllByRole('button', { name: /^Review wall version/, hidden: true })
+    .map((card) => card.getAttribute('aria-label'));
+}
+
+async function closeDialog(dialog: HTMLElement) {
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 }
 
 /** Renders the panel and moves to a reviewed tab holding the given walls. */
@@ -672,6 +705,24 @@ describe('SprayTrainingPanel drained page', () => {
     expect(mockRequest).toHaveBeenCalledTimes(3);
   });
 
+  it('lets the reviewer close the dialog while the next page loads, and keeps it closed', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true, unreviewed: 2 }));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    const nextPage = holdNextRequest();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Loading more walls')).toBeTruthy());
+
+    await closeDialog(screen.getByRole('dialog'));
+
+    // The page still lands in the grid, and the dialog does not come back with it.
+    nextPage.resolve(queueResponse([makeItem('v2', 2)]));
+    expect(await screen.findByRole('button', { name: 'Review wall version 2' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('says the tab is empty once the last wall of the last page is decided', async () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
     render(<SprayTrainingPanel />);
@@ -793,6 +844,235 @@ describe('SprayTrainingPanel after a failed "Load more"', () => {
   });
 });
 
+describe('SprayTrainingPanel reads and verdicts that overlap', () => {
+  const UNREVIEWED_FROM = (offset: number) => ({ status: 'UNREVIEWED', limit: 25, offset });
+
+  it('leaves a dialog the reviewer closed shut when the save of the last loaded wall returns', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true, unreviewed: 2 }));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+
+    const save = holdNextRequest();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    await closeDialog(dialog);
+
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v2', 2)]));
+    save.resolve(reviewResponse('v1', 'APPROVED'));
+
+    // The next page arrives in the grid. Nobody asked for the dialog again.
+    expect(await screen.findByRole('button', { name: 'Review wall version 2', hidden: true })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('stays on the wall the reviewer moved to while the save was on its way', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2), makeItem('v3', 3)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(2);
+
+    const save = holdNextRequest();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 1')).toBeTruthy());
+
+    save.resolve(reviewResponse('v2', 'APPROVED'));
+
+    await waitFor(() => expect(cardNames()).toEqual(['Review wall version 1', 'Review wall version 3']));
+    expect(within(dialog).getByText('Wall version 1')).toBeTruthy();
+    expect(within(dialog).getByText('1 of 2')).toBeTruthy();
+  });
+
+  it.each([
+    ['before the commit, so the wall is missing from it', false],
+    ['after the commit, so the wall is already on it', true],
+  ])('re-reads a tab that was opened %s, instead of patching it', async (_label, firstReadHasTheWall) => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+
+    const save = holdNextRequest();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    await closeDialog(dialog);
+
+    const approvedWall = makeItem('v1', 1);
+    approvedWall.review = { status: 'APPROVED', reason: null, notes: null };
+    const afterCommit = queueResponse([approvedWall], { unreviewed: 1, approved: 1 });
+    mockRequest.mockResolvedValueOnce(firstReadHasTheWall ? afterCommit : queueResponse([], { unreviewed: 2 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approved (0)' }));
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
+    await settle();
+
+    mockRequest.mockResolvedValueOnce(afterCommit);
+    save.resolve(reviewResponse('v1', 'APPROVED'));
+
+    // The verdict was given on another tab: this one is asked for again, not edited.
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(4));
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', {
+      status: 'APPROVED',
+      limit: 25,
+      offset: 0,
+    });
+    await settle();
+    expect(cardNames()).toEqual(['Review wall version 1']);
+    expect(screen.getByRole('button', { name: 'Approved (1)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Unreviewed (1)' })).toBeTruthy();
+
+    // Back on Unreviewed nothing opens by itself.
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v2', 2)], { unreviewed: 1, approved: 1 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unreviewed (1)' }));
+    expect(await screen.findByRole('button', { name: 'Review wall version 2' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('throws away a "Load more" answer read at an offset from before the verdict', async () => {
+    // One wall loaded; the server holds v1, v2 and v3.
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true, unreviewed: 3 }));
+    render(<SprayTrainingPanel />);
+    const loadMore = holdNextRequest();
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await waitFor(() => expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', UNREVIEWED_FROM(1)));
+
+    await openWall(1);
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    // The emptied list asks again from the top, which the dropped read's spinner must not block.
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v2', 2), makeItem('v3', 3)], { unreviewed: 2 }));
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Wall version 2')).toBeTruthy());
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
+
+    // The server answered offset 1 after the commit: v3 alone and no more, with v2 skipped.
+    loadMore.resolve(queueResponse([makeItem('v3', 3)], { unreviewed: 2 }));
+    await settle();
+    expect(cardNames()).toEqual(['Review wall version 2', 'Review wall version 3']);
+    expect(screen.queryByText('Nothing here')).toBeNull();
+  });
+
+  it('asks again from the walls left when a verdict lands while "Load more" is on its way', async () => {
+    // Two walls loaded; the server holds v1 to v5.
+    mockRequest.mockResolvedValueOnce(
+      queueResponse([makeItem('v1', 1), makeItem('v2', 2)], { hasMore: true, unreviewed: 5 }),
+    );
+    render(<SprayTrainingPanel />);
+    const overtakenLoadMore = holdNextRequest();
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await waitFor(() => expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', UNREVIEWED_FROM(2)));
+
+    await openWall(1);
+    const save = holdNextRequest();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+    // The server committed, then answered offset 2 of v2..v5 with v4 on. It lands while the save is still out.
+    overtakenLoadMore.resolve(queueResponse([makeItem('v4', 4)], { hasMore: true, unreviewed: 4 }));
+    await settle();
+    expect(cardNames()).toEqual(['Review wall version 1', 'Review wall version 2']);
+
+    mockRequest.mockResolvedValueOnce(
+      queueResponse([makeItem('v3', 3), makeItem('v4', 4)], { hasMore: true, unreviewed: 4 }),
+    );
+    save.resolve(reviewResponse('v1', 'APPROVED'));
+
+    // One wall is left on screen, so that is where the read starts now.
+    await waitFor(() => expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', UNREVIEWED_FROM(1)));
+    await waitFor(() =>
+      expect(cardNames()).toEqual(['Review wall version 2', 'Review wall version 3', 'Review wall version 4']),
+    );
+    // The dropped read took its spinner with it: "Load more" is on offer again.
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Load more', hidden: true }).disabled).toBe(false);
+  });
+
+  it('sends a dropped "Load more" out again as it was when the verdict fails to save', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true, unreviewed: 2 }));
+    render(<SprayTrainingPanel />);
+    holdNextRequest();
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await waitFor(() => expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', UNREVIEWED_FROM(1)));
+
+    await openWall(1);
+    mockRequest.mockRejectedValueOnce(graphqlFailure('INTERNAL_SERVER_ERROR'));
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v2', 2)], { unreviewed: 2 }));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    expect(await screen.findByText("Couldn't save the review")).toBeTruthy();
+    // Nothing moved on the server, so the offset is the one it had.
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(4));
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', UNREVIEWED_FROM(1));
+    await waitFor(() => expect(cardNames()).toEqual(['Review wall version 1', 'Review wall version 2']));
+  });
+
+  it('starts no page read while a verdict is being saved', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockRequest.mockResolvedValueOnce(
+      queueResponse([makeItem('v1', 1), makeItem('v2', 2)], { hasMore: true, unreviewed: 4 }),
+    );
+    render(<SprayTrainingPanel />);
+    mockRequest.mockRejectedValueOnce(new Error('offline'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await screen.findByRole('button', { name: 'Retry' });
+
+    const dialog = await openWall(1);
+    const save = holdNextRequest();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    await closeDialog(dialog);
+
+    // Either button would read at an offset the verdict is about to shift.
+    const pageReadButtons = ['Load more', 'Retry'].map((name) =>
+      screen.getByRole<HTMLButtonElement>('button', { name }),
+    );
+    expect(pageReadButtons.map((button) => button.disabled)).toEqual([true, true]);
+
+    save.resolve(reviewResponse('v1', 'APPROVED'));
+    await waitFor(() => expect(pageReadButtons.map((button) => button.disabled)).toEqual([false, false]));
+  });
+
+  it('drops a page that arrives after the reviewer moved to another tab', async () => {
+    const unreviewedRead = holdNextRequest();
+    render(<SprayTrainingPanel />);
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+    const approvedRead = holdNextRequest();
+    fireEvent.click(screen.getByRole('button', { name: 'Approved (0)' }));
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+
+    // The tab that was left answers first, while the new one is still loading.
+    unreviewedRead.resolve(queueResponse([makeItem('v1', 1)], { unreviewed: 1 }));
+    await settle();
+    expect(cardNames()).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Unreviewed (0)' })).toBeTruthy();
+    // Still loading, so not yet known to be empty.
+    expect(screen.queryByText('Nothing here')).toBeNull();
+
+    const approvedWall = makeItem('v9', 9);
+    approvedWall.review = { status: 'APPROVED', reason: null, notes: null };
+    approvedRead.resolve(queueResponse([approvedWall], { unreviewed: 3, approved: 1 }));
+    await waitFor(() => expect(cardNames()).toEqual(['Review wall version 9']));
+    expect(screen.getByRole('button', { name: 'Unreviewed (3)' })).toBeTruthy();
+  });
+
+  it('does not raise the retry prompt for a failure that belongs to the tab that was left', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const unreviewedRead = holdNextRequest();
+    render(<SprayTrainingPanel />);
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+    const approvedRead = holdNextRequest();
+    fireEvent.click(screen.getByRole('button', { name: 'Approved (0)' }));
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+
+    unreviewedRead.reject(new Error('offline'));
+    await settle();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+
+    approvedRead.resolve(queueResponse([]));
+    expect(await screen.findByText('Nothing here')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+});
+
 describe('SprayTrainingPanel refused verdicts', () => {
   it('takes a wall that left the training set off the screen and says why', async () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
@@ -800,8 +1080,9 @@ describe('SprayTrainingPanel refused verdicts', () => {
     const dialog = await openWall(1);
 
     mockRequest.mockRejectedValueOnce(graphqlFailure('SPRAY_TRAINING_NOT_ELIGIBLE'));
+    // Not what counting one wall out of two would give: the owner had more versions in the queue.
     mockRequest.mockResolvedValueOnce({
-      sprayTrainingQueue: { totals: { unreviewed: 1, approved: 0, rejected: 0 } },
+      sprayTrainingQueue: { totals: { unreviewed: 5, approved: 2, rejected: 1 } },
     });
     fireEvent.keyDown(window, { key: 'a' });
 
@@ -811,12 +1092,59 @@ describe('SprayTrainingPanel refused verdicts', () => {
     expect(screen.queryByRole('button', { name: 'Review wall version 1', hidden: true })).toBeNull();
     expect(within(dialog).getByText('Wall version 2')).toBeTruthy();
     expect(within(dialog).getByAltText(PHOTO_ALT).getAttribute('src')).toBe('https://photos.example/v2.jpg');
-    // The counts come from the server: nothing was approved, one wall is left.
+    // The counts are the server's, not one subtracted from what was on screen.
     await waitFor(() =>
       expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_TOTALS', { status: 'UNREVIEWED' }),
     );
-    expect(await screen.findByRole('button', { name: 'Unreviewed (1)', hidden: true })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Approved (0)', hidden: true })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Unreviewed (5)', hidden: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approved (2)', hidden: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Rejected (1)', hidden: true })).toBeTruthy();
+  });
+
+  it('takes no verdict on the next wall until the counts are back', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+
+    mockRequest.mockRejectedValueOnce(graphqlFailure('SPRAY_TRAINING_NOT_ELIGIBLE'));
+    const totalsRead = holdNextRequest();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 2')).toBeTruthy());
+    finishPhotoLoad(dialog);
+
+    // The photo is up, so only the counts still on their way hold the verdict back.
+    expect(approveButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(reviewCalls()).toHaveLength(1);
+
+    totalsRead.resolve({ sprayTrainingQueue: { totals: { unreviewed: 1, approved: 0, rejected: 0 } } });
+    await waitFor(() => expect(approveButton(dialog).disabled).toBe(false));
+  });
+
+  it('does not subtract the refused wall twice when the next page brought the server count first', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true, unreviewed: 5 }));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    mockRequest.mockRejectedValueOnce(graphqlFailure('SPRAY_TRAINING_NOT_ELIGIBLE'));
+    // Two reads follow the refusal: the counts, and the next page for the emptied list.
+    let failTotalsRead: () => void = () => undefined;
+    mockRequest.mockImplementation((operation: string) => {
+      if (operation !== 'GET_SPRAY_TRAINING_TOTALS') {
+        return Promise.resolve(queueResponse([makeItem('v2', 2)], { unreviewed: 4 }));
+      }
+      return new Promise((_resolve, reject) => {
+        failTotalsRead = () => reject(new Error('offline'));
+      });
+    });
+    fireEvent.keyDown(window, { key: 'a' });
+
+    // The page carries the server's count: four walls left.
+    expect(await screen.findByRole('button', { name: 'Unreviewed (4)', hidden: true })).toBeTruthy();
+    failTotalsRead();
+    await settle();
+    expect(screen.getByRole('button', { name: 'Unreviewed (4)', hidden: true })).toBeTruthy();
   });
 
   it('counts the wall out itself when the server totals cannot be read', async () => {
@@ -877,6 +1205,93 @@ describe('SprayTrainingPanel races and shortcuts', () => {
         expect(screen.queryByRole('button', { name: 'Review wall version 1', hidden: true })).toBeNull(),
       );
       expect(screen.getByRole('button', { name: 'Review wall version 2', hidden: true })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not bring back a wall when a link refresh that started mid-save answers after it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const expiring = [makeItem('v1', 1), makeItem('v2', 2)];
+      for (const entry of expiring) {
+        entry.photo = { ...entry.photo!, expiresAt: new Date(Date.now() + 90_000).toISOString() };
+      }
+      mockRequest.mockResolvedValueOnce(queueResponse(expiring));
+      render(<SprayTrainingPanel />);
+      await openWall(1);
+
+      const save = holdNextRequest();
+      fireEvent.keyDown(window, { key: 'a' });
+      await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+      // The refresh starts about 30 s in, with the save still out, and reads the list before the commit.
+      const refresh = holdNextRequest();
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
+
+      save.resolve(reviewResponse('v1', 'APPROVED'));
+      await waitFor(() => expect(cardNames()).toEqual(['Review wall version 2']));
+
+      refresh.resolve(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(cardNames()).toEqual(['Review wall version 2']);
+      expect(screen.getByRole('button', { name: 'Unreviewed (1)', hidden: true })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a link refresh that a "Load more" overtook', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const expiring = makeItem('v1', 1);
+      expiring.photo = { ...expiring.photo!, expiresAt: new Date(Date.now() + 90_000).toISOString() };
+      mockRequest.mockResolvedValueOnce(queueResponse([expiring], { hasMore: true, unreviewed: 2 }));
+      render(<SprayTrainingPanel />);
+      const loadMore = await screen.findByRole('button', { name: 'Load more' });
+
+      const refresh = holdNextRequest();
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+
+      mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v2', 2)], { unreviewed: 2 }));
+      fireEvent.click(loadMore);
+      await waitFor(() => expect(cardNames()).toEqual(['Review wall version 1', 'Review wall version 2']));
+
+      // The refresh read one page, from when one wall was loaded: taking it now would take v2 off the screen.
+      refresh.resolve(queueResponse([expiring], { hasMore: true, unreviewed: 2 }));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(cardNames()).toEqual(['Review wall version 1', 'Review wall version 2']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('goes back for fresh links after a verdict that changed nothing overtook the refresh', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const expiring = makeItem('v1', 1);
+      expiring.photo = { ...expiring.photo!, expiresAt: new Date(Date.now() + 90_000).toISOString() };
+      mockRequest.mockResolvedValueOnce(queueResponse([expiring]));
+      render(<SprayTrainingPanel />);
+      await openWall(1);
+
+      const overtakenRefresh = holdNextRequest();
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+
+      // A save that fails leaves the list as it was, so nothing else would arm the timer again.
+      mockRequest.mockRejectedValueOnce(graphqlFailure('INTERNAL_SERVER_ERROR'));
+      fireEvent.keyDown(window, { key: 'a' });
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
+      overtakenRefresh.resolve(queueResponse([expiring]));
+
+      mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
+      await vi.advanceTimersByTimeAsync(6_000);
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(4));
+      expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
     } finally {
       vi.useRealTimers();
     }

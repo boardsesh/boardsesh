@@ -3467,6 +3467,9 @@ for a wall with no photo. `setSprayTrainingReview` re-checks the predicate and
 refuses a version that left it after the page loaded with
 `SPRAY_TRAINING_NOT_ELIGIBLE`. The screen then takes that wall off the
 reviewer's screen at once and re-reads the tab counts.
+A note belongs to the verdict it was typed for: the screen sends the saved note
+again with the same verdict, and with a changed verdict only when the reviewer
+edited it, so an approval never carries the reason a wall was once rejected.
 
 ### The export
 

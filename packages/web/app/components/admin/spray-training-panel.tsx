@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { useIsomorphicLayoutEffect } from '@/app/lib/hooks/use-isomorphic-layout-effect';
 import { msUntilExpiry, summariseStats } from '@/app/lib/admin/spray-training-overlay';
 import { isSprayTrainingNotEligibleError } from '@boardsesh/graphql/errors';
 import {
@@ -30,6 +31,7 @@ import {
   type SetSprayTrainingReviewMutationResponse,
   type SetSprayTrainingReviewMutationVariables,
   type SprayTrainingQueueItemData,
+  type SprayTrainingReviewData,
   type SprayTrainingReviewStatus,
   type SprayTrainingTotalsData,
 } from '@boardsesh/graphql/operations';
@@ -55,6 +57,32 @@ function totalsKey(status: SprayTrainingReviewStatus): keyof SprayTrainingTotals
   return 'unreviewed';
 }
 
+type VerdictOutcome =
+  | { kind: 'saved'; review: SprayTrainingReviewData }
+  /** The wall left the training set after the page loaded: training switched off, wall deleted or hidden, photo replaced. */
+  | { kind: 'refused' }
+  | { kind: 'failed' };
+
+async function sendVerdict(
+  client: ReturnType<typeof createGraphQLHttpClient>,
+  versionId: string,
+  decision: SprayTrainingDecision,
+): Promise<VerdictOutcome> {
+  try {
+    const result = await client.request<
+      SetSprayTrainingReviewMutationResponse,
+      SetSprayTrainingReviewMutationVariables
+    >(SET_SPRAY_TRAINING_REVIEW, {
+      input: { versionId, status: decision.status, reason: decision.reason ?? null, notes: decision.notes ?? null },
+    });
+    return { kind: 'saved', review: result.setSprayTrainingReview.review };
+  } catch (err) {
+    if (isSprayTrainingNotEligibleError(err)) return { kind: 'refused' };
+    console.error('[SprayTrainingPanel] Failed to save review:', err);
+    return { kind: 'failed' };
+  }
+}
+
 export default function SprayTrainingPanel() {
   const { t } = useTranslation('admin');
   const { token } = useWsAuthToken();
@@ -72,17 +100,32 @@ export default function SprayTrainingPanel() {
   const [resumeReview, setResumeReview] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [snackbar, setSnackbar] = useState('');
-  // Drops a response that lands after the status tab changed.
+  // Bumped by whatever makes an answer still on its way wrong for the list on
+  // screen: a newer page read, a tab switch, a verdict. A page read or a link
+  // refresh that finds it changed throws its answer away.
   const requestCounter = useRef(0);
-  // Walls moved to another tab since the last full read. A refresh that was
-  // already in flight must not bring them back.
-  const decidedIds = useRef<Set<string>>(new Set());
+  // Whether a page read is on its way, so that dropping it can also clear its
+  // spinner and tell the caller to ask again.
+  const pageReadInFlight = useRef(false);
+  // Counts the times the list was thrown away and read from the top (a tab
+  // switch, a new token). A verdict that returns to another list must not
+  // patch it.
+  const listEpoch = useRef(0);
+  // What is on screen now, for code that resumes after an await and would
+  // otherwise act on the render it started in.
+  const shown = useRef({ status, items, hasMore, selectedId });
+  useIsomorphicLayoutEffect(() => {
+    shown.current = { status, items, hasMore, selectedId };
+  });
   const [refreshAttempt, setRefreshAttempt] = useState(0);
+  // Bumped when a link refresh was overtaken, so the effect arms another one.
+  const [overtakenRefreshes, setOvertakenRefreshes] = useState(0);
 
   const fetchPage = useCallback(
     async (offset: number, forStatus: SprayTrainingReviewStatus) => {
       if (!token) return;
       const requestId = ++requestCounter.current;
+      pageReadInFlight.current = true;
       setLoading(true);
       setFailedOffset(null);
       try {
@@ -107,15 +150,29 @@ export default function SprayTrainingPanel() {
         console.error('[SprayTrainingPanel] Failed to fetch queue:', err);
         setFailedOffset(offset);
       } finally {
-        if (requestId === requestCounter.current) setLoading(false);
+        if (requestId === requestCounter.current) {
+          pageReadInFlight.current = false;
+          setLoading(false);
+        }
       }
     },
     [token],
   );
 
+  // Throws away whatever answer is on its way. Says whether a page read was
+  // among them: its spinner is cleared here, since its own cleanup no longer
+  // runs, and the caller asks again once the list has settled.
+  const dropReadsInFlight = useCallback(() => {
+    requestCounter.current += 1;
+    if (!pageReadInFlight.current) return false;
+    pageReadInFlight.current = false;
+    setLoading(false);
+    return true;
+  }, []);
+
   useEffect(() => {
+    listEpoch.current += 1;
     setItems([]);
-    decidedIds.current = new Set();
     void fetchPage(0, status);
   }, [fetchPage, status]);
 
@@ -135,8 +192,8 @@ export default function SprayTrainingPanel() {
     const delay = Math.min(MAX_TIMER_MS, Math.max(MIN_REFRESH_DELAY_MS, refreshAttempt > 0 ? retryDelay : expiryDelay));
     const timer = setTimeout(async () => {
       // Not bumped: a refresh must not cancel a load-more (nor leave its
-      // spinner stuck). Any fetchPage that starts meanwhile changes this and
-      // the stale refresh is dropped.
+      // spinner stuck). A page read or a verdict that starts meanwhile changes
+      // this and the stale refresh is dropped.
       const startedAt = requestCounter.current;
       try {
         const client = createGraphQLHttpClient(token);
@@ -153,11 +210,16 @@ export default function SprayTrainingPanel() {
           latestHasMore = result.sprayTrainingQueue.hasMore;
           if (!result.sprayTrainingQueue.hasMore) break;
         }
-        if (startedAt !== requestCounter.current) return;
+        if (startedAt !== requestCounter.current) {
+          // Overtaken, so this answer may predate what is on screen. The links
+          // still need renewing, and nothing else is sure to arm the timer.
+          setOvertakenRefreshes((count) => count + 1);
+          return;
+        }
         const seen = new Set<string>();
         setItems(
           pages.filter((entry) => {
-            if (decidedIds.current.has(entry.versionId) || seen.has(entry.versionId)) return false;
+            if (seen.has(entry.versionId)) return false;
             seen.add(entry.versionId);
             return true;
           }),
@@ -167,11 +229,11 @@ export default function SprayTrainingPanel() {
         setRefreshAttempt(0);
       } catch (err) {
         console.error('[SprayTrainingPanel] Failed to refresh photo links:', err);
-        if (startedAt === requestCounter.current) setRefreshAttempt((attempt) => attempt + 1);
+        setRefreshAttempt((attempt) => attempt + 1);
       }
     }, delay);
     return () => clearTimeout(timer);
-  }, [token, earliestExpiry, itemCount, status, refreshAttempt]);
+  }, [token, earliestExpiry, itemCount, status, refreshAttempt, overtakenRefreshes]);
 
   // Deciding every loaded wall is not the end of the queue. Whatever emptied
   // the list (a verdict, a refused one, a refresh), read the next page. A
@@ -208,79 +270,102 @@ export default function SprayTrainingPanel() {
   const decide = useCallback(
     async (item: SprayTrainingQueueItemData, decision: SprayTrainingDecision) => {
       if (!token) return;
-      // The wall leaves this tab, so the next one takes its slot in the dialog.
-      const leaveTab = () => {
-        decidedIds.current.add(item.versionId);
-        const index = items.findIndex((entry) => entry.versionId === item.versionId);
-        const remaining = items.filter((entry) => entry.versionId !== item.versionId);
-        setItems((previous) => previous.filter((entry) => entry.versionId !== item.versionId));
-        const successor = remaining[Math.min(index, remaining.length - 1)];
-        setSelectedId(successor ? successor.versionId : null);
-        if (!successor && hasMore) setResumeReview(true);
-      };
+      const epochAtSend = listEpoch.current;
+      // A page read on its way was aimed at an offset this verdict is about to
+      // shift, and the server may answer it from either side of the commit.
+      // Drop it now and ask again once the verdict is in.
+      const readDroppedAtSend = dropReadsInFlight();
       setDeciding(true);
       const client = createGraphQLHttpClient(token);
       try {
-        const result = await client.request<
-          SetSprayTrainingReviewMutationResponse,
-          SetSprayTrainingReviewMutationVariables
-        >(SET_SPRAY_TRAINING_REVIEW, {
-          input: {
-            versionId: item.versionId,
-            status: decision.status,
-            reason: decision.reason ?? null,
-            notes: decision.notes ?? null,
-          },
-        });
-        if (decision.status === status) {
+        const outcome = await sendVerdict(client, item.versionId, decision);
+        const {
+          status: shownStatus,
+          items: shownItems,
+          hasMore: shownHasMore,
+          selectedId: shownSelectedId,
+        } = shown.current;
+        const listReplaced = listEpoch.current !== epochAtSend;
+
+        if (outcome.kind === 'failed') {
+          setSnackbar(t('sprayTraining.snackbar.failed'));
+          // Nothing moved on the server, so the read that was dropped goes out again as it was.
+          if (readDroppedAtSend && !listReplaced) void fetchPage(shownItems.length, shownStatus);
+          return;
+        }
+
+        if (outcome.kind === 'refused') setSnackbar(t('sprayTraining.snackbar.notEligible'));
+        else if (decision.status === 'APPROVED') setSnackbar(t('sprayTraining.snackbar.approved'));
+        else if (decision.status === 'REJECTED') setSnackbar(t('sprayTraining.snackbar.rejected'));
+        else setSnackbar(t('sprayTraining.snackbar.reset'));
+
+        if (listReplaced) {
+          // The reviewer moved to another tab while this saved. That tab was
+          // read around the commit and may sit on either side of it, so ask the
+          // server again instead of patching a list this verdict was not given on.
+          void fetchPage(0, shownStatus);
+          return;
+        }
+
+        // Anything that started while the verdict saved was read around the commit too.
+        const readDropped = dropReadsInFlight() || readDroppedAtSend;
+
+        if (outcome.kind === 'saved' && decision.status === shownStatus) {
           // Same verdict, new reason or notes: the wall stays on this tab.
-          const { review } = result.setSprayTrainingReview;
+          const { review } = outcome;
           setItems((previous) =>
             previous.map((entry) => (entry.versionId === item.versionId ? { ...entry, review } : entry)),
           );
-        } else {
-          leaveTab();
-          setTotals((previous) => ({
-            ...previous,
-            [totalsKey(status)]: Math.max(0, previous[totalsKey(status)] - 1),
-            [totalsKey(decision.status)]: previous[totalsKey(decision.status)] + 1,
-          }));
-        }
-        if (decision.status === 'APPROVED') setSnackbar(t('sprayTraining.snackbar.approved'));
-        else if (decision.status === 'REJECTED') setSnackbar(t('sprayTraining.snackbar.rejected'));
-        else setSnackbar(t('sprayTraining.snackbar.reset'));
-      } catch (err) {
-        if (!isSprayTrainingNotEligibleError(err)) {
-          console.error('[SprayTrainingPanel] Failed to save review:', err);
-          setSnackbar(t('sprayTraining.snackbar.failed'));
+          if (readDropped) void fetchPage(shownItems.length, shownStatus);
           return;
         }
-        // The wall left the training set after this page loaded (training
-        // switched off, wall deleted or hidden, photo replaced by a newer
-        // version). Its photo comes off the screen now, not at the next refresh.
-        leaveTab();
-        setSnackbar(t('sprayTraining.snackbar.notEligible'));
+
+        // The wall leaves this tab.
+        const index = shownItems.findIndex((entry) => entry.versionId === item.versionId);
+        const remaining = shownItems.filter((entry) => entry.versionId !== item.versionId);
+        setItems((previous) => previous.filter((entry) => entry.versionId !== item.versionId));
+        if (shownSelectedId === item.versionId) {
+          // Still the wall in the dialog, so the next one takes its slot. A
+          // dialog the reviewer closed or moved to another wall stays as it is.
+          const successor = remaining[Math.min(index, remaining.length - 1)];
+          setSelectedId(successor ? successor.versionId : null);
+          if (!successor && shownHasMore) setResumeReview(true);
+        }
+        // An emptied list reads its next page by itself.
+        if (readDropped && remaining.length > 0) void fetchPage(remaining.length, shownStatus);
+
+        if (outcome.kind === 'saved') {
+          setTotals((previous) => ({
+            ...previous,
+            [totalsKey(shownStatus)]: Math.max(0, previous[totalsKey(shownStatus)] - 1),
+            [totalsKey(decision.status)]: previous[totalsKey(decision.status)] + 1,
+          }));
+          return;
+        }
+
+        // Refused. Count the wall out now, so that whichever server count lands
+        // next (this read, or the page an emptied list asks for) is the last
+        // word and nothing is subtracted twice.
+        setTotals((previous) => ({
+          ...previous,
+          [totalsKey(shownStatus)]: Math.max(0, previous[totalsKey(shownStatus)] - 1),
+        }));
         // Still under `deciding`: a verdict saved while this read was in flight
         // would leave the counts off by one.
         try {
           const fresh = await client.request<GetSprayTrainingTotalsQueryResponse, GetSprayTrainingTotalsQueryVariables>(
             GET_SPRAY_TRAINING_TOTALS,
-            { status },
+            { status: shownStatus },
           );
           setTotals(fresh.sprayTrainingQueue.totals);
         } catch (totalsError) {
           console.error('[SprayTrainingPanel] Failed to refresh totals:', totalsError);
-          // Best guess when the server will not say: this tab lost the one wall.
-          setTotals((previous) => ({
-            ...previous,
-            [totalsKey(status)]: Math.max(0, previous[totalsKey(status)] - 1),
-          }));
         }
       } finally {
         setDeciding(false);
       }
     },
-    [token, items, hasMore, status, t],
+    [token, fetchPage, dropReadsInFlight, t],
   );
 
   return (
@@ -315,6 +400,8 @@ export default function SprayTrainingPanel() {
               color="inherit"
               size="small"
               onClick={() => fetchPage(items.length, status)}
+              // A page read that starts while a verdict saves is aimed at an offset about to shift.
+              disabled={deciding}
               sx={{ textTransform: 'none' }}
             >
               {t('sprayTraining.retry')}
@@ -378,7 +465,7 @@ export default function SprayTrainingPanel() {
           <Button
             variant="outlined"
             onClick={() => fetchPage(items.length, status)}
-            disabled={loading}
+            disabled={loading || deciding}
             sx={{ textTransform: 'none' }}
           >
             {t('sprayTraining.loadMore')}
