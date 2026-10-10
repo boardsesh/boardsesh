@@ -168,9 +168,7 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   SprayTrainingConsentField: () => null,
 }));
 vi.mock('../SprayWallTrainingConsentRow', () => ({ SprayWallTrainingConsentRow: () => null }));
-vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
-  useSprayWallTrainingConsent: () => ({ data: undefined }),
-}));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));

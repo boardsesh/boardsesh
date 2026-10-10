@@ -232,18 +232,17 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
   SprayWallVisibilityField: () => null,
-  SprayTrainingConsentField: () => createElement('div', { 'data-testid': 'builder-consent' }),
+  SprayTrainingConsentField: ({ value, onValueChange }: { value: boolean; onValueChange: (next: boolean) => void }) =>
+    createElement('button', { 'data-testid': 'builder-consent', onClick: () => onValueChange(!value) }),
 }));
+// Draws for the owner only, as the real row does.
 vi.mock('../SprayWallTrainingConsentRow', () => ({
-  SprayWallTrainingConsentRow: ({ wallUuid }: { wallUuid: string }) =>
-    createElement('div', { 'data-testid': 'server-consent' }, wallUuid),
+  SprayWallTrainingConsentRow: ({ wallUuid, isOwner }: { wallUuid: string; isOwner: boolean }) =>
+    isOwner ? createElement('div', { 'data-testid': 'server-consent' }, wallUuid) : null,
 }));
-const trainingConsentMock = vi.hoisted(() =>
-  vi.fn((_wallUuid: string | null, _enabled: boolean) => ({ data: undefined as boolean | null | undefined })),
-);
-vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
-  useSprayWallTrainingConsent: trainingConsentMock,
-}));
+/** Who is driving the flow. The fixtures' walls belong to `me`. */
+const viewer = vi.hoisted(() => ({ userId: 'me' as string | null }));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => viewer.userId }));
 // Online throughout: the upload-notice wording has its own suite (#5960).
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
@@ -281,7 +280,7 @@ const UNFINISHED_WALL = {
   uuid: 'wall-1',
   layoutId: 7,
   viewerCanEdit: true,
-  board: { name: 'Garage wall' },
+  board: { name: 'Garage wall', ownerId: 'me' },
   currentVersion: null,
 };
 
@@ -326,6 +325,7 @@ beforeEach(() => {
   resetWallMock.mockReset();
   fetchVersionsMock.mockReset();
   guard.confirmLeave = null;
+  viewer.userId = 'me';
   editorProps.last = null;
   listEnabled.walls = [];
   listEnabled.lifecycle = [];
@@ -400,6 +400,76 @@ describe('resume freshness', () => {
     expect(queryByTestId('identity')).not.toBeNull();
     expect(getByTestId('server-consent').textContent).toBe('wall-1');
     expect(queryByTestId('builder-consent')).toBeNull();
+  });
+});
+
+describe('the photo step and Help train hold finding', () => {
+  function mountAtNewWallForm() {
+    setWalls({ data: [], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    return mountWizard();
+  }
+
+  it('says so in a note on a new wall, whose switch is on the step before', () => {
+    const { getByText, queryByTestId } = mountAtNewWallForm();
+    act(() => header.trailing?.onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(getByText('sprayWizard.photo.trainingNote')).toBeTruthy();
+    expect(queryByTestId('server-consent')).toBeNull();
+  });
+
+  it('leaves the note out once that switch has been turned off', () => {
+    const { getByText, getByTestId, queryByText } = mountAtNewWallForm();
+    act(() => getByTestId('builder-consent').click());
+    act(() => header.trailing?.onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
+
+  it("puts a resumed wall's own switch there, in place of the note", async () => {
+    fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const { getByText, getByTestId, queryByText } = mountWizard();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(getByTestId('server-consent').textContent).toBe('wall-1');
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
+
+  it('shows neither to somebody finishing a wall they can edit but do not own', async () => {
+    fetchVersionsMock.mockResolvedValue({
+      ...UNFINISHED_WALL,
+      board: { name: 'Garage wall', ownerId: 'the-owner' },
+      versions: [],
+    });
+    const { getByText, queryByText, queryByTestId } = render(
+      <SprayWallWizardScreen returnTo="/(tabs)/climbs" wallUuid="wall-1" />,
+    );
+    await act(async () => {});
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(queryByTestId('server-consent')).toBeNull();
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+
+    // Nor on the name step Back leads to.
+    act(() => header.leading?.onPress());
+    expect(queryByTestId('identity')).not.toBeNull();
+    expect(queryByTestId('server-consent')).toBeNull();
+    expect(queryByTestId('builder-consent')).toBeNull();
+  });
+
+  it('shows neither while it is not yet known who is signed in', async () => {
+    viewer.userId = null;
+    fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const { getByText, queryByText, queryByTestId } = mountWizard();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(queryByTestId('server-consent')).toBeNull();
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
   });
 });
 
@@ -497,7 +567,7 @@ describe('a reset (`resetOf`)', () => {
     viewerCanEdit: true,
     currentVersion: null,
     resetOfWallUuid: 'old-wall',
-    board: { name: 'Garage wall' },
+    board: { name: 'Garage wall', ownerId: 'me' },
   };
   const CLONE_WITH_PHOTO = {
     ...CLONE,
@@ -523,19 +593,16 @@ describe('a reset (`resetOf`)', () => {
     expect(queryByTestId('identity')).toBeNull();
   });
 
-  it("says the photo helps train hold finding only when the clone's switch is on", async () => {
+  // Back leaves a reset from here and its clone is in no board list, so the
+  // photo step is the only place the owner can reach the switch.
+  it("puts the clone's training switch on the photo step, in place of the note", async () => {
     resetWallMock.mockResolvedValue(CLONE);
     fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
-    trainingConsentMock.mockReturnValue({ data: true });
-    const on = await mountReset();
-    expect(trainingConsentMock).toHaveBeenLastCalledWith('clone-1', true);
-    expect(on.getByText('sprayWizard.photo.trainingNote')).toBeTruthy();
-    on.unmount();
+    const { getByText, getByTestId, queryByText } = await mountReset();
 
-    trainingConsentMock.mockReturnValue({ data: false });
-    const off = await mountReset();
-    expect(off.queryByText('sprayWizard.photo.trainingNote')).toBeNull();
-    trainingConsentMock.mockReturnValue({ data: undefined });
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+    expect(getByTestId('server-consent').textContent).toBe('clone-1');
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
   });
 
   it('leaves the flow from the photo step rather than opening the meta form', async () => {
