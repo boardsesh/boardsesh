@@ -1170,6 +1170,74 @@ describe('the export', () => {
     expect(storedExportIds()).toEqual(exportIds.slice(1).sort());
   });
 
+  it('mints an id after a stored export that is ahead of the clock, so the run after a change still skips', async () => {
+    const first = await createPublishedWall();
+    await review(first.versionId, 'APPROVED');
+    // Written by a backend replica whose clock ran a day ahead.
+    const ahead = await exportSprayTrainingDataset({ now: runAt(1) });
+    expect(ahead.skipped).toBe(false);
+
+    // On the right clock, with nothing changed: the stored export is current.
+    expect(await exportSprayTrainingDataset({ now: RUN_1 })).toMatchObject({
+      skipped: true,
+      skippedReason: 'UNCHANGED',
+    });
+
+    // Something changes. "Newest" is by id for the skip and for the ML fetch,
+    // so the new export has to sort AFTER the one already stored, whatever the
+    // clock says.
+    const second = await createPublishedWall();
+    await review(second.versionId, 'APPROVED');
+    const changed = await exportSprayTrainingDataset({ now: RUN_1 });
+    expect(changed.skipped).toBe(false);
+    expect(changed.exportId! > ahead.exportId!).toBe(true);
+    const newestStored = storedExportIds().at(-1)!;
+    expect(newestStored).toBe(changed.exportId);
+    expect(manifestOf(newestStored).images.map((image) => String(image.versionId))).toEqual([
+      first.versionId,
+      second.versionId,
+    ]);
+
+    // An id minted from the clock would have sorted behind `ahead`: every later
+    // run would find the old export on top and write a full export again.
+    expect(await exportSprayTrainingDataset({ now: new Date(RUN_1.getTime() + 60_000) })).toMatchObject({
+      exportId: null,
+      skipped: true,
+      skippedReason: 'UNCHANGED',
+    });
+  });
+
+  it('reads the newest stored export in code-point order, the order the ML fetch uses', async () => {
+    const { versionId } = await createPublishedWall();
+    await review(versionId, 'APPROVED');
+    const written = await exportSprayTrainingDataset({ now: RUN_1 });
+    const writtenPrefix = `${SPRAY_TRAINING_EXPORT_PREFIX}${written.exportId}/`;
+    const writtenManifest = manifestOf(written.exportId!);
+
+    // The same export under two hand-made ids that a locale collation and code
+    // points order differently: `a` sorts after `Z` by code point, before it by
+    // collation. The copy under `a` is current; the one under `Z` is out of date.
+    const copyExportAs = (exportId: string, fingerprint: string) => {
+      for (const key of exportKeys().filter((storedKey) => storedKey.startsWith(writtenPrefix))) {
+        const body =
+          key === `${writtenPrefix}manifest.json`
+            ? Buffer.from(JSON.stringify({ ...writtenManifest, exportId, fingerprint }))
+            : bucket('private').get(key)!;
+        bucket('private').set(`${SPRAY_TRAINING_EXPORT_PREFIX}${exportId}/${key.slice(writtenPrefix.length)}`, body);
+      }
+    };
+    const currentFingerprint = readJson<{ fingerprint: string }>(`${writtenPrefix}manifest.json`).fingerprint;
+    copyExportAs('a-current', currentFingerprint);
+    copyExportAs('Z-outdated', 'an-older-fingerprint');
+
+    // Newest by code point is `a-current`, which matches: nothing to write.
+    expect(await exportSprayTrainingDataset({ now: runAt(1) })).toMatchObject({
+      exportId: null,
+      skipped: true,
+      skippedReason: 'UNCHANGED',
+    });
+  });
+
   it('freezes the split across runs and shares it with reset clones', async () => {
     const source = await createPublishedWall();
     const clone = await startReset(source.wall);
