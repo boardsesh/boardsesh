@@ -46,6 +46,10 @@ vi.mock('expo-router', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
+vi.mock('../../../../src/providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryBackground: '#fff' } }),
+}));
+
 vi.mock('../../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
 
 vi.mock('../../../../src/components/create-climb/CreateClimbScreen', () => ({

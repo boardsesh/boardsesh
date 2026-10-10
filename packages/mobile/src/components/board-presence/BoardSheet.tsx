@@ -42,6 +42,7 @@ import { NowOnTheWallPanel } from './NowOnTheWallPanel';
 import type { BoardSheetClimbAction, NowOnTheWallPanelHandle } from './NowOnTheWallPanel';
 import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 
 export type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 
@@ -111,6 +112,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   ref,
 ) {
   const { sheet, sheetSurface } = useTheme();
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const sheetRef = useRef<BottomSheetModal>(null);
   const panelRef = useRef<NowOnTheWallPanelHandle>(null);
 
@@ -164,14 +166,17 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   // colour it reaches for is the Android fallback palette, so an iPhone got a
   // flat #181225 panel where iOS 26 should be drawing Liquid Glass.
   //
-  // Keyed on the surface mode rather than the platform or the variant, per
-  // theme/variants/README: 'glass' and 'blur' hand the background back to
-  // SwiftUI, while 'material' keeps Android's intended solid and 'solid' keeps
-  // it for Reduce Transparency and for Android forced onto the glass variant.
+  // iOS shares the same background rule as every other sheet. Elsewhere,
+  // preserve this panel's existing opaque Material/Reduce Transparency surface.
   const surfaceMode = useEffectiveSurfaceMode();
   const backgroundStyle = useMemo(
-    () => (surfaceMode === 'glass' || surfaceMode === 'blur' ? undefined : { backgroundColor: sheetSurface }),
-    [surfaceMode, sheetSurface],
+    () =>
+      Platform.OS === 'ios'
+        ? iosBackgroundStyle
+        : surfaceMode === 'glass' || surfaceMode === 'blur'
+          ? undefined
+          : { backgroundColor: sheetSurface },
+    [iosBackgroundStyle, surfaceMode, sheetSurface],
   );
 
   const invalidatePanelActions = useCallback(() => {

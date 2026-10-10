@@ -21,6 +21,7 @@ import { brandColors } from '../../theme/colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
+import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 
 type AngleSelectorSheetProps = {
   visible: boolean;
@@ -45,6 +46,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   // The window's inset, not the mount point's: a sheet covers the tab bar (#3776).
   const windowInsetBottom = useWindowBottomInset();
   const { gradeFormat } = useGradeFormat();
@@ -116,6 +118,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
       onChange={managed.onChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={sheetStyles.indicator}
+      backgroundStyle={iosBackgroundStyle}
     >
       {/* The sheet's single child: the top bar and the body share it. */}
       <BottomSheetView style={{ paddingBottom: windowInsetBottom + spacing[4] }}>

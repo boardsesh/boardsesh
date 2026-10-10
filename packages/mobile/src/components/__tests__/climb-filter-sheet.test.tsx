@@ -329,6 +329,8 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
+vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle: () => undefined }));
+
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../theme/colors', () => ({ brandColors: { primary: '#6D28D9' } }));

@@ -14,6 +14,7 @@ import { SheetTopBar } from './SheetTopBar';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { spacing, borderRadius, sheetStyles } from '../theme/tokens';
+import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
 import type { SessionExitMode } from './session-screen/use-session-exit-options';
 
 type EndSessionSheetProps = {
@@ -65,6 +66,7 @@ export function EndSessionSheet({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const windowInsetBottom = useWindowBottomInset();
   const keyboardHeight = useKeyboardHeight();
   const bottomClearance =
@@ -114,7 +116,9 @@ export function EndSessionSheet({
       enablePanDownToClose
       onChange={managed.onChange}
       onFullyDismissed={managed.onFullyDismissed}
-      backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
+      backgroundStyle={
+        Platform.OS === 'ios' ? iosBackgroundStyle : { backgroundColor: systemColors.secondaryBackground }
+      }
       handleIndicatorStyle={sheetStyles.indicator}
     >
       {/* The sheet's single child: the top bar and the body share it. */}

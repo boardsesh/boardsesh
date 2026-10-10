@@ -53,6 +53,10 @@ vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
+vi.mock('../../../../src/providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryBackground: '#fff' } }),
+}));
+
 vi.mock('../../../../src/lib/routing/use-unsupported-board-exit', () => ({
   useUnsupportedBoardExit: () => {},
 }));

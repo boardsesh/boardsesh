@@ -28,6 +28,7 @@ import { UndoSnackbar } from '../UndoSnackbar';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
+import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 
 // Long enough to notice and reach for the button; the removal is already live
 // for the crew, so it isn't held open forever.
@@ -79,6 +80,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   const { t } = useTranslation('session');
   const insets = useSafeAreaInsets();
   const { systemColors, sheet } = useTheme();
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const sheetRef = useRef<BottomSheetModal>(null);
 
   const {
@@ -376,6 +378,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
       onChange={handleSheetChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={sheet.handleStyle}
+      backgroundStyle={iosBackgroundStyle}
       style={styles.sheet}
     >
       {Platform.OS === 'android' ? (

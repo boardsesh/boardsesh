@@ -74,8 +74,8 @@ describe('the New climb route', () => {
     expect(options).not.toHaveProperty('animation');
   });
 
-  it('is opaque, since nothing behind it shows through any more', () => {
-    expect(createOptions().contentStyle).toEqual({ backgroundColor: '#221A33' });
+  it('lets iOS draw the modal presentation background', () => {
+    expect(createOptions()).not.toHaveProperty('contentStyle');
   });
 
   it('slides up from the bottom on Android, as an M3 full-screen dialog', () => {
@@ -83,6 +83,7 @@ describe('the New climb route', () => {
     const options = createOptions();
     expect(options.presentation).toBe('modal');
     expect(options.animation).toBe('slide_from_bottom');
+    expect(options.contentStyle).toEqual({ backgroundColor: '#221A33' });
   });
 
   it('uses an iPad editing card, preserving the live native tab sidebar', () => {

@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { useCallback, useMemo, useRef, type ComponentRef } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { hapticSelection } from '../../lib/haptics';
+import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 
 type LogbookEntryChooserSheetProps = {
   /** The grouped day's entries, newest first. Opens with length > 1 (a
@@ -50,6 +51,7 @@ const STATUS_ICON: Record<AscentFeedItem['status'], IconName> = {
 export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }: LogbookEntryChooserSheetProps) {
   const { t, i18n } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<ComponentRef<typeof BottomSheetModal>>(null);
   const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
@@ -122,7 +124,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
       enablePanDownToClose
       onChange={managed.onChange}
       handleIndicatorStyle={{ backgroundColor: systemColors.tertiaryLabel }}
-      backgroundStyle={{ backgroundColor: systemColors.background }}
+      backgroundStyle={Platform.OS === 'ios' ? iosBackgroundStyle : { backgroundColor: systemColors.background }}
     >
       <BottomSheetFlatList
         data={entries}

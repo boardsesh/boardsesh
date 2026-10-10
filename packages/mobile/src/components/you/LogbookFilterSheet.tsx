@@ -26,6 +26,7 @@ import { useGrades } from '../../lib/graphql/hooks';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { nowDate } from '../../lib/clock';
+import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 
 // The logbook spans every board, but Kilter and Tension share an identical
 // difficulty-id scale (the font/V-grade taxonomy), so one board's grade list is
@@ -71,6 +72,7 @@ export function LogbookFilterSheet({
   const { t } = useTranslation('you');
   const theme = useTheme();
   const { systemColors } = theme;
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
@@ -234,6 +236,7 @@ export function LogbookFilterSheet({
       onChange={managed.onChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={{ ...styles.indicator, backgroundColor: theme.chartColors.separator }}
+      backgroundStyle={iosBackgroundStyle}
     >
       <View style={styles.header}>
         <Text variant="title3">{t('mobile.logbook.filter')}</Text>

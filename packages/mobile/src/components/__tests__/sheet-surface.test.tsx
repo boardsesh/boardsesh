@@ -1,16 +1,9 @@
 // @vitest-environment jsdom
 //
-// The three sheet props the tick-sheet redesign added — `surface`,
-// `footerSurface` and `header` — for BOTH wrappers, since Sheet and ModalSheet
-// carry byte-identical copies of that code and a fix applied to one has already
-// been forgotten on the other.
-//
-// The load-bearing case is `surface="solid"`. @expo/ui's `extractBackgroundColor`
-// (BottomSheet.ios.tsx:26) does `typeof color === 'string'` and SILENTLY falls
-// back to the glass material for anything else — a `PlatformColor`, an
-// `OpaqueColorValue`, a themed object. No warning, no error: the form just goes
-// see-through again. So the assertion here is on the string-ness of the value,
-// not only on which token it came from.
+// Both wrappers share the iOS sheet background rule. A caller's `surface`
+// preference cannot override the native Apple presentation; Material and
+// Reduce Transparency use an opaque plain-string colour. The resolver's mode
+// selection is tested separately in use-ios-sheet-background-style.test.tsx.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, forwardRef, type ComponentType, type ReactNode, type Ref } from 'react';
@@ -26,6 +19,7 @@ const captures = vi.hoisted(() => ({
   scrollStyle: undefined as unknown,
   viewStyles: [] as unknown[],
 }));
+const iosBackground = vi.hoisted(() => ({ style: undefined as { backgroundColor: string } | undefined }));
 
 type SheetMockProps = { children?: ReactNode; backgroundStyle?: unknown };
 type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
@@ -104,6 +98,10 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('../../lib/haptics', () => ({ hapticMedium: vi.fn(), hapticSelection: vi.fn() }));
 
+vi.mock('../use-ios-sheet-background-style', () => ({
+  useIosSheetBackgroundStyle: () => iosBackground.style,
+}));
+
 // The coordinator's serialization is covered by sheet-presentation-provider.test.tsx.
 vi.mock('../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({
@@ -161,6 +159,7 @@ function footerBarStyle(): Record<string, unknown> {
 }
 
 beforeEach(() => {
+  iosBackground.style = undefined;
   captures.backgroundStyle = undefined;
   captures.columnRendered = false;
   captures.columnStyle = undefined;
@@ -170,24 +169,17 @@ beforeEach(() => {
 
 describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
   describe('surface', () => {
-    it('paints the opaque sheetSurface as a PLAIN STRING when solid', () => {
-      // @expo/ui keeps a PlatformColor out of the native background with no
-      // error — a regression to a themed/opaque colour value would be invisible
-      // at runtime and only show up as a see-through data-entry form.
+    it('leaves the native Apple background untouched when solid is requested', () => {
       render(
         <SheetLike surface="solid">
           <div>body</div>
         </SheetLike>,
       );
 
-      const background = flattenStyle(captures.backgroundStyle);
-      expect(background.backgroundColor).toBe(theme.sheetSurface);
-      expect(typeof background.backgroundColor).toBe('string');
+      expect(captures.backgroundStyle).toBeUndefined();
     });
 
-    it('leaves the native glass background untouched by default', () => {
-      // Pre-change behaviour: no backgroundStyle at all, so the native material
-      // (iOS 26 glass / Material scrim) draws the ground.
+    it('leaves the native Apple background untouched by default', () => {
       render(
         <SheetLike>
           <div>body</div>
@@ -197,7 +189,7 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
       expect(captures.backgroundStyle).toBeUndefined();
     });
 
-    it('leaves the native glass background untouched when explicitly glass', () => {
+    it('leaves the native Apple background untouched when explicitly glass', () => {
       render(
         <SheetLike surface="glass">
           <div>body</div>
@@ -205,6 +197,22 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
       );
 
       expect(captures.backgroundStyle).toBeUndefined();
+    });
+
+    it.each(['glass', 'solid'] as const)('uses an opaque plain-string iOS override for %s', (surface) => {
+      // The real resolver selects this override for Material or Reduce
+      // Transparency. @expo/ui silently ignores non-string colours.
+      iosBackground.style = { backgroundColor: theme.sheetSurface };
+
+      render(
+        <SheetLike surface={surface}>
+          <div>body</div>
+        </SheetLike>,
+      );
+
+      const background = flattenStyle(captures.backgroundStyle);
+      expect(background.backgroundColor).toBe(theme.sheetSurface);
+      expect(typeof background.backgroundColor).toBe('string');
     });
   });
 
