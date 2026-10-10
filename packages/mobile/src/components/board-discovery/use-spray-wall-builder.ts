@@ -56,7 +56,6 @@ export type SprayWallBuilderSeed = {
   isUnlisted?: boolean;
   hideLocation?: boolean;
   locationName?: string;
-  trainingConsent?: boolean;
 };
 
 /** Everything the details step edits, as the wall on the server holds it. */
@@ -135,9 +134,9 @@ export function useSprayWallBuilder(
   const [locationName, setLocationName] = useState(seed?.locationName ?? '');
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string } | null>(null);
-  // "Help train hold finding" (SW-20, #5471). On by default, as the server's own
-  // default is; the switch sits beside visibility and the photo step says so.
-  const [trainingConsent, setTrainingConsent] = useState(seed?.trainingConsent ?? true);
+  // "Help train hold finding" (SW-20, #5471). On by default; the switch sits
+  // beside visibility and the photo step says so.
+  const [trainingConsent, setTrainingConsent] = useState(true);
 
   /**
    * Pick (or clear) the wall's gym, back-filling the location name the way
@@ -295,6 +294,8 @@ export function useSprayWallBuilder(
       latitude: coords?.latitude,
       longitude: coords?.longitude,
       gymUuid: selectedGym?.uuid,
+      // Sent whether on or off, never left to the server's default: only a
+      // client that showed the switch can say what its owner answered.
       trainingConsent,
     };
   }, [name, angle, isPublic, isUnlisted, hideLocation, locationName, coords, selectedGym, trainingConsent]);
