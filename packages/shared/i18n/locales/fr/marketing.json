@@ -1014,7 +1014,7 @@
   },
   "privacy": {
     "title": "Politique de confidentialité",
-    "lastUpdatedProductAnalytics": "Dernière mise à jour : 9 octobre 2026",
+    "lastUpdated": "Dernière mise à jour : 11 octobre 2026",
     "intro1": "Boardsesh est une app open source pour piloter les boards d'entraînement (Kilter, Tension, MoonBoard) en Bluetooth. Cette politique explique quelles données nous collectons, pourquoi, et ce que nous en faisons.",
     "intro2ProductAnalytics": "La version courte : nous collectons uniquement ce qui est nécessaire au fonctionnement de l'app. Nous ne vendons pas vos données, nous n'affichons pas de publicités, et nous ne partageons pas vos données avec des marketeurs tiers ou des courtiers en données.",
     "collect": {
@@ -1039,6 +1039,14 @@
       "body1": "L'accès à la localisation est optionnel. Lorsqu'il est accordé, il sert un seul objectif : rendre votre session Mode Party visible aux grimpeurs à proximité. Votre localisation n'est partagée avec le serveur que pendant qu'une session Mode Party est active. Nous ne stockons pas votre historique de localisation, ne construisons pas de profil de localisation et ne partageons pas de données de localisation en dehors de la fonctionnalité de découverte de sessions party.",
       "body2": "Vous pouvez révoquer la permission de localisation à tout moment dans les paramètres de votre appareil. L'app fonctionne pleinement sans elle."
     },
+    "sprayPhotos": {
+      "title": "Photos de murs de spray",
+      "body1": "Quand tu ajoutes un mur de spray, nous gardons sa photo et les prises que tu marques. Qui peut voir la photo dépend de la visibilité du mur : privé, lien seulement ou public. Les membres d'une salle voient aussi les murs rattachés à cette salle.",
+      "body2": "Chaque mur a un interrupteur « Aider à entraîner la détection des prises ». Tant qu'il est activé, nous utilisons la photo du mur et les prises que tu marques pour entraîner le détecteur de prises, la partie de l'app qui repère les prises sur la photo d'un nouveau mur. Un admin Boardsesh les vérifie d'abord pour s'assurer qu'elles sont bonnes pour apprendre. Cela vaut quelle que soit la visibilité, murs privés compris. La copie utilisée pour l'entraînement est gardée dans un stockage privé et n'est jamais partagée ni publiée hors de Boardsesh.",
+      "body3": "L'interrupteur est activé quand tu ajoutes un mur, et tu peux le modifier à ce moment-là ou plus tard dans « Modifier la board ». Les murs ajoutés avant l'arrivée de l'interrupteur, ou avec une version de l'app qui ne l'affiche pas, commencent avec l'interrupteur désactivé. Nous entraînons avec un mur dont l'interrupteur est activé au titre de l'intérêt légitime pour améliorer la détection des prises ; le désactiver est ta façon de t'y opposer, avec l'effet décrit plus bas.",
+      "body4": "Si tu le désactives, supprimes le mur ou supprimes ton compte, le mur sort sous 24 heures du jeu de données d'entraînement que nous stockons. Une copie déjà téléchargée pour un entraînement peut encore servir pendant 7 jours au plus, et elle est supprimée au prochain téléchargement de ce jeu de données. Les modèles déjà entraînés gardent ce qu'ils ont appris, mais n'ont aucune copie de ta photo.",
+      "body5": "Si un mur est signalé, un admin Boardsesh peut voir sa photo pour traiter le signalement, quel que soit le réglage de l'interrupteur. Quand tu supprimes un mur, nous supprimons sa photo au bout de 30 jours. Quand tu supprimes ton compte, les photos de tes murs sont supprimées avec lui ; la copie d'entraînement sort dans les délais indiqués plus haut. Quand tu réinitialises un mur, l'ancien est conservé avec sa photo comme mur archivé jusqu'à ce que tu le supprimes aussi. Désactiver l'interrupteur sur l'un des deux vaut pour les deux."
+    },
     "thirdParty": {
       "title": "Services tiers",
       "posthogLabel": "PostHog.",
@@ -1062,7 +1070,8 @@
     "sharing": {
       "title": "Partage de données",
       "body1ProductAnalytics": "Nous ne vendons pas tes données, n’affichons pas de publicités et ne partageons pas d’informations avec des annonceurs ou des courtiers en données. Les prestataires décrits ci-dessus traitent les données pour l’hébergement, le stockage, la fiabilité du service et les statistiques facultatives. La synchronisation Aurora Climbing fonctionne quand tu l’actives.",
-      "body2": "Les autres utilisateurs de Boardsesh peuvent voir votre nom d'utilisateur, votre profil et vos blocs enregistrés si vous participez à des fonctionnalités sociales comme le Mode Party. C'est visible dans l'app et fait partie du fonctionnement du produit."
+      "body2": "Les autres utilisateurs de Boardsesh peuvent voir ton nom d'utilisateur, ton profil et tes blocs enregistrés si tu participes à des fonctionnalités sociales comme le Mode Party. C'est visible dans l'app et fait partie du fonctionnement du produit.",
+      "body3SprayPhotos": "Nous ne donnons à personne d'autre les photos de murs de spray ni les prises que tu marques pour entraîner des modèles. Le seul modèle entraîné avec elles est notre propre détecteur de prises. Les autres voient la photo d'un mur selon sa visibilité, et les membres d'une salle voient les murs rattachés à cette salle, murs privés compris. La photo d'un mur public est sur le web ouvert."
     },
     "retention": {
       "title": "Conservation des données",

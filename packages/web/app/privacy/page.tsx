@@ -17,7 +17,7 @@ export async function generateMetadata() {
 export default async function PrivacyPolicyPage() {
   const { t } = await getServerTranslation('marketing');
   return (
-    <PageShell title={t('privacy.title')} lead={t('privacy.lastUpdatedProductAnalytics')}>
+    <PageShell title={t('privacy.title')} lead={t('privacy.lastUpdated')}>
       <PageSection>
         <Prose>{t('privacy.intro1')}</Prose>
         <Prose>{t('privacy.intro2ProductAnalytics')}</Prose>
@@ -48,6 +48,14 @@ export default async function PrivacyPolicyPage() {
       <PageSection title={t('privacy.location.title')}>
         <Prose>{t('privacy.location.body1')}</Prose>
         <Prose>{t('privacy.location.body2')}</Prose>
+      </PageSection>
+
+      <PageSection title={t('privacy.sprayPhotos.title')}>
+        <Prose>{t('privacy.sprayPhotos.body1')}</Prose>
+        <Prose>{t('privacy.sprayPhotos.body2')}</Prose>
+        <Prose>{t('privacy.sprayPhotos.body3')}</Prose>
+        <Prose>{t('privacy.sprayPhotos.body4')}</Prose>
+        <Prose>{t('privacy.sprayPhotos.body5')}</Prose>
       </PageSection>
 
       <PageSection title={t('privacy.thirdParty.title')}>
@@ -100,6 +108,7 @@ export default async function PrivacyPolicyPage() {
       <PageSection title={t('privacy.sharing.title')}>
         <Prose>{t('privacy.sharing.body1ProductAnalytics')}</Prose>
         <Prose>{t('privacy.sharing.body2')}</Prose>
+        <Prose>{t('privacy.sharing.body3SprayPhotos')}</Prose>
       </PageSection>
 
       <PageSection title={t('privacy.retention.title')}>

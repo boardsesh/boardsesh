@@ -86,3 +86,16 @@ export function readDuplicateBoardError(error: unknown): DuplicateBoardError | n
 export function isBoardLimitError(error: unknown): boolean {
   return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'BOARD_LIMIT_REACHED');
 }
+
+/**
+ * The spray training queue refusing a verdict because the wall version left
+ * the training set after the page loaded: its owner switched training off or
+ * deleted the wall, an admin hid it, or a newer version of the same photo took
+ * its place. Not something to retry. The version has to come off the
+ * reviewer's screen. Only the web admin queue meets it.
+ */
+export function isSprayTrainingNotEligibleError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_TRAINING_NOT_ELIGIBLE',
+  );
+}

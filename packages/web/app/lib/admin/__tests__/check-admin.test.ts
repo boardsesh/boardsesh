@@ -58,6 +58,7 @@ describe('checkAdmin', () => {
       userId: 'user-1',
       isAdmin: false,
       boardScopedOnly: true,
+      hasGlobalAdmin: false,
     });
   });
 
@@ -69,6 +70,7 @@ describe('checkAdmin', () => {
       userId: 'user-1',
       isAdmin: true,
       boardScopedOnly: false,
+      hasGlobalAdmin: true,
     });
   });
 
@@ -81,7 +83,13 @@ describe('checkAdmin', () => {
     ];
 
     const access = await checkAdmin();
-    expect(access).toEqual({ authenticated: true, userId: 'user-1', isAdmin: true, boardScopedOnly: false });
+    expect(access).toEqual({
+      authenticated: true,
+      userId: 'user-1',
+      isAdmin: true,
+      boardScopedOnly: false,
+      hasGlobalAdmin: true,
+    });
   });
 
   it('denies a signed-in user with no admin rows without the scoped copy', async () => {
@@ -92,6 +100,7 @@ describe('checkAdmin', () => {
       userId: 'user-1',
       isAdmin: false,
       boardScopedOnly: false,
+      hasGlobalAdmin: false,
     });
   });
 
@@ -105,5 +114,30 @@ describe('checkAdmin', () => {
     expect(mockWhere).toHaveBeenCalledTimes(1);
     // A `.limit(1)` here would hide a second admin row from the scope check.
     expect(mockLimit).not.toHaveBeenCalled();
+  });
+
+  it('grants a spray-scoped admin only when asked for the spray board', async () => {
+    queuedRows = [{ role: 'admin', boardType: 'spray' }];
+
+    expect(await checkAdmin({ boardType: 'spray' })).toEqual({
+      authenticated: true,
+      userId: 'user-1',
+      isAdmin: true,
+      boardScopedOnly: false,
+      hasGlobalAdmin: false,
+    });
+    expect(await checkAdmin()).toMatchObject({ isAdmin: false, boardScopedOnly: true });
+  });
+
+  it('denies a kilter-scoped admin for the spray board', async () => {
+    queuedRows = [{ role: 'admin', boardType: 'kilter' }];
+
+    expect(await checkAdmin({ boardType: 'spray' })).toMatchObject({ isAdmin: false, boardScopedOnly: true });
+  });
+
+  it('lets a global admin through for any board type', async () => {
+    queuedRows = [{ role: 'admin', boardType: null }];
+
+    expect(await checkAdmin({ boardType: 'spray' })).toMatchObject({ isAdmin: true });
   });
 });

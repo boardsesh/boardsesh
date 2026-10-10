@@ -80,7 +80,6 @@ const SPRAY_TRAINING_REVIEW_FIELDS = `
   status
   reason
   notes
-  reviewedAt
 `;
 
 /** One page of the queue. Community admins only (`spray`-scoped or global). */
@@ -95,16 +94,11 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
       }
       items {
         versionId
-        wallUuid
         versionNumber
         visibility
-        createdAt
-        publishedAt
         photo {
           url
           thumbUrl
-          width
-          height
           expiresAt
         }
         photoWidth
@@ -117,7 +111,6 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
           outline
           source
           autoReview
-          confidence
         }
         unmappableHoldCount
         candidates {
@@ -125,27 +118,36 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
           cx
           cy
           r
-          confidence
           outline
           fate
         }
         detectionModelVersion
         stats {
           holdCount
-          manualHoldCount
-          autoHoldCount
           acceptedHoldCount
-          confirmedHoldCount
           editedHoldCount
-          candidateCount
-          keptCandidateCount
-          editedCandidateCount
           deletedCandidateCount
-          notShownCandidateCount
         }
         review {
           ${SPRAY_TRAINING_REVIEW_FIELDS}
         }
+      }
+    }
+  }
+`;
+
+/**
+ * The three tab counts on their own, for when the list on screen is known to
+ * be stale. `limit: 1` because the resolver builds a page whether or not the
+ * query selects it, and every item on a page mints a presigned photo.
+ */
+export const GET_SPRAY_TRAINING_TOTALS = gql`
+  query GetSprayTrainingTotals($status: SprayTrainingReviewStatus!) {
+    sprayTrainingQueue(status: $status, limit: 1) {
+      totals {
+        unreviewed
+        approved
+        rejected
       }
     }
   }
@@ -167,7 +169,6 @@ export type SprayTrainingReviewData = {
   status: SprayTrainingReviewStatus;
   reason: SprayTrainingRejectReason | null;
   notes: string | null;
-  reviewedAt: string | null;
 };
 
 /** A saved hold in the version's PHOTO pixels; `outline` is in units of `r`. */
@@ -179,7 +180,6 @@ export type SprayTrainingHoldData = {
   outline: number[] | null;
   source: SprayHoldSource;
   autoReview: SprayHoldAutoReview | null;
-  confidence: number | null;
 };
 
 /** A detector suggestion in photo pixels; `outline` is in units of `r`. */
@@ -188,33 +188,29 @@ export type SprayTrainingCandidateData = {
   cx: number;
   cy: number;
   r: number;
-  confidence: number;
   outline: number[] | null;
   fate: SprayTrainingCandidateFate;
 };
 
+/** The four counts the queue cards show. The schema serves seven more. */
 export type SprayTrainingStatsData = {
   holdCount: number;
-  manualHoldCount: number;
-  autoHoldCount: number;
   acceptedHoldCount: number;
-  confirmedHoldCount: number;
   editedHoldCount: number;
-  candidateCount: number;
-  keptCandidateCount: number;
-  editedCandidateCount: number;
   deletedCandidateCount: number;
-  notShownCandidateCount: number;
 };
+
+/**
+ * The signed links alone. The photo's size comes from `photoWidth` and
+ * `photoHeight` on the item, the box the holds were projected into.
+ */
+export type SprayTrainingPhotoData = Pick<SprayWallPhotoData, 'url' | 'thumbUrl' | 'expiresAt'>;
 
 export type SprayTrainingQueueItemData = {
   versionId: string;
-  wallUuid: string;
   versionNumber: number;
   visibility: SprayTrainingWallVisibility;
-  createdAt: string;
-  publishedAt: string | null;
-  photo: SprayWallPhotoData | null;
+  photo: SprayTrainingPhotoData | null;
   photoWidth: number | null;
   photoHeight: number | null;
   holds: SprayTrainingHoldData[];
@@ -231,12 +227,21 @@ export type GetSprayTrainingQueueQueryVariables = {
   offset?: number | null;
 };
 
+/** How many eligible versions sit on each tab. */
+export type SprayTrainingTotalsData = { unreviewed: number; approved: number; rejected: number };
+
 export type GetSprayTrainingQueueQueryResponse = {
   sprayTrainingQueue: {
     hasMore: boolean;
-    totals: { unreviewed: number; approved: number; rejected: number };
+    totals: SprayTrainingTotalsData;
     items: SprayTrainingQueueItemData[];
   };
+};
+
+export type GetSprayTrainingTotalsQueryVariables = { status: SprayTrainingReviewStatus };
+
+export type GetSprayTrainingTotalsQueryResponse = {
+  sprayTrainingQueue: { totals: SprayTrainingTotalsData };
 };
 
 export type SetSprayTrainingReviewMutationVariables = {
