@@ -1,10 +1,17 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { SprayTrainingQueueItemData, SprayTrainingReviewStatus } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SprayTrainingPanel from '../spray-training-panel';
 import { isShortcutBlockedTarget } from '../spray-training-review-dialog';
+
+// The dialog is an MUI modal: everything behind it is `aria-hidden` until its exit
+// transition ends, and role queries walk the whole tree. The default 1 s wait is
+// enough on an idle machine and not on a loaded CI runner, where a wait that is
+// about to succeed times out instead. A longer ceiling changes nothing for a test
+// that passes; it only stops a slow pass from being reported as a failure.
+configure({ asyncUtilTimeout: 5000 });
 
 const mockRequest = vi.fn();
 
@@ -746,8 +753,9 @@ describe('SprayTrainingPanel drained page', () => {
     mockRequest.mockRejectedValueOnce(new Error('offline'));
     fireEvent.keyDown(window, { key: 'a' });
 
-    expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+    // The dialog closes first; Retry is behind it until then.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
     expect(screen.queryByText('Nothing here')).toBeNull();
     // One failed read, not a retry loop.
     expect(mockRequest).toHaveBeenCalledTimes(3);
