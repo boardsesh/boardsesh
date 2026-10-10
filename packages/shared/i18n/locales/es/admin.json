@@ -469,6 +469,11 @@
       "DUPLICATE": "Duplicada",
       "OTHER": "Otro motivo"
     },
+    "visibility": {
+      "PRIVATE": "Visibilidad: privado",
+      "UNLISTED": "Visibilidad: solo con enlace",
+      "PUBLIC": "Visibilidad: público"
+    },
     "review": {
       "title": "Versión {{version}} del muro",
       "close": "Cerrar",
@@ -477,6 +482,7 @@
       "position": "{{current}} de {{total}}",
       "photoAlt": "Foto de un muro de spray con las presas marcadas",
       "noPhoto": "Esta foto ya no está disponible.",
+      "photoLoading": "Cargando la foto",
       "unmappable": "Presas que no pudimos situar en la foto: {{total}}",
       "model": "Detector de presas: {{version}}",
       "showMarks": "Mostrar marcas (H)",

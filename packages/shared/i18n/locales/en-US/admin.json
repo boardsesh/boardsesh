@@ -469,6 +469,11 @@
       "DUPLICATE": "Duplicate",
       "OTHER": "Other"
     },
+    "visibility": {
+      "PRIVATE": "Visibility: private",
+      "UNLISTED": "Visibility: link only",
+      "PUBLIC": "Visibility: public"
+    },
     "review": {
       "title": "Wall version {{version}}",
       "close": "Close",
@@ -477,6 +482,7 @@
       "position": "{{current}} of {{total}}",
       "photoAlt": "Spray wall photo with marked holds",
       "noPhoto": "This photo is no longer available.",
+      "photoLoading": "Loading the photo",
       "unmappable": "Holds we couldn't place on the photo: {{total}}",
       "model": "Detector: {{version}}",
       "showMarks": "Show marks (H)",

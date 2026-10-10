@@ -469,6 +469,11 @@
       "DUPLICATE": "Doublon",
       "OTHER": "Autre motif"
     },
+    "visibility": {
+      "PRIVATE": "Visibilité : privé",
+      "UNLISTED": "Visibilité : lien seulement",
+      "PUBLIC": "Visibilité : public"
+    },
     "review": {
       "title": "Mur, version {{version}}",
       "close": "Fermer",
@@ -477,6 +482,7 @@
       "position": "{{current}} sur {{total}}",
       "photoAlt": "Photo d'un mur de spray avec les prises marquées",
       "noPhoto": "Cette photo n'est plus disponible.",
+      "photoLoading": "Chargement de la photo",
       "unmappable": "Prises qu'on n'a pas pu placer sur la photo : {{total}}",
       "model": "Détecteur de prises : {{version}}",
       "showMarks": "Afficher les marques (H)",

@@ -6,15 +6,17 @@ import type { SprayOverlayKind, SprayOverlayMark } from '@/app/lib/admin/spray-t
 type KindStyle = { stroke: string; strokeWidth: number; dashed: boolean };
 
 /**
- * One look per kind. Stroke widths are in PHOTO pixels (the SVG's viewBox), so
- * `vectorEffect="non-scaling-stroke"` keeps them readable at any display size.
+ * One look per kind. Stroke widths are in SCREEN pixels: the marks carry
+ * `vectorEffect="non-scaling-stroke"`, so the viewBox (the photo's pixel box)
+ * scales their geometry but not the line, and a ring is as thick on a small
+ * photo as on a large one.
  */
 export const SPRAY_OVERLAY_STYLES: Record<SprayOverlayKind, KindStyle> = {
   manual: { stroke: themeTokens.colors.primary, strokeWidth: 2, dashed: false },
   auto: { stroke: themeTokens.neutral[700], strokeWidth: 2, dashed: false },
   accepted: { stroke: themeTokens.colors.warning, strokeWidth: 2, dashed: false },
   confirmed: { stroke: themeTokens.colors.success, strokeWidth: 4, dashed: false },
-  edited: { stroke: themeTokens.colors.accent, strokeWidth: 2, dashed: false },
+  edited: { stroke: themeTokens.colors.pink, strokeWidth: 2, dashed: false },
   deleted: { stroke: themeTokens.colors.error, strokeWidth: 2, dashed: true },
   notShown: { stroke: themeTokens.neutral[500], strokeWidth: 2, dashed: true },
 };

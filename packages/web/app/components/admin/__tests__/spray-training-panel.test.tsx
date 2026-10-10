@@ -1,9 +1,10 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { SprayTrainingQueueItemData } from '@boardsesh/graphql/operations';
+import type { SprayTrainingQueueItemData, SprayTrainingReviewStatus } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SprayTrainingPanel from '../spray-training-panel';
+import { isShortcutBlockedTarget } from '../spray-training-review-dialog';
 
 const mockRequest = vi.fn();
 
@@ -28,6 +29,9 @@ vi.mock('@boardsesh/graphql/operations', () => ({
 }));
 
 const FAR_FUTURE = '2999-01-01T00:00:00.000Z';
+const PHOTO_ALT = 'Spray wall photo with marked holds';
+const NO_PHOTO = 'This photo is no longer available.';
+const FIRST_PAGE = { status: 'UNREVIEWED', limit: 25, offset: 0 };
 
 function makeItem(versionId: string, versionNumber: number): SprayTrainingQueueItemData {
   return {
@@ -70,10 +74,54 @@ function makeItem(versionId: string, versionNumber: number): SprayTrainingQueueI
   };
 }
 
-function queueResponse(items: SprayTrainingQueueItemData[], hasMore = false) {
-  return {
-    sprayTrainingQueue: { hasMore, totals: { unreviewed: items.length, approved: 0, rejected: 0 }, items },
-  };
+function queueResponse(
+  items: SprayTrainingQueueItemData[],
+  { hasMore = false, unreviewed = items.length }: { hasMore?: boolean; unreviewed?: number } = {},
+) {
+  return { sprayTrainingQueue: { hasMore, totals: { unreviewed, approved: 0, rejected: 0 }, items } };
+}
+
+function reviewResponse(versionId: string, status: SprayTrainingReviewStatus) {
+  return { setSprayTrainingReview: { versionId, review: { status, reason: null, notes: null, reviewedAt: null } } };
+}
+
+function reviewCalls() {
+  return mockRequest.mock.calls.filter(([operation]) => operation === 'SET_SPRAY_TRAINING_REVIEW');
+}
+
+function approveButton(dialog: HTMLElement) {
+  return within(dialog).getByRole<HTMLButtonElement>('button', { name: 'Approve (A)' });
+}
+
+function rejectButton(dialog: HTMLElement) {
+  return within(dialog).getByRole<HTMLButtonElement>('button', { name: 'Reject (R)' });
+}
+
+/** The browser finishing the download of the wall photo now in the dialog. */
+function finishPhotoLoad(dialog: HTMLElement) {
+  fireEvent.load(within(dialog).getByAltText(PHOTO_ALT));
+}
+
+/** Opens a wall without its photo: jsdom never loads an image by itself. */
+async function openWallUnloaded(versionNumber: number) {
+  fireEvent.click(await screen.findByRole('button', { name: `Review wall version ${versionNumber}` }));
+  return screen.findByRole('dialog');
+}
+
+/** Opens a wall the way a reviewer meets it once the photo is on screen. */
+async function openWall(versionNumber: number) {
+  const dialog = await openWallUnloaded(versionNumber);
+  finishPhotoLoad(dialog);
+  return dialog;
+}
+
+/** Picks a reject reason with the mouse and waits for the menu to shut. */
+async function pickReasonWithMouse(dialog: HTMLElement, reasonLabel: string) {
+  const reasonPicker = within(dialog).getByRole('combobox');
+  fireEvent.mouseDown(reasonPicker);
+  fireEvent.click(await screen.findByRole('option', { name: reasonLabel }));
+  await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  return reasonPicker;
 }
 
 beforeEach(() => {
@@ -93,15 +141,11 @@ describe('SprayTrainingPanel', () => {
     expect(screen.getByText('Accepted unchecked: 50%')).toBeTruthy();
     expect(screen.getByText('Deleted suggestions: 1')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unreviewed (1)' })).toBeTruthy();
-    expect(mockRequest).toHaveBeenCalledWith('GET_SPRAY_TRAINING_QUEUE', {
-      status: 'UNREVIEWED',
-      limit: 25,
-      offset: 0,
-    });
+    expect(mockRequest).toHaveBeenCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
   });
 
   it('asks for the next page at the loaded offset', async () => {
-    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], true));
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)], { hasMore: true }));
     render(<SprayTrainingPanel />);
     const more = await screen.findByRole('button', { name: 'Load more' });
 
@@ -134,7 +178,7 @@ describe('SprayTrainingPanel', () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
     render(<SprayTrainingPanel />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
+    await openWall(1);
 
     const overlay = await screen.findByTestId('spray-hold-overlay');
     expect(overlay.getAttribute('viewBox')).toBe('0 0 800 600');
@@ -145,18 +189,25 @@ describe('SprayTrainingPanel', () => {
     expect(overlay.querySelectorAll('circle').length).toBe(2);
   });
 
+  it('tells the reviewer who can see the wall', async () => {
+    const linkOnly = makeItem('v2', 2);
+    linkOnly.visibility = 'UNLISTED';
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), linkOnly]));
+    render(<SprayTrainingPanel />);
+
+    const dialog = await openWall(1);
+    expect(within(dialog).getByText('Visibility: private')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(within(dialog).getByText('Visibility: link only')).toBeTruthy());
+  });
+
   it('approves with A, advances to the next wall and moves the totals', async () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
     render(<SprayTrainingPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
-    await screen.findByTestId('spray-hold-overlay');
+    await openWall(1);
 
-    mockRequest.mockResolvedValueOnce({
-      setSprayTrainingReview: {
-        versionId: 'v1',
-        review: { status: 'APPROVED', reason: null, notes: null, reviewedAt: null },
-      },
-    });
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
     fireEvent.keyDown(window, { key: 'a' });
 
     await waitFor(() =>
@@ -170,17 +221,30 @@ describe('SprayTrainingPanel', () => {
     expect(screen.getByRole('button', { name: 'Approved (1)', hidden: true })).toBeTruthy();
   });
 
+  it('sends the trimmed notes with an approval', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+
+    fireEvent.change(within(dialog).getByLabelText('Notes (optional)'), { target: { value: '  clean labels \n' } });
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    fireEvent.click(approveButton(dialog));
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenCalledWith('SET_SPRAY_TRAINING_REVIEW', {
+        input: { versionId: 'v1', status: 'APPROVED', reason: null, notes: 'clean labels' },
+      }),
+    );
+  });
+
   it('rejects with the chosen reason and notes', async () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
     render(<SprayTrainingPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await openWall(1);
 
-    const rejectButton = within(dialog).getByRole('button', { name: 'Reject (R)' }) as HTMLButtonElement;
-    expect(rejectButton.disabled).toBe(true);
+    expect(rejectButton(dialog).disabled).toBe(true);
 
-    fireEvent.mouseDown(within(dialog).getByRole('combobox'));
-    fireEvent.click(await screen.findByRole('option', { name: 'Photo quality' }));
+    await pickReasonWithMouse(dialog, 'Photo quality');
     fireEvent.change(within(dialog).getByLabelText('Notes (optional)'), { target: { value: ' too dark ' } });
 
     mockRequest.mockResolvedValueOnce({
@@ -189,7 +253,7 @@ describe('SprayTrainingPanel', () => {
         review: { status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: 'too dark', reviewedAt: null },
       },
     });
-    fireEvent.click(rejectButton);
+    fireEvent.click(rejectButton(dialog));
 
     await waitFor(() =>
       expect(mockRequest).toHaveBeenCalledWith('SET_SPRAY_TRAINING_REVIEW', {
@@ -201,7 +265,7 @@ describe('SprayTrainingPanel', () => {
   it('H hides every mark', async () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
     render(<SprayTrainingPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
+    await openWall(1);
     const overlay = await screen.findByTestId('spray-hold-overlay');
 
     fireEvent.keyDown(window, { key: 'h' });
@@ -210,25 +274,207 @@ describe('SprayTrainingPanel', () => {
   });
 });
 
-describe('SprayTrainingPanel photo expiry', () => {
-  it('re-reads the loaded page once the photo link has expired', async () => {
+describe('SprayTrainingPanel photo on screen', () => {
+  it('holds Approve, Reject and their shortcuts until the photo has loaded, on every wall', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWallUnloaded(1);
+
+    expect(within(dialog).getByRole('progressbar', { name: 'Loading the photo' })).toBeTruthy();
+    expect(screen.queryByTestId('spray-hold-overlay')).toBeNull();
+    expect(approveButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    // R with no reason would open the picker: not while the photo is loading.
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(reviewCalls()).toHaveLength(0);
+
+    const firstPhoto = within(dialog).getByAltText(PHOTO_ALT);
+    finishPhotoLoad(dialog);
+    expect(approveButton(dialog).disabled).toBe(false);
+    expect(within(dialog).queryByRole('progressbar')).toBeNull();
+    expect(screen.getByTestId('spray-hold-overlay')).toBeTruthy();
+
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 2')).toBeTruthy());
+
+    // The next wall is a new image element with nothing painted yet, so the
+    // first wall's photo cannot sit under the second wall's marks.
+    const secondPhoto = within(dialog).getByAltText(PHOTO_ALT);
+    expect(secondPhoto).not.toBe(firstPhoto);
+    expect(secondPhoto.getAttribute('src')).toBe('https://photos.example/v2.jpg');
+    expect(screen.queryByTestId('spray-hold-overlay')).toBeNull();
+    // The save has finished, so only the unloaded photo keeps Approve off.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approved (1)', hidden: true })).toBeTruthy());
+    expect(approveButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(reviewCalls()).toHaveLength(1);
+
+    finishPhotoLoad(dialog);
+    mockRequest.mockResolvedValueOnce(reviewResponse('v2', 'APPROVED'));
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1][1]).toEqual({
+      input: { versionId: 'v2', status: 'APPROVED', reason: null, notes: null },
+    });
+  });
+
+  it('waits for the photo again on a wall the reviewer comes back to', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+    const firstVisit = within(dialog).getByAltText(PHOTO_ALT);
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 2')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 1')).toBeTruthy());
+
+    // A fresh element for the same wall: its earlier load does not count.
+    expect(within(dialog).getByAltText(PHOTO_ALT)).not.toBe(firstVisit);
+    expect(approveButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(reviewCalls()).toHaveLength(0);
+
+    finishPhotoLoad(dialog);
+    expect(approveButton(dialog).disabled).toBe(false);
+  });
+
+  it('keeps the photo on screen while a re-signed link for the same wall loads', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const expiring = makeItem('v1', 1);
-      expiring.photo = { ...expiring.photo!, expiresAt: new Date(Date.now() + 60_000).toISOString() };
+      expiring.photo = { ...expiring.photo!, expiresAt: new Date(Date.now() + 90_000).toISOString() };
+      mockRequest.mockResolvedValueOnce(queueResponse([expiring]));
+      render(<SprayTrainingPanel />);
+      const dialog = await openWall(1);
+      const photo = within(dialog).getByAltText(PHOTO_ALT);
+
+      const resigned = makeItem('v1', 1);
+      resigned.photo = { ...resigned.photo!, url: 'https://photos.example/v1-resigned.jpg' };
+      mockRequest.mockResolvedValueOnce(queueResponse([resigned]));
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() => expect(photo.getAttribute('src')).toBe('https://photos.example/v1-resigned.jpg'));
+
+      // Same element, so the browser keeps painting the old bytes until the new ones arrive.
+      expect(within(dialog).getByAltText(PHOTO_ALT)).toBe(photo);
+      expect(approveButton(dialog).disabled).toBe(false);
+      expect(screen.getByTestId('spray-hold-overlay')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps Reject off while the photo is loading even with a reason chosen', async () => {
+    const withReason = makeItem('v1', 1);
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    mockRequest.mockResolvedValueOnce(queueResponse([withReason]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWallUnloaded(1);
+
+    expect(rejectButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(reviewCalls()).toHaveLength(0);
+
+    finishPhotoLoad(dialog);
+    expect(rejectButton(dialog).disabled).toBe(false);
+  });
+
+  it('does not decide on a held key', async () => {
+    const withReason = makeItem('v1', 1);
+    // A saved reason, so a repeated R would reject at once if it got through.
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    mockRequest.mockResolvedValueOnce(queueResponse([withReason, makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    fireEvent.keyDown(window, { key: 'a', repeat: true });
+    fireEvent.keyDown(window, { key: 'A', repeat: true });
+    fireEvent.keyDown(window, { key: 'r', repeat: true });
+    fireEvent.keyDown(window, { key: 'R', repeat: true });
+    expect(reviewCalls()).toHaveLength(0);
+
+    // The same key, pressed once, still decides.
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+  });
+
+  it.each([
+    ['the photo link is missing', (wall: SprayTrainingQueueItemData) => void (wall.photo = null)],
+    ['the photo has no size', (wall: SprayTrainingQueueItemData) => void (wall.photoWidth = null)],
+  ])('cannot approve when %s, but can still reject', async (_label, breakPhoto) => {
+    const unseen = makeItem('v1', 1);
+    breakPhoto(unseen);
+    mockRequest.mockResolvedValueOnce(queueResponse([unseen]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWallUnloaded(1);
+
+    expect(within(dialog).getByText(NO_PHOTO)).toBeTruthy();
+    expect(approveButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(reviewCalls()).toHaveLength(0);
+
+    await pickReasonWithMouse(dialog, 'Photo quality');
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'REJECTED'));
+    fireEvent.click(rejectButton(dialog));
+
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0][1]).toEqual({
+      input: { versionId: 'v1', status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: null },
+    });
+  });
+
+  it('treats a photo that fails to download as unavailable, and tries again on the next visit', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWallUnloaded(1);
+
+    fireEvent.error(within(dialog).getByAltText(PHOTO_ALT));
+
+    expect(within(dialog).getByText(NO_PHOTO)).toBeTruthy();
+    expect(within(dialog).queryByRole('progressbar')).toBeNull();
+    expect(approveButton(dialog).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(reviewCalls()).toHaveLength(0);
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 2')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 1')).toBeTruthy());
+
+    expect(within(dialog).queryByText(NO_PHOTO)).toBeNull();
+    finishPhotoLoad(dialog);
+    expect(approveButton(dialog).disabled).toBe(false);
+  });
+});
+
+describe('SprayTrainingPanel photo links', () => {
+  it('re-reads the loaded page a minute before the earliest photo link expires', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const expiring = makeItem('v1', 1);
+      expiring.photo = { ...expiring.photo!, expiresAt: new Date(Date.now() + 90_000).toISOString() };
       mockRequest.mockResolvedValueOnce(queueResponse([expiring]));
       render(<SprayTrainingPanel />);
       await screen.findByRole('button', { name: 'Review wall version 1' });
 
-      mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
-      await vi.advanceTimersByTimeAsync(61_000);
+      // 90 s of life less the 60 s lead puts the re-read at 30 s: not yet at 25 s.
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+
+      const resigned = makeItem('v1', 1);
+      resigned.photo = { ...resigned.photo!, thumbUrl: 'https://photos.example/v1-thumb-resigned.jpg' };
+      mockRequest.mockResolvedValueOnce(queueResponse([resigned]));
+      await vi.advanceTimersByTimeAsync(10_000);
 
       await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
-      expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', {
-        status: 'UNREVIEWED',
-        limit: 25,
-        offset: 0,
-      });
+      expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
+      // The card swaps to the freshly signed link while the old one still works.
+      await waitFor(() =>
+        expect(document.querySelector('img[src="https://photos.example/v1-thumb-resigned.jpg"]')).not.toBeNull(),
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -245,8 +491,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
       }
       mockRequest.mockResolvedValueOnce(queueResponse(expiring));
       render(<SprayTrainingPanel />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
-      await screen.findByTestId('spray-hold-overlay');
+      await openWall(1);
 
       // The refresh starts about 30 s in (60 s before expiry) and is held open.
       let releaseRefresh: (value: unknown) => void = () => undefined;
@@ -254,12 +499,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
       await vi.advanceTimersByTimeAsync(31_000);
       await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
 
-      mockRequest.mockResolvedValueOnce({
-        setSprayTrainingReview: {
-          versionId: 'v1',
-          review: { status: 'APPROVED', reason: null, notes: null, reviewedAt: null },
-        },
-      });
+      mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
       fireEvent.keyDown(window, { key: 'a' });
       await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
 
@@ -286,8 +526,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
       sprayTrainingQueue: { hasMore: false, totals: { unreviewed: 0, approved: 0, rejected: 1 }, items: [rejected] },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Rejected (1)' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await openWall(1);
 
     mockRequest.mockResolvedValueOnce({
       setSprayTrainingReview: {
@@ -296,7 +535,7 @@ describe('SprayTrainingPanel races and shortcuts', () => {
       },
     });
     fireEvent.change(within(dialog).getByLabelText('Notes (optional)'), { target: { value: 'again' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject (R)' }));
+    fireEvent.click(rejectButton(dialog));
 
     await waitFor(() => expect(mockRequest).toHaveBeenLastCalledWith('SET_SPRAY_TRAINING_REVIEW', expect.anything()));
     await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Wall version 1')).toBeTruthy());
@@ -304,30 +543,107 @@ describe('SprayTrainingPanel races and shortcuts', () => {
   });
 
   it('ignores shortcuts typed in the notes field and while the reason menu is open', async () => {
-    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
+    const withReason = makeItem('v1', 1);
+    // A saved reason, so R would reject at once if the key got through.
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    mockRequest.mockResolvedValueOnce(queueResponse([withReason]));
     render(<SprayTrainingPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await openWall(1);
 
-    fireEvent.keyDown(within(dialog).getByLabelText('Notes (optional)'), { key: 'a' });
-    expect(mockRequest).toHaveBeenCalledTimes(1);
+    const notesField = within(dialog).getByLabelText('Notes (optional)');
+    fireEvent.keyDown(notesField, { key: 'a' });
+    fireEvent.keyDown(notesField, { key: 'r' });
+    expect(reviewCalls()).toHaveLength(0);
 
     fireEvent.mouseDown(within(dialog).getByRole('combobox'));
     await screen.findByRole('listbox');
     fireEvent.keyDown(screen.getByRole('listbox'), { key: 'a' });
-    expect(mockRequest).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'r' });
+    expect(reviewCalls()).toHaveLength(0);
+  });
+
+  it.each([
+    ['r', { versionId: 'v1', status: 'REJECTED', reason: 'PHOTO_QUALITY', notes: null }],
+    ['a', { versionId: 'v1', status: 'APPROVED', reason: null, notes: null }],
+  ] as const)('takes %s from the closed reason picker after a mouse pick', async (key, input) => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
+    render(<SprayTrainingPanel />);
+    const dialog = await openWall(1);
+
+    // MUI leaves focus on the picker's trigger, so that is where the next key lands.
+    const reasonPicker = await pickReasonWithMouse(dialog, 'Photo quality');
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', input.status));
+    fireEvent.keyDown(reasonPicker, { key });
+
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0][1]).toEqual({ input });
+  });
+
+  it('leaves Cmd, Ctrl and Alt combinations to the browser', async () => {
+    const withReason = makeItem('v1', 1);
+    // A saved reason, so Cmd+R would reject at once if it were read as R.
+    withReason.review = { status: 'UNREVIEWED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    mockRequest.mockResolvedValueOnce(queueResponse([withReason]));
+    render(<SprayTrainingPanel />);
+    await openWall(1);
+
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+      const reload = new KeyboardEvent('keydown', { key: 'r', bubbles: true, cancelable: true, ...modifier });
+      const selectAll = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true, ...modifier });
+      fireEvent(window, reload);
+      fireEvent(window, selectAll);
+      // Cmd+R still has to reload the page.
+      expect(reload.defaultPrevented).toBe(false);
+      expect(selectAll.defaultPrevented).toBe(false);
+    }
+    expect(reviewCalls()).toHaveLength(0);
   });
 
   it('still takes shortcuts after a legend switch has focus', async () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
     render(<SprayTrainingPanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
+    const dialog = await openWall(1);
     const overlay = await screen.findByTestId('spray-hold-overlay');
-    const dialog = screen.getByRole('dialog');
 
     const legendSwitch = within(dialog).getAllByRole('switch')[0];
     fireEvent.keyDown(legendSwitch, { key: 'h' });
 
     await waitFor(() => expect(overlay.querySelectorAll('[data-kind]').length).toBe(0));
+  });
+});
+
+describe('isShortcutBlockedTarget', () => {
+  function element(markup: string): HTMLElement {
+    const host = document.createElement('div');
+    host.innerHTML = markup;
+    return host.firstElementChild as HTMLElement;
+  }
+
+  it.each([
+    ['a multi-line text field', '<textarea></textarea>'],
+    ['a text input', '<input type="text" />'],
+    ['a search input', '<input type="search" />'],
+    ['a native select', '<select></select>'],
+    ['an open menu', '<ul role="listbox"></ul>'],
+  ])('blocks %s', (_label, markup) => {
+    expect(isShortcutBlockedTarget(element(markup))).toBe(true);
+  });
+
+  it('blocks an option inside an open menu', () => {
+    const menu = element('<ul role="listbox"><li role="option"><span>Photo quality</span></li></ul>');
+    expect(isShortcutBlockedTarget(menu.querySelector('span'))).toBe(true);
+  });
+
+  it.each([
+    ['the closed reason picker', '<div role="combobox" tabindex="0"></div>'],
+    ['a switch', '<input type="checkbox" role="switch" />'],
+    ['a button', '<button type="button"></button>'],
+  ])('lets shortcuts through from %s', (_label, markup) => {
+    expect(isShortcutBlockedTarget(element(markup))).toBe(false);
+  });
+
+  it('lets shortcuts through when no element has the key', () => {
+    expect(isShortcutBlockedTarget(window)).toBe(false);
+    expect(isShortcutBlockedTarget(null)).toBe(false);
   });
 });

@@ -469,6 +469,11 @@
       "DUPLICATE": "Duplikat",
       "OTHER": "Anderer Grund"
     },
+    "visibility": {
+      "PRIVATE": "Sichtbarkeit: privat",
+      "UNLISTED": "Sichtbarkeit: nur mit Link",
+      "PUBLIC": "Sichtbarkeit: öffentlich"
+    },
     "review": {
       "title": "Spraywand, Version {{version}}",
       "close": "Schließen",
@@ -477,6 +482,7 @@
       "position": "{{current}} von {{total}}",
       "photoAlt": "Foto einer Spraywand mit markierten Griffen",
       "noPhoto": "Dieses Foto ist nicht mehr verfügbar.",
+      "photoLoading": "Foto wird geladen",
       "unmappable": "Griffe, die wir nicht auf dem Foto platzieren konnten: {{total}}",
       "model": "Grifferkennung: {{version}}",
       "showMarks": "Markierungen zeigen (H)",
