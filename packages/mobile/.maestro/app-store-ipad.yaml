@@ -14,6 +14,9 @@ name: app-store screenshots (iPad)
 # Tap the first matching label (the sidebar parent precedes its duplicate text
 # child and page headings), then require selected: true on that destination.
 # Retry swallowed taps after rotation; keep content readiness gates below.
+# UIKit owns Hide Sidebar / Toggle sidebar: capture simulators use English system
+# language while the app catalog locale changes separately. Collapse the floating
+# sidebar before capture so it cannot cover the screen content; reopen for navigation.
 # The orchestrator also rejects byte-identical captures of different scenes.
 #
 # The wall kiosk seed (the active board's real climbs) is published at the root by
@@ -24,17 +27,20 @@ name: app-store screenshots (iPad)
 # before running this flow.
 - setOrientation: ${MAESTRO_DEVICE_ORIENTATION}
 - waitForAnimationToEnd
-# The sidebar must be mounted and interactive before the first tap — the first tap
-# after the rotation relayout is the one that got swallowed in CI.
-- extendedWaitUntil:
-    visible:
-      text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
-    timeout: 15000
+# Each navigation also handles a sidebar left collapsed by a previous run.
 
 # Climbs — the browse list.
 - retry:
     maxRetries: 2
     commands:
+      - runFlow:
+          when:
+            visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+          commands:
+            - tapOn: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+      - extendedWaitUntil:
+          visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+          timeout: 15000
       - tapOn:
           text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
           index: 0
@@ -43,6 +49,11 @@ name: app-store screenshots (iPad)
             text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
             selected: true
           timeout: 5000
+- tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+    timeout: 15000
+- assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 - takeScreenshot: 02-climbs
@@ -51,6 +62,14 @@ name: app-store screenshots (iPad)
 - retry:
     maxRetries: 2
     commands:
+      - runFlow:
+          when:
+            visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+          commands:
+            - tapOn: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+      - extendedWaitUntil:
+          visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+          timeout: 15000
       - tapOn:
           text: ${SCREENSHOT_SIDEBAR_HOME_LABEL}
           index: 0
@@ -59,6 +78,11 @@ name: app-store screenshots (iPad)
             text: ${SCREENSHOT_SIDEBAR_HOME_LABEL}
             selected: true
           timeout: 5000
+- tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+    timeout: 15000
+- assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
 # The live rail settles independently from the session feed.
 - extendedWaitUntil:
@@ -76,6 +100,14 @@ name: app-store screenshots (iPad)
 - retry:
     maxRetries: 2
     commands:
+      - runFlow:
+          when:
+            visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+          commands:
+            - tapOn: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+      - extendedWaitUntil:
+          visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+          timeout: 15000
       - tapOn:
           text: ${SCREENSHOT_SIDEBAR_WALL_LABEL}
           index: 0
@@ -84,6 +116,11 @@ name: app-store screenshots (iPad)
             text: ${SCREENSHOT_SIDEBAR_WALL_LABEL}
             selected: true
           timeout: 5000
+- tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+    timeout: 15000
+- assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 - takeScreenshot: 00-wall
@@ -93,6 +130,14 @@ name: app-store screenshots (iPad)
 - retry:
     maxRetries: 2
     commands:
+      - runFlow:
+          when:
+            visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+          commands:
+            - tapOn: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+      - extendedWaitUntil:
+          visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+          timeout: 15000
       - tapOn:
           text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}
           index: 0
@@ -101,6 +146,11 @@ name: app-store screenshots (iPad)
             text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}
             selected: true
           timeout: 5000
+- tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+    timeout: 15000
+- assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
 # Pixel stability alone can still describe the preceding tab.
 - extendedWaitUntil:
@@ -115,6 +165,14 @@ name: app-store screenshots (iPad)
 - retry:
     maxRetries: 2
     commands:
+      - runFlow:
+          when:
+            visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+          commands:
+            - tapOn: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+      - extendedWaitUntil:
+          visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+          timeout: 15000
       - tapOn:
           text: ${SCREENSHOT_SIDEBAR_DISCOVER_LABEL}
           index: 0
@@ -123,6 +181,11 @@ name: app-store screenshots (iPad)
             text: ${SCREENSHOT_SIDEBAR_DISCOVER_LABEL}
             selected: true
           timeout: 5000
+- tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+    timeout: 15000
+- assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
 - takeScreenshot: 04-discover
 
@@ -130,6 +193,14 @@ name: app-store screenshots (iPad)
 - retry:
     maxRetries: 2
     commands:
+      - runFlow:
+          when:
+            visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+          commands:
+            - tapOn: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+      - extendedWaitUntil:
+          visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+          timeout: 15000
       - tapOn:
           text: ${SCREENSHOT_SIDEBAR_PROFILE_LABEL}
           index: 0
@@ -138,6 +209,11 @@ name: app-store screenshots (iPad)
             text: ${SCREENSHOT_SIDEBAR_PROFILE_LABEL}
             selected: true
           timeout: 5000
+- tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}
+    timeout: 15000
+- assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
 - extendedWaitUntil:
     notVisible:

@@ -204,7 +204,11 @@ The iPad flow navigates the native sidebar using accessibility labels from the
 same localized catalogs as the app. UIKit sidebar items do not expose the custom
 React Native sidebar's test IDs. Each navigation retries the tap and requires the
 destination's selected state before continuing; screen-specific content checks
-still gate each capture.
+still gate each capture. Before capturing, the flow collapses the floating sidebar
+so it cannot obscure content, then reopens it for the next destination. The UIKit
+controls (`Hide Sidebar` / `Toggle sidebar`) follow the simulator system language,
+not the app catalog locale: use English-system simulators for all four app locales.
+Missing native controls fail the capture rather than leave the overlay visible.
 
 ## The `help` flow — captures for the boardsesh.com help pages
 

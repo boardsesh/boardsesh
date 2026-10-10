@@ -961,17 +961,26 @@ describe('renderMaestroFlowForIosDevice', () => {
       retry?: {
         commands: Array<{
           tapOn?: { text: string; index: number };
-          extendedWaitUntil?: { visible: { text: string; selected: boolean } };
+          extendedWaitUntil?: { visible: string | { text: string; selected: boolean } };
+          runFlow?: { when: { visible: string }; commands: Array<{ tapOn: string }> };
         }>;
       };
       takeScreenshot?: string;
+      tapOn?: string;
+      extendedWaitUntil?: { visible: string };
+      assertNotVisible?: string;
     }>;
     const navigation = commands.flatMap((command) => (command.retry ? [command.retry.commands] : []));
     expect(navigation).toHaveLength(6);
     for (const [index, segment] of ['CLIMBS', 'HOME', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
       const label = '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
-      expect(navigation[index][0].tapOn).toEqual({ text: label, index: 0 });
-      expect(navigation[index][1].extendedWaitUntil?.visible).toEqual({ text: label, selected: true });
+      expect(navigation[index][0].runFlow).toEqual({
+        when: { visible: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' },
+        commands: [{ tapOn: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' }],
+      });
+      expect(navigation[index][1].extendedWaitUntil?.visible).toBe('${SCREENSHOT_SIDEBAR_HIDE_LABEL}');
+      expect(navigation[index][2].tapOn).toEqual({ text: label, index: 0 });
+      expect(navigation[index][3].extendedWaitUntil?.visible).toEqual({ text: label, selected: true });
     }
     expect(commands.flatMap((command) => (command.takeScreenshot ? [command.takeScreenshot] : []))).toEqual([
       '02-climbs',
@@ -981,6 +990,33 @@ describe('renderMaestroFlowForIosDevice', () => {
       '04-discover',
       '05-profile',
     ]);
+    // Every scene must prove navigation before hiding the overlay, then capture
+    // only after the collapsed native control is visible and Hide Sidebar is gone.
+    let selectedDestination = false;
+    let collapseRequested = false;
+    let collapsedControlVisible = false;
+    let sidebarAbsent = false;
+    for (const command of commands) {
+      if (command.retry) selectedDestination = true;
+      if (command.tapOn === '${SCREENSHOT_SIDEBAR_HIDE_LABEL}') {
+        expect(selectedDestination).toBe(true);
+        collapseRequested = true;
+      }
+      if (command.extendedWaitUntil?.visible === '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}') {
+        expect(collapseRequested).toBe(true);
+        collapsedControlVisible = true;
+      }
+      if (command.assertNotVisible === '${SCREENSHOT_SIDEBAR_HIDE_LABEL}') sidebarAbsent = true;
+      if (command.takeScreenshot) {
+        expect([selectedDestination, collapseRequested, collapsedControlVisible, sidebarAbsent]).toEqual([
+          true,
+          true,
+          true,
+          true,
+        ]);
+        selectedDestination = collapseRequested = collapsedControlVisible = sidebarAbsent = false;
+      }
+    }
     expect(ipadFlow).not.toContain('ipad-sidebar-');
     expect(ipadFlow).not.toContain('point:');
     expect(ipadFlow).toContain("id: 'pre-session-footer'");
@@ -996,7 +1032,9 @@ describe('renderMaestroFlowForIosDevice', () => {
     };
     for (const locale of allAppLocales) {
       const env = buildIosSidebarMaestroEnv(locale);
-      expect(env).toHaveLength(12);
+      expect(env).toHaveLength(16);
+      expect(env).toContain('SCREENSHOT_SIDEBAR_HIDE_LABEL=Hide Sidebar');
+      expect(env).toContain('SCREENSHOT_SIDEBAR_TOGGLE_LABEL=Toggle sidebar');
       for (const [index, segment] of ['HOME', 'CLIMBS', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
         expect(env).toContain('SCREENSHOT_SIDEBAR_' + segment + '_LABEL=' + expected[locale][index]);
       }

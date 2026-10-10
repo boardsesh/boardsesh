@@ -418,7 +418,9 @@ export async function frameShowcaseComposition(
     );
   } else {
     // The island is SpringBoard UI: enlarge its actual pixels instead of drawing controls.
-    const crop = layout === 'store-island' ? { top: 0, height: 0.183 } : undefined;
+    // Both supported iPhones capture at 3×: the expanded Island occupies the
+    // same 160-point region. A screen-height fraction exposes app labels on Max.
+    const crop = layout === 'store-island' ? { top: 0, height: 480 / sourceSize.height } : undefined;
     const panelWidth = Math.min(region.width, region.height / (aspect * (crop?.height ?? 1)));
     const panelHeight = panelWidth * aspect * (crop?.height ?? 1);
     panels.push({

@@ -1842,7 +1842,7 @@ export function isIpadScreenshotDevice(screenshotDevice: IosScreenshotDevice): b
 /**
  * The Maestro flow source for an iOS device. iPad deep links don't navigate on
  * the simulator — the "Open in 'Boardsesh'?" scheme-confirm dialog swallows every
- * `openurl` — so iPad drives navigation via sidebar coordinate taps from a
+ * `openurl` — so iPad uses localized sidebar accessibility labels from a
  * dedicated `<flow>-ipad.yaml`. Falls back to the shared `<flow>[-ios].yaml`
  * (iPhone's deep-link flow) when no iPad variant exists.
  */
@@ -2333,6 +2333,10 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
     SCREENSHOT_SIDEBAR_RECORD_LABEL: session.mobile.session.recordTab,
     SCREENSHOT_SIDEBAR_DISCOVER_LABEL: playlists.bottomTabBar.discover,
     SCREENSHOT_SIDEBAR_PROFILE_LABEL: common.mobile.nav.profile,
+    // These UIKit-owned controls follow the simulator system language, not the JS catalog.
+    // Store capture simulators use English; an unsupported native language fails closed.
+    SCREENSHOT_SIDEBAR_HIDE_LABEL: 'Hide Sidebar',
+    SCREENSHOT_SIDEBAR_TOGGLE_LABEL: 'Toggle sidebar',
   };
   return Object.entries(labels).flatMap(([name, label]) => ['-e', `${name}=${label}`]);
 }

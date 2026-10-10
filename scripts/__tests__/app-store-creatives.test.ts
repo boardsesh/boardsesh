@@ -34,6 +34,41 @@ async function capture(width = 1206, height = 2622): Promise<Buffer> {
 }
 
 describe('multiboard App Store campaign', () => {
+  it.each([
+    [1206, 2622],
+    [1320, 2868],
+  ])('keeps Island controls and excludes system labels at %i×%i', async (width, height) => {
+    const source = await sharp({ create: { width, height, channels: 3, background: '#ff0000' } })
+      .composite([
+        {
+          input: await sharp({ create: { width, height: 480, channels: 3, background: '#214736' } })
+            .png()
+            .toBuffer(),
+          left: 0,
+          top: 0,
+        },
+        {
+          input: await sharp({ create: { width: 200, height: 40, channels: 3, background: '#00ff00' } })
+            .png()
+            .toBuffer(),
+          left: 100,
+          top: 400,
+        },
+      ])
+      .png()
+      .toBuffer();
+    const framed = await frameShowcaseComposition([source], readCaptionCatalog('en-US').storeIsland, 'store-island');
+    const pixels = await sharp(framed).removeAlpha().raw().toBuffer();
+    let controlPixels = 0;
+    let systemPixels = 0;
+    for (let offset = 0; offset < pixels.length; offset += 3) {
+      if (pixels[offset] === 0 && pixels[offset + 1] === 255 && pixels[offset + 2] === 0) controlPixels++;
+      if (pixels[offset] === 255 && pixels[offset + 1] === 0 && pixels[offset + 2] === 0) systemPixels++;
+    }
+    expect(controlPixels).toBeGreaterThan(1000);
+    expect(systemPixels).toBe(0);
+  });
+
   it('keeps every native footer visible below a longer localized headline', async () => {
     const colors = ['#ff0000', '#00ff00', '#0000ff'];
     const sources = await Promise.all(
