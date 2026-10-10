@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 /**
- * The xprem publish protocol, as eoas 3.2.5 speaks it: validate an Expo export on
+ * The xprem publish protocol, as eoas 3.2.6 speaks it: validate an Expo export on
  * disk, ask the server for an upload lease, send the files, finalize, and read
  * what a device is then served. One copy, shared by the two tools that publish
  * without running `expo export`:
@@ -17,6 +17,11 @@
  * content hash, md5 cache key and role) instead of `fileNames`, and a server on
  * either side of that line rejects the other shape, so this file moves with
  * EOAS_PACKAGE_SPEC.
+ *
+ * 3.2.6 added one optional item beside `files`: `sourcemap`, the launch bundle's
+ * Hermes source map (path and hash). A server with UPLOAD_SOURCEMAPS on records
+ * it on the update and leases an upload unless it already holds that map; any
+ * other server ignores the item. An export without a map publishes as before.
  *
  * Dependency-free with `.ts` import extensions: run under bare
  * `node --experimental-strip-types` by jobs that hold a publish credential.
@@ -39,6 +44,8 @@ export interface ValidatedExport {
   appId: string;
   files: Map<string, ExportFile>;
   bundlePath: string;
+  /** `${bundlePath}.map` when the export has one. In `files`, never in the manifest. */
+  sourcemapPath: string | null;
   assetPaths: string[];
   assetExtensions: Map<string, string>;
   expoConfig: Record<string, unknown>;
@@ -68,6 +75,13 @@ export interface UploadFileItem {
   key?: string;
   ext?: string;
   role: UploadFileRole;
+}
+
+/** The launch bundle's source map, sent beside the `files` list (eoas 3.2.6 SourcemapUploadItem). */
+export interface UploadSourcemapItem {
+  path: string;
+  /** SHA-256, base64url without padding: the object key under sourcemaps/{appId}/. */
+  hash: string;
 }
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -165,6 +179,15 @@ export function validateExport(
   addFile('metadata.json');
   addFile('expoConfig.json');
   addFile(bundlePath);
+  // `expo export --dump-sourcemap` writes the Hermes map next to the bundle and
+  // names it in no metadata, so its presence is read off the disk, as eoas does
+  // (computeFilesRequests). Absent is fine; present is held to the same
+  // regular-file rules as every other path. lstat, not existsSync, so a link
+  // that points nowhere counts as present and is refused, not read as "no map".
+  const declaredSourcemapPath = `${bundlePath}.map`;
+  const sourcemapEntry = lstatSync(join(root, ...declaredSourcemapPath.split('/')), { throwIfNoEntry: false });
+  const sourcemapPath = sourcemapEntry === undefined ? null : declaredSourcemapPath;
+  if (sourcemapPath !== null) addFile(sourcemapPath);
   for (const [index, assetInput] of platformMetadata.assets.entries()) {
     const asset = object(assetInput, `${platform} asset ${index}`);
     const assetPath = string(asset.path, `${platform} asset ${index} path`);
@@ -196,7 +219,7 @@ export function validateExport(
   const requestHeaders = object(updates.requestHeaders, 'expoConfig.json updates.requestHeaders');
   const appId = string(requestHeaders['expo-app-id'], 'expo-app-id');
   if (!UUID.test(appId)) throw new Error('expo-app-id must be a UUID.');
-  return { platform, appId, files, bundlePath, assetPaths, assetExtensions, expoConfig };
+  return { platform, appId, files, bundlePath, sourcemapPath, assetPaths, assetExtensions, expoConfig };
 }
 
 function fileDigest(absolutePath: string): { hash: string; key: string } {
@@ -238,6 +261,21 @@ export function buildUploadFiles(exportFiles: ValidatedExport): UploadFileItem[]
     role: 'asset',
   }));
   return [...configFiles, launchAsset, ...assets];
+}
+
+/**
+ * The `sourcemap` item eoas 3.2.6 sends for one platform (buildSourcemapUpload):
+ * the launch bundle's map, by path and content hash. Undefined when the export
+ * has none, and the publish then goes out without one.
+ */
+export function buildSourcemapUpload(exportFiles: ValidatedExport): UploadSourcemapItem | undefined {
+  if (exportFiles.sourcemapPath === null) return undefined;
+  const sourcemap = exportFiles.files.get(exportFiles.sourcemapPath);
+  if (!sourcemap) throw new Error(`${exportFiles.platform} export source map disappeared.`);
+  return {
+    path: exportFiles.sourcemapPath,
+    hash: createHash('sha256').update(readFileSync(sourcemap.absolutePath)).digest('base64url'),
+  };
 }
 
 export function uploadServerBase(manifestUrl: string): URL {
@@ -393,6 +431,8 @@ export function requestUploadLease(
     /** Start the update as a rollout to this share of devices. Null publishes to everyone. */
     rolloutPercentage: number | null;
     files: UploadFileItem[];
+    /** The launch bundle's source map. Omitted when the export has none. */
+    sourcemap?: UploadSourcemapItem;
     message: string;
   },
 ): Promise<Response> {
@@ -409,6 +449,7 @@ export function requestUploadLease(
     headers: { Authorization: `Bearer ${target.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       files: publish.files,
+      ...(publish.sourcemap ? { sourcemap: publish.sourcemap } : {}),
       ...(publish.message ? { message: publish.message } : {}),
     }),
     redirect: 'error',

@@ -629,6 +629,15 @@ export function r2LifecycleRuleMatches(existing: readonly R2LifecycleRule[], des
   return matching.length === 1 && jsonEqual(matching[0], desired);
 }
 
+/** What a managed rule does, for the plan line: read from the rule so it cannot name another bucket's. */
+function describeR2LifecycleRule(rule: R2LifecycleRule): string {
+  const maxAgeSeconds = rule.deleteObjectsTransition?.condition?.maxAge;
+  const scope = rule.conditions.prefix ? `objects under ${rule.conditions.prefix}` : 'every object';
+  const expiry =
+    typeof maxAgeSeconds === 'number' ? `after ${String(maxAgeSeconds / 86_400)} days` : 'on its own schedule';
+  return `Delete ${scope} ${expiry}; preserve other lifecycle rules.`;
+}
+
 /**
  * True when the bucket carries CORS rules this repo does not describe.
  *
@@ -727,7 +736,7 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
         resource: 'r2-bucket',
         r2BucketName: desired.name,
         summary: `R2 ${desired.name}: ${conflict ? 'cannot update' : 'will set'} lifecycle rule ${desired.lifecycleRule.id}`,
-        detail: conflict ?? `Expire generated export copies after 14 days; preserve other lifecycle rules.`,
+        detail: conflict ?? describeR2LifecycleRule(desired.lifecycleRule),
         blocked: Boolean(conflict),
       });
     }

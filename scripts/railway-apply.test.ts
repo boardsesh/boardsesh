@@ -1079,10 +1079,13 @@ describe('buildPlan', () => {
   });
 
   it('covers every table xprem creates, so none grows unbounded unnoticed', () => {
-    // The five tables in xprem's two ClickHouse migrations. A new one appearing
-    // upstream should fail here rather than quietly accumulate forever.
+    // The seven tables in xprem's ClickHouse migrations at v3.2.6. This list is
+    // typed in by hand, so it cannot see a table a later version adds: read the
+    // new migrations on every bump and add the table here and in config.ts.
     expect(CLICKHOUSE_RETENTION.map((table) => table.table).sort()).toEqual([
       'device_health_events',
+      'error_groups',
+      'error_occurrences',
       'observe_logs',
       'observe_metrics',
       'update_health_segment_snapshots',
