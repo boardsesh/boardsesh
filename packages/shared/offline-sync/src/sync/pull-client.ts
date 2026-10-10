@@ -1115,6 +1115,7 @@ async function processDeletions(
       await runPullWrite(db, async (transaction) => {
         // A retried attempt starts from a rollback: nothing it found was deleted.
         pageInvalidations.length = 0;
+        pageDeletedRows.clear();
         // Expo opens this wrapper with deferred BEGIN: entering the callback is
         // NOT writer-lock ownership — `beginImmediateWrite` inside runPullWrite is
         // what takes it, before the first statement below rather than because of
@@ -1226,13 +1227,33 @@ async function processDeletions(
               [...recordIdParts, ...guardParams],
             );
             rowsDeleted = deleteResult?.changes ?? 0;
+            // A stats or grade row hangs off a climb, and the server deletes them
+            // ahead of it, so the climb is normally still here to say which board
+            // this was. Without it a deleted wall climb with one ascent would
+            // refresh every board's lists through its stats tombstone. Only read
+            // for a row that was really removed: most of these name boards the
+            // device never held.
+            const climbUuid = recordIdParts[pkColumns.indexOf('climb_uuid')];
+            if (config.isPerBoard && rowsDeleted > 0 && climbUuid !== undefined) {
+              const climb = await transaction.getFirstAsync<{ board_type: string | null; layout_id: number | null }>(
+                'SELECT board_type, layout_id FROM board_climbs WHERE uuid = ?',
+                [climbUuid],
+              );
+              if (climb?.board_type && climb.layout_id !== null) {
+                changedBoard = { boardType: climb.board_type, layoutId: climb.layout_id };
+              }
+            }
           }
 
-          // Board tombstones go to every device, for every board (#6302): a climb
-          // or stats row deleted on a board this device never downloaded removes
-          // nothing here, and used to refetch every climb list on screen anyway.
-          // A user-table tombstone always counts. Its row can be on screen from
-          // the network without ever having been pulled into SQLite.
+          // Board tombstones go to every device, for every board (#6302), in
+          // volume: a fresh install replays thousands of stats rows for boards it
+          // never held. One that removes nothing here says nothing, where it used
+          // to refetch every climb list on screen. The price is a board that is
+          // not downloaded: its lists come from the network, and a climb deleted
+          // there now stays until the list goes stale, like any other change made
+          // on the server. A user-table tombstone always counts. Those are the
+          // climber's own rows, few, and can be on screen from the network without
+          // ever having been pulled into SQLite.
           if (config.isPerBoard && rowsDeleted === 0) continue;
           pageInvalidations.push({ keys: config.invalidateKeys, board: changedBoard });
         }
@@ -2653,7 +2674,11 @@ async function runBootstrapPhase(params: {
           // Bust the board-table query caches now: if the snapshot fully satisfies
           // the scope, the delta pull returns zero documents and syncTable's
           // arrivals-only invalidation never fires — an active search/detail query
-          // would keep serving the pre-import (empty) result set.
+          // would keep serving the pre-import (empty) result set. A scope that is
+          // not complete yet is still closed to local reads, so for it this
+          // refetch goes to the network; the board loop queues the same keys again
+          // when its completion marker lands. A scope that already was complete
+          // (a heal) gets no second signal, and this is the one that counts.
           for (const tableName of ['board_climbs', 'board_climb_stats'] as const) {
             invalidations.add(TABLE_CONFIGS[tableName].invalidateKeys, scope);
           }

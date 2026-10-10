@@ -309,11 +309,12 @@ describe('useInfiniteSearchClimbs', () => {
   });
 });
 
-// Issue #6302. A sync pull invalidates the search keys through
-// `scopedInvalidateFilters`, which reaches a list only when its key names the
-// board whose rows moved. A list whose key stopped matching its own offline
-// scope would never refresh after a sync, and nothing would fail. So this pins
-// the hook's real key to the scope key the downloads are stored under.
+// Issue #6302. A sync pull refreshes the search keys through
+// `scopedInvalidateFilters`, which reaches a list only when its key carries the
+// board whose rows moved. That reads the key's shape, so this pins the shape
+// from the real hook: a pull for another board leaves the list alone, and one
+// for its own board refetches it. `search-keys-sync-scope.test.tsx` does the
+// same for the two plain search hooks.
 describe('sync invalidation scope', () => {
   const boards = [
     { boardType: 'kilter', layoutId: 1, sizeId: 10 },

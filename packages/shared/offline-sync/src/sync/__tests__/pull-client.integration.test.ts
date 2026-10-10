@@ -1492,6 +1492,7 @@ describe('query invalidation over one pull cycle', () => {
   function makeCycleFetch(
     pages: Record<string, Record<string, unknown>[]>,
     deletions: DeletionRecord[] = [],
+    onRequest?: (resolver: string) => void,
   ): GraphQLFetch {
     return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
       if (query.includes('syncDeletions')) {
@@ -1500,6 +1501,7 @@ describe('query invalidation over one pull cycle', () => {
       const queryName = extractQueryName(query);
       const { boardType, layoutId } = (variables ?? {}) as { boardType?: string; layoutId?: number };
       const board = boardType ? `@${boardType}:${layoutId}` : '';
+      onRequest?.(`${queryName}${board}`);
       // Past its first page a table has nothing more: the cursor is set.
       const documents = variables?.cursor ? [] : (pages[`${queryName}${board}`] ?? []);
       return { [queryName]: { documents, cursor: DEFAULT_CURSOR, hasMore: false } } as T;
@@ -1560,6 +1562,36 @@ describe('query invalidation over one pull cycle', () => {
     expect(filtersFor('climbStatsHistory')).toHaveLength(2);
   });
 
+  it('refreshes the user tables after their marker and before the first board is pulled', async () => {
+    // The logbook reads SQLite only once `user_data_complete` is down, so its
+    // refetch must not start earlier. And it must not wait for the boards: a
+    // first download can crawl for minutes.
+    const events: string[] = [];
+    const runAsync = db.runAsync.bind(db);
+    vi.spyOn(db, 'runAsync').mockImplementation(async (sql, params) => {
+      if (Array.isArray(params) && params[0] === 'checkpoint:user_data_complete') events.push('marker');
+      return runAsync(sql, params);
+    });
+    invalidateQueries.mockImplementation((filters) => {
+      if (filters.queryKey[0] === 'logbook') events.push('logbook refreshed');
+    });
+
+    await pullSync(
+      db,
+      queryClient,
+      makeCycleFetch(
+        { syncTicks: [tickDocument], 'syncClimbs@kilter:1': [climbDocument('kilter-climb', 'kilter', 1, 5)] },
+        [],
+        (resolver) => {
+          if (resolver === 'syncClimbs@kilter:1') events.push('board pull');
+        },
+      ),
+      { enabledBoards: [KILTER] },
+    );
+
+    expect(events).toEqual(['marker', 'logbook refreshed', 'board pull']);
+  });
+
   it('refreshes a board whose download completes without moving a row, and only that once', async () => {
     // What a snapshot-satisfied scope looks like to the delta pull: no rows.
     await pullSync(db, queryClient, makeCycleFetch({}), { enabledBoards: [KILTER] });
@@ -1612,12 +1644,37 @@ describe('query invalidation over one pull cycle', () => {
       expect(searchRefreshes[0].predicate?.(tensionList)).toBe(false);
     });
 
-    it('refreshes for a stats row it did delete', async () => {
+    it('keeps a deleted climb with stats and a grade to its own board', async () => {
+      // How a real deletion arrives: the server removes the stats and grade rows
+      // ahead of the climb, so their tombstones come first.
+      await seedClimb('local-climb');
       await db.runAsync(
         "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, sync_seq) VALUES ('kilter', 'local-climb', 40, 1)",
       );
+      await db.runAsync(
+        "INSERT INTO board_climb_grades (board_type, climb_uuid, angle, sync_seq) VALUES ('kilter', 'local-climb', 40, 1)",
+      );
       const deletions: DeletionRecord[] = [
         { tableName: 'board_climb_stats', recordId: 'kilter:local-climb:40', deletedAt: '2024-06-01T00:00:00Z' },
+        { tableName: 'board_climb_grades', recordId: 'kilter:local-climb:40', deletedAt: '2024-06-01T00:00:01Z' },
+        { tableName: 'board_climbs', recordId: 'local-climb', deletedAt: '2024-06-01T00:00:02Z' },
+      ];
+
+      await pullSync(db, queryClient, makeCycleFetch({}, deletions));
+
+      expect(await db.getFirstAsync("SELECT 1 FROM board_climb_stats WHERE climb_uuid = 'local-climb'")).toBeNull();
+      const searchRefreshes = filtersFor('infiniteSearchClimbs');
+      expect(searchRefreshes).toHaveLength(1);
+      expect(searchRefreshes[0].predicate?.(kilterList)).toBe(true);
+      expect(searchRefreshes[0].predicate?.(tensionList)).toBe(false);
+    });
+
+    it('refreshes every list for a deleted stats row whose climb it cannot place', async () => {
+      await db.runAsync(
+        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, sync_seq) VALUES ('kilter', 'orphan-climb', 40, 1)",
+      );
+      const deletions: DeletionRecord[] = [
+        { tableName: 'board_climb_stats', recordId: 'kilter:orphan-climb:40', deletedAt: '2024-06-01T00:00:00Z' },
       ];
 
       await pullSync(db, queryClient, makeCycleFetch({}, deletions));

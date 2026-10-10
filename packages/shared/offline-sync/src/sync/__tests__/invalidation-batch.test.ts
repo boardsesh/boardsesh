@@ -117,16 +117,17 @@ describe('createInvalidationBatch', () => {
     expect(invalidateQueries).toHaveBeenCalledTimes(2);
   });
 
-  it('does not replay a flush that threw', () => {
-    const invalidateQueries = vi.fn<QueryInvalidator['invalidateQueries']>(() => {
-      throw new Error('query client is gone');
+  it('tries every key of a flush that throws, reports the first failure, and does not replay it', () => {
+    const invalidateQueries = vi.fn<QueryInvalidator['invalidateQueries']>((filters) => {
+      if (filters.queryKey[0] === 'logbook') throw new Error('logbook reader is gone');
     });
     const batch = createInvalidationBatch({ invalidateQueries });
 
     batch.add([['logbook'], ['userTicks']]);
-    expect(() => batch.flush()).toThrow('query client is gone');
-    batch.flush();
+    expect(() => batch.flush()).toThrow('logbook reader is gone');
+    expect(invalidateQueries.mock.calls).toEqual([[{ queryKey: ['logbook'] }], [{ queryKey: ['userTicks'] }]]);
 
-    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    batch.flush();
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
   });
 });

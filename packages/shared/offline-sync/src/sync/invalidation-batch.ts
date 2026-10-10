@@ -15,7 +15,8 @@ type DirectInvalidateFilters = { queryKey: readonly unknown[]; exact?: boolean }
  *
  * Queuing only ever DELAYS an invalidation, and only until the caller's next
  * flush. The pull client flushes in a `finally`, so rows a cycle committed
- * before it threw or was torn down still reach the UI.
+ * before it threw or was torn down still reach the UI. A flush tries every
+ * entry even when one throws.
  */
 export type InvalidationBatch = {
   /**
@@ -61,13 +62,20 @@ export function createInvalidationBatch(queryClient: QueryInvalidator): Invalida
 
     flush() {
       const flushing = pending;
-      // Emptied first: a flush that throws part-way must not replay on the next one.
+      // Emptied first: a flush that throws must not replay on the next one.
       pending = new Map();
+      let failure: { error: unknown } | undefined;
       for (const { filters, unscopedId } of flushing.values()) {
         // The same key queued for every board already covers this one board.
         if (unscopedId !== undefined && flushing.has(unscopedId)) continue;
-        queryClient.invalidateQueries(filters);
+        try {
+          queryClient.invalidateQueries(filters);
+        } catch (error) {
+          // One key failing must not cost the rest of the phase its refresh.
+          failure ??= { error };
+        }
       }
+      if (failure) throw failure.error instanceof Error ? failure.error : new Error(String(failure.error));
     },
   };
 }
