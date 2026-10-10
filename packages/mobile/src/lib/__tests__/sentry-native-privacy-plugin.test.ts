@@ -142,6 +142,8 @@ describe('supported native Sentry startup', () => {
       'do {',
       'let options = try RNSentryStart.createOptions(with:',
       'RNSentryStart.update(withReactDefaults: options)',
+      'options.environment = ',
+      'options.sendDefaultPii = false',
       'options.beforeSend = {',
       'RNSentryStart.update(withReactFinals: options)',
       'RNSentryStart.start(options: options)',

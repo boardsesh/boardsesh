@@ -40,8 +40,10 @@ The first write to them segfaulted every launch of TestFlight 2.6.0 (15), 100 ms
 any crash handler existed, so nothing reached Sentry. If the DSN fails to parse, the iOS block
 logs and the app launches without native Sentry.
 
-That block is compiled only into Release builds (`#if !DEBUG`). Dev clients, the simulator
-smokes and the screenshot captures never run it, so a green CI run says nothing about it.
+That block is compiled only into Release builds (`#if !DEBUG`). iOS CI builds a Release app, so
+it proves the block compiles. Nothing launches a Release app before TestFlight: dev clients, the
+simulator smokes and the screenshot captures are all Debug. After editing the block, launch a
+Release simulator build.
 
 JavaScript sets `autoInitializeNativeSdk: false` so it cannot replace those native callbacks.
 Native startup uses the configured DSN and a fixed production environment, keeps crash/ANR/app-hang
