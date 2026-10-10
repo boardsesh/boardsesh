@@ -1,5 +1,5 @@
-import { setTimeout as delay } from 'node:timers/promises';
 import type { JobRun } from './types';
+import { hasNonNegativeCounts, runBackendCronMutation } from './backend-cron-mutation';
 
 /**
  * Export the vetted spray wall training set (SW-20, #5471).
@@ -10,13 +10,27 @@ import type { JobRun } from './types';
  * schedule is the promise in `docs/spray-walls.md`: a wall whose owner switches
  * "Help train hold finding" off (or deletes it, or an admin hides it) leaves
  * every stored export within 24 hours, because each run first retires any
- * export holding a version that is no longer eligible and approved.
+ * export holding a version that is no longer eligible and approved. The job
+ * runs every six hours, so the promise survives two failed runs in a row.
+ *
+ * Running four times a day costs little, because a run with nothing to do stops
+ * early. The backend reads the approved set, lists the export prefix and reads
+ * each stored export's manifest (it keeps two exports); when none is stale and
+ * the fingerprint matches the newest, it answers `skipped: true` (`UNCHANGED`,
+ * or `NOTHING_TO_EXPORT` when nothing is approved) having downloaded no photo,
+ * deleted nothing and written nothing. Both are successful runs here.
  *
  * Overlap-safe, which `JobDefinition` requires: the mutation takes a lease row
  * before it touches storage, so a second run meeting a first answers
- * `skippedReason: LOCKED` and writes nothing. This job then FAILS, on purpose:
- * a lease still held a day later means a stuck run, and that must not pass as
- * a skip.
+ * `skippedReason: LOCKED` and writes nothing. This job then FAILS, on purpose.
+ * The lease lasts 20 minutes, so a tick that meets one found a run that began
+ * in that window and has not let go: one still going (started by hand, or by a
+ * request whose answer never arrived), or one that died. Either way this tick
+ * retired nothing, and that must not pass as a skip.
+ *
+ * The request, the 502/503 retry and the GraphQL-errors check belong to
+ * `runBackendCronMutation`. What is this job's own is below: the result's shape
+ * and the LOCKED rule.
  */
 export const EXPORT_SPRAY_TRAINING_MUTATION = `
   mutation ExportSprayTrainingDataset {
@@ -25,10 +39,6 @@ export const EXPORT_SPRAY_TRAINING_MUTATION = `
     }
   }
 `;
-
-function isRecord(candidate: unknown): candidate is Record<string, unknown> {
-  return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
-}
 
 /** What one export run reports back. Mirrors `SprayTrainingExportResult` in the backend. */
 export type ExportResult = {
@@ -41,70 +51,31 @@ export type ExportResult = {
   durationMs: number;
 };
 
-const SKIP_REASONS: ReadonlyArray<ExportResult['skippedReason']> = ['LOCKED', 'UNCHANGED', 'NOTHING_TO_EXPORT', null];
+/** Every value `skippedReason` may carry. `unknown` so an unvalidated field can be looked up in it. */
+const SKIP_REASONS: readonly unknown[] = ['LOCKED', 'UNCHANGED', 'NOTHING_TO_EXPORT', null] satisfies ReadonlyArray<
+  ExportResult['skippedReason']
+>;
 
-/** HTTP 200 alone is insufficient: GraphQL can report resolver errors in it. */
-export function readExportResult(payload: unknown): ExportResult {
-  if (!isRecord(payload) || payload.errors !== undefined || !isRecord(payload.data)) {
-    throw new Error('exportSprayTrainingDataset returned GraphQL errors or an invalid response');
-  }
-  const exported = payload.data.exportSprayTrainingDataset;
+export const exportSprayTraining: JobRun = async (context) => {
+  const exported = await runBackendCronMutation({
+    context,
+    mutationName: 'exportSprayTrainingDataset',
+    mutation: EXPORT_SPRAY_TRAINING_MUTATION,
+  });
   if (
-    !isRecord(exported) ||
-    !['imagesWritten', 'exportsRetired', 'versionsSkipped', 'durationMs'].every(
-      (field) =>
-        typeof exported[field] === 'number' && Number.isFinite(exported[field]) && (exported[field] as number) >= 0,
-    ) ||
+    !hasNonNegativeCounts(exported, ['imagesWritten', 'exportsRetired', 'versionsSkipped', 'durationMs']) ||
     typeof exported.skipped !== 'boolean' ||
-    !SKIP_REASONS.includes(exported.skippedReason as ExportResult['skippedReason']) ||
+    !SKIP_REASONS.includes(exported.skippedReason) ||
     !(exported.exportId === null || typeof exported.exportId === 'string')
   ) {
     throw new Error('exportSprayTrainingDataset returned an invalid result');
   }
+  // Another run holds the lease, so this one retired nothing. The 24-hour
+  // removal promise rests on retirement, so that is a failed run (`lastError`
+  // on /health/jobs) rather than a quiet skip.
+  if (exported.skippedReason === 'LOCKED') {
+    throw new Error('exportSprayTrainingDataset skipped: another run holds the export lease');
+  }
   // Narrowed by the checks above, which `Record<string, unknown>` cannot express.
   return exported as ExportResult;
-}
-
-export const exportSprayTraining: JobRun = async ({ config, timeoutMs, shutdownSignal, logger }) => {
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(new Error('Spray training export timed out')), timeoutMs);
-  const signal = shutdownSignal ? AbortSignal.any([controller.signal, shutdownSignal]) : controller.signal;
-
-  try {
-    for (let attempt = 0; ; attempt++) {
-      signal.throwIfAborted();
-      const response = await fetch(config.backendGraphqlUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.cronSecret}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/graphql-response+json, application/json',
-        },
-        body: JSON.stringify({ query: EXPORT_SPRAY_TRAINING_MUTATION }),
-        signal,
-      });
-      if (!response.ok) {
-        // Consume the response before retrying; never put raw backend pages in
-        // logs. A deploy in flight is the one case worth a second try.
-        await response.body?.cancel();
-        if (attempt === 0 && (response.status === 502 || response.status === 503)) {
-          logger.warn('spray training export backend unavailable; retrying once', { status: response.status });
-          await delay(2_000, undefined, { signal });
-          continue;
-        }
-        throw new Error(`exportSprayTrainingDataset returned HTTP ${response.status}`);
-      }
-      const result = readExportResult(await response.json());
-      // A held lease means another run is still going, or one died holding it.
-      // Either way today's retirement did not happen, and the 24-hour removal
-      // promise rests on it, so this is a failed run (lastError and overdue on
-      // /health/jobs) rather than a quiet skip.
-      if (result.skippedReason === 'LOCKED') {
-        throw new Error('exportSprayTrainingDataset skipped: another run holds the export lease');
-      }
-      return result;
-    }
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
 };

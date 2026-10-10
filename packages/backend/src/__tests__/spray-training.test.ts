@@ -1082,7 +1082,7 @@ describe('the export', () => {
     await review(versionId, 'APPROVED');
     await expect(exportSprayTrainingDataset({ now: RUN_1, deadlineMs: -1 })).rejects.toThrow('deadline');
     expect(exportKeys().some((key) => key.endsWith('manifest.json'))).toBe(false);
-    // And the lease was released, so tomorrow's run is not blocked.
+    // And the lease was released, so the next run is not blocked.
     expect(await exportSprayTrainingDataset({ now: runAt(1) })).toMatchObject({ skipped: false });
   });
 

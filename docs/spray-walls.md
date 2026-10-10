@@ -3407,13 +3407,20 @@ own: the predicate is re-read every time.
 
 ### The export
 
-`exportSprayTrainingDataset`, run daily at 08:00 UTC by the scheduler's
-`export-spray-training` job ([scheduler.md](./scheduler.md)). One run at a
-time, through a `sync_daemon_leases` row (`spray-training-export`, 20-minute
-TTL) that holds no database connection while the run works on storage. A run
-meeting a live lease answers `skippedReason: LOCKED`, which the job reports as
-a failure. A run stops at 12 minutes and writes no manifest if it has not
-finished. Reads are short separate queries, not one snapshot.
+`exportSprayTrainingDataset`, run every six hours (02:00, 08:00, 14:00 and
+20:00 UTC) by the scheduler's `export-spray-training` job
+([scheduler.md](./scheduler.md)). Six-hourly rather than daily so the 24-hour
+removal promise below survives two failed runs in a row; a run with nothing to
+retire and nothing new answers `skipped` after reading the approved set and the
+stored exports' manifests. One run at a time, through a `sync_daemon_leases`
+row (`spray-training-export`, 20-minute TTL) that holds no database connection
+while the run works on storage. A run meeting a live lease answers
+`skippedReason: LOCKED`, which the job reports as a failure. The backend stops
+a run at 12 minutes and writes no manifest if it has not finished. The
+scheduler's request ends well before that (100 seconds through the Cloudflare
+proxy, 300 in Node's `fetch`), so a slow run is reported as a failed job while
+the backend carries on; scheduler.md has the table. Reads are short separate
+queries, not one snapshot.
 
 1. **Retire.** Every stored export under `spray-training/exports/` in the
    private bucket whose manifest names a version that is no longer eligible and

@@ -87,7 +87,7 @@ describe('monitorConfigForJob', () => {
       'scheduler-purge-spray-wall-photos': '0 7 * * *',
       'scheduler-snapshot-active-users': '20 0 * * *',
       'scheduler-purge-user-activity': '30 7 * * *',
-      'scheduler-export-spray-training': '0 8 * * *',
+      'scheduler-export-spray-training': '0 2,8,14,20 * * *',
     });
 
     for (const config of Object.values(configBySlug)) {
