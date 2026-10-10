@@ -215,14 +215,14 @@ describe('SprayWallTrainingConsentRow', () => {
       expect(readConsent).toHaveBeenCalledTimes(2);
     });
 
-    it('keeps the row, disabled, once every attempt has failed', async () => {
+    it('keeps the row disabled and says the read failed, once every attempt has', async () => {
       readConsent.mockRejectedValue(new TypeError('Network request failed'));
       renderRow();
       // The first attempt and the policy's two retries.
       await waitFor(() => expect(readConsent).toHaveBeenCalledTimes(3));
-      await settle();
+      expect((await screen.findByTestId('error')).textContent).toBe('mobile.sprayTraining.loadError');
 
-      // Not dropped.
+      // Not dropped, and not a dead switch with no reason on it.
       expect(switchInput().disabled).toBe(true);
       expect(switchInput().checked).toBe(false);
       act(() => field.onValueChange?.(true));

@@ -37,8 +37,8 @@ function ignorePressOnHeldRow(): void {
  * nothing under it moves when the answer lands. It used to arrive late, and on
  * Android a tap anywhere on a switch row flips it and saves at once: a tap
  * aimed at the control below could land on the arriving row. The held row
- * cannot write. A read that failed keeps the held row rather than dropping it
- * silently.
+ * cannot write. A read that failed keeps the held row and says so, rather than
+ * leaving a dead switch with no reason on it or dropping the row silently.
  *
  * Nothing at all for anybody but the owner. The caller's owner check decides
  * whether to ask, and says no while it does not know who is signed in, so no
@@ -94,7 +94,7 @@ export function SprayWallTrainingConsentRow({ wallUuid, isOwner }: { wallUuid: s
       value={storedConsent === true}
       onValueChange={hasAnswer ? onValueChange : ignorePressOnHeldRow}
       disabled={!hasAnswer || isSaving}
-      errorMessage={hasAnswer ? error : null}
+      errorMessage={hasAnswer ? error : consent.isError ? t('mobile.sprayTraining.loadError') : null}
     />
   );
 }
