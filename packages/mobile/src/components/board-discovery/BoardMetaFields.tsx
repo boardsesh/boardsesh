@@ -33,7 +33,6 @@ import { SegmentedControl } from '../SegmentedControl';
 import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 import type { PickedGym } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 
 /**
  * A gym as the picker hands it back and both builders hold it.
@@ -245,7 +244,9 @@ export function SprayTrainingConsentField({
   disabled?: boolean;
   errorMessage?: string | null;
 }) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
   return (
     <>
       <SwitchRow
@@ -259,7 +260,7 @@ export function SprayTrainingConsentField({
       {errorMessage ? (
         <Text
           variant="footnote"
-          color={iosSystemColors.systemRed}
+          color={systemColors.error}
           style={styles.visibilityHint}
           accessibilityLiveRegion="polite"
         >

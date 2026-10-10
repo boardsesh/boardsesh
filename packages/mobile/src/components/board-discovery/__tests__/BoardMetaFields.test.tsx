@@ -51,7 +51,6 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemRed: '#FF3B30' } }));
 vi.mock('../../SwitchRow', () => ({
   SwitchRow: ({
     label,

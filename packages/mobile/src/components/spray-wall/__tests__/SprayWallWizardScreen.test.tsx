@@ -395,7 +395,8 @@ describe('resume freshness', () => {
     await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
     expect(getByText('sprayWizard.photo.title')).toBeTruthy();
 
-    act(() => getByText('sprayWizard.back').click());
+    expect(header.leading?.kind).toBe('back');
+    act(() => header.leading?.onPress());
     expect(queryByTestId('identity')).not.toBeNull();
     expect(getByTestId('server-consent').textContent).toBe('wall-1');
     expect(queryByTestId('builder-consent')).toBeNull();

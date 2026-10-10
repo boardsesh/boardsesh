@@ -165,6 +165,11 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
   SprayWallVisibilityField: () => null,
+  SprayTrainingConsentField: () => null,
+}));
+vi.mock('../SprayWallTrainingConsentRow', () => ({ SprayWallTrainingConsentRow: () => null }));
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
+  useSprayWallTrainingConsent: () => ({ data: undefined }),
 }));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
