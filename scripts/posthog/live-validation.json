@@ -1,0 +1,92 @@
+{
+  "validatedAt": "2026-10-10",
+  "projectId": 412845,
+  "dashboardId": 2170056,
+  "activityPeriods": [
+    {
+      "start": "2026-08-14",
+      "exclusiveEnd": "2026-09-11",
+      "appUsers": 3673,
+      "boardUsers": 2029
+    },
+    {
+      "start": "2026-09-11",
+      "exclusiveEnd": "2026-10-09",
+      "appUsers": 4206,
+      "boardUsers": 2387
+    }
+  ],
+  "buckets": [
+    {
+      "days": "1",
+      "previousUsers": 870,
+      "returners": 343,
+      "sharePercent": 42.88,
+      "returnPercent": 39.43
+    },
+    {
+      "days": "2–3",
+      "previousUsers": 678,
+      "returners": 437,
+      "sharePercent": 33.42,
+      "returnPercent": 64.45
+    },
+    {
+      "days": "4–7",
+      "previousUsers": 371,
+      "returners": 299,
+      "sharePercent": 18.28,
+      "returnPercent": 80.59
+    },
+    {
+      "days": "8+",
+      "previousUsers": 110,
+      "returners": 107,
+      "sharePercent": 5.42,
+      "returnPercent": 97.27
+    }
+  ],
+  "weightedRetention": {
+    "boardPreviousUsers": 2029,
+    "boardReturners": 1186,
+    "boardRetentionPercent": 58.45,
+    "appPreviousUsers": 3673,
+    "appReturners": 1933,
+    "appRetentionPercent": 52.63
+  },
+  "newcomers": {
+    "observedThroughExclusiveUtc": "2026-10-10",
+    "people": 2139,
+    "eligible28": 452,
+    "registered28": 394,
+    "independentFirstBoardUsers": 201,
+    "independentTwoDayUsers": 121,
+    "orderedFirstBoardUsers": 198,
+    "orderedTwoDayUsers": 119,
+    "orderedFourDayUsers": 63,
+    "eligibleExactDay28": 404,
+    "boardExactDay28Returners": 17,
+    "eligible56": 0
+  },
+  "contributionTotals": {
+    "boardUsers": 2387,
+    "boardDays": 6537,
+    "climbsSent": 161284,
+    "ticks": 23365,
+    "gradeRatings": 1595,
+    "qualityRatings": 3846,
+    "publishedCreationEvents": 21,
+    "draftCreationEvents": 242
+  },
+  "identityValidation": {
+    "personDayKeysUnique": true,
+    "newcomerPersonKeysUnique": true,
+    "orderedMilestonesNeverExceedUnconditionalDays": true
+  },
+  "originalInsightsPreserved": [
+    12518191, 12518193, 12518194, 12518195, 12518196, 12518205, 12518206, 12518207, 12518208, 12518209
+  ],
+  "forcedRefreshInsightIds": [12518191, 12518193, 12518194, 12518207, 12718141, 12718172, 12718181, 12718190, 12718191],
+  "dashboardQueryWarnings": [],
+  "verification": "Independent raw-event queries and reviewer reconciliation, followed by completed materialized refresh. Historical event arrivals can change counts at subsequent refreshes."
+}

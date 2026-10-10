@@ -1,0 +1,251 @@
+{
+  "projectId": 412845,
+  "dashboardId": 2170056,
+  "deployedAt": "2026-10-10",
+  "views": [
+    {
+      "name": "growth_native_person_days",
+      "id": "01a12475-5fee-0000-9293-ba3236630c06",
+      "refresh": "24hour",
+      "mode": "bounded full refresh"
+    },
+    {
+      "name": "growth_native_newcomers",
+      "id": "01a12476-b003-0000-66c1-6b897bdbb5bd",
+      "refresh": "24hour",
+      "mode": "bounded full refresh"
+    }
+  ],
+  "updatedInsightIds": [12518191, 12518193, 12518194, 12518207],
+  "addedInsights": {
+    "activation": {
+      "id": 12718141,
+      "short_id": "UYxQjrnK"
+    },
+    "sources": {
+      "id": 12718172,
+      "short_id": "hgzmdIxb"
+    },
+    "app-retention": {
+      "id": 12718181,
+      "short_id": "dYEEqdQG"
+    },
+    "board-retention": {
+      "id": 12718190,
+      "short_id": "yTC7hNbo"
+    },
+    "contribution": {
+      "id": 12718191,
+      "short_id": "PUOXXBaR"
+    }
+  },
+  "details": {
+    "campaign": {
+      "id": 12718192,
+      "short_id": "ddw4wY4T"
+    },
+    "cohortCounts": {
+      "id": 12718204,
+      "short_id": "4BQhqXOB"
+    },
+    "modelCutoffs": {
+      "id": 12718206,
+      "short_id": "pkfI8ln2"
+    }
+  },
+  "paidTextTileId": 13390214,
+  "layouts": [
+    {
+      "id": 13390214,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 60,
+          "w": 12,
+          "h": 8
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094375,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094377,
+      "layouts": {
+        "sm": {
+          "x": 6,
+          "y": 0,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094378,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 5,
+          "w": 12,
+          "h": 6
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094379,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 11,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094380,
+      "layouts": {
+        "sm": {
+          "x": 6,
+          "y": 11,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094397,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 16,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094398,
+      "layouts": {
+        "sm": {
+          "x": 6,
+          "y": 16,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094399,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 21,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094400,
+      "layouts": {
+        "sm": {
+          "x": 6,
+          "y": 21,
+          "w": 6,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13094401,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 26,
+          "w": 12,
+          "h": 5
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13390104,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 31,
+          "w": 12,
+          "h": 7
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13390139,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 38,
+          "w": 12,
+          "h": 8
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13390148,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 46,
+          "w": 6,
+          "h": 6
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13390165,
+      "layouts": {
+        "sm": {
+          "x": 6,
+          "y": 46,
+          "w": 6,
+          "h": 6
+        }
+      },
+      "show_description": true
+    },
+    {
+      "id": 13390166,
+      "layouts": {
+        "sm": {
+          "x": 0,
+          "y": 52,
+          "w": 12,
+          "h": 8
+        }
+      },
+      "show_description": true
+    }
+  ]
+}
