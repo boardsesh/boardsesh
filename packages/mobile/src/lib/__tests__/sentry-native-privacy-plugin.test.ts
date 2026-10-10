@@ -98,7 +98,7 @@ describe('supported native Sentry startup', () => {
     if (!iosTemplate || !androidTemplate) throw new Error('Expo native templates were not found');
     const ios = plugin.applySwiftSentryPrivacy(iosTemplate, { dsn });
     const android = plugin.applyKotlinSentryPrivacy(androidTemplate, { dsn });
-    expect(ios.indexOf('RNSentrySDK.start(configureOptions:')).toBeLessThan(ios.indexOf('ExpoReactNativeFactory('));
+    expect(ios.indexOf('RNSentryStart.start(options: options)')).toBeLessThan(ios.indexOf('ExpoReactNativeFactory('));
     expect(android.indexOf('RNSentrySDK.init(this)')).toBeLessThan(android.indexOf('loadReactNative(this)'));
     expect(plugin.applySwiftSentryPrivacy(ios, { dsn })).toBe(ios);
     expect(plugin.applyKotlinSentryPrivacy(android, { dsn })).toBe(android);
@@ -107,7 +107,7 @@ describe('supported native Sentry startup', () => {
   it('installs callbacks before React Native and retains crash/app-hang/ANR handling', () => {
     const ios = plugin.applySwiftSentryPrivacy(swift, { dsn, environment: 'preview' });
     const android = plugin.applyKotlinSentryPrivacy(kotlin, { dsn, environment: 'preview' });
-    expect(ios.indexOf('RNSentrySDK.start(configureOptions:')).toBeLessThan(ios.indexOf('ExpoReactNativeFactory('));
+    expect(ios.indexOf('RNSentryStart.start(options: options)')).toBeLessThan(ios.indexOf('ExpoReactNativeFactory('));
     expect(android.indexOf('super.onCreate()')).toBeLessThan(android.indexOf('RNSentrySDK.init(this)'));
     expect(android.indexOf('RNSentrySDK.init(this)')).toBeLessThan(android.indexOf('loadReactNative(this)'));
     expect(ios).toContain('options.enableCrashHandler = true');
@@ -120,7 +120,7 @@ describe('supported native Sentry startup', () => {
     expect(android).toContain('event.contexts.device?.id = null');
     expect(android).toContain('transaction.user = null');
     expect(android).toContain('transaction.contexts.device?.id = null');
-    expect(ios).toContain(`options.dsn = "${dsn}"`);
+    expect(ios).toContain(`RNSentryStart.createOptions(with: ["dsn": "${dsn}"])`);
     expect(android).toContain(`options.dsn = "${dsn}"`);
     expect(ios).toContain('options.environment = "preview"');
     expect(android).toContain('options.environment = "preview"');
@@ -130,6 +130,26 @@ describe('supported native Sentry startup', () => {
     // limits its privacy claim to errors/transactions, not every envelope item.
     expect(ios).not.toContain('enableAutoSessionTracking');
     expect(android).not.toContain('EnableAutoSessionTracking');
+  });
+
+  it('builds iOS options in code so a bundle without sentry.options.json cannot crash launch', () => {
+    const ios = plugin.applySwiftSentryPrivacy(swift, { dsn });
+    // RNSentrySDK.start(configureOptions:) reads the DSN from sentry.options.json.
+    // Without that file it calls back with nil options, and the first write to
+    // them segfaulted every launch of TestFlight 2.6.0 (15).
+    expect(ios).not.toContain('RNSentrySDK');
+    const order = [
+      'do {',
+      'let options = try RNSentryStart.createOptions(with:',
+      'RNSentryStart.update(withReactDefaults: options)',
+      'options.beforeSend = {',
+      'RNSentryStart.update(withReactFinals: options)',
+      'RNSentryStart.start(options: options)',
+      '} catch {',
+      'ExpoReactNativeFactory(',
+    ].map((step) => ios.indexOf(step));
+    expect(order).not.toContain(-1);
+    expect(order).toEqual([...order].sort((first, second) => first - second));
   });
 
   it.each([
@@ -144,8 +164,8 @@ describe('supported native Sentry startup', () => {
       const second = apply(first, { dsn: secondDsn, environment: 'preview' });
       expect(second).not.toContain(dsn);
       expect(second).toContain(secondDsn);
-      expect(second.match(/RNSentrySDK\.(?:start|init)\(/g)).toHaveLength(1);
-      expect(apply(second, {})).not.toContain('RNSentrySDK.');
+      expect(second.match(/RNSentry(?:Start\.start|SDK\.init)\(/g)).toHaveLength(1);
+      expect(apply(second, {})).not.toMatch(/RNSentry(?:Start|SDK)\./);
       expect(apply(template, {})).toBe(template);
     },
   );

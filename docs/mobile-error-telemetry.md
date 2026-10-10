@@ -27,9 +27,21 @@ identifiers support update health; the app assigns no account identity to Observ
 Sentry crash, app-hang and ANR reporting continues with `sendDefaultPii: false`: JavaScript error
 and transaction hooks remove `user` and persistent device IDs. The app-owned Expo plugin
 `packages/mobile/plugins/with-sentry-native-privacy.js` initializes the native SDK through the
-documented `RNSentrySDK` configuration callbacks, removing native event users and device IDs
+public React Native Sentry startup APIs, removing native event users and device IDs
 without patching Sentry. Android has separate error and transaction callbacks; the Apple
 `beforeSend` callback covers both. No account identity is assigned to Sentry.
+
+The two platforms start differently on purpose. Android calls `RNSentrySDK.init`, which starts
+from the callback alone when the app has no `sentry.options.json`. iOS builds its options in code
+with `RNSentryStart` (`createOptions`, React defaults, our callbacks, React finals, `start`) and
+must never call `RNSentrySDK.start(configureOptions:)`: that entry point takes the DSN from a
+bundled `sentry.options.json`, we ship none, and without it the callback receives nil options.
+The first write to them segfaulted every launch of TestFlight 2.6.0 (15), 100 ms in and before
+any crash handler existed, so nothing reached Sentry. If the DSN fails to parse, the iOS block
+logs and the app launches without native Sentry.
+
+That block is compiled only into Release builds (`#if !DEBUG`). Dev clients, the simulator
+smokes and the screenshot captures never run it, so a green CI run says nothing about it.
 
 JavaScript sets `autoInitializeNativeSdk: false` so it cannot replace those native callbacks.
 Native startup uses the configured DSN and a fixed production environment, keeps crash/ANR/app-hang
