@@ -78,6 +78,9 @@ const trackMock = vi.hoisted(() => vi.fn());
 const detectionProps = vi.hoisted(() => ({ last: null as null | { onManual: () => void } }));
 const confirmDiscardMock = vi.hoisted(() => vi.fn());
 const resetWallMock = vi.hoisted(() => vi.fn());
+const createWallMock = vi.hoisted(() => vi.fn());
+/** The builder the name step hands its identity fields, so a test can name the wall. */
+const identityFields = vi.hoisted(() => ({ builder: null as null | { setName: (next: string) => void } }));
 const discardDraftMock = vi.hoisted(() => vi.fn(async () => true));
 const routerMock = vi.hoisted(() => ({
   back: vi.fn(),
@@ -429,6 +432,29 @@ function mountWizard() {
   return { ...view, rerenderWizard: () => view.rerender(<SprayWallWizardScreen returnTo="/(tabs)/climbs" />) };
 }
 
+const PICKED_PHOTO = {
+  outcome: 'picked',
+  photo: {
+    uri: 'file:///wall.jpg',
+    width: 4032,
+    height: 3024,
+    base: { uri: 'file:///wall.jpg', width: 4032, height: 3024 },
+    original: { uri: 'file:///wall.heic', longSide: 4032 },
+    edit: null,
+  },
+};
+
+/** Pick a photo, so Next is live, and start listening for Android Back. */
+async function pickPhotoAndListen(view: { getByText: (text: string) => HTMLElement }) {
+  const wallPhoto = await import('../../../lib/spray/wall-photo');
+  vi.mocked(wallPhoto.pickWallPhotoFromLibrary).mockResolvedValue(
+    PICKED_PHOTO as unknown as Awaited<ReturnType<typeof wallPhoto.pickWallPhotoFromLibrary>>,
+  );
+  await act(async () => view.getByText('sprayWizard.photo.library').click());
+  alertMock.mockClear();
+  hardwareBack.focusEffect?.();
+}
+
 /** The buttons of the most recent `Alert.alert`, keyed by their label. */
 function lastAlertButton(label: string): { onPress: () => void } {
   const buttons = alertMock.mock.calls.at(-1)?.[2] as { text: string; onPress: () => void }[];
@@ -467,6 +493,8 @@ beforeEach(() => {
   resetSourceMock.mockReset();
   // Once-queued answers must not leak from one case into the next.
   resetWallMock.mockReset();
+  createWallMock.mockReset();
+  identityFields.builder = null;
   fetchVersionsMock.mockReset();
   guard.confirmLeave = null;
   viewer.userId = 'me';
@@ -618,6 +646,30 @@ describe('the photo step and Help train hold finding', () => {
     expect(getByText('sprayWizard.photo.title')).toBeTruthy();
     expect(getByTestId('server-consent').textContent).toBe('wall-1');
     expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
+
+  // The switch only draws once its read has answered, and on Android a tap
+  // anywhere on its row flips it and saves at once. Above the buttons, its
+  // arrival slid "Choose photo" out from under a thumb and took the tap itself.
+  it('draws that switch last on the step, so its arrival moves nothing that can be tapped', async () => {
+    fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const view = mountWizard();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+
+    const consentRow = () => view.getByTestId('server-consent');
+    const drawnBeforeTheRow = (element: Element) =>
+      (element.compareDocumentPosition(consentRow()) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.helpLink'))).toBe(true);
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.library'))).toBe(true);
+
+    // With a photo picked, the preview and its crop button come before it too.
+    await pickPhotoAndListen(view);
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.pickAnother'))).toBe(true);
+    expect(drawnBeforeTheRow(view.getByText('sprayWizard.photo.adjust'))).toBe(true);
+    const buttons = [...view.container.querySelectorAll('button')];
+    expect(buttons.length).toBeGreaterThan(0);
+    expect(buttons.every(drawnBeforeTheRow)).toBe(true);
   });
 
   it('shows neither to somebody finishing a wall they can edit but do not own', async () => {
