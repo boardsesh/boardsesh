@@ -483,6 +483,7 @@
       "photoAlt": "Photo d'un mur de spray avec les prises marquées",
       "noPhoto": "Cette photo n'est plus disponible.",
       "photoLoading": "Chargement de la photo",
+      "loadingNext": "Chargement d'autres murs",
       "unmappable": "Prises qu'on n'a pas pu placer sur la photo : {{total}}",
       "model": "Détecteur de prises : {{version}}",
       "showMarks": "Afficher les marques (H)",
@@ -498,7 +499,8 @@
       "approved": "Approuvé",
       "rejected": "Refusé",
       "reset": "De retour dans la file à relire",
-      "failed": "Impossible d'enregistrer la relecture"
+      "failed": "Impossible d'enregistrer la relecture",
+      "notEligible": "Non enregistré. Ce mur n'est plus disponible comme données d'entraînement."
     },
     "backToAdmin": "Retour à l'admin",
     "noAccess": "Vos droits d'administration ne couvrent pas les murs de spray. Cette page demande un accès admin spray ou sur tout le site."

@@ -3460,6 +3460,14 @@ not turn every kept suggestion into a deleted one. No owner or wall name.
 `UNREVIEWED` deletes it. A review row never exports anything on its own: the
 predicate is re-read every time.
 
+The web screen (`/admin/spray-walls`) keeps its half of that. Approve stays off
+until the wall's photo has loaded and whenever the photo is missing, so an
+approval always means somebody looked at the picture; Reject stays available
+for a wall with no photo. `setSprayTrainingReview` re-checks the predicate and
+refuses a version that left it after the page loaded with
+`SPRAY_TRAINING_NOT_ELIGIBLE`. The screen then takes that wall off the
+reviewer's screen at once and re-reads the tab counts.
+
 ### The export
 
 `exportSprayTrainingDataset`, run every six hours (02:00, 08:00, 14:00 and

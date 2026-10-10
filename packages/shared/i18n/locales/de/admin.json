@@ -483,6 +483,7 @@
       "photoAlt": "Foto einer Spraywand mit markierten Griffen",
       "noPhoto": "Dieses Foto ist nicht mehr verfügbar.",
       "photoLoading": "Foto wird geladen",
+      "loadingNext": "Weitere Wände werden geladen",
       "unmappable": "Griffe, die wir nicht auf dem Foto platzieren konnten: {{total}}",
       "model": "Grifferkennung: {{version}}",
       "showMarks": "Markierungen zeigen (H)",
@@ -498,7 +499,8 @@
       "approved": "Freigegeben",
       "rejected": "Abgelehnt",
       "reset": "Wieder in der Warteschlange",
-      "failed": "Die Prüfung ließ sich nicht speichern"
+      "failed": "Die Prüfung ließ sich nicht speichern",
+      "notEligible": "Nicht gespeichert. Diese Wand ist nicht mehr als Trainingsdaten verfügbar."
     },
     "backToAdmin": "Zurück zum Admin",
     "noAccess": "Dein Admin-Zugang gilt nicht für Spraywände. Diese Seite braucht Admin-Zugang für Spraywände oder die ganze Seite."

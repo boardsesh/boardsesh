@@ -146,6 +146,23 @@ export const GET_SPRAY_TRAINING_QUEUE = gql`
   }
 `;
 
+/**
+ * The three tab counts on their own, for when the list on screen is known to
+ * be stale. `limit: 1` because the resolver builds a page whether or not the
+ * query selects it, and every item on a page mints a presigned photo.
+ */
+export const GET_SPRAY_TRAINING_TOTALS = gql`
+  query GetSprayTrainingTotals($status: SprayTrainingReviewStatus!) {
+    sprayTrainingQueue(status: $status, limit: 1) {
+      totals {
+        unreviewed
+        approved
+        rejected
+      }
+    }
+  }
+`;
+
 /** Approve, reject (with a reason) or clear the verdict on one version. */
 export const SET_SPRAY_TRAINING_REVIEW = gql`
   mutation SetSprayTrainingReview($input: SetSprayTrainingReviewInput!) {
@@ -221,12 +238,21 @@ export type GetSprayTrainingQueueQueryVariables = {
   offset?: number | null;
 };
 
+/** How many eligible versions sit on each tab. */
+export type SprayTrainingTotalsData = { unreviewed: number; approved: number; rejected: number };
+
 export type GetSprayTrainingQueueQueryResponse = {
   sprayTrainingQueue: {
     hasMore: boolean;
-    totals: { unreviewed: number; approved: number; rejected: number };
+    totals: SprayTrainingTotalsData;
     items: SprayTrainingQueueItemData[];
   };
+};
+
+export type GetSprayTrainingTotalsQueryVariables = { status: SprayTrainingReviewStatus };
+
+export type GetSprayTrainingTotalsQueryResponse = {
+  sprayTrainingQueue: { totals: SprayTrainingTotalsData };
 };
 
 export type SetSprayTrainingReviewMutationVariables = {

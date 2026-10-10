@@ -483,6 +483,7 @@
       "photoAlt": "Spray wall photo with marked holds",
       "noPhoto": "This photo is no longer available.",
       "photoLoading": "Loading the photo",
+      "loadingNext": "Loading more walls",
       "unmappable": "Holds we couldn't place on the photo: {{total}}",
       "model": "Detector: {{version}}",
       "showMarks": "Show marks (H)",
@@ -498,7 +499,8 @@
       "approved": "Approved",
       "rejected": "Rejected",
       "reset": "Back in the unreviewed queue",
-      "failed": "Couldn't save the review"
+      "failed": "Couldn't save the review",
+      "notEligible": "Not saved. This wall is no longer available as training data."
     },
     "backToAdmin": "Back to admin",
     "noAccess": "Your admin role doesn't cover spray walls. This page needs spray or site-wide admin access."

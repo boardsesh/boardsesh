@@ -18,15 +18,20 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { msUntilExpiry, summariseStats } from '@/app/lib/admin/spray-training-overlay';
+import { isSprayTrainingNotEligibleError } from '@boardsesh/graphql/errors';
 import {
   GET_SPRAY_TRAINING_QUEUE,
+  GET_SPRAY_TRAINING_TOTALS,
   SET_SPRAY_TRAINING_REVIEW,
   type GetSprayTrainingQueueQueryResponse,
   type GetSprayTrainingQueueQueryVariables,
+  type GetSprayTrainingTotalsQueryResponse,
+  type GetSprayTrainingTotalsQueryVariables,
   type SetSprayTrainingReviewMutationResponse,
   type SetSprayTrainingReviewMutationVariables,
   type SprayTrainingQueueItemData,
   type SprayTrainingReviewStatus,
+  type SprayTrainingTotalsData,
 } from '@boardsesh/graphql/operations';
 import SprayTrainingReviewDialog, { type SprayTrainingDecision } from './spray-training-review-dialog';
 
@@ -42,11 +47,9 @@ const REFRESH_RETRY_MAX_MS = 300_000;
 /** setTimeout fires at once for anything past 2^31 - 1 ms. */
 const MAX_TIMER_MS = 2_147_483_647;
 
-type Totals = GetSprayTrainingQueueQueryResponse['sprayTrainingQueue']['totals'];
+const EMPTY_TOTALS: SprayTrainingTotalsData = { unreviewed: 0, approved: 0, rejected: 0 };
 
-const EMPTY_TOTALS: Totals = { unreviewed: 0, approved: 0, rejected: 0 };
-
-function totalsKey(status: SprayTrainingReviewStatus): keyof Totals {
+function totalsKey(status: SprayTrainingReviewStatus): keyof SprayTrainingTotalsData {
   if (status === 'APPROVED') return 'approved';
   if (status === 'REJECTED') return 'rejected';
   return 'unreviewed';
@@ -57,12 +60,15 @@ export default function SprayTrainingPanel() {
   const { token } = useWsAuthToken();
   const [status, setStatus] = useState<SprayTrainingReviewStatus>('UNREVIEWED');
   const [items, setItems] = useState<SprayTrainingQueueItemData[]>([]);
-  const [totals, setTotals] = useState<Totals>(EMPTY_TOTALS);
+  const [totals, setTotals] = useState<SprayTrainingTotalsData>(EMPTY_TOTALS);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   // The offset that failed, so Retry re-requests the same page.
   const [error, setError] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The dialog decided the last loaded wall while the queue goes on. It stays
+  // open and lands on the first wall of the page being fetched.
+  const [resumeReview, setResumeReview] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [snackbar, setSnackbar] = useState('');
   // Drops a response that lands after the status tab changed.
@@ -91,7 +97,9 @@ export default function SprayTrainingPanel() {
           const known = new Set(previous.map((entry) => entry.versionId));
           return [...previous, ...page.items.filter((entry) => !known.has(entry.versionId))];
         });
-        setHasMore(page.hasMore);
+        // An empty page ends the list whatever it claims, so the drained-list
+        // fetch below can never chase its own tail.
+        setHasMore(page.hasMore && page.items.length > 0);
         setTotals(page.totals);
       } catch (err) {
         if (requestId !== requestCounter.current) return;
@@ -132,7 +140,7 @@ export default function SprayTrainingPanel() {
       try {
         const client = createGraphQLHttpClient(token);
         const pages: SprayTrainingQueueItemData[] = [];
-        let latestTotals: Totals | null = null;
+        let latestTotals: SprayTrainingTotalsData | null = null;
         let latestHasMore = false;
         for (let offset = 0; offset < Math.max(itemCount, 1); offset += PAGE_SIZE) {
           const result = await client.request<GetSprayTrainingQueueQueryResponse, GetSprayTrainingQueueQueryVariables>(
@@ -164,10 +172,27 @@ export default function SprayTrainingPanel() {
     return () => clearTimeout(timer);
   }, [token, earliestExpiry, itemCount, status, refreshAttempt]);
 
+  // Deciding every loaded wall is not the end of the queue. Whatever emptied
+  // the list (a verdict, a refused one, a refresh), read the next page.
+  useEffect(() => {
+    if (itemCount === 0 && hasMore && !loading && error === null) void fetchPage(0, status);
+  }, [itemCount, hasMore, loading, error, fetchPage, status]);
+
+  // The page the dialog was held open for has landed, or is not coming.
+  const firstVersionId = items[0]?.versionId ?? null;
+  useEffect(() => {
+    if (!resumeReview) return;
+    if (firstVersionId !== null) setSelectedId(firstVersionId);
+    if (firstVersionId !== null || !hasMore || error !== null) setResumeReview(false);
+  }, [resumeReview, firstVersionId, hasMore, error]);
+
   const selectedIndex = items.findIndex((item) => item.versionId === selectedId);
   const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : null;
 
-  const closeDialog = useCallback(() => setSelectedId(null), []);
+  const closeDialog = useCallback(() => {
+    setSelectedId(null);
+    setResumeReview(false);
+  }, []);
   const goPrevious = useCallback(() => {
     if (selectedIndex > 0) setSelectedId(items[selectedIndex - 1].versionId);
   }, [items, selectedIndex]);
@@ -178,9 +203,19 @@ export default function SprayTrainingPanel() {
   const decide = useCallback(
     async (item: SprayTrainingQueueItemData, decision: SprayTrainingDecision) => {
       if (!token) return;
+      // The wall leaves this tab, so the next one takes its slot in the dialog.
+      const leaveTab = () => {
+        decidedIds.current.add(item.versionId);
+        const index = items.findIndex((entry) => entry.versionId === item.versionId);
+        const remaining = items.filter((entry) => entry.versionId !== item.versionId);
+        setItems((previous) => previous.filter((entry) => entry.versionId !== item.versionId));
+        const successor = remaining[Math.min(index, remaining.length - 1)];
+        setSelectedId(successor ? successor.versionId : null);
+        if (!successor && hasMore) setResumeReview(true);
+      };
       setDeciding(true);
+      const client = createGraphQLHttpClient(token);
       try {
-        const client = createGraphQLHttpClient(token);
         const result = await client.request<
           SetSprayTrainingReviewMutationResponse,
           SetSprayTrainingReviewMutationVariables
@@ -199,30 +234,48 @@ export default function SprayTrainingPanel() {
             previous.map((entry) => (entry.versionId === item.versionId ? { ...entry, review } : entry)),
           );
         } else {
-          // The wall leaves this tab, so the next one takes its slot in the dialog.
-          decidedIds.current.add(item.versionId);
-          const index = items.findIndex((entry) => entry.versionId === item.versionId);
-          const remaining = items.filter((entry) => entry.versionId !== item.versionId);
-          setItems((previous) => previous.filter((entry) => entry.versionId !== item.versionId));
+          leaveTab();
           setTotals((previous) => ({
             ...previous,
             [totalsKey(status)]: Math.max(0, previous[totalsKey(status)] - 1),
             [totalsKey(decision.status)]: previous[totalsKey(decision.status)] + 1,
           }));
-          const successor = remaining[Math.min(index, remaining.length - 1)];
-          setSelectedId(successor ? successor.versionId : null);
         }
         if (decision.status === 'APPROVED') setSnackbar(t('sprayTraining.snackbar.approved'));
         else if (decision.status === 'REJECTED') setSnackbar(t('sprayTraining.snackbar.rejected'));
         else setSnackbar(t('sprayTraining.snackbar.reset'));
       } catch (err) {
-        console.error('[SprayTrainingPanel] Failed to save review:', err);
-        setSnackbar(t('sprayTraining.snackbar.failed'));
+        if (!isSprayTrainingNotEligibleError(err)) {
+          console.error('[SprayTrainingPanel] Failed to save review:', err);
+          setSnackbar(t('sprayTraining.snackbar.failed'));
+          return;
+        }
+        // The wall left the training set after this page loaded (training
+        // switched off, wall deleted or hidden, photo replaced by a newer
+        // version). Its photo comes off the screen now, not at the next refresh.
+        leaveTab();
+        setSnackbar(t('sprayTraining.snackbar.notEligible'));
+        // Still under `deciding`: a verdict saved while this read was in flight
+        // would leave the counts off by one.
+        try {
+          const fresh = await client.request<GetSprayTrainingTotalsQueryResponse, GetSprayTrainingTotalsQueryVariables>(
+            GET_SPRAY_TRAINING_TOTALS,
+            { status },
+          );
+          setTotals(fresh.sprayTrainingQueue.totals);
+        } catch (totalsError) {
+          console.error('[SprayTrainingPanel] Failed to refresh totals:', totalsError);
+          // Best guess when the server will not say: this tab lost the one wall.
+          setTotals((previous) => ({
+            ...previous,
+            [totalsKey(status)]: Math.max(0, previous[totalsKey(status)] - 1),
+          }));
+        }
       } finally {
         setDeciding(false);
       }
     },
-    [token, items, status, t],
+    [token, items, hasMore, status, t],
   );
 
   return (
@@ -305,7 +358,7 @@ export default function SprayTrainingPanel() {
         })}
       </Box>
 
-      {items.length === 0 && !loading && error === null && (
+      {items.length === 0 && !loading && error === null && !hasMore && (
         <Typography variant="body2" sx={{ color: themeTokens.neutral[400], py: 2, textAlign: 'center' }}>
           {t('sprayTraining.empty')}
         </Typography>
@@ -330,6 +383,7 @@ export default function SprayTrainingPanel() {
 
       <SprayTrainingReviewDialog
         item={selectedItem}
+        loadingNext={resumeReview && selectedItem === null}
         position={selectedIndex + 1}
         total={items.length}
         busy={deciding}

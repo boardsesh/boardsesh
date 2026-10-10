@@ -483,6 +483,7 @@
       "photoAlt": "Foto de un muro de spray con las presas marcadas",
       "noPhoto": "Esta foto ya no está disponible.",
       "photoLoading": "Cargando la foto",
+      "loadingNext": "Cargando más muros",
       "unmappable": "Presas que no pudimos situar en la foto: {{total}}",
       "model": "Detector de presas: {{version}}",
       "showMarks": "Mostrar marcas (H)",
@@ -498,7 +499,8 @@
       "approved": "Aprobado",
       "rejected": "Rechazado",
       "reset": "De vuelta en la cola sin revisar",
-      "failed": "No se pudo guardar la revisión"
+      "failed": "No se pudo guardar la revisión",
+      "notEligible": "No se guardó. Este muro ya no está disponible como datos de entrenamiento."
     },
     "backToAdmin": "Volver a admin",
     "noAccess": "Tu rol de admin no cubre los muros de spray. Esta página necesita acceso de admin de muros de spray o de todo el sitio."
