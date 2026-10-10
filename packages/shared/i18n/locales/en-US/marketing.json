@@ -1041,11 +1041,11 @@
     },
     "sprayPhotos": {
       "title": "Spray wall photos",
-      "body1": "When you add a spray wall, we keep its photo and the holds you mark. Who can see the photo follows the wall's visibility setting: private, link-only or public.",
-      "body2": "Each wall has a “Help train hold finding” switch. While it is on, we use the wall's photo and the holds you mark to train the hold finder, the part of the app that spots holds in a new wall photo. A Boardsesh admin may look at them first to check they are good to learn from. That applies at every visibility, private walls included. The copy we use for training is kept in private storage and is never shared or published outside Boardsesh.",
+      "body1": "When you add a spray wall, we keep its photo and the holds you mark. Who can see the photo follows the wall's visibility setting: private, link-only or public. Members of a gym can also see the walls attached to that gym.",
+      "body2": "Each wall has a “Help train hold finding” switch. While it is on, we use the wall's photo and the holds you mark to train the hold finder, the part of the app that spots holds in a new wall photo. A Boardsesh admin checks them first to make sure they are good to learn from. That applies at every visibility, private walls included. The copy we use for training is kept in private storage and is never shared or published outside Boardsesh.",
       "body3": "The switch is on when you add a wall, and you can change it then or any time later under Edit board. Walls added before the switch existed, or with a version of the app that does not show it, start with it off.",
-      "body4": "Switching it off, deleting the wall, or deleting your account removes the wall from the training set we store within 24 hours. A copy already downloaded for a training run can be used for up to 7 more days, and is deleted the next time we fetch the set. Models we already trained keep what they learned, but they hold no copy of your photo.",
-      "body5": "If a wall is reported, a Boardsesh admin can see its photo to review the report, whatever the switch says. When you delete a wall, we delete its photo after 30 days. When you delete your account, your wall photos are deleted with it."
+      "body4": "Switching it off, deleting the wall, or deleting your account takes the wall out of our stored training set within 24 hours. A copy already downloaded for a training run can be used for up to 7 more days, and is deleted the next time we fetch the set. Models we already trained keep what they learned, but they hold no copy of your photo.",
+      "body5": "If a wall is reported, a Boardsesh admin can see its photo to review the report, whatever the switch says. When you delete a wall, we delete its photo after 30 days. When you delete your account, your wall photos are deleted with it; a training copy leaves on the timing above. Resetting a wall keeps the old one, photo included, as an archived wall until you delete it too. Turning the switch off on either wall covers both."
     },
     "thirdParty": {
       "title": "Third-party services",
@@ -1071,7 +1071,7 @@
       "title": "Data sharing",
       "body1ProductAnalytics": "We do not sell your data, run ads or share information with advertisers or data brokers. The providers described above process data for hosting, storage, service reliability and optional analytics. Aurora Climbing synchronization runs when you enable it.",
       "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like Party Mode. This is visible in the app and is part of how the product works.",
-      "body3SprayPhotos": "We do not give spray wall photos or the holds you mark to anyone else to train on. The only model trained on them is our own hold finder. Other people see a wall's photo only as its visibility setting allows: a public wall's photo is on the open web."
+      "body3SprayPhotos": "We do not give spray wall photos or the holds you mark to anyone else to train on. The only model trained on them is our own hold finder. Other people see a wall's photo as its visibility setting allows, and members of a gym see the walls attached to that gym, private ones included. A public wall's photo is on the open web."
     },
     "retention": {
       "title": "Data retention",
