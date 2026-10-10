@@ -23,8 +23,14 @@ import { Image } from 'expo-image';
  * plain model — so on Android a prefetch of a local file warms nothing a view
  * will ever look up. There a file only counts as in memory once a view has
  * loaded it (`noteBoardArtInMemory`).
+ *
+ * Read when a warm-up is asked for, not at import: this module is pulled in by
+ * `LayeredClimbImage`, and a test that mocks `react-native` down to `View` must
+ * still be able to load it.
  */
-const canWarmBoardArtMemory = Platform.OS === 'ios';
+function canWarmBoardArtMemory(): boolean {
+  return Platform.OS === 'ios';
+}
 
 /**
  * How many files to believe are still decoded. The image memory cache is capped
@@ -63,7 +69,7 @@ export function forgetBoardArtInMemory(): void {
 
 /** Best effort: a miss only means the view decodes the file itself. */
 export function warmBoardArtMemory(uris: readonly string[]): void {
-  if (!canWarmBoardArtMemory) return;
+  if (!canWarmBoardArtMemory()) return;
   const localUris = uris.filter(isLocalFileUri);
   if (localUris.length === 0) return;
   void Image.prefetch(localUris, 'memory')
