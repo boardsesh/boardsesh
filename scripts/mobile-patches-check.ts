@@ -116,6 +116,22 @@ export interface PatchRule {
  * package that has neither a rule nor an allowlist entry.
  */
 export const RULES: readonly PatchRule[] = [
+  {
+    package: 'expo-modules-core',
+    file: 'ios/Core/AppContext.swift',
+    sentinels: [
+      'private var hasPostedAppContextDestroys = false',
+      'private func postAppContextDestroysOnce()',
+      'postAppContextDestroysOnce()\n    _runtime = nil',
+      'if isModuleRegistryInitialized {\n      for module in moduleRegistry {',
+    ],
+    orderedSentinels: [
+      'guard !hasPostedAppContextDestroys else',
+      'hasPostedAppContextDestroys = true',
+      'moduleRegistry.post(event: .appContextDestroys)',
+    ],
+    patchedKey: 'expo-modules-core@57.0.21',
+  },
   ...(['src/SQLiteDatabase.ts', 'build/SQLiteDatabase.js'] as const).map((file) => ({
     package: 'expo-sqlite',
     file,
@@ -144,6 +160,12 @@ export const RULES: readonly PatchRule[] = [
     package: 'expo-sqlite',
     file: 'ios/SQLiteModule.swift',
     sentinels: [
+      'private let moduleQueue: DispatchQueue',
+      'OnAppContextDestroys {\n      closeAllDatabases()',
+      'OnDestroy {\n      closeAllDatabases()',
+      'DispatchQueue.getSpecific(key: moduleQueueKey)',
+      'moduleQueue.async(flags: .barrier, execute: closeDatabases)',
+      'moduleQueue.sync(flags: .barrier, execute: closeDatabases)',
       `let result = exsqlite3_finalize(statement.pointer)
     statement.isFinalized = true
     if result != SQLITE_OK`,

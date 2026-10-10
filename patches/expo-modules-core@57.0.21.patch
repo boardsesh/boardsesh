@@ -1,0 +1,59 @@
+diff --git a/ios/Core/AppContext.swift b/ios/Core/AppContext.swift
+--- a/ios/Core/AppContext.swift
++++ b/ios/Core/AppContext.swift
+@@ -39,6 +39,10 @@
+    Whether the module registry for this app context has already been initialized.
+    */
+   private var isModuleRegistryInitialized: Bool = false
++
++  // Runtime teardown can precede ARC deallocation when another runtime or an
++  // asynchronous operation still retains this context.
++  private var hasPostedAppContextDestroys = false
+ 
+   /**
+    The legacy module registry with modules written in the old-fashioned way.
+@@ -624,8 +628,10 @@
+     sharedObjectRegistry.clear()
+     classRegistry.clear()
+ 
+-    for module in moduleRegistry {
+-      module.releaseJavaScriptObject()
++    if isModuleRegistryInitialized {
++      for module in moduleRegistry {
++        module.releaseJavaScriptObject()
++      }
+     }
+   }
+ 
+@@ -707,7 +713,20 @@
+       // Otherwise the JSCRuntime asserts may fail on deallocation.
+       releaseRuntimeObjects()
+     }
++    postAppContextDestroysOnce()
+     _runtime = nil
++  }
++
++  private func postAppContextDestroysOnce() {
++    guard !hasPostedAppContextDestroys else {
++      return
++    }
++    // Set the guard before callbacks: listeners and _runtime.didSet can reenter
++    // destroy(). Do not force the lazy registry to initialize during teardown.
++    hasPostedAppContextDestroys = true
++    if isModuleRegistryInitialized {
++      moduleRegistry.post(event: .appContextDestroys)
++    }
+   }
+ 
+   /**
+@@ -719,9 +738,7 @@
+     // Post an event to the registry only if it was already created.
+     // If we let it to lazy-load here, that would crash since the module registry
+     // has a weak reference to the app context which is being deallocated.
+-    if isModuleRegistryInitialized {
+-      moduleRegistry.post(event: .appContextDestroys)
+-    }
++    postAppContextDestroysOnce()
+   }
+ 
+   @objc
