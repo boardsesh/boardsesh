@@ -21,8 +21,10 @@ needs a macOS runner, which is why that one prebuilds locally too.)
 
 ## How it runs
 
-- **Trigger:** push to `main` touching `packages/mobile/**` (+ the shared
-  packages it imports), or a trusted manual dispatch from `main`.
+- **Trigger:** push to `release/next` touching `packages/mobile/**` (+ its shared
+  packages and root dependency inputs), or a trusted manual dispatch from
+  `main` or `release/next`. Automatic builds require a new native fingerprint;
+  manual dispatches default to `force_native=true`.
 - **Output:** 30-day APK/AAB Actions artifacts, an upload to the Play internal
   track, and a public prerelease containing the exact signed arm64 APK.
 - The job runs in the `Production` GitHub Environment so it can read the
@@ -42,17 +44,70 @@ and serves the right APKs for its supported device set.
 
 ### Download the beta APK
 
-Open [Boardsesh Releases](https://github.com/boardsesh/boardsesh/releases) and
-select the newest prerelease named **Boardsesh Android Beta**. Download
+Open [Boardsesh Android Beta releases](https://github.com/boardsesh/boardsesh/releases?q=Boardsesh+Android+Beta)
+and select the newest prerelease named **Boardsesh Android Beta**. Download
 `boardsesh-android-beta-arm64-v8a.apk`. Each prerelease uses the immutable
 `build-android-v<version>-<versionCode>-<fingerprint>` tag created for the exact
 Play-uploaded candidate, so a branch move cannot relabel or replace its APK. If
 a newer native candidate finishes later, it gets its own prerelease above it.
+The release description records the actual source branch and build commit,
+including APKs requested manually from `main`.
+
+GitHub's `/releases/latest` selects a full release and excludes prereleases, so it
+can point to an older APK. Use the filtered beta list above for native testing.
 
 The APK uses package `com.boardsesh.app` and the Boardsesh upload key. It upgrades
 other sideloaded Boardsesh builds signed with that key. Do not install it over a
 Play-installed copy: Google re-signs Play downloads with its app-signing key, so
 Android rejects cross-channel upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
+
+### Recover a queue blocked before the build
+
+The production workflow serializes the whole run with
+`cancel-in-progress=false`, preserving Play versionCode allocation, upload, and
+candidate publication order. A run waiting for the `Production` environment can
+therefore block newer requests. A deleted `release/next` branch also stops
+automatic builds; a trusted manual dispatch from `main` remains available.
+
+1. List recent runs and identify the waiting run and its pending replacement:
+
+   ```sh
+   gh run list --workflow android-apk-rn.yml --limit 10 \
+     --json databaseId,status,headBranch,url
+   ```
+
+2. Inspect both runs. Continue only when neither has started a native build or
+   Play upload, and the waiting run is blocked before its gate steps:
+
+   ```sh
+   gh run view <pending-run-id> --json status,jobs
+   gh run view <waiting-run-id> --json status,jobs
+   ```
+
+3. Cancel the pending replacement first, so it cannot start when the blocker ends:
+
+   ```sh
+   gh run cancel <pending-run-id>
+   ```
+
+4. Recheck the waiting run, then cancel it only if it remains blocked before
+   building or uploading:
+
+   ```sh
+   gh run view <waiting-run-id> --json status,jobs
+   gh run cancel <waiting-run-id>
+   ```
+
+5. Request a fresh production APK from the current `main`:
+
+   ```sh
+   gh workflow run android-apk-rn.yml --ref main -f force_native=true
+   ```
+
+Follow the new run in the [Android production workflow](https://github.com/boardsesh/boardsesh/actions/workflows/android-apk-rn.yml).
+
+Let an active build or Play upload finish. If Play already accepted the candidate
+and publication failed, rerun the failed jobs to repair its tags and APK release.
 
 ## Signing
 
@@ -253,7 +308,8 @@ the Developer API cannot create the app or perform the initial upload:
    `FOREGROUND_SERVICE_CONNECTED_DEVICE` (justification: keep a BLE-connected
    climbing board controllable in the background) — it can block the release.
 6. Add the service-account JSON as `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` in the
-   `Production` environment. Subsequent native changes on `main` auto-upload.
+   `Production` environment. Subsequent native changes on `release/next`
+   auto-upload; builds from `main` require a manual dispatch.
 
 ### Upload key vs app signing key
 
@@ -352,8 +408,26 @@ switch between worktrees' servers from the dev menu). The APK is **universal**
 [Android emulator screenshots](./android-emulator-screenshots.md) for the local
 `vp run mobile:android-shots` flow that downloads and drives it automatically.
 
+Pushes to `main` and manual dispatches check the dev variant's Android native
+fingerprint before setting up Java or the Android SDK. The comparison uses the
+commit of the newest successfully published dev-client APK. When its native
+fingerprint matches the current commit, the workflow reuses that release and
+skips compilation, artifact upload, and release creation. JavaScript-only changes
+therefore need only a Metro restart. Native module, config plugin, asset, patch,
+or dependency changes build a new APK when they move the fingerprint. Root
+package, lockfile, and workspace changes also trigger this check.
+
+An existing release does not need stored fingerprint metadata: the gate resolves
+its build commit for the comparison. Failed or cancelled builds do not establish
+a new baseline. A manual dispatch runs the same native check and skips a build
+when the existing APK already matches:
+
+```sh
+gh workflow run android-apk-dev-client.yml --ref main
+```
+
 It installs **side-by-side** with the production app. `app.config.ts` reads
-`BOARDSESH_APP_VARIANT=dev` (set as a job env var) and switches to:
+`BOARDSESH_APP_VARIANT=dev` (set as a workflow env var) and switches to:
 
 - **name** `Boardsesh Dev`
 - **android.package** `com.boardsesh.app.dev` (distinct package → coexists with
@@ -379,8 +453,9 @@ every production OTA bundle.
 **No signing secrets.** Debug builds self-sign with the deterministic Expo
 template `debug.keystore`, so the signature is stable run-to-run and a newer dev
 APK upgrades the previous `com.boardsesh.app.dev` install in place. The workflow
-runs without the `Production` environment and uploads both a 30-day artifact and
-a per-run **prerelease** tagged `rn-android-dev-<run_number>`.
+runs without the `Production` environment. Each build uploads a 30-day artifact
+and a **prerelease** tagged `rn-android-dev-<run_number>`; a run that reuses
+an existing APK creates neither, whether automatic or manually dispatched.
 
 Known limitations of the dev variant:
 

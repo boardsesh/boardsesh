@@ -35,6 +35,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { commandExists, runCapture, runInherit } from './lib/exec';
 import { ensureAndroidSdk } from './lib/android-sdk';
+import { compareDevNativeInputs, DEV_NATIVE_INPUT_PATHS, latestPublishedDevApk } from './lib/android-dev-native';
 
 const LOG = '[mobile:android-apk]';
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -76,6 +77,8 @@ export interface ResolvedAndroidApk {
 export const NATIVE_INPUT_PATHS: { readonly files: readonly string[]; readonly dirs: readonly string[] } = {
   files: [
     'packages/mobile/app.config.ts',
+    'packages/mobile/fingerprint.config.js',
+    'packages/mobile/eas.json',
     'packages/mobile/package.json',
     'package.json',
     'pnpm-lock.yaml',
@@ -83,25 +86,26 @@ export const NATIVE_INPUT_PATHS: { readonly files: readonly string[]; readonly d
     'pnpm-workspace.yaml',
   ],
   // dev-assets: the dev variant's icon / adaptive icon / splash (app.config.ts).
-  dirs: ['packages/mobile/plugins', 'packages/mobile/modules', 'packages/mobile/dev-assets', 'patches'],
+  dirs: [
+    'packages/mobile/plugins',
+    'packages/mobile/modules',
+    'packages/mobile/dev-assets',
+    'packages/mobile/assets',
+    'packages/mobile/locales',
+    'packages/mobile/targets',
+    'patches',
+  ],
 };
 
 /**
  * Paths `git diff` compares between a release APK's commit and HEAD to decide
  * whether the prebuilt APK still matches this checkout.
  *
- * The native inputs minus `pnpm-lock.yaml`, plus the workflow that produces the
- * APK. The lockfile is left out on purpose: the producer workflow's `paths:`
- * filter ignores it too, so a lockfile-only change never yields a new release
- * and treating it as staleness would rebuild locally (~30 min) on every
- * dependency bump. The iOS `.app` cache key makes the same trade — a
- * transitive-only native bump is an accepted blind spot.
+ * The same candidate paths as the published native gate. A candidate diff is
+ * resolved through Expo before rejecting the APK: a version bump or unrelated
+ * lockfile edit may leave its native fingerprint unchanged.
  */
-export const DEV_APK_FRESHNESS_PATHS: readonly string[] = [
-  ...NATIVE_INPUT_PATHS.files.filter((path) => path !== 'pnpm-lock.yaml'),
-  ...NATIVE_INPUT_PATHS.dirs,
-  '.github/workflows/android-apk-dev-client.yml',
-];
+export const DEV_APK_FRESHNESS_PATHS: readonly string[] = DEV_NATIVE_INPUT_PATHS;
 
 /** Minimal `git` surface devApkFreshness needs, injected so tests never spawn git. */
 export type GitRunner = (args: string[]) => { status: number; stdout: string };
@@ -113,18 +117,16 @@ const defaultGitRunner: GitRunner = (args) => {
 
 export type DevApkFreshness =
   | { fresh: true; reason?: 'newer-release-same-native-inputs' }
-  | { fresh: false; reason: 'not-an-ancestor' | 'native-inputs-changed' | 'unknown' };
+  | { fresh: false; reason: 'native-inputs-changed' | 'unknown' };
 
-/** Latest rn-android-dev-N tag by build number (not list order). Null if none/unreachable. */
+/** Latest successfully published rn-android-dev-N APK. Null if none/unreachable. */
 export function resolveLatestDevTag(): string | null {
-  const result = runCapture('gh', ['release', 'list', '--limit', '50']);
-  if (result.status !== 0) return null;
-  const tags = result.stdout
-    .split(/\r?\n/)
-    .flatMap((line) => line.split(/\s+/))
-    .filter((token) => /^rn-android-dev-\d+$/.test(token))
-    .sort((a, b) => Number(a.replace(/\D/g, '')) - Number(b.replace(/\D/g, '')));
-  return tags[tags.length - 1] ?? null;
+  try {
+    return latestPublishedDevApk(ROOT_DIR)?.tag ?? null;
+  } catch (error) {
+    console.warn(`${LOG} published APK lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 /** True if the APK ships native libs for `abi` (lib/<abi>/...). */
@@ -273,25 +275,15 @@ export function resolveDevTagCommit(tag: string): string | null {
 }
 
 /**
- * Does the release APK built at `tagCommit` still match `headSha`'s native tree?
- *
- * Pure over an injected git runner. The common case is `tagCommit` an ancestor of
- * `headSha` (this checkout is ahead of the release): fresh iff the native inputs
- * are unchanged since. When `tagCommit` is instead a DESCENDANT of `headSha` —
- * every native deploy to main publishes a fresh rn-android-dev-* release, so a
- * workflow checked out at an older pinned commit (e.g. a `workflow_run.head_sha`
- * from 30-50 minutes earlier) often sees a newer release by the time it runs —
- * the check flips direction: fresh (`newer-release-same-native-inputs`) iff the
- * native inputs are unchanged between the two commits, since the APK's native
- * tree is identical either way. `not-an-ancestor` means neither commit contains
- * the other (a PR branched off before the release, or a different line of
- * history) — the diff would then be two-way and unreadable, so it's reported
- * rather than measured.
+ * Compare native trees regardless of ancestry. Candidate edits require matching
+ * Expo dev fingerprints; newer compatible releases are useful to pinned captures.
  */
 export function devApkFreshness(
   headSha: string,
   tagCommit: string,
   runGit: GitRunner = defaultGitRunner,
+  compareFingerprints: (headCommit: string, baseCommit: string) => boolean = (headCommit, baseCommit) =>
+    compareDevNativeInputs(ROOT_DIR, headCommit, baseCommit).compatible,
 ): DevApkFreshness {
   const haveCommit = (commit: string): boolean => runGit(['cat-file', '-e', `${commit}^{commit}`]).status === 0;
   if (!haveCommit(tagCommit)) {
@@ -303,16 +295,31 @@ export function devApkFreshness(
   if (runGit(['merge-base', '--is-ancestor', tagCommit, headSha]).status === 0) {
     const diff = runGit(['diff', '--quiet', tagCommit, headSha, '--', ...DEV_APK_FRESHNESS_PATHS]);
     if (diff.status === 0) return { fresh: true };
-    if (diff.status === 1) return { fresh: false, reason: 'native-inputs-changed' };
+    if (diff.status === 1) {
+      return compareFingerprints(headSha, tagCommit)
+        ? { fresh: true }
+        : { fresh: false, reason: 'native-inputs-changed' };
+    }
     return { fresh: false, reason: 'unknown' };
   }
   if (runGit(['merge-base', '--is-ancestor', headSha, tagCommit]).status === 0) {
     const diff = runGit(['diff', '--quiet', headSha, tagCommit, '--', ...DEV_APK_FRESHNESS_PATHS]);
     if (diff.status === 0) return { fresh: true, reason: 'newer-release-same-native-inputs' };
-    if (diff.status === 1) return { fresh: false, reason: 'native-inputs-changed' };
+    if (diff.status === 1) {
+      return compareFingerprints(headSha, tagCommit)
+        ? { fresh: true, reason: 'newer-release-same-native-inputs' }
+        : { fresh: false, reason: 'native-inputs-changed' };
+    }
     return { fresh: false, reason: 'unknown' };
   }
-  return { fresh: false, reason: 'not-an-ancestor' };
+  const diff = runGit(['diff', '--quiet', tagCommit, headSha, '--', ...DEV_APK_FRESHNESS_PATHS]);
+  if (diff.status === 0) return { fresh: true };
+  if (diff.status === 1) {
+    return compareFingerprints(headSha, tagCommit)
+      ? { fresh: true }
+      : { fresh: false, reason: 'native-inputs-changed' };
+  }
+  return { fresh: false, reason: 'unknown' };
 }
 
 function resolveHeadSha(): string {

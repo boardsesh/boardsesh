@@ -11,15 +11,20 @@ const TAG_COMMIT = 'b'.repeat(40);
 // this list AND the `git diff` invocation below — a self-referential assertion
 // would happily agree with a shortened list.
 const EXPECTED_FRESHNESS_PATHS = [
-  'packages/mobile/app.config.ts',
-  'packages/mobile/package.json',
   'package.json',
+  'packages/mobile/package.json',
+  'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+  'packages/mobile/app.config.ts',
+  'packages/mobile/fingerprint.config.js',
   'packages/mobile/plugins',
   'packages/mobile/modules',
+  'packages/mobile/locales',
+  'packages/mobile/eas.json',
+  'packages/mobile/assets',
   'packages/mobile/dev-assets',
+  'packages/mobile/targets',
   'patches',
-  '.github/workflows/android-apk-dev-client.yml',
 ];
 
 interface GitCall {
@@ -61,11 +66,10 @@ describe('devApkFreshness', () => {
     });
   });
 
-  it('reports not-an-ancestor when the release commit is not in this history', () => {
+  it('compares native trees even when the release is not in this history', () => {
     const calls: GitCall[] = [];
     expect(devApkFreshness(HEAD, TAG_COMMIT, fakeGit({ catFile: [0], isAncestor: 1 }, calls))).toEqual({
-      fresh: false,
-      reason: 'not-an-ancestor',
+      fresh: true,
     });
 
     // Pins the argument ORDER: `merge-base --is-ancestor <tagCommit> <headSha>`
@@ -76,10 +80,14 @@ describe('devApkFreshness', () => {
   });
 
   it('reports native-inputs-changed when git diff exits 1', () => {
-    expect(devApkFreshness(HEAD, TAG_COMMIT, fakeGit({ catFile: [0], isAncestor: 0, diff: 1 }))).toEqual({
+    expect(devApkFreshness(HEAD, TAG_COMMIT, fakeGit({ catFile: [0], isAncestor: 0, diff: 1 }), () => false)).toEqual({
       fresh: false,
       reason: 'native-inputs-changed',
     });
+  });
+
+  it('reuses an APK when version or lockfile edits keep the same fingerprint', () => {
+    expect(devApkFreshness(HEAD, TAG_COMMIT, fakeGit({ diff: 1 }), () => true)).toEqual({ fresh: true });
   });
 
   it('reports unknown when git diff fails outright (not a 0/1 answer)', () => {
@@ -108,8 +116,7 @@ describe('devApkFreshness', () => {
     expect(calls.map((call) => call.args[0])).toEqual(['cat-file', 'fetch', 'cat-file']);
   });
 
-  // A native deploy publishes a fresh rn-android-dev-* release on every push to
-  // main, so a workflow pinned to an older commit (e.g. a `workflow_run.head_sha`
+  // A native change publishes a fresh rn-android-dev-* release on main, so a workflow pinned to an older commit (e.g. a `workflow_run.head_sha`
   // from 30-50 minutes earlier) often finds the newest release is a DESCENDANT
   // of HEAD rather than an ancestor. These three cover that reversed direction.
   // Distinct from `fakeGit`: the two merge-base calls ask opposite questions and
@@ -155,15 +162,16 @@ describe('devApkFreshness', () => {
       HEAD,
       TAG_COMMIT,
       directionalGit({ tagAncestorOfHead: 1, headAncestorOfTag: 0, diff: 1 }),
+      () => false,
     );
 
     expect(verdict).toEqual({ fresh: false, reason: 'native-inputs-changed' });
   });
 
-  it('is stale (not-an-ancestor) when the release and HEAD have diverged', () => {
+  it('can reuse identical native inputs when the release and HEAD have diverged', () => {
     const verdict = devApkFreshness(HEAD, TAG_COMMIT, directionalGit({ tagAncestorOfHead: 1, headAncestorOfTag: 1 }));
 
-    expect(verdict).toEqual({ fresh: false, reason: 'not-an-ancestor' });
+    expect(verdict).toEqual({ fresh: true });
   });
 
   it('diffs every freshness path (a dropped path would silently pass a stale APK)', () => {
@@ -179,7 +187,7 @@ describe('devApkFreshness', () => {
 });
 
 describe('DEV_APK_FRESHNESS_PATHS', () => {
-  it('covers the native inputs plus the producer workflow, and skips the lockfile', () => {
+  it('covers native candidate inputs including dependency resolution', () => {
     expect([...DEV_APK_FRESHNESS_PATHS]).toEqual(EXPECTED_FRESHNESS_PATHS);
   });
 });

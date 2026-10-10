@@ -162,6 +162,9 @@ jobs:
   # against the recorded fixture backend. Emulator, APK and Maestro setup are the
   # Play Store capture's, shared through the composite action.
   android-smoke:
+    permissions:
+      contents: read
+      actions: read # Verify the published dev-client came from a successful build.
     needs: resolve
     runs-on: ubuntu-latest
     # Measured on the store capture, which runs a longer flow on the same setup:
