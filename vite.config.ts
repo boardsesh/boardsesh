@@ -611,6 +611,19 @@ export default defineConfig({
         command: 'vp run video:record && vp run video:render',
         cache: false,
       },
+      // The /help/spray-walls walkthrough uses current iPhone takes.
+      'video:spray-walkthrough': {
+        command: 'tsx packages/web/scripts/render-spray-walkthrough.ts',
+        cache: false,
+      },
+      'video:spray-walkthrough:landscape': {
+        command: 'tsx packages/web/scripts/render-spray-walkthrough-landscape.ts',
+        cache: false,
+      },
+      'video:spray-editor': {
+        command: 'tsx packages/web/scripts/render-spray-editor.ts',
+        cache: false,
+      },
       // Two-way i18n guard: catalog keys with no reference, code references with
       // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {

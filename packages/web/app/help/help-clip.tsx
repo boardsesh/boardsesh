@@ -5,7 +5,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import { useAutoplayVideo } from '@/app/hooks/use-autoplay-video';
-import { helpClip, type HelpClipName } from '@/app/lib/help-clips';
+import { helpClip, helpWalkthrough, type HelpClipName, type HelpWalkthroughName } from '@/app/lib/help-clips';
 import frame from '@/app/components/marketing/marketing-screenshot.module.css';
 import styles from './help-clip.module.css';
 
@@ -55,6 +55,51 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
           {t('help.clip.playHint')}
         </Typography>
       ) : null}
+    </Box>
+  );
+}
+
+/** A longer walkthrough shows a poster and controls without autoplay or looping. */
+export function HelpWalkthrough({ name, alt }: { name: HelpWalkthroughName; alt: string }) {
+  const { t } = useTranslation('marketing');
+  const { portrait, landscape } = helpWalkthrough(name);
+
+  return (
+    <Box component="figure" className={`${styles.figure} ${styles.walkthroughFigure}`}>
+      <Box className={`${frame.frame} ${styles.landscapeFrame}`}>
+        <video
+          className={`${styles.video} ${styles.landscapeVideo}`}
+          poster={landscape.poster}
+          width={landscape.width}
+          height={landscape.height}
+          aria-label={alt}
+          muted
+          playsInline
+          preload="none"
+          controls
+        >
+          <source src={landscape.mp4} type="video/mp4" />
+          <source src={landscape.webm} type="video/webm" />
+          {t('help.clip.unsupported')}
+        </video>
+      </Box>
+      <Box className={`${frame.frame} ${styles.portraitFrame}`}>
+        <video
+          className={`${styles.video} ${styles.portraitVideo}`}
+          poster={portrait.poster}
+          width={portrait.width}
+          height={portrait.height}
+          aria-label={alt}
+          muted
+          playsInline
+          preload="none"
+          controls
+        >
+          <source src={portrait.mp4} type="video/mp4" />
+          <source src={portrait.webm} type="video/webm" />
+          {t('help.clip.unsupported')}
+        </video>
+      </Box>
     </Box>
   );
 }

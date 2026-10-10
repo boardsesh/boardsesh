@@ -16,6 +16,10 @@ below). [SW-17 (#5450)](https://github.com/boardsesh/boardsesh/issues/5450) adds
 the ops half: reporting a wall, hiding one, what happens to a deleted wall's
 photographs, the telemetry, and the flag rollout.
 
+![A densely set indoor spray wall photographed from the front](../packages/web/public/images/help/spray-wall-photo.webp)
+
+The photo above is the example used in the [climber's spray wall guide](https://www.boardsesh.com/help/spray-walls).
+
 **Sharing lands separately.**
 [SW-14 (#5447)](https://github.com/boardsesh/boardsesh/issues/5447) is in flight
 on the other stack and owns the visibility switch: private / unlisted with a link
@@ -350,6 +354,14 @@ than a tuned threshold.
 `packages/mobile/app/boards/spray/new.tsx` → `SprayWallWizardScreen` (SW-09,
 #5442). One route, with separate background and hold-look steps, available to
 every climber.
+
+The climber-facing guide is `/help/spray-walls`
+(`packages/web/app/help/spray-walls/`). It includes a setup walkthrough and a
+separate editor video with real screenshots for adding missed holds, returning
+later, and understanding how published edits affect existing climbs. The guide
+also explains full-width iPad Pencil gestures. Recording and render steps are
+in [help-clips.md](help-clips.md#the-spray-wall-walkthrough). Change the page
+and re-record the takes when this flow changes.
 
 Two front doors open it: the board picker's Spray wall tile, and "Add my spray
 wall" under My own board in the "Where do you climb?" block that Climbs' Find my

@@ -56,6 +56,10 @@
     "helpBetaVideos": {
       "title": "Ein Reel von Instagram oder TikTok als Beta teilen",
       "description": "Teile ein Instagram-Reel oder TikTok aus dem Teilen-Menü nach Boardsesh, häng es an einen Boulder, film neue Beta und find die Beta der anderen."
+    },
+    "helpSprayWalls": {
+      "title": "Spraywand fotografieren und einrichten",
+      "description": "Fotografiere deine Spraywand frontal, im Hochformat und mit dem Handy im Winkel der Wand, füge sie in Boardsesh hinzu, korrigiere die gefundenen Griffe und bearbeite sie nach einem Umbau."
     }
   },
   "home": {
@@ -419,7 +423,7 @@
     },
     "guides": {
       "title": "Guides",
-      "intro": "Sieben kurze Seiten mit Screenshots aus der App.",
+      "intro": "Acht kurze Seiten mit Screenshots aus der App.",
       "playlists": {
         "title": "Playlists",
         "body": "Playlist anlegen, einen Boulder wieder rausnehmen, die ganze Liste in die Warteschlange legen und die acht fertigen Listen nutzen."
@@ -447,6 +451,10 @@
       "betaVideos": {
         "title": "Beta-Videos",
         "body": "Ein Reel von Instagram oder TikTok nach Boardsesh teilen, an einen Boulder hängen und die Beta der anderen finden."
+      },
+      "sprayWalls": {
+        "title": "Spraywände",
+        "body": "Fotografiere deine Wand so, dass die Griffe gut erkannt werden, füge sie hinzu und korrigiere ihre Griffe jederzeit."
       }
     },
     "playlists": {
@@ -844,6 +852,95 @@
     "install": {
       "title": "Hol dir die App",
       "intro": "Alles auf dieser Seite passiert in der App."
+    },
+    "sprayWalls": {
+      "breadcrumb": "Spraywände",
+      "hero": {
+        "title": "Spraywand einrichten",
+        "subtitle": "Jeder Griff und jeder Boulder an deiner Wand sitzt auf einem einzigen Foto. Darum zählt die Aufnahme."
+      },
+      "watch": {
+        "title": "Sieh dir den Ablauf an",
+        "videoAlt": "Video über das Hinzufügen einer Spraywand und das Bearbeiten ihrer Griffe in der Boardsesh-App",
+        "p1": "Boardsesh findet die Griffe auf deinem Foto, und jeder Boulder an der Wand wird auf genau diesem Foto gesetzt. Ein gutes Foto heißt: weniger Griffe, die du von Hand korrigieren musst."
+      },
+      "photo": {
+        "title": "Das Foto machen",
+        "p1": "Bevor du das Wandfoto auswählst oder aufnimmst, beachte diese Tipps:",
+        "square": "Stell dich frontal und mittig vor die Wand. Von der Seite aus werden die entfernten Griffe kleiner und rücken zusammen.",
+        "portrait": "Halte das Handy im Hochformat. Du kletterst mit dem Handy hochkant, und ein Foto im Querformat schrumpft zu einem Streifen, auf dem die Griffe zu klein zum Antippen sind.",
+        "tilt": "Neig das Handy im Winkel der Wand, sodass es parallel zur Wandfläche liegt. Im Überhang wirkt der obere Teil der Wand bei senkrecht gehaltenem Handy riesig, und der untere schrumpft.",
+        "frame": "Hol die ganze Wand ins Bild, von oben bis unten und von Rand zu Rand.",
+        "zoom": "Fotografiere bei 1x. Passt die Wand nicht drauf, geh lieber ein paar Schritte zurück, statt auf das Weitwinkelobjektiv zu wechseln.",
+        "lighting": "Sorge für helles, gleichmäßiges Licht, damit sich die Griffe von der Wand abheben. Ein klarer Kontrast hilft Boardsesh, sie zu erkennen.",
+        "why": "Warum das wichtig ist: Die Griff-Erkennung liest dein Foto so, wie es ist. Schräg fotografierte Griffe kommen klein und verzerrt raus, also werden mehr übersehen und du musst sie selbst hinzufügen.",
+        "exampleAlt": "Dicht bestückte Spraywand, frontal fotografiert und mit der ganzen Kletterfläche im Bild",
+        "exampleCaption": "Nimm die ganze Wand auf, damit sich ihre Griffe leicht finden und markieren lassen."
+      },
+      "add": {
+        "title": "Die Wand hinzufügen",
+        "step1": "Öffne Boards und tippe auf Spraywand.",
+        "step2": "Gib der Wand einen Namen und stell ihren Winkel ein. Nach dem Veröffentlichen ist der Winkel fest.",
+        "step3": "Wähle ein Foto oder nimm eins auf. Mit Zuschneiden oder drehen kannst du die Ränder anpassen.",
+        "step4": "Markiere alle vier Wandecken, damit weitere Hintergründe möglich sind, sofern sich das Foto eignet; ohne Ecken bleibt nur das Foto.",
+        "step5": "Lass Boardsesh das Foto prüfen und sieh dir danach die Griffringe an."
+      },
+      "fix": {
+        "title": "Griffe vor dem Veröffentlichen korrigieren",
+        "p1": "Die Griffe, die Boardsesh gefunden hat, erscheinen als Kreise auf deinem Foto. Prüf sie, bevor jemand daran klettert.",
+        "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen und dann auf Behalten.",
+        "toggle": "Tippe auf einen Ring, um ihn auszuwählen. Tippe erneut, um den Griff auszuschalten; seinen Geisterring kannst du wieder einschalten oder löschen.",
+        "longPress": "Halte einen Ring gedrückt, um ihn zu verschieben. Halte eine freie Stelle der Wand gedrückt, um einen Griff zu setzen.",
+        "p2": "Tippe auf Look wählen. Wähle einen verfügbaren Hintergrund und dann die Griffbeleuchtung. Ohne markierte Ecken ist nur das Foto verfügbar. Veröffentliche die Wand.",
+        "select": "Auswählen: Tippe auf einen Griff, um ihn auszuwählen, zu verschieben, seine Größe zu ändern oder ihn an- und auszuschalten.",
+        "add": "Hinzufügen: Markiere einen fehlenden Griff mit Zeichnen oder Ecken.",
+        "trace": "Umranden: Zeichne den Umriss des ausgewählten Griffs in einem Zug neu.",
+        "refine": "Nachbessern: Vergrößere oder verkleinere den Umriss mit dem Pinsel.",
+        "join": "Verbinden: Wähle einen Griff und tippe dann auf einen zweiten, um beide Umrisse zu einem Griff zu verbinden.",
+        "imageAlt": "Spraywand-Editor mit ausgewähltem Griff und den Werkzeugen Auswählen, Hinzufügen, Umranden, Nachbessern und Verbinden",
+        "imageCaption": "Wähle einen Ring aus, um seine Steuerelemente zu sehen. Mit den fünf Werkzeugen korrigierst du die Griffe auf deinem Foto.",
+        "gestures": "Verschiebe das Foto mit zwei Fingern oder zieh sie zum Zoomen auseinander. Mit Rückgängig und Wiederholen kannst du deine Änderungen zurücknehmen und wiederherstellen."
+      },
+      "later": {
+        "title": "Griffe später bearbeiten",
+        "p1": "Tippe unter Boards auf deine Spraywand, um sie zu aktivieren. Tippe auf den Tab Boulder mit der Lupe und dann oben auf den Wandnamen. Wähle Griffe bearbeiten und danach Griffe veröffentlichen.",
+        "p2": "Wurden die Griffe an der ganzen Wand geändert? Tippe in derselben Übersicht auf Wand zurücksetzen. Füge ein neues Foto hinzu und markiere die Griffe von vorn. Beim Veröffentlichen wird die alte Wand mit ihren Bouldern archiviert.",
+        "missed": "Beim ersten Durchgang ein paar Griffe übersehen? Hier kannst du sie jederzeit ergänzen. Neue Griffe verändern bestehende Boulder nicht. Veröffentliche sie, sobald alle sie nutzen können sollen."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "logbook": "Deine Begehungen eintragen",
+        "sessions": "Mit deiner Crew klettern",
+        "hub": "Alle Hilfethemen"
+      },
+      "editor": {
+        "title": "Übersehene Griffe markieren",
+        "p1": "Die Erkennung ist ein Anfang. Markiere im Editor echte Griffe ohne Ring, bevor du veröffentlichst oder sobald sie dir später auffallen.",
+        "videoAlt": "Anleitung zum Hinzufügen fehlender Griffe, Korrigieren von Umrissen, erneuten Öffnen des Editors und Veröffentlichen der Änderungen",
+        "step1": "Zoome mit zwei Fingern hinein, bis du den fehlenden Griff gut siehst.",
+        "step2": "Wähle Hinzufügen und dann Zeichnen.",
+        "step3": "Zeichne einen geschlossenen Umriss um den Griff. Tippe für einen kleinen runden Griff, um einen Kreis zu setzen.",
+        "step4": "Wiederhole das für weitere fehlende Griffe. Verschiebe das Foto mit zwei Fingern und nutze bei Fehlern Rückgängig.",
+        "step5": "Schließe die Einrichtung mit Look wählen ab, bei einer bestehenden Wand mit Griffe veröffentlichen.",
+        "corners": "Lieber gerade Kanten? Wähle Hinzufügen → Ecken. Tippe mindestens drei Punkte um einen Griff an und dann auf Abschließen, um den Umriss zu schließen. Wiederhole das für den nächsten Griff.",
+        "drawAlt": "Werkzeug Hinzufügen im Modus Zeichnen mit einem von Hand umrandeten Griff auf dem Wandfoto",
+        "drawCaption": "Hinzufügen → Zeichnen: Umrande jeden fehlenden Griff einzeln oder tippe für einen Kreis.",
+        "cornersAlt": "Werkzeug Hinzufügen im Modus Ecken mit Punkten um einen Griff und der Schaltfläche Abschließen",
+        "cornersCaption": "Hinzufügen → Ecken: Setze mindestens drei Punkte und tippe auf Abschließen."
+      },
+      "used": {
+        "title": "Was passiert mit Bouldern, wenn du Griffe änderst?",
+        "removal": "Entfernst du einen Griff, den ein veröffentlichter Boulder nutzt, oder schaltest ihn aus, bleibt der Boulder nach dem Veröffentlichen mit einer Warnung zum fehlenden Griff verfügbar. Seine eingetragenen Begehungen bleiben ebenfalls erhalten.",
+        "confirm": "Wenn du auf Griffe veröffentlichen tippst, fragt Boardsesh nach, falls deine Änderungen Griffe entfernen, die veröffentlichte Boulder nutzen. Griffe behalten bricht das Veröffentlichen ab, damit du die Änderungen prüfen kannst. Trotzdem entfernen veröffentlicht sie.",
+        "changes": "Auch wenn du einen veröffentlichten Griff verschiebst, seine Größe oder Form änderst oder ihn mit einem anderen verbindest, zeigen Boulder mit seiner alten Markierung nach dem Veröffentlichen eine Warnung zum fehlenden Griff. Ihre eingetragenen Begehungen bleiben erhalten.",
+        "remix": "Nutze Remixen bei einem betroffenen Boulder, um mit den verfügbaren Griffen eine aktualisierte Version zu setzen. Das erstellt einen neuen Boulder; das Original wird nicht automatisch repariert."
+      },
+      "pencil": {
+        "title": "Apple Pencil auf dem iPad nutzen",
+        "layout": "Diese Pencil-Gesten gibt es im iPad-Editor bei voller Fensterbreite. Ein schmales Fenster nutzt die Handyansicht.",
+        "draw": "Zeichne mit Apple Pencil um einen unmarkierten Griff, um seinen Umriss hinzuzufügen, oder tippe auf eine unmarkierte Stelle für einen Kreis. Tippe mit dem Pencil auf einen markierten Griff, um ihn an- oder auszuschalten.",
+        "setting": "Nur Pencil wird aktiviert, sobald Apple Pencil den Editor erstmals berührt oder darüber schwebt, sofern du noch keine Einstellung gewählt hast. Deine Wahl wird gespeichert. Mit Nur Pencil kannst du mit den Fingern weiterhin Griffe auswählen, den ausgewählten Griff verschieben und das Foto verschieben oder zoomen. Der Pencil übernimmt das Zeichnen und das An- und Ausschalten von Griffen."
+      }
     }
   },
   "docs": {

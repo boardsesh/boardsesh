@@ -29,3 +29,41 @@
   color: var(--neutral-500);
   line-height: 1.5;
 }
+
+/* The wide cut extends beyond the prose measure so the recorded controls stay
+   readable. Phones see the portrait cut; both players defer video downloads. */
+.walkthroughFigure {
+  max-width: none;
+  width: min(900px, calc(100vw - var(--spacing-8) - var(--spacing-8)));
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+.landscapeVideo {
+  aspect-ratio: 1280 / 720;
+}
+
+.portraitFrame {
+  display: none;
+}
+
+.portraitVideo {
+  aspect-ratio: 720 / 1280;
+}
+
+@media (max-width: 760px), (max-width: 1000px) and (max-height: 500px) and (pointer: coarse) {
+  .walkthroughFigure {
+    max-width: 360px;
+    width: 100%;
+    margin-inline: auto;
+    transform: none;
+  }
+
+  .landscapeFrame {
+    display: none;
+  }
+
+  .portraitFrame {
+    display: block;
+  }
+}

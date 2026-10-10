@@ -1,0 +1,41 @@
+{
+  "_comment": "Current iPhone app captured 2026-10-10 from d669419a6b (main 5992ed8e8005). Assemble fixed-30-fps clips from gitignored raw iOS recordings with scripts/spray-walkthrough-takes.sh assemble. Segments and captions are clip frames.",
+  "takes": [
+    {
+      "id": "create",
+      "file": "spray-create-cut.mp4",
+      "segments": [[0, 900]],
+      "captions": [
+        { "at": 0, "key": "start" },
+        { "at": 120, "key": "name" },
+        { "at": 270, "key": "photo" },
+        { "at": 420, "key": "corners" },
+        { "at": 570, "key": "detect" }
+      ]
+    },
+    {
+      "id": "review",
+      "file": "spray-review-cut.mp4",
+      "segments": [[0, 1230]],
+      "captions": [
+        { "at": 0, "key": "maybe" },
+        { "at": 270, "key": "resize" },
+        { "at": 420, "key": "add" },
+        { "at": 870, "key": "background" },
+        { "at": 1020, "key": "publish" }
+      ]
+    },
+    {
+      "id": "later",
+      "file": "spray-edit-later-cut.mp4",
+      "segments": [[0, 900]],
+      "captions": [
+        { "at": 0, "key": "open" },
+        { "at": 150, "key": "switchOff" },
+        { "at": 300, "key": "remove" },
+        { "at": 570, "key": "add" },
+        { "at": 720, "key": "publish" }
+      ]
+    }
+  ]
+}

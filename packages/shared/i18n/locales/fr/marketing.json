@@ -56,6 +56,10 @@
     "helpBetaVideos": {
       "title": "Partager un reel Instagram ou TikTok en beta",
       "description": "Partage un reel Instagram ou un TikTok vers Boardsesh depuis sa fiche de partage, joins-le à un bloc, filme une nouvelle beta, et trouve la beta des autres."
+    },
+    "helpSprayWalls": {
+      "title": "Comment photographier et configurer ton mur de spray",
+      "description": "Photographie ton mur de spray bien en face, en portrait et incliné comme le mur, puis ajoute-le à Boardsesh, corrige les prises trouvées et modifie-les après un changement de prises."
     }
   },
   "home": {
@@ -419,7 +423,7 @@
     },
     "guides": {
       "title": "Guides",
-      "intro": "Sept pages courtes avec des captures de l'app.",
+      "intro": "Huit pages courtes avec des captures de l'app.",
       "playlists": {
         "title": "Playlists",
         "body": "Créer une playlist, en ressortir un bloc, mettre toute la liste en file, et utiliser les huit listes intégrées."
@@ -447,6 +451,10 @@
       "betaVideos": {
         "title": "Vidéos beta",
         "body": "Partager un reel Instagram ou TikTok vers Boardsesh, le joindre à un bloc, et trouver la beta des autres."
+      },
+      "sprayWalls": {
+        "title": "Murs de spray",
+        "body": "Photographie ton mur pour que les prises ressortent bien, ajoute-le, et corrige ses prises quand tu veux."
       }
     },
     "playlists": {
@@ -844,6 +852,95 @@
     "install": {
       "title": "Prends l'app",
       "intro": "Tout ce qui est sur cette page se passe dans l'app."
+    },
+    "sprayWalls": {
+      "breadcrumb": "Murs de spray",
+      "hero": {
+        "title": "Configuration du mur de spray",
+        "subtitle": "Chaque prise et chaque bloc de ton mur sont posés sur une seule photo, alors soigne-la."
+      },
+      "watch": {
+        "title": "Regarde le guide vidéo",
+        "videoAlt": "Vidéo montrant comment ajouter un mur de spray et modifier ses prises dans l'app Boardsesh",
+        "p1": "Boardsesh trouve les prises sur ta photo, et chaque bloc du mur est posé sur cette même photo. Une bonne photo, c'est moins de prises à corriger à la main."
+      },
+      "photo": {
+        "title": "Prendre la photo",
+        "p1": "Avant de choisir ou de prendre la photo du mur, garde ces conseils en tête :",
+        "square": "Place-toi bien en face du mur, dans l'axe de son centre. Décalé sur le côté, les prises lointaines rétrécissent et se tassent.",
+        "portrait": "Tiens le téléphone en portrait. Tu grimpes avec le téléphone à la verticale, et une photo en paysage se réduit à une bande où les prises sont trop petites pour être touchées.",
+        "tilt": "Incline le téléphone selon l'angle du mur, pour qu'il soit parallèle à sa surface. Sur un dévers, un téléphone tenu bien droit fait grossir le haut du mur et rétrécir le bas.",
+        "frame": "Cadre tout le mur, de haut en bas et d'un bord à l'autre.",
+        "zoom": "Shoote en 1x. Si le mur ne rentre pas, recule plutôt que de passer au grand-angle.",
+        "lighting": "Utilise un éclairage vif et uniforme pour que les prises se détachent du mur. Un bon contraste aide Boardsesh à les repérer.",
+        "why": "Pourquoi c'est important : le détecteur de prises lit ta photo telle quelle. Photographiées de biais, les prises ressortent petites et étirées, donc il en rate davantage et tu finis par les ajouter toi-même.",
+        "exampleAlt": "Mur de spray couvert de prises, photographié de face avec toute la surface de grimpe visible",
+        "exampleCaption": "Cadre tout le mur pour trouver et marquer les prises plus facilement."
+      },
+      "add": {
+        "title": "Ajouter le mur",
+        "step1": "Ouvre Boards et touche Mur spray.",
+        "step2": "Donne un nom au mur et règle son angle. L'angle est figé une fois publié.",
+        "step3": "Choisis ou prends une photo. Utilise Recadrer ou pivoter si tu dois ajuster les bords.",
+        "step4": "Marque les quatre coins du mur pour accéder à d'autres fonds si la photo le permet ; si tu passes cette étape, tu gardes la photo.",
+        "step5": "Laisse Boardsesh analyser la photo, puis vérifie les cercles autour des prises."
+      },
+      "fix": {
+        "title": "Corriger les prises avant de publier",
+        "p1": "Les prises trouvées par Boardsesh s'affichent en cercles sur ta photo. Vérifie-les avant que quelqu'un grimpe dessus.",
+        "maybe": "Les cercles en pointillés sont des prises incertaines. Touche-en un, puis Garder.",
+        "toggle": "Touche un cercle pour le sélectionner. Touche-le à nouveau pour désactiver la prise ; tu peux réactiver ou supprimer son fantôme.",
+        "longPress": "Appuie longuement sur un cercle pour le déplacer. Appuie longuement sur une zone vide du mur pour placer une prise.",
+        "p2": "Touche Choisir le rendu. Choisis un fond disponible, puis comment allumer les prises. Sans les coins marqués, seule la photo est proposée. Publie le mur.",
+        "select": "Choisir : touche une prise pour la sélectionner, la déplacer, la redimensionner ou l’activer et la désactiver.",
+        "add": "Ajouter : marque une prise manquante avec Dessiner ou Coins.",
+        "trace": "Tracer : redessine le contour de la prise choisie d’un seul geste.",
+        "refine": "Retoucher : passe le pinceau sur le contour pour l’agrandir ou le rogner.",
+        "join": "Réunir : choisis une prise, puis touche une autre pour réunir leurs contours en une seule prise.",
+        "imageAlt": "Éditeur du mur de spray avec une prise choisie et les outils Choisir, Ajouter, Tracer, Retoucher et Réunir",
+        "imageCaption": "Choisis un cercle pour voir ses commandes. Corrige les prises sur la photo avec les cinq outils.",
+        "gestures": "Utilise deux doigts pour déplacer la photo ou pince pour zoomer. Annuler et Rétablir te permettent de revenir sur tes modifications."
+      },
+      "later": {
+        "title": "Modifier les prises plus tard",
+        "p1": "Dans Boards, touche ton mur de spray pour l'activer. Touche l'onglet Blocs (la loupe), puis le nom du mur en haut. Touche Modifier les prises, puis Publier les prises.",
+        "p2": "Si tu as changé les prises sur tout le mur, touche Réinitialiser ce mur dans la même fiche. Ajoute une nouvelle photo et marque les prises de zéro. Quand tu publies le nouveau mur, l'ancien est archivé avec ses blocs.",
+        "missed": "Tu as oublié quelques prises au premier passage ? Reviens ici pour les ajouter quand tu veux. Ajouter de nouvelles prises ne change pas les blocs existants ; publie quand tu veux que tout le monde puisse les utiliser."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "logbook": "Faire la croix sur tes blocs",
+        "sessions": "Grimper avec ta crew",
+        "hub": "Tous les sujets d'aide"
+      },
+      "editor": {
+        "title": "Marquer les prises oubliées par la détection",
+        "p1": "La détection est un point de départ. Utilise l’éditeur pour marquer les vraies prises sans cercle, avant de publier ou dès que tu les remarques plus tard.",
+        "videoAlt": "Guide pour ajouter les prises manquantes, corriger les contours, revenir dans l’éditeur et publier les modifications",
+        "step1": "Pince pour zoomer jusqu’à bien voir la prise manquante.",
+        "step2": "Choisis Ajouter, puis Dessiner.",
+        "step3": "Dessine un contour fermé autour de la prise. Pour une petite prise ronde, touche la photo pour placer un cercle.",
+        "step4": "Recommence pour les autres prises manquantes. Déplace la photo avec deux doigts et utilise Annuler en cas d’erreur.",
+        "step5": "Termine avec Choisir le rendu pendant la configuration, ou Publier les prises pour un mur existant.",
+        "corners": "Tu préfères les bords droits ? Choisis Ajouter → Coins. Touche au moins trois points autour d’une prise, puis Terminer pour fermer le contour. Recommence pour la prise suivante.",
+        "drawAlt": "Outil Ajouter en mode Dessiner avec le contour d’une prise tracé à la main sur la photo",
+        "drawCaption": "Ajouter → Dessiner : trace chaque prise manquante, ou touche pour placer un cercle.",
+        "cornersAlt": "Outil Ajouter en mode Coins avec des points autour d’une prise et la commande Terminer",
+        "cornersCaption": "Ajouter → Coins : place au moins trois points, puis touche Terminer."
+      },
+      "used": {
+        "title": "Que deviennent les blocs quand tu modifies des prises ?",
+        "removal": "Si tu retires ou désactives une prise utilisée par un bloc publié, le bloc reste disponible avec un avertissement de prise manquante après publication. Ses ascensions enregistrées sont aussi conservées.",
+        "confirm": "Quand tu touches Publier les prises, Boardsesh demande confirmation si tes modifications retirent des prises utilisées par des blocs publiés. Garder les prises annule la publication pour te permettre de revoir les modifications. Retirer quand même les publie.",
+        "changes": "Déplacer, redimensionner, redessiner ou réunir une prise publiée fait aussi apparaître un avertissement de prise manquante sur les blocs qui utilisaient son ancien marquage, après publication. Leurs ascensions enregistrées sont conservées.",
+        "remix": "Utilise Remixer sur un bloc concerné pour créer une version à jour avec les prises disponibles. Cela crée un nouveau bloc ; l’original n’est pas réparé automatiquement."
+      },
+      "pencil": {
+        "title": "Utiliser Apple Pencil sur iPad",
+        "layout": "Ces gestes au Pencil sont disponibles dans l’éditeur iPad en pleine largeur. Une fenêtre compacte utilise la disposition du téléphone.",
+        "draw": "Avec Apple Pencil, dessine autour d’une prise non marquée pour ajouter son contour, ou touche une zone non marquée pour ajouter un cercle. Touche une prise marquée avec le Pencil pour l’activer ou la désactiver.",
+        "setting": "Pencil uniquement s’active au premier contact ou survol de l’éditeur avec Apple Pencil, sauf si tu as déjà choisi un réglage. Ton choix est mémorisé. Avec Pencil uniquement activé, les doigts peuvent toujours sélectionner les prises, déplacer la prise choisie, déplacer la photo ou zoomer ; le Pencil sert à dessiner et à activer ou désactiver les prises."
+      }
     }
   },
   "docs": {
