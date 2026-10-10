@@ -3371,22 +3371,44 @@ each owned wall with its `trainingConsentAt`.
 **Off covers the whole physical wall; on covers one wall.** A reset clones a
 wall, so one physical wall is a family of rows linked by `reset_from_wall_id`:
 the archived walls it was reset from, the live one, and a clone whose reset is
-not finished yet. `trainingConsent: false` on any of them nulls the stamp on
-all of them, in the same transaction: every ancestor up the chain and every
-clone made from any of those, with no depth limit. Without that, the archived
-wall's old photo would stay eligible after its owner said no on the wall they
-can still see, and a clone started before the switch would publish its new
-photo under consent it copied earlier. `trainingConsent: true` stamps only the
-wall it names. It never reaches back to consent an older photo again, so a
-family switched off and on again exports the wall that was switched on and
-nothing older.
+not finished yet. The live wall is its owner's answer for all of them. Three
+things take the whole family out, each in the transaction that does it, each
+reaching every ancestor up the chain and every clone made from any of those
+with no depth limit:
 
-That write opens its transaction by taking the owner's account lock and then
-the lock of every wall in the family, highest id first. The account lock is
-the one `resetSprayWall` holds while it clones, so no clone joins the family
-between the walk and the write. The order is the one a clone's first publish
-uses (clone, then source), so the two cannot deadlock. The other family rows
-keep their `updated_at`.
+1. **Off on any wall.** `updateSprayWall { trainingConsent: false }` on any wall
+   of the family nulls the stamp on all of them. Without that, the archived
+   wall's old photo would stay eligible after its owner said no on the wall they
+   can still see, and a clone started before the switch would publish its new
+   photo under consent it copied earlier.
+2. **Deleting the live wall.** `deleteSprayWall` on the published, unarchived
+   wall nulls the stamp on the rest of the family. Nothing the owner can see
+   says yes any more, so an archived photo may not either.
+3. **Publishing a reset whose clone is off.** The clone becomes the live wall at
+   its first publish (`archiveResetSourceUnderLock`). If its switch is off, the
+   wall it replaces and everything older lose their stamp. This is the case
+   where the wall had not said yes when the reset started, and the owner
+   switched the old wall on while the reset was in progress.
+
+Deleting an ARCHIVED wall removes that one photo and leaves the rest alone.
+So does deleting an UNFINISHED wall: that abandons a reset, and the wall it
+would have replaced is still live with the answer its owner gave on it.
+
+`trainingConsent: true` stamps only the wall it names. It never reaches back to
+consent an older photo again, so a family switched off and on again exports the
+wall that was switched on and nothing older.
+
+The first two open their transaction by taking the owner's account lock and
+then the lock of every wall in the family, highest id first
+(`lockResetFamilyForWrite`). The account lock is the one `resetSprayWall` holds
+while it clones, so no clone joins the family between the walk and the write.
+The order is the one a clone's first publish uses (clone, then source), so the
+two cannot deadlock. The third runs inside that publish, with the clone's and
+the source's locks already held, and takes no more: the clone is the newest
+wall of its family, and every path that holds more than one wall lock takes a
+family's newest wall first. Account deletion needs no family walk: it deletes
+every wall the account owns. In every case the other family rows keep their
+`updated_at`.
 
 ### Hold provenance
 

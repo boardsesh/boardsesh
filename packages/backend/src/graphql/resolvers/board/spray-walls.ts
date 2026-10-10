@@ -1317,8 +1317,25 @@ const CARRY_OVER_BATCH_SIZE = 1000;
  * source exists, so its `bigserial` id is always the higher of the two, and the
  * only other paths that hold more than one wall lock at once take them by id
  * DESCENDING, which is the same order: `deleteAccountSprayWalls`, and
- * `lockResetFamilyForWrite` when an owner switches training consent off.
- * `resetSprayWall` holds the source's lock but never the clone's.
+ * `lockResetFamilyForWrite` when an owner switches training consent off or
+ * deletes the live wall. `resetSprayWall` holds the source's lock but never the
+ * clone's.
+ *
+ * ## Training consent
+ *
+ * From this publish on, the clone is the wall its owner sees, so its "Help
+ * train hold finding" switch is their answer for the physical wall. A clone
+ * that publishes with the switch off takes the stamp off every older wall of
+ * the family: otherwise a source switched on while the reset was in progress is
+ * archived with its stamp, and its photo stays queued and exportable behind a
+ * live wall that reads off. Whether or not the source is archived by this call.
+ *
+ * This takes no lock beyond the two already held. The clone is the newest wall
+ * of its family (an unpublished wall cannot be reset, and its source hands out
+ * no second clone while it is unfinished), and every path that holds more than
+ * one wall lock takes a family's newest wall first. So nothing that could be
+ * holding one of these rows is ahead of this transaction, and no wall joins the
+ * family while the source's lock is held.
  *
  * ## What carries over
  *
@@ -1335,10 +1352,14 @@ const CARRY_OVER_BATCH_SIZE = 1000;
 async function archiveResetSourceUnderLock(
   tx: SprayWriteTransaction,
   sourceWallId: number,
-  successor: { boardUuid: string; layoutId: number },
+  successor: { boardUuid: string; layoutId: number; trainingConsented: boolean },
 ): Promise<void> {
   const successorBoardUuid = successor.boardUuid;
   await lockWallForWrite(tx, sourceWallId);
+
+  if (!successor.trainingConsented) {
+    await clearTrainingConsent(tx, await resetFamilyWallIds(tx, sourceWallId));
+  }
 
   const archivedAt = new Date();
   const [archived] = await tx
@@ -1511,6 +1532,7 @@ async function publishDraftUnderLock(
       pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
       pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
       resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
+      trainingConsentAt: dbSchema.sprayWalls.trainingConsentAt,
     })
     .from(dbSchema.sprayWalls)
     .where(and(eq(dbSchema.sprayWalls.id, wall.id), isNull(dbSchema.sprayWalls.deletedAt)))
@@ -1636,6 +1658,8 @@ async function publishDraftUnderLock(
     await archiveResetSourceUnderLock(tx, wallNow.resetFromWallId, {
       boardUuid: wallNow.boardUuid,
       layoutId: wall.layoutId,
+      // Read under this wall's lock above, which every consent write to it takes.
+      trainingConsented: wallNow.trainingConsentAt != null,
     });
   }
 
@@ -3516,6 +3540,12 @@ export const sprayWallMutations = {
     /** The public copy the tombstone orphans, deleted after the commit. */
     let orphanedPublicKey: string | null = null;
     await db.transaction(async (tx) => {
+      // Deleting the wall its owner sees switches training consent off on the
+      // rest of the reset family (below), which writes other walls' rows. Their
+      // locks come first, behind the owner's account lock, in the order
+      // `lockResetFamilyForWrite` documents. An archived wall has no such write
+      // and never stops being archived, so it takes only its own lock.
+      const familyWallIds = wall.archivedAt == null ? await lockResetFamilyForWrite(tx, board.ownerId, wall.id) : [];
       // The same wall lock every other writer takes: without it a publish in
       // flight would stamp `current_version_id` onto a wall this transaction is
       // deleting.
@@ -3535,11 +3565,33 @@ export const sprayWallMutations = {
       // reason: a window where the flag and the key disagree is a window where a
       // deleted wall's photo still resolves.
       const [wallNow] = await tx
-        .select({ publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey })
+        .select({
+          publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey,
+          archivedAt: dbSchema.sprayWalls.archivedAt,
+          currentVersionId: dbSchema.sprayWalls.currentVersionId,
+        })
         .from(dbSchema.sprayWalls)
         .where(eq(dbSchema.sprayWalls.id, wall.id))
         .limit(1);
       if (wallNow?.publicPhotoKey) orphanedPublicKey = wallNow.publicPhotoKey;
+
+      // The LIVE wall (published, not archived) is its owner's answer for the
+      // physical wall, older photos included. Once it is gone nothing the owner
+      // can see says yes any more, so every other wall of the family loses its
+      // stamp: without this an archived source stays queued and exportable
+      // behind a wall that no longer exists. This wall's own stamp is left: a
+      // deleted wall is ineligible whatever it says.
+      //
+      // Decided on the row as it is under the lock. Deleting an ARCHIVED wall
+      // removes that one photo and says nothing about the wall the owner still
+      // has. Nor does deleting an unfinished one: that abandons a reset, and
+      // the wall it would have replaced is still live with its own answer.
+      if (wallNow != null && wallNow.archivedAt == null && wallNow.currentVersionId != null) {
+        await clearTrainingConsent(
+          tx,
+          familyWallIds.filter((familyWallId) => familyWallId !== wall.id),
+        );
+      }
 
       await tx
         .update(dbSchema.sprayWalls)
@@ -3624,6 +3676,20 @@ async function resetFamilyWallIds(tx: SprayWriteTransaction, wallId: number): Pr
     frontier = discovered;
   }
   return [...family];
+}
+
+/**
+ * Switch "Help train hold finding" off on these walls. Only the stamp moves.
+ * `updated_at` is left alone: no document a device pulls carries this column,
+ * and on a deleted wall `updated_at` is the photo purge's fence against a late
+ * upload.
+ */
+async function clearTrainingConsent(tx: SprayWriteTransaction, wallIds: readonly number[]): Promise<void> {
+  if (wallIds.length === 0) return;
+  await tx
+    .update(dbSchema.sprayWalls)
+    .set({ trainingConsentAt: null })
+    .where(and(inArray(dbSchema.sprayWalls.id, [...wallIds]), isNotNull(dbSchema.sprayWalls.trainingConsentAt)));
 }
 
 /**
@@ -3971,9 +4037,12 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       // stamp here, in this transaction: otherwise an archived source's photo
       // stays eligible after its owner said no on the live wall, and a clone
       // started before the switch publishes with consent it copied earlier.
-      // Their `updated_at` is left alone: no document a device pulls carries
-      // this column, and on a deleted wall `updated_at` is the photo purge's
-      // fence against a late upload.
+      //
+      // Two more things take the whole family out, for the same reason, and
+      // they live where they happen: deleting the live wall (`deleteSprayWall`)
+      // and publishing a reset whose clone has the switch off
+      // (`archiveResetSourceUnderLock`). In all three the wall the owner sees
+      // no longer says yes, so no older photo of it may.
       //
       // On is this wall only. It never reaches back to consent an older photo
       // again on the owner's behalf. It stamps `now()` only when it was off, so
@@ -3981,15 +4050,10 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       // leaves the training export's consent fingerprint alone).
       if (validated.trainingConsent === false) {
         wallUpdates.trainingConsentAt = null;
-        const relatedWallIds = revokedFamilyWallIds.filter((familyWallId) => familyWallId !== wall.id);
-        if (relatedWallIds.length > 0) {
-          await tx
-            .update(dbSchema.sprayWalls)
-            .set({ trainingConsentAt: null })
-            .where(
-              and(inArray(dbSchema.sprayWalls.id, relatedWallIds), isNotNull(dbSchema.sprayWalls.trainingConsentAt)),
-            );
-        }
+        await clearTrainingConsent(
+          tx,
+          revokedFamilyWallIds.filter((familyWallId) => familyWallId !== wall.id),
+        );
       } else if (validated.trainingConsent === true && wallNow?.trainingConsentAt == null) {
         wallUpdates.trainingConsentAt = new Date();
       }

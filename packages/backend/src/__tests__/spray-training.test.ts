@@ -229,6 +229,10 @@ async function setTrainingConsent(wall: CreatedWall, trainingConsent: boolean) {
   )) as { trainingConsent: boolean | null };
 }
 
+async function deleteWall(wall: CreatedWall) {
+  return sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER));
+}
+
 /** The wall's row as the consent write leaves it. Timestamps as text, which keeps `updated_at`'s microseconds. */
 async function wallRowOf(wall: CreatedWall) {
   const rows = (await db.execute(sql`
@@ -480,7 +484,8 @@ describe('training consent on the wall', () => {
 
 /**
  * A reset clones the wall, so one physical wall is several rows linked by
- * `reset_from_wall_id`. "No" on any of them is "no" for the wall.
+ * `reset_from_wall_id`. "No" on any of them is "no" for the wall, and so is the
+ * wall its owner sees going away or being replaced by one that says no.
  */
 describe('training consent across a reset', () => {
   it('switches the archived source off with its live clone, and leaves its other columns alone', async () => {
@@ -530,6 +535,84 @@ describe('training consent across a reset', () => {
     expect((await wallRowOf(clone)).training_consent_at).toBeNull();
     await publishFirstVersion(clone);
     expect(await queueVersionIds()).toEqual([]);
+  });
+
+  it('switches the older walls off when a reset publishes with its clone off', async () => {
+    // The wall had never said yes when the reset started, so the clone copied
+    // a no. Then the owner says yes on the wall they can still see.
+    const oldest = await createPublishedWall({ trainingConsent: false });
+    const source = await startReset(oldest.wall);
+    const sourceVersionId = await publishFirstVersion(source);
+    const clone = await startReset(source);
+    expect((await wallRowOf(clone)).training_consent_at).toBeNull();
+    await setTrainingConsent(source, true);
+    // And, separately, on the archived photo from before the first reset.
+    await setTrainingConsent(oldest.wall, true);
+    expect(await queueVersionIds()).toEqual([oldest.versionId, sourceVersionId]);
+
+    await publishFirstVersion(clone);
+
+    // The clone is the wall the owner sees now, and it reads off. Nothing
+    // older may stay in behind it.
+    expect((await wallRowOf(source)).archived_at).not.toBeNull();
+    expect((await wallRowOf(source)).training_consent_at).toBeNull();
+    expect((await wallRowOf(oldest.wall)).training_consent_at).toBeNull();
+    expect((await wallRowOf(clone)).training_consent_at).toBeNull();
+    expect(await queueVersionIds()).toEqual([]);
+  });
+
+  it('switches the archived walls off when the live wall is deleted', async () => {
+    // Reset twice: two archived walls behind the live one, all consented.
+    const first = await createPublishedWall();
+    const second = await startReset(first.wall);
+    const secondVersionId = await publishFirstVersion(second);
+    const third = await startReset(second);
+    const thirdVersionId = await publishFirstVersion(third);
+    const unrelated = await createPublishedWall();
+    expect(await queueVersionIds()).toEqual([first.versionId, secondVersionId, thirdVersionId, unrelated.versionId]);
+
+    await deleteWall(third);
+
+    // Nothing the owner can see says yes any more, so the old photos go too.
+    expect((await wallRowOf(first.wall)).training_consent_at).toBeNull();
+    expect((await wallRowOf(second)).training_consent_at).toBeNull();
+    expect((await wallRowOf(unrelated.wall)).training_consent_at).not.toBeNull();
+    expect(await queueVersionIds()).toEqual([unrelated.versionId]);
+  });
+
+  it('switches an unfinished reset clone off when the live wall it was cloned from is deleted', async () => {
+    const source = await createPublishedWall();
+    const clone = await startReset(source.wall);
+    expect((await wallRowOf(clone)).training_consent_at).not.toBeNull();
+
+    await deleteWall(source.wall);
+
+    expect((await wallRowOf(clone)).training_consent_at).toBeNull();
+  });
+
+  it('leaves the live wall on when an archived wall of its family is deleted', async () => {
+    const source = await createPublishedWall();
+    const clone = await startReset(source.wall);
+    const cloneVersionId = await publishFirstVersion(clone);
+    expect((await wallRowOf(source.wall)).archived_at).not.toBeNull();
+
+    // Removing one old photo says nothing about the wall the owner still has.
+    await deleteWall(source.wall);
+
+    expect((await wallRowOf(clone)).training_consent_at).not.toBeNull();
+    expect(await queueVersionIds()).toEqual([cloneVersionId]);
+  });
+
+  it('leaves the live wall on when an unfinished reset of it is deleted', async () => {
+    const source = await createPublishedWall();
+    const clone = await startReset(source.wall);
+
+    // Abandoning a reset: the wall it would have replaced is still the one the
+    // owner sees, with the answer they gave on it.
+    await deleteWall(clone);
+
+    expect((await wallRowOf(source.wall)).training_consent_at).not.toBeNull();
+    expect(await queueVersionIds()).toEqual([source.versionId]);
   });
 
   it('switches back on for the one wall it names, never for the archived source', async () => {
