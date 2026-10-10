@@ -36,6 +36,9 @@ const recorded = vi.hoisted(() => ({
   angleSheet: [] as Props[],
   lightbulb: [] as { canRelay?: boolean; onRelayToHolder?: () => void }[],
   scroll: [] as Props[],
+  firstScreen: [] as Props[],
+  sectionsSheet: [] as Props[],
+  scrollGate: [] as Props[],
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
@@ -56,9 +59,73 @@ const navigation = vi.hoisted(() => ({
   },
 }));
 
+const drawerSections = vi.hoisted(() => ({
+  defaults: {
+    logbook: true,
+    climberLogs: true,
+    setterNotes: true,
+    betaVideos: true,
+    boardseshGrade: true,
+    community: true,
+    similarClimbs: true,
+  },
+  sections: {
+    logbook: true,
+    climberLogs: true,
+    setterNotes: true,
+    betaVideos: true,
+    boardseshGrade: true,
+    community: true,
+    similarClimbs: true,
+  },
+  ready: true,
+}));
+vi.mock('../../../lib/play-drawer-sections-preference', () => ({
+  DEFAULT_PLAY_DRAWER_SECTIONS: drawerSections.defaults,
+  PLAY_DRAWER_SECTION_IDS: [
+    'logbook',
+    'climberLogs',
+    'setterNotes',
+    'betaVideos',
+    'boardseshGrade',
+    'community',
+    'similarClimbs',
+  ],
+  usePlayDrawerSectionsPreference: () => ({
+    sections: drawerSections.sections,
+    ready: drawerSections.ready,
+    setSection: vi.fn(),
+    setAll: vi.fn(),
+  }),
+}));
+vi.mock('../use-deliberate-scroll-gesture', () => ({
+  useDeliberateScrollGesture: (options: Props) => {
+    recorded.scrollGate.push(options);
+    return {};
+  },
+}));
+vi.mock('../PlayDrawerSectionsSheet', () => ({
+  PlayDrawerSectionsSheet: (props: Props) => {
+    recorded.sectionsSheet.push(props);
+    return null;
+  },
+}));
+
 // --- Host platform -----------------------------------------------------------
 vi.mock('react-native', () => ({
-  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: LayoutChangeEvent) => void }) => {
+  View: ({
+    children,
+    onLayout,
+    style,
+  }: {
+    children?: ReactNode;
+    onLayout?: (event: LayoutChangeEvent) => void;
+    style?: Props[];
+  }) => {
+    const firstScreenStyle = Array.isArray(style)
+      ? style.find((entry) => entry && 'height' in entry && 'paddingTop' in entry)
+      : undefined;
+    if (firstScreenStyle) recorded.firstScreen.push(firstScreenStyle);
     if (onLayout) recorded.headerLayout = onLayout;
     return createElement('div', null, children);
   },
@@ -252,9 +319,6 @@ vi.mock('../use-mobile-playback', () => ({
     return { isAnimatable: false };
   },
 }));
-vi.mock('../use-below-fold-content-request', () => ({
-  useBelowFoldContentRequest: () => ({ requested: false, request: vi.fn(), requestFromScrollOffset: vi.fn() }),
-}));
 vi.mock('../use-drawer-dismiss-gesture', () => ({
   useDrawerDismissGesture: () => ({
     gesture: { enabled: () => ({}) },
@@ -330,6 +394,7 @@ beforeEach(() => {
   recorded.switchOverlay = [];
   recorded.actionBar = [];
   recorded.deferredSections = [];
+  recorded.scrollGate = [];
   recorded.logAscent = [];
   recorded.favoriteStatus = [];
   recorded.playback = [];
@@ -337,6 +402,10 @@ beforeEach(() => {
   recorded.lightbulb = [];
   recorded.scroll = [];
   recorded.headerLayout = undefined;
+  recorded.firstScreen = [];
+  recorded.sectionsSheet = [];
+  drawerSections.sections = { ...drawerSections.defaults };
+  drawerSections.ready = true;
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
@@ -381,7 +450,7 @@ describe('PlayDrawer opening layout', () => {
     expect(lastBoardProps().layoutReady).toBe(false);
     const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
     const headerLayout = recorded.headerLayout;
-    const logbookLayout = recorded.deferredSections.at(-1)?.onLogbookHeaderLayout as (height: number) => void;
+    const logbookLayout = recorded.deferredSections.at(-1)?.onFirstSectionHeaderLayout as (height: number) => void;
     if (!headerLayout) throw new Error('Title header is not measured');
     const event = (height: number) =>
       ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } }) as LayoutChangeEvent;
@@ -606,5 +675,134 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     // The pill changes the SELECTED board's angle — it must not offer to move a
     // wall the climber is not on.
     expect(recorded.actionBar.at(-1)?.currentAngle).toBe(TWELVE_BY_TWELVE.angle);
+  });
+});
+
+describe('PlayDrawer configurable sections', () => {
+  function hideEverySection() {
+    drawerSections.sections = {
+      logbook: false,
+      climberLogs: false,
+      setterNotes: false,
+      betaVideos: false,
+      boardseshGrade: false,
+      community: false,
+      similarClimbs: false,
+    };
+  }
+  const layoutEvent = (height: number) =>
+    ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } }) as LayoutChangeEvent;
+  it('hiding everything removes content and scroll without waiting for a nonexistent header', () => {
+    hideEverySection();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.deferredSections).toHaveLength(0);
+    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(false);
+    const editSections = recorded.actionBar.at(-1)?.onEditSections as () => void;
+    act(editSections);
+    expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
+    const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
+    const headerLayout = recorded.headerLayout;
+    if (!headerLayout) throw new Error('Title header is not measured');
+    act(() => {
+      viewportLayout(layoutEvent(568));
+      headerLayout(layoutEvent(70));
+    });
+    expect(lastBoardProps().layoutReady).toBe(true);
+    expect(recorded.firstScreen.at(-1)?.height).toBe(568);
+  });
+  it('can restore a first enabled header and scrolling after hiding everything', () => {
+    hideEverySection();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const rendered = renderDrawer();
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    rendered.rerender(
+      createElement(PlayDrawer, { boardConfig: TWELVE_BY_TWELVE, onOpenQueue: vi.fn(), openTarget: null }),
+    );
+    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(true);
+    expect(recorded.deferredSections.at(-1)?.sections).toEqual(drawerSections.sections);
+    expect(recorded.firstScreen.at(-1)?.height).toBeLessThan(844);
+  });
+  it('remeasures the newly selected first header and opens its content on explicit expand', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const rendered = renderDrawer();
+    const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
+    const headerLayout = recorded.headerLayout;
+    const logbookHeaderLayout = recorded.deferredSections.at(-1)?.onFirstSectionHeaderLayout as (
+      height: number,
+    ) => void;
+    if (!headerLayout) throw new Error('Title header is not measured');
+    act(() => {
+      viewportLayout(layoutEvent(844));
+      headerLayout(layoutEvent(70));
+      logbookHeaderLayout(70);
+    });
+    expect(lastBoardProps().layoutReady).toBe(true);
+    expect(recorded.firstScreen.at(-1)?.height).toBe(754);
+    hideEverySection();
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    rendered.rerender(
+      createElement(PlayDrawer, { boardConfig: TWELVE_BY_TWELVE, onOpenQueue: vi.fn(), openTarget: null }),
+    );
+    expect(lastBoardProps().layoutReady).toBe(false);
+    const betaHeaderLayout = recorded.deferredSections.at(-1)?.onFirstSectionHeaderLayout as (height: number) => void;
+    act(() => betaHeaderLayout(60));
+    expect(lastBoardProps().layoutReady).toBe(true);
+    expect(recorded.firstScreen.at(-1)?.height).toBe(764);
+    const expandFirst = recorded.deferredSections.at(-1)?.onFirstSectionToggle as (expanded: boolean) => void;
+    act(() => expandFirst(true));
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+  });
+  it('opens a lone deferred section on deliberate scroll intent before any offset exists', () => {
+    hideEverySection();
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(false);
+    const onScrollIntent = recorded.scrollGate.at(-1)?.onScrollIntent as () => void;
+    act(onScrollIntent);
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+  });
+  it('opens a lone deferred section when a native drag begins, before its first offset', () => {
+    hideEverySection();
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(false);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', 845);
+    const beginDrag = recorded.scroll.at(-1)?.onScrollBeginDrag as () => void;
+    act(beginDrag);
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', undefined);
+  });
+  it('gives initial overflow and removes it after scrolling or hiding everything', () => {
+    hideEverySection();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const rendered = renderDrawer();
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).not.toHaveProperty('minHeight', 845);
+    const ignoredIntent = recorded.scrollGate.at(-1)?.onScrollIntent as () => void;
+    act(ignoredIntent);
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    rendered.rerender(
+      createElement(PlayDrawer, { boardConfig: TWELVE_BY_TWELVE, onOpenQueue: vi.fn(), openTarget: null }),
+    );
+    const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
+    act(() => viewportLayout(layoutEvent(844)));
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(false);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', 845);
+    const onScroll = recorded.scroll.at(-1)?.onScroll as (event: {
+      nativeEvent: { contentOffset: { y: number } };
+    }) => void;
+    act(() => onScroll({ nativeEvent: { contentOffset: { y: 1 } } }));
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', undefined);
+  });
+  it('waits for preference hydration before mounting sections or the board', () => {
+    drawerSections.ready = false;
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.deferredSections).toHaveLength(0);
+    expect(lastBoardProps().layoutReady).toBe(false);
+    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(false);
   });
 });

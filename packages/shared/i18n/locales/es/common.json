@@ -701,6 +701,25 @@
         "footer": "Las actualizaciones anticipadas pueden traer algún fallo de vez en cuando. Los cambios se aplican la próxima vez que abras la app.",
         "joinDeferred": "No hay conexión con el servidor de actualizaciones. Lo intentaremos la próxima vez que abras la app; las actualizaciones anticipadas empiezan la vez siguiente.",
         "leaveDeferred": "Todavía no se puede volver. Lo intentaremos la próxima vez que abras la app."
+      },
+      "climbDrawer": {
+        "title": "Vista del bloque",
+        "description": "Elige qué ves debajo del bloque.",
+        "loading": "Cargando opciones de vista…",
+        "hideAll": "Ocultar todo",
+        "showAll": "Mostrar todo",
+        "sections": {
+          "logbook": "Logbook",
+          "climberLogs": "Registros de escaladores",
+          "setterNotes": "Notas del setter",
+          "betaVideos": "Vídeos de beta",
+          "boardseshGrade": "Grado Boardsesh",
+          "community": "Comunidad",
+          "similarClimbs": "Bloques similares"
+        },
+        "sheetTitle": "Opciones de vista",
+        "groupTitle": "Debajo del bloque",
+        "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical."
       }
     },
     "sendRecovery": {

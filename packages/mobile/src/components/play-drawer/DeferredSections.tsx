@@ -36,6 +36,11 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-interactions';
 import { useClimbSettled } from '../../hooks/use-climb-settled';
 import { BETA_SHELF_SECTION_KEY } from '../../lib/beta-shelf-collapse';
+import {
+  DEFAULT_PLAY_DRAWER_SECTIONS,
+  type PlayDrawerSectionsVisibility,
+} from '../../lib/play-drawer-sections-preference';
+import { visiblePlayDrawerSections } from './play-drawer-sections';
 
 type DeferredSectionsProps = {
   climb: Climb;
@@ -46,16 +51,17 @@ type DeferredSectionsProps = {
   angle: number;
   enabled: boolean;
   contentEnabled: boolean;
+  sections?: PlayDrawerSectionsVisibility;
   onSimilarClimbPress: (climb: Climb) => void;
-  /** Reports the measured height of the Logbook section header (drives the play
+  /** Reports the measured height of the first visible section header (drives the play
    *  drawer's first-screen reserve so the header teases at the bottom of the fold). */
-  onLogbookHeaderLayout?: (height: number) => void;
-  /** Reports the measured height of the whole Logbook section (header + expanded
+  onFirstSectionHeaderLayout?: (height: number) => void;
+  /** Reports the measured height of the whole first section (header + expanded
    *  body). Lets the play drawer scroll a deliberate expand fully into view. */
-  onLogbookSectionLayout?: (height: number) => void;
-  /** Fires when the user taps to expand/collapse the Logbook (not on mount), with
+  onFirstSectionLayout?: (height: number) => void;
+  /** Fires when the user taps to expand/collapse the first section (not on mount), with
    *  the new state — the play drawer scrolls the section into view on expand. */
-  onLogbookToggle?: (expanded: boolean) => void;
+  onFirstSectionToggle?: (expanded: boolean) => void;
   /** Opens the "share your beta" sheet. Rendered as the Beta Videos header "+" for
    *  signed-in users; absent (undefined) hides it. */
   onAddBetaVideo?: () => void;
@@ -103,10 +109,11 @@ export const DeferredSections = memo(function DeferredSections({
   angle,
   enabled,
   contentEnabled,
+  sections = DEFAULT_PLAY_DRAWER_SECTIONS,
   onSimilarClimbPress,
-  onLogbookHeaderLayout,
-  onLogbookSectionLayout,
-  onLogbookToggle,
+  onFirstSectionHeaderLayout,
+  onFirstSectionLayout,
+  onFirstSectionToggle,
   onAddBetaVideo,
   onOpenFullLogbook,
   onOpenClimberLogs,
@@ -119,22 +126,33 @@ export const DeferredSections = memo(function DeferredSections({
   const { brandColors } = useTheme();
   const { gradeFormat } = useGradeFormat();
   const boardseshGradeEnabled = useBoardseshGradeEnabled();
+  const visibleSections = visiblePlayDrawerSections({
+    sections,
+    isAuthenticated,
+    boardseshGradeEnabled,
+    description: climb.description,
+    screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+  });
+  const firstSectionId = visibleSections[0];
+  const showLogbook = enabled && visibleSections.includes('logbook');
+  const showClimberLogs = enabled && visibleSections.includes('climberLogs');
+  const crewWanted = showLogbook || showClimberLogs;
 
   const handleAddBetaVideoPress = useCallback(() => {
     void Haptics.selectionAsync();
     onAddBetaVideo?.();
   }, [onAddBetaVideo]);
 
-  const handleLogbookSectionLayout = useCallback(
+  const handleFirstSectionLayout = useCallback(
     (event: LayoutChangeEvent) => {
-      onLogbookSectionLayout?.(event.nativeEvent.layout.height);
+      onFirstSectionLayout?.(event.nativeEvent.layout.height);
     },
-    [onLogbookSectionLayout],
+    [onFirstSectionLayout],
   );
   // Defer the JS-heavy below-fold sections until just after the drawer's open
   // animation and only after the user has started scrolling below the fold.
-  // The Logbook stays eager above because its collapsed header is the scroll
-  // hint at the bottom of the first screen — it must measure immediately.
+  // The first visible header is the scroll hint at the bottom of the first
+  // screen and must measure immediately, even when Logbook is hidden.
   // Re-defers per climb (resetKey = uuid) and — unlike a bare
   // runAfterInteractions — falls back to a bounded timeout, so a starved
   // interaction queue can't leave these sections blank until the drawer reopens.
@@ -145,7 +163,7 @@ export const DeferredSections = memo(function DeferredSections({
   // open), but React Query dedupes it with LogbookSection's identical fetch, so
   // it never doubles up; it stays empty until it lands, and the summary just
   // drops the clause meanwhile.
-  const { logbook } = useLogbook(boardName as BoardName, [climb.uuid]);
+  const { logbook } = useLogbook(showLogbook ? boardName : null, showLogbook ? [climb.uuid] : []);
   const { otherAngleActivity, angleTickCounts } = useMemo(() => {
     const entriesForClimb = logbook.filter((entry) => entry.climb_uuid === climb.uuid);
     return {
@@ -165,11 +183,11 @@ export const DeferredSections = memo(function DeferredSections({
   // snapshot is only read here: the root sync bridge keeps it fresh, so opening
   // the drawer costs no followed-authors request and no SQLite write. A missing
   // one loads behind the same settle gate.
-  const settled = useClimbSettled(enabled, climb.uuid);
+  const settled = useClimbSettled(enabled && crewWanted, climb.uuid);
   // What a climber's own grade is compared against: only one that differs is worth a mention.
   const climbGradeId = getDifficultyIdForGradeName(climb.difficulty);
   const { data: followedAuthors, isError: followedAuthorsFailed } = useFollowedAuthorsSnapshot({
-    loadWhenMissing: isAuthenticated && settled,
+    loadWhenMissing: crewWanted && isAuthenticated && settled,
   });
   const followState: 'none' | 'some' | 'unknown' | 'none-yet' = followedAuthors
     ? followedAuthors.users.length > 0
@@ -179,7 +197,7 @@ export const DeferredSections = memo(function DeferredSections({
       ? 'unknown'
       : 'none-yet';
   const { data: crewLogs } = useFollowingClimbLogs(boardName, climb.uuid, {
-    enabled: isAuthenticated && settled && (followState === 'some' || followState === 'unknown'),
+    enabled: crewWanted && isAuthenticated && settled && (followState === 'some' || followState === 'unknown'),
   });
   // Everyone else's newest logs, for the Climber logs card's fall-through rows.
   // The card mounts only once the climber scrolls, so asking from there starts
@@ -193,6 +211,7 @@ export const DeferredSections = memo(function DeferredSections({
   // card alone decides whether the rows may show.
   const isOffline = useIsOffline();
   const everyoneLogsWanted =
+    showClimberLogs &&
     isAuthenticated &&
     settled &&
     !isOffline &&
@@ -286,7 +305,7 @@ export const DeferredSections = memo(function DeferredSections({
   // stats-history queries below have nothing to answer with — skip them for
   // both. (BoardseshGradeSection gates its own by-angle query the same way.)
   const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
-  const boardseshReady = boardseshGradeEnabled && !noCrowdGrade && readyToRender;
+  const boardseshReady = enabled && sections.boardseshGrade && boardseshGradeEnabled && !noCrowdGrade && readyToRender;
   const { data: boardseshGrade } = useBoardseshGrade(boardName, climb.uuid, angle, {
     enabled: boardseshReady,
   });
@@ -301,58 +320,49 @@ export const DeferredSections = memo(function DeferredSections({
     return buildBoardseshGradeSummary(view, { crowdLabel, localWord: tClimbs('boardseshGrade.summaryLocal') });
   }, [boardName, boardseshGrade, gradeFormat, history, angle, tClimbs]);
 
-  if (!enabled) {
+  if (!enabled || visibleSections.length === 0) {
     return null;
   }
 
-  // Keep the Logbook eager and collapsed so its one-line header (sends/attempts)
-  // measures immediately and teases as the scroll hint at the bottom of the first
-  // screen. The per-angle history mounts only when the user expands it. The
-  // heavier Beta/Community/Similar sections still wait for scroll + the
-  // interaction queue.
+  // The first enabled header is eager so there is always a reachable scroll hint.
+  // Other headers and heavy bodies still wait for real scrolling / an explicit expand.
   return (
     <View style={styles.container}>
-      {/* Renders nothing, so the Logbook is still the first section. */}
-      <ClimbLogsPreviewRequest boardName={boardName} climbUuid={climb.uuid} enabled={everyoneLogsWanted} />
-      {/* Wrapper measures the whole section (header + expanded body) so the play
-          drawer can smoothly scroll a deliberate expand fully into view. */}
-      <View onLayout={onLogbookSectionLayout ? handleLogbookSectionLayout : undefined}>
-        <CollapsibleSection
-          title={t('mobile.logbook.title')}
-          summary={logbookSummary}
-          persistKey="logbook"
-          onHeaderLayout={onLogbookHeaderLayout}
-          onToggle={onLogbookToggle}
-        >
-          <LogbookSection
-            climbUuid={climb.uuid}
-            boardName={boardName}
-            layoutId={layoutId}
-            angle={angle}
-            userAscents={climb.userAscents}
-            userAttempts={climb.userAttempts}
-            onOpenFullLogbook={onOpenFullLogbook}
-          />
-        </CollapsibleSection>
-      </View>
-
-      {readyToRender && (
-        <>
-          {/* Logs from climbers the viewer follows. First below-fold section
-              AFTER the Logbook, never before it: PlayDrawer's
-              `firstScreenReserve` / `computeLogbookScrollTarget` assume the
-              Logbook is the first section here, so anything inserted above it
-              breaks the fold math. Signed-in only, and left out of store
-              captures (its query is off in screenshot mode). Waits for the
-              followed-authors snapshot so the card never opens on the wrong
-              empty state. */}
-          {isAuthenticated && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' && followState !== 'none-yet' && (
-            <CollapsibleSection
-              title={t('mobile.climberLogs.title')}
-              summary={climberLogsSummary}
-              defaultExpanded
-              persistKey="climberLogs"
-            >
+      {showClimberLogs && (
+        <ClimbLogsPreviewRequest boardName={boardName} climbUuid={climb.uuid} enabled={everyoneLogsWanted} />
+      )}
+      {showLogbook && (
+        <View onLayout={firstSectionId === 'logbook' ? handleFirstSectionLayout : undefined}>
+          <CollapsibleSection
+            title={t('mobile.logbook.title')}
+            summary={logbookSummary}
+            persistKey="logbook"
+            onHeaderLayout={firstSectionId === 'logbook' ? onFirstSectionHeaderLayout : undefined}
+            onToggle={firstSectionId === 'logbook' ? onFirstSectionToggle : undefined}
+          >
+            <LogbookSection
+              climbUuid={climb.uuid}
+              boardName={boardName}
+              layoutId={layoutId}
+              angle={angle}
+              userAscents={climb.userAscents}
+              userAttempts={climb.userAttempts}
+              onOpenFullLogbook={onOpenFullLogbook}
+            />
+          </CollapsibleSection>
+        </View>
+      )}
+      {showClimberLogs && (readyToRender || firstSectionId === 'climberLogs') && (
+        <View onLayout={firstSectionId === 'climberLogs' ? handleFirstSectionLayout : undefined}>
+          <CollapsibleSection
+            title={t('mobile.climberLogs.title')}
+            summary={climberLogsSummary}
+            defaultExpanded
+            persistKey="climberLogs"
+            onHeaderLayout={firstSectionId === 'climberLogs' ? onFirstSectionHeaderLayout : undefined}
+            onToggle={firstSectionId === 'climberLogs' ? onFirstSectionToggle : undefined}
+          >
+            {readyToRender && followState !== 'none-yet' && (
               <ClimberLogsSection
                 climbUuid={climb.uuid}
                 boardName={boardName}
@@ -364,17 +374,28 @@ export const DeferredSections = memo(function DeferredSections({
                 onPressClimber={onOpenClimberProfile ?? noop}
                 onFindClimbers={onFindClimbers ?? noop}
               />
-            </CollapsibleSection>
-          )}
-
-          {/* The setter's own notes. Renders nothing when the climb has no notes
-              worth showing. */}
-          <SetterNotesSection description={climb.description} />
-
+            )}
+          </CollapsibleSection>
+        </View>
+      )}
+      {visibleSections.includes('setterNotes') && (readyToRender || firstSectionId === 'setterNotes') && (
+        <View onLayout={firstSectionId === 'setterNotes' ? handleFirstSectionLayout : undefined}>
+          <SetterNotesSection
+            description={climb.description}
+            contentEnabled={readyToRender}
+            onHeaderLayout={firstSectionId === 'setterNotes' ? onFirstSectionHeaderLayout : undefined}
+            onToggle={firstSectionId === 'setterNotes' ? onFirstSectionToggle : undefined}
+          />
+        </View>
+      )}
+      {visibleSections.includes('betaVideos') && (readyToRender || firstSectionId === 'betaVideos') && (
+        <View onLayout={firstSectionId === 'betaVideos' ? handleFirstSectionLayout : undefined}>
           <CollapsibleSection
             title={t('mobile.betaVideos.title')}
             defaultExpanded
             persistKey={BETA_SHELF_SECTION_KEY}
+            onHeaderLayout={firstSectionId === 'betaVideos' ? onFirstSectionHeaderLayout : undefined}
+            onToggle={firstSectionId === 'betaVideos' ? onFirstSectionToggle : undefined}
             headerAction={
               isAuthenticated && onAddBetaVideo ? (
                 <PressableSurface
@@ -392,44 +413,68 @@ export const DeferredSections = memo(function DeferredSections({
               ) : undefined
             }
           >
-            <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />
+            {readyToRender && <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />}
           </CollapsibleSection>
-
-          {boardseshGradeEnabled && (
-            <CollapsibleSection
-              title={tClimbs('boardseshGrade.title')}
-              summary={boardseshSummary}
-              defaultExpanded
-              persistKey="boardseshGrade"
-            >
-              <BoardseshGradeSection climbUuid={climb.uuid} boardName={boardName} angle={angle} />
-            </CollapsibleSection>
-          )}
-
-          <CollapsibleSection title={t('mobile.community.title')} defaultExpanded persistKey="community">
-            <CommunitySection
-              climbUuid={climb.uuid}
-              boardName={boardName}
-              layoutId={layoutId}
-              angle={angle}
-              qualityAverage={climb.quality_average}
-              ascensionistCount={climb.ascensionist_count}
-              isHidden={climb.is_hidden === true}
-            />
+        </View>
+      )}
+      {visibleSections.includes('boardseshGrade') && (readyToRender || firstSectionId === 'boardseshGrade') && (
+        <View onLayout={firstSectionId === 'boardseshGrade' ? handleFirstSectionLayout : undefined}>
+          <CollapsibleSection
+            title={tClimbs('boardseshGrade.title')}
+            summary={boardseshSummary}
+            defaultExpanded
+            persistKey="boardseshGrade"
+            onHeaderLayout={firstSectionId === 'boardseshGrade' ? onFirstSectionHeaderLayout : undefined}
+            onToggle={firstSectionId === 'boardseshGrade' ? onFirstSectionToggle : undefined}
+          >
+            {readyToRender && <BoardseshGradeSection climbUuid={climb.uuid} boardName={boardName} angle={angle} />}
           </CollapsibleSection>
-
-          <CollapsibleSection title={t('mobile.similarClimbs.title')} persistKey="similarClimbs">
-            <SimilarClimbsSection
-              climbUuid={climb.uuid}
-              boardName={boardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              angle={angle}
-              onClimbPress={onSimilarClimbPress}
-            />
+        </View>
+      )}
+      {visibleSections.includes('community') && (readyToRender || firstSectionId === 'community') && (
+        <View onLayout={firstSectionId === 'community' ? handleFirstSectionLayout : undefined}>
+          <CollapsibleSection
+            title={t('mobile.community.title')}
+            defaultExpanded
+            persistKey="community"
+            onHeaderLayout={firstSectionId === 'community' ? onFirstSectionHeaderLayout : undefined}
+            onToggle={firstSectionId === 'community' ? onFirstSectionToggle : undefined}
+          >
+            {readyToRender && (
+              <CommunitySection
+                climbUuid={climb.uuid}
+                boardName={boardName}
+                layoutId={layoutId}
+                angle={angle}
+                qualityAverage={climb.quality_average}
+                ascensionistCount={climb.ascensionist_count}
+                isHidden={climb.is_hidden === true}
+              />
+            )}
           </CollapsibleSection>
-        </>
+        </View>
+      )}
+      {visibleSections.includes('similarClimbs') && (readyToRender || firstSectionId === 'similarClimbs') && (
+        <View onLayout={firstSectionId === 'similarClimbs' ? handleFirstSectionLayout : undefined}>
+          <CollapsibleSection
+            title={t('mobile.similarClimbs.title')}
+            persistKey="similarClimbs"
+            onHeaderLayout={firstSectionId === 'similarClimbs' ? onFirstSectionHeaderLayout : undefined}
+            onToggle={firstSectionId === 'similarClimbs' ? onFirstSectionToggle : undefined}
+          >
+            {readyToRender && (
+              <SimilarClimbsSection
+                climbUuid={climb.uuid}
+                boardName={boardName}
+                layoutId={layoutId}
+                sizeId={sizeId}
+                setIds={setIds}
+                angle={angle}
+                onClimbPress={onSimilarClimbPress}
+              />
+            )}
+          </CollapsibleSection>
+        </View>
       )}
     </View>
   );

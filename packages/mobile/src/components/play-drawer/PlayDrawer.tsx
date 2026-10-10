@@ -21,7 +21,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { ScrollView, GestureDetector } from 'react-native-gesture-handler';
+import { ScrollView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useAnimatedReaction, useSharedValue, runOnJS } from 'react-native-reanimated';
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { reportHandledError } from '../../lib/error-reporting';
@@ -70,12 +70,16 @@ import { LogAscentSheet } from '../LogAscentSheet';
 import { DeferredSections } from './DeferredSections';
 import { PanePlaceholder } from './PanePlaceholder';
 import {
-  computeFirstScreenHeight,
-  computeLogbookScrollTarget,
+  computeDrawerFirstScreenHeight,
+  computeFirstSectionScrollTarget,
   initialDrawerPreviewItem,
   shouldShowPanePlaceholder,
 } from './play-drawer-layout';
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
+import { useDeliberateScrollGesture } from './use-deliberate-scroll-gesture';
+import { PlayDrawerSectionsSheet } from './PlayDrawerSectionsSheet';
+import { usePlayDrawerSectionsPreference, type PlayDrawerSectionId } from '../../lib/play-drawer-sections-preference';
+import { visiblePlayDrawerSections } from './play-drawer-sections';
 import { useDrawerDismissGesture, type SwipeDismissAnimation } from './use-drawer-dismiss-gesture';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
@@ -88,7 +92,6 @@ import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
 import { ChromeIconButton } from '../ChromeIconButton';
-import { useTheme } from '../../providers/theme-provider';
 import {
   usePlaylistSuggestionSource,
   useQueueData,
@@ -100,7 +103,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useSetting } from '../../settings';
 import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provider';
 import { useAuth } from '../../providers/auth-provider';
-import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
+import { useClimbModerationEnabled, useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { canReportDisplayedClimb } from './can-report-climb';
 import { useToggleFavorite, useFavoriteStatus, useClimb, useProfile } from '../../lib/graphql/hooks';
@@ -274,7 +277,7 @@ const NO_PREFETCH_FRAMES: string[] = [];
 // Fallback used for the first-screen reserve before the Logbook header has
 // been measured, so the board fits without a visible jump on first open.
 // A collapsed section header is a single row (title + summary + chevron).
-const DEFAULT_LOGBOOK_HEADER_HEIGHT = 52;
+const DEFAULT_SECTION_HEADER_HEIGHT = 52;
 
 /**
  * How long the session must stay solo before an armed browse latch lets go.
@@ -321,7 +324,11 @@ export function PlayDrawer({
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
+  const { t: tCommon } = useTranslation('common');
+  const { sections, ready: sectionsReady } = usePlayDrawerSectionsPreference();
+  const [sectionsSettingsOpen, setSectionsSettingsOpen] = useState(false);
+  const handleOpenSectionsSettings = useCallback(() => setSectionsSettingsOpen(true), []);
+  const handleCloseSectionsSettings = useCallback(() => setSectionsSettingsOpen(false), []);
   // The copy/share affordance strings live in the `climbs` namespace alongside
   // the climb-actions sheet's "Link copied" toast.
   const { t: tClimbs } = useTranslation('climbs');
@@ -404,20 +411,14 @@ export function PlayDrawer({
     requestFromScrollOffset: requestBelowFoldContentFromScrollOffset,
   } = useBelowFoldContentRequest();
   const resetZoomRef = useRef<(() => void) | null>(null);
-  // Set true when the user taps to expand the Logbook peek; the section's next
-  // layout then glides it fully into view. Stays armed across the logbook's
+  // Set true when the user taps to expand the first section peek; the section's next
+  // layout then glides it fully into view. Stays armed across the section's
   // loading→loaded height growth (so a slow fetch still lands framed) and is
   // disarmed once the user drives the scroll, collapses it, or the climb changes.
-  const pendingLogbookScrollRef = useRef(false);
+  const pendingFirstSectionScrollRef = useRef(false);
 
-  const handleScrollTowardBelowFold = useCallback(() => {
-    requestBelowFoldContent();
-    // The user is driving the scroll now — stand down the expand-into-view glide.
-    pendingLogbookScrollRef.current = false;
-  }, [requestBelowFoldContent]);
-
-  // RNGH ref for the scroll container. The board's swipe + pinch gestures declare
-  // themselves simultaneous with it (otherwise the plain RN ScrollView starved
+  // RNGH ref for the scroll container. Board gestures coordinate their
+  // scroll blocking / simultaneous recognition through this ref (otherwise the plain RN ScrollView starved
   // them after the gorhom removal), and the dismiss gesture reads scroll offset
   // from it. Typed as the ScrollView instance for the `ref` prop; widened to
   // RNGH's GestureRef shape (same object) when handed to the board gestures.
@@ -436,7 +437,7 @@ export function PlayDrawer({
       // trackpad, scrollbar, or keyboard scroll. Open the same deferred-content
       // gate from real movement so the lower drawer sections cannot stay absent.
       requestBelowFoldContentFromScrollOffset(offsetY);
-      if (offsetY > 0) pendingLogbookScrollRef.current = false;
+      if (offsetY > 0) pendingFirstSectionScrollRef.current = false;
     },
     [requestBelowFoldContentFromScrollOffset, scrollYSV],
   );
@@ -505,13 +506,13 @@ export function PlayDrawer({
     },
   );
 
-  // Logbook section-header height feeds the first-screen reserve so the
+  // First section-header height feeds the first-screen reserve so the
   // header teases at the bottom of the full-screen view (the cue that there's
   // more to scroll). Measured because it varies with locale / font scaling.
-  const [logbookHeaderHeight, setLogbookHeaderHeight] = useState(0);
-  const handleLogbookHeaderLayout = useCallback((measured: number) => {
-    setLogbookHeaderHeight((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
-  }, []);
+  const [sectionHeaderMeasurement, setSectionHeaderMeasurement] = useState<{
+    sectionId: PlayDrawerSectionId | undefined;
+    height: number;
+  }>({ sectionId: undefined, height: 0 });
 
   const { queue, currentClimbQueueItem } = useQueueData();
   const { setCurrentClimb, nextClimb, previousClimb, addToQueue, mirrorCurrentClimb } = useQueueActions();
@@ -542,6 +543,64 @@ export function PlayDrawer({
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
   const isPreview = drawerPreviewItem != null;
+
+  const drawerGradeSectionEnabled = useBoardseshGradeEnabled();
+  const visibleSectionIds = useMemo(
+    () =>
+      visiblePlayDrawerSections({
+        sections,
+        isAuthenticated,
+        boardseshGradeEnabled: drawerGradeSectionEnabled,
+        description: displayedClimb?.description,
+        screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+      }),
+    [sections, isAuthenticated, drawerGradeSectionEnabled, displayedClimb?.description],
+  );
+  const firstSectionId = visibleSectionIds[0];
+  const hasVisibleSections = sectionsReady && visibleSectionIds.length > 0;
+  const handleDeliberateScrollIntent = useCallback(() => {
+    if (hasVisibleSections) requestBelowFoldContent();
+  }, [hasVisibleSections, requestBelowFoldContent]);
+  const handleScrollTowardBelowFold = useCallback(() => {
+    pendingFirstSectionScrollRef.current = false;
+    handleDeliberateScrollIntent();
+  }, [handleDeliberateScrollIntent]);
+  const deliberateScrollGesture = useDeliberateScrollGesture({
+    scrollRef: scrollGestureRef,
+    scrollYSV,
+    isPane,
+    onScrollIntent: handleDeliberateScrollIntent,
+  });
+  const contentGesture = useMemo(
+    () =>
+      Platform.OS === 'web'
+        ? dismissGesture.enabled(!isPane)
+        : Gesture.Simultaneous(dismissGesture.enabled(!isPane), deliberateScrollGesture),
+    [dismissGesture, deliberateScrollGesture, isPane],
+  );
+  // An expanded header with a deferred body may fill the viewport exactly.
+  // One pixel lets the native recognizer or browser input start scrolling and
+  // request the body without waiting for another gesture to release the touch.
+  const initialScrollHeight =
+    hasVisibleSections && !belowFoldContentRequested ? (sheetViewportHeight || windowHeight) + 1 : undefined;
+  const visibleSectionsKey = sectionsReady ? visibleSectionIds.join(',') : 'loading';
+  const firstSectionHeaderHeight =
+    sectionHeaderMeasurement.sectionId === firstSectionId ? sectionHeaderMeasurement.height : 0;
+  const handleFirstSectionHeaderLayout = useCallback(
+    (measured: number) => {
+      setSectionHeaderMeasurement((previous) =>
+        previous.sectionId === firstSectionId && Math.abs(previous.height - measured) <= 2
+          ? previous
+          : { sectionId: firstSectionId, height: Math.round(measured) },
+      );
+    },
+    [firstSectionId],
+  );
+  useEffect(() => {
+    pendingFirstSectionScrollRef.current = false;
+    scrollYSV.value = 0;
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [visibleSectionsKey, scrollYSV]);
 
   const displayedClimbUuid = displayedClimb?.uuid;
   // Live sessions have one shared orientation. Preview/solo flips stay local.
@@ -892,7 +951,7 @@ export function PlayDrawer({
     setMirrorFlip(null);
     // A new climb's Logbook re-lays out from scratch — don't let a stale expand
     // intent auto-scroll it.
-    pendingLogbookScrollRef.current = false;
+    pendingFirstSectionScrollRef.current = false;
   }, [displayedClimbUuid]);
 
   // --- The shared-session browse latch ---------------------------------------
@@ -1714,10 +1773,14 @@ export function PlayDrawer({
     openQueueFromActions,
   ]);
 
-  // Arm (expand) / disarm (collapse) the scroll-into-view for the Logbook peek.
-  const handleLogbookToggle = useCallback((expanded: boolean) => {
-    pendingLogbookScrollRef.current = expanded;
-  }, []);
+  // Arm (expand) / disarm (collapse) the scroll-into-view for the first section peek.
+  const handleFirstSectionToggle = useCallback(
+    (expanded: boolean) => {
+      pendingFirstSectionScrollRef.current = expanded;
+      if (expanded) requestBelowFoldContent();
+    },
+    [requestBelowFoldContent],
+  );
 
   const handleOpenAngleSelector = useCallback(() => {
     setActiveSubDrawer('angleSelector');
@@ -1801,19 +1864,15 @@ export function PlayDrawer({
     [addToQueue, setCurrentClimb, viewer, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
   );
 
-  // The first screen is sized so the action bar stays visible and the Logbook
-  // header teases at the bottom across board sizes — the carousel fits
-  // the leftover space (SwipeBoardCarousel contains the board). Reserve the
-  // DeferredSections top padding, the logbook header, and a small margin so that
-  // header peeks just above the fold. The home-indicator inset belongs to the
-  // scroll view's paddingBottom only — counting it here too would shrink the
-  // board by that inset twice.
-  const firstScreenReserve =
-    spacing[3] + (logbookHeaderHeight > 0 ? logbookHeaderHeight : DEFAULT_LOGBOOK_HEADER_HEIGHT) + spacing[2];
-  // Size the first screen from the MEASURED viewport (the scroll container fills
-  // the full window), falling back to windowHeight pre-layout. The reserve leaves
-  // the Logbook header peeking below the fold.
-  const firstScreenHeight = computeFirstScreenHeight(sheetViewportHeight || windowHeight, firstScreenReserve);
+  // Reserve only the first eligible section's header. Without sections, content
+  // plus bottom safe area exactly fills the measured viewport and cannot scroll.
+  const firstScreenHeight = computeDrawerFirstScreenHeight({
+    viewport: sheetViewportHeight || windowHeight,
+    bottomInset: insets.bottom,
+    firstSectionHeaderHeight: hasVisibleSections ? firstSectionHeaderHeight || DEFAULT_SECTION_HEADER_HEIGHT : null,
+    sectionTopPadding: spacing[3],
+    sectionMargin: spacing[2],
+  });
   // Named because the wall-state callout needs it too: it hangs off the header's
   // measured bottom edge, and that measurement is relative to the a11y-trap
   // wrapper INSIDE this padding, not to the first screen itself.
@@ -1821,14 +1880,14 @@ export function PlayDrawer({
   const ownsTopInset = !isPane || paneTopInset;
   const firstScreenPaddingTop = ownsTopInset ? insets.top + spacing[2] : spacing[2];
 
-  // When the user expands the Logbook peek, glide it fully into view. Fires on the
+  // When the user expands the first section peek, glide it fully into view. Fires on the
   // section's layout (re-firing as a slow logbook fetch grows it) while armed.
-  // The Logbook is the first below-fold section, so it starts right after the
+  // The first visible section starts right after the
   // fixed-height first screen, past the DeferredSections top padding.
-  const handleLogbookSectionLayout = useCallback(
+  const handleFirstSectionLayout = useCallback(
     (sectionHeight: number) => {
-      if (!pendingLogbookScrollRef.current) return;
-      const target = computeLogbookScrollTarget({
+      if (!pendingFirstSectionScrollRef.current) return;
+      const target = computeFirstSectionScrollTarget({
         firstScreenHeight,
         topPadding: spacing[3],
         sectionHeight,
@@ -1851,6 +1910,7 @@ export function PlayDrawer({
   // before. Trims ~5 Android Compose host instantiations off the open.
   const climbActionsVisible = activeSubDrawer === 'actions';
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
+  const mountSectionsSettings = useMountedOnFirstOpen(sectionsSettingsOpen);
   const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
   const fullLogbookOpen = fullLogbookClimbUuid !== null;
@@ -1876,11 +1936,13 @@ export function PlayDrawer({
           paddingBottom={insets.bottom}
         />
       ) : (
-        <GestureDetector gesture={dismissGesture.enabled(!isPane)}>
+        <GestureDetector gesture={contentGesture}>
           <Animated.View style={[styles.content, !swipeDismiss && dismissAnimatedStyle]}>
             <ScrollView
               ref={scrollRef}
               nestedScrollEnabled
+              scrollEnabled={hasVisibleSections}
+              directionalLockEnabled={Platform.OS === 'ios'}
               showsVerticalScrollIndicator={false}
               showsHorizontalScrollIndicator={false}
               // No top/bottom rubber-band: at the top, a downward drag is the
@@ -1889,7 +1951,7 @@ export function PlayDrawer({
               bounces={false}
               overScrollMode="never"
               style={styles.content}
-              contentContainerStyle={{ paddingBottom: insets.bottom }}
+              contentContainerStyle={{ paddingBottom: insets.bottom, minHeight: initialScrollHeight }}
               onLayout={handleViewportLayout}
               onScroll={handleScroll}
               scrollEventThrottle={16}
@@ -1934,6 +1996,15 @@ export function PlayDrawer({
                           The grabber stays centred: both flanks are absolute. */}
                         <View style={styles.restTimerSlot}>
                           <RestTimerPillHost compact />
+                          {commitBarModel.mode === 'commit' && viewer !== 'anonymous' ? (
+                            <ChromeIconButton
+                              icon="visibility"
+                              role="action"
+                              onPress={handleOpenSectionsSettings}
+                              accessibilityLabel={tCommon('mobile.settings.climbDrawer.sheetTitle')}
+                              testID="play-drawer-section-settings"
+                            />
+                          ) : null}
                         </View>
                       </View>
 
@@ -2000,7 +2071,12 @@ export function PlayDrawer({
                         {boardRenderData ? (
                           <DeferredBoard
                             open={isSheetOpen}
-                            layoutReady={sheetViewportHeight > 0 && headerBottomY > 0 && logbookHeaderHeight > 0}
+                            layoutReady={
+                              sectionsReady &&
+                              sheetViewportHeight > 0 &&
+                              headerBottomY > 0 &&
+                              (!hasVisibleSections || firstSectionHeaderHeight > 0)
+                            }
                             boardName={boardName as BoardName}
                             boardRenderData={boardRenderData}
                             layoutId={layoutId}
@@ -2117,6 +2193,7 @@ export function PlayDrawer({
                             onLightbulb={handleLightbulb}
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
+                            onEditSections={handleOpenSectionsSettings}
                             onOpenQueue={onOpenQueue}
                             onShare={displayedClimbIsDraft ? undefined : handleShare}
                             onTickPress={handleTickFabPress}
@@ -2172,31 +2249,34 @@ export function PlayDrawer({
                       fixed-height first screen, outside the callout's scrim, and
                       a tap there must not scroll the logbook behind an open
                       modal. */}
-                  <View
-                    accessibilityElementsHidden={wallCallout === 'explainer'}
-                    importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
-                    pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
-                  >
-                    <DeferredSections
-                      climb={displayedClimb}
-                      boardName={boardName as BoardName}
-                      layoutId={layoutId}
-                      sizeId={sizeId}
-                      setIds={setIds}
-                      angle={angle}
-                      enabled={isSheetOpen}
-                      contentEnabled={belowFoldContentRequested}
-                      onSimilarClimbPress={handleSimilarClimbPress}
-                      onLogbookHeaderLayout={handleLogbookHeaderLayout}
-                      onLogbookSectionLayout={handleLogbookSectionLayout}
-                      onLogbookToggle={handleLogbookToggle}
-                      onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-                      onOpenFullLogbook={handleOpenFullLogbook}
-                      onOpenClimberLogs={handleOpenClimberLogs}
-                      onOpenClimberProfile={handleOpenClimberProfile}
-                      onFindClimbers={handleFindClimbers}
-                    />
-                  </View>
+                  {hasVisibleSections && (
+                    <View
+                      accessibilityElementsHidden={wallCallout === 'explainer'}
+                      importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
+                      pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
+                    >
+                      <DeferredSections
+                        climb={displayedClimb}
+                        boardName={boardName as BoardName}
+                        layoutId={layoutId}
+                        sizeId={sizeId}
+                        setIds={setIds}
+                        angle={angle}
+                        enabled={isSheetOpen}
+                        contentEnabled={belowFoldContentRequested}
+                        sections={sections}
+                        onSimilarClimbPress={handleSimilarClimbPress}
+                        onFirstSectionHeaderLayout={handleFirstSectionHeaderLayout}
+                        onFirstSectionLayout={handleFirstSectionLayout}
+                        onFirstSectionToggle={handleFirstSectionToggle}
+                        onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+                        onOpenFullLogbook={handleOpenFullLogbook}
+                        onOpenClimberLogs={handleOpenClimberLogs}
+                        onOpenClimberProfile={handleOpenClimberProfile}
+                        onFindClimbers={handleFindClimbers}
+                      />
+                    </View>
+                  )}
                 </>
               )}
             </ScrollView>
@@ -2207,6 +2287,9 @@ export function PlayDrawer({
         </GestureDetector>
       )}
 
+      {mountSectionsSettings && (
+        <PlayDrawerSectionsSheet visible={sectionsSettingsOpen} onClose={handleCloseSectionsSettings} />
+      )}
       {/* Sub-drawers: @expo/ui native .sheet()s presented from within the player
           route's view controller, so they stack ABOVE it. On iOS the ellipsis
           routes to ClimbReactionMenu via onOpenClimbActions, so activeSubDrawer
@@ -2404,7 +2487,9 @@ const styles = StyleSheet.create({
     right: spacing[2],
     height: 44,
     zIndex: 2,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: spacing[2],
+    alignItems: 'center',
   },
   closeButton: {
     position: 'absolute',

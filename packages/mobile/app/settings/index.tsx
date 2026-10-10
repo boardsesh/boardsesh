@@ -60,6 +60,7 @@ import { useShowPlaylistTagsPreference } from '../../src/lib/show-playlist-tags-
 import { useBoardseshGradesPreference } from '../../src/lib/boardsesh-grades-preference';
 import { usePersonalGradesPreference } from '../../src/lib/personal-grades-preference';
 import { usePersonalGradesActive } from '../../src/hooks/use-personal-grades';
+import { usePlayDrawerSectionControls } from '../../src/components/settings/use-play-drawer-section-controls';
 import { useClimbQuickActionsButton } from '../../src/lib/climb-quick-actions-button-preference';
 import { useToast } from '../../src/providers/toast-provider';
 import {
@@ -116,6 +117,7 @@ export default function MoreScreen() {
   const { setEnabled: setPersonalGrades } = usePersonalGradesPreference();
   const personalGradesActive = usePersonalGradesActive();
   const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
+  const { settingsSection: climbDrawerSettingsSection } = usePlayDrawerSectionControls();
   const boardseshGradeFlagEnabled = useBoardseshGradeEnabled();
   // Kill switch for the whole community-moderation surface. Off hides the way in.
   const climbModerationEnabled = useClimbModerationEnabled();
@@ -647,6 +649,8 @@ export default function MoreScreen() {
         : []),
     ],
   });
+
+  sections.push(climbDrawerSettingsSection);
 
   const autoDisconnectTimeoutOptions = AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({
     key: String(seconds),

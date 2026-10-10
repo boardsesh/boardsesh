@@ -46,6 +46,7 @@ type ActionButtonProps = {
   checked?: boolean;
   /** Spoken after the label, e.g. the heatmap's current mode. */
   accessibilityValueText?: string;
+  testID?: string;
 };
 
 export function ActionButton({
@@ -61,6 +62,7 @@ export function ActionButton({
   busy = false,
   checked,
   accessibilityValueText,
+  testID,
 }: ActionButtonProps) {
   const { systemColors } = useTheme();
   const neutralActionColor = useVariantValue({
@@ -83,6 +85,7 @@ export function ActionButton({
 
   return (
     <PressableSurface
+      testID={testID}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole={checked === undefined ? 'button' : 'togglebutton'}

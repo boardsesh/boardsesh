@@ -239,6 +239,35 @@ work and native QA before claiming that contract works on Android.
 | **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
 | **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | no tab-root editing flow; nothing on a phone (`onboarding` moved to `transparentModal` in #5654) |
 
+### Play drawer section controls
+
+Settings → Climb view and the eye button beside the player's ellipsis use the same seven visibility
+switches. The eye opens the **View options** sheet (`PlayDrawerSectionsSheet`)
+as a managed `ModalSheet` mounted inside the player, above `/play`. Its bulk actions
+remain outside the list scroll. On iOS with the Apple variant, the header controls and
+list leave their backgrounds unset so the native sheet material stays visible around
+the inset switch group. Only the grouped rows use an opaque semantic content surface;
+Material, Reduce Transparency, Android and web keep their grouped content background.
+Show all and Hide all
+stay together above the grouped switches, with 44-point targets and disabled states
+when every section already matches the action. Choices apply immediately; the close
+button dismisses the sheet without a save step. It remains reachable
+when every section is hidden. These device-local choices use AsyncStorage (IndexedDB
+in the browser) and keep each section's existing expansion preference and order.
+
+The first eligible visible section supplies the header preview at the fold; its header
+mounts before deferred content so hiding Logbook never strands the remaining sections.
+With no eligible sections, the board and controls fill the viewport including safe-area
+clearance, and vertical scrolling is disabled. Native scrolling uses its normal
+activation distance, with iOS directional locking to reduce diagonal drift.
+The carousel and scroll-intent observer run simultaneously with the scroll;
+neither makes the native scroll wait for a gesture to fail. Scroll intent and
+the start of a drag request deferred content when the header alone cannot scroll.
+Pinch, zoomed panning, and downward dismissal retain their own gesture handling.
+Browser touch, wheel, trackpad, and keyboard scrolling retain native browser behavior.
+While a visible section awaits content, the drawer gets one pixel of initial
+overflow so those inputs can open the content gate. Hide all removes that overflow.
+
 ## The decision tree
 
 ```

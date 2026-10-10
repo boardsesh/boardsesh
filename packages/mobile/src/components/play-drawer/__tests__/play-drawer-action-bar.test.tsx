@@ -30,7 +30,17 @@ type PressMockProps = {
   hitSlop?: number;
 };
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
+    const flattenedStyle = Object.assign({}, ...[style].flat(10).filter(Boolean));
+    return createElement(
+      'div',
+      {
+        'data-row-gap': flattenedStyle.gap,
+        'data-horizontal-padding': flattenedStyle.paddingHorizontal,
+      },
+      children,
+    );
+  },
   Pressable: ({ children, onPress, accessibilityLabel, hitSlop }: PressMockProps) =>
     createElement(
       'button',
@@ -90,6 +100,8 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     checked,
     accessibilityLabel,
     accessibilityValueText,
+    testID,
+    size,
     onPress,
   }: {
     iconName?: string;
@@ -97,11 +109,15 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     checked?: boolean;
     accessibilityLabel?: string;
     accessibilityValueText?: string;
+    testID?: string;
+    size?: string;
     onPress?: () => void;
   }) =>
     createElement('div', {
       onClick: onPress,
       'data-action': iconName,
+      'data-testid': testID,
+      'data-size': size,
       'data-icon-color': iconColor,
       'data-checked': checked == null ? undefined : String(checked),
       'data-label': accessibilityLabel,
@@ -193,6 +209,55 @@ function actions(container: HTMLElement): string[] {
 }
 
 describe('PlayDrawerActionBar', () => {
+  it('opens section choices from an eye button immediately right of the ellipsis', () => {
+    const onEditSections = vi.fn();
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections }));
+    const ellipsis = container.querySelector('[data-action="more"]');
+    const edit = container.querySelector('[data-testid="play-drawer-section-settings"]');
+    expect(ellipsis?.nextElementSibling).toBe(edit);
+    expect(edit?.getAttribute('data-action')).toBe('visibility');
+    expect(edit?.getAttribute('data-size')).toBe('sm');
+    expect(edit?.getAttribute('data-label')).toBe('mobile.settings.climbDrawer.sheetTitle');
+    if (!edit) throw new Error('Expected section edit button');
+    fireEvent.click(edit);
+    expect(onEditSections).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps six secondary controls within 320 points by tightening only gaps and gutters', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections: vi.fn() }));
+    const eye = container.querySelector('[data-testid="play-drawer-section-settings"]');
+    const row = eye?.parentElement;
+    expect(row?.getAttribute('data-row-gap')).toBe('4');
+    expect(row?.getAttribute('data-horizontal-padding')).toBe('8');
+    const gap = Number(row?.getAttribute('data-row-gap'));
+    const gutter = Number(row?.getAttribute('data-horizontal-padding'));
+    // Angle plus five 44pt action targets (including the eye), with
+    // the spacer's two neighboring gaps included even when it reaches zero.
+    expect(44 + 5 * 44 + 6 * gap + 2 * gutter).toBeLessThanOrEqual(320);
+  });
+
+  it('allows anonymous viewers to choose sections and keeps commit rows dedicated', () => {
+    const onEditSections = vi.fn();
+    const anonymous = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections, viewer: 'anonymous' }));
+    const anonymousEye = anonymous.container.querySelector('[data-testid="play-drawer-section-settings"]');
+    expect(anonymousEye).toBeTruthy();
+    expect(anonymous.container.querySelector('[data-action="more"]')).toBeNull();
+    if (!anonymousEye) throw new Error('Expected anonymous section settings');
+    fireEvent.click(anonymousEye);
+    expect(onEditSections).toHaveBeenCalledTimes(1);
+    anonymous.unmount();
+    const commit = render(
+      createElement(PlayDrawerActionBar, {
+        ...baseProps,
+        onEditSections,
+        secondaryMode: 'commit',
+        onBackToLive: vi.fn(),
+        onCommit: vi.fn(),
+      }),
+    );
+    expect(commit.container.querySelector('[data-testid="play-drawer-section-settings"]')).toBeNull();
+  });
+
   it('renders the tick as a green glyph (colour on the icon, not a solid fill)', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
     const tick = container.querySelector('[data-icon="tick.outline"]') as HTMLElement;

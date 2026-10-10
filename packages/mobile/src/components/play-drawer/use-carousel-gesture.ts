@@ -18,10 +18,9 @@ type UseCarouselGestureOptions = {
   screenWidth: number;
   enabled?: boolean;
   isZoomedSV?: SharedValue<boolean>;
-  /** RNGH ref to the surrounding scroll. Declares the swipe Pan simultaneous with
-   *  it so vertical drags reach the scroll while horizontal ones drive the
-   *  carousel. Typed as RNGH's GestureRef shape so the method call needs no cast;
-   *  at runtime it holds the RN ScrollView instance. */
+  /** RNGH ref to the surrounding scroll. Simultaneous recognition lets native
+   *  vertical scrolling start immediately while horizontal swipes still drive
+   *  the carousel. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
   /** Optional external translateX. Pass one so a sibling rendered OUTSIDE this
    *  carousel (the play-drawer header) can swipe off the exact same value as the
@@ -165,9 +164,14 @@ export function useCarouselGesture({
   const gesture = useMemo(() => {
     const pan = Gesture.Pan()
       .manualActivation(true)
-      .onTouchesDown((event) => {
+      .maxPointers(1)
+      .onTouchesDown((event, state) => {
         'worklet';
         directionLock.value = 0;
+        if (event.allTouches.length > 1) {
+          state.fail();
+          return;
+        }
         const touch = event.allTouches[0];
         if (touch) {
           startTouchX.value = touch.absoluteX;
@@ -176,7 +180,7 @@ export function useCarouselGesture({
       })
       .onTouchesMove((event, state) => {
         'worklet';
-        if (!enabledSV.value || isZoomedSV?.value) {
+        if (event.allTouches.length > 1 || !enabledSV.value || isZoomedSV?.value) {
           state.fail();
           return;
         }
@@ -290,11 +294,6 @@ export function useCarouselGesture({
         'worklet';
         directionLock.value = 0;
       });
-    // Declare the swipe Pan simultaneous with the surrounding RNGH ScrollView so a
-    // horizontal swipe runs without the scroll cancelling it, while a vertical drag
-    // (the Pan fails on its direction-lock) still reaches the scroll. The plain RN
-    // ScrollView the play route briefly used after the gorhom removal wasn't in
-    // RNGH's tree, so this Pan had no peer to negotiate with and went dead.
     return scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan;
   }, [
     canSwipeNextSV,

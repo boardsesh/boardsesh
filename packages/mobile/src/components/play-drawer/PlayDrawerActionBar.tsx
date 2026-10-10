@@ -18,6 +18,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
+import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
@@ -122,6 +123,8 @@ type PlayDrawerActionBarProps = {
   onLightbulb: () => void;
   onLightbulbLongPress?: () => void;
   onOpenActions: () => void;
+  /** Configure the sections below the rendered board. */
+  onEditSections?: () => void;
   onOpenQueue: () => void;
   /** Absent on a draft: only its setter can open it, so a link goes nowhere (#5960). */
   onShare?: () => void;
@@ -168,6 +171,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onLightbulb,
   onLightbulbLongPress,
   onOpenActions,
+  onEditSections,
   onOpenQueue,
   onShare,
   onTickPress,
@@ -177,6 +181,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
+  const { t: tCommon } = useTranslation('common');
   const theme = useTheme();
   // What the bulb says it does. Resolved here rather than inline in the JSX so
   // the four cases read as four cases. Callers that don't pass a kind fall back
@@ -199,6 +204,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   // suppression lives here with the rest of the `viewer` rules rather than only
   // in the resolver — the same shape as `showLightbulb` above.
   const inCommitMode = secondaryMode === 'commit' && !isAnonymous && onBackToLive != null && onCommit != null;
+  const showSectionsButton = Boolean(onEditSections) && !inCommitMode;
   // The pill replaces the bulb only where the bulb would have been offered.
   const showConnectPill = connectPill && showLightbulb && !isAnonymous && !inCommitMode;
 
@@ -325,7 +331,13 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
       {/* Commit mode paints the row's own faint violet track edge-to-edge — a
           bottom "mode strip" that pairs with the header pill up top, and still
           0pt: it's a background on a row that already exists. */}
-      <View style={[drawerActionBarStyles.rowSecondary, inCommitMode && { backgroundColor: theme.systemColors.fill }]}>
+      <View
+        style={[
+          drawerActionBarStyles.rowSecondary,
+          showSectionsButton && styles.compactSecondary,
+          inCommitMode && { backgroundColor: theme.systemColors.fill },
+        ]}
+      >
         {inCommitMode ? (
           <PlayDrawerCommitBar
             showBackToLive={showBackToLive}
@@ -378,6 +390,15 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 accessibilityLabel={t('playView.actionBar.climbActionsAria')}
               />
             )}
+            {showSectionsButton && onEditSections ? (
+              <ActionButton
+                testID="play-drawer-section-settings"
+                size="sm"
+                iconName="visibility"
+                onPress={onEditSections}
+                accessibilityLabel={tCommon('mobile.settings.climbDrawer.sheetTitle')}
+              />
+            ) : null}
 
             <View style={drawerActionBarStyles.spacer} />
 
@@ -489,6 +510,12 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
 }
 
 const styles = StyleSheet.create({
+  // The extra visibility control fits on a 320pt screen without reducing any
+  // button's touch target; the spare space still belongs to the row's spacer.
+  compactSecondary: {
+    gap: spacing[1],
+    paddingHorizontal: spacing[2],
+  },
   // Holder avatar overlaid on the lightbulb's top-right corner.
   connectionBadge: {
     position: 'absolute',

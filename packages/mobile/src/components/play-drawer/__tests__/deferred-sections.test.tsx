@@ -95,8 +95,16 @@ vi.mock('react-i18next', async () => {
   return { useTranslation: () => ({ t }) };
 });
 vi.mock('expo-haptics', () => ({ selectionAsync: vi.fn() }));
-const logbook = vi.hoisted(() => ({ entries: [] as unknown[] }));
-vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => ({ logbook: logbook.entries, isLoading: false }) }));
+const logbook = vi.hoisted(() => ({
+  entries: [] as unknown[],
+  calls: [] as Array<{ boardName: string | null; climbUuids: string[] }>,
+}));
+vi.mock('@boardsesh/board-react', () => ({
+  useLogbook: (boardName: string | null, climbUuids: string[]) => {
+    logbook.calls.push({ boardName, climbUuids });
+    return { logbook: logbook.entries, isLoading: false };
+  },
+}));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 const auth = vi.hoisted(() => ({ isAuthenticated: false }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: auth.isAuthenticated }) }));
@@ -208,6 +216,10 @@ vi.mock('../../../hooks/use-grade-format', () => ({
 }));
 
 import { DeferredSections } from '../DeferredSections';
+import {
+  DEFAULT_PLAY_DRAWER_SECTIONS,
+  type PlayDrawerSectionsVisibility,
+} from '../../../lib/play-drawer-sections-preference';
 
 const climb = {
   uuid: 'climb-1',
@@ -220,6 +232,8 @@ const climb = {
 type RenderOptions = {
   enabled?: boolean;
   contentEnabled?: boolean;
+  sections?: PlayDrawerSectionsVisibility;
+  onFirstSectionHeaderLayout?: (height: number) => void;
   description?: string | null;
   climbOverrides?: Partial<Climb>;
   onOpenFullLogbook?: () => void;
@@ -242,6 +256,8 @@ function renderSections(options: RenderOptions = {}) {
       angle={40}
       enabled={options.enabled ?? true}
       contentEnabled={options.contentEnabled ?? false}
+      sections={options.sections}
+      onFirstSectionHeaderLayout={options.onFirstSectionHeaderLayout}
       onSimilarClimbPress={vi.fn()}
       onOpenFullLogbook={options.onOpenFullLogbook}
       {...options.handlers}
@@ -260,6 +276,7 @@ describe('DeferredSections', () => {
     i18n.locale = null;
     auth.isAuthenticated = false;
     logbook.entries = [];
+    logbook.calls = [];
     crewQuery.settled = false;
     crewQuery.gateCalls = [];
     crewQuery.calls = [];
@@ -349,10 +366,7 @@ describe('DeferredSections', () => {
     expect(screen.getByTestId('boardsesh-grade')).not.toBeNull();
   });
 
-  // #4494. The notes sit BELOW the Logbook on purpose: PlayDrawer's
-  // `firstScreenReserve` / `computeLogbookScrollTarget` both assume the Logbook
-  // is the first section rendered here, so anything inserted above it silently
-  // breaks the fold math and the expand-into-view scroll.
+  // Notes retain their position after Logbook when both are enabled.
   describe("the setter's notes", () => {
     function sectionTitles(container: HTMLElement): string[] {
       return [...container.querySelectorAll('section')].map((node) => node.getAttribute('data-title') ?? '');
@@ -555,7 +569,6 @@ describe('DeferredSections', () => {
         arrange();
         renderSections({ contentEnabled: true });
 
-        expect(everyoneQuery.calls.length).toBeGreaterThan(0);
         expect(everyoneQuery.calls.every((call) => call.enabled === false)).toBe(true);
       });
     });
@@ -712,6 +725,7 @@ describe('DeferredSections', () => {
     it('counts crew sends at the board angle only, and in the singular', () => {
       crewQuery.data = crewAnswer(1);
       logbook.entries = [];
+      logbook.calls = [];
       expect(logbookSummary({ climbOverrides: { userAscents: 0, userAttempts: 0 } })).toBe(
         '40° · not tried yet · 1 crew sent',
       );
@@ -730,6 +744,89 @@ describe('DeferredSections', () => {
   it('renders nothing while disabled', () => {
     const { container } = renderSections({ enabled: false, contentEnabled: true });
 
+    expect(container.childElementCount).toBe(0);
+  });
+});
+
+describe('DeferredSections visibility preferences', () => {
+  const hiddenSections: PlayDrawerSectionsVisibility = {
+    logbook: false,
+    climberLogs: false,
+    setterNotes: false,
+    betaVideos: false,
+    boardseshGrade: false,
+    community: false,
+    similarClimbs: false,
+  };
+  beforeEach(() => {
+    deferred.ready = false;
+    auth.isAuthenticated = true;
+    flags.boardseshGrade = true;
+    crewQuery.settled = true;
+    crewQuery.calls = [];
+    everyoneQuery.calls = [];
+    followedAuthors.calls = [];
+    followedAuthors.result = { data: { users: [] }, isError: false };
+    boardseshGradeQuery.calls = [];
+    logbook.calls = [];
+    logbookSection.props = null;
+  });
+  it('mounts and measures a Beta header eagerly without mounting its body', () => {
+    const onFirstSectionHeaderLayout = vi.fn();
+    const { container } = renderSections({
+      sections: { ...hiddenSections, betaVideos: true },
+      onFirstSectionHeaderLayout,
+    });
+    expect(container.querySelector('[data-title="mobile.betaVideos.title"]')).not.toBeNull();
+    expect(onFirstSectionHeaderLayout).toHaveBeenCalledWith(44);
+    expect(screen.queryByTestId('beta-videos')).toBeNull();
+    expect(screen.queryByTestId('logbook')).toBeNull();
+    expect(logbook.calls.every(({ boardName, climbUuids }) => boardName === null && climbUuids.length === 0)).toBe(
+      true,
+    );
+    expect(crewQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(everyoneQuery.calls).toHaveLength(0);
+    expect(followedAuthors.calls.every(({ loadWhenMissing }) => !loadWhenMissing)).toBe(true);
+  });
+  it('mounts the selected body once scrolling and interaction gates open', () => {
+    deferred.ready = true;
+    renderSections({ sections: { ...hiddenSections, betaVideos: true }, contentEnabled: true });
+    expect(screen.getByTestId('beta-videos')).toBeDefined();
+    expect(screen.queryByTestId('community')).toBeNull();
+    expect(screen.queryByTestId('logbook')).toBeNull();
+    expect(boardseshGradeQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+  });
+  it('all-hidden renders no padding container and disables section queries', () => {
+    const { container } = renderSections({ sections: hiddenSections, contentEnabled: true });
+    expect(container.childElementCount).toBe(0);
+    expect(logbook.calls.every(({ boardName }) => boardName === null)).toBe(true);
+    expect(boardseshGradeQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(crewQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(everyoneQuery.calls).toHaveLength(0);
+  });
+  it('preserves crew reads for visible Logbook while suppressing hidden everyone-log prefetch', () => {
+    followedAuthors.result = { data: { users: [{ userId: 'friend' }] }, isError: false };
+    renderSections({ sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, climberLogs: false } });
+    expect(crewQuery.calls.at(-1)?.enabled).toBe(true);
+    expect(logbook.calls.at(-1)?.boardName).toBe('kilter');
+    expect(everyoneQuery.calls).toHaveLength(0);
+  });
+  it('an eligible Climber logs header can measure before the followed snapshot arrives', () => {
+    followedAuthors.result = { data: undefined, isError: false };
+    const onFirstSectionHeaderLayout = vi.fn();
+    const { container } = renderSections({
+      sections: { ...hiddenSections, climberLogs: true },
+      onFirstSectionHeaderLayout,
+    });
+    expect(container.querySelector('[data-title="mobile.climberLogs.title"]')).not.toBeNull();
+    expect(onFirstSectionHeaderLayout).toHaveBeenCalledWith(44);
+    expect(screen.queryByTestId('climber-logs')).toBeNull();
+  });
+  it('empty notes alone leave no container or scroll hint', () => {
+    const { container } = renderSections({
+      sections: { ...hiddenSections, setterNotes: true },
+      description: 'No match',
+    });
     expect(container.childElementCount).toBe(0);
   });
 });

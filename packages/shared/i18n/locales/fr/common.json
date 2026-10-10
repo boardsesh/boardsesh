@@ -426,6 +426,25 @@
         "footer": "Les mises à jour anticipées peuvent avoir quelques défauts de temps en temps. Les changements s'appliquent à la prochaine ouverture de l'app.",
         "joinDeferred": "Serveur de mises à jour injoignable. Nouvel essai à la prochaine ouverture de l'app ; les mises à jour anticipées démarrent à l'ouverture suivante.",
         "leaveDeferred": "Retour impossible pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
+      },
+      "climbDrawer": {
+        "title": "Vue du bloc",
+        "description": "Choisis ce que tu vois sous le bloc.",
+        "loading": "Chargement des options d’affichage…",
+        "hideAll": "Tout masquer",
+        "showAll": "Tout afficher",
+        "sections": {
+          "logbook": "Carnet",
+          "climberLogs": "Entrées des grimpeurs",
+          "setterNotes": "Notes de l’ouvreur",
+          "betaVideos": "Vidéos de méthodes",
+          "boardseshGrade": "Cotation Boardsesh",
+          "community": "Communauté",
+          "similarClimbs": "Blocs similaires"
+        },
+        "sheetTitle": "Options d’affichage",
+        "groupTitle": "Sous le bloc",
+        "footer": "Les changements s’appliquent immédiatement. Masque tout pour voir uniquement le bloc, sans défilement vertical."
       }
     },
     "sendRecovery": {
