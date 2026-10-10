@@ -154,7 +154,7 @@ const REQUIRED_STORE_FLOW_OPERATIONS = [
  * change which silently emptied one of the three sources fails here instead of
  * turning the checks below into no-ops.
  */
-const MINIMUM_REGISTRY_DOCUMENTS = 54;
+const MINIMUM_REGISTRY_DOCUMENTS = 55;
 
 const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/apple-ads-attribution': sharedAppleAdsAttribution,

@@ -6,15 +6,24 @@ import { commitVerifiedAuthResult } from '../verified-auth-result';
 import { notifyAnalyticsIdentityChanged } from '../analytics-identity-events';
 
 const analytics = vi.hoisted(() => ({ capture: vi.fn(() => true), setPersonProperties: vi.fn(), distinctId: '' }));
-const preferences = vi.hoisted(() => ({ stored: new Map<string, unknown>(), get: vi.fn(), set: vi.fn() }));
+const preferences = vi.hoisted(() => ({
+  stored: new Map<string, unknown>(),
+  get: vi.fn(),
+  set: vi.fn(),
+  remove: vi.fn(),
+}));
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 vi.mock('../analytics', () => ({
   capture: analytics.capture,
   setPersonProperties: analytics.setPersonProperties,
   getAnalyticsIdentity: () => ({ distinctId: analytics.distinctId, anonymousId: 'anonymous' }),
 }));
-vi.mock('../preference-store', () => ({ getPreference: preferences.get, setPreference: preferences.set }));
-import { createSignupConsentLease, publishSignupConversion } from '../signup-conversion';
+vi.mock('../preference-store', () => ({
+  getPreference: preferences.get,
+  setPreference: preferences.set,
+  removePreference: preferences.remove,
+}));
+import { createSignupConsentLease, forgetSignupConversion, publishSignupConversion } from '../signup-conversion';
 
 let sequence = 0;
 function receipt(provider: AccountCreationReceipt['provider'] = 'email'): AccountCreationReceipt {
@@ -48,6 +57,9 @@ beforeEach(() => {
   preferences.get.mockReset().mockImplementation(async (key: string) => preferences.stored.get(key) ?? null);
   preferences.set.mockReset().mockImplementation(async (key: string, stored: unknown) => {
     preferences.stored.set(key, stored);
+  });
+  preferences.remove.mockReset().mockImplementation(async (key: string) => {
+    preferences.stored.delete(key);
   });
 });
 afterEach(() => {
@@ -155,5 +167,105 @@ describe('verified signup conversion', () => {
     publishSignupConversion(unkeyed);
     await settle();
     expect(preferences.stored.has(`signupConversion:${unkeyed.userId}`)).toBe(false);
+  });
+
+  it('retains published markers across ordinary sign-out and withdrawal', async () => {
+    const creation = receipt();
+    resolveOwner(creation);
+    publishSignupConversion(creation);
+    await settle();
+
+    invalidateConsentAccount();
+    updateConsentState({ record: { ...grantedConsent, analytics: 'denied' } });
+
+    expect(preferences.stored.get(`signupConversion:${creation.userId}`)).toBe(creation.createdAt);
+    expect(preferences.remove).not.toHaveBeenCalled();
+  });
+
+  it('removes only the deleted account marker and preserves other accounts and install ownership', async () => {
+    const deletedAccount = receipt();
+    const otherAccount = receipt();
+    const installOwner = { ownerId: deletedAccount.userId, closed: true };
+    preferences.stored.set(`signupConversion:${deletedAccount.userId}`, deletedAccount.createdAt);
+    preferences.stored.set(`signupConversion:${otherAccount.userId}`, otherAccount.createdAt);
+    preferences.stored.set('appleAdsAttributionV1', installOwner);
+
+    await forgetSignupConversion(deletedAccount.userId);
+
+    expect(preferences.remove).toHaveBeenCalledExactlyOnceWith(`signupConversion:${deletedAccount.userId}`);
+    expect(preferences.stored.has(`signupConversion:${deletedAccount.userId}`)).toBe(false);
+    expect(preferences.stored.get(`signupConversion:${otherAccount.userId}`)).toBe(otherAccount.createdAt);
+    expect(preferences.stored.get('appleAdsAttributionV1')).toBe(installOwner);
+  });
+
+  it('waits for a pending marker write before deletion and prevents later resurrection', async () => {
+    const creation = receipt();
+    resolveOwner(creation);
+    let finishWrite: () => void = () => {};
+    preferences.set.mockImplementationOnce(
+      (key: string, timestamp: string) =>
+        new Promise<void>((resolve) => {
+          finishWrite = () => {
+            preferences.stored.set(key, timestamp);
+            resolve();
+          };
+        }),
+    );
+    publishSignupConversion(creation);
+    await settle();
+    expect(preferences.set).toHaveBeenCalledOnce();
+
+    const cleanup = forgetSignupConversion(creation.userId);
+    await settle();
+    expect(preferences.remove).not.toHaveBeenCalled();
+    finishWrite();
+    await cleanup;
+    publishSignupConversion(creation);
+    notifyAnalyticsIdentityChanged();
+    await settle();
+
+    expect(preferences.stored.has(`signupConversion:${creation.userId}`)).toBe(false);
+    expect(preferences.set).toHaveBeenCalledOnce();
+    expect(analytics.capture).toHaveBeenCalledOnce();
+  });
+
+  it('suppresses a deleted account while its marker read is delayed', async () => {
+    const creation = receipt();
+    resolveOwner(creation);
+    let finishRead: (result: unknown) => void = () => {};
+    preferences.get.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    publishSignupConversion(creation);
+
+    await forgetSignupConversion(creation.userId);
+    finishRead(null);
+    await settle();
+    notifyAnalyticsIdentityChanged();
+
+    expect(analytics.capture).not.toHaveBeenCalled();
+    expect(preferences.set).not.toHaveBeenCalled();
+    expect(preferences.stored.has(`signupConversion:${creation.userId}`)).toBe(false);
+  });
+
+  it('suppresses a deleted account while its verified conversion waits for SDK readiness', async () => {
+    const creation = receipt();
+    resolveOwner(creation);
+    analytics.distinctId = 'anonymous';
+    publishSignupConversion(creation);
+    await settle();
+
+    await forgetSignupConversion(creation.userId);
+    analytics.distinctId = creation.userId;
+    notifyAnalyticsIdentityChanged();
+    publishSignupConversion(creation);
+    await settle();
+
+    expect(analytics.capture).not.toHaveBeenCalled();
+    expect(preferences.set).not.toHaveBeenCalled();
+    expect(preferences.stored.has(`signupConversion:${creation.userId}`)).toBe(false);
   });
 });

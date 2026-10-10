@@ -542,6 +542,11 @@ allowlisted properties as the person's `$set_once` properties:
 Development dummy responses never publish. Invalid responses, exhausted
 retries, a missing native module and unanswered/declined consent leave the
 source unknown. There is no fallback from these outcomes to `organic`.
+Filter iOS campaign reports on `attribution_provider = apple_ads` and
+`apple_ads_attribution_status = attributed`. Report `unattributed` separately:
+it is an explicit negative Apple Ads result, not the Android `install_channel`
+classification. Missing status remains unknown. The publisher accepts only
+`attributed` and `unattributed`; test and retry statuses never reach PostHog.
 The bounded retry sequence makes at most three exchanges with one token,
 waiting at least five seconds between attempts. Apple tokens expire after
 24 hours; a later foreground attempt obtains a fresh token after a cooldown.
@@ -1102,6 +1107,9 @@ submissions. Report draft creations separately; a creation event does not prove
 publication, and later draft publication cannot yet be counted reliably.
 
 The Apple Ads status card prepares the dashboard without fabricated metrics.
+The new 2.6.0 integration's property and report contract is documented in
+[Apple Ads (iOS)](#apple-ads-ios); it still requires real campaign evidence
+before these dashboard metrics can be populated.
 The proposed **A$500/month** is a budget, not observed spend. Keep actual AUD
 spend, store-reported installs, attributed first opens and product outcomes
 separate until reliable person-level attribution exists. Future costs divide

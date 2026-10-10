@@ -70,11 +70,17 @@ function publishAppleAdsAttribution(
   distinctId: string,
   emitEvent: boolean,
 ): boolean {
-  if (!isProductAnalyticsGranted() || getAnalyticsIdentity()?.distinctId !== distinctId || !record.result) return false;
-  const attribution = record.result.attribution;
+  const result = record.result;
+  if (
+    !isProductAnalyticsGranted() ||
+    getAnalyticsIdentity()?.distinctId !== distinctId ||
+    (result?.status !== 'ATTRIBUTED' && result?.status !== 'UNATTRIBUTED')
+  )
+    return false;
+  const attribution = result.attribution;
   const properties = {
     attribution_provider: 'apple_ads',
-    apple_ads_attribution_status: record.result.status.toLowerCase(),
+    apple_ads_attribution_status: result.status === 'ATTRIBUTED' ? 'attributed' : 'unattributed',
     apple_ads_org_id: attribution?.orgId,
     apple_ads_campaign_id: attribution?.campaignId,
     apple_ads_ad_group_id: attribution?.adGroupId,

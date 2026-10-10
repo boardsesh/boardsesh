@@ -12,9 +12,17 @@ import { GET_DELETE_ACCOUNT_INFO, DELETE_ACCOUNT } from '@boardsesh/graphql/oper
 // directly (not the barrel) so we only mock the GraphQL client — the barrel
 // transitively pulls react-native / expo via its other re-exports.
 const requestMock = vi.fn();
+const credentials = vi.hoisted(() => ({ generation: 1, getToken: vi.fn() }));
+const forgetSignupConversionMock = vi.hoisted(() => vi.fn(async (_userId: string): Promise<void> => {}));
 vi.mock('../../client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
+vi.mock('../../../auth-store', () => ({
+  captureAuthCredentialGeneration: () => credentials.generation,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === credentials.generation,
+  getAuthToken: credentials.getToken,
+}));
+vi.mock('../../../signup-conversion', () => ({ forgetSignupConversion: forgetSignupConversionMock }));
 
 import { useDeleteAccountInfo, useDeleteAccount } from '../use-delete-account';
 
@@ -30,7 +38,14 @@ function makeWrapper() {
 
 beforeEach(() => {
   requestMock.mockReset();
+  credentials.generation = 1;
+  credentials.getToken.mockReset().mockResolvedValue(null);
+  forgetSignupConversionMock.mockReset().mockResolvedValue(undefined);
 });
+
+function tokenFor(userId: string): string {
+  return `header.${btoa(JSON.stringify({ sub: userId })).replace(/=/g, '')}.signature`;
+}
 
 describe('useDeleteAccountInfo', () => {
   it('selects the published-climb count from the response', async () => {
@@ -71,11 +86,100 @@ describe('useDeleteAccount', () => {
   });
 
   it('surfaces a rejected mutation to the caller', async () => {
+    credentials.getToken.mockResolvedValue(tokenFor('602c83bf-e090-4c90-9f7e-000000000081'));
     requestMock.mockRejectedValue(new Error('boom'));
     const { Wrapper } = makeWrapper();
 
     const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
 
     await expect(result.current.mutateAsync({ input: { removeSetterName: false } })).rejects.toThrow('boom');
+    expect(forgetSignupConversionMock).not.toHaveBeenCalled();
+  });
+
+  it('forgets only the captured account after confirmed deletion', async () => {
+    const userId = '602c83bf-e090-4c90-9f7e-000000000082';
+    credentials.getToken.mockResolvedValue(tokenFor(userId));
+    requestMock.mockResolvedValue({ deleteAccount: true });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+
+    await expect(result.current.mutateAsync({ input: { removeSetterName: false } })).resolves.toBe(true);
+
+    expect(forgetSignupConversionMock).toHaveBeenCalledExactlyOnceWith(userId);
+    expect(credentials.getToken.mock.invocationCallOrder[0]).toBeLessThan(requestMock.mock.invocationCallOrder[0]);
+  });
+
+  it('retains the account marker when the mutation returns false', async () => {
+    credentials.getToken.mockResolvedValue(tokenFor('602c83bf-e090-4c90-9f7e-000000000083'));
+    requestMock.mockResolvedValue({ deleteAccount: false });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+
+    await expect(result.current.mutateAsync({ input: { removeSetterName: false } })).resolves.toBe(false);
+
+    expect(forgetSignupConversionMock).not.toHaveBeenCalled();
+  });
+
+  it('does not clean a marker after credentials change during server deletion', async () => {
+    credentials.getToken.mockResolvedValue(tokenFor('602c83bf-e090-4c90-9f7e-000000000084'));
+    requestMock.mockImplementation(async () => {
+      credentials.generation += 1;
+      return { deleteAccount: true };
+    });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+
+    await expect(result.current.mutateAsync({ input: { removeSetterName: false } })).resolves.toBe(true);
+
+    expect(forgetSignupConversionMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a replaced credential owner before sending the mutation', async () => {
+    let finishTokenRead: (token: string) => void = () => {};
+    credentials.getToken.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishTokenRead = resolve;
+        }),
+    );
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+    const mutation = result.current.mutateAsync({ input: { removeSetterName: false } });
+    const rejected = expect(mutation).rejects.toThrow('Account credentials changed before account deletion');
+    await waitFor(() => expect(credentials.getToken).toHaveBeenCalledOnce());
+    credentials.generation += 1;
+    finishTokenRead(tokenFor('602c83bf-e090-4c90-9f7e-000000000085'));
+
+    await rejected;
+
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(forgetSignupConversionMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending', 'failed'] as const)(
+    'does not block successful deletion on %s marker cleanup',
+    async (cleanupState) => {
+      credentials.getToken.mockResolvedValue(tokenFor('602c83bf-e090-4c90-9f7e-000000000086'));
+      requestMock.mockResolvedValue({ deleteAccount: true });
+      if (cleanupState === 'failed') forgetSignupConversionMock.mockRejectedValue(new Error('storage unavailable'));
+      else forgetSignupConversionMock.mockReturnValue(new Promise<void>(() => {}));
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+
+      await expect(result.current.mutateAsync({ input: { removeSetterName: false } })).resolves.toBe(true);
+
+      expect(forgetSignupConversionMock).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps successful server deletion independent of an unavailable local JWT read', async () => {
+    credentials.getToken.mockRejectedValue(new Error('keychain unavailable'));
+    requestMock.mockResolvedValue({ deleteAccount: true });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteAccount(), { wrapper: Wrapper });
+
+    await expect(result.current.mutateAsync({ input: { removeSetterName: false } })).resolves.toBe(true);
+
+    expect(forgetSignupConversionMock).not.toHaveBeenCalled();
   });
 });
