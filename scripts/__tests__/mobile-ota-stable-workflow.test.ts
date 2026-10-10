@@ -14,6 +14,7 @@ interface Step {
   with?: Record<string, unknown>;
 }
 interface Job {
+  permissions?: Record<string, string>;
   needs?: string | string[];
   uses?: string;
   if?: string;
@@ -27,6 +28,7 @@ interface Workflow {
   jobs: Record<string, Job>;
   concurrency: Record<string, unknown>;
   'run-name': string;
+  permissions: Record<string, string>;
 }
 const source = readFileSync(
   resolve(import.meta.dirname, '../../.github/workflows/mobile-ota-stable-release.yml'),
@@ -78,6 +80,31 @@ describe('daily stable workflow boundaries', () => {
       'cancel-in-progress': false,
       queue: 'max',
     });
+  });
+  it('allows the reusable boot resolver read permissions without expanding controller scopes', () => {
+    const bootWorkflow = parse(
+      readFileSync(resolve(import.meta.dirname, '../../.github/workflows/mobile-ota-boot-check.yml'), 'utf8'),
+    ) as Workflow;
+    const callerPermissions = workflow.jobs.boot.permissions;
+    expect(callerPermissions).toEqual({
+      contents: 'read',
+      actions: 'read',
+      deployments: 'read',
+      'pull-requests': 'read',
+    });
+    // GitHub validates nested jobs even when a read-only plan skips the call.
+    // Check the actual callee's requirements instead of a copied resolver list.
+    for (const nestedJob of Object.values(bootWorkflow.jobs)) {
+      for (const [scope, permission] of Object.entries(nestedJob.permissions ?? bootWorkflow.permissions)) {
+        expect(permission, scope).toBe('read');
+        expect(callerPermissions?.[scope], `boot caller must allow ${scope}`).toBe(permission);
+      }
+    }
+    expect(workflow.permissions).toEqual({ contents: 'read', actions: 'read' });
+    for (const controller of ['prepare', 'qualify', 'tick']) {
+      expect(workflow.jobs[controller].permissions).toBeUndefined();
+    }
+    expect(workflow.jobs.smokes.permissions).toBeUndefined();
   });
   it('qualification records both actual output SHAs and strict job outcomes', () => {
     const verdict = step('qualify', 'Record blocking QA verdict');

@@ -317,7 +317,7 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     for (const { name, platform } of expectedWorkflowResolvers) {
       const source = readWorkflow(name);
       const resolverCalls = source.match(/vp exec expo-updates runtimeversion:resolve/g) ?? [];
-      expect(resolverCalls, `${name} must resolve each explicit fingerprint`).toHaveLength(name === OTA ? 5 : 1);
+      expect(resolverCalls, `${name} must resolve each explicit fingerprint`).toHaveLength(name === OTA ? 7 : 1);
       expect(source).toContain(
         `cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform ${platform}`,
       );

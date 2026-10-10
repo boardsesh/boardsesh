@@ -877,7 +877,7 @@ jobs:
       && (needs.deploy-production-backend.result == 'success' || (needs.detect-changes.outputs.backend_changed != 'true' && needs.deploy-production-backend.result == 'skipped'))
     runs-on: ubuntu-latest
     timeout-minutes: 130
-    environment: Production
+    environment: ota-stable-release
     permissions:
       contents: read
       actions: read
@@ -886,8 +886,12 @@ jobs:
       cancel-in-progress: false
       queue: max
     steps:
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -908,8 +912,13 @@ jobs:
       - name: Promote exact staged bytes to early updates
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
-        run: node --experimental-strip-types scripts/mobile-ota-promote-track.ts ota-stage
+        run: |
+          set -euo pipefail
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+          node --experimental-strip-types scripts/mobile-ota-promote-track.ts ota-stage --verify-empty-target
 
   verify-mobile-ota:
     needs: [detect-changes, stage-mobile-ota, promote-mobile-ota, promote-early-mobile-ota]

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initialStableState } from './lib/ota-stable';
-import { tickStable, abortStable, parseStableArgs, saveState, readState } from './mobile-ota-stable';
+import { tickStable, prepareStable, abortStable, parseStableArgs, saveState, readState } from './mobile-ota-stable';
 import type { XpremAdminClient } from './lib/xprem-admin.mts';
 import { activeFixture, candidateFixture } from './__tests__/helpers/ota-stable-fixtures';
 import { desiredOtaState } from '../infra/ota/config';
@@ -116,6 +116,27 @@ function fixture() {
   return { options, client, live, baselineIds, save, root };
 }
 describe('stable controller execution', () => {
+  it('uses live authenticated empty-target reads only for the frozen candidate, preserving production baselines', async () => {
+    const { options, root } = fixture();
+    const candidate = candidateFixture();
+    writeFileSync(join(root, 'receipt.json'), JSON.stringify(candidate.receipt));
+    mocks.baseline
+      .mockResolvedValueOnce(candidate.receipt.baselineProductionUpdateIds)
+      .mockResolvedValueOnce({ ios: null, android: null });
+    const prepared = await prepareStable(options, '101', candidate.receipt.commitHash, '102');
+    expect(mocks.baseline.mock.calls[0][0]).not.toHaveProperty('emptyBranchReader');
+    expect(mocks.baseline.mock.calls[1][0]).toMatchObject({
+      branch: 'pr-stable-candidate',
+      emptyBranchReader: options.client,
+    });
+    expect(mocks.promote).toHaveBeenCalledWith(
+      expect.objectContaining({ branch: 'pr-stable-candidate', emptyBranchReader: options.client }),
+    );
+    expect(prepared.receipt.baselineProductionUpdateIds).toEqual(candidate.receipt.baselineProductionUpdateIds);
+    expect(
+      JSON.parse(readFileSync(join(root, 'candidate-upload-receipt.json'), 'utf8')).baselineProductionUpdateIds,
+    ).toEqual({ ios: null, android: null });
+  });
   it.each([nativeUUIDs.ios, -1])(
     'refuses echoed5 lease ID %s before PUT/finalize and leaves a parseable checkpoint',
     async (updateId) => {

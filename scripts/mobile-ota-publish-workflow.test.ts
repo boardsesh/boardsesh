@@ -77,9 +77,14 @@ describe('production OTA workflow reliability', () => {
   it('archives both beta and production baselines captured before either staged export', () => {
     const baseline = stepBlock(production, 'Capture production OTA baseline before staging');
     const receipt = stepBlock(production, 'Record staged export fingerprints and hashes');
-    expect(baseline).toContain('--capture-baseline --branch pr-beta');
-    expect(baseline).toContain('--out ota-stage/early-baseline.json');
-    expect(baseline).toContain('--out ota-stage/baseline.json');
+    const capture = jobBlock(production, 'capture-staging-baselines');
+    expect(capture).toContain('--capture-baseline --branch pr-beta --verify-empty-target');
+    expect(capture).toContain('--out early-baseline.json');
+    expect(capture).toContain('--out production-baseline.json');
+    expect(baseline).toContain('needs.capture-staging-baselines.outputs.early_baseline');
+    expect(baseline).toContain('needs.capture-staging-baselines.outputs.production_baseline');
+    expect(baseline).toContain('> ota-stage/early-baseline.json');
+    expect(baseline).toContain('> ota-stage/baseline.json');
     for (const platform of ['iOS', 'Android']) {
       expect(production.indexOf('      - name: Capture production OTA baseline before staging')).toBeLessThan(
         production.indexOf(`      - name: Publish ${platform} OTA`),
@@ -127,6 +132,117 @@ describe('production OTA workflow reliability', () => {
     expect(waitMinutes).toBeGreaterThan(0);
     const timeout = Number(jobBlock(production, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2, false, true) + waitMinutes);
+  });
+
+  it('separates installed fingerprint resolution from trusted admin baseline capture', () => {
+    const resolveJob = jobBlock(production, 'resolve-staging-runtimes');
+    const captureJob = jobBlock(production, 'capture-staging-baselines');
+    const publishJob = jobBlock(production, 'publish');
+    expect(resolveJob).toContain('environment: Production');
+    expect(resolveJob).toContain('vp install --frozen-lockfile');
+    expect(resolveJob).not.toContain('OTA_ADMIN');
+    expect(captureJob).toContain('environment: ota-stable-release');
+    expect(captureJob).toContain('needs: resolve-staging-runtimes');
+    expect(captureJob).not.toMatch(/vp install|setup-vp|vp exec|EOO_TOKEN/);
+    for (const job of [resolveJob, captureJob]) {
+      expect(job).toContain('if: inputs.stage_for_production_deploy');
+      expect(job.indexOf('Refuse any ref but main')).toBeLessThan(job.indexOf('actions/checkout@'));
+      expect(job).toContain("if: github.ref != 'refs/heads/main'");
+      expect(job).toContain('ref: ${{ github.sha }}');
+      expect(job).toContain('persist-credentials: false');
+    }
+    expect(publishJob).not.toContain('OTA_ADMIN');
+    const authenticate = stepBlock(captureJob, 'Capture authenticated early baseline');
+    expect(authenticate).toContain('--verify-empty-target');
+    expect(authenticate).toContain('::add-mask::$OTA_ADMIN_EMAIL');
+    expect(captureJob.slice(0, captureJob.indexOf('      - name: Capture authenticated early baseline'))).not.toContain(
+      'OTA_ADMIN',
+    );
+  });
+
+  it('uses identical .env inputs and platform-specific maps keys for both staging resolutions', () => {
+    const resolveJob = jobBlock(production, 'resolve-staging-runtimes');
+    const publisher = jobBlock(production, 'publish');
+    const dotenv = (job: string) => job.match(/cat > \.env <<EOF([\s\S]*?)\n          EOF/)?.[1];
+    expect(dotenv(resolveJob)).toBeDefined();
+    expect(dotenv(resolveJob)).toBe(dotenv(publisher));
+    for (const step of [
+      stepBlock(resolveJob, 'Resolve staged native runtimes'),
+      stepBlock(publisher, 'Capture production OTA baseline before staging'),
+    ]) {
+      expect(step).toContain('env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios');
+      expect(step).toContain(
+        'GOOGLE_MAPS_API_KEY="$ANDROID_MAPS_KEY" vp exec expo-updates runtimeversion:resolve --platform android',
+      );
+      expect(step).toContain('ANDROID_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}');
+    }
+    const parity = stepBlock(publisher, 'Capture production OTA baseline before staging');
+    expect(parity).toContain('[ "$ios_runtime" != "$IOS_RUNTIME" ] || [ "$android_runtime" != "$ANDROID_RUNTIME" ]');
+    expect(parity.indexOf('exit 1')).toBeLessThan(parity.indexOf('> ota-stage/baseline.json'));
+    expect(parity).not.toContain('--capture-baseline');
+  });
+
+  it('allows direct publishes when staging prerequisites skip, and blocks failed staging capture', () => {
+    const workflow = parse(production) as {
+      jobs: Record<string, { if?: string; needs?: string[] }>;
+    };
+    const publisher = workflow.jobs.publish;
+    expect(publisher.needs).toEqual(['resolve-staging-runtimes', 'capture-staging-baselines']);
+    const expression = publisher.if!.replace(/needs\.([a-z-]+)/g, 'needs["$1"]');
+    // Execute the actual workflow expression so a dependency/always change is caught.
+    // oxlint-disable-next-line no-implied-eval
+    const permits = new Function('inputs', 'needs', 'always', 'cancelled', `return ${expression};`) as (
+      inputs: { stage_for_production_deploy: boolean },
+      needs: Record<string, { result: string }>,
+      always: () => boolean,
+      cancelled: () => boolean,
+    ) => boolean;
+    for (const first of ['success', 'skipped', 'failure', 'cancelled']) {
+      for (const second of ['success', 'skipped', 'failure', 'cancelled']) {
+        const needs = {
+          'resolve-staging-runtimes': { result: first },
+          'capture-staging-baselines': { result: second },
+        };
+        expect(
+          permits(
+            { stage_for_production_deploy: false },
+            needs,
+            () => true,
+            () => false,
+          ),
+        ).toBe(true);
+        expect(
+          permits(
+            { stage_for_production_deploy: true },
+            needs,
+            () => true,
+            () => false,
+          ),
+        ).toBe(first === 'success' && second === 'success');
+        expect(
+          permits(
+            { stage_for_production_deploy: false },
+            needs,
+            () => true,
+            () => true,
+          ),
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('runs authenticated beta promotion only from exact main without installing dependencies', () => {
+    const early = jobBlock(pipeline, 'promote-early-mobile-ota');
+    expect(early).toContain('environment: ota-stable-release');
+    expect(early).toContain('ref: ${{ github.sha }}');
+    expect(early.indexOf('Refuse any ref but main')).toBeLessThan(early.indexOf('actions/checkout@'));
+    expect(early).not.toMatch(/vp install|setup-vp/);
+    const promotion = stepBlock(early, 'Promote exact staged bytes to early updates');
+    expect(promotion).toContain('mobile-ota-promote-track.ts ota-stage --verify-empty-target');
+    expect(promotion).toContain('::add-mask::$OTA_ADMIN_EMAIL');
+    expect(early.slice(0, early.indexOf('      - name: Promote exact staged bytes'))).not.toMatch(
+      /OTA_ADMIN|EOO_TOKEN/,
+    );
   });
 
   it('keeps the gate watching exactly the paths that trigger the Railway apply job', () => {

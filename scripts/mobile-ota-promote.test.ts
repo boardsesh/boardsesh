@@ -5,13 +5,15 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   captureProductionBaseline,
+  connectEmptyBranchReader,
   parseCaptureArgs,
   parseStageReceipt,
   promoteArchivedOta,
   validateExport,
 } from './mobile-ota-promote';
 import { parsePromoteArgs } from './mobile-ota-promote';
-import type { RolloutReader } from './mobile-ota-promote';
+import type { EmptyBranchReader, RolloutReader } from './mobile-ota-promote';
+import type { XpremBranch, XpremChannel } from './lib/xprem-admin.mts';
 
 const APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const COMMIT = 'a'.repeat(40);
@@ -29,8 +31,27 @@ const requestUrl = (input: RequestInfo | URL): URL =>
 
 const temporaryDirectories: string[] = [];
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
+
+function emptyTargetReader(branch = 'pr-beta') {
+  const target: XpremBranch = { branchId: 2, branchName: branch, protected: true };
+  const channel: XpremChannel = {
+    releaseChannelId: 1,
+    releaseChannelName: 'production',
+    branchId: 1,
+    branchName: 'production',
+    branchSurfing: { enabled: true, pattern: 'pr-*' },
+    rollout: null,
+  };
+  const reader: EmptyBranchReader = {
+    getBranches: vi.fn(async () => [target]),
+    getChannels: vi.fn(async () => [channel]),
+    getRuntimeVersions: vi.fn(async (): Promise<string[]> => []),
+  };
+  return { reader, target, channel };
+}
 
 function stageFixture() {
   const root = mkdtempSync(join(tmpdir(), 'boardsesh-ota-promote-'));
@@ -724,7 +745,7 @@ function branchServer(
       const expoClient = JSON.parse(readFileSync(join(fixture.root, platform, 'expoConfig.json'), 'utf8')) as unknown;
       return Response.json({
         id: BASELINE_IDS[platform],
-        runtimeVersion: RUNTIME,
+        runtimeVersion: headers.get('expo-runtime-version') ?? RUNTIME,
         launchAsset: { hash: Buffer.from(fixture.hashes[platform], 'hex').toString('base64url') },
         assets: [
           {
@@ -838,6 +859,274 @@ function promoteOptions(fixture: ReturnType<typeof stageFixture>, fetchImpl: typ
 }
 
 describe('promotion to a named branch', () => {
+  it.each(['pr-beta', 'pr-stable-candidate'])(
+    'captures null for verified empty %s runtimes without borrowing production UUIDs',
+    async (branch) => {
+      const fixture = stageFixture();
+      const server = branchServer(fixture, 'production');
+      const { reader } = emptyTargetReader(branch);
+      const fallbackFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers);
+        headers.set('xprem-branch', '');
+        return server.fetchImpl(input, { ...init, headers });
+      }) as unknown as typeof fetch;
+      await expect(
+        captureProductionBaseline({
+          manifestUrl: 'https://updates.example/manifest',
+          appId: APP_ID,
+          runtimeVersions: { ios: RUNTIME, android: RUNTIME },
+          branch,
+          fetchImpl: fallbackFetch,
+          emptyBranchReader: reader,
+        }),
+      ).resolves.toEqual({ ios: null, android: null });
+      expect(reader.getRuntimeVersions).toHaveBeenCalledWith(branch);
+      expect(server.calls.every((call) => (call.init.method ?? 'GET') === 'GET')).toBe(true);
+    },
+  );
+
+  it.each([
+    'existing-runtime',
+    'unprotected',
+    'missing-branch',
+    'surfing-off',
+    'different-pattern',
+    'different-mapping',
+    'channel-rollout',
+    'admin-unavailable',
+  ])('refuses empty beta capture for %s', async (scenario) => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production');
+    const { reader, target, channel } = emptyTargetReader();
+    if (scenario === 'existing-runtime') vi.mocked(reader.getRuntimeVersions).mockResolvedValue([RUNTIME]);
+    if (scenario === 'unprotected') target.protected = false;
+    if (scenario === 'missing-branch') vi.mocked(reader.getBranches).mockResolvedValue([]);
+    if (scenario === 'surfing-off') channel.branchSurfing = { enabled: false, pattern: 'pr-*' };
+    if (scenario === 'different-pattern') channel.branchSurfing = { enabled: true, pattern: 'pr-6*' };
+    if (scenario === 'different-mapping') channel.branchName = 'another-branch';
+    if (scenario === 'channel-rollout') channel.rollout = { percentage: 5, rolloutBranchName: 'other' };
+    if (scenario === 'admin-unavailable')
+      vi.mocked(reader.getRuntimeVersions).mockRejectedValue(new Error('Admin unavailable'));
+    const fallbackFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set('xprem-branch', '');
+      return server.fetchImpl(input, { ...init, headers });
+    }) as unknown as typeof fetch;
+    await expect(
+      captureProductionBaseline({
+        manifestUrl: 'https://updates.example/manifest',
+        appId: APP_ID,
+        runtimeVersions: { ios: RUNTIME, android: RUNTIME },
+        branch: 'pr-beta',
+        fetchImpl: fallbackFetch,
+        emptyBranchReader: reader,
+      }),
+    ).rejects.toThrow();
+    expect(server.calls.every((call) => (call.init.method ?? 'GET') === 'GET')).toBe(true);
+  });
+
+  it('rejects authenticated empty-target login outside main before making any request', async () => {
+    vi.stubEnv('GITHUB_REF', 'refs/heads/feature');
+    await expect(connectEmptyBranchReader('https://updates.example/manifest', APP_ID)).rejects.toThrow(
+      'only runs from main',
+    );
+  });
+
+  it.each([false, true])(
+    'verifies authenticated no-update baselines against runtime inventory (existing=%s)',
+    async (existing) => {
+      const { reader } = emptyTargetReader();
+      vi.mocked(reader.getRuntimeVersions).mockResolvedValue(existing ? [RUNTIME] : []);
+      const fetchImpl = vi.fn(
+        async () =>
+          new Response(
+            '--boundary\r\nexpo-part-type: directive\r\ncontent-type: application/json\r\n\r\n' +
+              '{"type":"noUpdateAvailable"}\r\n--boundary--\r\n',
+            { headers: { 'Content-Type': 'multipart/mixed; boundary=boundary' } },
+          ),
+      ) as unknown as typeof fetch;
+      const capture = captureProductionBaseline({
+        manifestUrl: 'https://updates.example/manifest',
+        appId: APP_ID,
+        runtimeVersions: { ios: RUNTIME, android: RUNTIME },
+        branch: 'pr-beta',
+        fetchImpl,
+        emptyBranchReader: reader,
+      });
+      if (existing) await expect(capture).rejects.toThrow('already has runtime');
+      else await expect(capture).resolves.toEqual({ ios: null, android: null });
+      expect(reader.getRuntimeVersions).toHaveBeenCalledWith('pr-beta');
+    },
+  );
+
+  it('rejects a no-update fallback hiding an existing runtime before requesting any lease', async () => {
+    const fixture = stageFixture();
+    const receipt = JSON.parse(readFileSync(fixture.receiptPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      fixture.receiptPath,
+      JSON.stringify({ ...receipt, baselineProductionUpdateIds: { ios: null, android: null } }),
+    );
+    const server = branchServer(fixture, 'pr-beta');
+    const { reader } = emptyTargetReader();
+    vi.mocked(reader.getRuntimeVersions).mockResolvedValue([RUNTIME]);
+    const noUpdateFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      if (requestUrl(input).pathname === '/manifest') {
+        return new Response(
+          '--boundary\r\nexpo-part-type: directive\r\ncontent-type: application/json\r\n\r\n' +
+            '{"type":"noUpdateAvailable"}\r\n--boundary--\r\n',
+          { headers: { 'Content-Type': 'multipart/mixed; boundary=boundary' } },
+        );
+      }
+      return server.fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    await expect(
+      promoteArchivedOta({ ...promoteOptions(fixture, noUpdateFetch), branch: 'pr-beta', emptyBranchReader: reader }),
+    ).rejects.toThrow('already has runtime');
+    expect(server.calls.some((call) => call.url.pathname.includes('requestUploadUrl'))).toBe(false);
+  });
+
+  it.each(['runtime', 'app', 'channel', 'uuid', 'other-branch'])(
+    'rejects malformed or unrelated %s fallback before trusting an empty runtime',
+    async (field) => {
+      const fixture = stageFixture();
+      const server = branchServer(fixture, 'production');
+      const { reader } = emptyTargetReader();
+      const badFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers);
+        headers.set('xprem-branch', '');
+        const response = await server.fetchImpl(input, { ...init, headers });
+        const manifest = (await response.json()) as {
+          id: string;
+          runtimeVersion: string;
+          extra: { branch: string; expoClient: { updates: { requestHeaders: Record<string, string> } } };
+        };
+        if (field === 'runtime') manifest.runtimeVersion = 'c'.repeat(40);
+        if (field === 'app')
+          manifest.extra.expoClient.updates.requestHeaders['expo-app-id'] = '11111111-1111-4111-8111-111111111111';
+        if (field === 'channel') manifest.extra.expoClient.updates.requestHeaders['expo-channel-name'] = 'other';
+        if (field === 'uuid') manifest.id = 'not-a-native-uuid';
+        if (field === 'other-branch') manifest.extra.branch = 'pr-other';
+        return Response.json(manifest);
+      }) as unknown as typeof fetch;
+      await expect(
+        captureProductionBaseline({
+          manifestUrl: 'https://updates.example/manifest',
+          appId: APP_ID,
+          runtimeVersions: { ios: RUNTIME, android: RUNTIME },
+          branch: 'pr-beta',
+          fetchImpl: badFetch,
+          emptyBranchReader: reader,
+        }),
+      ).rejects.toThrow();
+      expect(reader.getRuntimeVersions).not.toHaveBeenCalled();
+    },
+  );
+
+  it('bootstraps beta but still requires its exact branch and bytes after publication', async () => {
+    const fixture = stageFixture();
+    const receipt = parseStageReceipt(JSON.parse(readFileSync(fixture.receiptPath, 'utf8')));
+    const androidRuntime = 'c'.repeat(40);
+    writeFileSync(
+      fixture.receiptPath,
+      JSON.stringify({
+        ...receipt,
+        platforms: { ...receipt.platforms, android: { ...receipt.platforms.android, runtimeVersion: androidRuntime } },
+        baselineProductionUpdateIds: { ios: null, android: null },
+      }),
+    );
+    const published = new Set<string>();
+    const server = branchServer(fixture, 'pr-beta', { onFinalize: (platform) => published.add(platform) });
+    const { reader } = emptyTargetReader();
+    // xprem exposes checked runtimes after finalize, never for pending upload leases.
+    vi.mocked(reader.getRuntimeVersions).mockImplementation(async () => [
+      ...(published.has('ios') ? [RUNTIME] : []),
+      ...(published.has('android') ? [androidRuntime] : []),
+    ]);
+    const bootstrapFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      if (requestUrl(input).pathname === '/manifest' && !published.has(headers.get('expo-platform') ?? ''))
+        headers.set('xprem-branch', '');
+      return server.fetchImpl(input, { ...init, headers });
+    }) as unknown as typeof fetch;
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, bootstrapFetch),
+      branch: 'pr-beta',
+      emptyBranchReader: reader,
+    });
+    expect(published).toEqual(new Set(['ios', 'android']));
+    expect(reader.getRuntimeVersions).toHaveBeenCalledTimes(4);
+  });
+
+  it('refuses an ambiguous shared runtime after the first platform finalizes', async () => {
+    const fixture = stageFixture();
+    const receipt = parseStageReceipt(JSON.parse(readFileSync(fixture.receiptPath, 'utf8')));
+    writeFileSync(
+      fixture.receiptPath,
+      JSON.stringify({ ...receipt, baselineProductionUpdateIds: { ios: null, android: null } }),
+    );
+    const published = new Set<string>();
+    const server = branchServer(fixture, 'pr-beta', { onFinalize: (platform) => published.add(platform) });
+    const { reader } = emptyTargetReader();
+    vi.mocked(reader.getRuntimeVersions).mockImplementation(async () => (published.size ? [RUNTIME] : []));
+    const bootstrapFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      if (requestUrl(input).pathname === '/manifest' && !published.has(headers.get('expo-platform') ?? ''))
+        headers.set('xprem-branch', '');
+      return server.fetchImpl(input, { ...init, headers });
+    }) as unknown as typeof fetch;
+    await expect(
+      promoteArchivedOta({ ...promoteOptions(fixture, bootstrapFetch), branch: 'pr-beta', emptyBranchReader: reader }),
+    ).rejects.toThrow('already has runtime');
+    expect(published).toEqual(new Set(['ios']));
+    expect(
+      server.calls.some((call) => call.url.hostname === 'bucket.example' && call.url.pathname.includes('android')),
+    ).toBe(false);
+  });
+
+  it('refuses a hidden beta head that arrives after empty capture before any lease', async () => {
+    const fixture = stageFixture();
+    const receipt = JSON.parse(readFileSync(fixture.receiptPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      fixture.receiptPath,
+      JSON.stringify({ ...receipt, baselineProductionUpdateIds: { ios: null, android: null } }),
+    );
+    const server = branchServer(fixture, 'pr-beta');
+    const { reader } = emptyTargetReader();
+    vi.mocked(reader.getRuntimeVersions).mockResolvedValue([RUNTIME]);
+    const hiddenFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set('xprem-branch', '');
+      return server.fetchImpl(input, { ...init, headers });
+    }) as unknown as typeof fetch;
+    await expect(
+      promoteArchivedOta({ ...promoteOptions(fixture, hiddenFetch), branch: 'pr-beta', emptyBranchReader: reader }),
+    ).rejects.toThrow('already has runtime');
+    expect(server.calls.some((call) => call.url.pathname.includes('requestUploadUrl'))).toBe(false);
+  });
+
+  it('refuses continued production fallback after beta finalize even with an empty-target reader', async () => {
+    const fixture = stageFixture();
+    const receipt = JSON.parse(readFileSync(fixture.receiptPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      fixture.receiptPath,
+      JSON.stringify({ ...receipt, baselineProductionUpdateIds: { ios: null, android: null } }),
+    );
+    const server = branchServer(fixture, 'pr-beta');
+    const { reader } = emptyTargetReader();
+    const fallbackFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set('xprem-branch', '');
+      return server.fetchImpl(input, { ...init, headers });
+    }) as unknown as typeof fetch;
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, fallbackFetch),
+        branch: 'pr-beta',
+        emptyBranchReader: reader,
+        verificationDelaysMs: [],
+      }),
+    ).rejects.toThrow('ios manifest is not from the pr-beta branch.');
+  });
   it.each(['production', 'pr-beta', 'pr-staging'])(
     'always probes through the production channel when targeting %s',
     async (branch) => {
@@ -920,6 +1209,7 @@ describe('promotion to a named branch', () => {
       branch: 'production',
       rolloutPercentage: null,
       rolloutReceipt: null,
+      verifyEmptyTarget: false,
     });
     const rollout = ['--rollout-percentage', '5', '--rollout-receipt', 'rollout.json'];
     expect(parsePromoteArgs([...paths, '--branch', 'pr-beta', ...rollout])).toMatchObject({

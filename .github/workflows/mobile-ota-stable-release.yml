@@ -117,6 +117,13 @@ jobs:
 
   boot:
     needs: prepare
+    # GitHub validates every nested job before evaluating plan/prepare guards.
+    # The preview receipt resolver also reads deployments and PR metadata.
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      pull-requests: read
     uses: ./.github/workflows/mobile-ota-boot-check.yml
     with:
       ref: ${{ needs.prepare.outputs.sha }}
