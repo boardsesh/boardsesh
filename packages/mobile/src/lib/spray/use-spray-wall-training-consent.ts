@@ -5,7 +5,7 @@
 // costs only this switch, not the whole edit screen.
 
 import { useCallback, useMemo } from 'react';
-import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   GET_SPRAY_WALL_TRAINING_CONSENT,
   SET_SPRAY_WALL_TRAINING_CONSENT,
@@ -18,7 +18,29 @@ export const sprayWallTrainingConsentQueryKey = (wallUuid: string | null) =>
   ['sprayWallTrainingConsent', wallUuid] as const;
 
 /** Per wall, so a flip on the wire is counted whichever switch for that wall sent it. */
-const setSprayWallTrainingConsentMutationKey = (wallUuid: string) => ['setSprayWallTrainingConsent', wallUuid] as const;
+const setSprayWallTrainingConsentMutationKey = (wallUuid: string | null) =>
+  ['setSprayWallTrainingConsent', wallUuid] as const;
+
+/**
+ * Whether a flip of this wall's switch is still on the wire, whichever switch
+ * sent it. Never for `null`, a wall that does not exist yet.
+ *
+ * For a screen that hosts the switch and must not move on mid-flip: it reads
+ * the mutation cache, so the host holds no state of its own, and a flip on some
+ * other wall does not hold it.
+ */
+export function useSprayWallTrainingConsentSaving(wallUuid: string | null): boolean {
+  return useIsMutating({ mutationKey: setSprayWallTrainingConsentMutationKey(wallUuid) }) > 0;
+}
+
+/**
+ * The same answer read at call time, for a handler. The hook above is one render
+ * behind the tap that started the flip, and a second press that queued up behind
+ * that tap runs before the render.
+ */
+export function isSprayWallTrainingConsentSaving(queryClient: QueryClient, wallUuid: string | null): boolean {
+  return queryClient.isMutating({ mutationKey: setSprayWallTrainingConsentMutationKey(wallUuid) }) > 0;
+}
 
 /**
  * The wall's switch: true or false for its owner, null for anybody else (the
@@ -100,14 +122,14 @@ export function useSetSprayWallTrainingConsent(wallUuid: string, { onRefused }: 
     },
   });
 
-  const isSaving = useIsMutating({ mutationKey }) > 0;
+  const isSaving = useSprayWallTrainingConsentSaving(wallUuid);
   const setConsent = useCallback(
     (consent: boolean): boolean => {
-      if (queryClient.isMutating({ mutationKey }) > 0) return false;
+      if (isSprayWallTrainingConsentSaving(queryClient, wallUuid)) return false;
       mutate(consent);
       return true;
     },
-    [queryClient, mutationKey, mutate],
+    [queryClient, wallUuid, mutate],
   );
 
   return { setConsent, isSaving };

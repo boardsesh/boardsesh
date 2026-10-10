@@ -169,6 +169,12 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
 }));
 vi.mock('../SprayWallTrainingConsentRow', () => ({ SprayWallTrainingConsentRow: () => null }));
 vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
+// No training switch flip is ever on the wire here: the hold has its own cases
+// in SprayWallWizardScreen.test.tsx.
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
+  useSprayWallTrainingConsentSaving: () => false,
+  isSprayWallTrainingConsentSaving: () => false,
+}));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));

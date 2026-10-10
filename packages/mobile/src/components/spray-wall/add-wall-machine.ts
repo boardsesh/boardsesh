@@ -316,10 +316,19 @@ export type EditorLeaveState = {
  *
  * `confirmDiscard` is the editor's unwritten changes; `confirm` is the generic
  * "the draft is kept" question; `leave` goes without asking.
+ *
+ * `outsideRequestRunning` is a request the flow is waiting on that the machine
+ * does not run itself, so `isBusy` cannot see it: a flip of the wall's training
+ * switch, which saves on the tap. It is asked about like one of the machine's
+ * own.
  */
 export type LeaveDecision = 'leave' | 'block' | 'confirm' | 'confirmDiscard';
 
-export function leaveDecision(state: AddWallState, editor: EditorLeaveState): LeaveDecision {
+export function leaveDecision(
+  state: AddWallState,
+  editor: EditorLeaveState,
+  outsideRequestRunning = false,
+): LeaveDecision {
   // The wall is published; all that is left is the bind and the dismiss, and
   // both of those ARE leaving. Said first and outright, not left to fall out of
   // `shouldConfirmLeave`: a detection flag left running, or a stale editor
@@ -330,7 +339,7 @@ export function leaveDecision(state: AddWallState, editor: EditorLeaveState): Le
   // The look step's save is the same kind of moment: its success publishes.
   if (state.step === 'look' && state.lookSaving) return 'block';
   if (state.step === 'review' && editor.dirty && !isBusy(state)) return 'confirmDiscard';
-  return shouldConfirmLeave(state) ? 'confirm' : 'leave';
+  return outsideRequestRunning || shouldConfirmLeave(state) ? 'confirm' : 'leave';
 }
 
 /** Where the flow stood when a leave dialog was put up. */
