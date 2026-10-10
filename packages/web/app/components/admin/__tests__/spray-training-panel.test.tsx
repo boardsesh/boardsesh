@@ -541,6 +541,96 @@ describe('SprayTrainingPanel drained page', () => {
   });
 });
 
+describe('SprayTrainingPanel after a failed "Load more"', () => {
+  /** Loads one page, then fails the next one, leaving the Retry prompt up. */
+  async function failLoadMore(firstPage: SprayTrainingQueueItemData[], unreviewed: number) {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockRequest.mockResolvedValueOnce(queueResponse(firstPage, { hasMore: true, unreviewed }));
+    render(<SprayTrainingPanel />);
+
+    mockRequest.mockRejectedValueOnce(new Error('offline'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await screen.findByRole('button', { name: 'Retry' });
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', {
+      status: 'UNREVIEWED',
+      limit: 25,
+      offset: firstPage.length,
+    });
+  }
+
+  it('retries from the walls still loaded, so a verdict given since the failure skips nothing', async () => {
+    // The Unreviewed tab as the server holds it, in order.
+    let unreviewedOnServer = [makeItem('v1', 1), makeItem('v2', 2), makeItem('v3', 3), makeItem('v4', 4)];
+    await failLoadMore(unreviewedOnServer.slice(0, 2), 4);
+
+    const dialog = await openWall(1);
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(within(dialog).getByText('Wall version 2')).toBeTruthy());
+    // The approved wall has left the tab on the server too, so every later wall moved up one.
+    unreviewedOnServer = unreviewedOnServer.slice(1);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // The server answers the offset it is asked for from the list as it stands now.
+    mockRequest.mockImplementationOnce((_operation: string, variables: { offset: number }) =>
+      Promise.resolve(queueResponse(unreviewedOnServer.slice(variables.offset), { unreviewed: 3 })),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', {
+        status: 'UNREVIEWED',
+        limit: 25,
+        offset: 1,
+      }),
+    );
+    await screen.findByRole('button', { name: 'Review wall version 4' });
+    const cardNames = screen
+      .getAllByRole('button', { name: /^Review wall version/ })
+      .map((card) => card.getAttribute('aria-label'));
+    expect(cardNames).toEqual(['Review wall version 2', 'Review wall version 3', 'Review wall version 4']);
+  });
+
+  it('reads on from the top when the last loaded wall is decided while the error still shows', async () => {
+    await failLoadMore([makeItem('v1', 1)], 2);
+
+    await openWall(1);
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v2', 2)]));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    // The page that failed lay past a wall that is gone now: the read starts over, unprompted.
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(4));
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Wall version 2')).toBeTruthy());
+    expect(screen.queryByText('Nothing here')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry', hidden: true })).toBeNull();
+  });
+
+  it('leaves a failed read of the top of the list to Retry, which starts from the first wall', async () => {
+    await failLoadMore([makeItem('v1', 1)], 2);
+
+    await openWall(1);
+    mockRequest.mockResolvedValueOnce(reviewResponse('v1', 'APPROVED'));
+    mockRequest.mockRejectedValueOnce(new Error('still offline'));
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // One unprompted read, not a loop, and no claim that the tab is empty.
+    expect(mockRequest).toHaveBeenCalledTimes(4);
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
+    expect(screen.queryByText('Nothing here')).toBeNull();
+
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v2', 2)]));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('button', { name: 'Review wall version 2' })).toBeTruthy();
+    expect(mockRequest).toHaveBeenCalledTimes(5);
+    expect(mockRequest).toHaveBeenLastCalledWith('GET_SPRAY_TRAINING_QUEUE', FIRST_PAGE);
+  });
+});
+
 describe('SprayTrainingPanel refused verdicts', () => {
   it('takes a wall that left the training set off the screen and says why', async () => {
     mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
