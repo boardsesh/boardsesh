@@ -59,6 +59,15 @@ describe('boardSnapshotDdlStatements', () => {
     }
   });
 
+  it('leaves out the ascents ranking index, which the import never reads the artifact by', () => {
+    expect(DEVICE_ONLY_STATEMENTS.some((statement) => statement.includes('idx_stats_ascents'))).toBe(true);
+    for (const statement of boardSnapshotDdlStatements()) {
+      expect(statement).not.toContain('idx_stats_ascents');
+    }
+    // The indexes the artifact has always carried are still there.
+    expect(boardSnapshotDdlStatements().some((statement) => statement.includes('idx_stats_lookup'))).toBe(true);
+  });
+
   it('keeps the grades artifact to board_climb_grades and snapshot_meta', () => {
     expect(tableNamesAfterApplying(boardSnapshotDdlStatements(['board_climb_grades']))).toEqual([
       'board_climb_grades',

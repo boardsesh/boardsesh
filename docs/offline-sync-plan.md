@@ -663,6 +663,31 @@ User data (ticks, playlists, favorites, follows) syncs on native with no per-boa
 
 **Local-first browse (live).** Climb **search + count + detail** are **local-first**: whenever the active board's exact scope is downloaded and the filters are on-device-expressible, they read local `board_climbs`/`board_climb_stats` (`search-climbs-local.ts` / `get-climb-local.ts`, mirroring the server's LEFT-JOIN standard search) **even while online** — a local query is far faster than a network round-trip. Freshness comes from the background sync (foreground + reconnect), which invalidates `['searchClimbs']`/`['climb']` after each pull so the next local read reflects new data; a downloaded board reads local regardless of connectivity, so connectivity isn't part of the query key. The **network** is used only when there's no usable local data: the board isn't downloaded, or the filter needs a table we don't sync. **Limitations:** filters needing un-synced tables — hold-state (STARTING/HAND/FOOT/FINISH), zone, tall/wide, beta-video — and the drafts path always go to the network (online) or are unavailable (offline); name search is ASCII-case-insensitive only; climb-detail satellites (comments, beta links, stats history) are network-only and absent offline. **Similar climbs** is the exception: it is **local-only** — answered from the downloaded board's device-derived holds index, online and offline, and never from the network for non-admins (a board that is not downloaded gets a download offer instead; see `docs/offline-reads.md`, "Expensive catalogue reads are local-only"). Trade-off: on a downloaded board, online reads reflect the last sync rather than the live server (acceptable for a climb catalog; the sync keeps it current).
 
+**The default sort is read off an index (schema v13).** Until v13 every page of a downloaded board's list cost the same: `searchClimbsLocal` visited every listed climb on the board (298,088 on a Kilter download), ran two `json_each` probes and a stats lookup on each, sorted what was left and kept one page. The default sort, "most ascents first at this angle", is also the order of `idx_stats_ascents`:
+
+```sql
+CREATE INDEX idx_stats_ascents ON board_climb_stats (board_type, angle, ascensionist_count DESC, climb_uuid DESC)
+  WHERE ascensionist_count > 0;
+```
+
+For that sort the search walks the index instead (the "ranked walk" in `search-climbs-local.ts`): read the angle's stats rows in rank order, join each climb by primary key, apply the same `WHERE`, stop at the row that fills the page.
+
+| Page of 30, Kilter Original 12x12 at 40 degrees | Full query | Ranked walk |
+| --- | --- | --- |
+| iPhone 13 Pro, pages 0 to 14 while scrolling | 1.4 to 2.2 s, median 1.7 s | 2 to 36 ms, median 6 ms |
+| iPhone 13 Pro, launch to the first page on screen | about 4.3 s | about 2.6 s |
+| Laptop, first page | 520 ms | 0.1 ms |
+| Laptop, 5,000 rows deep | 820 ms | 14 ms |
+
+The rules that keep the two readers interchangeable:
+
+1. **The walk answers only a full page.** A climb somebody has sent sorts before every climb nobody has (a count of 0, then no count), so the walk's rows are a prefix of the full query's. It is trusted only when it returned `pageSize + 1` rows. A page that reaches the unsent climbs, or that the walk could not fill, goes to the full query, which is unchanged.
+2. **The walk is bounded.** It reads at most `max(12,000, 25 x rows wanted)` stats rows, found by reading the row at that rank from the index first. A filter that keeps almost nothing therefore costs a bounded extra (31 ms on a laptop for 12,000 rows) before the full query runs, not a second pass over the board.
+3. **Sparse filters never try it.** Name, setter, followed setters, hold filters, projects, benchmarks and the "only climbs I sent / tried / rated" filters go straight to the full query (`canWalkAscentsRanking`). So do every other sort, ascending ascents and cross-angle stats, whose order the index does not have.
+4. **Both readers share one `WHERE` and one column list.** A new filter added to `buildJoinAndWhere` reaches both. A change to the default sort's key or tie-break has to change the index too, or leave the walk.
+
+The index is partial because 4 in 10 stats rows are climbs nobody has sent, which the walk never needs: 12 MB on a 293 MB Kilter database, where indexing every row would be 19.5 MB. A statement must say `ascensionist_count > 0` in those words for SQLite to accept `INDEXED BY idx_stats_ascents`. Costs: the index is built once in migration v13 (0.4 s on an iPhone 13 Pro holding two Kilter boards), and it is one more b-tree to maintain while a download imports stats (1.6 to 1.9 s more on a laptop for a Kilter board's 372,524 rows; not measured on a phone). It is a device-only statement, so snapshot artifacts do not carry it.
+
 ```typescript
 const enabledBoards = getMMKVPreference<string[]>('sync_boards') ?? [];
 

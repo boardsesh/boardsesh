@@ -269,6 +269,31 @@ CREATE INDEX IF NOT EXISTS idx_climbs_sync_seq ON board_climbs (board_type, layo
 `.trim();
 
 /**
+ * `board_climb_stats` in the order the climb list shows it: one board at one
+ * angle, most ascents first, ties broken by climb uuid, highest uuid first. The
+ * default sort reads its first pages straight off this index instead of
+ * filtering and sorting every climb on the board for each page of 20
+ * (`searchClimbsLocal`, the ranked walk).
+ *
+ * Both sort columns are DESC so the walk runs forwards, and `climb_uuid` is in
+ * the index so the tie-break needs no table read.
+ *
+ * Partial on purpose. A climb nobody has sent sorts after every climb somebody
+ * has, so the walk never needs it, and 4 in 10 stats rows are such climbs
+ * (146,097 of a Kilter download's 372,524). Leaving them out makes the index
+ * 12 MB on that 293 MB database, where the whole table would be 19.5 MB. A
+ * query has to say `ascensionist_count > 0`, spelled exactly so, for SQLite to
+ * accept this index.
+ *
+ * Device-only for the same reason as `idx_climbs_sync_seq`: it names an
+ * artifact table, and the import copies rows out of the artifact without ever
+ * reading it in this order.
+ */
+export const INDEX_STATS_ASCENTS = `
+CREATE INDEX IF NOT EXISTS idx_stats_ascents ON board_climb_stats (board_type, angle, ascensionist_count DESC, climb_uuid DESC) WHERE ascensionist_count > 0;
+`.trim();
+
+/**
  * Tables the device builds for itself and that must never leave it: not synced
  * (no `TABLE_CONFIGS` entry), not in a snapshot artifact. The snapshot export
  * refuses to emit DDL naming one of these, and the explicit sign-out wipe clears
@@ -281,7 +306,7 @@ export const DEVICE_ONLY_TABLES = ['holds_index_climbs', 'board_climb_hold_sets'
  * although they touch an artifact table. The export drops these by exact text,
  * so moving one requires no artifact format change.
  */
-export const DEVICE_ONLY_STATEMENTS: readonly string[] = [INDEX_CLIMBS_SYNC_SEQ];
+export const DEVICE_ONLY_STATEMENTS: readonly string[] = [INDEX_CLIMBS_SYNC_SEQ, INDEX_STATS_ASCENTS];
 
 // --- Sync bookkeeping ---------------------------------------------------------
 // checkpoints.ts reads/writes sync_meta(key, value); it has no CREATE TABLE of
