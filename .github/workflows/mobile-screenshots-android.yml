@@ -6,12 +6,8 @@ name: Mobile Screenshots (Android)
 # cron.
 #
 # WHEN IT RUNS — two ways, and only these two:
-#   * automatically, after an Android Play internal deploy on the release train
-#     (`release/next`) that actually SHIPPED a binary (the `workflow_run` trigger
-#     plus the `gate` job below). Native store candidates are built from the
-#     train, never from main (#5477, docs/mobile-store-release.md §1-2), so the
-#     trigger follows the train and the checkout pins the deploy's own `head_sha`
-#     — the train commit the binary was built from;
+#   * automatically, after an Android Play internal deploy on main or release/next
+#     that actually SHIPPED a binary. Every checkout pins the deploy's head_sha;
 #   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
 #
 # THE SHIPPED GATE. `conclusion == 'success'` is NOT proof a binary shipped: a
@@ -91,12 +87,8 @@ on:
     workflows:
       - Android Play Internal Deploy (React Native)
     types: [completed]
-    # The release train is the only branch that builds a store candidate; main
-    # no longer deploys native at all. Kept in sync with the deploy workflows'
-    # own `push.branches` by scripts/__tests__/mobile-screenshots-workflows.test.ts,
-    # which reads that value rather than hard-coding one. Mirrors RELEASE_BRANCH
-    # below — `on:` cannot read `env`, so the literal lives in both places.
-    branches: [release/next]
+    # Follow the native workflows on both trusted release branches.
+    branches: [main, release/next]
   workflow_dispatch:
     inputs:
       flow:
@@ -185,7 +177,8 @@ env:
   # checks both against the deploy workflow. Note this is NOT where the captured
   # screenshots are committed — `commit_to_main` pushes to main, where
   # mobile-store-metadata.yml reads them from.
-  RELEASE_BRANCH: release/next
+  # Automatic runs follow the binary source; dispatches use their selected ref.
+  RELEASE_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
 
 jobs:
   # One API call on a cheap ubuntu runner, deciding whether the emulator job

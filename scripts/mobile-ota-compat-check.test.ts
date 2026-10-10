@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ALLOW_NATIVE_ON_MAIN_LABEL,
   CHECK_TITLE,
-  NATIVE_ON_MAIN_FAILURE,
-  RELEASE_BRANCH,
   STICKY_MARKER,
   checkTitle,
   confirmComparison,
@@ -310,18 +307,15 @@ describe('parseRuntimeVersion', () => {
   });
 });
 
-// The release train (docs/mobile-store-release.md): native store builds run from
-// `release/next`, so a fingerprint-moving PR that lands on `main` instead gets no
-// replacement binary at all — the store fleet's OTA just stops. That single case
-// is the only one this check blocks.
-describe('deriveCheckConclusion (native-on-main enforcement)', () => {
-  it('fails a native change merging into main without the label', () => {
+// Both trusted release branches build replacements; compatibility stays informational.
+describe('deriveCheckConclusion (informational compatibility)', () => {
+  it('allows a native change merging into main without a waiver', () => {
     expect(
       deriveCheckConclusion({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false }),
-    ).toBe('failure');
+    ).toBe('neutral');
   });
 
-  it('is waived by the allow-native-on-main label', () => {
+  it('stays informational with the legacy waiver label', () => {
     expect(
       deriveCheckConclusion({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: true }),
     ).toBe('neutral');
@@ -331,7 +325,7 @@ describe('deriveCheckConclusion (native-on-main enforcement)', () => {
     expect(
       deriveCheckConclusion({
         overall: 'native-change-required',
-        baseBranch: RELEASE_BRANCH,
+        baseBranch: 'release/next',
         allowNativeOnMain: false,
       }),
     ).toBe('neutral');
@@ -347,34 +341,33 @@ describe('deriveCheckConclusion (native-on-main enforcement)', () => {
     );
   });
 
-  it('names the retarget command and the waiver label in the failure title', () => {
+  it('uses the native-build title for main without a waiver', () => {
     const title = checkTitle({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false });
-    expect(title).toBe(NATIVE_ON_MAIN_FAILURE);
-    expect(title).toContain(`--base ${RELEASE_BRANCH}`);
-    expect(title).toContain(ALLOW_NATIVE_ON_MAIN_LABEL);
+    expect(title).toBe(CHECK_TITLE['native-change-required']);
+    expect(title).not.toContain('retarget');
   });
 
   it('keeps the plain verdict title when nothing is blocked', () => {
     expect(
-      checkTitle({ overall: 'native-change-required', baseBranch: RELEASE_BRANCH, allowNativeOnMain: false }),
+      checkTitle({ overall: 'native-change-required', baseBranch: 'release/next', allowNativeOnMain: false }),
     ).toBe(CHECK_TITLE['native-change-required']);
   });
 });
 
 describe('enforcementNote', () => {
-  it('tells a main-targeting native PR to retarget', () => {
+  it('tells a main-targeting native PR that merging starts replacement builds', () => {
     expect(
       enforcementNote({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false }),
-    ).toContain(NATIVE_ON_MAIN_FAILURE);
+    ).toContain('starts fingerprint-gated TestFlight and Play builds');
   });
 
   it('tells a train PR that this is where the store builds come from', () => {
     const note = enforcementNote({
       overall: 'native-change-required',
-      baseBranch: RELEASE_BRANCH,
+      baseBranch: 'release/next',
       allowNativeOnMain: false,
     });
-    expect(note).toContain(RELEASE_BRANCH);
+    expect(note).toContain('release/next');
     expect(note).not.toContain('retarget');
   });
 

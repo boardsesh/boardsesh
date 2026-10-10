@@ -1,14 +1,17 @@
 # Mobile store release runbook
 
-How a `packages/mobile` (React Native) release reaches TestFlight and Google
-Play from the release train, `release/next`. Regular work lands on `main`; every
-change that moves the native fingerprint targets `release/next`, and merging it
-there is what starts a store build. A native fingerprint change temporarily
-prevents the current store fleet from receiving new production OTAs, so prepare
-the release identity before the final native change and move the replacement
-binaries through review quickly. The marketing version and build numbers are not
-part of the fingerprint, so a version bump alone starts no build (see
-[Version-only releases](#version-only-releases)).
+Both `main` and `release/next` automatically build TestFlight and Play-internal
+candidates when the native fingerprint changes. Use either branch for a release;
+the screenshot and store-draft follow-ups use the branch that produced the binary.
+JS-only pushes skip native builds. Manual dispatch can force a rebuild on either
+branch. The marketing version and build numbers do not affect the fingerprint,
+so a version-only release needs a manual build.
+
+Native changes temporarily stop older binaries receiving new compatible OTAs.
+Prepare the release identity before the final native change, keep the backend
+compatible with installed builds, and move the replacement binaries through QA
+and review promptly. `main` still owns the store fleet's OTA delivery; the train's
+OTA guard prevents a train bundle taking over a runtime that main also uses.
 
 Source of truth for uploaded material:
 
@@ -31,10 +34,11 @@ build, fingerprint, and release-anchor tags. Retain the active tag ruleset for
 `build-*`, `fingerprint-*`, and `release/*`; allow only that App to create,
 update, or delete those tags.
 
-## 1. Open the train and prepare the release
+## 1. Prepare the release on either branch
 
-The train is `release/next`. It is cut from `main`, carries the release, and is
-merged back when the stores have accepted it.
+Land the release on `main` directly, or use the optional `release/next` train
+below. Native PRs into either branch are accepted without `allow-native-on-main`.
+When using a train, cut it from `main` and merge it back after store acceptance.
 
 1. **Cut it** (start of a release, or to reset it after a merge-back):
 
@@ -49,11 +53,9 @@ merged back when the stores have accepted it.
    the intended version and copy. The version no longer moves the fingerprint, so
    landing it first does not cost the store fleet its OTAs; it just means the
    version rides on the native change that does start the build.
-3. **Land the native changes.** Every PR that moves the native fingerprint
-   targets `release/next`. The OTA compatibility check fails a fingerprint-moving
-   PR into `main` and tells you to retarget it; the `allow-native-on-main` label
-   is the owner's override, and it means main will build no replacement binary
-   for that change.
+3. **Land the native changes on the chosen branch.** Both `main` and
+   `release/next` start fingerprint-gated store builds. The OTA compatibility
+   check reports the native change without blocking or requiring a waiver.
 4. **Sync `main` into the train whenever the release needs main's JS.** A merge
    commit, never a squash — a squash would rewrite the shared history and make
    the merge-back conflict with itself:
@@ -82,9 +84,9 @@ again. Then reset the train with the force-push in step 1.
 There is no branch protection on `release/next` and no automated sync: syncs and
 merge-backs are ordinary merge commits that maintainers push.
 
-## 2. Automatic native builds from `release/next`
+## 2. Automatic native builds from `main` and `release/next`
 
-A `release/next` push that resolves to a new native fingerprint triggers:
+A push to either release branch that resolves to a new native fingerprint triggers:
 
 - **iOS TestFlight Deploy** (`ios-testflight-rn.yml`) — resolves the next build
   number from App Store Connect, builds, validates the archive, and uploads the
@@ -94,12 +96,19 @@ A `release/next` push that resolves to a new native fingerprint triggers:
   AAB to Play internal. After Play accepts it, the exact signed arm64 APK is
   published as the newest **Boardsesh Android Beta** prerelease.
 
-`workflow_dispatch` still works from `main` as well as `release/next` — that is
-the hotfix rebuild after a merge-back, when main's fingerprint already equals the
-train's. Automatic builds come only from the train. A dispatched build from
-`main` does **not** auto-draft, because `mobile-store-draft.yml` subscribes to
-completed runs whose head branch is `release/next`; dispatch
-`mobile-store-draft.yml` by hand after that build lands.
+`workflow_dispatch` works from either branch and forces a build (Android has
+`force_native`, enabled by default). Automatic screenshot and store-draft runs
+follow successful builds from both branches. Store drafting resolves and rechecks
+the triggering build's source branch; manual drafting uses its selected ref and
+refuses branches other than `main` and `release/next` before checking out code.
+
+Build numbers and upload concurrency are global per platform, so builds from the
+two branches cannot race store numbering. Existing fingerprint tags deduplicate
+identical native states across branches. Draft selection remains conservative:
+it selects the highest uploaded tags for the marketing version and verifies them
+against the chosen branch. If the branches carry different native states under
+the same marketing version, drafting can wait for matching candidates rather
+than attach an incompatible binary.
 
 Both workflows use the `Production` environment and serialize non-cancelling
 builds. A successful upload records the exact commit, store build number, and
@@ -211,9 +220,8 @@ unchanged copy.
 
 Screenshots are automatic too. **Mobile Screenshots** (`mobile-screenshots-ios.yml`
 and `mobile-screenshots-android.yml`) runs after each native deploy on
-`release/next` **that actually shipped a binary**, one workflow per platform —
-the train is where store candidates are built (§1), so that is where the pixels
-come from. There is no cron; a manual `workflow_dispatch`, runnable from any
+`main` or `release/next` **that actually shipped a binary**, one workflow per
+platform. The pixels come from the exact commit that produced the binary. There is no cron; a manual `workflow_dispatch`, runnable from any
 branch, is the only other way to start a capture.
 
 "Shipped" is not the same as "the deploy run went green". A JS-only push finishes
@@ -368,11 +376,11 @@ at 500 characters.
 
 `mobile-store-draft.yml` is best-effort and always on; there is no enable flag.
 It runs whenever **iOS TestFlight Deploy** or **Android Play Internal Deploy**
-completes on `release/next`, and on demand; there is no schedule. It pins the
-current `release/next` SHA, selects the exact highest iOS and Android build tags
-for that version, and checks that both tagged binaries match the train's platform
-fingerprints. Immediately before changing either store draft it rechecks that
-`release/next` and both selected tags have not moved. A mismatch, or only one platform's build existing yet, waits for a later
+completes on `main` or `release/next`, and on demand; there is no schedule. It pins
+the current source branch SHA, selects the exact highest iOS and Android build tags
+for that version, and checks that both tagged binaries match the source branch's
+platform fingerprints. Immediately before changing either store draft it rechecks that
+the source branch and both selected tags have not moved. A mismatch, or only one platform's build existing yet, waits for a later
 run (the other platform's completion re-triggers it) instead of drafting the
 wrong build.
 
@@ -405,18 +413,18 @@ after the shipped fingerprint moves on.
 
 ## End-to-end checklist
 
-1. Cut the train: `git push --force-with-lease origin main:release/next`.
+1. Choose `main`, or cut an optional `release/next` train.
 2. Set the release version and translate both stores' release notes — on
-   `release/next`. A version-only release also needs both native workflows
+   the chosen branch. A version-only release also needs both native workflows
    dispatched by hand (§2, "Version-only releases").
-3. Land the focused native changes on `release/next`; wait for TestFlight and
+3. Land the native changes on the chosen branch; wait for TestFlight and
    Play internal builds.
 4. Complete native QA against the exact uploaded candidates.
 5. Screenshots re-capture themselves after the native build (the probe decides
    whether to fan out); listing text pushes itself.
 6. Verify the store drafts select the tagged builds, then submit both manually.
 7. After approval, confirm both immutable release anchors were created, then
-   merge `release/next` into `main` as a **merge commit** and reset the train.
+   if using a train, merge it into `main` as a **merge commit** and reset it.
 8. Re-record the homepage showcase video's app footage so the site shows the
    shipped app: `vp run video` ([showcase-video.md](showcase-video.md)).
 

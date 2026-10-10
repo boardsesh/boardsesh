@@ -84,24 +84,12 @@ function workflowName(path: string): string {
   return declared as string;
 }
 
-/**
- * The branch a deploy workflow actually builds store candidates from — read out
- * of its own `push.branches` rather than repeated as a literal here. #5477 moved
- * that from `main` to `release/next`; the next rename (or a second branch added
- * to the list) must red this test, naming the deploy workflow, instead of
- * silently leaving the screenshot captures subscribed to a branch that no longer
- * deploys anything.
- */
-function deployBranch(deployPath: string): string {
+/** Read the trusted native release branches so captures cannot lose a source. */
+function deployBranches(deployPath: string): string[] {
   const push = (parseWorkflow(deployPath).on ?? {}).push as PushTrigger | undefined;
   const branches = push?.branches ?? [];
-  expect(
-    branches,
-    `${deployPath} must declare exactly one push branch — the release train the screenshot ` +
-      'workflows follow. Update both mobile-screenshots-*.yml (the workflow_run `branches:` ' +
-      'filter and the RELEASE_BRANCH env) if this deliberately changed.',
-  ).toHaveLength(1);
-  return branches[0];
+  expect(branches, `${deployPath} must build from both trusted release branches`).toEqual(['main', 'release/next']);
+  return branches;
 }
 
 /** Every `actions/checkout` step in a workflow, flattened across its jobs. */
@@ -474,16 +462,12 @@ describe('screenshot captures follow the native deploys', () => {
     expect(workflowRun?.workflows).toEqual([workflowName(entry.deploy)]);
     expect(workflowRun?.types).toEqual(['completed']);
 
-    // Native store candidates are built from the release train, not main, so the
-    // branch filter is read out of the deploy workflow's own `push.branches`
-    // instead of being repeated here. A future rename of the train reds this with
-    // the deploy workflow named, rather than leaving the captures subscribed to a
-    // branch that no longer builds anything.
-    const releaseBranch = deployBranch(entry.deploy);
+    // Captures must subscribe to every branch that can build a native candidate.
+    const releaseBranches = deployBranches(entry.deploy);
     expect(
       workflowRun?.branches,
-      `${entry.path} must follow the branch ${entry.deploy} deploys from (${releaseBranch})`,
-    ).toEqual([releaseBranch]);
+      `${entry.path} must follow the branch ${entry.deploy} deploys from (${releaseBranches.join(', ')})`,
+    ).toEqual(releaseBranches);
 
     // Manual dispatch survives alongside it — the only other way to capture, and
     // it is runnable from any branch (no branch filter of its own).
@@ -495,15 +479,15 @@ describe('screenshot captures follow the native deploys', () => {
     // env so prose, notices and summaries below read from a single place. `on:`
     // cannot read `env`, so the literal is unavoidably written twice in the file
     // — this is what keeps the two copies (and the deploy workflow) in agreement.
-    const releaseBranch = deployBranch(entry.deploy);
+    const releaseBranches = deployBranches(entry.deploy);
     expect(
       parseWorkflow(entry.path).env?.RELEASE_BRANCH,
-      `${entry.path} must declare RELEASE_BRANCH: ${releaseBranch}, mirroring its workflow_run filter`,
-    ).toBe(releaseBranch);
+      `${entry.path} must declare RELEASE_BRANCH: ${releaseBranches.join(', ')}, mirroring its workflow_run filter`,
+    ).toBe("${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}");
     expect(
       parseWorkflow(STORE_DRAFT_PATH).env?.RELEASE_BRANCH,
       'mobile-store-draft.yml is the convention these mirror; it must name the same train',
-    ).toBe(releaseBranch);
+    ).toBe("${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}");
   });
 
   it.each(workflows)('$platform has no schedule and no cron', (entry) => {

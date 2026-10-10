@@ -3,7 +3,7 @@ name: Mobile Store Draft Submission
 # Best-effort preparation of a DRAFT store submission for the current marketing
 # version, so a human only has to review and hit Submit — we never auto-submit for
 # review. Each platform is pinned to the exact highest uploaded build tag for the
-# validated version and must fingerprint-match the pinned release/next commit. No
+# validated version and must fingerprint-match the pinned source branch commit. No
 # binary upload, no review submission, no rollout. It does not CAPTURE screenshots
 # or author metadata (the screenshot workflows and mobile-store-metadata.yml own
 # those), but it does attach the already-published `screenshots-baseline` set to
@@ -13,8 +13,8 @@ name: Mobile Store Draft Submission
 # ALWAYS ON: there is no enable flag. What protects the stores is that this only
 # ever prepares DRAFTS (submit_for_review: false, release_status: draft), and
 # that release-candidate refuses to draft anything but the exact highest build
-# tag for the train's version whose fingerprint matches release/next's head. Runs
-# whenever a TestFlight or Play deploy on release/next completes (workflow_run)
+# tag for the source branch's version whose fingerprint matches its head. Runs
+# whenever a TestFlight or Play deploy on main or release/next completes (workflow_run)
 # and on demand — no
 # schedule, so a draft follows each native build by minutes rather than hours.
 # The candidate check tolerates the other platform not being there yet (it exits
@@ -32,9 +32,8 @@ on:
       - iOS TestFlight Deploy (React Native)
       - Android Play Internal Deploy (React Native)
     types: [completed]
-    # Native store candidates are built from the release train; main never
-    # produces one. See docs/mobile-store-release.md.
-    branches: [release/next]
+    # Follow both trusted native release branches.
+    branches: [main, release/next]
   workflow_dispatch:
     inputs:
       platform:
@@ -57,11 +56,9 @@ permissions:
   contents: read
 
 env:
-  # The branch that carries the store candidate. Every ref this workflow pins,
-  # rechecks, and dispatches metadata for reads from here — there is one train,
-  # and hard-coding `main` in even one of those places would draft a build from
-  # the wrong line.
-  RELEASE_BRANCH: release/next
+  # Pin and recheck the branch that produced the binary. A manual dispatch uses
+  # its selected ref, which is allowlisted before any checkout or install.
+  RELEASE_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
   EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
   EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
   EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
@@ -106,6 +103,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          case "$RELEASE_BRANCH" in
+            main|release/next) ;;
+            *) echo '::error::Store drafts require main or release/next.'; exit 1 ;;
+          esac
           sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${RELEASE_BRANCH}" --jq '.object.sha')"
           if [ -z "$sha" ]; then
             echo "::error::Could not resolve $RELEASE_BRANCH; refusing to prepare a store draft."
