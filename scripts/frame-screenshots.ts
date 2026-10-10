@@ -29,6 +29,7 @@ import {
   STORE_CAPTION_LOCALES,
   readCaptionCatalog,
   resolveScreenshotRecipes,
+  resolveScreenshotLabels,
   sha256Screenshot,
   sha256ScreenshotSources,
   type CaptionLocale,
@@ -292,7 +293,7 @@ export async function frameShowcaseComposition(
   options: { labels?: readonly string[]; placement?: StoreCreativePlacement } = {},
 ): Promise<Buffer> {
   const boards = layout === 'store-boards';
-  const boardCount = options.placement ? 4 : 3;
+  const boardCount = 3;
   if (sources.length !== (boards ? boardCount : 1)) throw new Error(`Invalid showcase source count for ${layout}`);
   const sourceSizes = sources.map(readPngDimensions);
   const sourceSize = sourceSizes[0];
@@ -300,11 +301,11 @@ export async function frameShowcaseComposition(
     throw new Error('Showcase sources must come from the same capture device');
   if (boards && options.labels?.length !== boardCount)
     throw new Error('Each board capture needs its own compatibility label');
-  if (options.placement && !boards) throw new Error('Creative placements require the four-board opening');
+  if (options.placement && !boards) throw new Error('Creative placements require the three-board opening');
   const { width, height } = options.placement ? STORE_CREATIVE_PLACEMENTS[options.placement] : sourceSize;
   const wide = width > height;
   const tablet = wide && !options.placement;
-  const light = layout === 'store-wall' || layout === 'wall-column';
+  const light = layout === 'store-wall' || layout === 'store-spray' || layout === 'wall-column';
   const base = light ? materialSurfaces.light : materialSurfaces.dark;
   // Same violet ground as the showcase stage; UI pixels retain their native appearance.
   const colors = {
@@ -356,34 +357,7 @@ export async function frameShowcaseComposition(
   const panels: NativePanel[] = [];
   const aspect = sourceSize.height / sourceSize.width;
   const foreground: sharp.OverlayOptions[] = [];
-  if (boards && options.placement) {
-    // Dedicated placements give all four boards equal, unobscured native panels.
-    // The spray photo is a required capture, never a fallback illustration.
-    const panelGap = width * 0.008;
-    const labelSize = Math.round(width * 0.016);
-    const labels = await Promise.all(
-      options.labels!.map((label) =>
-        renderShowcaseText(label, labelSize, Math.round((region.width - panelGap * 3) / 4), colors.label, {
-          bold: true,
-        }),
-      ),
-    );
-    const labelHeight = Math.max(...labels.map((label) => label.info.height));
-    const labelGap = height * 0.012;
-    const panelWidth = Math.min((region.width - panelGap * 3) / 4, (region.height - labelHeight - labelGap) / aspect);
-    const groupWidth = panelWidth * 4 + panelGap * 3;
-    const panelTop =
-      region.top + (region.height - panelWidth * aspect - labelHeight - labelGap) / 2 + labelHeight + labelGap;
-    for (let index = 0; index < sources.length; index++) {
-      const left = region.left + (region.width - groupWidth) / 2 + index * (panelWidth + panelGap);
-      panels.push({ raw: sources[index], left, top: panelTop, width: panelWidth });
-      foreground.push({
-        input: labels[index].data,
-        left: Math.round(left + (panelWidth - labels[index].info.width) / 2),
-        top: Math.round(panelTop - labelGap - labels[index].info.height),
-      });
-    }
-  } else if (boards) {
+  if (boards) {
     // Lower the portrait foreground phone to expose more lit holds on both sides.
     // Fit its complete native footer even when translated copy makes the stage shorter.
     const foregroundDrop = wide ? 0.17 : 0.29;
@@ -393,10 +367,14 @@ export async function frameShowcaseComposition(
       region.width * 0.49,
       (height * 0.96 - sideTop - region.height * foregroundDrop - panelBleed) / aspect,
     );
+    // Short Header canvases limit phone height; keep the group compact enough
+    // that the center spray panel overlaps both sides instead of becoming a row.
+    const boardGroupWidth = options.placement ? Math.min(region.width, panelWidth * 2.05) : region.width;
+    const boardGroupLeft = region.left + (region.width - boardGroupWidth) / 2;
     const positions = [
-      { left: region.left, top: sideTop },
-      { left: region.left + (region.width - panelWidth) / 2, top: sideTop + region.height * foregroundDrop },
-      { left: region.left + region.width - panelWidth, top: sideTop },
+      { left: boardGroupLeft, top: sideTop },
+      { left: boardGroupLeft + (boardGroupWidth - panelWidth) / 2, top: sideTop + region.height * foregroundDrop },
+      { left: boardGroupLeft + boardGroupWidth - panelWidth, top: sideTop },
     ];
     for (const index of [0, 2, 1]) {
       const position = positions[index];
@@ -715,7 +693,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
         buffers,
         catalog[recipe.caption],
         recipe.layout,
-        options.platform === 'ios' ? { labels: recipe.labels } : undefined,
+        options.platform === 'ios' ? { labels: resolveScreenshotLabels(recipe, catalog) } : undefined,
       );
       writeFileSync(join(staging, name), framed);
       thumbnails.push(await sharp(framed).resize({ width: 270 }).toBuffer({ resolveWithObject: true }));

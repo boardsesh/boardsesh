@@ -12,12 +12,7 @@ import {
   type CaptionLocale,
 } from './lib/screenshot-presentation';
 
-const OPENING_SOURCES = [
-  '01-board-view-2.png',
-  '00-board-view.png',
-  '10-moonboard-board-view.png',
-  '14-spray-board-view.png',
-] as const;
+const OPENING_SOURCES = ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'] as const;
 
 export interface StoreCreativeOptions {
   input: string;
@@ -45,7 +40,7 @@ export async function renderStoreCreatives(options: StoreCreativeOptions): Promi
   const caption = catalog.storeBoards;
   const sprayLabel = catalog.storeSpray.boardLabel;
   if (!sprayLabel) throw new Error(`Missing spray wall compatibility label for ${options.locale}`);
-  const labels = ['Tension', 'Kilter', 'MoonBoard', sprayLabel];
+  const labels = ['Kilter', sprayLabel, 'MoonBoard'];
   const assets = [];
   for (const placement of ['header', 'search-results'] as const) {
     const buffer = await frameShowcaseComposition(

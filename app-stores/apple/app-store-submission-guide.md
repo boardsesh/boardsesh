@@ -57,8 +57,9 @@ slot assignment. [Apple screenshot specifications](https://developer.apple.com/h
 
 ### New nine-image iPhone campaign
 
-The new story leads with Kilter, Tension and MoonBoard together, then the shared
-queue, spray walls, additional supported boards, wall status, logbook, workouts,
+The new story leads with Kilter, a spray wall and MoonBoard together, then a
+dedicated spray-wall scene on a light background, additional supported boards,
+the shared queue, wall status, logbook, workouts,
 Dynamic Island and climb search. Its full output map is in
 [App Store metadata](app-store-metadata.md#screenshots).
 

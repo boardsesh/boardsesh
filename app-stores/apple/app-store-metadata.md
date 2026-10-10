@@ -69,19 +69,19 @@ these nine outputs. Filename prefixes set the store display order:
 
 | Output                  | Headline / benefit               | Native content                                                       |
 | ----------------------- | -------------------------------- | -------------------------------------------------------------------- |
-| `00-your-boards.png`    | Your boards. One app.            | Kilter, Tension and MoonBoard, labelled by compatibility.            |
-| `01-your-crew.png`      | Your crew. One queue.            | The shared queue and contributor avatars.                            |
-| `02-spray-wall.png`     | Your spray wall, too.            | A real wall photo with the climb's holds highlighted.                |
-| `03-more-boards.png`    | More boards. Same app.           | Woods, Decoy and Grasshopper; copy also names Touchstone and So iLL. |
+| `00-your-boards.png`    | Your boards. One app.            | Kilter, spray wall in the center foreground, and MoonBoard.          |
+| `01-spray-wall.png`     | Your spray wall, too.            | The real wall photo on a light marketing background.                |
+| `02-more-boards.png`    | More boards. Same app.           | Woods, Decoy and Grasshopper; copy also names Touchstone and So iLL. |
+| `03-your-crew.png`      | Your crew. One queue.            | The shared queue and contributor avatars.                            |
 | `04-on-the-wall.png`    | See what's on the wall.          | Current wall status while browsing another climb.                    |
 | `05-one-logbook.png`    | All your boards. One logbook.    | Native logbook entries from several boards.                          |
 | `06-session-plan.png`   | Give your session a plan.        | The native workout generator.                                        |
 | `07-dynamic-island.png` | Next climb. From Dynamic Island. | Real expanded Live Activity controls.                                |
 | `08-next-project.png`   | Find your next project.          | Native climb search and filters.                                     |
 
-The opening establishes compatibility; queue and spray show why to try it. The
-fourth image makes the wider board catalogue visible without crowding the first
-image. Compositions reuse the showcase video's typography and palette around
+The opening puts spray walls alongside supported boards; the second image gives
+the new spray feature its own scene. The third broadens board compatibility,
+then the fourth shows the shared queue. Compositions reuse the showcase video's typography and palette around
 real captures. They do not manufacture app controls or use AI-generated images.
 
 The campaign uses the dedicated `app-stores/apple/campaign-fixtures.json` pin

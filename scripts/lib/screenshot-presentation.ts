@@ -107,6 +107,7 @@ export type ScreenshotLayout =
   | 'wall-column'
   | 'cross-board-logbook'
   | 'store-boards'
+  | 'store-spray'
   | 'store-queue'
   | 'store-wall'
   | 'store-island';
@@ -117,7 +118,20 @@ export interface ScreenshotRecipe {
   /** Actual native captures, in their compositing order. */
   sources: readonly string[];
   /** Compatibility labels, in source order; never guessed from a layout. */
-  labels?: readonly string[];
+  labels?: readonly (string | { caption: CaptionId })[];
+}
+
+/** Resolve board-kind labels from the same localized catalog as the composition. */
+export function resolveScreenshotLabels(
+  recipe: ScreenshotRecipe,
+  catalog: CaptionCatalog,
+): readonly string[] | undefined {
+  return recipe.labels?.map((label) => {
+    if (typeof label === 'string') return label;
+    const translated = catalog[label.caption].boardLabel;
+    if (!translated?.trim()) throw new Error(`Missing screenshot board label ${label.caption}`);
+    return translated;
+  });
 }
 
 export const IOS_CAMPAIGN_CAPTURE_NAMES = [
@@ -137,18 +151,18 @@ const IOS_CAMPAIGN_RECIPES: readonly ScreenshotRecipe[] = [
     output: '00-your-boards.png',
     caption: 'storeBoards',
     layout: 'store-boards',
-    sources: ['01-board-view-2.png', '00-board-view.png', '10-moonboard-board-view.png'],
-    labels: ['Tension', 'Kilter', 'MoonBoard'],
+    sources: ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'],
+    labels: ['Kilter', { caption: 'storeSpray' }, 'MoonBoard'],
   },
-  { output: '01-your-crew.png', caption: 'storeCrew', layout: 'store-queue', sources: ['15-crew-queue.png'] },
-  { output: '02-spray-wall.png', caption: 'storeSpray', layout: 'screen', sources: ['14-spray-board-view.png'] },
+  { output: '01-spray-wall.png', caption: 'storeSpray', layout: 'store-spray', sources: ['14-spray-board-view.png'] },
   {
-    output: '03-more-boards.png',
+    output: '02-more-boards.png',
     caption: 'storeMoreBoards',
     layout: 'store-boards',
     sources: ['11-woods-board-view.png', '12-decoy-board-view.png', '13-grasshopper-board-view.png'],
     labels: ['Woods', 'Decoy', 'Grasshopper'],
   },
+  { output: '03-your-crew.png', caption: 'storeCrew', layout: 'store-queue', sources: ['15-crew-queue.png'] },
   { output: '04-on-the-wall.png', caption: 'wallStatus', layout: 'store-wall', sources: ['16-wall-status.png'] },
   { output: '05-one-logbook.png', caption: 'crossBoardLogbook', layout: 'screen', sources: ['08-logbook.png'] },
   { output: '06-session-plan.png', caption: 'workout', layout: 'screen', sources: ['05-workout-generator.png'] },

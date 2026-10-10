@@ -14,6 +14,7 @@ import {
   PRESENTATION_ROOT,
   readCaptionCatalog,
   resolveScreenshotRecipes,
+  resolveScreenshotLabels,
   sha256Screenshot,
 } from '../lib/screenshot-presentation';
 
@@ -156,9 +157,23 @@ describe('multiboard App Store campaign', () => {
   it('requires the complete native scenario and names the exact hardware in source order', () => {
     const recipes = resolveScreenshotRecipes('ios', 'iphone-16-pro', IOS_CAMPAIGN_CAPTURE_NAMES);
     expect(recipes).toHaveLength(9);
-    expect(recipes[0].labels).toEqual(['Tension', 'Kilter', 'MoonBoard']);
-    expect(recipes[3].labels).toEqual(['Woods', 'Decoy', 'Grasshopper']);
-    expect(recipes[3].sources).toContain('12-decoy-board-view.png');
+    expect(recipes.map((recipe) => recipe.output)).toEqual([
+      '00-your-boards.png',
+      '01-spray-wall.png',
+      '02-more-boards.png',
+      '03-your-crew.png',
+      '04-on-the-wall.png',
+      '05-one-logbook.png',
+      '06-session-plan.png',
+      '07-dynamic-island.png',
+      '08-next-project.png',
+    ]);
+    expect(recipes[0].sources).toEqual(['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png']);
+    expect(recipes[0].labels).toEqual(['Kilter', { caption: 'storeSpray' }, 'MoonBoard']);
+    expect(recipes[1]).toMatchObject({ layout: 'store-spray', sources: ['14-spray-board-view.png'] });
+    expect(recipes[2].labels).toEqual(['Woods', 'Decoy', 'Grasshopper']);
+    expect(recipes[2].sources).toContain('12-decoy-board-view.png');
+    expect(recipes[3].sources).toEqual(['15-crew-queue.png']);
     expect(recipes[7].sources).toEqual(['17-dynamic-island.png']);
     for (const missing of ['14-spray-board-view.png', '12-decoy-board-view.png', '17-dynamic-island.png'])
       expect(() =>
@@ -182,13 +197,29 @@ describe('multiboard App Store campaign', () => {
       const raw = await capture();
       const catalog = readCaptionCatalog(locale);
       for (const [caption, layout, labels] of [
-        [catalog.storeBoards, 'store-boards', ['Tension', 'Kilter', 'MoonBoard']],
+        [
+          catalog.storeBoards,
+          'store-boards',
+          resolveScreenshotLabels(
+            resolveScreenshotRecipes('ios', 'iphone-16-pro', IOS_CAMPAIGN_CAPTURE_NAMES)[0],
+            catalog,
+          ),
+        ],
+        [catalog.storeSpray, 'store-spray', undefined],
         [catalog.storeCrew, 'store-queue', undefined],
         [catalog.storeIsland, 'store-island', undefined],
       ] as const) {
         const sources = labels ? [raw, raw, raw] : [layout === 'store-island' ? await islandCapture() : raw];
         const framed = await frameShowcaseComposition(sources, caption, layout, { labels });
         expect(await sharp(framed).metadata()).toMatchObject({ width: 1206, height: 2622, hasAlpha: false });
+        if (layout === 'store-spray') {
+          const corner = await sharp(framed)
+            .extract({ left: 0, top: 0, width: 1, height: 1 })
+            .removeAlpha()
+            .raw()
+            .toBuffer();
+          expect([...corner]).toEqual([244, 241, 251]);
+        }
       }
     },
     60_000,
@@ -198,17 +229,13 @@ describe('multiboard App Store campaign', () => {
     const input = directory();
     const output = directory();
     const raw = await capture();
-    const names = [
-      '01-board-view-2.png',
-      '00-board-view.png',
-      '10-moonboard-board-view.png',
-      '14-spray-board-view.png',
-    ];
-    for (const name of names.slice(0, 3)) writeFileSync(join(input, name), raw);
+    const names = ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'];
+    for (const name of names.filter((name) => name !== '14-spray-board-view.png'))
+      writeFileSync(join(input, name), raw);
     await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow(
       '14-spray-board-view.png',
     );
-    writeFileSync(join(input, names[3]), raw);
+    writeFileSync(join(input, names[1]), raw);
     const saved = await renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' });
     expect(saved.map((pathname) => pathname.slice(output.length + 1))).toEqual(['header.png', 'search-results.png']);
     for (const [placement, dimensions] of Object.entries(STORE_CREATIVE_PLACEMENTS)) {
@@ -240,12 +267,7 @@ describe('multiboard App Store campaign', () => {
     const input = directory();
     const output = directory();
     const raw = await capture(800, 1738);
-    for (const name of [
-      '01-board-view-2.png',
-      '00-board-view.png',
-      '10-moonboard-board-view.png',
-      '14-spray-board-view.png',
-    ])
+    for (const name of ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'])
       writeFileSync(join(input, name), raw);
     await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow();
     const blank = await sharp({
@@ -253,12 +275,7 @@ describe('multiboard App Store campaign', () => {
     })
       .png()
       .toBuffer();
-    for (const name of [
-      '01-board-view-2.png',
-      '00-board-view.png',
-      '10-moonboard-board-view.png',
-      '14-spray-board-view.png',
-    ])
+    for (const name of ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'])
       writeFileSync(join(input, name), blank);
     await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow(
       'likely blank',
@@ -275,9 +292,9 @@ describe('multiboard App Store campaign', () => {
   });
 
   it.each(['header', 'search-results'] as const)(
-    'preserves all four native footers in the %s placement',
+    'preserves all three native footers in the %s placement',
     async (placement) => {
-      const markers = ['#ff0000', '#00ff00', '#0000ff', '#ffff00'];
+      const markers = ['#ff0000', '#00ff00', '#0000ff'];
       const sources = await Promise.all(
         markers.map(async (color) =>
           sharp({ create: { width: 1320, height: 2868, channels: 3, background: '#214736' } })
@@ -294,7 +311,7 @@ describe('multiboard App Store campaign', () => {
             .toBuffer(),
         ),
       );
-      const labels = ['Tension', 'Kilter', 'MoonBoard', 'Plafón de spray'];
+      const labels = ['Kilter', 'Plafón de spray', 'MoonBoard'];
       const framed = await frameShowcaseComposition(sources, readCaptionCatalog('es').storeBoards, 'store-boards', {
         labels,
         placement,
@@ -304,12 +321,11 @@ describe('multiboard App Store campaign', () => {
         hasAlpha: false,
       });
       const pixels = await sharp(framed).removeAlpha().raw().toBuffer();
-      const counts = [0, 0, 0, 0];
+      const counts = [0, 0, 0];
       const colors = [
         [255, 0, 0],
         [0, 255, 0],
         [0, 0, 255],
-        [255, 255, 0],
       ];
       for (let offset = 0; offset < pixels.length; offset += 3) {
         for (const [index, color] of colors.entries()) {
@@ -318,14 +334,26 @@ describe('multiboard App Store campaign', () => {
       }
       for (const count of counts) expect(count).toBeGreaterThan(1000);
       await expect(
-        frameShowcaseComposition(sources.slice(0, 3), readCaptionCatalog('en-US').storeBoards, 'store-boards', {
-          labels: labels.slice(0, 3),
+        frameShowcaseComposition(sources.slice(0, 2), readCaptionCatalog('en-US').storeBoards, 'store-boards', {
+          labels: labels.slice(0, 2),
           placement,
         }),
       ).rejects.toThrow('source count');
     },
     60_000,
   );
+
+  it('resolves the first portrait spray label from its locale and rejects a missing translation', () => {
+    const recipe = resolveScreenshotRecipes('ios', 'iphone-16-pro', IOS_CAMPAIGN_CAPTURE_NAMES)[0];
+    const labels = ['Spray wall', 'Plafón de spray', 'Mur de spray', 'Spraywall'];
+    for (const [index, locale] of CAPTION_LOCALES.entries()) {
+      const catalog = readCaptionCatalog(locale);
+      expect(resolveScreenshotLabels(recipe, catalog)).toEqual(['Kilter', labels[index], 'MoonBoard']);
+      delete catalog.storeSpray.boardLabel;
+      expect(() => resolveScreenshotLabels(recipe, catalog)).toThrow('Missing screenshot board label');
+    }
+    expect(readCaptionCatalog('en-US').storeMoreBoards.headline).toBe('More boards.\nSame app.');
+  });
 
   it('localizes the required spray board label in every caption catalog', () => {
     const labels = ['Spray wall', 'Plafón de spray', 'Mur de spray', 'Spraywall'];

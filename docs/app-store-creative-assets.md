@@ -11,10 +11,12 @@ border; it centers that silhouette on an opaque canvas.
 
 ## Capture prerequisite and campaign order
 
-The first four screenshots show Kilter/Tension/MoonBoard together, the shared
-crew queue, a spray wall, and Woods/Decoy/Grasshopper. The fourth image also names
-compatibility with Touchstone and So iLL. Wall status, the multiboard logbook,
-workouts, Dynamic Island and climb search complete the story. See the
+The first screenshot shows Kilter, the permitted spray wall in the center
+foreground, and MoonBoard. The second gives the spray wall its own light
+marketing background. The third, “More boards. Same app.” in English, shows
+Woods/Decoy/Grasshopper and names compatibility with Touchstone and So iLL.
+The shared crew queue is fourth. Wall status, the multiboard logbook, workouts,
+Dynamic Island and climb search complete the story. See the
 [exact output filenames](../app-stores/apple/app-store-metadata.md#screenshots).
 Keep iPad's six-image kiosk-first story.
 
@@ -58,7 +60,6 @@ The generator also accepts `--device iphone-16-pro-max` when the source captures
 are from that device. It requires these unframed source images:
 
 - `00-board-view.png`: Kilter.
-- `01-board-view-2.png`: Tension.
 - `10-moonboard-board-view.png`: MoonBoard.
 - `14-spray-board-view.png`: the permitted Home Spray Wall, showing Black Pearl.
 
@@ -69,9 +70,10 @@ dimensions and hashes. Retain it with the review artifacts; it is not an image
 to upload to Apple. These dimensions follow Apple's
 [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications).
 
-Header and Search Results give all four board captures equal, unobscured panels
-with localized labels. The spray source is required; missing it fails export.
-These compositions are independent of the three-board portrait opening. The output
+Header and Search Results use three overlapping native captures: Kilter on the
+left, the spray wall in the center foreground, and MoonBoard on the right.
+Labels follow the app locale, and the spray source is required; missing it fails
+export. These independently sized compositions echo the first portrait. The output
 directory must be separate from the inputs and outside
 `app-stores/apple/screenshots/`, so the screenshot uploader cannot confuse a
 creative placement with a device screenshot.
@@ -102,7 +104,8 @@ Use the target release's UI and preserve the spray photograph's consent record.
 The Home Spray Wall and Black Pearl hold arrangement match the website video
 references `marketing/showcase-video/reference/ios/spray.jpg` and
 `marketing/showcase-video/reference/ios/boards-spray.jpg`; the fresh native
-`14-spray-board-view.png` supplies both the portrait spray shot and these placements.
+`14-spray-board-view.png` supplies the first portrait’s center panel, the second portrait’s spray shot
+and these placements.
 Existing showcase footage or website images are visual references, not proof
 that a fresh release capture has passed review. Keep URLs, other marketplace
 branding and donation messages out of the Apple compositions. Apple's
