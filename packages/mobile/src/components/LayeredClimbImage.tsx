@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import type { ImageErrorEventData } from 'expo-image';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 import { useBoardArtVisible } from './board-art-visibility-context';
+import { noteBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
 
 type LayeredClimbImageProps = {
   overlayUri: string | null;
@@ -341,6 +342,9 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           onLoad={() => {
             const emittingLoadKey = overlayLoadKey ?? null;
             const latestAttempt = latestOverlayAttemptRef.current;
+            // `cachePolicy="memory"`: the decoded overlay is in memory from here
+            // on, so the next surface to mount it can paint it straight away.
+            noteBoardArtInMemory(overlayUri);
             // The holds are on the layer now: let the photo through with them.
             // Guarded like the marker below, so a late event from the previous
             // climb's image cannot reveal a row whose own overlay is still out.

@@ -8,7 +8,7 @@ import type { HoldColorOverrides } from '../lib/hold-color-overrides';
 import { LayeredClimbImage } from './LayeredClimbImage';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
-import { canWarmBoardArtMemory } from '../lib/board-render/warm-board-art-memory';
+import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
 
 type BoardImageNativeProps = {
   accessible?: boolean;
@@ -190,9 +190,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
     maxVeilOpacity,
   });
 
-  // Already rendered when the board took this climb, and (iOS) decoded into
-  // memory by the warm-up, so it is on the layer the frame the board mounts.
-  const overlayPaintsWithBoard = overlayImmediate && canWarmBoardArtMemory;
+  // Already rendered when the board took this climb AND decoded into memory, so
+  // it is on the layer the frame the board mounts. Rendered alone is not enough:
+  // the view would show the bare wall for the frames its own decode takes.
+  const overlayPaintsWithBoard = overlayImmediate && isBoardArtInMemory(overlayUri);
 
   const containerStyle: ViewStyle = {
     width: '100%',

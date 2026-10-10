@@ -285,19 +285,25 @@ on an iPhone 13 Pro, yet every list row used to show its bare board first and fa
   there, so the row's first commit for that climb already carries the overlay. Left to the effect,
   the row committed once with no overlay and again with it.
 - **No cross-fade onto a visible board.** The hook returns `overlayImmediate` (the overlay was
-  rendered when the surface took the climb); `BoardImageNative` and `ClimbListThumbnail` pass it to
-  `suppressOverlayTransition`. expo-image applies its `transition` to memory-cache hits too.
+  rendered when the surface took the climb); `BoardImageNative` and `ClimbListThumbnail` suppress
+  the transition when that overlay is also in memory. expo-image applies its `transition` to
+  memory-cache hits too.
 - **Rows are warmed before they mount.** `ClimbListThumbnailPrewarmWindow`
   (`ClimbListScrollAhead.tsx`) mounts a `ClimbListThumbnailPrewarm` for the 24 loaded climbs below
   the viewport: a `prefetch`-rank render, then `warmBoardArtMemory` decodes the PNG into
   expo-image's memory cache. In a 465-row cold scroll 93% of rows found their overlay already
   rendered. `warmBoardArtMemory` is the only caller of `Image.prefetch` the board-art network
-  guard allows, and it drops anything that is not a `file://` URI. It is iOS-only
-  (`canWarmBoardArtMemory`): expo-image's Android prefetch loads a `GlideUrl`, which never
-  matches the key a view uses for a local file. So on Android an already-rendered overlay still
-  decodes after the board is up, and keeps its cross-fade.
-- **A late overlay holds the photo back.** When the overlay is not ready (a page landed right
-  under the finger), `LayeredClimbImage`'s `revealWithOverlay` keeps the stack at opacity 0 behind
+  guard allows, and it drops anything that is not a `file://` URI. It is iOS-only: expo-image's
+  Android prefetch loads a `GlideUrl`, which never matches the key a view uses for a local file.
+- **Rendered is not the same as decoded.** A view paints an image on the frame it mounts only
+  when the bitmap is already in memory. On a hard flick a row can mount before the warm-up's
+  decode has finished, and the view then shows the bare board for the frames its own decode
+  takes. The module keeps a record of the files known to be in memory (a finished warm-up, or a
+  view's `onLoad`; cleared when the image cache is swept), and a surface shows its board straight
+  away only when `overlayImmediate && isBoardArtInMemory(overlayUri)`. Otherwise it waits behind
+  the placeholder below. On Android the record only ever holds files a view has loaded.
+- **Anything not ready holds the photo back.** When the overlay is not rendered, or not decoded
+  yet, `LayeredClimbImage`'s `revealWithOverlay` keeps the stack at opacity 0 behind
   a skeleton-coloured block until the overlay's `onLoad`, with a 600 ms fallback so a failed
   render still shows a board. Callers leave it unset when the hook reports `overlayUnavailable`
   (no renderer, no matching holds, no render config, a full disk): nothing is coming to wait for. `'each-climb'` for list rows; `'first-paint'` for the play board,

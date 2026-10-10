@@ -3,6 +3,7 @@ import { AppState, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useSegments } from 'expo-router';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
+import { forgetBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
 import { useDeviceLayout } from './use-device-layout';
 import { tabsActiveSegment } from '../lib/route-segments';
 
@@ -83,11 +84,14 @@ export function useImageCacheMemoryManagement(): void {
   }, []);
 
   useEffect(() => {
-    if (isBackgrounded) void Image.clearMemoryCache();
+    if (!isBackgrounded) return;
+    forgetBoardArtInMemory();
+    void Image.clearMemoryCache();
   }, [isBackgrounded]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('memoryWarning', () => {
+      forgetBoardArtInMemory();
       void Image.clearMemoryCache();
     });
     // React Native Web does not implement the native memoryWarning event and
@@ -125,6 +129,8 @@ export function useIpadTabSwitchImageCacheSweep(): void {
     }
     if (activeTab === lastTab.current) return;
     lastTab.current = activeTab;
-    if (isPad) void Image.clearMemoryCache();
+    if (!isPad) return;
+    forgetBoardArtInMemory();
+    void Image.clearMemoryCache();
   }, [activeTab, isPad]);
 }

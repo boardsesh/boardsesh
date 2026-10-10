@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
-import { canWarmBoardArtMemory, warmBoardArtMemory } from '../lib/board-render/warm-board-art-memory';
+import { isBoardArtInMemory, warmBoardArtMemory } from '../lib/board-render/warm-board-art-memory';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
@@ -132,6 +132,12 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     renderWidth: thumbnailRenderWidth(cellWidth),
   });
 
+  // Rendered when the row took this climb (a revisit, or a row the list warmed
+  // ahead of the scroll) is not enough on its own: on a hard flick the row can
+  // mount before the warm-up's decode has finished, and the view then shows the
+  // bare board for the frames its own decode takes.
+  const overlayPaintsWithBoard = overlayImmediate && isBoardArtInMemory(overlayUri);
+
   return (
     <View style={[styles.container, size ? { width: cellWidth, height: cellHeight } : null]}>
       <LayeredClimbImage
@@ -144,16 +150,15 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={frames}
-        // Already rendered when the row took this climb (a revisit, or a row the
-        // list warmed ahead of the scroll) AND decoded into memory by that
-        // warm-up: it paints with the board, so a cross-fade from nothing would
-        // only put the bare board on screen. Where the warm-up cannot run
-        // (Android) the overlay still decodes after the board is up; keep the
-        // fade there.
-        suppressOverlayTransition={overlayImmediate && canWarmBoardArtMemory}
-        // Not rendered yet: hold the whole thumbnail back until its holds have
-        // painted. Never for an overlay that is not coming.
-        revealWithOverlay={frames.length > 0 && !overlayImmediate && !overlayUnavailable ? 'each-climb' : undefined}
+        // Rendered AND decoded: it is on the layer the frame the row mounts, so a
+        // cross-fade from nothing would only put the bare board on screen.
+        suppressOverlayTransition={overlayPaintsWithBoard}
+        // Anything else — not rendered yet, or rendered but still to be decoded —
+        // holds the whole thumbnail back until its holds have painted. Never for
+        // an overlay that is not coming.
+        revealWithOverlay={
+          frames.length > 0 && !overlayPaintsWithBoard && !overlayUnavailable ? 'each-climb' : undefined
+        }
         revealPlaceholderColor={systemColors.fill}
       />
     </View>

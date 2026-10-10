@@ -1,7 +1,12 @@
 /**
  * Decode board art that is ALREADY A FILE ON THIS PHONE into expo-image's
- * memory cache, so the view that shows it next paints it on the frame it mounts
- * instead of a frame or two later, after its own decode.
+ * memory cache, and remember which files are in it.
+ *
+ * A view only paints an image on the frame it mounts when the decoded bitmap is
+ * already in memory. Otherwise it decodes first, and on a fast scroll that is
+ * several frames of a board with no holds on it. So surfaces ask
+ * `isBoardArtInMemory` before deciding to show the board straight away, and
+ * hold it back behind a placeholder when the answer is no.
  *
  * Never a download. Board art comes from bundled assets and from the native
  * renderer's own PNGs; fetching it over HTTP is forbidden
@@ -16,13 +21,44 @@ import { Image } from 'expo-image';
  * iOS only. expo-image's Android prefetch loads every URL as a `GlideUrl`,
  * which goes to the network stack, while its views load a `file://` source as a
  * plain model — so on Android a prefetch of a local file warms nothing a view
- * will ever look up. A surface that skips its cross-fade because "the overlay
- * will come out of memory" has to check this first.
+ * will ever look up. There a file only counts as in memory once a view has
+ * loaded it (`noteBoardArtInMemory`).
  */
-export const canWarmBoardArtMemory = Platform.OS === 'ios';
+const canWarmBoardArtMemory = Platform.OS === 'ios';
+
+/**
+ * How many files to believe are still decoded. The image memory cache is capped
+ * by bytes (256 MB on iOS, see `useImageCacheMemoryManagement`), about 320 list
+ * thumbnails; staying under that keeps "in memory" true in practice. A stale
+ * yes costs a few frames of bare board; a stale no costs a placeholder.
+ */
+const IN_MEMORY_URIS_MAX = 240;
+
+// Insertion order is recency: a re-noted URI moves to the end.
+const inMemoryUris = new Set<string>();
 
 function isLocalFileUri(uri: string): boolean {
   return uri.startsWith('file://');
+}
+
+/** A view finished loading this file, or a warm-up decoded it. */
+export function noteBoardArtInMemory(uri: string): void {
+  inMemoryUris.delete(uri);
+  inMemoryUris.add(uri);
+  if (inMemoryUris.size > IN_MEMORY_URIS_MAX) {
+    const oldest = inMemoryUris.values().next().value;
+    if (oldest !== undefined) inMemoryUris.delete(oldest);
+  }
+}
+
+/** Whether a view mounting this file now would paint it on its first frame. */
+export function isBoardArtInMemory(uri: string | null | undefined): boolean {
+  return uri != null && inMemoryUris.has(uri);
+}
+
+/** The image memory cache was swept (app backgrounded, memory warning, iPad tab switch). */
+export function forgetBoardArtInMemory(): void {
+  inMemoryUris.clear();
 }
 
 /** Best effort: a miss only means the view decodes the file itself. */
@@ -30,5 +66,9 @@ export function warmBoardArtMemory(uris: readonly string[]): void {
   if (!canWarmBoardArtMemory) return;
   const localUris = uris.filter(isLocalFileUri);
   if (localUris.length === 0) return;
-  void Image.prefetch(localUris, 'memory').catch(() => {});
+  void Image.prefetch(localUris, 'memory')
+    .then((decoded) => {
+      if (decoded) for (const uri of localUris) noteBoardArtInMemory(uri);
+    })
+    .catch(() => {});
 }
