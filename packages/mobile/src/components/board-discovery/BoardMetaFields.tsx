@@ -20,11 +20,12 @@ import { PressableSurface } from '../PressableSurface';
 // them structurally without either importing the other.
 
 import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
-import { AccessibilityInfo, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useDeviceLocation, type LocationStatus } from '../../lib/use-device-location';
 import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
+import { announceQueued } from '../../lib/announce-queued';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -249,11 +250,12 @@ export function SprayTrainingConsentField({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  // `accessibilityLiveRegion` below is Android-only; VoiceOver needs telling.
-  // Keyed on the message, which the caller clears when the next flip starts, so
-  // a second refusal in the same words is said again.
+  // `accessibilityLiveRegion` below is Android-only, so VoiceOver is told, and
+  // only VoiceOver: TalkBack reads the live region and would hear it twice (the
+  // toast provider's rule). Keyed on the message, which the caller clears when
+  // the next flip starts, so a second refusal in the same words is said again.
   useEffect(() => {
-    if (errorMessage) AccessibilityInfo.announceForAccessibility(errorMessage);
+    if (errorMessage && Platform.OS === 'ios') announceQueued(errorMessage);
   }, [errorMessage]);
   return (
     <>

@@ -21,8 +21,10 @@ import { createElement, type ReactNode } from 'react';
 
 type InputMockProps = { accessibilityLabel?: string; autoCorrect?: boolean; spellCheck?: boolean };
 const announceMock = vi.hoisted(() => vi.fn());
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: announceMock },
+  Platform: platform,
   TextInput: ({ accessibilityLabel, autoCorrect, spellCheck }: InputMockProps) =>
     createElement('input', {
       'aria-label': accessibilityLabel,
@@ -151,6 +153,7 @@ beforeEach(() => {
   location.status = 'idle';
   settings.canOpen = true;
   announceMock.mockClear();
+  platform.OS = 'ios';
 });
 
 describe('BoardIdentityFields name input', () => {
@@ -265,6 +268,19 @@ describe('SprayTrainingConsentField', () => {
     // TalkBack reads the live region; VoiceOver ignores it and needs the call.
     expect(refusal.getAttribute('data-live-region')).toBe('polite');
     expect(announceMock).toHaveBeenCalledExactlyOnceWith('mobile.sprayTraining.updateError');
+  });
+
+  it('leaves TalkBack to the live region, which would otherwise hear the refusal twice', () => {
+    platform.OS = 'android';
+    const { getByRole } = render(
+      <SprayTrainingConsentField
+        value={false}
+        onValueChange={() => {}}
+        errorMessage="mobile.sprayTraining.updateError"
+      />,
+    );
+    expect(getByRole('alert').getAttribute('data-live-region')).toBe('polite');
+    expect(announceMock).not.toHaveBeenCalled();
   });
 
   it('tells VoiceOver again when a later flip is refused in the same words', () => {
