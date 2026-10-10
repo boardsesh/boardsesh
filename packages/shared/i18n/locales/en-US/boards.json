@@ -442,7 +442,7 @@
       "private": "Private",
       "unlisted": "Link only",
       "public": "Public",
-      "privateHint": "Only you can see it. With “Help train hold finding” on, the Boardsesh team may use the photo to improve hold finding.",
+      "privateHint": "Only you can see it, plus members of its gym if it has one. With “Help train hold finding” on, the Boardsesh team may use the photo to improve hold finding.",
       "unlistedHint": "Anyone with the link gets in. The wall isn't listed on the gym page and its photo stays off the open web.",
       "publicHint": "Anyone can find the wall. It shows on the gym page, its climbs turn up in the feed, and the wall photo goes on the open web.",
       "ownerOnlyError": "Only the climber who set this wall up can change who sees it. Your other changes saved.",

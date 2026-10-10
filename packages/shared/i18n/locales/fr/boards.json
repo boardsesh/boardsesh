@@ -442,7 +442,7 @@
       "private": "Privé",
       "unlisted": "Lien seulement",
       "public": "Public",
-      "privateHint": "Toi seul peux le voir. Avec « Aider à entraîner la détection des prises » activé, l'équipe Boardsesh peut utiliser la photo pour améliorer la détection des prises.",
+      "privateHint": "Toi seul peux le voir, et les membres de sa salle s'il en a une. Avec « Aider à entraîner la détection des prises » activé, l'équipe Boardsesh peut utiliser la photo pour améliorer la détection des prises.",
       "unlistedHint": "Toute personne qui a le lien entre. Le mur n'apparaît pas sur la page de la salle et sa photo reste hors du web ouvert.",
       "publicHint": "N'importe qui peut trouver le mur. Il apparaît sur la page de la salle, ses blocs arrivent dans le feed, et la photo du mur part sur le web ouvert.",
       "ownerOnlyError": "Seul le grimpeur qui a monté ce mur peut changer qui le voit. Tes autres modifications sont enregistrées.",

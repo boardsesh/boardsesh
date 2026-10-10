@@ -442,7 +442,7 @@
       "private": "Privat",
       "unlisted": "Nur mit Link",
       "public": "Öffentlich",
-      "privateHint": "Nur du kannst es sehen. Ist „Hilf beim Training der Grifferkennung“ an, darf das Boardsesh-Team das Foto nutzen, um die Grifferkennung zu verbessern.",
+      "privateHint": "Nur du kannst es sehen, dazu die Mitglieder der Halle, falls es zu einer gehört. Ist „Hilf beim Training der Grifferkennung“ an, darf das Boardsesh-Team das Foto nutzen, um die Grifferkennung zu verbessern.",
       "unlistedHint": "Wer den Link hat, kommt rein. Das Board steht nicht auf der Seite der Halle und sein Foto bleibt aus dem offenen Web.",
       "publicHint": "Jede*r kann das Board finden. Es steht auf der Seite der Halle, seine Boulder landen im Feed, und das Foto vom Board geht ins offene Web.",
       "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer es sieht. Deine anderen Änderungen sind gespeichert.",

@@ -442,7 +442,7 @@
       "private": "Privado",
       "unlisted": "Solo con enlace",
       "public": "Público",
-      "privateHint": "Solo tú puedes verlo. Con «Ayuda a entrenar la detección de presas» activado, el equipo de Boardsesh puede usar la foto para mejorar la detección de presas.",
+      "privateHint": "Solo tú puedes verlo, y los miembros de su rocódromo si tiene uno. Con «Ayuda a entrenar la detección de presas» activado, el equipo de Boardsesh puede usar la foto para mejorar la detección de presas.",
       "unlistedHint": "Cualquiera con el enlace entra. El plafón no aparece en la página del rocódromo y su foto no sale a la web abierta.",
       "publicHint": "Cualquiera puede encontrar el plafón. Aparece en la página del rocódromo, sus bloques salen en el feed y su foto se publica en la web abierta.",
       "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién lo ve. El resto de tus cambios se han guardado.",
