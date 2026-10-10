@@ -511,12 +511,14 @@ describe('an archived wall refuses writes, decided under the wall lock', () => {
     expect(deleteAccountSource).toContain('.orderBy(desc(dbSchema.sprayWalls.id))');
   });
 
-  it('a training-consent revoke locks the whole reset family, account first and highest id first', () => {
-    // `runUpdateSprayWall` is the one writer that writes OTHER walls' rows: it
-    // nulls `training_consent_at` on every wall of the reset family. So it needs
-    // their locks too, taken in the order the two paths above use. The account
-    // lock comes first because `resetSprayWall` holds it while it clones: taken
-    // before the walk, no clone joins the family between the walk and the write.
+  it('a write across the reset family locks all of it, account first and highest id first', () => {
+    // Two writers write OTHER walls' rows, to null `training_consent_at` on the
+    // rest of a reset family: `runUpdateSprayWall` when the owner switches
+    // consent off, and `deleteSprayWall` when the live wall goes. So they need
+    // those walls' locks too, taken in the order the two paths above use. The
+    // account lock comes first because `resetSprayWall` holds it while it
+    // clones: taken before the walk, no clone joins the family between the walk
+    // and the write.
     const familyLockBody = functionBody(SPRAY_WALLS_SOURCE, 'lockResetFamilyForWrite');
     const accountLockAt = familyLockBody.indexOf('lockSprayWallAccount(');
     const walkAt = familyLockBody.indexOf('resetFamilyWallIds(');
@@ -528,10 +530,26 @@ describe('an archived wall refuses writes, decided under the wall lock', () => {
 
     // …and before anything else in the transaction: ahead of the wall's own lock
     // (or the family would be locked out of order) and of the first write.
-    const updateBody = functionBody(SPRAY_WALLS_SOURCE, 'runUpdateSprayWall');
-    const familyLockAt = updateBody.indexOf('lockResetFamilyForWrite(');
-    expect(familyLockAt).toBeGreaterThan(updateBody.indexOf('db.transaction('));
-    expect(familyLockAt).toBeLessThan(updateBody.indexOf('lockWallForWrite('));
-    expect(familyLockAt).toBeLessThan(firstWriteOffset(updateBody));
+    for (const writer of ['runUpdateSprayWall', 'deleteSprayWall']) {
+      const body = functionBody(SPRAY_WALLS_SOURCE, writer);
+      const familyLockAt = body.indexOf('lockResetFamilyForWrite(');
+      expect(familyLockAt, `${writer} never locks the reset family`).toBeGreaterThan(body.indexOf('db.transaction('));
+      expect(familyLockAt, `${writer} takes its own wall lock first`).toBeLessThan(body.indexOf('lockWallForWrite('));
+      expect(familyLockAt, `${writer} writes before locking the family`).toBeLessThan(firstWriteOffset(body));
+      expect(familyLockAt).toBeLessThan(body.indexOf('clearTrainingConsent('));
+    }
+  });
+
+  it('a clone publishing with consent off clears the family under the source lock, with no new lock', () => {
+    // `archiveResetSourceUnderLock` runs with the clone's lock held and takes
+    // the source's. It must not take the account lock (walls are already held,
+    // and every other path takes the account first) or the family's other wall
+    // locks; its docstring says why it does not need them.
+    const body = functionBody(SPRAY_WALLS_SOURCE, 'archiveResetSourceUnderLock');
+    const sourceLockAt = body.indexOf('lockWallForWrite(tx, sourceWallId)');
+    expect(sourceLockAt).toBeGreaterThanOrEqual(0);
+    expect(body.indexOf('clearTrainingConsent(')).toBeGreaterThan(sourceLockAt);
+    expect(body).not.toContain('lockSprayWallAccount(');
+    expect(body).not.toContain('lockResetFamilyForWrite(');
   });
 });
