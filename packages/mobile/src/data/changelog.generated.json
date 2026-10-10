@@ -1,6 +1,79 @@
 {
-  "generatedAt": "2026-10-09T22:05:49.357Z",
+  "generatedAt": "2026-10-10T23:14:18.210Z",
   "entries": [
+    {
+      "prNumber": 6300,
+      "category": "fixed",
+      "title": "Opening Boardsesh no longer throws you into a blank Safari tab",
+      "mergedAt": "2026-10-10T22:29:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6300"
+    },
+    {
+      "prNumber": 6127,
+      "category": "fixed",
+      "title": "Private spray-wall climbs keep their threads and activity details private. Session totals still count every send, while named activity shows climbs you can see. Threads for deleted climbs are hidden.",
+      "mergedAt": "2026-10-10T07:02:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6127"
+    },
+    {
+      "prNumber": 6140,
+      "category": "new",
+      "title": "Learn to photograph your spray wall, mark missed holds, and update it later without surprises for your climbs.",
+      "mergedAt": "2026-10-10T07:01:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6140"
+    },
+    {
+      "prNumber": 6257,
+      "category": "new",
+      "title": "Choose whether to share analytics, and change your choice anytime.",
+      "mergedAt": "2026-10-10T06:59:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6257",
+      "body": "Keep climbing with basic crash and performance diagnostics when analytics is off."
+    },
+    {
+      "prNumber": 6214,
+      "category": "fixed",
+      "title": "Pop-up messages no longer hide behind the tab bar or float too high",
+      "mergedAt": "2026-10-10T06:33:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6214"
+    },
+    {
+      "prNumber": 6282,
+      "category": "fixed",
+      "title": "Keep update checks from restarting onto a preview you've already left.",
+      "mergedAt": "2026-10-10T05:48:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6282"
+    },
+    {
+      "prNumber": 6279,
+      "category": "improved",
+      "title": "Choose what sits below your climb, or hide it all for a drawer that stays still.",
+      "mergedAt": "2026-10-10T05:47:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6279",
+      "body": "Swipe between climbs with less accidental vertical scrolling."
+    },
+    {
+      "prNumber": 6284,
+      "category": "improved",
+      "title": "Sheets now feel at home on iPhone, from filters to tick logging. Climber logs is easier to scan, with Close on the left.",
+      "mergedAt": "2026-10-10T05:36:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6284"
+    },
+    {
+      "prNumber": 6292,
+      "category": "improved",
+      "title": "Resume offline downloads after Boardsesh reloads.",
+      "mergedAt": "2026-10-10T04:50:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6292"
+    },
+    {
+      "prNumber": 6286,
+      "category": "fixed",
+      "title": "Get back to your climbs when offline downloads stall.",
+      "mergedAt": "2026-10-10T03:12:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6286",
+      "body": "Browse online while downloads recover, and retry errors without being stuck in the queue."
+    },
     {
       "prNumber": 6275,
       "category": "improved",
@@ -7016,6 +7089,41 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-11T09:30:18+11:00",
+      "sha": "17497639c4a3bde632785ea2e613356d6788cfec",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "02959a57b6416a750eaf25bc2e62a2f616d1b2ff"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-11T08:51:02+11:00",
+      "sha": "cf76df83a98997209ee4071a5dcec13d92b29200",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "f7d140bb43073c4bcb313fcc7de9ed16bfe81b46",
+        "ios": "741d11bd2492ece5b009e52bbb0b87e6a4a5bfb3"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-10-10T17:34:12+11:00",
+      "sha": "79925bf1e6fc29d25a299d4ac8474180a2d1522f",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "d00f42bbaceb1a81c4ebf766db9d1ec32b87f38d"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-06T19:20:54+11:00",

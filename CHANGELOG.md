@@ -4,6 +4,40 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-11
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+## 2026-10-10
+
+### App update
+
+A new version shipped to the Play Store.
+
+### New
+
+- Learn to photograph your spray wall, mark missed holds, and update it later without surprises for your climbs. ([#6140](https://github.com/boardsesh/boardsesh/pull/6140))
+- Choose whether to share analytics, and change your choice anytime. ([#6257](https://github.com/boardsesh/boardsesh/pull/6257))
+  Keep climbing with basic crash and performance diagnostics when analytics is off.
+
+### Improved
+
+- Choose what sits below your climb, or hide it all for a drawer that stays still. ([#6279](https://github.com/boardsesh/boardsesh/pull/6279))
+  Swipe between climbs with less accidental vertical scrolling.
+- Sheets now feel at home on iPhone, from filters to tick logging. Climber logs is easier to scan, with Close on the left. ([#6284](https://github.com/boardsesh/boardsesh/pull/6284))
+- Resume offline downloads after Boardsesh reloads. ([#6292](https://github.com/boardsesh/boardsesh/pull/6292))
+
+### Fixed
+
+- Opening Boardsesh no longer throws you into a blank Safari tab ([#6300](https://github.com/boardsesh/boardsesh/pull/6300))
+- Private spray-wall climbs keep their threads and activity details private. Session totals still count every send, while named activity shows climbs you can see. Threads for deleted climbs are hidden. ([#6127](https://github.com/boardsesh/boardsesh/pull/6127))
+- Pop-up messages no longer hide behind the tab bar or float too high ([#6214](https://github.com/boardsesh/boardsesh/pull/6214))
+- Keep update checks from restarting onto a preview you've already left. ([#6282](https://github.com/boardsesh/boardsesh/pull/6282))
+- Get back to your climbs when offline downloads stall. ([#6286](https://github.com/boardsesh/boardsesh/pull/6286))
+  Browse online while downloads recover, and retry errors without being stuck in the queue.
+
 ## 2026-10-09
 
 ### Improved
