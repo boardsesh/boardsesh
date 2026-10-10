@@ -45,8 +45,8 @@ export function buildHoldShape({ cx, cy, r, outline }: ShapeInput): SprayOverlay
   return { geometry: 'polygon', points: points.join(' ') };
 }
 
-function roundTo2(value: number): number {
-  return Math.round(value * 100) / 100;
+function roundTo2(coordinate: number): number {
+  return Math.round(coordinate * 100) / 100;
 }
 
 export function holdKind(hold: Pick<SprayTrainingHoldData, 'source' | 'autoReview'>): SprayOverlayKind {
