@@ -3397,13 +3397,17 @@ reset family (see "Consent").
 
 Admins (`spray`-scoped or global) read `sprayTrainingQueue(status, limit ≤ 25,
 offset)`: the presigned photo, holds projected into photo pixels through the
-shared `mapCanonicalHoldsToPhoto`, the newest finished detector run's
-candidates with a fate (KEPT, EDITED, DELETED, NOT_SHOWN below
-`SPRAY_MAYBE_FLOOR`, or UNKNOWN when no hold records provenance), counts, and
-the verdict. No owner or wall name. `setSprayTrainingReview` writes one row per
-version in `spray_wall_training_reviews` (`approved`, or `rejected` with a
-reason); `UNREVIEWED` deletes it. A review row never exports anything on its
-own: the predicate is re-read every time.
+shared `mapCanonicalHoldsToPhoto`, one finished detector run's candidates with
+a fate (KEPT, EDITED, DELETED, NOT_SHOWN below `SPRAY_MAYBE_FLOOR`, or UNKNOWN
+when no hold records provenance), counts, and the verdict. The run is the one
+on the version's photo that the most of its holds point back at
+(`origin_detection_id`), or the newest finished run on that photo when no hold
+points at any (`pickDetection`); a later retry of the detector therefore does
+not turn every kept suggestion into a deleted one. No owner or wall name.
+`setSprayTrainingReview` writes one row per version in
+`spray_wall_training_reviews` (`approved`, or `rejected` with a reason);
+`UNREVIEWED` deletes it. A review row never exports anything on its own: the
+predicate is re-read every time.
 
 ### The export
 

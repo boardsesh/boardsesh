@@ -9523,7 +9523,11 @@ export type SprayRemixSeed = {
   suggestedHoldIds: Array<Scalars['Int']['output']>;
 };
 
-/** One suggestion from the version's newest finished detector run, in photo pixels. */
+/**
+ * One suggestion, in photo pixels, from the detector run the version is judged
+ * against: the finished run on its photo that the most of its holds point back
+ * at, or the newest finished run on that photo when no hold points at any.
+ */
 export type SprayTrainingCandidate = {
   __typename?: 'SprayTrainingCandidate';
   confidence: Scalars['Float']['output'];
