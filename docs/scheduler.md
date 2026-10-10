@@ -318,7 +318,7 @@ canary: a dead ticker misses a six-hourly check-in within 6 hours (plus the
 5-minute margin), where the daily `cleanup` would take up to 24. A job opts in
 with `sentryMonitor: true` on its `JobDefinition`; `registry.test.ts` pins
 `refresh-sitemap-climbs` as the only one, so adding a second is a deliberate
-billing change. The other five jobs are watched through `overdue`, which an
+billing change. The other seven jobs are watched through `overdue`, which an
 external probe (the homelab's Prometheus blackbox exporter) alerts on. Their
 old monitors (`scheduler-cleanup`, `scheduler-profile-percentiles`,
 `scheduler-refresh-gym-activity-stats`, `scheduler-purge-spray-wall-photos`)
