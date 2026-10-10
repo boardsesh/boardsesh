@@ -475,7 +475,7 @@
     },
     "sprayTraining": {
       "label": "Aider à entraîner la détection des prises",
-      "description": "On utilise la photo de ce mur et les prises que tu marques pour apprendre à l'app à repérer les prises. Quelqu'un de l'équipe Boardsesh les vérifie d'abord. Personne d'autre ne les voit.",
+      "description": "On utilise la photo de ce mur et les prises que tu marques pour apprendre à l'app à repérer les prises. Un admin Boardsesh les vérifie d'abord. La copie d'entraînement reste privée.",
       "updateError": "Impossible de modifier « Aider à entraîner la détection des prises ». Réessaie."
     }
   },
@@ -1028,7 +1028,7 @@
         "name": "Donne-lui un nom",
         "step": "{{number}}. {{label}}"
       },
-      "trainingNote": "Ta photo et les prises que tu marques aident l'app à apprendre à repérer les prises. Tu peux le désactiver à tout moment dans les réglages du mur."
+      "trainingNote": "Ta photo et les prises que tu marques aident l'app à apprendre à repérer les prises. Tu peux désactiver « Aider à entraîner la détection des prises » à l'étape précédente, ou à tout moment dans « Modifier la board »."
     },
     "adjust": {
       "title": "Recadre et pivote",
