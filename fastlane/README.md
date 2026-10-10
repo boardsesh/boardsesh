@@ -31,8 +31,8 @@ The iOS lane uploads PNGs in
 **screenshots only** — no binary, no text metadata, no review submission.
 deliver routes each image to its display slot by pixel dimensions; the `NN-`
 filename prefixes set the display order inside each slot. The common iOS matrix
-includes the three iPhone portrait slots plus 13-inch and 11-inch iPad landscape
-slots.
+includes iPhone 16 Pro Max and iPhone 16 Pro portrait captures plus 13-inch and
+11-inch iPad landscape captures.
 
 The upload expects the generated Apple locale folders `en-US`, `es-ES`, `es-MX`,
 `fr-FR`, and `de-DE`. The app has one Spanish locale (`es`), so the capture
@@ -43,8 +43,29 @@ The Android lane uploads PNGs in `app-stores/google/screenshots/pixel-2/` to the
 Google Play phone screenshot slot as **screenshots only**, staged into
 `supply`'s expected `en-US/images/phoneScreenshots/` structure.
 
-In CI these run from the `Mobile Screenshots (Native)` workflow when dispatched
-with `upload = true` (never on the nightly cron).
+The default iOS replay campaign produces nine composed iPhone images from
+18 real captures and retains the six-image iPad story. It uses the dedicated
+Apple campaign fixture described in the [creative asset runbook](../docs/app-store-creative-assets.md).
+Android and navigation smoke keep their existing fixture pin. Review every
+locale/device set in the canonical upload tree before publication. Explicit
+record/live captures are diagnostic; the iOS workflow requires replay for store
+upload and baseline publication.
+
+The `Mobile Screenshots (iOS)` manual workflow dispatch uploads only with
+`upload = true`; capture-only defaults leave the store unchanged. Qualifying
+automatic release-train runs can also upload a complete verified set. The Android
+workflow is separate. See [mobile store release](../docs/mobile-store-release.md)
+for the trigger and review sequence.
+
+### Apple Header and Search Results
+
+`vp run store:creatives` renders `header.png`, `search-results.png` and a
+`creative-assets.json` source/output manifest outside the screenshot upload tree.
+These are organic App Store creative assets, not screenshot slots. The fastlane
+lanes above do not upload or publish them. Use the manual Asset Library review
+and placement steps in the [creative asset runbook](../docs/app-store-creative-assets.md).
+Keep native captures and their locale/device identity together when generating
+localized assets.
 
 ## Listing text — `ios metadata`, `android metadata`
 

@@ -6,6 +6,7 @@ import { gunzipSync } from 'node:zlib';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const FIXTURE_SNAPSHOT_REFERENCE = join(REPO_ROOT, 'app-stores/screenshot-fixtures.json');
+export const IOS_CAMPAIGN_FIXTURE_REFERENCE = join(REPO_ROOT, 'app-stores/apple/campaign-fixtures.json');
 const CACHE_ROOT = join(REPO_ROOT, '.boardsesh/screenshot-fixtures');
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 

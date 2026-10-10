@@ -73,6 +73,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.10
         version: 4.1.11(@vitest/browser@4.1.11)(vitest@4.1.11)
+      graphql:
+        specifier: ^16.14.2
+        version: 16.14.2
       license-checker-rseidelsohn:
         specifier: ^5.0.1
         version: 5.0.1(supports-color@8.1.1)

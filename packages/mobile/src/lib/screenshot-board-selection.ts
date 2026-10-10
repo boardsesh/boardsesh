@@ -132,3 +132,11 @@ export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
   );
   return byOldestFirst[index] ?? null;
 }
+
+/** Previous search results can survive a board switch; never open them for a new capture slot. */
+export function screenshotClimbMatchesBoard(
+  climb: { boardType?: string | null; layoutId?: number | null },
+  board: { boardType: string; layoutId: number },
+): boolean {
+  return climb.boardType === board.boardType && climb.layoutId === board.layoutId;
+}

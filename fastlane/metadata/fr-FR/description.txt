@@ -1,26 +1,26 @@
-Cherche une voie, regarde ton mur s'allumer. Moins de temps sur ton téléphone, plus de temps sur le mur.
+Grimpe sur Kilter, Tension, MoonBoard et d'autres boards, ou sur ton mur de spray. Tes blocs, ta file partagée et ton carnet, dans une seule appli.
 
-UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
-Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Woods, Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
+TES BOARDS. UNE APPLI.
+Boardsesh est compatible avec Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper et So iLL. Change de board et garde ton historique d'escalade au même endroit.
 
 TON MUR DE SPRAY AUSSI
 Un mur chez toi, ou un mur de spray dans ta salle ? Prends-le en photo et Boardsesh trouve les prises. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le mur par lien et ton crew peut y ouvrir des blocs aussi. Mur reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien mur est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé, prêt à être remixé.
 
 L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
-Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
-Dans Boardsesh, chaque board sur laquelle tu te connectes a un fil live de ce qui est allumé sur ce mur en ce moment : le nom de la voie, qui l'a allumée, qui l'a ouverte, la cotation et l'inclinaison, et les sends récents. Ça se met à jour au fil des changements sur le mur, pour que tu saches toujours ce qu'il y a dessus.
+Partage une board et tu perds vite le fil du dernier bloc, et quelqu'un finit toujours par l'effacer par accident.
+Dans Boardsesh, chaque board sur laquelle tu te connectes a un fil live de ce qui est allumé sur ce mur en ce moment : le nom du bloc, qui l'a allumé, qui l'a ouvert, la cotation et l'inclinaison, et les croix récentes. Ça se met à jour au fil des changements sur le mur, pour que tu saches toujours ce qu'il y a dessus.
 
 LES SÉANCES AVEC TA CREW
-Lance une séance et toi et ta crew partagez une seule file que tout le monde peut piloter. N'importe qui peut allumer la prochaine voie au mur. À la fin, tu reçois un récap et un suivi : sends et essais, éventail de cotations, ton plus gros send, et ta progression dans le temps.
+Lance une séance et toi et ta crew partagez une seule file que tout le monde peut piloter. N'importe qui peut allumer le prochain bloc au mur. À la fin, tu reçois un récap et un suivi : croix et essais, éventail de cotations, ta croix la plus dure, et ta progression dans le temps.
 
 PILOTE DEPUIS TON ÉCRAN VERROUILLÉ (iOS 17+)
-Les Live Activities iOS t'indiquent la voie en cours depuis ton écran verrouillé, et te laissent en changer sans le quitter.
+Les Live Activities iOS t'indiquent le bloc en cours depuis ton écran verrouillé, et te laissent en changer sans le quitter.
 
 MONTE UNE SÉANCE D'ENTRAÎNEMENT
-Choisis Volume, Pyramide, Échelle ou Cotation ciblée, fixe une cotation cible et un échauffement, prévisualise les voies, puis envoie-les au mur une par une.
+Choisis Volume, Pyramide, Échelle ou Cotation ciblée, fixe une cotation cible et un échauffement, prévisualise les blocs, puis allume-les au mur un par un.
 
 SUIS TON ESCALADE
-Note tes sends, tes flashs et tes essais, reçois un récap avec la durée, l'éventail de cotations et ton plus gros send, et regarde tes sends et tes cotations grimper dans l'onglet Progression.
+Note tes croix, tes flashs et tes essais, reçois un récap avec la durée, l'éventail de cotations et ta croix la plus dure, et regarde tes croix et tes cotations grimper dans l'onglet Progression.
 
 EMPORTE TON HISTORIQUE AVEC TOI
 Enregistre ta séance dans Apple Health, et importe ton ancien carnet Kilter et Tension depuis Aurora Climbing.

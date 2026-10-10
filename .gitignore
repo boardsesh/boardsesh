@@ -145,6 +145,7 @@ packages/mobile/.app-cache/
 # bucket by `vp run help:publish-shots`, never committed.
 /app-stores/help/
 /app-stores/onboarding/
+/app-stores/app-store-campaign/
 /app-stores/*/raw-screenshots/
 /app-stores/google/screenshots/**/contact-sheet.jpg
 # Google Play screenshots ARE committed: app-stores/google/screenshots/pixel-2/

@@ -13,6 +13,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import { extractScreenshotIsland } from './lib/screenshot-island';
 import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
 import {
   findGooglePlayImageOffenders,
@@ -36,7 +37,7 @@ import {
   type ScreenshotLayout,
 } from './lib/screenshot-presentation';
 
-type MaterialSurface = (typeof materialSurfaces)[keyof typeof materialSurfaces];
+type MaterialSurface = Record<keyof (typeof materialSurfaces)['dark'], string>;
 
 /**
  * The iPad shell's trailing "Now on the wall" column is 300 points wide
@@ -50,6 +51,14 @@ const IPAD_WALL_COLUMN_PIXELS = 300 * 2;
 const LOG = '[screenshot:frame]';
 const COLORS = materialSurfaces.dark;
 const MIN_RAW_BYTES = 61_440;
+
+// Pango markup can reference more than one face. `fontfile` alone registers only
+// the current face, so pin Fontconfig's catalogue too instead of silently using
+// a runner's sans-serif fallback for Instrument Serif.
+process.env.FONTCONFIG_FILE = join(PRESENTATION_ROOT, 'fonts', 'fonts.conf');
+// macOS otherwise selects CoreText, which ignores Pango's fontfile catalogue
+// and silently substitutes system fonts even when these TTFs are present.
+process.env.PANGOCAIRO_BACKEND = 'fc';
 
 function escapeMarkup(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -128,7 +137,9 @@ export async function frameComposition(
   sources: readonly Buffer[],
   caption: ScreenshotCaption,
   layout: ScreenshotLayout,
+  showcase = false,
 ): Promise<Buffer> {
+  if (showcase || layout.startsWith('store-')) return frameShowcaseComposition(sources, caption, layout);
   if (
     ((layout === 'screen' || layout === 'wall-status' || layout === 'wall-column') && sources.length !== 1) ||
     (layout === 'board-family' && sources.length !== 2 && sources.length !== 3) ||
@@ -227,6 +238,209 @@ export async function frameComposition(
   ];
   if (boardNames) layers.push({ input: boardNames.data, left: margin, top: boardNamesTop });
   return paintFrame({ width, height, colors, layers, panels, unit });
+}
+
+export const STORE_CREATIVE_PLACEMENTS = {
+  header: { width: 3840, height: 1646 },
+  'search-results': { width: 3840, height: 2560 },
+} as const;
+export type StoreCreativePlacement = keyof typeof STORE_CREATIVE_PLACEMENTS;
+
+/** Load pinned faces through Pango, including the italic face used inside a headline. */
+export async function renderShowcaseText(
+  text: string,
+  size: number,
+  width: number,
+  color: string,
+  options: {
+    bold?: boolean;
+    emphasis?: string;
+    accent?: string;
+  } = {},
+) {
+  const fonts = join(PRESENTATION_ROOT, 'fonts');
+  if (options.emphasis) {
+    if (!text.includes(options.emphasis)) throw new Error('Showcase emphasis must appear in its headline');
+  }
+  let markup = escapeMarkup(text);
+  if (options.emphasis)
+    markup = markup.replace(
+      escapeMarkup(options.emphasis),
+      `<span font_family="Instrument Serif" style="italic" weight="normal" foreground="${options.accent ?? color}">${escapeMarkup(options.emphasis)}</span>`,
+    );
+  return sharp({
+    text: {
+      text: `<span foreground="${color}">${markup}</span>`,
+      font: `Inter Tight ${options.bold ? 'Bold ' : ''}${size}`,
+      fontfile: join(fonts, `InterTight-${options.bold ? 'Bold' : 'Regular'}.ttf`),
+      width,
+      dpi: 72,
+      rgba: true,
+      wrap: 'word',
+      spacing: 0,
+    },
+  })
+    .png()
+    .toBuffer({ resolveWithObject: true });
+}
+
+/** Still compositions use complete native PNGs, never the video's downsampled JPEG frames. */
+export async function frameShowcaseComposition(
+  sources: readonly Buffer[],
+  caption: ScreenshotCaption,
+  layout: ScreenshotLayout,
+  options: { placement?: StoreCreativePlacement } = {},
+): Promise<Buffer> {
+  const boards = layout === 'store-boards';
+  const boardCount = 3;
+  if (sources.length !== (boards ? boardCount : 1)) throw new Error(`Invalid showcase source count for ${layout}`);
+  const sourceSizes = sources.map(readPngDimensions);
+  const sourceSize = sourceSizes[0];
+  if (sourceSizes.some((size) => size.width !== sourceSize.width || size.height !== sourceSize.height))
+    throw new Error('Showcase sources must come from the same capture device');
+  if (options.placement && !boards) throw new Error('Creative placements require the three-board opening');
+  const { width, height } = options.placement ? STORE_CREATIVE_PLACEMENTS[options.placement] : sourceSize;
+  const wide = width > height;
+  const tablet = wide && !options.placement;
+  const light = layout === 'store-wall' || layout === 'store-spray' || layout === 'wall-column';
+  const base = light ? materialSurfaces.light : materialSurfaces.dark;
+  // Same violet ground as the showcase stage; UI pixels retain their native appearance.
+  const colors = {
+    ...base,
+    background: light ? '#F4F1FB' : '#110A20',
+    secondaryBackground: light ? '#F4F1FB' : '#110A20',
+  };
+  const accent = light ? brandColors.primary : brandColorsDark.primary;
+  const margin = Math.round(width * 0.06);
+  const copyWidth = Math.round(wide ? width * 0.32 : width - margin * 2);
+  const headlineSize = Math.round(wide ? width * 0.053 : width * 0.105);
+  const wordmark = await renderShowcaseText(
+    'boardsesh',
+    Math.round(width * (wide ? 0.013 : 0.029)),
+    copyWidth,
+    accent,
+    {
+      bold: true,
+    },
+  );
+  const headline = await renderShowcaseText(caption.headline, headlineSize, copyWidth, colors.label, {
+    bold: true,
+    emphasis: caption.emphasis,
+    accent,
+  });
+  const description = await renderShowcaseText(
+    caption.description,
+    Math.round(width * (wide ? 0.018 : 0.037)),
+    copyWidth,
+    colors.secondaryLabel,
+  );
+  const gap = Math.round(height * 0.018);
+  const copyHeight = wordmark.info.height + headline.info.height + description.info.height + gap * 2;
+  if (copyHeight > height * (wide ? 0.82 : 0.33)) throw new Error(`Showcase caption overflows: ${caption.headline}`);
+  const copyTop = Math.round(wide ? (height - copyHeight) / 2 : height * 0.047);
+  const layers: sharp.OverlayOptions[] = [
+    { input: wordmark.data, left: margin, top: copyTop },
+    { input: headline.data, left: margin, top: copyTop + wordmark.info.height + gap },
+    { input: description.data, left: margin, top: copyTop + wordmark.info.height + headline.info.height + gap * 2 },
+  ];
+  const region = wide
+    ? { left: width * 0.42, top: height * 0.1, width: width * 0.52, height: height * 0.8 }
+    : {
+        left: margin,
+        top: copyTop + copyHeight + height * 0.045,
+        width: width - margin * 2,
+        height: height * 0.94 - (copyTop + copyHeight + height * 0.045),
+      };
+  const panels: NativePanel[] = [];
+  const aspect = sourceSize.height / sourceSize.width;
+  const foreground: sharp.OverlayOptions[] = [];
+  if (boards) {
+    // Lower the portrait foreground phone to expose more lit holds on both sides.
+    // Fit its complete native footer even when translated copy makes the stage shorter.
+    const foregroundDrop = wide ? 0.17 : 0.29;
+    const sideTop = region.top + height * 0.032;
+    const panelBleed = Math.max(2, Math.round(Math.min(width, height) * 0.002)) * 2 + 8;
+    const panelWidth = Math.min(
+      region.width * 0.49,
+      (height * 0.96 - sideTop - region.height * foregroundDrop - panelBleed) / aspect,
+    );
+    // Short Header canvases limit phone height; keep the group compact enough
+    // that the center spray panel overlaps both sides instead of becoming a row.
+    const boardGroupWidth = options.placement ? Math.min(region.width, panelWidth * 2.05) : region.width;
+    const boardGroupLeft = region.left + (region.width - boardGroupWidth) / 2;
+    const positions = [
+      { left: boardGroupLeft, top: sideTop },
+      { left: boardGroupLeft + (boardGroupWidth - panelWidth) / 2, top: sideTop + region.height * foregroundDrop },
+      { left: boardGroupLeft + boardGroupWidth - panelWidth, top: sideTop },
+    ];
+    for (const index of [0, 2, 1]) {
+      const position = positions[index];
+      panels.push({ raw: sources[index], ...position, width: panelWidth });
+    }
+  } else if (!wide && (layout === 'store-queue' || layout === 'store-wall')) {
+    // These details are lifted from the same full native capture shown below.
+    // Queue: first two rows and their contributor avatars. Wall: native status chip.
+    const crop = layout === 'store-queue' ? { top: 0.195, height: 0.34 } : { top: 0.075, height: 0.06 };
+    const detailWidth = region.width;
+    const detailHeight = detailWidth * aspect * crop.height;
+    const screenTop = region.top + detailHeight + height * 0.025;
+    const screenWidth = Math.min(region.width, (region.top + region.height - screenTop) / aspect);
+    panels.push(
+      { raw: sources[0], left: region.left, top: region.top, width: detailWidth, crop },
+      { raw: sources[0], left: (width - screenWidth) / 2, top: screenTop, width: screenWidth },
+    );
+  } else if (tablet && layout === 'wall-column') {
+    const panelWidth = Math.min(region.width * 0.82, region.height / aspect);
+    const panelHeight = panelWidth * aspect;
+    const detailHeight = Math.min(region.height, panelHeight * 1.18);
+    const detailWidth = (detailHeight * IPAD_WALL_COLUMN_PIXELS) / (sourceSize.height * 0.62);
+    panels.push(
+      { raw: sources[0], left: region.left, top: (height - panelHeight) / 2, width: panelWidth },
+      {
+        raw: sources[0],
+        left: width - margin - detailWidth,
+        top: (height - detailHeight) / 2,
+        width: detailWidth,
+        crop: {
+          top: 0,
+          height: 0.62,
+          left: 1 - IPAD_WALL_COLUMN_PIXELS / sourceSize.width,
+          width: IPAD_WALL_COLUMN_PIXELS / sourceSize.width,
+        },
+      },
+    );
+  } else if (layout === 'store-island') {
+    // Keep the actual native silhouette and contents; omit wallpaper and the
+    // decorative screenshot border. Center the Island on the complete canvas.
+    const island = await sharp(await extractScreenshotIsland(sources[0]))
+      .resize(Math.round(region.width))
+      .png()
+      .toBuffer({ resolveWithObject: true });
+    foreground.push({
+      input: island.data,
+      left: Math.round((width - island.info.width) / 2),
+      top: Math.round(Math.max(copyTop + copyHeight + height * 0.085, (height - island.info.height) / 2)),
+    });
+  } else {
+    const panelWidth = Math.min(region.width, region.height / aspect);
+    const panelHeight = panelWidth * aspect;
+    panels.push({
+      raw: sources[0],
+      left: region.left + (region.width - panelWidth) / 2,
+      top: region.top + (region.height - panelHeight) / 2,
+      width: panelWidth,
+    });
+  }
+  return paintFrame({
+    width,
+    height,
+    colors,
+    layers,
+    panels,
+    unit: Math.min(width, height),
+    showcase: true,
+    foreground,
+  });
 }
 
 /**
@@ -377,13 +591,26 @@ interface FramePaint {
   layers: sharp.OverlayOptions[];
   panels: readonly NativePanel[];
   unit: number;
+  showcase?: boolean;
+  foreground?: sharp.OverlayOptions[];
 }
 
 /** The gradient ground plus every native panel, clipped to the canvas. */
-async function paintFrame({ width, height, colors, layers, panels, unit }: FramePaint): Promise<Buffer> {
+async function paintFrame({
+  width,
+  height,
+  colors,
+  layers,
+  panels,
+  unit,
+  showcase,
+  foreground,
+}: FramePaint): Promise<Buffer> {
   const background = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="background" x2="0" y2="1"><stop stop-color="${colors.secondaryBackground}"/><stop offset="1" stop-color="${colors.background}"/></linearGradient></defs>
+    <defs><linearGradient id="background" x2="0" y2="1"><stop stop-color="${colors.secondaryBackground}"/><stop offset="1" stop-color="${colors.background}"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="${brandColorsDark.primaryFill}" stop-opacity="0.23"/><stop offset="1" stop-color="${colors.background}" stop-opacity="0"/></radialGradient></defs>
     <rect width="100%" height="100%" fill="url(#background)"/>
+    ${showcase ? '<ellipse cx="60%" cy="65%" rx="65%" ry="60%" fill="url(#glow)"/>' : ''}
   </svg>`);
   for (const panel of panels) {
     const rendered = await renderNativePanel(panel, unit);
@@ -401,7 +628,7 @@ async function paintFrame({ width, height, colors, layers, panels, unit }: Frame
     layers.push({ input: clipped, left: Math.max(0, left), top: Math.max(0, panelTop) });
   }
   return sharp(background)
-    .composite(layers)
+    .composite([...layers, ...(foreground ?? [])])
     .flatten({ background: colors.background })
     .removeAlpha()
     .png({ compressionLevel: 9 })
@@ -447,7 +674,12 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
     for (const recipe of recipes) {
       const name = recipe.output;
       const buffers = recipe.sources.map((source) => capturesByName.get(source)!);
-      const framed = await frameComposition(buffers, catalog[recipe.caption], recipe.layout);
+      const framed = await frameComposition(
+        buffers,
+        catalog[recipe.caption],
+        recipe.layout,
+        options.platform === 'ios',
+      );
       writeFileSync(join(staging, name), framed);
       thumbnails.push(await sharp(framed).resize({ width: 270 }).toBuffer({ resolveWithObject: true }));
       const sourceMetadata = Object.fromEntries(

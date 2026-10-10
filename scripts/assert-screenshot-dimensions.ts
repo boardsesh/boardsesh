@@ -41,6 +41,7 @@ export interface Dimensions {
 export const EXPECTED_APP_STORE_LOCALES = ['en-US', 'es-ES', 'es-MX', 'fr-FR', 'de-DE'] as const;
 export const EXPECTED_APP_STORE_DEVICE_SLUGS = [
   'iphone-16-pro-max',
+  'iphone-16-pro',
   'ipad-pro-13-inch-m5',
   'ipad-pro-11-inch-m5',
 ] as const;
@@ -52,14 +53,13 @@ export const EXPECTED_APP_STORE_DEVICE_SLUGS = [
  * slug can't sneak un-validated sizes past the gate.
  */
 export const ACCEPTED_SIZES: Record<string, readonly Dimensions[]> = {
-  // 6.9" iPhone slot — the ONLY size we capture. Apple auto-scales it down to every
-  // smaller iPhone, so one 6.9" set covers the whole device range and extra sizes add
-  // no store/ranking value (see app-store-submission-guide.md). Apple accepts the
-  // iPhone 16 Pro Max native 1320x2868 or the prior-gen 1290x2796 here.
+  // Large Dynamic Island iPhone slot; retain Apple's prior-generation size.
   'iphone-16-pro-max': [
     { width: 1320, height: 2868 },
     { width: 1290, height: 2796 },
   ],
+  // Medium Dynamic Island iPhone slot, captured at the Pro's native size.
+  'iphone-16-pro': [{ width: 1206, height: 2622 }],
   // 13" iPad slot, captured in landscape. Apple accepts the current 13" native
   // size and the earlier 12.9"/13" 2048x2732 family in the same slot.
   'ipad-pro-13-inch-m5': [

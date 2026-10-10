@@ -1232,6 +1232,10 @@ export default defineConfig({
         command: 'tsx scripts/frame-screenshots.ts',
         cache: false,
       },
+      'store:creatives': {
+        command: 'tsx scripts/app-store-creatives.ts',
+        cache: false,
+      },
       'screenshot:assert-content': {
         command: 'tsx scripts/assert-screenshot-content.ts',
         cache: false,

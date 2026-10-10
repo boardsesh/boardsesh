@@ -1,26 +1,26 @@
-Busca una vía y mira cómo se enciende tu muro. Menos tiempo en el móvil, más tiempo en el muro.
+Escala en Kilter, Tension, MoonBoard y más plafones, o en tu muro de spray. Tus bloques, la cola compartida y el logbook, en una sola app.
 
-UNA APP PARA CADA PLAFÓN QUE ESCALAS
-Kilter, Tension y MoonBoard traen cada uno su propia app para su propio plafón. Boardsesh funciona con todos ellos, más Woods, Decoy, Touchstone, Grasshopper y So iLL, en un solo sitio. Todo tu historial de escalada en cada plafón vive aquí.
+TUS PLAFONES. UNA APP.
+Boardsesh es compatible con Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper y So iLL. Cambia de plafón y conserva tu historial de escalada en un solo sitio.
 
 TU MURO DE SPRAY, TAMBIÉN
-¿Un muro de casa, o un muro de spray en tu rocódromo? Fotografíalo y Boardsesh encuentra las presas. Corrige lo que se le haya pasado y luego monta bloques, ponlos en cola y registra encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto. Comparte el muro por enlace y tu crew también podrá montar en él. ¿Has desmontado el muro? Resetéalo con una foto nueva y el muro anterior se archiva con sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado, listo para remezclar.
+¿Un muro de casa, o un muro de spray en tu rocódromo? Fotografíalo y Boardsesh encuentra las presas. Corrige lo que se le haya pasado y luego monta bloques, ponlos en cola y registra encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto. Comparte el muro por enlace y tu equipo también podrá montar en él. ¿Has desmontado el muro? Resetéalo con una foto nueva y el muro anterior se archiva con sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado, listo para remezclar.
 
 HISTORIAL DEL MURO, SIEMPRE ACTIVO
-Si compartes muro, enseguida pierdes la cuenta de la última vía, y siempre hay alguien que la borra sin querer.
-En Boardsesh cada plafón al que te conectas tiene un feed en directo de lo que hay encendido en ese muro ahora mismo: el nombre de la vía, quién la encendió, quién la montó, el grado y el ángulo, y los encadenes recientes. Se actualiza según cambia el muro, así que siempre sabes qué hay puesto.
+Si compartes muro, enseguida pierdes la cuenta del último bloque, y siempre hay alguien que lo borra sin querer.
+En Boardsesh cada plafón al que te conectas tiene un feed en directo de lo que hay encendido en ese muro ahora mismo: el nombre del bloque, quién lo encendió, quién lo montó, el grado y el ángulo, y los encadenes recientes. Se actualiza según cambia el muro, así que siempre sabes qué hay puesto.
 
 SESIONES CON TU EQUIPO
-Abre una sesión y tú y tu equipo compartís una cola que cualquiera puede llevar. Cualquiera enciende la siguiente vía en el muro. Al terminar te llevas un resumen y el seguimiento: encadenes e intentos, reparto de grados, tu vía más dura y el progreso a lo largo del tiempo.
+Abre una sesión y tú y tu equipo compartís una cola que cualquiera puede llevar. Cualquiera enciende el siguiente bloque en el muro. Al terminar te llevas un resumen y el seguimiento: encadenes e intentos, reparto de grados, tu bloque más duro y el progreso a lo largo del tiempo.
 
 LLÉVALO DESDE LA PANTALLA DE BLOQUEO (iOS 17+)
-Las Live Activities te dicen qué vía hay puesta desde la pantalla de bloqueo, y te dejan cambiarla sin salir de ella.
+Las Live Activities te dicen qué bloque hay puesto desde la pantalla de bloqueo, y te dejan cambiarlo sin salir de ella.
 
 MÓNTATE UN ENTRENAMIENTO
-Elige Volumen, Pirámide, Escalera o Foco en grado, fija un grado objetivo y el calentamiento, previsualiza las vías y mándalas al muro de una en una.
+Elige Volumen, Pirámide, Escalera o Foco en grado, fija un grado objetivo y el calentamiento, previsualiza los bloques e ilumínalos en el muro de uno en uno.
 
 REGISTRA TU ESCALADA
-Apunta encadenes, flashes e intentos, recibe un resumen con la duración, el reparto de grados y tu vía más dura, y mira cómo suben tus encadenes y grados en la pestaña Progreso.
+Apunta encadenes, flashes e intentos, recibe un resumen con la duración, el reparto de grados y tu bloque más duro, y mira cómo suben tus encadenes y grados en la pestaña Progreso.
 
 LLÉVATE TU HISTORIAL CONTIGO
 Guarda tu sesión en Apple Health e importa tu logbook antiguo de Kilter y Tension desde Aurora Climbing.

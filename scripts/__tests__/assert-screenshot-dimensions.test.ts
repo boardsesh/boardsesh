@@ -58,17 +58,25 @@ describe('findOffenders', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('fails closed for the dropped Plus/Pro slugs (only 6.9" is captured now)', () => {
+  it('fails closed for the unsupported Plus slug', () => {
     expect(
       findOffenders('iphone-14-plus', [
         { name: 'iphone-14-plus/00-home.png', buffer: pngHeader({ width: 1284, height: 2778 }) },
       ])[0].reason,
     ).toMatch(/no accepted-size list/);
+  });
+
+  it('accepts the medium Dynamic Island slot at native resolution', () => {
     expect(
       findOffenders('iphone-16-pro', [
         { name: 'iphone-16-pro/00-home.png', buffer: pngHeader({ width: 1206, height: 2622 }) },
-      ])[0].reason,
-    ).toMatch(/no accepted-size list/);
+      ]),
+    ).toEqual([]);
+    expect(
+      findOffenders('iphone-16-pro', [
+        { name: 'iphone-16-pro/00-home.png', buffer: pngHeader({ width: 1320, height: 2868 }) },
+      ]),
+    ).toHaveLength(1);
   });
 
   it('accepts the iPad landscape App Store sizes', () => {
@@ -127,6 +135,12 @@ describe('findScreenshotTreeOffenders', () => {
     // every case below would fail on a spurious "missing locale" offender.
     for (const locale of EXPECTED_APP_STORE_LOCALES) {
       baseTree[locale] = {
+        'iphone-16-pro': [
+          {
+            name: `${locale}/iphone-16-pro/00-home.png`,
+            buffer: pngHeader({ width: 1206, height: 2622 }),
+          },
+        ],
         'iphone-16-pro-max': [
           {
             name: `${locale}/iphone-16-pro-max/00-home.png`,

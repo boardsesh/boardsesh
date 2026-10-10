@@ -22,7 +22,7 @@ inputs:
     description: 'Device folder slug, e.g. "iphone-16-pro-max". Names the artifact.'
     required: true
   flow:
-    description: 'Maestro flow to run (app-store | onboarding | smoke).'
+    description: 'Maestro flow to run (app-store | app-store-campaign | onboarding | smoke).'
     required: false
     default: app-store
   render-mode:
@@ -88,13 +88,18 @@ runs:
       env:
         FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture-snapshot }}
         FIXTURES_MODE: ${{ inputs.fixtures }}
+        CAPTURE_FLOW: ${{ inputs.flow }}
       run: |
         set -euo pipefail
         if [ "$FIXTURES_MODE" != "replay" ]; then
           echo "::error::fixture_snapshot is only valid for replay"
           exit 1
         fi
-        vp run mobile:screenshot-fixtures-fetch -- --reference-url "$FIXTURE_SNAPSHOT_URL"
+        reference=app-stores/screenshot-fixtures.json
+        if [ "$CAPTURE_FLOW" = "app-store" ] || [ "$CAPTURE_FLOW" = "app-store-campaign" ]; then
+          reference=app-stores/apple/campaign-fixtures.json
+        fi
+        vp run mobile:screenshot-fixtures-fetch -- --reference "$reference" --reference-url "$FIXTURE_SNAPSHOT_URL"
 
     # Restore the .app ios-build produced — read-only (never save) and
     # fail-on-cache-miss so a shard can NEVER silently cold-build. ios-build
@@ -134,7 +139,7 @@ runs:
       # EXPO_PUBLIC_BACKEND_URL override, so the bundle uses the app's production
       # backend defaults. --locales is a single value: `es` expands to both es-ES
       # and es-MX for this device, so the shards together produce all five App
-      # Store locales × 3 devices. --shutdown is belt-and-suspenders (a shard only
+      # Store locales × 4 devices. --shutdown is belt-and-suspenders (a shard only
       # boots this one sim, so there's nothing to accumulate).
       #
       # Bounded shard-level retry: the simulator/Maestro capture is flaky — a leg
@@ -172,9 +177,8 @@ runs:
         if [ -n "$BOARDS_INPUT" ]; then
           retarget+=(--boards "$BOARDS_INPUT")
         fi
-        # `live` is the old direct-to-PROD path — it passes no --fixtures flag at
-        # all, so the shard talks to PROD exactly as it did before fixtures
-        # existed. `replay` (the default) and `record` both pass --fixtures
+        # `live` explicitly disables fixtures because iOS store captures default
+        # to replay. `replay` (the default) and `record` both pass --fixtures
         # through. A recording shard starts from an empty set (--fresh), so what
         # it uploads is only what THIS locale/device asked for; the merge step
         # downstream is what unions the shards.
@@ -186,6 +190,8 @@ runs:
               retarget+=(--frozen-now "$FROZEN_NOW_INPUT")
             fi
           fi
+        else
+          retarget+=(--fixtures off)
         fi
         attempts="$ATTEMPTS_INPUT"
         for attempt in $(seq 1 "$attempts"); do

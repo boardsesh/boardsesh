@@ -16,6 +16,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
+import { bindFixtureAssetUrls } from './screenshot-fixture-assets';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import {
   createServer,
@@ -27,6 +28,11 @@ import {
 import { extname, join, resolve as resolvePath, sep } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import {
+  isCampaignPushRegistration,
+  isCampaignWallConfirmation,
+  replayCampaignSessionResponse,
+} from './screenshot-campaign-session';
 
 import {
   FIXTURE_HASH_DISPLAY_LENGTH,
@@ -782,7 +788,63 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       return;
     }
 
-    const entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
+    if (manifest.flow === 'app-store-campaign' && isCampaignPushRegistration(query)) {
+      emit({ event: 'default', operationName, hash12 });
+      sendResponse(
+        JSON.stringify({ errors: [{ message: 'APNs registration is disabled in local screenshot replay' }] }),
+      );
+      return;
+    }
+    if (manifest.flow === 'app-store-campaign' && operationName === 'ConfirmClimbOnWall') {
+      try {
+        const crewFixtures = manifest.graphql
+          .filter((item) => ['JoinSession', 'QueueUpdates'].includes(item.operationName))
+          .map((item) => {
+            if (!isFixtureFileWithinDirectory(fixturesDir, item.file)) throw new Error('Invalid fixture path');
+            return JSON.parse(readFileSync(join(fixturesDir, item.file), 'utf8')) as GraphqlFixtureFile;
+          })
+          .filter(
+            (fixture) =>
+              fixture.variables &&
+              typeof fixture.variables === 'object' &&
+              (fixture.variables as Record<string, unknown>).sessionId === manifest.capture?.sharedSessionId,
+          );
+        const queue = crewFixtures.find((fixture) => fixture.operationName === 'QueueUpdates');
+        if (
+          queue &&
+          crewFixtures.some((fixture) => isCampaignWallConfirmation(query, parsedBody.variables, queue, fixture))
+        ) {
+          emit({ event: 'default', operationName, hash12 });
+          sendResponse(
+            JSON.stringify({
+              errors: [{ message: 'Physical wall confirmation is disabled in local screenshot replay' }],
+            }),
+          );
+          return;
+        }
+      } catch {
+        missGraphql(operationName, 'unreadable-fixture');
+        return;
+      }
+    }
+    let entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
+    let campaignResponse: { response: unknown } | null = null;
+    if (!entry && manifest.flow === 'app-store-campaign' && operationName === 'JoinSession') {
+      for (const candidate of manifest.graphql.filter((item) => item.operationName === 'JoinSession')) {
+        try {
+          if (!isFixtureFileWithinDirectory(fixturesDir, candidate.file)) throw new Error('Invalid fixture path');
+          const fixture = JSON.parse(readFileSync(join(fixturesDir, candidate.file), 'utf8')) as GraphqlFixtureFile;
+          campaignResponse = replayCampaignSessionResponse(query, parsedBody.variables, fixture);
+          if (campaignResponse) {
+            entry = candidate;
+            break;
+          }
+        } catch {
+          missGraphql(operationName, 'unreadable-fixture');
+          return;
+        }
+      }
+    }
     if (!entry) {
       // EXACT KEY FIRST, always: a batch that was recorded verbatim replays its
       // own recorded bytes. Only a batch nobody recorded as a whole is composed
@@ -816,14 +878,27 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       try {
         const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
         const compatibility =
-          entry.documentHash !== key.documentHash ? replayCompatibleFixtureResponse(query, fixture) : null;
+          campaignResponse ??
+          (entry.documentHash !== key.documentHash
+            ? (replayCompatibleFixtureResponse(query, fixture) ??
+              (manifest.flow === 'app-store-campaign'
+                ? replayCampaignSessionResponse(query, parsedBody.variables, fixture)
+                : null))
+            : null);
         if (entry.documentHash !== key.documentHash && !compatibility) {
           missGraphql(operationName, 'document-changed');
           return;
         }
-        // Preserve recorded errors too; compatibility only supplies a known
-        // nullable field on old manufacturer-board recordings.
+        // Preserve recorded errors. Compatibility is limited to known nullable
+        // board fields and the campaign's recorded session projections.
         serializedResponse = JSON.stringify(compatibility?.response ?? fixture.response);
+        const boundAddress = httpServer.address();
+        if (!boundAddress || typeof boundAddress === 'string') throw new Error('Replay asset origin is unavailable');
+        serializedResponse = bindFixtureAssetUrls(
+          serializedResponse,
+          `http://localhost:${boundAddress.port}`,
+          manifest.static.map((asset) => asset.path),
+        );
       } catch {
         // The startup check already read every fixture, so the file went
         // missing or was truncated DURING the run. Answer exactly like any
@@ -1061,7 +1136,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       }
       return;
     }
-    if (method === 'GET' && pathname.startsWith('/static/')) {
+    if (method === 'GET' && (pathname.startsWith('/static/') || pathname === '/api/internal/board-render')) {
       const query = sortedQueryString(requestUrl.searchParams);
       if (isRecording) await recordStatic(response, pathname, query);
       else replayStatic(response, pathname, query);
@@ -1284,6 +1359,17 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         }
       }
       if (!Object.hasOwn(recorded, 'response')) problems.push(`${label} has no recorded response`);
+      else {
+        try {
+          bindFixtureAssetUrls(
+            JSON.stringify(recorded.response),
+            'http://localhost',
+            manifest.static.map((asset) => asset.path),
+          );
+        } catch {
+          problems.push(`${label} contains an invalid or unbundled reserved screenshot asset reference`);
+        }
+      }
     }
     for (const entry of manifest.static) {
       const label = `${entry.file} (${entry.path})`;

@@ -21,7 +21,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  * Android PNGs land in app-stores/google/screenshots/<device>/.
  *
  * Usage:
- *   vp run mobile:screenshots -- [--platform ios] [--flow app-store|onboarding|help|smoke]
+ *   vp run mobile:screenshots -- [--platform ios] [--flow app-store|app-store-campaign|onboarding|help|smoke]
  *                                 [--backend local|prod] [--devices common|phones|ipads|<comma-list>]
  *                                 [--locales all|<comma-list>] [--device "iPhone 16 Pro Max"]
  *                                 [--variant material|liquidGlass] [--shutdown]
@@ -68,10 +68,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { fixtureSnapshotDirectory } from './lib/screenshot-fixture-snapshot';
+import {
+  fixtureSnapshotDirectory,
+  FIXTURE_SNAPSHOT_REFERENCE,
+  IOS_CAMPAIGN_FIXTURE_REFERENCE,
+  readFixtureSnapshotReference,
+} from './lib/screenshot-fixture-snapshot';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { captionLocaleForStore } from './lib/screenshot-presentation';
+import { captionLocaleForStore, IOS_CAMPAIGN_CAPTURE_NAMES } from './lib/screenshot-presentation';
 import { SUPPORTED_LOCALES, isSupportedLocale, type Locale } from '../packages/shared/i18n/src/config';
 import {
   METRO_LOG_PATH,
@@ -155,14 +160,14 @@ const OUTPUT_ROOT = resolve(ROOT_DIR, 'app-stores');
  * This is not tidiness. `writeCapturedScreenshots` DELETES every PNG in the
  * output directory before writing, and an unframed flow writes straight into
  * `screenshots/<locale>/<device>/`. Sharing the root meant a bare
- * `vp run mobile:screenshots --flow help` — which defaults to three devices and
- * all four locales — wiped and replaced all twelve committed store shards with
- * help screens, two thirds of them captured on iPads where deep links don't
+ * `vp run mobile:screenshots --flow help` — which defaults to the common devices and
+ * all four locales — wiped and replaced the existing store shards with
+ * help screens, including iPads where deep links don't
  * navigate at all. The next `vp run screenshot:compare` would then diff help
  * pages against the store baseline.
  */
 function outputRootForFlow(flow: ScreenshotFlow): string {
-  return flow === 'app-store' ? OUTPUT_ROOT : join(OUTPUT_ROOT, flow);
+  return flow === 'app-store' || flow === 'app-store-campaign' ? OUTPUT_ROOT : join(OUTPUT_ROOT, flow);
 }
 /**
  * Android's answer to the Metro tee: the device log, streamed to a file for the
@@ -223,7 +228,7 @@ export type ScreenshotPlatform = 'ios' | 'android' | 'all';
 /**
  * Which committed Maestro flow a run drives.
  *
- * `app-store` is the only FRAMED flow — it is the one `collectScreenshots` runs
+ * `app-store` and its iOS replay `app-store-campaign` flow are FRAMED: `collectScreenshots` runs them
  * through `screenshot:frame` (captions, device frames, the recipe table in
  * `scripts/lib/screenshot-presentation.ts`). `onboarding` and `help` write raw,
  * uncaptioned PNGs straight to the shard directory.
@@ -234,7 +239,7 @@ export type ScreenshotPlatform = 'ios' | 'android' | 'all';
  * the device log and the replay backend's log, and the answer lands in the
  * result file `smokeResultPath()` names.
  */
-export type ScreenshotFlow = 'app-store' | 'onboarding' | 'help' | 'smoke';
+export type ScreenshotFlow = 'app-store' | 'app-store-campaign' | 'onboarding' | 'help' | 'smoke';
 export type ScreenshotBackend = 'local' | 'prod';
 /**
  * Whether this capture talks to a real backend (`off`), proxies one while
@@ -253,17 +258,17 @@ export interface IosScreenshotDevice {
   orientation: IosDeviceOrientation;
 }
 
-// iPhones: just the 6.9" iPhone 16 Pro Max. App Store Connect auto-scales the
-// largest iPhone size down to every smaller iPhone, so a single 6.9" set covers the
-// whole iPhone range — extra iPhone sizes are invisible to users and add no ranking
-// value, only CI time (see app-stores/apple/app-store-submission-guide.md). iPad is
-// a separate App Store slot that does NOT auto-scale from the iPhone screenshots, so
-// it gets its own captures below. Locale, not iPhone size, is the axis that helps the
-// listing, so the orchestrator still captures every app locale.
+// Capture both Dynamic Island display slots at native resolution. The smoke and
+// pixel probe remain on one Pro Max; store coverage is a separate inventory.
 export const IOS_PHONE_SCREENSHOT_DEVICES: readonly IosScreenshotDevice[] = [
   {
     name: 'iPhone 16 Pro Max',
     typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max',
+    orientation: 'PORTRAIT',
+  },
+  {
+    name: 'iPhone 16 Pro',
+    typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
     orientation: 'PORTRAIT',
   },
 ];
@@ -418,7 +423,13 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
         index++;
         break;
       case '--flow':
-        options.flow = expectEnum(flag, value, ['app-store', 'onboarding', 'help', 'smoke']) as ScreenshotFlow;
+        options.flow = expectEnum(flag, value, [
+          'app-store',
+          'app-store-campaign',
+          'onboarding',
+          'help',
+          'smoke',
+        ]) as ScreenshotFlow;
         index++;
         break;
       case '--backend':
@@ -501,6 +512,17 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     }
   }
 
+  if (options.flow === 'app-store-campaign' && options.platform !== 'ios') {
+    throw new Error('--flow app-store-campaign requires --platform ios; Android keeps its existing campaign.');
+  }
+
+  if (
+    options.platform === 'ios' &&
+    (options.flow === 'app-store' || options.flow === 'app-store-campaign') &&
+    !args.includes('--fixtures')
+  )
+    options.fixtures = 'replay';
+
   if (options.flow === 'smoke') {
     // One result file and one retry budget per invocation, so one platform.
     if (options.platform === 'all') {
@@ -508,7 +530,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     }
     // The pinned fixture set was recorded on the iPhone in en-US, and the smoke
     // can only ask for what that set holds. An explicit flag still wins.
-    if (!args.includes('--device') && !args.includes('--devices')) options.devices = [...PHONE_IOS_DEVICE_NAMES];
+    if (!args.includes('--device') && !args.includes('--devices')) options.devices = ['iPhone 16 Pro Max'];
     if (!args.includes('--locales')) options.appLocales = ['en-US'];
   }
 
@@ -649,6 +671,7 @@ export function buildScreenshotEnv(
     // count and the crash screen reports itself (src/lib/screenshot-smoke.ts).
     env.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL = `http://localhost:${SCREENSHOT_READY_PORT}/smoke`;
   }
+  if (options.flow === 'app-store-campaign') env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
   if (appLocale) {
     env.EXPO_PUBLIC_SCREENSHOT_LOCALE = appLocale;
   }
@@ -693,6 +716,23 @@ export function buildScreenshotEnv(
     env.EXPO_PUBLIC_SCREENSHOT_NOW = frozenNow;
   }
   return env;
+}
+
+/** Keep the fixture clock, origin and board roster together at both Metro call sites. */
+export function buildScreenshotSessionEnv(
+  options: ScreenshotOptions,
+  baseEnv: NodeJS.ProcessEnv,
+  appLocale: Locale | null,
+  session: Pick<ScreenshotBackendSession, 'frozenNow' | 'port' | 'capture'> | null,
+): NodeJS.ProcessEnv {
+  return buildScreenshotEnv(
+    options,
+    baseEnv,
+    appLocale,
+    session?.frozenNow ?? null,
+    session?.port ?? null,
+    session?.capture ?? null,
+  );
 }
 
 export interface DeviceInfo {
@@ -1059,7 +1099,7 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
     // Only the store flow is board-backed; the onboarding flow shoots screens
     // that never mount a board, so a missing render line there is expected.
     // (The smoke opens a board too, and checks the same line in judgeSmokeAttempt.)
-    requireRenderLine: options.flow === 'app-store',
+    requireRenderLine: options.flow === 'app-store' || options.flow === 'app-store-campaign',
   });
   if (problems.length === 0) {
     for (const line of summariseScreenshotRender(logText)) {
@@ -1314,9 +1354,14 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
   const mode: ScreenshotBackendMode = options.fixtures === 'record' ? 'record' : 'replay';
   let fixturesDir = resolveFixturesDir(options);
   if (mode === 'replay' && fixturesDir === resolve(ROOT_DIR, DEFAULT_SCREENSHOT_FIXTURES_DIR)) {
-    const status = runInherit('vp', ['run', 'mobile:screenshot-fixtures-fetch'], process.env);
+    const reference = screenshotFixtureReference(options);
+    const status = runInherit(
+      'vp',
+      ['run', 'mobile:screenshot-fixtures-fetch', '--', '--reference', reference],
+      process.env,
+    );
     if (status !== 0) throw new Error('Could not download the pinned screenshot fixtures');
-    fixturesDir = fixtureSnapshotDirectory();
+    fixturesDir = fixtureSnapshotDirectory(readFixtureSnapshotReference(reference));
   }
   const port = resolveScreenshotBackendPort(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT);
   if (port === 0) {
@@ -1797,20 +1842,21 @@ export function isIpadScreenshotDevice(screenshotDevice: IosScreenshotDevice): b
 /**
  * The Maestro flow source for an iOS device. iPad deep links don't navigate on
  * the simulator — the "Open in 'Boardsesh'?" scheme-confirm dialog swallows every
- * `openurl` — so iPad drives navigation via sidebar coordinate taps from a
+ * `openurl` — so iPad uses localized sidebar accessibility labels from a
  * dedicated `<flow>-ipad.yaml`. Falls back to the shared `<flow>[-ios].yaml`
  * (iPhone's deep-link flow) when no iPad variant exists.
  */
 export function iosSourceFlowFile(options: ScreenshotOptions, screenshotDevice: IosScreenshotDevice): string {
   if (isIpadScreenshotDevice(screenshotDevice)) {
-    const ipadFlowFile = join(MAESTRO_DIR, `${options.flow}-ipad.yaml`);
+    const ipadFlow = options.flow === 'app-store-campaign' ? 'app-store' : options.flow;
+    const ipadFlowFile = join(MAESTRO_DIR, `${ipadFlow}-ipad.yaml`);
     if (existsSync(ipadFlowFile)) return ipadFlowFile;
   }
   return flowFileForPlatform(options, 'ios');
 }
 
-// The iPad flow taps sidebar items by their locale-independent testID
-// (`ipad-sidebar-<segment>`, see IpadSidebar) and verifies each navigation via
+// The iPad flow taps native sidebar items by catalog-derived accessibility labels
+// (see buildIosSidebarMaestroEnv) and verifies each navigation via
 // the item's `selected` accessibility state — no per-device coordinate math.
 // Only the orientation placeholder needs substituting per device.
 export function renderMaestroFlowForIosDevice(flowSource: string, screenshotDevice: IosScreenshotDevice): string {
@@ -1829,7 +1875,14 @@ function renderedFlowFileForIosDevice(
   const flowFile = iosSourceFlowFile(options, screenshotDevice);
   if (!existsSync(flowFile)) return flowFile;
   const renderedFlowFile = join(captureDir, `${options.flow}-${deviceSlug(screenshotDevice.name)}.yaml`);
-  writeFileSync(renderedFlowFile, renderMaestroFlowForIosDevice(readFileSync(flowFile, 'utf8'), screenshotDevice));
+  let source = readFileSync(flowFile, 'utf8');
+  if (options.flow === 'app-store-campaign' && !isIpadScreenshotDevice(screenshotDevice)) {
+    // Inline the existing ten-shot flow: Maestro resolves relative subflows from
+    // this temporary directory, where the committed app-store.yaml does not live.
+    const legacyCommands = readFileSync(join(MAESTRO_DIR, 'app-store.yaml'), 'utf8').split('\n---\n')[1];
+    source = source.replace('- runFlow: app-store.yaml', legacyCommands);
+  }
+  writeFileSync(renderedFlowFile, renderMaestroFlowForIosDevice(source, screenshotDevice));
   return renderedFlowFile;
 }
 
@@ -2004,6 +2057,12 @@ function captureIosDevice(
         `SCREENSHOT_USER_EMAIL=${email}`,
         '-e',
         `SCREENSHOT_USER_PASSWORD=${password}`,
+        ...(options.flow === 'app-store-campaign'
+          ? buildIosCampaignMaestroEnv(localeTarget.appLocale, backendSession?.capture)
+          : []),
+        ...(isIpadScreenshotDevice(screenshotDevice) && ['app-store', 'app-store-campaign'].includes(options.flow)
+          ? buildIosSidebarMaestroEnv(localeTarget.appLocale)
+          : []),
       ],
       process.env,
       captureDir,
@@ -2045,6 +2104,10 @@ function captureIosDevice(
       if (!reportFrozenClockProblems(metroLog, backendSession.frozenNow, METRO_LOG_PATH)) return 1;
     }
 
+    if (options.flow === 'app-store-campaign' && !isIpadScreenshotDevice(screenshotDevice)) {
+      assertIosCampaignSources(readdirSync(captureDir).filter((file) => file.endsWith('.png')));
+    }
+
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
     if (duplicateGroups.length > 0) {
       for (const group of duplicateGroups) {
@@ -2060,7 +2123,7 @@ function captureIosDevice(
       'ios',
       device.name,
       localeTarget.appStoreLocales,
-      options.flow === 'app-store',
+      options.flow === 'app-store' || options.flow === 'app-store-campaign',
       outputRootForFlow(options.flow),
     );
     if (saved.length === 0) {
@@ -2195,6 +2258,113 @@ function readSettledLogcat(stream: ChildProcess): string | null {
   return logcat;
 }
 
+/** Campaign fixtures are explicit; an old two/six-board bundle must never masquerade as the new listing. */
+export function assertIosCampaignSources(capturedNames: readonly string[]): void {
+  const missing = IOS_CAMPAIGN_CAPTURE_NAMES.filter((name) => !capturedNames.includes(name));
+  const unexpected = capturedNames.filter((name) => !(IOS_CAMPAIGN_CAPTURE_NAMES as readonly string[]).includes(name));
+  if (missing.length || unexpected.length) {
+    throw new Error(
+      `Incomplete iOS campaign capture; missing: ${missing.join(', ') || 'none'}; unexpected: ${unexpected.join(', ') || 'none'}. Refusing legacy framing.`,
+    );
+  }
+}
+
+export type IosCampaignBoard = { name: string; layoutName?: string | null; boardType: string };
+
+export function readIosCampaignBoards(fixturesDir: string): IosCampaignBoard[] {
+  const manifest = readScreenshotFixtureManifest(fixturesDir);
+  return (manifest?.graphql ?? [])
+    .filter((entry) => entry.operationName === 'GetMyBoards')
+    .flatMap((entry) => {
+      const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as {
+        response?: { data?: { myBoards?: { boards?: IosCampaignBoard[] } } };
+      };
+      return fixture.response?.data?.myBoards?.boards ?? [];
+    });
+}
+
+export function assertIosCampaignCaptureReady(
+  options: ScreenshotOptions,
+  capture?: ScreenshotCaptureScenario,
+  recordedBoards: readonly IosCampaignBoard[] = [],
+): void {
+  const boards = (options.boards ?? capture?.boards.join('|') ?? '').split('|').filter((selector) => selector.trim());
+  if (options.fixtures !== 'replay' || !capture?.sharedSessionId || boards.length < 7) {
+    throw new Error(
+      'app-store-campaign needs a verified replay campaign fixture with a shared crew session and seven board selectors ' +
+        'in order: Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper, spray wall. ' +
+        'The previous fixture lacks Decoy/spray captures; record and sanitize the missing sources before running this flow.',
+    );
+  }
+  const normalize = (name: string | null | undefined) => (name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const expectedTypes = ['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
+  for (const [index, expectedType] of expectedTypes.entries()) {
+    const selector = normalize(boards[index]);
+    // Same precedence as the app's matchScreenshotBoard, without positional fallback.
+    const recorded =
+      recordedBoards.find((board) => normalize(board.name) === selector) ??
+      recordedBoards.find((board) => normalize(board.layoutName) === selector) ??
+      recordedBoards.find((board) => normalize(board.name).includes(selector)) ??
+      recordedBoards.find((board) => normalize(board.layoutName).includes(selector));
+    if (recorded?.boardType !== expectedType) {
+      throw new Error(
+        `app-store-campaign board[${index}] "${boards[index]}" must resolve to ${expectedType} in recorded GetMyBoards responses; found ${recorded?.boardType ?? 'no recorded board'}. Record and sanitize the missing campaign fixture.`,
+      );
+    }
+  }
+}
+
+/** Read accessibility labels from the same catalog as the native UI for all four locales. */
+export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
+  const directory = join(ROOT_DIR, 'packages/shared/i18n/locales', locale);
+  const common = JSON.parse(readFileSync(join(directory, 'common.json'), 'utf8')) as {
+    mobile: { nav: { home: string; climbs: string; wall: string; profile: string } };
+  };
+  const session = JSON.parse(readFileSync(join(directory, 'session.json'), 'utf8')) as {
+    mobile: { session: { recordTab: string } };
+  };
+  const playlists = JSON.parse(readFileSync(join(directory, 'playlists.json'), 'utf8')) as {
+    bottomTabBar: { discover: string };
+  };
+  const labels = {
+    SCREENSHOT_SIDEBAR_HOME_LABEL: common.mobile.nav.home,
+    SCREENSHOT_SIDEBAR_CLIMBS_LABEL: common.mobile.nav.climbs,
+    SCREENSHOT_SIDEBAR_WALL_LABEL: common.mobile.nav.wall,
+    SCREENSHOT_SIDEBAR_RECORD_LABEL: session.mobile.session.recordTab,
+    SCREENSHOT_SIDEBAR_DISCOVER_LABEL: playlists.bottomTabBar.discover,
+    SCREENSHOT_SIDEBAR_PROFILE_LABEL: common.mobile.nav.profile,
+    // These UIKit-owned controls follow the simulator system language, not the JS catalog.
+    // Store capture simulators use English; an unsupported native language fails closed.
+    SCREENSHOT_SIDEBAR_HIDE_LABEL: 'Hide Sidebar',
+    SCREENSHOT_SIDEBAR_TOGGLE_LABEL: 'Toggle sidebar',
+  };
+  return Object.entries(labels).flatMap(([name, label]) => ['-e', `${name}=${label}`]);
+}
+
+/** Read accessibility labels from the same catalog as the native UI for all four locales. */
+export function buildIosCampaignMaestroEnv(locale: Locale, capture?: ScreenshotCaptureScenario): string[] {
+  const catalog = JSON.parse(
+    readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
+  ) as {
+    mobileJoin: { join: string };
+    mobile: { boardPresence: { stripA11yLabelWithSender: string } };
+    queueDrawer: { title: string };
+    playView: { closeAria: string; actionBar: { queueCountAria: string } };
+  };
+  const labels = {
+    SCREENSHOT_SHARED_SESSION_ID: capture?.sharedSessionId ?? '',
+    SCREENSHOT_JOIN_LABEL: catalog.mobileJoin.join,
+    SCREENSHOT_CLOSE_LABEL: catalog.playView.closeAria,
+    SCREENSHOT_QUEUE_LABEL: catalog.playView.actionBar.queueCountAria.replace('{{count}}', '.*'),
+    SCREENSHOT_QUEUE_TITLE: catalog.queueDrawer.title,
+    SCREENSHOT_WALL_STATUS_LABEL: catalog.mobile.boardPresence.stripA11yLabelWithSender
+      .replace('{{name}}', 'Lightest Pair of Shorts')
+      .replace('{{grade}}', '.*')
+      .replace('{{sender}}', '.*'),
+  };
+  return Object.entries(labels).flatMap(([name, label]) => ['-e', `${name}=${label}`]);
+}
+
 export function buildAndroidMaestroArgs(
   context: {
     deviceId: string;
@@ -2311,14 +2481,7 @@ function runAndroid(options: ScreenshotOptions): number {
     if (options.devClient) {
       // Android captures the single en-US tree (the locale matrix is iOS-only),
       // so no locale is baked into the bundle here.
-      const metroEnv = buildScreenshotEnv(
-        options,
-        process.env,
-        null,
-        backendSession?.frozenNow ?? null,
-        backendSession?.port ?? null,
-        backendSession?.capture ?? null,
-      );
+      const metroEnv = buildScreenshotSessionEnv(options, process.env, null, backendSession);
       console.log(
         `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
       );
@@ -2421,7 +2584,7 @@ function runAndroid(options: ScreenshotOptions): number {
       'android',
       deviceName,
       null,
-      options.flow === 'app-store',
+      options.flow === 'app-store' || options.flow === 'app-store-campaign',
       outputRootForFlow(options.flow),
     );
     if (saved.length === 0) {
@@ -2658,6 +2821,12 @@ function runIos(options: ScreenshotOptions): number {
     // Started once for the whole run (every locale, every device), so the
     // per-capture gate slices the log from a baseline rather than reading it whole.
     if (options.fixtures !== 'off') backendSession = startScreenshotBackend(options);
+    if (options.flow === 'app-store-campaign')
+      assertIosCampaignCaptureReady(
+        options,
+        backendSession?.capture,
+        backendSession ? readIosCampaignBoards(backendSession.fixturesDir) : [],
+      );
     const status = runIosLocales(options, appPath, screenshotDevices, localeTargets, backendSession);
     if (status !== 0) return status;
     if (backendSession?.mode === 'record' && !reportRecordingSummary(backendSession)) return 1;
@@ -2681,13 +2850,7 @@ function runIosLocales(
       return 1;
     }
     const localeTarget = localeTargets[localeIndex];
-    const metroEnv = buildScreenshotEnv(
-      options,
-      process.env,
-      localeTarget.appLocale,
-      backendSession?.frozenNow ?? null,
-      backendSession?.port ?? null,
-    );
+    const metroEnv = buildScreenshotSessionEnv(options, process.env, localeTarget.appLocale, backendSession);
     console.log(
       `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}, locale=${localeTarget.appLocale}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
     );
@@ -2765,14 +2928,47 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const platforms: Array<'ios' | 'android'> = options.platform === 'all' ? ['ios', 'android'] : [options.platform];
 
   for (const platform of platforms) {
-    const status = options.flow === 'smoke' ? runSmoke(options, platform) : runPlatform(options, platform);
+    const status =
+      options.flow === 'smoke'
+        ? runSmoke(options, platform)
+        : runPlatform(options, platform, !argv.includes('--fixtures'));
     if (status !== 0) return status;
   }
 
   return 0;
 }
 
-function runPlatform(options: ScreenshotOptions, platform: 'ios' | 'android'): number {
+/** Resolve each platform separately so an all-platform run cannot move Android onto the iOS fixture. */
+export function resolvePlatformScreenshotOptions(
+  options: ScreenshotOptions,
+  platform: 'ios' | 'android',
+  useFixtureDefaults = false,
+): ScreenshotOptions {
+  const fixtures =
+    platform === 'ios' && options.flow === 'app-store' && useFixtureDefaults ? 'replay' : options.fixtures;
+  return {
+    ...options,
+    platform,
+    fixtures,
+    flow:
+      platform === 'ios' && options.flow === 'app-store' && fixtures === 'replay' ? 'app-store-campaign' : options.flow,
+  };
+}
+
+export function screenshotFixtureReference(options: ScreenshotOptions): string {
+  return options.platform === 'ios' &&
+    (options.flow === 'app-store' || options.flow === 'app-store-campaign') &&
+    options.fixtures === 'replay'
+    ? IOS_CAMPAIGN_FIXTURE_REFERENCE
+    : FIXTURE_SNAPSHOT_REFERENCE;
+}
+
+function runPlatform(
+  originalOptions: ScreenshotOptions,
+  platform: 'ios' | 'android',
+  useFixtureDefaults: boolean,
+): number {
+  const options = resolvePlatformScreenshotOptions(originalOptions, platform, useFixtureDefaults);
   try {
     return platform === 'ios' ? runIos(options) : runAndroid(options);
   } catch (error) {
@@ -2789,7 +2985,7 @@ function runPlatform(options: ScreenshotOptions, platform: 'ios' | 'android'): n
 function runSmoke(options: ScreenshotOptions, platform: 'ios' | 'android'): number {
   const attempt = (): number => {
     const judgedBefore = smokeAttempts.length;
-    const status = runPlatform(options, platform);
+    const status = runPlatform(options, platform, false);
     // A failure that never reached judgeSmokeAttempt happened before the app
     // launched (no device, a failed install, a port in use).
     if (status !== 0 && smokeAttempts.length === judgedBefore) {

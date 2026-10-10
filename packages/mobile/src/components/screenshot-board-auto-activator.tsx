@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '@boardsesh/climb-filters';
 import {
   buildScreenshotWallSeed,
@@ -52,7 +52,8 @@ const WALL_SEED_SEARCH_DISABLED_INPUT: ClimbSearchInput = {
  */
 export function ScreenshotBoardAutoActivator(): null {
   const { isAuthenticated } = useAuth();
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isPending: activeBoardPending } = useActiveBoard();
+  const primaryBoardActivated = useRef(false);
   // Every board, not the board picker's first page: the wall is pinned by name
   // and one page tops out at the server's default 20. Keeping it observed also
   // keeps the roster warm in the React Query cache for the re-activation path.
@@ -71,17 +72,22 @@ export function ScreenshotBoardAutoActivator(): null {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || activeBoard) return;
+    if (!isAuthenticated || activeBoardPending) return;
+    if (primaryBoardActivated.current && activeBoard) return;
     // Slot 0 of SCREENSHOT_BOARDS — the wall every board-backed shot but the
     // second board-view sits on. By name, not position: myBoards comes back
     // newest-owned-first, so `boards[0]` drifts as the account follows walls.
     const targetBoard = resolveScreenshotBoard(screenshotBoards, 0);
     if (!targetBoard) return;
+    if (activeBoard?.uuid === targetBoard.uuid) {
+      primaryBoardActivated.current = true;
+      return;
+    }
     // Logged so a screenshot run is debuggable from the Metro output the
     // orchestrator tees (a missing line means the boards fetch came back empty).
     console.log(`[screenshot] auto-activating board ${targetBoard.uuid} (${targetBoard.boardType})`);
     void setActiveBoard(targetBoard);
-  }, [isAuthenticated, activeBoard, screenshotBoards, setActiveBoard]);
+  }, [isAuthenticated, activeBoard, activeBoardPending, screenshotBoards, setActiveBoard]);
 
   // Same default-filter search the Climbs list runs, sized to the seed — so the
   // wall lights the same climbs the Climbs screen would publish.

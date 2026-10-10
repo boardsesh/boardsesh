@@ -23,118 +23,116 @@ The app icon and splash screen are defined in `packages/mobile/app.config.ts` (`
 
 ---
 
-## 2. Take Screenshots
+## 2. Capture and review store assets
 
-Automated native capture (the real RN app, dark theme) via Maestro:
+The standard native capture uses recorded fixtures and the app's dark appearance:
 
 ```bash
-vp run mobile:screenshots -- --platform ios --backend prod --theme dark --devices common --locales all
+vp run mobile:screenshots -- --platform ios --fixtures replay --theme dark --devices common --locales all
 ```
 
-This drives the common Apple simulator set against prod (signed in as the test
-user) and saves PNGs to `app-stores/apple/screenshots/<app-store-locale>/<device>/`
-— e.g. `app-stores/apple/screenshots/en-US/iphone-16-pro-max/` and
-`app-stores/apple/screenshots/en-US/ipad-pro-13-inch-m5/`. See
-`packages/mobile/.maestro/README.md` for prerequisites (Maestro, the
-`SCREENSHOT_USER_PASSWORD` env, etc.).
+This replays the pinned fixture rather than depending on changing production
+content. It writes framed PNGs to
+`app-stores/apple/screenshots/<app-store-locale>/<device>/` and retains the
+native sources under `app-stores/apple/raw-screenshots/`. See the
+[iOS capture guide](../../docs/ios-simulator-screenshots.md) for simulator and
+cached native-client prerequisites, and the [fixture guide](../../docs/mobile-screenshot-fixtures.md)
+for capture data.
 
-### Required screenshot sizes
+### Device and language coverage
 
-| Device                          | Resolution       | Required?                                    |
-| ------------------------------- | ---------------- | -------------------------------------------- |
-| 6.9" iPhone (iPhone 16 Pro Max) | 1320x2868        | Yes — the only iPhone size the flow captures |
-| 13" iPad (iPad Pro)             | 2752x2064        | Yes — captured in landscape for tablet app   |
-| 11" iPad (iPad Pro)             | 2420x1668 family | Yes — captured in landscape for tablet app   |
+| Capture device        | Native output | Orientation |
+| --------------------- | ------------- | ----------- |
+| iPhone 16 Pro Max     | 1320 × 2868   | Portrait    |
+| iPhone 16 Pro         | 1206 × 2622   | Portrait    |
+| iPad Pro 13-inch (M5) | 2752 × 2064   | Landscape   |
+| iPad Pro 11-inch (M5) | 2420 × 1668   | Landscape   |
 
-For iPhone we capture a single size, the 6.9" iPhone 16 Pro Max. App Store Connect
-**auto-scales the largest iPhone screenshot down** to every smaller iPhone, so one
-6.9" set covers the whole iPhone range — extra iPhone sizes are invisible to users
-and add no ranking value, only CI time. iPad is a separate App Store slot that does
-**not** auto-scale from iPhone, so the 13" and 11" iPad Pro captures are their own
-set. The other axis that helps the listing is locale, so that stays a full sweep.
-(See
-<https://developer.apple.com/help/app-store-connect/manage-app-information/upload-app-previews-and-screenshots/>.)
+The common matrix captures both iPhone display sizes and both iPads. The
+four app languages (`en-US`, `es`, `fr`, `de`) produce 16 capture shards and
+20 storefront sets: Spanish supplies both `es-ES` and `es-MX`, while French and
+German map to `fr-FR` and `de-DE`. iPad has its own six-image kiosk-first story.
+Use the actual PNG dimensions and the repository's dimension gate to verify
+slot assignment. [Apple screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications)
 
-The app has `supportsTablet: true`, so the automated set includes iPad screenshots.
-`--locales all` captures `en-US`, `es`, `fr`, and `de`; the single Spanish app
-locale is uploaded to both App Store Connect Spanish locales, `es-ES` and
-`es-MX`, while French and German each map to one (`fr-FR`, `de-DE`).
+### New nine-image iPhone campaign
 
-Dark is the canonical appearance; pass `--theme light` for a light set.
+The new story leads with Kilter, a spray wall and MoonBoard together, then a
+dedicated spray-wall scene on a light background, additional supported boards,
+the shared queue, wall status, logbook, workouts,
+Dynamic Island and climb search. Its full output map is in
+[App Store metadata](app-store-metadata.md#screenshots).
 
-### Manual alternative
+Capture the default campaign from its dedicated sanitized replay fixture:
 
-If you need a specific screen the flow doesn't cover:
+```bash
+vp run mobile:screenshots -- --platform ios --fixtures replay --theme dark --devices common --locales all
+```
 
-1. Open Xcode > Window > Devices and Simulators
-2. Create or select an iPhone 16 Pro Max, iPad Pro 13-inch, or iPad Pro 11-inch simulator
-3. Run the app in the simulator
-4. Navigate to each key screen:
-   - Board selection / home feed
-   - Climb list with search results
-   - Climb detail with hold overlay on board image
-   - Record / start a session
-   - Discover / playlists
-   - Profile stats
-   - Logbook / profile stats
-5. Press Cmd+S in the simulator to save a screenshot
+The Apple campaign pin includes the shared crew session and seven selectors:
+Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper, spray. Preflight checks
+recorded board types before capture. Do not substitute another board or bypass
+the check. The spray photo is a permitted real wall image bundled for replay.
 
-### Screenshot tips
+Native sources are retained under `app-stores/apple/raw-screenshots/`; the nine
+composed iPhone images are under `app-stores/apple/screenshots/`. iPads retain
+six images. Review the entire locale/device matrix before upload. Diagnostic
+record/live runs retain the old capture recipe and cannot publish a store set.
 
-- Use the demo account (test@boardsesh.com / test) so there is real data in the logbook.
-- Show a variety of boards (Kilter and Tension at minimum).
-- Make sure the queue has 3-5 climbs to show the feature clearly.
-- For the Bluetooth screenshot, show the scanning/pairing UI (it does not need a connected board).
+### Review before uploading
 
-### Automated upload to App Store Connect
+1. Inspect each contact sheet at store thumbnail size; confirm board labels and readable copy.
+2. Inspect full-size images for missing holds, loading states and obscured controls.
+3. Check Spanish, French and German text, including the captured native UI.
+4. Verify the shared queue, distinct on-wall status and real Dynamic Island controls.
+5. Run the complete screenshot dimension and content gates before staging an upload.
 
-You don't have to upload screenshots by hand. The **Mobile Screenshots (Native)**
-GitHub workflow captures the screenshots fresh and uploads them to App Store
-Connect via `fastlane deliver` — screenshots **only**, no binary, no text
-metadata, and no review submission. (The PNGs are no longer committed to the
-repo; they're regenerated each run.)
+Only real app captures and permitted wall photography belong in these assets;
+do not generate app screenshots with AI. Keep the source PNGs and presentation
+manifests so a reviewer can trace each composition.
 
-**How to run it:** Actions → **Mobile Screenshots (Native)** → **Run workflow**,
-and set **upload** to `true`. Leaving `upload` unset (the default, and what the
-nightly cron uses) only captures and saves the artifact — it never touches App
-Store Connect.
+### Screenshot upload to App Store Connect
 
-What it does:
+The **Mobile Screenshots (iOS)** workflow's manual dispatch defaults to capture
+only (`upload = false`, `publish_baseline = false`). Inspect the artifact before
+requesting an upload. Automatic runs after a qualifying native release-train
+build can upload a complete verified default set; see the
+[release workflow](../../docs/mobile-store-release.md) before dispatching.
 
-1. Captures common iPhone portrait screenshots and iPad landscape screenshots on
-   simulators, against **prod** (signed in as the test user) for every supported
-   app locale — the canonical store recipe, with no local backend needed.
-2. Runs `vp run check:screenshot-dimensions`, which fails the run if any PNG
-   isn't an Apple-accepted size for its slot (so Apple can't reject the upload
-   for a bad resolution).
-3. Runs `fastlane ios screenshots` (`fastlane/Fastfile`), which uploads the PNGs
-   with `skip_binary_upload`, `skip_metadata`, and `submit_for_review: false`.
-   deliver routes each image to its display slot by pixel dimensions
-   (1320x2868 -> the 6.9" iPhone slot, 2752x2064 -> the 13" iPad slot); the
-   `00-`/`01-` filename prefixes set the display order inside each device slot.
+`fastlane ios screenshots` uploads only the staged screenshot tree, with
+`skip_binary_upload`, `skip_metadata` and `submit_for_review: false`. Filename
+prefixes determine image order; pixel dimensions determine the display slot.
+The lane skips when no editable App Store version exists. Check App Store
+Connect's current version and status immediately before upload: a successful
+TestFlight build or earlier draft-preparation run does not prove it is editable
+now. The lane does not create a new version or submit it for review.
 
-**Authentication** uses the App Store Connect API key already configured for the
-TestFlight workflows — no new secrets:
+The lane synchronizes the entire screenshot set with the supplied PNGs. Use a
+complete reviewed set, because an upload replaces the existing images in its
+slots. Authentication uses the existing App Store Connect API key; local lane
+instructions are in [fastlane/README.md](../../fastlane/README.md).
 
-| Secret                             | Purpose                                                      |
-| ---------------------------------- | ------------------------------------------------------------ |
-| `APP_STORE_CONNECT_API_KEY_ID`     | API key id; names the decoded `.p8` (`AuthKey_<id>.p8`)      |
-| `APP_STORE_CONNECT_API_KEY_BASE64` | base64 of the `.p8` key; decoded at runtime, never committed |
-| `APP_STORE_CONNECT_ISSUER_ID`      | API issuer id                                                |
+### Header and Search Results stills
 
-> **The App Store version must be in an editable state.** deliver writes
-> screenshots to the version currently in **Prepare for Submission**. If the run
-> fails with a "could not find app/version" error, open App Store Connect, create
-> or open the next version so it's editable, then re-run the workflow. The lane
-> sets `submit_for_review: false` and `skip_app_version_update: true`, so it only
-> edits screenshots — it never bumps the version or submits for review.
+Generate these separately from screenshots:
 
-**Re-running is safe.** With `overwrite_screenshots` + `sync_screenshots`, each
-run replaces the App Store Connect screenshot set with exactly the captured PNGs,
-so a re-run converges rather than piling up duplicates.
+```bash
+vp run store:creatives -- --input <rawdevice> --output .boardsesh/app-store-creatives/en-US --device iphone-16-pro --locale en-US
+```
 
-To run the lane locally instead (after capturing with `vp run mobile:screenshots`),
-see `fastlane/README.md`.
+The command writes opaque `header.png` (3840 × 1646), `search-results.png`
+(3840 × 2560) and `creative-assets.json` provenance. Replace `<rawdevice>` with
+the matching locale/device directory of native captures. Repeat for `es`, `fr`
+and `de`; do not relabel English UI as a localized capture. These files stay
+outside the screenshot upload tree and are not uploaded by fastlane's screenshot
+or metadata lanes.
+
+Header and Search Results are organic App Store creative placements on
+iOS/iPadOS 27 and later. Review and submit them through App Store Connect's
+Asset Library, then assign the approved assets to the intended version and
+localizations. See the [creative asset runbook](../../docs/app-store-creative-assets.md)
+for the manual review/publication sequence. Do not infer Apple Ads placement
+eligibility from the presence of these organic assets.
 
 ---
 
@@ -276,7 +274,7 @@ Apple rejects apps that are just websites wrapped in a WebView without meaningfu
 - **This is a native React Native app with no WebView.** The screens are native RN components, not a hosted website. There is no embedded browser anywhere in the app.
 - **BLE is native-only and core to the app.** The app talks to Kilter Board and Tension Board hardware over native CoreBluetooth via `react-native-ble-plx`, which bridges to `CBCentralManager` (device discovery) and `CBPeripheral` (characteristic writes to the board's Nordic UART Service). There is no web fallback — Web Bluetooth is not supported on iOS (https://caniuse.com/web-bluetooth).
 - The app declares `bluetooth-le` in `UIRequiredDeviceCapabilities` and `bluetooth-central` in `UIBackgroundModes`, signaling that BLE is core functionality.
-- Include a screenshot of the Bluetooth pairing flow in the screenshots.
+- If the reviewer needs pairing evidence, attach a real capture to the review notes; keep the public nine-image campaign focused on its approved story.
 - If questioned, respond with: "This is a native React Native app with no web view. It requires native CoreBluetooth (via react-native-ble-plx) to communicate with Kilter Board hardware. Web Bluetooth is not supported on iOS. The app uses CBCentralManager to scan for boards advertising the Aurora BLE service (UUID 4488b571-7806-4df6-bcff-a2897e4953ff) and writes LED lighting commands to the Nordic UART RX characteristic (UUID 6e400002-b5a3-f393-e0a9-e50e24dcca9e). This functionality is not available in any iOS browser."
 
 ### 5.1.1(v) Account Deletion

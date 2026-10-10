@@ -98,6 +98,12 @@ in slot order (`[0]` boots active, `[1]` is the second board-view shot). Each en
 a board's own name or its layout name, ignoring case, spacing and punctuation. Defaults live
 in `packages/mobile/src/lib/screenshot-mode.ts`.
 
+Screenshot builds start from the selected primary wall even when a simulator restores a
+different active wall. They skip saved solo-queue/session restoration and solo-queue writes,
+so repeated captures do not inherit a previous board’s mini-player. These startup guards do
+not clear stored queues or session IDs; solo queue snapshot writes are disabled in screenshot mode.
+After the primary wall is active, explicit capture slots can switch boards normally.
+
 ### Fake Bluetooth and showcase anchors
 
 Two screenshot-mode switches exist for the homepage showcase video. The recorder and
@@ -183,6 +189,26 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 - The `screenshot` / `navigate` / `shutdown` subcommands attach to the **already-booted**
   simulator from a background `run`; they don't restart Metro. "No booted simulator" means you
   haven't started `run` yet (or it died — check its output).
+
+## Store capture device coverage
+
+`vp run mobile:screenshots -- --devices common` captures iPhone 16 Pro Max
+(1320 × 2868), iPhone 16 Pro (1206 × 2622), and both existing landscape iPads.
+`--devices phones` selects both phones. The four app locales produce 16 capture
+shards and 20 storefront sets because Spanish targets both `es-ES` and `es-MX`.
+The `smoke` flow keeps its single Pro Max / English default; pass an explicit
+`--device` to inspect another device. The ad-hoc `mobile:ios-shots` default is
+unchanged.
+
+The iPad flow navigates the native sidebar using accessibility labels from the
+same localized catalogs as the app. UIKit sidebar items do not expose the custom
+React Native sidebar's test IDs. Each navigation retries the tap and requires the
+destination's selected state before continuing; screen-specific content checks
+still gate each capture. Before capturing, the flow collapses the floating sidebar
+so it cannot obscure content, then reopens it for the next destination. The UIKit
+controls (`Hide Sidebar` / `Toggle sidebar`) follow the simulator system language,
+not the app catalog locale: use English-system simulators for all four app locales.
+Missing native controls fail the capture rather than leave the overlay visible.
 
 ## The `help` flow — captures for the boardsesh.com help pages
 
