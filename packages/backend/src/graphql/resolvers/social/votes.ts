@@ -8,6 +8,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { VoteInputSchema, BulkVoteSummaryInputSchema, SocialEntityTypeSchema } from '../../../validation/schemas';
 import { validateEntityExists } from './entity-validation';
 import { lockReferencedClimb } from '../climbs/spray-climb-lock';
+import { readableSocialEntityIds } from './entity-read-access';
 import { publishSocialEvent } from '../../../events/index';
 import { logger } from '../../../utils/logger';
 
@@ -18,6 +19,9 @@ async function getVoteSummary(
 ) {
   if (!(await canReadSocialEntity(entityType, entityId, authenticatedUserId)))
     return { entityType, entityId, upvotes: 0, downvotes: 0, voteScore: 0, userVote: 0 };
+  if (!(await readableSocialEntityIds(entityType, [entityId], authenticatedUserId)).has(entityId)) {
+    return { entityType, entityId, upvotes: 0, downvotes: 0, voteScore: 0, userVote: 0 };
+  }
   // Single query to vote_counts table instead of 3 separate COUNT queries
   const [counts] = await db
     .select({
@@ -76,6 +80,18 @@ export const socialVoteQueries = {
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
 
     if (entityIds.length === 0) return [];
+    const readableIds = await readableSocialEntityIds(entityType, entityIds, authenticatedUserId);
+    const visibleEntityIds = entityIds.filter((entityId) => readableIds.has(entityId));
+    if (visibleEntityIds.length === 0) {
+      return entityIds.map((entityId) => ({
+        entityType,
+        entityId,
+        upvotes: 0,
+        downvotes: 0,
+        voteScore: 0,
+        userVote: 0,
+      }));
+    }
 
     // Single query to vote_counts instead of separate upvote/downvote GROUP BY queries
     const countResults = await db
@@ -88,7 +104,7 @@ export const socialVoteQueries = {
       .where(
         and(
           eq(dbSchema.voteCounts.entityType, entityType),
-          inArray(dbSchema.voteCounts.entityId, entityIds),
+          inArray(dbSchema.voteCounts.entityId, visibleEntityIds),
           socialEntityPrivacyCondition(sql`${entityType}`, dbSchema.voteCounts.entityId, authenticatedUserId),
         ),
       );
@@ -113,7 +129,7 @@ export const socialVoteQueries = {
         .where(
           and(
             eq(dbSchema.votes.entityType, entityType),
-            inArray(dbSchema.votes.entityId, entityIds),
+            inArray(dbSchema.votes.entityId, visibleEntityIds),
             socialEntityPrivacyCondition(sql`${entityType}`, dbSchema.votes.entityId, authenticatedUserId),
             eq(dbSchema.votes.userId, authenticatedUserId),
           ),

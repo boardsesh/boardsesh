@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
 import { boardClimbEvents, sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import { ART_RECIPE } from '@boardsesh/spray-wall-geometry';
+import * as dbSchema from '@boardsesh/db/schema';
 import type * as GraphQLModule from 'graphql';
 import type {
   GraphQLArgument,
@@ -14,7 +15,7 @@ import type {
   GraphQLSchema,
   GraphQLType,
 } from 'graphql';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 
 /**
  * A schema-wide sweep: every climb reader in the SDL, run against ONE private
@@ -2116,5 +2117,431 @@ describe('references to a hard-deleted spray climb', () => {
         GHOST_KILTER_TICK_COMMENT,
       );
     });
+  });
+});
+
+// #6037: anonymous totals remain, but UUID possession never unlocks private prose.
+describe('private spray social references and anonymous aggregates', () => {
+  const publicClimbUuid = uuidv4();
+  const deletedSprayUuid = uuidv4();
+  const deletedCatalogueUuid = uuidv4();
+  const privateTickUuid = uuidv4();
+  const publicTickUuid = uuidv4();
+  const privateFriendTickUuid = uuidv4();
+  const privateCommentUuid = uuidv4();
+  const cycleCommentUuid = uuidv4();
+  const sessionId = uuidv4();
+  const privacyViewers = [
+    ...VIEWERS,
+    { name: 'unauthenticated owner', ctx: { ...ctxFor(OWNER), isAuthenticated: false } },
+  ];
+  const privateThreadBody = '6037 private tick prose';
+  const publicThreadBody = '6037 catalogue tick prose';
+
+  async function ask6037(
+    ctx: ConnectionContext,
+    document: string,
+    variables: Record<string, unknown>,
+  ): Promise<unknown> {
+    const outcome = await runRow(
+      { key: '6037 case', rootName: 'Query', fieldName: 'privacy', document, variables, kinds: [] },
+      ctx,
+    );
+    expect(outcome.errorMessages).toEqual([]);
+    return outcome.data;
+  }
+
+  async function restoreSession(): Promise<void> {
+    await db
+      .insert(dbSchema.boardSessions)
+      .values({
+        id: sessionId,
+        boardPath: 'kilter/1/1/1/40',
+        createdByUserId: OWNER,
+        name: '6037 mixed session',
+        boardId: world.boardId,
+        status: 'active',
+        startedAt: new Date(),
+        lastActivity: new Date(),
+      })
+      .onConflictDoNothing();
+  }
+
+  beforeAll(async () => {
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: publicClimbUuid,
+      boardType: 'kilter',
+      layoutId: 1,
+      name: '6037 public catalogue climb',
+      isDraft: false,
+      isListed: true,
+      frames: '',
+      userId: OWNER,
+    });
+    await db.insert(dbSchema.boardseshTicks).values([
+      {
+        uuid: privateTickUuid,
+        userId: OWNER,
+        climbUuid: world.climbUuid,
+        boardType: 'spray',
+        angle: ANGLE,
+        status: 'send',
+        quality: 5,
+        difficulty: 18,
+        sessionId,
+        boardId: world.boardId,
+        climbedAt: new Date().toISOString(),
+      },
+      {
+        uuid: publicTickUuid,
+        userId: OWNER,
+        climbUuid: publicClimbUuid,
+        boardType: 'kilter',
+        angle: ANGLE,
+        status: 'send',
+        difficulty: 10,
+        sessionId,
+        climbedAt: new Date().toISOString(),
+      },
+      {
+        uuid: privateFriendTickUuid,
+        userId: FRIEND,
+        climbUuid: world.climbUuid,
+        boardType: 'spray',
+        angle: ANGLE,
+        status: 'send',
+        difficulty: 18,
+        sessionId,
+        climbedAt: new Date().toISOString(),
+      },
+      {
+        uuid: uuidv4(),
+        userId: OWNER,
+        climbUuid: deletedSprayUuid,
+        boardType: 'spray',
+        angle: ANGLE,
+        status: 'send',
+        quality: 5,
+        climbedAt: new Date().toISOString(),
+      },
+    ]);
+    await db.insert(dbSchema.boardseshTicks).values([
+      {
+        uuid: uuidv4(),
+        userId: OWNER,
+        climbUuid: world.climbUuid,
+        boardType: 'spray',
+        angle: ANGLE,
+        status: 'send',
+        difficulty: 18,
+        climbedAt: '2026-10-03T12:00:00Z',
+      },
+      {
+        uuid: uuidv4(),
+        userId: OWNER,
+        climbUuid: publicClimbUuid,
+        boardType: 'kilter',
+        angle: ANGLE,
+        status: 'send',
+        difficulty: 10,
+        climbedAt: '2026-10-03T12:01:00Z',
+      },
+      {
+        uuid: uuidv4(),
+        userId: FRIEND,
+        climbUuid: world.climbUuid,
+        boardType: 'spray',
+        angle: ANGLE,
+        status: 'send',
+        difficulty: 18,
+        climbedAt: '2026-10-03T12:02:00Z',
+      },
+    ]);
+    await db.insert(dbSchema.comments).values([
+      {
+        uuid: uuidv4(),
+        userId: OWNER,
+        entityType: 'playlist_climb',
+        entityId: `${world.playlistId}:${world.climbUuid}`,
+        body: '6037 private playlist prose',
+      },
+      {
+        uuid: uuidv4(),
+        userId: OWNER,
+        entityType: 'comment',
+        entityId: privateCommentUuid,
+        body: '6037 nested private prose',
+      },
+
+      {
+        uuid: privateCommentUuid,
+        userId: OWNER,
+        entityType: 'tick',
+        entityId: privateTickUuid,
+        body: privateThreadBody,
+      },
+      { uuid: uuidv4(), userId: OWNER, entityType: 'tick', entityId: publicTickUuid, body: publicThreadBody },
+      {
+        uuid: uuidv4(),
+        userId: OWNER,
+        entityType: 'climb',
+        entityId: deletedSprayUuid,
+        body: '6037 deleted spray prose',
+      },
+      {
+        uuid: uuidv4(),
+        userId: OWNER,
+        entityType: 'climb',
+        entityId: deletedCatalogueUuid,
+        body: '6037 deleted catalogue prose',
+      },
+      {
+        uuid: cycleCommentUuid,
+        userId: OWNER,
+        entityType: 'comment',
+        entityId: cycleCommentUuid,
+        body: '6037 cyclic prose',
+      },
+    ]);
+    await db
+      .insert(dbSchema.voteCounts)
+      .values([
+        { entityType: 'tick', entityId: privateTickUuid, upvotes: 3, downvotes: 1, score: 2, createdAt: new Date() },
+        { entityType: 'tick', entityId: publicTickUuid, upvotes: 2, downvotes: 0, score: 2, createdAt: new Date() },
+        {
+          entityType: 'comment',
+          entityId: privateCommentUuid,
+          upvotes: 4,
+          downvotes: 1,
+          score: 3,
+          createdAt: new Date(),
+        },
+        { entityType: 'climb', entityId: world.climbUuid, upvotes: 5, downvotes: 0, score: 5, createdAt: new Date() },
+        {
+          entityType: 'comment',
+          entityId: cycleCommentUuid,
+          upvotes: 6,
+          downvotes: 0,
+          score: 6,
+          createdAt: new Date(),
+        },
+      ])
+      .onConflictDoUpdate({
+        target: [dbSchema.voteCounts.entityType, dbSchema.voteCounts.entityId],
+        set: { upvotes: 5, downvotes: 0, score: 5 },
+      });
+    await db
+      .insert(dbSchema.votes)
+      .values({ userId: STRANGER, entityType: 'tick', entityId: privateTickUuid, value: 1 });
+    await db
+      .insert(dbSchema.userFavorites)
+      .values({ userId: OWNER, climbUuid: deletedSprayUuid, boardName: 'spray', angle: ANGLE });
+    const [lastProposal] = await db
+      .select({ id: dbSchema.climbProposals.id })
+      .from(dbSchema.climbProposals)
+      .where(eq(dbSchema.climbProposals.uuid, world.hideProposalUuid));
+    await db.insert(dbSchema.climbCommunityStatus).values({
+      climbUuid: world.climbUuid,
+      boardType: 'spray',
+      angle: ANGLE,
+      communityGrade: '27',
+      lastProposalId: lastProposal.id,
+    });
+    await db
+      .insert(dbSchema.climbClassicStatus)
+      .values({ climbUuid: world.climbUuid, boardType: 'spray', isClassic: true, lastProposalId: lastProposal.id });
+  });
+
+  it('hides private tick/comment threads and every deleted-climb thread, keeping a live catalogue control', async () => {
+    const document =
+      'query Privacy($input: CommentsInput!) { comments(input: $input) { totalCount hasMore comments { body } } }';
+    for (const viewer of privacyViewers) {
+      const privateAnswer = await ask6037(viewer.ctx, document, {
+        input: { entityType: 'tick', entityId: privateTickUuid },
+      });
+      if (viewer.name === 'owner') expect(JSON.stringify(privateAnswer)).toContain(privateThreadBody);
+      else expect(privateAnswer).toEqual({ comments: { totalCount: 0, hasMore: false, comments: [] } });
+      expect(
+        JSON.stringify(
+          await ask6037(viewer.ctx, document, { input: { entityType: 'tick', entityId: publicTickUuid } }),
+        ),
+      ).toContain(publicThreadBody);
+
+      for (const root of [
+        {
+          entityType: 'playlist_climb',
+          entityId: `${world.playlistId}:${world.climbUuid}`,
+          body: '6037 private playlist prose',
+        },
+        { entityType: 'comment', entityId: privateCommentUuid, body: '6037 nested private prose' },
+      ]) {
+        const rootAnswer = await ask6037(viewer.ctx, document, {
+          input: { entityType: root.entityType, entityId: root.entityId },
+        });
+        if (viewer.name === 'owner') expect(JSON.stringify(rootAnswer)).toContain(root.body);
+        else expect(rootAnswer).toEqual({ comments: { totalCount: 0, hasMore: false, comments: [] } });
+      }
+      for (const climbUuid of [deletedSprayUuid, deletedCatalogueUuid]) {
+        expect(await ask6037(viewer.ctx, document, { input: { entityType: 'climb', entityId: climbUuid } })).toEqual({
+          comments: { totalCount: 0, hasMore: false, comments: [] },
+        });
+      }
+    }
+  });
+
+  it('neutralizes single and batch private votes, including comment roots and the caller vote', async () => {
+    const document =
+      'query Privacy($type: SocialEntityType!, $id: String!, $input: BulkVoteSummaryInput!) { voteSummary(entityType: $type, entityId: $id) { upvotes downvotes voteScore userVote } bulkVoteSummaries(input: $input) { entityId upvotes userVote } }';
+    for (const viewer of privacyViewers) {
+      const answer = await ask6037(viewer.ctx, document, {
+        type: 'tick',
+        id: privateTickUuid,
+        input: { entityType: 'tick', entityIds: [privateTickUuid, publicTickUuid] },
+      });
+      if (viewer.name === 'owner')
+        expect(answer).toMatchObject({ voteSummary: { upvotes: 3, downvotes: 1, voteScore: 2 } });
+      else
+        expect(answer).toMatchObject({
+          voteSummary: { upvotes: 0, downvotes: 0, voteScore: 0, userVote: 0 },
+          bulkVoteSummaries: [
+            { entityId: privateTickUuid, upvotes: 0, userVote: 0 },
+            { entityId: publicTickUuid, upvotes: 2 },
+          ],
+        });
+      const commentAnswer = await ask6037(viewer.ctx, document, {
+        type: 'comment',
+        id: privateCommentUuid,
+        input: { entityType: 'comment', entityIds: [privateCommentUuid, cycleCommentUuid] },
+      });
+      expect(commentAnswer).toMatchObject({
+        voteSummary: { upvotes: viewer.name === 'owner' ? 4 : 0 },
+        bulkVoteSummaries: [{ entityId: privateCommentUuid }, { entityId: cycleCommentUuid, upvotes: 0, userVote: 0 }],
+      });
+    }
+  });
+
+  it('neutralizes inaccessible community metadata before enrichment and keeps owner data', async () => {
+    const document =
+      'query Privacy($uuid: String!) { climbCommunityStatus(climbUuid: $uuid, boardType: "spray", angle: 40) { communityGrade isClassic openProposalCount freezeReason } bulkClimbCommunityStatus(climbUuids: [$uuid], boardType: "spray", angle: 40) { communityGrade isClassic } climbClassicStatus(climbUuid: $uuid, boardType: "spray") { isClassic } }';
+    for (const viewer of privacyViewers) {
+      const answer = await ask6037(viewer.ctx, document, { uuid: world.climbUuid });
+      if (viewer.name === 'owner')
+        expect(answer).toMatchObject({
+          climbCommunityStatus: { communityGrade: '27', isClassic: true },
+          climbClassicStatus: { isClassic: true },
+        });
+      else
+        expect(answer).toEqual({
+          climbCommunityStatus: { communityGrade: null, isClassic: false, openProposalCount: 0, freezeReason: null },
+          bulkClimbCommunityStatus: [{ communityGrade: null, isClassic: false }],
+          climbClassicStatus: { isClassic: false },
+        });
+    }
+    expect(await ask6037(ctxFor(OWNER), document, { uuid: deletedSprayUuid })).toMatchObject({
+      climbCommunityStatus: { communityGrade: null, openProposalCount: 0 },
+    });
+  });
+
+  it('excludes deleted spray smart refs and retains the author’s live climb counts', async () => {
+    const document =
+      'query Privacy($input: GetSmartPlaylistInput!) { smartPlaylist(input: $input) { totalCount hasMore meta { climbCount } climbs { uuid } } }';
+    for (const type of ['FIVE_STARS', 'LIKED_CLIMBS']) {
+      for (const ctx of [ctxFor(null), ctxFor(STRANGER), { ...ctxFor(OWNER), isAuthenticated: false }]) {
+        expect(await ask6037(ctx, document, { input: { type, userId: OWNER, boardName: 'spray' } })).toMatchObject({
+          smartPlaylist: { totalCount: 0, hasMore: false, meta: { climbCount: 0 }, climbs: [] },
+        });
+      }
+      expect(
+        await ask6037(ctxFor(OWNER), document, { input: { type, userId: OWNER, boardName: 'spray' } }),
+      ).toMatchObject({ smartPlaylist: { totalCount: 1, meta: { climbCount: 1 } } });
+    }
+  });
+
+  it('fails closed for unknown social roots while allowing established general threads', async () => {
+    const { readableSocialEntityIds } = await import('../graphql/resolvers/social/entity-read-access');
+    expect(await readableSocialEntityIds('future_private_root' as SocialEntityType, [privateTickUuid], null)).toEqual(
+      new Set(),
+    );
+    for (const entityType of ['board', 'gym', 'session'] as const) {
+      expect(await readableSocialEntityIds(entityType, [publicTickUuid], null)).toEqual(new Set([publicTickUuid]));
+    }
+  });
+
+  it('keeps aggregate sends while hiding named private-only participants and their counts', async () => {
+    await restoreSession();
+    const document =
+      'query Privacy($input: ActivityFeedInput) { sessionGroupedFeed(input: $input) { sessions { sessionId totalSends tickCount participants { userId sends } } } }';
+    for (const viewer of privacyViewers) {
+      const answer = (await ask6037(viewer.ctx, document, { input: { limit: 50 } })) as {
+        sessionGroupedFeed: {
+          sessions: Array<{
+            sessionId: string;
+            totalSends: number;
+            tickCount: number;
+            participants: Array<{ userId: string; sends: number }>;
+          }>;
+        };
+      };
+      const card = answer.sessionGroupedFeed.sessions.find((session) => session.sessionId === sessionId);
+      expect(card).toMatchObject({ totalSends: 3, tickCount: 3 });
+      expect(card?.participants).toEqual(
+        viewer.name === 'owner'
+          ? [
+              { userId: OWNER, sends: 2 },
+              { userId: FRIEND, sends: 1 },
+            ]
+          : [{ userId: OWNER, sends: 1 }],
+      );
+      const detail = await ask6037(
+        viewer.ctx,
+        'query Privacy($id: String!) { sessionDetail(sessionId: $id) { totalSends participants { userId sends } ticks { uuid } } }',
+        { id: sessionId },
+      );
+      expect(detail).toMatchObject({
+        sessionDetail: { totalSends: viewer.name === 'owner' ? 3 : 1, participants: card?.participants },
+      });
+      if (viewer.name !== 'owner') expect(JSON.stringify(detail)).not.toContain(privateTickUuid);
+      const summary = await generateSessionSummary(sessionId, viewer.name === 'owner' ? OWNER : null);
+      expect(summary?.totalSends).toBe(3);
+      expect(
+        summary?.participants.map((participant) => ({ userId: participant.userId, sends: participant.sends })),
+      ).toEqual(card?.participants);
+    }
+  });
+  it('separates daily aggregate counts from named public/private-only activity', async () => {
+    const document =
+      'query Privacy($input: ActivityFeedInput) { sessionGroupedFeed(input: $input) { sessions { sessionId totalSends tickCount participants { userId sends } } } }';
+    for (const viewer of privacyViewers) {
+      const answer = (await ask6037(viewer.ctx, document, {
+        input: { limit: 50, includeDailyHighlights: true, userId: OWNER },
+      })) as {
+        sessionGroupedFeed: {
+          sessions: Array<{
+            sessionId: string;
+            totalSends: number;
+            tickCount: number;
+            participants: Array<{ userId: string; sends: number }>;
+          }>;
+        };
+      };
+      const ownerCard = answer.sessionGroupedFeed.sessions.find(
+        (session) => session.sessionId === `daily:${OWNER}:2026-10-03`,
+      );
+      const friendAnswer = (await ask6037(viewer.ctx, document, {
+        input: { limit: 50, includeDailyHighlights: true, userId: FRIEND },
+      })) as typeof answer;
+      const friendCard = friendAnswer.sessionGroupedFeed.sessions.find(
+        (session) => session.sessionId === `daily:${FRIEND}:2026-10-03`,
+      );
+      expect(ownerCard).toMatchObject({ totalSends: 2, tickCount: 2 });
+      expect(ownerCard?.participants).toEqual([{ userId: OWNER, sends: viewer.name === 'owner' ? 2 : 1 }]);
+      if (viewer.name === 'owner') {
+        expect(friendCard).toMatchObject({ totalSends: 1, tickCount: 1, participants: [{ userId: FRIEND, sends: 1 }] });
+      } else {
+        // A daily card has no session UUID independent of its tick. Existing
+        // policy drops private-only days rather than exposing a private tick.
+        expect(friendCard).toBeUndefined();
+      }
+    }
   });
 });

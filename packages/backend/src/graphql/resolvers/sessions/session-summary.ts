@@ -5,7 +5,7 @@ import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
+import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
 import { eq, and, inArray, sql, desc, isNotNull } from 'drizzle-orm';
 import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -158,9 +158,9 @@ export async function generateSessionSummary(
              COUNT(*) FILTER (WHERE t.status IN ('flash', 'send'))::int AS "rawSends",
              COUNT(*) FILTER (WHERE t.status = 'flash')::int AS "rawFlashes",
              COUNT(*)::int AS "rawAttempts",
-             COUNT(*) FILTER (WHERE t.status IN ('flash', 'send') AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))})::int AS sends,
-             COUNT(*) FILTER (WHERE t.status = 'flash' AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))})::int AS flashes,
-             COUNT(*) FILTER (WHERE ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))})::int AS attempts
+             COUNT(*) FILTER (WHERE t.status IN ('flash', 'send') AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))} AND ${sprayTickVisibleSql('t', viewerUserId)})::int AS sends,
+             COUNT(*) FILTER (WHERE t.status = 'flash' AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))} AND ${sprayTickVisibleSql('t', viewerUserId)})::int AS flashes,
+             COUNT(*) FILTER (WHERE ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))} AND ${sprayTickVisibleSql('t', viewerUserId)})::int AS attempts
       FROM boardsesh_ticks t
       LEFT JOIN users u ON u.id = t.user_id
       LEFT JOIN user_profiles up ON up.user_id = t.user_id

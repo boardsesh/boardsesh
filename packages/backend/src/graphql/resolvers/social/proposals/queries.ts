@@ -4,6 +4,7 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceClimbExistsCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
+import { readableSprayClimbUuids } from '../entity-read-access';
 import { isSprayBoardType, sprayClimbRowExists, sprayClimbUuidIsReadable } from '../../climbs/spray-read-access';
 import { GetClimbProposalsInputSchema, BrowseProposalsInputSchema } from '../../../../validation/schemas';
 import { resolveCommunitySetting } from '../community-settings';
@@ -150,6 +151,22 @@ export const socialProposalQueries = {
     { climbUuid, boardType, angle }: { climbUuid: string; boardType: string; angle: number },
     ctx: ConnectionContext,
   ) => {
+    const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
+    if (isSprayBoardType(boardType) && !(await readableSprayClimbUuids([climbUuid], viewerUserId)).has(climbUuid)) {
+      return {
+        climbUuid,
+        boardType,
+        angle,
+        communityGrade: null,
+        isBenchmark: false,
+        isClassic: false,
+        isFrozen: false,
+        freezeReason: null,
+        openProposalCount: 0,
+        outlierAnalysis: null,
+        updatedAt: null,
+      };
+    }
     // Get community status
     const [status] = await db
       .select()
@@ -215,30 +232,41 @@ export const socialProposalQueries = {
   bulkClimbCommunityStatus: async (
     _: unknown,
     { climbUuids, boardType, angle }: { climbUuids: string[]; boardType: string; angle: number },
-    _ctx: ConnectionContext,
+    ctx: ConnectionContext,
   ) => {
     if (climbUuids.length === 0) return [];
+    const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
+    const readableClimbs = isSprayBoardType(boardType)
+      ? await readableSprayClimbUuids(climbUuids, viewerUserId)
+      : new Set(climbUuids);
+    const visibleClimbUuids = climbUuids.filter((climbUuid) => readableClimbs.has(climbUuid));
 
-    const statuses = await db
-      .select()
-      .from(dbSchema.climbCommunityStatus)
-      .where(
-        and(
-          inArray(dbSchema.climbCommunityStatus.climbUuid, climbUuids),
-          eq(dbSchema.climbCommunityStatus.boardType, boardType),
-          eq(dbSchema.climbCommunityStatus.angle, angle),
-        ),
-      );
+    const statuses =
+      visibleClimbUuids.length === 0
+        ? []
+        : await db
+            .select()
+            .from(dbSchema.climbCommunityStatus)
+            .where(
+              and(
+                inArray(dbSchema.climbCommunityStatus.climbUuid, visibleClimbUuids),
+                eq(dbSchema.climbCommunityStatus.boardType, boardType),
+                eq(dbSchema.climbCommunityStatus.angle, angle),
+              ),
+            );
 
-    const classicStatuses = await db
-      .select()
-      .from(dbSchema.climbClassicStatus)
-      .where(
-        and(
-          inArray(dbSchema.climbClassicStatus.climbUuid, climbUuids),
-          eq(dbSchema.climbClassicStatus.boardType, boardType),
-        ),
-      );
+    const classicStatuses =
+      visibleClimbUuids.length === 0
+        ? []
+        : await db
+            .select()
+            .from(dbSchema.climbClassicStatus)
+            .where(
+              and(
+                inArray(dbSchema.climbClassicStatus.climbUuid, visibleClimbUuids),
+                eq(dbSchema.climbClassicStatus.boardType, boardType),
+              ),
+            );
 
     const statusMap = new Map(statuses.map((s) => [s.climbUuid, s]));
     const classicMap = new Map(classicStatuses.map((s) => [s.climbUuid, s]));
@@ -265,8 +293,12 @@ export const socialProposalQueries = {
   climbClassicStatus: async (
     _: unknown,
     { climbUuid, boardType }: { climbUuid: string; boardType: string },
-    _ctx: ConnectionContext,
+    ctx: ConnectionContext,
   ) => {
+    const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
+    if (isSprayBoardType(boardType) && !(await readableSprayClimbUuids([climbUuid], viewerUserId)).has(climbUuid)) {
+      return { climbUuid, boardType, isClassic: false, updatedAt: null };
+    }
     const [status] = await db
       .select()
       .from(dbSchema.climbClassicStatus)

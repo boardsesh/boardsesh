@@ -15,7 +15,7 @@ import {
 } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayReferenceClimbExistsCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
 import { GetSmartPlaylistInputSchema } from '../../../../validation/schemas';
 import { hydrateClimbsByRefs, type ClimbRef } from '../helpers/hydrate-climbs';
@@ -72,6 +72,10 @@ function smartBaseConditions(
     sprayReferenceVisibilityCondition(
       { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
       viewerUserId,
+    ),
+    sprayReferenceClimbExistsCondition(
+      { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+      { authorId: dbSchema.boardseshTicks.userId, viewerUserId },
     ),
   );
   return conditions;
@@ -200,6 +204,10 @@ async function selectSmartClimbRefs(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
       ),
+      sprayReferenceClimbExistsCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        { authorId: dbSchema.userFavorites.userId, viewerUserId },
+      ),
     ];
     if (boardName) {
       favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
@@ -282,6 +290,10 @@ async function countSmartClimbRefs(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
       ),
+      sprayReferenceClimbExistsCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        { authorId: dbSchema.userFavorites.userId, viewerUserId },
+      ),
     ];
     if (boardName) {
       favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
@@ -358,6 +370,7 @@ export const smartPlaylist = async (
   await applyRateLimit(ctx, 60, 'smartPlaylist');
   validateInput(GetSmartPlaylistInputSchema, input, 'input');
 
+  const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
   const page = input.page ?? 0;
   const pageSize = input.pageSize ?? 20;
 
@@ -373,7 +386,7 @@ export const smartPlaylist = async (
       userAvatar: null as string | null,
       climbCount: 0,
     };
-    if (!ctx.userId || ctx.userId !== input.userId) {
+    if (!viewerUserId || viewerUserId !== input.userId) {
       return { meta: emptyMeta, climbs: [], totalCount: 0, hasMore: false };
     }
     const maxRecPage = Math.floor(MAX_RECOMMENDATION_OFFSET / pageSize);
@@ -415,7 +428,7 @@ export const smartPlaylist = async (
     // The VIEWER, not `input.userId` — that is the logbook's owner, so passing it
     // made every smart playlist hydrate as if the owner were asking and handed a
     // private wall's climb name and frames to anyone who named them.
-    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides, viewerUserId: ctx.userId });
+    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides, viewerUserId });
     return {
       meta: {
         type: input.type,
@@ -442,12 +455,12 @@ export const smartPlaylist = async (
   }
 
   const [pageRefs, totalCount] = await Promise.all([
-    selectSmartClimbRefs(input.type, input.userId, input.boardName, page, pageSize, ctx.userId),
-    countSmartClimbRefs(input.type, input.userId, input.boardName, ctx.userId),
+    selectSmartClimbRefs(input.type, input.userId, input.boardName, page, pageSize, viewerUserId),
+    countSmartClimbRefs(input.type, input.userId, input.boardName, viewerUserId),
   ]);
   // The VIEWER. `input.userId` is whose logbook is being rendered, which is not the
   // same person and must never stand in for them — see the recommendation branch.
-  const climbs = await hydrateClimbsByRefs(pageRefs, { viewerUserId: ctx.userId });
+  const climbs = await hydrateClimbsByRefs(pageRefs, { viewerUserId });
 
   return {
     meta: {

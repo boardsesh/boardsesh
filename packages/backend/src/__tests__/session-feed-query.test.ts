@@ -193,8 +193,12 @@ describe('sessionGroupedFeed user filtering', () => {
     expect(boardTypesQueryText).toContain('AND t.user_id =');
     expect(hardestSendsQueryText).toContain('AND t.user_id =');
     expect(featuredBetaQueryText).toContain('AND t.user_id =');
-    // participants[] is the leaderboard — it must stay whole-session, never scoped.
-    expect(participantsQueryText).not.toContain('AND t.user_id =');
+    // The leaderboard spans session members, with private ticks filtered per viewer.
+    // The nested privacy predicate has an author-id comparison; only the outer
+    // tick scope must omit the profile's participant filter.
+    const participantTickScope = participantsQueryText.split('AND (')[0];
+    expect(participantTickScope).not.toContain('AND t.user_id =');
+    expect(participantsQueryText).toContain("t.board_type IS DISTINCT FROM 'spray'");
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]).toMatchObject({

@@ -87,14 +87,15 @@ vi.mock('@boardsesh/db/queries', () => ({
   sprayClimbVisibilityCondition: () => ({ __sprayVisibility: true }),
   // …and its fail-closed half for a spray tick whose climb row is gone (#6031).
   sprayReferenceClimbExistsCondition: () => ({ __sprayClimbExists: true }),
+  sprayReferenceVisibilityCondition: () => ({ __sprayReferenceVisibility: true }),
 }));
 
 // Mock drizzle-orm functions to prevent errors from passing mock schema objects
-vi.mock('drizzle-orm', () => ({
+vi.mock('drizzle-orm', async (importOriginal) => ({
   eq: (..._args: unknown[]) => ({}),
   and: (..._args: unknown[]) => ({}),
   inArray: (..._args: unknown[]) => ({}),
-  sql: (_strings: TemplateStringsArray, ..._values: unknown[]) => ({}),
+  sql: (await importOriginal<typeof import('drizzle-orm')>()).sql,
   count: (..._args: unknown[]) => ({}),
   desc: (..._args: unknown[]) => ({}),
   isNotNull: (..._args: unknown[]) => ({}),
@@ -139,7 +140,14 @@ describe('generateSessionSummary', () => {
       },
     ];
     mockState.participantRows = [
-      { userId: 'user-1', displayName: 'Alice', avatarUrl: null, sends: 4, flashes: 1, attempts: 8 },
+      {
+        userId: 'user-1',
+        displayName: 'Alice',
+        avatarUrl: null,
+        sends: 4,
+        flashes: 1,
+        attempts: 8,
+      },
       {
         userId: 'user-2',
         displayName: 'Bob',
@@ -414,9 +422,30 @@ describe('generateSessionSummary', () => {
     mockState.gradeDistRows = [];
     mockState.hardestRows = [];
     mockState.participantRows = [
-      { userId: 'user-1', displayName: 'A', avatarUrl: null, sends: 10, flashes: 3, attempts: 15 },
-      { userId: 'user-2', displayName: 'B', avatarUrl: null, sends: 5, flashes: 1, attempts: 20 },
-      { userId: 'user-3', displayName: 'C', avatarUrl: null, sends: 0, flashes: 0, attempts: 3 },
+      {
+        userId: 'user-1',
+        displayName: 'A',
+        avatarUrl: null,
+        sends: 10,
+        flashes: 3,
+        attempts: 15,
+      },
+      {
+        userId: 'user-2',
+        displayName: 'B',
+        avatarUrl: null,
+        sends: 5,
+        flashes: 1,
+        attempts: 20,
+      },
+      {
+        userId: 'user-3',
+        displayName: 'C',
+        avatarUrl: null,
+        sends: 0,
+        flashes: 0,
+        attempts: 3,
+      },
     ];
 
     const result = await generateSessionSummary('session-1');
