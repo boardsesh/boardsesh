@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SprayTrainingConsentField } from '../board-discovery/BoardMetaFields';
@@ -7,6 +6,7 @@ import {
   useSetSprayWallTrainingConsent,
   useSprayWallTrainingConsent,
 } from '../../lib/spray/use-spray-wall-training-consent';
+import { useTrainingConsentRefusalNotice } from '../../lib/spray/use-training-consent-refusal-notice';
 
 /**
  * "Help train hold finding" on an existing wall (SW-20, #5471).
@@ -14,15 +14,13 @@ import {
  * Saves on the tap, not with the form: it is not a board-row edit, and the
  * switch moving under the thumb is the whole confirmation. A refusal flips it
  * back and says so where the owner is looking: inline while they are on the
- * row, and in a native alert once they are not, because the wall is still
- * opted in and they have to be told.
+ * row, and in a notice over whatever they moved on to once they are not,
+ * because the wall is still opted in and they have to be told
+ * (`useTrainingConsentRefusalNotice`).
  *
  * "Not on the row" is two cases. The row has unmounted (Save or Back on Edit
  * board), or it is still mounted under a screen pushed over it (Edit board's
- * "Reset wall" opens the wizard on top). An alert and not a toast for both:
- * Edit board is pushed inside the boards modal, so the owner is still inside a
- * modal after leaving it, and the toast overlay draws behind one
- * (`toast-provider.tsx`). A native alert sits above every modal.
+ * "Reset wall" opens the wizard on top).
  *
  * Draws nothing until the server has answered with the owner's value, and
  * nothing after a read that failed: a switch drawn from a guess would write that
@@ -34,6 +32,7 @@ export function SprayWallTrainingConsentRow({ wallUuid, isOwner }: { wallUuid: s
   const { t } = useTranslation('boards');
   const consent = useSprayWallTrainingConsent(wallUuid, isOwner);
   const [error, setError] = useState<string | null>(null);
+  const noticeOffTheRow = useTrainingConsentRefusalNotice();
 
   // Mounted, and on the screen in front. Read when the refusal lands, which can
   // be seconds after the tap.
@@ -48,8 +47,8 @@ export function SprayWallTrainingConsentRow({ wallUuid, isOwner }: { wallUuid: s
   const onRefused = useCallback(() => {
     const message = t('mobile.sprayTraining.updateError');
     if (ownerIsLookingRef.current) setError(message);
-    else Alert.alert(message);
-  }, [t]);
+    else noticeOffTheRow(message);
+  }, [t, noticeOffTheRow]);
   const { setConsent, isSaving } = useSetSprayWallTrainingConsent(wallUuid, { onRefused });
 
   const onValueChange = useCallback(
