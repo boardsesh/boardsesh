@@ -856,13 +856,12 @@
     "sprayWalls": {
       "breadcrumb": "Spray walls",
       "hero": {
-        "title": "Photograph and set up your spray wall",
+        "title": "Spraywall setup",
         "subtitle": "One photo of your wall is what every hold and climb is set on, so the shot matters."
       },
       "watch": {
         "title": "Watch the walkthrough",
         "videoAlt": "Walkthrough of adding a spray wall and editing its holds in the Boardsesh app",
-        "videoCaption": "Add a wall, review its holds, choose its look, and edit it later.",
         "p1": "Boardsesh finds the holds in your photo, and every climb on the wall is set on that same photo. A good shot means fewer holds to fix by hand."
       },
       "photo": {
@@ -873,6 +872,7 @@
         "tilt": "Tilt the phone to match the wall's angle, so it sits parallel to the wall face. On an overhang, a phone held straight up makes the top of the wall loom and the bottom shrink away.",
         "frame": "Get the whole wall in frame, top to bottom and side to side.",
         "zoom": "Shoot at 1x. If the wall doesn't fit, step back rather than switching to the wide lens.",
+        "lighting": "Use bright, even lighting so the holds stand out from the wall. Clear contrast helps Boardsesh find them.",
         "why": "Why it matters: the hold finder reads your photo as it is. Holds shot at a skew come out small and stretched, so more of them get missed and you end up adding them yourself.",
         "exampleAlt": "A densely set indoor spray wall photographed from the front, with the whole climbing surface visible",
         "exampleCaption": "Keep the whole wall in frame so its holds are easy to find and mark."

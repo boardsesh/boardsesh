@@ -856,13 +856,12 @@
     "sprayWalls": {
       "breadcrumb": "Murs de spray",
       "hero": {
-        "title": "Photographie et configure ton mur de spray",
+        "title": "Configuration du mur de spray",
         "subtitle": "Chaque prise et chaque bloc de ton mur sont posés sur une seule photo, alors soigne-la."
       },
       "watch": {
         "title": "Regarde le guide vidéo",
         "videoAlt": "Vidéo montrant comment ajouter un mur de spray et modifier ses prises dans l'app Boardsesh",
-        "videoCaption": "Ajoute le mur, vérifie ses prises, choisis son apparence et modifie-le plus tard.",
         "p1": "Boardsesh trouve les prises sur ta photo, et chaque bloc du mur est posé sur cette même photo. Une bonne photo, c'est moins de prises à corriger à la main."
       },
       "photo": {
@@ -873,6 +872,7 @@
         "tilt": "Incline le téléphone selon l'angle du mur, pour qu'il soit parallèle à sa surface. Sur un dévers, un téléphone tenu bien droit fait grossir le haut du mur et rétrécir le bas.",
         "frame": "Cadre tout le mur, de haut en bas et d'un bord à l'autre.",
         "zoom": "Shoote en 1x. Si le mur ne rentre pas, recule plutôt que de passer au grand-angle.",
+        "lighting": "Utilise un éclairage vif et uniforme pour que les prises se détachent du mur. Un bon contraste aide Boardsesh à les repérer.",
         "why": "Pourquoi c'est important : le détecteur de prises lit ta photo telle quelle. Photographiées de biais, les prises ressortent petites et étirées, donc il en rate davantage et tu finis par les ajouter toi-même.",
         "exampleAlt": "Mur de spray couvert de prises, photographié de face avec toute la surface de grimpe visible",
         "exampleCaption": "Cadre tout le mur pour trouver et marquer les prises plus facilement."

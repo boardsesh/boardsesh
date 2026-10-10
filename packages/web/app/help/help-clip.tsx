@@ -60,7 +60,7 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
 }
 
 /** A longer walkthrough shows a poster and controls without autoplay or looping. */
-export function HelpWalkthrough({ name, alt, caption }: { name: HelpWalkthroughName; alt: string; caption: string }) {
+export function HelpWalkthrough({ name, alt }: { name: HelpWalkthroughName; alt: string }) {
   const { t } = useTranslation('marketing');
   const { portrait, landscape } = helpWalkthrough(name);
 
@@ -100,9 +100,6 @@ export function HelpWalkthrough({ name, alt, caption }: { name: HelpWalkthroughN
           {t('help.clip.unsupported')}
         </video>
       </Box>
-      <Typography component="figcaption" variant="body2" className={styles.caption}>
-        {caption}
-      </Typography>
     </Box>
   );
 }

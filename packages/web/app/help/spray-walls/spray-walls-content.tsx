@@ -24,11 +24,7 @@ export default function SprayWallsContent() {
       breadcrumb={<HelpBreadcrumb current={t('help.sprayWalls.breadcrumb')} />}
     >
       <PageSection title={t('help.sprayWalls.watch.title')}>
-        <HelpWalkthrough
-          name="spray-walls-walkthrough"
-          alt={t('help.sprayWalls.watch.videoAlt')}
-          caption={t('help.sprayWalls.watch.videoCaption')}
-        />
+        <HelpWalkthrough name="spray-walls-walkthrough" alt={t('help.sprayWalls.watch.videoAlt')} />
         <Prose>{t('help.sprayWalls.watch.p1')}</Prose>
       </PageSection>
 
@@ -40,6 +36,7 @@ export default function SprayWallsContent() {
           <li>{t('help.sprayWalls.photo.tilt')}</li>
           <li>{t('help.sprayWalls.photo.frame')}</li>
           <li>{t('help.sprayWalls.photo.zoom')}</li>
+          <li>{t('help.sprayWalls.photo.lighting')}</li>
         </ProseList>
         <Prose>{t('help.sprayWalls.photo.why')}</Prose>
         <Box component="figure" className={styles.photoFigure}>

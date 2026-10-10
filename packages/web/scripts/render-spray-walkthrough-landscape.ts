@@ -24,7 +24,12 @@ const chapters = [
     at: 0,
     eyebrow: '01 / THE PHOTO',
     title: ['One good', 'photo.'],
-    body: ['Shoot square on, in portrait.', 'Keep the whole wall in frame.'],
+    body: [
+      'Shoot square on, in portrait.',
+      'Keep the whole wall in frame.',
+      'Even lighting and strong contrast',
+      'help Boardsesh recognize holds.',
+    ],
   },
   {
     at: 39,

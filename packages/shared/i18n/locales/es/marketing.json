@@ -856,13 +856,12 @@
     "sprayWalls": {
       "breadcrumb": "Muros de spray",
       "hero": {
-        "title": "Fotografía y configura tu muro de spray",
+        "title": "Configuración del muro de spray",
         "subtitle": "Cada presa y cada bloque de tu muro se marcan sobre una sola foto, así que la foto importa."
       },
       "watch": {
         "title": "Mira el vídeo",
         "videoAlt": "Vídeo sobre cómo añadir un muro de spray y editar sus presas en la app Boardsesh",
-        "videoCaption": "Añade el muro, revisa sus presas, elige su aspecto y edítalo después.",
         "p1": "Boardsesh encuentra las presas en tu foto, y cada bloque del muro se marca sobre esa misma foto. Una buena foto significa menos presas que corregir a mano."
       },
       "photo": {
@@ -873,6 +872,7 @@
         "tilt": "Inclina el móvil según el ángulo del muro, para que quede paralelo a la pared. En un desplome, con el móvil recto la parte de arriba se agiganta y la de abajo se encoge.",
         "frame": "Encuadra el muro entero, de arriba abajo y de lado a lado.",
         "zoom": "Dispara a 1x. Si el muro no cabe, aléjate en lugar de cambiar al gran angular.",
+        "lighting": "Usa una luz intensa y uniforme para que las presas destaquen sobre el muro. Un buen contraste ayuda a Boardsesh a encontrarlas.",
         "why": "Por qué importa: el detector de presas lee tu foto tal cual. Las presas fotografiadas de lado salen pequeñas y estiradas, así que se le escapan más y acabas añadiéndolas tú.",
         "exampleAlt": "Muro de spray cubierto de presas, fotografiado de frente con toda la superficie de escalada visible",
         "exampleCaption": "Encuadra el muro entero para que sea fácil encontrar y marcar las presas."

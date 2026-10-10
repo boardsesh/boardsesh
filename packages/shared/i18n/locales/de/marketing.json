@@ -856,13 +856,12 @@
     "sprayWalls": {
       "breadcrumb": "Spraywände",
       "hero": {
-        "title": "Fotografiere und richte deine Spraywand ein",
+        "title": "Spraywand einrichten",
         "subtitle": "Jeder Griff und jeder Boulder an deiner Wand sitzt auf einem einzigen Foto. Darum zählt die Aufnahme."
       },
       "watch": {
         "title": "Sieh dir den Ablauf an",
         "videoAlt": "Video über das Hinzufügen einer Spraywand und das Bearbeiten ihrer Griffe in der Boardsesh-App",
-        "videoCaption": "Wand hinzufügen, Griffe prüfen, Darstellung wählen und später bearbeiten.",
         "p1": "Boardsesh findet die Griffe auf deinem Foto, und jeder Boulder an der Wand wird auf genau diesem Foto gesetzt. Ein gutes Foto heißt: weniger Griffe, die du von Hand korrigieren musst."
       },
       "photo": {
@@ -873,6 +872,7 @@
         "tilt": "Neig das Handy im Winkel der Wand, sodass es parallel zur Wandfläche liegt. Im Überhang wirkt der obere Teil der Wand bei senkrecht gehaltenem Handy riesig, und der untere schrumpft.",
         "frame": "Hol die ganze Wand ins Bild, von oben bis unten und von Rand zu Rand.",
         "zoom": "Fotografiere bei 1x. Passt die Wand nicht drauf, geh lieber ein paar Schritte zurück, statt auf das Weitwinkelobjektiv zu wechseln.",
+        "lighting": "Sorge für helles, gleichmäßiges Licht, damit sich die Griffe von der Wand abheben. Ein klarer Kontrast hilft Boardsesh, sie zu erkennen.",
         "why": "Warum das wichtig ist: Die Griff-Erkennung liest dein Foto so, wie es ist. Schräg fotografierte Griffe kommen klein und verzerrt raus, also werden mehr übersehen und du musst sie selbst hinzufügen.",
         "exampleAlt": "Dicht bestückte Spraywand, frontal fotografiert und mit der ganzen Kletterfläche im Bild",
         "exampleCaption": "Nimm die ganze Wand auf, damit sich ihre Griffe leicht finden und markieren lassen."

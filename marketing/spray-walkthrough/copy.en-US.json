@@ -25,11 +25,18 @@
     "title": "Why it matters",
     "good": "Square on",
     "bad": "Skewed",
-    "body": "The hold finder reads your photo as it is. Skewed holds come out small and stretched, so more of them get missed."
+    "body": "Even light and clear contrast between holds and wall help the hold finder recognize them. Skewed holds look small and stretched, so more get missed."
   },
   "recap": {
     "title": "Before you shoot",
-    "items": ["Portrait", "Square on", "Tilted with the wall", "The whole wall in frame"]
+    "items": [
+      "Portrait",
+      "Square on",
+      "Tilted with the wall",
+      "The whole wall in frame",
+      "Good, even lighting",
+      "Strong hold-to-wall contrast"
+    ]
   },
   "outro": {
     "title": "Your wall, ready to climb.",
