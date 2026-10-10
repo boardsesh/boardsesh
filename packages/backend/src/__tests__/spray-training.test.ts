@@ -160,11 +160,12 @@ async function createWallWithInput(input: Record<string, unknown>, owner = OWNER
 }
 
 /**
- * A wall as the app's wizard creates it: the owner saw "Help train hold
- * finding" and left it on, so the client SENDS `trainingConsent: true`. Stated
- * here because the server never assumes it. A create that says nothing stores
- * no consent (see "training consent at creation"), and most tests below need a
- * consented wall to have anything to assert on.
+ * A wall as the app's wizard creates it. The add-a-wall switch "Help train hold
+ * finding" is on when the wizard opens, and the app SENDS whatever the owner
+ * leaves it at: here they left it on, so `trainingConsent: true`. Stated in the
+ * input because the server stores a yes only when a client sends one. A create
+ * that says nothing stores a no (see "training consent at creation"), and most
+ * tests below need a consented wall to have anything to assert on.
  */
 async function createWall(input: Record<string, unknown> = {}, owner = OWNER): Promise<CreatedWall> {
   return createWallWithInput(

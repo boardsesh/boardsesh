@@ -232,11 +232,13 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     """
     replacedByWallUuid: ID
     """
-    Whether the owner lets this wall's photo and marked holds help train hold
-    finding. The app turns it on for a new wall unless the owner switches it
-    off. A wall that existed before the switch, or was created without stating
-    it, starts off. A Boardsesh admin checks a version before it is used. Only
-    ever non-null for the wall's OWNER.
+    Whether this wall's photo and marked holds may help train hold finding. The
+    server stores a yes only when a client sends trainingConsent: true. The
+    app's add-a-wall switch is on when the wizard opens, and the app sends
+    whatever the owner leaves it at. A wall that existed before the switch, or
+    was created by an app without it, is off until its owner turns it on. A
+    Boardsesh admin checks a version before it is used. Only ever non-null for
+    the wall's OWNER.
     """
     trainingConsent: Boolean
   }
@@ -340,9 +342,10 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     "Accepted and ignored. Only a climb's setter edits it."
     climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
     """
-    Let this wall's photo and marked holds help train hold finding. Off when
-    omitted: only a client that showed the owner the switch can say yes, so
-    the app sends it explicitly.
+    Let this wall's photo and marked holds help train hold finding. The server
+    stores a yes only for true; omitted and false both store a no. The app's
+    add-a-wall switch is on when the wizard opens, and the app sends whatever
+    the owner leaves it at.
     """
     trainingConsent: Boolean
   }

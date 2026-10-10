@@ -2820,8 +2820,11 @@ Migration 0258 adds both. Nothing is dropped or rewritten.
   made exactly like any new wall's. It copies the name, description, angle,
   location fields and the stored look (`render_settings`). The retired climb
   edit policy is not copied. The gym link and `hide_location` are copied as they were when the
-  reset started; a later change to the old wall does not follow. No photo,
-  version, hold or climb is copied.
+  reset started; a later change to the old wall does not follow. The training
+  consent choice is copied the same way: a clone of a wall with "Help train hold
+  finding" on starts on, with a fresh stamp, and a clone of a wall that is off
+  starts off (see "Training data: consent, vetting, export" for what happens to
+  it afterwards). No photo, version, hold or climb is copied.
 - **Visibility.** The old wall's visibility is parked on `pending_is_public` /
   `pending_is_unlisted`, so the clone is private until its first publish, like
   any new wall (#5513). At that publish the clone gets the NARROWER of the
@@ -3349,12 +3352,14 @@ so.** The column has no default and the migration backfills nothing.
   "on" keeps the old stamp); `false` nulls it.
 - A reset clone starts with its source's choice, yes or no.
 
-A client that shows the switch sends the owner's choice with the create. A
-client that does not, which is every app build from before the switch, sends
-nothing, and the wall starts off.
+Server and app are two halves. The SERVER stores a yes only when a client
+sends `trainingConsent: true`. The APP's add-a-wall switch is on when the
+wizard opens, and the app sends whatever the owner leaves it at. A wall that
+existed before the switch, and a wall created by an app without it, is off
+until its owner turns it on.
 
-**Why it is not on by default.** Spray walls have been open to every climber
-since #5949 (2026-10-03), before this switch existed. Those walls were
+**Why the server never assumes a yes.** Spray walls have been open to every
+climber since #5949 (2026-10-03), before this switch existed. Those walls were
 photographed with the visibility picker saying "Only you. Your wall photo stays
 in your account." (`boards.sprayVisibility.privateHint`). A column default of
 `now()` would have opted every one of them in, private walls included, and
