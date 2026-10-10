@@ -139,7 +139,7 @@
     "feedback": "Reportes de errores",
     "gymDuplicates": "Rocódromos duplicados",
     "locationSync": "Bloqueos de sincronización de ubicaciones",
-    "sprayWalls": "Entrenamiento con muros de spray"
+    "sprayWalls": "Datos de entrenamiento de muros de spray"
   },
   "feedback": {
     "title": "Errores y comentarios",
@@ -455,7 +455,7 @@
       "manual": "Marcada a mano",
       "auto": "Encontrada, sin revisar",
       "accepted": "Aceptada sin revisar",
-      "confirmed": "Posible confirmada",
+      "confirmed": "Dudosa confirmada",
       "edited": "Editada",
       "deleted": "Sugerencia borrada",
       "notShown": "Nunca mostrada"
@@ -478,7 +478,7 @@
       "photoAlt": "Foto de un muro de spray con las presas marcadas",
       "noPhoto": "Esta foto ya no está disponible.",
       "unmappable": "Presas que no pudimos situar en la foto: {{total}}",
-      "model": "Detector: {{version}}",
+      "model": "Detector de presas: {{version}}",
       "showMarks": "Mostrar marcas (H)",
       "legend": "Leyenda",
       "reason": "Motivo del rechazo",

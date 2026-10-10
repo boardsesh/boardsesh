@@ -26,7 +26,7 @@
     "feedback": "Rapports de bugs",
     "gymDuplicates": "Salles en double",
     "locationSync": "Gels de synchronisation des lieux",
-    "sprayWalls": "Entraînement sur les murs de spray"
+    "sprayWalls": "Données d'entraînement des murs de spray"
   },
   "feedback": {
     "title": "Bugs et retours",
@@ -455,7 +455,7 @@
       "manual": "Posée à la main",
       "auto": "Trouvée, sans relecture",
       "accepted": "Acceptée sans vérif",
-      "confirmed": "Possible confirmée",
+      "confirmed": "Incertaine confirmée",
       "edited": "Modifiée",
       "deleted": "Suggestion supprimée",
       "notShown": "Jamais montrée"
@@ -478,7 +478,7 @@
       "photoAlt": "Photo d'un mur de spray avec les prises marquées",
       "noPhoto": "Cette photo n'est plus disponible.",
       "unmappable": "Prises qu'on n'a pas pu placer sur la photo : {{total}}",
-      "model": "Détecteur : {{version}}",
+      "model": "Détecteur de prises : {{version}}",
       "showMarks": "Afficher les marques (H)",
       "legend": "Légende",
       "reason": "Motif du refus",

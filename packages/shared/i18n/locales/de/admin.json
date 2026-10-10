@@ -26,7 +26,7 @@
     "feedback": "Bug-Reports",
     "gymDuplicates": "Doppelte Hallen",
     "locationSync": "Standort-Sync-Sperren",
-    "sprayWalls": "Spraywand-Training"
+    "sprayWalls": "Trainingsdaten der Spraywände"
   },
   "feedback": {
     "title": "Bug-Reports & Feedback",
@@ -455,7 +455,7 @@
       "manual": "Von Hand markiert",
       "auto": "Gefunden, ungeprüft",
       "accepted": "Ungeprüft übernommen",
-      "confirmed": "Vielleicht bestätigt",
+      "confirmed": "Unsicherer Griff, bestätigt",
       "edited": "Bearbeitet",
       "deleted": "Gelöschter Vorschlag",
       "notShown": "Nie angezeigt"
@@ -478,7 +478,7 @@
       "photoAlt": "Foto einer Spraywand mit markierten Griffen",
       "noPhoto": "Dieses Foto ist nicht mehr verfügbar.",
       "unmappable": "Griffe, die wir nicht auf dem Foto platzieren konnten: {{total}}",
-      "model": "Detektor: {{version}}",
+      "model": "Grifferkennung: {{version}}",
       "showMarks": "Markierungen zeigen (H)",
       "legend": "Legende",
       "reason": "Ablehnungsgrund",
