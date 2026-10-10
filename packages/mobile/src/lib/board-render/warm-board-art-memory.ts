@@ -74,6 +74,9 @@ export function warmBoardArtMemory(uris: readonly string[]): void {
   if (localUris.length === 0) return;
   void Image.prefetch(localUris, 'memory')
     .then((decoded) => {
+      // One answer for the batch: true only when every file decoded, false as
+      // soon as one failed. On false nothing is recorded, which errs towards a
+      // placeholder for files that did make it.
       if (decoded) for (const uri of localUris) noteBoardArtInMemory(uri);
     })
     .catch(() => {});

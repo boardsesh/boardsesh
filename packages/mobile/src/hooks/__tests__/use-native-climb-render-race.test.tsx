@@ -228,6 +228,23 @@ describe('useNativeClimbRender in-flight race', () => {
     expect(result.current.overlayImmediate).toBe(false);
   });
 
+  // A surface that holds its photo back for the holds must not wait when the
+  // board cannot be drawn at all.
+  it('says no overlay is coming for a board it has no render data for', async () => {
+    const { getBoardRenderData } = await import('../../lib/board-details');
+    const renderData = vi.mocked(getBoardRenderData);
+    const original = renderData.getMockImplementation();
+    renderData.mockImplementation(() => null as unknown as ReturnType<typeof getBoardRenderData>);
+    try {
+      const { result } = renderHook(() => useNativeClimbRender({ ...BASE, layoutId: 777, frames: FRAMES_SLOW }));
+      await waitFor(() => expect(result.current.overlayUnavailable).toBe(true));
+      expect(result.current.overlayUri).toBeNull();
+      expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    } finally {
+      renderData.mockImplementation(original ?? (() => null as unknown as ReturnType<typeof getBoardRenderData>));
+    }
+  });
+
   it('reports an overlay found by the first render of a fresh mount as immediate', () => {
     _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES_CACHED), 'file:///overlay-cached.png');
     const { result } = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_CACHED }));

@@ -304,7 +304,7 @@ vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
 // Mocked so this screen test does not pull the native render hook in.
 vi.mock('../../../../src/components/ClimbListScrollAhead', () => ({
   ClimbListThumbnailPrewarmWindow: () => null,
-  createLastVisibleRowStore: () => ({ get: () => 0, set: () => {}, subscribe: () => () => {} }),
+  createVisibleRowsStore: () => ({ getFirst: () => 0, getLast: () => 0, set: () => {}, subscribe: () => () => {} }),
 }));
 
 vi.mock('../../../../src/components/play-drawer/PlayBoardPrewarmHost', () => ({

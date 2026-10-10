@@ -224,6 +224,15 @@ describe('out-of-space render storm', () => {
     expect(result.current.backgroundPaths).toEqual(['file:///bg.png']);
   });
 
+  // A surface that holds its photo back until the holds have painted must show
+  // the photo now: while renders are backed off, no overlay is coming.
+  it('says no overlay is coming while backed off', async () => {
+    renderRow(0);
+    await waitFor(() => expect(sweepBoardArtCache).toHaveBeenCalled());
+    const backedOff = renderRow(1);
+    await waitFor(() => expect(backedOff.result.current.overlayUnavailable).toBe(true));
+  });
+
   // The same storm, on a phone that isn't set to English: without the free-space
   // check nothing backs off and nothing sweeps, because the OS phrased "out of
   // space" in Spanish.

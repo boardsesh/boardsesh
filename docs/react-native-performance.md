@@ -100,7 +100,7 @@ unbounded drain-until-`hasMore` loop quietly fetches and mounts the entire catal
     to be discarded, and the list sat at its last row until the climber scrolled away and back —
     80 s in one capture. The request is now kept and honoured when the list is free; an effect
     re-asks on every fetch-state change. The last visible row comes from `onViewableItemsChanged`
-    through a store (`createLastVisibleRowStore`), never screen state: one state update per row
+    through a store (`createVisibleRowsStore`), never screen state: one state update per row
     scrolled would re-render the whole screen. Its `viewabilityConfig` sets `minimumViewTime: 0`;
     FlashList's default of 250 ms reports nothing during a flick.
   - **The re-ask is fenced, or it is a drain.** An ask the climber did not cause (`settle`) is
@@ -290,8 +290,9 @@ on an iPhone 13 Pro, yet every list row used to show its bare board first and fa
   memory-cache hits too.
 - **Rows are warmed before they mount.** `ClimbListThumbnailPrewarmWindow`
   (`ClimbListScrollAhead.tsx`) mounts a `ClimbListThumbnailPrewarm` for the 24 loaded climbs below
-  the viewport: a `prefetch`-rank render, then `warmBoardArtMemory` decodes the PNG into
-  expo-image's memory cache. In a 465-row cold scroll 93% of rows found their overlay already
+  the viewport and the 12 above it: a `prefetch`-rank render, then `warmBoardArtMemory` decodes
+  the PNG into expo-image's memory cache. The rows above are already rendered; they are there
+  for the decode, so a fast scroll back up a long list does not fall back to placeholders. In a 465-row cold scroll 93% of rows found their overlay already
   rendered. `warmBoardArtMemory` is the only caller of `Image.prefetch` the board-art network
   guard allows, and it drops anything that is not a `file://` URI. It is iOS-only: expo-image's
   Android prefetch loads a `GlideUrl`, which never matches the key a view uses for a local file.

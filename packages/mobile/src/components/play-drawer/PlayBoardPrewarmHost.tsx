@@ -3,10 +3,14 @@ import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { backgroundImageUri } from '../LayeredClimbImage';
 import { warmBoardArtMemory } from '../../lib/board-render/warm-board-art-memory';
 import {
+  clearPlayBoardPrewarm,
   getPlayBoardPrewarmTarget,
   subscribeToPlayBoardPrewarm,
   type PlayBoardPrewarmTarget,
 } from '../../lib/board-render/play-board-prewarm';
+
+/** Far longer than a drawer takes to open and measure (~150ms); see the host. */
+const ABANDONED_TARGET_MS = 5000;
 
 /**
  * The render for the climb that was just tapped. Draws nothing.
@@ -54,6 +58,14 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
  */
 export function PlayBoardPrewarmHost() {
   const target = useSyncExternalStore(subscribeToPlayBoardPrewarm, getPlayBoardPrewarmTarget);
+  // The carousel drops the target when it has measured. A tap that never gets
+  // that far (the drawer dismissed mid-open) would leave the hidden render
+  // mounted until the next tap, so let go of it after a while regardless.
+  useEffect(() => {
+    if (!target) return;
+    const timer = setTimeout(clearPlayBoardPrewarm, ABANDONED_TARGET_MS);
+    return () => clearTimeout(timer);
+  }, [target]);
   if (!target) return null;
   return <TappedBoardRender {...target} />;
 }

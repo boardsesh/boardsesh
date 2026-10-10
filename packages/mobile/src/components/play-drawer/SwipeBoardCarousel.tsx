@@ -370,7 +370,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 // Opening onto a climb whose play-size overlay is not rendered
                 // yet: show the wall and its holds together, a few frames later,
                 // rather than the bare wall first. Only the first paint — a
-                // swipe to the next climb keeps the photo up.
+                // swipe to the next climb keeps the photo up. No placeholder
+                // colour on purpose: the drawer behind is a blur material, and no
+                // solid block matches it, so the wait shows the drawer itself.
                 revealWithOverlay="first-paint"
                 // See the screenshot-mode board above: the current card is the
                 // only `surface: 'play'` in the app.

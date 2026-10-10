@@ -42,10 +42,7 @@ import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkelet
 import { shouldFetchNextPage, type NextPageTrigger } from '../../../src/lib/climb-list-pagination';
 import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
 import { PlayBoardPrewarmHost } from '../../../src/components/play-drawer/PlayBoardPrewarmHost';
-import {
-  ClimbListThumbnailPrewarmWindow,
-  createLastVisibleRowStore,
-} from '../../../src/components/ClimbListScrollAhead';
+import { ClimbListThumbnailPrewarmWindow, createVisibleRowsStore } from '../../../src/components/ClimbListScrollAhead';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
@@ -738,9 +735,8 @@ function ClimbListInner() {
     // the same board loads, instead of swapping the list to skeleton rows.
   } = useInfiniteSearchClimbs(searchInput, searchReady, { keepPreviousResults: true });
   const isLoadingMoreRef = useRef(false);
-  // The last row on screen, kept out of this screen's state on purpose.
-  const lastVisibleRowStore = useMemo(() => createLastVisibleRowStore(), []);
-  const firstVisibleIndexRef = useRef(0);
+  // The rows on screen, kept out of this screen's state on purpose.
+  const visibleRowsStore = useMemo(() => createVisibleRowsStore(), []);
   // An end-reached report that could not be acted on when it arrived; see
   // `shouldFetchNextPage` for why it has to be remembered.
   const endReachedPendingRef = useRef(false);
@@ -777,12 +773,12 @@ function ClimbListInner() {
     climbListRef.current?.scrollToOffset({ offset: 0, animated: false });
     // Back at the top: the row index from the previous search would otherwise
     // read as "near the end" of the new first page and fetch its second page.
-    lastVisibleRowStore.set(0);
-    firstVisibleIndexRef.current = 0;
+    visibleRowsStore.set(0, 0);
     // And an end-reached report from the previous search is not this one's.
     endReachedPendingRef.current = false;
     loadedCountAtLastFetchRef.current = null;
-  }, [searchScrollKey, lastVisibleRowStore]);
+    lastNextPageFailureAtRef.current = null;
+  }, [searchScrollKey, visibleRowsStore]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.
@@ -976,8 +972,8 @@ function ClimbListInner() {
         fetchInFlight: isLoadingMoreRef.current,
         msSinceLastFailure: failedAt === null ? null : Date.now() - failedAt,
         loadedCountAtLastFetch: loadedCountAtLastFetchRef.current,
-        firstVisibleIndex: firstVisibleIndexRef.current,
-        lastVisibleIndex: lastVisibleRowStore.get(),
+        firstVisibleIndex: visibleRowsStore.getFirst(),
+        lastVisibleIndex: visibleRowsStore.getLast(),
         endReachedPending: endReachedPendingRef.current,
         pageSize: PAGE_SIZE,
       });
@@ -993,7 +989,7 @@ function ClimbListInner() {
           isLoadingMoreRef.current = false;
         });
     },
-    [fetchNextPage, lastVisibleRowStore],
+    [fetchNextPage, visibleRowsStore],
   );
 
   const handleEndReached = useCallback(() => {
@@ -1016,11 +1012,10 @@ function ClimbListInner() {
         if (viewable.index > lastVisibleIndex) lastVisibleIndex = viewable.index;
       }
       if (lastVisibleIndex < 0) return;
-      firstVisibleIndexRef.current = firstVisibleIndex;
-      lastVisibleRowStore.set(lastVisibleIndex);
+      visibleRowsStore.set(firstVisibleIndex, lastVisibleIndex);
       maybeFetchNextPage('scroll');
     },
-    [lastVisibleRowStore, maybeFetchNextPage],
+    [visibleRowsStore, maybeFetchNextPage],
   );
 
   // Ask again whenever the list becomes free: a page landed (there may be more
@@ -2212,7 +2207,7 @@ function ClimbListInner() {
         <PlayBoardPrewarmHost />
         {hasBoardConfig && !isPlaceholderData ? (
           <ClimbListThumbnailPrewarmWindow
-            store={lastVisibleRowStore}
+            store={visibleRowsStore}
             climbs={visibleClimbs}
             boardName={boardName as BoardName}
             layoutId={layoutId}

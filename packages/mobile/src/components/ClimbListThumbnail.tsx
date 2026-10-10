@@ -42,9 +42,9 @@ type ClimbListThumbnailPrewarmProps = {
  * A row that mounts onto a climb nobody has rendered yet shows the bare board
  * until the native render, the PNG decode and a cross-fade have all finished —
  * the "board first, holds flash in later" a fast scroll is full of. The climbs
- * list mounts one of these for each loaded climb just past the viewport, so by
- * the time the row arrives the overlay is an index hit and a memory-cache hit,
- * and it paints with the board.
+ * list mounts one of these for each loaded climb just outside the viewport, so
+ * by the time the row arrives the overlay is an index hit and a memory-cache
+ * hit, and it paints with the board.
  *
  * `prefetch` puts the render at the scheduler's idle-only rank: it never takes a
  * slot from a thumbnail somebody can already see.
@@ -69,7 +69,9 @@ export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailP
     prefetch: true,
   });
   useEffect(() => {
-    if (overlayUri) warmBoardArtMemory([overlayUri]);
+    // Rows just above the viewport were on screen a moment ago and are usually
+    // still decoded; nothing to ask for then.
+    if (overlayUri && !isBoardArtInMemory(overlayUri)) warmBoardArtMemory([overlayUri]);
   }, [overlayUri]);
   return null;
 });

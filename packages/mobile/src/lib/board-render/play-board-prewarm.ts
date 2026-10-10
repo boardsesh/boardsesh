@@ -9,7 +9,9 @@
  * time the drawer mounts, the overlay is an index hit and paints with the photo.
  *
  * Module state, no React: the carousel writes the width, the list writes the
- * tapped climb, and `PlayBoardPrewarmHost` is the one subscriber.
+ * tapped climb, and `PlayBoardPrewarmHost` is the one subscriber. One target for
+ * the whole app, which is right while one play drawer can be open at a time; two
+ * hosts mounted at once would share it.
  */
 import type { BoardName } from '@boardsesh/shared-schema';
 
@@ -79,8 +81,9 @@ export function subscribeToPlayBoardPrewarm(listener: () => void): () => void {
   };
 }
 
-/** Test-only: forget the measured widths and the pending target. */
+/** Test-only: forget the measured widths, the pending target and every subscriber. */
 export function _resetPlayBoardPrewarmForTests(): void {
   overlayWidthByBoard.clear();
   prewarmTarget = null;
+  listeners.clear();
 }
