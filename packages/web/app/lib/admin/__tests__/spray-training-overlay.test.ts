@@ -94,12 +94,12 @@ describe('percentOf and summariseStats', () => {
   });
 
   it('builds the card numbers', () => {
-    const stats = {
+    const stats: SprayTrainingStatsData = {
       holdCount: 20,
       editedHoldCount: 5,
       acceptedHoldCount: 10,
       deletedCandidateCount: 3,
-    } as SprayTrainingStatsData;
+    };
     expect(summariseStats(stats)).toEqual({
       holdCount: 20,
       editedPercent: 25,
