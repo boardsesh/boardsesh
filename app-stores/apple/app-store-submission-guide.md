@@ -62,26 +62,21 @@ queue, spray walls, additional supported boards, wall status, logbook, workouts,
 Dynamic Island and climb search. Its full output map is in
 [App Store metadata](app-store-metadata.md#screenshots).
 
-It is an opt-in local flow until the required fixture is ready:
+Capture the default campaign from its dedicated sanitized replay fixture:
 
 ```bash
-vp run mobile:screenshots -- --platform ios --flow app-store-campaign --fixtures replay --fixtures-dir <verified-campaign-fixture> --theme dark --devices common --locales all
+vp run mobile:screenshots -- --platform ios --fixtures replay --theme dark --devices common --locales all
 ```
 
-Replace the placeholder with a verified, sanitized replay fixture containing a
-shared crew session and seven board selectors in order: Kilter, Tension,
-MoonBoard, Woods, Decoy, Grasshopper, spray. The pinned legacy fixture lacks the
-required Decoy/spray scenario. The campaign checks board types and fails before
-capture if that prerequisite is absent. Do not replace missing boards with other
-captures or bypass the check.
+The Apple campaign pin includes the shared crew session and seven selectors:
+Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper, spray. Preflight checks
+recorded board types before capture. Do not substitute another board or bypass
+the check. The spray photo is a permitted real wall image bundled for replay.
 
-This flow writes to `app-stores/app-store-campaign/apple/`, preserving its
-18-source iPhone captures under `raw-screenshots/` and its nine-image sets under
-`screenshots/`. iPads retain their existing six-image recipe. Review the entire
-campaign before staging a complete locale/device set into the canonical
-`app-stores/apple/screenshots/` upload tree. The default `app-store` flow still
-produces the earlier ten-image iPhone set; the workflow does not select the new
-campaign automatically.
+Native sources are retained under `app-stores/apple/raw-screenshots/`; the nine
+composed iPhone images are under `app-stores/apple/screenshots/`. iPads retain
+six images. Review the entire locale/device matrix before upload. Diagnostic
+record/live runs retain the old capture recipe and cannot publish a store set.
 
 ### Review before uploading
 

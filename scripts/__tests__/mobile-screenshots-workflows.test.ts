@@ -668,6 +668,12 @@ describe('screenshot captures follow the native deploys', () => {
 });
 
 describe('ios-screenshot-shard composite action', () => {
+  it('explicitly disables replay for live diagnostics', () => {
+    const action = parse(readYaml(SHARD_ACTION_PATH)) as { runs: { steps: WorkflowStep[] } };
+    const capture = action.runs.steps.find((step) => step.run?.includes('attempts="$ATTEMPTS_INPUT"'));
+    expect(capture?.run).toMatch(/else\s+retarget\+=\(--fixtures off\)/);
+  });
+
   it('exists and takes the seven shard inputs', () => {
     expect(existsSync(SHARD_ACTION_PATH)).toBe(true);
     const action = parse(readYaml(SHARD_ACTION_PATH)) as {

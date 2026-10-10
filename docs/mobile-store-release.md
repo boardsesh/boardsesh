@@ -199,11 +199,10 @@ baselines are rejected; the next probe therefore captures the full set before
 publishing a new baseline. The store-draft workflow attaches these same framed
 images when it creates an editable version.
 
-
 Listing text is automatic. **Mobile Store Metadata** (`mobile-store-metadata.yml`)
 runs on every `main` push that touches `fastlane/metadata/**`, the Fastfile, or
 the committed Play screenshots, and pushes listing text plus the Play icon and
-feature graphic. The iOS half can only write onto an *editable* App Store
+feature graphic. The iOS half can only write onto an _editable_ App Store
 version, so when the copy lands before a version exists (the normal order, §1)
 that run skips iOS; `mobile-store-draft.yml` dispatches it again with
 `platform: ios` right after it creates the version (§4), so the text and What's
@@ -248,16 +247,17 @@ uploads the artifact; committing the set back to `main` stays opt-in on a
 dispatch (`commit_to_main`) — that is deliberately still `main`, because
 `mobile-store-metadata.yml` reads the committed PNGs from there.
 
-### Candidate iPhone campaign capture
+### iPhone campaign capture
 
-The new nine-frame multiboard campaign is staged with `--flow app-store-campaign`.
-It retains the ten existing native sources and adds MoonBoard, Woods, Decoy,
-Grasshopper, spray wall, crew queue, persistent wall status, and the expanded
-Dynamic Island. Its outputs stay under `app-stores/app-store-campaign/apple/`
-for review; this flow does not replace or upload the current listing. iPads keep
-their six-source kiosk campaign. Android keeps its existing flow and fixture pin.
+The default iOS `app-store` replay uses the nine-frame multiboard campaign.
+It retains ten existing native sources and adds MoonBoard, Woods, Decoy,
+Grasshopper, spray wall, crew queue, wall status, and expanded Dynamic Island.
+Raw and framed outputs go under `app-stores/apple/`. iPads keep their six-source
+kiosk campaign. Android and navigation smoke keep their existing fixture pin.
+Explicit record/live captures retain the legacy diagnostic recipe; store upload
+and baseline publication require replay.
 
-The candidate requires a dedicated sanitized replay fixture with a crew session
+The campaign uses `app-stores/apple/campaign-fixtures.json`, a dedicated sanitized replay fixture with a crew session
 and seven selectors in this order: Kilter, Tension, MoonBoard, Woods, Decoy,
 Grasshopper, spray wall. Preflight checks the types against recorded `GetMyBoards`
 responses, not selector spelling or board count. The old fixture is rejected with
@@ -266,9 +266,9 @@ must be an actual permitted wall photograph included in that fixture's static fi
 
 Use an entitled simulator client for the Dynamic Island. The flow uses the existing
 screenshot BLE adapter and verifies the native Next control before capturing;
-an empty island or disconnected widget fails. Inspect the candidate sources on both
-phones and all four locales before promoting the flow and complete baseline into
-the default upload pipeline. Missing campaign sources never select a legacy layout.
+an empty island or disconnected widget fails. Inspect the sources on both phones
+and all four locales before publishing an updated baseline or uploading to the
+store. Missing campaign sources never select a legacy layout.
 
 ### The iOS probe gate
 

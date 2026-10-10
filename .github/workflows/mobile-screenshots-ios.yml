@@ -114,8 +114,8 @@ name: Mobile Screenshots (iOS)
 # ios-capture capture BYTE-IDENTICALLY — a probe that captured differently from
 # the fan-out would compare against a baseline it could never match.
 #
-# All runs capture against PROD signed in as the test user (the canonical store
-# recipe), so there's no local backend.
+# Store replay runs use the dedicated sanitized Apple campaign fixture. Explicit
+# record/live runs use the production capture account for diagnostics.
 #
 # ios-finalize uploads the captured set to App Store Connect (screenshots ONLY —
 # no binary, no text metadata) on an automatic run that captured the full set,
@@ -183,7 +183,7 @@ on:
         type: string
         default: ''
       fixtures:
-        description: '"replay" (the default) serves the pinned fixture snapshot, so captures are deterministic. "record" proxies PROD and uploads the recorded fixtures as an artifact — dispatch it with locales=en-US, then merge the artifacts with `vp run mobile:screenshot-fixtures-merge` and commit the set. "live" talks straight to PROD with no fixtures — the old direct-to-PROD path, kept for debugging.'
+        description: '"replay" uses the dedicated iOS campaign pin for the nine-image listing. "record" and "live" use the legacy diagnostic flow and cannot upload screenshots or publish a baseline.'
         type: choice
         default: replay
         options:
@@ -354,12 +354,18 @@ jobs:
           FLOW: ${{ inputs.flow || 'app-store' }}
           UPLOAD_INPUT: ${{ inputs.upload || 'false' }}
           GATE_INPUT: ${{ inputs.gate || 'full' }}
+          FIXTURES_MODE: ${{ inputs.fixtures || 'replay' }}
+          PUBLISH_BASELINE: ${{ inputs.publish_baseline || 'false' }}
         run: |
           set -euo pipefail
           locales="$LOCALES"
           flow="$FLOW"
           upload="$UPLOAD_INPUT"
           gate="$GATE_INPUT"
+          if [ "$FIXTURES_MODE" != "replay" ] && { [ "$upload" = "true" ] || [ "$PUBLISH_BASELINE" = "true" ]; }; then
+            echo "::error::store upload and baseline publication require the verified replay campaign."
+            exit 1
+          fi
           # An automatic run after a native deploy always probes first: it is the
           # unattended path, most native releases move no store pixels, and the
           # probe is one macOS runner instead of sixteen. A dispatch keeps the

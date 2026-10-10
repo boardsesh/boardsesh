@@ -1,6 +1,6 @@
 import { getPrivacyRevocationGeneration, invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { QueueState } from '@boardsesh/queue';
 
@@ -14,7 +14,11 @@ vi.mock('../../../lib/queue-snapshot-store', () => ({
   setStoredQueueSnapshot: snapshots.set,
   getQueueSnapshotGeneration: () => snapshots.generation,
 }));
-vi.mock('../../../lib/session-store', () => ({ getStoredSessionId: async () => null, clearStoredSessionId: vi.fn() }));
+const sessions = vi.hoisted(() => ({ get: vi.fn(async () => null), clear: vi.fn() }));
+vi.mock('../../../lib/session-store', () => ({
+  getStoredSessionId: sessions.get,
+  clearStoredSessionId: sessions.clear,
+}));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 import { useQueuePersistence, SOLO_QUEUE_SAVE_DEBOUNCE_MS } from '../use-queue-persistence';
@@ -165,4 +169,43 @@ it('reschedules a pending solo save after privacy revalidation completes', async
     ),
   );
   unmount();
+});
+
+it('leaves saved queues untouched and starts empty in screenshot mode', async () => {
+  sessions.get.mockClear();
+  sessions.clear.mockClear();
+  snapshots.get.mockReset();
+  snapshots.set.mockReset();
+  snapshots.get.mockResolvedValue({ queue: [{ uuid: 'saved-real-climb' }], currentClimbQueueItem: null });
+  vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+  const dispatch = vi.fn();
+  const { unmount } = renderHook(() =>
+    useQueuePersistence({
+      authenticatedUserId: 'viewer-a',
+      identityReady: true,
+      dispatch,
+      sessionIdRef: { current: null },
+      setSessionId: vi.fn(),
+      stateRef: { current: { queue: [], currentClimbQueueItem: null } as unknown as QueueState },
+      sessionId: null,
+      queue: [],
+      currentClimbQueueItem: null,
+      playlistSuggestionSource: null,
+      setPlaylistSuggestionSourceState: vi.fn(),
+      activeBoardSettled: true,
+    }),
+  );
+  try {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SOLO_QUEUE_SAVE_DEBOUNCE_MS + 30));
+    });
+    expect(snapshots.get).not.toHaveBeenCalled();
+    expect(snapshots.set).not.toHaveBeenCalled();
+    expect(sessions.get).not.toHaveBeenCalled();
+    expect(sessions.clear).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  } finally {
+    unmount();
+    vi.unstubAllEnvs();
+  }
 });

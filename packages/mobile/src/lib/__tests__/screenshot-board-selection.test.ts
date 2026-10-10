@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { matchScreenshotBoard, type ScreenshotSelectableBoard } from '../screenshot-board-selection';
+import {
+  matchScreenshotBoard,
+  screenshotClimbMatchesBoard,
+  type ScreenshotSelectableBoard,
+} from '../screenshot-board-selection';
 
 function board(overrides: Partial<ScreenshotSelectableBoard> & { name: string }): ScreenshotSelectableBoard {
   return {
@@ -128,5 +132,15 @@ describe('resolveScreenshotBoard', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = "Marco's Kilterboard";
     const { resolveScreenshotBoard } = await import('../screenshot-board-selection');
     expect(resolveScreenshotBoard(roster, 9)).toBeNull();
+  });
+});
+
+describe('screenshotClimbMatchesBoard', () => {
+  it('waits for the requested spray results instead of opening the previous Grasshopper climb', () => {
+    const spray = { boardType: 'spray', layoutId: 47 };
+    expect(screenshotClimbMatchesBoard({ boardType: 'grasshopper', layoutId: 1 }, spray)).toBe(false);
+    expect(screenshotClimbMatchesBoard({ boardType: 'spray', layoutId: 48 }, spray)).toBe(false);
+    expect(screenshotClimbMatchesBoard({}, spray)).toBe(false);
+    expect(screenshotClimbMatchesBoard({ boardType: 'spray', layoutId: 47 }, spray)).toBe(true);
   });
 });

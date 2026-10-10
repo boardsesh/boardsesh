@@ -40,6 +40,7 @@
     "@types/semver": "^7.7.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
+    "graphql": "^16.14.2",
     "license-checker-rseidelsohn": "^5.0.1",
     "oxlint-tsgolint": "~7.0.2001",
     "postgres": "^3.4.9",

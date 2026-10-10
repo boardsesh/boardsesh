@@ -62,9 +62,9 @@ landscape screenshots. `--devices common --locales all` covers iPhone 16 Pro Max
 iPhone 16 Pro, and the 13-inch and 11-inch iPads in four app languages. Spanish
 is copied to both Apple Spanish locales. iPhone and iPad carry different stories.
 
-### iPhone — nine-image campaign, staged behind a fixture prerequisite
+### iPhone — nine-image campaign
 
-The opt-in `--flow app-store-campaign` captures 18 native sources and composes
+The default iOS replay capture uses 18 native sources and composes
 these nine outputs. Filename prefixes set the store display order:
 
 | Output                  | Headline / benefit               | Native content                                                       |
@@ -74,7 +74,7 @@ these nine outputs. Filename prefixes set the store display order:
 | `02-spray-wall.png`     | Your spray wall, too.            | A real wall photo with the climb's holds highlighted.                |
 | `03-more-boards.png`    | More boards. Same app.           | Woods, Decoy and Grasshopper; copy also names Touchstone and So iLL. |
 | `04-on-the-wall.png`    | See what's on the wall.          | Current wall status while browsing another climb.                    |
-| `05-one-logbook.png`    | All your boards. One logbook.    | The multiboard Progress overview.                                    |
+| `05-one-logbook.png`    | All your boards. One logbook.    | Native logbook entries from several boards.                          |
 | `06-session-plan.png`   | Give your session a plan.        | The native workout generator.                                        |
 | `07-dynamic-island.png` | Next climb. From Dynamic Island. | Real expanded Live Activity controls.                                |
 | `08-next-project.png`   | Find your next project.          | Native climb search and filters.                                     |
@@ -84,13 +84,11 @@ fourth image makes the wider board catalogue visible without crowding the first
 image. Compositions reuse the showcase video's typography and palette around
 real captures. They do not manufacture app controls or use AI-generated images.
 
-**The campaign is not the default capture flow yet.** Its replay prerequisite is
-a verified, sanitized fixture with a shared crew session and seven board
-selectors in this order: Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper,
-spray. The existing pinned fixture lacks the required Decoy/spray scenario. The
-capture gate rejects missing or wrongly typed boards; do not bypass it or upload
-an incomplete campaign. Until that fixture is ready, `--flow app-store` retains
-the earlier ten-image iPhone recipe. See the [creative asset runbook](../../docs/app-store-creative-assets.md)
+The campaign uses the dedicated `app-stores/apple/campaign-fixtures.json` pin
+with a shared crew session and seven board selectors: Kilter, Tension, MoonBoard,
+Woods, Decoy, Grasshopper, spray. Preflight rejects missing or wrongly typed
+boards. Android and navigation smoke retain the separate legacy fixture.
+See the [creative asset runbook](../../docs/app-store-creative-assets.md)
 for capture, review, and separate Header/Search Results exports.
 
 Apple permits up to ten screenshots; this campaign deliberately uses nine.

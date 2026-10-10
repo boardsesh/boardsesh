@@ -15,33 +15,31 @@ workouts, Dynamic Island and climb search complete the story. See the
 [exact output filenames](../app-stores/apple/app-store-metadata.md#screenshots).
 Keep iPad's six-image kiosk-first story.
 
-`--flow app-store-campaign` is opt-in. It needs a verified, sanitized replay
-fixture with a shared crew session and seven board selectors, in this order:
-Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper, spray. The current legacy
-pin does not provide the required Decoy/spray scenario. The capture gate checks
-the recorded board types and refuses missing or substituted boards. Build and
-verify the missing recording through the existing
-[fixture workflow](mobile-screenshot-fixtures.md) before selecting this flow;
-do not bypass the gate or silently use production data instead.
-
-Once that prerequisite is met:
+The default iOS `app-store` replay capture uses the nine-image campaign and the
+separate `app-stores/apple/campaign-fixtures.json` reference. Android and the
+navigation smoke keep `app-stores/screenshot-fixtures.json`. The campaign fixture
+contains a shared crew session and seven selectors in this order: Kilter,
+Tension, MoonBoard, Woods, Decoy, Grasshopper, spray. Preflight checks recorded
+board types and refuses a missing or substituted board. The permitted spray
+photo is bundled for offline replay; signed production URLs are never published.
+See the [fixture workflow](mobile-screenshot-fixtures.md) for recording and
+sanitizing a replacement.
 
 ```bash
-vp run mobile:screenshots -- --platform ios --flow app-store-campaign --fixtures replay --fixtures-dir <verified-campaign-fixture> --theme dark --devices common --locales all
+vp run mobile:screenshots -- --platform ios --fixtures replay --theme dark --devices common --locales all
 ```
 
 The common matrix contains iPhone 16 Pro Max, iPhone 16 Pro, and both existing
 landscape iPads, across four app locales. That is 16 capture shards and
 20 storefront sets because Spanish supplies two Apple locales. The campaign
 captures 18 native sources per iPhone and frames nine output images. Sources
-remain under `app-stores/app-store-campaign/apple/raw-screenshots/`; composed
-sets are under its sibling `screenshots/` directory, with presentation
-manifests and contact sheets.
+remain under `app-stores/apple/raw-screenshots/`; composed sets are under
+`app-stores/apple/screenshots/`, with presentation manifests and contact sheets.
+The explicit `--flow app-store-campaign` alias selects the same iOS campaign.
 
-The default `app-store` flow still uses the earlier ten-image iPhone recipe.
-The new campaign is not automatically selected or published by the screenshot
-workflow. Review the complete new sets before staging them into
-`app-stores/apple/screenshots/` for the existing upload lane.
+Explicit `--fixtures record` and `--fixtures off` retain the legacy diagnostic
+flow. The iOS workflow refuses store upload or baseline publication from these
+modes. Review complete replay captures before uploading them.
 
 ## Generate Header and Search Results stills
 
@@ -52,7 +50,7 @@ vp run store:creatives -- --input <rawdevice> --output .boardsesh/app-store-crea
 ```
 
 For an English campaign capture, `<rawdevice>` is
-`app-stores/app-store-campaign/apple/raw-screenshots/en-US/iphone-16-pro`.
+`app-stores/apple/raw-screenshots/en-US/iphone-16-pro`.
 The generator also accepts `--device iphone-16-pro-max` when the source captures
 are from that device. It requires these unframed source images:
 

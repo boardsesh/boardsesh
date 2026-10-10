@@ -43,13 +43,13 @@ The Android lane uploads PNGs in `app-stores/google/screenshots/pixel-2/` to the
 Google Play phone screenshot slot as **screenshots only**, staged into
 `supply`'s expected `en-US/images/phoneScreenshots/` structure.
 
-The opt-in iOS `--flow app-store-campaign` produces nine composed iPhone images
-from 18 real captures and retains the six-image iPad story. It requires the
-verified seven-board replay fixture described in the [creative asset runbook](../docs/app-store-creative-assets.md).
-The legacy pinned fixture lacks Decoy/spray, so the default `app-store` flow
-remains in place until the campaign can be captured and reviewed. Campaign
-outputs are staged separately under `app-stores/app-store-campaign/apple/`;
-only a complete reviewed set belongs in the canonical upload tree above.
+The default iOS replay campaign produces nine composed iPhone images from
+18 real captures and retains the six-image iPad story. It uses the dedicated
+Apple campaign fixture described in the [creative asset runbook](../docs/app-store-creative-assets.md).
+Android and navigation smoke keep their existing fixture pin. Review every
+locale/device set in the canonical upload tree before publication. Explicit
+record/live captures are diagnostic; the iOS workflow requires replay for store
+upload and baseline publication.
 
 The `Mobile Screenshots (iOS)` manual workflow dispatch uploads only with
 `upload = true`; capture-only defaults leave the store unchanged. Qualifying

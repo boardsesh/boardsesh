@@ -68,7 +68,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { fixtureSnapshotDirectory } from './lib/screenshot-fixture-snapshot';
+import {
+  fixtureSnapshotDirectory,
+  FIXTURE_SNAPSHOT_REFERENCE,
+  IOS_CAMPAIGN_FIXTURE_REFERENCE,
+  readFixtureSnapshotReference,
+} from './lib/screenshot-fixture-snapshot';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captionLocaleForStore, IOS_CAMPAIGN_CAPTURE_NAMES } from './lib/screenshot-presentation';
@@ -162,7 +167,7 @@ const OUTPUT_ROOT = resolve(ROOT_DIR, 'app-stores');
  * pages against the store baseline.
  */
 function outputRootForFlow(flow: ScreenshotFlow): string {
-  return flow === 'app-store' ? OUTPUT_ROOT : join(OUTPUT_ROOT, flow);
+  return flow === 'app-store' || flow === 'app-store-campaign' ? OUTPUT_ROOT : join(OUTPUT_ROOT, flow);
 }
 /**
  * Android's answer to the Metro tee: the device log, streamed to a file for the
@@ -223,7 +228,7 @@ export type ScreenshotPlatform = 'ios' | 'android' | 'all';
 /**
  * Which committed Maestro flow a run drives.
  *
- * `app-store` and the staged `app-store-campaign` flow are FRAMED: `collectScreenshots` runs them
+ * `app-store` and its iOS replay `app-store-campaign` flow are FRAMED: `collectScreenshots` runs them
  * through `screenshot:frame` (captions, device frames, the recipe table in
  * `scripts/lib/screenshot-presentation.ts`). `onboarding` and `help` write raw,
  * uncaptioned PNGs straight to the shard directory.
@@ -511,6 +516,13 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     throw new Error('--flow app-store-campaign requires --platform ios; Android keeps its existing campaign.');
   }
 
+  if (
+    options.platform === 'ios' &&
+    (options.flow === 'app-store' || options.flow === 'app-store-campaign') &&
+    !args.includes('--fixtures')
+  )
+    options.fixtures = 'replay';
+
   if (options.flow === 'smoke') {
     // One result file and one retry budget per invocation, so one platform.
     if (options.platform === 'all') {
@@ -704,6 +716,23 @@ export function buildScreenshotEnv(
     env.EXPO_PUBLIC_SCREENSHOT_NOW = frozenNow;
   }
   return env;
+}
+
+/** Keep the fixture clock, origin and board roster together at both Metro call sites. */
+export function buildScreenshotSessionEnv(
+  options: ScreenshotOptions,
+  baseEnv: NodeJS.ProcessEnv,
+  appLocale: Locale | null,
+  session: Pick<ScreenshotBackendSession, 'frozenNow' | 'port' | 'capture'> | null,
+): NodeJS.ProcessEnv {
+  return buildScreenshotEnv(
+    options,
+    baseEnv,
+    appLocale,
+    session?.frozenNow ?? null,
+    session?.port ?? null,
+    session?.capture ?? null,
+  );
 }
 
 export interface DeviceInfo {
@@ -1325,9 +1354,14 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
   const mode: ScreenshotBackendMode = options.fixtures === 'record' ? 'record' : 'replay';
   let fixturesDir = resolveFixturesDir(options);
   if (mode === 'replay' && fixturesDir === resolve(ROOT_DIR, DEFAULT_SCREENSHOT_FIXTURES_DIR)) {
-    const status = runInherit('vp', ['run', 'mobile:screenshot-fixtures-fetch'], process.env);
+    const reference = screenshotFixtureReference(options);
+    const status = runInherit(
+      'vp',
+      ['run', 'mobile:screenshot-fixtures-fetch', '--', '--reference', reference],
+      process.env,
+    );
     if (status !== 0) throw new Error('Could not download the pinned screenshot fixtures');
-    fixturesDir = fixtureSnapshotDirectory();
+    fixturesDir = fixtureSnapshotDirectory(readFixtureSnapshotReference(reference));
   }
   const port = resolveScreenshotBackendPort(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT);
   if (port === 0) {
@@ -2417,14 +2451,7 @@ function runAndroid(options: ScreenshotOptions): number {
     if (options.devClient) {
       // Android captures the single en-US tree (the locale matrix is iOS-only),
       // so no locale is baked into the bundle here.
-      const metroEnv = buildScreenshotEnv(
-        options,
-        process.env,
-        null,
-        backendSession?.frozenNow ?? null,
-        backendSession?.port ?? null,
-        backendSession?.capture ?? null,
-      );
+      const metroEnv = buildScreenshotSessionEnv(options, process.env, null, backendSession);
       console.log(
         `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
       );
@@ -2793,13 +2820,7 @@ function runIosLocales(
       return 1;
     }
     const localeTarget = localeTargets[localeIndex];
-    const metroEnv = buildScreenshotEnv(
-      options,
-      process.env,
-      localeTarget.appLocale,
-      backendSession?.frozenNow ?? null,
-      backendSession?.port ?? null,
-    );
+    const metroEnv = buildScreenshotSessionEnv(options, process.env, localeTarget.appLocale, backendSession);
     console.log(
       `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}, locale=${localeTarget.appLocale}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
     );
@@ -2877,14 +2898,47 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const platforms: Array<'ios' | 'android'> = options.platform === 'all' ? ['ios', 'android'] : [options.platform];
 
   for (const platform of platforms) {
-    const status = options.flow === 'smoke' ? runSmoke(options, platform) : runPlatform(options, platform);
+    const status =
+      options.flow === 'smoke'
+        ? runSmoke(options, platform)
+        : runPlatform(options, platform, !argv.includes('--fixtures'));
     if (status !== 0) return status;
   }
 
   return 0;
 }
 
-function runPlatform(options: ScreenshotOptions, platform: 'ios' | 'android'): number {
+/** Resolve each platform separately so an all-platform run cannot move Android onto the iOS fixture. */
+export function resolvePlatformScreenshotOptions(
+  options: ScreenshotOptions,
+  platform: 'ios' | 'android',
+  useFixtureDefaults = false,
+): ScreenshotOptions {
+  const fixtures =
+    platform === 'ios' && options.flow === 'app-store' && useFixtureDefaults ? 'replay' : options.fixtures;
+  return {
+    ...options,
+    platform,
+    fixtures,
+    flow:
+      platform === 'ios' && options.flow === 'app-store' && fixtures === 'replay' ? 'app-store-campaign' : options.flow,
+  };
+}
+
+export function screenshotFixtureReference(options: ScreenshotOptions): string {
+  return options.platform === 'ios' &&
+    (options.flow === 'app-store' || options.flow === 'app-store-campaign') &&
+    options.fixtures === 'replay'
+    ? IOS_CAMPAIGN_FIXTURE_REFERENCE
+    : FIXTURE_SNAPSHOT_REFERENCE;
+}
+
+function runPlatform(
+  originalOptions: ScreenshotOptions,
+  platform: 'ios' | 'android',
+  useFixtureDefaults: boolean,
+): number {
+  const options = resolvePlatformScreenshotOptions(originalOptions, platform, useFixtureDefaults);
   try {
     return platform === 'ios' ? runIos(options) : runAndroid(options);
   } catch (error) {
@@ -2901,7 +2955,7 @@ function runPlatform(options: ScreenshotOptions, platform: 'ios' | 'android'): n
 function runSmoke(options: ScreenshotOptions, platform: 'ios' | 'android'): number {
   const attempt = (): number => {
     const judgedBefore = smokeAttempts.length;
-    const status = runPlatform(options, platform);
+    const status = runPlatform(options, platform, false);
     // A failure that never reached judgeSmokeAttempt happened before the app
     // launched (no device, a failed install, a port in use).
     if (status !== 0 && smokeAttempts.length === judgedBefore) {

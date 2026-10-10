@@ -129,7 +129,9 @@ export function useQueuePersistence({
   // solo queue snapshot hydrates the reducer. The gate flag below keeps the
   // save effect from clobbering a stored snapshot with the initial empty state.
   useEffect(() => {
-    if (!ownerReady) return;
+    // Capture sessions start from the fixture, never a user's saved queue/session.
+    // Leave the stored bytes untouched so normal launches still restore them.
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !ownerReady) return;
     let cancelled = false;
     const generation = getPrivacyRevocationGeneration();
     const isCurrent = () => !cancelled && generation === getPrivacyRevocationGeneration();
@@ -223,6 +225,7 @@ export function useQueuePersistence({
   // as the clear when the user empties the queue or a session teardown resets
   // it; the debounce coalesces mutation bursts (swipes, clear-queue removals).
   useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return undefined;
     if (!ownerReady || hydratedScope !== hydrationScope || sessionId !== null || !activeBoardSettled) return undefined;
     const snapshotGeneration = getQueueSnapshotGeneration();
     const generation = getPrivacyRevocationGeneration();

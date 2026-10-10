@@ -15,6 +15,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
+import sharp from 'sharp';
+import { prepareIosCampaignFixtures } from '../prepare-ios-campaign-fixtures';
+import { NATIVE_CAMPAIGN_JOIN_QUERY, NATIVE_CAMPAIGN_REGISTER_QUERY } from '../lib/screenshot-campaign-session';
 
 import {
   createScreenshotBackend,
@@ -161,6 +164,7 @@ describe('screenshot backend', () => {
     mode: 'replay' | 'record';
     fresh?: boolean;
     pseudonymise?: boolean;
+    flow?: string;
   }): Promise<void> => {
     logLines = [];
     backend = createScreenshotBackend({
@@ -171,7 +175,7 @@ describe('screenshot backend', () => {
       log: (line) => logLines.push(line),
       fresh: options.fresh,
       ...(options.pseudonymise === undefined ? {} : { pseudonymise: options.pseudonymise }),
-      flow: 'app-store',
+      flow: options.flow ?? 'app-store',
     });
     const port = await backend.listen(0);
     backendOrigin = `http://127.0.0.1:${port}`;
@@ -237,6 +241,105 @@ describe('screenshot backend', () => {
     await stop();
     await stopUpstream(upstream);
     rmSync(fixturesDir, { recursive: true, force: true });
+  });
+
+  it('projects recorded native identity, refuses APNs locally, and reports corrupted session fixtures as misses', async () => {
+    await start({ mode: 'record', flow: 'app-store-campaign' });
+    upstream.nextGraphqlResponse = {
+      status: 200,
+      body: { data: { joinSession: { id: 'crew', clientId: 'recorded-client', boardPath: 'kilter/8/25/26,27/35' } } },
+    };
+    await postGraphql({
+      query:
+        'mutation JoinSession($sessionId: ID!, $boardPath: String!) { joinSession(sessionId: $sessionId, boardPath: $boardPath) { id clientId boardPath } }',
+      variables: { sessionId: 'crew', boardPath: 'kilter/8/25/26,27/35' },
+    });
+    await stop();
+    await start({ mode: 'replay', flow: 'app-store-campaign' });
+    const nativeRequest = {
+      query: NATIVE_CAMPAIGN_JOIN_QUERY,
+      variables: { sessionId: 'crew', boardPath: '/kilter/8/25/26,27/0' },
+    };
+    expect(await (await postGraphql(nativeRequest)).json()).toEqual({
+      data: { joinSession: { id: 'crew', clientId: 'recorded-client' } },
+    });
+    const upstreamCount = upstream.graphqlRequests.length;
+    const denied = await (
+      await postGraphql({
+        query: NATIVE_CAMPAIGN_REGISTER_QUERY,
+        variables: { sessionId: 'crew', token: 'private-device-token' },
+      })
+    ).json();
+    expect(denied).toEqual({ errors: [{ message: 'APNs registration is disabled in local screenshot replay' }] });
+    expect(upstream.graphqlRequests).toHaveLength(upstreamCount);
+    expect(logLines.join('\n')).not.toContain('private-device-token');
+    const manifest = readScreenshotFixtureManifest(fixturesDir)!;
+    writeFileSync(join(fixturesDir, manifest.graphql[0].file), 'corrupt');
+    await postGraphql(nativeRequest);
+    expect(hasLine('unreadable-fixture')).toBe(true);
+  });
+
+  it('prepares a portable photo and replays exact bytes over HTTP and WebSocket on a new port', async () => {
+    const wallUuid = 'authorized-wall';
+    const photoBytes = await sharp({ create: { width: 3, height: 2, channels: 3, background: '#123456' } })
+      .png()
+      .toBuffer();
+    const photo = {
+      url: `https://bucket.r2.cloudflarestorage.com/spray-walls/${wallUuid}/photo.png?X-Amz-Signature=private`,
+      expiresAt: '2026-09-08T10:00:00Z',
+      width: 3,
+      height: 2,
+    };
+    const request = {
+      operationName: 'GetSprayWallRenderData',
+      query: 'query GetSprayWallRenderData($uuid: ID!) { sprayWallRenderData(uuid: $uuid) { photo { url } } }',
+      variables: { uuid: wallUuid },
+    };
+    await start({ mode: 'record', fresh: true });
+    const recordedOrigin = backendOrigin;
+    upstream.nextGraphqlResponse = {
+      status: 200,
+      body: { data: { sprayWallRenderData: { photo, wall: { uuid: wallUuid, currentVersion: { photo } } } } },
+    };
+    await postGraphql(request);
+    await stop();
+    const recordingDir = fixturesDir;
+    const candidateDir = join(recordingDir, 'candidate');
+    const download: typeof fetch = async () => new Response(new Uint8Array(photoBytes));
+    await expect(prepareIosCampaignFixtures(recordingDir, candidateDir, 'wrong-wall', 47, download)).rejects.toThrow(
+      'Uncaptured signed photo URL',
+    );
+    await prepareIosCampaignFixtures(recordingDir, candidateDir, wallUuid, 47, download);
+    fixturesDir = candidateDir;
+    try {
+      await start({ mode: 'replay' });
+      expect(backendOrigin).not.toBe(recordedOrigin);
+      const response = (await (await postGraphql(request)).json()) as {
+        data: { sprayWallRenderData: { photo: { url: string } } };
+      };
+      const photoUrl = response.data.sprayWallRenderData.photo.url;
+      expect(new URL(photoUrl).port).toBe(new URL(backendOrigin).port);
+      expect(photoUrl).not.toContain('Signature');
+      const bytes = await fetch(photoUrl);
+      expect(bytes.headers.get('content-type')).toContain('image/png');
+      expect(Buffer.from(await bytes.arrayBuffer())).toEqual(photoBytes);
+      const socket = await openGraphqlSocket();
+      try {
+        const frames = await socket.exchange({ type: 'subscribe', id: 'photo', payload: request });
+        expect(frames[0]).toMatchObject({ type: 'next', payload: response });
+      } finally {
+        await socket.close();
+      }
+      await stop();
+      const manifest = readScreenshotFixtureManifest(candidateDir)!;
+      writeFileSync(join(candidateDir, 'manifest.json'), JSON.stringify({ ...manifest, static: [] }));
+      await expect(start({ mode: 'replay' })).rejects.toThrow(
+        'invalid or unbundled reserved screenshot asset reference',
+      );
+    } finally {
+      await stop();
+      fixturesDir = recordingDir;
+    }
   });
 
   it('replays the known nullable spray field without changing old recording bytes or hiding other drift', async () => {

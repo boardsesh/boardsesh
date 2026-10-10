@@ -98,6 +98,12 @@ in slot order (`[0]` boots active, `[1]` is the second board-view shot). Each en
 a board's own name or its layout name, ignoring case, spacing and punctuation. Defaults live
 in `packages/mobile/src/lib/screenshot-mode.ts`.
 
+Screenshot builds start from the selected primary wall even when a simulator restores a
+different active wall. They skip saved solo-queue/session restoration and solo-queue writes,
+so repeated captures do not inherit a previous board’s mini-player. These startup guards do
+not clear stored queues or session IDs; solo queue snapshot writes are disabled in screenshot mode.
+After the primary wall is active, explicit capture slots can switch boards normally.
+
 ### Fake Bluetooth and showcase anchors
 
 Two screenshot-mode switches exist for the homepage showcase video. The recorder and

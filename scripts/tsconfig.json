@@ -191,6 +191,11 @@
     "__tests__/mobile-screenshots.test.ts",
     "__tests__/mobile-profile-capture.test.ts",
     "__tests__/mobile-android-apk.test.ts",
-    "__tests__/with-android-dev-menu-defaults.test.ts"
+    "__tests__/with-android-dev-menu-defaults.test.ts",
+    "prepare-ios-campaign-fixtures.ts",
+    "lib/screenshot-fixture-assets.ts",
+    "__tests__/screenshot-fixture-assets.test.ts",
+    "lib/screenshot-campaign-session.ts",
+    "__tests__/screenshot-campaign-session.test.ts"
   ]
 }

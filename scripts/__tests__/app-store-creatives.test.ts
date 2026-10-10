@@ -34,6 +34,46 @@ async function capture(width = 1206, height = 2622): Promise<Buffer> {
 }
 
 describe('multiboard App Store campaign', () => {
+  it('keeps every native footer visible below a longer localized headline', async () => {
+    const colors = ['#ff0000', '#00ff00', '#0000ff'];
+    const sources = await Promise.all(
+      colors.map(async (color) =>
+        sharp({ create: { width: 1206, height: 2622, channels: 3, background: '#214736' } })
+          .composite([
+            {
+              input: await sharp({ create: { width: 1206, height: 80, channels: 3, background: color } })
+                .png()
+                .toBuffer(),
+              left: 0,
+              top: 2542,
+            },
+          ])
+          .png()
+          .toBuffer(),
+      ),
+    );
+    const caption = {
+      ...readCaptionCatalog('de').storeMoreBoards,
+      headline: 'Mehr Boards.\nDieselbe App.\nFür deine Crew.',
+    };
+    const framed = await frameShowcaseComposition(sources, caption, 'store-boards', {
+      labels: ['Woods', 'Decoy', 'Grasshopper'],
+    });
+    const pixels = await sharp(framed).raw().toBuffer();
+    const footerPixels = [0, 0, 0];
+    for (let offset = 0; offset < pixels.length; offset += 3) {
+      for (let channel = 0; channel < 3; channel++) {
+        if (
+          pixels[offset + channel] === 255 &&
+          pixels[offset + ((channel + 1) % 3)] === 0 &&
+          pixels[offset + ((channel + 2) % 3)] === 0
+        )
+          footerPixels[channel]++;
+      }
+    }
+    for (const count of footerPixels) expect(count).toBeGreaterThan(1000);
+  });
+
   it('loads Instrument Serif rather than substituting the sans-serif italic face', async () => {
     const sample = 'app. queue.';
     const serif = await renderShowcaseText(sample, 120, 1100, '#FFFFFF', { emphasis: sample });

@@ -17,6 +17,7 @@ import {
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
+  buildScreenshotSessionEnv,
   collectScreenshots,
   deviceSlug,
   findFrozenClockProblems,
@@ -39,6 +40,8 @@ import {
   resolveAppStoreLocaleTargets,
   resolveAppPath,
   resolveIosScreenshotDevices,
+  resolvePlatformScreenshotOptions,
+  screenshotFixtureReference,
   rotationDegreesForIosOrientation,
   validateIosAppLauncherUrl,
   type IosScreenshotDevice,
@@ -101,11 +104,11 @@ describe('deviceSlug', () => {
 
 describe('parseArgs', () => {
   it('defaults to ios / app-store / local / common devices / all locales / dark when no flags are given', () => {
-    expect(parseArgs([])).toEqual(makeOptions());
+    expect(parseArgs([])).toEqual(makeOptions({ fixtures: 'replay' }));
   });
 
   it('ignores a bare `--` separator', () => {
-    expect(parseArgs(['--'])).toEqual(makeOptions());
+    expect(parseArgs(['--'])).toEqual(makeOptions({ fixtures: 'replay' }));
   });
 
   it('parses every flag', () => {
@@ -199,7 +202,7 @@ describe('parseArgs', () => {
   });
 
   it('maps --devices common and --locales all to the defaults', () => {
-    expect(parseArgs(['--devices', 'common', '--locales', 'all'])).toEqual(makeOptions());
+    expect(parseArgs(['--devices', 'common', '--locales', 'all'])).toEqual(makeOptions({ fixtures: 'replay' }));
   });
 
   it('maps --devices phones and --devices ipads to their platform groups', () => {
@@ -330,7 +333,20 @@ describe('iOS campaign capture', () => {
   const capture = { sharedSessionId: 'crew', boards: boards.map((board) => board.name) };
   const options = makeOptions({ flow: 'app-store-campaign', fixtures: 'replay' });
 
-  it('is opt-in and stays iOS-only', () => {
+  it('carries the replay roster into the localized Metro session without manual board flags', () => {
+    const env = buildScreenshotSessionEnv(options, baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'stale|boards' }), 'de', {
+      capture,
+      frozenNow: '2026-09-08T09:00:00Z',
+      port: 8098,
+    });
+    expect(env.EXPO_PUBLIC_SCREENSHOT_BOARDS?.split('|')).toEqual(capture.boards);
+    expect(env.EXPO_PUBLIC_SCREENSHOT_LOCALE).toBe('de');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBe('2026-09-08T09:00:00Z');
+    expect(env.EXPO_PUBLIC_WS_URL).toBe('ws://localhost:8098/graphql');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE).toBe('1');
+  });
+
+  it('accepts an explicit campaign alias and stays iOS-only', () => {
     expect(parseArgs(['--flow', 'app-store-campaign']).flow).toBe('app-store-campaign');
     expect(parseArgs([]).flow).toBe('app-store');
     expect(() => parseArgs(['--flow', 'app-store-campaign', '--platform', 'android'])).toThrow(
@@ -400,7 +416,19 @@ describe('iOS campaign capture', () => {
     expect([...new Set(names)].sort()).toEqual([...IOS_CAMPAIGN_CAPTURE_NAMES].sort());
     expect(names).toContain('17-dynamic-island.png');
     expect(campaign).toContain("visible: 'Next climb'");
-    expect(campaign).not.toContain('when:');
+    function assertUnconditionalCaptures(node: unknown, conditional = false): void {
+      if (Array.isArray(node)) {
+        for (const child of node) assertUnconditionalCaptures(child, conditional);
+      } else if (node && typeof node === 'object') {
+        const command = node as Record<string, unknown>;
+        const guarded = conditional || 'when' in command || command.optional === true;
+        if ('takeScreenshot' in command) expect(guarded).toBe(false);
+        for (const child of Object.values(command)) assertUnconditionalCaptures(child, guarded);
+      }
+    }
+    for (const document of documents) assertUnconditionalCaptures(document.toJS() as unknown);
+    expect(campaign).not.toContain('launchApp');
+    expect(campaign).toContain("visible: '.*Lightest Pair of Shorts.*'");
   });
 });
 
@@ -1053,14 +1081,35 @@ describe('resolveAppStoreLocaleTargets', () => {
 });
 
 describe('--fixtures', () => {
-  it('defaults to off and leaves the fixture env unset', () => {
-    const options = parseArgs([]);
+  it('defaults iOS store captures to replay while explicit live and Android captures retain their mode', () => {
+    expect(parseArgs([]).fixtures).toBe('replay');
+    expect(parseArgs(['--platform', 'android']).fixtures).toBe('off');
+    const options = parseArgs(['--fixtures', 'off']);
     expect(options.fixtures).toBe('off');
     expect(options.fixturesDir).toBe('packages/mobile/screenshot-fixtures');
     expect(options.fresh).toBe(false);
     const env = buildScreenshotEnv(options, baseEnv());
     expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBeUndefined();
     expect(env.EXPO_PUBLIC_WS_URL).toBeUndefined();
+  });
+
+  it('isolates the iOS campaign recipe and fixture pin from Android and navigation smoke', () => {
+    const both = parseArgs(['--platform', 'all']);
+    const ios = resolvePlatformScreenshotOptions(both, 'ios', true);
+    const android = resolvePlatformScreenshotOptions(both, 'android', true);
+    expect(ios.flow).toBe('app-store-campaign');
+    expect(ios.fixtures).toBe('replay');
+    expect(screenshotFixtureReference(ios)).toMatch(/app-stores\/apple\/campaign-fixtures\.json$/);
+    expect(android.flow).toBe('app-store');
+    expect(android.fixtures).toBe('off');
+    expect(screenshotFixtureReference(android)).toMatch(/app-stores\/screenshot-fixtures\.json$/);
+    const smoke = resolvePlatformScreenshotOptions(parseArgs(['--flow', 'smoke', '--fixtures', 'replay']), 'ios');
+    expect(smoke.flow).toBe('smoke');
+    expect(screenshotFixtureReference(smoke)).toBe(screenshotFixtureReference(android));
+    for (const mode of ['record', 'off']) {
+      const diagnostic = resolvePlatformScreenshotOptions(parseArgs(['--fixtures', mode]), 'ios');
+      expect(diagnostic.flow).toBe('app-store');
+    }
   });
 
   it('parses the mode, the directory and --fresh', () => {

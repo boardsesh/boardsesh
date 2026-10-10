@@ -354,12 +354,18 @@ export async function frameShowcaseComposition(
   const aspect = sourceSize.height / sourceSize.width;
   const foreground: sharp.OverlayOptions[] = [];
   if (boards) {
-    // Three unobscured board surfaces. Side phones sit higher than the foreground phone.
-    const panelWidth = Math.min(region.width * 0.49, region.height / (aspect * 1.18));
+    // Lower the portrait foreground phone to expose more lit holds on both sides.
+    // Fit its complete native footer even when translated copy makes the stage shorter.
+    const foregroundDrop = wide ? 0.17 : 0.29;
     const sideTop = region.top + height * 0.032;
+    const panelBleed = Math.max(2, Math.round(Math.min(width, height) * 0.002)) * 2 + 8;
+    const panelWidth = Math.min(
+      region.width * 0.49,
+      (height * 0.96 - sideTop - region.height * foregroundDrop - panelBleed) / aspect,
+    );
     const positions = [
       { left: region.left, top: sideTop },
-      { left: region.left + (region.width - panelWidth) / 2, top: sideTop + region.height * 0.17 },
+      { left: region.left + (region.width - panelWidth) / 2, top: sideTop + region.height * foregroundDrop },
       { left: region.left + region.width - panelWidth, top: sideTop },
     ];
     for (const index of [0, 2, 1]) {
@@ -381,7 +387,7 @@ export async function frameShowcaseComposition(
   } else if (!wide && (layout === 'store-queue' || layout === 'store-wall')) {
     // These details are lifted from the same full native capture shown below.
     // Queue: first two rows and their contributor avatars. Wall: native status chip.
-    const crop = layout === 'store-queue' ? { top: 0.245, height: 0.245 } : { top: 0.075, height: 0.06 };
+    const crop = layout === 'store-queue' ? { top: 0.195, height: 0.34 } : { top: 0.075, height: 0.06 };
     const detailWidth = region.width;
     const detailHeight = detailWidth * aspect * crop.height;
     const screenTop = region.top + detailHeight + height * 0.025;
@@ -412,7 +418,7 @@ export async function frameShowcaseComposition(
     );
   } else {
     // The island is SpringBoard UI: enlarge its actual pixels instead of drawing controls.
-    const crop = layout === 'store-island' ? { top: 0, height: 0.28 } : undefined;
+    const crop = layout === 'store-island' ? { top: 0, height: 0.183 } : undefined;
     const panelWidth = Math.min(region.width, region.height / (aspect * (crop?.height ?? 1)));
     const panelHeight = panelWidth * aspect * (crop?.height ?? 1);
     panels.push({

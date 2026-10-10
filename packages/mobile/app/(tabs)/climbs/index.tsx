@@ -112,7 +112,7 @@ import {
   buildScreenshotWallSeed,
   publishScreenshotWallClimbs,
 } from '../../../src/lib/board-presence/screenshot-wall-seed';
-import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-selection';
+import { resolveScreenshotBoard, screenshotClimbMatchesBoard } from '../../../src/lib/screenshot-board-selection';
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
@@ -1030,7 +1030,7 @@ function ClimbListInner() {
     if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
     if (!activeBoard || screenshotOpenedForBoardRef.current === activeBoard.uuid) return;
     const firstClimb = visibleClimbs[0];
-    if (!searchReady || !firstClimb) return;
+    if (!searchReady || !firstClimb || !screenshotClimbMatchesBoard(firstClimb, activeBoard)) return;
     screenshotOpenedForBoardRef.current = activeBoard.uuid;
     handleClimbPress(firstClimb);
   }, [screenshotOpenFirst, searchReady, visibleClimbs, handleClimbPress, screenshotTargetBoard, activeBoard]);

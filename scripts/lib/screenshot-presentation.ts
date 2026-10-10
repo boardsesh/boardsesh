@@ -148,7 +148,7 @@ const IOS_CAMPAIGN_RECIPES: readonly ScreenshotRecipe[] = [
     labels: ['Woods', 'Decoy', 'Grasshopper'],
   },
   { output: '04-on-the-wall.png', caption: 'wallStatus', layout: 'store-wall', sources: ['16-wall-status.png'] },
-  { output: '05-one-logbook.png', caption: 'crossBoardLogbook', layout: 'screen', sources: ['09-profile.png'] },
+  { output: '05-one-logbook.png', caption: 'crossBoardLogbook', layout: 'screen', sources: ['08-logbook.png'] },
   { output: '06-session-plan.png', caption: 'workout', layout: 'screen', sources: ['05-workout-generator.png'] },
   {
     output: '07-dynamic-island.png',
