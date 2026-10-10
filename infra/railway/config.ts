@@ -392,11 +392,11 @@ export interface RailwayDesiredState {
 }
 
 /**
- * Retention for the two Observe fact tables.
+ * Retention for every table xprem keeps in ClickHouse.
  *
- * xprem's ClickHouse migrations ship NO TTL on any table — verified across both
- * files in internal/database/clickhouse/migrations/. Left alone these grow without
- * bound, and the growth is invisible until a volume fills.
+ * xprem's ClickHouse migrations ship NO TTL on any table — verified across every
+ * file in internal/database/clickhouse/migrations/ at v3.2.6. Left alone these grow
+ * without bound, and the growth is invisible until a volume fills.
  *
  * Logs get the shorter window because their bodies and attribute blobs dominate the
  * bytes, while the metrics are narrow numeric rows that compress well and are the
@@ -450,6 +450,26 @@ export const CLICKHOUSE_RETENTION: TableRetentionDesired[] = [
     // worth keeping longest: it is the raw adoption record the snapshots
     // summarise.
     reason: 'Raw per-device adoption events: the lowest volume here and the record the rest is derived from.',
+  },
+  // The two below arrived with error tracking in xprem 3.2.6 and, like the rest,
+  // ship with no TTL. The Errors view reads at most 31 days back, so 90 days is
+  // history nothing queries, kept in step with the metrics it is read beside.
+  {
+    table: 'error_occurrences',
+    column: 'hour',
+    ttlDays: 90,
+    // Filled by the error_occurrences_mv materialized view as logs arrive, and
+    // partitioned by day: without a TTL it gains a partition every day forever.
+    reason: 'Hourly error counts per update, one partition a day; read 31 days back at most.',
+  },
+  {
+    table: 'error_groups',
+    column: 'symbolicated_at',
+    ttlDays: 90,
+    // One row per (update, error) holding a whole symbolicated trace. The sweep
+    // in ee/observe/error_groups_job.go writes a row for any counted error that
+    // lacks one, so an expired row for an error still happening is written again.
+    reason: 'One symbolicated stack trace per update and error: wide rows, rewritten on demand.',
   },
 ];
 

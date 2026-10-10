@@ -152,8 +152,8 @@ from source maps stored with each update. Both need the Enterprise licence.
   pinned to eoas 3.2.5 keeps publishing. Between the two CLI versions only `publish` and its asset
   helper changed; `rollback`, `republish` and `doctor` are byte-identical.
 - **Source maps are off until `UPLOAD_SOURCEMAPS` is set.** The server ignores the `sourcemap` item
-  until then, and `scripts/lib/ota-publish-protocol.ts` does not send one yet. So the Errors view
-  groups errors from the first boot, with raw Hermes stack traces.
+  until then, so the Errors view groups errors from the first boot with raw Hermes stack traces.
+  See [Error tracking in Observe](#error-tracking-in-observe-alongside-sentry).
 - **Update health reads the SDK's own signals.** A fatal exception reported by `expo-app-metrics`
   marks the running update faulty, and a later first render clears it. The app recovers from
   worklet-serialization fatals in `global-error-capture.ts`. Going by import order, the SDK's
@@ -1668,6 +1668,63 @@ entry. The interface pin's separate removal condition remains in `pnpm-workspace
 (#5867).
 
 Where the rows land, and what they cost to keep: `docs/railway.md`.
+
+### Error tracking in Observe (alongside Sentry)
+
+Since xprem 3.2.6, Observe has an Errors view: errors grouped by fingerprint, with occurrence,
+device and crash counts, per update. It needs no app change. Two sources already feed it:
+
+- **`reportError`** (`packages/mobile/src/lib/error-reporting.ts`) sends every handled error to Sentry
+  and to Observe from one funnel, so the two agree on what counted as an error.
+- **The SDK's own global handler** records uncaught JavaScript errors.
+
+Sentry stays on. Observe answers "which update did this error arrive with"; Sentry keeps the rest:
+
+| | Observe | Sentry |
+| --- | --- | --- |
+| Handled errors through `reportError` | Yes | Yes |
+| Uncaught JavaScript errors | Yes | Yes |
+| Unhandled promise rejections | No | Yes |
+| Native crashes | Some arrive as `native.exception`; never symbolicated | Yes, with dSYM and R8 mapping |
+| Errors from a store binary's embedded bundle | Listed, never symbolicated | Symbolicated |
+| Tags, breadcrumbs, the `beforeSend` noise filter | No | Yes |
+
+Two call sites report to Sentry only, by calling `captureToSentry` directly: the create-climb
+handoff and the global handler that recovers from worklet-serialization fatals.
+
+**Source maps.** A stack trace is symbolicated when the update that produced it has a stored map:
+
+1. `eoas publish` dumps the Hermes map next to the bundle and names it in `requestUploadUrl`, as a
+   `sourcemap` item (path and hash) beside `files`.
+2. The server records the hash on the update and leases an upload, unless it already holds that map.
+3. Production updates are promoted by `scripts/mobile-ota-promote.ts`, not by eoas. It names the
+   same map from the staged export, and the server reuses the copy the staging publish stored. An
+   export with no map still promotes, with a warning in the log.
+4. A background job indexes the map, and a sweep symbolicates new errors every minute.
+
+Storage needs `UPLOAD_SOURCEMAPS=true` and `S3_BUCKET_SOURCEMAPS_NAME` on the OTA server. Until
+both are declared in `infra/railway/config.ts`, the server ignores every `sourcemap` item. The maps
+live in the private `boardsesh-ota-sourcemaps` bucket and expire after 35 days
+([cloudflare.md](./cloudflare.md#ota-source-maps)).
+
+**Storage is part of publishing once it is on.** With `UPLOAD_SOURCEMAPS` set, the server records
+the map on the update and checks its store at lease and at finalize. If the store is unreachable, or
+the server's credential cannot read the bucket, every publish fails: eoas on `pr-staging` and
+`pr-<n>`, and the promote to `production`. Nothing half-publishes at the lease, because it fails
+before any upload. To publish again, unset `UPLOAD_SOURCEMAPS` on the OTA service in Railway; the
+server then ignores source maps and updates go out unsymbolicated.
+
+Limits to know before reading a trace:
+
+- **31 days.** The Errors view and symbolication cover errors received in the last 31 days.
+- **35 days per map.** A map is deleted 35 days after it was uploaded. An update still running
+  after that gets raw traces for errors xprem has not already symbolicated.
+- **128 MB.** xprem does not index a larger map. The iOS map was 44 MB on 2026-10-10.
+- **JavaScript frames only.** Native and Hermes-internal frames stay as the device reported them.
+- **No map, no symbols.** An update published before storage was on, or from a branch still pinned
+  to an older eoas, keeps raw traces. So does the embedded bundle of a store binary.
+- **The licence must be active when a map is indexed.** If it lapses, the index shows as Unusable
+  until a key is activated and the map reindexed from the dashboard.
 
 ## Health monitoring & rollback
 

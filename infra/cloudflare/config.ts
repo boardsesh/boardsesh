@@ -1037,6 +1037,26 @@ export const USER_EXPORT_LIFECYCLE_RULE: R2LifecycleRule = {
   deleteObjectsTransition: { condition: { type: 'Age', maxAge: 14 * 24 * 60 * 60 } },
 };
 
+/**
+ * Every publish stores one Hermes source map per platform (44 MB for iOS on
+ * 2026-10-10), previews included, so without a rule the bucket only grows.
+ * xprem keeps each map and its index under `sourcemaps/{appId}/`, with no
+ * branch in the key, so the rule cannot spare production maps.
+ *
+ * The clock runs from the day a map was uploaded, not from the error. So this
+ * is a trade: an update still running 35 days after it was published (the last
+ * OTA of an old binary) gets raw stack traces for any error xprem has not
+ * already symbolicated. Errors grouped before then keep their trace, which is
+ * stored in ClickHouse. Lengthen the window if that tail matters more than the
+ * storage; nothing expires until 35 days after source maps are switched on.
+ */
+export const OTA_SOURCEMAP_LIFECYCLE_RULE: R2LifecycleRule = {
+  id: 'boardsesh-ota-sourcemaps-35d',
+  enabled: true,
+  conditions: { prefix: 'sourcemaps/' },
+  deleteObjectsTransition: { condition: { type: 'Age', maxAge: 35 * 24 * 60 * 60 } },
+};
+
 export interface R2BucketDesired {
   name: string;
   /** Hostname serving this bucket publicly, or null when it must stay unreachable. */
@@ -1097,6 +1117,16 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
   // updates.boardsesh.com stays the endpoint clients are built against.
   // No CORS: only the native expo-updates client reads these.
   { name: 'boardsesh-ota-v3', customDomain: OTA_ASSETS_HOSTNAME, r2DevDomainEnabled: false },
+  // Hermes source maps for OTA updates, written by xprem at publish once
+  // UPLOAD_SOURCEMAPS is on. MUST stay domain-less: a map embeds the app's
+  // source with its comments, and xprem refuses to keep maps in a bucket its
+  // CDN_BASE_URL fronts, which is why they cannot share boardsesh-ota-v3.
+  {
+    name: 'boardsesh-ota-sourcemaps',
+    customDomain: null,
+    r2DevDomainEnabled: false,
+    lifecycleRule: OTA_SOURCEMAP_LIFECYCLE_RULE,
+  },
 ];
 
 export const desiredCloudflareState: CloudflareDesiredState = {

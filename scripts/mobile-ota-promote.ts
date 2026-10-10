@@ -40,6 +40,7 @@ import {
   DEFAULT_BRANCH,
   UPDATE_ID,
   UUID,
+  buildSourcemapUpload,
   buildUploadFiles,
   finalizeUpload,
   object,
@@ -709,6 +710,13 @@ export async function promoteArchivedOta(options: {
   // Validate both server responses before sending any archived bytes.
   for (const platform of ['ios', 'android'] as const) {
     if (leases[platform] === 'rolling' || rolloutRecord.unchangedPlatforms[platform]) continue;
+    // The staged export carries the Hermes map eoas dumped next to the bundle.
+    // Without it the promoted update still ships; xprem just cannot symbolicate
+    // its errors, so say so and carry on.
+    const sourcemap = buildSourcemapUpload(exports[platform]);
+    if (!sourcemap) {
+      console.warn(`[ota-promote] ${platform}: staged export has no source map; ${branch} errors stay unsymbolicated.`);
+    }
     const response = await requestUploadLease(target, {
       platform,
       runtimeVersion: receipt.platforms[platform].runtimeVersion,
@@ -716,6 +724,7 @@ export async function promoteArchivedOta(options: {
       publishGroup,
       rolloutPercentage,
       files: buildUploadFiles(exports[platform]),
+      sourcemap,
       message: receipt.message,
     });
     if (response.status === 409) {
