@@ -1,15 +1,17 @@
 /**
  * Which version of a climb a tick belongs to (#6023).
  *
- * Each tick stores the version it was logged on (`climbRevision`, picked by
- * the server), and each climb carries the version at which its holds last
- * moved (`holdsRevisionNumber`). Versions start at 1.
+ * A tick can carry the version it was logged on (`climbRevision`), and each
+ * climb carries the version at which its holds last moved
+ * (`holdsRevisionNumber`). Versions start at 1. The server no longer records a
+ * version on a new tick, so most ticks have none.
  *
  * "Does this tick still count as a send of the climb?" follows the rule the
  * server used to apply, where a tick with no version is version 1. The server
- * dropped the rule and no longer moves either number, so every climb's holds
- * version is 1 and every tick counts. A tick the app cannot say anything about
- * is a third case and counts (see `isTickOnCurrentHolds`).
+ * dropped the rule, no longer moves either number, and reset every stored
+ * holds version to 1 (migration 0263). So every holds version the app is given
+ * is 1 and every tick counts. A tick the app cannot say anything about is a
+ * third case and counts (see `isTickOnCurrentHolds`).
  */
 
 type RevisionNumber = number | null | undefined;

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { sql } from 'drizzle-orm';
 import type * as GraphQLModule from 'graphql';
@@ -22,6 +22,7 @@ vi.mock('../graphql/resolvers/board-presence/stats', () => ({ queueBoardStatsPub
 vi.mock('../services/analytics/posthog', () => ({ captureBackendEvent: vi.fn(() => true) }));
 
 import { db } from '../db/client';
+import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 import { schema } from '../graphql/index';
 
 // `graphql` resolves to two module instances under the test transform. The
@@ -46,7 +47,7 @@ const SAVE_TICK = `mutation Save($input: SaveTickInput!) {
  * queued in their offline outboxes, still carry it. Dropping the field would
  * fail those requests, and the drainer dead-letters a send that fails for good.
  */
-describe('saveTick with a climbRevision from an older app', () => {
+describe('climbRevision after the retirement', () => {
   beforeAll(async () => {
     await setupWorkerDatabase();
     await db.execute(sql`
@@ -67,7 +68,16 @@ describe('saveTick with a climbRevision from an older app', () => {
     await db.execute(sql`DELETE FROM users WHERE id = ${USER_ID}`);
   });
 
-  it('saves the tick and stores no revision', async () => {
+  afterEach(async () => {
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+  });
+
+  const authCtx = () =>
+    ({ connectionId: 'conn-tick-revision', isAuthenticated: true, userId: USER_ID }) as ConnectionContext;
+
+  // 3 is what an older bundle sends. 0 and -1 are the bad integers the Zod
+  // schema swallows instead of refusing; null is an explicit "none".
+  it.each([[3], [0], [-1], [null]])('saves the tick and stores no revision when sent %s', async (climbRevision) => {
     const result = await execute({
       schema,
       document: parse(SAVE_TICK),
@@ -75,7 +85,7 @@ describe('saveTick with a climbRevision from an older app', () => {
         input: {
           boardType: BOARD,
           climbUuid: CLIMB_UUID,
-          climbRevision: 3,
+          climbRevision,
           angle: 40,
           isMirror: false,
           status: 'send',
@@ -87,11 +97,7 @@ describe('saveTick with a climbRevision from an older app', () => {
           climbedAt: '2026-08-15T12:00:00.000Z',
         },
       },
-      contextValue: {
-        connectionId: 'conn-tick-revision',
-        isAuthenticated: true,
-        userId: USER_ID,
-      } as ConnectionContext,
+      contextValue: authCtx(),
     });
 
     expect(result.errors ?? []).toEqual([]);
@@ -102,5 +108,29 @@ describe('saveTick with a climbRevision from an older app', () => {
       SELECT climb_revision FROM boardsesh_ticks WHERE uuid = ${saved.uuid}
     `)) as unknown as Array<{ climb_revision: number | null }>;
     expect([...stored]).toEqual([{ climb_revision: null }]);
+  });
+
+  // Ticks saved while the server still stamped a revision keep their number,
+  // and `Tick.climbRevision` still answers with it.
+  it('updateTick leaves a stored revision alone and returns it', async () => {
+    const tickUuid = '6f0d2c8e-3b1a-4c5d-9e7f-0a1b2c3d4e5f';
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, climb_revision, angle, status,
+                                   attempt_count, climbed_at, created_at, updated_at)
+      VALUES (${tickUuid}, ${USER_ID}, ${BOARD}, ${CLIMB_UUID}, 2, 40, 'send', 1,
+              '2026-10-05T12:00:00Z', now(), now())
+    `);
+
+    const updated = (await tickMutations.updateTick(
+      undefined,
+      { uuid: tickUuid, input: { status: 'attempt', attemptCount: 3, comment: 'Not yet', angle: 25 } },
+      authCtx(),
+    )) as { climbRevision: number | null };
+
+    expect(updated.climbRevision).toBe(2);
+    const stored = (await db.execute(sql`
+      SELECT climb_revision FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+    `)) as unknown as Array<{ climb_revision: number | null }>;
+    expect([...stored]).toEqual([{ climb_revision: 2 }]);
   });
 });

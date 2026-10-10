@@ -150,7 +150,7 @@ The persisted cache adds its own layer on top: the blob carries a `userId` stamp
 
 ### Climb versions are read from the phone, even for a network answer
 
-The phone still keeps which version of the climb a tick was logged on (#6023). The server retired both the stamp and the rule that read it (`docs/spray-walls.md` → "Climb revisions (retired)"), so every holds version the phone is given is 1 and every tick counts; what follows describes the app's own copy. The documents that would carry the numbers (`SearchClimbs`, `GetClimb`, `GetTicks`, the queue documents) are pinned by the App Store screenshot fixtures and cannot select them yet, so the phone's own tables answer instead. Three reads, all in `packages/mobile/src/db/queries/climb-revisions-local.ts`:
+The phone still keeps which version of the climb a tick was logged on (#6023). The server retired both the stamp and the rule that read it (`docs/spray-walls.md` → "Climb revisions (retired)"), and migration 0263 reset any stored holds version to 1, so every holds version the phone is given is 1 and every tick counts; what follows describes the app's own copy. The documents that would carry the numbers (`SearchClimbs`, `GetClimb`, `GetTicks`, the queue documents) are pinned by the App Store screenshot fixtures and cannot select them yet, so the phone's own tables answer instead. Three reads, all in `packages/mobile/src/db/queries/climb-revisions-local.ts`:
 
 | Read | Table | Gate |
 | --- | --- | --- |

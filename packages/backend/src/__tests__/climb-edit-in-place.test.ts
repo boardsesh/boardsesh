@@ -730,6 +730,112 @@ describe('the backfill at the end of migration 0252', () => {
   });
 });
 
+// Migration 0263 sets the retired revision numbers back to 1 on any climb whose
+// holds epoch is above 1, and marks that climb's stats keys for a recompute.
+// The app still compares a tick's revision with the epoch, and a tick saved
+// today has none, so a stored epoch above 1 would cost every new send its sent
+// mark on the phone. Read out of the file and run here, like 0252's backfill.
+describe('migration 0263, the reset of the retired revision numbers', () => {
+  const reset = readFileSync(
+    new URL('../../../db/drizzle/0263_reset_retired_climb_revision_numbers.sql', import.meta.url),
+    'utf8',
+  )
+    .split('\n')
+    .filter((line) => !line.startsWith('--'))
+    .join('\n')
+    .trim();
+  const runReset = () => db.execute(sql.raw(reset));
+
+  async function insertClimb(revisionNumber: number, holdsRevisionNumber: number): Promise<string> {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed, user_id,
+                                revision_number, holds_revision_number)
+      VALUES (${climbUuid}, 'kilter', 1, 'Reset climb', 'p1117r12', false, true, ${SETTER},
+              ${revisionNumber}, ${holdsRevisionNumber})
+    `);
+    return climbUuid;
+  }
+
+  const pendingAnglesOf = async (climbUuid: string): Promise<number[]> => {
+    const rows = (await db.execute(sql`
+      SELECT angle FROM climb_stats_recompute_pending
+      WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} ORDER BY angle
+    `)) as unknown as Array<{ angle: number }>;
+    return [...rows].map((row) => Number(row.angle));
+  };
+
+  it('is one statement that only writes board_climbs and the recompute markers', () => {
+    expect(reset).toMatch(/^WITH reset AS \(\s+UPDATE "board_climbs"/);
+    expect(reset.match(/;/g)).toHaveLength(1);
+    expect(reset).not.toMatch(/board_climb_revisions|boardsesh_ticks/);
+  });
+
+  it('resets a climb whose holds epoch is above 1 and re-delivers it', async () => {
+    const climbUuid = await insertClimb(3, 2);
+    const before = await revisionColumnsOf(climbUuid);
+
+    await runReset();
+
+    const after = await revisionColumnsOf(climbUuid);
+    expect(after).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+    expect(after.sync_seq).toBeGreaterThan(before.sync_seq);
+  });
+
+  it('leaves a climb at epoch 1 alone, whatever its revision number', async () => {
+    const renamedOnly = await insertClimb(2, 1);
+    const unedited = await insertClimb(1, 1);
+    const renamedOnlyBefore = await revisionColumnsOf(renamedOnly);
+    const uneditedBefore = await revisionColumnsOf(unedited);
+
+    await runReset();
+
+    // Not rewritten at all: `sync_seq` is where it was, so no phone re-pulls them.
+    expect(await revisionColumnsOf(renamedOnly)).toEqual(renamedOnlyBefore);
+    expect(await revisionColumnsOf(unedited)).toEqual(uneditedBefore);
+    expect(await pendingAnglesOf(renamedOnly)).toEqual([]);
+  });
+
+  it('changes nothing on a second run', async () => {
+    const climbUuid = await insertClimb(3, 2);
+
+    await runReset();
+    const afterFirstRun = await revisionColumnsOf(climbUuid);
+    await runReset();
+
+    expect(await revisionColumnsOf(climbUuid)).toEqual(afterFirstRun);
+  });
+
+  it('marks every stats key of a climb it reset, and keeps a marker that was already there', async () => {
+    const climbUuid = await insertClimb(2, 2);
+    const untouched = await insertClimb(1, 1);
+    for (const [uuid, angle] of [
+      [climbUuid, 25],
+      [climbUuid, 40],
+      [untouched, 40],
+    ] as const) {
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count)
+        VALUES ('kilter', ${uuid}, ${angle}, 0)
+      `);
+    }
+    await db.execute(sql`
+      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
+      VALUES ('kilter', ${climbUuid}, 40, '2026-01-01T00:00:00Z')
+    `);
+
+    await runReset();
+
+    expect(await pendingAnglesOf(climbUuid)).toEqual([25, 40]);
+    expect(await pendingAnglesOf(untouched)).toEqual([]);
+    const [kept] = (await db.execute(sql`
+      SELECT requested_at < now() - interval '1 day' AS is_original FROM climb_stats_recompute_pending
+      WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} AND angle = 40
+    `)) as unknown as Array<{ is_original: boolean }>;
+    expect(kept.is_original).toBe(true);
+  });
+});
+
 describe('an edit decided on a climb another edit has since changed', () => {
   it('is refused with CLIMB_EDIT_CONFLICT, and leaves the frames and the hold rows agreeing', async () => {
     // The setter has the climb open on two devices with frames F0. The first

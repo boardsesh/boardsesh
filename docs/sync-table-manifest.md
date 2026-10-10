@@ -303,9 +303,12 @@ composite-keyed sync table must keep this true (or version the encoding).
 - `revision_number` and `holds_revision_number` are the climb's current revision and the revision at which its
   holds last changed (#6023). On the server both are `NOT NULL DEFAULT 1`; on the device both are nullable
   INTEGERs, because a row pulled before schema v11 has never been told its revision. Since revision history was
-  retired the server no longer moves either number, and `syncClimbs` keeps shipping the stored values.
+  retired the server no longer moves either number, and `syncClimbs` keeps shipping the stored values. Migration
+  0263 set both back to 1 on any climb whose `holds_revision_number` was above 1, so the only value the server
+  holds for the holds revision is 1.
 - They were also added **without** bumping `refreshRevision`. Only an edit (before the retirement) moved either
-  number off 1, and an edit bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor. A row that is
+  number off 1, and an edit bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor.
+  The 0263 reset bumps `sync_seq` the same way, so a phone that held an epoch above 1 is sent the 1. A row that is
   never re-delivered is a climb nobody has edited. Its local NULL costs nothing: the app never sends a tick's
   revision, and the server stores none. A bump would re-crawl every downloaded catalogue to write a 1 beside each
   climb.

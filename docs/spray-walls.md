@@ -3032,7 +3032,7 @@ a separately approved cleanup:
 | `spray_climb_lineage` | No |
 | `spray_walls.climb_edit_policy` | No (new walls take the column default, `setter`) |
 | `spray_wall_versions.is_full_reset` | No (new versions take the default, `false`) |
-| `board_climbs.revision_number`, `holds_revision_number` | No. Frozen at their stored values, and no server rule reads them. |
+| `board_climbs.revision_number`, `holds_revision_number` | No. No server rule reads them, and migration 0263 set both to 1 wherever the holds number was above 1 (see "Climb revisions (retired)"). |
 | `spray_wall_holds.moved_from_hold_id` | Yes, by the hold editor: a correction to an inherited hold links its successor |
 | `board_climbs.missing_hold_count`, `retired_by_reset` | Yes, by the publish recompute and by `updateClimb`'s per-climb recompute. A hold-edit publish that removes a used hold raises the count; `retired_by_reset` only moves for climbs an old full reset touched. |
 | `boardsesh_ticks.climb_revision` | No. `saveTick` stores NULL; ticks saved between 2026-10-05 and the removal keep their number. |
@@ -3916,8 +3916,7 @@ The two rules that read those numbers are removed as well:
   count, first ascent and stars, and towards every per-climb "has this climber
   sent / tried / rated it" check, only when its `climb_revision` was at or above
   the climb's `holds_revision_number`. Every tick counts now, on every climb,
-  whatever the two columns hold. Nobody had used climb edits by the time they
-  were retired, so no climb's numbers changed.
+  whatever the two columns hold.
 - **The tick stamp.** `saveTick` no longer works out which revision a tick was
   logged on. New ticks store `climb_revision = NULL`. `SaveTickInput.climbRevision`
   is still accepted and ignored, because app bundles from before the retirement,
@@ -3925,18 +3924,49 @@ The two rules that read those numbers are removed as well:
   input field would fail the request, and the drainer dead-letters a send that
   fails for good.
 
+**Migration 0263 sets any stored holds epoch back to 1.** The app still makes
+the comparison on the phone and reads a tick with no revision as revision 1, so
+on a climb left at an epoch above 1 every new send would lose its sent mark in
+the app while the server counted it. The migration sets `revision_number` and
+`holds_revision_number` to 1 on every climb whose `holds_revision_number` is
+above 1. Climb edits are believed never to have been used, which makes it a
+no-op, but the outcome does not rest on that.
+
+- It finds its rows through `board_climbs_holds_moved_idx`, and each row it
+  changes goes back to the phones through the ordinary `sync_seq` cursor.
+- In the same statement it marks those climbs' stats keys in
+  `climb_stats_recompute_pending`, so the self-heal job recomputes counts that
+  were written while the rule still left older ticks out.
+- A climb with `revision_number` above 1 and `holds_revision_number` at 1 is
+  left alone: the rule never read `revision_number`, and finding those rows
+  takes a scan of the table.
+- Ticks keep the `climb_revision` they have, and `board_climb_revisions` keeps
+  its rows.
+
 What remains in the schema, and why:
 
 | Item | Why it is still there |
 | --- | --- |
-| `board_climbs.revision_number`, `holds_revision_number`, `boardsesh_ticks.climb_revision` | The device's SQLite schema (v11) and its `localColumns` contract have them, so `syncClimbs` / `syncTicks` keep emitting them. The app still runs its own copy of the comparison, which lets every tick through because every epoch it is given is 1. |
+| `board_climbs.revision_number`, `holds_revision_number`, `boardsesh_ticks.climb_revision` | The device's SQLite schema (v11) and its `localColumns` contract have them, so `syncClimbs` / `syncTicks` keep emitting them. The app still runs its own copy of the comparison, which lets every tick through: migration 0263 leaves no epoch above 1, and nothing raises one. |
 | `board_climb_revisions` | Kept rows; nothing reads or writes it. |
 | `board_climbs_holds_moved_idx` (partial, `holds_revision_number > 1`) | No query uses it. It goes with the column. |
 | `climb_revision` and `holds_revision_number` in `CLIMB_STATS_SELF_HEAL_GRANTS` | A worker image from before the removal still reads both until it is replaced. |
 | The nullable GraphQL fields (`Tick.climbRevision`, `Climb.revisionNumber`, `Climb.holdsRevisionNumber`, `ClimbInput.revisionNumber`, `UpdateClimbResult.revisionNumber` / `holdsRevisionNumber`, `climbRevision` / `climbCurrentRevision` on the log and feed items) | Shipped app bundles select them. They answer with the stored value, or `null`. |
 
 Dropping the columns, the table, the index, the grants and the fields is a later
-change, after the app stops reading them.
+change, after the app stops reading them. That change also owns the client half,
+which this one left alone because editing it publishes an app update:
+
+- the local rule itself: `packages/mobile/src/db/queries/climb-revisions-local.ts`,
+  its use in `search-climbs-local.ts`, `use-ascent-status.ts` and
+  `use-local-climb-ticks.ts`, and `packages/shared/logbook/src/tick-revision.ts`;
+- comments that still describe the server rule as live or name the deleted
+  `holds-epoch.ts`: `climb-revisions-local.ts`, the note above the epoch cases in
+  `packages/mobile/src/db/queries/__tests__/search-climbs-local.test.ts`, and the
+  "by-date fallback" note on `board_climbs` in
+  `packages/shared/offline-sync/src/sync/table-config.ts`;
+- `DROPPABLE_INPUT_FIELDS` (`SaveTick: ['climbRevision']`) in
+  `packages/shared/offline-sync`, and the SQLite v11 columns.
 
 `Climb.revisionNumber`, `Climb.holdsRevisionNumber` and `Tick.climbRevision` come
 back unchanged, and `syncTicks` / `syncClimbs` keep emitting the three columns.

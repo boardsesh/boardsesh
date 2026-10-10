@@ -390,8 +390,9 @@ export const boardClimbs = pgTable(
     revisionNumber: integer('revision_number').notNull().default(1),
     // The revision at which the holds last changed (frames or frame count),
     // frozen with `revisionNumber`. The server rule that compared a tick's
-    // revision with it ("holds epoch") was removed; the column is only passed
-    // through to clients until it is dropped.
+    // revision with it ("holds epoch") was removed, and migration 0263 set any
+    // value above 1 back to 1 because the app still makes that comparison. The
+    // column is only passed through to clients until it is dropped.
     holdsRevisionNumber: integer('holds_revision_number').notNull().default(1),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
