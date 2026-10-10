@@ -20,6 +20,15 @@ Wrapped by two helpers so they don't drift (both supply the scrim, drag handle, 
 background natively, plus JS-side keyboard avoidance for the `header` / `footer` column — neither
 native sheet window resizes for the keyboard, so the wrappers pad on both platforms):
 
+**Background rule.** On iOS with the Apple variant, leave the sheet's native
+`backgroundStyle` unset, even when `surface="solid"` is requested. The system
+then draws the appropriate sheet appearance for the OS. Explicit Material 3 and
+Reduce Transparency use an opaque `theme.sheetSurface` instead. Apply this rule
+to raw `BottomSheet`/`BottomSheetModal` users too, through the shared sheet
+background resolver. Android and web retain their current behavior. For a
+`modal` page route, leave presentation chrome native and use semantic backgrounds
+on content such as a form or list when needed for readability.
+
 | Wrapper                                            | Backing            | Opened by                                                                          | Use when                                                                                                                          |
 | -------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **`ModalSheet`** (`src/components/ModalSheet.tsx`) | `BottomSheetModal` | imperatively via ref — `present()` / `dismiss()`, or the controlled `visible` prop | A button/handler opens it. Presents **above root chrome** (the queue bar / tab bar) for free. The default for an on-demand sheet. |

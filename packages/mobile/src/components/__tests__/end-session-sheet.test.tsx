@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle: () => undefined }));
 vi.mock('../AccessibleBottomSheetTextInput', async () => {
   const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
   return { AccessibleBottomSheetTextInput: BottomSheetTextInput };

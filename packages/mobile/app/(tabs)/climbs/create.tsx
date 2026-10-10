@@ -8,6 +8,7 @@ import { SUPPORTED_BOARDS, type BoardName, type UserBoard } from '@boardsesh/sha
 import { CreateClimbScreen } from '../../../src/components/create-climb/CreateClimbScreen';
 import { DevicePickerSheetHost } from '../../../src/components/ble/DevicePickerSheetHost';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
+import { useTheme } from '../../../src/providers/theme-provider';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
@@ -136,6 +137,7 @@ export default function CreateClimbRoute() {
   const params = useLocalSearchParams<CreateClimbParams>();
   const { data: activeBoard, isPending: activeBoardPending } = useActiveBoard();
   const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
 
   const resolvedBoard = useMemo(() => resolveEditorBoard(params, activeBoard), [params, activeBoard]);
 
@@ -201,7 +203,7 @@ export default function CreateClimbRoute() {
   if (!resolvedBoard || !wallArchiveSettled) {
     return (
       <>
-        <View style={styles.loading}>
+        <View style={[styles.loading, { backgroundColor: systemColors.secondaryBackground }]}>
           <ActivityIndicator size="large" />
         </View>
         <DevicePickerSheetHost registerExternal />

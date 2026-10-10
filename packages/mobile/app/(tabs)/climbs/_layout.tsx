@@ -57,8 +57,12 @@ export default function ClimbsLayout() {
               headerShown: false,
               presentation: 'modal',
               gestureEnabled: false,
-              contentStyle: { backgroundColor: systemColors.secondaryBackground },
-              ...(Platform.OS === 'android' ? { animation: 'slide_from_bottom' as const } : null),
+              ...(Platform.OS === 'android'
+                ? {
+                    animation: 'slide_from_bottom' as const,
+                    contentStyle: { backgroundColor: systemColors.secondaryBackground },
+                  }
+                : null),
             }}
           />
           <Stack.Screen

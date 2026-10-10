@@ -45,6 +45,10 @@ vi.mock('expo-router', () => ({
 // asserting on English copy would make every reword a test failure.
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
+vi.mock('../../../../src/providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryBackground: '#fff' } }),
+}));
+
 vi.mock('../../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
 
 // Real board-config: the route reads both SUPPORTED_BOARDS and the

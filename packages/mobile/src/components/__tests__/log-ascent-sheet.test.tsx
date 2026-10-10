@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle: () => undefined }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, forwardRef, useState, type ReactNode, type Ref } from 'react';

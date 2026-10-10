@@ -41,6 +41,7 @@ import {
   useSheetScrollIntoViewHost,
 } from './sheet-scroll-into-view';
 import { useDetentDragHaptic } from './sheet-detent-haptic';
+import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
 import {
   useManagedSheet,
   type ManagedSheetHandle,
@@ -73,17 +74,12 @@ type ModalSheetProps = {
   /** Composers and LogAscentSheet only: form actions go in a SheetTopBar through
    * `header` (no-bottom-footers.test.ts holds the list of files allowed a footer). */
   footer?: ReactNode;
-  /** Sheet ground. `glass` (default) keeps the native material — right for chrome
-   * and short pickers. `solid` paints an opaque `theme.sheetSurface` so a
-   * data-entry form isn't read through the content behind it.
-   *
-   * The colour MUST stay a plain string: @expo/ui's `extractBackgroundColor`
-   * checks `typeof color === 'string'` and silently falls back to glass for a
-   * `PlatformColor`, with no error. */
+  /** Android/web sheet ground. iOS follows the native Apple presentation unless
+   * Material is selected or Reduce Transparency is enabled. */
   surface?: 'glass' | 'solid';
   /** Pinned-footer ground. `plate` (default) keeps the raised
-   * `secondaryBackground` plate. `flush` makes it transparent so it reads as part
-   * of a `surface="solid"` sheet; the hairline top border stays either way. */
+   * `secondaryBackground` plate. `flush` makes it transparent; the hairline top
+   * border stays either way. */
   footerSurface?: 'plate' | 'flush';
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
@@ -127,8 +123,9 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   ref,
 ) {
   const { systemColors, sheet, sheetSurface } = useTheme();
+  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
-  // Plain string, never a PlatformColor — see the `surface` prop doc.
+  // Expo's native backgroundColor extraction needs a plain string.
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
 
   // On Android, `androidContentSized` swaps the `%` detents for `@expo/ui`'s
@@ -316,7 +313,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
       enableDynamicSizing={useContentFitting}
       enablePanDownToClose={enablePanDownToClose}
       handleIndicatorStyle={sheet.handleStyle}
-      backgroundStyle={surface === 'solid' ? solidBackground : undefined}
+      backgroundStyle={Platform.OS === 'ios' ? iosBackgroundStyle : surface === 'solid' ? solidBackground : undefined}
       onChange={handleChange}
       onFullyDismissed={managed.onFullyDismissed}
       style={styles.sheet}
