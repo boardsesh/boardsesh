@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { ConnectionContext, SprayDetectionCandidate, SprayDetectionResult } from '@boardsesh/shared-schema';
 import { SPRAY_MAYBE_FLOOR } from '@boardsesh/shared-schema';
@@ -104,7 +104,7 @@ export function trainingEligibleCondition(): SQL {
             eq(newerVersion.wallId, dbSchema.sprayWallVersions.wallId),
             eq(newerVersion.photoKey, dbSchema.sprayWallVersions.photoKey),
             ne(newerVersion.status, 'draft'),
-            sql`${newerVersion.versionNumber} > ${dbSchema.sprayWallVersions.versionNumber}`,
+            gt(newerVersion.versionNumber, dbSchema.sprayWallVersions.versionNumber),
           ),
         ),
     ),
@@ -244,7 +244,7 @@ function pickDetection(
  * app that predates provenance saved them), kept and deleted cannot be told
  * apart: UNKNOWN. Only then is a shown candidate with no hold DELETED.
  */
-export function candidateFates(
+function candidateFates(
   detection: SprayDetectionRow | null,
   holds: readonly Pick<SprayWallHoldRow, 'originDetectionId' | 'originCandidateIndex' | 'autoReview'>[],
 ): FatedCandidate[] {
@@ -663,7 +663,7 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
  * clamped to the frame: a hold straddling the photo edge is still a label for
  * the part that is in it.
  */
-export function holdPolygon(
+function holdPolygon(
   hold: Pick<SprayPhotoHold, 'cx' | 'cy' | 'r' | 'outline'>,
   width: number,
   height: number,
@@ -977,11 +977,11 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
   // Every split always gets an annotations file, even an empty one: the ML
   // fetch refuses an export missing any of the three. A root wall lands in
   // exactly one split by construction (`trainingSplitForRoot`).
-  const coco = new Map<SprayTrainingSplit, { images: Array<Record<string, unknown>>; annotations: CocoAnnotation[] }>([
-    ['train', { images: [], annotations: [] }],
-    ['valid', { images: [], annotations: [] }],
-    ['eval', { images: [], annotations: [] }],
-  ]);
+  const coco: Record<SprayTrainingSplit, { images: Array<Record<string, unknown>>; annotations: CocoAnnotation[] }> = {
+    train: { images: [], annotations: [] },
+    valid: { images: [], annotations: [] },
+    eval: { images: [], annotations: [] },
+  };
   const splitMembers: Record<SprayTrainingSplit, number[]> = { train: [], valid: [], eval: [] };
   const fateCounts: Record<CandidateFate, number> = { KEPT: 0, EDITED: 0, DELETED: 0, NOT_SHOWN: 0, UNKNOWN: 0 };
   const modelVersions = new Set<string>();
@@ -1034,8 +1034,7 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
     // (`handlers/spray-wall-photos.ts`), so these are the stored bytes as-is.
     await writeFile(imageFile, photo, 'image/jpeg');
 
-    const splitCoco = coco.get(split) ?? { images: [], annotations: [] };
-    coco.set(split, splitCoco);
+    const splitCoco = coco[split];
     const imageId = splitCoco.images.length + 1;
     const rootRef = trainingRef('root', rootUuid);
     const versionRef = trainingRef('version', String(versionId));
@@ -1077,7 +1076,6 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
       reviewedAt: row.review?.reviewedAt?.toISOString() ?? null,
       consentAt: row.trainingConsentAt?.toISOString() ?? null,
       holds: versionLabels.holds.length,
-      unmappableHolds: versionLabels.unmappableHoldCount,
     });
     const consent = consentByWall.get(row.wallId) ?? {
       wallRef: trainingRef('wall', row.wallUuid),
@@ -1104,7 +1102,7 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
   }
   checkDeadline();
 
-  for (const [split, payload] of coco) {
+  for (const [split, payload] of Object.entries(coco)) {
     await writeFile(
       `${split}/_annotations.coco.json`,
       Buffer.from(
@@ -1122,7 +1120,7 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
   await writeFile('candidates.json', Buffer.from(JSON.stringify({ images: candidateEntries })), 'application/json');
 
   const annotationCounts = Object.fromEntries(
-    [...coco.entries()].map(([split, payload]) => [split, payload.annotations.length]),
+    Object.entries(coco).map(([split, payload]) => [split, payload.annotations.length]),
   );
   const manifest = {
     exportId,
