@@ -1039,8 +1039,8 @@ describe('pullSync', () => {
     const logbookKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["logbook"]').length;
     const userTicksKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["userTicks"]').length;
 
-    expect(logbookKeyCount).toBeGreaterThanOrEqual(1);
-    expect(userTicksKeyCount).toBeGreaterThanOrEqual(1);
+    expect(logbookKeyCount).toBe(1);
+    expect(userTicksKeyCount).toBe(1);
   });
 
   it('invalidates a committed deletion page before a later page request fails', async () => {

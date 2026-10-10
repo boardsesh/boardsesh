@@ -131,7 +131,8 @@ import {
  */
 export type { SchemaDriftReporter } from './schema-compatibility';
 import { type SchemaDriftReporter } from './schema-compatibility';
-import { scopedInvalidateFilters } from './invalidate-keys';
+import type { BoardScopeKey, InvalidateKeys } from './invalidate-keys';
+import { createInvalidationBatch, type InvalidationBatch } from './invalidation-batch';
 
 /**
  * What a report site inside the bootstrap phase supplies. `reason` and `aborted`
@@ -813,14 +814,14 @@ function assertSyncPageProgress(result: SyncResult, cursor: SyncCursorInput | un
 }
 
 /** Wall identity is exact; renderer queries append viewer/version arguments. */
-function invalidateDeletedSprayWalls(queryClient: QueryInvalidator, rows: Record<string, unknown>[]): void {
+function invalidateDeletedSprayWalls(invalidations: InvalidationBatch, rows: Record<string, unknown>[]): void {
   for (const row of rows) {
     if (typeof row.layout_id === 'number') {
-      queryClient.invalidateQueries({ queryKey: ['sprayWallByLayout', row.layout_id], exact: true });
+      invalidations.addFilters({ queryKey: ['sprayWallByLayout', row.layout_id], exact: true });
     }
     if (typeof row.board_uuid === 'string') {
       for (const namespace of ['sprayWallRenderData', 'sprayWallWithVersions']) {
-        queryClient.invalidateQueries({ queryKey: [namespace, row.board_uuid] });
+        invalidations.addFilters({ queryKey: [namespace, row.board_uuid] });
       }
     }
   }
@@ -843,7 +844,8 @@ class RefreshColumnsMissingError extends Error {
 
 async function syncTable(
   db: OfflineDatabase,
-  queryClient: QueryInvalidator,
+  /** The cycle's batch; pullSync flushes it at the end of the phase. */
+  invalidations: InvalidationBatch,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
   tableName: string,
   /** The purge token pullSync captured at CYCLE start — see `cycleAborted` there. */
@@ -1049,18 +1051,16 @@ async function syncTable(
     // Those changes must become visible even if the next retry has no rows.
     if (totalProcessed > 0) {
       // A per-board table only changed this board: board-scoped keys (the
-      // heatmap, similar climbs) refresh for it alone.
-      const changedBoard = config.isPerBoard ? boardScope : undefined;
-      for (const key of config.invalidateKeys) {
-        queryClient.invalidateQueries(scopedInvalidateFilters(key, changedBoard));
-      }
+      // heatmap, similar climbs, the climb lists) refresh for it alone.
+      invalidations.add(config.invalidateKeys, config.isPerBoard ? boardScope : undefined);
     }
   }
 }
 
 async function processDeletions(
   db: OfflineDatabase,
-  queryClient: QueryInvalidator,
+  /** The cycle's batch; pullSync flushes it with the user tables. */
+  invalidations: InvalidationBatch,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
   /** The purge token pullSync captured at CYCLE start — see `cycleAborted` there. */
   purgeToken: PurgeToken,
@@ -1106,12 +1106,15 @@ async function processDeletions(
     // some rows could be deleted while the page checkpoint stayed behind. One
     // exclusive transaction gives SQLite one lock/commit per page and ensures a
     // failed tombstone rolls the entire page back for a clean retry.
-    const pageInvalidatedKeys = new Set<string>();
+    // What the page has to tell the UI, queued once the page has committed.
+    const pageInvalidations: { keys: InvalidateKeys; board?: BoardScopeKey }[] = [];
     // Rows the page actually removed, per table, with the columns that table
     // asked to keep. Filled inside the transaction, used after it commits.
     const pageDeletedRows = new Map<string, Record<string, unknown>[]>();
     try {
       await runPullWrite(db, async (transaction) => {
+        // A retried attempt starts from a rollback: nothing it found was deleted.
+        pageInvalidations.length = 0;
         // Expo opens this wrapper with deferred BEGIN: entering the callback is
         // NOT writer-lock ownership — `beginImmediateWrite` inside runPullWrite is
         // what takes it, before the first statement below rather than because of
@@ -1141,6 +1144,9 @@ async function processDeletions(
           const hasUpdatedAt = config.localColumns.includes('updated_at');
           const guardClause = hasUpdatedAt ? ' AND (updated_at IS NULL OR updated_at <= ?)' : '';
           const guardParams = hasUpdatedAt ? [deletion.deletedAt] : [];
+          let rowsDeleted = 0;
+          // Set for a deleted climb: the one board whose lists lost a row.
+          let changedBoard: BoardScopeKey | undefined;
 
           if (pkColumns.length === 1) {
             // Read what the platform will need once the row is gone. Only the
@@ -1168,6 +1174,10 @@ async function processDeletions(
               `DELETE FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?${guardClause}`,
               [deletion.recordId, ...guardParams],
             );
+            rowsDeleted = deleteResult?.changes ?? 0;
+            if (deletedClimb?.board_type && deletedClimb.layout_id !== null) {
+              changedBoard = { boardType: deletedClimb.board_type, layoutId: deletedClimb.layout_id };
+            }
             // Local cascade: the server's whole-playlist delete cascades
             // playlist_climbs in Postgres but deliberately emits NO child
             // tombstones (see 0144's NULL-parent guard), and the local SQLite has
@@ -1211,15 +1221,20 @@ async function processDeletions(
               continue;
             }
             const whereClause = pkColumns.map((col) => `${col} = ?`).join(' AND ');
-            await transaction.runAsync(`DELETE FROM ${deletion.tableName} WHERE ${whereClause}${guardClause}`, [
-              ...recordIdParts,
-              ...guardParams,
-            ]);
+            const deleteResult = await transaction.runAsync(
+              `DELETE FROM ${deletion.tableName} WHERE ${whereClause}${guardClause}`,
+              [...recordIdParts, ...guardParams],
+            );
+            rowsDeleted = deleteResult?.changes ?? 0;
           }
 
-          for (const key of config.invalidateKeys) {
-            pageInvalidatedKeys.add(JSON.stringify(key));
-          }
+          // Board tombstones go to every device, for every board (#6302): a climb
+          // or stats row deleted on a board this device never downloaded removes
+          // nothing here, and used to refetch every climb list on screen anyway.
+          // A user-table tombstone always counts. Its row can be on screen from
+          // the network without ever having been pulled into SQLite.
+          if (config.isPerBoard && rowsDeleted === 0) continue;
+          pageInvalidations.push({ keys: config.invalidateKeys, board: changedBoard });
         }
 
         // A purge/background transition may start while we hold the writer lock.
@@ -1250,16 +1265,14 @@ async function processDeletions(
     }
 
     const deletedWalls = pageDeletedRows.get('spray_walls');
-    if (deletedWalls) invalidateDeletedSprayWalls(queryClient, deletedWalls);
+    if (deletedWalls) invalidateDeletedSprayWalls(invalidations, deletedWalls);
 
-    // Invalidate immediately after this page commits. Deferring all keys until
-    // the stream tail meant page N could commit and advance its checkpoint,
-    // then a later request could fail before those deleted rows were evicted
-    // from React Query. The retry resumes after page N, so that stale UI would
-    // otherwise survive for the rest of the app process.
-    for (const serializedKey of pageInvalidatedKeys) {
-      queryClient.invalidateQueries({ queryKey: JSON.parse(serializedKey) as string[] });
-    }
+    // Queue as soon as this page commits, not at the stream tail: page N can
+    // commit and advance its checkpoint, then a later request can fail. The
+    // retry resumes after page N, so keys only gathered at the tail would leave
+    // those deleted rows in React Query for the rest of the app process. The
+    // cycle flushes the batch on every exit, a throw included.
+    for (const { keys, board } of pageInvalidations) invalidations.add(keys, board);
 
     totalProcessed += result.deletions.length;
     onProgress?.(totalProcessed);
@@ -1522,7 +1535,8 @@ async function resolveManifestOnce(
  */
 async function runBootstrapPhase(params: {
   db: OfflineDatabase;
-  queryClient: QueryInvalidator;
+  /** The cycle's batch. An import flushes it at once: nothing later in the phase queues for it. */
+  invalidations: InvalidationBatch;
   source: SnapshotSource;
   scopes: BoardScope[];
   /** The purge token pullSync captured at CYCLE start — see `cycleAborted` there. */
@@ -1539,7 +1553,7 @@ async function runBootstrapPhase(params: {
 }): Promise<{ skipPagedPull: Set<string>; cycleInterrupted: boolean }> {
   const {
     db,
-    queryClient,
+    invalidations,
     source,
     scopes,
     purgeToken,
@@ -1810,9 +1824,8 @@ async function runBootstrapPhase(params: {
       // MAX, like importLockMaxMs: the question is the worst hold a concurrent
       // write met, which does not add up across scopes of the same layout.
       phases.gradesLockMs = Math.max(phases.gradesLockMs ?? 0, gradesLockMs);
-      for (const key of TABLE_CONFIGS.board_climb_grades.invalidateKeys) {
-        queryClient.invalidateQueries(scopedInvalidateFilters(key, scope));
-      }
+      invalidations.add(TABLE_CONFIGS.board_climb_grades.invalidateKeys, scope);
+      invalidations.flush();
     } catch (error) {
       // A wipe rolls the transaction back; no checkpoint, nothing to count.
       const importVerdict = teardownVerdict(scope.scopeKey);
@@ -2642,10 +2655,9 @@ async function runBootstrapPhase(params: {
           // arrivals-only invalidation never fires — an active search/detail query
           // would keep serving the pre-import (empty) result set.
           for (const tableName of ['board_climbs', 'board_climb_stats'] as const) {
-            for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
-              queryClient.invalidateQueries(scopedInvalidateFilters(key, scope));
-            }
+            invalidations.add(TABLE_CONFIGS[tableName].invalidateKeys, scope);
           }
+          invalidations.flush();
           // Grades ride a second, small artifact and a second short exclusive
           // transaction, right after the climbs/stats one. See
           // importGradesForScope — every failure here is free.
@@ -2856,7 +2868,7 @@ async function runBootstrapPhase(params: {
  */
 async function enforceDeletionsCoverage(
   db: OfflineDatabase,
-  queryClient: QueryInvalidator,
+  invalidations: InvalidationBatch,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
   purgeToken: PurgeToken,
   options?: SyncOptions,
@@ -2940,16 +2952,12 @@ async function enforceDeletionsCoverage(
   // least one document and processDeletions only on arrivals, so a table the
   // user had emptied server-side re-pulls nothing and a mounted screen would
   // keep serving the pre-wipe react-query cache — the exact #3474 symptom
-  // surviving the fix. Deduped by serialized key, same shape as processDeletions.
-  const invalidatedKeys = new Set<string>();
+  // surviving the fix. Flushed here rather than with the rebuild: the bootstrap
+  // phase can run for minutes before the user tables are pulled again.
   for (const tableName of USER_DATA_TABLES) {
-    for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
-      invalidatedKeys.add(JSON.stringify(key));
-    }
+    invalidations.add(TABLE_CONFIGS[tableName].invalidateKeys);
   }
-  for (const serializedKey of invalidatedKeys) {
-    queryClient.invalidateQueries({ queryKey: JSON.parse(serializedKey) as string[] });
-  }
+  invalidations.flush();
 
   options?.onCoverageReset?.({ markerAgeDays, rowsCleared, pendingMutations });
   // Alongside the reset event, not instead of it: onCoverageReset stays the
@@ -3042,6 +3050,10 @@ async function performPullSync(
   let allPullsReachedTail = true;
   let retirementInterrupted = false;
   const retirementEpochs = new Map<string, number>();
+  // Every invalidation of this cycle goes through one batch, flushed at the end
+  // of each phase (#6302). Seven tables share the climb-search keys, and a cycle
+  // that invalidated per table refetched the list on screen once for each.
+  const invalidations = createInvalidationBatch(queryClient);
   const unsubscribeRetirement = onTeardown(() => {
     if (
       cycleAborted() ||
@@ -3081,7 +3093,7 @@ async function performPullSync(
     // phase, so the reset and the rebuild that follows belong to the same cycle.
     // See deletions-coverage.ts for the invariant and for exactly what the reset
     // does (and does not) clear.
-    await enforceDeletionsCoverage(db, queryClient, graphqlFetch, purgeToken, options);
+    await enforceDeletionsCoverage(db, invalidations, graphqlFetch, purgeToken, options);
     // The phase can spend a probe and a multi-table wipe; the bootstrap phase below
     // starts downloading before the deletions phase's own cycleAborted(), so check
     // here rather than let a teardown that landed during it kick off a download.
@@ -3161,7 +3173,7 @@ async function performPullSync(
       onProgress?.({ phase: 'bootstrap', currentTable: null, documentsProcessed: 0 });
       const bootstrapPhase = await runBootstrapPhase({
         db,
-        queryClient,
+        invalidations,
         source: options.snapshotSource,
         scopes: boardScopes,
         purgeToken,
@@ -3191,7 +3203,7 @@ async function performPullSync(
     onProgress?.({ phase: 'deletions', currentTable: null, documentsProcessed: 0 });
     const deletionsResult = await processDeletions(
       db,
-      queryClient,
+      invalidations,
       graphqlFetch,
       purgeToken,
       (deletionsProcessed) => {
@@ -3212,7 +3224,7 @@ async function performPullSync(
       const baseCount = totalDocuments;
       const userTableResult = await syncTable(
         db,
-        queryClient,
+        invalidations,
         graphqlFetch,
         tableName,
         purgeToken,
@@ -3239,6 +3251,10 @@ async function performPullSync(
     if (allUserTablesReachedTail) await markUserDataComplete(db);
     else allPullsReachedTail = false;
     if (!deletionsResult.reachedTail) allPullsReachedTail = false;
+    // The tombstones and all seven user tables, as one refresh. After the marker
+    // on purpose: a local reader gated on `user_data_complete` (the logbook) has
+    // to find it when the refetch this starts runs.
+    invalidations.flush();
 
     // Each enabled board is a "boardType:layoutId:sizeId" scope key (already parsed
     // into boardScopes). currentTable carries the full scope key so a per-board UI
@@ -3260,6 +3276,11 @@ async function performPullSync(
       // side: it is the last code that can still see the Started marker before
       // deleting it, and it de-dups against the bootstrap phase's own
       // `aborted-wipe` through the purge generation.
+      // One refresh per scope: whatever the previous board queued, across its
+      // four tables and its completion marker. Here rather than at the end of the
+      // body, which leaves through a dozen `continue`s; the last scope is flushed
+      // after the loop, and an early return by the cycle's `finally`.
+      invalidations.flush();
       if (cycleAborted()) return reportInterruptedCycle();
       if (scopePurged(boardScope)) continue;
       const scopeKey = boardScope.scopeKey;
@@ -3310,7 +3331,7 @@ async function performPullSync(
         const tableStartedAt = Date.now();
         const { reachedTail, rowsProcessed, resumedFromCheckpoint } = await syncTable(
           db,
-          queryClient,
+          invalidations,
           graphqlFetch,
           tableName,
           purgeToken,
@@ -3376,6 +3397,14 @@ async function performPullSync(
         // Clears the persisted start stamp as well as writing the complete marker.
         await markScopeDownloadComplete(db, scopeKey);
         if (wasScopeComplete) continue;
+        // The marker is what opens this board to local reads, so its queries must
+        // run again now that it is down. Rows moving is not enough of a signal: a
+        // snapshot can satisfy the scope outright, the delta pull above then
+        // moves nothing, and the import's own invalidation ran while the scope
+        // was still closed, so that refetch went to the network.
+        for (const tableName of BOARD_DATA_TABLES) {
+          invalidations.add(TABLE_CONFIGS[tableName].invalidateKeys, boardScope);
+        }
         const startedAt = scopeStartedAt.get(scopeKey);
         // Should be unreachable because stampScopeStart runs at the top of this
         // loop for every scope. If that invariant breaks, skip telemetry rather
@@ -3408,6 +3437,9 @@ async function performPullSync(
       }
     }
 
+    // The last scope of the loop above.
+    invalidations.flush();
+
     // Ordinary deltas retain priority and their own checkpoint, including on cellular.
     // Only already-complete catalogs need this conservative replay after an upgrade.
     for (const boardScope of boardScopes) {
@@ -3430,7 +3462,7 @@ async function performPullSync(
         try {
           await syncTable(
             db,
-            queryClient,
+            invalidations,
             graphqlFetch,
             tableName,
             purgeToken,
@@ -3454,6 +3486,7 @@ async function performPullSync(
           console.warn(`[Sync] refresh deferred for ${tableName} in ${boardScope.scopeKey}: ${error.message}`);
         }
       }
+      invalidations.flush();
     }
 
     // The holds index (hold heatmap + similar climbs on device), per scope, LAST:
@@ -3550,12 +3583,11 @@ async function performPullSync(
           }
           for (const scope of deletedScopes) {
             for (const tableName of BOARD_DATA_TABLES) {
-              for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
-                queryClient.invalidateQueries(scopedInvalidateFilters(key, scope));
-              }
+              invalidations.add(TABLE_CONFIGS[tableName].invalidateKeys, scope);
             }
           }
-          invalidateDeletedSprayWalls(queryClient, deletedRows);
+          invalidateDeletedSprayWalls(invalidations, deletedRows);
+          invalidations.flush();
         }
       } catch (error) {
         if (error instanceof SprayWallRetirementInterruptedError) return reportInterruptedCycle();
@@ -3564,8 +3596,16 @@ async function performPullSync(
         for (const release of releases) release();
       }
     }
+    invalidations.flush();
     onProgress?.({ phase: 'idle', currentTable: null, documentsProcessed: totalDocuments });
   } finally {
-    unsubscribeRetirement();
+    // Every other way out: a throw, a teardown, an interrupted retirement. Pages
+    // an earlier phase committed must reach the UI even when the next retry has
+    // no rows to bring.
+    try {
+      invalidations.flush();
+    } finally {
+      unsubscribeRetirement();
+    }
   }
 }
