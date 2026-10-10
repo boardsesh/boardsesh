@@ -455,7 +455,7 @@
       "manual": "Marcada a mano",
       "auto": "Encontrada, sin revisar",
       "accepted": "Aceptada sin revisar",
-      "confirmed": "Dudosa confirmada",
+      "confirmed": "Dudosa, confirmada",
       "edited": "Editada",
       "deleted": "Sugerencia borrada",
       "notShown": "Nunca mostrada"
