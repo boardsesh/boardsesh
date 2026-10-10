@@ -42,6 +42,13 @@ export type AppSettings = {
    */
   offlineDownloadAllTapPending: boolean;
   /**
+   * Scope keys of the downloads a person started or retried and that have not
+   * finished yet (issue #4310). Only these hold the screen awake. Persisted so
+   * a download resumed after a relaunch still counts. An entry goes when its
+   * download completes or its board leaves `syncEnabledBoards`.
+   */
+  offlineUserStartedDownloads: string[];
+  /**
    * When the server last said each archived spray wall was archived, keyed by
    * wall uuid (`rememberSprayWallArchive`). A downloaded wall opened with no
    * signal is drawn from SQLite, which has no column for it, so without this an

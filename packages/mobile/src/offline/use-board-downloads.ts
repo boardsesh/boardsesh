@@ -18,6 +18,8 @@ import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { triggerSync, drainMutationQueue, hasUsableInternetConnection } from './offline-sync-adapter';
+import { isUserStartedTrigger } from './download-keep-awake';
+import { markUserStartedDownload } from './download-keep-awake-store';
 import { useSnapshotSource } from './use-snapshot-source';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
@@ -171,6 +173,10 @@ export function useBoardDownloads() {
         // be a later app launch entirely if the board was enabled with no signal,
         // which is exactly what the arm path below leaves behind.
         rememberDownloadTrigger(scopeKey, trigger);
+        // A tap, as opposed to a setting acting on its own, holds the screen
+        // awake until the download finishes (issue #4310). After the enable
+        // above on purpose: the mark only sticks for an enabled board.
+        if (isUserStartedTrigger(trigger)) markUserStartedDownload(scopeKey);
         track(SHARED_EVENTS.OfflineBoardToggled, {
           scopeKey,
           enabled: true,
@@ -214,6 +220,9 @@ export function useBoardDownloads() {
     async (board: UserBoard) => {
       await restoreBootstrapRetryBudget(db, offlineBoardKeyForBoard(board));
       notifyBootstrapMetadataChanged({ scopeKey: offlineBoardKeyForBoard(board) });
+      // A retry is a person asking again, so it holds the screen awake like the
+      // first tap did, with a fresh cap.
+      markUserStartedDownload(offlineBoardKeyForBoard(board));
       startDownloadCycle();
     },
     [db, startDownloadCycle],

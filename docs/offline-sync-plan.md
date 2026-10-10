@@ -541,6 +541,80 @@ reads all follow the same baked native decision. Reading data already on disk re
 network request cannot be served, including captive-portal/dead-upstream failures. Manual sign-out remains
 an unconditional data-safety boundary and still offers its existing confirmation and bounded queue drain.
 
+### Keeping the screen awake during a download (#4310)
+
+A Kilter download is 110 MB plus an import and takes 20 to 60 seconds. In the 14 days to 2026-10-11, 17% of the
+iOS people who started one had it cut off by the phone locking (`aborted-background`), and their median download
+took 493 s against 44.5 s for a clean run. So the app holds the screen on while a download a person started is
+running. `expo-keep-awake` was already in the binary; this is JavaScript only.
+
+`OfflineDownloadKeepAwake` (`packages/mobile/src/components/offline-download-keep-awake.tsx`) is mounted at the
+root beside `OfflineSyncBridge`. It renders nothing and calls `useKeepAwakeWhile(active, 'offline-download')`.
+`active` is one boolean from `packages/mobile/src/offline/download-keep-awake-store.ts`, and the component
+re-renders only when it flips. All four of these have to hold (`shouldKeepScreenAwake` in
+`download-keep-awake.ts`):
+
+- **A user-started download is in flight.** The running cycle has emitted a progress frame naming a board in the
+  user-started set, and that board has not finished.
+- **The app is in the foreground.** `inactive` counts as foreground, the same as the engine's own guard.
+- **Progress arrived in the last 60 seconds.** A stalled transfer does not keep a phone awake in a pocket.
+- **The lock has been held under 10 minutes for this download.** Time is added up across stretches, and each
+  stretch costs at least 30 seconds however short it was. A retry tap starts a fresh 10 minutes.
+
+The 30 second minimum is what makes the cap a bound on screen time and not only on held time. Letting go and
+taking the lock again restarts the phone's own auto-lock countdown, so a download whose cycle fails half a
+second after its first frame, on every 30 second scheduler retry, would otherwise keep the screen on for hours
+while charging almost nothing. With the minimum, one tap can take the lock at most 20 times. Thirty seconds is
+the shortest auto-lock iOS offers and the one Low Power Mode forces. The cap lives in memory, so relaunching the
+app also starts a fresh one.
+
+Screenshot mode never holds the lock, and Expo web is inert because no engine publishes frames there.
+
+**User-started** means a tap. `markBoardsEnabled` and `retryFastDownload` (`use-board-downloads.ts`) add the scope
+key to the `offlineUserStartedDownloads` setting, so a download that resumes after a relaunch still counts. The
+three triggers that are not a tap are left out: `auto-download-all`, `adopt-auto` and `owned-wall`. An entry goes
+when `Offline Board Download Completed` fires, when the end of a cycle finds the board already complete on disk,
+or when the board leaves `syncEnabledBoards`. Removal and the My Boards toggle take the board out of that setting
+as their first step. Sign-out empties it near the end, after several awaited cleanup steps
+(`runSignedOutCleanup` in `auth-provider.tsx`); the lock goes earlier than that, when sign-out tears the running
+cycle down. The store drops a board's cap and telemetry record at the same moment. The routine sync
+of a board that is already downloaded is never in the set, so it never holds the screen on.
+
+**Which frame belongs to which board** is decided in one function, `downloadProgressSubject`. A bootstrap frame
+carries the scope key, a paged-crawl frame carries `table:scopeKey`, and deletions and user-table frames are
+shared work. Shared work counts as progress for a download once that download has been named in the cycle.
+Frames for another board change nothing.
+
+The engine has no terminal failure for a download. When the fast path gives up, the board moves to the paged
+crawl, which is still the same download and still holds the screen on, up to the 10 minute cap.
+
+Known gaps:
+
+- **The grades artifact.** Its transfer and import emit no progress frames, so the 60 second rule is the only
+  cover: a grades stretch longer than a minute releases the lock. On a resumed cycle the grades retro-fit also
+  runs before any frame names the board, so the lock is not taken for it at all.
+- **A board queued behind another.** A tapped board gets no hold until its own frames start, so it is not
+  covered while the board ahead of it downloads.
+- **The foreground debounce is unchanged.** A return to the foreground still waits `FOREGROUND_DEBOUNCE_MS`
+  (2 s) before a cycle starts. Skipping it for a pending download was tried and dropped: the manifest request is
+  an ordinary `fetch`, and one that fails because the link is not back yet counts against the two manifest waits
+  a fresh board gets before it falls back to the paged crawl (`MAX_MANIFEST_WAIT_FAILURES`), and then waits 30 s
+  for the retry.
+
+**Telemetry.** `Offline Board Download Completed` and `Offline Board Download Failed` carry two more props.
+Neither is sent on the three `abandoned-*` failure reasons.
+
+- `keepAwake`: the lock was held for this download at some point since it started or since the app launched.
+  Do not compare `true` against `false` to measure the effect. `false` is mostly the automatic downloads, which
+  are different boards and sizes, so it is not a control group. Compare before and after this change, on the
+  tapped triggers.
+- `suspendedMs`: iOS only, absent elsewhere. The store runs a 1 s JS timer while a cycle is running and adds up
+  every gap over 3 s while this board was the one downloading. On iOS a gap that long means the process was
+  suspended. On Android, React Native stops JS timers when the activity pauses while JS keeps running, so the
+  same gap is ordinary work there. It covers one cycle, like the phase timings. Filter on `suspendedMs = 0` for
+  clean-run phase percentiles. Subtracting it from a phase gives a lower bound, because iOS keeps a transfer
+  going while the app is suspended. It does not cover `durationMs`.
+
 ### Backend reachability (#4862)
 
 Until #4862 the app had exactly one connectivity signal — React Query's `onlineManager`, seeded from
