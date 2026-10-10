@@ -62,6 +62,7 @@ describe('GET /api/auth/native/callback', () => {
       createdAt: '2026-10-10T00:00:00.000Z',
     };
     const marker = issueNativeOAuthAttempt({ attemptId, provider: 'apple' });
+    vi.advanceTimersByTime(1);
     mockedGetServerSession.mockResolvedValue({
       user: { id: userId },
       authSessionId: 'login-1',
@@ -90,12 +91,13 @@ describe('GET /api/auth/native/callback', () => {
     expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
   });
 
-  it.each(['old-session', 'wrong-provider', 'wrong-session', 'wrong-attempt'] as const)(
+  it.each(['old-session', 'same-millisecond-session', 'wrong-provider', 'wrong-session', 'wrong-attempt'] as const)(
     'authenticates without signup proof for %s',
     async (mismatch) => {
       const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
       const attemptId = 'a'.repeat(32);
       const marker = issueNativeOAuthAttempt({ attemptId, provider: 'apple' });
+      vi.advanceTimersByTime(1);
       mockedGetServerSession.mockResolvedValue({
         user: { id: userId },
         authSessionId: 'login-1',
@@ -103,7 +105,7 @@ describe('GET /api/auth/native/callback', () => {
         nativeOAuthCreationProof: {
           authSessionId: mismatch === 'wrong-session' ? 'old-login' : 'login-1',
           provider: mismatch === 'wrong-provider' ? 'google' : 'apple',
-          signedInAt: Date.now() - (mismatch === 'old-session' ? 1 : 0),
+          signedInAt: Date.now() - (mismatch === 'old-session' ? 2 : mismatch === 'same-millisecond-session' ? 1 : 0),
           accountCreation: { userId, accountCreated: true, provider: 'apple', createdAt: '2026-10-10T00:00:00.000Z' },
         },
       });

@@ -115,7 +115,14 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
 export function createNativeAppleAdsAttributionController() {
   return createAppleAdsAttributionController({
     snapshot: getConsentSnapshot,
-    verifiedAccountId: () => getVerifiedAuthResult()?.userId ?? getConsentSnapshot().accountId,
+    verifiedAccountId: () => {
+      const verifiedUserId = getVerifiedAuthResult()?.userId;
+      if (verifiedUserId) return verifiedUserId;
+      // Restored sessions have no interactive-auth receipt. Their account
+      // becomes authoritative after consent sync verifies the current JWT.
+      const snapshot = getConsentSnapshot();
+      return snapshot.authSettled && snapshot.accountResolved ? snapshot.accountId : null;
+    },
     authorityGranted: isConsentAuthorityGranted,
     publicationGranted: isProductAnalyticsGranted,
     identity: getAnalyticsIdentity,

@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     proof?.provider === attempt.provider &&
     proof.authSessionId === session.authSessionId &&
     proof.accountCreation.userId === session.user.id &&
-    proof.signedInAt >= attempt.startedAt &&
+    proof.signedInAt > attempt.startedAt &&
     proof.signedInAt <= Date.now()
       ? {
           accountCreation: proof.accountCreation,
