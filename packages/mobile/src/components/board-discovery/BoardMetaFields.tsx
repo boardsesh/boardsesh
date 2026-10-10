@@ -20,7 +20,7 @@ import { PressableSurface } from '../PressableSurface';
 // them structurally without either importing the other.
 
 import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
-import { StyleSheet } from 'react-native';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useDeviceLocation, type LocationStatus } from '../../lib/use-device-location';
@@ -226,9 +226,11 @@ export function SprayWallVisibilityField({
 }
 
 /**
- * The owner's "Help train hold finding" switch (SW-20, #5471), drawn right
- * under the wall's visibility because it is the other answer to "who sees my
- * photo". Owner only: each caller decides that and leaves this out otherwise.
+ * The owner's "Help train hold finding" switch (SW-20, #5471), drawn beside the
+ * control that says who sees the wall because it is the other answer to "who
+ * sees my photo": under the three-way visibility control, or directly above the
+ * audience control where the privacy rollout has replaced it (`BoardForm`).
+ * Owner only: each caller decides that and leaves this out otherwise.
  *
  * Controlled, with the error slot inline: the edit screen is a modal route and a
  * toast would draw behind it (`toast-provider.tsx`).
@@ -247,6 +249,12 @@ export function SprayTrainingConsentField({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
+  // `accessibilityLiveRegion` below is Android-only; VoiceOver needs telling.
+  // Keyed on the message, which the caller clears when the next flip starts, so
+  // a second refusal in the same words is said again.
+  useEffect(() => {
+    if (errorMessage) AccessibilityInfo.announceForAccessibility(errorMessage);
+  }, [errorMessage]);
   return (
     <>
       <SwitchRow
@@ -262,6 +270,7 @@ export function SprayTrainingConsentField({
           variant="footnote"
           color={systemColors.error}
           style={styles.visibilityHint}
+          accessibilityRole="alert"
           accessibilityLiveRegion="polite"
         >
           {errorMessage}

@@ -20,7 +20,9 @@ import { createElement, type ReactNode } from 'react';
 // say something when location is denied or no fix comes back.
 
 type InputMockProps = { accessibilityLabel?: string; autoCorrect?: boolean; spellCheck?: boolean };
+const announceMock = vi.hoisted(() => vi.fn());
 vi.mock('react-native', () => ({
+  AccessibilityInfo: { announceForAccessibility: announceMock },
   TextInput: ({ accessibilityLabel, autoCorrect, spellCheck }: InputMockProps) =>
     createElement('input', {
       'aria-label': accessibilityLabel,
@@ -48,7 +50,15 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { lg: 12, md: 8 },
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({
+    children,
+    accessibilityRole,
+    accessibilityLiveRegion,
+  }: {
+    children?: ReactNode;
+    accessibilityRole?: string;
+    accessibilityLiveRegion?: string;
+  }) => createElement('span', { role: accessibilityRole, 'data-live-region': accessibilityLiveRegion }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../SwitchRow', () => ({
@@ -140,6 +150,7 @@ const visibilityBuilder = {
 beforeEach(() => {
   location.status = 'idle';
   settings.canOpen = true;
+  announceMock.mockClear();
 });
 
 describe('BoardIdentityFields name input', () => {
@@ -236,14 +247,38 @@ describe('SprayTrainingConsentField', () => {
     expect(queryByText('mobile.sprayTraining.updateError')).toBeNull();
   });
 
-  it('shows a refusal inline', () => {
-    const { getByText } = render(
+  it('says nothing to a screen reader while there is no refusal', () => {
+    render(<SprayTrainingConsentField value onValueChange={() => {}} />);
+    expect(announceMock).not.toHaveBeenCalled();
+  });
+
+  it('shows a refusal inline, as an alert, and tells VoiceOver', () => {
+    const { getByRole } = render(
       <SprayTrainingConsentField
         value={false}
         onValueChange={() => {}}
         errorMessage="mobile.sprayTraining.updateError"
       />,
     );
-    expect(getByText('mobile.sprayTraining.updateError')).toBeTruthy();
+    const refusal = getByRole('alert');
+    expect(refusal.textContent).toBe('mobile.sprayTraining.updateError');
+    // TalkBack reads the live region; VoiceOver ignores it and needs the call.
+    expect(refusal.getAttribute('data-live-region')).toBe('polite');
+    expect(announceMock).toHaveBeenCalledExactlyOnceWith('mobile.sprayTraining.updateError');
+  });
+
+  it('tells VoiceOver again when a later flip is refused in the same words', () => {
+    const refused = (
+      <SprayTrainingConsentField
+        value={false}
+        onValueChange={() => {}}
+        errorMessage="mobile.sprayTraining.updateError"
+      />
+    );
+    const { rerender } = render(refused);
+    // The row clears the message when the next flip starts.
+    rerender(<SprayTrainingConsentField value onValueChange={() => {}} />);
+    rerender(refused);
+    expect(announceMock).toHaveBeenCalledTimes(2);
   });
 });
