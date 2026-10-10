@@ -38,16 +38,13 @@ export async function renderStoreCreatives(options: StoreCreativeOptions): Promi
   if (offenders.length) throw new Error(offenders.map(({ file, reason }) => `${file}: ${reason}`).join('\n'));
   const catalog = readCaptionCatalog(options.locale);
   const caption = catalog.storeBoards;
-  const sprayLabel = catalog.storeSpray.boardLabel;
-  if (!sprayLabel) throw new Error(`Missing spray wall compatibility label for ${options.locale}`);
-  const labels = ['Kilter', sprayLabel, 'MoonBoard'];
   const assets = [];
   for (const placement of ['header', 'search-results'] as const) {
     const buffer = await frameShowcaseComposition(
       captures.map(({ buffer }) => buffer),
       caption,
       'store-boards',
-      { labels, placement },
+      { placement },
     );
     assets.push({ placement, buffer, file: `${placement}.png`, ...STORE_CREATIVE_PLACEMENTS[placement] });
   }

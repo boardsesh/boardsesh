@@ -40,8 +40,6 @@ export interface ScreenshotCaption {
   description: string;
   /** Exact headline substring set in the showcase's italic display face. */
   emphasis?: string;
-  /** Localized board-kind label for dedicated creative placements. */
-  boardLabel?: string;
 }
 export type CaptionCatalog = Record<CaptionId, ScreenshotCaption>;
 
@@ -117,21 +115,6 @@ export interface ScreenshotRecipe {
   layout: ScreenshotLayout;
   /** Actual native captures, in their compositing order. */
   sources: readonly string[];
-  /** Compatibility labels, in source order; never guessed from a layout. */
-  labels?: readonly (string | { caption: CaptionId })[];
-}
-
-/** Resolve board-kind labels from the same localized catalog as the composition. */
-export function resolveScreenshotLabels(
-  recipe: ScreenshotRecipe,
-  catalog: CaptionCatalog,
-): readonly string[] | undefined {
-  return recipe.labels?.map((label) => {
-    if (typeof label === 'string') return label;
-    const translated = catalog[label.caption].boardLabel;
-    if (!translated?.trim()) throw new Error(`Missing screenshot board label ${label.caption}`);
-    return translated;
-  });
 }
 
 export const IOS_CAMPAIGN_CAPTURE_NAMES = [
@@ -152,7 +135,6 @@ const IOS_CAMPAIGN_RECIPES: readonly ScreenshotRecipe[] = [
     caption: 'storeBoards',
     layout: 'store-boards',
     sources: ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'],
-    labels: ['Kilter', { caption: 'storeSpray' }, 'MoonBoard'],
   },
   { output: '01-spray-wall.png', caption: 'storeSpray', layout: 'store-spray', sources: ['14-spray-board-view.png'] },
   {
@@ -160,7 +142,6 @@ const IOS_CAMPAIGN_RECIPES: readonly ScreenshotRecipe[] = [
     caption: 'storeMoreBoards',
     layout: 'store-boards',
     sources: ['11-woods-board-view.png', '12-decoy-board-view.png', '13-grasshopper-board-view.png'],
-    labels: ['Woods', 'Decoy', 'Grasshopper'],
   },
   { output: '03-your-crew.png', caption: 'storeCrew', layout: 'store-queue', sources: ['15-crew-queue.png'] },
   { output: '04-on-the-wall.png', caption: 'wallStatus', layout: 'store-wall', sources: ['16-wall-status.png'] },
@@ -319,13 +300,10 @@ export function readCaptionCatalog(locale: CaptionLocale, root = PRESENTATION_RO
     ) {
       throw new Error(`Invalid screenshot emphasis ${locale}.${captionId}`);
     }
-    if (caption.boardLabel !== undefined && (typeof caption.boardLabel !== 'string' || !caption.boardLabel.trim()))
-      throw new Error(`Invalid screenshot board label ${locale}.${captionId}`);
     catalog[captionId] = {
       headline: caption.headline,
       description: caption.description,
       ...(typeof caption.emphasis === 'string' ? { emphasis: caption.emphasis } : {}),
-      ...(typeof caption.boardLabel === 'string' ? { boardLabel: caption.boardLabel } : {}),
     };
   }
   return catalog;

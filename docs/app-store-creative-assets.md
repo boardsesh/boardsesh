@@ -72,8 +72,9 @@ to upload to Apple. These dimensions follow Apple's
 
 Header and Search Results use three overlapping native captures: Kilter on the
 left, the spray wall in the center foreground, and MoonBoard on the right.
-Labels follow the app locale, and the spray source is required; missing it fails
-export. These independently sized compositions echo the first portrait. The output
+Board-name overlays are omitted so native UI remains unobscured. The exact
+spray source is required; missing it fails export. These independently sized
+compositions echo the first portrait. The output
 directory must be separate from the inputs and outside
 `app-stores/apple/screenshots/`, so the screenshot uploader cannot confuse a
 creative placement with a device screenshot.
@@ -94,7 +95,7 @@ the [Spanish](i18n-spanish-glossary.md), [French](i18n-french-glossary.md) and
 [German](i18n-german-glossary.md) glossaries. Keep manufacturer names unchanged
 and describe compatibility without implying endorsement.
 
-1. Inspect contact sheets at phone size: readable headlines, distinct benefits and clear board labels.
+1. Inspect contact sheets at phone size: readable headlines, distinct benefits and unobscured native board views.
 2. Check full-resolution captures: loaded holds, the intended board, genuine queue and wall state.
 3. Check translated UI and line breaks; verify that no text or focal board is clipped.
 4. Inspect Header and Search Results in App Store Connect Preview for each locale and device.

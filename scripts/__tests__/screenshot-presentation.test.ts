@@ -518,7 +518,7 @@ describe('store screenshot presentation', () => {
     expect(Object.keys(manifest.files)).toEqual(names);
     const first = names[0];
     expect(readFileSync(join(output, shard, first))).toEqual(
-      await frameComposition([raw], readCaptionCatalog('es')[screenshotCaptions('ios', device)[first]], 'screen', {}),
+      await frameComposition([raw], readCaptionCatalog('es')[screenshotCaptions('ios', device)[first]], 'screen', true),
     );
   }, 60_000);
 
@@ -709,7 +709,7 @@ describe('store screenshot presentation', () => {
     )
       .png()
       .toBuffer();
-    const framed = await frameComposition([raw], readCaptionCatalog('en-US').wallKiosk, 'screen', {});
+    const framed = await frameComposition([raw], readCaptionCatalog('en-US').wallKiosk, 'screen', true);
     expect(readPngDimensions(framed)).toEqual({ width: 2752, height: 2064 });
     const { data } = await sharp(framed).raw().toBuffer({ resolveWithObject: true });
     const capture = (x: number, y: number) => {
@@ -745,7 +745,7 @@ describe('store screenshot presentation', () => {
       .png()
       .toBuffer();
     for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
-      const framed = await frameComposition([raw], readCaptionCatalog(locale).wallStatus, 'wall-column', {});
+      const framed = await frameComposition([raw], readCaptionCatalog(locale).wallStatus, 'wall-column', true);
       const { data } = await sharp(framed).raw().toBuffer({ resolveWithObject: true });
       // Widest horizontal run of the "on the wall" band, per side of the canvas.
       let widest = 0;
@@ -806,7 +806,7 @@ describe('store screenshot presentation', () => {
         const longest = campaign
           .map((id) => catalog[id])
           .reduce((worst, caption) => (caption.headline.length > worst.headline.length ? caption : worst));
-        const framed = await frameComposition([raw], longest, 'screen', {});
+        const framed = await frameComposition([raw], longest, 'screen', true);
         expect(readPngDimensions(framed)).toEqual(size);
       }
     }

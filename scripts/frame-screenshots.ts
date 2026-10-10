@@ -29,7 +29,6 @@ import {
   STORE_CAPTION_LOCALES,
   readCaptionCatalog,
   resolveScreenshotRecipes,
-  resolveScreenshotLabels,
   sha256Screenshot,
   sha256ScreenshotSources,
   type CaptionLocale,
@@ -138,9 +137,9 @@ export async function frameComposition(
   sources: readonly Buffer[],
   caption: ScreenshotCaption,
   layout: ScreenshotLayout,
-  showcase?: { labels?: readonly string[] },
+  showcase = false,
 ): Promise<Buffer> {
-  if (showcase || layout.startsWith('store-')) return frameShowcaseComposition(sources, caption, layout, showcase);
+  if (showcase || layout.startsWith('store-')) return frameShowcaseComposition(sources, caption, layout);
   if (
     ((layout === 'screen' || layout === 'wall-status' || layout === 'wall-column') && sources.length !== 1) ||
     (layout === 'board-family' && sources.length !== 2 && sources.length !== 3) ||
@@ -290,7 +289,7 @@ export async function frameShowcaseComposition(
   sources: readonly Buffer[],
   caption: ScreenshotCaption,
   layout: ScreenshotLayout,
-  options: { labels?: readonly string[]; placement?: StoreCreativePlacement } = {},
+  options: { placement?: StoreCreativePlacement } = {},
 ): Promise<Buffer> {
   const boards = layout === 'store-boards';
   const boardCount = 3;
@@ -299,8 +298,6 @@ export async function frameShowcaseComposition(
   const sourceSize = sourceSizes[0];
   if (sourceSizes.some((size) => size.width !== sourceSize.width || size.height !== sourceSize.height))
     throw new Error('Showcase sources must come from the same capture device');
-  if (boards && options.labels?.length !== boardCount)
-    throw new Error('Each board capture needs its own compatibility label');
   if (options.placement && !boards) throw new Error('Creative placements require the three-board opening');
   const { width, height } = options.placement ? STORE_CREATIVE_PLACEMENTS[options.placement] : sourceSize;
   const wide = width > height;
@@ -379,18 +376,6 @@ export async function frameShowcaseComposition(
     for (const index of [0, 2, 1]) {
       const position = positions[index];
       panels.push({ raw: sources[index], ...position, width: panelWidth });
-      const label = await renderShowcaseText(
-        options.labels![index],
-        Math.round(width * (wide ? 0.018 : 0.032)),
-        Math.round(panelWidth),
-        colors.label,
-        { bold: true },
-      );
-      foreground.push({
-        input: label.data,
-        left: Math.round(position.left + (panelWidth - label.info.width) / 2),
-        top: Math.round(position.top - label.info.height - height * 0.008),
-      });
     }
   } else if (!wide && (layout === 'store-queue' || layout === 'store-wall')) {
     // These details are lifted from the same full native capture shown below.
@@ -693,7 +678,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
         buffers,
         catalog[recipe.caption],
         recipe.layout,
-        options.platform === 'ios' ? { labels: resolveScreenshotLabels(recipe, catalog) } : undefined,
+        options.platform === 'ios',
       );
       writeFileSync(join(staging, name), framed);
       thumbnails.push(await sharp(framed).resize({ width: 270 }).toBuffer({ resolveWithObject: true }));

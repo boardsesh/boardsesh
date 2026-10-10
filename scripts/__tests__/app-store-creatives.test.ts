@@ -14,7 +14,6 @@ import {
   PRESENTATION_ROOT,
   readCaptionCatalog,
   resolveScreenshotRecipes,
-  resolveScreenshotLabels,
   sha256Screenshot,
 } from '../lib/screenshot-presentation';
 
@@ -115,9 +114,7 @@ describe('multiboard App Store campaign', () => {
       ...readCaptionCatalog('de').storeMoreBoards,
       headline: 'Mehr Boards.\nDieselbe App.\nFür deine Crew.',
     };
-    const framed = await frameShowcaseComposition(sources, caption, 'store-boards', {
-      labels: ['Woods', 'Decoy', 'Grasshopper'],
-    });
+    const framed = await frameShowcaseComposition(sources, caption, 'store-boards');
     const pixels = await sharp(framed).raw().toBuffer();
     const footerPixels = [0, 0, 0];
     for (let offset = 0; offset < pixels.length; offset += 3) {
@@ -169,9 +166,12 @@ describe('multiboard App Store campaign', () => {
       '08-next-project.png',
     ]);
     expect(recipes[0].sources).toEqual(['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png']);
-    expect(recipes[0].labels).toEqual(['Kilter', { caption: 'storeSpray' }, 'MoonBoard']);
     expect(recipes[1]).toMatchObject({ layout: 'store-spray', sources: ['14-spray-board-view.png'] });
-    expect(recipes[2].labels).toEqual(['Woods', 'Decoy', 'Grasshopper']);
+    expect(recipes[2].sources).toEqual([
+      '11-woods-board-view.png',
+      '12-decoy-board-view.png',
+      '13-grasshopper-board-view.png',
+    ]);
     expect(recipes[2].sources).toContain('12-decoy-board-view.png');
     expect(recipes[3].sources).toEqual(['15-crew-queue.png']);
     expect(recipes[7].sources).toEqual(['17-dynamic-island.png']);
@@ -196,21 +196,15 @@ describe('multiboard App Store campaign', () => {
     async (locale) => {
       const raw = await capture();
       const catalog = readCaptionCatalog(locale);
-      for (const [caption, layout, labels] of [
-        [
-          catalog.storeBoards,
-          'store-boards',
-          resolveScreenshotLabels(
-            resolveScreenshotRecipes('ios', 'iphone-16-pro', IOS_CAMPAIGN_CAPTURE_NAMES)[0],
-            catalog,
-          ),
-        ],
-        [catalog.storeSpray, 'store-spray', undefined],
-        [catalog.storeCrew, 'store-queue', undefined],
-        [catalog.storeIsland, 'store-island', undefined],
+      for (const [caption, layout] of [
+        [catalog.storeBoards, 'store-boards'],
+        [catalog.storeSpray, 'store-spray'],
+        [catalog.storeCrew, 'store-queue'],
+        [catalog.storeIsland, 'store-island'],
       ] as const) {
-        const sources = labels ? [raw, raw, raw] : [layout === 'store-island' ? await islandCapture() : raw];
-        const framed = await frameShowcaseComposition(sources, caption, layout, { labels });
+        const sources =
+          layout === 'store-boards' ? [raw, raw, raw] : [layout === 'store-island' ? await islandCapture() : raw];
+        const framed = await frameShowcaseComposition(sources, caption, layout);
         expect(await sharp(framed).metadata()).toMatchObject({ width: 1206, height: 2622, hasAlpha: false });
         if (layout === 'store-spray') {
           const corner = await sharp(framed)
@@ -263,7 +257,7 @@ describe('multiboard App Store campaign', () => {
     ).rejects.toThrow('separate');
   }, 60_000);
 
-  it('rejects compressed video frames, blank images, mismatched devices and missing labels', async () => {
+  it('rejects compressed video frames, blank images and mismatched devices', async () => {
     const input = directory();
     const output = directory();
     const raw = await capture(800, 1738);
@@ -282,13 +276,8 @@ describe('multiboard App Store campaign', () => {
     );
     const native = await capture();
     await expect(
-      frameShowcaseComposition([native, raw, native], readCaptionCatalog('en-US').storeBoards, 'store-boards', {
-        labels: ['Tension', 'Kilter', 'MoonBoard'],
-      }),
+      frameShowcaseComposition([native, raw, native], readCaptionCatalog('en-US').storeBoards, 'store-boards'),
     ).rejects.toThrow('same capture device');
-    await expect(
-      frameShowcaseComposition([native, native, native], readCaptionCatalog('en-US').storeBoards, 'store-boards'),
-    ).rejects.toThrow('compatibility label');
   });
 
   it.each(['header', 'search-results'] as const)(
@@ -311,9 +300,7 @@ describe('multiboard App Store campaign', () => {
             .toBuffer(),
         ),
       );
-      const labels = ['Kilter', 'Plafón de spray', 'MoonBoard'];
       const framed = await frameShowcaseComposition(sources, readCaptionCatalog('es').storeBoards, 'store-boards', {
-        labels,
         placement,
       });
       expect(await sharp(framed).metadata()).toMatchObject({
@@ -335,31 +322,12 @@ describe('multiboard App Store campaign', () => {
       for (const count of counts) expect(count).toBeGreaterThan(1000);
       await expect(
         frameShowcaseComposition(sources.slice(0, 2), readCaptionCatalog('en-US').storeBoards, 'store-boards', {
-          labels: labels.slice(0, 2),
           placement,
         }),
       ).rejects.toThrow('source count');
     },
     60_000,
   );
-
-  it('resolves the first portrait spray label from its locale and rejects a missing translation', () => {
-    const recipe = resolveScreenshotRecipes('ios', 'iphone-16-pro', IOS_CAMPAIGN_CAPTURE_NAMES)[0];
-    const labels = ['Spray wall', 'Plafón de spray', 'Mur de spray', 'Spraywall'];
-    for (const [index, locale] of CAPTION_LOCALES.entries()) {
-      const catalog = readCaptionCatalog(locale);
-      expect(resolveScreenshotLabels(recipe, catalog)).toEqual(['Kilter', labels[index], 'MoonBoard']);
-      delete catalog.storeSpray.boardLabel;
-      expect(() => resolveScreenshotLabels(recipe, catalog)).toThrow('Missing screenshot board label');
-    }
-    expect(readCaptionCatalog('en-US').storeMoreBoards.headline).toBe('More boards.\nSame app.');
-  });
-
-  it('localizes the required spray board label in every caption catalog', () => {
-    const labels = ['Spray wall', 'Plafón de spray', 'Mur de spray', 'Spraywall'];
-    for (const [index, locale] of CAPTION_LOCALES.entries())
-      expect(readCaptionCatalog(locale).storeSpray.boardLabel).toBe(labels[index]);
-  });
 
   it('requires an explicit supported locale and capture device', () => {
     const args = [
