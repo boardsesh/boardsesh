@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { sanitizeActiveBoard } from '../active-board-snapshot';
+import { reportHandledError } from '../error-reporting';
 
 // These projections can contain copied names, avatars, notes or prior grants.
 // Cancel first, clear the snapshot, then refetch: invalidate alone leaves old
@@ -53,8 +54,11 @@ export async function invalidatePrivacyQueries(
   } catch (error) {
     revalidation = Promise.reject(error);
   }
-  // Observe early failures while query cancellation is still pending.
-  void revalidation.catch(() => undefined);
+  // Server-authorized reads and successful mutations must not wait for SQLite.
+  // The repair owns the local gate and its retries, including after this returns.
+  void revalidation.catch((error: unknown) => {
+    reportHandledError(error, { tags: { source: 'privacy-revalidation' } });
+  });
   invalidatePrivacySnapshots();
   const filters = {
     predicate: (query: { queryKey: readonly unknown[] }) => !VIEWER_LOCAL_QUERY_ROOTS.has(String(query.queryKey[0])),
@@ -78,6 +82,5 @@ export async function invalidatePrivacyQueries(
     // content. Clear explicitly before any fresh authorization response.
     query.setState({ data: undefined, dataUpdatedAt: 0, error: null, status: 'pending' });
   }
-  await revalidation;
   await queryClient.invalidateQueries(filters);
 }

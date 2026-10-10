@@ -1,5 +1,6 @@
 import { canReadPrivateCatalog, captureCatalogReadEpoch, isCatalogReadCurrent } from '../../offline/catalog-access';
-import { needsPrivacyRevalidation, waitForPrivacyRevalidation } from '../../offline/privacy-revalidation';
+import { needsPrivacyRevalidation } from '../../offline/privacy-revalidation';
+import { getPrivacyRevocationGeneration } from '../privacy/privacy-cache';
 import { onlineManager } from '@tanstack/react-query';
 import type { Variables } from 'graphql-request';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -20,6 +21,7 @@ import {
 } from '../../db/queries/board-download-status';
 import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
 import { getHttpClient } from './client';
+import { createAbortError } from './request-timeout';
 import { ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
 import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
@@ -478,7 +480,13 @@ function offlineReadLane(): OfflineReadLane {
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
-  if (operation && needsPrivacyRevalidation()) await waitForPrivacyRevalidation();
+  const privacyGeneration = getPrivacyRevocationGeneration();
+  const localAllowed = () => !needsPrivacyRevalidation() && getPrivacyRevocationGeneration() === privacyGeneration;
+  // A withdrawn catalogue cannot serve local-only reads, but it must never hold
+  // an authenticated server request behind a locked SQLite file.
+  if (operation && !localAllowed() && (!onlineManager.isOnline() || operation.networkPolicy === 'local-only')) {
+    return operation.offlineFallback() as TResponse;
+  }
   if (operation?.networkPolicy === 'local-only') return localOnlyRequest<TResponse>(operation, variables);
   const catalogEpoch = captureCatalogReadEpoch();
   // Carry a local source we already resolved on the way to the network so the
@@ -491,13 +499,14 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
     const isOnline = onlineManager.isOnline();
     // Consult local sources when OFFLINE (always) or, while ONLINE, only when the
     // flag enables the local-first optimization.
-    if (!isOnline || isOfflineEngineEnabled()) {
+    if (localAllowed() && (!isOnline || isOfflineEngineEnabled())) {
       localDb = getDatabaseHandle();
       // The `variables !== undefined` guard makes a registered document called
       // without variables degrade to HTTP rather than throw in a destructure;
       // the offline fallback below still applies either way. `as never` re-narrows
       // the storage-erased generics — see the OFFLINE_OPERATIONS declaration.
       if (
+        localAllowed() &&
         localDb &&
         variables !== undefined &&
         (await canReadPrivateCatalog(localDb)) &&
@@ -527,7 +536,7 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
               boardName: operation.boardNameOf(variables as never),
             });
           }
-          return (await canReadPrivateCatalog(localDb)) && isCatalogReadCurrent(catalogEpoch)
+          return localAllowed() && (await canReadPrivateCatalog(localDb)) && isCatalogReadCurrent(catalogEpoch)
             ? localResponse
             : (operation.offlineFallback() as TResponse);
         }
@@ -568,14 +577,23 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         ? operation.networkVariables(variables as never)
         : variables;
     const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);
-    return await enrichNetworkResponse(operation, localDb, variables, networkResponse);
+    if (operation && getPrivacyRevocationGeneration() !== privacyGeneration) {
+      throw createAbortError('Privacy changed during climb request');
+    }
+    const response = localAllowed()
+      ? await enrichNetworkResponse(operation, localDb, variables, networkResponse)
+      : networkResponse;
+    if (operation && getPrivacyRevocationGeneration() !== privacyGeneration) {
+      throw createAbortError('Privacy changed during climb request');
+    }
+    return response;
   } catch (networkError) {
     // The request reached the network and failed. If it's a registered op whose
     // board is downloaded, serve local instead — this catches the "connected but
     // unreachable" and cold-start-race cases that `onlineManager` still reports as
     // online (see the doc above). Flag-independent, like every other on-disk read.
     // Nothing local to serve → rethrow the real error unchanged.
-    if (operation && variables !== undefined) {
+    if (operation && localAllowed() && isCatalogReadCurrent(catalogEpoch) && variables !== undefined) {
       // Reuse the db + canServeLocal result from the miss-retry path when we have
       // them; otherwise (flag off, or db not resolved above) probe now.
       const db = localDb ?? getDatabaseHandle();
@@ -600,7 +618,7 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
             boardName: operation.boardNameOf(variables as never),
           });
         }
-        return (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
+        return localAllowed() && (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
           ? rescued
           : (operation.offlineFallback() as TResponse);
       }
@@ -640,7 +658,7 @@ async function enrichNetworkResponse<TResponse>(
   if (!operation?.enrichNetworkResponse || variables === undefined) return networkResponse;
   if (!isOfflineEngineEnabled()) return networkResponse;
   const db = resolvedDb ?? getDatabaseHandle();
-  if (!db || !(await canReadPrivateCatalog(db))) return networkResponse;
+  if (!db || needsPrivacyRevalidation() || !(await canReadPrivateCatalog(db))) return networkResponse;
 
   let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const budget = new Promise<TResponse>((resolve) => {
@@ -656,7 +674,9 @@ async function enrichNetworkResponse<TResponse>(
     // it cannot surface as an unhandled one.
     enriched.catch(() => undefined);
     const result = await Promise.race([enriched, budget]);
-    return (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch) ? result : networkResponse;
+    return !needsPrivacyRevalidation() && (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
+      ? result
+      : networkResponse;
   } catch {
     return networkResponse;
   } finally {
@@ -685,6 +705,7 @@ async function localOnlyRequest<TResponse>(
   const isOnline = onlineManager.isOnline();
   const db = getDatabaseHandle();
   if (
+    !needsPrivacyRevalidation() &&
     db &&
     variables !== undefined &&
     (await canReadPrivateCatalog(db)) &&
@@ -696,7 +717,7 @@ async function localOnlyRequest<TResponse>(
       surface: operation.surface,
       boardName: operation.boardNameOf(variables as never),
     });
-    return (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
+    return !needsPrivacyRevalidation() && (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
       ? localResponse
       : (operation.offlineFallback() as TResponse);
   }

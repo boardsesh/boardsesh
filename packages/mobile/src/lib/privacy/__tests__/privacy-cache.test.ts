@@ -7,6 +7,8 @@ import {
   registerPrivacyRevalidation,
 } from '../privacy-cache';
 
+vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
+
 describe('privacy revocation', () => {
   it('retires captured callbacks synchronously before query cancellation finishes', async () => {
     const queryClient = new QueryClient();
@@ -28,7 +30,7 @@ describe('privacy revocation', () => {
     queryClient.clear();
   });
 
-  it('starts catalog withdrawal before listeners and waits before refetching', async () => {
+  it('starts catalog withdrawal before listeners and refetches while repair is pending', async () => {
     const queryClient = new QueryClient();
     const order: string[] = [];
     let finish!: () => void;
@@ -48,8 +50,8 @@ describe('privacy revocation', () => {
     try {
       const invalidation = invalidatePrivacyQueries(queryClient);
       expect(order).toEqual(['catalog', 'snapshots']);
-      finish();
       await invalidation;
+      finish();
       expect(order).toEqual(['catalog', 'snapshots', 'refetch']);
     } finally {
       unsubscribe();
@@ -66,11 +68,32 @@ describe('privacy revocation', () => {
       throw new Error('offline');
     });
     try {
-      await expect(invalidatePrivacyQueries(queryClient)).rejects.toThrow('offline');
+      await expect(invalidatePrivacyQueries(queryClient)).resolves.toBeUndefined();
       expect(getPrivacyRevocationGeneration()).toBe(previous + 1);
       expect(queryClient.getQueryData(['climb', 'private'])).toBeUndefined();
     } finally {
       unregister();
+      queryClient.clear();
+    }
+  });
+
+  it('refetches an observed cleared query even when local repair rejects', async () => {
+    const queryClient = new QueryClient();
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['searchClimbs'],
+      initialData: { name: 'Withdrawn' },
+      staleTime: Infinity,
+      queryFn: async () => ({ name: 'Server authorized' }),
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    const unregister = registerPrivacyRevalidation(() => Promise.reject(new Error('database is locked')));
+    try {
+      await invalidatePrivacyQueries(queryClient);
+      expect(observer.getCurrentResult().data).toEqual({ name: 'Server authorized' });
+      expect(observer.getCurrentResult().status).toBe('success');
+    } finally {
+      unregister();
+      unsubscribe();
       queryClient.clear();
     }
   });

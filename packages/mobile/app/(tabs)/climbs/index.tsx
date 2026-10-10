@@ -18,6 +18,7 @@ import { Stack, useFocusEffect, useRouter, useLocalSearchParams } from 'expo-rou
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { isNetworkError, isServerUnavailableError } from '@boardsesh/offline-sync/error-classification';
 import {
   toClimbSearchInput,
   mergeBoardFilters,
@@ -102,6 +103,7 @@ import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity'
 import { offlineReasonFor, type OfflineQueryReason } from '../../../src/hooks/use-offline-query-state';
 import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog-state';
 import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
+import { OfflineState } from '../../../src/components/OfflineState';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { useFrozenSearchBasis } from '../../../src/lib/playlists/use-frozen-search-basis';
@@ -1906,19 +1908,22 @@ function ClimbListInner() {
     query: name,
     activeFilterCount,
   });
-  // A failed search counts as no connection, the same test the boards picker
-  // makes (`isLocalOnly`, app/boards/index.tsx): on a captive portal or gym wifi
-  // with a dead upstream `useIsOffline()` reads ONLINE, and offlineAwareRequest
-  // rethrows once it finds nothing local to serve the search with — the exact
-  // scenario these states exist for. Judging it by connectivity alone left that
-  // user on the generic "no climbs" with no way out.
-  const noUsableConnection = isOffline || isClimbsError;
+  // A captive portal can fail a search while the device still reports online.
+  // Storage, authorization and validation failures need their own Retry state;
+  // claiming those will recover on reconnect strands an already-online climber.
+  const searchConnectionFailure =
+    isClimbsError &&
+    climbSearchError?.name !== 'AbortError' &&
+    (isNetworkError(climbSearchError) || isServerUnavailableError(climbSearchError));
+  const noUsableConnection = isOffline || searchConnectionFailure;
   // Who the offline-filter placard blames. The store's verdict, except for the
   // lying connection — no verdict at all, yet the search itself failed — which
   // has bars and a request that cannot land, so it reads as our end being
   // unreachable, exactly as the boards picker's `pickerNoticeUnreachable` does.
   const offlineFilterReason: OfflineQueryReason =
-    connectivityReason === null && isClimbsError ? 'backend_unreachable' : offlineReasonFor(connectivityReason);
+    connectivityReason === null && searchConnectionFailure
+      ? 'backend_unreachable'
+      : offlineReasonFor(connectivityReason);
   // No connection, with a filter we can't answer on-device (drafts, beta, zones,
   // hold state) — the search returns an empty result, so tell the user why
   // instead of the generic "no climbs". Tall/wide are offline-expressible, so
@@ -1994,6 +1999,8 @@ function ClimbListInner() {
                 </Text>
                 <Button title={t('authors.retry')} onPress={() => void refetch()} />
               </View>
+            ) : isClimbsError && !noUsableConnection ? (
+              <OfflineState reason="error" onRetry={handleRefresh} />
             ) : offlineFilterUnavailable ? (
               <View style={styles.emptyContainer}>
                 {/* The glyph carries the same blame as the title: a wifi-slash over
