@@ -32,11 +32,8 @@ const FAR_FUTURE = '2999-01-01T00:00:00.000Z';
 function makeItem(versionId: string, versionNumber: number): SprayTrainingQueueItemData {
   return {
     versionId,
-    wallUuid: `wall-${versionId}`,
     versionNumber,
     visibility: 'PRIVATE',
-    createdAt: '2026-10-01T00:00:00.000Z',
-    publishedAt: null,
     photo: {
       url: `https://photos.example/${versionId}.jpg`,
       thumbUrl: `https://photos.example/${versionId}-thumb.jpg`,
@@ -47,22 +44,13 @@ function makeItem(versionId: string, versionNumber: number): SprayTrainingQueueI
     photoWidth: 800,
     photoHeight: 600,
     holds: [
-      { id: 1, cx: 100, cy: 100, r: 10, outline: null, source: 'MANUAL', autoReview: null, confidence: null },
-      {
-        id: 2,
-        cx: 200,
-        cy: 200,
-        r: 10,
-        outline: [1, 0, 0, 1, -1, 0],
-        source: 'AUTO',
-        autoReview: 'ACCEPTED',
-        confidence: 0.9,
-      },
+      { id: 1, cx: 100, cy: 100, r: 10, outline: null, source: 'MANUAL', autoReview: null },
+      { id: 2, cx: 200, cy: 200, r: 10, outline: [1, 0, 0, 1, -1, 0], source: 'AUTO', autoReview: 'ACCEPTED' },
     ],
     unmappableHoldCount: 0,
     candidates: [
-      { index: 0, cx: 300, cy: 300, r: 10, confidence: 0.4, outline: null, fate: 'DELETED' },
-      { index: 1, cx: 400, cy: 400, r: 10, confidence: 0.3, outline: null, fate: 'NOT_SHOWN' },
+      { index: 0, cx: 300, cy: 300, r: 10, outline: null, fate: 'DELETED' },
+      { index: 1, cx: 400, cy: 400, r: 10, outline: null, fate: 'NOT_SHOWN' },
     ],
     detectionModelVersion: 'v1',
     stats: {
