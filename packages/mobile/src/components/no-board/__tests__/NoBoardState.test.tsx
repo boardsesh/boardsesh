@@ -1,3 +1,4 @@
+vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { tertiaryLabel: '#777' } }) }));
 // @vitest-environment jsdom
 //
 // Climbs with no board bound: who gets the read-only preview, who keeps the

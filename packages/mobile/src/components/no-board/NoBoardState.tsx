@@ -35,7 +35,7 @@ import {
   type NoBoardQueryStatus,
   type SettledNoBoardDecision,
 } from '../../lib/boards/no-board-preview';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 
 // The picker and the board builder read the popular list with this same input,
@@ -51,6 +51,7 @@ function queryStatus(hasData: boolean, isError: boolean): NoBoardQueryStatus {
 }
 
 export function NoBoardState() {
+  const { systemColors } = useTheme();
   const router = useRouter();
   const { t } = useTranslation('climbs');
   // Climbs is the app's entry tab, so this mounts underneath whatever is pushed
@@ -219,7 +220,7 @@ export function NoBoardState() {
 
   return (
     <View testID="no-board-placard" style={styles.placard}>
-      <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+      <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
       <Text variant="headline" style={styles.title}>
         {t('mobile.emptyState.noBoard.title')}
       </Text>
