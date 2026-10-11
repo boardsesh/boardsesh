@@ -14,12 +14,17 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { useConsent } from './consent-provider';
+import { useConsentRegionPrompt } from './use-consent-region-prompt';
 
 export default function ConsentBanner() {
   const { t } = useTranslation('consent');
   const { decide, dialogOpen, closeChoices, syncFailed } = useConsent();
   const pathname = usePathnameWithoutLocale();
-  if (isChromeLessPath(pathname.toLowerCase())) return null;
+  const chromeLess = isChromeLessPath(pathname.toLowerCase());
+  // The banner asks only in the prompt regions (or an unknown one). Privacy
+  // choices in the footer and Settings open the dialog below for everyone.
+  const promptRegion = useConsentRegionPrompt(!chromeLess);
+  if (chromeLess) return null;
   const choose = (choice: 'granted' | 'denied') => {
     void decide(choice);
     closeChoices();
@@ -36,40 +41,42 @@ export default function ConsentBanner() {
   );
   return (
     <>
-      <Box
-        className="analytics-consent-banner"
-        role="region"
-        aria-labelledby="consent-banner-title"
-        data-testid="consent-banner"
-        sx={{
-          position: 'fixed',
-          zIndex: (theme) => theme.zIndex.tooltip,
-          bottom: 0,
-          left: 0,
-          right: 0,
-          p: { xs: 1, sm: 2 },
-          pb: 'max(8px, env(safe-area-inset-bottom))',
-          display: 'flex',
-          justifyContent: 'center',
-        }}
-      >
-        <Paper elevation={8} sx={{ p: 2, maxWidth: 600, width: '100%' }}>
-          <Stack spacing={2}>
-            <Typography variant="h6" component="h2" id="consent-banner-title">
-              {t('title')}
-            </Typography>
-            {copy}
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-              <Button variant="outlined" fullWidth onClick={() => choose('granted')}>
-                {t('allow')}
-              </Button>
-              <Button variant="outlined" fullWidth onClick={() => choose('denied')}>
-                {t('deny')}
-              </Button>
+      {promptRegion && (
+        <Box
+          className="analytics-consent-banner"
+          role="region"
+          aria-labelledby="consent-banner-title"
+          data-testid="consent-banner"
+          sx={{
+            position: 'fixed',
+            zIndex: (theme) => theme.zIndex.tooltip,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            p: { xs: 1, sm: 2 },
+            pb: 'max(8px, env(safe-area-inset-bottom))',
+            display: 'flex',
+            justifyContent: 'center',
+          }}
+        >
+          <Paper elevation={8} sx={{ p: 2, maxWidth: 600, width: '100%' }}>
+            <Stack spacing={2}>
+              <Typography variant="h6" component="h2" id="consent-banner-title">
+                {t('title')}
+              </Typography>
+              {copy}
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <Button variant="outlined" fullWidth onClick={() => choose('granted')}>
+                  {t('allow')}
+                </Button>
+                <Button variant="outlined" fullWidth onClick={() => choose('denied')}>
+                  {t('deny')}
+                </Button>
+              </Stack>
             </Stack>
-          </Stack>
-        </Paper>
-      </Box>
+          </Paper>
+        </Box>
+      )}
       <Dialog open={dialogOpen} onClose={closeChoices} fullWidth maxWidth="sm">
         <DialogTitle>{t('privacyChoices')}</DialogTitle>
         <DialogContent>

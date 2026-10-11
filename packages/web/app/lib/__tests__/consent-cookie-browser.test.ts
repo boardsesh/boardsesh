@@ -57,6 +57,23 @@ describe('cache-safe browser consent cookie', () => {
     runInNewContext(consent.CONSENT_PREPAINT_SCRIPT, { document });
     expect(document.documentElement.dataset.consent).toBeUndefined();
   });
+  it('pre-paint hides the banner for the region default cookie', async () => {
+    cookies = 'boardsesh-consent=v1.granted.1760000000.web.region';
+    const consent = await import('../consent');
+    runInNewContext(consent.CONSENT_PREPAINT_SCRIPT, { document });
+    expect(document.documentElement.dataset.consent).toBe('granted');
+    expect(consent.getWebConsentRecord()).toMatchObject({ analytics: 'granted', basis: 'region_default' });
+  });
+  it.each(['v1.denied.1760000000.web.region', 'v1.granted.1760000000.web.explicit', 'v1.granted.1760000000.web.'])(
+    'pre-paint and parser both ignore a fifth part we never write: %s',
+    async (cookie) => {
+      cookies = `boardsesh-consent=${cookie}`;
+      const consent = await import('../consent');
+      runInNewContext(consent.CONSENT_PREPAINT_SCRIPT, { document });
+      expect(document.documentElement.dataset.consent).toBeUndefined();
+      expect(consent.getWebConsentRecord()).toBeNull();
+    },
+  );
   it('pre-paint recognizes the same valid cookie without a server cookie read', async () => {
     cookies = 'boardsesh-consent=v1.denied.1760000000.web';
     const consent = await import('../consent');

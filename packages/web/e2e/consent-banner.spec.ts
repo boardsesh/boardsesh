@@ -1,6 +1,29 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 test.use({ storageState: { cookies: [], origins: [] } });
-test.describe('analytics privacy choices', () => {
+
+/**
+ * The banner only asks in the prompt regions (EU, EEA, UK, Switzerland, ...),
+ * which the browser learns from the backend's `consentRegion` query. Stub that
+ * one operation so every run takes a known path, whatever country the runner
+ * or the backend sits in. Every other GraphQL request goes through untouched.
+ */
+async function stubConsentRegion(page: Page, region: { countryCode: string | null; promptRequired: boolean } | 'fail') {
+  await page.route('**/graphql', async (route) => {
+    if (!(route.request().postData() ?? '').includes('consentRegion')) return route.fallback();
+    if (region === 'fail') return route.abort('failed');
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'access-control-allow-origin': '*' },
+      body: JSON.stringify({ data: { consentRegion: region } }),
+    });
+  });
+}
+
+test.describe('analytics privacy choices in a prompt region', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubConsentRegion(page, { countryCode: 'DE', promptRequired: true });
+  });
   test('fresh visit offers equally weighted choices and a policy link', async ({ page, context }) => {
     await context.clearCookies();
     await page.goto('/');
@@ -35,4 +58,31 @@ test.describe('analytics privacy choices', () => {
       );
     });
   }
+});
+
+test.describe('analytics privacy choices outside the prompt regions', () => {
+  test('a US visitor gets no banner, analytics on, and can still switch it off', async ({ page, context }) => {
+    await stubConsentRegion(page, { countryCode: 'US', promptRequired: false });
+    await context.clearCookies();
+    await page.goto('/');
+    await expect
+      .poll(async () => (await context.cookies()).find((stored) => stored.name === 'boardsesh-consent')?.value)
+      .toMatch(/^v1\.granted\.\d+\.web\.region$/);
+    await expect(page.getByTestId('consent-banner')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('consent-banner')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Privacy choices', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'No thanks', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeHidden();
+    expect((await context.cookies()).find((stored) => stored.name === 'boardsesh-consent')?.value).toMatch(
+      /^v1\.denied\.\d+\.web$/,
+    );
+  });
+
+  test('a visitor whose region lookup fails still gets the banner', async ({ page, context }) => {
+    await stubConsentRegion(page, 'fail');
+    await context.clearCookies();
+    await page.goto('/');
+    await expect(page.getByTestId('consent-banner')).toBeVisible();
+  });
 });
