@@ -117,8 +117,10 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
   }, 15000);
 
   it('takes the writer lock before reading a catalogue snapshot', async () => {
+    // A spray row throughout this file: it is the kind a privacy event still
+    // withdraws, so whether it survives shows whether the purge committed.
     await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'kilter', 1, 'other')",
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'spray', 1, 'other')",
     );
     const exclusive = database.withExclusiveTransactionAsync.bind(database);
     let interloperError: unknown;
@@ -164,7 +166,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
 
   it('does not stamp a changed credential after waiting for the writer lock', async () => {
     await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'kilter', 1, 'other')",
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'spray', 1, 'other')",
     );
     const attempts = await contendNextPurge(() => {
       auth.token = 'new-account-token';
@@ -212,7 +214,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
     await privacy.revalidatePrivateCatalog(database, 'viewer', []);
     request.mockClear();
     await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'kilter', 1, 'other')",
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'spray', 1, 'other')",
     );
     const failure = new Error(message);
     const exclusive = database.withExclusiveTransactionAsync.bind(database);
