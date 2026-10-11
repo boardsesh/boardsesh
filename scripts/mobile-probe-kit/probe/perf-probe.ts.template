@@ -1,0 +1,97 @@
+/**
+ * MEASUREMENT BUILDS ONLY. Injected by scripts/mobile-probe-kit/probe/apply_probes.py;
+ * the shipping app never imports this file. See docs/mobile-visible-performance.md.
+ *
+ * Events are buffered and written as JSON chunks to Documents/perf-probe/, which
+ * the host pulls after a run. A Release build drops console.log, so a file is
+ * the transport.
+ */
+import { Directory, File, Paths } from 'expo-file-system';
+
+export const PERF_PROBE_ENABLED = process.env.EXPO_PUBLIC_PERF_PROBE === '1';
+type PerfProbeDetail = Record<string, string | number | boolean | null>;
+type PerfProbeEvent = PerfProbeDetail & { name: string; atMs: number; wallMs: number };
+let pendingEvents: PerfProbeEvent[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let chunkSequence = 0;
+let probeDirectory: Directory | null = null;
+let frameMonitorStarted = false;
+
+export function perfNow(): number {
+  return performance.now();
+}
+
+function applyColdRunRequest(): void {
+  try {
+    const coldMarker = new File(Paths.document, 'perf-probe-cold');
+    if (!coldMarker.exists) return;
+    coldMarker.delete();
+    const overlayCache = new Directory(Paths.cache, 'board-thumbnails');
+    if (overlayCache.exists) overlayCache.delete();
+  } catch {
+    // Best effort.
+  }
+}
+if (PERF_PROBE_ENABLED) applyColdRunRequest();
+
+function ensureProbeDirectory(): Directory {
+  if (probeDirectory) return probeDirectory;
+  const directory = new Directory(Paths.document, 'perf-probe');
+  if (directory.exists) directory.delete();
+  directory.create({ intermediates: true });
+  probeDirectory = directory;
+  return directory;
+}
+
+function flushPendingEvents(): void {
+  flushTimer = null;
+  if (pendingEvents.length === 0) return;
+  const events = pendingEvents;
+  pendingEvents = [];
+  try {
+    const chunk = new File(ensureProbeDirectory(), `chunk-${String(chunkSequence).padStart(5, '0')}.json`);
+    chunkSequence += 1;
+    chunk.create({ overwrite: true });
+    chunk.write(JSON.stringify(events));
+  } catch {
+    // A lost chunk shows up as a gap.
+  }
+}
+
+function recordEvent(name: string, detail?: PerfProbeDetail): void {
+  pendingEvents.push({ ...detail, name, atMs: Math.round(performance.now() * 10) / 10, wallMs: Date.now() });
+  // Throttled, not debounced: a busy session never goes 1.2s without an event.
+  if (flushTimer === null) flushTimer = setTimeout(flushPendingEvents, 1500);
+}
+
+function startJsFrameMonitor(): void {
+  if (frameMonitorStarted) return;
+  frameMonitorStarted = true;
+  let previousFrameMs = performance.now();
+  const onFrame = () => {
+    const frameMs = performance.now();
+    const gapMs = frameMs - previousFrameMs;
+    previousFrameMs = frameMs;
+    if (gapMs >= 34) recordEvent('js-frame-gap', { gapMs: Math.round(gapMs) });
+    requestAnimationFrame(onFrame);
+  };
+  requestAnimationFrame(onFrame);
+}
+
+export function perfProbe(name: string, detail?: PerfProbeDetail): void {
+  if (!PERF_PROBE_ENABLED) return;
+  startJsFrameMonitor();
+  recordEvent(name, detail);
+}
+
+/**
+ * Records one `render` event each time the component calling it renders.
+ *
+ * A hook on purpose. React Compiler treats a plain call with constant arguments
+ * as something it may compute once and reuse, so `perfProbe('render', ...)` at
+ * the top of a compiled component logs its first render and none after. A hook
+ * call is one the compiler has to make on every render.
+ */
+export function useRenderProbe(component: string): void {
+  perfProbe('render', { c: component });
+}

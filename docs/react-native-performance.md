@@ -472,6 +472,11 @@ Required evidence for any list / provider / theme PR: a **before/after recording
 and the play drawer**, captured on a large-logbook account. A claim of "this is faster" without a
 recording does not clear review.
 
+To count what a recording only shows (thumbnails that appeared before their holds, the wait for each
+page of climbs, the stages of a drawer open, stalls during launch), use the probe build and scripted
+scenarios in `docs/mobile-visible-performance.md`. Its reference table has the iPhone 13 Pro numbers
+to compare a later release against.
+
 1. **React DevTools Profiler — "Highlight updates when components render."** Turn it on, then scroll
    the climbs list and navigate the queue / play drawer. Every row that flashes on an unrelated
    state change is a missing `React.memo`, an unstable `renderItem` dep, or an unmemoized context
