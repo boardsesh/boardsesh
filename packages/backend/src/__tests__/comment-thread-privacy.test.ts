@@ -7,8 +7,9 @@
  */
 import { randomUUID } from 'crypto';
 import { beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
+import { entityOwnerCondition } from '@boardsesh/db/queries';
 import type { ConnectionContext, SocialEvent } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import type { EventBroker } from '../events/event-broker';
@@ -214,6 +215,49 @@ describe('the owner of the commented item', () => {
       'comment_on_tick',
       'vote_on_tick',
     ]);
+  });
+
+  it('lets a comment’s author read its likes and hear about a private climber’s like', async () => {
+    expect(
+      await socialVoteQueries.voteSummary(
+        null,
+        { entityType: 'comment', entityId: privateTickComment },
+        viewer(PRIVATE_CLIMBER),
+      ),
+    ).toMatchObject({ upvotes: 2, voteScore: 2 });
+
+    const handleEvent = captureWorkerHandler();
+    await handleEvent({
+      type: 'vote.cast',
+      actorId: PRIVATE_CLIMBER,
+      entityType: 'comment',
+      entityId: replierAnswer,
+      timestamp: Date.now(),
+      metadata: {},
+    });
+    expect(await notificationTypes(REPLIER, PRIVATE_CLIMBER)).toEqual(['vote_on_comment']);
+    const inbox = await socialNotificationQueries.notifications(null, {}, viewer(REPLIER));
+    expect(inbox.notifications.map((notification) => notification.type)).toEqual(['vote_on_comment']);
+  });
+
+  it('names a playlist’s owner only from a well-formed playlist_climb id', async () => {
+    const playlistUuid = randomUUID();
+    const [playlist] = await db
+      .insert(dbSchema.playlists)
+      .values({ uuid: playlistUuid, boardType: 'kilter', name: 'Thread privacy', isPublic: true })
+      .returning();
+    await db.insert(dbSchema.playlistOwnership).values({ playlistId: playlist.id, userId: TICK_OWNER, role: 'owner' });
+    const owns = async (entityId: string, viewerId: string) => {
+      const [row] = await db
+        .select({ owned: entityOwnerCondition('playlist_climb', sql`${entityId}::text`, viewerId) })
+        .from(sql`(SELECT 1) owner_probe`);
+      return row.owned;
+    };
+    expect(await owns(`${playlistUuid}:_all`, TICK_OWNER)).toBe(true);
+    expect(await owns(`${playlistUuid}:${CLIMB_UUID}`, TICK_OWNER)).toBe(true);
+    expect(await owns(`${playlistUuid}:_all`, STRANGER)).toBe(false);
+    expect(await owns(playlistUuid, TICK_OWNER)).toBe(false);
+    expect(await owns(`${playlistUuid}:a:b`, TICK_OWNER)).toBe(false);
   });
 });
 

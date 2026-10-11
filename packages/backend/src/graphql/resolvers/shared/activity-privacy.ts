@@ -2,7 +2,11 @@ import { and, eq, exists, isNull, or, sql, type SQL, type SQLWrapper } from 'dri
 import { alias, QueryBuilder } from 'drizzle-orm/pg-core';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  playlistClimbEntityClimbUuid,
+  playlistClimbEntityPlaylistUuid,
+  sprayClimbVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
 import { contentVisibilityCondition, entityOwnerCondition, resourceAccessCondition } from '../../../services/privacy';
 
@@ -252,10 +256,10 @@ function terminalSocialEntityPrivacyCondition(
         .from(schema.playlists)
         .where(
           and(
-            eq(schema.playlists.uuid, sql`split_part(${entityId}, ':', 1)`),
+            eq(schema.playlists.uuid, playlistClimbEntityPlaylistUuid(entityId)),
             playlistVisibilityCondition(viewerId),
             or(
-              sql`split_part(${entityId}, ':', 2) = '_all'`,
+              sql`${playlistClimbEntityClimbUuid(entityId)} = '_all'`,
               exists(
                 queryBuilder
                   .select({ id: schema.playlistClimbs.id })
@@ -270,7 +274,7 @@ function terminalSocialEntityPrivacyCondition(
                   .where(
                     and(
                       eq(schema.playlistClimbs.playlistId, schema.playlists.id),
-                      eq(climb.uuid, sql`split_part(${entityId}, ':', 2)`),
+                      eq(climb.uuid, playlistClimbEntityClimbUuid(entityId)),
                       contentVisibilityCondition('climb', climb.uuid, climb.userId, viewerId),
                       sprayClimbVisibilityCondition({ boardType: climb.boardType, layoutId: climb.layoutId }, viewerId),
                       or(
@@ -322,17 +326,19 @@ export function commentPrivacyCondition(
   comment: CommentPrivacyColumns = schema.comments,
 ): SQL {
   const ownComment = viewerId ? sql`COALESCE(${comment.userId} = ${viewerId}, false)` : sql`false`;
-  // Every comment the viewer wrote on this item, walked up to its root. UNION
-  // (not UNION ALL) drops repeated rows, so a cyclic chain stops expanding.
+  // Every comment the viewer wrote on this item, walked up toward its root with
+  // the same 32-ancestor cap as `privacy_ancestors`: a cycle or an over-deep
+  // chain stops there, and such a chain never reads anyway.
   const viewerThread = viewerId
     ? sql`, privacy_viewer_thread AS (
-      SELECT privacy_mine.id, privacy_mine.uuid, privacy_mine.parent_comment_id FROM comments privacy_mine
+      SELECT privacy_mine.id, privacy_mine.uuid, privacy_mine.parent_comment_id, 0 AS depth FROM comments privacy_mine
       WHERE privacy_mine.user_id = ${viewerId}
         AND privacy_mine.entity_type = (${comment.entityType})::text::social_entity_type
         AND privacy_mine.entity_id = ${comment.entityId}
-      UNION
-      SELECT privacy_above.id, privacy_above.uuid, privacy_above.parent_comment_id
+      UNION ALL
+      SELECT privacy_above.id, privacy_above.uuid, privacy_above.parent_comment_id, privacy_below.depth + 1
       FROM comments privacy_above JOIN privacy_viewer_thread privacy_below ON privacy_above.id = privacy_below.parent_comment_id
+      WHERE privacy_below.depth < 32
     )`
     : sql``;
   const inViewerThread = (uuid: SQLWrapper): SQL =>
@@ -407,17 +413,31 @@ export async function canReadDeletedComment(
   return result?.allowed === true;
 }
 
-/** Whether the viewer owns the item a like or comment is about. */
-export async function viewerOwnsSocialEntity(
+/**
+ * Whether a notification about this item may name its actor to the viewer, in
+ * one round trip: the item's owner hears about every like on it, and anyone
+ * else needs the actor's account and item audience to allow it. The same pair
+ * `notificationPrivacyCondition` applies when the inbox is read.
+ */
+export async function canSeeActorOnEntity(
   entityType: string,
   entityId: string,
-  viewerId: string | null | undefined,
+  actorId: string,
+  viewerId: string,
 ): Promise<boolean> {
-  if (!viewerId) return false;
+  const entityTypeText = sql`${entityType}::text`;
+  const entityIdText = sql`${entityId}::text`;
   const [result] = await db
-    .select({ owned: entityOwnerCondition(entityType, sql`${entityId}::text`, viewerId) })
-    .from(sql`(SELECT 1) privacy_owner_check`);
-  return result?.owned === true;
+    .select({
+      allowed: sql<boolean>`(${entityOwnerCondition(entityTypeText, entityIdText, viewerId)} OR ${contentVisibilityCondition(
+        entityTypeText,
+        entityIdText,
+        sql`${actorId}::text`,
+        viewerId,
+      )})`,
+    })
+    .from(sql`(SELECT 1) privacy_actor_check`);
+  return result?.allowed === true;
 }
 
 export function notificationPrivacyCondition(

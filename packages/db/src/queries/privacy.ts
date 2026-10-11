@@ -37,6 +37,25 @@ export function contentVisibilityCondition(
 }
 
 /**
+ * The playlist uuid inside a `playlist_climb` entity id, or NULL when the id is
+ * not that shape. The id is `<playlistUuid>:<climbUuid>`, or `<playlistUuid>:_all`
+ * for the playlist's general thread; `validateEntityExists` (backend
+ * `social/entity-validation.ts`) rejects any other shape before a comment or
+ * vote is written, and the web and mobile playlist screens build it. A malformed
+ * id names no playlist, so it grants nothing.
+ */
+export function playlistClimbEntityPlaylistUuid(entityIdColumn: SQLWrapper): SQL<string | null> {
+  return sql<string | null>`CASE WHEN (${entityIdColumn})::text ~ '^[^:]+:[^:]+$'
+    THEN split_part((${entityIdColumn})::text, ':', 1) ELSE NULL END`;
+}
+
+/** The climb uuid (or `_all`) inside a well-formed `playlist_climb` entity id, else NULL. */
+export function playlistClimbEntityClimbUuid(entityIdColumn: SQLWrapper): SQL<string | null> {
+  return sql<string | null>`CASE WHEN (${entityIdColumn})::text ~ '^[^:]+:[^:]+$'
+    THEN split_part((${entityIdColumn})::text, ':', 2) ELSE NULL END`;
+}
+
+/**
  * Whether the viewer owns the item a comment, like or notification is about:
  * the tick's climber, the session's host, the climb's setter, the playlist's
  * owner, the proposer, the comment's author, the board's or gym's owner. An
@@ -62,7 +81,7 @@ export function entityOwnerCondition(
       WHERE owner_climb.uuid = ${entityIdColumn} AND owner_climb.user_id = ${viewerId})
     WHEN 'playlist_climb' THEN EXISTS (SELECT 1 FROM playlists owner_playlist
       JOIN playlist_ownership owner_playlist_role ON owner_playlist_role.playlist_id = owner_playlist.id
-      WHERE owner_playlist.uuid = split_part(${entityIdColumn}, ':', 1)
+      WHERE owner_playlist.uuid = ${playlistClimbEntityPlaylistUuid(entityIdColumn)}
         AND owner_playlist_role.user_id = ${viewerId} AND owner_playlist_role.role = 'owner')
     WHEN 'proposal' THEN EXISTS (SELECT 1 FROM climb_proposals owner_proposal
       WHERE owner_proposal.uuid = ${entityIdColumn} AND owner_proposal.proposer_id = ${viewerId})
