@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { and, eq, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { socialBoardMutations } from '../graphql/resolvers/social/boards';
+import { resetAllRateLimits } from '../utils/rate-limiter';
 
 // The migration is read off disk and executed verbatim, so the assertions test
 // the shipped file and not a copy of it.
@@ -12,6 +15,7 @@ const BACKFILL = readFileSync(`${drizzleDir}0265_privacy_public_defaults_backfil
 const GUARD_TAG = 'privacy_public_defaults_backfill_b1';
 const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const owner = 'backfill-owner';
+const ownerContext = { userId: owner, isAuthenticated: true, connectionId: 'backfill-owner' } as ConnectionContext;
 
 async function runBackfill(): Promise<void> {
   for (const statement of BACKFILL.split('--> statement-breakpoint')) {
@@ -59,6 +63,7 @@ async function boardPolicy(uuid: string) {
 }
 
 beforeEach(async () => {
+  resetAllRateLimits();
   await db.execute(
     sql`CREATE TABLE IF NOT EXISTS _bs_migration_guards (tag text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
   );
@@ -76,7 +81,18 @@ beforeEach(async () => {
 describe('0265 privacy public-defaults backfill', () => {
   it('makes untouched default-private boards public and leaves every deliberate choice alone', async () => {
     const legacyDefault = await insertBoard();
-    const beforeCutoff = await insertBoard({ createdAt: new Date('2026-10-01T00:00:00Z') });
+    const beforeCutoff = await insertBoard({
+      createdAt: new Date('2026-10-08T21:27:50Z'),
+      updatedAt: new Date('2026-10-08T21:27:50Z'),
+    });
+    // Private with the location shown was never the #6254 default: a deliberate choice.
+    const locationShown = await insertBoard({ hideLocation: false });
+    // Default-shaped, but edited after creation (for example switched private
+    // through the legacy updateBoard, which has no policy row to write).
+    const editedLater = await insertBoard();
+    await db.execute(
+      sql`UPDATE user_boards SET updated_at = created_at + interval '1 minute' WHERE uuid = ${editedLater.uuid}`,
+    );
     const sprayWall = await insertBoard({ boardType: 'spray' });
     const deleted = await insertBoard({ deletedAt: new Date() });
     const systemOwned = await insertBoard({ ownerId: SYSTEM_OWNER });
@@ -97,6 +113,15 @@ describe('0265 privacy public-defaults backfill', () => {
     await db
       .insert(schema.resourcePrivacy)
       .values({ kind: 'board', resourceId: editedOnlyMe.uuid, ownerId: owner, audience: 'only_me', revision: 1 });
+    // A create that chose a location audience alongside isPublic: false.
+    const onlyMeSharedLocation = await insertBoard();
+    await db.insert(schema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: onlyMeSharedLocation.uuid,
+      ownerId: owner,
+      audience: 'only_me',
+      locationAudience: 'members',
+    });
 
     await runBackfill();
 
@@ -105,15 +130,32 @@ describe('0265 privacy public-defaults backfill', () => {
     expect(await boardRow(untouchedOnlyMe.uuid)).toMatchObject({ isPublic: true, hideLocation: true });
     expect(await boardPolicy(untouchedOnlyMe.uuid)).toMatchObject({ audience: 'public', revision: 0 });
 
-    for (const kept of [beforeCutoff, sprayWall, deleted, systemOwned, unlisted, withGrant, inviteOnly, editedOnlyMe]) {
+    for (const kept of [
+      beforeCutoff,
+      locationShown,
+      editedLater,
+      sprayWall,
+      deleted,
+      systemOwned,
+      unlisted,
+      withGrant,
+      inviteOnly,
+      editedOnlyMe,
+      onlyMeSharedLocation,
+    ]) {
       expect((await boardRow(kept.uuid)).isPublic, kept.uuid).toBe(false);
     }
     expect(await boardPolicy(inviteOnly.uuid)).toMatchObject({ audience: 'invite_only' });
     expect(await boardPolicy(editedOnlyMe.uuid)).toMatchObject({ audience: 'only_me' });
+    expect(await boardPolicy(onlyMeSharedLocation.uuid)).toMatchObject({
+      audience: 'only_me',
+      locationAudience: 'members',
+    });
+    expect(await boardRow(locationShown.uuid)).toMatchObject({ hideLocation: false });
   });
 
   it('makes untouched flag-private accounts public and keeps every account that chose', async () => {
-    const accounts = ['flag-default', 'chose-private', 'finished-setup', 'old-account', 'only-me-default'];
+    const accounts = ['flag-default', 'chose-private', 'finished-setup', 'old-account', 'only-me-default', 'edited'];
     await db.insert(schema.users).values(accounts.map((id) => ({ id, email: `${id}@test.com` })));
     await db.insert(schema.userProfiles).values([
       { userId: 'flag-default', isPrivate: true, defaultSessionAudience: 'followers' },
@@ -123,10 +165,18 @@ describe('0265 privacy public-defaults backfill', () => {
         userId: 'old-account',
         isPrivate: true,
         defaultSessionAudience: 'followers',
-        createdAt: new Date('2026-10-01T00:00:00Z'),
+        createdAt: new Date('2026-10-08T21:27:50Z'),
+        updatedAt: new Date('2026-10-08T21:27:50Z'),
       },
       { userId: 'only-me-default', isPrivate: true, defaultSessionAudience: 'only_me' },
     ]);
+    // Saved again in settings (still private, so the revision did not move).
+    await db
+      .insert(schema.userProfiles)
+      .values({ userId: 'edited', isPrivate: true, defaultSessionAudience: 'followers' });
+    await db.execute(
+      sql`UPDATE user_profiles SET updated_at = created_at + interval '1 minute' WHERE user_id = 'edited'`,
+    );
 
     await runBackfill();
 
@@ -134,9 +184,54 @@ describe('0265 privacy public-defaults backfill', () => {
       (await db.select().from(schema.userProfiles)).map((profile) => [profile.userId, profile] as const),
     );
     expect(profiles.get('flag-default')).toMatchObject({ isPrivate: false, defaultSessionAudience: null });
-    for (const kept of ['chose-private', 'finished-setup', 'old-account', 'only-me-default']) {
+    for (const kept of ['chose-private', 'finished-setup', 'old-account', 'only-me-default', 'edited']) {
       expect(profiles.get(kept)?.isPrivate, kept).toBe(true);
     }
+  });
+
+  it('keeps a board created public and switched private through the legacy updateBoard', async () => {
+    const created = await socialBoardMutations.createBoard(
+      null,
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          sizeId: 1,
+          setIds: '5,6,7,8,9,10',
+          name: 'Switched private',
+          allowDuplicateConfig: true,
+        },
+      },
+      ownerContext,
+    );
+    await socialBoardMutations.updateBoard(null, { input: { boardUuid: created.uuid, isPublic: false } }, ownerContext);
+    expect(await boardRow(created.uuid)).toMatchObject({ isPublic: false, hideLocation: true });
+    expect(await boardPolicy(created.uuid)).toBeUndefined();
+
+    await runBackfill();
+
+    expect((await boardRow(created.uuid)).isPublic).toBe(false);
+  });
+
+  it('narrows every followers location to invited people, whatever its date', async () => {
+    const old = await insertBoard({
+      isPublic: true,
+      createdAt: new Date('2026-09-01T00:00:00Z'),
+      updatedAt: new Date('2026-09-01T00:00:00Z'),
+    });
+    await db.insert(schema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: old.uuid,
+      ownerId: owner,
+      audience: 'public',
+      locationAudience: 'followers',
+      revision: 2,
+    });
+
+    await runBackfill();
+
+    expect(await boardPolicy(old.uuid)).toMatchObject({ audience: 'public', locationAudience: 'members', revision: 2 });
+    expect(await boardRow(old.uuid)).toMatchObject({ isPublic: true, hideLocation: true });
   });
 
   it('runs once: a board made private after the backfill stays private on a second run', async () => {
