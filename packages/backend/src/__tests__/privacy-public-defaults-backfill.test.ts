@@ -11,7 +11,7 @@ import { resetAllRateLimits } from '../utils/rate-limiter';
 // The migration is read off disk and executed verbatim, so the assertions test
 // the shipped file and not a copy of it.
 const drizzleDir = fileURLToPath(new URL('../../../db/drizzle/', import.meta.url));
-const BACKFILL = readFileSync(`${drizzleDir}0265_privacy_public_defaults_backfill.sql`, 'utf8');
+const BACKFILL = readFileSync(`${drizzleDir}0266_privacy_public_defaults_backfill.sql`, 'utf8');
 const GUARD_TAG = 'privacy_public_defaults_backfill_b1';
 const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const owner = 'backfill-owner';
