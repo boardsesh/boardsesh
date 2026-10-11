@@ -1,6 +1,6 @@
 import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { alias } from 'drizzle-orm/pg-core';
-import { canAccessResource, contentVisibilityCondition } from '../../../services/privacy';
+import { canAccessResource, climbVisibilityCondition } from '../../../services/privacy';
 import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -133,7 +133,17 @@ export async function generateSessionSummary(
           eq(dbSchema.boardseshTicks.sessionId, sessionId),
           inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
           isNotNull(dbSchema.boardseshTicks.difficulty),
-          contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
+          // The audience and the draft rule: a draft sent in the session is
+          // named to its owner alone, and the next hardest send is picked for
+          // everyone else.
+          climbVisibilityCondition(
+            {
+              uuid: dbSchema.boardClimbs.uuid,
+              userId: dbSchema.boardClimbs.userId,
+              isDraft: dbSchema.boardClimbs.isDraft,
+            },
+            viewerUserId,
+          ),
           // The hardest-send rows carry the climb's name and frames, and the
           // summary is keyed on a session id alone — session access is not wall
           // access. A no-op on the other eight board types. The viewer is the
