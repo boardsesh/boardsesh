@@ -21,7 +21,7 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
 import { logger } from '../utils/logger';
-import { deleteFollowRequestNotifications, FOLLOW_REQUEST_DEDUP_MINUTES } from './follow-request-notifications';
+import { writeFollowRequestNotification } from './follow-request-notifications';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 import {
   fanoutCommentFeedItems,
@@ -198,31 +198,24 @@ export class NotificationWorker {
    * A follow request to a private account. One row per requester (entityId is
    * the requester) and at most one per pair: inside the dedup window a new
    * request re-shows the existing row, after it the old row is replaced, so a
-   * cancel and a later re-request never leave two rows (or two unread). The row
+   * cancel and a later re-request never leave two rows (or two unread). The
+   * write is serialized per pair (see writeFollowRequestNotification). The row
    * stays visible only while the request is pending: see
    * notificationPrivacyCondition.
+   *
+   * No actor-visibility check, unlike createAndPublishNotification: the
+   * requester is introducing themselves, so the recipient seeing their name is
+   * the point, even when the requester's own account is private.
    */
   private async handleFollowRequested(event: SocialEvent): Promise<void> {
     const recipient = resolveFollowRequestRecipient(event.metadata);
     if (!recipient) return;
 
-    const isDuplicate = await this.isDuplicate(
-      event.actorId,
-      recipient.recipientId,
-      recipient.notificationType,
-      event.entityId,
-      FOLLOW_REQUEST_DEDUP_MINUTES,
-    );
-    if (isDuplicate) return;
+    const uuid = await writeFollowRequestNotification(event.actorId, recipient.recipientId);
+    if (!uuid) return;
 
-    await deleteFollowRequestNotifications(event.actorId, recipient.recipientId);
-    await this.createAndPublishNotification(
-      recipient.recipientId,
-      event.actorId,
-      recipient.notificationType,
-      null,
-      event.entityId,
-    );
+    const enriched = await this.enrichNotification(uuid, event.actorId, 'follow_request', null, event.actorId);
+    pubsub.publishNotificationEvent(recipient.recipientId, { notification: enriched });
   }
 
   private async handleAscentLogged(event: SocialEvent): Promise<void> {
@@ -435,10 +428,10 @@ export class NotificationWorker {
     // Guard: don't notify yourself
     if (recipientId === actorId) return;
 
-    // A follower or a requester is telling the recipient about themselves, so
-    // the recipient seeing their name is the point, whatever the actor's own
-    // activity privacy says.
-    if (type !== 'new_follower' && type !== 'follow_request') {
+    // A follower is telling the recipient about themselves, so the recipient
+    // seeing their name is the point, whatever the actor's own activity privacy
+    // says. Follow requests are written by handleFollowRequested, not here.
+    if (type !== 'new_follower') {
       // The owner of the item hears about every comment and like on it, private
       // commenters included: `canReadSocialEntity` admits the owner of a
       // commented item, and `canSeeActorOnEntity` the owner of a liked one.

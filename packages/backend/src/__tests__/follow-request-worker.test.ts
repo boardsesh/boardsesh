@@ -89,6 +89,17 @@ describe('NotificationWorker follow requests', () => {
     expect(await rowsOfType('follow_request')).toHaveLength(1);
   });
 
+  it('writes one row when several workers handle the same request at once', async () => {
+    // Two workers, as with several Redis consumers, each holding copies of the
+    // event: a quick request, cancel, request. Without the per-pair lock both
+    // could find no row and both insert.
+    const workers = [captureWorkerHandler(), captureWorkerHandler()];
+    await Promise.all(Array.from({ length: 6 }, (_, index) => workers[index % 2](followRequested())));
+
+    expect(await rowsOfType('follow_request')).toHaveLength(1);
+    expect(await socialNotificationQueries.unreadNotificationCount(null, null, context(recipient))).toBe(1);
+  });
+
   it('replaces an older row after the window, so a later re-request is one unread row', async () => {
     const handle = captureWorkerHandler();
     await handle(followRequested());

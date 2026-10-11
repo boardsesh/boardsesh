@@ -18,7 +18,7 @@ import {
 import { isHideProposalEvent } from './notification-worker';
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
-import { deleteFollowRequestNotifications, FOLLOW_REQUEST_DEDUP_MINUTES } from './follow-request-notifications';
+import { writeFollowRequestNotification } from './follow-request-notifications';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
 /** The values `notifications.entity_type` actually accepts, for the guard below. */
@@ -59,9 +59,37 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         break;
       }
       case 'follow.requested': {
-        recipientId = event.metadata.recipientUserId;
-        notificationType = 'follow_request';
-        break;
+        // Same locked, deduplicated write as the worker, so local-only mode
+        // behaves like production.
+        const followRequestRecipient = event.metadata.recipientUserId;
+        if (!followRequestRecipient) return;
+        const uuid = await writeFollowRequestNotification(event.actorId, followRequestRecipient);
+        if (!uuid) return;
+        const [requester] = await db
+          .select({
+            name: dbSchema.users.name,
+            image: dbSchema.users.image,
+            displayName: dbSchema.userProfiles.displayName,
+            avatarUrl: dbSchema.userProfiles.avatarUrl,
+          })
+          .from(dbSchema.users)
+          .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+          .where(eq(dbSchema.users.id, event.actorId))
+          .limit(1);
+        pubsub.publishNotificationEvent(followRequestRecipient, {
+          notification: {
+            uuid,
+            type: 'follow_request',
+            actorId: event.actorId,
+            actorDisplayName: requester?.displayName || requester?.name || undefined,
+            actorAvatarUrl: requester?.avatarUrl || requester?.image || undefined,
+            entityType: null,
+            entityId: event.actorId,
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          },
+        });
+        return;
       }
       case 'comment.created': {
         if (event.entityType === 'tick') {
@@ -282,10 +310,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
 
     if (!recipientId || !notificationType || recipientId === event.actorId) return;
 
-    // Deduplicate: check if a similar notification already exists recently. A
-    // follow request uses the worker's day-long window, so local-only mode
-    // behaves like production.
-    const dedupMinutes = notificationType === 'follow_request' ? FOLLOW_REQUEST_DEDUP_MINUTES : 60;
+    // Deduplicate: check if a similar notification already exists recently
     const [existing] = await db
       .select({ id: dbSchema.notifications.id })
       .from(dbSchema.notifications)
@@ -295,13 +320,11 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
           eq(dbSchema.notifications.recipientId, recipientId),
           eq(dbSchema.notifications.type, notificationType),
           eq(dbSchema.notifications.entityId, event.entityId),
-          sql`${dbSchema.notifications.createdAt} > NOW() - make_interval(mins => ${dedupMinutes})`,
+          sql`${dbSchema.notifications.createdAt} > NOW() - INTERVAL '1 hour'`,
         ),
       )
       .limit(1);
     if (existing) return;
-    // One follow request row per pair: replace an older one rather than add one.
-    if (notificationType === 'follow_request') await deleteFollowRequestNotifications(event.actorId, recipientId);
 
     // `follow.created` carries entityType 'user', which is NOT a member of the
     // social_entity_type enum — passing it through threw on insert and the catch
