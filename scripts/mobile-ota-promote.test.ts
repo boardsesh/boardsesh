@@ -98,6 +98,17 @@ function stageFixture() {
   return { root, receiptPath, hashes, iosExport: join(root, 'ios'), androidExport: join(root, 'android') };
 }
 
+/** Put a Hermes map next to each staged bundle, where `expo export --dump-sourcemap` leaves it. */
+function writeSourcemaps(fixture: ReturnType<typeof stageFixture>) {
+  const write = (platform: 'ios' | 'android') => {
+    const path = `_expo/static/js/${platform}/main.hbc.map`;
+    const bytes = Buffer.from(JSON.stringify({ version: 3, sources: [`${platform}.tsx`], mappings: 'AAAA' }));
+    writeFileSync(join(fixture.root, platform, path), bytes);
+    return { path, bytes };
+  };
+  return { ios: write('ios'), android: write('android') };
+}
+
 function fetchServer(
   fixture: ReturnType<typeof stageFixture>,
   statusByPlatform: Partial<Record<'ios' | 'android', number>> = {},
@@ -210,6 +221,32 @@ describe('stage receipt and export validation', () => {
     rmSync(original);
     symlinkSync(moved, original);
     expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('symbolic link');
+  });
+
+  it('finds the source map next to the bundle, and reports none when it is absent', () => {
+    const fixture = stageFixture();
+    const withoutMap = validateExport(fixture.iosExport, 'ios', fixture.hashes.ios);
+    expect(withoutMap.sourcemapPath).toBeNull();
+    const maps = writeSourcemaps(fixture);
+    const withMap = validateExport(fixture.iosExport, 'ios', fixture.hashes.ios);
+    expect(withMap.sourcemapPath).toBe(maps.ios.path);
+    // Uploadable, but never part of the manifest's asset list.
+    expect(withMap.files.has(maps.ios.path)).toBe(true);
+    expect(withMap.assetPaths).not.toContain(maps.ios.path);
+  });
+
+  it('rejects a source map that is a symbolic link', () => {
+    const fixture = stageFixture();
+    const outside = join(fixture.root, 'outside.map');
+    writeFileSync(outside, '{}');
+    symlinkSync(outside, join(fixture.iosExport, '_expo/static/js/ios/main.hbc.map'));
+    expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('symbolic link');
+  });
+
+  it('rejects a source map link that points nowhere, and does not read it as no map', () => {
+    const fixture = stageFixture();
+    symlinkSync(join(fixture.root, 'gone.map'), join(fixture.iosExport, '_expo/static/js/ios/main.hbc.map'));
+    expect(() => validateExport(fixture.iosExport, 'ios', fixture.hashes.ios)).toThrow('Expo export file is missing');
   });
 
   it('rejects metadata paths that escape the export', () => {
@@ -435,6 +472,149 @@ describe('exact-byte production promotion', () => {
     expect(server.calls.filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/production'))).toHaveLength(
       2,
     );
+  });
+
+  it('promotes an export without a source map, and says the errors stay unsymbolicated', async () => {
+    const fixture = stageFixture();
+    const server = fetchServer(fixture);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await promoteArchivedOta({
+        receiptPath: fixture.receiptPath,
+        iosExport: fixture.iosExport,
+        androidExport: fixture.androidExport,
+        manifestUrl: 'https://updates.example/manifest',
+        token: 'test-token',
+        fetchImpl: server.fetchImpl,
+      });
+      for (const platform of ['ios', 'android']) {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(`${platform}: staged export has no source map`));
+      }
+    } finally {
+      warn.mockRestore();
+    }
+    const requests = server.calls.filter((call) => call.url.pathname.includes('/requestUploadUrl/production'));
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(JSON.parse(request.init.body as string)).not.toHaveProperty('sourcemap');
+    }
+    expect(server.calls.filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/production'))).toHaveLength(
+      2,
+    );
+  });
+
+  it('names the staged source map beside the files, and uploads nothing when the server already holds it', async () => {
+    const fixture = stageFixture();
+    const maps = writeSourcemaps(fixture);
+    const server = fetchServer(fixture);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await promoteArchivedOta({
+        receiptPath: fixture.receiptPath,
+        iosExport: fixture.iosExport,
+        androidExport: fixture.androidExport,
+        manifestUrl: 'https://updates.example/manifest',
+        token: 'test-token',
+        fetchImpl: server.fetchImpl,
+      });
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('no source map'));
+    } finally {
+      warn.mockRestore();
+    }
+    const requests = server.calls.filter((call) => call.url.pathname.includes('/requestUploadUrl/production'));
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      const platform = request.url.searchParams.get('platform') as 'ios' | 'android';
+      const body = JSON.parse(request.init.body as string) as { files: { path: string }[]; sourcemap: unknown };
+      // eoas 3.2.6 SourcemapUploadItem: path and base64url SHA-256, outside `files`.
+      expect(body.sourcemap).toEqual({
+        path: maps[platform].path,
+        hash: createHash('sha256').update(maps[platform].bytes).digest('base64url'),
+      });
+      expect(body.files.map((file) => file.path)).not.toContain(maps[platform].path);
+    }
+    // The staging publish already stored this map, so the lease asks for the bundle only.
+    const puts = server.calls.filter((call) => call.init.method === 'PUT');
+    expect(puts).toHaveLength(2);
+    expect(puts.every((call) => call.url.pathname.endsWith('/bundle'))).toBe(true);
+  });
+
+  it('uploads the bundle and the source map when the lease asks for both', async () => {
+    const fixture = stageFixture();
+    const maps = writeSourcemaps(fixture);
+    const server = fetchServer(fixture);
+    const sourcemapFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/requestUploadUrl/production')) {
+        const platform = url.searchParams.get('platform') as 'ios' | 'android';
+        return Response.json({
+          updateId: platform === 'ios' ? 101 : 102,
+          // What a 3.2.6 server answers for a bundle and a map it has never seen.
+          // The map (requestSourcemapUpload) is an ordinary upload request whose
+          // filePath is the path the publish named, appended after the files.
+          uploadRequests: [
+            {
+              requestUploadUrl: `https://bucket.example/${platform}/bundle`,
+              fileName: 'main.hbc',
+              filePath: `_expo/static/js/${platform}/main.hbc`,
+            },
+            {
+              requestUploadUrl: `https://sourcemaps.example/${platform}/map`,
+              fileName: 'main.hbc.map',
+              filePath: maps[platform].path,
+              originalFileName: maps[platform].path,
+              hash: createHash('sha256').update(maps[platform].bytes).digest('base64url'),
+            },
+          ],
+        });
+      }
+      return server.fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    await promoteArchivedOta({
+      receiptPath: fixture.receiptPath,
+      iosExport: fixture.iosExport,
+      androidExport: fixture.androidExport,
+      manifestUrl: 'https://updates.example/manifest',
+      token: 'test-token',
+      fetchImpl: sourcemapFetch,
+    });
+    const puts = server.calls.filter((call) => call.init.method === 'PUT');
+    expect(puts).toHaveLength(4);
+    for (const platform of ['ios', 'android'] as const) {
+      const upload = puts.find((call) => call.url.pathname === `/${platform}/map`);
+      expect(Buffer.from(upload?.init.body as Buffer)).toEqual(maps[platform].bytes);
+      expect(upload?.init.headers).toMatchObject({ 'Content-Type': 'application/json' });
+      expect(upload?.init.redirect).toBe('error');
+      const bundle = puts.find((call) => call.url.pathname === `/${platform}/bundle`);
+      expect(Buffer.from(bundle?.init.body as Buffer)).toEqual(
+        readFileSync(join(fixture.root, platform, `_expo/static/js/${platform}/main.hbc`)),
+      );
+    }
+    expect(server.calls.filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/production'))).toHaveLength(
+      2,
+    );
+  });
+
+  it('fails the promote when the server refuses to finalize an update that named a source map', async () => {
+    // A 3.2.6 server answers 400 at finalize when the update names a map its
+    // store does not hold. Source-map storage is part of publishing once it is
+    // on: the promote stops there and never reports a release that did not land.
+    const fixture = stageFixture();
+    writeSourcemaps(fixture);
+    const server = fetchServer(fixture, { ios: 400 });
+    await expect(
+      promoteArchivedOta({
+        receiptPath: fixture.receiptPath,
+        iosExport: fixture.iosExport,
+        androidExport: fixture.androidExport,
+        manifestUrl: 'https://updates.example/manifest',
+        token: 'test-token',
+        fetchImpl: server.fetchImpl,
+      }),
+    ).rejects.toThrow();
+    // iOS goes first, so nothing of Android's was finalized behind the failure.
+    const finalized = server.calls.filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/production'));
+    expect(finalized.map((call) => call.url.searchParams.get('platform'))).toEqual(['ios']);
   });
 
   it('verifies without uploading when the server says production already has these files', async () => {

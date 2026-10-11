@@ -116,6 +116,10 @@ function printServerSetup(): void {
       // unset unless the CDN adds the im and expo-base-update-id headers.
       `CDN_BASE_URL=https://ota-assets.boardsesh.com`,
       `BUNDLE_DIFFING=true`,
+      // Hermes source maps for Observe error tracking, in their own private
+      // bucket. The bucket credential above must be able to read and write both.
+      `UPLOAD_SOURCEMAPS=true`,
+      `S3_BUCKET_SOURCEMAPS_NAME=boardsesh-ota-sourcemaps`,
       // Redis, not local: local mode caches in the Go heap with no bound and
       // reached 1.7 GB (2.3M objects) after 21 days in production. xprem has no
       // default REDIS_PORT. The prefix names OTA keys in the shared Redis.
@@ -303,7 +307,7 @@ function printRunbook(): void {
   log('Run these phases as infra comes online:');
   log('');
   log('  1. (cloud) create the boardsesh-ota-v3 bucket + a dedicated Railway Postgres,');
-  log('       deploy ghcr.io/mercuretechnologies/xprem:v3.2.5 on Railway,');
+  log('       deploy ghcr.io/mercuretechnologies/xprem:v3.2.6 on Railway,');
   log('       point updates.boardsesh.com at it (see docs/mobile-ota-updates.md).');
   log('  2. vp run mobile:ota-setup keys');
   log('       → prints the V3 Railway env block + the cert-export steps.');
