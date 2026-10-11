@@ -221,6 +221,34 @@ describe('account consent synchronization', () => {
       expect(coordinator.getSnapshot()).toMatchObject({ record: localDenial, pending: false, accountResolved: true });
     },
   );
+  it('drops a pending grant on an offline restart when the shared cookie holds a newer withdrawal', async () => {
+    // The app was killed after a cookie withdrawal superseded an in-flight grant
+    // but before the pending grant was cleared from storage. The restored grant
+    // carries no owner (pending records are keyed by account, not stamped), and
+    // the cookie denial has none either, so neither may be written.
+    const cookieDenial = { ...denial, decidedAt: '2026-10-08T10:00:05.000Z' };
+    const writeAccountConsent = vi.fn(async () => grant);
+    const persistPendingDecision = vi.fn(async () => {});
+    const onError = vi.fn();
+    const coordinator = createConsentSyncCoordinator({
+      initialRecord: cookieDenial,
+      readAccountConsent: vi.fn(async () => {
+        throw new Error('offline');
+      }),
+      writeAccountConsent,
+      persistLocalConsent: vi.fn(),
+      persistPendingDecision,
+      loadPendingDecision: async () => ({ record: grant, basedOnDecidedAt: null }),
+      onError,
+    });
+    coordinator.setAccount('account-a');
+    await coordinator.sync();
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+    expect(persistPendingDecision).toHaveBeenCalledExactlyOnceWith('account-a', null);
+    expect(onError).toHaveBeenCalledOnce();
+    // Tracking stays off and nothing asks yet: the account read has not answered.
+    expect(coordinator.getSnapshot()).toMatchObject({ record: cookieDenial, pending: false, accountResolved: false });
+  });
   it('restores a pending grant from a later second than the local denial', async () => {
     const earlierDenial = { ...denial, decidedAt: '2026-10-08T09:59:59.999Z' };
     const writeAccountConsent = vi.fn(async () => grant);
@@ -523,6 +551,8 @@ describe('account consent synchronization', () => {
         ownedByA(denial),
         null,
       ],
+      ['own denial decided at the same moment as the account grant', ownedByA(denial), grant, ownedByA(denial), null],
+      ['own grant decided at the same moment as the account denial', ownedByA(grant), denial, ownedByA(denial), null],
       [
         'newer own denial, older account grant',
         ownedByA(later(denial, '2026-10-09T00:00:00.000Z')),

@@ -19,6 +19,15 @@ export type ConsentSyncInput = {
   basedOnDecidedAt: string | null;
 };
 export type PendingConsentDecision = { record: ConsentRecord; basedOnDecidedAt: string | null };
+/**
+ * Validate a stored pending decision. The record carries no owner on purpose:
+ * pending decisions are stored per account, and a restored one is bound to the
+ * account it was loaded for. A newer local denial that is not that account's
+ * (signed out, or the shared cookie) still wins on this device and drops the
+ * restored grant without writing either; see the restore step in
+ * {@link createConsentSyncCoordinator} and "Whose answer is it" in
+ * docs/analytics-consent.md.
+ */
 export function parsePendingConsentDecision(candidate: unknown): PendingConsentDecision | null {
   if (typeof candidate !== 'object' || candidate === null) return null;
   const pendingDecision = candidate as Record<string, unknown>;

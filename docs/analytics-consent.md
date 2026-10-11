@@ -211,6 +211,9 @@ no event is appended; A keeps its own No thanks (rule 3). A shared-cookie
 withdrawal that arrives while a grant is in flight stops tracking on this
 device and drops the grant, but is not written by this tab: the origin that
 took it writes it if it was signed in.
+If the app is killed before that dropped grant leaves pending storage, the
+restored grant meets the newer cookie denial on the next launch, loses, and is
+discarded; neither is written, online or offline.
 
 The app's consent gate waits for the account read (at most 5 s, as for a
 first answer) before it trusts an answer that is not this account's. When the
