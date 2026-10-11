@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { captureTutorial } from './lib/instructional-video/capture';
 import { resolveAndroidApk } from './mobile-android-apk';
-import { startTutorialDemo } from './lib/instructional-video/demo';
+import { startTutorialDemo, type TutorialDemo } from './lib/instructional-video/demo';
 import { tutorialEpisode } from './lib/instructional-video/episodes';
 import { TUTORIAL_REPO_ROOT, TUTORIAL_WORK_ROOT } from './lib/instructional-video/paths';
 import { buildTutorialCuts, selectedChapters } from './lib/instructional-video/timeline';
@@ -158,10 +158,21 @@ async function main(): Promise<void> {
       resolve(notesDirectory, 'qa-notes.md'),
       '1. Open the tutorial demo → Alex and four tutorial walls appear.\n2. Join Alex’s session → Sam contributes a climb with his avatar.\n3. Start a workout → logging starts rest, then advances the queue.\n4. Open the spray wall → the photo and highlighted holds appear.\n5. Open progress → personal grades and multiple boards appear.\n',
     );
-    const apkPath = options.apkPath ?? (options.platform === 'android' ? resolveAndroidApk().apkPath : undefined);
-    const demo = await startTutorialDemo(options.workRoot);
-    console.log(`Tutorial backend: ${demo.backendUrl}`);
+    const controller = new AbortController();
+    const interrupt = (signal: 'SIGINT' | 'SIGTERM') => {
+      if (controller.signal.aborted) return;
+      process.exitCode = signal === 'SIGINT' ? 130 : 143;
+      controller.abort(new Error(`Tutorial capture interrupted by ${signal}.`));
+    };
+    const onInterrupt = () => interrupt('SIGINT');
+    const onTerminate = () => interrupt('SIGTERM');
+    process.on('SIGINT', onInterrupt);
+    process.on('SIGTERM', onTerminate);
+    let demo: TutorialDemo | undefined;
     try {
+      const apkPath = options.apkPath ?? (options.platform === 'android' ? resolveAndroidApk().apkPath : undefined);
+      demo = await startTutorialDemo(options.workRoot, controller.signal);
+      console.log(`Tutorial backend: ${demo.backendUrl}`);
       await captureTutorial({
         episode,
         platform: options.platform,
@@ -172,10 +183,17 @@ async function main(): Promise<void> {
         recapture: options.recapture,
         backendUrl: demo.backendUrl,
         env: demo.env,
+        signal: controller.signal,
       });
     } finally {
-      await demo.stop();
+      try {
+        await demo?.stop();
+      } finally {
+        process.off('SIGINT', onInterrupt);
+        process.off('SIGTERM', onTerminate);
+      }
     }
+    controller.signal.throwIfAborted();
   }
   if (!options.recordOnly)
     console.log(
@@ -186,5 +204,5 @@ async function main(): Promise<void> {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
+    if (process.exitCode !== 130 && process.exitCode !== 143) process.exitCode = 1;
   });

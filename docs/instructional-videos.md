@@ -58,7 +58,9 @@ The local demo uses its own Docker Compose project, persistent Postgres volume, 
 
 Each take's `manifest.json` records source commit, native APK SHA-256, dependency fingerprint, measured pixel/dp screen, 30 fps frame count, named marks and normalized anchor samples. The renderer stops a beat before the next marked action; a short demonstration can pause while its sentence finishes. It does not stretch the rest countdown to imply automatic advancement. The workout capture waits for the live session's current climb to change after logging, without a manual Next gesture. The crew uses a second authenticated WebSocket participant against the local backend and checks its queue contribution.
 
-Similar climbs and heatmaps require a completed local download. Missing required marks, anchors, frames or download completion fail capture/render. Session takes are accepted only after the app ends the exact captured session and the authenticated API confirms teardown. Native crashes and automation failures leave diagnostic logs under the work directory. Do not bless a partially completed take by editing its manifest.
+Similar climbs and heatmaps require a completed local download. Missing required marks, anchors, frames or download completion fail capture/render. Session takes are accepted only after the app ends the exact captured session and the authenticated API confirms teardown. Each automation flow has a ten-minute deadline; the encoder is finalized explicitly so slow native checks cannot truncate a valid take. A real Home transition after the final hold supplies the last timestamp for Android's variable-frame recording; the edit ends before that transition.
+
+Ctrl-C or SIGTERM cancels capture, ends its active session and stops the owned process groups and Compose services. Database volumes and emulator storage remain intact. Interrupted takes are not accepted or rendered. Native crashes and automation failures leave diagnostic logs under the work directory. Do not bless a partially completed take by editing its manifest.
 
 ## R2 publication
 

@@ -50,6 +50,8 @@ export function tutorialCaptureSourceHash(repoRoot: string): string {
       'scripts/lib/instructional-video/capture-bootstrap.ts',
       'scripts/lib/instructional-video/source.ts',
       'scripts/lib/instructional-video/demo.ts',
+      'scripts/lib/instructional-video/types.ts',
+      'scripts/instructional-video.ts',
     ],
     { cwd: repoRoot, encoding: 'utf8' },
   );

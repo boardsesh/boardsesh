@@ -1,10 +1,22 @@
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { tutorialDemoEnvironment } from './demo';
+import { startTutorialDemo, tutorialDemoEnvironment } from './demo';
 import { resolveMediaBinary } from '../help-clips';
 
 const ports = { postgres: 15433, redis: 16380, s3: 15001, backend: 18089 };
 
 describe('isolated instructional demo environment', () => {
+  it('rejects pre-cancelled startup without creating a workspace or owning a lock', async () => {
+    const workRoot = resolve('.boardsesh/tutorial-videos/cancellation-tests', `pre-cancelled-${randomUUID()}`);
+    const controller = new AbortController();
+    const reason = new Error('Startup already cancelled');
+    controller.abort(reason);
+    await expect(startTutorialDemo(workRoot, controller.signal)).rejects.toBe(reason);
+    expect(existsSync(workRoot)).toBe(false);
+  });
+
   it('replaces production resources and drops inherited credentials and side-effect integrations', () => {
     const inherited = {
       PATH: '/test/bin',

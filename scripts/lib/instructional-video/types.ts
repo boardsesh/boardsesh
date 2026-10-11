@@ -81,6 +81,8 @@ export type TutorialCaptureOptions = Readonly<{
   recapture?: boolean;
   backendUrl?: string;
   env?: NodeJS.ProcessEnv;
+  /** Cancellation unwinds owned capture processes before stopping the local demo. */
+  signal?: AbortSignal;
 }>;
 
 export const TUTORIAL_FPS = 30;

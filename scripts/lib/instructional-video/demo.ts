@@ -99,31 +99,80 @@ async function unusedPort(): Promise<number> {
   return address.port;
 }
 
-async function run(command: string, args: string[], env: NodeJS.ProcessEnv, logPath: string): Promise<string> {
+/** Stop the exact owned command group before rejecting cancellation; cleanup callers omit the signal. */
+export async function runTutorialDemoCommand(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  logPath: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  signal?.throwIfAborted();
   const log = createWriteStream(logPath, { flags: 'a' });
   let stdout = '';
   await new Promise<void>((accept, reject) => {
-    const child = spawn(command, args, { cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { cwd: REPO_ROOT, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let killTimeout: ReturnType<typeof setTimeout> | undefined;
+    const clear = () => {
+      signal?.removeEventListener('abort', abort);
+      if (killTimeout) clearTimeout(killTimeout);
+    };
+    const abort = () => {
+      if (!child.pid) return;
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch (error: unknown) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
+          child.kill('SIGTERM');
+        }
+      }
+      const ownedProcessGroup = child.pid;
+      killTimeout = setTimeout(() => {
+        // A wrapper can exit while a descendant retains its pipes and ignores SIGTERM.
+        if (ownedProcessGroup) {
+          try {
+            process.kill(-ownedProcessGroup, 'SIGKILL');
+          } catch {
+            /* command group already exited */
+          }
+        }
+      }, 8000);
+    };
     child.stdout?.pipe(log, { end: false });
     child.stderr?.pipe(log, { end: false });
     child.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
     });
-    child.once('error', reject);
-    child.once('exit', (code) =>
-      code === 0 ? accept() : reject(new Error(`${command} ${args.join(' ')} failed (${code}); inspect ${logPath}`)),
-    );
+    child.once('error', (error) => {
+      clear();
+      reject(error);
+    });
+    child.once('close', (code) => {
+      clear();
+      if (signal?.aborted) reject(signal.reason);
+      else if (code === 0) accept();
+      else reject(new Error(`${command} ${args.join(' ')} failed (${code}); inspect ${logPath}`));
+    });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
   }).finally(() => log.end());
   return stdout;
 }
 
-async function waitForHttp(url: string, child?: ChildProcess): Promise<void> {
+const run = runTutorialDemoCommand;
+
+async function waitForHttp(url: string, child?: ChildProcess, signal?: AbortSignal): Promise<void> {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
-    if (child && child.exitCode !== null) throw new Error('Tutorial backend exited before becoming ready');
+    signal?.throwIfAborted();
+    if (child && (child.exitCode !== null || child.signalCode !== null))
+      throw new Error('Tutorial backend exited before becoming ready');
     try {
-      if ((await fetch(url, { signal: AbortSignal.timeout(2000) })).ok) return;
+      const deadlineSignal = AbortSignal.timeout(2000);
+      if ((await fetch(url, { signal: signal ? AbortSignal.any([signal, deadlineSignal]) : deadlineSignal })).ok)
+        return;
     } catch {
+      signal?.throwIfAborted();
       /* service still starting */
     }
     await new Promise((accept) => setTimeout(accept, 500));
@@ -132,7 +181,8 @@ async function waitForHttp(url: string, child?: ChildProcess): Promise<void> {
 }
 
 /** Start only the named tutorial Compose project. stop retains all database volumes and seeded history. */
-export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo> {
+export async function startTutorialDemo(workRoot: string, signal?: AbortSignal): Promise<TutorialDemo> {
+  signal?.throwIfAborted();
   const demoRoot = resolve(workRoot, 'demo');
   await mkdir(demoRoot, { recursive: true });
   const project = `boardsesh-tutorial-${createHash('sha256').update(demoRoot).digest('hex').slice(0, 10)}`;
@@ -169,33 +219,41 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
     if (stopped) return;
     stopped = true;
     try {
-      if (backend?.pid && backend.exitCode === null) {
-        const child = backend;
-        process.kill(-backend.pid, 'SIGTERM');
-        await new Promise<void>((accept) => {
-          const timeout = setTimeout(() => {
-            if (child.pid && child.exitCode === null) {
-              try {
-                process.kill(-child.pid, 'SIGKILL');
-              } catch {
-                /* exited */
+      try {
+        if (backend?.pid && backend.exitCode === null && backend.signalCode === null) {
+          const child = backend;
+          try {
+            process.kill(-backend.pid, 'SIGTERM');
+          } catch (error: unknown) {
+            if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
+          }
+          await new Promise<void>((accept) => {
+            const timeout = setTimeout(() => {
+              if (child.pid && child.exitCode === null && child.signalCode === null) {
+                try {
+                  process.kill(-child.pid, 'SIGKILL');
+                } catch {
+                  /* exited */
+                }
               }
-            }
-            accept();
-          }, 12_000);
-          child.once('exit', () => {
-            clearTimeout(timeout);
-            accept();
+              accept();
+            }, 12_000);
+            child.once('exit', () => {
+              clearTimeout(timeout);
+              accept();
+            });
           });
-        });
+        }
+      } finally {
+        if (startedInfrastructure) await run('docker', [...compose, 'stop'], env, logPath);
       }
-      if (startedInfrastructure) await run('docker', [...compose, 'stop'], env, logPath);
     } finally {
       backendLog.end();
       await unlink(lockPath);
     }
   };
   try {
+    signal?.throwIfAborted();
     // Required tester-facing notes are written before the backend is started.
     const qaNotes = resolve(demoRoot, 'qa-notes.md');
     await writeFile(
@@ -207,8 +265,8 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
     env.TUTORIAL_QA_NOTES_FILE = qaNotes;
     console.info(`[tutorial-demo] QA notes: ${qaNotes}`);
     startedInfrastructure = true;
-    await run('docker', [...compose, 'up', '-d', '--wait', '--wait-timeout', '300'], env, logPath);
-    await waitForHttp(`http://127.0.0.1:${ports.s3}/`);
+    await run('docker', [...compose, 'up', '-d', '--wait', '--wait-timeout', '300'], env, logPath, signal);
+    await waitForHttp(`http://127.0.0.1:${ports.s3}/`, undefined, signal);
     // The baked development image already contains main; POSTGRES_DB cannot rename an initialized cluster.
     const databaseExists = await run(
       'docker',
@@ -227,6 +285,7 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
       ],
       env,
       logPath,
+      signal,
     );
     if (databaseExists.trim() !== '1')
       await run(
@@ -234,14 +293,16 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
         [...compose, 'exec', '-T', 'postgres', 'createdb', '-U', 'postgres', '-T', 'main', 'boardsesh_tutorial'],
         env,
         logPath,
+        signal,
       );
-    await run('vp', ['exec', 'tsx', 'packages/db/scripts/migrate-instructional-video.ts'], env, logPath);
+    await run('vp', ['exec', 'tsx', 'packages/db/scripts/migrate-instructional-video.ts'], env, logPath, signal);
     const seedPath = resolve(demoRoot, 'seed.json');
     await run(
       'vp',
       ['exec', 'tsx', 'packages/backend/src/scripts/seed-instructional-video.ts', REPO_ROOT, seedPath],
       env,
       logPath,
+      signal,
     );
     // Cloning the baked database leaves planner statistics empty. Refresh them before native profile reads.
     await run(
@@ -249,6 +310,7 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
       [...compose, 'exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', 'boardsesh_tutorial', '-c', 'ANALYZE'],
       env,
       logPath,
+      signal,
     );
     env.TUTORIAL_SEED_FILE = seedPath;
     const seed = JSON.parse(await readFile(seedPath, 'utf8')) as {
@@ -259,6 +321,7 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
     if (!kilter) throw new Error('Tutorial seed has no Kilter board');
     env.TUTORIAL_BOARD_PATH = `kilter/${kilter.layoutId}/${kilter.sizeId}/${kilter.setIds}`;
     env.TUTORIAL_FIXTURE_FINGERPRINT = seed.fixtureFingerprint;
+    signal?.throwIfAborted();
     backend = spawn(
       process.execPath,
       ['--import', 'tsx', 'packages/backend/src/scripts/serve-instructional-video.ts'],
@@ -276,9 +339,10 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
       spawnError = error;
     });
     const backendUrl = `http://127.0.0.1:${ports.backend}`;
-    await waitForHttp(`${backendUrl}/health`, backend);
-    await waitForHttp(`${backendUrl}/health/db`, backend);
+    await waitForHttp(`${backendUrl}/health`, backend, signal);
+    await waitForHttp(`${backendUrl}/health/db`, backend, signal);
     if (spawnError) throw spawnError;
+    signal?.throwIfAborted();
     return { backendUrl, env, stop };
   } catch (error) {
     await stop();

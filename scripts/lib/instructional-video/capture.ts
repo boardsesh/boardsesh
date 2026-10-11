@@ -54,6 +54,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const APP = 'com.boardsesh.app.dev';
 const AVD = 'Boardsesh_Tutorial';
 const PORT = 5584;
+const MAESTRO_FLOW_TIMEOUT_MS = 600_000;
 const sleep = (milliseconds: number) => new Promise<void>((done) => setTimeout(done, milliseconds));
 const sha = (content: string | Buffer) => createHash('sha256').update(content).digest('hex');
 
@@ -79,28 +80,34 @@ function command(
   return result.stdout;
 }
 
-async function stop(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  if (child.pid) {
-    try {
-      process.kill(-child.pid, 'SIGINT');
-    } catch {
-      child.kill('SIGINT');
-    }
+export async function stopTutorialCaptureProcess(child: ChildProcess): Promise<void> {
+  const processGroup = child.pid;
+  if (!processGroup) return;
+  try {
+    process.kill(-processGroup, 'SIGINT');
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return;
+    throw error;
   }
-  await Promise.race([new Promise<void>((done) => child.once('exit', () => done())), sleep(8000)]);
-  if (child.exitCode === null && child.signalCode === null && child.pid) {
-    try {
-      process.kill(-child.pid, 'SIGKILL');
-    } catch {
-      child.kill('SIGKILL');
-    }
+  if (child.exitCode === null && child.signalCode === null)
+    await Promise.race([new Promise<void>((done) => child.once('exit', () => done())), sleep(8000)]);
+  // A launcher can exit before its detached group's JVM/Metro descendants.
+  try {
+    process.kill(-processGroup, 'SIGKILL');
+  } catch (error: unknown) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
   }
 }
 
-async function waitFor(check: () => boolean | Promise<boolean>, timeout: number, description: string): Promise<void> {
+async function waitFor(
+  check: () => boolean | Promise<boolean>,
+  timeout: number,
+  description: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     if (await check()) return;
     await sleep(500);
   }
@@ -110,6 +117,9 @@ async function waitFor(check: () => boolean | Promise<boolean>, timeout: number,
 export async function captureTutorial(options: TutorialCaptureOptions): Promise<void> {
   if (options.platform !== 'android')
     throw new Error('iOS capture is tracked in the iOS sub-issue; this recorder supports Linux Android.');
+  options.signal?.throwIfAborted();
+  const waitForCapture = (check: () => boolean | Promise<boolean>, timeout: number, description: string) =>
+    waitFor(check, timeout, description, options.signal);
   const env = androidEnv(options.env ?? process.env);
   const backend = assertLocalTutorialBackend(options.backendUrl ?? env.EXPO_PUBLIC_BACKEND_URL ?? '');
   const adb = adbPath(resolveAndroidHome());
@@ -129,6 +139,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
   const openLink = (link: string) => openTutorialLink(adb, serial, link, (binary, args) => command(binary, args, env));
   let emulator: ChildProcess | undefined;
   let metro: ChildProcess | undefined;
+  let activeFlow: ChildProcess | undefined;
   let crew: CrewParticipant | undefined;
   const marks = new Map<string, number>();
   const signals = new Set<string>();
@@ -141,6 +152,14 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
   let primaryJwt: string | undefined;
   let activeSession = false;
   let capturedSessionId: string | undefined;
+  let abortCleanup: Promise<unknown> | undefined;
+  const cancelCapture = () => {
+    const children = [activeFlow, ...(activeSession ? [] : [metro])].filter(
+      (child): child is ChildProcess => child !== undefined,
+    );
+    // Keep the app alive to end an active session in finally before stopping Metro.
+    abortCleanup = Promise.allSettled(children.map((child) => stopTutorialCaptureProcess(child)));
+  };
   let sessionTeardown: (() => Promise<void>) | undefined;
   const server = createServer((request, response) => {
     const [kind, name] = (request.url ?? '').split('?')[0].split('/').slice(1);
@@ -218,7 +237,9 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
   if (!address || typeof address === 'string') throw new Error('Signal server has no port');
   const signalUrl = `http://127.0.0.1:${address.port}`;
   const metroPort = Number(env.TUTORIAL_METRO_PORT ?? 8088);
+  options.signal?.addEventListener('abort', cancelCapture, { once: true });
   try {
+    options.signal?.throwIfAborted();
     const readyDevices = command(adb, ['devices'], env)
       .split('\n')
       .filter((line) => line.endsWith('\tdevice'))
@@ -276,7 +297,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
           `Tutorial emulator exited during boot (code=${code}, signal=${signal}); inspect ${join(work, 'emulator.log')}.`,
         );
       });
-      await waitFor(
+      await waitForCapture(
         () => {
           if (emulatorError) throw emulatorError;
           try {
@@ -356,6 +377,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     ])
       delete metroEnv[key];
     await assertTutorialMetroPortFree(metroPort);
+    options.signal?.throwIfAborted();
     const metroFd = openSync(metroLog, 'w');
     console.log(`[tutorial] Starting Metro on ${metroPort}`);
     metro = spawn(
@@ -392,7 +414,8 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     primaryJwt = ((await primaryAuth.json()) as { jwt?: string }).jwt;
     if (!primaryAuth.ok || !primaryJwt)
       throw new Error('Could not authenticate primary demo account for evidence checks.');
-    const flow = async (path: string, label: string) => {
+    const flow = async (path: string, label: string, cleanup = false) => {
+      if (!cleanup) options.signal?.throwIfAborted();
       const child = spawn(
         'maestro',
         [
@@ -409,6 +432,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         ],
         { cwd: ROOT, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
       );
+      activeFlow = child;
       let output = '';
       child.stdout?.on('data', (chunk: Buffer) => {
         output += chunk.toString();
@@ -416,7 +440,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       child.stderr?.on('data', (chunk: Buffer) => {
         output += chunk.toString();
       });
-      const timer = setTimeout(() => void stop(child), 240_000);
+      const timer = setTimeout(() => void stopTutorialCaptureProcess(child), MAESTRO_FLOW_TIMEOUT_MS);
       try {
         await new Promise<void>((done, reject) => {
           child.once('error', reject);
@@ -428,14 +452,17 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         });
       } finally {
         clearTimeout(timer);
+        await stopTutorialCaptureProcess(child);
+        if (activeFlow === child) activeFlow = undefined;
         writeFileSync(join(work, `${label}.log`), output);
       }
+      if (!cleanup) options.signal?.throwIfAborted();
     };
     sessionTeardown = async () => {
       const sessionId =
         capturedSessionId ??
         (await discoverTutorialSession(backend, primaryJwt, env.TUTORIAL_BOARD_PATH ?? 'kilter/1/7/1'));
-      await flow('packages/mobile/.maestro/tutorial/session-end.yaml', 'session-end');
+      await flow('packages/mobile/.maestro/tutorial/session-end.yaml', 'session-end', true);
       await waitFor(
         async () => !(await tutorialSessionStillActive(backend, primaryJwt, sessionId)),
         15_000,
@@ -446,6 +473,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     };
     let appLaunched = false;
     for (const take of selectedTakes) {
+      options.signal?.throwIfAborted();
       console.log(`[tutorial] Preparing chapter ${take.id}`);
       const takeDir = join(work, 'takes', take.id);
       const scenarioPath = env.TUTORIAL_SEED_FILE ?? join(options.workRoot, 'demo', 'seed.json');
@@ -485,7 +513,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       if (!appLaunched) {
         command(adb, ['-s', serial, 'shell', 'am', 'force-stop', APP], env);
         openLink(androidDevClientUrl(metroPort));
-        await waitFor(
+        await waitForCapture(
           () =>
             readFileSync(metroLog, 'utf8')
               .slice(baseline)
@@ -563,8 +591,9 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       console.log(`[tutorial] Recording chapter ${take.id}`);
       const started = Date.now();
       const recorderArgs = buildScreenrecordArgs(serial, remote, 180);
-      // The pinned Android system image supports bounded recordings beyond 180s.
-      recorderArgs[recorderArgs.indexOf('--time-limit') + 1] = '300';
+      // Verified Android screenrecord v1.4: zero removes its duration cap.
+      // The host flow deadline bounds capture; finally sends guest SIGINT to finalize.
+      recorderArgs[recorderArgs.indexOf('--time-limit') + 1] = '0';
       recorderArgs.splice(recorderArgs.length - 1, 0, '--size', `${geometry.width}x${geometry.height}`);
       const recorder = spawn(adb, recorderArgs, {
         cwd: ROOT,
@@ -605,7 +634,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         }
       }, 100);
       try {
-        await waitFor(
+        await waitForCapture(
           () => {
             if (recorderError) throw recorderError;
             if (recorder.exitCode !== null) throw new Error('screenrecord exited before capture');
@@ -620,6 +649,10 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         if (signalFailure) throw signalFailure;
         const minimumEnd = (marks.get('flow-start') ?? recordStart) + take.minSeconds * 1000 + 200;
         if (Date.now() < minimumEnd) await sleep(minimumEnd - Date.now());
+        // A real navigation after the readable hold gives variable-frame screenrecord
+        // a final timestamp. This transition stays outside every rendered teaching beat.
+        openLink('com.boardsesh.app://home');
+        await flow('packages/mobile/.maestro/tutorial/home-ready.yaml', `${take.id}-record-tail`);
       } finally {
         clearInterval(poll);
         // SIGINT must reach the encoder in the guest so MP4 gets its moov atom.
@@ -685,10 +718,15 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       crew = undefined;
       crewAdd = undefined;
       if (take.session) await sessionTeardown();
+      // Deliver interrupts queued while synchronous media extraction was running.
+      await new Promise<void>((resume) => setImmediate(resume));
+      options.signal?.throwIfAborted();
       writeFileSync(`${cachedPath}.tmp`, JSON.stringify(manifest, null, 2));
       renameSync(`${cachedPath}.tmp`, cachedPath);
     }
   } finally {
+    options.signal?.removeEventListener('abort', cancelCapture);
+    await abortCleanup;
     crew?.close();
     if (activeSession && sessionTeardown) {
       try {
@@ -698,14 +736,14 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       }
     }
     server.close();
-    if (metro) await stop(metro);
+    if (metro) await stopTutorialCaptureProcess(metro);
     if (emulator) {
       try {
         command(adb, ['-s', serial, 'emu', 'kill'], env);
       } catch {
         /* crashed emulator */
       }
-      await stop(emulator);
+      await stopTutorialCaptureProcess(emulator);
     }
   }
 }
