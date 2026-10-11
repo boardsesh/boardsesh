@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
         contentContainerStyle: { paddingTop: number };
         scrollIndicatorInsets: { top: number };
         contentInsetAdjustmentBehavior: string;
+        maintainVisibleContentPosition?: { disabled: boolean };
       }
     | undefined,
 }));
@@ -164,6 +165,7 @@ describe('Logbook composed profile header', () => {
     expect(resultsFrame.dataset.pointer).toBe('none');
     expect(resultsFrame.dataset.accessibilityHidden).toBe('true');
     expect(state.listProps?.contentInsetAdjustmentBehavior).toBe('automatic');
+    expect(state.listProps?.maintainVisibleContentPosition).toEqual({ disabled: true });
     expect(getByTestId('results').compareDocumentPosition(getByTestId('composed-header'))).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
@@ -173,12 +175,19 @@ describe('Logbook composed profile header', () => {
     expect(resultsFrame.dataset.pointer).toBe('auto');
     expect(state.listProps?.contentContainerStyle.paddingTop).toBe(180);
     expect(state.listProps?.scrollIndicatorInsets.top).toBe(180);
+    expect(state.listProps?.maintainVisibleContentPosition).toEqual({ disabled: true });
     expect(resultsFrame.dataset.style).not.toContain('"paddingTop"');
 
     // An expanded facet rail contributes to the same measurement, not a second inset.
     act(() => state.measure?.(260));
     expect(state.listProps?.contentContainerStyle.paddingTop).toBe(260);
     expect(state.listProps?.scrollIndicatorInsets.top).toBe(260);
+    expect(state.listProps?.maintainVisibleContentPosition).toEqual({ disabled: true });
+
+    // Closing the rail must also leave the native offset free of row anchoring.
+    act(() => state.measure?.(180));
+    expect(state.listProps?.contentContainerStyle.paddingTop).toBe(180);
+    expect(state.listProps?.maintainVisibleContentPosition).toEqual({ disabled: true });
   });
 
   it('starts Material results below the entire opaque measured header', () => {
@@ -189,6 +198,7 @@ describe('Logbook composed profile header', () => {
     expect(getByTestId('results').parentElement!.dataset.style).toContain('"overflow":"hidden"');
     expect(state.listProps?.contentContainerStyle.paddingTop).toBe(0);
     expect(state.listProps?.contentInsetAdjustmentBehavior).toBe('never');
+    expect(state.listProps?.maintainVisibleContentPosition).toBeUndefined();
   });
 
   it('leaves public profile controls in flow without adding supplementary padding', () => {
@@ -198,6 +208,7 @@ describe('Logbook composed profile header', () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(state.listProps?.contentContainerStyle.paddingTop).toBe(0);
+    expect(state.listProps?.maintainVisibleContentPosition).toBeUndefined();
     expect(getByTestId('results').parentElement!.dataset.pointer).toBe('auto');
   });
 

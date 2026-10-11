@@ -673,6 +673,9 @@ export function LogbookTab({
               renderItem={renderItem}
               keyExtractor={keyExtractor}
               getItemType={getRowType}
+              // The native controls are measured after this list mounts. Keeping
+              // a row anchored would scroll away the padding added for them.
+              maintainVisibleContentPosition={hasComposedHeader && nativeRootHeader ? { disabled: true } : undefined}
               contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
               onEndReached={handleEndReached}
               onEndReachedThreshold={0.5}
