@@ -1,13 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import type Redis from 'ioredis';
+import Redis from 'ioredis';
 import {
   findClonePairs,
   findSerialBackfills,
   mergeAllPairs,
   mergeClonePair,
+  runMerge,
   type ClonePair,
 } from '../scripts/merge-clone-boards';
 
@@ -64,7 +65,7 @@ async function linkSerial(userId: string, serial: string, boardUuid: string): Pr
   await db.execute(sql`
     INSERT INTO user_board_serials (user_id, serial_number, board_name, layout_id, size_id, set_ids, board_uuid)
     VALUES (${userId}, ${serial}, 'kilter', 1, 10, '1,20', ${boardUuid})
-    ON CONFLICT (user_id, serial_number) DO UPDATE SET board_uuid = EXCLUDED.board_uuid
+    ON CONFLICT (user_id, board_name, serial_number) DO UPDATE SET board_uuid = EXCLUDED.board_uuid
   `);
 }
 
@@ -99,13 +100,34 @@ async function cleanup(): Promise<void> {
   await db.execute(sql`DELETE FROM users WHERE id IN (${CLONE_OWNER_ID}, ${OTHER_USER_ID})`);
 }
 
-describe('merge-clone-boards', () => {
+describe('merge-clone-boards isolated legacy algorithms (not production safety)', () => {
   beforeEach(async () => {
     await cleanup();
     await seedUsers();
   });
 
   afterEach(cleanup);
+
+  it.each([['--backfill-serials', '--apply'], ['--merge', '--apply'], ['--apply']])(
+    'rejects held apply mode before database or Redis calls: %j',
+    async (...argv) => {
+      const execute = vi.spyOn(db, 'execute');
+      const select = vi.spyOn(db, 'select');
+      const update = vi.spyOn(db, 'update');
+      const transaction = vi.spyOn(db, 'transaction');
+      const redisConnect = vi.spyOn(Redis.prototype, 'connect');
+      try {
+        await expect(runMerge(argv)).rejects.toThrow('--apply is disabled');
+        expect(execute).not.toHaveBeenCalled();
+        expect(select).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+        expect(redisConnect).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    },
+  );
 
   describe('findClonePairs', () => {
     it('pairs a private duplicate with the gym listing a climber linked the serial to', async () => {

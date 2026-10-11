@@ -1177,7 +1177,15 @@ export function BluetoothProvider({
         pendingPresenceResolveConnectionRef.current = connection;
         const resolvePromise =
           serial && serial.length > 0
-            ? resolveAndBindBoard({ serial, boardType, layoutId, sizeId, setIds, advertisedBoardType, selectedBoardUuid: boardUuidRef.current ?? null })
+            ? resolveAndBindBoard({
+                serial,
+                boardType,
+                layoutId,
+                sizeId,
+                setIds,
+                advertisedBoardType,
+                selectedBoardUuid: boardUuidRef.current ?? null,
+              })
             : resolveAndBindBoardByConfig({ boardType, layoutId, sizeId, setIds });
         void resolvePromise
           .then((resolved) => {

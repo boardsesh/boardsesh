@@ -242,12 +242,7 @@ export async function findSelectedBoardForConnect(
       gymId: dbSchema.userBoards.gymId,
     })
     .from(dbSchema.userBoards)
-    .where(
-      and(
-        eq(dbSchema.userBoards.uuid, boardUuid),
-        isNull(dbSchema.userBoards.deletedAt),
-      ),
-    )
+    .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
   if (!board) return undefined;
   if (!(await canAccessResourceWithoutLink('board', board.uuid, userId))) return undefined;
@@ -355,8 +350,13 @@ export async function findChosenBoardForSerial(
     const chosen = await findChosenBoardForSerialLocked(tx, userId, serial, advertisedBoardType);
     // Recheck gym precedence while the same serial is fenced. A claim between
     // an earlier read and this pointer lookup must not revive an unbound hint.
-    if (chosen && connectedConfig && chosen.board.serialNumber !== serial &&
-      await hasSyncedGymBoardForSerial(serial, connectedConfig, tx, advertisedBoardType)) return undefined;
+    if (
+      chosen &&
+      connectedConfig &&
+      chosen.board.serialNumber !== serial &&
+      (await hasSyncedGymBoardForSerial(serial, connectedConfig, tx, advertisedBoardType))
+    )
+      return undefined;
     return chosen;
   });
 

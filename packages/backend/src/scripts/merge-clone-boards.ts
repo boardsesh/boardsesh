@@ -9,15 +9,17 @@
 // history and ticks under two board ids — and the map finder kept pointing at
 // the gym's own (empty) listing.
 //
-// Two independent phases, both dry-run by default:
+// Report-only discovery. ANY --apply is disabled until the legacy writer is
+// integrated with current board privacy, locking, tombstone and reference rules.
+// The isolated legacy helper tests do not establish production safety.
 //
-//   --backfill-serials  Stamp a recoverable serial onto the gym board that owns
-//                       it, learnt from `user_board_serials` links. Safe on its
-//                       own, moves no rows, and stops NEW clones appearing for
-//                       walls whose serial we already know.
+// Two discovery phases:
 //
-//   --merge             Repoint every clone's history/ticks/follows onto the
-//                       gym board and soft-delete the clone.
+//   --backfill-serials  Report recoverable gym-board serials learnt from
+//                       `user_board_serials` links; never stamp them.
+//
+//   --merge             Report candidate clone/gym pairs and row counts;
+//                       never repoint history or soft-delete boards.
 //
 // The two phases barely overlap, and NOT in the direction you'd assume:
 // `findSerialBackfills` skips any serial another active board already carries,
@@ -33,11 +35,10 @@
 //
 // Run:
 //   node --import tsx packages/backend/src/scripts/merge-clone-boards.ts --backfill-serials
-//   node --import tsx packages/backend/src/scripts/merge-clone-boards.ts --backfill-serials --apply
 //   node --import tsx packages/backend/src/scripts/merge-clone-boards.ts --merge --report pairs.csv
-//   node --import tsx packages/backend/src/scripts/merge-clone-boards.ts --merge --apply
 //
-// Needs DB_URL, and REDIS_URL for `--merge --apply` (see resetBoardCaches).
+// Report discovery needs the configured database. --apply is disabled;
+// no Redis connection or cache reset is performed by the report CLI.
 
 import { pathToFileURL } from 'node:url';
 import { writeFileSync } from 'node:fs';
@@ -48,7 +49,8 @@ import { closePool } from '@boardsesh/db/client';
 import { rowsOf } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { SYSTEM_BOARD_OWNER_ID, normalizeSetIds } from '../graphql/resolvers/board-presence/shared';
+import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
+import { normaliseSetIds } from '@boardsesh/board-config';
 import { logger } from '../utils/logger';
 
 type Database = typeof db;
@@ -244,7 +246,7 @@ export async function findClonePairs(database: Database | Transaction = db): Pro
         row.cloneBoardType === row.targetBoardType &&
         Number(row.cloneLayoutId) === Number(row.targetLayoutId) &&
         Number(row.cloneSizeId) === Number(row.targetSizeId) &&
-        normalizeSetIds(row.cloneSetIds) === normalizeSetIds(row.targetSetIds),
+        normaliseSetIds(row.cloneSetIds) === normaliseSetIds(row.targetSetIds),
     )
     .map((row) => ({
       cloneId: Number(row.cloneId),
@@ -481,14 +483,20 @@ function writeReport(path: string, pairs: ClonePair[]): void {
 }
 
 export async function runMerge(argv: string[]): Promise<void> {
-  const apply = argv.includes('--apply');
+  // Refuse before discovery queries, writes, report output or Redis connection.
+  if (argv.includes('--apply')) {
+    throw new Error(
+      'Board identity repair is report-only: --apply is disabled pending current-schema privacy, locking, tombstone and reference review',
+    );
+  }
+  const apply = false;
   const doBackfill = argv.includes('--backfill-serials');
   const doMerge = argv.includes('--merge');
   const reportIndex = argv.indexOf('--report');
   const reportPath = reportIndex >= 0 ? argv[reportIndex + 1] : null;
 
   if (!doBackfill && !doMerge) {
-    logger.error('[merge-clone-boards] pass --backfill-serials and/or --merge (add --apply to write)');
+    logger.error('[merge-clone-boards] pass --backfill-serials and/or --merge (report-only; --apply is disabled)');
     process.exitCode = 1;
     return;
   }
@@ -533,7 +541,9 @@ export async function runMerge(argv: string[]): Promise<void> {
           `(serial ${pair.serialNumber}, ${counts?.events ?? '?'} events, ${counts?.ticks ?? '?'} ticks)`,
       );
     }
-    logger.info('[merge-clone-boards] dry run complete — re-run with --apply to write');
+    logger.info(
+      '[merge-clone-boards] report complete — --apply remains disabled pending current-schema privacy and locking review',
+    );
     return;
   }
 

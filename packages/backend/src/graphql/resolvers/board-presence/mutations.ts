@@ -420,16 +420,24 @@ async function resolveSelectedBoardForSerial(
       hasSyncedGymBoardForSerial(serial, config, tx, advertisedBoardType),
     ]);
     if (!selected) return undefined;
-    if (gymListingCarriesSerial && !(selected.serialNumber === serial && isSyncedGymListing(selected))) return undefined;
+    if (gymListingCarriesSerial && !(selected.serialNumber === serial && isSyncedGymListing(selected)))
+      return undefined;
     let board = selected;
     if (selected.serialNumber === null && canClaimSerialForBoard(selected, userId)) {
       try {
         // A per-owner serial collision must roll back only the claim, leaving
         // the parent transaction usable for the selected-board pointer.
         const updated = await tx.transaction(async (claimTx) => {
-          const [claimed] = await claimTx.update(dbSchema.userBoards)
+          const [claimed] = await claimTx
+            .update(dbSchema.userBoards)
             .set({ serialNumber: serial, updatedAt: new Date() })
-            .where(and(eq(dbSchema.userBoards.id, selected.id), isNull(dbSchema.userBoards.serialNumber), isNull(dbSchema.userBoards.deletedAt)))
+            .where(
+              and(
+                eq(dbSchema.userBoards.id, selected.id),
+                isNull(dbSchema.userBoards.serialNumber),
+                isNull(dbSchema.userBoards.deletedAt),
+              ),
+            )
             .returning({ serialNumber: dbSchema.userBoards.serialNumber });
           return claimed;
         });
@@ -481,7 +489,13 @@ async function resolveSerialForUser(
   // type is a different physical controller, not a candidate.
   const { advertisedBoardType, selectedBoardUuid } = options;
   if (selectedBoardUuid) {
-    const selected = await resolveSelectedBoardForSerial(userId, serial, selectedBoardUuid, config, advertisedBoardType);
+    const selected = await resolveSelectedBoardForSerial(
+      userId,
+      serial,
+      selectedBoardUuid,
+      config,
+      advertisedBoardType,
+    );
     if (selected) return { kind: 'board', board: selected };
   }
   const chosen = await findChosenBoardForSerial(userId, serial, advertisedBoardType, config);
@@ -579,7 +593,9 @@ export const boardPresenceMutations = {
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
     const validAdvertisedBoardType = validateAdvertisedBoardType(advertisedBoardType);
-    const validSelectedBoardUuid = selectedBoardUuid ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid') : null;
+    const validSelectedBoardUuid = selectedBoardUuid
+      ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid')
+      : null;
     const userId = ctx.userId!;
 
     // Old clients can't prompt. The auto-pick's final candidate read and
@@ -636,7 +652,9 @@ export const boardPresenceMutations = {
     const validSerial = validateInput(BoardSerialSchema, serial, 'serial');
     const config = validateInput(BoardPresenceConfigInputSchema, { boardType, layoutId, sizeId, setIds }, 'input');
     const validAdvertisedBoardType = validateAdvertisedBoardType(advertisedBoardType);
-    const validSelectedBoardUuid = selectedBoardUuid ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid') : null;
+    const validSelectedBoardUuid = selectedBoardUuid
+      ? validateInput(UUIDSchema, selectedBoardUuid, 'selectedBoardUuid')
+      : null;
     const userId = ctx.userId!;
 
     const resolution = await resolveSerialForUser(userId, validSerial, config, {

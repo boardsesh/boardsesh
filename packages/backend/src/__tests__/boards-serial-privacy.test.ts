@@ -698,6 +698,7 @@ describe('recordBoardSerial', () => {
     const { onConflictDoUpdate } = setupRecordSeq([
       [],
       [{ uuid: OWNED_UUID }],
+      [{ uuid: OWNED_UUID }],
       [recordingRow({ boardUuid: OWNED_UUID, boardSlug: 'my-board' })],
     ]);
 

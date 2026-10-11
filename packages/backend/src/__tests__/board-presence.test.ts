@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vite-plus/test';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import { inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
 import type {
@@ -30,6 +30,7 @@ import { socialBoardMutations, socialBoardQueries } from '../graphql/resolvers/s
 import {
   allocateBoardPresenceSeq,
   claimSerialForBoard,
+  findSelectedBoardForConnect,
   getBoardSeqFloor,
   type SelectedConnectBoard,
 } from '../graphql/resolvers/board-presence/shared';
@@ -38,6 +39,7 @@ import { buildTickBoardLockQuery, tickMutations } from '../graphql/resolvers/tic
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 import { logger } from '../utils/logger';
 import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
+import { lockBoardSerialWrite } from '../graphql/resolvers/board-serial-write-lock';
 
 // Board presence is always-on (the BOARD_PRESENCE_ENABLED env gate and the
 // PostHog flag were removed when the feature went GA), so the suite needs no
@@ -936,7 +938,7 @@ describe('board-presence resolvers', () => {
         await db.execute(sql`
           INSERT INTO user_board_serials (user_id, serial_number, board_name, layout_id, size_id, set_ids, board_uuid)
           VALUES (${TEST_USER_ID}, ${serial}, 'kilter', 1, 10, '1,2', ${boardUuid})
-          ON CONFLICT (user_id, serial_number) DO UPDATE SET board_uuid = EXCLUDED.board_uuid
+          ON CONFLICT (user_id, board_name, serial_number) DO UPDATE SET board_uuid = EXCLUDED.board_uuid
         `);
       }
 
@@ -1431,6 +1433,200 @@ describe('board-presence resolvers', () => {
         // Stamping a serial here would redirect it for every climber who
         // connects afterwards, so only own/system boards may be claimed.
         expect(await serialOf(strangersBoard.id)).toBeNull();
+      });
+
+      it('rejects a legacy-public selection with a private override without remembering it', async () => {
+        const serial = `SELPRIVATE-${Date.now()}`;
+        const board = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,8',
+          name: 'Private Override Wall',
+          isPublic: true,
+        });
+        await db.insert(dbSchema.resourcePrivacy).values({
+          kind: 'board',
+          resourceId: board.uuid,
+          ownerId: SECOND_USER_ID,
+          audience: 'only_me',
+        });
+        try {
+          expect(
+            await findSelectedBoardForConnect(TEST_USER_ID, board.uuid, {
+              boardType: 'kilter',
+              layoutId: 1,
+              sizeId: 10,
+              setIds: '1,8',
+            }),
+          ).toBeUndefined();
+          const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+            undefined,
+            {
+              serial,
+              boardType: 'kilter',
+              layoutId: 1,
+              sizeId: 10,
+              setIds: '1,8',
+              selectedBoardUuid: board.uuid,
+            },
+            authCtx(),
+          );
+          expect(result.board?.boardId).not.toBe(board.id);
+          expect(await serialOf(board.id)).toBeNull();
+          expect(await linkedBoardUuid(serial)).not.toBe(board.uuid);
+        } finally {
+          await db
+            .delete(dbSchema.resourcePrivacy)
+            .where(
+              and(eq(dbSchema.resourcePrivacy.kind, 'board'), eq(dbSchema.resourcePrivacy.resourceId, board.uuid)),
+            );
+        }
+      });
+
+      it('admits an approved account grant despite a private legacy board flag', async () => {
+        const serial = `SELGRANT-${Date.now()}`;
+        const board = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,8',
+          name: 'Invited Wall',
+          isPublic: false,
+        });
+        await db.insert(dbSchema.resourcePrivacy).values({
+          kind: 'board',
+          resourceId: board.uuid,
+          ownerId: SECOND_USER_ID,
+          audience: 'invite_only',
+        });
+        await db.insert(dbSchema.resourceGrants).values({
+          kind: 'board',
+          resourceId: board.uuid,
+          userId: TEST_USER_ID,
+          status: 'approved',
+        });
+        try {
+          const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+            undefined,
+            {
+              serial,
+              boardType: 'kilter',
+              layoutId: 1,
+              sizeId: 10,
+              setIds: '1,8',
+              selectedBoardUuid: board.uuid,
+            },
+            authCtx(),
+          );
+          expect(result.board?.boardId).toBe(board.id);
+          expect(await linkedBoardUuid(serial)).toBe(board.uuid);
+          expect(await serialOf(board.id)).toBeNull();
+        } finally {
+          await db
+            .delete(dbSchema.resourceGrants)
+            .where(and(eq(dbSchema.resourceGrants.kind, 'board'), eq(dbSchema.resourceGrants.resourceId, board.uuid)));
+          await db
+            .delete(dbSchema.resourcePrivacy)
+            .where(
+              and(eq(dbSchema.resourcePrivacy.kind, 'board'), eq(dbSchema.resourcePrivacy.resourceId, board.uuid)),
+            );
+        }
+      });
+
+      it('remembers the selection after a duplicate serial claim rolls back its savepoint', async () => {
+        const serial = `SELDUPE-${Date.now()}`;
+        const original = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,8',
+          name: 'Already Bound Wall',
+        });
+        const selected = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,8',
+          name: 'Picked Wall',
+        });
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          {
+            serial,
+            boardType: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,8',
+            selectedBoardUuid: selected.uuid,
+          },
+          authCtx(),
+        );
+        expect(result.board?.boardId).toBe(selected.id);
+        expect(await linkedBoardUuid(serial)).toBe(selected.uuid);
+        expect(await serialOf(selected.id)).toBeNull();
+        expect(await serialOf(original.id)).toBe(serial);
+      });
+
+      it('rechecks a gym serial claim committed while the selected connect waits', async () => {
+        const serial = `SELWRITER-${Date.now()}`;
+        const selected = await insertRealUuidBoard({
+          ownerId: TEST_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,8',
+          name: 'Travelling Template',
+        });
+        const gym = await insertGymListing({
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '8,1',
+          name: 'Synced Wall',
+        });
+        const writerReady = createValueBarrier<number>();
+        const releaseWriter = createBarrier();
+        const writer = db.transaction(async (transaction) => {
+          await transaction.execute(sql`SELECT id FROM user_boards WHERE id = ${gym.id} FOR UPDATE`);
+          await lockBoardSerialWrite(transaction, serial);
+          await transaction.execute(sql`UPDATE user_boards SET serial_number = ${serial} WHERE id = ${gym.id}`);
+          const [session] = await transaction.execute(sql`SELECT pg_backend_pid() AS pid`);
+          writerReady.release(Number((session as { pid: number }).pid));
+          await releaseWriter.promise;
+        });
+        handleLater(writer);
+        let connect: ReturnType<typeof boardPresenceMutations.resolveBoardCandidatesForSerial> | undefined;
+        try {
+          const writerPid = await writerReady.promise;
+          connect = boardPresenceMutations.resolveBoardCandidatesForSerial(
+            undefined,
+            {
+              serial,
+              boardType: 'kilter',
+              layoutId: 1,
+              sizeId: 10,
+              setIds: '1,8',
+              advertisedBoardType: 'kilter',
+              selectedBoardUuid: selected.uuid,
+            },
+            authCtx(),
+          );
+          handleLater(connect);
+          await waitForSessionBlockedBy(writerPid);
+          releaseWriter.release();
+          await writer;
+          expect((await connect).board?.boardId).toBe(gym.id);
+          expect(await linkedBoardUuid(serial)).toBe(gym.uuid);
+          expect(await serialOf(selected.id)).toBeNull();
+        } finally {
+          releaseWriter.release();
+          await Promise.allSettled([writer, connect]);
+        }
       });
 
       it('legacy resolveBoardForSerial honours the selection too', async () => {
