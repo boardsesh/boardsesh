@@ -46,6 +46,7 @@ import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../hooks/use-privacy-scoped-state';
 import { sanitizeClimbTarget } from '../lib/queue-privacy';
+import { getPrivacyCredentialGeneration, getPrivacyRevocationGeneration } from '../lib/privacy/privacy-cache';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
@@ -305,7 +306,7 @@ type PlayDrawerRouteValue = {
   onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   /** Run from the route's unmount cleanup: clears the board override + open
    *  target so the next open starts clean. */
-  onPlayDrawerClosed: () => void;
+  onPlayDrawerClosed: (consumedNonce: number | null) => void;
   /** Report that the route has applied this target, so the close above knows
    *  which one it is allowed to clear. */
   onPlayDrawerTargetConsumed: (nonce: number) => void;
@@ -353,11 +354,29 @@ export function usePlayDrawerRoute(): PlayDrawerRouteValue {
 export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const navigationRef = useNavigationContainerRef();
   const composerCredentialScope = usePrivacyCredentialScope();
+  const openerPrivacyGeneration = getPrivacyRevocationGeneration();
   // The climb to show in the player route, with a per-open nonce so a re-tap
   // while `/play` is already up still re-applies (navigate is a no-op then). The
   // route consumes this via usePlayDrawerRoute and runs PlayDrawer's openDrawer.
   const [playTarget, setPlayTarget] = usePrivacyScopedState<PlayDrawerOpenTarget>();
   const playTargetNonceRef = useRef(0);
+  const playTargetRef = useRef(playTarget);
+  playTargetRef.current = playTarget;
+  const navigationRequestedTargetRef = useRef<{
+    nonce: number;
+    privacyGeneration: number;
+    credentialGeneration: number;
+  } | null>(null);
+  const replayFrameRef = useRef<number | null>(null);
+  const replayedTargetNonceRef = useRef<number | null>(null);
+  const hostMountedRef = useRef(false);
+  useEffect(() => {
+    hostMountedRef.current = true;
+    return () => {
+      hostMountedRef.current = false;
+      if (replayFrameRef.current != null) cancelAnimationFrame(replayFrameRef.current);
+    };
+  }, []);
   // See PreviewedClimbContext. Set when an open is preview-shaped (the caller
   // pinned a queue item the queue never receives), cleared when an open commits —
   // from then on `activeClimbUuid` is accurate and tracks onward swipes too.
@@ -388,7 +407,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // `onPlayDrawerClosed` for why "consumed" and not "latest" is the right test.
   const consumedPlayTargetNonceRef = useRef(0);
   const onPlayDrawerTargetConsumed = useCallback((nonce: number) => {
+    if (nonce < consumedPlayTargetNonceRef.current) return;
     consumedPlayTargetNonceRef.current = nonce;
+    if (navigationRequestedTargetRef.current?.nonce === nonce && replayFrameRef.current != null) {
+      cancelAnimationFrame(replayFrameRef.current);
+      replayFrameRef.current = null;
+    }
   }, []);
   // iPad regular width shows the PlayDrawer inline in the right-column pane
   // (IpadPlayPane) instead of the full-screen `/play` route. `paneTarget` is the
@@ -574,10 +598,31 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const myBoardsRef = useRef(myBoardsConn);
   myBoardsRef.current = myBoardsConn;
 
+  const navigateToPlayer = useCallback(() => {
+    if (Platform.OS !== 'web' && navigationRef.isReady()) {
+      const rootState = navigationRef.getRootState();
+      if (rootState.routeNames.some((routeName) => routeName === 'play')) {
+        navigationRef.dispatch({ type: 'NAVIGATE', target: rootState.key, payload: { name: 'play' } });
+        return;
+      }
+    }
+    router.navigate('/play');
+  }, [navigationRef]);
+
   const openPlayDrawer = useCallback(
     (climb: Climb, options?: OpenPlayDrawerOptions) => {
+      if (
+        openerPrivacyGeneration !== getPrivacyRevocationGeneration() ||
+        composerCredentialScope !== getPrivacyCredentialGeneration()
+      )
+        return;
       // Pull `boardConfig` out so it doesn't reach the open target.
       const { boardConfig: override, navigate = true, ...openOptions } = options ?? {};
+      if (replayFrameRef.current != null) {
+        cancelAnimationFrame(replayFrameRef.current);
+        replayFrameRef.current = null;
+      }
+      navigationRequestedTargetRef.current = null;
       // Set the board override BEFORE navigating so the route reads the right board
       // from `activeBoardConfig` (reactive) on mount — no requestAnimationFrame /
       // pending-replay dance. Only set an override that genuinely differs from the
@@ -601,22 +646,22 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // Stash the target (bumped nonce) and navigate. When `/play` is already up the
       // navigate is a no-op, but the new nonce re-applies the target in place.
       playTargetNonceRef.current += 1;
-      setPlayTarget({ climb, options: openOptions, nonce: playTargetNonceRef.current });
+      const target = { climb, options: openOptions, nonce: playTargetNonceRef.current };
+      playTargetRef.current = target;
+      setPlayTarget(target);
       if (navigate) {
+        navigationRequestedTargetRef.current = {
+          nonce: target.nonce,
+          privacyGeneration: getPrivacyRevocationGeneration(),
+          credentialGeneration: getPrivacyCredentialGeneration(),
+        };
         // This is a known root-stack route. Dispatch it in the tap's batch:
         // Expo's imperative URL queue otherwise waits for a provider commit
         // before its passive effect dispatches the navigation action.
-        if (Platform.OS !== 'web' && navigationRef.isReady()) {
-          const rootState = navigationRef.getRootState();
-          if (rootState.routeNames.some((routeName) => routeName === 'play')) {
-            navigationRef.dispatch({ type: 'NAVIGATE', target: rootState.key, payload: { name: 'play' } });
-            return;
-          }
-        }
-        router.navigate('/play');
+        navigateToPlayer();
       }
     },
-    [navigationRef, setPaneTarget, setPlayTarget],
+    [navigateToPlayer, setPaneTarget, setPlayTarget, openerPrivacyGeneration, composerCredentialScope],
   );
 
   // Drop the pane's selected climb when the pane goes away (a resize into compact,
@@ -629,32 +674,64 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // Reset on route unmount (close): drop the board override so non-drawer surfaces
   // snap back to the stored board, and clear the open target so a stray remount
   // can't replay a stale climb.
-  const onPlayDrawerClosed = useCallback(() => {
-    // A target written since the last one the route applied belongs to a tap the
-    // route has not served yet (see below). Its board override was set in the
-    // same `openPlayDrawer` call and the next mount reads the board from
-    // `activeBoardConfig`, so the override has to survive with it — cleared here,
-    // a dismiss-window tap on a climb from another board would replay against
-    // the stored board with no way back to the one it was tapped on.
-    const targetPending = playTargetNonceRef.current !== consumedPlayTargetNonceRef.current;
-    if (!targetPending) setBoardConfigOverride(null);
-    // Only drop the target this close was actually for. The reset runs from the
-    // route's UNMOUNT cleanup — the end of the dismiss animation — and the list
-    // underneath is live and tappable for that whole window (and for the pull-down
-    // that precedes it). A tap landing there sets a fresh target and finds
-    // `router.navigate('/play')` a no-op because the route is still in the stack,
-    // so an unguarded reset then nulls the target that tap just wrote and the
-    // drawer comes back on the previous climb. It reads as a dead tap.
-    //
-    // So the reset clears only a target the route actually CONSUMED. One that was
-    // written but never applied belongs to a tap that has not been served yet —
-    // replaying it on the next mount is the whole point, not a stale-climb bug.
-    // Previously the race was survivable by accident: every opener also wrote the
-    // queue, so the drawer still landed on the tapped climb even when the target
-    // was lost. Preview-shaped opens do not write the queue, which is what turned
-    // a latent race into a reproducible dead tap.
-    setPlayTarget((current) => (current && current.nonce === consumedPlayTargetNonceRef.current ? null : current));
-  }, [setPlayTarget]);
+  const onPlayDrawerClosed = useCallback(
+    (consumedNonce: number | null) => {
+      // A target written since the last one the route applied belongs to a tap the
+      // route has not served yet (see below). Its board override was set in the
+      // same `openPlayDrawer` call and the next mount reads the board from
+      // `activeBoardConfig`, so the override has to survive with it — cleared here,
+      // a dismiss-window tap on a climb from another board would replay against
+      // the stored board with no way back to the one it was tapped on.
+      const targetPending = playTargetRef.current != null && playTargetNonceRef.current !== consumedNonce;
+      if (!targetPending && !usesDetailPaneRef.current) setBoardConfigOverride(null);
+      // Only drop the target this close was actually for. The reset runs from the
+      // route's UNMOUNT cleanup — the end of the dismiss animation — and the list
+      // underneath is live and tappable for that whole window (and for the pull-down
+      // that precedes it). A tap landing there sets a fresh target and finds
+      // `router.navigate('/play')` a no-op because the route is still in the stack,
+      // so an unguarded reset then nulls the target that tap just wrote and the
+      // drawer comes back on the previous climb. It reads as a dead tap.
+      //
+      // So the reset clears only a target the route actually CONSUMED. One that was
+      // written but never applied belongs to a tap that has not been served yet —
+      // replaying it on the next mount is the whole point, not a stale-climb bug.
+      // Previously the race was survivable by accident: every opener also wrote the
+      // queue, so the drawer still landed on the tapped climb even when the target
+      // was lost. Preview-shaped opens do not write the queue, which is what turned
+      // a latent race into a reproducible dead tap.
+      // Capture the closing route's owner before the asynchronous state updater;
+      // another mounted route may already have consumed the newer global target.
+      setPlayTarget((current) => (current && current.nonce === consumedNonce ? null : current));
+      const requested = navigationRequestedTargetRef.current;
+      if (
+        !targetPending ||
+        !requested ||
+        requested.nonce === consumedPlayTargetNonceRef.current ||
+        requested.nonce === replayedTargetNonceRef.current ||
+        usesDetailPaneRef.current
+      )
+        return;
+      if (replayFrameRef.current != null) cancelAnimationFrame(replayFrameRef.current);
+      replayedTargetNonceRef.current = requested.nonce;
+      replayFrameRef.current = requestAnimationFrame(() => {
+        replayFrameRef.current = null;
+        if (
+          !hostMountedRef.current ||
+          usesDetailPaneRef.current ||
+          navigationRequestedTargetRef.current !== requested ||
+          playTargetRef.current?.nonce !== requested.nonce ||
+          consumedPlayTargetNonceRef.current === requested.nonce ||
+          requested.privacyGeneration !== getPrivacyRevocationGeneration() ||
+          requested.credentialGeneration !== getPrivacyCredentialGeneration()
+        )
+          return;
+        // The old /play has unmounted. Serve the pending tap without minting a
+        // target nonce, redoing its commit, or changing its board override.
+        navigateToPlayer();
+      });
+    },
+    [navigateToPlayer, setPlayTarget],
+  );
 
   // Apply an angle change made from the play drawer's angle selector.
   const handleAngleChange = useCallback(

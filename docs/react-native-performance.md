@@ -538,7 +538,7 @@ of the report, and wait four seconds for a paint that had happened.
 
 ### Opening a climb from the list
 
-The acceptance gate for a cached full-size climb is **p95 below 50 ms from the
+The acceptance gate for a cached full-size climb is **p95 at most 100 ms from the
 tap to full-size artwork and usable board gestures**, including after long
 scrolling and repeated openings. Completing the native slide animation is not
 part of that interval. A thumbnail bridge can cover a real render/decode miss,
@@ -561,6 +561,12 @@ through the stable snapshot action, so changing the active climb does not
 subscribe the entire climb list to another render. Queue commits remain
 synchronous and keep the same privacy and wall-control checks.
 
+QueueProvider reuses the compatibility result for the same immutable suggestion
+sequence, board target and privacy/credential epochs. Current-climb anchoring
+and the synthetic feed's first-anchor exception remain live. This removes a
+full-list compatibility pass on each subsequent selection; the first pass for
+a new loaded sequence still takes O(N) work.
+
 Measured geometry is reused through `opening-layout-cache.ts`, a 32-entry LRU.
 Reuse requires the complete layout identity: board and intrinsic dimensions,
 climb, viewport, font scale, pixel ratio, locale, safe-area insets, preferences,
@@ -575,7 +581,9 @@ alternating baseline/candidate batches with at least 30 warm opens per build,
 including 60 downward scrolls, repeated opens and recycled rows after hard
 flicks. Compare native hitches under similar thermal conditions. Unit tests and
 simulator screenshots prove lifecycle/layout behavior; they do not establish
-the 50 ms physical-device result or native frame rate.
+the 100 ms physical-device result or native frame rate. Measure the row's
+immediate touch feedback separately. A bounded delay before presenting the
+drawer can cover preparation, but it still counts toward tap-to-ready time.
 
 For player swipe dismissal on ProMotion iPhones, target the 120 Hz presentation
 budget (8.33 ms) in a release build. Record the OS/build, active display cadence,

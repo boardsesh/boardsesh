@@ -58,7 +58,11 @@ import { getHttpClient } from '../lib/graphql/client';
 import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
 import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../lib/privacy/privacy-cache';
+import {
+  getPrivacyCredentialGeneration,
+  getPrivacyRevocationGeneration,
+  subscribeToPrivacyRevocations,
+} from '../lib/privacy/privacy-cache';
 import {
   GET_SESSION_QUEUE_STATE,
   type SessionLiveStatsEvent,
@@ -117,10 +121,8 @@ import {
   type QueueReorderSource,
   type WidgetNavigationOptions,
 } from './queue/queue-contexts';
-import {
-  createBoardFeedSuggestionSource,
-  normalizeBoardSuggestionSource,
-} from '../lib/playlists/board-feed-suggestion-source';
+import { createBoardFeedSuggestionSource } from '../lib/playlists/board-feed-suggestion-source';
+import { createBoardSuggestionCompatibilityCache } from './queue/board-suggestion-compatibility-cache';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
@@ -419,18 +421,36 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // to a climb on the list and the track is live again.
   const currentClimbItemForSource = state.currentClimbQueueItem;
   const currentClimbForSource = currentClimbItemForSource?.climb;
+  const boardSuggestionCompatibilityCache = useMemo(createBoardSuggestionCompatibilityCache, []);
+  const anchoredSourceForBoard = useMemo(
+    () => anchoredSuggestionSource(rawPlaylistSuggestionSource, currentClimbItemForSource),
+    [rawPlaylistSuggestionSource, currentClimbItemForSource],
+  );
+  // Resolve the target each render: catalogue targets are stable, while spray
+  // resets/grant changes produce a new target through the registry's token.
+  const suggestionCompatibilityTarget =
+    anchoredSourceForBoard && activeBoard && anchoredSourceForBoard.boardKey === activeBoardKey
+      ? getPlaylistRenderBoardTarget({
+          boardName: activeBoard.boardType,
+          layoutId: activeBoard.layoutId,
+          sizeId: activeBoard.sizeId,
+          setIds: activeBoard.setIds,
+          angle: activeBoard.angle,
+        })
+      : null;
+  const suggestionPrivacyEpoch = getPrivacyRevocationGeneration();
+  const suggestionCredentialEpoch = getPrivacyCredentialGeneration();
   const playlistSuggestionSource = useMemo(() => {
-    const anchored = anchoredSuggestionSource(rawPlaylistSuggestionSource, currentClimbItemForSource);
+    const anchored = anchoredSourceForBoard;
     if (!anchored || !activeBoard || activeBoardKey == null) return anchored;
     if (anchored.boardKey !== activeBoardKey) return null;
-    const target = getPlaylistRenderBoardTarget({
-      boardName: activeBoard.boardType,
-      layoutId: activeBoard.layoutId,
-      sizeId: activeBoard.sizeId,
-      setIds: activeBoard.setIds,
-      angle: activeBoard.angle,
-    });
-    const normalized = normalizeBoardSuggestionSource(anchored, (climb) => canAddClimbToBoard(climb, target).ok);
+    if (!suggestionCompatibilityTarget) return anchored;
+    const normalized = boardSuggestionCompatibilityCache.normalize(
+      anchored,
+      suggestionCompatibilityTarget,
+      suggestionPrivacyEpoch,
+      suggestionCredentialEpoch,
+    );
     // Old mixed snapshots can also have a foreign current climb. Preserve its
     // position as an anchor, never as a successor, so the surviving list is reachable.
     if (
@@ -449,7 +469,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       });
     }
     return normalized;
-  }, [rawPlaylistSuggestionSource, activeBoard, activeBoardKey, currentClimbItemForSource, currentClimbForSource]);
+  }, [
+    anchoredSourceForBoard,
+    activeBoard,
+    activeBoardKey,
+    currentClimbForSource,
+    boardSuggestionCompatibilityCache,
+    suggestionCompatibilityTarget,
+    suggestionPrivacyEpoch,
+    suggestionCredentialEpoch,
+  ]);
   const playlistSuggestionSourceRef = useRef<PlaylistSuggestionSource | null>(null);
   playlistSuggestionSourceRef.current = playlistSuggestionSource;
 
@@ -540,6 +569,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         const snapshot = sanitizeQueueSnapshot(stateRef.current);
         stateRef.current = snapshot;
         playlistSuggestionSourceRef.current = null;
+        boardSuggestionCompatibilityCache.clear();
         pendingUnsyncedCurrentRef.current = null;
         dispatch({ type: 'UPDATE_QUEUE', payload: snapshot });
         setPlaylistSuggestionSourceState(null);
@@ -547,7 +577,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         setSessionRuntimeState(createEmptySessionRuntimeState());
         notify();
       }),
-    [resetQueueMutationLane],
+    [resetQueueMutationLane, boardSuggestionCompatibilityCache],
   );
   const privacyRevocationGeneration = useSyncExternalStore(
     subscribeToQueuePrivacy,

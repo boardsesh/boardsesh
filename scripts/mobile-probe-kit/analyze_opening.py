@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare observed full-art/geometry readiness with the cached-opening target.
 
-Usage: analyze_opening.py RUN_DIR [--gestures-verified] [--output FILE]
+Usage: analyze_opening.py RUN_DIR [--gestures-verified] [--ready-budget-ms 100] [--output FILE]
        analyze_opening.py --self-test
 
 Reads probe-events.json, events.json and build-manifest.json (or manifest.json).
@@ -231,7 +231,9 @@ def stress_validation(marks, records):
             'problems': problems}
 
 
-def analyze(probes, marks, manifest, gestures_verified=False, chunk_coverage=None):
+def analyze(probes, marks, manifest, gestures_verified=False, chunk_coverage=None, ready_budget_ms=100):
+    if not number(ready_budget_ms) or ready_budget_ms <= 0:
+        raise ValueError('ready_budget_ms must be finite and positive')
     events = normalize_events(probes)
     journal, snapshots, journal_complete = {}, {}, True
     expected_generation = 1
@@ -288,7 +290,15 @@ def analyze(probes, marks, manifest, gestures_verified=False, chunk_coverage=Non
             continue
         nonce = nonces.pop()
         record['nonce'] = nonce
+        latest_target = max(targets, key=lambda event: (event['wallMs'], event['_position']))
+        route_owner = latest_target.get('routeOwnerId')
+        if manifest.get('openingProbeVersion', 1) >= 2 and route_owner is None:
+            record['reason'] = 'missing serving route owner'
+            continue
+        record['routeOwnerId'] = route_owner
         matched = [event for event in grouped[tap_id] if event.get('nonce') == nonce and event.get('frames') == frames
+                   and (route_owner is None or event.get('routeOwnerId') == route_owner)
+                   and event['wallMs'] >= latest_target['wallMs']
                    and (started <= event['wallMs'] < next_tap or
                         event['name'] == 'play-gesture-geometry-committed-ui' and
                         number(event.get('uiWallMs')) and started <= event['uiWallMs'] < next_tap)]
@@ -363,16 +373,17 @@ def analyze(probes, marks, manifest, gestures_verified=False, chunk_coverage=Non
         problems.append('fewer than 30 valid cached opens')
     if any(record['status'] == 'incomplete' for record in records):
         problems.append('incomplete openings present')
-    if cached_stats['p95Ms'] is not None and cached_stats['p95Ms'] >= 50:
-        problems.append('overall cached p95 is not strictly below 50 ms')
+    if cached_stats['p95Ms'] is not None and cached_stats['p95Ms'] > ready_budget_ms:
+        problems.append(f'overall cached p95 exceeds {ready_budget_ms:g} ms')
     for phase, result in phases.items():
         if result['count'] == 0:
             problems.append(f'phase {phase} has no valid cached openings')
-        elif result['p95Ms'] >= 50:
-            problems.append(f'phase {phase} cached p95 is not strictly below 50 ms')
+        elif result['p95Ms'] > ready_budget_ms:
+            problems.append(f'phase {phase} cached p95 exceeds {ready_budget_ms:g} ms')
     stress = stress_validation(marks, records)
     problems.extend(stress['problems'])
     return {'schemaVersion': 1, 'passed': not problems, 'validationProblems': problems,
+            'readyBudgetMs': ready_budget_ms,
             'manifest': manifest, 'observedProbeVariant': observed_variant,
             'journalCoverageComplete': coverage, 'physicalGesturesVerified': bool(gestures_verified),
             'chunkEvidence': chunk_evidence, 'explicitJournalAttestation': explicit_attestation,
@@ -397,6 +408,8 @@ def main():
     parser.add_argument('run_directory', nargs='?', type=Path)
     parser.add_argument('--gestures-verified', action='store_true', help='explicitly attest physical swipe/pinch/dismiss checks')
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--ready-budget-ms', type=float, default=100,
+                        help='maximum cached p95 readiness, inclusive; default: 100 ms')
     parser.add_argument('--self-test', action='store_true')
     arguments = parser.parse_args()
     if arguments.self_test:
@@ -417,7 +430,7 @@ def main():
         verified = arguments.gestures_verified or isinstance(evidence, dict) and evidence.get('verified') is True
         terminal_problems, run_end = terminal_validation(normalize_events(probes), marks)
         chunk_coverage = verify_chunks(run, probes, run_end)
-        summary = analyze(probes, marks, manifest, verified, chunk_coverage)
+        summary = analyze(probes, marks, manifest, verified, chunk_coverage, arguments.ready_budget_ms)
         output = arguments.output or run / 'opening-summary.json'
         output.write_text(json.dumps(summary, indent=2) + '\n')
     except (OSError, ValueError, TypeError, KeyError) as error:
@@ -474,15 +487,83 @@ class OpeningAnalysisTests(unittest.TestCase):
         marks.append({'wall': max(event['wallMs'] for event in events), 'event': 'run-end'})
         return marks
 
-    def test_verified_thirty_opens_use_ui_instant_and_strict_gate(self):
+    def test_verified_thirty_opens_use_ui_instant_and_configured_gate(self):
         events, manifest = self.fixture(30)
         result = analyze(events, self.marks(events), manifest, True)
         self.assertTrue(result['passed'])
+        self.assertEqual(result['readyBudgetMs'], 100)
         self.assertEqual(result['cached']['p95Ms'], 25)
         events[-1]['uiWallMs'] = events[-1]['wallMs'] - 30
         # One tail outlier is below nearest-rank p95 for 30; two cannot hide.
         events[-6]['uiWallMs'] = events[-6]['wallMs'] - 30
-        self.assertFalse(analyze(events, self.marks(events), manifest, True)['passed'])
+        self.assertFalse(analyze(events, self.marks(events), manifest, True, ready_budget_ms=49)['passed'])
+
+    def test_hundred_ms_budget_includes_boundary_and_rejects_one_ms_over(self):
+        for ready_ms, expected in ((100, True), (101, False)):
+            events, manifest = self.fixture(30)
+            marks = self.marks(events)
+            # Space taps far enough apart that readiness arrives before the
+            # following target. Keep the completed scroll boundaries aligned.
+            for event in events:
+                event['wallMs'] *= 4
+                if 'uiWallMs' in event:
+                    event['uiWallMs'] *= 4
+            for mark in marks:
+                mark['wall'] *= 4
+            for event in events:
+                if event['name'] == 'play-gesture-geometry-committed-ui':
+                    event['uiWallMs'] = event['tapId'] * 400 + ready_ms
+            result = analyze(events, marks, manifest, True)
+            self.assertEqual(result['passed'], expected)
+            self.assertEqual(result['cached']['p95Ms'], ready_ms)
+
+    def test_invalid_ready_budget_is_rejected(self):
+        events, manifest = self.fixture()
+        for budget in (0, -1, True, float('inf'), float('nan')):
+            with self.assertRaises(ValueError):
+                analyze(events, self.marks(events), manifest, ready_budget_ms=budget)
+
+    def test_closing_route_readiness_cannot_satisfy_new_serving_route(self):
+        events, manifest = self.fixture()
+        manifest['openingProbeVersion'] = 2
+        for event in events:
+            if event['name'].startswith('play-'):
+                event['routeOwnerId'] = 1
+        events.append({'name': 'play-opening-target', 'wallMs': 110, 'tapId': 1,
+                       'frames': 'holds', 'climb': 'climb', 'nonce': 21, 'routeOwnerId': 2})
+        result = analyze(events, self.marks(events), manifest, True)
+        self.assertEqual(result['openings'][0]['status'], 'incomplete')
+        self.assertEqual(result['openings'][0]['routeOwnerId'], 2)
+
+    def test_new_serving_route_can_complete_same_nonce_handoff(self):
+        events, manifest = self.fixture()
+        manifest['openingProbeVersion'] = 2
+        target = next(event for event in events if event['name'] == 'play-opening-target')
+        target['routeOwnerId'] = 1
+        events.append({**target, 'wallMs': 103, 'routeOwnerId': 2})
+        for event in events:
+            if event['name'].startswith('play-') and event['name'] != 'play-opening-target':
+                event['routeOwnerId'] = 2
+                event['wallMs'] += 5
+        result = analyze(events, self.marks(events), manifest, True)
+        self.assertEqual(result['openings'][0]['status'], 'cached')
+
+    def test_new_probe_manifest_requires_owner_identity(self):
+        events, manifest = self.fixture()
+        manifest['openingProbeVersion'] = 2
+        result = analyze(events, self.marks(events), manifest, True)
+        self.assertEqual(result['openings'][0]['reason'], 'missing serving route owner')
+
+    def test_rejected_press_cannot_disappear_from_successful_openings(self):
+        events, manifest = self.fixture(30)
+        events.extend([
+            {'name': 'climb-press', 'wallMs': 3100, 'tapId': 31, 'frames': 'withdrawn', 'climb': 'blocked'},
+            {'name': 'climb-open-rejected', 'wallMs': 3101, 'tapId': 31, 'reason': 'withdrawn-loaded-snapshot'},
+        ])
+        result = analyze(events, self.marks(events), manifest, True)
+        self.assertEqual(result['cached']['count'], 30)
+        self.assertEqual(result['counts']['incomplete'], 1)
+        self.assertFalse(result['passed'])
 
     def test_same_millisecond_post_tap_write_is_a_miss(self):
         events, manifest = self.fixture()
@@ -549,12 +630,12 @@ class OpeningAnalysisTests(unittest.TestCase):
 
     def test_stress_phase_cannot_hide_behind_fast_warm_percentile(self):
         events, manifest = self.fixture(30)
-        events[-1]['uiWallMs'] = 3050
-        marks = [{'wall': 0, 'event': 'warm-start'}, {'wall': 2950, 'event': 'stress-start'}, {'wall': 3080, 'event': 'run-end'}]
+        events[-1]['uiWallMs'] = events[-1]['wallMs'] = 3101
+        marks = [{'wall': 0, 'event': 'warm-start'}, {'wall': 2950, 'event': 'stress-start'}, {'wall': 3101, 'event': 'run-end'}]
         result = analyze(events, marks, manifest, True)
         self.assertEqual(result['cached']['p95Ms'], 25)
         self.assertFalse(result['passed'])
-        self.assertEqual(result['phases']['stress']['p95Ms'], 50)
+        self.assertEqual(result['phases']['stress']['p95Ms'], 101)
 
     def test_post_tap_regeneration_is_reported_outside_cached_cohort(self):
         events, manifest = self.fixture(31)

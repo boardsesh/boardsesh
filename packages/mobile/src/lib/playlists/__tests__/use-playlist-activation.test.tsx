@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { useMemo, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import type { ReadyBoardArtSnapshot } from '../../board-render/ready-board-art';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
 import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
 import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
-import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { invalidatePrivacyQueries, invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
+import { toQueueClimbs, toSchemaClimb } from '../../climb-types';
+import type { SearchClimbsQueryResponse } from '../../graphql/operations';
 
 // The shared `usePlaylistClimbActivation` is exercised by @boardsesh/playlists-react's
 // own tests. Here we mock it to capture the options the mobile wrapper builds —
@@ -42,6 +48,8 @@ const mocks = vi.hoisted(() => ({
   choose: vi.fn<(options: { options: ReadonlyArray<{ value: string }> }) => Promise<string>>(),
   showQueueAddedSnackbar: vi.fn(),
   track: vi.fn(),
+  searchRequest:
+    vi.fn<(query: unknown, variables: { input: ClimbSearchInput }) => Promise<SearchClimbsQueryResponse>>(),
 }));
 
 const VIEW_ONLY_BOARD = { boardName: 'tension', layoutId: 9, sizeId: 5, setIds: '1,2', angle: 35 };
@@ -117,6 +125,15 @@ vi.mock('../../climb-to-queue-item', () => ({
     suggested: options?.suggested,
     climb,
   }),
+}));
+vi.mock('../../graphql/offline-request', () => ({
+  offlineAwareRequest: (query: unknown, variables: { input: ClimbSearchInput }) =>
+    mocks.searchRequest(query, variables),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => false }));
+vi.mock('../../../hooks/use-current-user-id', () => ({ useStoredUserId: () => ({ userId: null }) }));
+vi.mock('../../graphql/hooks/search-grade-source', () => ({
+  useGradeSourceSearchInput: (input: ClimbSearchInput) => input,
 }));
 
 /** The shape graphql-request 7.4.0 actually throws for a rate-limited operation. */
@@ -1736,6 +1753,42 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 });
 
 describe('privacy withdrawal during playlist activation', () => {
+  it('keeps large loaded-list taps usable as pages append without a privacy boundary', async () => {
+    const previousRows = Array.from({ length: 5000 }, (_, index) => makeClimb(`loaded-${index}`));
+    const options = { allClimbs: previousRows, viewOnlyBoard: VIEW_ONLY_BOARD };
+    const { result, rerender } = renderActivation(vi.fn(), options);
+    await act(() => result.current.activate(previousRows[4999]));
+    const nextRows = Array.from({ length: 5000 }, (_, index) => makeClimb(`appended-${index}`));
+    options.allClimbs = [...previousRows, ...nextRows];
+    rerender();
+    await act(() => result.current.activate(nextRows[4999]));
+    await act(() => result.current.activate({ ...previousRows[0] }));
+    expect(mocks.openPlayDrawer.mock.calls.map(([climb]) => climb.uuid)).toEqual([
+      'loaded-4999',
+      'appended-4999',
+      'loaded-0',
+    ]);
+  });
+
+  it('withdraws every row in a large mixed-generation array, including fresh same-UUID projections', async () => {
+    const previousRows = Array.from({ length: 5000 }, (_, index) => makeClimb(`loaded-${index}`));
+    const options = { allClimbs: previousRows, viewOnlyBoard: VIEW_ONLY_BOARD };
+    const { result, rerender } = renderActivation(vi.fn(), options);
+    await act(() => result.current.activate(previousRows[0]));
+    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    act(() => invalidatePrivacySnapshots());
+    const reauthorized = { ...previousRows[0], name: 'Fresh authorized projection' };
+    options.allClimbs = [reauthorized, ...previousRows.slice(1)];
+    rerender();
+    await act(() => result.current.activate(reauthorized));
+    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    // A complete replacement with fresh projections restores that exact UUID.
+    options.allClimbs = previousRows.map((climb) => ({ ...climb }));
+    rerender();
+    await act(() => result.current.activate(options.allClimbs[0]));
+    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps old loaded rows withdrawn across rerenders and shallow array copies', async () => {
     const withdrawn = makeClimb('withdrawn');
     const options = { allClimbs: [withdrawn], viewOnlyBoard: VIEW_ONLY_BOARD };
@@ -1874,5 +1927,124 @@ describe('privacy withdrawal during playlist activation', () => {
     expect(fetchPage).not.toHaveBeenCalled();
     expect(mocks.setQueue).not.toHaveBeenCalled();
     expect(mocks.appendQueueItems).not.toHaveBeenCalled();
+  });
+});
+
+describe('large climb-list query and activation privacy lifecycle', () => {
+  const input: ClimbSearchInput = {
+    boardName: 'kilter',
+    layoutId: 1,
+    sizeId: 2,
+    setIds: '3',
+    angle: 40,
+    pageSize: 100,
+  };
+
+  function response(climbs: Climb[]): SearchClimbsQueryResponse {
+    return { searchClimbs: { climbs: climbs.map(toSchemaClimb), hasMore: true } };
+  }
+
+  function renderLoadedSearch(rows: Climb[]) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    const pages = Array.from({ length: 50 }, (_, page) => response(rows.slice(page * 100, (page + 1) * 100)));
+    client.setQueryData(['infiniteSearchClimbs', { ...input, crossAngleStats: false }], {
+      pages,
+      pageParams: pages.map((_page, index) => index),
+    });
+    const hook = renderHook(
+      () => {
+        const query = useInfiniteSearchClimbs(input, true, { staleTime: Infinity });
+        const visibleClimbs = useMemo(
+          () => query.data?.pages.flatMap((page) => page.climbs) ?? [],
+          [query.data?.pages],
+        );
+        const allClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);
+        const activation = usePlaylistActivation({
+          sourceId: 'climblist',
+          allClimbs,
+          fetchPage: vi.fn(),
+          viewOnlyBoard: VIEW_ONLY_BOARD,
+          refreshErrorMessage: 'query lifecycle test',
+        });
+        return { query, allClimbs, activation, isFetchingNextPage: query.isFetchingNextPage };
+      },
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    return { ...hook, client };
+  }
+
+  it('reproduces dead taps after snapshot-only withdrawal and an identical authorized refetch', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+      const page = request.page ?? 0;
+      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+    });
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      expect(result.current.allClimbs).toHaveLength(5000);
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+      const previousProjection = result.current.allClimbs[0];
+      act(() => invalidatePrivacySnapshots());
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      // TanStack structurally shares the authorized identical response. The
+      // activation object's first-observed epoch is still the withdrawn one.
+      expect(mocks.searchRequest).toHaveBeenCalledTimes(50);
+      expect(result.current.allClimbs[0]).toBe(previousProjection);
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('restores fresh same-UUID taps after complete withdrawal while rejecting a canceled old next page', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    let releasePage: (page: SearchClimbsQueryResponse) => void = () => {};
+    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+      if ((request.page ?? 0) >= 50)
+        return new Promise((resolve) => {
+          releasePage = resolve;
+        });
+      const page = request.page ?? 0;
+      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+    });
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      expect(result.current.allClimbs).toHaveLength(5000);
+      const capturedProjection = result.current.allClimbs[0];
+      const capturedActivation = result.current.activation.activate;
+      expect(result.current.query.hasNextPage).toBe(true);
+      let nextPagePromise: Promise<unknown> | undefined;
+      act(() => {
+        nextPagePromise = result.current.query.fetchNextPage();
+      });
+      await waitFor(() => expect(result.current.isFetchingNextPage).toBe(true));
+      await act(async () => {
+        await invalidatePrivacyQueries(client);
+      });
+      await waitFor(() => expect(result.current.allClimbs).toHaveLength(100));
+      await act(async () => {
+        releasePage(response([makeClimb('withdrawn-next-page')]));
+        await nextPagePromise;
+      });
+      expect(result.current.allClimbs[0].uuid).toBe(capturedProjection.uuid);
+      expect(result.current.allClimbs[0]).not.toBe(capturedProjection);
+      expect(result.current.allClimbs.some((climb) => climb.uuid === 'withdrawn-next-page')).toBe(false);
+      await act(() => capturedActivation(capturedProjection));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      client.clear();
+    }
   });
 });

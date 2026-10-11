@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 
@@ -1182,6 +1182,7 @@ describe('DrawerHostProvider play drawer open target', () => {
       hosts.at(-1)?.openPlayDrawer(firstClimb);
     });
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(firstClimb));
+    const consumedNonce = routes.at(-1)!.playTarget!.nonce;
     // The route mounts and applies it.
     act(() => {
       routes.at(-1)?.onPlayDrawerTargetConsumed(routes.at(-1)!.playTarget!.nonce);
@@ -1194,7 +1195,7 @@ describe('DrawerHostProvider play drawer open target', () => {
       hosts.at(-1)?.openPlayDrawer(secondClimb);
     });
     act(() => {
-      routes.at(-1)?.onPlayDrawerClosed();
+      routes.at(-1)?.onPlayDrawerClosed(consumedNonce);
     });
 
     // The tap survives: the next mount serves it instead of swallowing it.
@@ -1219,6 +1220,7 @@ describe('DrawerHostProvider play drawer open target', () => {
       hosts.at(-1)?.openPlayDrawer(firstClimb);
     });
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(firstClimb));
+    const consumedNonce = routes.at(-1)!.playTarget!.nonce;
     act(() => {
       routes.at(-1)?.onPlayDrawerTargetConsumed(routes.at(-1)!.playTarget!.nonce);
     });
@@ -1230,7 +1232,7 @@ describe('DrawerHostProvider play drawer open target', () => {
     });
     await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).toMatchObject(otherBoard));
     act(() => {
-      routes.at(-1)?.onPlayDrawerClosed();
+      routes.at(-1)?.onPlayDrawerClosed(consumedNonce);
     });
 
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(secondClimb));
@@ -1257,10 +1259,150 @@ describe('DrawerHostProvider play drawer open target', () => {
       routes.at(-1)?.onPlayDrawerTargetConsumed(routes.at(-1)!.playTarget!.nonce);
     });
     act(() => {
-      routes.at(-1)?.onPlayDrawerClosed();
+      routes.at(-1)?.onPlayDrawerClosed(routes.at(-1)!.playTarget!.nonce);
     });
 
     await waitFor(() => expect(routes.at(-1)?.playTarget).toBeNull());
+  });
+
+  it('keeps a newer consumed route target when the old route cleans up', async () => {
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('old', 'old').climb as unknown as Climb));
+    const firstNonce = routes.at(-1)!.playTarget!.nonce;
+    act(() => routes.at(-1)?.onPlayDrawerTargetConsumed(firstNonce));
+    const otherBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+    act(() =>
+      hosts
+        .at(-1)
+        ?.openPlayDrawer(makeQueueItem('fresh', 'fresh').climb as unknown as Climb, { boardConfig: otherBoard }),
+    );
+    const secondNonce = routes.at(-1)!.playTarget!.nonce;
+    act(() => routes.at(-1)?.onPlayDrawerTargetConsumed(secondNonce));
+    act(() => routes.at(-1)!.onPlayDrawerClosed(firstNonce));
+    expect(routes.at(-1)?.playTarget?.nonce).toBe(secondNonce);
+    expect(routes.at(-1)?.activeBoardConfig).toMatchObject(otherBoard);
+  });
+
+  describe('pending target replay after native removal', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    function flushReplay() {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      act(() => callbacks.forEach((callback) => callback(0)));
+    }
+    function openPendingTarget(navigate = true) {
+      const hosts: Array<HostValue> = [];
+      const routes: Array<RouteValue> = [];
+      const view = renderHost(
+        (host) => hosts.push(host),
+        (route) => routes.push(route),
+      );
+      act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('first').climb as unknown as Climb));
+      const consumedNonce = routes.at(-1)!.playTarget!.nonce;
+      act(() => routes.at(-1)?.onPlayDrawerTargetConsumed(consumedNonce));
+      const otherBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+      act(() =>
+        hosts.at(-1)?.openPlayDrawer(makeQueueItem('fresh').climb as unknown as Climb, {
+          ...(navigate ? {} : { navigate: false as const }),
+          boardConfig: otherBoard,
+        }),
+      );
+      const pendingNonce = routes.at(-1)!.playTarget!.nonce;
+      routerNavigate.mockClear();
+      act(() => routes.at(-1)!.onPlayDrawerClosed(consumedNonce));
+      return { view, hosts, routes, consumedNonce, pendingNonce, otherBoard };
+    }
+    beforeEach(() => {
+      frames.clear();
+      frameId = 0;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.set(++frameId, callback);
+        return frameId;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (handle: number) => frames.delete(handle));
+    });
+    afterEach(() => {
+      cleanup();
+      vi.unstubAllGlobals();
+    });
+
+    it('replays one pending navigation without replacing its nonce or foreign-board override', () => {
+      const { routes, consumedNonce, pendingNonce, otherBoard } = openPendingTarget();
+      expect(frames.size).toBe(1);
+      act(() => routes.at(-1)!.onPlayDrawerClosed(consumedNonce));
+      expect(frames.size).toBe(1);
+      flushReplay();
+      expect(routerNavigate).toHaveBeenCalledExactlyOnceWith('/play');
+      expect(routes.at(-1)?.playTarget?.nonce).toBe(pendingNonce);
+      expect(routes.at(-1)?.activeBoardConfig).toMatchObject(otherBoard);
+      act(() => routes.at(-1)!.onPlayDrawerClosed(consumedNonce));
+      flushReplay();
+      expect(routerNavigate).toHaveBeenCalledTimes(1);
+    });
+
+    it('never auto-navigates a pending target written with navigate:false', () => {
+      const { routes, pendingNonce } = openPendingTarget(false);
+      expect(frames.size).toBe(0);
+      flushReplay();
+      expect(routerNavigate).not.toHaveBeenCalled();
+      expect(routes.at(-1)?.playTarget?.nonce).toBe(pendingNonce);
+    });
+
+    it('cancels replay when the pending target is served or superseded', () => {
+      const { hosts, routes, pendingNonce, consumedNonce } = openPendingTarget();
+      act(() => routes.at(-1)!.onPlayDrawerTargetConsumed(pendingNonce));
+      expect(frames.size).toBe(0);
+      flushReplay();
+      expect(routerNavigate).not.toHaveBeenCalled();
+      act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('newest').climb as unknown as Climb));
+      act(() => routes.at(-1)!.onPlayDrawerClosed(consumedNonce));
+      expect(frames.size).toBe(1);
+      act(() =>
+        hosts.at(-1)!.openPlayDrawer(makeQueueItem('supersedes').climb as unknown as Climb, { navigate: false }),
+      );
+      expect(frames.size).toBe(0);
+      routerNavigate.mockClear();
+      flushReplay();
+      expect(routerNavigate).not.toHaveBeenCalled();
+    });
+
+    it('does not replay a served newer opener after an older route reports late consumption', () => {
+      const { routes, pendingNonce, consumedNonce } = openPendingTarget();
+      act(() => routes.at(-1)!.onPlayDrawerTargetConsumed(pendingNonce));
+      act(() => routes.at(-1)!.onPlayDrawerTargetConsumed(consumedNonce));
+      act(() => routes.at(-1)!.onPlayDrawerClosed(consumedNonce));
+      expect(frames.size).toBe(0);
+      flushReplay();
+      expect(routerNavigate).not.toHaveBeenCalled();
+      expect(routes.at(-1)?.playTarget?.nonce).toBe(pendingNonce);
+    });
+
+    it.each(['privacy', 'credential'] as const)(
+      'rejects replay across a %s boundary before React rerenders',
+      (reason) => {
+        openPendingTarget();
+        act(() => {
+          invalidatePrivacySnapshots(reason);
+          flushReplay();
+        });
+        expect(routerNavigate).not.toHaveBeenCalled();
+      },
+    );
+
+    it('cancels the replay when the host unmounts', () => {
+      const { view } = openPendingTarget();
+      view.unmount();
+      expect(frames.size).toBe(0);
+      flushReplay();
+      expect(routerNavigate).not.toHaveBeenCalled();
+    });
   });
 });
 

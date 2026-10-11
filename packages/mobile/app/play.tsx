@@ -58,7 +58,9 @@ function PlayScreen() {
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const { systemColors, colorScheme } = useTheme();
-  const { swipeDismiss, animatedStyle, onLayout, close } = usePlaySwipeDismiss();
+  const { swipeDismiss, animatedStyle, onLayout, close, canConsumeTarget, dismissAndWait } = usePlaySwipeDismiss(
+    playTarget?.nonce,
+  );
 
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const [mountQueue, setMountQueue] = useState(false);
@@ -79,7 +81,11 @@ function PlayScreen() {
   const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
-  const dismissPlayerAndWait = usePlayerDismissAndWait();
+  const waitForPlayerDismiss = usePlayerDismissAndWait();
+  const dismissPlayerAndWait = useCallback(
+    () => dismissAndWait(waitForPlayerDismiss),
+    [dismissAndWait, waitForPlayerDismiss],
+  );
   // Any actions menu opened from this route receives the route-owned transition
   // waiter. That includes the root FullWindowOverlay and the route's QueueSheet;
   // neither can safely discover the native-stack navigation object itself.
@@ -95,7 +101,14 @@ function PlayScreen() {
   // without re-running the unmount effect.
   const onClosedRef = useRef(onPlayDrawerClosed);
   onClosedRef.current = onPlayDrawerClosed;
-  useEffect(() => () => onClosedRef.current(), []);
+  const consumedTargetNonceRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      const consumedNonce = consumedTargetNonceRef.current;
+      onClosedRef.current(consumedNonce);
+    },
+    [],
+  );
 
   // Tell the host which target this route has actually applied. The close above
   // is only allowed to clear that one — a target written by a tap that landed
@@ -106,9 +119,15 @@ function PlayScreen() {
   onTargetConsumedRef.current = onPlayDrawerTargetConsumed;
   const playTargetNonce = playTarget?.nonce;
   useEffect(() => {
-    if (playTargetNonce == null) return;
+    if (
+      playTargetNonce == null ||
+      playTargetNonce === consumedTargetNonceRef.current ||
+      !canConsumeTarget(playTargetNonce)
+    )
+      return;
+    consumedTargetNonceRef.current = playTargetNonce;
     onTargetConsumedRef.current(playTargetNonce);
-  }, [playTargetNonce]);
+  }, [playTargetNonce, canConsumeTarget]);
 
   // The queue renders climbs against the stored active board (thumbnails + tick),
   // same as the host's instance.

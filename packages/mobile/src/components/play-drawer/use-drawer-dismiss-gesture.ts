@@ -44,8 +44,10 @@ export type SwipeDismissAnimation = {
   translateY: SharedValue<number>;
   height: SharedValue<number>;
   isDismissing: SharedValue<boolean>;
+  /** Opening ownership captured at release; absent for standalone hosts. */
+  revision?: SharedValue<number>;
   /** Called after the surface has finished sliding offscreen. */
-  onComplete: () => void;
+  onComplete: (revision?: number) => void;
 };
 
 type UseDrawerDismissGestureOptions = {
@@ -93,6 +95,7 @@ export function useDrawerDismissGesture({
   const translateY = swipeDismiss?.translateY ?? localTranslateY;
   const isDismissing = swipeDismiss?.isDismissing ?? localIsDismissing;
   const dismissHeight = swipeDismiss?.height;
+  const dismissRevision = swipeDismiss?.revision;
   // Stable across renders, populated by RNGH when the detector attaches. Handed
   // to the zoomed board's pan so it can block this dismiss.
   const gestureRef = useRef<GestureType | undefined>(undefined);
@@ -102,10 +105,11 @@ export function useDrawerDismissGesture({
 
   // Captured ONCE by the gesture memo — must only close over the ref so a later
   // render's onDismiss is still reached (mirrors use-carousel-gesture).
-  const onDismissRef = useRef(onDismiss);
+  const onDismissRef = useRef<(revision?: number) => void>(onDismiss);
   onDismissRef.current = swipeDismiss?.onComplete ?? onDismiss;
-  const commitDismiss = () => {
-    onDismissRef.current();
+  const commitDismiss = (revision?: number) => {
+    if (revision === undefined) onDismissRef.current();
+    else onDismissRef.current(revision);
   };
 
   const gesture = useMemo(() => {
@@ -157,6 +161,7 @@ export function useDrawerDismissGesture({
           startedAtTop.value &&
           (translateY.value > DISMISS_DISTANCE_THRESHOLD || event.velocityY > DISMISS_VELOCITY_THRESHOLD);
         if (committed) {
+          const releasedRevision = dismissRevision?.value;
           isDismissing.value = true;
           if (dismissHeight) {
             // Never pause at the release position waiting for navigation/JS.
@@ -165,8 +170,9 @@ export function useDrawerDismissGesture({
               Math.max(dismissHeight.value, translateY.value),
               { ...springs.snappy, velocity: Math.max(0, event.velocityY), overshootClamping: true },
               (finished) => {
+                if (dismissRevision && dismissRevision.value !== releasedRevision) return;
                 if (finished) {
-                  runOnJS(commitDismiss)();
+                  runOnJS(commitDismiss)(releasedRevision);
                 } else {
                   isDismissing.value = false;
                   translateY.value = withSpring(0, springs.interactive);
@@ -193,7 +199,17 @@ export function useDrawerDismissGesture({
         if (!success && !isDismissing.value) translateY.value = withSpring(0, springs.interactive);
       });
     return scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan;
-  }, [translateY, isDismissing, dismissHeight, startedAtTop, scrollYSV, scrollRef, swipeTranslateX, swipeIsAnimating]);
+  }, [
+    translateY,
+    isDismissing,
+    dismissHeight,
+    dismissRevision,
+    startedAtTop,
+    scrollYSV,
+    scrollRef,
+    swipeTranslateX,
+    swipeIsAnimating,
+  ]);
 
   return { gesture, translateY, gestureRef };
 }

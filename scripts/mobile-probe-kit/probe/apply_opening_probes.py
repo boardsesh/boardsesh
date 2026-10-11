@@ -40,14 +40,45 @@ assert "export function perfProbeUi" in read(probe), "Apply standard probes firs
 assert "probeOpeningTap" not in read(probe), "Opening probes already applied"
 staged[probe] = read(probe) + r'''
 
+import { createContext, useContext, useEffect, useRef } from 'react';
+import { useNavigation } from 'expo-router';
+
+type OpeningProbeOwner = { id: number; translateY: SharedValue<number> };
+export const OpeningProbeRouteContext = createContext<OpeningProbeOwner | null>(null);
+let openingOwnerSequence = 0;
+const retiredOpeningOwners = new Set<number>();
+export function useOpeningProbeOwner(): OpeningProbeOwner | null {
+  return useContext(OpeningProbeRouteContext);
+}
+export function useOpeningProbeRouteOwner(translateY: SharedValue<number>): OpeningProbeOwner {
+  const ownerRef = useRef<OpeningProbeOwner | null>(null);
+  if (!ownerRef.current) ownerRef.current = { id: ++openingOwnerSequence, translateY };
+  const owner = ownerRef.current;
+  const navigation = useNavigation();
+  useEffect(() => {
+    let mounted = true;
+    let removalAttempt = 0;
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      const attempt = ++removalAttempt;
+      retiredOpeningOwners.add(owner.id);
+      queueMicrotask(() => {
+        if (mounted && removalAttempt === attempt && event.defaultPrevented)
+          retiredOpeningOwners.delete(owner.id);
+      });
+    });
+    return () => { mounted = false; retiredOpeningOwners.add(owner.id); unsubscribe(); };
+  }, [navigation, owner]);
+  return owner;
+}
+
 // Opening-only diagnostic identity. Raw names, holds, file paths and UUIDs stay
 // on the device; the event payloads contain hashes and timings only.
 let openingTapSequence = 0;
-let openingTarget: { tapId: number; climb: string; frames: string; nonce: number | null } | null = null;
+let openingTarget: { tapId: number; climb: string; frames: string; nonce: number | null; routeOwnerId: number | null } | null = null;
 type OpeningArtHint = { quality: string; overlayCacheKey: string; overlayUri: string; overlayGeneration: number };
 export function probeOpeningTap(climbUuid: string, frames: string, artwork?: OpeningArtHint): void {
   if (!PERF_PROBE_ENABLED) return;
-  openingTarget = { tapId: ++openingTapSequence, climb: perfProbeId(climbUuid), frames: perfProbeId(frames), nonce: null };
+  openingTarget = { tapId: ++openingTapSequence, climb: perfProbeId(climbUuid), frames: perfProbeId(frames), nonce: null, routeOwnerId: null };
   perfProbe('climb-press', {
     ...openingTarget,
     snapshotQuality: artwork?.quality ?? null,
@@ -56,16 +87,33 @@ export function probeOpeningTap(climbUuid: string, frames: string, artwork?: Ope
     snapshotGeneration: artwork?.overlayGeneration ?? null,
   });
 }
-export function probeOpeningTarget(nonce: number, climbUuid: string, frames: string): void {
-  if (!PERF_PROBE_ENABLED || openingTarget?.climb !== perfProbeId(climbUuid)) return;
-  if (openingTarget.nonce === nonce) return;
+export function probeOpeningTarget(owner: OpeningProbeOwner, nonce: number, climbUuid: string, frames: string): void {
+  if (!PERF_PROBE_ENABLED || retiredOpeningOwners.has(owner.id) || openingTarget?.climb !== perfProbeId(climbUuid)) return;
+  if (openingTarget.nonce === nonce && openingTarget.routeOwnerId === owner.id) return;
   openingTarget.nonce = nonce;
+  openingTarget.routeOwnerId = owner.id;
   perfProbe('play-opening-target', { ...openingTarget, frames: perfProbeId(frames) });
 }
-export function probeOpeningDetail(frames: string): { tapId: number | null; nonce: number | null; frames: string } {
+export function probeOpeningDetail(frames: string, owner: OpeningProbeOwner | null): { tapId: number | null; nonce: number | null; frames: string; routeOwnerId: number | null } {
   const frameId = perfProbeId(frames);
-  return { frames: frameId, tapId: openingTarget?.frames === frameId ? openingTarget.tapId : null,
-    nonce: openingTarget?.frames === frameId ? openingTarget.nonce : null };
+  const target = openingTarget;
+  const matching = owner && !retiredOpeningOwners.has(owner.id) && target?.routeOwnerId === owner.id && target.frames === frameId;
+  return { frames: frameId, routeOwnerId: owner?.id ?? null, tapId: matching ? target.tapId : null,
+    nonce: matching ? target.nonce : null };
+}
+export function probeOpeningRejected(climbUuid: string, reason: string, loadedCount: number | null = null): void {
+  if (!PERF_PROBE_ENABLED || openingTarget?.climb !== perfProbeId(climbUuid)) return;
+  perfProbe('climb-open-rejected', { ...openingTarget, reason, loadedCount });
+}
+function recordOpeningGeometry(detail: PerfProbeDetail): void {
+  const target = openingTarget;
+  if (!target || typeof detail.routeOwnerId !== 'number' || retiredOpeningOwners.has(detail.routeOwnerId) ||
+      detail.routeOwnerId !== target.routeOwnerId || detail.tapId !== target.tapId || detail.nonce !== target.nonce) return;
+  perfProbe('play-gesture-geometry-committed-ui', detail);
+}
+export function probeOpeningGeometryUi(detail: PerfProbeDetail): void {
+  'worklet';
+  if (PERF_PROBE_ENABLED) runOnJS(recordOpeningGeometry)({ ...detail, uiWallMs: Date.now() });
 }
 '''
 
@@ -81,26 +129,56 @@ replace(index, "export function clearOverlayIndex(): void {", """export function
   perfProbe('overlay-index-clear');""")
 
 climbs = "app/(tabs)/climbs/index.tsx"
-add_import(climbs, "import { probeOpeningTap } from '../../../src/lib/perf-probe';")
+add_import(climbs, "import { probeOpeningTap, probeOpeningRejected } from '../../../src/lib/perf-probe';")
 replace(climbs, "      perfProbe('climb-press');", "      probeOpeningTap(climb.uuid, climb.frames" + (", readyBoardArt" if candidate else "") + ");")
+replace(climbs, "        perfProbe('climb-open-rejected', { reason: 'placeholder-results' });",
+        "        probeOpeningRejected(climb.uuid, 'placeholder-results');")
+
+if candidate:
+    activation = "src/lib/playlists/use-playlist-activation.ts"
+    add_import(activation, "import { probeOpeningRejected } from '../perf-probe';")
+    replace(activation,
+        "      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();",
+        """      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) {
+        probeOpeningRejected(requestedClimb.uuid,
+          !loadedSnapshotCurrent ? 'withdrawn-loaded-snapshot' : 'stale-activation-scope', suppliedClimbs.length);
+        return Promise.resolve();
+      }""")
+    replace(activation,
+        "      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) return Promise.resolve();",
+        """      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) {
+        probeOpeningRejected(requestedClimb.uuid, 'stale-row-object', suppliedClimbs.length);
+        return Promise.resolve();
+      }""")
+    replace(activation,
+        "      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) return Promise.resolve();",
+        """      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) {
+        probeOpeningRejected(requestedClimb.uuid, 'row-not-reauthorized', suppliedClimbs.length);
+        return Promise.resolve();
+      }""")
 
 route = "app/play.tsx"
-add_import(route, "import { probeOpeningTarget } from '../src/lib/perf-probe';")
-replace(route, "  const playTargetNonce = playTarget?.nonce;", """  const playTargetNonce = playTarget?.nonce;
+add_import(route, "import { OpeningProbeRouteContext, useOpeningProbeRouteOwner, probeOpeningTarget } from '../src/lib/perf-probe';")
+serving_condition = "playTarget && canConsumeTarget(playTarget.nonce)" if "canConsumeTarget" in read(route) else "playTarget"
+replace(route, "  const queueSheetRef = useRef<QueueSheetHandle>(null);", """  const probeOwner = useOpeningProbeRouteOwner(swipeDismiss.translateY);
   // Correlation only, not a commit metric: child passive effects run before
   // this route's effects and may schedule the first UI geometry marker.
-  if (playTarget) probeOpeningTarget(playTarget.nonce, playTarget.climb.uuid, playTarget.climb.frames);""")
+  if (SERVING_CONDITION) probeOpeningTarget(probeOwner, playTarget.nonce, playTarget.climb.uuid, playTarget.climb.frames);
+  const queueSheetRef = useRef<QueueSheetHandle>(null);""".replace("SERVING_CONDITION", serving_condition))
+replace(route, "    <Link.AppleZoomTarget>", "    <OpeningProbeRouteContext.Provider value={probeOwner}>\n    <Link.AppleZoomTarget>")
+replace(route, "    </Link.AppleZoomTarget>", "    </Link.AppleZoomTarget>\n    </OpeningProbeRouteContext.Provider>")
 
 hook = "src/hooks/use-native-climb-render.ts"
-add_import(hook, "import { probeOpeningDetail } from '../lib/perf-probe';")
+add_import(hook, "import { probeOpeningDetail, useOpeningProbeOwner } from '../lib/perf-probe';")
 replace(hook, "  overlayUri: string | null;", "  probeOverlayCacheKey: string;\n  overlayUri: string | null;")
 return_anchor = "  return {\n    artworkIdentity," if candidate else "  return {\n    overlayUri,"
 replace(hook, return_anchor, return_anchor.replace("  return {\n", "  return {\n    probeOverlayCacheKey: currentCacheKey,\n"))
-replace(hook, "  const currentBoardKey = useMemo(", """  useEffect(() => {
+replace(hook, "  const currentBoardKey = useMemo(", """  const probeOwner = useOpeningProbeOwner();
+  useEffect(() => {
     if (!PERF_PROBE_ENABLED || !playSurface) return;
     const entry = getRenderedOverlay(currentCacheKey);
     perfProbe('play-overlay-selected', {
-      ...probeOpeningDetail(frames), key: perfProbeId(currentCacheKey),
+      ...probeOpeningDetail(frames, probeOwner), key: perfProbeId(currentCacheKey),
       uri: entry ? perfProbeId(entry.uri) : null, generation: entry?.generation ?? null,
       renderWidth: renderWidth ?? null,
     });
@@ -108,30 +186,32 @@ replace(hook, "  const currentBoardKey = useMemo(", """  useEffect(() => {
   const currentBoardKey = useMemo(""")
 
 board = "src/components/BoardImageNative.tsx"
-add_import(board, "import { perfProbe, perfProbeId, probeOpeningDetail } from '../lib/perf-probe';")
+add_import(board, "import { perfProbe, perfProbeId, probeOpeningDetail, useOpeningProbeOwner } from '../lib/perf-probe';")
+replace(board, "  const {\n    overlayUri,", "  const probeOwner = useOpeningProbeOwner();\n  const {\n    overlayUri,")
 replace(board, "  const {\n    overlayUri,", "  const {\n    probeOverlayCacheKey,\n    overlayUri,")
 if candidate:
     # The owner callback below stamps the nonce. This separate native-image
     # event supplies the exact full render key/URI used by the visible stack.
     replace(board, "            if (!bridging) onReadyArtDisplayed?.(displayedArt);", """            if (!bridging) {
               if (playSurface) perfProbe('play-full-art-displayed-native', {
-                ...probeOpeningDetail(frames), key: perfProbeId(probeOverlayCacheKey),
+                ...probeOpeningDetail(frames, probeOwner), key: perfProbeId(probeOverlayCacheKey),
                 uri: perfProbeId(overlayUri), loadKey: perfProbeId(loadKey), generation: loadKey ? Number(loadKey.split(':')[0]) : null,
                 quality: 'full', source: 'onDisplay',
               });
               onReadyArtDisplayed?.(displayedArt);
             }""")
     replace(board, "      liveArtRef.current.onReadyArtDisplayed?.(pending.art);", """      if (playSurface) perfProbe('play-full-art-displayed-native', {
-        ...probeOpeningDetail(pending.art.frames), key: perfProbeId(probeOverlayCacheKey),
+        ...probeOpeningDetail(pending.art.frames, probeOwner), key: perfProbeId(probeOverlayCacheKey),
         uri: perfProbeId(pending.art.overlayUri), loadKey: perfProbeId(pending.art.overlayLoadKey),
         generation: pending.art.overlayLoadKey ? Number(pending.art.overlayLoadKey.split(':')[0]) : null,
         quality: 'full', source: 'bridge-visibility-commit',
       });
       liveArtRef.current.onReadyArtDisplayed?.(pending.art);""")
     core = "src/components/play-drawer/PlayCore.tsx"
-    add_import(core, "import { perfProbe, perfProbeId, probeOpeningDetail } from '../../lib/perf-probe';")
+    add_import(core, "import { perfProbe, perfProbeId, probeOpeningDetail, useOpeningProbeOwner } from '../../lib/perf-probe';")
+    replace(core, "  const isAnonymous = viewer === 'anonymous';", "  const probeOwner = useOpeningProbeOwner();\n  const isAnonymous = viewer === 'anonymous';")
     replace(core, "                            currentFrames={displayedClimb.frames}", """                            onReadyArtDisplayed={(art) => perfProbe('play-full-art-displayed', {
-                              ...probeOpeningDetail(art.frames), nonce: openTarget?.nonce ?? null,
+                              ...probeOpeningDetail(art.frames, probeOwner), nonce: openTarget?.nonce ?? null,
                               climb: perfProbeId(displayedClimb.uuid), uri: perfProbeId(art.overlayUri), quality: 'full',
                             })}
                             currentFrames={displayedClimb.frames}""")
@@ -142,7 +222,7 @@ else:
           onProbeArtDisplayed={(loadKey) => {
             if (!playSurface || !overlayUri || loadKey !== overlayLoadKey || (boardName === 'kilter' && backgroundPaths.length === 0)) return;
             perfProbe('play-full-art-displayed', {
-              ...probeOpeningDetail(frames), key: perfProbeId(probeOverlayCacheKey),
+              ...probeOpeningDetail(frames, probeOwner), key: perfProbeId(probeOverlayCacheKey),
               uri: perfProbeId(overlayUri), loadKey: perfProbeId(loadKey), generation: loadKey ? Number(loadKey.split(':')[0]) : null, quality: 'full', source: 'onDisplay',
             });
           }}""")
@@ -201,13 +281,19 @@ else:
 
 carousel = "src/components/play-drawer/SwipeBoardCarousel.tsx"
 add_import(carousel, "import { runOnUI } from 'react-native-reanimated';")
-add_import(carousel, "import { PERF_PROBE_ENABLED, perfProbeUi, probeOpeningDetail } from '../../lib/perf-probe';")
+add_import(carousel, "import { PERF_PROBE_ENABLED, probeOpeningGeometryUi, probeOpeningDetail, useOpeningProbeOwner } from '../../lib/perf-probe';")
 gesture_condition = "gesturesEnabled" if candidate else "enabled && boardBox != null"
-replace(carousel, "  const boardSurfaceAnchor = useShowcaseAnchor('board-surface');", """  useEffect(() => {
+replace(carousel, "  const boardSurfaceAnchor = useShowcaseAnchor('board-surface');", """  const probeOwner = useOpeningProbeOwner();
+  const probeRouteTranslation = probeOwner?.translateY;
+  useEffect(() => {
     if (!PERF_PROBE_ENABLED || !(GESTURE_CONDITION) || !boardBox) return;
-    const detail = { ...probeOpeningDetail(currentFrames), width: boardBox.width, height: boardBox.height,
+    const detail = { ...probeOpeningDetail(currentFrames, probeOwner), width: boardBox.width, height: boardBox.height,
       recognizerConfirmed: false };
-    runOnUI(() => { 'worklet'; perfProbeUi('play-gesture-geometry-committed-ui', detail); })();
+    runOnUI(() => {
+      'worklet';
+      if (probeRouteTranslation && probeRouteTranslation.value !== 0) return;
+      probeOpeningGeometryUi(detail);
+    })();
   }, [currentFrames, enabled, boardBox]);
   const boardSurfaceAnchor = useShowcaseAnchor('board-surface');""".replace("GESTURE_CONDITION", gesture_condition))
 

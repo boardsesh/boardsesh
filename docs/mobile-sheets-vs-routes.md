@@ -533,16 +533,30 @@ animation cancellation. A completion after unmount is ignored; if another modal
 has taken focus, the player restores itself underneath it instead of dismissing
 the newer modal. The route's existing programmatic close waiter stays native.
 
+Every opening advances a motion revision. The UI release captures it and carries
+it through the JavaScript completion and both removal frames. A fresh opening
+cancels pending motion; callbacks from the previous revision cannot close it.
+Native removal attempts have separate identities: an aborted attempt can restore
+itself, but cannot restore a later removal. Restoration also retires old motion.
+
+After native removal has been requested, the departing route stops consuming
+targets. Its cleanup retires only the nonce it actually served, including that
+nonce's board override. The host retries an explicitly requested navigation once
+after unmount when a newer target is still pending. This retry preserves the
+nonce and checks privacy and credential generations; it excludes pane opens,
+`navigate: false`, superseded targets, and targets another route already consumed.
+
 The iPad pane does not receive this route-owned animation. Keep the modal's
 live-behind presentation and accessory-host mount rules above when changing it.
 
 ### Opening a heavy route
 
-A modal route's present animation can't START until React commits the route's first frame. If
-that first render is heavy (the player mounts board geometry + a stack of hooks), the slide
-visibly lags the tap. Paint only a cheap first frame (a solid/`GlassSurface` background) and
-defer the heavy content one `requestAnimationFrame` — the present runs natively while the
-content fills in mid-slide. See `app/play.tsx`. Don't use `InteractionManager` for this: it
+A modal route's present animation starts after React commits its first frame.
+The player mounts its board and gesture core in that commit, using exact cached
+artwork and geometry when available. Defer optional details and observers rather
+than adding a frame before the board: that delay previously exposed a blank
+player during presentation. See `app/play.tsx` and `PlayCore.tsx`. Don't use
+`InteractionManager` for this: it
 waits out the whole transition and is disabled in screenshot mode.
 
 The player board also waits for the scroll viewport, title header, and Logbook header

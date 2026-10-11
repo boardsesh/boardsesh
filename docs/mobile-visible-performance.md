@@ -159,18 +159,29 @@ Run `python3 scripts/mobile-probe-kit/probe/apply_opening_probes.py <isolated-ch
 | Event | Meaning |
 | --- | --- |
 | `climb-press` | Unique `tapId`, hashed climb/frames, and candidate snapshot quality/key/URI/generation captured before prewarming or navigation. No raw climb names, UUIDs, holds, or paths are logged. |
+| `climb-open-rejected` | A placeholder-results or activation-authority guard refused the tap. Candidate authority rejections include the correlated tap and loaded count. The press is recorded before these guards, so rejected opens remain incomplete samples. |
 | `overlay-index-write`, `overlay-index-drop`, `overlay-index-clear` | An ordered journal of render-cache identity changes. Reconstruct the selected full entry's presence at the tap without scanning the cache during the tap. |
-| `play-opening-target` | Associates the tap with the drawer target's nonce during route render, before child effects run. Correlation only; it does not prove a commit. Opens without a matching climb-list tap remain outside the cohort. |
+| `play-opening-target` | Associates the tap with the serving route's nonce and route-owner identity during render, before child effects run. A departing route cannot claim a new target. Correlation only; it does not prove a commit. Opens without a matching climb-list tap remain outside the cohort. |
 | `play-overlay-selected` | The actual full renderer key, URI, generation, and requested width. An index hit here is still a mount-time fact. |
 | `play-full-art-displayed` | Matching full artwork has received all required native background and overlay `onDisplay` events. Candidate publication comes through the current board's `onReadyArtDisplayed` callback and carries the target nonce. Baseline observation adds no reveal or mounting gate. If baseline opacity concealed the artwork, publication also waits one guarded animation frame after the reveal commit, matching the candidate thumbnail bridge's visibility accounting. Already visible cached artwork needs no extra frame. |
-| `play-full-art-displayed-native` | Candidate's matching full renderer key/URI/generation, including the visibility handoff when a thumbnail bridge covered the replacement. Join by `tapId`, frames, nonce, and URI. |
-| `play-gesture-geometry-committed-ui` | A UI worklet ran after the positive contained geometry and enabled gesture props committed. Uses `uiWallMs`; `recognizerConfirmed` is explicitly false. |
+| `play-full-art-displayed-native` | Candidate's matching full renderer key/URI/generation, including the visibility handoff when a thumbnail bridge covered the replacement. Join by `tapId`, frames, nonce, route owner, and URI. |
+| `play-gesture-geometry-committed-ui` | A UI worklet ran after the positive contained geometry and enabled gesture props committed, while the route's swipe translation was zero. Uses `uiWallMs`; `recognizerConfirmed` is explicitly false. |
 
 For the **cached-at-tap** cohort, reconstruct the journal up to each `climb-press`, then match the full display event's actual key, URI and generation against that state. A later full prewarm render, a thumbnail-only snapshot, or a full entry regenerated after the tap is not a qualifying cached entry. Keep rendered-cache hits separate from decoded-memory hits; legacy `overlay-painted.cacheType` helps describe decoding but does not prove it was decoded at the tap. Missing journal coverage, ambiguous target association, missing full-display events, or failed gestures make an opening incomplete, not a fast sample.
 
-The target is **p95 below 50 ms from tap to both full-size artwork and gesture readiness**. Record the later of full-art display and positive-geometry UI commit, using the tap's wall clock and `uiWallMs` for the latter. This is a readiness proxy: image `onDisplay` reaches JS after native delivery, and a UI worklet does not prove the recognizer accepts a finger. Require real swipe/pinch/dismiss checks and inspect the opening recording; neither native presentation animation completion nor a thumbnail appearance counts as the full-board endpoint. Instrumentation adds overhead and is identical on both builds; these are diagnostic timings, not native CPU/FPS evidence.
+The target is **p95 at most 100 ms from tap to both full-size artwork and gesture readiness**. Record the later of full-art display and positive-geometry UI commit, using the tap's wall clock and `uiWallMs` for the latter. Measure immediate row feedback separately; any preparation delay before presenting the drawer still counts toward this interval. This is a readiness proxy: image `onDisplay` reaches JS after native delivery, and a UI worklet does not prove the recognizer accepts a finger. Require real swipe/pinch/dismiss checks and inspect the opening recording; neither native presentation animation completion nor a thumbnail appearance counts as the full-board endpoint. Instrumentation adds overhead and is identical on both builds; these are diagnostic timings, not native CPU/FPS evidence.
+
+The starting marker runs in JavaScript's `onPress` handler. It excludes any delay
+before that handler receives the touch, so these timings do not measure complete
+finger-to-display latency. Profile rapid dismiss/reopen separately for correctness:
+an unchanged image on a retained route may not emit a new native display event.
+Keep that opening incomplete rather than inventing a fresh display acknowledgement.
 
 Use at least 30 warm opens per build in alternating baseline/candidate batches, including 60 downward scrolls, repeated row opens and hard flicks back through recycled rows. Poll until an actual row is settled and visible before tapping. Keep render/decode misses separate. Record queue length, loaded result count, offline/network lane and thermal conditions before each batch. Reject a run that becomes thermally incomparable; capture native hitches separately after these timings, and do not erase account data, downloads or render caches to manufacture a cold run.
+
+For a cannot-open reproduction, keep the production privacy stream enabled.
+`--keep-offline-boards` suppresses that stream in the measurement build; a run
+with that flag cannot validate opening across real withdrawal/revalidation.
 
 Run `vp exec python3 scripts/mobile-probe-kit/analyze_opening.py <run-directory>`
 to inspect the evidence. Add `--gestures-verified` only after physical
@@ -179,6 +190,7 @@ relaunching, then pull only that launch's probe chunks, starting at
 `chunk-00000.json`, into `probe/`. The analyzer compares chunk contents and
 ordering with `probe-events.json` and requires coverage through `run-end`.
 Include `build-manifest.json` with commit, Release mode, device ID, probe variant,
+`openingProbeVersion: 2` for current route-owner probes,
 and native thermal state before/after. Completed `scroll20`, `scroll40`,
 `scroll60`, and hard up/down recycled-row marks must precede their cached opens.
 Pilot timings remain available when these requirements are incomplete; they

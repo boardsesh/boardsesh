@@ -203,7 +203,12 @@ text = open(M + "app/(tabs)/climbs/index.tsx").read()
 press_start = text.index("  const handleClimbPress = useCallback(")
 guard = "      if (isPlaceholderDataRef.current) return;\n"
 guard_at = text.index(guard, press_start)
-text = text[:guard_at + len(guard)] + "      perfProbe('climb-press');\n" + text[guard_at + len(guard):]
+text = text[:guard_at] + """      perfProbe('climb-press');
+      if (isPlaceholderDataRef.current) {
+        perfProbe('climb-open-rejected', { reason: 'placeholder-results' });
+        return;
+      }
+""" + text[guard_at + len(guard):]
 skeleton_import = "import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';\n"
 assert text.count(skeleton_import) == 1
 text = text.replace(skeleton_import, skeleton_import + "import { perfProbe } from '../../../src/lib/perf-probe';\n")
