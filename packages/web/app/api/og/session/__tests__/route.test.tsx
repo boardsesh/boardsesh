@@ -191,6 +191,29 @@ describe('api/og/session route', () => {
     if (absent) expect(textContent).not.toContain(absent);
   });
 
+  it('does not duplicate a MoonBoard 6A send as an empty grade bar', async () => {
+    sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'MoonBoard session',
+      leaderName: null,
+      participantNames: [],
+      participantCount: 0,
+      totalSends: 2,
+      gradeRows: [{ difficulty: 16, count: 2 }],
+      boardType: 'moonboard',
+      boardLabel: 'MoonBoard',
+      boardAngle: 40,
+      boardPreviewPath: null,
+      version: 'test',
+      found: true,
+    });
+    const response = await GET(makeRequest({ sessionId: 'moon-session', variant: 'join' }));
+    expect(response.status).toBe(200);
+    const textContent = collectText(sessionRouteState.capturedElement);
+    expect(textContent).toContain('5a');
+    expect(textContent.match(/\b6a\b/g)).toHaveLength(1);
+  });
+
   it('shows only observed grades when the current private board cannot be resolved', async () => {
     sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
       sessionType: 'party',

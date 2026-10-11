@@ -1,8 +1,13 @@
 import 'server-only';
-import type { BoardName } from '@/app/lib/types';
+import type { BoardName, ParsedBoardRouteParameters } from '@/app/lib/types';
 import { cache } from 'react';
+import { parseBoardPath, parseNamedBoardPath, toBoardName } from '@boardsesh/board-config';
 import { BOARD_TYPES } from '@boardsesh/profile-stats';
 import { BOULDER_GRADES } from '@/app/lib/board-data';
+import { buildBoardRenderUrl } from '@/app/components/board-renderer/util';
+import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { detectLocale } from '@/app/lib/i18n/detect-locale';
+import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { executeGraphQLInternal } from '@/app/lib/graphql/server-cached-client';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildOgVersionToken } from './og';
@@ -125,6 +130,86 @@ export type SessionOgSummary = {
   found: boolean;
 };
 
+async function resolvePublicSessionBoard(boardPath: string | null | undefined): Promise<{
+  boardType: BoardName;
+  boardLabel: string;
+  boardAngle: number | null;
+  boardPreviewPath: string;
+} | null> {
+  if (!boardPath?.trim()) return null;
+  try {
+    const pathname = /^https?:\/\//i.test(boardPath) ? new URL(boardPath).pathname : boardPath;
+    const namedPath = parseNamedBoardPath(pathname);
+    let parsedParams: ParsedBoardRouteParameters;
+    let boardAngle: number | null;
+    if (namedPath) {
+      // Resolve the current slug anonymously, even when the page viewer is signed in.
+      // A masked board stays generic; never reuse a session's previous saved board.
+      const { boardBySlug } = await executeGraphQLInternal<{
+        boardBySlug: {
+          boardType: string;
+          layoutId: number;
+          sizeId: number;
+          setIds: string;
+          angle: number;
+          isPublic: boolean;
+        } | null;
+      }>(
+        `query SessionPreviewBoard($slug: String!) {
+          boardBySlug(slug: $slug) { boardType layoutId sizeId setIds angle isPublic }
+        }`,
+        { slug: namedPath.slug },
+      );
+      const boardType = toBoardName(boardBySlug?.boardType);
+      if (!boardBySlug?.isPublic || !boardType) return null;
+      const setIds = boardBySlug.setIds.split(',').map(Number);
+      if (setIds.length === 0 || setIds.some((setId) => !Number.isFinite(setId))) return null;
+      boardAngle = namedPath.angle ?? boardBySlug.angle;
+      parsedParams = {
+        board_name: boardType,
+        layout_id: boardBySlug.layoutId,
+        size_id: boardBySlug.sizeId,
+        set_ids: setIds,
+        angle: boardAngle,
+      };
+    } else {
+      const positionalPath = parseBoardPath(pathname);
+      const { strippedPath } = detectLocale(pathname.startsWith('/') ? pathname : `/${pathname}`);
+      const segments = strippedPath.split('/').filter(Boolean);
+      if (segments.length < 4) return null;
+      boardAngle = positionalPath?.angle ?? (segments[4] ? Number(segments[4]) : null);
+      if (boardAngle !== null && !Number.isFinite(boardAngle)) return null;
+      parsedParams = await parseBoardRouteParamsWithSlugs({
+        board_name: positionalPath?.boardName ?? segments[0],
+        layout_id: positionalPath ? String(positionalPath.layoutId) : segments[1],
+        size_id: positionalPath ? String(positionalPath.sizeId) : segments[2],
+        set_ids: positionalPath?.setIds ?? segments[3],
+        angle: String(boardAngle ?? 0),
+      });
+    }
+    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const layoutName = boardDetails.layout_name
+      ?.replace(new RegExp(`^${boardDetails.board_name}\\s*(board)?\\s*`, 'i'), '')
+      .trim();
+    const sizeMatch = boardDetails.size_name?.match(/(\d+)\s*x\s*(\d+)/i);
+    const sizeLabel = sizeMatch
+      ? `${sizeMatch[1]}x${sizeMatch[2]}`
+      : boardDetails.size_name || boardDetails.size_description;
+    return {
+      boardType: boardDetails.board_name,
+      boardLabel: [formatBoardDisplayName(boardDetails.board_name), layoutName, sizeLabel].filter(Boolean).join(' '),
+      boardAngle,
+      boardPreviewPath: buildBoardRenderUrl(boardDetails, '', {
+        thumbnail: true,
+        includeBackground: true,
+        format: 'png',
+      }),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const getSessionOgSummary = cache(async (sessionId: string): Promise<SessionOgSummary> => {
   const empty: SessionOgSummary = {
     sessionType: null,
@@ -152,6 +237,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     } | null;
     session: {
       name: string | null;
+      boardPath: string;
       startedAt: string | null;
       users: Array<{ userId: string | null; username: string; isLeader: boolean }>;
     } | null;
@@ -162,11 +248,12 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
       gradeDistribution { grade flash send }
       participants { displayName }
     }
-    session(sessionId: $sessionId) { name startedAt users { userId username isLeader } }
+    session(sessionId: $sessionId) { name boardPath startedAt users { userId username isLeader } }
   }`,
     { sessionId },
   );
   if (!sessionDetail && !session) return empty;
+  const currentBoard = await resolvePublicSessionBoard(session?.boardPath);
   const participantNames = sessionDetail
     ? sessionDetail.participants.flatMap((participant) => (participant.displayName ? [participant.displayName] : []))
     : (session?.users ?? []).flatMap((participant) => (participant.userId ? [participant.username] : []));
@@ -188,7 +275,12 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     participantCount: Math.max(sessionDetail?.participants.length ?? 0, session?.users.length ?? 0),
     totalSends: sessionDetail?.totalSends ?? 0,
     gradeRows,
-    boardLabel: sessionDetail?.boardTypes.map(formatBoardDisplayName).join(', ') || null,
+    boardType: currentBoard?.boardType ?? null,
+    boardLabel:
+      currentBoard?.boardLabel ??
+      (session?.boardPath ? null : sessionDetail?.boardTypes.map(formatBoardDisplayName).join(', ') || null),
+    boardAngle: currentBoard?.boardAngle ?? null,
+    boardPreviewPath: currentBoard?.boardPreviewPath ?? null,
     version: buildOgVersionToken(sessionDetail?.lastTickAt ?? session?.startedAt ?? null),
   };
 });

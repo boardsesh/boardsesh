@@ -6,7 +6,11 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import { BOULDER_GRADES, getGradesForBoard } from '@/app/lib/board-data';
 import type { BoardName } from '@/app/lib/types';
-import { gradeAxisFloorSteps, vGradeNumber } from '@boardsesh/board-constants/boulder-grade-mapping';
+import {
+  getBoulderGradesForBoard,
+  gradeAxisFloorSteps,
+  vGradeNumber,
+} from '@boardsesh/board-constants/boulder-grade-mapping';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { ogErrorResponse } from '@/app/lib/seo/og-error';
@@ -19,9 +23,6 @@ const DIFFICULTY_TO_GRADE: Record<number, string> = Object.fromEntries(
 );
 
 const GRADE_ORDER: string[] = BOULDER_GRADES.map((g) => g.font_grade);
-const DIFFICULTY_TO_V: Record<number, string> = Object.fromEntries(
-  BOULDER_GRADES.map((g) => [g.difficulty_id, g.v_grade]),
-);
 
 function gradeBarColor(grade: string, opacity: number): string {
   const hex = FONT_GRADE_COLORS[grade.toLowerCase()];
@@ -48,7 +49,8 @@ function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>,
       (minimum, row) => (DIFFICULTY_TO_GRADE[row.difficulty] ? Math.min(minimum, row.difficulty) : minimum),
       Infinity,
     );
-    const minV = vGradeNumber(DIFFICULTY_TO_V[minDifficulty] ?? '');
+    const lowestGrade = getBoulderGradesForBoard(boardType).find((grade) => grade.difficulty_id === minDifficulty);
+    const minV = vGradeNumber(lowestGrade?.v_grade ?? '');
     if (minV != null) {
       const floorBars = gradeAxisFloorSteps(minV, getGradesForBoard(boardType)).map((entry) => ({
         grade: entry.font_grade,
