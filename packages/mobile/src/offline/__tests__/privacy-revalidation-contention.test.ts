@@ -80,7 +80,7 @@ async function contendNextPurge(onFirstFailure: () => void = () => {}) {
 
 describe('privacy revalidation under real SQLite WAL contention', () => {
   it('recovers a contended marker withdrawal before contacting the server', async () => {
-    await privacy.revalidatePrivateCatalog(database, 'viewer', []);
+    await privacy.revalidatePrivateCatalog(database, 'viewer');
     request.mockClear();
     // The real main connection waits five seconds before returning this lock.
     await interloper.execAsync('BEGIN IMMEDIATE');
@@ -109,7 +109,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
       return { profile: { id: 'viewer' } };
     });
 
-    await expect(privacy.revalidatePrivateCatalog(database, 'viewer', [])).resolves.toBeUndefined();
+    await expect(privacy.revalidatePrivateCatalog(database, 'viewer')).resolves.toBeUndefined();
     expect(isDatabaseLockedError(lockFailure)).toBe(true);
     expect(withdrawalAttempts).toBe(2);
     expect(request).toHaveBeenCalledOnce();
@@ -128,7 +128,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
         const read = transaction.getAllAsync.bind(transaction);
         vi.spyOn(transaction, 'getAllAsync').mockImplementation(async (query, ...params) => {
           const rows = await read(query, ...params);
-          if (query.startsWith('SELECT DISTINCT board_type, layout_id')) {
+          if (query.startsWith('SELECT uuid, board_type, layout_id')) {
             try {
               await interloper.runAsync(
                 "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('snapshot-interloper', 'committed')",
@@ -144,7 +144,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
       }),
     );
 
-    await expect(privacy.revalidatePrivateCatalog(database, 'viewer', [])).resolves.toBeUndefined();
+    await expect(privacy.revalidatePrivateCatalog(database, 'viewer')).resolves.toBeUndefined();
     expect(interloperCommitted).toBe(false);
     expect(isDatabaseLockedError(interloperError)).toBe(true);
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
@@ -154,7 +154,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
   it('retries acquisition on a fresh transaction after a competing writer releases', async () => {
     const attempts = await contendNextPurge();
 
-    await expect(privacy.revalidatePrivateCatalog(database, 'viewer', [])).resolves.toBeUndefined();
+    await expect(privacy.revalidatePrivateCatalog(database, 'viewer')).resolves.toBeUndefined();
     expect(isDatabaseLockedError(attempts.firstFailure)).toBe(true);
     expect(attempts.connections.size).toBe(2);
     expect(request).toHaveBeenCalledOnce();
@@ -171,7 +171,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
       auth.generation += 1;
     });
 
-    await expect(privacy.revalidatePrivateCatalog(database, 'viewer', [])).rejects.toThrow('Account changed');
+    await expect(privacy.revalidatePrivateCatalog(database, 'viewer')).rejects.toThrow('Account changed');
     expect(attempts.connections.size).toBe(2);
     expect(request).toHaveBeenCalledOnce();
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'withdrawn' }]);
@@ -183,7 +183,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
   }, 15000);
 
   it('keeps reads blocked and avoids HTTP after exhausted marker withdrawal retries', async () => {
-    await privacy.revalidatePrivateCatalog(database, 'viewer', []);
+    await privacy.revalidatePrivateCatalog(database, 'viewer');
     request.mockClear();
     const failure = new Error('database is locked');
     const run = database.runAsync.bind(database);
@@ -197,7 +197,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
     });
     const transaction = vi.spyOn(database, 'withExclusiveTransactionAsync');
 
-    await expect(privacy.revalidatePrivateCatalog(database, 'viewer', [])).rejects.toBe(failure);
+    await expect(privacy.revalidatePrivateCatalog(database, 'viewer')).rejects.toBe(failure);
     expect(withdrawalAttempts).toBe(3);
     expect(request).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
@@ -209,7 +209,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
     { reason: 'exhausted lock retries', message: 'database is locked', attempts: 3 },
     { reason: 'a non-lock failure', message: 'disk I/O error', attempts: 1 },
   ])('preserves withdrawal and rolls back purge after $reason', async ({ message, attempts }) => {
-    await privacy.revalidatePrivateCatalog(database, 'viewer', []);
+    await privacy.revalidatePrivateCatalog(database, 'viewer');
     request.mockClear();
     await database.runAsync(
       "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'kilter', 1, 'other')",
@@ -227,7 +227,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
       }),
     );
 
-    await expect(privacy.revalidatePrivateCatalog(database, 'viewer', [])).rejects.toBe(failure);
+    await expect(privacy.revalidatePrivateCatalog(database, 'viewer')).rejects.toBe(failure);
     expect(connections.size).toBe(attempts);
     expect(request).toHaveBeenCalledOnce();
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'withdrawn' }]);

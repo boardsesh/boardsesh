@@ -16,6 +16,7 @@ const {
   getDatabaseHandle,
   isBoardDownloadedLocally,
   isBoardTypeDownloadedLocally,
+  isBoardTypeProtectedSettled,
   isClimbLayoutDownloadedLocally,
   getClimbStatsHistoryLocal,
   searchClimbsLocal,
@@ -39,6 +40,7 @@ const {
   getDatabaseHandle: vi.fn(),
   isBoardDownloadedLocally: vi.fn(),
   isBoardTypeDownloadedLocally: vi.fn(),
+  isBoardTypeProtectedSettled: vi.fn(),
   isClimbLayoutDownloadedLocally: vi.fn(),
   getClimbStatsHistoryLocal: vi.fn(),
   searchClimbsLocal: vi.fn(),
@@ -64,6 +66,7 @@ vi.mock('../../../db', () => ({ getDatabaseHandle }));
 vi.mock('../../../db/queries/board-download-status', () => ({
   isBoardDownloadedLocally,
   isBoardTypeDownloadedLocally,
+  isBoardTypeProtectedSettled,
   isClimbLayoutDownloadedLocally,
 }));
 vi.mock('../../../db/queries/get-climb-stats-history-local', () => ({ getClimbStatsHistoryLocal }));
@@ -198,6 +201,9 @@ beforeEach(() => {
   countClimbsLocal.mockResolvedValue(7);
   getClimbLocal.mockResolvedValue({ uuid: 'local-detail' });
   isBoardTypeDownloadedLocally.mockResolvedValue(true);
+  // Every downloaded board holds the protected rows it should, unless a test
+  // puts one in the middle of a replay.
+  isBoardTypeProtectedSettled.mockResolvedValue(true);
   getBoardseshGradeLocal.mockResolvedValue(localGrade);
   getBoardseshGradesForAnglesLocal.mockResolvedValue([{ angle: 40, ...localGrade }]);
   isClimbLayoutDownloadedLocally.mockResolvedValue(true);
@@ -1585,6 +1591,67 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
     expect(recordOfflineReadUnavailable).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'filter_unsupported', surface: 'hold_heatmap' }),
     );
+  });
+});
+
+// Issue #6306. A privacy event deletes other climbers' rows from the device and
+// the next pull brings back the ones the viewer may still see. In between, a
+// catalogue board is still downloaded: it holds its reference catalogue and the
+// climber's own climbs, and lacks only other climbers' Boardsesh climbs.
+describe('a downloaded board whose protected rows are still being replayed', () => {
+  beforeEach(() => {
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    isBoardTypeProtectedSettled.mockResolvedValue(false);
+  });
+
+  it('asks the server while online, which has the complete list', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result.searchClimbs.climbs[0].uuid).toBe('net');
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
+    expect(isBoardTypeProtectedSettled).toHaveBeenCalledWith(fakeDb, searchInput.boardName);
+    expect(request).toHaveBeenCalledWith(SEARCH_CLIMBS, { input: searchInput });
+  });
+
+  it('keeps serving the board from the device with no signal', async () => {
+    setOnline(false);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result).toEqual({ searchClimbs: { climbs: [{ uuid: 'local' }], hasMore: false } });
+    expect(request).not.toHaveBeenCalled();
+    // Offline there is nothing to prefer, so the question is not even asked.
+    expect(isBoardTypeProtectedSettled).not.toHaveBeenCalled();
+  });
+
+  it('still falls back to the device when that request fails', async () => {
+    setOnline(true);
+    request.mockRejectedValueOnce(new Error('Network request failed'));
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result).toEqual({ searchClimbs: { climbs: [{ uuid: 'local' }], hasMore: false } });
+    expect(recordOfflineRead).toHaveBeenCalledWith(expect.objectContaining({ lane: 'network_error_local' }));
+  });
+
+  it('applies to every local-first read of that board type: detail, grade and stats', async () => {
+    setOnline(true);
+    await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+    await offlineAwareRequest(BOARDSESH_GRADE, gradeVars);
+    await offlineAwareRequest(CLIMB_STATS_HISTORY, statsHistoryVars);
+
+    expect(getClimbLocal).not.toHaveBeenCalled();
+    expect(getBoardseshGradeLocal).not.toHaveBeenCalled();
+    expect(getClimbStatsHistoryLocal).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('goes back to local-first once the replay has finished', async () => {
+    setOnline(true);
+    isBoardTypeProtectedSettled.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(result).toEqual({ searchClimbs: { climbs: [{ uuid: 'local' }], hasMore: false } });
+    expect(request).not.toHaveBeenCalled();
   });
 });
 

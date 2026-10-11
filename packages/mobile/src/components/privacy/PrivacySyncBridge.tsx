@@ -17,7 +17,6 @@ import {
 } from '../../offline/privacy-revalidation';
 import { canReadPrivateCatalog, subscribeCatalogCredentialMismatch } from '../../offline/catalog-access';
 import { getDatabaseHandle, subscribeDatabaseHandle } from '../../db/connection';
-import { getSetting } from '../../settings';
 import { clearStoredSprayPhotos } from '../../lib/spray/spray-photo-store';
 import { reportHandledError } from '../../lib/error-reporting';
 
@@ -63,7 +62,7 @@ export function PrivacySyncBridge() {
         getDatabaseHandle() === database &&
         getPrivacyCredentialGeneration() === credentialGeneration;
       try {
-        await revalidatePrivateCatalog(database, viewerId, getSetting('syncEnabledBoards'), isCurrent, canAuthorize);
+        await revalidatePrivateCatalog(database, viewerId, isCurrent, canAuthorize);
         if (isCurrent()) retryIndex = 0;
       } catch (error) {
         if (currentViewer() && revision === attemptRevision) {
