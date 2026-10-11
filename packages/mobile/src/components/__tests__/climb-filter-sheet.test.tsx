@@ -23,9 +23,9 @@ import {
   StrictMode,
   type ReactNode,
 } from 'react';
-import { act, fireEvent, render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
+import { act, fireEvent, render, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_CLIMB_FILTER_STATE, type ClimbBoardFilterState } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from '../../lib/climb-filter-types';
 import { ClimbFilterSheet } from '../ClimbFilterSheet';
 import { emitSetterFilterSelection } from '../../lib/setter-filter-handoff';
@@ -40,6 +40,7 @@ type PressableProps = {
   onPress?: () => void;
   accessibilityLabel?: string;
   accessibilityRole?: string;
+  accessibilityState?: { selected?: boolean };
   disabled?: boolean;
   style?: StyleProp;
 };
@@ -84,9 +85,14 @@ const bottomSheetScrollViewProps = vi.hoisted(() => ({
   latest: null as null | {
     onScroll?: (event: { nativeEvent: { contentOffset: { y: number } } }) => void;
     onContentSizeChange?: () => void;
+    keyboardShouldPersistTaps?: string;
+    scrollEventThrottle?: number;
   },
   scrollTo: vi.fn(),
 }));
+
+type ScrollViewMockProps = NonNullable<typeof bottomSheetScrollViewProps.latest> & { children?: ReactNode };
+const platformMock = vi.hoisted(() => ({ OS: 'android' as 'android' | 'ios' | 'web' }));
 
 // expo-router stand-ins: a push spy and a holder for the focus callback so a test
 // can simulate the climbs screen regaining focus after a sub-route pops.
@@ -147,7 +153,7 @@ type TextInputProps = {
 };
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'android' },
+  Platform: platformMock,
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   View: ({ children, style, testID }: { children?: ReactNode; style?: StyleProp; testID?: string }) =>
     createElement(
@@ -164,13 +170,22 @@ vi.mock('react-native', () => ({
     metrics: () => undefined,
   },
   LayoutAnimation: { configureNext: () => {} },
-  Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled, style }: PressableProps) => {
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityState,
+    disabled,
+    style,
+  }: PressableProps) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
       'button',
       {
         onClick: disabled ? undefined : onPress,
         'aria-label': accessibilityLabel,
+        'aria-pressed': accessibilityState?.selected,
         'data-role': accessibilityRole,
         'data-style': resolveStyle(style),
         disabled,
@@ -198,7 +213,11 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('react-native-gesture-handler', () => ({
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: forwardRef<unknown, ScrollViewMockProps>(function GestureHandlerScrollView({ children, ...props }, ref) {
+    bottomSheetScrollViewProps.latest = props;
+    useImperativeHandle(ref, () => ({ scrollTo: bottomSheetScrollViewProps.scrollTo }), []);
+    return createElement('div', { 'data-testid': 'filter-scroll-view', 'data-adapter': 'gesture-handler' }, children);
+  }),
 }));
 
 vi.mock('expo-router', () => ({
@@ -220,17 +239,13 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     }, []);
     return createElement('div', null, children);
   }),
-  BottomSheetScrollView: forwardRef<
-    unknown,
-    {
-      children?: ReactNode;
-      onScroll?: (event: { nativeEvent: { contentOffset: { y: number } } }) => void;
-      onContentSizeChange?: () => void;
-    }
-  >(function BottomSheetScrollView({ children, onScroll, onContentSizeChange }, ref) {
-    bottomSheetScrollViewProps.latest = { onScroll, onContentSizeChange };
+  BottomSheetScrollView: forwardRef<unknown, ScrollViewMockProps>(function BottomSheetScrollView(
+    { children, ...props },
+    ref,
+  ) {
+    bottomSheetScrollViewProps.latest = props;
     useImperativeHandle(ref, () => ({ scrollTo: bottomSheetScrollViewProps.scrollTo }), []);
-    return createElement('div', null, children);
+    return createElement('div', { 'data-testid': 'filter-scroll-view', 'data-adapter': 'bottom-sheet' }, children);
   }),
 }));
 
@@ -274,45 +289,28 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, params?: { count?: number }) => `${key}${params?.count ?? ''}` }),
 }));
 
-vi.mock('@boardsesh/climb-filters', async (importOriginal) => {
-  const { applyStatusChange } = await importOriginal<typeof import('@boardsesh/climb-filters')>();
-  return {
-    SORT_OPTIONS: ['popular', 'difficulty'],
-    GRADE_ACCURACY_VALUES: ['0', '0.2', '0.1', '0.05'],
-    DEFAULT_CLIMB_FILTER_STATE: {
-      sortBy: 'popular',
-      sortOrder: 'desc',
-      status: 'any',
-      boulders: true,
-      routes: false,
-    },
-    DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
-    hasActiveClimbFilters: filterActivityMocks.hasActiveClimbFilters,
-    hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
-    applyStatusChange,
-    normalizeRetiredFilters: (filters: unknown) => filters,
-    toClimbSearchInput: searchInputMocks.toClimbSearchInput,
-    newSortSeed: () => '424242',
-    mergeBoardFilters: searchInputMocks.mergeBoardFilters,
-    formatMinAscentsFilterCount: (count: number) => String(count),
-    countFilteredHolds: (holdsFilter?: Record<string, unknown>) => Object.keys(holdsFilter ?? {}).length,
-    // "Your progress" selector (PRIMARY card single-select).
-    PROGRESS_FILTER_VALUES: ['all', 'untried', 'projects', 'sent', 'unsent'],
-    flagsToProgress: (flags?: Record<string, unknown>) => {
-      if (flags?.showOnlyCompleted) return 'sent';
-      if (flags?.showOnlyAttempted) return 'projects';
-      if (flags?.hideAttempted && flags?.hideCompleted) return 'untried';
-      if (flags?.hideCompleted) return 'unsent';
-      return 'all';
-    },
-    progressToFlags: () => ({
-      hideAttempted: undefined,
-      hideCompleted: undefined,
-      showOnlyAttempted: undefined,
-      showOnlyCompleted: undefined,
-    }),
-  };
-});
+vi.mock('@boardsesh/climb-filters', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/climb-filters')>()),
+  SORT_OPTIONS: ['popular', 'difficulty'],
+  GRADE_ACCURACY_VALUES: ['0', '0.2', '0.1', '0.05'],
+  DEFAULT_CLIMB_FILTER_STATE: {
+    sortBy: 'popular',
+    sortOrder: 'desc',
+    status: 'any',
+    boulders: true,
+    routes: false,
+  },
+  DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
+  hasActiveClimbFilters: filterActivityMocks.hasActiveClimbFilters,
+  hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
+  applyStatusChange: (await importOriginal<typeof import('@boardsesh/climb-filters')>()).applyStatusChange,
+  normalizeRetiredFilters: (filters: unknown) => filters,
+  toClimbSearchInput: searchInputMocks.toClimbSearchInput,
+  newSortSeed: () => '424242',
+  mergeBoardFilters: searchInputMocks.mergeBoardFilters,
+  formatMinAscentsFilterCount: (count: number) => String(count),
+  countFilteredHolds: (holdsFilter?: Record<string, unknown>) => Object.keys(holdsFilter ?? {}).length,
+}));
 
 const countPreviewMock = vi.hoisted(() => ({ count: 12 as number | undefined }));
 vi.mock('../../lib/graphql/hooks', () => ({
@@ -410,7 +408,6 @@ vi.mock('../SegmentedControl', () => ({
       ),
     ),
 }));
-vi.mock('../StarRating', () => ({ StarRating: () => null }));
 vi.mock('../RadioGroup', () => ({ RadioGroup: () => null }));
 // A clickable toggle keyed by label, so tests can drive the "My drafts" /
 // benchmark / tall / wide switches.
@@ -565,6 +562,191 @@ beforeEach(() => {
   focusEffectHolder.cb = null;
   authMock.isAuthenticated = true;
   pinStore.pinnedKind = null;
+  platformMock.OS = 'android';
+});
+
+describe('ClimbFilterSheet scroll adapters', () => {
+  it.each([
+    ['ios', 'gesture-handler'],
+    ['android', 'bottom-sheet'],
+    ['web', 'bottom-sheet'],
+  ] as const)('uses the %s scroll adapter and keeps the keyboard tap contract', (platform, adapter) => {
+    platformMock.OS = platform;
+    const { getByTestId } = renderFilterSheet();
+
+    expect(getByTestId('filter-scroll-view').getAttribute('data-adapter')).toBe(adapter);
+    expect(bottomSheetScrollViewProps.latest).toMatchObject({
+      keyboardShouldPersistTaps: 'handled',
+      scrollEventThrottle: 32,
+    });
+  });
+});
+
+// These presses verify the draft, preview and Apply wiring with the actual
+// progress mapping and StarRating. Native gesture delivery still needs device QA.
+describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interactions on %s (#6340)', (platform) => {
+  beforeEach(() => {
+    platformMock.OS = platform;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  function advanceCountPreview() {
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+  }
+
+  it('selects Sent, clears the previous progress flags and previews and applies the draft', () => {
+    const onApply = vi.fn();
+    const { getByLabelText, getByText } = renderFilterSheet({
+      onApply,
+      currentFilters: { ...currentFilters, showOnlyAttempted: true, hideCompleted: true },
+    });
+    const sentChip = getByLabelText('mobile.filter.progress.sent');
+    fireEvent.click(sentChip);
+
+    expect(sentChip.getAttribute('aria-pressed')).toBe('true');
+    expect(getByLabelText('mobile.filter.progress.projects').getAttribute('aria-pressed')).toBe('false');
+    expect(hapticSelection).toHaveBeenCalledTimes(1);
+    advanceCountPreview();
+
+    const sentFilters = {
+      ...currentFilters,
+      hideAttempted: undefined,
+      hideCompleted: undefined,
+      showOnlyAttempted: undefined,
+      showOnlyCompleted: true,
+    };
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(sentFilters);
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    expect(onApply).not.toHaveBeenCalled();
+    simulateNativeClose();
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledWith(sentFilters, currentBoardFilters);
+  });
+
+  it('selects different stars in My rating and Min rating and carries both into preview and Apply', () => {
+    const onApply = vi.fn();
+    const { getByText } = renderFilterSheet({ onApply });
+    const myRatingControls = within(getByText('mobile.filter.myRating').parentElement as HTMLElement);
+    const qualityControls = within(getByText('mobile.filter.section.quality').parentElement as HTMLElement);
+
+    fireEvent.click(myRatingControls.getByLabelText('3 stars'));
+    fireEvent.click(qualityControls.getByLabelText('4 stars'));
+
+    expect(myRatingControls.getByLabelText('3 stars').getAttribute('aria-pressed')).toBe('true');
+    expect(qualityControls.getByLabelText('4 stars').getAttribute('aria-pressed')).toBe('true');
+    expect(hapticSelection).toHaveBeenCalledTimes(2);
+    advanceCountPreview();
+
+    const ratedFilters = { ...currentFilters, minUserRating: 3, minRating: 4 };
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(ratedFilters);
+    expect(onApply).not.toHaveBeenCalled();
+    applyAndClose(getByText('mobile.filter.showCount12'));
+
+    expect(onApply).toHaveBeenCalledWith(ratedFilters, currentBoardFilters);
+  });
+
+  it('clears each star filter with its own Any chip in preview and Apply', () => {
+    const onApply = vi.fn();
+    const { getByText } = renderFilterSheet({
+      onApply,
+      currentFilters: { ...currentFilters, minUserRating: 3, minRating: 4 },
+    });
+    const myRatingControls = within(getByText('mobile.filter.myRating').parentElement as HTMLElement);
+    const qualityControls = within(getByText('mobile.filter.section.quality').parentElement as HTMLElement);
+
+    fireEvent.click(myRatingControls.getByLabelText('mobile.filter.anyRating'));
+    fireEvent.click(qualityControls.getByLabelText('mobile.filter.anyRating'));
+
+    expect(myRatingControls.getByLabelText('mobile.filter.anyRating').getAttribute('aria-pressed')).toBe('true');
+    expect(qualityControls.getByLabelText('mobile.filter.anyRating').getAttribute('aria-pressed')).toBe('true');
+    expect(myRatingControls.getByLabelText('3 stars').getAttribute('aria-pressed')).toBe('false');
+    expect(qualityControls.getByLabelText('4 stars').getAttribute('aria-pressed')).toBe('false');
+    advanceCountPreview();
+
+    const clearedRatings = { ...currentFilters, minUserRating: undefined, minRating: undefined };
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(clearedRatings);
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith(clearedRatings, currentBoardFilters);
+  });
+
+  it('turns Only-rated off and clears its constraint from preview and Apply', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({
+      onApply,
+      currentFilters: { ...currentFilters, onlyRatedByMe: true },
+    });
+
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    expect(getByTestId('switch-mobile.filter.onlyRatedByMe').getAttribute('data-value')).toBe('false');
+    advanceCountPreview();
+
+    const clearedOnlyRated = { ...currentFilters, onlyRatedByMe: undefined };
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(clearedOnlyRated);
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith(clearedOnlyRated, currentBoardFilters);
+  });
+
+  it('resets Sent and both ratings together and previews and applies the defaults', () => {
+    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+    const onApply = vi.fn();
+    const { getByText, getByLabelText } = renderFilterSheet({
+      onApply,
+      currentFilters: { ...currentFilters, showOnlyCompleted: true, minUserRating: 3, minRating: 4 },
+    });
+    const myRatingControls = within(getByText('mobile.filter.myRating').parentElement as HTMLElement);
+    const qualityControls = within(getByText('mobile.filter.section.quality').parentElement as HTMLElement);
+
+    fireEvent.click(getByText('mobile.filter.reset'));
+
+    expect(getByLabelText('mobile.filter.progress.all').getAttribute('aria-pressed')).toBe('true');
+    expect(getByLabelText('mobile.filter.progress.sent').getAttribute('aria-pressed')).toBe('false');
+    expect(myRatingControls.getByLabelText('mobile.filter.anyRating').getAttribute('aria-pressed')).toBe('true');
+    expect(qualityControls.getByLabelText('mobile.filter.anyRating').getAttribute('aria-pressed')).toBe('true');
+    advanceCountPreview();
+
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(DEFAULT_CLIMB_FILTER_STATE);
+    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({});
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith(DEFAULT_CLIMB_FILTER_STATE, {});
+  });
+
+  it('previews mutually exclusive Collection choices and applies Any with both constraints cleared', () => {
+    const onApply = vi.fn();
+    const { getByText } = renderFilterSheet({ onApply });
+    const collectionControls = within(getByText('mobile.filter.section.quality').parentElement as HTMLElement);
+
+    fireEvent.click(collectionControls.getByTestId('segment-drafts'));
+    expect(collectionControls.getByTestId('segment-drafts').getAttribute('data-selected')).toBe('true');
+    advanceCountPreview();
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual({ ...currentFilters, status: 'drafts' });
+    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
+      ...currentBoardFilters,
+      onlyBenchmarks: undefined,
+    });
+
+    fireEvent.click(collectionControls.getByTestId('segment-benchmarks'));
+    expect(collectionControls.getByTestId('segment-drafts').getAttribute('data-selected')).toBe('false');
+    expect(collectionControls.getByTestId('segment-benchmarks').getAttribute('data-selected')).toBe('true');
+    advanceCountPreview();
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(currentFilters);
+    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
+      ...currentBoardFilters,
+      onlyBenchmarks: true,
+    });
+
+    fireEvent.click(collectionControls.getByTestId('segment-any'));
+    expect(collectionControls.getByTestId('segment-any').getAttribute('data-selected')).toBe('true');
+    advanceCountPreview();
+    const clearedCollection = { ...currentBoardFilters, onlyBenchmarks: undefined };
+    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual(clearedCollection);
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith(currentFilters, clearedCollection);
+  });
 });
 
 describe('ClimbFilterSheet live selections and dismissal', () => {
@@ -1140,26 +1322,30 @@ describe('ClimbFilterSheet sub-pickers', () => {
     expect(bottomSheetModalProps.mountCount).toBe(2);
   });
 
-  it('restores the pre-suspend scroll offset after the remount, ignoring mount-time scroll noise', () => {
-    const { getByLabelText } = renderFilterSheet();
+  it.each(['android', 'ios', 'web'] as const)(
+    'restores the pre-suspend scroll offset on %s, ignoring mount-time scroll noise',
+    (platform) => {
+      platformMock.OS = platform;
+      const { getByLabelText } = renderFilterSheet();
 
-    // User scrolls down, then opens a sub-picker (offset snapshotted at suspend).
-    act(() => {
-      bottomSheetScrollViewProps.latest?.onScroll?.({ nativeEvent: { contentOffset: { y: 240 } } });
-    });
-    fireEvent.click(getByLabelText('mobile.filter.setters'));
-    simulateScreenRefocus();
+      // User scrolls down, then opens a sub-picker (offset snapshotted at suspend).
+      act(() => {
+        bottomSheetScrollViewProps.latest?.onScroll?.({ nativeEvent: { contentOffset: { y: 240 } } });
+      });
+      fireEvent.click(getByLabelText('mobile.filter.setters'));
+      simulateScreenRefocus();
 
-    // The fresh ScrollView can emit an initial onScroll at y=0 before its content
-    // lays out — the restore must not pick that up as the target.
-    act(() => {
-      bottomSheetScrollViewProps.latest?.onScroll?.({ nativeEvent: { contentOffset: { y: 0 } } });
-      bottomSheetScrollViewProps.latest?.onContentSizeChange?.();
-    });
+      // The fresh ScrollView can emit an initial onScroll at y=0 before its content
+      // lays out — the restore must not pick that up as the target.
+      act(() => {
+        bottomSheetScrollViewProps.latest?.onScroll?.({ nativeEvent: { contentOffset: { y: 0 } } });
+        bottomSheetScrollViewProps.latest?.onContentSizeChange?.();
+      });
 
-    expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledTimes(1);
-    expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledWith({ y: 240, animated: false });
-  });
+      expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledTimes(1);
+      expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledWith({ y: 240, animated: false });
+    },
+  );
 });
 
 describe('ClimbFilterSheet rows without a board config', () => {

@@ -154,6 +154,12 @@ Android bounds it natively and keeps `flex: 1`. A raw-`BottomSheet` surface with
 single flex child by going through `Sheet` / `ModalSheet` (the picker sheets do). `LogAscentSheet` is a `ModalSheet` now
 and gets it from the wrapper.
 
+`ClimbFilterSheet` uses the gesture-handler `ScrollView` for its iOS body, matching the
+grade rail's native gesture path for RN chips, stars and switches inside the SwiftUI
+sheet (#6340). Keep the existing Expo `BottomSheetScrollView` on Android and the
+Gorhom adapter on web. All paths retain the bounded column, keyboard padding and
+scroll-position restore after a sub-picker.
+
 **Android sizing — only two real states.** `@expo/ui`'s Android sheet is a plain Material 3
 `ModalBottomSheet`: it never reads the requested `%` snap-point _values_, only the detent count
 and which index is requested — it has a fixed ~50% "partial" state and a content-fitting
