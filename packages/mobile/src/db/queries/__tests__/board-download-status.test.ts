@@ -11,10 +11,17 @@ vi.mock('react-native-mmkv', () => {
   return { createMMKV: vi.fn(() => createMockInstance()) };
 });
 
-import { runMigrations } from '@boardsesh/offline-sync';
-import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import { resetProtectedSyncState, runMigrations } from '@boardsesh/offline-sync';
+import {
+  createTestDatabase,
+  markScopeDownloaded,
+  markScopeProtectedComplete,
+  type TestSqliteDb,
+} from '@boardsesh/offline-sync/testing';
 import {
   isBoardDownloadedLocally,
+  isBoardTypeDownloadedLocally,
+  isBoardTypeProtectedSettled,
   hasDownloadedBoardData,
   isClimbLayoutDownloadedLocally,
 } from '../board-download-status';
@@ -177,5 +184,93 @@ describe('isClimbLayoutDownloadedLocally', () => {
     await markScopeDownloadComplete(db, 'kilter:1:5');
     expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'missing')).toBe(false);
     expect(await isClimbLayoutDownloadedLocally(db, 'tension', 'a')).toBe(false);
+  });
+});
+
+// Issue #6306. A privacy event deletes other climbers' protected rows and
+// resets the protected sync cursors; the `scope-complete:` marker stays, and the
+// next pull brings back what the viewer may still see. What may be read from
+// the device in between depends on what the board is made of.
+describe('a downloaded board whose protected rows are being replayed after a privacy event', () => {
+  let db: TestSqliteDb;
+  const KILTER = { boardType: 'kilter', layoutId: 1, sizeId: 5 };
+  const WALL = { boardType: 'spray', layoutId: 7, sizeId: 7 };
+
+  beforeEach(async () => {
+    mockStorage.clear();
+    resetAllSettings();
+    db = createTestDatabase();
+    await runMigrations(db);
+    await insertClimb(db, { uuid: 'kilter-climb', compatibleSizeIds: [5] });
+    await insertClimb(db, { uuid: 'wall-climb', boardType: 'spray', layoutId: 7, compatibleSizeIds: [7] });
+    setSetting('syncEnabledBoards', ['kilter:1:5', 'spray:7:7']);
+    await markScopeDownloaded(db, 'kilter:1:5');
+    await markScopeDownloaded(db, 'spray:7:7');
+  });
+
+  it('reads both boards from the device once every stream is at its tail', async () => {
+    expect(await isBoardDownloadedLocally(db, KILTER)).toBe(true);
+    expect(await isBoardDownloadedLocally(db, WALL)).toBe(true);
+    expect(await isBoardTypeProtectedSettled(db, 'kilter')).toBe(true);
+    expect(await isBoardTypeProtectedSettled(db, 'spray')).toBe(true);
+  });
+
+  describe('between the event and the end of the replay', () => {
+    beforeEach(async () => {
+      // What the revalidation does to the sync state.
+      await resetProtectedSyncState(db);
+    });
+
+    it('keeps serving a catalogue board: it still holds its reference catalogue and the climber’s own climbs', async () => {
+      expect(await isBoardDownloadedLocally(db, KILTER)).toBe(true);
+      expect(await isBoardTypeDownloadedLocally(db, 'kilter')).toBe(true);
+      expect(await isClimbLayoutDownloadedLocally(db, 'kilter', 'kilter-climb')).toBe(true);
+    });
+
+    it('does not serve a spray wall: without its protected rows there is no wall', async () => {
+      expect(await isBoardDownloadedLocally(db, WALL)).toBe(false);
+      expect(await isBoardTypeDownloadedLocally(db, 'spray')).toBe(false);
+      expect(await isClimbLayoutDownloadedLocally(db, 'spray', 'wall-climb')).toBe(false);
+    });
+
+    it('says neither board type is settled, which is what sends an online read to the server', async () => {
+      expect(await isBoardTypeProtectedSettled(db, 'kilter')).toBe(false);
+      expect(await isBoardTypeProtectedSettled(db, 'spray')).toBe(false);
+    });
+
+    it('serves the wall again, and settles, when its replay finishes', async () => {
+      await markScopeProtectedComplete(db, 'spray:7:7');
+
+      expect(await isBoardDownloadedLocally(db, WALL)).toBe(true);
+      expect(await isBoardTypeProtectedSettled(db, 'spray')).toBe(true);
+      // One board's replay says nothing about another's.
+      expect(await isBoardTypeProtectedSettled(db, 'kilter')).toBe(false);
+    });
+  });
+
+  describe('isBoardTypeProtectedSettled', () => {
+    it('is settled for a board type with nothing downloaded: there is nothing to wait for', async () => {
+      expect(await isBoardTypeProtectedSettled(db, 'tension')).toBe(true);
+    });
+
+    it('ignores a scope that is still downloading, which is not read from the device anyway', async () => {
+      setSetting('syncEnabledBoards', ['kilter:1:5', 'kilter:8:5']);
+      expect(await isBoardTypeProtectedSettled(db, 'kilter')).toBe(true);
+    });
+
+    it('ignores a board that is on the device but switched off', async () => {
+      await resetProtectedSyncState(db);
+      setSetting('syncEnabledBoards', ['spray:7:7']);
+      expect(await isBoardTypeProtectedSettled(db, 'kilter')).toBe(true);
+    });
+
+    it('waits for every downloaded scope of the type, not just one', async () => {
+      await insertClimb(db, { uuid: 'kilter-other-layout', layoutId: 8, compatibleSizeIds: [5] });
+      setSetting('syncEnabledBoards', ['kilter:1:5', 'kilter:8:5']);
+      await markScopeDownloadComplete(db, 'kilter:8:5');
+      expect(await isBoardTypeProtectedSettled(db, 'kilter')).toBe(false);
+      await markScopeProtectedComplete(db, 'kilter:8:5');
+      expect(await isBoardTypeProtectedSettled(db, 'kilter')).toBe(true);
+    });
   });
 });

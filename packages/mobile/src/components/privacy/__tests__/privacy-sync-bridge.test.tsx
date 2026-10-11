@@ -171,7 +171,7 @@ describe('privacy revocation subscription', () => {
     mocks.database = { id: 2 };
     await act(async () => mocks.databaseListener?.());
     expect(mocks.revalidate).toHaveBeenCalledOnce();
-    expect((mocks.revalidate.mock.calls[0][4] as () => boolean)()).toBe(false);
+    expect((mocks.revalidate.mock.calls[0][3] as () => boolean)()).toBe(false);
     expect(mocks.report).not.toHaveBeenCalled();
     mocks.online = true;
     await act(async () => mocks.onlineListener?.(true));
@@ -189,7 +189,7 @@ describe('privacy revocation subscription', () => {
     );
     render(<PrivacySyncBridge />);
     await act(async () => revoke());
-    const originalCurrent = mocks.revalidate.mock.calls[0][3] as () => boolean;
+    const originalCurrent = mocks.revalidate.mock.calls[0][2] as () => boolean;
     expect(originalCurrent()).toBe(true);
     await act(async () => {
       revoke();
@@ -211,7 +211,7 @@ describe('privacy revocation subscription', () => {
     );
     render(<PrivacySyncBridge />);
     await act(async () => revoke());
-    const originalCurrent = mocks.revalidate.mock.calls[0][3] as () => boolean;
+    const originalCurrent = mocks.revalidate.mock.calls[0][2] as () => boolean;
     mocks.database = { id: 2 };
     await act(async () => mocks.databaseListener?.());
     expect(originalCurrent()).toBe(false);
@@ -229,7 +229,7 @@ describe('privacy revocation subscription', () => {
     );
     const view = render(<PrivacySyncBridge />);
     await act(async () => revoke());
-    const originalCurrent = mocks.revalidate.mock.calls[0][3] as () => boolean;
+    const originalCurrent = mocks.revalidate.mock.calls[0][2] as () => boolean;
     mocks.credential += 1;
     expect(originalCurrent()).toBe(false);
     view.unmount();

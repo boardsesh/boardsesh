@@ -17,6 +17,7 @@ import { FollowedAuthorsUnavailableError } from '../followed-authors-error';
 import {
   isBoardDownloadedLocally,
   isBoardTypeDownloadedLocally,
+  isBoardTypeProtectedSettled,
   isClimbLayoutDownloadedLocally,
 } from '../../db/queries/board-download-status';
 import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
@@ -510,6 +511,11 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         localDb &&
         variables !== undefined &&
         (await canReadPrivateCatalog(localDb)) &&
+        // Online, a board whose protected rows are still being replayed after a
+        // privacy event goes to the server, which has the complete answer. The
+        // local copy still answers below if that request fails, and offline it
+        // answers here (see `isBoardTypeProtectedSettled`).
+        (!isOnline || (await isBoardTypeProtectedSettled(localDb, operation.boardNameOf(variables as never)))) &&
         (await operation.canServeLocal(localDb, variables as never))
       ) {
         localServiceable = true;
