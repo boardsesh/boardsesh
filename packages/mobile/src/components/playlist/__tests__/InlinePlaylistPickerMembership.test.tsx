@@ -98,6 +98,23 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { full: 9999, md: 8 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32, 10: 40 },
 }));
+vi.mock('../../PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityLabel,
+    disabled,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+    disabled?: boolean;
+  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel, disabled }, children),
+}));
+vi.mock('../../Button', () => ({
+  Button: ({ children, onPress, disabled }: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: onPress, disabled }, children),
+}));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
