@@ -28,11 +28,15 @@ counts (see [analytics-consent.md](./analytics-consent.md)).
   and a signed-out climber who declines analytics can't be counted anywhere.
 - **Platform:** `unknown` until the web and app clients send
   `x-boardsesh-platform` / `clientPlatform` (PRs B and C of #2644).
-- **PostHog MAU is no longer comparable.** Once the consent prompt ships (PRs B
-  and C of #2644), PostHog only sees climbers who chose "Allow", so a
-  people-based MAU tile drops by the share who declined or never answered.
-  Read growth from the snapshot; read behaviour (funnels, retention) from
-  PostHog people, knowing they are the consenting subset.
+- **PostHog MAU is no longer comparable.** Since the consent prompt shipped
+  (PRs B and C of #2644), PostHog sees climbers in the prompt regions (EU, EEA,
+  UK, Switzerland and the rest of `CONSENT_PROMPT_COUNTRIES`) only after they
+  choose "Allow", and everyone else unless they switch analytics off (the
+  region default). The opted-in share therefore differs by region: European
+  numbers drop by the share who declined or never answered, the rest barely
+  move. Never compare a prompt-region country with another region by PostHog
+  people counts. Read growth from the snapshot; read behaviour (funnels,
+  retention) from PostHog people, knowing they are the consenting subset.
 
 ## Populations
 

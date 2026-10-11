@@ -1,7 +1,11 @@
 # Analytics consent
 
 Boardsesh asks before it runs product analytics, on the web and in the app,
-and stores the answer on the device and on the account. Tracking issue #2644.
+in the EU, the EEA, the UK, Switzerland and the other places listed under
+[Who is asked](#who-is-asked), and whenever it cannot tell where a visitor is.
+Everywhere else analytics starts on and the climber can switch it off in
+Settings. Answers are stored on the device and on the account. Tracking issue
+#2644.
 This page covers the shared consent model, account synchronization, backend
 statistics, web banner and privacy policy. The app shares the model and account
 synchronizer.
@@ -17,6 +21,7 @@ type ConsentRecord = {
   version: number; // CONSENT_VERSION the climber was asked under
   decidedAt: string; // ISO 8601
   source: 'web' | 'ios' | 'android';
+  basis?: 'explicit' | 'region_default'; // device-only; absent means explicit
 };
 ```
 
@@ -28,7 +33,78 @@ type ConsentRecord = {
 - On the web the device copy is the `boardsesh-consent` cookie, value
   `v1.granted.1767225600.web` (version, choice, epoch seconds, source).
   `parseConsentCookieValue` returns null for anything else, so a garbled cookie
-  asks again; it can never turn tracking on.
+  asks again; it can never turn tracking on. A region default adds a fifth
+  part, `v1.granted.1767225600.web.region`; only `granted` may carry it.
+- `basis` is new and optional, so no `CONSENT_VERSION` bump: every record
+  stored before it reads as explicit. A bundle that predates the fifth cookie
+  part reads a region-default cookie as no answer and asks, the safe direction.
+
+## Who is asked
+
+`consentPromptRequired(countryCode)` in `@boardsesh/consent`
+(`packages/shared/consent/src/consent-region.ts`) decides. It is true for:
+
+- The 27 EU member states, plus EU territory that geolocation reports under its
+  own code: Åland `AX`, French Guiana `GF`, Guadeloupe `GP`, Saint-Martin `MF`,
+  Martinique `MQ`, Réunion `RE`, Mayotte `YT`.
+- The rest of the EEA: Iceland `IS`, Liechtenstein `LI`, Norway `NO`.
+- The UK `GB`, and places with their own copy of GDPR: Switzerland `CH`
+  (revised FADP), Gibraltar `GI`, Guernsey `GG`, Jersey `JE`, Isle of Man `IM`.
+  These are a policy choice, kept in their own list so they can be dropped.
+- Every code that does not name one known country: null, `XX`, `ZZ`, Tor's
+  `T1`, the other user-assigned codes (`AA`, `QM`-`QZ`, `X*`), the reserved
+  `EU` and `UK`, lowercase or malformed values. When in doubt, ask.
+
+**Where the country comes from.** The unauthenticated GraphQL query
+`consentRegion { countryCode promptRequired }`. The backend reads Cloudflare's
+`CF-IPCountry` through `resolveFlagCountry` (`packages/backend/src/utils/flag-country.ts`),
+the same trusted-hop check the PostHog proxy uses (see `docs/cloudflare.md`):
+a forged header from a direct-origin caller resolves as `XX` and asks. The HTTP
+context carries only that coarse country (`ConnectionContext.edgeCountry`); the
+IP is not read, logged or stored for this. WebSocket operations have no edge
+country and always ask. `myAnalyticsConsent` does not carry `promptRequired`:
+it is signed-in only and null exactly when the region is needed.
+
+**Region default.** A device with no answer whose region is not a prompt region
+takes `createRegionDefaultConsent(source)`: analytics granted, `basis:
+'region_default'`. It is device-only:
+
+- The sync coordinator never writes it to the account, so it is never recorded
+  as an Art. 7 consent. (The one guard is in `consent-sync.ts`; the
+  `resolveConsent` change below is in `consent-record.ts`.)
+- An account denial replaces it (merge rule 2). An account grant replaces it
+  with the account's explicit answer (merge rule 3).
+- Any choice in Settings, the footer's Privacy choices or the prompt replaces it
+  with an explicit record that syncs as before.
+- A device that holds a region default re-checks the region once per app launch
+  or page load. A prompt region drops the default and the prompt asks (a climber
+  who travels into the EU). An unknown region keeps it, so a flaky or offline
+  start does not re-ask.
+
+**App.** `ConsentGate` (`packages/mobile/src/components/onboarding/ConsentGate.tsx`)
+starts the lookup as soon as the device turns out to have no answer
+(`lookUpConsentRegion`, one request per launch, capped at 5 seconds). Where it
+would open the prompt it waits for that answer: `false` writes the region
+default, `true` or no answer opens the prompt. Signed-in climbers still wait up
+to 5 seconds for their account answer first; an account answer is never
+touched. Screenshot mode and the `privacy-consent-step-kill` flag skip the
+lookup, as they skip the prompt.
+
+**Website.** The browser asks, never the server: list and climb pages are cached
+at Cloudflare (`boardsesh:www-html-edge-cache`) and shared between visitors, so a
+region decided in middleware or the layout would hand one visitor's country to
+another. `useConsentRegionPrompt` (used by the banner) looks the region up once
+per page load while the cookie holds no answer or a region default. The banner
+renders only after a prompt region or an unknown answer (capped at 5 seconds),
+so a visitor outside those regions never sees it flash. A `false` answer writes
+the region-default cookie; this is the one consent cookie written without a
+click. Kiosk and embed pages never look up the region and never write it.
+
+**Legal basis outside the prompt regions.** Product analytics there runs under
+legitimate interest with an opt-out: the Analytics toggle in app Settings, and
+Privacy choices on the website. Both are global, for every visitor in every
+region, and so is the account merge rule. Session replay stays a separate
+opt-in that defaults off everywhere.
 
 ## The merge rule
 
@@ -37,8 +113,8 @@ type ConsentRecord = {
 1. A record older than `CONSENT_VERSION` counts as no answer.
 2. An account `denied` always wins. "No thanks" anywhere you are signed in
    stops tracking everywhere you are signed in.
-3. An account `granted` only applies to a device with no answer of its own. A
-   device that said "No thanks" keeps saying it.
+3. An account `granted` only applies to a device with no answer of its own, or
+   only a region default. A device that said "No thanks" keeps saying it.
 4. Otherwise the device's own answer stands.
 
 Because rule 2 lets the account override a newer device grant, a client must
@@ -112,11 +188,11 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 
 | Tracker | Basis | Notes |
 | --- | --- | --- |
-| PostHog capture and identify (web, app) | Consent | Only after "Allow" (PRs B and C). Feature flags still resolve without consent. |
-| PostHog session replay | Consent | Off unless analytics is granted. |
+| PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. |
+| PostHog session replay | Consent | Off unless analytics is on and the climber also switches replay on; never on by default. |
 | Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
-| Android install-referrer attribution | Consent | `Install Attributed` is sent only after a grant. |
-| iOS Apple Ads attribution | Consent | Native token acquisition, the first-party backend exchange with Apple, and campaign-linked PostHog publication require a current Allow. Tokens are never persisted or sent to diagnostics. |
+| Android install-referrer attribution | Consent in the prompt regions; legitimate interest with opt-out elsewhere | `Install Attributed` is sent only while analytics is on (a grant or the region default). |
+| iOS Apple Ads attribution | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Native token acquisition, the first-party backend exchange with Apple, and campaign-linked PostHog publication require a current Allow. Tokens are never persisted or sent to diagnostics. |
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
@@ -259,10 +335,12 @@ before storage can restore an analytics grant.
 
 ## Website and browser app
 
-The website renders the same banner and analytics components for every request.
-A pre-paint script reads the current, valid `boardsesh-consent` cookie and sets
+The website renders the same analytics components for every request; the banner
+itself appears only after the browser's region lookup (see
+[Who is asked](#who-is-asked)). A pre-paint script reads the current, valid
+`boardsesh-consent` cookie, region default included, and sets
 `html[data-consent]`; CSS hides answered banners before hydration. Request
-cookies never determine cached HTML. The one-year cookie uses Path=/,
+cookies and the visitor's country never determine cached HTML. The one-year cookie uses Path=/,
 SameSite=Lax and Secure on HTTPS, with Domain=.boardsesh.com on the production
 origins. Local development and previews use host-only cookies. The browser app
 reads the same cookie through its platform storage adapter. Since browser
