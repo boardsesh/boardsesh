@@ -757,15 +757,9 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
         emailVerified: emailVerificationEnabled ? null : new Date(),
       });
       await tx.insert(userCredentials).values({ userId: newUserId, passwordHash });
-      // Mirror the web createUser event: every user gets a profile row.
-      await tx
-        .insert(userProfiles)
-        .values({
-          userId: newUserId,
-          isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
-          defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
-        })
-        .onConflictDoNothing();
+      // Mirror the web createUser event: every user gets a profile row. New
+      // accounts start public (the column defaults); Private is opt-in.
+      await tx.insert(userProfiles).values({ userId: newUserId }).onConflictDoNothing();
       const tokenPair = await generateTokenPair(newUserId, tx);
       return {
         userId: newUserId,
@@ -1038,15 +1032,9 @@ async function findOrCreateOAuthUser(
       name: resolveDisplayName(identity, forwardedName),
       emailVerified: identity.emailVerified ? new Date() : null,
     });
-    // Mirror the web `createUser` event: every user gets a profile row.
-    await tx
-      .insert(userProfiles)
-      .values({
-        userId: newUserId,
-        isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
-        defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
-      })
-      .onConflictDoNothing();
+    // Mirror the web `createUser` event: every user gets a profile row. New
+    // accounts start public (the column defaults); Private is opt-in.
+    await tx.insert(userProfiles).values({ userId: newUserId }).onConflictDoNothing();
     await tx.insert(accounts).values({ userId: newUserId, type: 'oauth', provider, providerAccountId: identity.sub });
     const tokenPair = await generateTokenPair(newUserId, tx);
     return {

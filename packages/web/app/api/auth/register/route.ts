@@ -87,12 +87,9 @@ export async function POST(request: NextRequest) {
           passwordHash,
         });
 
-        // Create empty profile (user can customize later)
-        await tx.insert(schema.userProfiles).values({
-          isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
-          defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
-          userId,
-        });
+        // Create empty profile (user can customize later). New accounts start
+        // public (the column defaults); Private is opt-in.
+        await tx.insert(schema.userProfiles).values({ userId });
 
         // Insert verification token if email verification is enabled
         if (emailVerificationEnabled && verificationToken && tokenExpires) {

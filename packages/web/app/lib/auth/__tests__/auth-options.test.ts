@@ -1032,17 +1032,14 @@ describe('auth-options module side effect — canonical NEXTAUTH_URL', () => {
 });
 
 describe('OAuth registration privacy rollout', () => {
-  it.each(['0', '1'])('creates manageable defaults with privacy controls enabled=%s', async (flag) => {
+  it.each(['0', '1'])('creates a public account with privacy controls enabled=%s', async (flag) => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
     try {
       await authOptions.events?.createUser?.({
         user: { id: 'oauth-rollout-user', email: 'rollout@example.com' },
       });
-      expect(mockDbInsertValues).toHaveBeenLastCalledWith({
-        userId: 'oauth-rollout-user',
-        isPrivate: flag === '1',
-        defaultSessionAudience: flag === '1' ? 'followers' : 'public',
-      });
+      // Only the user id: the column defaults make the account public.
+      expect(mockDbInsertValues).toHaveBeenLastCalledWith({ userId: 'oauth-rollout-user' });
     } finally {
       vi.unstubAllEnvs();
     }

@@ -32,12 +32,16 @@ vi.mock('bcryptjs', () => ({
 
 const mockSelectLimit = vi.fn();
 const mockProfileValues = vi.fn();
+const { mockUserProfilesTable } = vi.hoisted(() => ({ mockUserProfilesTable: { userId: 'user_profiles.userId' } }));
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-  const mockValues = vi.fn((record: Record<string, unknown>) => {
-    if ('isPrivate' in record) mockProfileValues(record);
-    return Promise.resolve(undefined);
+  await fn({
+    insert: (table: unknown) => ({
+      values: (record: Record<string, unknown>) => {
+        if (table === mockUserProfilesTable) mockProfileValues(record);
+        return Promise.resolve(undefined);
+      },
+    }),
   });
-  await fn({ insert: () => ({ values: mockValues }) });
 });
 
 vi.mock('@/app/lib/db/db', () => ({
@@ -50,7 +54,7 @@ vi.mock('@/app/lib/db/db', () => ({
 vi.mock('@/app/lib/db/schema', () => ({
   users: { id: 'users.id', email: 'users.email' },
   userCredentials: { userId: 'user_credentials.userId' },
-  userProfiles: { userId: 'user_profiles.userId' },
+  userProfiles: mockUserProfilesTable,
   verificationTokens: { identifier: 'verification_tokens.identifier' },
 }));
 
@@ -77,17 +81,13 @@ describe('POST /api/auth/register', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['0', '1'])('gates signup defaults with privacy controls enabled=%s', async (flag) => {
+  it.each(['0', '1'])('creates a public account with privacy controls enabled=%s', async (flag) => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
     try {
       const response = await POST(createRequest({ email: 'rollout@example.com', password: 'password123' }));
       expect(response.status).toBe(201);
-      expect(mockProfileValues).toHaveBeenCalledWith(
-        expect.objectContaining({
-          isPrivate: flag === '1',
-          defaultSessionAudience: flag === '1' ? 'followers' : 'public',
-        }),
-      );
+      // Only the user id: the column defaults make the account public.
+      expect(mockProfileValues).toHaveBeenCalledWith({ userId: expect.any(String) });
     } finally {
       vi.unstubAllEnvs();
     }

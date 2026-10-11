@@ -209,7 +209,7 @@ describe('handleNativeAuthOAuth', () => {
     updateCalls.length = 0;
   });
 
-  it.each(['0', '1'])('gates OAuth account defaults with controls enabled=%s', async (flag) => {
+  it.each(['0', '1'])('creates a public OAuth account with controls enabled=%s', async (flag) => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
     jwtVerify.mockResolvedValueOnce({
       payload: { sub: 'rollout-google', email: 'rollout@example.com', email_verified: true },
@@ -220,10 +220,9 @@ describe('handleNativeAuthOAuth', () => {
     try {
       await callHandler(makeRequest({ method: 'POST', body: { provider: 'google', identityToken: 'tok' } }), res);
       expect(res.statusCode).toBe(200);
-      expect(insertsFor(userProfiles)[0].values).toMatchObject({
-        isPrivate: flag === '1',
-        defaultSessionAudience: flag === '1' ? 'followers' : 'public',
-      });
+      // Only the user id: the column defaults make the account public.
+      const profileValues = insertsFor(userProfiles)[0].values as Record<string, unknown>;
+      expect(Object.keys(profileValues)).toEqual(['userId']);
     } finally {
       vi.unstubAllEnvs();
     }

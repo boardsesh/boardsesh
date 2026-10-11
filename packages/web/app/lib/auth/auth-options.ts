@@ -462,17 +462,11 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async createUser({ user }) {
-      // Create profile for new OAuth users
+      // Create profile for new OAuth users. New accounts start public (the
+      // column defaults); Private is opt-in.
       if (user.id) {
         const db = getDb();
-        await db
-          .insert(schema.userProfiles)
-          .values({
-            userId: user.id,
-            isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
-            defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
-          })
-          .onConflictDoNothing();
+        await db.insert(schema.userProfiles).values({ userId: user.id }).onConflictDoNothing();
       }
     },
   },

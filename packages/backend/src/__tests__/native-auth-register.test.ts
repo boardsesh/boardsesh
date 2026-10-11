@@ -220,7 +220,7 @@ describe('handleNativeAuthRegister', () => {
     });
   });
 
-  it.each(['0', '1'])('gates new account privacy defaults with controls enabled=%s', async (flag) => {
+  it.each(['0', '1'])('creates a public account with privacy controls enabled=%s', async (flag) => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
     queueSelect([]);
     const req = makeRequest({ method: 'POST', body: { email: 'rollout@example.com', password: 'longenough' } });
@@ -228,10 +228,10 @@ describe('handleNativeAuthRegister', () => {
     try {
       await callHandler(req, res);
       expect(res.statusCode).toBe(201);
-      expect(insertsFor(userProfiles)[0].values).toMatchObject({
-        isPrivate: flag === '1',
-        defaultSessionAudience: flag === '1' ? 'followers' : 'public',
-      });
+      // Only the user id: the column defaults (is_private = false, no session
+      // default) make the account public. Private is opt-in.
+      const profileValues = insertsFor(userProfiles)[0].values as Record<string, unknown>;
+      expect(Object.keys(profileValues)).toEqual(['userId']);
     } finally {
       vi.unstubAllEnvs();
     }
