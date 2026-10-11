@@ -20,14 +20,15 @@
 -- Anything else, including an "Only me" a climber picked on a tick that is not
 -- in an explicit session, is left alone.
 --
--- Precondition: BOARDSESH_PRIVACY_ENABLED has never been 1 in production (the
--- default is off, docs/privacy.md and #6273). With the flag off nobody could pick
--- a tick or session audience (setContentAudience and updateResourcePrivacy go
--- through privacyActor), so every row this touches was written by the server.
--- Confirm it before deploying. It also covers two reconcile quirks: its upsert
--- never touched updated_at, so a tick row it overwrote keeps the older row's time
--- (a pre-2026-10-09 row is missed and stays Only me; a row written after it and
--- then overwritten is removed and falls back to the account default).
+-- Precondition, confirmed by the owner on 2026-10-12: the flag was never enabled
+-- in production (BOARDSESH_PRIVACY_ENABLED; the default is off, docs/privacy.md
+-- and #6273). With the flag off nobody could pick a tick or session audience
+-- (setContentAudience and updateResourcePrivacy go through privacyActor), so
+-- every row this touches was written by the server. It also covers two
+-- reconcile quirks: its upsert never touched updated_at, so a tick row it
+-- overwrote keeps the older row's time (a pre-2026-10-09 row is missed and stays
+-- Only me; a row written after it and then overwritten is removed and falls back
+-- to the account default).
 --
 -- Second block: session policies the legacy switch wrote as invite_only.
 -- After #6254 an old or flag-off client's Private switch, reconcile merges and
