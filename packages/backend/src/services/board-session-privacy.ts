@@ -1,7 +1,11 @@
 import { pubsub } from '../pubsub';
 import { createHmac } from 'node:crypto';
-import { and, eq, inArray, or } from 'drizzle-orm';
-import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import {
+  contentVisibilityCondition,
+  publicReferenceClimbSql,
+  sprayClimbVisibilityCondition,
+} from '@boardsesh/db/queries';
 import type {
   BoardConnectionHolder,
   BoardPresenceClimb,
@@ -46,6 +50,19 @@ export async function redactSessionUsers(
   );
 }
 
+/**
+ * Published and listed, or the viewer's own: the publication test the board
+ * sync uses (`publicReferenceClimbSql`), so a climb every device holds is not
+ * blanked in a live session. That test is two-valued. `is_draft` is nullable
+ * and NULL is not a draft, where `is_draft = false` would read NULL as one.
+ *
+ * Both queries below select from `board_climbs` unaliased, which is the name
+ * the predicate is built for.
+ */
+function publishedOrOwnClimb(viewerId: string | null | undefined) {
+  return or(viewerId ? eq(boardClimbs.userId, viewerId) : undefined, sql.raw(publicReferenceClimbSql('board_climbs')));
+}
+
 export async function canReadClimbContent(climbUuid: string, viewerId: string | null | undefined): Promise<boolean> {
   const [climb] = await db
     .select({ uuid: boardClimbs.uuid })
@@ -55,10 +72,7 @@ export async function canReadClimbContent(climbUuid: string, viewerId: string | 
         eq(boardClimbs.uuid, climbUuid),
         contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, viewerId),
         sprayClimbVisibilityCondition({ boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId }, viewerId),
-        or(
-          viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
-          and(eq(boardClimbs.isDraft, false), eq(boardClimbs.isListed, true)),
-        ),
+        publishedOrOwnClimb(viewerId),
       ),
     )
     .limit(1);
@@ -137,10 +151,7 @@ export async function redactBoardClimbs(
                 { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
                 viewerId,
               ),
-              or(
-                viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
-                and(eq(boardClimbs.isDraft, false), eq(boardClimbs.isListed, true)),
-              ),
+              publishedOrOwnClimb(viewerId),
             ),
           );
   const readableUuids = new Set(readableClimbs.map((climb) => climb.uuid));
