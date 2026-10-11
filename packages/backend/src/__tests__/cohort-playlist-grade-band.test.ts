@@ -1,9 +1,10 @@
 /**
- * The nightly recommendations job swaps a "Best of" playlist's climbs and
+ * The nightly recommendations job swaps a cohort playlist's climbs and
  * recomputes its grade band in one transaction (packages/db/src/jobs/
- * refresh-recommendations.ts). These pin the shape that call relies on: a
- * recompute run inside a caller's transaction sees the swapped climbs, commits
- * with them, and rolls back with them.
+ * refresh-recommendations.ts). These pin the transaction shape that call
+ * relies on: a recompute nested in a caller's transaction sees the swapped
+ * climbs, commits with them, and rolls back with them. The job path itself,
+ * under the batch worker's login, is covered in job-queue-roles.test.ts.
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { eq, like, sql } from 'drizzle-orm';
@@ -30,7 +31,7 @@ async function seedPlaylist(): Promise<bigint> {
   ]);
   const [playlist] = await db
     .insert(dbSchema.playlists)
-    .values({ uuid: `${PREFIX}playlist`, boardType: BOARD, layoutId: 1, name: 'Best of', isPublic: true })
+    .values({ uuid: `${PREFIX}playlist`, boardType: BOARD, layoutId: 1, name: 'Crowd Favorites', isPublic: true })
     .returning({ id: dbSchema.playlists.id });
   await db.insert(dbSchema.playlistOwnership).values({ playlistId: playlist.id, userId: OWNER_ID, role: 'owner' });
   await db.insert(dbSchema.playlistClimbs).values({ playlistId: playlist.id, climbUuid: climb('easy'), angle: 40 });

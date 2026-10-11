@@ -285,6 +285,7 @@ async function upsertCohortPlaylist(
   transact: JobTransact,
   cohort: Cohort,
   variant: (typeof PUBLIC_VARIANTS)[number],
+  log: JobLogger,
 ): Promise<{ name: string; count: number; skipped: boolean }> {
   const target = cohortTarget(cohort);
   const tiers = getSizeFullnessTiers(cohort.boardType, cohort.sizeId);
@@ -357,9 +358,19 @@ async function upsertCohortPlaylist(
     );
 
     // Recompute the grade band in the same transaction as the climb swap, so a
-    // rewritten "Best of" playlist never shows yesterday's band or misses a
-    // grade filter until the daily grade-summary job runs.
-    await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
+    // rewritten cohort playlist never shows yesterday's band or misses a grade
+    // filter until the daily grade-summary job runs. The recompute runs in its
+    // own savepoint: if it fails, that rolls back alone, the swap still commits,
+    // and the daily job repairs the band. A band must never cost the playlists.
+    try {
+      await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
+    } catch (error) {
+      log.warn(
+        `[recs]   grade band for ${name} not refreshed, the daily grade-summary job will: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   });
 
   return { name, count: refs.length, skipped: false };
@@ -389,7 +400,7 @@ export async function runRefreshRecommendations(
   for (const cohort of COHORTS) {
     for (const variant of PUBLIC_VARIANTS) {
       signal.throwIfAborted();
-      const result = await upsertCohortPlaylist(db, transact, cohort, variant);
+      const result = await upsertCohortPlaylist(db, transact, cohort, variant, log);
       playlistResults.push(result);
       log.info(
         `[recs]   ${result.name} → ${result.skipped ? 'SKIPPED (0 climbs, kept previous)' : `${result.count} climbs`}`,
