@@ -68,9 +68,11 @@ LIMIT 500;
 
 The cursor timestamp is `updated_at` for climbs/stats and `computed_at` for grades. These are index-backed
 `LIMIT` probes, never full `COUNT(*)` scans: a 300k-row catalog rewrite stops after finding row 500. A
-layout is rebuilt when any table reaches 500 stable rows, when its manifest entry is missing, or when an
-existing main/grades artifact has an older client schema. If the optional grades artifact is absent, the
-grades probe starts at epoch and still requires 500 rows, so grade-less MoonBoard layouts remain a no-op.
+layout is rebuilt when any table reaches 500 stable rows, when its manifest entry is missing, when an
+existing main/grades artifact has an older client schema, or when the entry was built in a different
+[artifact shape](#artifact-shape) from the one the exporter is set to write (logged as `stale-shape`). If
+the optional grades artifact is absent, the grades probe starts at epoch and still requires 500 rows, so
+grade-less MoonBoard layouts remain a no-op.
 
 Small layouts take a cheaper path. The scan first reads up to 500 of the layout's climb uuids (with
 `enable_seqscan` off for that one statement, because `board_type` and `layout_id` are estimated
@@ -94,7 +96,9 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
 1. Opens a `node:sqlite` file and applies DDL derived from the shared client `MIGRATIONS` — every
    migration statement that touches `board_climbs` or `board_climb_stats`, in version order, plus a
    `snapshot_meta` table (`boardSnapshotDdlStatements`). No hand-maintained DDL: a column added to the
-   client schema shows up in the next artifact automatically.
+   client schema shows up in the next artifact automatically. In the default
+   [artifact shape](#artifact-shape) the same statements are rewritten on the way in: the data tables
+   become `WITHOUT ROWID` and the device's three secondary indexes are left out.
 2. Inside one Postgres `REPEATABLE READ` transaction, streams both tables through the **same row shaping**
    the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`), so an artifact row is byte-identical
    to what an incremental `syncClimbs`/`syncClimbStats` pull would have written. `snapshot-export-golden.test.ts`
@@ -128,10 +132,12 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    tracking/visibility is incomplete, or any timestamp is invalid. Every per-layout
    build/upload log carries `deletionsReplayFrom` and `deletionsReplayFallbackReason`: success is a
    timestamp plus a null reason; fallback is a null timestamp plus one stable, low-cardinality reason.
-5. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
+5. In the default artifact shape, vacuums the finished file (and the grades file) so its rows are packed
+   and in primary-key order. See [Artifact shape](#artifact-shape).
+6. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
    default, or `gzip` (with `Content-Encoding: gzip`) under `--gzip`. The manifest's `contentEncoding`
    field records which, so the client stays agnostic.
-6. After every artifact for the run has landed, writes `<keyPrefix>/manifest.json` **last**, so a
+7. After every artifact for the run has landed, writes `<keyPrefix>/manifest.json` **last**, so a
    reader only ever sees a fully-consistent old-or-new manifest, never a manifest pointing at an artifact
    that hasn't finished uploading.
 
@@ -246,14 +252,36 @@ The singular variable controls URLs embedded by the exporter; the plural variabl
 handle's public URL base. They must agree. A named bucket never borrows legacy credentials, and R2
 uploads omit ACLs automatically. Keep `SYNC_STABILITY_WINDOW_SECONDS` aligned with the backend.
 Missing storage or the singular public base fails the run before publication.
+`SNAPSHOT_ARTIFACT_SHAPE` stays unset in normal operation; setting it to `1` is the
+[shape rollback](#rolling-back-the-artifact-shape).
 For controlled migration exports, `--no-prune` (CLI) or `skipPrune: true` (operator payload) suppresses
 object listing/deletion in identity, gzip, and catalog passes; ordinary nightly retention is unchanged.
 
-**Scratch space.** Each layout's SQLite file is written under `os.tmpdir()` and then read whole into
-memory and gzipped (`kilter:1` is about 271 MB raw, 103 MB gzipped). Mount `/tmp` as a 2 GB tmpfs on the
-batch container; peak use is one layout plus its grades file, well under 1 GB. Tmpfs pages are charged
-to the container's memory cgroup, so a container memory limit must cover the Node heap (4 GB), the
-in-memory artifact and its gzip copy, and whatever sits in `/tmp` at the same time.
+**Scratch space.** Each layout's SQLite file is written under `os.tmpdir()`, vacuumed into a second file
+beside it that then replaces it, and read whole into memory and gzipped. The batch container's `/tmp` is
+a **1 GiB** tmpfs (`/tmp:size=1g` in blackheathdc-ansible,
+`roles/boardsesh_worker/templates/docker-compose.yml.j2`), and the container's `mem_limit` is 6 GiB.
+
+`kilter:1`, the largest layout, peaks at about **498 MB** of scratch: the unpacked layout file (241 MB),
+its packed copy (207 MB) and the unpacked grades file (51 MB), all three on disk while the vacuum runs.
+That is roughly 2x headroom on the 1 GiB mount. After both vacuums it is 252 MB on disk (layout plus
+grades), and during the upload 207 MB in memory and 82 MB of gzip. Shape 1 has no vacuum: about 351 MB of scratch (284 MB plus 67 MB
+of grades), 284 MB in memory and 110 MB of gzip.
+
+If a layout outgrows the mount, the write that fills it throws: `VACUUM INTO` in the usual case, since
+that is the moment two copies exist (`database or disk is full`; checked on a deliberately small volume,
+where the unpacked original stayed intact). The half-written packed copy and its journal are deleted,
+that layout fails and keeps its previous manifest entry, the other layouts still publish, and the run
+fails at the end. The layout is
+then picked up again by the next scan that selects it, and fails the same way: every scan while its
+entry is still in the other shape (`stale-shape`), otherwise each time 500 rows have landed. It does not
+heal on its own. Enlarge the tmpfs, or set `SNAPSHOT_ARTIFACT_SHAPE=1`
+([shape rollback](#rolling-back-the-artifact-shape)), which needs no second copy.
+
+Tmpfs pages are charged to the container's memory cgroup, so the 6 GiB limit has to cover the Node heap
+(4 GB cap), the in-memory artifact and its gzip copy, and whatever sits in `/tmp` at the same time. The
+build also gives each of its two SQLite connections a 64 MiB page cache (up to about 100 MB resident
+each); both are released before the vacuum starts.
 
 **Grants.** `batch=<login>` in `MIGRATION_WORKER_ROLES` adds SELECT on `board_climbs`,
 `board_climb_stats`, `board_climb_grades` and the catalogue tables, with `board_beta_links` limited to
@@ -281,7 +309,8 @@ never overlap:
    neither as enabled, and the host vars leave `boardsesh_dr_snapshot_enabled` and
    `boardsesh_dr_snapshot_timers_enabled` at their default `false`. Check what is deployed, not the
    defaults: #5622 allows one publisher across Actions, Ansible timers and pg-boss.
-2. Grant `pg_read_all_stats` (above), and deploy the environment and the 2 GB `/tmp`.
+2. Grant `pg_read_all_stats` (above), and deploy the environment and the `/tmp` tmpfs (1 GiB as
+   deployed; see "Scratch space" above).
 3. `gh workflow disable export-board-snapshots.yml`. That stops new scheduled runs, not a run already
    in progress or queued, so wait until
    `gh run list --workflow export-board-snapshots.yml --status in_progress` and `--status queued` both
@@ -413,6 +442,90 @@ layout artifact but intentionally outside the enabled size.
   artifact hits exactly that stale path: it rejects the artifact and crawls the scope page by page until the
   next export rebuilds it at v5.
 
+### Artifact shape
+
+The shape is how an artifact's SQLite file stores its rows. The tables, columns, rows and `snapshot_meta`
+are the same in every shape, so it is not part of `format_version` or `schema_version`.
+
+- **Shape 1** is the device schema copied as it stands: rowid tables, filled in the order Postgres streams
+  the rows, with the three secondary indexes the phone's schema has had since migration v1
+  (`idx_climbs_search`, `idx_stats_lookup`, `idx_stats_difficulty`).
+- **Shape 2**, the default, creates `board_climbs`, `board_climb_stats` and `board_climb_grades`
+  `WITHOUT ROWID`, carries no secondary index, and vacuums the file once it is built. A `WITHOUT ROWID`
+  table is its own primary-key b-tree, so the two primary-key autoindexes go as well, and the vacuum
+  leaves the rows packed and in primary-key order.
+
+Measured on `kilter:1` as published on 2026-10-10 (387,101 climbs, 372,669 stats, 356,680 grades), by
+replaying its rows through both builds:
+
+| File            | Shape 1 decoded | Shape 1 gzip | Shape 2 decoded | Shape 2 gzip | Wire change |
+| --------------- | --------------- | ------------ | --------------- | ------------ | ----------- |
+| Layout artifact | 284.3 MB        | 110.2 MB     | 206.6 MB        | 82.4 MB      | -25.2%      |
+| Grades artifact | 66.8 MB         | 27.1 MB      | 45.5 MB         | 16.8 MB      | -38.0%      |
+
+In the shape-1 layout file the three secondary indexes are 36.5 MB and the two autoindexes 39.2 MB. The
+vacuum is worth the last 10 MB of gzip: unvacuumed, the shape-2 file is 240.6 MB and 92.5 MB gzipped.
+
+**Why no client changes.** The import reads an attached artifact by table and column name only:
+`PRAGMA quick_check`, `pragma_table_info`, `COUNT(*)`, `snapshot_meta` by table name, a scan of
+`board_climbs`, and a primary-key range seek on `board_climb_stats`. Its one `rowid` is on its own TEMP
+staging table, and it names no index. `snapshot-shape-import.test.ts` builds both shapes from one seeded
+database with the real export and runs the shipped `bootstrapScopeFromSnapshot` and
+`bootstrapScopeGradesFromSnapshot` on each: a size-scoped import, a whole-layout import, a reconcile over
+a partly crawled scope and a second size of the same layout all end in identical rows, watermarks and
+checkpoints. The same test checks the query plan: each batch still reaches its rows by a primary-key
+seek, now on the table itself instead of an index.
+
+The import does get cheaper on shape 2, because it reads the artifact and writes the phone's primary-key
+index front to back. On a desktop, with the node test double standing in for expo-sqlite, the shipped
+import of `kilter:1` size 10 (373,099 climbs, 360,708 stats) used 5.3 s of CPU on a shape-2 file against
+8.4 s on shape 1, and the grades import 0.8 s against 1.7 s. Those runs were at device schema v12; v13's
+`idx_stats_ascents` is one more index the phone fills during an import of either shape. How much of the
+difference a phone sees is not yet measured.
+
+**In the manifest.** A shape-2 entry carries `artifactShape: 2`, which covers the layout file and its
+grades file. A shape-1 entry carries no `artifactShape` at all, exactly like every entry published before
+the field existed. Only the export reads it, to find entries built in the other shape. A client must not
+gate on it, and `parseSnapshotManifest` accepts a shape number it has never seen.
+
+**What is left out, and where that is decided.** The phone has five secondary indexes on the artifact
+tables, and two lists keep them out of an artifact:
+
+| Index                  | Table               | Device migration | Shape 1 artifact | Shape 2 artifact | Left out by                 |
+| ---------------------- | ------------------- | ---------------- | ---------------- | ---------------- | --------------------------- |
+| `idx_climbs_search`    | `board_climbs`      | v1               | carried          | left out         | `SHAPE_2_OMITTED_INDEXES`   |
+| `idx_stats_lookup`     | `board_climb_stats` | v1               | carried          | left out         | `SHAPE_2_OMITTED_INDEXES`   |
+| `idx_stats_difficulty` | `board_climb_stats` | v1               | carried          | left out         | `SHAPE_2_OMITTED_INDEXES`   |
+| `idx_climbs_sync_seq`  | `board_climbs`      | v10              | left out         | left out         | `DEVICE_ONLY_STATEMENTS`    |
+| `idx_stats_ascents`    | `board_climb_stats` | v13              | left out         | left out         | `DEVICE_ONLY_STATEMENTS`    |
+
+So a shape-2 artifact carries none of them, and the phone has all five after an import: it creates them
+in its own database from its own migrations and fills them as the import writes rows into its own
+tables. Nothing about either list reaches the device schema.
+
+The three v1 indexes are named in `SHAPE_2_OMITTED_INDEXES` in the export script, not in the shared
+`DEVICE_ONLY_STATEMENTS`. That shared list is also read on the device (`artifactSchemaVersion` derives
+`ARTIFACT_SCHEMA_VERSION` from it), and a shape-1 run has to put those three back. The shared list is
+applied first, for every shape, so a device-only index never reaches the shape-2 rewrite: v13 added
+`idx_stats_ascents` after shape 2 was written and neither the build nor `ARTIFACT_SCHEMA_VERSION` (12,
+with the device at 13) moved.
+
+The rewrite refuses what it does not recognise: a `CREATE TABLE` in another form, a table with no primary
+key, a listed index that no migration creates, or a new index on an artifact table that is in neither
+list. That last one fails `snapshot-export-ddl.test.ts` until the index is listed in
+`DEVICE_ONLY_STATEMENTS`.
+
+**What it costs the export.** Rows arrive in an order unrelated to the primary key, so each build
+connection gets a 64 MiB page cache; at SQLite's 2 MB default the build is slower than shape 1. The vacuum
+is `VACUUM INTO` a sibling file that then replaces the original, which keeps the copy in the scratch
+directory and off a rollback journal. Replaying `kilter:1` on a development machine, the SQLite half of
+the build takes 9.2 s of CPU (9.5 s for shape 1) and the vacuum a third of a second. A whole dry-run pass
+for that layout against a local Postgres holding the same rows used 31 to 35 s of CPU in either shape and
+peaked at 1.03 GB of resident memory, against 1.05 GB for shape 1; with the machine busy, the two vacuums
+(layout and grades) took 1.3 to 1.9 s together. None of these numbers has been taken on the homelab
+worker. The vacuum is one synchronous call per file, so it blocks the worker's heartbeat
+timer for its duration; every `[export-snapshots] uploaded` line reports it as `vacuumMs`.
+
 ### Device-derived tables stay out
 
 The holds index behind similar climbs and the hold heatmap on the phone is three tables:
@@ -428,7 +541,8 @@ land in every artifact, where it is dead weight because the import copies rows o
 serves any future statement that the device needs on an artifact table but the artifact must not carry. It
 needs no format change, because an artifact never had these statements. v13's `idx_stats_ascents`, the
 climb list's default order on `board_climb_stats`, is the second entry: the phone walks it for every page of
-the list, and nothing reads an artifact in that order.
+the list, and nothing reads an artifact in that order. The three older indexes that shape 2 leaves out are
+not in this list; see [Artifact shape](#artifact-shape) for why.
 
 v10 changes no artifact table, so it does not move `ARTIFACT_SCHEMA_VERSION`. v10 clients import v9
 artifacts, and v9 clients import v10 ones. No staleness window applies.
@@ -509,6 +623,11 @@ ignores the key. Every entry published before the field existed omits it, and th
 entries through untouched, so a reader must handle `undefined`. It only starts appearing on the first
 export run after the field ships: the nightly runs at 07:15 UTC, or enqueue the
 worker's nightly export (Ops runbook, "Manual export") to fill it in sooner.
+
+The `grades` block has the same pair. `bytes` was always there; `uncompressedBytes` is written with
+[shape 2](#artifact-shape) and absent on a shape-1 block. A client that finds it holds the downloaded
+grades file to that exact length (see "Exact decoded-size gate" below), which is why the shape rollback
+takes it out again.
 
 ### Grades artifact (issue #4310)
 
@@ -977,10 +1096,12 @@ pre-import empty result set.
   error, and throws `SnapshotArtifactTruncatedError` → funnel reason `artifact-truncated`, charged to the
   **transport** budget (a short body is a cut-short response; `structural-device` would durably settle a
   scope onto the paged crawl after two occurrences). It runs **after** the gzip sniff, so a
-  still-compressed body keeps reporting `permanent-miss`. Absent `uncompressedBytes` — every gzip grades
-  block and every pre-#4311 layout entry — the gate is skipped; an `identity` entry gates on
-  `entry.bytes`, which there IS the decoded size. A retained artifact's size is re-verified before its
-  sidecar is trusted, so a survivor the OS truncated is re-downloaded rather than ATTACHed.
+  still-compressed body keeps reporting `permanent-miss`. Absent `uncompressedBytes` — every pre-#4311
+  layout entry and every gzip grades block published in shape 1 — the gate is skipped; an `identity`
+  entry gates on `entry.bytes`, which there IS the decoded size. A shape-2 grades block carries
+  `uncompressedBytes`, so its file is gated like the layout's; a mismatch there spends the grades budget,
+  never the layout's. A retained artifact's size is re-verified before its sidecar is trusted, so a
+  survivor the OS truncated is re-downloaded rather than ATTACHed.
 
 - **Superseded-partial sweep**: artifacts for an older `builtAt` of the same (board, layout) are deleted
   at the **top** of `downloadSnapshotFile`, before the free-space precheck, as well as after a successful
@@ -1319,6 +1440,56 @@ node --import tsx src/scripts/export-board-snapshots.ts \
 - `DATABASE_URL` must point at the **primary**, never a read replica (see the rationale above) — this is
   read-only-sufficient (the export only `SELECT`s) but the write-time/commit-order mismatch on a replica is
   a correctness bug, not a permissions one.
+
+### Rolling back the artifact shape
+
+`SNAPSHOT_ARTIFACT_SHAPE` is read by the export at the start of every run. Unset or blank is
+[shape 2](#artifact-shape). Set it to `1` on the batch container and the export goes back to publishing
+what it published before shape 2: rowid tables with the three secondary indexes, no vacuum, no enlarged
+page cache, no `artifactShape` on the entry and no `uncompressedBytes` on the grades block. The accepted
+values are `1` and `2` (`2` is the same as leaving it unset). Anything else fails the run before it
+reads the manifest or uploads anything.
+
+Use it when shape-2 artifacts are suspected of breaking imports (a rise in `import`-stage failures on
+`Offline Board Download Failed` after a regeneration) or when the vacuum is too much for the worker.
+
+1. Set `SNAPSHOT_ARTIFACT_SHAPE=1` in the batch container's environment (blackheathdc-ansible) and
+   redeploy the worker.
+2. The next live scan, at most 15 minutes away, sees every `v1-gzip` entry as built in the other shape
+   and rebuilds all of them, not only the layouts past 500 rows. Each one logs
+   `[export-snapshots] threshold refresh selected layout` with `reason: 'stale-shape'`. To start it at
+   once, enqueue it (see [Manual export](#manual-export)):
+
+   ```sh
+   node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"live-scan"}'
+   ```
+
+3. The identity `v1` prefix is rebuilt by the next nightly, or by enqueueing `{"mode":"nightly"}`.
+4. Check the published result, past the manifest's five-minute cache:
+
+   ```sh
+   manifest='https://snapshots.boardsesh.com/board-snapshots/v1-gzip/manifest.json'
+   curl -fsSL -H 'Cache-Control: no-cache' "$manifest?verify=$(date +%s)" |
+     jq -r '.entries[] | "\(.boardType):\(.layoutId) shape=\(.artifactShape // 1) built=\(.builtAt)"'
+   ```
+
+   Every line should read `shape=1` with a `builtAt` after the redeploy. A layout whose rebuild failed
+   keeps its previous entry and shape, and the run's log names it.
+
+The rebuild is a full pass over every layout on the live prefix, the same work as a nightly's gzip pass.
+That pass took 9 min 33 s for 23 layouts on 2026-10-10 (homelab worker log, `starting run` to
+`manifest uploaded`), so the rebuild is expected to fit inside one 15-minute slot. If it runs longer,
+nothing is lost: the next scan waits in the queue behind it, and once it starts it either runs normally
+or, having waited more than 840 s, logs `LIVE_SCAN_STALE` and leaves the work to the scan after it.
+
+Clients need nothing. The manifest is replaced once, at the end of the run, so it goes from all one
+shape to all the other in a single step; it holds both only when a layout's rebuild failed and kept its
+previous entry. Either is fine for a client, and an artifact already downloaded stays valid. Phones that
+already imported a shape-2 artifact are unaffected either way, because the shape never reaches the
+device's own tables.
+
+Unset the variable and redeploy to go forward again; the next scan rebuilds every entry in shape 2 the
+same way. That is also how shape 2 first reaches a prefix whose entries predate it.
 
 ### Verify deletion replay metadata after a live full refresh
 

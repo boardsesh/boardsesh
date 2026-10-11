@@ -6,8 +6,12 @@
 //
 // S3 is mocked at the storage/s3 function boundary (the beta-link-thumbnails
 // precedent); Postgres is the real worker test DB.
+//
+// The last block covers the artifact shape at the same level: what the manifest
+// says about it, what SNAPSHOT_ARTIFACT_SHAPE=1 takes back, and how a live scan
+// notices an entry built in the other shape.
 
-import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 
 vi.mock('../storage/s3', () => ({
   isS3Configured: vi.fn(() => true),
@@ -21,6 +25,11 @@ vi.mock('../storage/s3', () => ({
 }));
 
 import { Readable } from 'node:stream';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { sql } from 'drizzle-orm';
 import { LATEST_SCHEMA_VERSION, type SnapshotManifest, type SnapshotManifestEntry } from '@boardsesh/offline-sync';
 import { createPool } from '@boardsesh/db/client';
@@ -41,6 +50,9 @@ function manifestEntryFixture(boardType: string, layoutId: number, key: string):
     builtAt: '2026-06-01T00:00:00.000Z',
     schemaVersion: LATEST_SCHEMA_VERSION,
     privacyVersion: 1,
+    // The shape the export writes by default. A threshold scan rebuilds an entry
+    // in any other shape, so a fixture without it would never be a no-op.
+    artifactShape: 2,
     tables: {
       board_climbs: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 5 },
       board_climb_stats: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '7', rowCount: 3 },
@@ -850,6 +862,244 @@ describe('runExportWithOptions — worker hooks', () => {
     // The observer mode, once per run: the test login is a superuser.
     expect(lines.find(({ message }) => message === '[export-snapshots] starting run')?.meta).toMatchObject({
       readsAllStats: true,
+    });
+  });
+});
+
+// The artifact shape (SnapshotArtifactShape) as a run publishes it. Shape 2 is
+// the default; SNAPSHOT_ARTIFACT_SHAPE=1 is the rollback, and it has to take
+// back everything shape 2 added to what clients can see.
+describe('runExport — artifact shape', () => {
+  const GZIP_PREFIX = 'board-snapshots/v1-gzip';
+  const GZIP_MANIFEST_KEY = `${GZIP_PREFIX}/manifest.json`;
+  const gzipArgs = ['--gzip', '--key-prefix', GZIP_PREFIX];
+  const thresholdArgs = [...gzipArgs, '--refresh-threshold', '500'];
+  const SECONDARY_INDEXES = ['idx_climbs_search', 'idx_stats_difficulty', 'idx_stats_lookup'];
+
+  const originalShape = process.env.SNAPSHOT_ARTIFACT_SHAPE;
+  let scratchDir: string;
+
+  beforeEach(() => {
+    delete process.env.SNAPSHOT_ARTIFACT_SHAPE;
+    scratchDir = mkdtempSync(join(tmpdir(), 'snapshot-run-shape-'));
+  });
+
+  afterEach(() => {
+    if (originalShape === undefined) delete process.env.SNAPSHOT_ARTIFACT_SHAPE;
+    else process.env.SNAPSHOT_ARTIFACT_SHAPE = originalShape;
+    rmSync(scratchDir, { recursive: true, force: true });
+  });
+
+  /** The decoded bytes of the object uploaded under `key`, as a client would have them on disk. */
+  function uploadedArtifact(key: string): Buffer {
+    const upload = vi.mocked(uploadToS3).mock.calls.find(([, , uploadedKey]) => uploadedKey === key);
+    expect(upload, key).toBeDefined();
+    const [, body, , , options] = upload as unknown as [string, Buffer, string, string, { contentEncoding?: string }?];
+    return options?.contentEncoding === 'gzip' ? gunzipSync(body) : body;
+  }
+
+  /** Which tables of an uploaded artifact are WITHOUT ROWID, and every index it carries. */
+  function uploadedStorage(key: string): { withoutRowid: Record<string, boolean>; indexes: string[] } {
+    const filePath = join(scratchDir, key.replace(/[^a-z0-9]/gi, '-'));
+    writeFileSync(filePath, uploadedArtifact(key));
+    const artifactDb = new DatabaseSync(filePath, { readOnly: true });
+    try {
+      const tables = artifactDb
+        .prepare("SELECT name, wr FROM pragma_table_list WHERE schema = 'main' AND type = 'table' ORDER BY name")
+        .all() as { name: string; wr: number }[];
+      return {
+        withoutRowid: Object.fromEntries(
+          tables.filter((table) => !table.name.startsWith('sqlite_')).map((table) => [table.name, table.wr === 1]),
+        ),
+        indexes: (
+          artifactDb.prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name").all() as {
+            name: string;
+          }[]
+        ).map((row) => row.name),
+      };
+    } finally {
+      artifactDb.close();
+    }
+  }
+
+  it('publishes shape-2 files and says so on the entry, with exact decoded sizes for both files', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+
+    await runExport(gzipArgs);
+
+    const entry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+    expect(entry.artifactShape).toBe(2);
+    expect(uploadedStorage(entry.key)).toEqual({
+      withoutRowid: { board_climb_stats: true, board_climbs: true, snapshot_meta: false },
+      indexes: ['sqlite_autoindex_snapshot_meta_1'],
+    });
+    expect(uploadedStorage(entry.grades!.key)).toEqual({
+      withoutRowid: { board_climb_grades: true, snapshot_meta: false },
+      indexes: ['sqlite_autoindex_snapshot_meta_1'],
+    });
+    // Both sizes are the vacuumed file's own length: what a client's exact
+    // decoded-size check will hold the download to.
+    expect(entry.uncompressedBytes).toBe(uploadedArtifact(entry.key).length);
+    expect(entry.grades?.uncompressedBytes).toBe(uploadedArtifact(entry.grades!.key).length);
+    expect(entry.grades?.uncompressedBytes).toBeGreaterThan(entry.grades!.bytes);
+    // Additive only: the contract version is the one clients already accept.
+    expect(uploadedManifest(GZIP_MANIFEST_KEY).formatVersion).toBe(2);
+  });
+
+  it('builds the identity rollback prefix in the configured shape too', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runExport([]);
+
+    const entry = uploadedManifest().entries[0];
+    expect(entry.artifactShape).toBe(2);
+    expect(uploadedStorage(entry.key).withoutRowid.board_climbs).toBe(true);
+  });
+
+  it('SNAPSHOT_ARTIFACT_SHAPE=1 publishes exactly the pre-shape artifact and manifest entry', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+    process.env.SNAPSHOT_ARTIFACT_SHAPE = '1';
+
+    await runExport(gzipArgs);
+
+    const entry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+    // Absent, not `1`: byte for byte the entry the export wrote before shapes.
+    expect(entry).not.toHaveProperty('artifactShape');
+    expect(entry.grades).toBeDefined();
+    expect(entry.grades).not.toHaveProperty('uncompressedBytes');
+    expect(Object.keys(entry).sort()).toEqual(
+      [
+        'boardType',
+        'builtAt',
+        'bytes',
+        'contentEncoding',
+        'grades',
+        'key',
+        'layoutId',
+        'privacyVersion',
+        'schemaVersion',
+        'tables',
+        'uncompressedBytes',
+        'url',
+      ].sort(),
+    );
+    const storage = uploadedStorage(entry.key);
+    expect(storage.withoutRowid).toEqual({ board_climb_stats: false, board_climbs: false, snapshot_meta: false });
+    for (const indexName of SECONDARY_INDEXES) expect(storage.indexes).toContain(indexName);
+    expect(uploadedStorage(entry.grades!.key).withoutRowid.board_climb_grades).toBe(false);
+  });
+
+  it('refuses a mistyped SNAPSHOT_ARTIFACT_SHAPE before it reads the manifest or uploads anything', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    process.env.SNAPSHOT_ARTIFACT_SHAPE = 'two';
+
+    await expect(runExport(gzipArgs)).rejects.toThrow(/SNAPSHOT_ARTIFACT_SHAPE must be 1 or 2/);
+
+    expect(getFromS3Strict).not.toHaveBeenCalled();
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('reports the shape and the vacuum time in the run log', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    const lines: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+    const record = (message: string, meta?: Record<string, unknown>) => {
+      lines.push({ message, meta });
+    };
+
+    await runExportWithOptions(
+      { dryRun: false, gzip: true, keyPrefix: GZIP_PREFIX },
+      { log: { info: record, warn: record, error: record } },
+    );
+
+    expect(lines.find(({ message }) => message === '[export-snapshots] starting run')?.meta).toMatchObject({
+      artifactShape: 2,
+    });
+    expect(lines.find(({ message }) => message === '[export-snapshots] uploaded')?.meta).toMatchObject({
+      artifactShape: 2,
+      vacuumMs: expect.any(Number),
+    });
+  });
+
+  describe('a live threshold scan', () => {
+    // A live scan rebuilds a layout only when 500 rows have landed past its
+    // watermarks. An entry in the wrong SHAPE is rebuilt regardless, or neither
+    // shipping shape 2 nor rolling it back would reach the fleet's prefix
+    // before the next nightly.
+    it('rebuilds an entry that predates shapes (no artifactShape), with no new rows at all', async () => {
+      await seedClimb('kilter', 1, 'k1-a');
+      const { artifactShape: _withoutShape, ...shape1Entry } = manifestEntryFixture(
+        'kilter',
+        1,
+        `${GZIP_PREFIX}/kilter/1/old.db`,
+      );
+      serveExistingManifest(manifestFixture([shape1Entry]));
+      const lines: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+      const record = (message: string, meta?: Record<string, unknown>) => {
+        lines.push({ message, meta });
+      };
+
+      await runExportWithOptions(
+        { dryRun: false, gzip: true, keyPrefix: GZIP_PREFIX, refreshThreshold: 500 },
+        { log: { info: record, warn: record, error: record } },
+      );
+
+      const refreshed = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+      expect(refreshed.key).not.toBe(shape1Entry.key);
+      expect(refreshed.artifactShape).toBe(2);
+      expect(
+        lines.find(({ message }) => message === '[export-snapshots] threshold refresh selected layout')?.meta,
+      ).toMatchObject({ boardType: 'kilter', layoutId: 1, reason: 'stale-shape' });
+    });
+
+    it('leaves an entry already in the configured shape alone', async () => {
+      await seedClimb('kilter', 1, 'k1-a');
+      serveExistingManifest(manifestFixture([manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`)]));
+
+      await runExport(thresholdArgs);
+
+      expect(uploadToS3).not.toHaveBeenCalled();
+    });
+
+    it('rolls a shape-2 entry back on the next scan once SNAPSHOT_ARTIFACT_SHAPE is 1', async () => {
+      await seedClimb('kilter', 1, 'k1-a');
+      await seedClimb('kilter', 2, 'k2-a');
+      const shape2Entry = manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`);
+      // Already shape 1 (published before shapes, or by an earlier rollback scan).
+      const { artifactShape: _withoutShape, ...shape1Entry } = manifestEntryFixture(
+        'kilter',
+        2,
+        `${GZIP_PREFIX}/kilter/2/old.db`,
+      );
+      serveExistingManifest(manifestFixture([shape2Entry, shape1Entry]));
+      process.env.SNAPSHOT_ARTIFACT_SHAPE = '1';
+
+      await runExport(thresholdArgs);
+
+      const manifest = uploadedManifest(GZIP_MANIFEST_KEY);
+      const rolledBack = manifest.entries.find((entry) => entry.layoutId === 1)!;
+      expect(rolledBack.key).not.toBe(shape2Entry.key);
+      expect(rolledBack).not.toHaveProperty('artifactShape');
+      expect(uploadedStorage(rolledBack.key).withoutRowid.board_climbs).toBe(false);
+      // The layout that was shape 1 all along is not rebuilt a second time.
+      expect(manifest.entries.find((entry) => entry.layoutId === 2)).toEqual(shape1Entry);
+    });
+
+    it('rebuilds an entry stamped with a shape this exporter does not write', async () => {
+      // A newer exporter rolled back to this one: its manifest must still parse
+      // (the scan would otherwise abort before any upload) and its entries read
+      // as stale.
+      await seedClimb('kilter', 1, 'k1-a');
+      const futureEntry: SnapshotManifestEntry = {
+        ...manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`),
+        artifactShape: 3,
+      };
+      serveExistingManifest(manifestFixture([futureEntry]));
+
+      await runExport(thresholdArgs);
+
+      expect(uploadedManifest(GZIP_MANIFEST_KEY).entries[0].artifactShape).toBe(2);
     });
   });
 });

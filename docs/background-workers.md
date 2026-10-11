@@ -460,7 +460,8 @@ job's signal.
 | `SNAPSHOTS_S3_BUCKET_NAME`, `SNAPSHOTS_AWS_ACCESS_KEY_ID`, `SNAPSHOTS_AWS_SECRET_ACCESS_KEY`, `SNAPSHOTS_AWS_ENDPOINT_URL`, `SNAPSHOTS_AWS_REGION` | Permanent worker R2 configuration; see `docs/board-snapshots.md`. Legacy `AWS_*` fields remain available for rollback. Actions stays disabled. |
 | `SNAPSHOT_PUBLIC_BASE_URL`, `SNAPSHOTS_PUBLIC_BASE_URL` | Both are `https://snapshots.boardsesh.com`. Storage client reads passed; normal producer and native reader acceptance are tracked in `docs/r2-migration-2026-10.md`. |
 | `SYNC_STABILITY_WINDOW_SECONDS` | Only when the backend sets it; the export must use the same window. |
-| `/tmp` | tmpfs, 2 GB. One layout's SQLite files live there during its export (kilter's largest is about 271 MB raw). Tmpfs pages are charged to the container's memory cgroup, so a memory limit must cover them on top of the 4 GB heap. |
+| `SNAPSHOT_ARTIFACT_SHAPE` | Unset. The accepted values are `1` and `2`: `1` is the rollback to the older artifact shape, `2` is the default and the same as unset; see `docs/board-snapshots.md` ("Rolling back the artifact shape"). Anything else fails the run. |
+| `/tmp` | tmpfs, 1 GiB (`/tmp:size=1g` in blackheathdc-ansible; the container's `mem_limit` is 6 GiB). One layout's SQLite files live there during its export. Kilter's largest peaks at about 498 MB while its vacuum holds the unpacked layout, the packed layout and the grades file, roughly half the mount, then about 250 MB. A layout that outgrows the mount fails its vacuum and keeps its previous manifest entry; see `docs/board-snapshots.md` ("Scratch space"). Tmpfs pages are charged to the container's memory cgroup, so the memory limit must cover them on top of the 4 GB heap. |
 
 The family is described in full, with its cutover, in `docs/board-snapshots.md`
 ("Batch worker owner").

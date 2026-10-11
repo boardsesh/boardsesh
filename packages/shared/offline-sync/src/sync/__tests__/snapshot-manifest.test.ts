@@ -251,3 +251,114 @@ describe('parseSnapshotManifest — the optional grades artifact', () => {
     expect(manifest?.entries[0].tables).not.toHaveProperty('board_climb_grades');
   });
 });
+
+// The two fields artifact shape 2 adds: `artifactShape` on an entry and
+// `uncompressedBytes` on its grades block. Both are optional and additive, and
+// neither may cost a client its manifest.
+describe('parseSnapshotManifest — artifactShape and the grades decoded size', () => {
+  it('accepts an entry with no artifactShape (every shape-1 entry) and one stamped shape 2', () => {
+    expect(parseSnapshotManifest(validManifest())?.entries[0]).not.toHaveProperty('artifactShape');
+    expect(parseSnapshotManifest(withEntry({ artifactShape: 2 }))?.entries[0].artifactShape).toBe(2);
+  });
+
+  it('rejects an artifactShape that is not a positive integer', () => {
+    for (const corrupt of [0, -1, 1.5, '2', null, true, {}]) {
+      expect(
+        parseSnapshotManifest(withEntry({ artifactShape: corrupt as unknown as number })),
+        JSON.stringify(corrupt),
+      ).toBeNull();
+    }
+  });
+
+  // Deliberately NOT pinned to the shapes this build knows. The import reads an
+  // artifact by table and column name, the same for every shape, so an unknown
+  // one is still a file this client can import. Rejecting it would also make an
+  // export job rolled back across a shape change refuse the manifest it merges.
+  it('accepts a shape number this build has never heard of', () => {
+    expect(parseSnapshotManifest(withEntry({ artifactShape: 3 }))?.entries[0].artifactShape).toBe(3);
+  });
+
+  it('accepts a grades block with and without uncompressedBytes', () => {
+    const withoutSize = parseSnapshotManifest(withEntry({ grades: validGradesArtifact() }));
+    expect(withoutSize?.entries[0].grades).not.toHaveProperty('uncompressedBytes');
+
+    const withSize = parseSnapshotManifest(
+      withEntry({ grades: { ...validGradesArtifact(), uncompressedBytes: 66_801_664 } }),
+    );
+    expect(withSize?.entries[0].grades?.uncompressedBytes).toBe(66_801_664);
+  });
+
+  it('rejects a corrupt grades uncompressedBytes, like the layout entry’s', () => {
+    for (const corrupt of [1.5, -1, '66801664', null]) {
+      const manifest = withEntry({ grades: { ...validGradesArtifact(), uncompressedBytes: corrupt as never } });
+      expect(parseSnapshotManifest(manifest), JSON.stringify(corrupt)).toBeNull();
+    }
+  });
+
+  // A FROZEN COPY of the format-2 entry validator as it stood before these two
+  // fields existed, checked in like the v1 copy above so it keeps describing the
+  // bundles already in the field. They must parse a manifest that carries both
+  // fields: a rejection would drop every one of them to the paged crawl the
+  // moment shape-2 artifacts were published.
+  it('is accepted by the format-2 validator that shipped before the fields existed', () => {
+    const isRecord = (candidate: unknown): candidate is Record<string, unknown> =>
+      typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+    const isInteger = (candidate: unknown): candidate is number =>
+      typeof candidate === 'number' && Number.isInteger(candidate);
+    const isDecimalString = (candidate: unknown): boolean => typeof candidate === 'string' && /^\d+$/.test(candidate);
+    const isIso = (candidate: unknown): boolean =>
+      typeof candidate === 'string' &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/.test(candidate) &&
+      Number.isFinite(Date.parse(candidate));
+    const isTableStats = (candidate: unknown): boolean =>
+      isRecord(candidate) &&
+      isIso(candidate.watermarkUpdatedAt) &&
+      isDecimalString(candidate.watermarkSyncSeq) &&
+      isInteger(candidate.rowCount);
+    const hasArtifactFields = (candidate: Record<string, unknown>): boolean =>
+      typeof candidate.key === 'string' &&
+      typeof candidate.url === 'string' &&
+      isInteger(candidate.bytes) &&
+      (candidate.contentEncoding === 'gzip' || candidate.contentEncoding === 'identity') &&
+      isIso(candidate.builtAt) &&
+      isInteger(candidate.schemaVersion);
+    const isShippedGradesArtifact = (candidate: unknown): boolean => {
+      if (!isRecord(candidate) || !hasArtifactFields(candidate)) return false;
+      const tables = candidate.tables;
+      return isRecord(tables) && isTableStats(tables.board_climb_grades);
+    };
+    const isShippedEntry = (candidate: unknown): boolean => {
+      if (!isRecord(candidate)) return false;
+      if (typeof candidate.boardType !== 'string' || !isInteger(candidate.layoutId) || !hasArtifactFields(candidate)) {
+        return false;
+      }
+      if (
+        candidate.uncompressedBytes !== undefined &&
+        (!isInteger(candidate.uncompressedBytes) || candidate.uncompressedBytes < 0)
+      ) {
+        return false;
+      }
+      if (candidate.grades !== undefined && !isShippedGradesArtifact(candidate.grades)) return false;
+      const tables = candidate.tables;
+      return isRecord(tables) && isTableStats(tables.board_climbs) && isTableStats(tables.board_climb_stats);
+    };
+    const parseWithShippedV2Validator = (candidate: unknown): boolean =>
+      isRecord(candidate) &&
+      candidate.formatVersion === 2 &&
+      isIso(candidate.generatedAt) &&
+      Array.isArray(candidate.entries) &&
+      candidate.entries.every(isShippedEntry);
+
+    const shape2Manifest = JSON.parse(
+      JSON.stringify(
+        withEntry({ artifactShape: 2, grades: { ...validGradesArtifact(), uncompressedBytes: 66_801_664 } }),
+      ),
+    ) as unknown;
+
+    expect(parseWithShippedV2Validator(shape2Manifest)).toBe(true);
+    expect(parseSnapshotManifest(shape2Manifest)).not.toBeNull();
+    // The copy is a real validator, not a rubber stamp.
+    expect(parseWithShippedV2Validator(withEntry({ bytes: 1.5 }))).toBe(false);
+    expect(parseWithShippedV2Validator({ ...validManifest(), formatVersion: 1 })).toBe(false);
+  });
+});
