@@ -53,3 +53,8 @@ name: issue 6360 native session settings
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
+- runFlow:
+    when:
+      true: ${QA_CAPTURE_CONTENT_SIZE === 'accessibility-extra-large'}
+    commands:
+      - takeScreenshot: 05-rest-timer-sheet-lower-controls

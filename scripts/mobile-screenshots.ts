@@ -2061,6 +2061,8 @@ function captureIosDevice(
         `SCREENSHOT_USER_EMAIL=${email}`,
         '-e',
         `SCREENSHOT_USER_PASSWORD=${password}`,
+        '-e',
+        `QA_CAPTURE_CONTENT_SIZE=${captureContentSize}`,
         ...(options.flow === 'app-store-campaign'
           ? buildIosCampaignMaestroEnv(localeTarget.appLocale, backendSession?.capture)
           : []),
