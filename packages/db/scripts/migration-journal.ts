@@ -7,7 +7,10 @@ import {
   findUnappliedMigrations,
   formatBaselinedGapWarning,
   formatMigrationGapError,
+  isMigrationJournalGateArmed,
   partitionMissingMigrations,
+  VERIFY_MIGRATION_JOURNAL_ENV,
+  VERIFY_MIGRATION_JOURNAL_OFF,
   type ExpectedMigration,
   type ExpectedMigrationWithWhen,
 } from '../../../scripts/lib/migration-ledger.js';
@@ -237,12 +240,18 @@ export function describeBaselinedGap(report: MigrationJournalReport): string | n
   );
 }
 
-/** Env var that turns the deploy gate on. Set by production-deploy.yml and db-migration-renumber.yml. */
-export const VERIFY_MIGRATION_JOURNAL_ENV = 'VERIFY_MIGRATION_JOURNAL';
+export { VERIFY_MIGRATION_JOURNAL_ENV, VERIFY_MIGRATION_JOURNAL_OFF };
 
 /**
- * The deploy gate exactly as `migrate.ts` runs it: verify when
- * `VERIFY_MIGRATION_JOURNAL=1`, otherwise do nothing and touch no database.
+ * The deploy gate exactly as `migrate.ts` runs it: verify unless
+ * `VERIFY_MIGRATION_JOURNAL=0`, in which case do nothing and touch no database.
+ *
+ * The check is on by default since #3978 — the dev-db image that forced the
+ * original opt-in now carries every journal entry's ledger row, and `vp run
+ * db:up` reconciles the rest per hash before this ever runs. See
+ * `isMigrationJournalGateArmed` in `scripts/lib/migration-ledger.ts` for the
+ * reasoning and for the unit coverage of the env contract, which lives there
+ * because this package runs on `tsx --test` and is outside the CI test graph.
  *
  * This lives here rather than inline in `migrate.ts` so the fail-closed
  * behaviour — the whole point of #2933 — is reachable from a test. `migrate.ts`
@@ -259,7 +268,7 @@ export async function runMigrationJournalGate(
   migrationsFolder: string = DRIZZLE_MIGRATIONS_FOLDER,
   baselineOverride?: LedgerBaseline,
 ): Promise<MigrationJournalReport | null> {
-  if (env[VERIFY_MIGRATION_JOURNAL_ENV] !== '1') {
+  if (!isMigrationJournalGateArmed(env)) {
     return null;
   }
   return assertMigrationJournalApplied(readLedgerHashes, migrationsFolder, baselineOverride);
