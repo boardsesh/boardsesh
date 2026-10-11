@@ -579,11 +579,11 @@
       },
       "start": {
         "title": "Erst Grad und Winkel",
-        "p1": "Tipp auf die Anzeige Grad neben der Suche. Ein Grad zeigt nur diesen Grad, ein zweiter innerhalb von drei Sekunden ergibt einen Bereich, und der gewählte Grad nochmal setzt zurück.",
+        "p1": "Tipp auf die Anzeige Grad neben der Suche. Ein Grad zeigt nur diesen Grad, derselbe Grad nochmal setzt zurück. Für einen Bereich schalte Bereich ein und tipp einen zweiten Grad an.",
         "p2": "Jeder Grad und jede Zahl an Begehungen gilt für den Winkel des Boards. Tipp auf den Winkel-Chip, um ihn zu ändern.",
         "p3": "Angemeldet filtern die Fortschritt-Chips nach deiner Historie. Nicht getoppt blendet deine Begehungen aus, Projekte behält versuchte, aber nicht getoppte Boulder, Nicht versucht behält nie eingetragene.",
         "clipAlt": "Einen Gradbereich setzen",
-        "clipCaption": "Zwei schnelle Taps bilden einen Bereich. Tipp denselben Grad nochmal an, um ihn zu löschen."
+        "clipCaption": "Schalte Bereich ein und tipp einen zweiten Grad an, um einen Bereich zu bilden. Tipp einen Grad nochmal an, um ihn zu löschen."
       },
       "holds": {
         "title": "Nach Griff filtern",

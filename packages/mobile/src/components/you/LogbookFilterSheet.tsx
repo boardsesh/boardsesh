@@ -311,7 +311,6 @@ export function LogbookFilterSheet({
               grades={grades ?? []}
               bound={gradeBound}
               onChange={handleGradeChange}
-              dismissible={false}
               showTitle
               centerOnEmpty={false}
               style={styles.inlineGradeRail}
@@ -403,8 +402,12 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
   },
+  // Cancels the section card's content padding so the grade strip scrolls out to
+  // the card's edges; the rail's own insets put its title, first chip and Range
+  // toggle back on that padding.
   inlineGradeRail: {
     marginTop: spacing[1],
+    marginHorizontal: -spacing[4],
   },
   dateRowGap: {
     height: spacing[2],

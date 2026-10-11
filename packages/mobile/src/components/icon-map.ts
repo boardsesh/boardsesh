@@ -219,6 +219,8 @@ export const iconMap = {
   clock: { ios: 'clock', android: 'clock-outline' },
   filter: { ios: 'line.3.horizontal.decrease', android: 'filter-variant' },
   sort: { ios: 'arrow.up.arrow.down', android: 'sort-variant' },
+  // The grade rail's Range toggle: a span between two ends.
+  range: { ios: 'arrow.left.and.right', android: 'arrow-expand-horizontal' },
   refresh: { ios: 'arrow.clockwise', android: 'refresh' },
   'crop.free': { ios: 'viewfinder', android: 'crop-free' },
   // The spray editor's iPad tool rail: the resting pick-and-switch tool, the

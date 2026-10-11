@@ -1373,13 +1373,6 @@ function ClimbListInner() {
     );
   }, [replaceSearch, name, filters.minGrade, filters.maxGrade]);
 
-  const handleGradeChange = useCallback(
-    (next: GradeBound) => {
-      setGrade(next);
-    },
-    [setGrade],
-  );
-
   // Remember the grade the climber filters by (from any path — the chip rail,
   // the filter sheet's Apply, tokens, recent pills, per-board restore) so the
   // rail can open centred on it later. Skips clears (undefined) so clearing
@@ -1708,9 +1701,7 @@ function ClimbListInner() {
                 bound={gradeBound}
                 lastUsedGradeId={lastUsedGrade}
                 boardName={boardName}
-                onChange={handleGradeChange}
-                onRequestClose={handleDismissGrade}
-                dismissible={false}
+                onChange={setGrade}
               />
             ) : undefined
           }
@@ -1747,8 +1738,7 @@ function ClimbListInner() {
               bound={gradeBound}
               lastUsedGradeId={lastUsedGrade}
               boardName={boardName}
-              onChange={handleGradeChange}
-              dismissible={false}
+              onChange={setGrade}
             />
           </View>
         ) : null}
@@ -1763,7 +1753,7 @@ function ClimbListInner() {
     gradeBound,
     lastUsedGrade,
     boardName,
-    handleGradeChange,
+    setGrade,
     pinnedChips,
     activeFilterCount,
     handleOpenFilters,
@@ -2277,7 +2267,7 @@ function ClimbListInner() {
         gradeRailVisible={showGrade}
         gradeChip={gradeChip}
         onOpenGrade={handleOpenGrade}
-        onGradeChange={handleGradeChange}
+        onGradeChange={setGrade}
         filterChrome={filterChrome}
         showPersistentChips={filterInTopChrome}
       />
@@ -2370,9 +2360,10 @@ const styles = StyleSheet.create({
   placeholderTint: {
     opacity: 0.4,
   },
-  // The grade rail the Grade chip discloses, in flow under the chip row.
+  // The grade rail the Grade chip discloses, in flow under the chip row. No side
+  // padding: the rail runs edge to edge and insets its own first chip and Range
+  // toggle to the 16pt gutter the chip row above rests on.
   chipGradeRail: {
-    paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
   },
   emptyContainer: {

@@ -592,8 +592,9 @@
       "rangeFilterAria": "{{grade}} est dans la plage de cotations sélectionnée",
       "anyGradeAria": "Toutes les cotations sélectionnées",
       "clearFilterAria": "Effacer le filtre de cotation",
-      "closeAria": "Fermer le sélecteur de cotation",
-      "rangeHint": "Touchez une autre cotation pour créer une plage",
+      "rangeToggle": "Plage",
+      "rangeToggleHint": "Activez, puis touchez une deuxième cotation pour filtrer tout ce qui se trouve entre les deux",
+      "rangeHint": "Crée une plage avec la cotation sélectionnée",
       "setLogGradeAria": "Enregistrer la cotation {{grade}}",
       "selectedLogGradeAria": "Cotation {{grade}} sélectionnée pour le carnet",
       "consensusGradeAria": "{{grade}}, cotation consensus"

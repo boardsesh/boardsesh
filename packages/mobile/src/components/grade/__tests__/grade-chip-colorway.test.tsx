@@ -1,27 +1,34 @@
 // @vitest-environment jsdom
 //
 // GradeChip paints from two palettes and the two must not bleed into each other.
-// `grade` is the app-wide ramp every filter rail has always used — a selected V6
-// is the same red it is everywhere else. `selection` is the tick sheets' palette,
-// where the chip answers "which one did I pick?" in violet and amber and the
-// grade ramp lives in the header instead.
+// `grade` is the filter rails' palette: the grade's colour is a dot at rest and
+// the whole chip once selected, and a checkmark marks every chip that is part of
+// the selection. `selection` is the tick sheets' palette, where the chip answers
+// "which one did I pick?" in violet and amber and the grade ramp lives in the
+// header instead.
 //
-// This test pins three things:
-//   1. `grade` is byte-for-byte what it was before the tick redesign, for every
-//      tone. The redesign added a colorway; it must not have moved the default.
-//   2. `selection`'s selected tone is the brand fill with `onPrimary` text.
-//   3. The box geometry does not move between tones. React Native is border-box,
+// This test pins four things:
+//   1. `grade` state is never colour alone: a dot at rest, a checkmark in range
+//      and on the solid selected chip, and no tint on an in-range chip.
+//   2. `selection` is untouched by the mark: no dot, no checkmark, same paint.
+//   3. `selection`'s selected tone is the brand fill with `onPrimary` text.
+//   4. The box geometry does not move between tones. React Native is border-box,
 //      so a tone that changes `borderWidth` resizes the content box under the
-//      label — which is exactly what a 0pt selected border did.
+//      label — which is exactly what a 0pt selected border did. In `grade` the
+//      mark's slot is one size in every tone for the same reason.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type CapturedStyle = Record<string, unknown>;
+type CapturedIcon = { name: string; color: unknown; size: number; maxFontSizeMultiplier: unknown };
 
 const captured = vi.hoisted(() => ({
   frameStyles: [] as unknown[],
   textColors: [] as unknown[],
+  viewStyles: [] as unknown[],
+  icons: [] as unknown[],
+  fontScale: 1,
 }));
 
 vi.mock('react-native', () => ({
@@ -29,7 +36,11 @@ vi.mock('react-native', () => ({
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  useWindowDimensions: () => ({ fontScale: captured.fontScale }),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
+    captured.viewStyles.push(style);
+    return createElement('div', null, children);
+  },
 }));
 
 vi.mock('../../PressableSurface', () => ({
@@ -43,6 +54,13 @@ vi.mock('../../Text', () => ({
   Text: ({ children, color }: { children?: ReactNode; color?: unknown }) => {
     captured.textColors.push(color);
     return createElement('span', null, children);
+  },
+}));
+
+vi.mock('../../Icon', () => ({
+  Icon: (props: CapturedIcon) => {
+    captured.icons.push(props);
+    return createElement('span', { 'data-icon': props.name });
   },
 }));
 
@@ -70,6 +88,9 @@ const GRADE_COLOR = '#D64541';
  *  component would defeat the assertion. */
 const CHIP_MIN_WIDTH = 52;
 const CHIP_PADDING_X = spacing[3];
+const MARK_SLOT_SIZE = 12;
+const MARK_DOT_SIZE = 8;
+const MARK_GAP = spacing[1];
 
 type ChipPaint = {
   backgroundColor: unknown;
@@ -78,31 +99,73 @@ type ChipPaint = {
   textColor: unknown;
 };
 
+/** What sits in front of the label: the grade dot, the checkmark, or neither. */
+type ChipMark = {
+  /** The slot both marks share, or undefined when the chip draws no mark at all. */
+  slotSize: number | undefined;
+  dot: { size: unknown; color: unknown; ringColor: unknown; ringWidth: unknown } | undefined;
+  check: { color: unknown; size: number } | undefined;
+};
+
 function flatten(style: unknown): CapturedStyle {
   if (Array.isArray(style)) return Object.assign({}, ...style.map(flatten));
   if (style && typeof style === 'object') return style as CapturedStyle;
   return {};
 }
 
-function paint(tone: GradeChipTone, colorway: GradeChipColorway): ChipPaint {
+/** `null` renders the chip with no grade colour at all, as the range rail's "Any" does. */
+function renderChip(tone: GradeChipTone, colorway: GradeChipColorway, gradeColor: string | null = GRADE_COLOR) {
   captured.frameStyles = [];
   captured.textColors = [];
+  captured.viewStyles = [];
+  captured.icons = [];
   render(
     createElement(GradeChip, {
       label: 'V6',
       tone,
       colorway,
-      gradeColor: GRADE_COLOR,
+      gradeColor: gradeColor ?? undefined,
       onPress: () => {},
       accessibilityLabel: 'V6',
     }),
   );
+}
+
+function paint(tone: GradeChipTone, colorway: GradeChipColorway): ChipPaint {
+  renderChip(tone, colorway);
   const frame = flatten(captured.frameStyles.at(-1));
   return {
     backgroundColor: frame.backgroundColor,
     borderColor: frame.borderColor,
     borderWidth: frame.borderWidth as number,
     textColor: captured.textColors.at(-1),
+  };
+}
+
+/** The label row's own style: the first view the chip renders, ahead of the mark's. */
+function contentStyle(): CapturedStyle {
+  return flatten(captured.viewStyles[0]);
+}
+
+function mark(tone: GradeChipTone, colorway: GradeChipColorway, gradeColor: string | null = GRADE_COLOR): ChipMark {
+  renderChip(tone, colorway, gradeColor);
+  const views = captured.viewStyles.map(flatten);
+  // The dot is the one view that paints a colour; the slot is the one sized
+  // view that paints none.
+  const dotStyle = views.find((style) => style.backgroundColor !== undefined);
+  const slotStyle = views.find((style) => style.width !== undefined && style.backgroundColor === undefined);
+  const icon = captured.icons.at(-1) as CapturedIcon | undefined;
+  return {
+    slotSize: slotStyle?.width as number | undefined,
+    dot: dotStyle
+      ? {
+          size: dotStyle.width,
+          color: dotStyle.backgroundColor,
+          ringColor: dotStyle.borderColor,
+          ringWidth: dotStyle.borderWidth,
+        }
+      : undefined,
+    check: icon?.name === 'check.small' ? { color: icon.color, size: icon.size } : undefined,
   };
 }
 
@@ -125,6 +188,9 @@ function contentBoxWidth(chip: ChipPaint, labelWidth: number): number {
 beforeEach(() => {
   captured.frameStyles = [];
   captured.textColors = [];
+  captured.viewStyles = [];
+  captured.icons = [];
+  captured.fontScale = 1;
 });
 
 describe('GradeChip colorway="grade"', () => {
@@ -137,6 +203,14 @@ describe('GradeChip colorway="grade"', () => {
     });
   });
 
+  it('carries the grade colour of a neutral chip as an 8pt dot in a separator ring', () => {
+    expect(mark('neutral', 'grade')).toEqual({
+      slotSize: MARK_SLOT_SIZE,
+      dot: { size: MARK_DOT_SIZE, color: GRADE_COLOR, ringColor: systemColors.separator, ringWidth: 1 },
+      check: undefined,
+    });
+  });
+
   it('paints selected in the grade colour with readable text on it', () => {
     expect(paint('selected', 'grade')).toEqual({
       backgroundColor: GRADE_COLOR,
@@ -146,21 +220,63 @@ describe('GradeChip colorway="grade"', () => {
     });
   });
 
-  it('paints an in-range chip as a washed grade tint', () => {
-    expect(paint('range', 'grade')).toEqual({
-      backgroundColor: withAlpha(GRADE_COLOR, 0.18),
-      borderColor: withAlpha(GRADE_COLOR, 0.75),
-      borderWidth: 1,
-      textColor: undefined,
+  it('marks a selected chip with a checkmark in the label colour, not the dot', () => {
+    expect(mark('selected', 'grade')).toEqual({
+      slotSize: MARK_SLOT_SIZE,
+      dot: undefined,
+      check: { color: readableTextColor(GRADE_COLOR), size: MARK_SLOT_SIZE },
     });
   });
 
-  it('paints consensus fainter than in-range', () => {
+  it('paints an in-range chip exactly like a neutral one: no tint, no coloured ring', () => {
+    expect(paint('range', 'grade')).toEqual(paint('neutral', 'grade'));
+  });
+
+  it('marks an in-range chip with a checkmark in place of the dot', () => {
+    expect(mark('range', 'grade')).toEqual({
+      slotSize: MARK_SLOT_SIZE,
+      dot: undefined,
+      check: { color: systemColors.label, size: MARK_SLOT_SIZE },
+    });
+  });
+
+  it('paints consensus as a faint grade tint with a tinted ring', () => {
     expect(paint('consensus', 'grade')).toEqual({
       backgroundColor: withAlpha(GRADE_COLOR, 0.11),
       borderColor: withAlpha(GRADE_COLOR, 0.55),
       borderWidth: 1,
       textColor: undefined,
+    });
+  });
+
+  it('keeps the dot on a consensus chip, so only a selected chip is checked', () => {
+    const consensus = mark('consensus', 'grade');
+
+    expect(consensus.dot?.color).toBe(GRADE_COLOR);
+    expect(consensus.check).toBeUndefined();
+  });
+
+  // The range rail's "Any" chip stands for no grade, so it passes no colour.
+  describe('with no grade colour', () => {
+    it('draws no dot at rest and keeps the neutral fill', () => {
+      expect(mark('neutral', 'grade', null)).toEqual({
+        slotSize: MARK_SLOT_SIZE,
+        dot: undefined,
+        check: undefined,
+      });
+      const frame = flatten(captured.frameStyles.at(-1));
+      expect(frame.backgroundColor).toBe(systemColors.fill);
+    });
+
+    it('takes a checkmark on the neutral fill, never the brand fill', () => {
+      expect(mark('range', 'grade', null)).toEqual({
+        slotSize: MARK_SLOT_SIZE,
+        dot: undefined,
+        check: { color: systemColors.label, size: MARK_SLOT_SIZE },
+      });
+      const frame = flatten(captured.frameStyles.at(-1));
+      expect(frame.backgroundColor).toBe(systemColors.fill);
+      expect(frame.backgroundColor).not.toBe(brandColors.primary);
     });
   });
 });
@@ -191,6 +307,24 @@ describe('GradeChip colorway="selection"', () => {
       textColor: systemColors.label,
     });
   });
+
+  it.each<GradeChipTone>(['neutral', 'selected', 'range', 'consensus'])(
+    'draws no dot, no checkmark and no mark slot on a %s chip',
+    (tone) => {
+      expect(mark(tone, 'selection')).toEqual({ slotSize: undefined, dot: undefined, check: undefined });
+    },
+  );
+
+  it('keeps its content a plain centred box, with no row or gap for a mark', () => {
+    renderChip('selected', 'selection');
+
+    expect(contentStyle()).toEqual({
+      minHeight: 42,
+      paddingHorizontal: CHIP_PADDING_X,
+      alignItems: 'center',
+      justifyContent: 'center',
+    });
+  });
 });
 
 describe('GradeChip box geometry', () => {
@@ -201,6 +335,7 @@ describe('GradeChip box geometry', () => {
   // assertions only mean something above the clamp.
   const LABEL_WIDTH = 40;
   const TONES: GradeChipTone[] = ['neutral', 'selected', 'consensus'];
+  const GRADE_TONES: GradeChipTone[] = ['neutral', 'range', 'selected', 'consensus'];
 
   it('measures above the min-width clamp, or the rest of this block proves nothing', () => {
     for (const tone of TONES) {
@@ -235,9 +370,33 @@ describe('GradeChip box geometry', () => {
     expect(contentBoxWidth(selected, LABEL_WIDTH)).toBe(contentBoxWidth(neutral, LABEL_WIDTH));
   });
 
-  it('keeps the selected tone the same size in both colorways', () => {
-    expect(outerBoxWidth(paint('selected', 'selection'), LABEL_WIDTH)).toBe(
-      outerBoxWidth(paint('selected', 'grade'), LABEL_WIDTH),
-    );
+  it('keeps the same 1pt border on every grade tone, so no tone resizes the box', () => {
+    for (const tone of GRADE_TONES) {
+      expect(paint(tone, 'grade').borderWidth).toBe(1);
+    }
+  });
+
+  it('holds the mark in one slot size on every grade tone, so the label never shifts', () => {
+    // Dot, checkmark or neither: the slot in front of the label is the same
+    // width, and the row gap beside it does not depend on the tone.
+    for (const tone of GRADE_TONES) {
+      expect(mark(tone, 'grade').slotSize).toBe(MARK_SLOT_SIZE);
+      expect(contentStyle().gap).toBe(MARK_GAP);
+    }
+    // "Any" changes between an empty slot and a checkmark without resizing.
+    expect(mark('neutral', 'grade', null).slotSize).toBe(mark('range', 'grade', null).slotSize);
+  });
+
+  it('scales the slot and the dot with the text size, up to the cap the checkmark glyph uses', () => {
+    captured.fontScale = 1.3;
+    const scaled = mark('neutral', 'grade');
+    expect(scaled.slotSize).toBeCloseTo(MARK_SLOT_SIZE * 1.3);
+    expect(scaled.dot?.size).toBeCloseTo(MARK_DOT_SIZE * 1.3);
+
+    captured.fontScale = 3;
+    expect(mark('neutral', 'grade').slotSize).toBeCloseTo(MARK_SLOT_SIZE * 1.5);
+    // The checkmark is handed the same cap, so glyph and slot grow together.
+    mark('selected', 'grade');
+    expect((captured.icons.at(-1) as CapturedIcon).maxFontSizeMultiplier).toBe(1.5);
   });
 });

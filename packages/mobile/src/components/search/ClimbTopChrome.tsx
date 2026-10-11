@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Appbar, Chip } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
-import type { GradeBound, GradeTapMeta } from '@boardsesh/climb-filters';
+import type { GradeBound } from '@boardsesh/climb-filters';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
@@ -74,7 +74,7 @@ type ClimbTopChromeProps = {
   gradeRailVisible?: boolean;
   gradeChip?: { label: string; active: boolean; onClear?: () => void };
   onOpenGrade?: () => void;
-  onGradeChange?: (grade: GradeBound, meta?: GradeTapMeta) => void;
+  onGradeChange?: (grade: GradeBound) => void;
   /** Persistent native filter-chip row + token row, rendered under the title on
    *  Liquid Glass, independent of search focus. On Material it renders in the search
    *  stack instead when `showPersistentChips` is set. The caller composes it so every
@@ -294,6 +294,11 @@ function ClimbTopChromeComponent({
               </View>
             ) : null}
 
+            {/* The rail stays inside the stack's gutter like the chip row above it,
+                which pads its own chips a further 16pt, so both strips clip on the
+                same line. The rail's default left inset rests the first grade chip
+                under that row's first chip; the Range toggle needs no right inset,
+                the gutter already is one. */}
             {gradeRailVisible && gradeBound && onGradeChange ? (
               <GradeRangeRail
                 grades={grades}
@@ -301,8 +306,7 @@ function ClimbTopChromeComponent({
                 lastUsedGradeId={lastUsedGradeId}
                 boardName={boardName}
                 onChange={onGradeChange}
-                onRequestClose={onCloseGrade}
-                dismissible={false}
+                contentInsetRight={0}
                 style={styles.materialGradeRail}
               />
             ) : null}

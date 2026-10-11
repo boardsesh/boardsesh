@@ -54,13 +54,17 @@ function LogbookFacetRailComponent({ openFacet, filters, grades, onUpdateFilters
 
   return (
     <View style={styles.rail}>
+      {/* The toolbar already owns the 16pt gutter, and the chip row above pads its
+          own chips a further 16pt inside it. The rail's default left inset rests
+          the first grade chip under that row's first chip; the Range toggle needs
+          no right inset, the gutter already is one. */}
       {openFacet === 'grade' ? (
         <GradeRangeRail
           grades={grades}
           bound={gradeBound}
           onChange={handleGradeChange}
-          dismissible={false}
           centerOnEmpty={false}
+          contentInsetRight={0}
         />
       ) : null}
 

@@ -592,8 +592,9 @@
       "rangeFilterAria": "{{grade}} liegt im gewählten Grad-Bereich",
       "anyGradeAria": "Beliebiger Grad ausgewählt",
       "clearFilterAria": "Grad-Filter zurücksetzen",
-      "closeAria": "Grad-Auswahl schließen",
-      "rangeHint": "Tipp einen zweiten Grad an, um einen Bereich zu wählen",
+      "rangeToggle": "Bereich",
+      "rangeToggleHint": "Einschalten, dann einen zweiten Grad antippen, um alles dazwischen zu filtern",
+      "rangeHint": "Bildet mit dem gewählten Grad einen Bereich",
       "setLogGradeAria": "Eingetragenen Grad auf {{grade}} setzen",
       "selectedLogGradeAria": "Eingetragener Grad {{grade}} ausgewählt",
       "consensusGradeAria": "{{grade}}, Konsens-Grad"

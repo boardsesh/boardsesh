@@ -1021,7 +1021,6 @@ export function ClimbFilterSheet({
                 lastUsedGradeId={lastUsedGradeId}
                 boardName={boardName}
                 onChange={handleGradeChange}
-                dismissible={false}
                 style={styles.inlineGradeRail}
               />
 
@@ -1519,8 +1518,11 @@ const createStyles = (textStyles: TypographyScale) =>
     tappableRowValue: {
       opacity: 0.55,
     },
+    // Cancels the body's gutter so the grade strip scrolls out to the sheet's
+    // edges; the rail's own insets put its first chip and Range toggle back on it.
     inlineGradeRail: {
       marginTop: spacing[2],
+      marginHorizontal: -spacing[4],
     },
     countNote: {
       paddingTop: spacing[3],

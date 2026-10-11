@@ -13,7 +13,8 @@
 // One <Host> wraps a horizontal SwiftUI ScrollView + HStack of chips:
 //   Filters · N → opens the long-tail sheet (Button, no menu)
 //   Recent ▾    → native Menu of saved filters + Clear (hidden when none)
-//   Grade       → discloses the GradeRangeRail row (Button, no menu) [PRIMARY #1]
+//   Grade ⌄     → discloses the GradeRangeRail row (Button, no menu; the chevron
+//                 points up while the row is open)                    [PRIMARY #1]
 //   Your progress ▾ → native Menu + Picker (single-select, auth-gated) [PRIMARY #2]
 //   Collection ▾→ native Menu + Picker (Any / Benchmarks / My drafts)  [PRIMARY #3]
 //   Tall / Wide → tap toggles, long-press Lock / Unlock (iOS-only lock)
@@ -27,8 +28,30 @@
 import { memo, useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Host, HStack, ScrollView, Menu, Picker, Button, Text, Divider, Popover, RNHostView } from '@expo/ui/swift-ui';
-import { buttonStyle, controlSize, tint, tag, padding, fixedSize } from '@expo/ui/swift-ui/modifiers';
+import {
+  Host,
+  HStack,
+  ScrollView,
+  Menu,
+  Picker,
+  Button,
+  Text,
+  Image,
+  Divider,
+  Popover,
+  RNHostView,
+} from '@expo/ui/swift-ui';
+import {
+  buttonStyle,
+  controlSize,
+  tint,
+  tag,
+  padding,
+  fixedSize,
+  imageScale,
+  accessibilityHint,
+  accessibilityHidden,
+} from '@expo/ui/swift-ui/modifiers';
 import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import {
@@ -126,6 +149,30 @@ function FilterChipRowComponent({
       ? t('mobile.search.chips.filtersWithCount', { count: activeFilterCount })
       : t('mobile.filter.title');
 
+  // The Grade chip, built once for both of its placements below (the popover
+  // trigger on regular-width iPad, the plain chip everywhere else). The trailing
+  // chevron marks it as the one chip that discloses a row, and flips while that
+  // row is open. No colour or size on the chevron: it takes the button's own, so
+  // it stays legible on the tinted active chip. VoiceOver skips the glyph and
+  // reads the hint instead.
+  const gradeChip = (
+    <Button
+      onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+      modifiers={[
+        ...chipModifiers(gradeActive),
+        accessibilityHint(gradeRailOpen ? t('mobile.search.gradeCloseHint') : t('mobile.search.gradeOpenHint')),
+      ]}
+    >
+      <HStack spacing={spacing[1]}>
+        <Text>{gradeLabel}</Text>
+        <Image
+          systemName={gradeRailOpen ? 'chevron.up' : 'chevron.down'}
+          modifiers={[imageScale('small'), accessibilityHidden()]}
+        />
+      </HStack>
+    </Button>
+  );
+
   return (
     <Host matchContents={{ vertical: true }} style={styles.host}>
       <ScrollView axes="horizontal" showsIndicators={false}>
@@ -183,13 +230,7 @@ function FilterChipRowComponent({
                   if (!presented) onCloseGrade();
                 }}
               >
-                <Popover.Trigger>
-                  <Button
-                    label={gradeLabel}
-                    onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
-                    modifiers={chipModifiers(gradeActive)}
-                  />
-                </Popover.Trigger>
+                <Popover.Trigger>{gradeChip}</Popover.Trigger>
                 <Popover.Content>
                   <RNHostView matchContents>
                     <View style={styles.gradePopover}>{gradePopoverContent}</View>
@@ -197,11 +238,7 @@ function FilterChipRowComponent({
                 </Popover.Content>
               </Popover>
             ) : (
-              <Button
-                label={gradeLabel}
-                onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
-                modifiers={chipModifiers(gradeActive)}
-              />
+              gradeChip
             )
           ) : null}
 
@@ -414,7 +451,9 @@ function FilterChipRowComponent({
 }
 
 const styles = StyleSheet.create({
-  gradePopover: { width: 400 },
+  // The rail draws no frame of its own, so the popover gives it the room above
+  // and below its chips; the rail's own insets handle the sides.
+  gradePopover: { width: 400, paddingVertical: spacing[2] },
   host: {
     width: '100%',
   },

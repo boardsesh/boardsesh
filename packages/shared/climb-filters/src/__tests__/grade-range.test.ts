@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RANGE_EXTEND_WINDOW_MS,
   isAnyGrade,
   isSingleGrade,
   isRangeGrade,
@@ -8,21 +7,16 @@ import {
   isGradeInRange,
   isGradeEndpoint,
   computeGradeTap,
+  collapseToLowerEnd,
   type GradeBound,
 } from '../grade-range';
 
-// Ascending difficulty_ids, mirroring how the picker feeds them. Gaps between
-// ids are intentional so index-neighbor logic (rule 4 trim) can't be confused
-// with id arithmetic.
-const gradeIds = [10, 12, 14, 16, 18, 20];
-
+// Difficulty ids with gaps between them, so a rule that did arithmetic on an id
+// instead of using the ids it was given would land on a grade that is not in
+// the scale.
 const any: GradeBound = { minGradeId: undefined, maxGradeId: undefined };
-
-describe('RANGE_EXTEND_WINDOW_MS', () => {
-  it('matches the documented 3000ms window', () => {
-    expect(RANGE_EXTEND_WINDOW_MS).toBe(3000);
-  });
-});
+const single: GradeBound = { minGradeId: 14, maxGradeId: 14 };
+const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
 
 describe('grade-bound predicates', () => {
   it('isAnyGrade is true only when both bounds are undefined', () => {
@@ -52,7 +46,6 @@ describe('grade-bound predicates', () => {
   });
 
   it('isGradeInRange is inclusive and false unless both bounds are set', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
     expect(isGradeInRange(range, 12)).toBe(true); // lower endpoint
     expect(isGradeInRange(range, 18)).toBe(true); // upper endpoint
     expect(isGradeInRange(range, 14)).toBe(true); // interior
@@ -64,7 +57,6 @@ describe('grade-bound predicates', () => {
   });
 
   it('isGradeEndpoint matches either endpoint only', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
     expect(isGradeEndpoint(range, 12)).toBe(true);
     expect(isGradeEndpoint(range, 18)).toBe(true);
     expect(isGradeEndpoint(range, 14)).toBe(false);
@@ -72,149 +64,81 @@ describe('grade-bound predicates', () => {
   });
 });
 
-describe('computeGradeTap — rule 1: Any -> single', () => {
-  it('collapses Any to a single grade regardless of window flag', () => {
-    expect(computeGradeTap(any, gradeIds, 14, false)).toEqual({
-      next: { minGradeId: 14, maxGradeId: 14 },
-    });
-    expect(computeGradeTap(any, gradeIds, 14, true)).toEqual({
-      next: { minGradeId: 14, maxGradeId: 14 },
-    });
+describe('computeGradeTap with range mode off', () => {
+  it('picks the tapped grade from Any', () => {
+    expect(computeGradeTap(any, 14, false)).toEqual({ minGradeId: 14, maxGradeId: 14 });
   });
 
-  it('emits no meta on Any -> single', () => {
-    expect(computeGradeTap(any, gradeIds, 10, false).meta).toBeUndefined();
-  });
-});
-
-describe('computeGradeTap — rule 2: single -> clear', () => {
-  it('tapping the same single grade clears to Any', () => {
-    const single: GradeBound = { minGradeId: 14, maxGradeId: 14 };
-    expect(computeGradeTap(single, gradeIds, 14, false)).toEqual({
-      next: { minGradeId: undefined, maxGradeId: undefined },
-    });
-    // Window flag must not change clear behaviour.
-    expect(computeGradeTap(single, gradeIds, 14, true)).toEqual({
-      next: { minGradeId: undefined, maxGradeId: undefined },
-    });
+  it('clears to Any when the selected single grade is tapped again', () => {
+    expect(computeGradeTap(single, 14, false)).toEqual({ minGradeId: undefined, maxGradeId: undefined });
   });
 
-  it('emits no meta on clear', () => {
-    const single: GradeBound = { minGradeId: 14, maxGradeId: 14 };
-    expect(computeGradeTap(single, gradeIds, 14, false).meta).toBeUndefined();
+  it('switches to the tapped grade from another single grade, never a range', () => {
+    expect(computeGradeTap(single, 18, false)).toEqual({ minGradeId: 18, maxGradeId: 18 });
+    expect(computeGradeTap(single, 10, false)).toEqual({ minGradeId: 10, maxGradeId: 10 });
+  });
+
+  it('replaces a range with the tapped grade, wherever the tap lands', () => {
+    expect(computeGradeTap(range, 12, false)).toEqual({ minGradeId: 12, maxGradeId: 12 }); // lower end
+    expect(computeGradeTap(range, 18, false)).toEqual({ minGradeId: 18, maxGradeId: 18 }); // upper end
+    expect(computeGradeTap(range, 14, false)).toEqual({ minGradeId: 14, maxGradeId: 14 }); // inside
+    expect(computeGradeTap(range, 20, false)).toEqual({ minGradeId: 20, maxGradeId: 20 }); // outside
   });
 });
 
-describe('computeGradeTap — rule 3: single + different chip', () => {
-  it('within window: extends to range [min,max] (tapping higher)', () => {
-    const single: GradeBound = { minGradeId: 12, maxGradeId: 12 };
-    expect(computeGradeTap(single, gradeIds, 18, true)).toEqual({
-      next: { minGradeId: 12, maxGradeId: 18 },
-      meta: { extendedRangeWithinWindow: true },
-    });
+describe('computeGradeTap with range mode on', () => {
+  it('makes the tapped grade the first end from Any', () => {
+    expect(computeGradeTap(any, 14, true)).toEqual({ minGradeId: 14, maxGradeId: 14 });
   });
 
-  it('within window: extends to range, normalising order (tapping lower)', () => {
-    const single: GradeBound = { minGradeId: 18, maxGradeId: 18 };
-    expect(computeGradeTap(single, gradeIds, 12, true)).toEqual({
-      next: { minGradeId: 12, maxGradeId: 18 },
-      meta: { extendedRangeWithinWindow: true },
-    });
+  it('builds a range from a single grade and a higher tap', () => {
+    expect(computeGradeTap(single, 18, true)).toEqual({ minGradeId: 14, maxGradeId: 18 });
   });
 
-  it('outside window: switches single grade with meta false', () => {
-    const single: GradeBound = { minGradeId: 12, maxGradeId: 12 };
-    expect(computeGradeTap(single, gradeIds, 18, false)).toEqual({
-      next: { minGradeId: 18, maxGradeId: 18 },
-      meta: { extendedRangeWithinWindow: false },
-    });
-  });
-});
-
-describe('computeGradeTap — rule 4: range endpoint trim', () => {
-  it('tapping the lower endpoint trims it inward by one grade index', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    // index of 12 is 1; next index is 2 -> id 14, still <= 18.
-    expect(computeGradeTap(range, gradeIds, 12, false)).toEqual({
-      next: { minGradeId: 14, maxGradeId: 18 },
-    });
+  it('builds a range in ascending order from a single grade and a lower tap', () => {
+    expect(computeGradeTap(single, 10, true)).toEqual({ minGradeId: 10, maxGradeId: 14 });
   });
 
-  it('tapping the upper endpoint trims it inward by one grade index', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    // index of 18 is 4; prev index is 3 -> id 16, still >= 12.
-    expect(computeGradeTap(range, gradeIds, 18, false)).toEqual({
-      next: { minGradeId: 12, maxGradeId: 16 },
-    });
+  it('clears to Any when the selected single grade is tapped again', () => {
+    expect(computeGradeTap(single, 14, true)).toEqual({ minGradeId: undefined, maxGradeId: undefined });
   });
 
-  it('lower-endpoint trim that would invert collapses to the surviving (max) endpoint', () => {
-    // Adjacent two-grade range: trimming the lower endpoint would push min past
-    // max, so settle on max as a single grade.
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 14 };
-    expect(computeGradeTap(range, gradeIds, 12, false)).toEqual({
-      next: { minGradeId: 14, maxGradeId: 14 },
-    });
-  });
-
-  it('upper-endpoint trim that would invert collapses to the surviving (min) endpoint', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 14 };
-    expect(computeGradeTap(range, gradeIds, 14, false)).toEqual({
-      next: { minGradeId: 12, maxGradeId: 12 },
-    });
-  });
-
-  it('lower-endpoint trim at the top of the grades array collapses to max', () => {
-    // min is the second-to-last grade, max is the last grade. Trimming min
-    // inward lands on max -> single.
-    const range: GradeBound = { minGradeId: 18, maxGradeId: 20 };
-    expect(computeGradeTap(range, gradeIds, 18, false)).toEqual({
-      next: { minGradeId: 20, maxGradeId: 20 },
-    });
-  });
-
-  it('endpoint trim ignores the window flag', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    expect(computeGradeTap(range, gradeIds, 12, true)).toEqual({
-      next: { minGradeId: 14, maxGradeId: 18 },
-    });
-  });
-
-  it('emits no meta on endpoint trim', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    expect(computeGradeTap(range, gradeIds, 12, false).meta).toBeUndefined();
+  it('starts a new range from the tapped grade when a range is already set', () => {
+    expect(computeGradeTap(range, 12, true)).toEqual({ minGradeId: 12, maxGradeId: 12 }); // lower end
+    expect(computeGradeTap(range, 18, true)).toEqual({ minGradeId: 18, maxGradeId: 18 }); // upper end
+    expect(computeGradeTap(range, 14, true)).toEqual({ minGradeId: 14, maxGradeId: 14 }); // inside
+    expect(computeGradeTap(range, 20, true)).toEqual({ minGradeId: 20, maxGradeId: 20 }); // outside
   });
 });
 
-describe('computeGradeTap — rule 5: range interior collapse', () => {
-  it('tapping an interior chip collapses to that single grade', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    expect(computeGradeTap(range, gradeIds, 14, false)).toEqual({
-      next: { minGradeId: 14, maxGradeId: 14 },
-    });
-    expect(computeGradeTap(range, gradeIds, 16, false).meta).toBeUndefined();
+describe('computeGradeTap from a half-set bound', () => {
+  // Only one bound set is neither Any, a single grade nor a range. A tap starts
+  // over on the tapped grade in both modes, including a tap on the set bound.
+  const lowerOnly: GradeBound = { minGradeId: 12, maxGradeId: undefined };
+  const upperOnly: GradeBound = { minGradeId: undefined, maxGradeId: 18 };
+
+  it.each([false, true])('picks the tapped grade (range mode %s)', (rangeMode) => {
+    expect(computeGradeTap(lowerOnly, 16, rangeMode)).toEqual({ minGradeId: 16, maxGradeId: 16 });
+    expect(computeGradeTap(lowerOnly, 12, rangeMode)).toEqual({ minGradeId: 12, maxGradeId: 12 });
+    expect(computeGradeTap(upperOnly, 18, rangeMode)).toEqual({ minGradeId: 18, maxGradeId: 18 });
   });
 });
 
-describe('computeGradeTap — rule 6: range outside collapse', () => {
-  it('tapping a chip below the range collapses to that single grade', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    expect(computeGradeTap(range, gradeIds, 10, false)).toEqual({
-      next: { minGradeId: 10, maxGradeId: 10 },
-    });
+describe('collapseToLowerEnd', () => {
+  it('turns a range into the single grade at its lower end', () => {
+    expect(collapseToLowerEnd(range)).toEqual({ minGradeId: 12, maxGradeId: 12 });
   });
 
-  it('tapping a chip above the range collapses to that single grade', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    expect(computeGradeTap(range, gradeIds, 20, false)).toEqual({
-      next: { minGradeId: 20, maxGradeId: 20 },
-    });
+  it('returns a single grade as is', () => {
+    expect(collapseToLowerEnd(single)).toBe(single);
   });
 
-  it('outside-collapse ignores the window flag and emits no meta', () => {
-    const range: GradeBound = { minGradeId: 12, maxGradeId: 18 };
-    expect(computeGradeTap(range, gradeIds, 20, true)).toEqual({
-      next: { minGradeId: 20, maxGradeId: 20 },
-    });
+  it('returns Any as is', () => {
+    expect(collapseToLowerEnd(any)).toBe(any);
+  });
+
+  it('returns a half-set bound as is', () => {
+    const lowerOnly: GradeBound = { minGradeId: 12, maxGradeId: undefined };
+    expect(collapseToLowerEnd(lowerOnly)).toBe(lowerOnly);
   });
 });

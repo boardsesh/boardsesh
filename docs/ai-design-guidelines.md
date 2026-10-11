@@ -427,6 +427,43 @@ Neutral tiles in session summaries and Profile's period comparison use `systemCo
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
 keeps `systemColors.fill`. Do not apply a violet background to every content card.
 
+### Inline facet rows
+
+A filter chip that opens a control in place opens it as a plain row. The reference is the grade
+picker, `GradeRangeRail` (`src/components/grade/GradeRail.tsx`): the Grade chip on Climbs and the
+Grade facet in the Logbook open it under the chip row, and the two filter sheets and the iPad
+popover show the same row.
+
+**No frame, no grab handle.** The row belongs to the surface that holds it; it is not a sheet. [HIG
+Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) keeps the grabber for
+resizable sheets, and a glass capsule under a row of glass chips is glass on glass (see "Glass
+material" above). The chip that opened the row closes it; on iOS its chevron points up while the row
+is open.
+
+**Insets come from the container.** With no frame, the row lines up with what is above it: the
+first chip rests under the first chip of the chip row (or under the section's label in a sheet), and
+the pinned trailing control rests on the trailing gutter. Both are props (`contentInsetLeft` /
+`contentInsetRight`, 16pt by default). On Climbs, in both filter sheets and in the popover the strip
+scrolls out to the container's edge. Under a chip row that is itself inset (the Material chrome, the
+Logbook toolbar) it clips on that row's line. A 1pt `systemColors.separator` hairline marks where
+the strip stops in front of the pinned control. No gradient fade: the background differs per call
+site.
+
+**Grade colour on the selection only.** A resting chip is a `systemColors.fill` capsule with an 8pt
+dot in the grade's colour. A selected grade, or either end of a range, is the solid grade colour
+with `readableTextColor` text. "Any" is a neutral chip, never a brand fill.
+
+**State is never colour alone.** Every chip in the selection carries a checkmark where its dot was:
+the solid ends, the neutral chips between them, and "Any" while no filter is set. The mark sits in
+one slot of a set size, so a chip does not resize and its label does not move when its state changes.
+
+**A visible mode, not a timed rule.** Range is a toggle the climber can see: a 44pt capsule, brand
+fill when on, announced as a toggle button. Off, a tap picks one grade. On, the first tap is one end
+and the second makes the range (`computeGradeTap` in `@boardsesh/climb-filters`). Nothing depends on
+how fast the second tap follows, and the row never closes itself. [HIG
+Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility) asks to
+minimise time-boxed interface elements.
+
 ### Top-bar buttons
 
 One spec for every button in a sheet's `SheetTopBar`, a native stack header (`useHeaderActions` /

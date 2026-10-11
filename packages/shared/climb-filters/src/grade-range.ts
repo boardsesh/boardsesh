@@ -1,39 +1,16 @@
 /**
- * Pure grade-range tap rules shared by the web GradeRangePicker and the mobile
- * GradePopover. The bounds are `{ minGradeId, maxGradeId }`:
+ * Pure grade-range rules for a chip-based grade picker (the mobile
+ * GradeRangeRail). The bounds are `{ minGradeId, maxGradeId }`:
  *   - both undefined = "Any" (filter cleared)
  *   - equal = single grade
  *   - unequal = range
- * The grade ids fed in MUST be ascending difficulty_ids.
+ * Grade ids are difficulty_ids, which ascend with difficulty.
+ *
+ * Whether a tap picks one grade or builds a range is the picker's visible Range
+ * toggle, passed in as `rangeMode`. Nothing here is timed.
  */
-
-/**
- * Tapping a different chip while a single grade is selected only extends to a
- * range when the second tap lands within this window. Past it, the tap is
- * treated as a single-grade switch instead — matches user intent (rapid taps =
- * "I'm building a range", slow taps over a session = "I'm switching grades").
- */
-export const RANGE_EXTEND_WINDOW_MS = 3000;
 
 export type GradeBound = { minGradeId: number | undefined; maxGradeId: number | undefined };
-
-/**
- * Optional metadata emitted with a tap result. Lets the call site fold
- * picker-internal context into analytics without the rule logic knowing about
- * the analytics layer.
- */
-export type GradeTapMeta = {
-  /**
-   * Set only when the user tapped a different chip from the currently-selected
-   * single grade. `true` = the second tap landed inside the
-   * RANGE_EXTEND_WINDOW_MS window from the first tap and was treated as range
-   * extension. `false` = the window had expired so we switched single grade
-   * (avoiding an accidental range). Undefined for all other rules.
-   */
-  extendedRangeWithinWindow?: boolean;
-};
-
-export type GradeTapResult = { next: GradeBound; meta?: GradeTapMeta };
 
 /** Both bounds undefined = "Any" (filter cleared). */
 export function isAnyGrade(bound: GradeBound): boolean {
@@ -67,75 +44,35 @@ export function isGradeEndpoint(bound: GradeBound, gradeId: number): boolean {
 }
 
 /**
- * Pure reducer for one chip tap. `gradeIds` MUST be ascending difficulty_ids.
- * `withinExtendWindow` = caller's timer says the tap is inside
- * RANGE_EXTEND_WINDOW_MS of the last fresh single-grade selection. Implements
- * rules 1-6 + clear-on-resame:
- *   1. From Any -> single. 2. Tap the same single grade -> Any (clear).
- *   3. From single, tap a different chip: within window -> range [min,max];
- *      else -> switch single.
- *   4. From range, tap an endpoint -> trim inward (collapse to surviving
- *      endpoint if it inverts).
- *   5. From range, tap interior -> collapse to that single grade.
- *   6. From range, tap outside -> collapse to that single grade.
+ * Pure reducer for one grade tap.
+ *
+ * Range mode off (one grade at a time):
+ *   - tap the selected single grade -> Any (clear)
+ *   - any other tap -> that single grade, also when `current` is a range
+ * Range mode on (two taps make a range):
+ *   - from Any or from a range -> single: the tapped grade is the first end
+ *   - from a single grade, tap a different grade -> range [min, max]
+ *   - from a single grade, tap it again -> Any (clear)
  */
-export function computeGradeTap(
-  current: GradeBound,
-  gradeIds: number[],
-  tappedGradeId: number,
-  withinExtendWindow: boolean,
-): GradeTapResult {
-  const { minGradeId, maxGradeId } = current;
+export function computeGradeTap(current: GradeBound, tappedGradeId: number, rangeMode: boolean): GradeBound {
+  const tappedAlone: GradeBound = { minGradeId: tappedGradeId, maxGradeId: tappedGradeId };
+  const selectedGradeId = isSingleGrade(current) ? current.minGradeId : undefined;
 
-  if (isRangeGrade(current) && minGradeId !== undefined && maxGradeId !== undefined) {
-    // Rule 4: tapping an endpoint of a range trims it. The other endpoint is
-    // preserved; the tapped endpoint moves inward by one grade (still within
-    // the range). If the trim collapses min > max, settle on the surviving
-    // endpoint as a single grade.
-    if (tappedGradeId === minGradeId) {
-      const minIdx = gradeIds.findIndex((id) => id === minGradeId);
-      const nextMinIdx = minIdx + 1;
-      if (nextMinIdx < gradeIds.length && gradeIds[nextMinIdx] <= maxGradeId) {
-        const newMin = gradeIds[nextMinIdx];
-        return { next: { minGradeId: newMin, maxGradeId } };
-      }
-      // Trim would invert; collapse to the surviving (max) endpoint.
-      return { next: { minGradeId: maxGradeId, maxGradeId } };
-    }
-    if (tappedGradeId === maxGradeId) {
-      const maxIdx = gradeIds.findIndex((id) => id === maxGradeId);
-      const nextMaxIdx = maxIdx - 1;
-      if (nextMaxIdx >= 0 && gradeIds[nextMaxIdx] >= minGradeId) {
-        const newMax = gradeIds[nextMaxIdx];
-        return { next: { minGradeId, maxGradeId: newMax } };
-      }
-      return { next: { minGradeId, maxGradeId: minGradeId } };
-    }
-    // Rules 5 & 6: interior or outside — collapse to the tapped grade.
-    return { next: { minGradeId: tappedGradeId, maxGradeId: tappedGradeId } };
-  }
+  // Any, a range, or a half-set bound: the tap starts over on one grade.
+  if (selectedGradeId === undefined) return tappedAlone;
+  if (selectedGradeId === tappedGradeId) return clearGradeBound();
+  if (!rangeMode) return tappedAlone;
+  return {
+    minGradeId: Math.min(selectedGradeId, tappedGradeId),
+    maxGradeId: Math.max(selectedGradeId, tappedGradeId),
+  };
+}
 
-  if (isSingleGrade(current)) {
-    if (minGradeId === tappedGradeId) {
-      // Rule 2: tap the same single grade -> Any (clear).
-      return { next: clearGradeBound() };
-    }
-    // Rule 3 is time-gated: rapid taps after a fresh single-grade pick build a
-    // range; slow taps switch single grade. Avoids accidentally creating a
-    // range during the user's primary single-grade workflow (warm-up V4, then
-    // climb V6 30s later — V6 should *replace*, not extend).
-    if (withinExtendWindow) {
-      const otherId = minGradeId as number;
-      const lo = Math.min(otherId, tappedGradeId);
-      const hi = Math.max(otherId, tappedGradeId);
-      return { next: { minGradeId: lo, maxGradeId: hi }, meta: { extendedRangeWithinWindow: true } };
-    }
-    return {
-      next: { minGradeId: tappedGradeId, maxGradeId: tappedGradeId },
-      meta: { extendedRangeWithinWindow: false },
-    };
-  }
-
-  // Rule 1: "Any" or any other state — collapse to single grade.
-  return { next: { minGradeId: tappedGradeId, maxGradeId: tappedGradeId } };
+/**
+ * Turning range mode off while a range is set keeps the range's lower end as
+ * the single grade. Any other bound is returned as is.
+ */
+export function collapseToLowerEnd(bound: GradeBound): GradeBound {
+  if (!isRangeGrade(bound)) return bound;
+  return { minGradeId: bound.minGradeId, maxGradeId: bound.minGradeId };
 }
