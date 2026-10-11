@@ -9,8 +9,11 @@
 -- from the CHECK.
 --
 -- One way: once this runs, the per-climb audiences are gone, and reverting the
--- code cannot bring them back. Count them on the read-only standby before
--- merging, and keep the number with the PR:
+-- code cannot bring them back. Dry run: the owner runs this count on the
+-- read-only standby before merge and pastes the result into the PR. It is the
+-- number of rows the DELETE below removes.
+--   SELECT count(*) FROM content_privacy WHERE entity_type = 'climb';
+-- The same rows, by audience and by whether the owner deleted their account:
 --   SELECT audience, (owner_id IS NULL) AS ownerless, count(*)
 --   FROM content_privacy WHERE entity_type = 'climb' GROUP BY 1, 2 ORDER BY 1, 2;
 DELETE FROM "content_privacy" WHERE "entity_type" = 'climb';
