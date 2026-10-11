@@ -60,11 +60,12 @@ never created.
 Two properties keep that honest, both pinned by
 `scripts/__tests__/ci-status-rollup.test.ts`:
 
-- every gating job is in `ci-status`'s `needs`. `large-files` was not, until
-  #4758 — it is ungated on purpose (a binary-only PR is the shape it catches), so
-  it could fail while the roll-up stayed green.
-- `test-report` is the one deliberate omission: it posts a comment with
-  `report-fail-on-error: false`, so a reporting hiccup must not block a merge.
+- every gating job is in `ci-status`'s `needs`. There are currently no exempt
+  jobs; the former `test-report` job has been removed.
+- the oversized-file check runs inside the required `guards` job without a
+  changed-file filter. It used to be a standalone `large-files` job outside the
+  roll-up, the gap reported in #4758. Keep the consolidated job: a binary-only
+  PR must still run this check, and its failure must reach `ci-status`.
 
 ## Why a ruleset and not classic branch protection
 
@@ -180,8 +181,8 @@ Recovery ladder from #4731, cheapest first:
 
 1. `gh workflow run ci.yml --ref <branch>` — proves the code. A dispatch run
    forces every path filter to `true`, so it runs *more* jobs than the PR run
-   would have (`release-notes` and `changelog-owned` are `pull_request`-only and
-   skip). GitHub does not show `workflow_dispatch` job checks in the PR's checks
+   would have (`release-notes` and `changelog-owned` inside `guards` are
+   `pull_request`-only steps and skip). GitHub does not show `workflow_dispatch` job checks in the PR's checks
    section or count them toward a required status check, even when they run on
    that PR's head SHA ([required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#checks-from-some-workflow-jobs-are-not-evaluated)).
    A dispatch therefore does **not** restore `pull_request` delivery or satisfy
