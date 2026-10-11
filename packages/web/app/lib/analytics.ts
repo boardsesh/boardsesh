@@ -97,7 +97,7 @@ function installConsentTransport(client: PostHog, backendProxyHost: string | nul
       const distinctId = await getFlagsBrowserDistinctId();
       // No secure random source: fail closed, flags keep their defaults.
       if (distinctId === null) throw new Error('No secure random source for the flags id');
-      options = { ...options, body: withAnonymousFlagsIdentity(options.body, distinctId, hasAnalyticsConsent()) };
+      options = { ...options, body: withAnonymousFlagsIdentity(options.body, distinctId) };
       if (retiredClients.has(client) || suspendedClients.has(client)) {
         throw new Error('Analytics consent does not permit this request');
       }

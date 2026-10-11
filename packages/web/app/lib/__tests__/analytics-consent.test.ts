@@ -262,7 +262,12 @@ describe('web analytics consent lifecycle', () => {
       headers: {},
       body: flagsBody('persisted-anonymous'),
     });
-    expect(lastSentBody().distinct_id).toBe(beforeAllow.distinct_id);
+    const afterAllow = lastSentBody();
+    expect(afterAllow.distinct_id).toBe(beforeAllow.distinct_id);
+    // With consent too: the SDK's anonymous id merges into the account at
+    // sign-in, so it never rides beside the browser's flags id.
+    expect(afterAllow).not.toHaveProperty('$anon_distinct_id');
+    expect(afterAllow).not.toHaveProperty('$device_id');
   });
   it('fails a signed-out flag request closed when the browser has no crypto', async () => {
     vi.stubGlobal('crypto', undefined);

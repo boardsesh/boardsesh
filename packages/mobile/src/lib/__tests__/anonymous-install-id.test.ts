@@ -24,7 +24,21 @@ vi.mock('expo-crypto', () => ({
   },
 }));
 
+const application = vi.hoisted(() => ({ installedAt: Date.UTC(2026, 9, 1, 8, 30) as number | null, fails: false }));
+vi.mock('expo-application', () => ({
+  getInstallationTimeAsync: async () => {
+    if (application.fails) throw new Error("Cannot find native module 'ExpoApplication'");
+    // Like expo-application: the web module returns null, which becomes the epoch.
+    return new Date(application.installedAt ?? 0);
+  },
+}));
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function storedRecord(): { id: string; installedAt: number | null; createdAt: number } | null {
+  const raw = storage.values.get('anonymousInstallId');
+  return raw === undefined ? null : JSON.parse(raw);
+}
 
 async function loadModule() {
   vi.resetModules();
@@ -36,7 +50,10 @@ beforeEach(() => {
   storage.failReads = false;
   expoCrypto.available = true;
   expoCrypto.calls = 0;
+  application.installedAt = Date.UTC(2026, 9, 1, 8, 30);
+  application.fails = false;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('getAnonymousInstallId', () => {
@@ -57,12 +74,71 @@ describe('getAnonymousInstallId', () => {
     expect(storage.values.size).toBe(1);
   });
 
-  it('replaces a stored value that is not a UUID', async () => {
-    storage.values.set('anonymousInstallId', JSON.stringify('device-serial-123'));
+  it('stores the id with the install time it belongs to and when it was minted', async () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 9, 11, 12), toFake: ['Date'] });
+    const launch = await loadModule();
+    const id = await launch.getAnonymousInstallId();
+    expect(storedRecord()).toEqual({
+      id,
+      installedAt: Date.UTC(2026, 9, 1, 8, 30),
+      createdAt: Date.UTC(2026, 9, 11, 12),
+    });
+  });
+
+  it.each([
+    ['not a UUID', { id: 'device-serial-123', installedAt: null, createdAt: Date.now() }],
+    ['a bare string (no install time)', '6f7f2f39-6c4c-4d4e-9a49-3b3f6a1c2d10'],
+  ])('replaces a stored value that is %s', async (_label, stored) => {
+    storage.values.set('anonymousInstallId', JSON.stringify(stored));
     const launch = await loadModule();
     const id = await launch.getAnonymousInstallId();
     expect(id).toMatch(UUID);
-    expect(JSON.parse(storage.values.get('anonymousInstallId') ?? 'null')).toBe(id);
+    expect(id).not.toBe('6f7f2f39-6c4c-4d4e-9a49-3b3f6a1c2d10');
+    expect(storedRecord()?.id).toBe(id);
+  });
+
+  it('mints a new id when storage was restored from another install (Android Auto Backup)', async () => {
+    const original = await (await loadModule()).getAnonymousInstallId();
+
+    // Same storage, restored onto a reinstall: the platform reports a new install time.
+    application.installedAt = Date.UTC(2026, 9, 9, 17, 5);
+    const restored = await loadModule();
+    const id = await restored.getAnonymousInstallId();
+
+    expect(id).toMatch(UUID);
+    expect(id).not.toBe(original);
+    expect(storedRecord()).toMatchObject({ id, installedAt: Date.UTC(2026, 9, 9, 17, 5) });
+  });
+
+  it('keeps the id across an app update (same install time)', async () => {
+    const original = await (await loadModule()).getAnonymousInstallId();
+    expect(await (await loadModule()).getAnonymousInstallId()).toBe(original);
+  });
+
+  it.each([
+    ['the platform has no install time (browser app)', () => (application.installedAt = null)],
+    ['expo-application is unavailable', () => (application.fails = true)],
+  ])('keeps the id when %s', async (_label, arrange) => {
+    arrange();
+    const original = await (await loadModule()).getAnonymousInstallId();
+    expect(storedRecord()?.installedAt).toBeNull();
+    application.installedAt = Date.UTC(2026, 9, 9, 17, 5);
+    application.fails = false;
+    expect(await (await loadModule()).getAnonymousInstallId()).toBe(original);
+  });
+
+  it('rotates the id 13 months after it was minted', async () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 9, 11, 12), toFake: ['Date'] });
+    const original = await (await loadModule()).getAnonymousInstallId();
+
+    vi.setSystemTime(Date.UTC(2027, 10, 11, 11, 59));
+    expect(await (await loadModule()).getAnonymousInstallId()).toBe(original);
+
+    vi.setSystemTime(Date.UTC(2027, 10, 11, 12));
+    const rotated = await (await loadModule()).getAnonymousInstallId();
+    expect(rotated).toMatch(UUID);
+    expect(rotated).not.toBe(original);
+    expect(storedRecord()).toMatchObject({ id: rotated, createdAt: Date.UTC(2027, 10, 11, 12) });
   });
 
   it('falls back to a launch-only id when storage cannot be read, then retries storage', async () => {
@@ -75,7 +151,7 @@ describe('getAnonymousInstallId', () => {
     storage.failReads = false;
     const stored = await launch.getAnonymousInstallId();
     expect(stored).toMatch(UUID);
-    expect(JSON.parse(storage.values.get('anonymousInstallId') ?? 'null')).toBe(stored);
+    expect(storedRecord()?.id).toBe(stored);
   });
 
   it('prefixes the flags distinct id', async () => {

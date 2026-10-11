@@ -224,9 +224,18 @@ describe('mobile consent privacy boundaries', () => {
       await client.fetch('https://backend/api/posthog/flags/', {
         method: 'POST',
         headers: {},
-        body: JSON.stringify({ distinct_id: sdkDistinctId }),
+        body: JSON.stringify({
+          distinct_id: sdkDistinctId,
+          $anon_distinct_id: sdkDistinctId,
+          $device_id: 'sdk-device',
+        }),
       });
-      return (JSON.parse(fetchSpy.mock.calls.at(-1)?.[1]?.body as string) as { distinct_id: string }).distinct_id;
+      const sent = JSON.parse(fetchSpy.mock.calls.at(-1)?.[1]?.body as string) as Record<string, unknown>;
+      // Consented or not, the SDK's anonymous and device ids never ride beside
+      // the install's flags id: the anonymous id merges into the account.
+      expect(sent).not.toHaveProperty('$anon_distinct_id');
+      expect(sent).not.toHaveProperty('$device_id');
+      return sent.distinct_id;
     };
     // Consented: the SDK's own anonymous id never decides the bucket.
     const consented = await flagsDistinctId('consented-anonymous');

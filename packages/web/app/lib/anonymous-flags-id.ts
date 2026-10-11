@@ -12,10 +12,18 @@ import { getPreference, setPreference } from './user-preferences-db';
  * persisted anonymous id and re-rolled it once more. One id per browser keeps
  * the bucket across loads and across Allow / No thanks. Signed in, flags use
  * the account id instead. docs/feature-flags.md, "Anonymous bucketing".
+ *
+ * It is replaced {@link FLAGS_ID_LIFETIME_MONTHS} months after it was minted,
+ * CNIL's ceiling for a tracker that needs no consent
+ * (docs/analytics-consent.md, "Legal basis per tracker").
  */
 
 const ANONYMOUS_FLAGS_ID_KEY = 'anonymousFlagsId';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const FLAGS_ID_LIFETIME_MONTHS = 13;
+
+/** What is stored: the id and when it was minted (epoch ms). */
+type StoredFlagsId = { id: string; createdAt: number };
 
 let knownId: string | null = null;
 let pending: Promise<string | null> | null = null;
@@ -40,14 +48,30 @@ function secureRandomId(): string | null {
   }
 }
 
+function parseStored(stored: unknown): StoredFlagsId | null {
+  if (!stored || typeof stored !== 'object') return null;
+  const { id, createdAt } = stored as Record<string, unknown>;
+  if (typeof id !== 'string' || !UUID_PATTERN.test(id)) return null;
+  if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) return null;
+  return { id, createdAt };
+}
+
+function isExpired(createdAt: number, now: number): boolean {
+  const expiry = new Date(createdAt);
+  expiry.setUTCMonth(expiry.getUTCMonth() + FLAGS_ID_LIFETIME_MONTHS);
+  return now >= expiry.getTime();
+}
+
 async function loadOrCreate(): Promise<string | null> {
   // getPreference/setPreference swallow IndexedDB failures (private windows,
   // blocked storage); the id then lasts for this page load only.
-  const stored = await getPreference<unknown>(ANONYMOUS_FLAGS_ID_KEY);
-  if (typeof stored === 'string' && UUID_PATTERN.test(stored)) return stored;
+  const now = Date.now();
+  const stored = parseStored(await getPreference<unknown>(ANONYMOUS_FLAGS_ID_KEY));
+  if (stored && !isExpired(stored.createdAt, now)) return stored.id;
   const created = secureRandomId();
   if (!created) return null;
-  await setPreference(ANONYMOUS_FLAGS_ID_KEY, created);
+  const record: StoredFlagsId = { id: created, createdAt: now };
+  await setPreference(ANONYMOUS_FLAGS_ID_KEY, record);
   return created;
 }
 
@@ -77,11 +101,13 @@ export async function getFlagsBrowserDistinctId(): Promise<string | null> {
 
 /**
  * Rewrite a signed-out `/flags` request body to bucket on this browser's id.
- * Without consent the SDK's in-memory anonymous and device ids are dropped too:
- * they identify nothing durable, and flags do not need them. Returns the body
- * untouched when it is not a JSON object.
+ * The SDK's anonymous and device ids are dropped whatever the consent answer:
+ * flags bucket on `distinct_id` alone, and with consent the anonymous id is
+ * the one that merges into the account at sign-in, so sending it beside the
+ * flags id would tie the two together. Returns the body untouched when it is
+ * not a JSON object.
  */
-export function withAnonymousFlagsIdentity(body: string, distinctId: string, granted: boolean): string {
+export function withAnonymousFlagsIdentity(body: string, distinctId: string): string {
   let payload: unknown;
   try {
     payload = JSON.parse(body);
@@ -90,10 +116,8 @@ export function withAnonymousFlagsIdentity(body: string, distinctId: string, gra
   }
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return body;
   const rewritten: Record<string, unknown> = { ...payload, distinct_id: distinctId };
-  if (!granted) {
-    delete rewritten.$anon_distinct_id;
-    delete rewritten.$device_id;
-  }
+  delete rewritten.$anon_distinct_id;
+  delete rewritten.$device_id;
   return JSON.stringify(rewritten);
 }
 

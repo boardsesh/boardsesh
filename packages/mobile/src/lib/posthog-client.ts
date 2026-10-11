@@ -149,10 +149,14 @@ export class ConsentPostHog extends PostHog {
             body: JSON.stringify({
               ...payload,
               distinct_id: distinctId,
+              // Signed out, the SDK's anonymous and device ids never ride
+              // beside the install's flags id, consented or not: the anonymous
+              // id merges into the account at sign-in, so sending both would
+              // tie the flags id to the account one step removed. Bucketing
+              // uses distinct_id only.
+              ...(!granted || !flagsIdentity ? { $device_id: undefined, $anon_distinct_id: undefined } : {}),
               ...(!granted
                 ? {
-                    $device_id: undefined,
-                    $anon_distinct_id: undefined,
                     person_properties:
                       'person_properties' in payload ? functionalFlagProperties(payload.person_properties) : {},
                     group_properties: {},

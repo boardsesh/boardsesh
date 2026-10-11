@@ -4,17 +4,30 @@ import { getPreference, setPreference } from './preference-store';
  * A random id for this install, kept in the app's own preference store
  * (AsyncStorage; IndexedDB in the browser app). It is not a device identifier,
  * never sits in the PostHog SDK's storage, and is never sent next to an account
- * id. Uninstalling the app clears it.
+ * id.
  *
- * Two uses, both without analytics consent (docs/analytics-consent.md):
+ * Two uses, both without analytics consent (docs/analytics-consent.md, "Legal
+ * basis per tracker"):
  *
  * - **Feature flags for a signed-out climber** (`posthog-client.ts`). A
  *   percentage rollout buckets on the flag request's distinct id. A new id per
  *   launch re-rolled the bucket every launch, and switching to the SDK's own
  *   anonymous id on Allow re-rolled it again. One id per install keeps the
  *   bucket from launch to launch and across Allow / No thanks.
- * - **Anonymous OTA health** (`anonymous-ota-health.ts`), so adoption and
- *   emergency-launch rates count installs rather than launches.
+ * - **Anonymous OTA health** (`anonymous-ota-health.ts`), as the distinct id of
+ *   `OTA Update Status`, so adoption and emergency-launch rates count installs
+ *   rather than launches.
+ *
+ * It ends with the install, and after 13 months at the latest:
+ *
+ * - The record holds the install time it was minted under
+ *   (`Application.getInstallationTimeAsync()`). Android Auto Backup restores
+ *   AsyncStorage on a reinstall or a new phone (`allowBackup` defaults to true
+ *   in Expo); a restored record names another install time, so a new id is
+ *   minted. Where the platform has no install time (the browser app), the
+ *   comparison is skipped.
+ * - A record older than {@link INSTALL_ID_LIFETIME_MONTHS} months is replaced,
+ *   CNIL's ceiling for a tracker that needs no consent.
  *
  * Signed in, flags use the account id instead, so the bucket changes once at
  * sign-in and then follows the account across devices.
@@ -22,6 +35,12 @@ import { getPreference, setPreference } from './preference-store';
 
 const ANONYMOUS_INSTALL_ID_KEY = 'anonymousInstallId';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const INSTALL_ID_LIFETIME_MONTHS = 13;
+/** Install times are compared with this much slack for float rounding on iOS. */
+const INSTALL_TIME_TOLERANCE_MS = 1000;
+
+/** What is stored: the id, the install time it belongs to, and when it was minted (epoch ms). */
+type StoredInstallId = { id: string; installedAt: number | null; createdAt: number };
 
 let storedId: string | null = null;
 let pending: Promise<string | null> | null = null;
@@ -55,12 +74,55 @@ async function secureRandomId(): Promise<string | null> {
   }
 }
 
+/**
+ * When this install happened, in epoch ms, or null where the platform cannot
+ * say (the browser app's expo-application returns null, which becomes the
+ * epoch). Loaded on demand like expo-crypto, so test graphs need no stub.
+ */
+async function readInstallationTime(): Promise<number | null> {
+  try {
+    const { getInstallationTimeAsync } = await import('expo-application');
+    const installed = (await getInstallationTimeAsync()).getTime();
+    return Number.isFinite(installed) && installed > 0 ? installed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseStored(stored: unknown): StoredInstallId | null {
+  if (!stored || typeof stored !== 'object') return null;
+  const { id, installedAt, createdAt } = stored as Record<string, unknown>;
+  if (typeof id !== 'string' || !UUID_PATTERN.test(id)) return null;
+  if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) return null;
+  if (installedAt !== null && (typeof installedAt !== 'number' || !Number.isFinite(installedAt))) return null;
+  return { id, installedAt, createdAt };
+}
+
+function expiresAt(createdAt: number): number {
+  const expiry = new Date(createdAt);
+  expiry.setUTCMonth(expiry.getUTCMonth() + INSTALL_ID_LIFETIME_MONTHS);
+  return expiry.getTime();
+}
+
+/** Still this install's id: same install time (where both are known) and not past its lifetime. */
+function isCurrent(record: StoredInstallId, installedAt: number | null, now: number): boolean {
+  if (now >= expiresAt(record.createdAt)) return false;
+  if (record.installedAt === null || installedAt === null) return true;
+  return Math.abs(record.installedAt - installedAt) < INSTALL_TIME_TOLERANCE_MS;
+}
+
 async function loadOrCreate(): Promise<string | null> {
-  const stored = await getPreference<unknown>(ANONYMOUS_INSTALL_ID_KEY);
-  if (typeof stored === 'string' && UUID_PATTERN.test(stored)) return stored;
+  const [stored, installedAt] = await Promise.all([
+    getPreference<unknown>(ANONYMOUS_INSTALL_ID_KEY),
+    readInstallationTime(),
+  ]);
+  const now = Date.now();
+  const record = parseStored(stored);
+  if (record && isCurrent(record, installedAt, now)) return record.id;
   const created = await secureRandomId();
   if (!created) return null;
-  await setPreference(ANONYMOUS_INSTALL_ID_KEY, created);
+  const replacement: StoredInstallId = { id: created, installedAt, createdAt: now };
+  await setPreference(ANONYMOUS_INSTALL_ID_KEY, replacement);
   return created;
 }
 

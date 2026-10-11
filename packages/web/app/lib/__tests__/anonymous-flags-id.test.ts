@@ -15,15 +15,44 @@ describe('getAnonymousFlagsId', () => {
     await removePreference('anonymousFlagsId');
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('creates one random id and keeps it in IndexedDB across page loads', async () => {
     const firstLoad = await loadModule();
     const id = await firstLoad.getAnonymousFlagsId();
     expect(id).toMatch(UUID);
-    expect(await getPreference('anonymousFlagsId')).toBe(id);
+    expect(await getPreference('anonymousFlagsId')).toMatchObject({ id });
 
     const secondLoad = await loadModule();
     expect(await secondLoad.getAnonymousFlagsId()).toBe(id);
     expect(await secondLoad.getFlagsBrowserDistinctId()).toBe(`flags-browser:${id}`);
+  });
+
+  it('replaces a bare stored string with a dated record', async () => {
+    const { setPreference } = await import('../user-preferences-db');
+    await setPreference('anonymousFlagsId', '6f7f2f39-6c4c-4d4e-9a49-3b3f6a1c2d10');
+    const load = await loadModule();
+    const id = await load.getAnonymousFlagsId();
+    expect(id).toMatch(UUID);
+    expect(id).not.toBe('6f7f2f39-6c4c-4d4e-9a49-3b3f6a1c2d10');
+    expect(await getPreference('anonymousFlagsId')).toMatchObject({ id });
+  });
+
+  it('rotates the id 13 months after it was minted', async () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 9, 11, 12), toFake: ['Date'] });
+    const original = await (await loadModule()).getAnonymousFlagsId();
+    expect(await getPreference('anonymousFlagsId')).toEqual({ id: original, createdAt: Date.UTC(2026, 9, 11, 12) });
+
+    vi.setSystemTime(Date.UTC(2027, 10, 11, 11, 59));
+    expect(await (await loadModule()).getAnonymousFlagsId()).toBe(original);
+
+    vi.setSystemTime(Date.UTC(2027, 10, 11, 12));
+    const rotated = await (await loadModule()).getAnonymousFlagsId();
+    expect(rotated).toMatch(UUID);
+    expect(rotated).not.toBe(original);
+    expect(await getPreference('anonymousFlagsId')).toEqual({ id: rotated, createdAt: Date.UTC(2027, 10, 11, 12) });
   });
 });
 
@@ -81,27 +110,18 @@ describe('withAnonymousFlagsIdentity', () => {
     person_properties: { $browser: 'Firefox' },
   });
 
-  it('buckets on the browser id and drops the SDK ids without consent', async () => {
+  it('buckets on the browser id and drops the SDK anonymous and device ids', async () => {
     const { withAnonymousFlagsIdentity } = await loadModule();
-    expect(JSON.parse(withAnonymousFlagsIdentity(body, 'flags-browser:abc', false))).toEqual({
+    expect(JSON.parse(withAnonymousFlagsIdentity(body, 'flags-browser:abc'))).toEqual({
       token: 'phc',
       distinct_id: 'flags-browser:abc',
       person_properties: { $browser: 'Firefox' },
     });
   });
 
-  it('keeps the SDK ids beside the browser id with consent', async () => {
-    const { withAnonymousFlagsIdentity } = await loadModule();
-    expect(JSON.parse(withAnonymousFlagsIdentity(body, 'flags-browser:abc', true))).toMatchObject({
-      distinct_id: 'flags-browser:abc',
-      $anon_distinct_id: 'sdk-anonymous',
-      $device_id: 'sdk-device',
-    });
-  });
-
   it('leaves a body that is not a JSON object alone', async () => {
     const { withAnonymousFlagsIdentity } = await loadModule();
-    expect(withAnonymousFlagsIdentity('not json', 'flags-browser:abc', false)).toBe('not json');
-    expect(withAnonymousFlagsIdentity('[1]', 'flags-browser:abc', false)).toBe('[1]');
+    expect(withAnonymousFlagsIdentity('not json', 'flags-browser:abc')).toBe('not json');
+    expect(withAnonymousFlagsIdentity('[1]', 'flags-browser:abc')).toBe('[1]');
   });
 });
