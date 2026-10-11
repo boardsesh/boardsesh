@@ -66,33 +66,6 @@ export function roundPaceSeconds(seconds: number): number {
 }
 
 /**
- * The displayed seconds-per-frame for a thumb position, matching the value
- * `reportLive` forwards via `onLiveChange`. `usable` is the draggable track span
- * in px (`trackWidth - THUMB_SIZE`); `px` is the clamped thumb offset.
- */
-export function roundedReportPaceSeconds(px: number, usable: number): number {
-  'worklet';
-  return roundPaceSeconds(paceSecondsAtRatio(usable > 0 ? px / usable : 0));
-}
-
-/**
- * Decide whether this drag frame should push a new live value. Returns the
- * rounded seconds for the position and whether it differs from the last one
- * reported (`lastReported`, threaded by the caller through a shared value, seeded
- * to a value the first real frame can't equal). When `changed` is false the
- * caller skips the `runOnJS(reportLive)` hop entirely.
- */
-export function shouldReportPaceSeconds(
-  px: number,
-  usable: number,
-  lastReported: number,
-): { rounded: number; changed: boolean } {
-  'worklet';
-  const rounded = roundedReportPaceSeconds(px, usable);
-  return { rounded, changed: rounded !== lastReported };
-}
-
-/**
  * Size of one rung on the pace ladder at a given value — the haptic tick spacing
  * and the VoiceOver adjust step.
  *
@@ -173,20 +146,4 @@ export function clampPaceSeconds(seconds: number): number {
 export function paceSecondsAtNotchOffset(seconds: number, direction: 1 | -1): number {
   const step = direction > 0 ? paceNotchStep(seconds) : paceNotchStep(seconds - 1e-6);
   return clampPaceSeconds(roundPaceSeconds(seconds + direction * step));
-}
-
-/**
- * Thumb offset (px) for a pace — the inverse of `roundedReportPaceSeconds`.
- *
- * Shared by the effect that tracks the committed value on the JS thread and the
- * gesture's `onFinalize` worklet, which has to put the thumb back when a drag is
- * CANCELLED. A cancelled gesture never reaches `onEnd`, so nothing commits and
- * the value the pill mirrors never moves — meaning the effect that would
- * normally resync it does not re-fire, and the pill is left reading a pace the
- * climb does not have. Living in one place keeps the two directions from
- * drifting, and lets both be tested without a gesture.
- */
-export function valueToTrackPosition(seconds: number, usable: number): number {
-  'worklet';
-  return paceRatioForSeconds(seconds) * Math.max(0, usable);
 }

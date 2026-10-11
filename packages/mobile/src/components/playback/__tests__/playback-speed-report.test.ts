@@ -6,35 +6,12 @@ import {
   paceSecondsAtNotchOffset,
   paceSecondsAtRatio,
   roundPaceSeconds,
-  roundedReportPaceSeconds,
-  shouldReportPaceSeconds,
   snapToMagnet,
-  valueToTrackPosition,
   MAX_PACE_SECONDS,
   MIN_PACE_SECONDS,
 } from '../playback-speed-report';
 
-// The pan `onUpdate` worklet runs ~60 frames/s. `shouldReportPaceSeconds` is the
-// gate that keeps `runOnJS(reportLive)` (-> setLiveValue React state) from firing
-// on every frame: it reports only when the DISPLAYED pace changes.
-
 const USABLE = 300; // 320px track - 20px thumb, the real geometry.
-
-/** Replay a drag (a px sequence) through the gate, threading lastReported the
- *  way the worklet threads its shared value, and collect the reported paces. */
-function paceReportsForDrag(pixels: number[]): number[] {
-  // Seed to a value the first frame can't equal so the first real frame reports.
-  let lastReported = -1;
-  const reported: number[] = [];
-  for (const px of pixels) {
-    const { rounded, changed } = shouldReportPaceSeconds(px, USABLE, lastReported);
-    if (changed) {
-      lastReported = rounded;
-      reported.push(rounded);
-    }
-  }
-  return reported;
-}
 
 describe('the log track', () => {
   it('puts the ends of the range at the ends of the track', () => {
@@ -104,73 +81,7 @@ describe('roundPaceSeconds', () => {
   });
 });
 
-describe('shouldReportPaceSeconds gate', () => {
-  it('spans the pace range, endpoints exact', () => {
-    expect(roundedReportPaceSeconds(0, USABLE)).toBe(MIN_PACE_SECONDS);
-    expect(roundedReportPaceSeconds(USABLE, USABLE)).toBe(MAX_PACE_SECONDS);
-    // A thumb dragged past either end clamps rather than running off the range.
-    expect(roundedReportPaceSeconds(-40, USABLE)).toBe(MIN_PACE_SECONDS);
-    expect(roundedReportPaceSeconds(USABLE + 40, USABLE)).toBe(MAX_PACE_SECONDS);
-    // Never below 0.3s: MIN_PACE_MS (200ms) is the BLE throughput floor and a
-    // pace driving the wall has to keep headroom above it — the reader's floor
-    // as much as the setter's, since both write frames over the same transport.
-    expect(MIN_PACE_SECONDS).toBeGreaterThan(0.2);
-  });
-
-  it('reaches the full range the catalogue uses', () => {
-    expect(MAX_PACE_SECONDS).toBeGreaterThanOrEqual(60);
-  });
-
-  it('reports far fewer times than the frame count over a slow drag', () => {
-    const pixels = Array.from({ length: 60 }, (_, index) => index + 1);
-    const reported = paceReportsForDrag(pixels);
-
-    expect(reported.length).toBeGreaterThan(0);
-    expect(reported.length).toBeLessThan(pixels.length);
-    for (let index = 1; index < reported.length; index += 1) {
-      expect(reported[index]).not.toBe(reported[index - 1]);
-    }
-  });
-
-  it('does not report while several frames stay inside one bucket', () => {
-    let lastReported = roundedReportPaceSeconds(100, USABLE);
-    const decisions = [100, 100, 100, 100].map((px) => {
-      const result = shouldReportPaceSeconds(px, USABLE, lastReported);
-      if (result.changed) lastReported = result.rounded;
-      return result.changed;
-    });
-    expect(decisions.filter(Boolean)).toHaveLength(0);
-  });
-
-  it('still reports every distinct step', () => {
-    const distinctPixels = [0, 20, 40, 60, 80];
-    const reported = paceReportsForDrag(distinctPixels);
-    expect(new Set(reported).size).toBe(reported.length);
-    expect(reported.length).toBe(distinctPixels.length);
-  });
-});
-
 describe('paceNotch', () => {
-  it('rises with the pace, so a drag crosses rungs in one direction', () => {
-    let previous = -Infinity;
-    for (let px = 0; px <= USABLE; px += 1) {
-      const notch = paceNotch(roundedReportPaceSeconds(px, USABLE));
-      expect(notch).toBeGreaterThanOrEqual(previous);
-      previous = notch;
-    }
-  });
-
-  it('ticks often enough to feel notched, rarely enough not to buzz', () => {
-    // A fixed 0.5s step (what the linear slider used) would fire ~119 times
-    // across this range, most of them inside the last third of the track.
-    const notches = new Set<number>();
-    for (let px = 0; px <= USABLE; px += 1) {
-      notches.add(paceNotch(roundedReportPaceSeconds(px, USABLE)));
-    }
-    expect(notches.size).toBeGreaterThan(15);
-    expect(notches.size).toBeLessThan(60);
-  });
-
   it('widens its rungs with the value rather than holding one step', () => {
     expect(paceNotch(0.4)).not.toBe(paceNotch(0.5));
     expect(paceNotch(2)).not.toBe(paceNotch(2.5));
@@ -269,32 +180,5 @@ describe('clampPaceSeconds', () => {
     // so this is a backstop, not a conversion.
     expect(clampPaceSeconds(Number.NaN)).toBe(MIN_PACE_SECONDS);
     expect(clampPaceSeconds(Number.POSITIVE_INFINITY)).toBe(MIN_PACE_SECONDS);
-  });
-});
-
-describe('valueToTrackPosition', () => {
-  it('puts the ends of the range at the ends of the track', () => {
-    expect(valueToTrackPosition(MIN_PACE_SECONDS, USABLE)).toBe(0);
-    expect(valueToTrackPosition(MAX_PACE_SECONDS, USABLE)).toBe(USABLE);
-  });
-
-  it('round-trips against the position-to-value mapping the drag reports', () => {
-    // The two directions live apart — one in a JS effect, one in a cancel
-    // worklet — so a drift between them would put the thumb somewhere the pill
-    // does not agree with, and only on a CANCELLED drag.
-    for (const seconds of [0.3, 0.5, 1, 2.5, 5, 10, 25, 60]) {
-      const px = valueToTrackPosition(seconds, USABLE);
-      expect(roundedReportPaceSeconds(px, USABLE)).toBe(roundPaceSeconds(seconds));
-    }
-  });
-
-  it('holds a value from outside the range on the track', () => {
-    expect(valueToTrackPosition(120, USABLE)).toBe(USABLE);
-    expect(valueToTrackPosition(0.05, USABLE)).toBe(0);
-  });
-
-  it('collapses to zero before layout has given the track a width', () => {
-    expect(valueToTrackPosition(5, 0)).toBe(0);
-    expect(valueToTrackPosition(5, -10)).toBe(0);
   });
 });
