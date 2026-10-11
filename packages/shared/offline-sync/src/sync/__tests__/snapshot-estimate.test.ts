@@ -16,6 +16,7 @@ import {
 } from '../snapshot-estimate';
 import {
   evaluateBootstrapEligibility,
+  BOOTSTRAP_DONE_VALUE,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
@@ -66,7 +67,7 @@ function eligible(patch: Partial<Parameters<typeof estimateScopeDownload>[0]> = 
     retryState: retryState(),
     hasBoardCheckpoint: false,
     isScopeComplete: false,
-    isBootstrapDone: false,
+    bootstrapDoneMarker: null,
     now: NOW,
     ...patch,
   });
@@ -173,7 +174,20 @@ describe('estimateScopeDownload', () => {
 
   it('refuses even a user-requested quote for a complete or already-warmed scope', () => {
     expect(eligible({ isScopeComplete: true, userRequested: true })).toEqual({ kind: 'unknown' });
-    expect(eligible({ isBootstrapDone: true, userRequested: true })).toEqual({ kind: 'unknown' });
+    expect(
+      eligible({ bootstrapDoneMarker: BOOTSTRAP_DONE_VALUE, hasBoardCheckpoint: true, userRequested: true }),
+    ).toEqual({ kind: 'unknown' });
+  });
+
+  // Issue #6306: the engine clears a marker it cannot resume from and imports
+  // again, so the dialog has to quote the size of that download.
+  it('quotes a size for a scope whose bootstrap-done marker no longer stands', () => {
+    // An earlier bundle's marker, with and without a cursor behind it.
+    expect(eligible({ bootstrapDoneMarker: '1' })).toMatchObject({ kind: 'snapshot' });
+    expect(eligible({ bootstrapDoneMarker: '1', hasBoardCheckpoint: true })).toMatchObject({ kind: 'snapshot' });
+    // This bundle's marker after its cursors were deleted under it.
+    expect(eligible({ bootstrapDoneMarker: BOOTSTRAP_DONE_VALUE })).toMatchObject({ kind: 'snapshot' });
+    expect(eligible({ bootstrapDoneMarker: '1', userRequested: true })).toMatchObject({ kind: 'snapshot' });
   });
 
   it('is unknown when the layout has not been exported yet', () => {
@@ -212,7 +226,7 @@ describe('estimateScopeDownload parity with the engine gate', () => {
         retryState: retryState(),
         hasBoardCheckpoint: false,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
       },
     },
     {
@@ -221,7 +235,7 @@ describe('estimateScopeDownload parity with the engine gate', () => {
         retryState: retryState({ transportFailures: 1, hasPriorSnapshotFailure: true }),
         hasBoardCheckpoint: true,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
       },
     },
     {
@@ -230,16 +244,44 @@ describe('estimateScopeDownload parity with the engine gate', () => {
         retryState: retryState(),
         hasBoardCheckpoint: true,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
       },
     },
     {
       name: 'scope complete',
-      scopeState: { retryState: retryState(), hasBoardCheckpoint: true, isScopeComplete: true, isBootstrapDone: false },
+      scopeState: {
+        retryState: retryState(),
+        hasBoardCheckpoint: true,
+        isScopeComplete: true,
+        bootstrapDoneMarker: null,
+      },
     },
     {
-      name: 'already bootstrapped',
-      scopeState: { retryState: retryState(), hasBoardCheckpoint: true, isScopeComplete: false, isBootstrapDone: true },
+      name: 'already bootstrapped by this bundle',
+      scopeState: {
+        retryState: retryState(),
+        hasBoardCheckpoint: true,
+        isScopeComplete: false,
+        bootstrapDoneMarker: BOOTSTRAP_DONE_VALUE,
+      },
+    },
+    {
+      name: 'bootstrapped by an earlier bundle, mid-crawl from its epoch stamp',
+      scopeState: {
+        retryState: retryState(),
+        hasBoardCheckpoint: true,
+        isScopeComplete: false,
+        bootstrapDoneMarker: '1',
+      },
+    },
+    {
+      name: 'stuck: a bootstrap-done marker and no cursor',
+      scopeState: {
+        retryState: retryState(),
+        hasBoardCheckpoint: false,
+        isScopeComplete: false,
+        bootstrapDoneMarker: 'heal',
+      },
     },
     {
       name: 'terminal on transport',
@@ -247,7 +289,7 @@ describe('estimateScopeDownload parity with the engine gate', () => {
         retryState: retryState({ transportFailures: MAX_TRANSPORT_DOWNLOAD_FAILURES, hasPriorSnapshotFailure: true }),
         hasBoardCheckpoint: false,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
       },
     },
     {
@@ -256,7 +298,7 @@ describe('estimateScopeDownload parity with the engine gate', () => {
         retryState: retryState({ transportFailures: 1, hasPriorSnapshotFailure: true, retryAfter: NOW + 1 }),
         hasBoardCheckpoint: false,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
       },
     },
     {
@@ -265,7 +307,7 @@ describe('estimateScopeDownload parity with the engine gate', () => {
         retryState: retryState({ transportFailures: 1, hasPriorSnapshotFailure: true, retryAfter: NOW }),
         hasBoardCheckpoint: false,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
       },
     },
   ];

@@ -1870,11 +1870,13 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
   }
 
   /**
-   * What mobile's `revalidatePrivateCatalog` does to a downloaded board on every
-   * privacy event: other climbers' rows go, every board-table checkpoint and
-   * every `scope-complete:` marker goes, and `bootstrap-done:` stays.
+   * What the privacy revalidation of a bundle from BEFORE the two-stream sync
+   * did to a downloaded board on every privacy event: other climbers' rows went,
+   * every board-table checkpoint and every `scope-complete:` marker went, and
+   * `bootstrap-done:` stayed. This bundle's revalidation resets protected
+   * cursors only, so this is now the state a rollback leaves behind.
    */
-  async function withdrawProtectedCatalog(): Promise<void> {
+  async function withdrawCatalogAsAnOlderBundleDid(): Promise<void> {
     await db.runAsync('DELETE FROM board_climbs WHERE user_id IS NOT NULL AND user_id <> ?', [VIEWER_ID]);
     for (const tableName of BOARD_DATA_TABLES) {
       await db.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`checkpoint:${tableName}:%`]);
@@ -1887,7 +1889,7 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
     return climbs.map((climb) => climb.uuid);
   }
 
-  it('replays a snapshot-bootstrapped scope after a privacy revalidation reset its checkpoints', async () => {
+  it('brings back a snapshot-bootstrapped scope whose checkpoints an older bundle wiped, by importing once more', async () => {
     const artifactPath = join(workDirectory, 'kilter-1.db');
     const manifest = await buildReferenceArtifact(artifactPath);
     const { source, downloadArtifact } = makeSnapshotSource(manifest, artifactPath);
@@ -1901,26 +1903,31 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
     expect(await readCheckpoint(db, `bootstrap-done:${SCOPE_KEY}`)).not.toBeNull();
     expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
 
-    await withdrawProtectedCatalog();
+    await withdrawCatalogAsAnOlderBundleDid();
     expect(await localClimbUuids()).toEqual(['reference-climb']);
 
     await pullSync(db, queryClient, server, syncOptions);
 
-    // The authenticated replay brought the withdrawn row back and the board
-    // serves offline again. The reference cursor stops at the last reference
-    // climb: the authored one arrived through the protected stream.
+    // Before #6316 this scope was skipped on every cycle and never synced again.
+    // The marker it kept has no cursor behind it, so it is set aside and the
+    // artifact is imported again: once, and it puts the reference cursor back at
+    // the artifact's watermark. The withdrawn row returns through the protected
+    // stream and the board serves offline again.
+    expect(downloadArtifact).toHaveBeenCalledTimes(2);
     expect(await localClimbUuids()).toEqual(['authored-climb', 'reference-climb']);
     expect(await readCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toEqual(REFERENCE_CURSOR);
     expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
-    // It came back over GraphQL. The kept marker still stops a second artifact
-    // install, which is what the revalidation keeps it for.
     expect(await readCheckpoint(db, `bootstrap-done:${SCOPE_KEY}`)).not.toBeNull();
-    expect(downloadArtifact).toHaveBeenCalledTimes(1);
+
+    // And it settles: nothing is imported on the cycles that follow.
+    await pullSync(db, queryClient, server, syncOptions);
+    expect(downloadArtifact).toHaveBeenCalledTimes(2);
   });
 
   it('pulls a completed scope that holds no climbs yet, so a climb set later arrives', async () => {
-    // No manifest, so the scope takes the paged path. An empty table leaves no
-    // checkpoint behind, which is the same shape the reset above produces.
+    // No manifest, so the scope takes the paged path. A stream that has
+    // delivered no row leaves no reference cursor behind, which is the same shape
+    // the older bundle's reset above produced.
     const { source } = makeSnapshotSource(null, null);
     let climbsOnServer: ServerClimb[] = [];
     const server = makeClimbServer(() => climbsOnServer);

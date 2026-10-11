@@ -244,7 +244,7 @@ vi.mock('@boardsesh/offline-sync', () => ({
   getCheckpoint: vi.fn(async () => null),
   getCheckpointKey: (table: string, key: string) => `${table}:${key}`,
   isScopeDownloadComplete: vi.fn(async () => false),
-  isBootstrapDone: vi.fn(async () => false),
+  getBootstrapDoneMarker: vi.fn(async () => null),
   readBootstrapRetryState: vi.fn(async () => ({ state: {}, migratedFromLegacy: false })),
   getBootstrapMetadataByScope: vi.fn(async () =>
     state.bootstrapMetadataRead ? await state.bootstrapMetadataRead : state.bootstrapMetadataByScope,

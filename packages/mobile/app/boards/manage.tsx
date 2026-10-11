@@ -24,7 +24,7 @@ import {
   getCheckpointKey,
   readBootstrapRetryState,
   isScopeDownloadComplete,
-  isBootstrapDone,
+  getBootstrapDoneMarker,
   getBootstrapMetadataByScope,
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
@@ -334,11 +334,13 @@ export default function ManageBoards() {
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
       const now = Date.now();
-      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
+      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapDoneMarker] = await Promise.all([
         getCheckpoint(db, getCheckpointKey('board_climbs', key)),
         getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
         isScopeDownloadComplete(db, key),
-        isBootstrapDone(db, key),
+        // The raw marker, not a yes/no: the estimate applies the engine's own
+        // rule for whether an earlier import still counts (issue #6306).
+        getBootstrapDoneMarker(db, key),
       ]);
       const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
       const { state: retryState } = await readBootstrapRetryState(
@@ -354,7 +356,7 @@ export default function ManageBoards() {
         retryState,
         hasBoardCheckpoint,
         isScopeComplete: scopeComplete,
-        isBootstrapDone: bootstrapAlreadyDone,
+        bootstrapDoneMarker,
         now,
         // Restoring the budget IS the action being confirmed, so the terminal
         // state the row is showing must not suppress the size.

@@ -25,7 +25,7 @@ const spies = vi.hoisted(() => ({
     bytes: 128_000_000,
   })),
   getCheckpoint: vi.fn(),
-  isBootstrapDone: vi.fn(async () => false),
+  getBootstrapDoneMarker: vi.fn(async (): Promise<string | null> => null),
   isScopeDownloadComplete: vi.fn(async () => false),
   notifyBootstrapMetadataChanged: vi.fn(),
   readBootstrapRetryState: vi.fn(async () => ({ state: {} })),
@@ -40,7 +40,7 @@ vi.mock('@boardsesh/offline-sync', () => ({
   estimateScopeDownload: spies.estimateScopeDownload,
   getCheckpoint: spies.getCheckpoint,
   getCheckpointKey: (table: string, scopeKey: string) => `${table}:${scopeKey}`,
-  isBootstrapDone: spies.isBootstrapDone,
+  getBootstrapDoneMarker: spies.getBootstrapDoneMarker,
   isScopeDownloadComplete: spies.isScopeDownloadComplete,
   readBootstrapRetryState: spies.readBootstrapRetryState,
   restoreBootstrapRetryBudget: spies.restoreBootstrapRetryBudget,
@@ -88,6 +88,23 @@ describe('useConfirmBoardDownload', () => {
     expect(spies.restoreBootstrapRetryBudget).toHaveBeenCalledWith(fixtures.database, 'kilter:1:10');
     expect(spies.notifyBootstrapMetadataChanged).toHaveBeenCalledWith({ scopeKey: 'kilter:1:10' });
     expect(spies.enableBoardsOffline).toHaveBeenCalledWith(fixtures.board, { trigger: 'toggle' });
+  });
+
+  // The engine decides whether an earlier import still counts from the marker's
+  // VALUE (issue #6306), so the estimate has to be handed the value, not a
+  // yes/no, or it would quote no size for a board the engine imports again.
+  it('hands the estimate the raw bootstrap-done marker, so it judges it the way the engine does', async () => {
+    spies.getBootstrapDoneMarker.mockResolvedValueOnce('1');
+    const { result } = renderHook(() => useConfirmBoardDownload());
+
+    await act(async () => {
+      await result.current.confirmAndDownload(fixtures.board, { trigger: 'toggle' });
+    });
+
+    expect(spies.getBootstrapDoneMarker).toHaveBeenCalledWith(fixtures.database, 'kilter:1:10');
+    expect(spies.estimateScopeDownload).toHaveBeenCalledWith(
+      expect.objectContaining({ bootstrapDoneMarker: '1', hasBoardCheckpoint: true, isScopeComplete: false }),
+    );
   });
 });
 

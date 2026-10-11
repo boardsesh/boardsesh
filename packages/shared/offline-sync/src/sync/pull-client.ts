@@ -43,6 +43,8 @@ import {
   MAX_GRADES_BOOTSTRAP_ATTEMPTS,
   markBootstrapDone,
   isBootstrapDone,
+  getBootstrapDoneMarker,
+  clearBootstrapDone,
   wasBootstrapHealed,
   getReusedImportFailure,
   recordReusedImportFailure,
@@ -64,6 +66,7 @@ import {
   clearTransportFailures,
   deferHeal,
   evaluateBootstrapEligibility,
+  isBootstrapDoneHonoured,
   isTerminal,
   markBootstrapPagedFallback,
   nextRetryState,
@@ -2127,7 +2130,6 @@ async function runBootstrapPhase(params: {
         scope,
         scopeKey: scope.scopeKey,
         filePath: gradesDownload.filePath,
-        replayFromEpoch: entry.privacyVersion === 1,
         onSchemaDrift,
       });
       // The artifact's own row count, reported alongside the paged crawl's
@@ -2245,7 +2247,22 @@ async function runBootstrapPhase(params: {
         const statsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_stats', scope.scopeKey));
         const hasBoardCheckpoint = climbsCheckpoint !== null || statsCheckpoint !== null;
         const isScopeComplete = await isScopeDownloadComplete(db, scope.scopeKey);
-        const isAlreadyBootstrapped = await isBootstrapDone(db, scope.scopeKey);
+        // A `bootstrap-done:` marker only counts while the import it records can
+        // still be resumed from (`isBootstrapDoneHonoured`). One that cannot is
+        // cleared here, and the scope is then judged as if it had never
+        // imported, which makes it eligible again. That is what un-sticks a
+        // board an earlier bundle left with the marker and no cursors (#6306).
+        const storedBootstrapDoneMarker = await getBootstrapDoneMarker(db, scope.scopeKey);
+        const isAlreadyBootstrapped = isBootstrapDoneHonoured({
+          bootstrapDoneMarker: storedBootstrapDoneMarker,
+          hasBoardCheckpoint,
+          isScopeComplete,
+        });
+        const bootstrapDoneMarker = isAlreadyBootstrapped ? storedBootstrapDoneMarker : null;
+        if (storedBootstrapDoneMarker !== null && !isAlreadyBootstrapped) {
+          await clearBootstrapDone(db, scope.scopeKey);
+          metadataSettled = true;
+        }
         // ONE clock reading for this scope's whole decision: the cooldown
         // comparison, the ladder it schedules, and the reported retryAfterMs must
         // all be made against the same instant or a slow download would report a
@@ -2273,7 +2290,7 @@ async function runBootstrapPhase(params: {
           retryState,
           hasBoardCheckpoint,
           isScopeComplete,
-          isBootstrapDone: isAlreadyBootstrapped,
+          bootstrapDoneMarker,
           now: evaluatedAt,
         });
         if (!verdict.eligible && verdict.reason === 'cooling-down' && retryState.retryAfter !== null) {
@@ -2938,7 +2955,6 @@ async function runBootstrapPhase(params: {
             scope,
             scopeKey: scope.scopeKey,
             filePath: download.filePath,
-            replayFromEpoch: entry.privacyVersion === 1,
             onSchemaDrift,
             // Arms the watermark-regression guard on the heal path: the artifact
             // may not stamp a checkpoint BELOW what this scope already crawled.
