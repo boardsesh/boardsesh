@@ -347,9 +347,11 @@ describe('smartPlaylist resolver', () => {
     expect(boardFilters.length).toBeGreaterThanOrEqual(2);
     for (const calls of [pageCalls, countCalls]) {
       const rendered = sqlText(calls.where[0][0]);
+      // The draft rule on the liked climb, and no audience: a published climb
+      // is public whoever set it.
       expect(rendered).toContain('privacy_reference_climb');
-      expect(rendered).toContain('public_consent_revision');
-      expect(rendered).toContain('privacy_revision');
+      expect(rendered).toContain('privacy_reference_climb.is_draft IS NOT TRUE');
+      expect(rendered).not.toContain('content_privacy');
     }
   });
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { and, eq, like, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -280,15 +280,19 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
         entityId: PRIVATE_PUBLISHED,
       },
     ]);
-    const visibleTo = async (viewerId: string) =>
-      (
-        await db
-          .select({ uuid: schema.notifications.uuid })
+    // One row at a time by its unique uuid, as the inbox reads it: the policy
+    // sits in the select list, so the planner never runs it across the table.
+    const visibleTo = async (viewerId: string) => {
+      const visible: string[] = [];
+      for (const uuid of ['matrix-n-author', 'matrix-n-other']) {
+        const [row] = await db
+          .select({ allowed: notificationPrivacyCondition(viewerId) })
           .from(schema.notifications)
-          .where(and(like(schema.notifications.uuid, 'matrix-n-%'), notificationPrivacyCondition(viewerId)))
-      )
-        .map((row) => row.uuid)
-        .sort();
+          .where(eq(schema.notifications.uuid, uuid));
+        if (row?.allowed === true) visible.push(uuid);
+      }
+      return visible;
+    };
     expect(await visibleTo(STRANGER)).toEqual(['matrix-n-author']);
     // An approved follower of the other actor sees both.
     expect(await visibleTo(FOLLOWER)).toEqual(['matrix-n-author', 'matrix-n-other']);
