@@ -487,8 +487,8 @@ A missing week (worker down, family disabled) is a gap, not a zero:
 weeks re-emit through the operator with a `weekStart` payload, which dedupes
 under its own key, not the weekly singleton.
 
-Read it as trend lines, not gates: `docs/spray-walls.md` → "Availability and detection quality
-out" keeps the rollout gates on the client funnels and watches this roll-up
+Read it as trend lines, not gates: `docs/spray-walls.md` → "Availability and detection quality"
+keeps the availability and detection checks beside the client funnels and watches this roll-up
 beside them. What the lines say at rollout time decides the next board —
 alongside `Board Demand Reported`, which is the same ledger from the other
 end: the demand that has not become a wall yet.
