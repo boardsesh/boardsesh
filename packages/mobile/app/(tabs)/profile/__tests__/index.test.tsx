@@ -10,11 +10,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
+type ListScrollHandler = (event: { nativeEvent: { contentOffset: { x: number; y: number } } }) => void;
+
 const ctrl = vi.hoisted(() => ({
   profileId: 'user-own-123' as string | undefined,
   measureProfile: undefined as ((height: number) => void) | undefined,
   measureLogbook: undefined as ((height: number) => void) | undefined,
   logbookHeightChange: vi.fn(),
+  // The UIKit header path (iOS on Liquid Glass): the lists sit under a floating
+  // segmented control, and rest at minus the header's height.
+  nativeRootHeader: false,
+  listTopOffset: 0,
+  // The scroll handler each mounted sub-tab's list was given.
+  listScroll: {} as Record<string, ListScrollHandler | undefined>,
 }));
 
 const rendered = vi.hoisted(() => ({
@@ -50,6 +58,10 @@ vi.mock('../../../../src/lib/graphql/hooks', () => ({
 vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { background: '#fff' } }),
 }));
+vi.mock('../../../../src/hooks/use-native-root-header', () => ({
+  useNativeRootHeader: () => ctrl.nativeRootHeader,
+}));
+vi.mock('../../../../src/hooks/use-list-top-offset', () => ({ useListTopOffset: () => ctrl.listTopOffset }));
 // Stand-in top chrome: exposes one button per known tab key so the test can
 // drive tab selection the same way a real tap would, without pulling in the
 // real chrome's native segmented control / app bar machinery.
@@ -59,17 +71,26 @@ vi.mock('../../../../src/components/you/ProfileTopChrome', () => ({
     onSelectTab,
     onHeightChange,
     children,
+    opaqueControls,
+    scrolledUnder,
   }: {
     activeTab: string;
     onSelectTab: (key: string) => void;
     onHeightChange: (height: number) => void;
     children?: ReactNode;
+    opaqueControls?: boolean;
+    scrolledUnder?: boolean;
   }) => {
     if (activeTab === 'logbook') ctrl.measureLogbook = onHeightChange;
     else ctrl.measureProfile = onHeightChange;
     return createElement(
       'div',
-      { 'data-chrome': 'true', 'data-active-tab': activeTab },
+      {
+        'data-chrome': 'true',
+        'data-active-tab': activeTab,
+        'data-opaque-controls': String(opaqueControls === true),
+        'data-scrolled-under': String(scrolledUnder),
+      },
       ['progress', 'sessions', 'logbook', 'climbs', 'social'].map((key) =>
         createElement('button', { key, 'data-select-tab': key, onClick: () => onSelectTab(key) }, key),
       ),
@@ -81,13 +102,23 @@ vi.mock('../../../../src/components/you/YouFilterSheet', () => ({
   YouFilterSheet: () => createElement('div', { 'data-filter-sheet': 'true' }),
 }));
 vi.mock('../../../../src/components/you/ProgressTab', () => ({
-  ProgressTab: ({ userId, topInset }: { userId: string | undefined; topInset: number }) => {
+  ProgressTab: ({
+    userId,
+    topInset,
+    onScroll,
+  }: {
+    userId: string | undefined;
+    topInset: number;
+    onScroll?: ListScrollHandler;
+  }) => {
+    ctrl.listScroll.progress = onScroll;
     rendered.progress.push({ userId, topInset });
     return createElement('div', { 'data-tab': 'progress' });
   },
 }));
 vi.mock('../../../../src/components/you/SessionsTab', () => ({
-  SessionsTab: ({ userId }: { userId: string | undefined }) => {
+  SessionsTab: ({ userId, onScroll }: { userId: string | undefined; onScroll?: ListScrollHandler }) => {
+    ctrl.listScroll.sessions = onScroll;
     rendered.sessions.push({ userId });
     return createElement('div', { 'data-tab': 'sessions' });
   },
@@ -109,13 +140,15 @@ vi.mock('../../../../src/components/you/LogbookTab', () => ({
   },
 }));
 vi.mock('../../../../src/components/you/ProfileClimbsTab', () => ({
-  ProfileClimbsTab: ({ userId }: { userId: string | undefined }) => {
+  ProfileClimbsTab: ({ userId, onScroll }: { userId: string | undefined; onScroll?: ListScrollHandler }) => {
+    ctrl.listScroll.climbs = onScroll;
     rendered.climbs.push({ userId });
     return createElement('div', { 'data-tab': 'climbs' });
   },
 }));
 vi.mock('../../../../src/components/you/SocialTab', () => ({
-  SocialTab: ({ userId }: { userId: string | undefined }) => {
+  SocialTab: ({ userId, onScroll }: { userId: string | undefined; onScroll?: ListScrollHandler }) => {
+    ctrl.listScroll.social = onScroll;
     rendered.social.push({ userId });
     return createElement('div', { 'data-tab': 'social' });
   },
@@ -129,6 +162,9 @@ describe('YouScreen (own profile)', () => {
     ctrl.measureProfile = undefined;
     ctrl.measureLogbook = undefined;
     ctrl.logbookHeightChange.mockClear();
+    ctrl.nativeRootHeader = false;
+    ctrl.listTopOffset = 0;
+    ctrl.listScroll = {};
     rendered.progress = [];
     rendered.sessions = [];
     rendered.logbook = [];
@@ -174,5 +210,75 @@ describe('YouScreen (own profile)', () => {
     expect(container.querySelector('[data-logbook-controls]')).toBeNull();
     expect(container.querySelector('[data-tab="logbook"]')).toBeNull();
     expect(rendered.progress.at(-1)?.topInset).toBe(72);
+  });
+
+  // The segmented control floats over the list on iOS 26. Logbook's header also
+  // holds a bare text heading, search and sort chips, so it keeps its band.
+  it('keeps the Logbook header opaque and lets every other sub-tab float', () => {
+    const { container } = render(<YouScreen />);
+    const opaqueControls = () => container.querySelector('[data-chrome]')?.getAttribute('data-opaque-controls');
+
+    for (const floatingTab of ['progress', 'sessions', 'climbs', 'social']) {
+      fireEvent.click(container.querySelector(`[data-select-tab="${floatingTab}"]`)!);
+      expect(opaqueControls()).toBe('false');
+    }
+    fireEvent.click(container.querySelector('[data-select-tab="logbook"]')!);
+    expect(opaqueControls()).toBe('true');
+  });
+
+  // The blur behind the floating segmented control shows only while the visible
+  // sub-tab's list is scrolled under it.
+  describe('under the UIKit header', () => {
+    const scrollList = (tab: string, offsetY: number) =>
+      act(() => ctrl.listScroll[tab]?.({ nativeEvent: { contentOffset: { x: 0, y: offsetY } } }));
+
+    beforeEach(() => {
+      ctrl.nativeRootHeader = true;
+      ctrl.listTopOffset = -106;
+    });
+
+    it.each(['progress', 'sessions', 'climbs', 'social'])(
+      'tells the header when the %s list scrolls under it and when it is back at rest',
+      (tab) => {
+        const { container } = render(<YouScreen />);
+        fireEvent.click(container.querySelector(`[data-select-tab="${tab}"]`)!);
+        const scrolledUnder = () => container.querySelector('[data-chrome]')?.getAttribute('data-scrolled-under');
+        expect(scrolledUnder()).toBe('false');
+
+        scrollList(tab, 240);
+        expect(scrolledUnder()).toBe('true');
+
+        // Pulled past the top (overscroll, pull-to-refresh), then settled.
+        scrollList(tab, -160);
+        expect(scrolledUnder()).toBe('false');
+        scrollList(tab, -106);
+        expect(scrolledUnder()).toBe('false');
+      },
+    );
+
+    it('starts each sub-tab at rest, whatever the last one was scrolled to', () => {
+      const { container } = render(<YouScreen />);
+      const scrolledUnder = () => container.querySelector('[data-chrome]')?.getAttribute('data-scrolled-under');
+      scrollList('progress', 600);
+      expect(scrolledUnder()).toBe('true');
+
+      fireEvent.click(container.querySelector('[data-select-tab="sessions"]')!);
+      expect(scrolledUnder()).toBe('false');
+
+      fireEvent.click(container.querySelector('[data-select-tab="progress"]')!);
+      expect(scrolledUnder()).toBe('false');
+    });
+  });
+
+  // Android, Material and the web keep opaque chrome: nothing floats over these
+  // lists, so they are not given a scroll listener at all.
+  it('leaves the lists without a scroll listener under the other chromes', () => {
+    const { container } = render(<YouScreen />);
+
+    for (const tab of ['progress', 'sessions', 'climbs', 'social']) {
+      fireEvent.click(container.querySelector(`[data-select-tab="${tab}"]`)!);
+      expect(tab in ctrl.listScroll).toBe(true);
+      expect(ctrl.listScroll[tab]).toBeUndefined();
+    }
   });
 });

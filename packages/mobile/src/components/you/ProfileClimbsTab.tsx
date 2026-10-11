@@ -1,6 +1,6 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useCallback, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +20,9 @@ import { useTheme } from '../../providers/theme-provider';
 type ProfileClimbsTabProps = {
   userId: string | undefined;
   topInset?: number;
+  /** The list's scroll events, for chrome that reacts to rows passing under it
+   *  (the Profile tab's floating header). Must not set state per event. */
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 };
 
 const keyExtractor = (climb: Climb) => climb.uuid;
@@ -29,7 +32,7 @@ const keyExtractor = (climb: Climb) => climb.uuid;
  * resolves its own board art from (boardType, layoutId) — the userClimbs payload
  * carries no size/sets — and opens the climb read-only in the play drawer.
  */
-export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps) {
+export function ProfileClimbsTab({ userId, topInset = 0, onScroll }: ProfileClimbsTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors } = useTheme();
@@ -125,6 +128,7 @@ export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps
         data={climbs}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        onScroll={onScroll}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
         scrollIndicatorInsets={{ top: topInset }}

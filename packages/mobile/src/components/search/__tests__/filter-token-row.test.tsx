@@ -28,11 +28,23 @@ vi.mock('react-native', () => ({
     children,
     onPress,
     accessibilityLabel,
+    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
-  }) => createElement('button', { 'data-pill': 'true', 'aria-label': accessibilityLabel, onClick: onPress }, children),
+    style?: unknown;
+  }) =>
+    createElement(
+      'button',
+      {
+        'data-pill': 'true',
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        'aria-label': accessibilityLabel,
+        onClick: onPress,
+      },
+      children,
+    ),
 }));
 
 vi.mock('../../Text', () => ({
@@ -47,7 +59,7 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
-  useTheme: () => ({ systemColors: { separator: '#333' } }),
+  useTheme: () => ({ systemColors: { separator: '#333', secondaryBackground: '#1C1C1E' } }),
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -90,6 +102,17 @@ describe('FilterTokenRow', () => {
     expect(clearGrade).toHaveBeenCalledTimes(1);
     expect(clearSetter).not.toHaveBeenCalled();
     expect(hapticSelectionMock).toHaveBeenCalledTimes(1);
+  });
+
+  // On iOS 26 the row floats over the scrolling list (see NativeRootHeader), so a
+  // border alone would leave the label on top of whatever row is behind it.
+  it('gives each pill an opaque fill so its label reads over the list behind', () => {
+    const { container } = render(<FilterTokenRow tokens={[makeToken()]} />);
+    const pillStyle = JSON.parse(container.querySelector('[data-pill]')?.getAttribute('data-style') ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(pillStyle).toMatchObject({ backgroundColor: '#1C1C1E', borderColor: '#333', borderWidth: 1 });
   });
 
   it('labels each pill for removal using the token label', () => {

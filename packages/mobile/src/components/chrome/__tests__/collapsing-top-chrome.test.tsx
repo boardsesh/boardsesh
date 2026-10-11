@@ -2,12 +2,20 @@
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => ctrl.nativeHeader }));
 vi.mock('../../chrome/NativeRootHeader', () => ({
-  NativeRootHeader: ({ centerContent, children }: { centerContent?: ReactNode; children?: ReactNode }) =>
+  NativeRootHeader: ({
+    centerContent,
+    children,
+    scrolledUnder,
+  }: {
+    centerContent?: ReactNode;
+    children?: ReactNode;
+    scrolledUnder?: boolean;
+  }) =>
     createElement(
       'div',
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
-      createElement('div', { 'data-native-controls': 'true' }, children),
+      createElement('div', { 'data-native-controls': 'true', 'data-scrolled-under': String(scrolledUnder) }, children),
     ),
 }));
 vi.mock('../../../hooks/use-device-layout', () => ({
@@ -234,6 +242,21 @@ describe('CollapsingTopChrome', () => {
     expect(container.querySelectorAll('button')).toHaveLength(1);
     fireEvent.click(climbButton);
     expect(onOpenClimb).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [true, 'true'],
+    [false, 'false'],
+    [undefined, 'undefined'],
+  ] as const)('tells the native header whether the list is scrolled under (%s)', (scrolledUnder, received) => {
+    ctrl.nativeHeader = true;
+    const { container } = render(
+      <CollapsingTopChrome {...makeProps({ scrolledUnder })}>
+        <span>Filter chips</span>
+      </CollapsingTopChrome>,
+    );
+
+    expect(container.querySelector('[data-native-controls]')?.getAttribute('data-scrolled-under')).toBe(received);
   });
 
   it('renders the board glyph for the active board, labelled with the board', () => {

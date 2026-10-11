@@ -30,7 +30,10 @@ function TokenPill({ token }: { token: FilterToken }) {
       }}
       accessibilityRole="button"
       accessibilityLabel={t('mobile.search.removeFilterAria', { filter: token.label })}
-      style={[styles.pill, { borderColor: systemColors.separator }]}
+      // An opaque fill: on iOS 26 the row floats over the scrolling list, and a
+      // border alone leaves the label sitting on whatever is behind it. It is the
+      // Material band's own colour, so nothing changes there.
+      style={[styles.pill, { borderColor: systemColors.separator, backgroundColor: systemColors.secondaryBackground }]}
       hitSlop={6}
     >
       <Text variant="caption1" numberOfLines={1} style={styles.pillLabel}>

@@ -1,12 +1,30 @@
 // @vitest-environment jsdom
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => controls.nativeHeader }));
 vi.mock('../../chrome/NativeRootHeader', () => ({
-  NativeRootHeader: ({ centerContent, children }: { centerContent?: ReactNode; children?: ReactNode }) =>
+  NativeRootHeader: ({
+    centerContent,
+    children,
+    opaqueControls,
+    scrolledUnder,
+  }: {
+    centerContent?: ReactNode;
+    children?: ReactNode;
+    opaqueControls?: boolean;
+    scrolledUnder?: boolean;
+  }) =>
     createElement(
       'div',
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
-      createElement('div', { 'data-native-controls': 'true' }, children),
+      createElement(
+        'div',
+        {
+          'data-native-controls': 'true',
+          'data-opaque': String(opaqueControls),
+          'data-scrolled-under': String(scrolledUnder),
+        },
+        children,
+      ),
     ),
 }));
 import { beforeEach, describe, it, expect, vi } from 'vitest';
@@ -100,6 +118,36 @@ describe('CollapsingLargeTitleHeader', () => {
     expect(container.querySelector('[data-native-center]')?.textContent).toBe('On the wall');
     expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Profile segments');
     expect(container.querySelectorAll('button')).toHaveLength(1);
+  });
+
+  it.each([
+    [true, 'true'],
+    [undefined, 'undefined'],
+  ] as const)('hands the opaque-controls opt-out (%s) to the native header', (opaqueControls, received) => {
+    controls.nativeHeader = true;
+    const { container } = render(
+      <CollapsingLargeTitleHeader {...makeProps({ opaqueControls })}>
+        <span>Profile segments</span>
+      </CollapsingLargeTitleHeader>,
+    );
+
+    expect(container.querySelector('[data-native-controls]')?.getAttribute('data-opaque')).toBe(received);
+  });
+
+  // Left out, the native header keeps its blur always on; see NativeRootHeader.
+  it.each([
+    [true, 'true'],
+    [false, 'false'],
+    [undefined, 'undefined'],
+  ] as const)('tells the native header whether the list is scrolled under (%s)', (scrolledUnder, received) => {
+    controls.nativeHeader = true;
+    const { container } = render(
+      <CollapsingLargeTitleHeader {...makeProps({ scrolledUnder })}>
+        <span>Profile segments</span>
+      </CollapsingLargeTitleHeader>,
+    );
+
+    expect(container.querySelector('[data-native-controls]')?.getAttribute('data-scrolled-under')).toBe(received);
   });
 
   it('renders the leftActions / rightActions / children slots when provided', () => {

@@ -22,6 +22,10 @@ const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   materialMeasure: undefined as ((event: { nativeEvent: { layout: { height: number } } }) => void) | undefined,
   glassMeasure: undefined as ((height: number) => void) | undefined,
+  // What the glass header was told about floating its controls over the list.
+  glassOpaqueControls: undefined as boolean | undefined,
+  // What it was told about the sub-tab's list being scrolled under it.
+  glassScrolledUnder: undefined as boolean | undefined,
 }));
 // Captures the props the SegmentedControl receives so the test can assert its
 // option set / selected key / which variant branch rendered it.
@@ -155,13 +159,19 @@ vi.mock('../../chrome', () => ({
     rightActions,
     children,
     onHeightChange,
+    opaqueControls,
+    scrolledUnder,
   }: {
     leftActions?: ReactNode;
     rightActions?: ReactNode;
     children?: ReactNode;
     onHeightChange: (height: number) => void;
+    opaqueControls?: boolean;
+    scrolledUnder?: boolean;
   }) => {
     ctrl.glassMeasure = onHeightChange;
+    ctrl.glassOpaqueControls = opaqueControls;
+    ctrl.glassScrolledUnder = scrolledUnder;
     return createElement(
       'div',
       { 'data-header': 'true' },
@@ -205,6 +215,8 @@ describe('ProfileTopChrome', () => {
     ctrl.variant = 'liquidGlass';
     ctrl.materialMeasure = undefined;
     ctrl.glassMeasure = undefined;
+    ctrl.glassOpaqueControls = undefined;
+    ctrl.glassScrolledUnder = undefined;
     segments.entries = [];
     materialTabs.entries = [];
   });
@@ -242,6 +254,22 @@ describe('ProfileTopChrome', () => {
       // wrapping it in a GlassSurface doubled the border, so the wrapper was dropped.
       expect(container.querySelector('[data-glass="true"]')).toBeNull();
       expect(segments.entries.at(-1)!.trackColor).toBe('transparent');
+    });
+
+    it('lets the segmented control float over the list unless the caller opts out', () => {
+      render(<ProfileTopChrome {...makeProps()} />);
+      expect(ctrl.glassOpaqueControls).toBeUndefined();
+    });
+
+    // Logbook's header carries a bare text heading under the tabs.
+    it('passes the opaque-controls opt-out through to the header', () => {
+      render(<ProfileTopChrome {...makeProps({ activeTab: 'logbook', opaqueControls: true })} />);
+      expect(ctrl.glassOpaqueControls).toBe(true);
+    });
+
+    it.each([true, false])('tells the header whether the list is scrolled under it (%s)', (scrolledUnder) => {
+      render(<ProfileTopChrome {...makeProps({ scrolledUnder })} />);
+      expect(ctrl.glassScrolledUnder).toBe(scrolledUnder);
     });
 
     it('does not render the Material app bar or primary tabs', () => {

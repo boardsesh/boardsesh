@@ -1,5 +1,6 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
+import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
@@ -809,6 +810,10 @@ function ClimbListInner() {
   const listTopOffset = useListTopOffset();
   const listTopOffsetRef = useRef(listTopOffset);
   listTopOffsetRef.current = listTopOffset;
+  // Whether rows are under the filter chips pinned below the UIKit header: the
+  // blur behind the chips shows only then. Re-renders this screen when that
+  // flips, never per scroll event.
+  const { onScroll: handleListScroll, scrolledUnder: listScrolledUnderChrome } = useScrollEdgeBackdrop();
   useEffect(() => {
     if (!hasSeenSearchKeyRef.current) {
       hasSeenSearchKeyRef.current = true;
@@ -2182,6 +2187,9 @@ function ClimbListInner() {
           // offset. React Native clamps a programmatic scroll at 0 unless told the
           // list may be scrolled past its content bounds.
           scrollToOverflowEnabled={nativeRootHeader}
+          // Only the UIKit header floats controls over this list; the other
+          // chromes keep the list free of a scroll listener.
+          onScroll={nativeRootHeader ? handleListScroll : undefined}
           contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
           scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
           keyboardShouldPersistTaps="handled"
@@ -2192,6 +2200,10 @@ function ClimbListInner() {
               refreshing={isRefetching && !isPlaceholderData}
               onRefresh={handleRefresh}
               tintColor={brandColors.primary}
+              // Under the UIKit header the filter chips are pinned over the top of
+              // the list, where the spinner appears. Draw it below them. Android
+              // and the other chromes keep the default position.
+              progressViewOffset={nativeRootHeader ? searchBarHeight : undefined}
             />
           }
           ListHeaderComponent={listHeader}
@@ -2343,6 +2355,7 @@ function ClimbListInner() {
         onGradeChange={handleGradeRailChange}
         filterChrome={filterChrome}
         showPersistentChips={filterInTopChrome}
+        scrolledUnder={listScrolledUnderChrome}
       />
 
       {showFilters ? (

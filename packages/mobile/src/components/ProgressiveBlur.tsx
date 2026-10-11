@@ -29,6 +29,11 @@ const DARK_SCRIM_LOCATIONS = [0, 0.7] as const;
 const SOLID_BG_DARK = '#000000';
 const SOLID_BG_LIGHT = '#FFFFFF';
 const SOLID_FADE_LOCATIONS = [0, 0.55, 1] as const;
+// The same scene background as channels, so the wash can carry its own alpha and
+// fade to a clear version of ITSELF: fading white to `transparent` (clear black)
+// passes through grey.
+const WASH_RGB_DARK = '0,0,0';
+const WASH_RGB_LIGHT = '255,255,255';
 
 type ProgressiveBlurProps = {
   /** Absolute position/size of the blur region (set by the caller). */
@@ -38,7 +43,46 @@ type ProgressiveBlurProps = {
   blurAmount?: number;
   /** Number of stacked blur layers — higher is a smoother ramp, more GPU work. */
   layers?: number;
+  /**
+   * Hold full strength from the top down to `fadeLength` points above the bottom
+   * edge, then fade out over that length. For a backdrop behind pinned controls:
+   * the default ramp is strongest at the very top and nearly clear where the
+   * lowest control row sits. Omit for the default ramp across the whole height.
+   */
+  fadeLength?: number;
+  /**
+   * Dark mode's black wash under the status bar (see `DARK_SCRIM_COLORS`). Switch
+   * it off where the blur is not the screen's own always-on top band.
+   */
+  scrim?: boolean;
+  /**
+   * With `fadeLength`: opacity (0 to 1) of a scene-background wash laid over the
+   * blur, holding and fading with it, in both colour schemes. It thins the content
+   * behind the controls further than the material does (HIG Materials: a scroll
+   * edge effect blurs the content behind and reduces its opacity). 0 (the
+   * default) draws none.
+   */
+  washOpacity?: number;
 };
+
+/** Holds `colors[0]` down to `fadeLength` above the bottom, then runs the gradient. */
+function PlateauFade({
+  colors,
+  fadeLength,
+  fadeEnd = 1,
+}: {
+  colors: readonly [string, string];
+  fadeLength: number;
+  /** Fraction of `fadeLength` at which the gradient reaches `colors[1]`. */
+  fadeEnd?: number;
+}) {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={[styles.plateau, { backgroundColor: colors[0] }]} />
+      <LinearGradient colors={colors} locations={[0, fadeEnd]} pointerEvents="none" style={{ height: fadeLength }} />
+    </View>
+  );
+}
 
 /**
  * A top-down progressive (gradient) blur for the floating header chrome: a few
@@ -48,26 +92,44 @@ type ProgressiveBlurProps = {
  * and tab bar read as the same surface. The blur tint follows the app's resolved
  * colour scheme, so it honours the in-app light/dark override.
  *
+ * With `fadeLength` it becomes a backdrop for controls pinned under a bar: full
+ * strength behind them, fading out only along its lower edge.
+ *
  * Only renders a live blur on the iOS glass / blur paths. On Material (Android) or
  * with Reduce Transparency on, `@react-native-community/blur` can't honour the iOS
  * material types and a11y wants no translucency, so it falls back to fading the
  * opaque scene background in from the top instead.
  */
-export function ProgressiveBlur({ style, blurAmount = 16, layers = DEFAULT_LAYERS }: ProgressiveBlurProps) {
+export function ProgressiveBlur({
+  style,
+  blurAmount = 16,
+  layers = DEFAULT_LAYERS,
+  fadeLength,
+  scrim = true,
+  washOpacity = 0,
+}: ProgressiveBlurProps) {
   const { colorScheme } = useTheme();
   const mode = useEffectiveSurfaceMode();
   const isDark = colorScheme === 'dark';
 
   // Android / Reduce Transparency: no live blur — fade the opaque scene background.
   if (mode !== 'glass' && mode !== 'blur') {
+    const solidBackground = isDark ? SOLID_BG_DARK : SOLID_BG_LIGHT;
     return (
       <View pointerEvents="none" style={style}>
-        <LinearGradient
-          colors={[isDark ? SOLID_BG_DARK : SOLID_BG_LIGHT, isDark ? SOLID_BG_DARK : SOLID_BG_LIGHT, 'transparent']}
-          locations={SOLID_FADE_LOCATIONS}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFill}
-        />
+        {fadeLength == null ? (
+          <LinearGradient
+            colors={[solidBackground, solidBackground, 'transparent']}
+            locations={SOLID_FADE_LOCATIONS}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+          />
+        ) : (
+          <PlateauFade
+            colors={[solidBackground, `rgba(${isDark ? WASH_RGB_DARK : WASH_RGB_LIGHT},0)`]}
+            fadeLength={fadeLength}
+          />
+        )}
       </View>
     );
   }
@@ -75,11 +137,14 @@ export function ProgressiveBlur({ style, blurAmount = 16, layers = DEFAULT_LAYER
   // Thin material: heavier than ultra-thin, so it reads like the native tab bar's
   // chrome glass rather than a light grey. Stacking accumulates it toward the top.
   const blurType = isDark ? 'thinMaterialDark' : 'thinMaterialLight';
+  const washRgb = isDark ? WASH_RGB_DARK : WASH_RGB_LIGHT;
 
   return (
     <View pointerEvents="none" style={style}>
       {Array.from({ length: layers }, (_, layer) => {
-        // Later layers fade out higher up, so they accumulate toward the top.
+        // Later layers fade out higher up, so they accumulate toward the top (or,
+        // with `fadeLength`, toward the top of the fade: every layer covers the
+        // plateau above it).
         const fadeEnd = (layers - layer) / layers;
         return (
           <MaskedView
@@ -87,17 +152,24 @@ export function ProgressiveBlur({ style, blurAmount = 16, layers = DEFAULT_LAYER
             pointerEvents="none"
             style={StyleSheet.absoluteFill}
             maskElement={
-              <LinearGradient colors={MASK_COLORS} locations={[0, fadeEnd]} style={StyleSheet.absoluteFill} />
+              fadeLength == null ? (
+                <LinearGradient colors={MASK_COLORS} locations={[0, fadeEnd]} style={StyleSheet.absoluteFill} />
+              ) : (
+                <PlateauFade colors={MASK_COLORS} fadeLength={fadeLength} fadeEnd={fadeEnd} />
+              )
             }
           >
             <BlurView blurType={blurType} blurAmount={blurAmount} style={StyleSheet.absoluteFill} />
           </MaskedView>
         );
       })}
+      {fadeLength != null && washOpacity > 0 ? (
+        <PlateauFade colors={[`rgba(${washRgb},${washOpacity})`, `rgba(${washRgb},0)`]} fadeLength={fadeLength} />
+      ) : null}
       {/* Dark-mode only: a black wash over the blur, strongest at the top, so the
           dynamic-island / status-bar band reads black rather than grey. Sits above
           the blur but below the floating islands (rendered later by the caller). */}
-      {isDark ? (
+      {isDark && scrim ? (
         <LinearGradient
           colors={DARK_SCRIM_COLORS}
           locations={DARK_SCRIM_LOCATIONS}
@@ -108,3 +180,7 @@ export function ProgressiveBlur({ style, blurAmount = 16, layers = DEFAULT_LAYER
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  plateau: { flex: 1 },
+});

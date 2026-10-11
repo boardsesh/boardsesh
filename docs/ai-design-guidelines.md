@@ -421,11 +421,68 @@ Profile's Logbook keeps its profile tabs, search/filter row, sort chips, and any
 rail in one measured header. On Liquid Glass, the full-height results list uses the native title
 inset plus padding for these supplementary controls; Material places the results viewport below
 the entire opaque header. The filter button stays beside search, outside the horizontally scrolling
-chips. Public profiles keep their toolbar in the page's normal flow.
+chips. Public profiles keep their toolbar in the page's normal flow. This header is the one block
+that stays on a painted band on iOS 26 (`opaqueControls`): see "Controls pinned under the bar".
 
 Neutral tiles in session summaries and Profile's period comparison use `systemColors.tertiaryFill`
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
 keeps `systemColors.fill`. Do not apply a violet background to every content card.
+
+### Controls pinned under the bar
+
+Some root tabs pin a block of controls under the UIKit navigation bar: Climbs has its filter chips,
+the grade row and the removable filter tokens; Profile has its segmented control. `NativeRootHeader`
+draws that block (`HeaderControls`), and the list pads its top by the block's measured height.
+
+**On iOS 26 the block floats.** It paints no background. The list scrolls behind the controls, and
+one blur runs from the top of the screen to the bottom of the block and fades out along its lower
+edge. [HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout): "Instead
+of applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to
+visually elevate controls above content." [HIG
+Materials](https://developer.apple.com/design/human-interface-guidelines/materials) says what that
+effect does: it blurs the content behind and reduces its opacity. Ours is `ProgressiveBlur` with a
+`fadeLength`: a thin material held at full strength behind the controls. It is a material and never
+a `GlassSurface`, because the chips on it are glass already (see "Glass material").
+
+**The blur is there only while rows are under the controls.** At rest the page behind them is the
+page: a material over an empty black page reads as a grey panel, which is the painted band again.
+The screen owns the list, so the screen says when: `useScrollEdgeBackdrop()` returns an `onScroll`
+for the list and a `scrolledUnder` boolean for the chrome (`ClimbTopChrome`, `ProfileTopChrome`,
+down to `NativeRootHeader`). It is true once the list is past its resting top
+(`useListTopOffset`, under the bar at its shortest, plus 2pt of slack). The rubber-band overscroll
+and a pull-to-refresh are more negative than that top, so they count as at rest. It sets state only
+when the answer flips, never per scroll event. A screen that swaps lists under one chrome (Profile's
+sub-tabs) passes a key per list, and a new list starts at rest. The blur fades over `timing.fast`
+and switches without a fade under Reduce Motion.
+
+**Wire every list under a floating block.** Leave `scrolledUnder` out and the blur stays on all the
+time. That is the safe default: a forgotten wire shows as a frost at rest, which anyone can see,
+where the other default would put bare controls over rows mid-scroll.
+
+**The look is a few numbers**, `CONTROLS_BACKDROP` in `NativeRootHeader.tsx`: `layers` (how heavily
+the list behind is frosted), `fadeLength` (points of fade along the bottom edge), `washOpacity`
+(a scene-background wash that fades the list behind further; 0 today, because one thin material
+over rows already dims them) and `fadeDuration`. Tune them there, on a device.
+
+**Everywhere else the block keeps its painted band**, in `systemColors.background`:
+`useFloatingHeaderControls` lets it float only when the surface mode is `glass` and Increase
+Contrast is known to be off. That leaves the band on iOS before 26, with Reduce Transparency or
+Increase Contrast on, and for a caller that passes `opaqueControls`. Material, Android and the web
+never reach this component and keep their own chrome.
+
+**What a control needs to sit on the blur.** Its own surface. Glass chips, the native segmented
+control and the grade row's `systemColors.fill` capsules have one. The filter tokens carry an
+opaque `systemColors.secondaryBackground` fill for this reason. Bare text does not survive a row
+scrolling behind it, which is why Profile's Logbook header (a text heading above its search and
+sort rows) opts out.
+
+**It always swallows touches.** The block is `pointerEvents="auto"` whether it floats or not: a row
+the blur has smeared must not take a tap through the gap between two chips.
+
+**The blur is not measured.** It is absolutely positioned inside the block, so `onHeightChange`
+still reports the controls alone and the list's `paddingTop`, scroll-indicator inset and
+`useListTopOffset` are unchanged. The Climbs list also draws its pull-to-refresh spinner below the
+block (`progressViewOffset`).
 
 ### Inline facet rows
 
@@ -954,8 +1011,9 @@ role-picker callbacks. A short fast flick commits a carousel swipe; springs use
 release velocity and retain the host's post-render handoff.
 
 On iOS, root screens use UIKit's collapsing large titles and automatic content
-insets. Native header controls use 44pt slots; floating controls keep their 48pt
-slots. A standalone avatar draws one circular background, while grouped bar items
+insets. Controls pinned under that bar float over the list on iOS 26 and sit on a
+painted band elsewhere ("Controls pinned under the bar"). Native header controls
+use 44pt slots; floating controls keep their 48pt slots. A standalone avatar draws one circular background, while grouped bar items
 use UIKit's shared material. Home's scope selector scrolls with the feed, and the
 on-wall climb capsule stays in the navigation bar's centre slot. Each tab's layout
 owns its localized title; opening a transparent drawer must not rewrite that

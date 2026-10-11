@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
-vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
-vi.mock('../../chrome/NativeRootHeader', () => ({ NativeRootHeader: () => null }));
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => nativeChrome.enabled }));
+vi.mock('../../chrome/NativeRootHeader', () => ({
+  NativeRootHeader: ({ scrolledUnder }: { scrolledUnder?: boolean }) => {
+    nativeChrome.scrolledUnder.push(scrolledUnder);
+    return null;
+  },
+}));
 vi.mock('../../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
 }));
@@ -28,6 +33,10 @@ type BluetoothCtx = {
   disconnect: () => Promise<void>;
   armUndoWallChangeToast: () => void;
 } | null;
+
+// The UIKit header path (iOS on Liquid Glass), off unless a test turns it on, and
+// what the native header was told about the list being scrolled under it.
+const nativeChrome = vi.hoisted(() => ({ enabled: false, scrolledUnder: [] as Array<boolean | undefined> }));
 
 const ctrl = vi.hoisted(() => ({
   board: null as BoardLabelFields | null,
@@ -434,8 +443,17 @@ describe('ClimbTopChrome', () => {
     ctrl.wallClimb = null;
     ctrl.focusEffects.length = 0;
     ctrl.setBoardAngle.mockClear();
+    nativeChrome.enabled = false;
+    nativeChrome.scrolledUnder.length = 0;
     haptics.light.mockClear();
     haptics.selection.mockClear();
+  });
+
+  // The blur behind the floating filter rows shows only while rows are under them.
+  it.each([true, false])('hands the UIKit header the list scrolled-under flag (%s)', (scrolledUnder) => {
+    nativeChrome.enabled = true;
+    render(<ClimbTopChrome {...makeProps({ scrolledUnder })} />);
+    expect(nativeChrome.scrolledUnder.at(-1)).toBe(scrolledUnder);
   });
 
   it('renders no board capsule when there is no active board', () => {

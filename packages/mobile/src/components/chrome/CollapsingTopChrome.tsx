@@ -66,6 +66,9 @@ type CollapsingTopChromeProps = {
   /** Extra controls rendered below the islands row (e.g. the Climbs search row).
    *  Discover passes none. Measured into the reported chrome height. */
   children?: ReactNode;
+  /** Under the UIKit header, whether the list is scrolled under `children`
+   *  (`useScrollEdgeBackdrop`): the blur behind them shows only then. */
+  scrolledUnder?: boolean;
 };
 
 /**
@@ -99,6 +102,7 @@ export function CollapsingTopChrome({
   hideLight = false,
   anchorBoardButton = false,
   children,
+  scrolledUnder,
 }: CollapsingTopChromeProps) {
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
@@ -251,6 +255,7 @@ export function CollapsingTopChrome({
             </GlassActionToolbar>
           ) : undefined
         }
+        scrolledUnder={scrolledUnder}
         onHeightChange={onHeightChange}
       >
         {children}

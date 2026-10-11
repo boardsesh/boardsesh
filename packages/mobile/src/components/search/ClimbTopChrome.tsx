@@ -95,6 +95,9 @@ type ClimbTopChromeProps = {
    *  the in-chrome grade rail stay. Always false on Liquid Glass (its own path renders
    *  `filterChrome`). */
   showPersistentChips?: boolean;
+  /** Liquid Glass under the UIKit header: whether the list is scrolled under the
+   *  filter rows (`useScrollEdgeBackdrop`). The blur behind them shows only then. */
+  scrolledUnder?: boolean;
 };
 
 function ClimbTopChromeComponent({
@@ -128,6 +131,7 @@ function ClimbTopChromeComponent({
   onGradeChange,
   filterChrome,
   showPersistentChips = false,
+  scrolledUnder,
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, variant } = useTheme();
@@ -349,6 +353,7 @@ function ClimbTopChromeComponent({
       boardBadge={showBoardBadge}
       anchorBoardButton={anchorBoardButton}
       onHeightChange={onHeightChange}
+      scrolledUnder={scrolledUnder}
       hideLight
     >
       {usesCustomSearch ? (

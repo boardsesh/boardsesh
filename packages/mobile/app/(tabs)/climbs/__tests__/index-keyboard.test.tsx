@@ -107,6 +107,15 @@ const mocks = vi.hoisted(() => ({
   openFilters: undefined as (() => void) | undefined,
   // Whether the chrome was told to draw its own (Material) grade rail.
   chromeGradeRailVisible: undefined as boolean | undefined,
+  // The chrome's height report: the controls block under the UIKit header, or the
+  // whole floating / Material chrome.
+  reportChromeHeight: undefined as ((height: number) => void) | undefined,
+  // The list's scroll listener, and what the chrome was last told about rows
+  // being scrolled under its filter chips.
+  listOnScroll: undefined as
+    | ((event: { nativeEvent: { contentOffset: { x: number; y: number } } }) => void)
+    | undefined,
+  chromeScrolledUnder: undefined as boolean | undefined,
   // The persisted "grade row shown" setting, as a store the screen re-renders
   // from: `set` is the write that keeps the choice across launches.
   gradeRow: {
@@ -137,6 +146,7 @@ type FlashListProps<Item> = {
   ListFooterComponent?: ReactNode;
   ListEmptyComponent?: ReactNode;
   refreshControl?: ReactNode;
+  onScroll?: (event: { nativeEvent: { contentOffset: { x: number; y: number } } }) => void;
 };
 
 vi.mock('react-native', () => ({
@@ -150,8 +160,12 @@ vi.mock('react-native', () => ({
     absoluteFill: {},
     hairlineWidth: 1,
   },
-  RefreshControl: ({ refreshing }: { refreshing?: boolean }) =>
-    createElement('div', { 'data-refresh-control': 'true', 'data-refreshing': String(!!refreshing) }),
+  RefreshControl: ({ refreshing, progressViewOffset }: { refreshing?: boolean; progressViewOffset?: number }) =>
+    createElement('div', {
+      'data-refresh-control': 'true',
+      'data-refreshing': String(!!refreshing),
+      'data-progress-view-offset': progressViewOffset,
+    }),
   Keyboard: { dismiss: mocks.dismissKeyboard },
   // The screen reads Platform.OS at module load (the iOS-only Tall/Wide lock).
   Platform: { OS: 'ios' },
@@ -182,7 +196,9 @@ vi.mock('@shopify/flash-list', () => ({
     ListFooterComponent,
     ListEmptyComponent,
     refreshControl,
+    onScroll,
   }: FlashListProps<Item>) => {
+    mocks.listOnScroll = onScroll;
     useImperativeHandle(ref, () => ({ scrollToOffset: mocks.scrollToOffset }), []);
     return createElement(
       'div',
@@ -392,7 +408,9 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
       onSearchFocus,
       onOpenFilters,
       gradeRailVisible,
+      scrolledUnder,
     }: {
+      scrolledUnder?: boolean;
       onHeightChange: (height: number) => void;
       filterChrome?: ReactNode;
       onOpenGrade?: () => void;
@@ -408,6 +426,8 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
       mocks.focusSearch = onSearchFocus;
       mocks.openFilters = onOpenFilters;
       mocks.chromeGradeRailVisible = gradeRailVisible;
+      mocks.reportChromeHeight = onHeightChange;
+      mocks.chromeScrolledUnder = scrolledUnder;
       if (mocks.renderFilterChrome) return createElement('div', { 'data-testid': 'top-chrome' }, filterChrome);
       return mocks.renderNativeChrome
         ? createElement(NativeRootHeader, {
@@ -713,6 +733,9 @@ beforeEach(() => {
   mocks.focusSearch = undefined;
   mocks.openFilters = undefined;
   mocks.chromeGradeRailVisible = undefined;
+  mocks.reportChromeHeight = undefined;
+  mocks.listOnScroll = undefined;
+  mocks.chromeScrolledUnder = undefined;
   mocks.gradeRow.shown = false;
   mocks.gradeRow.listeners.clear();
   mocks.gradeRow.set.mockReset();
@@ -783,6 +806,50 @@ describe('ClimbList native header ownership', () => {
     expect(restoredOptions).toMatchObject({ title: 'Climbs', headerShown: true, headerLargeTitle: true });
     expect(restoredOptions.headerTitle).toBeUndefined();
     expect(mocks.stackOptions.every((options) => !Object.hasOwn(options, 'title'))).toBe(true);
+  });
+});
+
+// On iOS 26 the filter chips float over the list. The blur behind them shows only
+// while rows are scrolled under them: at rest the page behind is just the page.
+// (The mocked header is 100pt tall, so the list rests at an offset of -100.)
+describe('ClimbList rows scrolling under the pinned filter chips', () => {
+  const scrollListTo = (offsetY: number) =>
+    act(() => mocks.listOnScroll?.({ nativeEvent: { contentOffset: { x: 0, y: offsetY } } }));
+
+  it('tells the chrome once rows are under it, and again when the list is back at rest', async () => {
+    const { findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+    expect(mocks.chromeScrolledUnder).toBe(false);
+
+    scrollListTo(-100);
+    expect(mocks.chromeScrolledUnder).toBe(false);
+
+    scrollListTo(180);
+    expect(mocks.chromeScrolledUnder).toBe(true);
+
+    scrollListTo(-100);
+    expect(mocks.chromeScrolledUnder).toBe(false);
+  });
+
+  it('stays at rest through the overscroll bounce and a pull-to-refresh', async () => {
+    const { findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    for (const offsetY of [-140, -190, -160, -160, -118, -100]) {
+      scrollListTo(offsetY);
+      expect(mocks.chromeScrolledUnder).toBe(false);
+    }
+  });
+
+  // Android, Material and the old floating chrome: nothing floats on a blur over
+  // this list, so it gets no scroll listener.
+  it('gives the list no scroll listener away from the UIKit header', async () => {
+    mocks.nativeRootHeader = false;
+    const { findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    expect(mocks.listOnScroll).toBeUndefined();
+    expect(mocks.chromeScrolledUnder).toBe(false);
   });
 });
 
@@ -956,6 +1023,27 @@ describe('ClimbList previous results standing in for a loading search', () => {
     await findByText('Moonage');
 
     expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('true');
+  });
+
+  // Under the UIKit header the filter chips are pinned over the top of the list,
+  // where the spinner appears: it is drawn below them, by their measured height.
+  it('draws the spinner below the controls pinned under the UIKit header', async () => {
+    const { container, findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    act(() => mocks.reportChromeHeight?.(96));
+
+    expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-progress-view-offset')).toBe('96');
+  });
+
+  it('leaves the spinner where it was under the Material and floating chromes', async () => {
+    mocks.nativeRootHeader = false;
+    const { container, findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+
+    act(() => mocks.reportChromeHeight?.(156));
+
+    expect(container.querySelector('[data-refresh-control]')?.hasAttribute('data-progress-view-offset')).toBe(false);
   });
 
   it('ignores a tap on a stale row', async () => {

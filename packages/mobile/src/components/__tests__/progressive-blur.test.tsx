@@ -9,9 +9,14 @@ const themeMock = vi.hoisted(() => ({ colorScheme: 'dark' as 'dark' | 'light' })
 // Android / Reduce-Transparency fade fallback.
 const surfaceMock = vi.hoisted(() => ({ mode: 'blur' as 'glass' | 'blur' | 'material' | 'solid' }));
 
+function flattenStyle(style: unknown): Record<string, unknown> {
+  return Object.assign({}, ...[style].flat(10).filter(Boolean));
+}
+
 vi.mock('react-native', () => ({
-  StyleSheet: { absoluteFill: {} },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  StyleSheet: { absoluteFill: {}, create: (styles: Record<string, unknown>) => styles },
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-view-style': JSON.stringify(flattenStyle(style)) }, children),
 }));
 
 // Render the mask + children so both the gradient mask and the blur are assertable
@@ -25,12 +30,24 @@ vi.mock('@react-native-community/blur', () => ({
     createElement('div', { 'data-testid': 'blur-view', 'data-blur-type': blurType, 'data-blur-amount': blurAmount }),
 }));
 vi.mock('expo-linear-gradient', () => ({
-  LinearGradient: ({ colors, locations }: { colors?: readonly string[]; locations?: readonly number[] }) =>
-    createElement('div', {
+  LinearGradient: ({
+    colors,
+    locations,
+    style,
+  }: {
+    colors?: readonly string[];
+    locations?: readonly number[];
+    style?: unknown;
+  }) => {
+    const { height } = flattenStyle(style);
+    return createElement('div', {
       'data-testid': 'mask-gradient',
       'data-colors': JSON.stringify(colors),
       'data-locations': JSON.stringify(locations),
-    }),
+      // Only a fade of a fixed length carries a height; a full-height one fills.
+      'data-height': typeof height === 'number' ? String(height) : '',
+    });
+  },
 }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({ colorScheme: themeMock.colorScheme }),
@@ -98,5 +115,91 @@ describe('ProgressiveBlur', () => {
     const colors = JSON.parse(gradient?.getAttribute('data-colors') ?? '[]') as string[];
     expect(colors[0]).toBe('#000000'); // dark scene background (default colour scheme)
     expect(colors[colors.length - 1]).toBe('transparent');
+  });
+
+  // The backdrop behind controls pinned under a bar: full strength behind them,
+  // fading only along the lower edge. The default ramp would leave the lowest row
+  // of controls, at the bottom of the blur, almost bare.
+  describe('with a fadeLength (pinned-controls backdrop)', () => {
+    const gradients = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('[data-testid="mask-gradient"]')).map((gradient) => ({
+        colors: JSON.parse(gradient.getAttribute('data-colors') ?? '[]') as string[],
+        locations: JSON.parse(gradient.getAttribute('data-locations') ?? '[]') as number[],
+        height: gradient.getAttribute('data-height'),
+        plateau: JSON.parse(gradient.previousElementSibling?.getAttribute('data-view-style') ?? '{}') as Record<
+          string,
+          unknown
+        >,
+      }));
+
+    it('holds every blur layer at full strength, then fades each over the fade length', () => {
+      themeMock.colorScheme = 'light';
+      const { container } = render(<ProgressiveBlur layers={2} fadeLength={24} scrim={false} />);
+
+      expect(container.querySelectorAll('[data-testid="blur-view"]')).toHaveLength(2);
+      const masks = gradients(container);
+      expect(masks).toHaveLength(2);
+      for (const mask of masks) {
+        // An opaque plateau that takes the height the fade leaves over...
+        expect(mask.plateau).toMatchObject({ flex: 1, backgroundColor: '#000000' });
+        // ...then a fade of exactly the asked length, in points, not a fraction.
+        expect(mask.height).toBe('24');
+        expect(mask.colors).toEqual(['#000000', 'transparent']);
+      }
+      // The first layer fades across the whole length; the next is gone halfway.
+      expect(masks.map((mask) => mask.locations)).toEqual([
+        [0, 1],
+        [0, 0.5],
+      ]);
+    });
+
+    it('keeps the top-weighted ramp when no fadeLength is given', () => {
+      themeMock.colorScheme = 'light';
+      const { container } = render(<ProgressiveBlur layers={2} />);
+      // No plateau: each mask is one gradient over the full height.
+      for (const mask of gradients(container)) expect(mask.height).toBe('');
+    });
+
+    it('drops the dark status-bar scrim when asked to', () => {
+      themeMock.colorScheme = 'dark';
+      const { container } = render(<ProgressiveBlur fadeLength={24} scrim={false} />);
+      expect(hasDarkScrim(container)).toBe(false);
+    });
+
+    it.each([
+      ['dark', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)'],
+      ['light', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0)'],
+    ] as const)('washes the blur with the %s scene background, along the same plateau', (scheme, wash, clear) => {
+      themeMock.colorScheme = scheme;
+      const { container } = render(<ProgressiveBlur layers={1} fadeLength={24} scrim={false} washOpacity={0.3} />);
+
+      const washLayer = gradients(container).find((gradient) => gradient.colors[0] === wash);
+      // Fades to a clear version of itself: white to `transparent` goes via grey.
+      expect(washLayer?.colors).toEqual([wash, clear]);
+      expect(washLayer?.height).toBe('24');
+      expect(washLayer?.plateau).toMatchObject({ flex: 1, backgroundColor: wash });
+    });
+
+    it('draws no wash by default, and none without a fadeLength', () => {
+      themeMock.colorScheme = 'light';
+      const plain = render(<ProgressiveBlur layers={1} fadeLength={24} />);
+      expect(gradients(plain.container)).toHaveLength(1);
+      plain.unmount();
+
+      const ramp = render(<ProgressiveBlur layers={1} washOpacity={0.3} />);
+      expect(gradients(ramp.container)).toHaveLength(1);
+    });
+
+    it('holds the opaque scene background over the plateau where there is no live blur', () => {
+      surfaceMock.mode = 'solid';
+      themeMock.colorScheme = 'light';
+      const { container } = render(<ProgressiveBlur fadeLength={24} />);
+
+      expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
+      const [fade] = gradients(container);
+      expect(fade.plateau).toMatchObject({ flex: 1, backgroundColor: '#FFFFFF' });
+      expect(fade.colors).toEqual(['#FFFFFF', 'rgba(255,255,255,0)']);
+      expect(fade.height).toBe('24');
+    });
   });
 });

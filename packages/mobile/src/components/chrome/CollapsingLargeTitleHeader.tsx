@@ -31,6 +31,13 @@ type CollapsingLargeTitleHeaderProps = {
   /** Extra controls rendered below the islands row (e.g. a search or segmented
    *  control row). Measured into the reported chrome height. */
   children?: ReactNode;
+  /** Under the UIKit header, keep the painted band behind `children` instead of
+   *  letting them float over the list (see `NativeRootHeader`). Nothing else
+   *  reads it: the floating islands have always sat over the list. */
+  opaqueControls?: boolean;
+  /** Under the UIKit header, whether the list is scrolled under `children`
+   *  (`useScrollEdgeBackdrop`): the blur behind them shows only then. */
+  scrolledUnder?: boolean;
 };
 
 /**
@@ -48,6 +55,8 @@ export function CollapsingLargeTitleHeader({
   leftActions,
   rightActions,
   children,
+  opaqueControls,
+  scrolledUnder,
 }: CollapsingLargeTitleHeaderProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -69,6 +78,8 @@ export function CollapsingLargeTitleHeader({
         leftActionsStandalone={Boolean(leftActions)}
         rightActions={rightActions}
         centerContent={centerContent}
+        opaqueControls={opaqueControls}
+        scrolledUnder={scrolledUnder}
         onHeightChange={onHeightChange}
       >
         {children}

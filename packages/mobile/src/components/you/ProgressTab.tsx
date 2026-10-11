@@ -1,6 +1,6 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, StyleSheet } from 'react-native';
+import { View, RefreshControl, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
@@ -39,6 +39,9 @@ type ProgressTabProps = {
   userId?: string;
   onOpenFilters?: () => void;
   isOwnProfile?: boolean;
+  /** The list's scroll events, for chrome that reacts to rows passing under it
+   *  (the Profile tab's floating header). Must not set state per event. */
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 };
 
 type ProgressItem =
@@ -70,6 +73,7 @@ export const ProgressTab = memo(function ProgressTab({
   userId,
   onOpenFilters,
   isOwnProfile = true,
+  onScroll,
 }: ProgressTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t, i18n } = useTranslation('profile');
@@ -401,6 +405,7 @@ export const ProgressTab = memo(function ProgressTab({
         keyExtractor={keyForProgressItem}
         getItemType={typeForProgressItem}
         maintainVisibleContentPosition={{ disabled: true }}
+        onScroll={onScroll}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
         scrollIndicatorInsets={{ top: topInset }}

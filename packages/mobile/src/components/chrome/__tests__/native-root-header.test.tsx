@@ -6,6 +6,14 @@ import type { NativeStackNavigationOptions } from 'expo-router';
 
 const controls = vi.hoisted(() => ({
   glassCapability: true,
+  // Whether the device and the climber's accessibility settings let the controls
+  // under the bar float (iOS 26 glass, Reduce Transparency and Increase Contrast
+  // off). use-floating-header-controls.test.ts covers how that is decided.
+  canFloat: false,
+  reduceMotion: false,
+  // The backdrop's opacity (a Reanimated shared value) and every fade it started.
+  backdropOpacity: undefined as { value: number } | undefined,
+  backdropFades: [] as Array<{ to: number; duration: number }>,
   headerHeight: 148,
   focusedSegments: ['(tabs)', 'home'] as string[],
   options: [] as NativeStackNavigationOptions[],
@@ -16,16 +24,18 @@ type MockViewProps = {
   children?: ReactNode;
   style?: unknown;
   testID?: string;
+  pointerEvents?: string;
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
 };
 
 vi.mock('react-native', () => ({
-  View: ({ children, style, testID, onLayout }: MockViewProps) =>
+  View: ({ children, style, testID, pointerEvents, onLayout }: MockViewProps) =>
     createElement(
       'div',
       {
         'data-testid': testID,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        'data-pointer-events': pointerEvents,
         'data-controls': onLayout ? 'true' : undefined,
         onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 36 } } }) : undefined,
       },
@@ -33,6 +43,36 @@ vi.mock('react-native', () => ({
     ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
 }));
+// Reanimated, reduced to what the backdrop's fade needs: a shared value the test
+// can read, and a record of each timing it was given.
+vi.mock('react-native-reanimated', async () => {
+  const { useRef } = await import('react');
+  return {
+    default: {
+      View: ({ children, style, pointerEvents }: MockViewProps) =>
+        createElement(
+          'div',
+          {
+            'data-backdrop-frame': 'true',
+            'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+            'data-pointer-events': pointerEvents,
+          },
+          children,
+        ),
+    },
+    useSharedValue: (initial: number) => {
+      const sharedValue = useRef({ value: initial }).current;
+      controls.backdropOpacity = sharedValue;
+      return sharedValue;
+    },
+    useAnimatedStyle: (style: () => Record<string, unknown>) => style(),
+    withTiming: (to: number, { duration }: { duration: number }) => {
+      controls.backdropFades.push({ to, duration });
+      return to;
+    },
+  };
+});
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => controls.reduceMotion }));
 vi.mock('expo-router', () => ({
   useSegments: () => controls.focusedSegments,
   Stack: {
@@ -46,10 +86,43 @@ vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => controls
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: 'theme-label', separator: 'theme-separator', elevatedSurface: 'surface' },
+    systemColors: {
+      label: 'theme-label',
+      separator: 'theme-separator',
+      elevatedSurface: 'surface',
+      background: 'theme-background',
+    },
   }),
 }));
 vi.mock('../../../hooks/use-glass-capability', () => ({ useGlassCapability: () => controls.glassCapability }));
+vi.mock('../../../hooks/use-floating-header-controls', () => ({
+  useFloatingHeaderControls: () => controls.canFloat,
+}));
+// The blur behind floating controls. Stubbed to its props: the real one pulls in
+// native blur and mask views, and progressive-blur.test.tsx covers what it draws.
+vi.mock('../../ProgressiveBlur', () => ({
+  ProgressiveBlur: ({
+    style,
+    layers,
+    fadeLength,
+    washOpacity,
+    scrim,
+  }: {
+    style?: unknown;
+    layers?: number;
+    fadeLength?: number;
+    washOpacity?: number;
+    scrim?: boolean;
+  }) =>
+    createElement('div', {
+      'data-backdrop': 'true',
+      'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      'data-layers': layers,
+      'data-fade-length': fadeLength,
+      'data-wash-opacity': washOpacity,
+      'data-scrim': String(scrim),
+    }),
+}));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
 vi.mock('../../../theme/tokens', () => ({ shadows: { sm: {} } }));
 vi.mock('../../GlassSurface', () => ({
@@ -89,7 +162,8 @@ vi.mock('../../Avatar', () => ({
   Avatar: ({ size }: { size: number }) => createElement('span', { 'data-avatar-size': size }),
 }));
 
-import { NativeRootHeader } from '../NativeRootHeader';
+import { CONTROLS_BACKDROP, NativeRootHeader } from '../NativeRootHeader';
+import { timing } from '../../../theme/animations';
 import { GlassActionToolbar, GlassToolbarAction } from '../GlassActionToolbar';
 import { UserAvatarToolbarAction } from '../../user-drawer/UserAvatarToolbarAction';
 
@@ -104,6 +178,10 @@ function readStyle(element: Element | null): Record<string, unknown> {
 describe('NativeRootHeader', () => {
   beforeEach(() => {
     controls.glassCapability = true;
+    controls.canFloat = false;
+    controls.reduceMotion = false;
+    controls.backdropOpacity = undefined;
+    controls.backdropFades.length = 0;
     controls.headerHeight = 148;
     controls.focusedSegments = ['(tabs)', 'home'];
     controls.options.length = 0;
@@ -209,6 +287,180 @@ describe('NativeRootHeader', () => {
 
     rerender(<NativeRootHeader onHeightChange={onHeightChange} />);
     expect(onHeightChange).toHaveBeenLastCalledWith(0);
+  });
+
+  describe('supplementary controls under the bar', () => {
+    type ControlsProps = { opaqueControls?: boolean; scrolledUnder?: boolean };
+    const header = (props: ControlsProps, onHeightChange: (height: number) => void) => (
+      <NativeRootHeader onHeightChange={onHeightChange} {...props}>
+        <span>Filter chips</span>
+      </NativeRootHeader>
+    );
+    const renderControls = (props: ControlsProps = {}) => {
+      const onHeightChange = vi.fn();
+      const view = render(header(props, onHeightChange));
+      const block = () => view.container.querySelector('[data-controls]');
+      // The blur, and the animated frame that positions and fades it.
+      const backdrop = () => view.container.querySelector('[data-backdrop]');
+      const backdropFrame = () => view.container.querySelector('[data-backdrop-frame]');
+      const update = (next: ControlsProps) => view.rerender(header(next, onHeightChange));
+      return { ...view, onHeightChange, block, backdrop, backdropFrame, update };
+    };
+
+    it('floats them over the list on iOS 26 glass: no painted band, a blur behind', () => {
+      controls.canFloat = true;
+      const { block, backdrop, backdropFrame, getByText } = renderControls({ scrolledUnder: true });
+
+      expect(readStyle(block())).not.toHaveProperty('backgroundColor');
+      expect(getByText('Filter chips')).toBeTruthy();
+      // One blur from the top of the screen (148 above the block, which sits under
+      // the bar) to one fade-length below the block: full strength behind every
+      // control, fading out over the rows under them.
+      expect(readStyle(backdropFrame())).toMatchObject({
+        position: 'absolute',
+        top: -148,
+        bottom: -CONTROLS_BACKDROP.fadeLength,
+        left: 0,
+        right: 0,
+      });
+      expect(backdropFrame()?.getAttribute('data-pointer-events')).toBe('none');
+      expect(block()?.firstElementChild).toBe(backdropFrame());
+      expect(backdropFrame()?.firstElementChild).toBe(backdrop());
+      expect(backdrop()?.getAttribute('data-layers')).toBe(String(CONTROLS_BACKDROP.layers));
+      expect(backdrop()?.getAttribute('data-fade-length')).toBe(String(CONTROLS_BACKDROP.fadeLength));
+      expect(backdrop()?.getAttribute('data-wash-opacity')).toBe(String(CONTROLS_BACKDROP.washOpacity));
+      // The dark status-bar scrim belongs to the old floating chrome's own band.
+      expect(backdrop()?.getAttribute('data-scrim')).toBe('false');
+    });
+
+    // The system's scroll edge effect is there only while content is under the
+    // bar. At rest the page behind the controls is the page, with no frost on it.
+    describe('the blur follows the list', () => {
+      beforeEach(() => {
+        controls.canFloat = true;
+      });
+
+      it('is hidden while the list is at rest', () => {
+        const { backdropFrame } = renderControls({ scrolledUnder: false });
+
+        expect(readStyle(backdropFrame()).opacity).toBe(0);
+        expect(controls.backdropOpacity?.value).toBe(0);
+      });
+
+      it('is shown from the first frame over a list already scrolled under', () => {
+        const { backdropFrame } = renderControls({ scrolledUnder: true });
+
+        expect(readStyle(backdropFrame()).opacity).toBe(1);
+        expect(controls.backdropOpacity?.value).toBe(1);
+      });
+
+      it('fades in as rows pass under the controls and out as they leave', () => {
+        const { update } = renderControls({ scrolledUnder: false });
+        controls.backdropFades.length = 0;
+
+        update({ scrolledUnder: true });
+        expect(controls.backdropFades).toEqual([{ to: 1, duration: CONTROLS_BACKDROP.fadeDuration }]);
+        expect(controls.backdropOpacity?.value).toBe(1);
+
+        update({ scrolledUnder: false });
+        expect(controls.backdropFades.at(-1)).toEqual({ to: 0, duration: CONTROLS_BACKDROP.fadeDuration });
+        expect(controls.backdropOpacity?.value).toBe(0);
+      });
+
+      it('takes the length of its fade from the theme animation tokens', () => {
+        expect(CONTROLS_BACKDROP.fadeDuration).toBe(timing.fast);
+      });
+
+      it('switches without a fade under Reduce Motion', () => {
+        controls.reduceMotion = true;
+        const { update } = renderControls({ scrolledUnder: false });
+
+        update({ scrolledUnder: true });
+
+        expect(controls.backdropFades).toEqual([]);
+        expect(controls.backdropOpacity?.value).toBe(1);
+      });
+
+      // A screen that forgets to wire its list gets a frost at rest, which is
+      // plain to see, and never bare controls over rows.
+      it('stays on for a screen that does not report its list', () => {
+        const { backdropFrame } = renderControls();
+
+        expect(readStyle(backdropFrame()).opacity).toBe(1);
+        expect(controls.backdropOpacity?.value).toBe(1);
+      });
+
+      it('keeps the block itself in place, hidden blur or not', () => {
+        const { block, backdrop } = renderControls({ scrolledUnder: false });
+
+        expect(backdrop()).not.toBeNull();
+        expect(readStyle(block())).not.toHaveProperty('backgroundColor');
+        expect(readStyle(block())).not.toHaveProperty('opacity');
+      });
+    });
+
+    // Material, Android, the web, iOS before 26, Reduce Transparency and Increase
+    // Contrast all arrive here as "cannot float".
+    it.each([true, false, undefined])(
+      'keeps the painted band wherever the controls cannot float (scrolled under: %s)',
+      (scrolledUnder) => {
+        const { block, backdrop, backdropFrame } = renderControls({ scrolledUnder });
+
+        expect(readStyle(block()).backgroundColor).toBe('theme-background');
+        expect(backdrop()).toBeNull();
+        expect(backdropFrame()).toBeNull();
+      },
+    );
+
+    it.each([true, false, undefined])(
+      'keeps the painted band for a caller that opts out, even on iOS 26 glass (scrolled under: %s)',
+      (scrolledUnder) => {
+        controls.canFloat = true;
+        const { block, backdrop, backdropFrame } = renderControls({ opaqueControls: true, scrolledUnder });
+
+        expect(readStyle(block()).backgroundColor).toBe('theme-background');
+        expect(backdrop()).toBeNull();
+        expect(backdropFrame()).toBeNull();
+      },
+    );
+
+    it.each([true, false])('swallows touches in its bounds (floating: %s)', (canFloat) => {
+      controls.canFloat = canFloat;
+      const { block } = renderControls({ scrolledUnder: false });
+      // Never box-none: a row smeared by the blur must not take a tap through the
+      // gaps between the chips.
+      expect(block()?.getAttribute('data-pointer-events')).toBe('auto');
+    });
+
+    it('reports the same height floating as on the band: the blur is not measured', () => {
+      const measured = [true, false].map((canFloat) => {
+        controls.canFloat = canFloat;
+        const { block, onHeightChange, unmount } = renderControls({ scrolledUnder: true });
+        expect(readStyle(block()).top).toBe(148);
+        fireEvent.click(block()!);
+        const reported = onHeightChange.mock.calls.at(-1);
+        unmount();
+        return reported;
+      });
+      expect(measured).toEqual([[36], [36]]);
+    });
+
+    it('moves the blur with the block as the large title collapses', () => {
+      controls.canFloat = true;
+      const { block, backdropFrame, update } = renderControls({ scrolledUnder: true });
+      controls.headerHeight = 100;
+      update({ scrolledUnder: true });
+
+      expect(readStyle(block()).top).toBe(100);
+      // Still starts at the top of the screen.
+      expect(readStyle(backdropFrame()).top).toBe(-100);
+    });
+
+    it('draws no blur on a screen with no controls', () => {
+      controls.canFloat = true;
+      const { container } = render(<NativeRootHeader scrolledUnder onHeightChange={vi.fn()} />);
+      expect(container.querySelector('[data-backdrop]')).toBeNull();
+    });
   });
 
   it('keeps the interactive current climb in the native bar without another row', () => {

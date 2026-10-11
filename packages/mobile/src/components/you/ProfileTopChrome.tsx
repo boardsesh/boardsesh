@@ -23,6 +23,16 @@ export type ProfileTopChromeProps = {
   onHeightChange: (height: number) => void;
   /** Controls below the tabs, included in the same measured header. */
   children?: ReactNode;
+  /**
+   * Liquid Glass only: keep the painted band behind the header instead of letting
+   * it float over the list. Logbook sets it: its `children` include a bare text
+   * heading, which a blur alone does not keep readable over scrolling rows.
+   * Material's header is always opaque.
+   */
+  opaqueControls?: boolean;
+  /** Liquid Glass only: whether the sub-tab's list is scrolled under the header
+   *  (`useScrollEdgeBackdrop`). The blur behind a floating header shows only then. */
+  scrolledUnder?: boolean;
 };
 
 export const ProfileTopChrome = createVariantComponent('ProfileTopChrome', {
@@ -97,7 +107,14 @@ function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange, chil
   );
 }
 
-function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange, children }: ProfileTopChromeProps) {
+function ProfileTopChromeGlass({
+  activeTab,
+  onSelectTab,
+  onHeightChange,
+  children,
+  opaqueControls,
+  scrolledUnder,
+}: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
 
   const dashboardTitle = t('metadata.dashboard.title');
@@ -111,7 +128,12 @@ function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange, childre
   );
 
   return (
-    <CollapsingLargeTitleHeader onHeightChange={onHeightChange} leftActions={leftActions}>
+    <CollapsingLargeTitleHeader
+      onHeightChange={onHeightChange}
+      leftActions={leftActions}
+      opaqueControls={opaqueControls}
+      scrolledUnder={scrolledUnder}
+    >
       {/* The native iOS segmented control brings its own track/background, so it
           renders directly — wrapping it in the old GlassSurface track doubled the
           border. The padded segmentStack positions it under the large title. */}
