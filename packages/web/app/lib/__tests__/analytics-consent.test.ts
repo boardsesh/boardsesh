@@ -170,24 +170,61 @@ describe('web analytics consent lifecycle', () => {
     );
     expect(harness.network).toHaveBeenCalledOnce();
   });
+  const marked = { 'x-boardsesh-analytics-consent': 'granted' };
   it.each([
-    ['the backend proxy', 'https://api.boardsesh.com/api/posthog', { 'x-boardsesh-analytics-consent': 'granted' }],
-    ['a direct PostHog override', 'https://posthog.test', {}],
-  ])('tells %s that consented capture may keep the visitor IP, never on flags', async (_label, host, consentHeader) => {
-    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', host);
-    harness.granted = true;
-    const analytics = await import('../analytics');
-    analytics.readPosthogFeatureFlags([]);
-    const client = harness.clients[0];
-    const headers = { 'Content-Type': 'application/json' };
-    await client.fetch(`${host}/batch/`, { method: 'POST', headers });
-    await client.fetch(`${host}/flags/?v=2`, { method: 'POST', headers });
-    expect(harness.network).toHaveBeenNthCalledWith(
-      1,
-      `${host}/batch/`,
-      expect.objectContaining({ headers: { ...headers, ...consentHeader } }),
-    );
-    expect(harness.network).toHaveBeenNthCalledWith(2, `${host}/flags/?v=2`, expect.objectContaining({ headers }));
+    ['the derived backend proxy', '', 'https://ws.boardsesh.com/api/posthog', marked],
+    [
+      'an override naming the backend proxy',
+      'https://ws.boardsesh.com/api/posthog/',
+      'https://ws.boardsesh.com/api/posthog/',
+      marked,
+    ],
+    ['a direct PostHog override', 'https://posthog.test', 'https://posthog.test', {}],
+    [
+      'another path on the backend',
+      'https://ws.boardsesh.com/api/posthog/extra',
+      'https://ws.boardsesh.com/api/posthog/extra',
+      {},
+    ],
+    [
+      'another host with the same path',
+      'https://api.boardsesh.com/api/posthog',
+      'https://api.boardsesh.com/api/posthog',
+      {},
+    ],
+  ])(
+    'consent header for %s: only our exact proxy hears consented capture, never flags',
+    async (_label, override, host, consentHeader) => {
+      vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', override);
+      harness.granted = true;
+      const analytics = await import('../analytics');
+      analytics.readPosthogFeatureFlags([]);
+      expect(harness.constructors).toHaveBeenLastCalledWith(expect.objectContaining({ host }));
+      const client = harness.clients[0];
+      const headers = { 'Content-Type': 'application/json' };
+      await client.fetch(`${host}/batch/`, { method: 'POST', headers });
+      await client.fetch(`${host}/flags/?v=2`, { method: 'POST', headers });
+      expect(harness.network).toHaveBeenNthCalledWith(
+        1,
+        `${host}/batch/`,
+        expect.objectContaining({ headers: { ...headers, ...consentHeader } }),
+      );
+      expect(harness.network).toHaveBeenNthCalledWith(2, `${host}/flags/?v=2`, expect.objectContaining({ headers }));
+    },
+  );
+  it('recognises the backend proxy by exact origin and path only', async () => {
+    const { isBackendPosthogProxy } = await import('../analytics');
+    const backend = 'https://ws.boardsesh.com';
+    expect(isBackendPosthogProxy('https://ws.boardsesh.com/api/posthog', backend)).toBe(true);
+    expect(isBackendPosthogProxy('https://ws.boardsesh.com/api/posthog/', backend)).toBe(true);
+    expect(isBackendPosthogProxy('https://WS.boardsesh.com/api/posthog', backend)).toBe(true);
+    expect(isBackendPosthogProxy('https://ws.boardsesh.com/api/posthog/v2', backend)).toBe(false);
+    expect(isBackendPosthogProxy('https://ws.boardsesh.com/proxy/api/posthog', backend)).toBe(false);
+    expect(isBackendPosthogProxy('http://ws.boardsesh.com/api/posthog', backend)).toBe(false);
+    expect(isBackendPosthogProxy('https://ws.boardsesh.com.evil.test/api/posthog', backend)).toBe(false);
+    expect(isBackendPosthogProxy('https://us.i.posthog.com', backend)).toBe(false);
+    expect(isBackendPosthogProxy('not a url', backend)).toBe(false);
+    expect(isBackendPosthogProxy('https://ws.boardsesh.com/api/posthog', null)).toBe(false);
   });
   it('keeps the grant after identity reset on sign-out', async () => {
     harness.granted = true;

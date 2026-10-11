@@ -54,6 +54,27 @@ function retirePosthog(client: PostHog): void {
   client.setPersistedProperty = () => {};
   void client.shutdown(100).catch(() => {});
 }
+const BACKEND_POSTHOG_PROXY_PATH = '/api/posthog';
+
+/**
+ * True only when `host` is exactly our backend's PostHog proxy: the same origin
+ * and the same path (a trailing slash aside). Only that proxy reads the consent
+ * header, so any other host, including a direct-to-PostHog override or a
+ * mistyped proxy path, gets no header and capture simply keeps no location.
+ */
+export function isBackendPosthogProxy(host: string, backendUrl: string | null): boolean {
+  if (!backendUrl) return false;
+  try {
+    const target = new URL(host);
+    // Built exactly as getPosthog() builds the default host.
+    const proxy = new URL(`${backendUrl}${BACKEND_POSTHOG_PROXY_PATH}`);
+    const path = (url: URL) => url.pathname.replace(/\/+$/, '');
+    return target.origin === proxy.origin && path(target) === path(proxy);
+  } catch {
+    return false;
+  }
+}
+
 function installConsentTransport(client: PostHog, viaBackendProxy: boolean): void {
   const sdkFetch = client.fetch.bind(client);
   const requests = new Set<AbortController>();
@@ -185,7 +206,7 @@ function getPosthog(): PostHog | null {
   // recovery (point straight at us.i.posthog.com if the proxy is down).
   const backendUrl = getBackendHttpUrl();
   const configuredHost = process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || null;
-  const host = configuredHost ?? (backendUrl ? `${backendUrl}/api/posthog` : DEFAULT_POSTHOG_HOST);
+  const host = configuredHost ?? (backendUrl ? `${backendUrl}${BACKEND_POSTHOG_PROXY_PATH}` : DEFAULT_POSTHOG_HOST);
   if (!configuredHost && !backendUrl) {
     const message =
       'PostHog proxy URL could not be derived on a production host; using direct PostHog ingestion. Check NEXT_PUBLIC_WS_URL or NEXT_PUBLIC_POSTHOG_HOST in the web build env.';
@@ -208,7 +229,7 @@ function getPosthog(): PostHog | null {
   });
 
   posthogPersisted = hasAnalyticsConsent();
-  installConsentTransport(posthogClient, /\/api\/posthog\/?$/.test(host));
+  installConsentTransport(posthogClient, isBackendPosthogProxy(host, backendUrl));
   if (posthogPersisted) void posthogClient.optIn().catch(() => {});
   else void posthogClient.optOut().catch(() => {});
   registerWebSuperProperties(posthogClient);
