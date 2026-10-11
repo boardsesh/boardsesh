@@ -47,6 +47,11 @@ export type CommunityPlaylistSize = 'any' | 'short' | 'session' | 'big';
  * The most climbs a community playlist can hold and still be listed. Bigger
  * lists are data exports with a playlist's name on them (a 600-climb
  * "favorites" dump), not something to climb through, so every band stops here.
+ *
+ * Only this full list applies it. The Discover hub's community shelf
+ * (`useDiscoverPlaylists`) still sends no cap: adding one changes the shelf's
+ * request variables, which the pinned App Store screenshot recordings are
+ * keyed on, so it waits for a re-record.
  */
 export const COMMUNITY_PLAYLIST_MAX_CLIMBS = 150;
 
