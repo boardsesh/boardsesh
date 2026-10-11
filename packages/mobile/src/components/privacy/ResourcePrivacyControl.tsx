@@ -1,7 +1,9 @@
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import type { PrivacyLocationAudience } from '@boardsesh/graphql/operations/privacy';
 import { AudiencePicker, BOARD_AUDIENCES, SESSION_AUDIENCES } from './AudiencePicker';
+import { locationOptions } from './location-options';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { SwitchRow } from '../SwitchRow';
@@ -21,6 +23,12 @@ export function ResourcePrivacyControl({ kind, resourceId }: { kind: 'board' | '
   const { effectiveOffline } = useConnectivity();
   if (!settings?.enabled || !privacy || privacy.ownerId !== profile?.id) return null;
   const disabled = effectiveOffline || update.isPending;
+  const locationLabels: Record<PrivacyLocationAudience, string> = {
+    only_me: t('privacy.audiences.onlyMe'),
+    followers: t('privacy.audiences.followers'),
+    members: t('privacy.locationInvited'),
+    public: t('privacy.locationMembers'),
+  };
   return (
     <View style={{ gap: spacing[3] }}>
       <AudiencePicker
@@ -44,38 +52,17 @@ export function ResourcePrivacyControl({ kind, resourceId }: { kind: 'board' | '
           />
           <Text variant="subheadline">{t('privacy.locationAudience')}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }}>
-            <Button
-              title={t('privacy.audiences.onlyMe')}
-              variant={privacy.locationAudience === 'only_me' ? 'filled' : 'outlined'}
-              disabled={disabled}
-              onPress={() =>
-                update.mutate({ kind, resourceId, audience: privacy.audience, locationAudience: 'only_me' })
-              }
-            />
-            <Button
-              title={t('privacy.audiences.followers')}
-              variant={privacy.locationAudience === 'followers' ? 'filled' : 'outlined'}
-              disabled={disabled}
-              onPress={() =>
-                update.mutate({ kind, resourceId, audience: privacy.audience, locationAudience: 'followers' })
-              }
-            />
-            <Button
-              title={t('privacy.locationInvited')}
-              variant={privacy.locationAudience === 'members' ? 'filled' : 'outlined'}
-              disabled={disabled}
-              onPress={() =>
-                update.mutate({ kind, resourceId, audience: privacy.audience, locationAudience: 'members' })
-              }
-            />
-            <Button
-              title={t('privacy.locationMembers')}
-              variant={privacy.locationAudience === 'public' ? 'filled' : 'outlined'}
-              disabled={disabled}
-              onPress={() =>
-                update.mutate({ kind, resourceId, audience: privacy.audience, locationAudience: 'public' })
-              }
-            />
+            {locationOptions(privacy.locationAudience).map((option) => (
+              <Button
+                key={option}
+                title={locationLabels[option]}
+                variant={privacy.locationAudience === option ? 'filled' : 'outlined'}
+                disabled={disabled}
+                onPress={() =>
+                  update.mutate({ kind, resourceId, audience: privacy.audience, locationAudience: option })
+                }
+              />
+            ))}
           </View>
         </>
       ) : null}

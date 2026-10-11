@@ -396,7 +396,7 @@ export function BoardForm({
             <AudiencePicker
               resource
               confirmPublic={privacySettings.isPrivate}
-              audience={builder.privacyAudience ?? 'invite_only'}
+              audience={builder.privacyAudience ?? 'public'}
               options={BOARD_AUDIENCES}
               disabled={submitting}
               label={tSettings('privacy.boardAudience')}

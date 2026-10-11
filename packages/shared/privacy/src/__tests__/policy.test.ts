@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { canReadActivity, canReadContent, canReadLocation, canReadResource, type PrivacyViewer } from '../index';
+import {
+  canReadActivity,
+  canReadContent,
+  canReadLocation,
+  canReadResource,
+  normalizeLocationAudience,
+  type PrivacyViewer,
+} from '../index';
 
 const stranger: PrivacyViewer = { isOwner: false, isApprovedFollower: false };
 const follower: PrivacyViewer = { isOwner: false, isApprovedFollower: true };
@@ -87,5 +94,14 @@ describe('resource invitations and location', () => {
   it('location never escapes a resource the viewer cannot access', () => {
     expect(canReadLocation('public', { ...follower, hasResourceAccess: false, hasApprovedGrant: true })).toBe(false);
     expect(canReadLocation('only_me', { ...owner, hasResourceAccess: true, hasApprovedGrant: false })).toBe(true);
+  });
+});
+
+describe('location audience writes', () => {
+  it('narrows a followers location to invited people and keeps every other choice', () => {
+    expect(normalizeLocationAudience('followers')).toBe('members');
+    expect(normalizeLocationAudience('members')).toBe('members');
+    expect(normalizeLocationAudience('public')).toBe('public');
+    expect(normalizeLocationAudience('only_me')).toBe('only_me');
   });
 });

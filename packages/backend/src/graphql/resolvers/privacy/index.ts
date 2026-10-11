@@ -5,7 +5,7 @@ import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { z } from 'zod';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import type { PrivacyContentType, PrivacyResourceKind } from '@boardsesh/privacy';
+import { normalizeLocationAudience, type PrivacyContentType, type PrivacyResourceKind } from '@boardsesh/privacy';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -23,7 +23,9 @@ import { isShareLinkAudience, revokeBoardShareLinks } from '../../../services/bo
 import { logger } from '../../../utils/logger';
 
 const resourceAudience = z.enum(['public', 'unlisted', 'followers', 'invite_only', 'only_me']);
-const locationAudience = z.enum(['public', 'followers', 'members', 'only_me']);
+// `followers` stays accepted for older clients but is stored as `members`: on a
+// public account follows auto-approve, so it would not restrict anything.
+const locationAudience = z.enum(['public', 'followers', 'members', 'only_me']).transform(normalizeLocationAudience);
 const contentAudience = z.enum(['public', 'followers', 'only_me']);
 const contentType = z.enum(['tick', 'session', 'comment', 'climb', 'playlist', 'beta']);
 const identifier = z.string().min(1).max(2048);

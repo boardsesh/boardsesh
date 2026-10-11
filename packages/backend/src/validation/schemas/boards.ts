@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeLocationAudience } from '@boardsesh/privacy';
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import {
   UUIDSchema,
@@ -30,7 +31,11 @@ const NullableBoardSerialInputSchema = z.preprocess((value) => {
 export const CreateBoardInputSchema = z
   .object({
     audience: z.enum(['public', 'unlisted', 'followers', 'invite_only', 'only_me']).optional(),
-    locationAudience: z.enum(['public', 'followers', 'members', 'only_me']).optional(),
+    // `followers` is narrowed to `members` on write: see normalizeLocationAudience.
+    locationAudience: z
+      .enum(['public', 'followers', 'members', 'only_me'])
+      .transform(normalizeLocationAudience)
+      .optional(),
     boardType: BoardNameSchema,
     layoutId: z.number().int().positive('Layout ID must be positive'),
     sizeId: z.number().int().positive('Size ID must be positive'),

@@ -215,6 +215,99 @@ describe('installed-client privacy contracts', () => {
   );
 
   it.each(['0', '1'])(
+    'creates a public board with its location hidden and no policy when an old client sends no visibility, controls enabled=%s',
+    async (flag) => {
+      vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
+      const board = await socialBoardMutations.createBoard(
+        null,
+        {
+          input: {
+            boardType: 'moonboard',
+            layoutId: 3,
+            sizeId: 1,
+            setIds: '5,6,7,8,9,10',
+            name: `Default board ${flag}`,
+            allowDuplicateConfig: true,
+          },
+        },
+        context,
+      );
+      const [stored] = await db.select().from(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
+      expect(stored).toMatchObject({ isPublic: true, isUnlisted: false, hideLocation: true });
+      expect(
+        await db
+          .select()
+          .from(schema.resourcePrivacy)
+          .where(and(eq(schema.resourcePrivacy.kind, 'board'), eq(schema.resourcePrivacy.resourceId, board.uuid))),
+      ).toEqual([]);
+    },
+  );
+
+  it('keeps an old client that asks for a private board private', async () => {
+    const board = await socialBoardMutations.createBoard(
+      null,
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          sizeId: 1,
+          setIds: '5,6,7,8,9,10',
+          name: 'Private legacy board',
+          isPublic: false,
+          isUnlisted: true,
+          allowDuplicateConfig: true,
+        },
+      },
+      context,
+    );
+    const [stored] = await db.select().from(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
+    expect(stored).toMatchObject({ isPublic: false, isUnlisted: false, hideLocation: true });
+  });
+
+  it('stores a followers location as invited people, on create and on update', async () => {
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '1');
+    const board = await socialBoardMutations.createBoard(
+      null,
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          sizeId: 1,
+          setIds: '5,6,7,8,9,10',
+          name: 'Followers location board',
+          audience: 'public',
+          locationAudience: 'followers',
+          allowDuplicateConfig: true,
+        },
+      },
+      context,
+    );
+    const policyFor = async () => {
+      const [policy] = await db
+        .select()
+        .from(schema.resourcePrivacy)
+        .where(and(eq(schema.resourcePrivacy.kind, 'board'), eq(schema.resourcePrivacy.resourceId, board.uuid)));
+      return policy;
+    };
+    expect(await policyFor()).toMatchObject({ audience: 'public', locationAudience: 'members' });
+
+    await privacyMutations.updateResourcePrivacy(
+      null,
+      { input: { kind: 'board', resourceId: board.uuid, audience: 'public', locationAudience: 'public' } },
+      context,
+    );
+    expect(await policyFor()).toMatchObject({ locationAudience: 'public' });
+    await privacyMutations.updateResourcePrivacy(
+      null,
+      { input: { kind: 'board', resourceId: board.uuid, audience: 'public', locationAudience: 'followers' } },
+      context,
+    );
+    expect(await policyFor()).toMatchObject({ locationAudience: 'members' });
+    const [stored] = await db.select().from(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
+    expect(stored.hideLocation).toBe(true);
+  });
+
+  it.each(['0', '1'])(
     'retains old session creation and visibility roundtrips with controls enabled=%s',
     async (flag) => {
       vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
@@ -251,8 +344,10 @@ describe('installed-client privacy contracts', () => {
     },
   );
 
+  // The account's restrictive defaults come from its own profile row (set in
+  // beforeAll), never from the controls flag: new accounts start public.
   it.each(['0', '1'])(
-    'protects restrictive account defaults on both old session creation paths with controls enabled=%s',
+    'protects an account that chose restrictive defaults on both old session creation paths with controls enabled=%s',
     async (flag) => {
       vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
       const privateContext = { ...context, userId: privateOwnerId, transport: 'http' as const };

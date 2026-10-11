@@ -2038,9 +2038,14 @@ export const socialBoardMutations = {
     let board: typeof dbSchema.userBoards.$inferSelect;
     let mintedGymId: number | null = null;
 
+    // New boards are public unless the caller says otherwise; the exact
+    // location stays hidden until the owner shares it. Old clients send only the
+    // legacy booleans, and a create with none of them lands public with its
+    // location hidden and no policy row (see hasPrivacyInput below). An explicit
+    // isPublic: false wins over isUnlisted, as it did on the old two-switch form.
     const audience =
       validatedInput.audience ??
-      (validatedInput.isPublic ? (validatedInput.isUnlisted ? 'unlisted' : 'public') : 'only_me');
+      (validatedInput.isPublic === false ? 'only_me' : validatedInput.isUnlisted ? 'unlisted' : 'public');
     const locationAudience =
       validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me');
     const privacyValues = { kind: 'board' as const, resourceId: uuid, ownerId: userId, audience, locationAudience };
@@ -2108,7 +2113,10 @@ export const socialBoardMutations = {
               slug: gymSlug,
               ownerId: userId,
               name: gymName,
-              isPublic: validatedInput.isPublic ?? false,
+              // A gym is listed with its coordinates, so it is public only when
+              // the board's exact location is: a minted gym must never publish
+              // the address of a board whose location is hidden.
+              isPublic: boardValues.isPublic && !boardValues.hideLocation,
               latitude: incomingLocation.latitude,
               longitude: incomingLocation.longitude,
             })

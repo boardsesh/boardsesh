@@ -89,6 +89,9 @@ export function findOwnedBoardForSession(ownedBoards: UserBoard[], config: Resol
  * Build the CREATE_BOARD input for a session config when the user owns no
  * matching board. `isOwned: false` — joining someone else's session shouldn't
  * claim the board as your own gear; it's a board you're climbing on right now.
+ * Visibility is sent explicitly, public with the location hidden, so the board
+ * gets the same defaults as one made in the builder whatever the server's
+ * fallback is.
  */
 export function buildCreateBoardInput(config: ResolvedBoardConfig): CreateBoardInput {
   return {
@@ -98,6 +101,8 @@ export function buildCreateBoardInput(config: ResolvedBoardConfig): CreateBoardI
     setIds: config.setIds,
     angle: config.angle,
     isOwned: false,
+    isPublic: true,
+    hideLocation: true,
     name: formatBoardDisplayName(config.boardType),
   };
 }

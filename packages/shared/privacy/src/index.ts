@@ -43,6 +43,17 @@ export function canReadResource(
     viewer.hasApprovedGrant || ((audience === 'followers' || viewer.inheritFollowers) && viewer.isApprovedFollower)
   );
 }
+/**
+ * Location audiences a writer may store. `followers` is not offered for a
+ * location: on a public account follows are approved automatically, so it would
+ * reveal the address to anyone who taps Follow. An incoming `followers` (an
+ * older client, or a stored choice) is narrowed to `members`, the people the
+ * owner invited. The value stays in the type and the database check so old rows
+ * and old clients keep working.
+ */
+export function normalizeLocationAudience(audience: PrivacyLocationAudience): PrivacyLocationAudience {
+  return audience === 'followers' ? 'members' : audience;
+}
 export function canReadLocation(
   audience: PrivacyLocationAudience,
   viewer: PrivacyViewer & { hasResourceAccess: boolean; hasApprovedGrant: boolean },

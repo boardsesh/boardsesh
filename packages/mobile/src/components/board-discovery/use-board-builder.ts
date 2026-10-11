@@ -107,13 +107,14 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // can't clobber edits. Create / Popular omit them, so the home-board defaults apply.
   const [name, setName] = useState(seed?.name ?? '');
 
-  // New home boards start private with their exact location hidden.
+  // New home boards start public with their exact location hidden: climbers
+  // can find the wall, and the address stays private until the owner shares it.
   const [isOwned, setIsOwned] = useState(seed?.isOwned ?? true);
-  const [isPublic, setIsPublic] = useState(seed?.isPublic ?? false);
+  const [isPublic, setIsPublic] = useState(seed?.isPublic ?? true);
   const [isUnlisted, setIsUnlisted] = useState(seed?.isUnlisted ?? false);
   const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? true);
   const [selectedPrivacyAudience, setPrivacyAudience] = useState<PrivacyResourceAudience | undefined>();
-  const privacyAudience = selectedPrivacyAudience ?? (options?.privacyEnabled ? 'invite_only' : undefined);
+  const privacyAudience = selectedPrivacyAudience ?? (options?.privacyEnabled ? 'public' : undefined);
   const [privacyLocationAudience, setPrivacyLocationAudience] = useState<PrivacyLocationAudience | undefined>();
   // Most home boards with a kicker tilt are adjustable; default on.
   const [isAngleAdjustable, setIsAngleAdjustable] = useState(seed?.isAngleAdjustable ?? true);

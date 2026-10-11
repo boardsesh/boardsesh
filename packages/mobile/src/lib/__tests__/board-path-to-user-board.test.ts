@@ -86,7 +86,7 @@ describe('findOwnedBoardForSession', () => {
 });
 
 describe('buildCreateBoardInput', () => {
-  it('builds an unowned create input with a derived board name', () => {
+  it('builds an unowned, public create input with its location hidden and a derived board name', () => {
     const input: CreateBoardInput = buildCreateBoardInput({
       boardType: 'moonboard',
       layoutId: 1,
@@ -101,6 +101,8 @@ describe('buildCreateBoardInput', () => {
       setIds: '3',
       angle: 25,
       isOwned: false,
+      isPublic: true,
+      hideLocation: true,
       name: 'MoonBoard',
     });
   });
@@ -134,6 +136,8 @@ describe('resolveBoardForSession', () => {
       setIds: '27,28',
       angle: 30,
       isOwned: false,
+      isPublic: true,
+      hideLocation: true,
       name: 'Kilter',
     });
     expect(result).toBe(created);

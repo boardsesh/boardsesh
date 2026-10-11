@@ -6,20 +6,24 @@ import { useBoardBuilder } from '../use-board-builder';
 // Kilter layout 1 = "Original"; selecting it auto-picks a default size + all its
 // sets, which is the behaviour that lets the per-set toggles stay behind Advanced.
 describe('useBoardBuilder', () => {
-  it('submits the untouched invite-only audience once privacy controls are enabled', () => {
+  it('starts a new board public with its location hidden, with or without privacy controls', () => {
     const { result, rerender } = renderHook(({ privacyEnabled }) => useBoardBuilder(null, { privacyEnabled }), {
       initialProps: { privacyEnabled: false },
     });
     act(() => result.current.selectLayout(1));
     expect(result.current.buildCreateInput()).not.toHaveProperty('audience');
+    expect(result.current.buildCreateInput()).not.toHaveProperty('locationAudience');
+    expect(result.current.buildCreateInput()).toMatchObject({ isPublic: true, isUnlisted: false, hideLocation: true });
 
     rerender({ privacyEnabled: true });
-    expect(result.current.privacyAudience).toBe('invite_only');
+    expect(result.current.privacyAudience).toBe('public');
     expect(result.current.buildCreateInput()).toMatchObject({
-      audience: 'invite_only',
-      isPublic: false,
+      audience: 'public',
+      isPublic: true,
       hideLocation: true,
     });
+    // No location choice is sent until the owner makes one: the server keeps it hidden.
+    expect(result.current.buildCreateInput()).not.toHaveProperty('locationAudience');
 
     act(() => result.current.setPrivacyAudience('followers'));
     rerender({ privacyEnabled: true });
