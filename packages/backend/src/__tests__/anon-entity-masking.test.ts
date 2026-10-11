@@ -14,8 +14,10 @@ import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/share
  * can't confirm a private gym/board exists or disclose its name.
  *
  * Gym reads require gym edit access. Private board reads require the current
- * viewer's resource access, even after sign-in. An unlisted board's UUID is its
- * link capability; slugs remain discovery identifiers and cannot grant access.
+ * viewer's resource access, even after sign-in. An unlisted home board's UUID
+ * and its slug are its link; every listing (search, gym boards, kiosks) still
+ * leaves it out. Unlisted boards come in both saved shapes: the legacy booleans,
+ * and the current audience control's `is_public = false` plus a policy row.
  *
  * Masking is expressed as `null` rather than a thrown NOT_FOUND because these
  * SDL fields are nullable — `null` already means "no such entity", so it is the
@@ -106,7 +108,31 @@ let privateGym: { id: number; uuid: string; slug: string };
 let publicBoard: { id: number; uuid: string; slug: string };
 let privateBoard: { id: number; uuid: string; slug: string };
 let unlistedBoard: { id: number; uuid: string; slug: string };
+let currentUnlistedBoard: { id: number; uuid: string; slug: string };
 let systemPrivateBoard: { id: number; uuid: string; slug: string };
+
+/** The audience control's write: a policy row, with the legacy booleans projected from it. */
+const chooseUnlisted = async (board: { uuid: string }, ownerId: string) => {
+  await db.execute(sql`
+    INSERT INTO resource_privacy (kind, resource_id, owner_id, audience, location_audience)
+    VALUES ('board', ${board.uuid}, ${ownerId}, 'unlisted', 'public')
+  `);
+  await db.execute(sql`UPDATE user_boards SET is_public = false, is_unlisted = true WHERE uuid = ${board.uuid}`);
+};
+
+/** Put a board on the map, so a proximity search can find it. */
+const placeBoard = (board: { uuid: string }, latitude: number, longitude: number) =>
+  db.execute(sql`
+    UPDATE user_boards
+    SET latitude = ${latitude}, longitude = ${longitude},
+        location = ST_MakePoint(${longitude}, ${latitude})::geography
+    WHERE uuid = ${board.uuid}
+  `);
+
+const UNLISTED_SHAPES = [
+  ['legacy booleans', () => unlistedBoard],
+  ['current audience control', () => currentUnlistedBoard],
+] as const;
 
 beforeEach(async () => {
   await db.execute(sql`
@@ -133,6 +159,13 @@ beforeEach(async () => {
     isPublic: true,
     isUnlisted: true,
   });
+  currentUnlistedBoard = await insertBoard({
+    gymId: publicGym.id,
+    ownerId: OWNER,
+    name: 'Current Unlisted Wall',
+    isPublic: false,
+  });
+  await chooseUnlisted(currentUnlistedBoard, OWNER);
   // A non-public board owned by the system user: the shared per-config feeds
   // anonymous viewers are first-class for. isRowAnonReadable keeps it readable.
   systemPrivateBoard = await insertBoard({
@@ -244,12 +277,19 @@ describe('board(boardUuid) anonymous masking', () => {
     expect(board).toBeNull();
   });
 
-  it('keeps an UNLISTED but public board readable anonymously by uuid', async () => {
-    // Unlisted means "link-only, never enumerated" — direct uuid reads still
-    // resolve it. Only enumerating reads (searchBoards, gymBoards) filter it.
-    const board = await socialBoardQueries.board(null, { boardUuid: unlistedBoard.uuid }, anonCtx());
-    expect(board?.name).toBe('Unlisted Wall');
-  });
+  it.each(UNLISTED_SHAPES)(
+    'keeps an UNLISTED board (%s) readable by uuid, signed out or not, with its presence channel',
+    async (_shape, getBoard) => {
+      // Unlisted means "link-only, never enumerated" — direct uuid reads still
+      // resolve it. Only enumerating reads (searchBoards, gymBoards) filter it.
+      const unlisted = getBoard();
+      for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+        const board = await socialBoardQueries.board(null, { boardUuid: unlisted.uuid }, ctx);
+        expect(board?.uuid).toBe(unlisted.uuid);
+        expect(board?.boardId).toBe(unlisted.id);
+      }
+    },
+  );
 
   it('keeps a non-public SYSTEM-owned board readable anonymously', async () => {
     const board = await socialBoardQueries.board(null, { boardUuid: systemPrivateBoard.uuid }, anonCtx());
@@ -290,20 +330,44 @@ describe('boardBySlug anonymous masking', () => {
     expect(board).toBeNull();
   });
 
-  it('treats an unlisted home board slug as its link, for anonymous and signed-in viewers', async () => {
-    const anonymous = await socialBoardQueries.boardBySlug(null, { slug: unlistedBoard.slug }, anonCtx());
-    expect(anonymous?.name).toBe('Unlisted Wall');
-    const stranger = await socialBoardQueries.boardBySlug(null, { slug: unlistedBoard.slug }, authCtx(STRANGER));
-    expect(stranger?.name).toBe('Unlisted Wall');
+  it.each(UNLISTED_SHAPES)(
+    'treats an unlisted home board slug (%s) as its link, for anonymous and signed-in viewers',
+    async (_shape, getBoard) => {
+      const unlisted = getBoard();
+      for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+        const board = await socialBoardQueries.boardBySlug(null, { slug: unlisted.slug }, ctx);
+        expect(board?.uuid).toBe(unlisted.uuid);
+        expect(board?.boardId).toBe(unlisted.id);
+      }
+    },
+  );
+
+  it('keeps unlisted boards out of text search even for someone who holds the link', async () => {
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      const result = (await socialBoardQueries.searchBoards(
+        {},
+        { input: { query: 'Unlisted Wall', limit: 20, offset: 0 } },
+        ctx,
+      )) as { boards: Array<{ uuid: string }> };
+      const found = result.boards.map((board) => board.uuid);
+      expect(found).not.toContain(unlistedBoard.uuid);
+      expect(found).not.toContain(currentUnlistedBoard.uuid);
+    }
   });
 
-  it('keeps an unlisted board out of search even for someone who holds its link', async () => {
-    const result = (await socialBoardQueries.searchBoards(
-      {},
-      { input: { query: 'Unlisted Wall', limit: 20, offset: 0 } },
-      authCtx(STRANGER),
-    )) as { boards: Array<{ uuid: string }> };
-    expect(result.boards.map((board) => board.uuid)).not.toContain(unlistedBoard.uuid);
+  it('keeps unlisted boards out of nearby search, while a public board on the same spot is found', async () => {
+    for (const board of [publicBoard, unlistedBoard, currentUnlistedBoard]) await placeBoard(board, 47.37, 8.54);
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      const result = (await socialBoardQueries.searchBoards(
+        {},
+        { input: { latitude: 47.37, longitude: 8.54, radiusKm: 5, limit: 20, offset: 0 } },
+        ctx,
+      )) as { boards: Array<{ uuid: string }> };
+      const found = result.boards.map((board) => board.uuid);
+      expect(found).toContain(publicBoard.uuid);
+      expect(found).not.toContain(unlistedBoard.uuid);
+      expect(found).not.toContain(currentUnlistedBoard.uuid);
+    }
   });
 });
 
@@ -317,6 +381,43 @@ describe('gymBoards / gymKiosk keep their existing masking', () => {
       message: 'Gym not found',
       extensions: { code: 'NOT_FOUND' },
     });
+  });
+
+  it('gymBoards lists a public gym without its unlisted boards, signed out or not', async () => {
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      const boards = await socialBoardQueries.gymBoards(null, { gymUuid: publicGym.uuid }, ctx);
+      const listed = boards.map((board) => board.uuid);
+      expect(listed).toContain(publicBoard.uuid);
+      expect(listed).not.toContain(unlistedBoard.uuid);
+      expect(listed).not.toContain(currentUnlistedBoard.uuid);
+    }
+  });
+
+  it('gymKiosk keeps unlisted slot boards off a public kiosk, while their owner still sees them', async () => {
+    await db.execute(sql`
+      INSERT INTO gym_kiosks (uuid, gym_id, slug, name, layout, created_at, updated_at)
+      VALUES (${uuidv4()}, ${publicGym.id}, 'lobby', 'Lobby', ${JSON.stringify({
+        version: 1,
+        boards: [publicBoard, unlistedBoard, currentUnlistedBoard].map((board) => ({ boardUuid: board.uuid })),
+        leaderboard: null,
+      })}::jsonb, now(), now())
+    `);
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      const kiosk = await socialGymKioskQueries.gymKiosk(null, { gymSlug: publicGym.slug, kioskSlug: 'lobby' }, ctx);
+      expect(kiosk?.boards.map((board) => board.boardUuid)).toEqual([publicBoard.uuid]);
+      expect(JSON.stringify(kiosk?.boards)).not.toContain('Unlisted Wall');
+    }
+    // OWNER owns the gym too, so use an outside owner for the "holds it" case.
+    await db.execute(sql`UPDATE user_boards SET owner_id = ${STRANGER} WHERE uuid = ${currentUnlistedBoard.uuid}`);
+    await db.execute(
+      sql`UPDATE resource_privacy SET owner_id = ${STRANGER} WHERE resource_id = ${currentUnlistedBoard.uuid}`,
+    );
+    const forItsOwner = await socialGymKioskQueries.gymKiosk(
+      null,
+      { gymSlug: publicGym.slug, kioskSlug: 'lobby' },
+      authCtx(STRANGER),
+    );
+    expect(forItsOwner?.boards.map((board) => board.boardUuid)).toEqual([publicBoard.uuid, currentUnlistedBoard.uuid]);
   });
 
   it('gymBoards returns the linked boards to a gym editor', async () => {

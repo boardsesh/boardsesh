@@ -722,22 +722,58 @@ describe('board-queue-preview privacy gates', () => {
     unsubscribe();
   });
 
-  it('unlisted board → the preview streams to anonymous viewers who hold the board id', async () => {
-    const boardId = await makeBoard({ isPublic: true, isUnlisted: true });
-    const sessionId = await makeSession({ boardId, isPublic: true });
-    const queue = [makeQueueItem(1), makeQueueItem(2)];
-    await seedQueueState(sessionId, queue, queue[0]);
-    await bindSessionToBoard(sessionId, boardId);
+  it.each([
+    ['legacy booleans', false],
+    ['current audience control', true],
+  ] as const)(
+    'unlisted board (%s) → the preview streams only to anonymous viewers presenting its uuid',
+    async (_shape, viaAudienceControl) => {
+      const board = await makeBoardRow({ isPublic: true, isUnlisted: true });
+      if (viaAudienceControl) {
+        await db.insert(dbSchema.resourcePrivacy).values({
+          kind: 'board',
+          resourceId: board.uuid,
+          ownerId: TEST_USER_ID,
+          audience: 'unlisted',
+          locationAudience: 'only_me',
+        });
+        await db
+          .update(dbSchema.userBoards)
+          .set({ isPublic: false, hideLocation: true })
+          .where(eq(dbSchema.userBoards.uuid, board.uuid));
+      }
+      const boardId = board.id;
+      const sessionId = await makeSession({ boardId, isPublic: true });
+      const queue = [makeQueueItem(1), makeQueueItem(2)];
+      await seedQueueState(sessionId, queue, queue[0]);
+      await bindSessionToBoard(sessionId, boardId);
 
-    const preview = await boardQueuePreviewQueries.boardQueuePreview(undefined, { boardId }, anonCtx());
-    expect(preview?.current?.climbUuid).toBe('climb-1');
-    expect(JSON.stringify(preview)).not.toContain(SECRET_USER_ID);
+      // The numeric id is countable, so on its own it is not the board's link.
+      await expect(boardQueuePreviewQueries.boardQueuePreview(undefined, { boardId }, anonCtx())).rejects.toThrow(
+        'Board not found',
+      );
+      await expect(
+        boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx()).next(),
+      ).rejects.toThrow('Board not found');
 
-    const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx());
-    const seed = await iterator.next();
-    expect(seed.done).toBe(false);
-    await iterator.return?.(undefined);
-  });
+      const preview = await boardQueuePreviewQueries.boardQueuePreview(
+        undefined,
+        { boardId, boardUuid: board.uuid },
+        anonCtx(),
+      );
+      expect(preview?.current?.climbUuid).toBe('climb-1');
+      expect(JSON.stringify(preview)).not.toContain(SECRET_USER_ID);
+
+      const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(
+        undefined,
+        { boardId, boardUuid: board.uuid },
+        anonCtx(),
+      );
+      const seed = await iterator.next();
+      expect(seed.done).toBe(false);
+      await iterator.return?.(undefined);
+    },
+  );
 
   it('returns null when no session is bound to the board at all', async () => {
     const boardId = await makeBoard({ isPublic: true });

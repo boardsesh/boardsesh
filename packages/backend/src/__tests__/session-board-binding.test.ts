@@ -19,12 +19,16 @@ const stranger = 'board-binding-stranger';
 const privateUuid = uuidv4();
 const publicUuid = uuidv4();
 const unlistedUuid = uuidv4();
+const currentUnlistedUuid = uuidv4();
 let privateBoardId: number;
 let publicBoardId: number;
 let unlistedBoardId: number;
+let currentUnlistedBoardId: number;
 const privatePath = '/b/binding-private/40';
 const publicPath = '/b/binding-public/40';
 const unlistedPath = '/b/binding-unlisted/40';
+// Unlisted as the current audience control saves it: `is_public = false` plus a policy row.
+const currentUnlistedPath = '/b/binding-unlisted-current/40';
 const genericPath = '/kilter/1/1/1/30';
 
 beforeAll(async () => {
@@ -66,11 +70,32 @@ beforeAll(async () => {
         isPublic: true,
         isUnlisted: true,
       },
+      {
+        uuid: currentUnlistedUuid,
+        slug: 'binding-unlisted-current',
+        ownerId: owner,
+        name: 'Unlisted Current',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 4,
+        setIds: '1',
+        isPublic: false,
+        isUnlisted: true,
+        hideLocation: true,
+      },
     ])
     .returning({ id: schema.userBoards.id, uuid: schema.userBoards.uuid });
+  await db.insert(schema.resourcePrivacy).values({
+    kind: 'board',
+    resourceId: currentUnlistedUuid,
+    ownerId: owner,
+    audience: 'unlisted',
+    locationAudience: 'only_me',
+  });
   privateBoardId = boards.find((board) => board.uuid === privateUuid)!.id;
   publicBoardId = boards.find((board) => board.uuid === publicUuid)!.id;
   unlistedBoardId = boards.find((board) => board.uuid === unlistedUuid)!.id;
+  currentUnlistedBoardId = boards.find((board) => board.uuid === currentUnlistedUuid)!.id;
 });
 
 /** Whether the viewer may see where the session is: its wall's location policy, not the session's. */
@@ -107,29 +132,45 @@ describe('session board path privacy binding', () => {
     await expect(resolveSessionBoardId(privatePath, stranger)).rejects.toThrow('Board not found');
     await expect(resolveSessionBoardId('/b/never-created/40', owner)).rejects.toThrow('Board not found');
   });
-  it('lets a stranger bind an unlisted board by its link while invite-only stays NOT_FOUND', async () => {
-    // The /b/<slug> path is the link.
+  it('lets a stranger bind an unlisted board by its link while a legacy private (only-me) board stays NOT_FOUND', async () => {
+    // The /b/<slug> path is the link, in either saved shape.
     expect(await resolveSessionBoardId(unlistedPath, stranger)).toBe(unlistedBoardId);
     expect(await resolveSessionBoardId(unlistedPath, owner)).toBe(unlistedBoardId);
+    expect(await resolveSessionBoardId(currentUnlistedPath, stranger)).toBe(currentUnlistedBoardId);
+    expect(await resolveSessionBoardId(currentUnlistedPath, null)).toBe(currentUnlistedBoardId);
     await expect(resolveSessionBoardId(privatePath, stranger)).rejects.toThrow('Board not found');
   });
   it('lets a stranger create a session on an unlisted board via its slug', async () => {
-    const session = await sessionMutations.createSession(null, { input: input(unlistedPath) }, context(stranger));
-    expect((await sessionRow(session.id)).boardId).toBe(unlistedBoardId);
+    for (const [path, boardId] of [
+      [unlistedPath, unlistedBoardId],
+      [currentUnlistedPath, currentUnlistedBoardId],
+    ] as const) {
+      const session = await sessionMutations.createSession(null, { input: input(path) }, context(stranger));
+      expect((await sessionRow(session.id)).boardId).toBe(boardId);
+    }
     await expect(
       sessionMutations.createSession(null, { input: input(privatePath) }, context(stranger)),
     ).rejects.toThrow('Board not found');
   });
-  it('lets a stranger attach an unlisted board to a session but not an invite-only one', async () => {
-    const attached = await sessionMutations.createSession(
+  it('never treats an attached board id as an unlisted board link', async () => {
+    // A numeric id is a counted bigserial: attaching an unlisted board by id alone
+    // fails exactly like attaching a private one.
+    for (const boardId of [unlistedBoardId, currentUnlistedBoardId, privateBoardId]) {
+      await expect(
+        sessionMutations.createSession(null, { input: input(publicPath, [boardId]) }, context(stranger)),
+      ).rejects.toThrow('One or more board IDs do not exist');
+    }
+    // The board the session path itself named was opened by its link.
+    const session = await sessionMutations.createSession(
       null,
-      { input: input(publicPath, [unlistedBoardId]) },
+      { input: input(currentUnlistedPath, [currentUnlistedBoardId]) },
       context(stranger),
     );
-    expect(attached.id).toBeTruthy();
+    expect((await sessionRow(session.id)).boardId).toBe(currentUnlistedBoardId);
+    // Its owner holds it already, so the id is enough for them.
     await expect(
-      sessionMutations.createSession(null, { input: input(publicPath, [privateBoardId]) }, context(stranger)),
-    ).rejects.toThrow('One or more board IDs do not exist');
+      sessionMutations.createSession(null, { input: input(publicPath, [currentUnlistedBoardId]) }, context(owner)),
+    ).resolves.toMatchObject({ id: expect.any(String) });
   });
   it('binds a private named board on the initial WebSocket session insert without hiding the session', async () => {
     const sessionId = uuidv4();

@@ -1435,6 +1435,43 @@ describe('board-presence resolvers', () => {
         expect(await serialOf(strangersBoard.id)).toBeNull();
       });
 
+      it('binds a stranger-owned Unlisted selection picked by its uuid, without branding it', async () => {
+        const serial = `SELUNLISTED-${Date.now()}`;
+        const board = await insertRealUuidBoard({
+          ownerId: SECOND_USER_ID,
+          serial: null,
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,9',
+          name: 'Link Only Wall',
+          isPublic: false,
+        });
+        // Saved the way the current audience control saves Unlisted.
+        await db.execute(sql`UPDATE user_boards SET is_unlisted = true WHERE id = ${board.id}`);
+        await db.insert(dbSchema.resourcePrivacy).values({
+          kind: 'board',
+          resourceId: board.uuid,
+          ownerId: SECOND_USER_ID,
+          audience: 'unlisted',
+        });
+
+        // The picked board's uuid is its link, so a climber who opened it can connect on it.
+        const selected = await findSelectedBoardForConnect(TEST_USER_ID, board.uuid, {
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,9',
+        });
+        expect(selected?.id).toBe(board.id);
+        const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+          undefined,
+          { serial, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,9', selectedBoardUuid: board.uuid },
+          authCtx(),
+        );
+        expect(result.board?.boardId).toBe(board.id);
+        expect(await serialOf(board.id)).toBeNull();
+      });
+
       it('rejects a legacy-public selection with a private override without remembering it', async () => {
         const serial = `SELPRIVATE-${Date.now()}`;
         const board = await insertRealUuidBoard({
@@ -3474,8 +3511,11 @@ describe('board-presence connection holder', () => {
       await expect(boardPresenceQueries.boardConnection(undefined, { boardId }, authCtx())).resolves.toBeNull();
     });
 
-    it("serves an unlisted board's live feed to anyone holding its id, anonymous included", async () => {
-      const slug = `unlisted-${Date.now().toString(36)}-${holderSerialCounter++}`;
+    async function makeOtherOwnersBoard(
+      name: string,
+      flags: { isPublic: boolean; isUnlisted?: boolean },
+    ): Promise<{ id: number; uuid: string }> {
+      const slug = `${name.toLowerCase().replace(/[^a-z]+/g, '-')}-${Date.now().toString(36)}-${holderSerialCounter++}`;
       const [row] = await db
         .insert(dbSchema.userBoards)
         .values({
@@ -3486,41 +3526,99 @@ describe('board-presence connection holder', () => {
           layoutId: 1,
           sizeId: 10,
           setIds: '1,2',
-          name: 'Unlisted Wall',
+          name,
           serialNumber: null,
-          isPublic: true,
-          isUnlisted: true,
+          isPublic: flags.isPublic,
+          isUnlisted: flags.isUnlisted ?? false,
         })
         .returning({ id: dbSchema.userBoards.id, uuid: dbSchema.userBoards.uuid });
-      const boardId = Number(row.id);
+      return { id: Number(row.id), uuid: row.uuid };
+    }
 
-      await expect(boardPresenceQueries.boardConnection(undefined, { boardId }, anon())).resolves.toBeNull();
-      await expect(boardPresenceQueries.boardRecentClimbs(undefined, { boardId }, anon())).resolves.toEqual([]);
+    /** The audience control's write: a policy row, with the legacy booleans projected from it. */
+    async function chooseAudience(boardUuid: string, audience: 'unlisted' | 'invite_only'): Promise<void> {
+      await db.insert(dbSchema.resourcePrivacy).values({
+        kind: 'board',
+        resourceId: boardUuid,
+        ownerId: SECOND_USER_ID,
+        audience,
+        locationAudience: 'only_me',
+      });
+      await db
+        .update(dbSchema.userBoards)
+        .set({ isPublic: false, isUnlisted: audience === 'unlisted', hideLocation: true })
+        .where(eq(dbSchema.userBoards.uuid, boardUuid));
+    }
+
+    it.each([
+      ['legacy booleans', false],
+      ['current audience control', true],
+    ] as const)(
+      "serves an unlisted board's live feed (%s) only to a caller presenting its uuid, never for the id alone",
+      async (_shape, viaAudienceControl) => {
+        const board = await makeOtherOwnersBoard('Unlisted Wall', { isPublic: true, isUnlisted: true });
+        if (viaAudienceControl) await chooseAudience(board.uuid, 'unlisted');
+        const boardId = board.id;
+
+        // The numeric id is a sequential bigserial: holding it is not holding the link.
+        for (const ctx of [anon(), authCtx()]) {
+          await expect(boardPresenceQueries.boardConnection(undefined, { boardId }, ctx)).rejects.toThrow(
+            'Board not found',
+          );
+          await expect(boardPresenceQueries.boardRecentClimbs(undefined, { boardId }, ctx)).rejects.toThrow(
+            'Board not found',
+          );
+          await expect(
+            boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, ctx).next(),
+          ).rejects.toThrow('Board not found');
+        }
+
+        // The uuid is the link, and anonymous resolution by it binds the feed.
+        const resolved = await boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: board.uuid }, anon());
+        expect(resolved.boardId).toBe(boardId);
+        for (const ctx of [anon(), authCtx()]) {
+          await expect(
+            boardPresenceQueries.boardConnection(undefined, { boardId, boardUuid: board.uuid }, ctx),
+          ).resolves.toBeNull();
+          await expect(
+            boardPresenceQueries.boardRecentClimbs(undefined, { boardId, boardUuid: board.uuid }, ctx),
+          ).resolves.toEqual([]);
+        }
+      },
+    );
+
+    it('keeps an invite-only board closed to a signed-in stranger, even with its uuid, and open to a grantee', async () => {
+      const board = await makeOtherOwnersBoard('Invite Wall', { isPublic: false });
+      await chooseAudience(board.uuid, 'invite_only');
+      const boardId = board.id;
+
+      await expect(
+        boardPresenceQueries.boardConnection(undefined, { boardId, boardUuid: board.uuid }, authCtx()),
+      ).rejects.toThrow('Board not found');
+      await expect(
+        boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: board.uuid }, authCtx()),
+      ).rejects.toThrow('Board not found');
+
+      await db
+        .insert(dbSchema.resourceGrants)
+        .values({ kind: 'board', resourceId: board.uuid, userId: TEST_USER_ID, status: 'approved' });
       await expect(boardPresenceQueries.boardConnection(undefined, { boardId }, authCtx())).resolves.toBeNull();
-      const resolved = await boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: row.uuid }, authCtx());
+      const resolved = await boardPresenceMutations.resolveBoardForUuid(
+        undefined,
+        { boardUuid: board.uuid },
+        authCtx(),
+      );
       expect(resolved.boardId).toBe(boardId);
     });
 
-    it("still refuses an invite-only board's live feed to a signed-in stranger", async () => {
-      const slug = `invite-${Date.now().toString(36)}-${holderSerialCounter++}`;
-      const [row] = await db
-        .insert(dbSchema.userBoards)
-        .values({
-          uuid: uuidv4(),
-          slug,
-          ownerId: SECOND_USER_ID,
-          boardType: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,2',
-          name: 'Invite Wall',
-          serialNumber: null,
-          isPublic: false,
-        })
-        .returning({ id: dbSchema.userBoards.id });
+    it("keeps a legacy private (only-me) board's live feed from everyone but its owner", async () => {
+      const board = await makeOtherOwnersBoard('Only Me Wall', { isPublic: false });
       await expect(
-        boardPresenceQueries.boardConnection(undefined, { boardId: Number(row.id) }, authCtx()),
+        boardPresenceQueries.boardConnection(undefined, { boardId: board.id, boardUuid: board.uuid }, authCtx()),
       ).rejects.toThrow('Board not found');
+      await expect(
+        boardPresenceQueries.boardConnection(undefined, { boardId: board.id }, authCtx({ userId: SECOND_USER_ID })),
+      ).resolves.toBeNull();
     });
 
     it('lets anonymous viewers read a shared system per-config board', async () => {

@@ -143,6 +143,17 @@ async function followBoard(userId: string, boardUuid: string): Promise<void> {
   await db.insert(dbSchema.boardFollows).values({ userId, boardUuid }).onConflictDoNothing();
 }
 
+/** The audience control's write: a policy row, with the legacy booleans projected from it. */
+async function chooseBoardAudience(boardUuid: string, audience: 'unlisted' | 'invite_only'): Promise<void> {
+  await db
+    .insert(dbSchema.resourcePrivacy)
+    .values({ kind: 'board', resourceId: boardUuid, ownerId: BOARD_OWNER, audience, locationAudience: 'only_me' });
+  await db
+    .update(dbSchema.userBoards)
+    .set({ isPublic: false, isUnlisted: audience === 'unlisted', hideLocation: true })
+    .where(eq(dbSchema.userBoards.uuid, boardUuid));
+}
+
 async function approveSessionGuest(sessionId: string, userId: string): Promise<void> {
   await db
     .insert(dbSchema.resourceGrants)
@@ -773,6 +784,68 @@ describe('followedLiveSessions — board privacy and ordering', () => {
 
     const [session] = await followedLiveSessions(VIEWER);
     expect(session.board?.uuid).toBe(board.uuid);
+  });
+
+  it.each([
+    ['legacy booleans', false],
+    ['current audience control', true],
+  ] as const)(
+    'names an unlisted board (%s) on its own sheet only for a caller holding its uuid',
+    async (_shape, viaAudienceControl) => {
+      const unlisted = await makeBoard({ isUnlisted: true, name: 'Link Sheet Wall' });
+      if (viaAudienceControl) await chooseBoardAudience(unlisted.uuid, 'unlisted');
+      const sessionId = await makeSession({ createdBy: FRIEND, boardId: unlisted.id });
+      await goLive(sessionId, FRIEND);
+
+      // The numeric id alone is countable: no sheet, and nothing on it names the board.
+      for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+        await expect(liveSessionQueries.boardLiveSessions(undefined, { boardId: unlisted.id }, ctx)).rejects.toThrow(
+          'Board not found',
+        );
+      }
+
+      // The uuid is the link: the sheet opens and names its board.
+      for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+        const [onSheet] = await liveSessionQueries.boardLiveSessions(
+          undefined,
+          { boardId: unlisted.id, boardUuid: unlisted.uuid },
+          ctx,
+        );
+        expect(onSheet.sessionId).toBe(sessionId);
+        expect(onSheet.board?.name).toBe('Link Sheet Wall');
+        expect(onSheet.board?.slug).toBe(unlisted.slug);
+      }
+
+      // The owner holds it already, so the id alone names it for them.
+      const [forOwner] = await liveSessionQueries.boardLiveSessions(
+        undefined,
+        { boardId: unlisted.id },
+        authCtx(BOARD_OWNER),
+      );
+      expect(forOwner.board?.uuid).toBe(unlisted.uuid);
+    },
+  );
+
+  it("keeps the board's slug path in joinSession for a stranger who started a session from its link", async () => {
+    const unlisted = await makeBoard({ isUnlisted: true, name: 'Link Join Wall' });
+    await chooseBoardAudience(unlisted.uuid, 'unlisted');
+    const boardPath = `/b/${unlisted.slug}/40`;
+    const connectionId = `ls-ws-${connectionCounter++}`;
+    await roomManager.registerClient(connectionId, 'Stranger', STRANGER);
+    const wsCtx = authCtx(STRANGER, { connectionId, transport: 'ws' });
+
+    const created = await sessionMutations.createSession(
+      undefined,
+      { input: { boardPath, latitude: 0, longitude: 0, discoverable: false } },
+      wsCtx,
+    );
+    const joined = await sessionMutations.joinSession(undefined, { sessionId: created.id, boardPath }, wsCtx);
+    expect(joined.boardPath.startsWith(`/b/${unlisted.slug}`)).toBe(true);
+
+    // Somebody who only holds the session invite gets the board's geometry, not its slug.
+    const preview = await sessionQueries.session(undefined, { sessionId: created.id }, authCtx(OTHER_STRANGER));
+    expect(preview?.boardPath).not.toContain(unlisted.slug);
+    expect(preview?.boardPath.startsWith('/kilter/1/10/')).toBe(true);
   });
 
   it('hides a gym name behind hideLocation from everyone but the board owner', async () => {

@@ -315,6 +315,44 @@ describe('tick board corrections', () => {
     },
   );
 
+  it('keeps naming an Unlisted board the climber logged on by its link, outside the picker list', async () => {
+    const [board] = await db
+      .insert(schema.userBoards)
+      .values({
+        uuid: uuidv4(),
+        slug: uuidv4(),
+        ownerId: otherUser,
+        name: 'Link only compatible wall',
+        // Saved the way the current audience control saves Unlisted.
+        isPublic: false,
+        isUnlisted: true,
+        boardType: 'kilter',
+        layoutId: 8,
+        sizeId: 25,
+        setIds: '26,27',
+      })
+      .returning();
+    await db
+      .insert(schema.resourcePrivacy)
+      .values({ kind: 'board', resourceId: board.uuid, ownerId: otherUser, audience: 'unlisted' });
+    try {
+      const uuid = await save(board, { boardUuid: board.uuid });
+      expect((await readTick(uuid)).boardId).toBe(board.id);
+
+      const options = await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, ctx);
+      expect(options.currentBoard?.name).toBe('Link only compatible wall');
+      // The picker list is a listing: the board is not offered there.
+      expect(options.boards.some((choice) => choice.uuid === board.uuid)).toBe(false);
+
+      const edited = await tickMutations.updateTick(undefined, { uuid, input: { comment: 'Linked recap' } }, ctx);
+      expect(edited).toMatchObject({ comment: 'Linked recap', boardDisplayName: 'Link only compatible wall' });
+    } finally {
+      await db.delete(schema.boardseshTicks).where(eq(schema.boardseshTicks.boardId, board.id));
+      await db.delete(schema.resourcePrivacy).where(eq(schema.resourcePrivacy.resourceId, board.uuid));
+      await db.delete(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
+    }
+  });
+
   it.each(['deleted', 'hidden_spray'] as const)(
     'does not expose a historical %s board through an ordinary tick edit',
     async (kind) => {
