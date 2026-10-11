@@ -557,6 +557,21 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
       'BUNDLE_DIFFING_CDN_REDIRECT stays unset: the edge does not add the patch headers expo-updates requires.',
   },
   {
+    name: 'UPLOAD_SOURCEMAPS',
+    value: 'true',
+    reason:
+      'Stores the Hermes source map each publish names, so Observe can symbolicate error stack traces. ' +
+      'Once on, a store xprem cannot reach fails every publish, eoas and promote alike. ' +
+      'This tool never unsets a variable: to switch it off, unset it in Railway and revert the declaration.',
+  },
+  {
+    name: 'S3_BUCKET_SOURCEMAPS_NAME',
+    value: 'boardsesh-ota-sourcemaps',
+    reason:
+      'The private bucket the source maps live in. Never the updates bucket: CDN_BASE_URL fronts that one, ' +
+      'and xprem refuses to boot with source maps behind a CDN.',
+  },
+  {
     name: 'AWS_BASE_ENDPOINT',
     reason:
       'The live S3-compatible endpoint. Presence-only so a provider migration cannot be overwritten by stale config.',
@@ -598,11 +613,13 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
   },
   {
     name: 'AWS_ACCESS_KEY_ID',
-    reason: 'Bucket credential. Scoped to the OTA bucket only.',
+    reason:
+      'Bucket credential. xprem takes one for both buckets: scoped to the OTA updates and source-map buckets only.',
   },
   {
     name: 'AWS_SECRET_ACCESS_KEY',
-    reason: 'Bucket credential. Scoped to the OTA bucket only.',
+    reason:
+      'Bucket credential. xprem takes one for both buckets: scoped to the OTA updates and source-map buckets only.',
   },
   {
     name: 'CLICKHOUSE_URL',
