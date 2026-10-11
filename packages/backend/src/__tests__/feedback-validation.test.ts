@@ -249,3 +249,40 @@ describe('SubmitAppFeedbackInputSchema', () => {
     });
   });
 });
+
+describe('feedback private diagnostics', () => {
+  it('keeps valid correlation while dropping malformed enrichment', () => {
+    const report = SubmitAppFeedbackInputSchema.parse({
+      platform: 'android',
+      source: 'drawer-bug',
+      comment: 'The app disappeared',
+      context: {
+        diagnostics: {
+          schemaVersion: 1,
+          launchId: 'launch-123',
+          previousLaunchCrashed: false,
+          reportId: 'r'.repeat(201),
+          otaBranch: 42,
+          accessToken: 'secret',
+        },
+      },
+    });
+    expect(report.context?.diagnostics).toEqual({
+      schemaVersion: 1,
+      launchId: 'launch-123',
+      previousLaunchCrashed: false,
+      reportId: null,
+      otaBranch: null,
+    });
+  });
+
+  it('does not lose the report when diagnostics have an invalid shape', () => {
+    const report = SubmitAppFeedbackInputSchema.parse({
+      platform: 'ios',
+      source: 'drawer-bug',
+      comment: 'The app disappeared',
+      context: { climbName: 'Orbit', diagnostics: 'broken' },
+    });
+    expect(report.context).toEqual({ climbName: 'Orbit', diagnostics: null });
+  });
+});

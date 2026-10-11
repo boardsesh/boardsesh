@@ -1,5 +1,26 @@
 export const feedbackTypeDefs = /* GraphQL */ `
   """
+  Private, best-effort telemetry identifiers for feedback investigation.
+  Available only through the authenticated admin dashboard.
+  """
+  type FeedbackDiagnostics {
+    schemaVersion: Int
+    reportId: String
+    launchId: String
+    previousLaunchId: String
+    nativeStartupId: String
+    lastUserOperationId: String
+    posthogDistinctId: String
+    posthogSessionId: String
+    easClientId: String
+    otaUpdateId: String
+    otaBranch: String
+    otaRuntimeVersion: String
+    previousLaunchCrashed: Boolean
+    otaIsEmbedded: Boolean
+  }
+
+  """
   Free-form debug context attached to a feedback submission. Stored as jsonb.
   Every field is optional — anonymous submissions made outside a board route
   may carry only \`url\` / \`userAgent\`.
@@ -12,6 +33,12 @@ export const feedbackTypeDefs = /* GraphQL */ `
     sessionName: String
     url: String
     userAgent: String
+    """
+    Opaque input so malformed or newer optional diagnostics cannot reject the
+    report. The backend stores only known, validated fields; output remains
+    explicitly typed and admin-only.
+    """
+    diagnostics: JSON
   }
 
   """
@@ -119,6 +146,10 @@ export const feedbackTypeDefs = /* GraphQL */ `
     sessionName: String
     url: String
     userAgent: String
+    """
+    Private identifiers. Any resolver returning this context must require admin access.
+    """
+    diagnostics: FeedbackDiagnostics
   }
 
   """
