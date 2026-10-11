@@ -72,10 +72,13 @@ import { revalidatePrivateCatalog } from '../privacy-revalidation';
 const KILTER_SCOPE = 'kilter:1:1';
 const SPRAY_SCOPE = 'spray:7:7';
 const SERVER_CURSOR = { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '9' };
+/** Where the engine leaves the cursor of a stream that has delivered no row. */
+const EMPTY_STREAM_CURSOR = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 /** The three board tables the fake server has rows for. */
 const BOARD_TABLE_RESOLVERS = ['syncClimbs', 'syncClimbStats', 'syncClimbGrades'];
 
-type SyncRequest = { resolver: string; cursor: unknown };
+type SyncAudience = 'REFERENCE' | 'PROTECTED';
+type SyncRequest = { resolver: string; audience: SyncAudience; cursor: unknown };
 
 const climbDocument = (uuid: string, boardType: string, layoutId: number, sizeId: number) => ({
   uuid,
@@ -113,8 +116,13 @@ const gradeDocument = (climbUuid: string, boardType: string) => ({
 
 /**
  * One page per `resolver@boardType:layoutId` for a request with no cursor, an
- * empty page for everything else, and a log of every request with the cursor it
- * carried. `holdNextPage` keeps one response on the wire until it is released.
+ * empty page for everything else, and a log of every board request with the
+ * stream and the cursor it carried. `holdNextPage` keeps one response on the
+ * wire until it is released.
+ *
+ * The rows here are published climbs set by another account. On a catalogue
+ * board those are reference rows, the same for everyone; on a spray wall, which
+ * has no reference stream, they come through the protected one.
  */
 function createSyncServer(firstPages: Record<string, Record<string, unknown>[]>) {
   const requests: SyncRequest[] = [];
@@ -125,15 +133,19 @@ function createSyncServer(firstPages: Record<string, Record<string, unknown>[]>)
     }
     const queryName = /\{\s*(sync[A-Za-z]+)\(/.exec(query)?.[1];
     if (!queryName) throw new Error(`Unexpected sync query: ${query}`);
-    const { boardType, layoutId, cursor } = (variables ?? {}) as {
+    const { boardType, layoutId, cursor, audience } = (variables ?? {}) as {
       boardType?: string;
       layoutId?: number;
       cursor?: unknown;
+      audience?: SyncAudience;
     };
     const resolver = boardType ? `${queryName}@${boardType}:${layoutId}` : queryName;
-    requests.push({ resolver, cursor: cursor ?? null });
-    // Past its first page a table has nothing more: the cursor is set.
-    const documents = cursor ? [] : (firstPages[resolver] ?? []);
+    const isBoardTable = BOARD_TABLE_RESOLVERS.includes(queryName);
+    if (isBoardTable && !audience) throw new Error(`${resolver} was requested without an audience`);
+    if (isBoardTable && audience) requests.push({ resolver, audience, cursor: cursor ?? null });
+    const streamOfTheseRows: SyncAudience = boardType === 'spray' ? 'PROTECTED' : 'REFERENCE';
+    // Past its first page a stream has nothing more: the cursor is set.
+    const documents = cursor || (isBoardTable && audience !== streamOfTheseRows) ? [] : (firstPages[resolver] ?? []);
     const heldPage = heldPages.get(resolver);
     if (heldPage) {
       heldPages.delete(resolver);
@@ -197,7 +209,7 @@ describe('a privacy event and the sync engine', () => {
     const requestsForDownload = server.requests.length;
 
     for (let event = 1; event <= 3; event += 1) {
-      await revalidatePrivateCatalog(database, 'viewer', [KILTER_SCOPE]);
+      await revalidatePrivateCatalog(database, 'viewer');
       expect(await isScopeDownloadComplete(database, KILTER_SCOPE)).toBe(true);
       await pullSync(database, queryClient, server.fetch, options);
     }
@@ -205,9 +217,17 @@ describe('a privacy event and the sync engine', () => {
     const laterBoardRequests = server.requests
       .slice(requestsForDownload)
       .filter(({ resolver }) => BOARD_TABLE_RESOLVERS.some((table) => resolver === `${table}@kilter:1`));
-    // One delta request per table per cycle, each resuming from the cursor the
-    // download left. A request without a cursor is the start of a re-crawl.
-    expect(laterBoardRequests.map(({ cursor }) => cursor)).toEqual(Array.from({ length: 9 }, () => SERVER_CURSOR));
+    const cursorsOf = (audience: SyncAudience) =>
+      laterBoardRequests.filter((boardRequest) => boardRequest.audience === audience).map(({ cursor }) => cursor);
+    // The public catalogue: one delta request per table per cycle, each resuming
+    // from the cursor the download left. A request without a cursor is the
+    // start of a re-crawl.
+    expect(cursorsOf('REFERENCE')).toEqual(Array.from({ length: 9 }, () => SERVER_CURSOR));
+    // The climber's own drafts and unlisted climbs: one small request per table
+    // per cycle. This climber has none, so that stream's cursor never leaves
+    // the start. The first event for an account forgets whose cursor it was,
+    // which is the one cycle that sends none at all; no later event does that.
+    expect(cursorsOf('PROTECTED')).toEqual([null, null, null, ...Array.from({ length: 6 }, () => EMPTY_STREAM_CURSOR)]);
     // "Offline Board Download Completed" stays a once-per-download event.
     expect(completedDownloadEvents()).toHaveLength(1);
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'community-climb' }]);
@@ -230,7 +250,7 @@ describe('a privacy event and the sync engine', () => {
     const download = pullSync(database, queryClient, server.fetch, syncOptions([KILTER_SCOPE]));
     await pageOnWire.requested;
 
-    await revalidatePrivateCatalog(database, 'viewer', [KILTER_SCOPE]);
+    await revalidatePrivateCatalog(database, 'viewer');
     pageOnWire.release();
     await download;
 
@@ -238,7 +258,11 @@ describe('a privacy event and the sync engine', () => {
     expect(await getCheckpoint(database, getCheckpointKey('board_climbs', KILTER_SCOPE))).toEqual(SERVER_CURSOR);
     // The same cycle went on to finish the download.
     expect(await isScopeDownloadComplete(database, KILTER_SCOPE)).toBe(true);
-    expect(server.requests.filter(({ resolver }) => resolver === 'syncClimbs@kilter:1')).toHaveLength(1);
+    expect(
+      server.requests.filter(
+        ({ resolver, audience }) => resolver === 'syncClimbs@kilter:1' && audience === 'REFERENCE',
+      ),
+    ).toHaveLength(1);
   });
 
   it('discards a spray page fetched before the event', async () => {
@@ -249,7 +273,7 @@ describe('a privacy event and the sync engine', () => {
     const download = pullSync(database, queryClient, server.fetch, syncOptions([SPRAY_SCOPE]));
     await pageOnWire.requested;
 
-    await revalidatePrivateCatalog(database, 'viewer', [SPRAY_SCOPE]);
+    await revalidatePrivateCatalog(database, 'viewer');
     pageOnWire.release();
     await download;
 

@@ -214,9 +214,9 @@ export function OfflineSyncBridge() {
         snapshotSource,
       };
       const stop = startSyncScheduler(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
-      // Withdrawal clears a spray wall's completion marker and aborts its older
-      // pull. Wake the existing single-flight scheduler when the authorized replay
-      // can start again; a catalogue board only gets its usual delta pull.
+      // Withdrawal forgets a spray wall's cursors and refuses a wall page already
+      // on its way. Wake the existing single-flight scheduler when the authorized
+      // replay can start again; a catalogue board only gets its usual delta pull.
       const stopPrivacy = subscribePrivacyRevalidation(() => {
         triggerSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
       });
