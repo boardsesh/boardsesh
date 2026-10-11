@@ -38,7 +38,10 @@ export async function runPlaylistGradeSummaryRefresh(): Promise<void> {
     shouldContinue: () => Date.now() < deadline,
   });
   if (!result.completed) {
-    logger.warn('[PlaylistGradeSummaries] Refresh stopped at its time budget', result);
+    // Every run starts from the first playlist, so a pass that keeps hitting
+    // the budget never reaches the playlists past where it stops. Loud on
+    // purpose: that is the signal to add a resume cursor.
+    logger.error('[PlaylistGradeSummaries] Refresh stopped at its time budget before the last playlist', result);
     return;
   }
   logger.info('[PlaylistGradeSummaries] Refreshed', result);

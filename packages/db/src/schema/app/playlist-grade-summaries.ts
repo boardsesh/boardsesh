@@ -20,10 +20,11 @@ import { playlists } from './playlists';
  * One row per playlist with at least one graded climb. A playlist with no
  * graded climb has no row, which is how the grade filter excludes it.
  *
- * Written only by `refreshPlaylistGradeSummaries` (packages/db/src/queries/
- * playlists/grade-summaries.ts): on every climb add or remove, and by the
- * backend's daily `playlist-grade-summary-refresh` job, which skips rows whose
- * values did not change. See docs/playlist-grade-summaries.md.
+ * Written only through packages/db/src/queries/playlists/grade-summaries.ts:
+ * `refreshPlaylistGradeSummariesFor` on every climb add or remove, and
+ * `refreshAllPlaylistGradeSummaries` from the backend's daily
+ * `playlist-grade-summary-refresh` job, which skips rows whose values did not
+ * change. See docs/playlist-grade-summaries.md.
  */
 export const playlistGradeSummaries = pgTable('playlist_grade_summaries', {
   playlistId: bigint('playlist_id', { mode: 'bigint' })

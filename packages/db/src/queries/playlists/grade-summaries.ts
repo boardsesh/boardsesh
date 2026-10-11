@@ -132,19 +132,35 @@ async function computeSummaries(db: PlaylistGradeSummaryDb, playlistScope: SQL):
  * only rows whose values moved and deleting the ones that no longer have a
  * graded climb. `summaryScope` must select the same playlists on the summary
  * table, so a playlist outside the scope is never deleted.
+ *
+ * `onlyRowsOlderThanCompute`: the daily job's guard. A mutation can recompute
+ * a playlist between the job reading its climbs and the job writing, and the
+ * job's answer is then the older one. So the job reads the database clock
+ * before it computes and leaves alone (no update, no delete) any row whose
+ * `updated_at` is not older than that. The mutations write without the guard:
+ * theirs is always the newest read.
  */
 async function writeSummaries(
   db: PlaylistGradeSummaryDb,
   playlistScope: SQL,
   summaryScope: SQL,
+  { onlyRowsOlderThanCompute = false }: { onlyRowsOlderThanCompute?: boolean } = {},
 ): Promise<PlaylistGradeSummaryWriteResult> {
+  let computeStartedAt: string | null = null;
+  if (onlyRowsOlderThanCompute) {
+    // Same clock and type as the `updated_at` default, read before the compute.
+    const [clock] = await db.select({ now: sql<string>`localtimestamp::text` }).from(sql`(SELECT 1) AS clock`);
+    computeStartedAt = clock?.now ?? null;
+  }
+  const notWrittenSinceCompute =
+    computeStartedAt === null ? undefined : sql`${playlistGradeSummaries.updatedAt} < ${computeStartedAt}::timestamp`;
   const computed = await computeSummaries(db, playlistScope);
 
   let written = 0;
   if (computed.length > 0) {
     const rows = await db
       .insert(playlistGradeSummaries)
-      .values(computed.map((summary) => ({ ...summary, updatedAt: sql`now()` })))
+      .values(computed)
       .onConflictDoUpdate({
         target: playlistGradeSummaries.playlistId,
         set: {
@@ -158,7 +174,9 @@ async function writeSummaries(
           updatedAt: sql`now()`,
         },
         // No dead tuple and no updated_at bump for a summary that did not move.
-        setWhere: sql`(
+        setWhere: and(
+          notWrittenSinceCompute,
+          sql`(
           ${playlistGradeSummaries.boardType}, ${playlistGradeSummaries.gradedClimbCount},
           ${playlistGradeSummaries.minDifficulty}, ${playlistGradeSummaries.p10Difficulty},
           ${playlistGradeSummaries.medianDifficulty}, ${playlistGradeSummaries.p90Difficulty},
@@ -169,6 +187,7 @@ async function writeSummaries(
           excluded.median_difficulty, excluded.p90_difficulty,
           excluded.max_difficulty
         )`,
+        ),
       })
       .returning({ playlistId: playlistGradeSummaries.playlistId });
     written = rows.length;
@@ -179,6 +198,7 @@ async function writeSummaries(
     .where(
       and(
         summaryScope,
+        notWrittenSinceCompute,
         computed.length > 0
           ? notInArray(
               playlistGradeSummaries.playlistId,
@@ -207,13 +227,17 @@ export async function refreshPlaylistGradeSummariesFor(
 }
 
 /** The playlist id that closes the chunk starting after `after`, or null when the rest fits in one. */
-async function nextChunkEnd(db: PlaylistGradeSummaryDb, after: bigint | null): Promise<bigint | null> {
+async function nextChunkEnd(
+  db: PlaylistGradeSummaryDb,
+  after: bigint | null,
+  chunkPlaylists: number,
+): Promise<bigint | null> {
   const [row] = await db
     .select({ id: playlists.id })
     .from(playlists)
     .where(after === null ? undefined : gt(playlists.id, after))
     .orderBy(asc(playlists.id))
-    .offset(REFRESH_CHUNK_PLAYLISTS - 1)
+    .offset(chunkPlaylists - 1)
     .limit(1);
   return row?.id ?? null;
 }
@@ -230,9 +254,15 @@ async function nextChunkEnd(db: PlaylistGradeSummaryDb, after: bigint | null): P
  */
 export async function refreshAllPlaylistGradeSummaries(
   db: PlaylistGradeSummaryDb,
-  options: { shouldContinue?: () => boolean } = {},
+  options: {
+    /** Checked before each chunk; returning false stops the pass where it is. */
+    shouldContinue?: () => boolean;
+    /** Playlists per chunk. Defaults to `REFRESH_CHUNK_PLAYLISTS`; tests set it small. */
+    chunkPlaylists?: number;
+  } = {},
 ): Promise<PlaylistGradeSummaryRefreshResult> {
   const shouldContinue = options.shouldContinue ?? (() => true);
+  const chunkPlaylists = options.chunkPlaylists ?? REFRESH_CHUNK_PLAYLISTS;
   const result: PlaylistGradeSummaryRefreshResult = {
     written: 0,
     deleted: 0,
@@ -242,7 +272,7 @@ export async function refreshAllPlaylistGradeSummaries(
   let after: bigint | null = null;
   for (;;) {
     if (!shouldContinue()) return result;
-    const end = await nextChunkEnd(db, after);
+    const end = await nextChunkEnd(db, after, chunkPlaylists);
     // (after, end]: the chunk's playlists, and the same range on the summary
     // table so a summary whose playlist lost its last graded climb is deleted.
     const chunk = await writeSummaries(
@@ -253,6 +283,7 @@ export async function refreshAllPlaylistGradeSummaries(
         after === null ? undefined : gt(playlistGradeSummaries.playlistId, after),
         end === null ? undefined : lte(playlistGradeSummaries.playlistId, end),
       ) ?? sql`true`,
+      { onlyRowsOlderThanCompute: true },
     );
     result.written += chunk.written;
     result.deleted += chunk.deleted;

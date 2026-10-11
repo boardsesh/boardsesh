@@ -149,6 +149,9 @@ describe('playlist grade summaries', () => {
         { name: 'circuit-b', angle: 45, grade: 21.6, ascents: 4 },
         // Graded only at 40: a row saved at 35 has no grade and never falls back.
         { name: 'circuit-c', angle: 40, grade: 30, ascents: 50 },
+        // A tie on ascents goes to the lower angle.
+        { name: 'circuit-d', angle: 45, grade: 26, ascents: 70 },
+        { name: 'circuit-d', angle: 40, grade: 20, ascents: 70 },
       ]);
       const playlistId = await createPlaylist('circuit', OWNER_ID, [
         { name: 'circuit-a', angle: null },
@@ -156,13 +159,16 @@ describe('playlist grade summaries', () => {
         // No stats row at all, and a row whose own angle has no stats row.
         { name: 'circuit-none', angle: null },
         { name: 'circuit-c', angle: 35 },
+        { name: 'circuit-d', angle: null },
       ]);
 
       await refreshPlaylistGradeSummariesFor(db, [playlistId]);
 
+      // circuit-a 18, circuit-b 22, circuit-d 20.
       expect(await summaryOf(playlistId)).toMatchObject({
-        gradedClimbCount: 2,
+        gradedClimbCount: 3,
         minDifficulty: 18,
+        medianDifficulty: 20,
         maxDifficulty: 22,
       });
     });
@@ -181,6 +187,9 @@ describe('playlist grade summaries', () => {
         { name: 'hard', angle: 40, grade: 24 },
       ]);
       const playlistId = await createPlaylist('editing', OWNER_ID, []);
+      // Another playlist's summary must survive every recompute of this one.
+      const bystander = await createPlaylist('bystander', OWNER_ID, [{ name: 'hard', angle: 40 }]);
+      await refreshPlaylistGradeSummariesFor(db, [bystander]);
       const ctx = makeCtx();
 
       await playlistMutations.addClimbToPlaylist(
@@ -210,6 +219,7 @@ describe('playlist grade summaries', () => {
         ctx,
       );
       expect(await summaryOf(playlistId)).toBeNull();
+      expect(await summaryOf(bystander)).toMatchObject({ gradedClimbCount: 1, p10Difficulty: 24 });
     });
   });
 
@@ -252,14 +262,93 @@ describe('playlist grade summaries', () => {
       expect((await summaryOf(steady))?.updatedAt.toISOString()).toBe('2026-01-01T00:00:00.000Z');
     });
 
+    it('walks every chunk and deletes only inside the chunk it is on', async () => {
+      const names = ['c0', 'c1', 'c2', 'c3', 'c4'];
+      await insertStats(names.map((name, index) => ({ name, angle: 40, grade: 16 + index })));
+      const ids = [];
+      for (const name of names) ids.push(await createPlaylist(name, OWNER_ID, [{ name, angle: 40 }]));
+
+      expect(await refreshAllPlaylistGradeSummaries(db, { chunkPlaylists: 2 })).toMatchObject({
+        written: 5,
+        deleted: 0,
+        chunks: 3,
+        completed: true,
+      });
+
+      // Ungrade the playlist in the middle chunk.
+      await db
+        .update(dbSchema.boardClimbStats)
+        .set({ displayDifficulty: null })
+        .where(eq(dbSchema.boardClimbStats.climbUuid, climb('c2')));
+      expect(await refreshAllPlaylistGradeSummaries(db, { chunkPlaylists: 2 })).toMatchObject({
+        written: 0,
+        deleted: 1,
+        chunks: 3,
+        completed: true,
+      });
+      expect(await summaryOf(ids[2])).toBeNull();
+      for (const index of [0, 1, 3, 4]) {
+        expect(await summaryOf(ids[index])).toMatchObject({ p10Difficulty: 16 + index });
+      }
+    });
+
     it('stops between chunks when its budget runs out', async () => {
-      await insertStats([{ name: 'budget', angle: 40, grade: 18 }]);
-      const playlistId = await createPlaylist('budget', OWNER_ID, [{ name: 'budget', angle: 40 }]);
+      const names = ['b0', 'b1', 'b2'];
+      await insertStats(names.map((name) => ({ name, angle: 40, grade: 18 })));
+      const ids = [];
+      for (const name of names) ids.push(await createPlaylist(name, OWNER_ID, [{ name, angle: 40 }]));
 
-      const stopped = await refreshAllPlaylistGradeSummaries(db, { shouldContinue: () => false });
+      let chunksAllowed = 1;
+      const stopped = await refreshAllPlaylistGradeSummaries(db, {
+        chunkPlaylists: 2,
+        shouldContinue: () => chunksAllowed-- > 0,
+      });
 
-      expect(stopped).toMatchObject({ written: 0, chunks: 0, completed: false });
-      expect(await summaryOf(playlistId)).toBeNull();
+      expect(stopped).toMatchObject({ written: 2, chunks: 1, completed: false });
+      expect(await summaryOf(ids[0])).not.toBeNull();
+      expect(await summaryOf(ids[2])).toBeNull();
+    });
+
+    it('never overwrites or deletes a summary written after it read the climbs', async () => {
+      await insertStats([{ name: 'raced', angle: 40, grade: 18 }]);
+      const raced = await createPlaylist('raced', OWNER_ID, [{ name: 'raced', angle: 40 }]);
+      const orphan = await createPlaylist('orphan', OWNER_ID, [{ name: 'no-grade', angle: 40 }]);
+      // Stand-ins for rows a mutation wrote while the job was computing: a later
+      // updated_at than the job's clock read, and values the job would change.
+      const later = new Date(Date.now() + 60 * 60 * 1000);
+      await db.insert(dbSchema.playlistGradeSummaries).values([
+        {
+          playlistId: raced,
+          boardType: BOARD,
+          gradedClimbCount: 2,
+          minDifficulty: 18,
+          p10Difficulty: 18,
+          medianDifficulty: 18,
+          p90Difficulty: 24,
+          maxDifficulty: 24,
+          updatedAt: later,
+        },
+        {
+          playlistId: orphan,
+          boardType: BOARD,
+          gradedClimbCount: 1,
+          minDifficulty: 20,
+          p10Difficulty: 20,
+          medianDifficulty: 20,
+          p90Difficulty: 20,
+          maxDifficulty: 20,
+          updatedAt: later,
+        },
+      ]);
+
+      expect(await refreshAllPlaylistGradeSummaries(db)).toMatchObject({ written: 0, deleted: 0 });
+      expect(await summaryOf(raced)).toMatchObject({ gradedClimbCount: 2, p90Difficulty: 24 });
+      expect(await summaryOf(orphan)).not.toBeNull();
+
+      // The mutation path has no such guard: it always writes what it just read.
+      await refreshPlaylistGradeSummariesFor(db, [raced, orphan]);
+      expect(await summaryOf(raced)).toMatchObject({ gradedClimbCount: 1, p90Difficulty: 18 });
+      expect(await summaryOf(orphan)).toBeNull();
     });
   });
 

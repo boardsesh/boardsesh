@@ -146,10 +146,10 @@ const styles = StyleSheet.create({
   },
   gradeOverlay: {
     position: 'absolute',
-    left: 4,
-    bottom: 4,
+    left: spacing[1],
+    bottom: spacing[1],
     maxWidth: '90%',
-    paddingHorizontal: 6,
+    paddingHorizontal: spacing[1],
     paddingVertical: 2,
     borderRadius: 8,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
