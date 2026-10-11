@@ -26,6 +26,9 @@ jobs:
           node-version: '22.x'
           registry-url: https://npm.pkg.github.com
           scope: '@boardsesh'
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
       - name: Pack the versioned workspace closure
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
