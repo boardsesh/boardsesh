@@ -1,5 +1,5 @@
 import { woodsSizeIdToDimension } from '@boardsesh/board-config';
-import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
+import { convertLitUpHoldsStringToMap, isSentinelHoldState, isAuroraBoardName, minimumStoredHoldId, projectAuroraFramesToStoredRows } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 
 export type NormalizedHold = {
@@ -13,8 +13,8 @@ export type NormalizedHoldRow = NormalizedHold & {
 
 /**
  * Parse the Aurora-style frame string ("p<id>r<role>p<id>r<role>...,p<id>r<role>...")
- * into a flat list of holds with their state name. Multi-frame strings (comma
- * separated) are flattened with the frame index preserved.
+ * into canonical stored rows. Aurora uses first-valid hold projection across
+ * frames; other boards preserve their decoded frame indices.
  *
  * Returns only holds whose state code resolves to a named state (STARTING /
  * HAND / FINISH / FOOT) — unknown codes (the synthetic "1=42" sentinel) are
@@ -26,6 +26,9 @@ export type NormalizedHoldRow = NormalizedHold & {
  */
 export function parseFramesToHoldEntries(boardType: BoardName, frames: string | null | undefined): NormalizedHoldRow[] {
   if (!frames) return [];
+  if (isAuroraBoardName(boardType)) {
+    return projectAuroraFramesToStoredRows(frames, boardType).rows;
+  }
   const frameMap = convertLitUpHoldsStringToMap(frames, boardType);
   const rows: NormalizedHoldRow[] = [];
   for (const [frameIndexKey, holdsMap] of Object.entries(frameMap)) {
@@ -33,7 +36,7 @@ export function parseFramesToHoldEntries(boardType: BoardName, frames: string | 
     for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
       if (isSentinelHoldState(hold.state)) continue;
       const holdId = Number(holdIdKey);
-      if (!Number.isFinite(holdId)) continue;
+      if (!Number.isSafeInteger(holdId) || holdId < minimumStoredHoldId(boardType)) continue;
       rows.push({ frameNumber, holdId, holdState: hold.state });
     }
   }

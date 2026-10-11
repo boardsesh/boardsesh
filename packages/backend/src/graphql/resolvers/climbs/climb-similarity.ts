@@ -5,11 +5,7 @@ import type { SQL, SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   STATE_TO_PRIMARY_CODE,
-  convertLitUpHoldsStringToMap,
-  isAuroraBoardName,
-  isSentinelHoldState,
   minimumStoredHoldId,
-  projectAuroraFramesToStoredRows,
 } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 import {
@@ -34,14 +30,9 @@ export type DuplicateGateExecutor = {
   execute(query: SQLWrapper | string): PromiseLike<unknown>;
 };
 
-export type NormalizedHold = {
-  holdId: number;
-  holdState: string;
-};
-
-export type NormalizedHoldRow = NormalizedHold & {
-  frameNumber: number;
-};
+import { parseFramesToHoldEntries, type NormalizedHold, type NormalizedHoldRow } from '@boardsesh/db/queries';
+export { parseFramesToHoldEntries };
+export type { NormalizedHold, NormalizedHoldRow };
 
 export type ExactDuplicateMatch = {
   uuid: string | null;
@@ -103,35 +94,6 @@ export function isSupportedSimilarityHold(row: NormalizedHold, boardType: BoardN
 
 function supportedHoldIdSql(boardType: BoardName, column: SQLWrapper): SQL {
   return minimumStoredHoldId(boardType) === 0 ? sql`${column} >= 0` : sql`${column} > 0`;
-}
-
-/**
- * Parse the Aurora-style frame string ("p<id>r<role>p<id>r<role>...,p<id>r<role>...")
- * into the one-row-per-hold shape persisted by board_climb_holds. Aurora
- * boards use the shared first-valid projector; MoonBoard keeps its existing
- * decoded-map path.
- *
- * Returns only holds whose state code resolves to a named state (STARTING /
- * HAND / FINISH / FOOT) — unknown codes (the synthetic "1=42" sentinel) are
- * dropped so they can't poison signatures.
- */
-export function parseFramesToHoldEntries(boardType: BoardName, frames: string | null | undefined): NormalizedHoldRow[] {
-  if (!frames) return [];
-  if (isAuroraBoardName(boardType)) {
-    return projectAuroraFramesToStoredRows(frames, boardType).rows;
-  }
-  const frameMap = convertLitUpHoldsStringToMap(frames, boardType);
-  const rows: NormalizedHoldRow[] = [];
-  for (const [frameIndexKey, holdsMap] of Object.entries(frameMap)) {
-    const frameNumber = Number(frameIndexKey);
-    for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
-      if (isSentinelHoldState(hold.state)) continue;
-      const holdId = Number(holdIdKey);
-      if (!Number.isSafeInteger(holdId) || holdId < minimumStoredHoldId(boardType)) continue;
-      rows.push({ frameNumber, holdId, holdState: hold.state });
-    }
-  }
-  return rows;
 }
 
 /**
