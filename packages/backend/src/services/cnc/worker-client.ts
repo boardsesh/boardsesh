@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logger } from '../../utils/logger';
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import { CNC_KICKER_SET_IDS, type CncBoardTuple } from './catalog';
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
@@ -190,7 +191,9 @@ export type CncWorkerManufacturing = {
   stud_clearance_offset_mm: number;
   /** Cut the seam backing strips. Changes the sheet count, so it is geometry. */
   support_strips: boolean;
-  /** Present only when the configuration includes kicker sets. */
+  /** Explicit for OG, whose main wall and kicker share the same sets. */
+  include_kicker?: boolean;
+  /** Present only when the configuration includes a kicker. */
   kicker?: CncWorkerKicker;
 };
 
@@ -306,9 +309,12 @@ export type ToLayoutRequestInput = {
  */
 export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput): CncWorkerLayoutRequest {
   const { lengthMm, widthMm } = parseSheetStock(options.sheetStock);
-  // Including either kicker set is what tells the generator to emit the two
-  // extra panels. `validateSetIds` has already ruled out the half-kicker case.
-  const hasKicker = setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId));
+  // OG sets cannot express kicker inclusion. Homewall retains its stored set
+  // selection, including orders created before the explicit option existed.
+  const isOriginal = entry.boardName === 'kilter' && entry.layoutId === KILTER_ORIGINAL_LAYOUT_ID;
+  const hasKicker = isOriginal
+    ? booleanOption(options, 'includeKicker', entry.sizeId !== 14)
+    : setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId));
 
   return {
     board: {
@@ -333,9 +339,8 @@ export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput
       // switching them off is the difference between a nine-sheet and an
       // eight-sheet cut summary on the reference 10x12.
       support_strips: booleanOption(options, 'supportStrips', true),
-      // Omitted rather than sent as null for a wall with no kicker: the
-      // generator's pydantic model treats a present kicker block as "build
-      // one", and a 10 ft wall has no kicker sets to build from.
+      ...(isOriginal ? { include_kicker: hasKicker } : {}),
+      // Keep the clearance alongside the inclusion choice for preview and jobs.
       ...(hasKicker ? { kicker: { mat_clearance_mm: numericOption(options, 'kickerMatClearanceMm') } } : {}),
     },
   };

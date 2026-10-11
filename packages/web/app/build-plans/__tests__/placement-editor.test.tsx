@@ -37,7 +37,7 @@ const RAW_LAYOUT = {
   seams: [{ kind: 'vertical', x_mm: 1200, extent: [0, 1200], between: [0, 1] }],
   holes: [
     { panel_index: 0, set_id: 26, kind: 'tnut', x_mm: 300, y_mm: 300, diameter_mm: 12.5, keepout_radius_mm: 26 },
-    { panel_index: 0, set_id: 26, kind: 'led', x_mm: 900, y_mm: 900, diameter_mm: 12.5, keepout_radius_mm: 11 },
+    { panel_index: 0, set_id: 20, kind: 'dual', x_mm: 900, y_mm: 900, diameter_mm: 13, keepout_radius_mm: 11 },
     { panel_index: 1, set_id: 26, kind: 'tnut', x_mm: 1500, y_mm: 300, diameter_mm: 12.5, keepout_radius_mm: 26 },
     // 10 mm inside panel 1, just across the seam from panel 0 — too far for a
     // 1x keep-out to reach, but within a cut-through's 1.5x one.
@@ -321,4 +321,12 @@ describe('an uploaded logo', () => {
     fireEvent.keyDown(screen.getByRole('application'), { key: 'ArrowUp' });
     expect(lastPlacement(onChange)).toMatchObject({ xMm: 600, yMm: 610 });
   });
+});
+
+it('draws the 13 mm OG foot center separately from its artwork clearance', () => {
+  renderEditor();
+  const footCenter = screen.getAllByTestId('cnc-bore').find((circle) => circle.getAttribute('data-kind') === 'dual');
+  expect(footCenter?.getAttribute('r')).toBe('6.5');
+  const footKeepout = screen.getAllByTestId('cnc-hole').find((circle) => circle.getAttribute('cx') === '900');
+  expect(footKeepout?.getAttribute('r')).toBe('11');
 });

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { CncOrder } from '@boardsesh/db/schema';
+import { buildWorkerJob } from '../../../../services/cnc/job-payload';
 
 vi.mock('../../../../db/client', () => ({ db: {}, dbRead: {} }));
 
@@ -497,6 +499,57 @@ describe('validateCncArtwork', () => {
 });
 
 describe('createCncPreview', () => {
+  it.each([
+    [14, false],
+    [8, false],
+    [8, true],
+    [10, false],
+    [10, true],
+    [28, false],
+    [28, true],
+  ] as const)(
+    'persists OG size %i kicker inclusion %s through the claimed worker job',
+    async (sizeId, includeKicker) => {
+      await cncPackMutations.createCncPreview(
+        undefined,
+        {
+          config: config({ layoutId: 1, sizeId, setIds: '1,20', options: { includeKicker }, artwork: [] }),
+        },
+        authCtx(),
+      );
+      const [orderInput] = createPreviewOrderMock.mock.calls[0] as [Record<string, unknown>];
+      expect(orderInput).toMatchObject({
+        layoutId: 1,
+        sizeId,
+        setIds: '1,20',
+        options: { includeKicker, ledHoleDiameterMm: 12.7 },
+      });
+      const claimedOrder = previewOrder({
+        ...orderInput,
+        status: 'preview_generating',
+        claimToken: 'claim-token',
+      }) as unknown as CncOrder;
+      const job = buildWorkerJob(claimedOrder, { bucket: 'test-private', issuedAt: new Date('2026-09-07T00:00:00Z') });
+      expect(job.config.options.includeKicker).toBe(includeKicker);
+      expect(job.layoutRequest.manufacturing.include_kicker).toBe(includeKicker);
+      expect(job.layoutRequest.manufacturing.kicker).toEqual(includeKicker ? { mat_clearance_mm: 50 } : undefined);
+      expect(job.layoutRequest.board.set_ids).toEqual([1, 20]);
+    },
+  );
+
+  it('rejects an OG 7x10 kicker before writing an order', async () => {
+    await expect(
+      cncPackMutations.createCncPreview(
+        undefined,
+        {
+          config: config({ layoutId: 1, sizeId: 14, setIds: '1,20', options: { includeKicker: true }, artwork: [] }),
+        },
+        authCtx(),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+    expect(createPreviewOrderMock).not.toHaveBeenCalled();
+  });
+
   /** A configuration carrying one uploaded asset. */
   function configWithAsset(assetId: string) {
     return config({

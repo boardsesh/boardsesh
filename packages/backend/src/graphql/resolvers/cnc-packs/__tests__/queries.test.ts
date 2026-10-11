@@ -148,13 +148,22 @@ beforeEach(() => {
 });
 
 describe('cncCatalog', () => {
-  it('publishes the four Kilter Homewall walls', async () => {
+  it('publishes the Homewall and Original walls', async () => {
     const catalog = await cncPackQueries.cncCatalog(undefined, undefined, anonCtx());
 
     expect(catalog.version).toBe(CNC_CATALOG_VERSION);
-    expect(catalog.entries).toHaveLength(4);
-    expect(catalog.entries.map((entry) => entry.label)).toEqual(['7x10', '10x10', '8x12', '10x12']);
-    expect(catalog.entries.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25]);
+    expect(catalog.entries).toHaveLength(8);
+    expect(catalog.entries.map((entry) => entry.label)).toEqual([
+      '7x10',
+      '10x10',
+      '8x12',
+      '10x12',
+      '7x10',
+      '8x12',
+      '12x12',
+      '16x12',
+    ]);
+    expect(catalog.entries.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25, 14, 8, 10, 28]);
   });
 
   it('does not publish the LED-kit size aliases', async () => {

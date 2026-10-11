@@ -60,6 +60,9 @@ export type SeamLineMm = {
 /** A drilled hole reduced to what a keep-out test needs, plus an id to point at. */
 export type HoleMm = {
   id: string;
+  /** Actual bore, separate from the artwork clearance. Optional for older generators. */
+  diameterMm?: number;
+  kind?: string;
   xMm: number;
   yMm: number;
   keepoutRadiusMm: number;
