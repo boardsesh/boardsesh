@@ -1,4 +1,5 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
@@ -766,12 +767,17 @@ function ClimbListInner() {
     [searchInput, boardseshGradesActive],
   );
   const hasSeenSearchKeyRef = useRef(false);
+  // Read through a ref: the header settling its height is not a new search and
+  // must not scroll the list.
+  const listTopOffset = useListTopOffset();
+  const listTopOffsetRef = useRef(listTopOffset);
+  listTopOffsetRef.current = listTopOffset;
   useEffect(() => {
     if (!hasSeenSearchKeyRef.current) {
       hasSeenSearchKeyRef.current = true;
       return;
     }
-    climbListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    climbListRef.current?.scrollToOffset({ offset: listTopOffsetRef.current, animated: false });
     // Back at the top: the row index from the previous search would otherwise
     // read as "near the end" of the new first page and fetch its second page.
     visibleRowsStore.set(0, 0);
@@ -2111,6 +2117,10 @@ function ClimbListInner() {
           // inset and the list pads manually by the measured chrome height. Leaving
           // this 'automatic' would double-inset under the (invisible) native header.
           contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+          // The scroll reset on a new search targets the inset top, a negative
+          // offset. React Native clamps a programmatic scroll at 0 unless told the
+          // list may be scrolled past its content bounds.
+          scrollToOverflowEnabled={nativeRootHeader}
           contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
           scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
           keyboardShouldPersistTaps="handled"

@@ -13,7 +13,7 @@ vi.mock('../../../../src/components/PressableSurface', async () => {
   };
 });
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useImperativeHandle, type ReactNode, type Ref } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { NativeStackNavigationOptions } from 'expo-router';
@@ -101,10 +101,13 @@ const mocks = vi.hoisted(() => ({
   deviceLayout: { isPad: false, isTablet: false, widthClass: 'compact' },
   openGrade: undefined as (() => void) | undefined,
   closeGrade: undefined as (() => void) | undefined,
+  scrollToOffset: vi.fn(),
   stackOptions: [] as NativeStackNavigationOptions[],
 }));
 
 type FlashListProps<Item> = {
+  ref?: Ref<{ scrollToOffset: (params: { offset: number; animated?: boolean }) => void }>;
+  scrollToOverflowEnabled?: boolean;
   data?: Item[];
   renderItem?: (info: { item: Item; index: number }) => ReactNode;
   ListHeaderComponent?: ReactNode;
@@ -148,23 +151,27 @@ vi.mock('../../../../src/hooks/use-device-layout', () => ({
 
 vi.mock('@shopify/flash-list', () => ({
   FlashList: <Item,>({
+    ref,
+    scrollToOverflowEnabled = false,
     data = [],
     renderItem,
     ListHeaderComponent,
     ListFooterComponent,
     ListEmptyComponent,
     refreshControl,
-  }: FlashListProps<Item>) =>
-    createElement(
+  }: FlashListProps<Item>) => {
+    useImperativeHandle(ref, () => ({ scrollToOffset: mocks.scrollToOffset }), []);
+    return createElement(
       'div',
-      { 'data-testid': 'flash-list' },
+      { 'data-testid': 'flash-list', 'data-scroll-to-overflow': String(scrollToOverflowEnabled) },
       refreshControl,
       ListHeaderComponent,
       data.length > 0
         ? data.map((item, index) => createElement('div', { key: index }, renderItem?.({ item, index })))
         : ListEmptyComponent,
       ListFooterComponent,
-    ),
+    );
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -191,7 +198,10 @@ vi.mock('expo-router', () => ({
   useLocalSearchParams: () => mocks.searchParams,
   useFocusEffect: () => {},
 }));
-vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 100 }));
+vi.mock('expo-router/react-navigation', async () => {
+  const { createContext } = await import('react');
+  return { useHeaderHeight: () => 100, HeaderHeightContext: createContext<number | undefined>(100) };
+});
 vi.mock('../../../../src/hooks/use-native-root-header', () => ({ useNativeRootHeader: () => mocks.nativeRootHeader }));
 vi.mock('../../../../src/hooks/use-glass-capability', () => ({ useGlassCapability: () => true }));
 
@@ -233,7 +243,8 @@ vi.mock('@boardsesh/analytics', () => ({
 vi.mock('@boardsesh/climb-filters', () => ({
   DEFAULT_CLIMB_FILTER_STATE: {},
   DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
-  toClimbSearchInput: () => ({}),
+  // Carries the filters through, so a changed filter is a changed search.
+  toClimbSearchInput: (filters: unknown) => ({ filters }),
   mergeBoardFilters: (input: unknown) => input,
   countActiveFilters: () => 0,
   hasActiveBoardFilters: () => false,
@@ -616,6 +627,7 @@ beforeEach(() => {
   mocks.deviceLayout = { isPad: false, isTablet: false, widthClass: 'compact' };
   mocks.openGrade = undefined;
   mocks.closeGrade = undefined;
+  mocks.scrollToOffset.mockClear();
   mocks.stackOptions.length = 0;
 });
 
@@ -1328,5 +1340,33 @@ describe('ClimbList grade rail placement', () => {
     expect(mocks.openGrade).toBeDefined();
     act(() => mocks.openGrade?.());
     expect(queryByTestId('grade-range-rail')).toBeNull();
+  });
+});
+
+// A new search puts the list back at its top. Under the UIKit header iOS insets
+// the list by the bar's height, so its top is that far ABOVE offset 0; scrolling
+// to 0 there parks the first result behind the header and the chips.
+describe('ClimbList scroll reset on a new search', () => {
+  const GRADED_SEARCH = { filters: { minGrade: 14, maxGrade: 14 }, boardFilters: {}, name: '' };
+
+  it('returns to the inset top under the native header', () => {
+    const { rerender, getByTestId } = render(<ClimbList />);
+    expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+    // Without this React Native clamps the negative offset back to 0.
+    expect(getByTestId('flash-list').getAttribute('data-scroll-to-overflow')).toBe('true');
+
+    mocks.searchState = GRADED_SEARCH;
+    rerender(<ClimbList />);
+    expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: -100, animated: false });
+  });
+
+  it('returns to offset 0 where the list is not inset natively', () => {
+    mocks.nativeRootHeader = false;
+    const { rerender, getByTestId } = render(<ClimbList />);
+    expect(getByTestId('flash-list').getAttribute('data-scroll-to-overflow')).toBe('false');
+
+    mocks.searchState = GRADED_SEARCH;
+    rerender(<ClimbList />);
+    expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: 0, animated: false });
   });
 });
