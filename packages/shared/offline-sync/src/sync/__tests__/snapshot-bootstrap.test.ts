@@ -49,6 +49,7 @@ import {
 import {
   getBootstrapAttempts,
   readBootstrapRetryState,
+  writeBootstrapRetryState,
   restoreBootstrapRetryBudget,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
@@ -965,6 +966,111 @@ describe('bootstrapScopeFromSnapshot', () => {
 // ---------------------------------------------------------------------------
 
 describe('pullSync snapshot bootstrap', () => {
+  it.each([
+    ['cleared cursors', null, true],
+    ['cleared cursors and a retained lock cooldown', BASE_NOW + 60_000, true],
+    ['authorization withheld after revalidation', BASE_NOW + 60_000, false],
+  ] as const)('replays a retained successful snapshot with %s', async (_label, retryAfter, authorized) => {
+    const scopeKey = 'kilter:1:5';
+    const filePath = join(workDir, 'revalidated-artifact.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'withdrawn-climb', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'withdrawn-climb', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry({ privacyVersion: 1 })]),
+      fileForEntry: () => filePath,
+    });
+    await pullSync(db, noopQueryClient(), makeGraphqlFetch().fetch, {
+      enabledBoards: [scopeKey],
+      snapshotSource: source,
+      now: () => BASE_NOW,
+    });
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`bootstrap-done:${scopeKey}`]),
+    ).not.toBeNull();
+
+    // Privacy revalidation withdraws visible rows and all board cursors/completion,
+    // while preserving the successful artifact marker so an old file cannot restore them.
+    await db.withExclusiveTransactionAsync(async (transaction) => {
+      for (const table of ['board_climb_stats', 'board_climb_grades'])
+        await transaction.runAsync(`DELETE FROM ${table} WHERE climb_uuid = ?`, ['withdrawn-climb']);
+      await transaction.runAsync('DELETE FROM board_climbs WHERE uuid = ?', ['withdrawn-climb']);
+      for (const table of ['board_climbs', 'board_climb_stats', 'board_climb_grades'])
+        await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [`checkpoint:${table}:${scopeKey}`]);
+      await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [`scope-complete:${scopeKey}`]);
+    });
+    await writeBootstrapRetryState(db, scopeKey, {
+      ...EMPTY_BOOTSTRAP_RETRY_STATE,
+      ...(retryAfter === null
+        ? {}
+        : { lockFailures: 1, lastFailureKind: 'database-locked' as const, hasPriorSnapshotFailure: true }),
+      retryAfter,
+    });
+    const replay = makeGraphqlFetch({
+      climbServerRows: [
+        {
+          doc: {
+            uuid: 'authorized-climb',
+            board_type: 'kilter',
+            layout_id: 1,
+            name: 'Authorized climb',
+            compatible_size_ids: '[5]',
+          },
+          cursor: CLIMBS_WATERMARK,
+        },
+      ],
+      gradeServerRows: [
+        {
+          doc: {
+            board_type: 'kilter',
+            climb_uuid: 'authorized-climb',
+            angle: 40,
+            local_grade: 20,
+            computed_at: CLIMBS_WATERMARK.updatedAt,
+            sync_seq: 20,
+          },
+          cursor: CLIMBS_WATERMARK,
+        },
+      ],
+    });
+    const fetch = async <Result>(query: string, variables?: Record<string, unknown>): Promise<Result> => {
+      if (!authorized && query.includes('syncClimbs')) throw new Error('Catalogue authorization withheld');
+      return replay.fetch<Result>(query, variables);
+    };
+    const result = pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: [scopeKey],
+      snapshotSource: source,
+      now: () => BASE_NOW,
+    });
+    if (authorized) {
+      await result;
+      expect(replay.capturedClimbCursors).toEqual([undefined]);
+      expect(replay.capturedStatsCursors).toEqual([undefined]);
+      expect(replay.capturedGradeCursors).toEqual([undefined]);
+      expect(
+        await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', ['authorized-climb']),
+      ).not.toBeNull();
+      expect(
+        await db.getFirstAsync('SELECT climb_uuid FROM board_climb_grades WHERE climb_uuid = ?', ['authorized-climb']),
+      ).not.toBeNull();
+      expect(
+        await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`scope-complete:${scopeKey}`]),
+      ).not.toBeNull();
+    } else {
+      await expect(result).rejects.toThrow('Catalogue authorization withheld');
+      expect(
+        await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`scope-complete:${scopeKey}`]),
+      ).toBeNull();
+      expect(await countRows('board_climbs')).toBe(0);
+    }
+    expect(source.downloadArtifact).toHaveBeenCalledOnce();
+    expect(await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', ['withdrawn-climb'])).toBeNull();
+  });
+
   it('warms a fresh scope, then the paged pull resumes from the watermark and marks the scope complete', async () => {
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-paged-fallback:kilter:1:5', '1']);
     const filePath = join(workDir, 'happy.db');
