@@ -1,6 +1,8 @@
 import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activity-privacy';
 import {
+  canAccessBoard,
   canAccessResource,
+  canAccessResourceWithoutLink,
   legacyResourceAudience,
   canViewActivityIdentity,
   canViewResourceLocation,
@@ -17,7 +19,7 @@ import { readSprayWallImportProgress } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
-import { resolveBoardBySlug } from '../shared/board-lookup';
+import { resolveBoardLinkBySlug } from '../shared/board-lookup';
 import { consensusDifficultyExpr } from '../shared/sql-expressions';
 import {
   CreateBoardInputSchema,
@@ -381,13 +383,19 @@ export async function filterEditableBoards(
 
 /**
  * The single gate for exposing a board's numeric presence-channel id
- * (userBoards.id, the `UserBoard.boardId` field feeding boardNowPlaying):
- * public boards expose it to everyone; private boards only to viewers with
- * board-level edit access. Every surface returning a UserBoard MUST use this —
- * a diverging inline computation could leak a private board's live channel.
+ * (userBoards.id, the `UserBoard.boardId` field feeding boardNowPlaying). Every
+ * surface returning a UserBoard MUST use this.
+ *
+ * The id is a sequential bigserial, so it opens nothing by itself: each
+ * presence read keyed on it takes the no-link reading unless the caller also
+ * presents the board's uuid. Exposing it to a viewer who may read the board is
+ * what lets that viewer's client reach the board's presence at all, so a board
+ * a viewer reached by its link (an Unlisted board saved with `is_public =
+ * false` included) exposes it to them. `viewerMayRead` is true on every path
+ * that already passed `canAccessResource` for this viewer.
  */
-function boardPresenceChannelId(board: { id: number; isPublic: boolean }, canEdit: boolean): number | null {
-  return board.isPublic || canEdit ? board.id : null;
+function boardPresenceChannelId(board: { id: number }, viewerMayRead: boolean, canEdit: boolean): number | null {
+  return viewerMayRead || canEdit ? board.id : null;
 }
 
 /**
@@ -570,7 +578,8 @@ async function enrichBoard(
     commentCount: Number(commentStats?.count || 0),
     isFollowedByMe,
     gymId: showLocation ? (board.gymId ?? null) : null,
-    boardId: boardPresenceChannelId(board, canEdit),
+    // Every caller gated this row on `canAccessResource` before enriching it.
+    boardId: boardPresenceChannelId(board, true, canEdit),
     gymUuid: showLocation ? (gymInfo?.uuid ?? null) : null,
     gymName: showLocation ? (gymInfo?.name ?? null) : null,
     distanceMeters: showLocation ? (distanceMeters ?? null) : null,
@@ -819,7 +828,8 @@ export async function enrichBoards(
         commentCount: commentMap.get(board.uuid) || 0,
         isFollowedByMe: followedSet.has(board.uuid),
         gymId: showLocation ? (board.gymId ?? null) : null,
-        boardId: boardPresenceChannelId(board, canEdit),
+        // `boards` was filtered on `canAccessResource` at the top of this function.
+        boardId: boardPresenceChannelId(board, true, canEdit),
         gymUuid: showLocation ? (gym?.uuid ?? null) : null,
         gymName: showLocation ? (gym?.name ?? null) : null,
         distanceMeters: showLocation ? (distanceMeters ?? null) : null,
@@ -840,20 +850,16 @@ export const socialBoardQueries = {
   /**
    * Get a board by UUID.
    *
-   * Anonymous callers only reach boards that pass `isRowAnonReadable` (public,
-   * or system-owned). A private board reads as `null` — the exact same response
-   * as a board that doesn't exist, so a uuid holder can't confirm one exists.
-   * That closes the kiosk dereference: a kiosk's `layout` JSON deliberately
-   * carries slot boardUuids, and those must not resolve to a private board's
-   * name.
+   * The uuid is the board's link, so the board's policy decides with the link
+   * reading (`canAccessResource`): Public and Unlisted open for anyone holding
+   * it, signed in or not; Followers and Invite-only need the viewer's standing.
+   * A board the viewer may not read is `null` — the exact same response as a
+   * board that doesn't exist, so a uuid holder can't confirm one exists. That
+   * closes the kiosk dereference: a kiosk's `layout` JSON deliberately carries
+   * slot boardUuids, and those must not resolve to a private board's name.
    *
-   * Deliberately ANON-ONLY, unlike the gym reads. A logged-in caller keeps
-   * membership-free access to any active board, matching
-   * `requireAnonReadableBoard` and the rest of the board-presence family.
-   * Authenticated non-owner access is load-bearing: a climber connecting to a
-   * gym's private board over BLE resolves it by uuid through here, and
-   * `boardsBySerialNumbers` already serves private boards to any signed-in
-   * caller.
+   * A merged-away uuid redirects to its survivor, and stays a link only when one
+   * owner holds both boards; otherwise the survivor gets the no-link reading.
    */
   board: async (_: unknown, { boardUuid }: { boardUuid: string }, ctx: ConnectionContext) => {
     validateInput(UUIDSchema, boardUuid, 'boardUuid');
@@ -866,33 +872,31 @@ export const socialBoardQueries = {
     if (!board) return null;
     const canonical = board.deletedAt ? await resolveBoardFollowingMerges(board) : board;
     if (!canonical) return null;
+    const uuidIsLink = !board.deletedAt || board.ownerId === canonical.ownerId;
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
-    // Gate before enrichment so a masked anonymous read never runs the
-    // owner/count/follow lookups for a board it isn't allowed to see.
+    // Gate before enrichment so a masked read never runs the owner/count/follow
+    // lookups for a board it isn't allowed to see.
     //
-    // A spray wall takes the wall's own rule INSTEAD of the anonymous mask, not
-    // after it. The mask refuses every non-public board to an anonymous caller,
-    // which is right for a piece of gym furniture and wrong here in both
-    // directions: it let a signed-in stranger into a PRIVATE wall (that is what
-    // the capability check below closes), and it kept an anonymous caller out of
-    // an UNLISTED one — even though the uuid they presented is the entire claim,
-    // 122 unguessable bits, and `sprayWall(uuid)` hands them the same wall. One
-    // rule per key: a uuid is a capability whether or not you are signed in.
-    if (isSprayBoardType(canonical.boardType)) {
-      if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
-    } else if (!viewerId && !isRowAnonReadable(canonical)) {
+    // A spray wall also takes the wall's own rule. One rule per key: a uuid is a
+    // capability whether or not you are signed in, so an UNLISTED wall opens for
+    // an anonymous caller too (122 unguessable bits, the same wall
+    // `sprayWall(uuid)` hands them), and a PRIVATE wall stays with its owner.
+    if (isSprayBoardType(canonical.boardType) && !(await sprayBoardRowIsReadable(canonical, viewerId, 'capability')))
       return null;
-    }
-    if (!(await canAccessResource('board', canonical.uuid, viewerId))) return null;
+    if (!(await canAccessBoard(canonical.uuid, viewerId, uuidIsLink ? canonical.uuid : null))) return null;
     return enrichBoard(canonical, viewerId);
   },
 
   /**
    * Get a board by slug (for URL routing).
    *
-   * This follows the same anonymous-only mask as `board(boardUuid)`: direct
-   * private-board links keep working for signed-in climbers, while anonymous
-   * requests cannot disclose a private board through the shared web cache.
+   * A home board's `/b/<slug>` path is its link, read the same way as
+   * `board(boardUuid)`: Public and Unlisted open for anyone holding it, signed
+   * in or not, and Followers and Invite-only need the viewer's standing. The
+   * slug is derived from the board's name, so Unlisted means "not listed", not
+   * "secret". A slug reached through a merge tombstone is the link only when
+   * one owner holds both boards (see `resolveBoardLinkBySlug`); a reused slug
+   * never opens another owner's Unlisted board.
    *
    * `wallUuid` is a spray wall's share link (`/b/{slug}/...?wall=<uuid>`). The
    * slug alone is a guess, so it never opens an unlisted wall; the uuid is the
@@ -910,20 +914,24 @@ export const socialBoardQueries = {
     ctx: ConnectionContext,
   ) => {
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
-    const canonical = await resolveBoardBySlug(slug);
-    if (!canonical) return null;
-    if (isSprayBoardType(canonical.boardType) && typeof wallUuid === 'string' && wallUuid === canonical.uuid) {
-      if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
-      if (!(await canAccessResource('board', canonical.uuid, viewerId))) return null;
+    const resolved = await resolveBoardLinkBySlug(slug);
+    if (!resolved) return null;
+    const { board: canonical, slugIsLink } = resolved;
+    if (isSprayBoardType(canonical.boardType)) {
+      if (typeof wallUuid === 'string' && wallUuid === canonical.uuid) {
+        if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
+        if (!(await canAccessResource('board', canonical.uuid, viewerId))) return null;
+        return enrichBoard(canonical, viewerId);
+      }
+      // A spray wall's slug is derived from the wall's NAME and, unlike a home
+      // board's, was never its link: the wall's enumerable rule and the no-link
+      // reading, behind the legacy anonymous mask.
+      if (!viewerId && !isRowAnonReadable(canonical)) return null;
+      if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'enumerable'))) return null;
+      if (!(await canAccessResourceWithoutLink('board', canonical.uuid, viewerId))) return null;
       return enrichBoard(canonical, viewerId);
     }
-    // Same anonymous mask as the active path and `board(boardUuid)`: following a
-    // tombstone must not disclose a private survivor to an anonymous caller.
-    if (!viewerId && !isRowAnonReadable(canonical)) return null;
-    // A spray wall's slug is derived from the wall's NAME, so it is a guess and
-    // not a capability: no unlisted exemption here, unlike `board(boardUuid)`.
-    if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'enumerable'))) return null;
-    if (!(await canAccessResource('board', canonical.uuid, viewerId))) return null;
+    if (!(await canAccessBoard(canonical.uuid, viewerId, slugIsLink ? canonical.uuid : null))) return null;
     return enrichBoard(canonical, viewerId);
   },
 
@@ -1093,8 +1101,9 @@ export const socialBoardQueries = {
           commentCount: 0,
           isFollowedByMe: false,
           gymId: null,
-          // Anonymous caller: no edit access, so only public boards expose it.
-          boardId: boardPresenceChannelId(board, false),
+          // Anonymous caller: a serial is not the board's link, so only a
+          // listed public board exposes its channel here.
+          boardId: boardPresenceChannelId(board, board.isPublic && !board.isUnlisted, false),
           gymUuid: null,
           gymName: null,
           distanceMeters: null,
@@ -1516,8 +1525,9 @@ export const socialBoardQueries = {
         throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
       }
     } else {
-      // Anonymous callers only read public / system-shared boards' leaderboards.
-      await requireAnonReadableBoard(board.id, ctx.userId);
+      // Keyed on the board's uuid, which is its link: an Unlisted board's
+      // leaderboard opens for whoever holds it, the same as `board(boardUuid)`.
+      await requireAnonReadableBoard(board.id, ctx.userId, boardUuid);
     }
 
     // Build time filter

@@ -709,9 +709,10 @@ export const boardPresenceMutations = {
    * stats and live presence share the same board_id before any BLE connection.
    *
    * Auth-optional: board presence is universal, so an anonymous viewer can bind
-   * a public board and become a member (keyed by `conn:{connectionId}`). Owned
-   * boards stay reachable only to their logged-in owner (see
-   * findReachableActiveBoardByUuid).
+   * a board and become a member (keyed by `conn:{connectionId}`). The uuid is
+   * the board's link, so its policy decides with the link reading: Public and
+   * Unlisted bind for anyone holding it, others need the viewer's standing
+   * (see findReachableActiveBoardByUuid).
    */
   resolveBoardForUuid: async (
     _: unknown,

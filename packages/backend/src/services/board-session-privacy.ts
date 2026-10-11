@@ -13,7 +13,13 @@ import type {
 } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { boardClimbs, boardSessions, resourceGrants, userBoards } from '@boardsesh/db/schema';
-import { canViewActivityIdentity, canViewContent, visibleActivityUserIds, visibleBoardIdentityIds } from './privacy';
+import {
+  canAccessResource,
+  canViewActivityIdentity,
+  canViewContent,
+  visibleActivityUserIds,
+  visibleBoardIdentityIds,
+} from './privacy';
 
 /** Session protocol IDs must never double as profile IDs. */
 export function sessionParticipantId(sessionId: string, userId: string): string {
@@ -95,8 +101,20 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
  * left at all (renamed since, or its account deleted) names nothing anyone can
  * open, so it comes back as the empty path, which clients read as "no board
  * path". Any other path is returned unchanged.
+ *
+ * A session invite is not the board's link, so for a live board a joiner
+ * normally gets the no-link reading (`visibleBoardIdentityIds`). Two viewers
+ * hold the link, and keep the named path while that link still opens the board
+ * for them (a home board's slug is its link; a spray wall's never was):
+ *  - `presentedByViewer`: the path is the viewer's own input, the `boardPath` a
+ *    `joinSession` sends from the board's page;
+ *  - `sessionCreatorId`: the session's creator presented this path to start it.
  */
-export async function projectSessionBoardPath(boardPath: string, viewerId: string | null | undefined): Promise<string> {
+export async function projectSessionBoardPath(
+  boardPath: string,
+  viewerId: string | null | undefined,
+  linkHolders: { presentedByViewer?: boolean; sessionCreatorId?: string | null } = {},
+): Promise<string> {
   const named = parseNamedBoardPath(boardPath);
   if (!named) return boardPath;
   const columns = {
@@ -127,10 +145,21 @@ export async function projectSessionBoardPath(boardPath: string, viewerId: strin
   const board = live ?? deleted;
   if (!board) return '';
   const mayName = live
-    ? (await visibleBoardIdentityIds([live.id], viewerId)).has(Number(live.id))
+    ? (await visibleBoardIdentityIds([live.id], viewerId)).has(Number(live.id)) ||
+      (await holdsLiveBoardLink(live, viewerId, linkHolders))
     : await holdsDeletedBoard(board, viewerId);
   if (mayName) return boardPath;
   return `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
+}
+
+/** The viewer presented this live board's link, and it still opens the board for them. */
+async function holdsLiveBoardLink(
+  board: { uuid: string; boardType: string },
+  viewerId: string | null | undefined,
+  linkHolders: { presentedByViewer?: boolean; sessionCreatorId?: string | null },
+): Promise<boolean> {
+  const presented = linkHolders.presentedByViewer === true || (!!viewerId && linkHolders.sessionCreatorId === viewerId);
+  return presented && board.boardType !== 'spray' && (await canAccessResource('board', board.uuid, viewerId));
 }
 
 /** A deleted board is still named to its owner and to anyone it was shared with. */

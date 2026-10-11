@@ -41,7 +41,7 @@ export type UserBoard = {
   commentCount: number;
   isFollowedByMe: boolean;
   gymId?: number | null;
-  /** Numeric board-presence channel id (userBoards.id); null unless the board is public or the viewer can edit it. Feeds boardNowPlaying(boardId) for kiosk/embed surfaces. */
+  /** Numeric board-presence channel id (userBoards.id); set whenever the viewer may read the board. Feeds boardNowPlaying(boardId); the id alone is the no-link reading, so an Unlisted board's presence also needs `boardUuid`. */
   boardId?: number | null;
   gymUuid?: string | null;
   gymName?: string | null;

@@ -34,20 +34,24 @@ export const liveSessionQueries = {
 
   /**
    * The live sessions on one board, for its presence sheet. Gated exactly like
-   * `boardHistory`: an active board, anonymous callers only on public /
-   * system-shared boards (a private board is masked as NOT_FOUND, same as a
-   * missing one), and a spray wall's own rule for everyone. Anonymous callers
-   * see public sessions only and never get followed-climber reasons.
+   * `boardHistory`: an active board the viewer may read (a board they may not
+   * is masked as NOT_FOUND, same as a missing one), and a spray wall's own rule
+   * for everyone. The board id alone is the no-link reading, because ids can
+   * be counted; an Unlisted board's sheet opens, and names its board, only for
+   * a caller who also presents its uuid (`boardUuid`). Anonymous callers see
+   * public sessions only and never get followed-climber reasons.
    */
   boardLiveSessions: async (
     _: unknown,
-    { boardId }: { boardId: number },
+    { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
     ctx: ConnectionContext,
   ): Promise<LiveSession[]> => {
     await applyRateLimit(ctx, 60, 'boardLiveSessions');
     const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
-    await assertAnonReadableBoard(visibilityBoard, ctx.userId);
+    await assertAnonReadableBoard(visibilityBoard, ctx.userId, boardUuid);
     await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
-    return findBoardLiveSessions(boardId, ctx.userId ?? null);
+    return findBoardLiveSessions(boardId, ctx.userId ?? null, {
+      linkHeld: typeof boardUuid === 'string' && boardUuid === visibilityBoard.uuid,
+    });
   },
 };

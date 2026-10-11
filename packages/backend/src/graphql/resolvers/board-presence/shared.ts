@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { canAccessResource, getResourcePrivacy } from '../../../services/privacy';
+import { canAccessBoard, canAccessResource } from '../../../services/privacy';
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
@@ -247,7 +247,9 @@ export async function findSelectedBoardForConnect(
     .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
   if (!board) return undefined;
-  if (!(await canAccessResourceWithoutLink('board', board.uuid, userId))) return undefined;
+  // The client names the picked board by uuid, which is its link: an Unlisted
+  // board a climber opened by its link stays their pick when they connect.
+  if (!(await canAccessResource('board', board.uuid, userId))) return undefined;
   if (!(await sprayLayoutIsReadable(board.boardType, Number(board.layoutId), userId))) return undefined;
   if (
     board.boardType !== config.boardType ||
@@ -632,9 +634,12 @@ export async function findReachableActiveBoardByUuid(
   if (!canonical) return undefined;
 
   // Reachability is deliberately evaluated on the canonical board, never the
-  // stale loser. Owning a private loser must not grant access to another
-  // owner's private survivor; anonymous callers can only reach public boards.
-  if (!canonical.isPublic && canonical.ownerId !== userId) return undefined;
+  // stale loser: owning a private loser must not grant access to another
+  // owner's private survivor. The uuid is the requested board's link, so it
+  // opens an Unlisted board. Across a merge it stays a link only when one owner
+  // holds both boards; otherwise the survivor gets the no-link reading.
+  const presentedLink = !requested.deletedAt || requested.ownerId === canonical.ownerId ? canonical.uuid : null;
+  if (!(await canAccessBoard(canonical.uuid, userId, presentedLink))) return undefined;
 
   return toActivePresenceBoard(canonical);
 }
@@ -684,8 +689,8 @@ export async function requireActiveBoardById(boardId: number): Promise<ActivePre
   const board = await findActiveBoardById(boardId);
   if (!board) {
     // NOT_FOUND matches requireAnonReadableBoard's mask below, so a missing
-    // board and a private board masked from an anonymous viewer produce the
-    // identical error shape (message + extensions.code) on the wire.
+    // board and a board the viewer may not read produce the identical error
+    // shape (message + extensions.code) on the wire.
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return board;
@@ -694,75 +699,55 @@ export async function requireActiveBoardById(boardId: number): Promise<ActivePre
 export type BoardVisibility = Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'isPublic' | 'ownerId'>;
 
 /**
- * THE anonymous board-visibility rule, applied to a board row already in hand:
- * a **public** board, or a system-owned shared per-config board (the serial-less
- * MoonBoard-style feeds anon is first-class for). Viewer-independent.
- *
- * Every board read reachable without a session MUST route its anonymous gate
- * through this one predicate — `isBoardAnonReadable` (by id),
- * `assertAnonReadableBoard` (throwing), and the `board(boardUuid)` entity read
- * all call it, so a private board can never be visible on one anonymous surface
- * and hidden on another.
- *
- * `isUnlisted` is deliberately NOT part of the rule: unlisted means "reachable
- * by direct link, never enumerated", so an unlisted-but-public board stays
- * readable by uuid. Enumerating reads (searchBoards, gymBoards) filter unlisted
- * separately.
+ * The legacy-boolean anonymous mask: a board flagged `is_public`, or a
+ * system-owned shared per-config board. It ignores the board's privacy policy,
+ * so an Unlisted board saved with the current controls (`is_public = false`
+ * plus a `resource_privacy` row) fails it. Home-board reads therefore do not use
+ * it: they read the policy through `canAccessResource` (the link) or
+ * `canAccessBoard` (a numeric id). Only the spray wall slug path in
+ * `boardBySlug` still applies it, ahead of the wall's own rule.
  */
 export function isRowAnonReadable(board: BoardVisibility): boolean {
   return board.isPublic || board.ownerId === SYSTEM_BOARD_OWNER_ID;
 }
 
 /**
- * `isRowAnonReadable` for a board identified by id — for callers that don't
- * already hold the row. Also the publish gate for the board-queue-preview
- * producer, which has no viewer at all. False for missing/deleted boards.
+ * Whether anybody without an account could read this board through its link:
+ * the policy's Public and Unlisted audiences (a signed-out viewer has no owner,
+ * grant or follower standing, so `canAccessResource` admits exactly those).
+ * Viewer-independent: the publish gate for the board-queue-preview producer,
+ * which has no viewer at all. Who may subscribe to that preview is the
+ * subscriber gate's call (`requireReadablePresenceBoard`), so an Unlisted
+ * board's preview reaches only callers who presented its uuid. False for
+ * missing/deleted boards.
  */
 export async function isBoardAnonReadable(boardId: number): Promise<boolean> {
   assertValidBoardId(boardId);
   const [board] = await db
-    .select({
-      uuid: dbSchema.userBoards.uuid,
-      isPublic: dbSchema.userBoards.isPublic,
-      ownerId: dbSchema.userBoards.ownerId,
-    })
+    .select({ uuid: dbSchema.userBoards.uuid })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
-  return Boolean(
-    board &&
-    ['public', 'unlisted'].includes((await getResourcePrivacy('board', board.uuid))?.audience ?? '') &&
-    (await canAccessResource('board', board.uuid, null)),
-  );
+  return Boolean(board && (await canAccessResource('board', board.uuid, null)));
 }
 
 /**
- * Bound anonymous reads of the live "now on the wall" feed (boardNowPlaying /
- * boardRecentClimbs / boardConnection) to boards an anonymous viewer is allowed
- * to see. Logged-in callers keep the pre-existing membership-free access to any
- * active board (a board's send feed is shared, leaderboard-style data among
- * authenticated users). Anonymous callers — who could otherwise enumerate the
- * sequential board ids — are restricted to the `isBoardAnonReadable` set.
- * Throws the same `Board not found` as a missing board so a private board's
- * existence isn't revealed to anon. No-op for logged-in.
- *
- * Returns whether anon-readability was actually VERIFIED — true only on the
- * anonymous path (where not throwing means `isBoardAnonReadable` held), false
- * for logged-in viewers (nothing was checked). Callers that re-apply the same
- * viewer-independent gate downstream (boardQueuePreview) use it to skip a
- * duplicate `isBoardAnonReadable` query — never treat `false` as "not
- * readable", only as "not verified here".
+ * The board gate for reads keyed on a numeric board id (boardNowPlaying, the
+ * leaderboard). `user_boards.id` is a sequential bigserial anyone can count, so
+ * the id alone gets the no-link reading: Public, plus whatever the viewer holds
+ * already (owner, grant, follower inheritance). An Unlisted board opens only
+ * when the caller also presents the board's uuid (`presentedBoardUuid`) and it
+ * is this row's own. Throws the same `Board not found` as a missing board, so a
+ * board the viewer may not read is no oracle.
  */
 export async function requireAnonReadableBoard(
   boardId: number,
   viewerUserId: string | null | undefined,
-): Promise<boolean> {
+  presentedBoardUuid?: string | null,
+): Promise<void> {
   assertValidBoardId(boardId);
   const board = await requireActiveBoardWithVisibilityById(boardId);
-  if (!(await canAccessResource('board', board.uuid, viewerUserId))) {
-    throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
-  }
-  return !viewerUserId && isRowAnonReadable(board);
+  await assertAnonReadableBoard(board, viewerUserId, presentedBoardUuid);
 }
 
 /**
@@ -771,20 +756,22 @@ export async function requireAnonReadableBoard(
  * (`boardConnection`, `boardQueuePreview`) that do not otherwise load the row.
  *
  * Behaviour is exactly the two gates in sequence:
- *  - anonymous: a missing, deleted or non-anon-readable board is NOT_FOUND;
- *  - signed in: nothing about existence is checked (a missing board stays the
- *    caller's null, as before);
+ *  - a missing or deleted board, or one the viewer may not read by id (no-link
+ *    reading, unless `presentedBoardUuid` is this row's uuid), is NOT_FOUND;
  *  - any found spray wall then takes `assertSprayBoardIsReadable` (private and
  *    hidden = its principals / owner only). Every other board type returns
  *    before that helper issues a query.
  *
- * Returns the anon-verified flag `requireAnonReadableBoard` returns, and the
- * row's type and layout so a subscription can build its per-event
- * `sprayStreamGate` without reading the row again.
+ * Returns `anonReadableVerified` (true for a signed-out viewer, whose passing
+ * this gate already means `isBoardAnonReadable` holds: a signed-out viewer
+ * passes only the Public and Unlisted audiences) and the row's type and layout
+ * so a subscription can build its per-event `sprayStreamGate` without reading
+ * the row again.
  */
 export async function requireReadablePresenceBoard(
   boardId: number,
   viewerUserId: string | null | undefined,
+  presentedBoardUuid?: string | null,
 ): Promise<{ anonReadableVerified: boolean; board: { boardType: string; layoutId: number } | null }> {
   assertValidBoardId(boardId);
   const [row] = await db
@@ -800,7 +787,7 @@ export async function requireReadablePresenceBoard(
     .where(eq(dbSchema.userBoards.id, boardId))
     .limit(1);
 
-  if (!row || row.deletedAt !== null || !(await canAccessResource('board', row.uuid, viewerUserId))) {
+  if (!row || row.deletedAt !== null || !(await canAccessBoard(row.uuid, viewerUserId, presentedBoardUuid))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   if (!row) return { anonReadableVerified: !viewerUserId, board: null };
@@ -818,12 +805,12 @@ export async function requireReadablePresenceBoard(
 }
 
 /**
- * Same shape as `requireActiveBoardById`, plus the `isPublic`/`ownerId`
- * columns `requireAnonReadableBoard` needs. Callers that need both checks
- * (`boardHistory`, `boardPresenceStats`, `boardRecentClimbs`) can do a single
- * indexed by-id lookup and pass the row to `assertAnonReadableBoard` instead
- * of `requireActiveBoardById` + `requireAnonReadableBoard` issuing two
- * separate round-trips for the same row on every anonymous request.
+ * Same shape as `requireActiveBoardById`, plus the `uuid` the board gate reads
+ * the policy by. Callers that need both checks (`boardHistory`,
+ * `boardPresenceStats`, `boardRecentClimbs`) can do a single indexed by-id
+ * lookup and pass the row to `assertAnonReadableBoard` instead of
+ * `requireActiveBoardById` + `requireAnonReadableBoard` issuing two separate
+ * round-trips for the same row on every request.
  */
 export async function requireActiveBoardWithVisibilityById(
   boardId: number,
@@ -857,14 +844,15 @@ export async function requireActiveBoardWithVisibilityById(
 /**
  * `requireAnonReadableBoard`'s gate, applied to a board row already loaded via
  * `requireActiveBoardWithVisibilityById` instead of re-querying by id. Same
- * masking behaviour: no-op for logged-in callers, NOT_FOUND for anonymous
- * callers on a non-public board that isn't system-owned.
+ * rule: the no-link reading for the id alone, the link reading when
+ * `presentedBoardUuid` is this row's uuid, NOT_FOUND otherwise.
  */
 export async function assertAnonReadableBoard(
   board: BoardVisibility,
   viewerUserId: string | null | undefined,
+  presentedBoardUuid?: string | null,
 ): Promise<void> {
-  if (!(await canAccessResource('board', board.uuid, viewerUserId)))
+  if (!(await canAccessBoard(board.uuid, viewerUserId, presentedBoardUuid)))
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
 }
 

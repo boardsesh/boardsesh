@@ -123,7 +123,7 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isFollowedByMe: Boolean!
     "Gym ID if linked to a gym"
     gymId: Int
-    "Numeric board-presence channel id (userBoards.id); null unless the board is public or the viewer can edit it. Feeds boardNowPlaying(boardId) for kiosk/embed surfaces."
+    "Numeric board-presence channel id (userBoards.id); set whenever the viewer may read the board. Feeds boardNowPlaying(boardId); the id alone is the no-link reading, so an Unlisted board's presence also needs boardUuid."
     boardId: Int
     "Gym UUID if linked to a gym"
     gymUuid: String

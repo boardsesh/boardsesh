@@ -14,6 +14,7 @@ import {
   UUIDSchema,
 } from '../../../validation/schemas';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
+import { resourceAccessCondition } from '../../../services/privacy';
 import {
   recordKioskHeartbeat,
   readKioskLastSeen,
@@ -128,12 +129,14 @@ type EnrichedGym = Awaited<ReturnType<typeof enrichGym>>;
  *    UI never shows a placeholder for a board the editor just placed. Their
  *    `boardId` is exposed directly — gym edit access is at least as strong a
  *    trust signal as the per-board gate.
- *  - everyone else: a slot board is included only when its presence-channel id
- *    is exposable via the shared `UserBoard.boardId` gate in enrichBoards
- *    (public, or the viewer can edit that board). GymKioskBoard's boardId is
- *    non-null, so a filtered board is omitted rather than shown with a null id
- *    (the private board stays in `layout`, off `boards`, and the kiosk client
- *    degrades the preset).
+ *  - everyone else: a kiosk URL is a listing, not a board's link, so a slot
+ *    board is included only when the viewer may read it WITHOUT the link (the
+ *    no-link reading of its policy: Public, or a board they already hold). An
+ *    Unlisted board stays off a public kiosk even though its uuid sits in the
+ *    layout. The survivors then go through enrichBoards and its shared
+ *    `UserBoard.boardId` gate. GymKioskBoard's boardId is non-null, so a
+ *    filtered board is omitted rather than shown with a null id (the board
+ *    stays in `layout`, off `boards`, and the kiosk client degrades the preset).
  */
 async function resolveKioskView(
   kiosk: KioskRow,
@@ -158,6 +161,9 @@ async function resolveKioskView(
           // A spray wall a reset archived leaves its slot the way a deleted board
           // does: nothing new can be set on it, so a kiosk must not offer it.
           boardIsNotArchivedSprayWall(),
+          viewerCanEditGym
+            ? undefined
+            : resourceAccessCondition('board', dbSchema.userBoards.uuid, viewerId, { allowUnlistedLink: false }),
         ),
       );
 

@@ -34,8 +34,11 @@ export {
  * for every surface — the query resolver, the subscription seed, and the live
  * producer all route through it:
  *
- * 1. The board must be anonymously readable (public, or a system-owned shared
- *    per-config board) — `isBoardAnonReadable`.
+ * 1. The board must be readable by a signed-out holder of its link (Public or
+ *    Unlisted, or a system-owned shared per-config board) —
+ *    `isBoardAnonReadable`. Who may SUBSCRIBE is the resolver gate's call: the
+ *    board id alone takes the no-link reading, so an Unlisted board's preview
+ *    reaches only a caller who also presents its uuid.
  * 2. The bound session must be `board_sessions.is_public = true` AND still
  *    `status = 'active'`. This deliberately widens `is_public`'s meaning from
  *    "appears in discovery" to "queue observable on public displays"
@@ -115,8 +118,8 @@ export function buildBoardQueuePreview(boardId: number, queueState: QueueState):
  *
  * `options.anonReadableVerified` skips the gate-1 board query when the
  * caller has ALREADY verified `isBoardAnonReadable(boardId) === true` for
- * this request (the anonymous resolver path, whose `requireAnonReadableBoard`
- * ran the identical query) — never pass it on any other basis.
+ * this request (the anonymous resolver path, where passing
+ * `requireReadablePresenceBoard` implies it) — never pass it on any other basis.
  */
 export async function resolvePublicPreviewSessionForBoard(
   boardId: number,

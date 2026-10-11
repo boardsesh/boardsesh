@@ -219,9 +219,18 @@ async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId
   };
 }
 /**
- * Both readings of one resource from a single policy load: `withLink` is what
- * an invite link or UUID opens, `withoutLink` is discovery (listings, numeric
- * IDs, slugs), where an unlisted resource needs the viewer to hold it already.
+ * Both readings of one resource from a single policy load, which reads the
+ * effective audience (the `resource_privacy` row first, the legacy booleans
+ * second).
+ *
+ * - `withLink`: what the resource's link opens. For a session that is its
+ *   invite link or id; for a home board its uuid or its `/b/<slug>` path. An
+ *   Unlisted resource opens for anyone holding one.
+ * - `withoutLink`: everything that is not that link. Listings, search, feeds,
+ *   a log that names a board, a spray wall's name-derived slug, and every key a
+ *   caller can count: `user_boards.id` is a sequential bigserial, so a numeric
+ *   board id is never a link. Here an Unlisted resource opens only for people
+ *   who already hold it (owner, approved grant, follower inheritance).
  */
 export async function resourceAccess(
   kind: PrivacyResourceKind,
@@ -236,6 +245,7 @@ export async function resourceAccess(
     withoutLink: canReadResource(resource.audience === 'unlisted' ? 'invite_only' : resource.audience, viewer),
   };
 }
+/** The `withLink` reading of {@link resourceAccess}: a session invite, a board uuid or home-board slug. */
 export async function canAccessResource(
   kind: PrivacyResourceKind,
   resourceId: string,
@@ -243,13 +253,28 @@ export async function canAccessResource(
 ): Promise<boolean> {
   return (await resourceAccess(kind, resourceId, viewerId)).withLink;
 }
-/** Numeric IDs, slugs and discovery are not unlisted-link capabilities. */
+/** The `withoutLink` reading of {@link resourceAccess}: listings, logs, numeric ids, spray slugs. */
 export async function canAccessResourceWithoutLink(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
 ): Promise<boolean> {
   return (await resourceAccess(kind, resourceId, viewerId)).withoutLink;
+}
+/**
+ * Access to a board through whatever key the caller holds. Only the board's own
+ * uuid, passed as `presentedBoardUuid`, is its link and gets the `withLink`
+ * reading. Everything else gets `withoutLink`: a numeric `user_boards.id`
+ * (enumerable), a slug or uuid carried across another owner's merge, or a uuid
+ * of some other board, which unlocks nothing here.
+ */
+export async function canAccessBoard(
+  boardUuid: string,
+  viewerId: ViewerId,
+  presentedBoardUuid: string | null | undefined,
+): Promise<boolean> {
+  const access = await resourceAccess('board', boardUuid, viewerId);
+  return presentedBoardUuid === boardUuid ? access.withLink : access.withoutLink;
 }
 export async function requireResourceAccess(
   kind: PrivacyResourceKind,

@@ -97,9 +97,11 @@ export async function buildSessionPayload(
     // Treats `sessionData.name === ''` the same as `name === null` —
     // consistent with the `goal` / `color` fields a few lines below.
     name: inputs.name !== undefined ? inputs.name : sessionData?.name || null,
+    // `inputs.boardPath` is the joiner's own `joinSession` argument, echoed back.
     boardPath: await projectSessionBoardPath(
       inputs.boardPath !== undefined ? inputs.boardPath : sessionData?.boardPath || '',
       ctx.userId,
+      { presentedByViewer: inputs.boardPath !== undefined, sessionCreatorId: sessionData?.createdByUserId },
     ),
     users: await redactSessionUsers(users, ctx.userId, sessionId),
     queueState: queueState

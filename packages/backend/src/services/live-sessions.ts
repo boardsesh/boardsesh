@@ -1,10 +1,4 @@
-import {
-  canAccessResource,
-  canViewResourceLocation,
-  resourceAccess,
-  resourceAccessCondition,
-  visibleActivityUserIds,
-} from './privacy';
+import { canViewResourceLocation, resourceAccess, resourceAccessCondition, visibleActivityUserIds } from './privacy';
 import { and, desc, eq, exists, gt, inArray, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import type {
   LiveSession,
@@ -450,12 +444,15 @@ async function loadBoardRows(
  * The board as this viewer may see it, or null. Never leaks a board the viewer
  * could not otherwise find:
  *
- * - it must be live (not deleted) and readable under its current resource
- *   policy, including audience overrides and revoked grants;
- * - an UNLISTED board is reachable by link, never enumerated, so it is only
- *   named to a viewer who already holds it: they follow it, selected it, or
- *   are reading that board's own sheet (`heldBoardIds`). Same rule as the tick
- *   feeds' `canShowBoard`;
+ * - it must be live (not deleted) and readable under the board's policy, read
+ *   the way `resourceAccess` reads it (the `resource_privacy` row first, the
+ *   legacy booleans second), so an Unlisted board saved with the current
+ *   controls (`is_public = false`) is judged by its audience, not its flag;
+ * - a board the viewer holds the link of (`heldBoardIds`: they follow it,
+ *   selected it by uuid, or presented its uuid with the board's own sheet) gets
+ *   the link reading. Any other board, including one named only by a session
+ *   or by the numeric id the sheet was asked for, gets the no-link reading: an
+ *   Unlisted board is named only to people who already hold it;
  * - a spray wall additionally needs the wall's own enumerable rule, since a
  *   public-flagged wall can still be admin-hidden or scoped to a gym.
  */
@@ -965,7 +962,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
         followedParticipantIds: followedParticipantIds.filter((userId) => visibleMembers.has(userId)),
         viewerIsMember: entry.viewerIsMember,
         isPublic: candidate.isPublic,
-        board: board && (await canAccessResource('board', board.uuid, viewerId)) ? board : null,
+        board,
         boardType,
         angle: parsedPath.angle ?? boardRow?.angle ?? null,
         sendCount: stats?.sendCount ?? 0,
@@ -1107,9 +1104,15 @@ export async function findFollowedLiveSessions(
 /**
  * A board's presence sheet: the live sessions on this board. The caller has
  * already applied the board's read gate (see `boardLiveSessions`); anonymous
- * viewers (`viewerId` null) only see public sessions.
+ * viewers (`viewerId` null) only see public sessions. `linkHeld` says the
+ * caller presented the board's uuid, not just its countable numeric id: only
+ * then may an Unlisted board's own name, slug and uuid ride on the sessions.
  */
-export async function findBoardLiveSessions(boardId: number, viewerId: string | null): Promise<LiveSession[]> {
+export async function findBoardLiveSessions(
+  boardId: number,
+  viewerId: string | null,
+  options: { linkHeld: boolean },
+): Promise<LiveSession[]> {
   const now = new Date();
   const [boardRow] = await db
     .select({
@@ -1138,8 +1141,9 @@ export async function findBoardLiveSessions(boardId: number, viewerId: string | 
     now,
     limit: BOARD_LIVE_SESSIONS_LIMIT,
     mode: 'board',
-    // The caller passed this board's read gate to get here, so it is held.
-    heldBoardIds: new Set([board.id]),
+    // Held only when the caller presented the board's link. The numeric id
+    // passed the no-link gate, which says nothing about holding an Unlisted board.
+    heldBoardIds: options.linkHeld ? new Set([board.id]) : new Set<number>(),
     boardReasons: (resolvedBoardId) => (resolvedBoardId === board.id ? ['SELECTED_BOARD'] : []),
   });
 }

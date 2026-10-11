@@ -13,8 +13,9 @@ export const boardQueuePreviewQueries = {
    * Redacted "Up next" snapshot of the party-session queue bound to a shared
    * board, for anonymous public displays (gym kiosks).
    *
-   * Auth-optional. `requireAnonReadableBoard` hides private boards from
-   * anonymous viewers behind the same NOT_FOUND as a missing board. The
+   * Auth-optional. `requireReadablePresenceBoard` hides a board the viewer may
+   * not read behind the same NOT_FOUND as a missing board: the board id alone is
+   * the no-link reading, and an Unlisted board needs its uuid (`boardUuid`). The
    * double privacy gate (anon-readable board AND `isPublic` active session —
    * including the deliberately widened `is_public` semantics) plus the
    * binding resolution (Redis reverse key → newest-active DB fallback) and
@@ -25,7 +26,7 @@ export const boardQueuePreviewQueries = {
    */
   boardQueuePreview: async (
     _: unknown,
-    { boardId }: { boardId: number },
+    { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
     ctx: ConnectionContext,
   ): Promise<BoardQueuePreview | null> => {
     // 30/min, parity with boardNowPlaying — the snapshot does DB work
@@ -39,7 +40,7 @@ export const boardQueuePreviewQueries = {
     // repeat it (logged-in viewers verified nothing — gate 1 still runs).
     // One row read: the anon gate plus a spray wall's own rule (private and
     // hidden = owner only).
-    const { anonReadableVerified } = await requireReadablePresenceBoard(boardId, ctx.userId);
+    const { anonReadableVerified } = await requireReadablePresenceBoard(boardId, ctx.userId, boardUuid);
     return getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified });
   },
 };
@@ -61,14 +62,14 @@ export const boardQueuePreviewSubscriptions = {
     subscribe: withSubscriptionCleanup(async function* (
       lifetime,
       _: unknown,
-      { boardId }: { boardId: number },
+      { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
       ctx: ConnectionContext,
     ) {
       // 30/min, parity with boardNowPlaying (the seed does DB work). Anon WS
       // callers are keyed per-connection — see the query resolver's note.
       await applyRateLimit(ctx, 30, 'boardQueuePreview');
       // Same gate-1 dedup as the query resolver (see its comment).
-      const { anonReadableVerified, board } = await requireReadablePresenceBoard(boardId, ctx.userId);
+      const { anonReadableVerified, board } = await requireReadablePresenceBoard(boardId, ctx.userId, boardUuid);
       // Re-checked per event, like `boardNowPlaying`: a wall going private or
       // hidden mid-stream has to end a stream that is already open. Null (no
       // cost) for every board that is not a spray wall.
@@ -99,7 +100,7 @@ export const boardQueuePreviewSubscriptions = {
           // Withdraw the last snapshot before closing: older kiosks do not
           // subscribe to privacyChanged and retain their last rendered queue.
           try {
-            await requireReadablePresenceBoard(boardId, ctx.userId);
+            await requireReadablePresenceBoard(boardId, ctx.userId, boardUuid);
           } catch (error) {
             if (error instanceof GraphQLError && ['NOT_FOUND', 'FORBIDDEN'].includes(String(error.extensions.code))) {
               yield { boardQueuePreview: buildEmptyBoardQueuePreview(boardId) };

@@ -17,8 +17,10 @@ export const boardPresenceSubscriptions = {
    * presence is universal, so anonymous viewers are first-class (they need to
    * watch to see the holder + who's connected). A rate limit (so an anonymous
    * client can't loop board ids and grow the subscriber set unbounded) plus
-   * `assertValidBoardId` bound it; it is otherwise membership-free — anyone who
-   * can name the board_id may watch. Keyed on the shared board_id; no driver.
+   * `assertValidBoardId` bound it; it is otherwise membership-free. The board
+   * id alone is the no-link reading (it can be counted); an Unlisted board's
+   * feed opens when the caller also presents its uuid (`boardUuid`). Keyed on
+   * the shared board_id; no driver.
    *
    * Eager subscribe: `createEagerAsyncIterator` awaits the Redis channel
    * subscribe before the first yield so a `reportBoardClimb` that lands during
@@ -28,7 +30,7 @@ export const boardPresenceSubscriptions = {
     subscribe: withSubscriptionCleanup(async function* (
       lifetime,
       _: unknown,
-      { boardId }: { boardId: number },
+      { boardId, boardUuid }: { boardId: number; boardUuid?: string | null },
       ctx: ConnectionContext,
     ) {
       // Bumped to the same 60/min budget as the sibling anon-tolerant reads
@@ -40,12 +42,12 @@ export const boardPresenceSubscriptions = {
       // poll rather than in a tight loop, so 60/min still leaves room for a
       // gym's worth of screens.
       await applyRateLimit(ctx, 60, 'boardNowPlaying');
-      // Validates the id and, for anonymous viewers, restricts to public /
-      // system-shared boards (not a private wall reached by enumerating ids);
-      // logged-in callers are unbounded.
-      await requireAnonReadableBoard(boardId, ctx.userId);
-      // …and the wall's own rule on top, because the line above waves through ANY
-      // authenticated caller and `boardId` is a small integer. The events on this
+      // Validates the id and applies the board gate: the no-link reading for the
+      // id alone (not a private or Unlisted wall reached by counting ids), the
+      // link reading when `boardUuid` is this board's own.
+      await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
+      // …and the wall's own rule on top, because the board policy above does not
+      // know the spray wall rule and `boardId` is a small integer. The events on this
       // channel carry the climb's name and frames (`reportBoardClimb`, and the
       // hardest-send name in `publishBoardStats`), so without this a signed-in
       // caller could walk the ids and watch a private spray wall live. The sibling
@@ -83,7 +85,7 @@ export const boardPresenceSubscriptions = {
       // page — no error naming a wall the caller may no longer see.
       const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId);
       for await (const event of asyncIterator) {
-        await requireAnonReadableBoard(boardId, ctx.userId);
+        await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
         if (gate && !(await gate())) return;
         if (event !== null) yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId) };
       }

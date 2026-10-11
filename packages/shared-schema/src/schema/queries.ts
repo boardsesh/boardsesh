@@ -41,11 +41,16 @@ export const queriesTypeDefs = /* GraphQL */ `
 
     """
     Sessions climbing right now on one board. Same access rule as
-    \`boardHistory\`: anonymous callers only reach public and system-shared
-    boards and only see public sessions; followed-climber reasons need
-    authentication.
+    \`boardHistory\`. The board id alone is the no-link reading (ids can be
+    counted); pass \`boardUuid\` to open an Unlisted board and to have it named
+    on its sessions. Anonymous callers only see public sessions;
+    followed-climber reasons need authentication.
     """
-    boardLiveSessions(boardId: Int!): [LiveSession!]!
+    boardLiveSessions(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+    ): [LiveSession!]!
 
     """
     Get a session summary (stats, grade distribution, participants).
@@ -485,11 +490,25 @@ export const queriesTypeDefs = /* GraphQL */ `
     week window (BOARD_HISTORY_TTL)) from the Redis FIFO. Used by late joiners
     before the live \`boardNowPlaying\` subscription takes over.
     """
-    boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+    boardRecentClimbs(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+    ): [BoardPresenceClimb!]!
     "Merged native and imported recent displays, used to infer the current climb by display time."
-    boardRecentHistory(boardId: Int!): [BoardPresenceClimb!]!
+    boardRecentHistory(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+    ): [BoardPresenceClimb!]!
     "Chronological durable history with an opaque, board-scoped pagination cursor."
-    boardHistoryPage(boardId: Int!, limit: Int, before: String): BoardHistoryPage!
+    boardHistoryPage(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+      limit: Int
+      before: String
+    ): BoardHistoryPage!
 
     """
     Durable history of what was pushed to a board (survives past the 1 week
@@ -499,27 +518,43 @@ export const queriesTypeDefs = /* GraphQL */ `
     paging never repeats or skips even when several sends share a \`sentAt\`
     second. A non-integer \`before\` is rejected with BAD_USER_INPUT. \`limit\`
     is capped at 100. This is the lasting "what was on the wall" record;
-    \`boardRecentClimbs\` is the hot 1 week cache. Anonymous access is allowed
-    for public and system-shared boards; private boards are masked as
-    NOT_FOUND for anonymous callers.
+    \`boardRecentClimbs\` is the hot 1 week cache. Access follows the board's
+    policy: the board id alone is the no-link reading, \`boardUuid\` adds the
+    link. A board the caller may not read is masked as NOT_FOUND.
     """
-    boardHistory(boardId: Int!, limit: Int, before: String): [BoardPresenceClimb!]!
+    boardHistory(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+      limit: Int
+      before: String
+    ): [BoardPresenceClimb!]!
 
     """
     The five most recent distinct climbers to send or flash a climb at the
     displayed angle on this physical board, newest sender first. Canonical and
-    aliased climb UUIDs share one sender list. Anonymous access is allowed for
-    public and system-shared boards; private boards are masked as NOT_FOUND.
+    aliased climb UUIDs share one sender list. Same board access rule as
+    \`boardHistory\`; a board the caller may not read is masked as NOT_FOUND.
     """
-    boardClimbRecentSenders(boardId: Int!, climbUuid: String!, angle: Int!): [BoardClimbRecentSender!]!
+    boardClimbRecentSenders(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+      climbUuid: String!
+      angle: Int!
+    ): [BoardClimbRecentSender!]!
 
     """
     Lightweight stats for a board's wall feed — durable counts derived from
     \`boardsesh_ticks\` stamped with this board_id, plus the live window.
-    Anonymous access is allowed for public and system-shared boards; private
-    boards are masked as NOT_FOUND for anonymous callers.
+    Same board access rule as \`boardHistory\`; a board the caller may not
+    read is masked as NOT_FOUND.
     """
-    boardPresenceStats(boardId: Int!): BoardPresenceStats!
+    boardPresenceStats(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+    ): BoardPresenceStats!
 
     """
     The board's current connection holder — who's connected and writing right now
@@ -528,16 +563,21 @@ export const queriesTypeDefs = /* GraphQL */ `
     \`BoardConnectionChanged\` stream warms up. Anonymous holders carry null
     user/name/avatar (clients render a "?").
     """
-    boardConnection(boardId: Int!): BoardConnectionHolder
+    boardConnection(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+    ): BoardConnectionHolder
 
     """
     Redacted "Up next" snapshot of the party-session queue bound to a shared
-    board, for anonymous public displays (gym kiosks). Auth-optional; for
-    anonymous viewers a private board reads as NOT_FOUND (same existence
-    hiding as \`boardNowPlaying\`).
+    board, for anonymous public displays (gym kiosks). Auth-optional; a board
+    the caller may not read is NOT_FOUND (same existence hiding as
+    \`boardNowPlaying\`, including the \`boardUuid\` rule).
 
     Double privacy gate — returns null unless BOTH hold:
-    1. the board is anonymously readable (public / system-shared), and
+    1. the board is readable by a signed-out holder of its link (Public or
+       Unlisted, or system-shared), and
     2. the bound session is \`isPublic: true\` and still active.
 
     Gate 2 deliberately widens \`board_sessions.is_public\` from "appears in
@@ -551,7 +591,11 @@ export const queriesTypeDefs = /* GraphQL */ `
     null outright, never another session's queue. Items are redacted to
     climb-catalog fields only — never who added or ticked them.
     """
-    boardQueuePreview(boardId: Int!): BoardQueuePreview
+    boardQueuePreview(
+      boardId: Int!
+      "The board's uuid, its link. The numeric id alone is countable, so without this an Unlisted board reads as NOT_FOUND."
+      boardUuid: ID
+    ): BoardQueuePreview
 
     """
     Get the current user's new climb subscriptions.

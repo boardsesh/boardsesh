@@ -3,9 +3,17 @@ import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { and, eq, isNull } from 'drizzle-orm';
 import { userBoards } from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { canAccessResource } from './privacy';
+import { canAccessResource, canAccessResourceWithoutLink } from './privacy';
 
-/** A session path carries an existing board identity, never a private-board grant. */
+/**
+ * The board a session path names, or null for a plain config path. A home
+ * board's `/b/<slug>` path is its link, so the board's policy decides with the
+ * link reading: an Unlisted board binds for anyone holding the path, and a
+ * Followers or Invite-only board still needs the viewer's standing. A spray
+ * wall's path (`/b/<slug>` or `/spray/<layoutId>`) is a guess from its name or
+ * a counted id, never its link, so it takes the no-link reading. The path is
+ * never a grant: a board the viewer may not open is NOT_FOUND.
+ */
 export async function resolveSessionBoardId(
   boardPath: string,
   viewerId: string | null | undefined,
@@ -17,7 +25,7 @@ export async function resolveSessionBoardId(
   if (spray && (!Number.isSafeInteger(spray.layoutId) || spray.layoutId <= 0))
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   const [board] = await db
-    .select({ id: userBoards.id, uuid: userBoards.uuid })
+    .select({ id: userBoards.id, uuid: userBoards.uuid, boardType: userBoards.boardType })
     .from(userBoards)
     .where(
       and(
@@ -28,7 +36,11 @@ export async function resolveSessionBoardId(
       ),
     )
     .limit(1);
-  if (!board || !(await canAccessResource('board', board.uuid, viewerId))) {
+  const pathIsLink = named !== null && board?.boardType !== 'spray';
+  if (
+    !board ||
+    !(await (pathIsLink ? canAccessResource : canAccessResourceWithoutLink)('board', board.uuid, viewerId))
+  ) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return board.id;

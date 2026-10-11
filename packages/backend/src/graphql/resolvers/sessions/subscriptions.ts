@@ -78,7 +78,9 @@ export const sessionSubscriptions = {
             // a null would raise a non-null-field violation that nulls the entire
             // sessionUpdates payload and silently drops the seed. Clients treat ''
             // as "keep current" (applySessionRuntimeEvent's `|| prev.boardPath`).
-            boardPath: await projectSessionBoardPath(session?.boardPath ?? '', ctx.userId),
+            boardPath: await projectSessionBoardPath(session?.boardPath ?? '', ctx.userId, {
+              sessionCreatorId: session?.createdByUserId,
+            }),
           } as SessionEvent,
         };
 
@@ -90,14 +92,14 @@ export const sessionSubscriptions = {
               ctx.userId,
               sessionId,
             );
+            const current = await roomManager.getSessionById(sessionId);
             yield {
               sessionUpdates: {
                 __typename: 'SessionRosterSnapshot' as const,
                 users: roster,
-                boardPath: await projectSessionBoardPath(
-                  (await roomManager.getSessionById(sessionId))?.boardPath ?? '',
-                  ctx.userId,
-                ),
+                boardPath: await projectSessionBoardPath(current?.boardPath ?? '', ctx.userId, {
+                  sessionCreatorId: current?.createdByUserId,
+                }),
               },
             };
             continue;
@@ -126,7 +128,12 @@ export const sessionSubscriptions = {
             yield { sessionUpdates: { ...event, leaderId: protocolId(event.leaderId) } };
           } else if (event.__typename === 'SessionBoardPathChanged') {
             yield {
-              sessionUpdates: { ...event, boardPath: await projectSessionBoardPath(event.boardPath, ctx.userId) },
+              sessionUpdates: {
+                ...event,
+                boardPath: await projectSessionBoardPath(event.boardPath, ctx.userId, {
+                  sessionCreatorId: session?.createdByUserId,
+                }),
+              },
             };
           } else if (event.__typename === 'SessionStatsUpdated') {
             const visibleStats = await buildSessionStatsUpdatedEvent(sessionId, ctx);
