@@ -17,6 +17,7 @@ interface WorkflowJob {
   steps: WorkflowStep[];
   needs?: string | string[];
   environment?: string;
+  if?: string;
 }
 const workflow = parse(readFileSync('.github/workflows/mobile-screenshots-ios.yml', 'utf8')) as {
   jobs: Record<string, WorkflowJob>;
@@ -103,6 +104,19 @@ describe('CPP workflow isolation and matrix', () => {
     expect(seed?.env?.SCREENSHOT_USER_PASSWORD).toContain('secrets.SCREENSHOT_USER_PASSWORD');
     expect(bootstrapSteps.filter(({ uses }) => uses === './.github/actions/asc-cpp')).toHaveLength(0);
     expect(workflow.concurrency.group).toContain("inputs.fixtures == 'record'");
+  });
+
+  it('packages only successful genuine record shards into an offline candidate', () => {
+    const candidate = workflow.jobs['cpp-prepare-record'];
+    expect(candidate.needs).toEqual(['setup', 'cpp-capture']);
+    expect(candidate.if).toContain("needs.cpp-capture.result == 'success'");
+    expect(candidate.if).toContain("inputs.fixtures == 'record'");
+    const pack = candidate.steps.find(({ name }) => name === 'Merge and prepare immutable CPP candidate');
+    expect(pack?.run).toContain('"${#manifests[@]}" -ne "$expected"');
+    expect(pack?.run).toContain('--cpp --refresh-photo-urls');
+    expect(pack?.run).toContain('screenshot-fixtures-publish.ts --archive');
+    expect(candidate.steps.some(({ uses }) => uses === './.github/actions/asc-cpp')).toBe(false);
+    expect(candidate.environment).toBeUndefined();
   });
 
   it('keeps default listing baseline publication in its original finalize job', () => {

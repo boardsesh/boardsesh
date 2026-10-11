@@ -10,6 +10,9 @@ import {
   ensureSprayPhoto,
   queueClimb,
   resolveBootstrapUpstream,
+  classifyBootstrapGraphqlError,
+  CPP_BOOTSTRAP_PROFILE_QUERY,
+  createTransport,
   type BootstrapBoard,
   type BootstrapCheckpoint,
   type BootstrapOptions,
@@ -19,15 +22,49 @@ import { readCppPage } from '../lib/screenshot-cpp';
 import { typeDefs } from '../../packages/shared-schema/src/schema';
 import type { ClimbInput } from '../../packages/shared-schema/src/generated/types';
 import { BACKEND_URL } from '../../packages/mobile/src/lib/env';
+import { MyBoardsInputSchema, CreateBoardInputSchema } from '../../packages/backend/src/validation/schemas/boards';
+import { AscentFeedInputSchema, SaveTickInputSchema } from '../../packages/backend/src/validation/schemas/ticks';
+import { CreateSessionInputSchema } from '../../packages/backend/src/validation/schemas/sessions';
+import { GetSmartPlaylistInputSchema } from '../../packages/backend/src/validation/schemas/playlists';
+import {
+  CreateSprayWallInputSchema,
+  CreateSprayWallVersionInputSchema,
+  UpsertSprayWallHoldsInputSchema,
+  PublishSprayWallVersionInputSchema,
+} from '../../packages/backend/src/validation/schemas/spray-walls';
 
 const ACCOUNT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SESSION = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const UPSTREAM = 'https://backend.example.test';
+const { ClimbSearchInputSchema, ClimbQueueItemSchema } = await vi.importActual<{
+  ClimbSearchInputSchema: { safeParse(input: unknown): { success: boolean } };
+  ClimbQueueItemSchema: { safeParse(input: unknown): { success: boolean } };
+}>('../../packages/backend/src/validation/schemas/climbs');
 const API_SCHEMA = buildSchema(typeDefs.join('\n'));
+const INPUT_SCHEMAS = {
+  GetMyBoards: MyBoardsInputSchema,
+  CreateBoard: CreateBoardInputSchema,
+  SearchClimbs: ClimbSearchInputSchema,
+  GetUserAscentsFeed: AscentFeedInputSchema,
+  SaveTick: SaveTickInputSchema,
+  CreateSession: CreateSessionInputSchema,
+  GetSmartPlaylist: GetSmartPlaylistInputSchema,
+  CreateSprayWall: CreateSprayWallInputSchema,
+  CreateSprayWallVersion: CreateSprayWallVersionInputSchema,
+  UpsertSprayWallHolds: UpsertSprayWallHoldsInputSchema,
+  PublishSprayWallVersion: PublishSprayWallVersionInputSchema,
+};
+function validateActualInput(name: string, variables: Record<string, unknown>): void {
+  const schema = INPUT_SCHEMAS[name as keyof typeof INPUT_SCHEMAS];
+  if (schema) expect(schema.safeParse(variables.input)).toMatchObject({ success: true });
+}
+function testUuid(index: number): string {
+  return `cccccccc-cccc-4ccc-8ccc-${String(index).padStart(12, '0')}`;
+}
 
 function genuineClimb(board: BootstrapBoard): ClimbInput {
   return {
-    uuid: `climb-${board.uuid}`,
+    uuid: `eeeeeeee-eeee-4eee-8eee-${board.uuid.slice(-12)}`,
     name: `Actual climb on ${board.name}`,
     setter_username: 'Existing setter',
     frames: 'p123r12p456r14',
@@ -51,7 +88,7 @@ function manufacturerHarness(): {
 } {
   const page = readCppPage('kilter');
   const owned = [...page.heroBoards, ...page.otherBoards].map((variant, index): BootstrapBoard => ({
-    uuid: `owned-board-${index}`,
+    uuid: testUuid(index + 1),
     name: `My actual ${variant.selector}`,
     ownerId: ACCOUNT,
     canEdit: true,
@@ -64,11 +101,14 @@ function manufacturerHarness(): {
   }));
   const operations: Array<{ name: string; variables: Record<string, unknown> }> = [];
   let recordedAscent = true;
-  const join = vi.fn(async () => ({ queue: [{ uuid: 'real-queue-item', climb: genuineClimb(owned[0]) }] }));
+  const join = vi.fn(async () => ({
+    queue: [{ uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', climb: genuineClimb(owned[0]) }],
+  }));
   const transport: BootstrapTransport = {
     async request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
       expect(validate(API_SCHEMA, parse(query))).toEqual([]);
       const name = getOperationAST(parse(query))?.name?.value ?? '';
+      validateActualInput(name, variables);
       operations.push({ name, variables });
       let response: unknown;
       switch (name) {
@@ -112,6 +152,29 @@ function manufacturerHarness(): {
         case 'CppBootstrapSessionStatus':
           response = { sessionStatus: 'active' };
           break;
+        case 'CreateSession':
+          response = { createSession: { id: SESSION } };
+          break;
+        case 'CreateBoard': {
+          const input = variables.input as {
+            name: string;
+            boardType: string;
+            layoutId: number;
+            sizeId: number;
+            setIds: string;
+            angle: number;
+          };
+          const board: BootstrapBoard = {
+            ...input,
+            uuid: testUuid(500),
+            ownerId: ACCOUNT,
+            canEdit: true,
+            boardId: 500,
+          };
+          owned.push(board);
+          response = { createBoard: board };
+          break;
+        }
         case 'CppBootstrapOwnedSessions':
           response = {
             mySessions: [{ id: SESSION, boardPath: '/kilter/1/10/1,20/40', createdByUserId: ACCOUNT, isActive: true }],
@@ -159,6 +222,120 @@ function manufacturerHarness(): {
 }
 
 describe('CPP account/bootstrap safety', () => {
+  it('uses an actual schema-valid read-only HTTP authentication probe', () => {
+    expect(validate(API_SCHEMA, parse(CPP_BOOTSTRAP_PROFILE_QUERY))).toEqual([]);
+    expect(getOperationAST(parse(CPP_BOOTSTRAP_PROFILE_QUERY))?.operation).toBe('query');
+  });
+
+  it('classifies known auth/input failures without echoing server payloads', () => {
+    expect(classifyBootstrapGraphqlError({ message: 'Authentication required to perform this operation' })).toBe(
+      'AUTHENTICATION_REQUIRED',
+    );
+    expect(classifyBootstrapGraphqlError({ message: 'Invalid input: Too big: expected number to be <=50' })).toBe(
+      'INVALID_INPUT',
+    );
+    expect(classifyBootstrapGraphqlError({ message: 'Cannot query field unsupported on UserBoard.' })).toBe(
+      'GRAPHQL_VALIDATION_FAILED',
+    );
+    expect(classifyBootstrapGraphqlError({ extensions: { code: 'INTERNAL_SERVER_ERROR' } })).toBe(
+      'INTERNAL_SERVER_ERROR',
+    );
+    expect(classifyBootstrapGraphqlError({ message: 'jwt-secret-data', extensions: { code: 'jwt-secret-data' } })).toBe(
+      'GRAPHQL_ERROR',
+    );
+  });
+
+  it('paginates the actual roster with the backend limit rather than skipping owned boards', async () => {
+    const harness = manufacturerHarness();
+    const originalRequest = harness.options.transport.request;
+    const offsets: number[] = [];
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'GetMyBoards') {
+        validateActualInput('GetMyBoards', variables);
+        const input = variables.input as { limit: number; offset: number };
+        offsets.push(input.offset);
+        expect(input.limit).toBe(50);
+        if (input.offset === 0)
+          return {
+            myBoards: {
+              boards: Array.from({ length: 50 }, (_, index) => ({
+                ...harness.owned[0],
+                uuid: testUuid(1000 + index),
+                ownerId: 'another-account',
+              })),
+              hasMore: true,
+            },
+          } as T;
+      }
+      return originalRequest<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(offsets).toEqual([0, 50]);
+    expect(result.boards).toHaveLength(6);
+  });
+
+  it('creates missing catalogue boards and private sessions using actual backend input constraints', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    harness.owned.shift();
+    harness.options.checkpoint.sessions = {};
+    const originalRequest = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'BoardLiveSessions') return { boardLiveSessions: [] } as T;
+      return originalRequest<T>(query, variables);
+    };
+    // The new primary goes last in the roster; return its genuine history and queue.
+    const activePrimary = () =>
+      harness.owned.find((board) => board.layoutId === 1 && board.sizeId === 10 && board.boardType === 'kilter')!;
+    const previousRequest = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'GetUserAscentsFeed') {
+        validateActualInput('GetUserAscentsFeed', variables);
+        const board = activePrimary();
+        return {
+          userAscentsFeed: {
+            items: [
+              {
+                climbName: genuineClimb(board).name,
+                boardType: board.boardType,
+                layoutId: board.layoutId,
+                angle: board.angle,
+                renderBoard: { sizeId: board.sizeId, setIds: board.setIds.split(',').map(Number) },
+              },
+            ],
+          },
+        } as T;
+      }
+      return previousRequest<T>(query, variables);
+    };
+    harness.join.mockImplementation(async (variables: { initialQueue: Array<{ uuid: string; climb: ClimbInput }> }) => {
+      for (const item of variables.initialQueue)
+        expect(ClimbQueueItemSchema.safeParse(item)).toMatchObject({ success: true });
+      return { queue: variables.initialQueue };
+    });
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toEqual([]);
+    expect(harness.operations.find((entry) => entry.name === 'CreateBoard')?.variables.input).toMatchObject({
+      isPublic: false,
+      isUnlisted: true,
+      setIds: '1,20',
+    });
+    expect(harness.operations.find((entry) => entry.name === 'CreateSession')?.variables.input).toMatchObject({
+      audience: 'invite_only',
+      isPublic: false,
+      discoverable: false,
+    });
+  });
+
   it('resolves the CLI default to the same production origin as native capture', () => {
     vi.stubEnv('SCREENSHOT_UPSTREAM', undefined);
     try {
@@ -168,6 +345,39 @@ describe('CPP account/bootstrap safety', () => {
       vi.unstubAllEnvs();
     }
   });
+
+  it.each([
+    'not-an-origin',
+    'https:example.test',
+    'http://example.test',
+    'ftp://example.test',
+    'https://user:password@example.test',
+    'https://@example.test',
+    'https://example.test/nested/path',
+    'https://example.test?secret=value',
+    'https://example.test?',
+    'https://example.test#fragment',
+    'https://example.test#',
+  ])('rejects unsafe backend origin %s before credential fetch', async (upstream) => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      expect(() => resolveBootstrapUpstream(upstream)).toThrow('HTTPS origin or local HTTP origin');
+      await expect(createTransport(upstream, 'dedicated@example.test', 'test-password')).rejects.toThrow(
+        'HTTPS origin or local HTTP origin',
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(['http://localhost:4000/', 'http://127.0.0.1:4000/', 'http://[::1]:4000/'])(
+    'allows local HTTP development origins %s',
+    (upstream) => {
+      expect(resolveBootstrapUpstream(upstream)).toBe(new URL(upstream).origin);
+    },
+  );
 
   it('retains screenshot environment and explicit CLI overrides in precedence order', () => {
     vi.stubEnv('SCREENSHOT_UPSTREAM', `${UPSTREAM}/`);
@@ -264,7 +474,7 @@ describe('CPP account/bootstrap safety', () => {
     expect(tick.variables.input).toMatchObject({
       status: 'attempt',
       privacy: { audience: 'only_me', privacyRevision: 7 },
-      comment: expect.stringContaining('not a physical ascent'),
+      comment: expect.stringContaining('example attempt'),
     });
     expect(result.blockers).toEqual([]);
     expect(result.scenario).toBeDefined();
@@ -272,7 +482,10 @@ describe('CPP account/bootstrap safety', () => {
 
   it('refuses to invent fields missing from the real queue climb', () => {
     const { owned } = manufacturerHarness();
-    expect(queueClimb(genuineClimb(owned[0]))).toMatchObject({ uuid: `climb-${owned[0].uuid}`, boardType: 'kilter' });
+    expect(queueClimb(genuineClimb(owned[0]))).toMatchObject({
+      uuid: genuineClimb(owned[0]).uuid,
+      boardType: 'kilter',
+    });
     expect(() => queueClimb({ ...genuineClimb(owned[0]), stars: undefined } as unknown as ClimbInput)).toThrow(
       'refusing invented fields',
     );
@@ -286,8 +499,8 @@ describe('real spray-photo provenance', () => {
     const original = readFileSync(variant.photo!);
     const sourceSha256 = createHash('sha256').update(original).digest('hex');
     const wall = {
-      uuid: 'our-new-wall',
-      board: { ...harness.owned[0], uuid: 'our-new-wall', boardType: 'spray' },
+      uuid: testUuid(700),
+      board: { ...harness.owned[0], uuid: testUuid(700), boardType: 'spray' },
       currentVersion: null,
       holdCount: 0,
     };
@@ -316,12 +529,13 @@ describe('real spray-photo provenance', () => {
       ...harness.options.transport,
       upload: vi.fn(async (_uuid, bytes) => {
         expect(bytes).toEqual(original);
-        return { photoId: 'original-upload' };
+        return { photoId: testUuid(702) };
       }),
       bytes: vi.fn(async () => original),
       async request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
         expect(validate(API_SCHEMA, parse(query))).toEqual([]);
         const name = getOperationAST(parse(query))?.name?.value ?? '';
+        validateActualInput(name, variables);
         writes.push({ name, variables });
         let response: unknown;
         switch (name) {
@@ -355,7 +569,7 @@ describe('real spray-photo provenance', () => {
     expect(await ensureSprayPhoto(harness.options, variant, wall, [])).toBeNull();
     expect(writes.find((entry) => entry.name === 'CreateSprayWallVersion')?.variables.input).toEqual({
       wallUuid: wall.uuid,
-      photoId: 'original-upload',
+      photoId: testUuid(702),
     });
     expect(writes.find((entry) => entry.name === 'UpsertSprayWallHolds')?.variables.input).toMatchObject({
       wallUuid: wall.uuid,
@@ -365,7 +579,7 @@ describe('real spray-photo provenance', () => {
     expect(writes.at(-1)?.name).toBe('PublishSprayWallVersion');
     expect(harness.options.checkpoint.boards[variant.id]).toMatchObject({
       sourceSha256,
-      photoId: 'original-upload',
+      photoId: testUuid(702),
       versionId: '40',
     });
   });
@@ -376,8 +590,8 @@ describe('real spray-photo provenance', () => {
     const source = readFileSync(variant.photo!);
     const differentStoredBytes = readFileSync(readCppPage('spray').heroBoards[1].photo!);
     const wall = {
-      uuid: 'approved-existing-liz',
-      board: { ...harness.owned[0], uuid: 'approved-existing-liz', boardType: 'spray' },
+      uuid: testUuid(701),
+      board: { ...harness.owned[0], uuid: testUuid(701), boardType: 'spray' },
       holdCount: 4,
       currentVersion: {
         id: '1',

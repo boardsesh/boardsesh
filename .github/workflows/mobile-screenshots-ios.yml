@@ -1179,6 +1179,57 @@ jobs:
           frozen-now: ${{ inputs.frozen_now || '' }}
           render-mode: ${{ inputs.render_mode || '' }}
 
+  cpp-prepare-record:
+    needs: [setup, cpp-capture]
+    if: ${{ !cancelled() && needs.cpp-capture.result == 'success' && inputs.fixtures == 'record' && (inputs.cpp_target || 'none') != 'none' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_sha }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Download real recorded CPP shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: screenshot-fixtures-cpp-capture-${{ inputs.cpp_target || 'none' }}-*
+          path: ${{ runner.temp }}/cpp-recordings
+      - name: Merge and prepare immutable CPP candidate
+        env:
+          CPP_TARGET: ${{ inputs.cpp_target || 'none' }}
+          CPP_MATRIX: ${{ needs.setup.outputs.cpp_matrix }}
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mapfile -t manifests < <(rg --files --hidden "$RUNNER_TEMP/cpp-recordings" -g manifest.json | sort)
+          expected=$(printf '%s' "$CPP_MATRIX" | jq -r '.include | length')
+          if [ "${#manifests[@]}" -ne "$expected" ]; then
+            echo '::error::Recorded CPP artifacts do not cover every requested shard.'
+            exit 1
+          fi
+          directories=()
+          for manifest in "${manifests[@]}"; do directories+=("$(dirname "$manifest")"); done
+          # The signatures/timestamps differ naturally between genuine shards.
+          # Keep the newest actual response and retain the merger's conflict log.
+          vp run mobile:screenshot-fixtures-merge -- --out "$RUNNER_TEMP/cpp-merged" --on-conflict newest "${directories[@]}"
+          vp exec node --import tsx scripts/prepare-ios-campaign-fixtures.ts "$RUNNER_TEMP/cpp-merged" "$RUNNER_TEMP/cpp-prepared" --cpp --refresh-photo-urls
+          vp run mobile:screenshot-fixtures-pseudonymise -- --dir "$RUNNER_TEMP/cpp-prepared" --check
+          mkdir -p "$RUNNER_TEMP/cpp-candidate"
+          vp exec node --import tsx scripts/screenshot-fixtures-publish.ts --archive "$RUNNER_TEMP/cpp-candidate/$CPP_TARGET.json.gz" "$RUNNER_TEMP/cpp-prepared" > "$RUNNER_TEMP/cpp-candidate/$CPP_TARGET.digest.json"
+          echo "CPP $CPP_TARGET candidate archived. No fixture pin or App Store resource was published." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload sanitized CPP fixture candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-fixture-candidate-${{ inputs.cpp_target || 'none' }}
+          path: ${{ runner.temp }}/cpp-candidate/*
+          if-no-files-found: error
+          retention-days: 14
+
   cpp-finalize:
     needs: [setup, cpp-capture]
     if: ${{ needs.cpp-capture.result == 'success' && (inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit') }}

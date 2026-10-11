@@ -104,7 +104,20 @@ Before replay, bundle all authorized wall photos using
 The wall list contains each `wallUuid`, `layoutId`, and its CPP `variantId`.
 Preparation adds `boardPhotoAssets` with hashes of the actual downloaded backend
 photo files; `boardPhotoSha256` separately records the approved original inputs.
-These hashes may differ after normal photo processing. Replay requires three
+These hashes may differ after normal photo processing. Private signatures expire
+in fifteen minutes. Add `--refresh-photo-urls` to preparation when it runs later:
+the helper authenticates the same screenshot account against the recorded backend,
+reads fresh signatures for the same immutable R2 objects, and preserves every
+recorded geometry/version field. It never replays mutations or substitutes photos.
+The `--cpp` selector derives the three wall identities from genuine recorded
+ownership and the capture scenario, or copies manufacturer recordings unchanged.
+
+After a successful record matrix, CI merges the requested shards and prepares a
+sanitized, hashed fixture-candidate archive artifact. This artifact is reviewable
+and does not publish a pin. Download, publish, and verify its immutable public
+snapshot before committing the target reference and running full replay.
+
+Replay requires three
 distinct bundled wall images and validates every asset before launching.
 
 The iOS workflow dispatch accepts `cpp_target` and `cpp_action` (`plan`,

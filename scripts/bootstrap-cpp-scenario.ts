@@ -35,6 +35,7 @@ import { readCppPage, isCppTarget, type CppBoard, type CppTarget, type CppSceneC
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
+export const CPP_BOOTSTRAP_PROFILE_QUERY = 'query CppBootstrapProfile { profile { id } }';
 const SESSION_STATUS_QUERY = `query CppBootstrapSessionStatus($sessionId: ID!) { sessionStatus(sessionId: $sessionId) }`;
 const OWNED_SESSIONS_QUERY = `query CppBootstrapOwnedSessions { mySessions { id boardPath createdByUserId isActive } }`;
 
@@ -175,10 +176,10 @@ function localized(namespace: string, key: string): Record<(typeof LOCALES)[numb
 
 async function listOwnedBoards(options: BootstrapOptions): Promise<BootstrapBoard[]> {
   const boards: BootstrapBoard[] = [];
-  for (let offset = 0; offset < 1000; offset += 100) {
+  for (let offset = 0; offset < 1000; offset += 50) {
     const result = await options.transport.request<{ myBoards: { boards: BootstrapBoard[]; hasMore: boolean } }>(
       GET_MY_BOARDS,
-      { input: { offset, limit: 100, includeUnfinishedSprayWalls: true } },
+      { input: { offset, limit: 50, includeUnfinishedSprayWalls: true } },
     );
     boards.push(...result.myBoards.boards.filter((board) => board.ownerId === options.accountUserId));
     if (!result.myBoards.hasMore) return boards;
@@ -446,7 +447,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
         layoutIds: [primary.layoutId],
         minAngle: primary.angle,
         maxAngle: primary.angle,
-        limit: 100,
+        limit: 50,
       },
     });
     let ascent = ascentResult.userAscentsFeed.items.find(
@@ -484,7 +485,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
             status: 'attempt',
             attemptCount: 1,
             isBenchmark: false,
-            comment: 'Private screenshot demonstration. Example attempt, not a physical ascent.',
+            comment: 'Demo project: example attempt.',
             climbedAt: new Date().toISOString(),
             layoutId: primary.layoutId,
             sizeId: primary.sizeId,
@@ -499,7 +500,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
             layoutIds: [primary.layoutId],
             minAngle: primary.angle,
             maxAngle: primary.angle,
-            limit: 100,
+            limit: 50,
           },
         });
         ascent = ascentResult.userAscentsFeed.items.find(
@@ -548,7 +549,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
           latitude: 0,
           longitude: 0,
           name: `${{ kilter: 'Kilter', tension: 'Tension', moonboard: 'MoonBoard', spray: 'Spray wall' }[options.target]} crew`,
-          audience: 'only_me',
+          audience: 'invite_only',
           isPublic: false,
           discoverable: false,
           isPermanent: true,
@@ -717,12 +718,38 @@ export function queueClimb(climb: ClimbInput): ClimbInput {
   };
 }
 
-async function createTransport(
+export interface BootstrapGraphqlError {
+  message?: string;
+  extensions?: { code?: string };
+}
+
+/** Classify known failures without logging arbitrary server messages or variables. */
+export function classifyBootstrapGraphqlError(error: BootstrapGraphqlError): string {
+  const knownCodes = new Set([
+    'UNAUTHENTICATED',
+    'FORBIDDEN',
+    'BAD_USER_INPUT',
+    'INVALID_INPUT',
+    'GRAPHQL_VALIDATION_FAILED',
+    'GRAPHQL_PARSE_FAILED',
+    'INTERNAL_SERVER_ERROR',
+    'RATE_LIMITED',
+  ]);
+  if (error.extensions?.code && knownCodes.has(error.extensions.code)) return error.extensions.code;
+  if (error.message === 'Authentication required to perform this operation') return 'AUTHENTICATION_REQUIRED';
+  if (/^Invalid (?:input|createSession input):/.test(error.message ?? '')) return 'INVALID_INPUT';
+  if (/^(?:Cannot query field|Unknown argument|Unknown type|Variable .* got invalid value)/.test(error.message ?? ''))
+    return 'GRAPHQL_VALIDATION_FAILED';
+  return 'GRAPHQL_ERROR';
+}
+
+export async function createTransport(
   upstream: string,
   email: string,
   password: string,
 ): Promise<{ transport: BootstrapTransport; accountUserId: string }> {
-  const auth = await fetch(`${upstream}/auth/native/credentials`, {
+  const backendOrigin = resolveBootstrapUpstream(upstream);
+  const auth = await fetch(`${backendOrigin}/auth/native/credentials`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     redirect: 'error',
@@ -738,16 +765,16 @@ async function createTransport(
   const transport: BootstrapTransport = {
     async request<T>(query: string, variables = {}): Promise<T> {
       const operationName = getOperationAST(parse(query))?.name?.value ?? 'unnamed operation';
-      const response = await fetch(`${upstream}/graphql`, {
+      const response = await fetch(`${backendOrigin}/graphql`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${jwt}` },
         body: JSON.stringify({ query, variables }),
         signal: AbortSignal.timeout(60_000),
       });
-      const body = (await response.json()) as { data?: T; errors?: Array<{ extensions?: { code?: string } }> };
+      const body = (await response.json()) as { data?: T; errors?: BootstrapGraphqlError[] };
       if (!response.ok || body.errors?.length || !body.data)
         throw new Error(
-          `CPP bootstrap ${operationName} failed (${response.status}, ${body.errors?.map((error) => error.extensions?.code ?? 'GRAPHQL_ERROR').join(',') ?? 'missing data'}); no credentials or server payload logged`,
+          `CPP bootstrap ${operationName} failed (${response.status}, ${body.errors?.map(classifyBootstrapGraphqlError).join(',') ?? 'missing data'}); no credentials or server payload logged`,
         );
       return body.data;
     },
@@ -755,7 +782,7 @@ async function createTransport(
       const form = new FormData();
       form.append('wallUuid', wallUuid);
       form.append('photo', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), filename);
-      const response = await fetch(`${upstream}/api/spray-wall-photos`, {
+      const response = await fetch(`${backendOrigin}/api/spray-wall-photos`, {
         method: 'POST',
         headers: { authorization: `Bearer ${jwt}` },
         body: form,
@@ -774,7 +801,7 @@ async function createTransport(
     async join(variables) {
       return await new Promise<{ queue: ClimbQueueItemInput[]; currentClimbQueueItem?: ClimbQueueItemInput | null }>(
         (done, reject) => {
-          const websocketUrl = new URL('/graphql', upstream);
+          const websocketUrl = new URL('/graphql', backendOrigin);
           websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:';
           const socket = new WebSocket(websocketUrl, 'graphql-transport-ws');
           let snapshot:
@@ -859,12 +886,37 @@ async function createTransport(
       );
     },
   };
+  const authenticatedProfile = await transport.request<{ profile: { id: string } | null }>(CPP_BOOTSTRAP_PROFILE_QUERY);
+  if (!authenticatedProfile.profile || authenticatedProfile.profile.id !== claims.sub)
+    throw new Error(
+      'CPP bootstrap HTTP_AUTHENTICATION_FAILED: native login succeeded, but the authenticated GraphQL profile does not identify that same account',
+    );
   return { transport, accountUserId: claims.sub };
 }
 
 /** The CLI and native capture share the same backend default. */
 export function resolveBootstrapUpstream(upstreamOverride?: string): string {
-  return (upstreamOverride ?? process.env.SCREENSHOT_UPSTREAM ?? BACKEND_URL).replace(/\/$/, '');
+  const candidate = upstreamOverride ?? process.env.SCREENSHOT_UPSTREAM ?? BACKEND_URL;
+  const invalidOrigin = 'Backend must be an HTTPS origin or local HTTP origin without credentials';
+  let parsedUpstream: URL;
+  try {
+    parsedUpstream = new URL(candidate);
+  } catch {
+    throw new Error(invalidOrigin);
+  }
+  if (
+    !/^https?:\/\//i.test(candidate) ||
+    /^https?:\/\/[^/?#]*@/i.test(candidate) ||
+    parsedUpstream.username ||
+    parsedUpstream.password ||
+    candidate.includes('?') ||
+    candidate.includes('#') ||
+    parsedUpstream.pathname !== '/' ||
+    !['https:', 'http:'].includes(parsedUpstream.protocol) ||
+    (parsedUpstream.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(parsedUpstream.hostname))
+  )
+    throw new Error(invalidOrigin);
+  return parsedUpstream.origin;
 }
 
 async function main(): Promise<void> {
@@ -905,17 +957,6 @@ async function main(): Promise<void> {
   const target = flags.get('--target');
   if (!isCppTarget(target)) throw new Error('--target must identify exactly one CPP');
   const upstream = resolveBootstrapUpstream(flags.get('--upstream'));
-  const parsedUpstream = new URL(upstream);
-  if (
-    parsedUpstream.username ||
-    parsedUpstream.password ||
-    parsedUpstream.search ||
-    parsedUpstream.hash ||
-    parsedUpstream.pathname !== '/' ||
-    !['https:', 'http:'].includes(parsedUpstream.protocol) ||
-    (parsedUpstream.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(parsedUpstream.hostname))
-  )
-    throw new Error('Backend must be an HTTPS origin or local HTTP origin without credentials');
   const email = process.env.SCREENSHOT_USER_EMAIL;
   const password = process.env.SCREENSHOT_USER_PASSWORD;
   if (!email || !password)

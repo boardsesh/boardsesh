@@ -211,6 +211,8 @@
     "__tests__/prepare-ios-campaign-fixtures.test.ts",
     "__tests__/cpp-workflow.test.ts",
     "__tests__/screenshot-cpp.test.ts",
-    "native-runtime.d.ts"
+    "native-runtime.d.ts",
+    "lib/cpp-photo-refresh.ts",
+    "__tests__/cpp-photo-refresh.test.ts"
   ]
 }
