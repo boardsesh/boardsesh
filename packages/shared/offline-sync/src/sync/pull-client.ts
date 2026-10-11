@@ -1998,7 +1998,16 @@ async function runBootstrapPhase(params: {
           // the same for a checkpointed scope so My Boards re-reads the row even
           // though this run did not mutate its markers.
           metadataSettled = true;
-          if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
+          // Only a cooldown may skip the crawl: the skip is a wait for the retry
+          // it scheduled. A `bootstrap-done` or `scope-complete` scope has no
+          // retry coming, yet it can be without a board checkpoint — a privacy
+          // revalidation resets them, and an empty table never writes one. Then
+          // `shouldSkipPagedPull` reads it as fresh and would skip it on every
+          // cycle, so the board never syncs again (issue #6306).
+          if (
+            verdict.reason === 'cooling-down' &&
+            shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })
+          ) {
             skipPagedPull.add(scope.scopeKey);
           }
           // RETRO-FIT (issue #4310): a scope with a COMPLETE climb catalog but
@@ -3326,9 +3335,11 @@ async function performPullSync(
       await emitScopeDownloadStartOnce({ scopeKey, pathIntent: 'paged', artifactBytes: null });
       if (cycleAborted()) return reportInterruptedCycle();
       if (scopePurged(boardScope)) continue;
-      // A scope whose bootstrap failed this cycle (with attempts still left) skips
-      // its paged pull: a first-page checkpoint would permanently disqualify the
-      // snapshot path, so the next cycle retries the snapshot instead.
+      // A fresh scope waiting on a snapshot retry skips its paged pull: its
+      // bootstrap failed this cycle with budget left, or a cooldown an earlier
+      // cycle scheduled is still running. The crawl would be round trips the
+      // retry throws away, and its first-page checkpoint would turn that retry
+      // into a heal. Never a scope the bootstrap has finished with (#6306).
       if (skipBootstrapPagedPull.has(scopeKey)) continue;
       let allTablesReachedTail = true;
       for (const tableName of BOARD_DATA_TABLES) {
