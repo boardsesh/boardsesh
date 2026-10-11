@@ -35,9 +35,9 @@ counts (see [analytics-consent.md](./analytics-consent.md)).
   `clientPlatform` on the WebSocket). www's socket sent nothing until October
   2026, so before then a www climber with a socket open counted under both
   `web` and `unknown` on the same day; `unknown` from that period is mostly www.
-- **Retention:** 60 days of rows, enough for the 30-day window and a late
-  re-run. A past day's counts live on in its snapshot event; the rows behind
-  them do not.
+- **Retention:** 60 days of rows, enough for the 30-day window and a re-run
+  of any day up to 30 days back (`snapshotActiveUsers(day: ...)`). A past
+  day's counts live on in its snapshot event; the rows behind them do not.
 - **PostHog MAU is no longer comparable.** Since the consent prompt shipped
   (PRs B and C of #2644), PostHog sees climbers in the prompt regions (EU, EEA,
   UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`) only after they
@@ -47,6 +47,15 @@ counts (see [analytics-consent.md](./analytics-consent.md)).
   move. Never compare a prompt-region country with another region by PostHog
   people counts. Read growth from the snapshot; read behaviour (funnels,
   retention) from PostHog people, knowing they are the consenting subset.
+- **Persons disappear.** A signed-in No thanks and an account deletion erase
+  the account's PostHog person, its split pre-sign-in person, their events and
+  their recordings, 15 minutes and again 7 days later
+  ([analytics-consent.md](./analytics-consent.md#erasure)). Person counts and
+  cohorts lose those climbers backwards in time, not only from the day they
+  answered. A climber who says Allow again comes back under the same account
+  id, which PostHog can keep hidden from insights, cohorts and person-targeted
+  flags until someone runs "Reset deleted person" for it; until then they are
+  missing from people-based numbers even though their events arrive.
 
 ## Populations
 

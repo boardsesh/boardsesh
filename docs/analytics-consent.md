@@ -252,8 +252,8 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 
 | Tracker | Basis | Notes |
 | --- | --- | --- |
-| PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. Withdrawal after a grant, and account deletion, erase the PostHog person ([Erasure](#erasure)). |
-| Feature-flag bucketing id (web, app) | Functional, not asked | One random UUID per browser (IndexedDB) or app install (app preferences), sent only as the distinct id of a signed-out flag request, so a rollout does not re-roll per load or flip on Allow. Never on a captured event, never next to an account id. See [feature-flags.md](./feature-flags.md#anonymous-bucketing). |
+| PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. A signed-in No thanks or switch-off (unless the account already said No), and account deletion, erase the PostHog person ([Erasure](#erasure)). |
+| Feature-flag bucketing id (web, app) | Strictly necessary (ePrivacy Art. 5(3) exemption), not asked | One random UUID per browser (IndexedDB) or app install (app preferences). Why it is necessary: kill switches and staged rollouts are how we keep the service a climber asked for working, and both need a stable bucket. Without one a 20% rollout re-rolls every launch, so a climber flips between the old and new screen from one launch to the next, and a kill switch scoped to a percentage cannot hold anyone out. It carries no account, no person and no GeoIP, and is never sent next to an account id or beside the SDK's own anonymous id. Lifetime: replaced 13 months after it was minted (CNIL's ceiling for an exempt tracker), and in the app also when the platform reports a different install time (an Android Auto Backup restore). On www it is only the distinct id of signed-out flag requests. In the app it is also the distinct id of the anonymous `OTA Update Status` event (`ota-install:<uuid>`, row below), which is stored. See [feature-flags.md](./feature-flags.md#anonymous-bucketing). |
 | PostHog session replay | Consent | Off unless analytics is on and the climber also switches replay on; never on by default. |
 | Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
 | Android install-referrer attribution | Consent, everywhere | The Play referrer is not even read before the climber's own Allow: reading it is access to information on the device for attribution (ePrivacy Art. 5(3)). Play keeps it for 90 days after install, and the first Allow triggers the read. `Install Attributed` and the install person properties are sent only after the climber's own Allow (`isAttributionPublicationGranted`). The region default does not enable them. |
@@ -261,7 +261,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
-| OTA health ping | Legitimate interest | Anonymous: one random id per install (`ota-install:<uuid>`, the same id that buckets signed-out flags), no account, no person profile, no GeoIP. Per install so adoption and emergency rates count phones, not launches. |
+| OTA health ping | Legitimate interest | Anonymous: one random id per install (`ota-install:<uuid>`, the same id that buckets signed-out flags, with the same 13-month lifetime), no account, no person profile, no GeoIP. Per install so adoption and emergency rates can count phones, not launches. |
 
 ## Backend PostHog events are non-personal
 
@@ -307,54 +307,131 @@ erase it.
 
 - **Account deletion.** `deleteAccount` queues the erasure in its own
   transaction, before the user row goes.
-- **Withdrawal after a grant.** `setAnalyticsConsent` queues it when it writes
-  a denial and the account's previous answer was a grant (any version). A
-  repeated denial, or a denial with no grant before it, queues nothing: nothing
-  was captured since.
+- **A No thanks from a signed-in account.** `setAnalyticsConsent` queues it
+  when it writes a denial and the account's previous answer was not already a
+  denial: a grant (any version), or no answer at all. No answer counts because
+  before the consent prompt shipped both clients identified every signed-in
+  climber with the account id and sent `email`, so an account whose first
+  answer is No thanks can still have a person. One with no person costs a
+  `bulk_delete` that finds nothing. A repeated denial queues nothing: the first
+  one already did, and nothing was captured since.
 
-The job is the `posthog-person-deletion` pg-boss queue, created by the
-migrator and worked by every backend replica
-(`packages/backend/src/services/analytics/posthog-person-deletion.ts`). It is
-enqueued in a savepoint of the caller's transaction, so it exists exactly when
-the deletion or withdrawal commits, and a queue failure rolls back only the job
-and logs `posthog_person_deletion_not_queued`; the deletion still commits. The
-PostHog call never runs inside that transaction.
+### The jobs
 
-The job sends `POST /api/projects/<id>/persons/bulk_delete/` with
-`distinct_ids: [<account id>]`, `delete_events: true` and
-`delete_recordings: true`. Deleting by the account id removes the merged
-person, so the anonymous ids identify() merged into it at sign-in go with it.
-What happens next is PostHog's:
+Each of those queues two jobs on the `posthog-person-deletion` pg-boss queue
+(`packages/backend/src/services/analytics/posthog-person-deletion.ts`), in one
+savepoint of the caller's transaction, so they exist exactly when the deletion
+or withdrawal commits. The PostHog calls never run inside that transaction.
 
-- The person record and its distinct ids are removed in the background shortly
-  after the request (`persons_queued_for_deletion` in the response).
-- Events and recordings are deleted by a later PostHog batch, which can take
-  days. `GET /api/projects/<id>/persons/deletion_status/` lists what is still
-  pending. Only events captured before the request are deleted.
+| Pass | Starts | Why |
+| --- | --- | --- |
+| `first` | 15 minutes after the commit | PostHog deletes only events captured before the request. The wait lets the app's on-disk event queue flush on its next foreground and ingestion catch up. |
+| `late` | 7 days after the commit | Catches what still arrived: another signed-in device that had not yet re-read the denial (rule 2 reaches it on its next sync) or had not yet hit a 401 after deletion, and a phone that sat offline with events queued. A deletion PostHog already has queued is not duplicated, so the second call is cheap. |
 
-Responses: 2xx is done (a non-empty `deletion_errors` retries); 404 is done,
-nothing to delete; 401, 403, 408, 429, 5xx, a timeout or a network error retry;
-any other 4xx is logged as an error and not retried. Retries back off from
-60 seconds to a 6-hour cap, 12 tries, about a day in all. A queued job waits up
-to 14 days for a worker (`retentionSeconds`), so a backend that cannot start
-the worker for a while loses nothing. A finished or failed job (the account id
-and a reason, nothing else) is kept 7 days so a failed erasure can be retried
-by hand, then pg-boss deletes it.
+Each job is the account id, a reason and a pass, nothing else.
 
-Configuration on the backend service: `POSTHOG_PERSONAL_API_KEY`, a personal
-API key with the `person:write` scope (the capture key cannot delete);
+### What one job does
+
+1. **Finds split persons** with one HogQL query (`query:read`): every
+   `$identify` the account sent names the anonymous id it switched away from as
+   `$anon_distinct_id`. Where PostHog merged that id into the account's person,
+   deleting it again is a no-op. Where it refused (the split persons in
+   [growth-metrics.md](./growth-metrics.md#identity-split-pitfall), 161 measured
+   from 2026-09-08 to 10-01), it is the only way to reach the pre-sign-in
+   person, which holds that session's `Login Succeeded` and `$screen` events.
+   The query also returns every distinct id that identified from each
+   anonymous id. An anonymous id that another live account also signed in from
+   (a shared phone) is skipped, so erasing one climber never erases another.
+   Ids that are not accounts, such as the party UUID a signed-out install
+   identified as before #6078, belong to the same install and go with it. At
+   most 999 anonymous ids, the `bulk_delete` limit less the account id.
+2. **Deletes** with `POST /api/projects/<id>/persons/bulk_delete/`
+   (`person:write`): `distinct_ids` is the account id plus those anonymous ids,
+   `delete_events: true`, `delete_recordings: true`. What happens next is
+   PostHog's:
+   - The person records and their distinct ids are removed in the background
+     shortly after the request (`persons_queued_for_deletion` in the response).
+   - Events and recordings are deleted by a later PostHog batch, which can take
+     days. `GET /api/projects/<id>/persons/deletion_status/` lists what is
+     still pending.
+
+Responses, on either call: 2xx is done (a non-empty `deletion_errors` retries);
+a 404 from the delete is done, nothing to delete; 401, 403, 408, 429, 5xx, a
+timeout or a network error retry. Any other 4xx means our request is wrong: the
+job is marked `failed` at once, without spending retries, and logged as an
+error. A lookup rejected that way still deletes the account id before the job
+fails. Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
+26.5 to 32.5 hours in all; a job that runs out is `failed` and logs
+`posthog_person_deletion_exhausted`. A queued job waits up to 14 days past its
+start for a worker (`retentionSeconds`). A finished or failed job is kept 7
+days so a failed erasure can be replayed, then pg-boss deletes it.
+
+### Configuration
+
+**`POSTHOG_ERASURE_API_KEY` must be set on the Railway backend service before
+this deploys.** It is a dedicated PostHog personal API key, scoped to project
+412845 with `person:write` and `query:read` and nothing else. It is not
+`POSTHOG_PERSONAL_API_KEY`: that one is read-only and shared with
+refresh-recommendations and CI's OTA health check. Optional:
 `POSTHOG_PROJECT_ID`, default `412845`; `POSTHOG_API_HOST`, default
 `https://us.posthog.com` (the private API host, not the `us.i.posthog.com`
-ingestion host). Only a production backend calls PostHog, the same gate as
-backend capture. Without the key, every attempt logs
-`posthog_person_deletion_unconfigured` and retries, so setting the key within
-the retry window still erases the person.
+ingestion host).
 
-Not covered: a device that said Allow and was never signed in. Its person is
-keyed by an SDK-generated id the server never sees, and withdrawal on that
-device resets the SDK, so nothing new joins it. A re-grant within seconds of a
-withdrawal can lose the events captured before the job runs; erring that way is
-deliberate.
+Only a production backend that holds the key registers the worker. Anywhere
+else (the key unset, a dev or preview backend, a debug run pointed at the
+production database) no worker runs, boot logs
+`posthog_person_deletion_unconfigured` (at error level in production), and the
+jobs wait in `created` without spending a retry. Setting the key and
+redeploying within 14 days erases every one of them. A worker without the key
+would burn the 12 retries in about 30 hours and lose the job.
+
+### When a job is missed
+
+The backend starts the queue before it starts listening, and on shutdown it
+stops the queue's workers first but keeps taking jobs until the WebSocket and
+HTTP servers have closed, so a mutation still running during a deploy can
+enqueue. If an enqueue fails anyway, the deletion or withdrawal still commits
+and the backend logs `posthog_person_deletion_not_queued` at error level with
+the `distinctId`. Once `deleteAccount` commits, that log line is the only
+record of whose person to erase. Replay it from a backend shell (both passes):
+
+```ts
+await boss.send('posthog-person-deletion', { distinctId, reason: 'account_deleted', pass: 'first' }, { startAfter: 900 });
+await boss.send('posthog-person-deletion', { distinctId, reason: 'account_deleted', pass: 'late' }, { startAfter: 604800 });
+```
+
+Use `reason: 'consent_withdrawn'` for a withdrawal. A `failed` job (`SELECT
+id, data FROM pgboss.job WHERE name = 'posthog-person-deletion' AND state =
+'failed'`, kept 7 days) is replayed with `boss.retry('posthog-person-deletion',
+id)`.
+
+### Not covered
+
+- **A device that said Allow and was never signed in.** Its person is keyed by
+  an SDK-generated id the server never sees, and withdrawal on that device
+  resets the SDK, so nothing new joins it.
+- **Party-UUID persons that never met a sign-in on that install.** Before
+  #6078 a signed-out install identified as its party UUID on every launch, and
+  each launch's anonymous id joined that person. The lookup above reaches it
+  only through an anonymous id the account later signed in from. A party person
+  whose install never signed in, or signed in only after a reset gave it a
+  fresh anonymous id, stays, with any install-referrer or Apple Ads properties
+  set on it while signed out. Nothing in PostHog links it to the account; it
+  would take a one-off cleanup by party UUID.
+- **An anonymous id shared with another account** is skipped (above), so that
+  pre-sign-in person stays.
+- **A re-grant.** A climber who withdraws and later says Allow again is
+  identified with the same account id, and PostHog advises against reusing a
+  deleted distinct id: the new person can stay hidden from insights, cohorts
+  and person-targeted flags. PostHog's fix is `POST
+  /api/projects/<id>/persons/reset_person_distinct_id/` with `{"distinct_id":
+  "<account id>"}`, or "Reset deleted person" on the persons page. It does
+  nothing until a live person uses the id, so it has to run after the client's
+  first identify following the grant, which the backend does not see, and a
+  `late` pass that runs after the re-grant hides the id again. So it is not
+  automated: reset an account by hand when it matters. A re-grant within 7 days
+  also loses what was captured between the grant and the `late` pass; erring
+  toward deletion is deliberate.
 
 ## First-party active users
 
@@ -399,8 +476,9 @@ platform. It is how MAU survives opt-outs.
   `purgeExpiredUserActivity`, which deletes rows older than 60 days
   (`USER_ACTIVITY_RETENTION_DAYS`). The longest window anything reads is the
   trailing 30-day MAU; the other 30 days let a failed snapshot be re-run up to
-  a month late. Nothing computes yearly actives; one that wants them needs a
-  longer retention argued here first.
+  a month late with `snapshotActiveUsers(day: "YYYY-MM-DD")` (any day from
+  yesterday back to 30 days ago, below). Nothing computes yearly actives; one
+  that wants them needs a longer retention argued here first.
 - **Known gap.** A signed-out climber who declines can't be deduplicated
   without storing an identifier, so they are not in MAU.
 
@@ -410,6 +488,11 @@ Manual runs: `scheduler run snapshot-active-users`, or POST to the backend
 ```json
 {"query":"mutation { snapshotActiveUsers { day dailyActiveUsers weeklyActiveUsers monthlyActiveUsers captured } }"}
 ```
+
+To re-run a day the job missed, pass it: `snapshotActiveUsers(day: "2026-10-05")`.
+The event is dated and keyed to that day, so it lands where the missing point
+was, and a day that did send collapses into its first copy. A day before 30
+days ago, today or a malformed date is refused (`BAD_USER_INPUT`).
 
 
 ## Account synchronization

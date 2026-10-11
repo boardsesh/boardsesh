@@ -112,22 +112,36 @@ anonymous id and re-rolled it once more. Now the bucket holds across launches an
 No thanks. Signing in moves the climber to the account's bucket once; from then on it follows the
 account across devices.
 
-The id is functional. www sends it on flag requests and nowhere else. The app also uses it as the
-distinct id of its anonymous OTA health report (`ota-install:<uuid>`), which has no person, no
-account and no GeoIP. It never lives in PostHog's own storage, is never sent beside an account id,
-and is not a device identifier. A flag request creates no PostHog person.
+The id is stored without asking, under the ePrivacy "strictly necessary" exemption: kill switches
+and staged rollouts need a stable bucket (the argument is in
+[analytics-consent.md](./analytics-consent.md#legal-basis-per-tracker)). www sends it on flag
+requests and nowhere else. The app also uses it as the distinct id of its anonymous OTA health
+report (`ota-install:<uuid>`), which has no person, no account and no GeoIP. It never lives in
+PostHog's own storage, is never sent beside an account id, and is not a device identifier. A
+signed-out flag request drops the SDK's own `$anon_distinct_id` and `$device_id`, consented or not:
+the anonymous id is the one that merges into the account at sign-in, and bucketing reads
+`distinct_id` only. A flag request creates no PostHog person.
+
+The id is replaced 13 months after it was minted. In the app the record also holds the install
+time it was minted under (`Application.getInstallationTimeAsync()`), so storage restored onto a
+reinstall or a new phone by Android Auto Backup gets a new id. Either way the climber is re-bucketed
+once, like a sign-in.
 
 What this means for targeting:
 
 - **Kill switches and percentage rollouts work for everyone**, consented or not, signed in or out.
 - **Conditions on what the request carries still work**: OS, app version and build, and the
   proxy's edge-verified country (`donation-links` below depends on that).
-- **Conditions on stored person properties or cohorts cannot match a climber who declined.**
-  Without consent the app sends no person traits, the account was never identified, and a
-  withdrawal erases the PostHog person ([analytics-consent.md](./analytics-consent.md#erasure)).
-  An email- or cohort-targeted flag therefore evaluates to its default for a declining account,
-  even when the account's email is on the list. Target testers and staff some other way (the QA
-  tester gate, a build property) when it must reach them whatever they answered.
+- **Conditions on stored person properties or cohorts cannot match a climber who is signed out,
+  or who declined.** Signed out, every flag request carries the `flags-install:` / `flags-browser:`
+  id, which never has a person, so person-property and cohort conditions miss every signed-out
+  climber, consented ones included. (Before, a consented signed-out climber bucketed on the SDK's
+  anonymous id, which has a person.) Signed in without consent, the app sends no person traits, the
+  account was never identified, and a No thanks erases the PostHog person
+  ([analytics-consent.md](./analytics-consent.md#erasure)). An email- or cohort-targeted flag
+  therefore evaluates to its default for both, even when the account's email is on the list.
+  Target testers and staff some other way (the QA tester gate, a build property) when it must reach
+  them whatever they answered, and do not target signed-out traffic by person property or cohort.
 
 ## Mobile flags
 
