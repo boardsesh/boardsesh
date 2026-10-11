@@ -523,25 +523,17 @@ export const createClimbFilters = (
     }
   }
 
-  // When onlyDrafts is enabled, show ONLY the user's own draft climbs.
-  // Draft climbs can be owned via userId (locally created or JSON-imported)
-  // or via setterId (Aurora-synced).
+  // When onlyDrafts is enabled, show ONLY the user's own draft climbs. A draft
+  // has one owner, the Boardsesh `user_id` on the row, and that is the only
+  // thing this compares: created here, JSON-imported, or imported from a linked
+  // manufacturer account, a draft carries the account it belongs to. A draft
+  // with no owner belongs to no caller. Matching the caller's linked
+  // manufacturer account against `setter_id` instead would hand such a draft
+  // to every Boardsesh account linked to that manufacturer account.
   const isOnlyDrafts = searchParams.onlyDrafts && userId;
 
-  const userOwnershipCondition = userId
-    ? or(
-        eq(boardClimbs.userId, userId),
-        sql`${boardClimbs.setterId} = (
-          SELECT ubm.board_user_id FROM user_board_mappings ubm
-          WHERE ubm.user_id = ${userId}
-          AND ubm.board_type = ${params.board_name}
-          LIMIT 1
-        )`,
-      )!
-    : sql`false`;
-
   const isDraftCondition: SQL = isOnlyDrafts
-    ? and(eq(boardClimbs.isDraft, true), userOwnershipCondition)!
+    ? and(eq(boardClimbs.isDraft, true), eq(boardClimbs.userId, userId))!
     : eq(boardClimbs.isDraft, false);
 
   // When showing only drafts, skip the isListed filter (drafts are never listed)

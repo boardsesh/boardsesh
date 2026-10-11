@@ -3,6 +3,8 @@ export {
   approvedFollowerCondition,
   userActivityVisibilityCondition,
   contentVisibilityCondition,
+  climbDraftVisibilityCondition,
+  climbVisibilityCondition,
   resourceAccessCondition,
   resourceLocationCondition,
   sessionBoardLocationCondition,

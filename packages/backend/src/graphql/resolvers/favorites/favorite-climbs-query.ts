@@ -2,7 +2,7 @@ import { eq, and, sql, desc } from 'drizzle-orm';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetUserFavoriteClimbsInputSchema } from '../../../validation/schemas';
@@ -62,6 +62,9 @@ export const favoriteClimbsQuery = {
             { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
             userId,
           ),
+          // A favourite names a climb by uuid, and a draft is its owner's alone:
+          // favouriting someone else's draft must not read it back.
+          climbDraftVisibilityCondition({ isDraft: tables.climbs.isDraft, userId: tables.climbs.userId }, userId),
         ),
       );
 
@@ -145,6 +148,7 @@ export const favoriteClimbsQuery = {
             { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
             userId,
           ),
+          climbDraftVisibilityCondition({ isDraft: tables.climbs.isDraft, userId: tables.climbs.userId }, userId),
         ),
       )
       .orderBy(desc(dbSchema.userFavorites.createdAt))

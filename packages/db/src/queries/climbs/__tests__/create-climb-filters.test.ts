@@ -1029,6 +1029,29 @@ void describe('createClimbFilters: community-hidden climbs', () => {
   });
 });
 
+// A draft is returned to its owner alone, and the owner is the Boardsesh
+// `user_id` on the row. The drafts list used to also match the caller's linked
+// manufacturer account against `setter_id`, which listed a draft with no owner,
+// or another account's, to every account linked to that manufacturer account.
+void describe('the drafts list', () => {
+  const draftConditions = (userId?: string) =>
+    createClimbFilters(params, { onlyDrafts: true }, userId).getClimbWhereConditions().map(sqlToString).join(' || ');
+
+  void it('lists drafts by the row owner and nothing else', () => {
+    const drafts = draftConditions('user-1');
+    assert.match(drafts, /\(is_draft = true and user_id = user-1\)/);
+    assert.doesNotMatch(drafts, /setter_id/);
+    assert.doesNotMatch(drafts, /user_board_mappings/);
+  });
+
+  void it('is the published list for a caller with no account: no draft at all', () => {
+    const anonymous = draftConditions();
+    assert.match(anonymous, /is_draft = false/);
+    assert.doesNotMatch(anonymous, /is_draft = true/);
+    assert.match(anonymous, /is_listed = true/);
+  });
+});
+
 // Issue #5405. Under cross-angle every stats predicate reads the EFFECTIVE row
 // (the browsed-angle row when there is one, else the climb's own set-angle row)
 // instead of the browsed-angle row alone.

@@ -153,6 +153,10 @@ export const socialGymInsightsQueries = {
             // hard-deleted has no wall left to check, so its sends are not
             // listed either. `null` viewer, so nobody is exempt.
             sprayTickClimbExistsCondition(null),
+            // A draft sent on a gym board is named to its owner alone, and this
+            // list has no single viewer to be that owner. `IS NOT TRUE` keeps a
+            // send whose climb row is missing, which the left join leaves NULL.
+            sql`${dbSchema.boardClimbs.isDraft} IS NOT TRUE`,
           ),
         )
         .groupBy(

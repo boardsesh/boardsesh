@@ -4,7 +4,7 @@ import { canAccessResource, canViewActivityIdentity, resourceAccessCondition } f
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -1452,6 +1452,9 @@ async function fetchTickHighlightsByUuid(
       -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
       -- feed already supports — instead of the row vanishing and shorting the page.
       AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
+      -- A draft is its owner's alone. Same shape as the spray rule above: for
+      -- anyone else the climb's name, frames and setter come back NULL.
+      AND ${climbDraftVisibilityCondition({ isDraft: sql`cf.is_draft`, userId: sql`cf.user_id` }, viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
@@ -1532,6 +1535,9 @@ async function fetchHardestSendsBatch(
       -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
       -- feed already supports — instead of the row vanishing and shorting the page.
       AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
+      -- A draft is its owner's alone. Same shape as the spray rule above: for
+      -- anyone else the climb's name, frames and setter come back NULL.
+      AND ${climbDraftVisibilityCondition({ isDraft: sql`cf.is_draft`, userId: sql`cf.user_id` }, viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type

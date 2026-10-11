@@ -164,15 +164,32 @@ export async function redactBoardClimbs(
   );
 }
 
+/**
+ * Whether the climb is a draft this viewer does not own. A missing row is not a
+ * draft, and a draft with no owner is nobody's: `!climb.userId` first, so an
+ * anonymous viewer never "equals" a missing owner.
+ */
+async function isForeignDraft(climbUuid: string, viewerId: string | null | undefined): Promise<boolean> {
+  const [climb] = await db
+    .select({ userId: boardClimbs.userId, isDraft: boardClimbs.isDraft })
+    .from(boardClimbs)
+    .where(eq(boardClimbs.uuid, climbUuid));
+  return climb?.isDraft === true && (!climb.userId || climb.userId !== viewerId);
+}
+
 export async function redactBoardStats(
   stats: BoardPresenceStats,
   viewerId: string | null | undefined,
 ): Promise<BoardPresenceStats> {
   const hardest = stats.hardestSend;
   if (!hardest) return stats;
-  // A restricted user-created climb is never featured publicly. Aggregate
-  // grades and counts above remain unchanged.
-  if (!(await canViewContent(viewerId, 'climb', hardest.climbUuid, hardest.climbOwnerId ?? null))) {
+  // A restricted user-created climb is never featured publicly, and neither is
+  // a draft: it is named to its owner alone. Aggregate grades and counts above
+  // remain unchanged.
+  if (
+    !(await canViewContent(viewerId, 'climb', hardest.climbUuid, hardest.climbOwnerId ?? null)) ||
+    (await isForeignDraft(hardest.climbUuid, viewerId))
+  ) {
     return { ...stats, hardestSend: null };
   }
   const showIdentity =
