@@ -100,9 +100,14 @@ A proposal is moderation on a published climb, so whoever can read the climb rea
 reason (`climb_proposals.reason`), weighted tally and comment thread. Only identities follow account
 privacy: a private proposer or resolver the viewer cannot see comes back with no id, name or avatar
 (`social/proposals/enrichment.ts`). Each comment in the thread is still its author's activity, so a
-private reporter's reason comment reads for their followers and for the proposer (the proposal's
-owner), not for strangers; the proposal's own `reason` column carries the first reporter's words for
-everyone. The spray wall rule still hides every part of a proposal on a wall the viewer cannot see.
+private reporter's reason comment reads for their followers only. A proposal has no owner, so that
+includes the first reporter: unless they follow a later private reporter, they read neither that
+reporter's words nor their name, and their inbox names a private moderator or voter only on the same
+terms. The proposal's own `reason` column carries the first
+reporter's words for everyone. The spray wall rule still hides every part of a proposal on a wall the
+viewer cannot see. `voteOnProposal` applies the listings' climb check before it loads the proposal: a
+draft, a climb its setter's privacy hides, or a climb on a spray wall the voter cannot see reads as
+`Proposal not found`.
 
 ## Approval
 
