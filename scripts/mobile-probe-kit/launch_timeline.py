@@ -11,8 +11,9 @@ the first event comes later and the early stalls are simply not recorded: an
 absent stall in such a run proves nothing.
 
 A GAP line is the JS thread going that long without running a frame callback.
-Gaps of about 105 ms in a row before the database is ready are the frame
-callback being throttled behind the splash screen, not work.
+Some launches show a run of gaps of about 105 ms each before the database is
+ready, and the same build an hour later shows none. Their cause is not
+established; do not read them as work the app did.
 """
 import collections, json, sys
 

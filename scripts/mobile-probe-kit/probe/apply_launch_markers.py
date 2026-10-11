@@ -55,8 +55,8 @@ def mark_render(path, signature_start, component, probe_import_path):
                 insert_at = next_end
                 break
             position = next_end + 1
-    text = text[:insert_at] + f"\n  useRenderProbe('{component}');" + text[insert_at:]
-    open(M + path, "w").write(add_import(text, f"import {{ useRenderProbe }} from '{probe_import_path}';"))
+    text = text[:insert_at] + f"\n  perfProbe('render', {{ c: '{component}' }});" + text[insert_at:]
+    open(M + path, "w").write(add_import(text, f"import {{ perfProbe }} from '{probe_import_path}';"))
 
 
 def edit(path, label, pairs, probe_import_path=None):
@@ -73,7 +73,8 @@ def edit(path, label, pairs, probe_import_path=None):
 
 mark_render("app/_layout.tsx", "function RootLayout() {", "RootLayout", "../src/lib/perf-probe")
 mark_render("app/(tabs)/_layout.tsx", "export default function TabLayout() {", "TabLayout", "../../src/lib/perf-probe")
-mark_render("app/(tabs)/climbs/index.tsx", "export default function ClimbList() {", "ClimbList", "../../../src/lib/perf-probe")
+# The screen's body, not the `ClimbList` wrapper around it: the wrapper renders once and says nothing.
+mark_render("app/(tabs)/climbs/index.tsx", "function ClimbListInner() {", "ClimbListInner", "../../../src/lib/perf-probe")
 mark_render("src/providers/auth-provider.tsx", "export function AuthProvider({", "AuthProvider", "../lib/perf-probe")
 mark_render("src/providers/database-provider.tsx", "export function DatabaseProvider({", "DatabaseProvider", "../lib/perf-probe")
 mark_render("src/providers/queue-provider.tsx", "export function QueueProvider({", "QueueProvider", "../lib/perf-probe")

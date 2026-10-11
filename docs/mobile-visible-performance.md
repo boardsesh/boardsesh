@@ -165,7 +165,7 @@ Not changed by either PR, on `main` the same day: the app reads each queued clim
 | Launches are several times slower than an hour ago, on the same build | Not established. Seen once, with a long-attached UI driver and fresh installs | Compare A and B alternately in one sitting; rerun later before believing an absolute launch number |
 | A flick does not scroll | It started on the header or the bottom bar | Start between 28% and 74% of the screen height |
 | Flicks land about once a second | The runner adds about 0.75 s around each gesture | Count on it. A truly fast flick needs a finger |
-| A component's `render` marker fires once | React Compiler computed a constant call once | Use `useRenderProbe`, which is a hook |
+| A screen's `render` marker fires once while its children render 25 times | The marker is on a thin wrapper (`ClimbList`) and the work is in the component it returns (`ClimbListInner`) | Mark the inner component. A plain call at the top of a component does run on every render, with React Compiler too |
 | No probe events | The build was made without `EXPO_PUBLIC_PERF_PROBE=1`, or the app relaunched and emptied the folder | Rebuild with the script; pull before relaunching |
 | The driver stops answering after a relaunch | Its session ended with the app | The kit asks for a new session; with your own client, check the remembered id first |
 | `Timed out while enabling automation mode` | The runner cannot start UI automation: the phone is locked, showing a system prompt, or has a stale automation session | Unlock it and look at the screen. `scenario_launch.py` still works without the driver |

@@ -83,15 +83,3 @@ export function perfProbe(name: string, detail?: PerfProbeDetail): void {
   startJsFrameMonitor();
   recordEvent(name, detail);
 }
-
-/**
- * Records one `render` event each time the component calling it renders.
- *
- * A hook on purpose. React Compiler treats a plain call with constant arguments
- * as something it may compute once and reuse, so `perfProbe('render', ...)` at
- * the top of a compiled component logs its first render and none after. A hook
- * call is one the compiler has to make on every render.
- */
-export function useRenderProbe(component: string): void {
-  perfProbe('render', { c: component });
-}
