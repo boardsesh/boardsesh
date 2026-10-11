@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { resolveSessionBoardId } from '../session-board-binding';
-import { notifyResourcePrivacyChanged } from '../board-session-privacy';
+import { notifyResourcePrivacyChanged, projectSessionBoardPath } from '../board-session-privacy';
 import {
   canViewActivityIdentity,
   getResourcePrivacy,
@@ -269,7 +269,8 @@ export async function findNearbySessions(
     result.push({
       id: session.id,
       name: session.name,
-      boardPath: session.boardPath,
+      // A deleted or renamed named board's slug is not this viewer's to read.
+      boardPath: await projectSessionBoardPath(session.boardPath, viewerId),
       latitude: 0,
       longitude: 0,
       createdAt: session.createdAt,

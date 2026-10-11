@@ -425,9 +425,9 @@ describe('author decides across feeds', () => {
     expect(await projectSessionBoardPath(slugPath, GRANTEE)).toBe(slugPath);
     expect(await projectSessionBoardPath(slugPath, STRANGER)).toBe('/kilter/1/10/1/35');
     expect(await projectSessionBoardPath(slugPath, null)).toBe('/kilter/1/10/1/35');
-    // Paths that name nothing pass through.
+    // A geometry path passes through; a slug no board carries names nothing.
     expect(await projectSessionBoardPath('/kilter/1/10/1/40', STRANGER)).toBe('/kilter/1/10/1/40');
-    expect(await projectSessionBoardPath('/b/never-existed/40', STRANGER)).toBe('/b/never-existed/40');
+    expect(await projectSessionBoardPath('/b/never-existed/40', STRANGER)).toBe('');
   });
 
   it('lets the legacy switch move a session between Public and Unlisted both ways', async () => {

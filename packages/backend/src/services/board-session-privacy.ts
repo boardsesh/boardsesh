@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
 import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type {
@@ -12,7 +12,7 @@ import type {
   Climb,
 } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { boardClimbs, boardSessions, userBoards } from '@boardsesh/db/schema';
+import { boardClimbs, boardSessions, resourceGrants, userBoards } from '@boardsesh/db/schema';
 import { canViewActivityIdentity, canViewContent, visibleActivityUserIds, visibleBoardIdentityIds } from './privacy';
 
 /** Session protocol IDs must never double as profile IDs. */
@@ -87,27 +87,72 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
  * (`/b/<slug>[/<angle>]`) names its board, and readable sessions can sit on
  * boards the viewer cannot see. Such a viewer gets the board's geometry instead
  * (`/<type>/<layout>/<size>/<sets>/<angle>`): it still draws the board and logs
- * the climbs, so the invite link joins, without the board's slug. Any other path,
- * or a slug that no longer resolves, is returned unchanged.
+ * the climbs, so the invite link joins, without the board's slug.
+ *
+ * A soft-deleted board (a merged one included) keeps its row, so its slug still
+ * resolves to geometry; only its owner and anyone it was shared with (an
+ * approved grant the row still carries) keep the named path. A slug with no row
+ * left at all (renamed since, or its account deleted) names nothing anyone can
+ * open, so it comes back as the empty path, which clients read as "no board
+ * path". Any other path is returned unchanged.
  */
 export async function projectSessionBoardPath(boardPath: string, viewerId: string | null | undefined): Promise<string> {
   const named = parseNamedBoardPath(boardPath);
   if (!named) return boardPath;
-  const [board] = await db
-    .select({
-      id: userBoards.id,
-      boardType: userBoards.boardType,
-      layoutId: userBoards.layoutId,
-      sizeId: userBoards.sizeId,
-      setIds: userBoards.setIds,
-      angle: userBoards.angle,
-    })
+  const columns = {
+    id: userBoards.id,
+    uuid: userBoards.uuid,
+    ownerId: userBoards.ownerId,
+    boardType: userBoards.boardType,
+    layoutId: userBoards.layoutId,
+    sizeId: userBoards.sizeId,
+    setIds: userBoards.setIds,
+    angle: userBoards.angle,
+  };
+  const [live] = await db
+    .select(columns)
     .from(userBoards)
     .where(and(eq(userBoards.slug, named.slug), isNull(userBoards.deletedAt)))
     .limit(1);
-  if (!board) return boardPath;
-  if ((await visibleBoardIdentityIds([board.id], viewerId)).has(Number(board.id))) return boardPath;
+  // Slugs are unique among live boards only: the latest deletion is the board
+  // this path last named.
+  const [deleted] = live
+    ? []
+    : await db
+        .select(columns)
+        .from(userBoards)
+        .where(and(eq(userBoards.slug, named.slug), isNotNull(userBoards.deletedAt)))
+        .orderBy(desc(userBoards.deletedAt))
+        .limit(1);
+  const board = live ?? deleted;
+  if (!board) return '';
+  const mayName = live
+    ? (await visibleBoardIdentityIds([live.id], viewerId)).has(Number(live.id))
+    : await holdsDeletedBoard(board, viewerId);
+  if (mayName) return boardPath;
   return `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
+}
+
+/** A deleted board is still named to its owner and to anyone it was shared with. */
+async function holdsDeletedBoard(
+  board: { uuid: string; ownerId: string },
+  viewerId: string | null | undefined,
+): Promise<boolean> {
+  if (!viewerId) return false;
+  if (board.ownerId === viewerId) return true;
+  const [grant] = await db
+    .select({ userId: resourceGrants.userId })
+    .from(resourceGrants)
+    .where(
+      and(
+        eq(resourceGrants.kind, 'board'),
+        eq(resourceGrants.resourceId, board.uuid),
+        eq(resourceGrants.userId, viewerId),
+        eq(resourceGrants.status, 'approved'),
+      ),
+    )
+    .limit(1);
+  return !!grant;
 }
 
 export async function canReadClimbContent(climbUuid: string, viewerId: string | null | undefined): Promise<boolean> {
