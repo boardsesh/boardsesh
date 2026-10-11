@@ -8,9 +8,9 @@ import { GET } from '../route';
 
 /**
  * Sentinels stand in for the drizzle handles `@/app/lib/db/db` exports.
- * Asserting on identity (not just "was called") is what actually pins the
- * replica seam: `executeRows` accepts any drizzle instance, so a regression
- * back to `dbz` (primary) would still "work" and only this test would catch it.
+ * Asserting on identity (not just "was called") is what pins the primary:
+ * `executeRows` accepts any drizzle instance, so a move to the replica would
+ * still "work" and only this test would catch it.
  */
 const setterRouteState = vi.hoisted(() => ({
   getSetterOgSummaryMock: vi.fn(),
@@ -120,7 +120,9 @@ describe('api/og/setter route', () => {
     setterRouteState.capturedElement = null;
   });
 
-  it('reads the tick-aggregate query off the replica seam (dbzRead), not the primary', async () => {
+  it('reads the tick aggregate on the primary, where a spray wall that just went private is private', async () => {
+    // The bars count sends on spray climbs too, gated by the wall's own rule. A
+    // replica with no replay barrier can still see the wall as public.
     setterRouteState.getSetterOgSummaryMock.mockResolvedValue({
       displayName: 'Alex',
       avatarUrl: null,
@@ -132,8 +134,8 @@ describe('api/og/setter route', () => {
     expect(response.status).toBe(200);
     expect(setterRouteState.executeRowsMock).toHaveBeenCalledTimes(1);
     const [dbArg] = setterRouteState.executeRowsMock.mock.calls[0];
-    expect(dbArg).toBe(setterRouteState.dbzReadSentinel);
-    expect(dbArg).not.toBe(setterRouteState.dbzSentinel);
+    expect(dbArg).toBe(setterRouteState.dbzSentinel);
+    expect(dbArg).not.toBe(setterRouteState.dbzReadSentinel);
   });
 
   it("counts a private account's published climbs: only listed, draft and spray-wall rules apply", async () => {

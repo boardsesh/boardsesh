@@ -9,7 +9,7 @@ import {
   withSerialPlan,
   type SerialPlanDb,
 } from '@boardsesh/db/queries';
-import { dbz, dbzRead, executeRows } from '@/app/lib/db/db';
+import { dbz, executeRows } from '@/app/lib/db/db';
 import { boardClimbs, boardClimbStats } from '@/app/lib/db/schema';
 import { publishableAngleWhere, publishedAngleOrderBy } from '@/app/lib/seo/sitemap/published-angle';
 import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
@@ -300,7 +300,12 @@ function toClimbRow(row: Awaited<ReturnType<typeof buildSetterClimbsQuery>>[numb
 export async function getSetterPageData(username: string, page: number): Promise<SetterPageData | null> {
   const offset = Math.max(0, page - 1) * SETTER_PAGE_SIZE;
 
-  const [boardTypeRows, climbRows] = await withSerialPlan(dbzRead, async (tx) => [
+  // The primary, not the replica. The setter's climbs span every board type,
+  // spray walls included, and the spray predicate in `visibleSetterClimbsWhere`
+  // is a wall rule its owner (or an admin hide) can withdraw at any moment. A
+  // replica with no replay barrier could still see the wall as public and hand
+  // a stranger its climbs. Same rule as every other spray read: on the primary.
+  const [boardTypeRows, climbRows] = await withSerialPlan(dbz, async (tx) => [
     await buildSetterProfileQuery(tx, username),
     await buildSetterClimbsQuery(tx, username, offset, SETTER_PAGE_SIZE),
   ]);

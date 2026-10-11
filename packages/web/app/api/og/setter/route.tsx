@@ -7,7 +7,7 @@ import { createPrivateOgImageHeaders as createOgImageHeaders } from '@/app/lib/s
 import React from 'react';
 import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
-import { dbzRead, executeRows } from '@/app/lib/db/db';
+import { dbz, executeRows } from '@/app/lib/db/db';
 import { sql } from 'drizzle-orm';
 // This card renders on a WHITE ground, so it reads the light-surface tokens
 // deliberately — see the printSurfaceTokens doc comment in theme-config.
@@ -51,7 +51,10 @@ export async function GET(request: NextRequest) {
           difficulty: number;
           cnt: number;
         }>(
-          dbzRead,
+          // The primary: the bars count sends on spray climbs too, and the spray
+          // predicate below is a wall rule its owner can withdraw. A lagging
+          // replica could still count a wall that just went private.
+          dbz,
           sql`
           SELECT bt.difficulty, COUNT(*) as cnt
           FROM boardsesh_ticks bt
