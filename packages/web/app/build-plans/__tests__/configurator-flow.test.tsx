@@ -371,8 +371,11 @@ it('selects TB2 dimensions and engraving and submits the matching tuple', async 
     }
   }
   renderConfigurator(supported);
+  await previewThisWall();
   fireEvent.mouseDown(await screen.findByRole('combobox', { name: 'Board' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Tension Board 2' }));
+  await waitFor(() => expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull());
+  expect(screen.getByRole('button', { name: 'Get a free preview' })).toBeDefined();
   expect(lastLayoutConfig()).toMatchObject({
     boardName: 'tension',
     sizeId: 9,
