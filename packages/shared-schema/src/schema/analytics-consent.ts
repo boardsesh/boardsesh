@@ -35,6 +35,17 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
     conditional: Boolean
   }
 
+  """
+  Whether this visitor is asked before analytics runs, from the Cloudflare
+  country of the request. See docs/analytics-consent.md.
+  """
+  type ConsentRegion {
+    "The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted."
+    countryCode: String
+    "True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown."
+    promptRequired: Boolean!
+  }
+
   "Daily first-party active-user counts for one platform."
   type ActiveUsersPlatformCount {
     "web, ios, android or unknown."
@@ -68,6 +79,8 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
   extend type Query {
     "The signed-in climber's current analytics consent, or null when they have never answered."
     myAnalyticsConsent: AnalyticsConsent
+    "Whether this request comes from a region where the analytics prompt is shown. No sign-in needed."
+    consentRegion: ConsentRegion!
   }
 
   extend type Mutation {

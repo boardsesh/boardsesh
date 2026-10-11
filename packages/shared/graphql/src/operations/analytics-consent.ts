@@ -1,5 +1,5 @@
 import { gql } from 'graphql-request';
-import type { AnalyticsConsent, SetAnalyticsConsentInput } from '@boardsesh/shared-schema';
+import type { AnalyticsConsent, ConsentRegion, SetAnalyticsConsentInput } from '@boardsesh/shared-schema';
 
 const ANALYTICS_CONSENT_FIELDS = gql`
   fragment AnalyticsConsentFields on AnalyticsConsent {
@@ -32,3 +32,18 @@ export const SET_ANALYTICS_CONSENT = gql`
 
 export type SetAnalyticsConsentVariables = { input: SetAnalyticsConsentInput };
 export type SetAnalyticsConsentResponse = { setAnalyticsConsent: AnalyticsConsent };
+
+/**
+ * Whether this device's region gets the analytics prompt. Signed out works.
+ * Clients ask only while the device has no answer (or holds a region default).
+ */
+export const GET_CONSENT_REGION = gql`
+  query GetConsentRegion {
+    consentRegion {
+      countryCode
+      promptRequired
+    }
+  }
+`;
+
+export type GetConsentRegionResponse = { consentRegion: ConsentRegion };

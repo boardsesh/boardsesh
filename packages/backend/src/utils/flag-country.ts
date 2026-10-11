@@ -99,6 +99,9 @@ export function resolveEdgeVisitorIp(req: IncomingMessage): string | null {
 /**
  * Accept country only from a trusted Cloudflare edge ({@link isTrustedCloudflareEdge}).
  * This coarse flag input never carries the visitor's IP upstream.
+ *
+ * GraphQL HTTP requests carry the same value as `ConnectionContext.edgeCountry`,
+ * which `consentRegion` turns into the analytics-prompt decision.
  */
 export function resolveFlagCountry(req: IncomingMessage): string {
   const trustedEdge = isTrustedCloudflareEdge(req);

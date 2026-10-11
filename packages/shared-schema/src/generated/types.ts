@@ -1859,6 +1859,18 @@ export type CommunityStats = {
   litLast30Days: Scalars['Int']['output'];
 };
 
+/**
+ * Whether this visitor is asked before analytics runs, from the Cloudflare
+ * country of the request. See docs/analytics-consent.md.
+ */
+export type ConsentRegion = {
+  __typename?: 'ConsentRegion';
+  /** The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted. */
+  countryCode?: Maybe<Scalars['String']['output']>;
+  /** True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown. */
+  promptRequired: Scalars['Boolean']['output'];
+};
+
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
 export type ControllerInfo = {
@@ -6576,6 +6588,8 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
+  /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
+  consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
@@ -11389,6 +11403,7 @@ export type ResolversTypes = ResolversObject<{
   CommunityRoleType: CommunityRoleType;
   CommunitySetting: ResolverTypeWrapper<CommunitySetting>;
   CommunityStats: ResolverTypeWrapper<CommunityStats>;
+  ConsentRegion: ResolverTypeWrapper<ConsentRegion>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
   ControllerInfo: ResolverTypeWrapper<ControllerInfo>;
   ControllerPing: ResolverTypeWrapper<ControllerPing>;
@@ -11900,6 +11915,7 @@ export type ResolversParentTypes = ResolversObject<{
   CommunityRoleAssignment: CommunityRoleAssignment;
   CommunitySetting: CommunitySetting;
   CommunityStats: CommunityStats;
+  ConsentRegion: ConsentRegion;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
   ControllerInfo: ControllerInfo;
   ControllerPing: ControllerPing;
@@ -13256,6 +13272,15 @@ export type CommunityStatsResolvers<
   climbersLast30Days?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   computedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   litLast30Days?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ConsentRegionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ConsentRegion'] = ResolversParentTypes['ConsentRegion'],
+> = ResolversObject<{
+  countryCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  promptRequired?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -15968,6 +15993,7 @@ export type QueryResolvers<
     RequireFields<QueryCommunitySettingsArgs, 'scope' | 'scopeKey'>
   >;
   communityStats?: Resolver<ResolversTypes['CommunityStats'], ParentType, ContextType>;
+  consentRegion?: Resolver<ResolversTypes['ConsentRegion'], ParentType, ContextType>;
   contentAudience?: Resolver<
     ResolversTypes['PrivacyContentAudience'],
     ParentType,
@@ -18184,6 +18210,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommunityRoleAssignment?: CommunityRoleAssignmentResolvers<ContextType>;
   CommunitySetting?: CommunitySettingResolvers<ContextType>;
   CommunityStats?: CommunityStatsResolvers<ContextType>;
+  ConsentRegion?: ConsentRegionResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;
   ControllerInfo?: ControllerInfoResolvers<ContextType>;
   ControllerPing?: ControllerPingResolvers<ContextType>;

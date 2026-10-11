@@ -188,6 +188,11 @@ export type ConnectionContext = {
   // separately from clientIp so a direct-origin caller cannot evade the
   // secondary rate-limit bucket by forging cf-connecting-ip (issue #4038).
   socketPeerIp?: string;
+  // Cloudflare's country for an HTTP request, accepted only from a trusted
+  // edge hop (resolveFlagCountry in packages/backend/src/utils/flag-country.ts);
+  // 'XX' when unknown or untrusted, undefined on WebSocket and test contexts.
+  // A coarse country only: no IP is derived from or stored with it.
+  edgeCountry?: string;
   // Which client app made the request, from the `x-boardsesh-client` header on
   // HTTP and `connectionParams.clientIdentity` on WebSocket (see
   // client-identity.ts). Identification only: nothing is gated on it.

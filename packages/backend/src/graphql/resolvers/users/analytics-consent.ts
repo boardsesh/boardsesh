@@ -1,7 +1,17 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import type { AnalyticsConsent, ConnectionContext, SetAnalyticsConsentInput } from '@boardsesh/shared-schema';
-import { isAnalyticsConsentChoice, isConsentSource } from '@boardsesh/consent';
+import type {
+  AnalyticsConsent,
+  ConnectionContext,
+  ConsentRegion,
+  SetAnalyticsConsentInput,
+} from '@boardsesh/shared-schema';
+import {
+  consentPromptRequired,
+  isAnalyticsConsentChoice,
+  isConsentSource,
+  normalizeConsentCountry,
+} from '@boardsesh/consent';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
@@ -160,11 +170,24 @@ export async function readAnalyticsConsentForUser(userId: string): Promise<Analy
   return latest ? toAnalyticsConsent(latest) : null;
 }
 
+/**
+ * Whether the analytics prompt is shown for this request. Signed out is fine:
+ * the decision is needed before anyone has an account. Only the coarse country
+ * from a trusted Cloudflare hop is read (see `resolveFlagCountry`); the IP is
+ * never read, logged or stored here. An unknown or untrusted country, and every
+ * WebSocket request, resolves to "ask".
+ */
+export function resolveConsentRegion(ctx: Pick<ConnectionContext, 'edgeCountry'>): ConsentRegion {
+  const countryCode = normalizeConsentCountry(ctx.edgeCountry);
+  return { countryCode, promptRequired: consentPromptRequired(countryCode) };
+}
+
 export const analyticsConsentQueries = {
   myAnalyticsConsent: async (_: unknown, _args: unknown, ctx: ConnectionContext): Promise<AnalyticsConsent | null> => {
     requireAuthenticated(ctx);
     return readAnalyticsConsentForUser(ctx.userId!);
   },
+  consentRegion: (_: unknown, _args: unknown, ctx: ConnectionContext): ConsentRegion => resolveConsentRegion(ctx),
 };
 
 export const analyticsConsentMutations = {

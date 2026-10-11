@@ -20,6 +20,7 @@ import { responseCompressionPlugin } from './response-compression';
 import { recordUserActivity, resolveActivityPlatform } from '../services/user-activity';
 import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usage';
 import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple-ads-token-privacy';
+import { resolveFlagCountry } from '../utils/flag-country';
 
 async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
   if (!authHeader) return null;
@@ -97,6 +98,9 @@ export async function buildHttpConnectionContext({
     isCronAuthenticated,
     clientIp,
     socketPeerIp: resolveWebSocketSocketPeerIp(req),
+    // The trusted-edge country decides whether the analytics prompt is shown
+    // (consentRegion). Without the Node request there is no peer to trust.
+    edgeCountry: req ? resolveFlagCountry(req) : undefined,
     clientIdentity,
     clientIdentityRaw,
   };
