@@ -498,7 +498,7 @@ describe('official Sentry uploader invocation', () => {
   });
 
   it.each(['ios', 'android'] as const)(
-    'runs the installed official uploader for every %s pair and propagates CLI failures',
+    'runs the validated CLI for every %s pair and propagates CLI failures',
     (platform) => {
       const fixture = createMobileFixture(platform);
       const originalSourceMap = readFileSync(fixture.sourceMapPath, 'utf8');
@@ -530,15 +530,15 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
       let cliExitCode = 0;
       const dependencies: UploadSourceMapsDependencies = {
         resolveUploader: () => uploaderPath,
+        resolveCli: () => fakeCliPath,
         spawnUploader: (executable, args, options) => {
-          // Inject the fake only at the test subprocess boundary. Production
-          // still strips SENTRY_CLI_EXECUTABLE and never receives real credentials.
+          // Only the injected test CLI writes these offline invocation receipts.
+          // Production retains its installed binary resolver and fixed environment.
           return spawnSync(executable, args, {
             ...options,
             stdio: 'pipe',
             env: {
               ...options.env,
-              SENTRY_CLI_EXECUTABLE: fakeCliPath,
               SENTRY_TEST_INVOCATIONS_PATH: invocationLogPath,
               SENTRY_TEST_EXIT_CODE: String(cliExitCode),
             },
@@ -574,7 +574,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
         );
       expect(invocations).toHaveLength(2);
       for (const invocation of invocations) {
-        expect(invocation.args.slice(0, 2)).toEqual(['sourcemaps', 'upload']);
+        expect(invocation.args.slice(0, 4)).toEqual(['sourcemaps', 'upload', '--wait', '--strict']);
         expect(invocation.sourceMaps).toEqual([expect.objectContaining({ debug_id: VALID_DEBUG_ID })]);
         expect(invocation).toMatchObject({ org: 'boardsesh', project: 'boardsesh', url: 'https://sentry.io/' });
         expect(invocation.release).toBeUndefined();
@@ -587,7 +587,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
       }
       cliExitCode = 17;
       expect(() => uploadMobileSourceMaps(options, dependencies)).toThrow(
-        /Official Sentry uploader failed with exit code (1|17)/,
+        /Sentry CLI uploader failed with exit code 17/,
       );
       expect(readFileSync(fixture.sourceMapPath, 'utf8')).toBe(originalSourceMap);
       expect(readFileSync(`${jsBundlePath}.map`, 'utf8')).toBe(originalSourceMap);
