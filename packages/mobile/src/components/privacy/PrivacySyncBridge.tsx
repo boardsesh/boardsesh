@@ -41,6 +41,7 @@ export function PrivacySyncBridge() {
     let dirty = false;
     let running = false;
     let retryIndex = 0;
+    let deliveryRevision = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const retryDelays = [1_000, 5_000, 15_000];
     const clearRetry = () => {
@@ -57,6 +58,7 @@ export function PrivacySyncBridge() {
       running = true;
       dirty = false;
       const attemptRevision = revision;
+      const attemptDeliveryRevision = deliveryRevision;
       const credentialGeneration = getPrivacyCredentialGeneration();
       const isCurrent = () =>
         currentViewer() &&
@@ -84,6 +86,20 @@ export function PrivacySyncBridge() {
         // An event received during a repair must run once more; sharing the old
         // promise would silently authorize the catalogue for the older event.
         if (currentViewer() && revision !== attemptRevision) void repair(true);
+        else if (
+          currentViewer() &&
+          deliveryRevision !== attemptDeliveryRevision &&
+          needsCatalogOutboxRepair(viewerId)
+        ) {
+          // Delivery can land before this attempt first marks the cleanup as
+          // blocked. Retry after it settles instead of losing that acknowledgment.
+          dirty = true;
+          clearRetry();
+          timer = setTimeout(() => {
+            timer = undefined;
+            void repair();
+          }, 1_000);
+        }
       }
     };
     const unregister = registerPrivacyRevalidation(() => {
@@ -117,7 +133,9 @@ export function PrivacySyncBridge() {
     // Once it is delivered, retry the cleanup. Coalesce a drain's acknowledgments
     // and keep the existing foreground/connection and single-flight gates.
     const stopMutationDelivery = subscribeMutationDelivery((event) => {
-      if (event.status !== 'acknowledged' || !currentViewer() || !needsCatalogOutboxRepair(viewerId)) return;
+      if (event.status !== 'acknowledged' || !currentViewer()) return;
+      deliveryRevision += 1;
+      if (running || !needsCatalogOutboxRepair(viewerId)) return;
       dirty = true;
       if (timer !== undefined) return;
       timer = setTimeout(() => {

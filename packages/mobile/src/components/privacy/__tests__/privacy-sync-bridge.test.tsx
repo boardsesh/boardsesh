@@ -148,6 +148,29 @@ describe('privacy revocation subscription', () => {
     expect(mocks.revalidate).toHaveBeenCalledTimes(2);
   });
 
+  it('repairs an acknowledgment that lands before a long initial cleanup marks itself blocked', async () => {
+    let finishInitialRepair: (() => void) | undefined;
+    mocks.revalidate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishInitialRepair = () => {
+            mocks.outboxRepairRequired = true;
+            resolve();
+          };
+        }),
+    );
+    render(<PrivacySyncBridge />);
+    await act(async () => revoke());
+    await act(async () => {
+      mocks.mutationListener?.({ status: 'acknowledged' });
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    await act(async () => finishInitialRepair?.());
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(mocks.revalidate).toHaveBeenCalledTimes(2);
+  });
+
   it('waits for foreground before repairing a delivered preserved write', async () => {
     render(<PrivacySyncBridge />);
     await act(async () => revoke());
