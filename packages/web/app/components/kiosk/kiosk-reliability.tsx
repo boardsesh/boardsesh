@@ -65,9 +65,18 @@ const DAILY_RELOAD_HOUR = 4;
 export function KioskBoardFeedBridge({
   boardId,
   onSnapshot,
+  catchUpNonce = 0,
 }: {
   boardId: number;
   onSnapshot: (boardId: number, snapshot: KioskBoardSnapshot) => void;
+  /**
+   * Bumped by the hub when it has replaced the whole ws client and the fresh
+   * one has connected. That rebuild reset this board's wall (the shared
+   * `useBoardPresence` RESETs on a client identity change) and its own backfill
+   * seeds ran while the backend was still unreachable, so this catch-up is the
+   * only thing that refills the screen. `0` means "no rebuild yet".
+   */
+  catchUpNonce?: number;
 }) {
   const { currentClimb, isLive } = useBoardPresenceCurrent();
   const { history } = useBoardPresenceFeed();
@@ -76,6 +85,11 @@ export function KioskBoardFeedBridge({
   useEffect(() => {
     onSnapshot(boardId, { currentClimb, history, isLive });
   }, [boardId, onSnapshot, currentClimb, history, isLive]);
+
+  useEffect(() => {
+    if (catchUpNonce === 0) return;
+    refresh('reconnect');
+  }, [catchUpNonce, refresh]);
 
   useEffect(() => {
     const intervalId = setInterval(() => refresh('manual'), BOARD_FEED_CATCH_UP_INTERVAL_MS);
