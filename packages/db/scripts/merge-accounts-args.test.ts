@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseArgs } from './merge-accounts.js';
+import { assertAllUserFksHandled, parseArgs } from './merge-accounts.js';
 
 test('no args is a dry-run (apply stays false)', () => {
   const parsed = parseArgs([]);
@@ -46,3 +46,39 @@ test('an unknown flag exits', () => assertExits(['--nope']));
 test('--limit 0 exits (requires a positive integer)', () => assertExits(['--limit', '0']));
 test('--limit without a value exits', () => assertExits(['--limit']));
 test('--only-email without a value exits', () => assertExits(['--only-email']));
+
+test('current unhandled ownership, privacy and consent foreign keys reject account merging', async () => {
+  const unhandledColumns = [
+    'board_climb_revisions.edited_by',
+    'content_privacy.owner_id',
+    'notification_deliveries.recipient_id',
+    'notification_devices.user_id',
+    'resource_grants.invited_by',
+    'resource_grants.user_id',
+    'resource_privacy.owner_id',
+    'user_activity_days.user_id',
+    'user_analytics_consent_events.user_id',
+    'user_follow_requests.recipient_id',
+    'user_follow_requests.requester_id',
+  ];
+  let queryCount = 0;
+  const commandDb = {
+    execute: async () => {
+      queryCount += 1;
+      return unhandledColumns.map((qualifiedColumn) => {
+        const [childTable, childColumn] = qualifiedColumn.split('.');
+        return { childTable, childColumn };
+      });
+    },
+  };
+
+  await assert.rejects(assertAllUserFksHandled(commandDb), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /11 foreign key\(s\).*not handled/);
+    for (const qualifiedColumn of unhandledColumns) {
+      assert.ok(error.message.includes(qualifiedColumn));
+    }
+    return true;
+  });
+  assert.equal(queryCount, 1, 'only the catalog audit runs; no merge queries execute');
+});
