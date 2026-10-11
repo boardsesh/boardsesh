@@ -168,6 +168,11 @@ const syncOptions = (enabledBoards: string[]): SyncOptions => ({
   isOnline: () => true,
   isOnUnmeteredNetwork: async () => false,
 });
+/** Another account's published, listed climb on a Kilter board: what an event must leave alone. */
+const seedCatalogueClimb = () =>
+  database.runAsync(
+    "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES ('community-climb', 'kilter', 1, 'other', 0, 1, 5)",
+  );
 /** The telemetry event the phone in #6306 sent 42 times in 43 minutes. */
 const completedDownloadEvents = () =>
   track.mock.calls.filter(([eventName]) => eventName === SHARED_EVENTS.OfflineBoardDownloadCompleted);
@@ -242,6 +247,7 @@ describe('a privacy event and the sync engine', () => {
   });
 
   it('discards a spray page fetched before the event', async () => {
+    await seedCatalogueClimb();
     const server = createSyncServer({
       'syncClimbs@spray:7': [climbDocument('spray-climb', 'spray', 7, 7)],
     });
@@ -253,12 +259,14 @@ describe('a privacy event and the sync engine', () => {
     pageOnWire.release();
     await download;
 
-    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+    // The spray page did not land. The catalogue climb beside it is still there.
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'community-climb' }]);
     expect(await getCheckpoint(database, getCheckpointKey('board_climbs', SPRAY_SCOPE))).toBeNull();
     expect(await isScopeDownloadComplete(database, SPRAY_SCOPE)).toBe(false);
   });
 
   it('discards a page for a spray wall that was switched off while it downloaded', async () => {
+    await seedCatalogueClimb();
     const server = createSyncServer({
       'syncClimbs@spray:7': [climbDocument('spray-climb', 'spray', 7, 7)],
     });
@@ -272,7 +280,8 @@ describe('a privacy event and the sync engine', () => {
     pageOnWire.release();
     await download;
 
-    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+    // The spray page did not land. The catalogue climb beside it is still there.
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'community-climb' }]);
     expect(await getCheckpoint(database, getCheckpointKey('board_climbs', SPRAY_SCOPE))).toBeNull();
     expect(await isScopeDownloadComplete(database, SPRAY_SCOPE)).toBe(false);
   });

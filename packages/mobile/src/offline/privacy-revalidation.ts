@@ -17,6 +17,7 @@ import {
   OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
   parseOfflineBoardKey,
   purgeNamespaceKey,
+  purgeNamespaceForScopeKey,
   BOARD_DATA_TABLES,
   type OfflineDatabase,
 } from '@boardsesh/offline-sync';
@@ -80,9 +81,15 @@ async function listLocalSprayNamespaces(db: OfflineDatabase): Promise<string[]> 
   const markers = await db.getAllAsync<{ key: string }>("SELECT key FROM sync_meta WHERE key LIKE '%:spray:%'");
   const namespaces = new Set(walls.map((wall) => purgeNamespaceKey({ boardType: 'spray', layoutId: wall.layout_id })));
   for (const marker of markers) {
-    // Every per-scope key ends in its scope key, `spray:<layoutId>:<sizeId>`.
-    const scope = parseOfflineBoardKey(marker.key.slice(marker.key.lastIndexOf(':spray:') + 1));
-    if (scope) namespaces.add(purgeNamespaceKey(scope));
+    // Relies on every per-scope sync_meta key ending in its scope key,
+    // `spray:<layoutId>:<sizeId>`. That holds for each family the engine writes
+    // today: `checkpoint:<table>:`, `scope-complete:`, `scope-started:`,
+    // `scope-download-started:`, `schema-refresh:<table>:`, `holds-index:` and
+    // the `bootstrap-*:` markers. A key that ends in anything else does not
+    // parse and is skipped, so a new key shape can only miss a wall, and only
+    // one with no row and no other marker.
+    const namespace = purgeNamespaceForScopeKey(marker.key.slice(marker.key.lastIndexOf(':spray:') + 1));
+    if (namespace) namespaces.add(namespace);
   }
   return [...namespaces];
 }
@@ -137,6 +144,11 @@ export function revalidatePrivateCatalog(
     // still pulls it. Fence every wall with state on this device before the
     // server is contacted: a page that beats this lands ahead of the reset below
     // and is withdrawn by it, and nothing lands after.
+    //
+    // This read is outside the exclusive transaction below. A switched-off wall
+    // whose first row or marker arrives between the two is not fenced by this
+    // event: its cycle can keep a cursor the reset then deletes. The next event
+    // finds the wall here and resets it.
     for (const namespace of await listLocalSprayNamespaces(db)) purgeSprayNamespace(namespace);
     assertCurrent();
     let credential = await captureCatalogCredential();
