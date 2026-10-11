@@ -18,21 +18,37 @@ name: Tutorial - real photo spray wall
     visible: tutorial-pause
     timeout: 7000
     optional: true
-- openLink: com.boardsesh.app://settings/board-look
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0&screenshotOpenFirst=1
 - waitForAnimationToEnd
+- openLink: com.boardsesh.app://settings/board-look
+- extendedWaitUntil:
+    visible: Aura Outline
+    timeout: 90000
 - tapOn: Aura Outline
 - assertVisible: '.*Aura Outline.*'
 - scrollUntilVisible:
     element: Use my look on spray walls
+    centerElement: true
     direction: DOWN
     timeout: 90000
 - runFlow:
     when:
-      visible:
-        text: 'Use my look on spray walls.*'
-        checked: false
+      notVisible:
+        rightOf: Use my look on spray walls
+        below: Spray walls
+        above: Reset board look
+        checked: true
     commands:
-      - tapOn: 'Use my look on spray walls.*'
+      - tapOn:
+          rightOf: Use my look on spray walls
+          below: Spray walls
+          above: Reset board look
+          checked: false
+- assertVisible:
+    rightOf: Use my look on spray walls
+    below: Spray walls
+    above: Reset board look
+    checked: true
 - openLink: com.boardsesh.app://climbs?screenshotBoardIndex=3&screenshotOpenFirst=1
 - waitForAnimationToEnd
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/look')}

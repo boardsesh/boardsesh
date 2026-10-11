@@ -88,7 +88,7 @@ export function tutorialCaptureFingerprint(
           'packages/mobile/.maestro/showcase/android/crew-invite.yaml',
         ]
       : []),
-    ...(take.session ? ['packages/mobile/.maestro/showcase/android/session-end.yaml'] : []),
+    ...(take.session ? ['packages/mobile/.maestro/tutorial/session-end.yaml'] : []),
   ])
     visit(path);
   return sha(

@@ -1,0 +1,10 @@
+appId: com.boardsesh.app.dev
+name: Tutorial teardown - end the captured session
+---
+- openLink: com.boardsesh.app://record
+- waitForAnimationToEnd
+- tapOn: Stop
+- tapOn: End session
+- extendedWaitUntil:
+    visible: Start
+    timeout: 20000

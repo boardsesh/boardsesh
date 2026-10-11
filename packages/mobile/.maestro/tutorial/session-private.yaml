@@ -1,0 +1,16 @@
+appId: com.boardsesh.app.dev
+name: Tutorial setup - invitation-only session
+---
+- scrollUntilVisible:
+    element: Show this session live
+    centerElement: true
+    direction: DOWN
+    timeout: 90000
+- runFlow:
+    when:
+      visible:
+        text: 'Show this session live.*'
+        checked: true
+    commands:
+      - tapOn: 'Show this session live.*'
+- assertVisible: '.*Only people with your invite link can join.*'

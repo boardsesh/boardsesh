@@ -3,7 +3,7 @@ name: Tutorial - a workout advances after real rest
 ---
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd
-- runFlow: ../showcase/android/session-private.yaml
+- runFlow: session-private.yaml
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
 - tapOn: Pyramid
 - extendedWaitUntil:
@@ -15,13 +15,21 @@ name: Tutorial - a workout advances after real rest
     visible: tutorial-pause
     timeout: 7000
     optional: true
+- scrollUntilVisible:
+    element: 'Rest timer.*'
+    direction: DOWN
+    centerElement: true
+    timeout: 90000
 - runFlow:
     when:
-      visible:
+      notVisible:
         text: 'Rest timer.*'
-        checked: false
+        checked: true
     commands:
       - tapOn: 'Rest timer.*'
+- assertVisible:
+    text: 'Rest timer.*'
+    checked: true
 - repeat:
     times: 22
     commands:
@@ -33,11 +41,16 @@ name: Tutorial - a workout advances after real rest
                 id: rest-length-pill
 - assertVisible: 'Rest length, 0:30'
 - tapOn: After each climb
+- scrollUntilVisible:
+    element: 'Move to the next climb.*'
+    direction: DOWN
+    centerElement: true
+    timeout: 90000
 - runFlow:
     when:
-      visible:
+      notVisible:
         text: 'Move to the next climb.*'
-        checked: false
+        checked: true
     commands:
       - tapOn: 'Move to the next climb.*'
 - assertVisible:
@@ -60,9 +73,22 @@ name: Tutorial - a workout advances after real rest
     timeout: 15000
 - tapOn: Log ascent
 - tapOn: Attempt
+- assertTrue: ${http.get(TUTORIAL_SIGNAL_URL + '/set/timer-baseline').body == 'ready'}
 - tapOn: Save
 - extendedWaitUntil:
     visible: Tick saved
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: rest-timer-pill
+      text: 'Rest timer, .* left'
+    timeout: 15000
+- tapOn:
+    id: rest-timer-pill
+- extendedWaitUntil:
+    visible:
+      id: rest-timer-hero-clock
+      text: 'Rest timer, .* left.*'
     timeout: 15000
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/logged')}
 # Wait for the normal 30-second timer; the edit cuts this wait, not the app.
@@ -74,6 +100,7 @@ name: Tutorial - a workout advances after real rest
           visible: tutorial-pause
           timeout: 500
           optional: true
+- back
 - assertNotVisible: "Queue's empty"
 - assertVisible: 'On the wall.*'
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/advanced')}

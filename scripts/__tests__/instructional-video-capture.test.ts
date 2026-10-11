@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   assertLocalTutorialBackend,
   measureTutorialScreen,
@@ -6,6 +6,7 @@ import {
   tutorialCaptureFingerprint,
   tutorialManifestProblems,
 } from '../lib/instructional-video/capture';
+import { selectActiveTutorialSession, tutorialSessionStillActive } from '../lib/instructional-video/capture-crew';
 import type { TutorialTake, TutorialTakeManifest } from '../lib/instructional-video/types';
 
 const take: TutorialTake = {
@@ -45,6 +46,30 @@ const manifest: TutorialTakeManifest = {
 };
 
 describe('tutorial capture safety and evidence', () => {
+  it('selects the primary active board session even when ended sessions are returned first', () => {
+    expect(
+      selectActiveTutorialSession(
+        [
+          { id: 'ended-crew', isActive: false, boardPath: 'kilter/1/7/1,20/40' },
+          { id: 'other-board', isActive: true, boardPath: 'tension/1/10/1/40' },
+          { id: 'current-workout', isActive: true, boardPath: 'kilter/1/7/1,20/40' },
+        ],
+        'kilter/1/7/1,20',
+      ),
+    ).toBe('current-workout');
+  });
+  it('rejects missing or ambiguous primary sessions instead of joining or proving the wrong queue', () => {
+    expect(() => selectActiveTutorialSession([], 'kilter/1/7/1')).toThrow();
+    expect(() =>
+      selectActiveTutorialSession(
+        [
+          { id: 'first', isActive: true, boardPath: 'kilter/1/7/1/40' },
+          { id: 'second', isActive: true, boardPath: 'kilter/1/7/1/45' },
+        ],
+        'kilter/1/7/1',
+      ),
+    ).toThrow();
+  });
   it('carries the latest pre-trim anchor forward and normalizes measured dp geometry', () => {
     expect(
       trimTutorialAnchors(
@@ -113,5 +138,54 @@ describe('tutorial capture safety and evidence', () => {
       'footage is too short',
     );
     expect(tutorialManifestProblems(manifest, take, 'different')).toContain('capture identity differs');
+  });
+});
+
+describe('tutorial session teardown evidence', () => {
+  it('rejects an empty owner list instead of treating an invalid token as ended', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ data: { mySessions: [] } })));
+    try {
+      await expect(
+        tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'invalid-token', 'captured'),
+      ).rejects.toThrow('missing from its owner');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('checks the exact recorded session while another session remains active', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              mySessions: [
+                { id: 'captured', isActive: false, boardPath: 'kilter/1/7/1' },
+                { id: 'other', isActive: true, boardPath: 'tension/1/1/1' },
+              ],
+            },
+          }),
+        ),
+    );
+    try {
+      expect(await tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'primary-token', 'captured')).toBe(
+        false,
+      );
+      expect(await tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'primary-token', 'other')).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+  it('refuses to declare teardown complete when the authoritative response is missing', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: {} })));
+    try {
+      await expect(
+        tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'primary-token', 'captured'),
+      ).rejects.toThrow('no session list');
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

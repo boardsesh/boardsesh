@@ -203,7 +203,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'personal-grades',
         label: 'Turn on Use my grades',
-        focus: { x: 0.04, y: 0.42, width: 0.92, height: 0.1 },
+        focus: { x: 0, y: 0.42, width: 1, height: 0.1 },
       },
       {
         id: 'progress-filter',
@@ -223,6 +223,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'multiboard',
         label: 'Every board · one logbook',
+        focus: { x: 0.04, y: 0.19, width: 0.92, height: 0.405 },
         overview: true,
       },
       {
@@ -233,7 +234,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'calendar',
         label: 'Filter progress by board',
-        anchor: 'activity-calendar',
+        focus: { x: 0, y: 0.61, width: 1, height: 0.205 },
       },
     ],
   },

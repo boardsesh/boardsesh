@@ -13,5 +13,6 @@ name: Tutorial setup - private crew session
     timeout: 15000
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd
-- runFlow: ../showcase/android/session-private.yaml
-- runFlow: ../showcase/android/crew-start.yaml
+- runFlow: session-private.yaml
+- tapOn: Start
+- waitForAnimationToEnd

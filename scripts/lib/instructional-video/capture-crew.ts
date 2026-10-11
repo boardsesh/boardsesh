@@ -75,3 +75,53 @@ export class CrewParticipant {
     this.socket.close();
   }
 }
+
+export function selectActiveTutorialSession(
+  sessions: readonly { id: string; isActive: boolean; boardPath: string }[],
+  boardPath: string,
+): string {
+  const active = sessions.filter(
+    (session) => session.isActive && (session.boardPath === boardPath || session.boardPath.startsWith(`${boardPath}/`)),
+  );
+  if (active.length !== 1) throw new Error(`Expected one active tutorial session, received ${active.length}.`);
+  return active[0].id;
+}
+
+type TutorialSession = { id: string; isActive: boolean; boardPath: string };
+
+async function readTutorialSessions(backend: URL, jwt: string | undefined): Promise<TutorialSession[]> {
+  if (!jwt) throw new Error('Primary tutorial account is not authenticated.');
+  const response = await fetch(new URL('/graphql', backend), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${jwt}` },
+    body: JSON.stringify({ query: '{mySessions{id isActive boardPath}}' }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const result = (await response.json()) as {
+    data?: { mySessions?: { id: string; isActive: boolean; boardPath: string }[] };
+    errors?: unknown;
+  };
+  if (!response.ok || result.errors) throw new Error('Could not discover the active tutorial session.');
+  if (!Array.isArray(result.data?.mySessions)) throw new Error('Tutorial session response has no session list.');
+  return result.data.mySessions;
+}
+
+/** Read the primary user's actual current session without restarting the native app. */
+export async function discoverTutorialSession(
+  backend: URL,
+  jwt: string | undefined,
+  boardPath: string,
+): Promise<string> {
+  return selectActiveTutorialSession(await readTutorialSessions(backend, jwt), boardPath);
+}
+
+/** Teardown must end the exact captured session before another warm chapter starts. */
+export async function tutorialSessionStillActive(
+  backend: URL,
+  jwt: string | undefined,
+  sessionId: string,
+): Promise<boolean> {
+  const session = (await readTutorialSessions(backend, jwt)).find((candidate) => candidate.id === sessionId);
+  if (!session) throw new Error('Captured tutorial session is missing from its owner session list.');
+  return session.isActive;
+}

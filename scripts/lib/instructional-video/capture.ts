@@ -15,7 +15,7 @@ import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CrewParticipant } from './capture-crew';
+import { CrewParticipant, discoverTutorialSession, tutorialSessionStillActive } from './capture-crew';
 import { extractTutorialFrames } from './capture-media';
 import {
   assertTutorialMetroPortFree,
@@ -23,7 +23,7 @@ import {
   openTutorialLink,
   listenTutorialSignals,
 } from './capture-bootstrap';
-import { tutorialModifiedSourcePaths } from './source';
+import { tutorialCaptureSourceHash, tutorialModifiedSourcePaths } from './source';
 import {
   assertLocalTutorialBackend,
   measureTutorialScreen,
@@ -121,38 +121,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
   const nativeArtifactSha256 = sha(readFileSync(apk));
   const sourceCommit = command('git', ['rev-parse', 'HEAD'], env).trim();
   const sourceDirtyAtStart = tutorialModifiedSourcePaths(ROOT, sourceCommit).length > 0;
-  const captureSource = createHash('sha256');
-  const captureSources = new Set([
-    ...command(
-      'git',
-      [
-        'ls-files',
-        'packages/backend/src',
-        'packages/mobile/app',
-        'packages/mobile/src',
-        'packages/shared',
-        'packages/shared-schema',
-        'packages/board-constants',
-        'scripts/lib/android-sdk.ts',
-        'scripts/mobile-dev-start.ts',
-        'scripts/lib/metro-host.ts',
-        'scripts/lib/tailscale-hostname.ts',
-        'scripts/lib/showcase-video/android.ts',
-        'scripts/lib/showcase-video/contract.ts',
-      ],
-      env,
-    )
-      .trim()
-      .split('\n'),
-    'scripts/lib/instructional-video/capture.ts',
-    'scripts/lib/instructional-video/capture-crew.ts',
-    'scripts/lib/instructional-video/capture-contract.ts',
-    'scripts/lib/instructional-video/capture-media.ts',
-    'scripts/lib/instructional-video/capture-bootstrap.ts',
-  ]);
-  for (const path of [...captureSources].sort())
-    if (existsSync(resolve(ROOT, path))) captureSource.update(path).update(readFileSync(resolve(ROOT, path)));
-  const captureSourceSha256 = captureSource.digest('hex');
+  const captureSourceSha256 = tutorialCaptureSourceHash(ROOT);
   const selectedTakes = options.episode.takes.filter(
     (take) => !options.chapterIds || options.chapterIds.includes(take.chapterId),
   );
@@ -171,6 +140,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
   let timerCurrentUuid: string | undefined;
   let primaryJwt: string | undefined;
   let activeSession = false;
+  let capturedSessionId: string | undefined;
   let sessionTeardown: (() => Promise<void>) | undefined;
   const server = createServer((request, response) => {
     const [kind, name] = (request.url ?? '').split('?')[0].split('/').slice(1);
@@ -195,41 +165,20 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       if (!result.ok || body.errors) throw new Error('Could not read authoritative workout queue.');
       return body.data?.session?.queueState.currentClimbQueueItem?.climb.uuid;
     };
-    if (kind === 'mark') {
-      marks.set(name, Date.now());
-      if (name === 'logged') {
-        void (async () => {
-          const result = await fetch(new URL('/graphql', backend), {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', authorization: `Bearer ${primaryJwt}` },
-            body: JSON.stringify({ query: '{mySessions{id isActive createdAt boardPath}}' }),
-            signal: AbortSignal.timeout(5000),
-          });
-          const body = (await result.json()) as {
-            data?: { mySessions: { id: string; isActive: boolean; createdAt: string; boardPath: string }[] };
-            errors?: unknown;
-          };
-          if (!result.ok || body.errors) throw new Error('Could not discover the active workout session.');
-          const active = (body.data?.mySessions ?? [])
-            .filter(
-              (session) =>
-                session.isActive &&
-                (!env.TUTORIAL_BOARD_PATH ||
-                  session.boardPath === env.TUTORIAL_BOARD_PATH ||
-                  session.boardPath.startsWith(`${env.TUTORIAL_BOARD_PATH}/`)),
-            )
-            .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
-          if (active.length !== 1)
-            throw new Error(`Expected one active tutorial workout session, received ${active.length}.`);
-          timerSessionId = active[0].id;
-          if (!timerSessionId) throw new Error('Workout has no active private session.');
-          timerCurrentUuid = await sessionCurrent(timerSessionId);
-          if (!timerCurrentUuid) throw new Error('Workout has no authoritative current climb.');
-        })().catch((error: unknown) => {
-          signalFailure = error instanceof Error ? error : new Error(String(error));
-        });
-      }
+    if (kind === 'set' && name === 'timer-baseline') {
+      void (async () => {
+        timerSessionId = await discoverTutorialSession(backend, primaryJwt, env.TUTORIAL_BOARD_PATH ?? 'kilter/1/7/1');
+        capturedSessionId = timerSessionId;
+        timerCurrentUuid = await sessionCurrent(timerSessionId);
+        if (!timerCurrentUuid) throw new Error('Workout has no authoritative current climb.');
+        response.end('ready');
+      })().catch((error: unknown) => {
+        signalFailure = error instanceof Error ? error : new Error(String(error));
+        response.writeHead(500).end('failed');
+      });
+      return;
     }
+    if (kind === 'mark') marks.set(name, Date.now());
     if (kind === 'signal' && name === 'timer-advanced') {
       void (async () => {
         const current = timerSessionId ? await sessionCurrent(timerSessionId) : undefined;
@@ -483,8 +432,17 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       }
     };
     sessionTeardown = async () => {
-      await flow('packages/mobile/.maestro/showcase/android/session-end.yaml', 'abort-session-end');
+      const sessionId =
+        capturedSessionId ??
+        (await discoverTutorialSession(backend, primaryJwt, env.TUTORIAL_BOARD_PATH ?? 'kilter/1/7/1'));
+      await flow('packages/mobile/.maestro/tutorial/session-end.yaml', 'session-end');
+      await waitFor(
+        async () => !(await tutorialSessionStillActive(backend, primaryJwt, sessionId)),
+        15_000,
+        'captured session to end',
+      );
       activeSession = false;
+      capturedSessionId = undefined;
     };
     let appLaunched = false;
     for (const take of selectedTakes) {
@@ -504,7 +462,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         (path) => readFileSync(resolve(ROOT, path), 'utf8'),
       );
       const cachedPath = join(takeDir, 'manifest.json');
-      if (!options.recapture && existsSync(cachedPath)) {
+      if (!options.recapture && !sourceDirtyAtStart && existsSync(cachedPath)) {
         try {
           const cached = JSON.parse(readFileSync(cachedPath, 'utf8')) as TutorialTakeManifest;
           if (
@@ -546,21 +504,8 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       if (take.session === 'crew') {
         activeSession = true;
         await flow('packages/mobile/.maestro/tutorial/crew-setup.yaml', 'crew-session');
-        const beforeRelaunch = readFileSync(metroLog, 'utf8').length;
-        command(adb, ['-s', serial, 'shell', 'am', 'force-stop', APP], env);
-        openLink(androidDevClientUrl(metroPort));
-        let sessionId = '';
-        await waitFor(
-          () => {
-            const restored = /\[session\] restored from store:\s*([a-f0-9-]{36})/.exec(
-              readFileSync(metroLog, 'utf8').slice(beforeRelaunch),
-            );
-            sessionId = restored?.[1] ?? '';
-            return !!sessionId;
-          },
-          120_000,
-          'new crew session identity',
-        );
+        const sessionId = await discoverTutorialSession(backend, primaryJwt, env.TUTORIAL_BOARD_PATH ?? 'kilter/1/7/1');
+        capturedSessionId = sessionId;
         const signIn = await fetch(new URL('/auth/native/credentials', backend), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -736,15 +681,12 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       };
       const problems = tutorialManifestProblems(manifest, take, fingerprint);
       if (problems.length) throw new Error(`Capture ${take.id} failed validation: ${problems.join('; ')}`);
-      writeFileSync(`${cachedPath}.tmp`, JSON.stringify(manifest, null, 2));
-      renameSync(`${cachedPath}.tmp`, cachedPath);
       crew?.close();
       crew = undefined;
       crewAdd = undefined;
-      if (take.session) {
-        await flow('packages/mobile/.maestro/showcase/android/session-end.yaml', `${take.id}-end`);
-        activeSession = false;
-      }
+      if (take.session) await sessionTeardown();
+      writeFileSync(`${cachedPath}.tmp`, JSON.stringify(manifest, null, 2));
+      renameSync(`${cachedPath}.tmp`, cachedPath);
     }
   } finally {
     crew?.close();

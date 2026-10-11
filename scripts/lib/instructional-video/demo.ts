@@ -243,6 +243,13 @@ export async function startTutorialDemo(workRoot: string): Promise<TutorialDemo>
       env,
       logPath,
     );
+    // Cloning the baked database leaves planner statistics empty. Refresh them before native profile reads.
+    await run(
+      'docker',
+      [...compose, 'exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', 'boardsesh_tutorial', '-c', 'ANALYZE'],
+      env,
+      logPath,
+    );
     env.TUTORIAL_SEED_FILE = seedPath;
     const seed = JSON.parse(await readFile(seedPath, 'utf8')) as {
       fixtureFingerprint: string;

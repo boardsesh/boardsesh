@@ -33,8 +33,7 @@ name: Tutorial setup - require a completed local hold index
           visible:
             id: hold-filter-heatmap-legend
           timeout: 120000
-- assertVisible:
-    id: hold-filter-heatmap-legend
+- runFlow: heatmap-ready.yaml
 - assertNotVisible:
     id: hold-heatmap-download-line
 - tapOn: Heatmap

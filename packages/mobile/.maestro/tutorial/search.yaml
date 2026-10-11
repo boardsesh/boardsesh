@@ -65,6 +65,7 @@ name: Tutorial - choose holds, regions and similar climbs
     visible:
       id: hold-filter-heatmap-legend
     timeout: 15000
+- runFlow: heatmap-ready.yaml
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/heatmap')}
 - extendedWaitUntil:
     visible: tutorial-pause
