@@ -166,8 +166,43 @@ later died on `relation "location_sync_gym_sources" does not exist`.
 With `VERIFY_MIGRATION_JOURNAL=1`, `packages/db/scripts/migrate.ts` now checks **every**
 journal entry against the ledger, keyed on the migration hash, and throws with the missing
 tags named. `production-deploy.yml` and `db-migration-renumber.yml` both set it. It stays
-opt-in for now because the `boardsesh-dev-db` image is missing `0187_sad_freak`'s ledger
-row, so a default-on check would redden every developer's `vp run db:migrate`.
+opt-in, because a dev database can still carry gaps the developer did not cause and a
+default-on check would redden every `vp run db:migrate`.
+
+#### Ledger timestamps on the dev DB (`vp run db:normalize-ledger`)
+
+Older `boardsesh-dev-db` image versions stamped ledger rows with the image's **build clock**
+instead of each journal entry's `when`. The current image helper, added on main in #4474,
+records the exact `when` in both ledger copies in the same transaction as each migration.
+The high-water assertion added here keeps future image builds from reintroducing the drift.
+
+An old high-water mark can still live in a pinned CI image or a persistent developer volume.
+Drizzle reads `max(created_at)` once and applies only entries whose `when` is greater, so an
+older branch migration below that mark can be skipped without an error. The repair is for
+those existing databases; it does not change production migration verification.
+
+Use the normalizer on the intended local dev database to repair its existing rows:
+
+```
+DATABASE_URL=postgres://... vp run db:normalize-ledger        # add -- --dry-run to plan only
+```
+
+Matched rows are paired by hash and insertion order, then rewritten to the journal value
+drizzle itself uses. The normalizer never deletes ledger rows or guesses timestamps. If either
+copy contains an unmatched hash or more copies of a hash than the current journal has, it
+refuses the entire repair even when that row's timestamp looks harmless: its history cannot be
+proven from the current journal. It reports the row IDs and hashes so the database owner can
+reconcile them before retrying. For fully matched ledgers, it plans both copies and verifies the
+resulting high-water mark before writing; an unapplied migration that would still be skipped
+also stops the repair. Both copies are then written and checked again in one transaction, so
+any failure rolls every timestamp update back. A non-local target is refused without `--force`.
+
+`vp run db:up` and CI run the normalizer before migration apply. Remote/Tailscale discovery
+intentionally skips automatic normalization and prints a warning before its pending-migration
+check. Verify the selected database before manually running the command against a shared dev
+database; the normalizer does not expand the remote auto-repair path.
+
+A gate firing on a dev database is therefore a real gap again, not ledger noise.
 
 Run it read-only against any database, without applying anything:
 
@@ -219,8 +254,12 @@ Repair each named tag by hand, in this order:
    `INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ('<ledger hash>', <when>);`
 4. Re-run `vp run db:verify-journal` to confirm the repair.
 
-Extra ledger rows matching no journal entry are ignored — renumbering leaves those behind
-legitimately, and failing on them would block deploys for benign residue.
+Extra ledger rows matching no journal entry are ignored by this read-only gate — renumbering
+can leave those behind, and they do not prove a journal migration is missing. The dev-ledger
+timestamp normalizer has a stricter requirement: it must know the journal `when` for every row
+it changes, so it refuses to normalize either ledger copy while unmatched or excess rows
+remain, regardless of their current timestamps. Reconcile those rows with the database owner;
+the normalizer reports IDs and hashes and never deletes rows or invents timestamps.
 
 #### The recorded baseline
 

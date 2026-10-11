@@ -441,6 +441,14 @@ async function main(): Promise<void> {
     console.info('[dev-db] Redis not reachable; backend will run in local-only pub/sub mode.');
   }
 
+  if (selection.source !== 'local-standalone') {
+    console.warn(
+      '[dev-db] Automatic migration-ledger timestamp normalization is skipped for an env/Tailscale database. ' +
+        'Verify this is the intended development database and reconcile any pre-#4211 high-water mark before ' +
+        'relying on pending-migration results; see docs/db-migrations.md.',
+    );
+  }
+
   console.info('[dev-db] Checking for pending migrations...');
   await runPendingMigrations(selection.connectionString);
   writeGeneratedEnv(selection);
