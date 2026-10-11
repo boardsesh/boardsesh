@@ -151,8 +151,9 @@ from source maps stored with each update. Both need the Enterprise licence.
   (path and hash) beside `files`. A 3.2.6 server accepts a publish without it, so a PR branch still
   pinned to eoas 3.2.5 keeps publishing. Between the two CLI versions only `publish` and its asset
   helper changed; `rollback`, `republish` and `doctor` are byte-identical.
-- **Source maps are off until `UPLOAD_SOURCEMAPS` is set.** The server ignores the `sourcemap` item
-  until then, so the Errors view groups errors from the first boot with raw Hermes stack traces.
+- **Source maps were switched on separately.** The server ignores the `sourcemap` item until
+  `UPLOAD_SOURCEMAPS` is set, so the Errors view grouped errors from the first boot with raw Hermes
+  stack traces, and symbolication started with the first update published after the switch.
   See [Error tracking in Observe](#error-tracking-in-observe-alongside-sentry).
 - **Update health reads the SDK's own signals.** A fatal exception reported by `expo-app-metrics`
   marks the running update faulty, and a later first render clears it. The app recovers from
@@ -1702,10 +1703,10 @@ handoff and the global handler that recovers from worklet-serialization fatals.
    export with no map still promotes, with a warning in the log.
 4. A background job indexes the map, and a sweep symbolicates new errors every minute.
 
-Storage needs `UPLOAD_SOURCEMAPS=true` and `S3_BUCKET_SOURCEMAPS_NAME` on the OTA server. Until
-both are declared in `infra/railway/config.ts`, the server ignores every `sourcemap` item. The maps
-live in the private `boardsesh-ota-sourcemaps` bucket and expire after 35 days
-([cloudflare.md](./cloudflare.md#ota-source-maps)).
+Storage is switched on by `UPLOAD_SOURCEMAPS=true` and `S3_BUCKET_SOURCEMAPS_NAME` on the OTA
+server, both declared in `infra/railway/config.ts`. Without them the server ignores every
+`sourcemap` item. The maps live in the private `boardsesh-ota-sourcemaps` bucket and expire after
+35 days ([cloudflare.md](./cloudflare.md#ota-source-maps)).
 
 **Storage is part of publishing once it is on.** With `UPLOAD_SOURCEMAPS` set, the server records
 the map on the update and checks its store at lease and at finalize. If the store is unreachable, or
