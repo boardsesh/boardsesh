@@ -1155,7 +1155,6 @@ export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResp
         privacySettings: {
           isPrivate: false,
           privacyRevision: 0,
-          privacyOnboardingVersion: 1,
           defaultSessionAudience: 'public',
           enabled: false,
         },
