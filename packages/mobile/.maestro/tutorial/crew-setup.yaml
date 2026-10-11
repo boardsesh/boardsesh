@@ -44,6 +44,12 @@ name: Tutorial setup - private crew session
     point: '80%,91%'
     waitToSettleTimeoutMs: 500
 - back
+# Back may close the drawer onto the climb list. Open the actual current climb
+# rather than assuming the wall banner exists on that underlying list.
+- openLink: com.boardsesh.app://play
+- extendedWaitUntil:
+    visible: NuVu
+    timeout: 20000
 - extendedWaitUntil:
     visible: 'On the wall: NuVu,.*'
     timeout: 20000
