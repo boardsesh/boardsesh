@@ -101,6 +101,10 @@ export const socialCommentQueries = {
       return { comments: [], totalCount: 0, hasMore: false };
     }
 
+    // Every statement below reads comments on this one item, so the reply-author
+    // walk starts from the viewer's comments on it alone.
+    const item = { entityType, entityId };
+
     // If parentCommentUuid is provided, resolve to internal ID for filtering replies
     let parentCommentFilter: ReturnType<typeof sql>;
     let resolvedParentId: number | null = null;
@@ -108,7 +112,12 @@ export const socialCommentQueries = {
       const [parentComment] = await db
         .select({ id: dbSchema.comments.id })
         .from(dbSchema.comments)
-        .where(and(eq(dbSchema.comments.uuid, parentCommentUuid), commentPrivacyCondition(ctx?.userId)))
+        .where(
+          and(
+            eq(dbSchema.comments.uuid, parentCommentUuid),
+            commentPrivacyCondition(ctx?.userId, dbSchema.comments, item),
+          ),
+        )
         .limit(1);
 
       if (!parentComment) {
@@ -153,7 +162,7 @@ export const socialCommentQueries = {
         and(
           eq(dbSchema.comments.entityType, entityType),
           eq(dbSchema.comments.entityId, entityId),
-          commentPrivacyCondition(authenticatedUserId),
+          commentPrivacyCondition(authenticatedUserId, dbSchema.comments, item),
           resolvedParentId !== null
             ? eq(dbSchema.comments.parentCommentId, resolvedParentId)
             : isNull(dbSchema.comments.parentCommentId),
@@ -193,7 +202,7 @@ export const socialCommentQueries = {
         SELECT r."parent_comment_id", COUNT(*) as cnt
         FROM "comments" r
         WHERE r."parent_comment_id" IS NOT NULL AND r."deleted_at" IS NULL
-          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r."uuid"`, userId: sql`r."user_id"`, parentCommentId: sql`r."parent_comment_id"`, entityType: sql`r."entity_type"`, entityId: sql`r."entity_id"` })}
+          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r."uuid"`, userId: sql`r."user_id"`, parentCommentId: sql`r."parent_comment_id"`, entityType: sql`r."entity_type"`, entityId: sql`r."entity_id"` }, item)}
           AND r."entity_type" = ${entityType} AND r."entity_id" = ${entityId}
         GROUP BY r."parent_comment_id"
       ) reply_cnt ON reply_cnt."parent_comment_id" = c."id"
@@ -206,7 +215,7 @@ export const socialCommentQueries = {
       WHERE c."entity_type" = ${entityType}
         AND c."entity_id" = ${entityId}
         AND ${parentCommentFilter}
-        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"`, entityType: sql`c."entity_type"`, entityId: sql`c."entity_id"` })}
+        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"`, entityType: sql`c."entity_type"`, entityId: sql`c."entity_id"` }, item)}
       ORDER BY ${orderByClause}
       LIMIT ${limit}
       OFFSET ${offset}
@@ -532,7 +541,12 @@ export const socialCommentMutations = {
           deletedAt: dbSchema.comments.deletedAt,
         })
         .from(dbSchema.comments)
-        .where(and(eq(dbSchema.comments.uuid, parentCommentUuid), commentPrivacyCondition(ctx?.userId)))
+        .where(
+          and(
+            eq(dbSchema.comments.uuid, parentCommentUuid),
+            commentPrivacyCondition(ctx?.userId, dbSchema.comments, { entityType, entityId }),
+          ),
+        )
         .limit(1);
 
       if (!parent) {
@@ -653,7 +667,10 @@ export const socialCommentMutations = {
         and(
           eq(dbSchema.comments.parentCommentId, comment.id),
           isNull(dbSchema.comments.deletedAt),
-          commentPrivacyCondition(userId),
+          commentPrivacyCondition(userId, dbSchema.comments, {
+            entityType: comment.entityType,
+            entityId: comment.entityId,
+          }),
         ),
       );
     const replyCount = Number(replyResult[0]?.count || 0);

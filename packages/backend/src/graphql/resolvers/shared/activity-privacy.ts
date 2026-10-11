@@ -297,6 +297,9 @@ function terminalSocialEntityPrivacyCondition(
     ELSE false END`;
 }
 
+/** The one item (tick, climb, session, ...) a statement reads comments on. */
+export type CommentThreadItem = { entityType: string; entityId: string };
+
 type CommentPrivacyColumns = {
   uuid: SQLWrapper;
   userId: SQLWrapper;
@@ -318,14 +321,26 @@ type CommentPrivacyColumns = {
  * - An ancestor row that no longer exists is readable. Deleting an account
  *   cascades its comments, and that must not orphan the replies under them.
  *
+ * Pass `item` whenever the statement reads comments on one known item. A
+ * comment and its ancestors always share their item, so the walk then starts
+ * from the viewer's comments on that item only, and its cost follows the
+ * thread instead of how many replies the viewer has written site-wide. Without
+ * it (feeds, inboxes, a comment reached by uuid alone) the walk covers every
+ * comment the viewer wrote.
+ *
  * Structure still fails closed for everyone: the chain must end at a root or a
  * missing row within 32 ancestors, so a cycle or an over-deep chain never reads.
  */
 export function commentPrivacyCondition(
   viewerId: string | null | undefined,
   comment: CommentPrivacyColumns = schema.comments,
+  item?: CommentThreadItem,
 ): SQL {
   const ownComment = viewerId ? sql`COALESCE(${comment.userId} = ${viewerId}, false)` : sql`false`;
+  // Bound constants, never the outer row: the walk stays uncorrelated.
+  const viewerCommentsOnItem = item
+    ? sql` AND privacy_mine.entity_type = ${item.entityType} AND privacy_mine.entity_id = ${item.entityId}`
+    : sql``;
   // Every comment above one the viewer wrote, walked up with the same
   // 32-ancestor cap as `privacy_ancestors` (so a cycle stops too). It names no
   // outer column, so PostgreSQL runs it once per statement and probes the
@@ -335,7 +350,7 @@ export function commentPrivacyCondition(
       WITH RECURSIVE privacy_viewer_thread AS (
         SELECT privacy_replied_to.id, privacy_replied_to.uuid, privacy_replied_to.parent_comment_id, 1 AS depth
         FROM comments privacy_mine JOIN comments privacy_replied_to ON privacy_replied_to.id = privacy_mine.parent_comment_id
-        WHERE privacy_mine.user_id = ${viewerId}
+        WHERE privacy_mine.user_id = ${viewerId}${viewerCommentsOnItem}
         UNION ALL
         SELECT privacy_above.id, privacy_above.uuid, privacy_above.parent_comment_id, privacy_below.depth + 1
         FROM comments privacy_above JOIN privacy_viewer_thread privacy_below ON privacy_above.id = privacy_below.parent_comment_id
@@ -402,13 +417,17 @@ export async function canReadDeletedComment(
 ): Promise<boolean> {
   const [result] = await db
     .select({
-      allowed: commentPrivacyCondition(viewerId, {
-        uuid: sql`${deleted.commentUuid}::text`,
-        userId: sql`${deleted.authorUserId}::text`,
-        parentCommentId: sql`${deleted.parentCommentId}::bigint`,
-        entityType: sql`${deleted.entityType}::text`,
-        entityId: sql`${deleted.entityId}::text`,
-      }),
+      allowed: commentPrivacyCondition(
+        viewerId,
+        {
+          uuid: sql`${deleted.commentUuid}::text`,
+          userId: sql`${deleted.authorUserId}::text`,
+          parentCommentId: sql`${deleted.parentCommentId}::bigint`,
+          entityType: sql`${deleted.entityType}::text`,
+          entityId: sql`${deleted.entityId}::text`,
+        },
+        { entityType: deleted.entityType, entityId: deleted.entityId },
+      ),
     })
     .from(sql`(SELECT 1) privacy_deleted_comment`);
   return result?.allowed === true;
