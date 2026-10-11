@@ -1,5 +1,5 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 32
+ * The standing inventory oracle for issue #1889 (REST surface audit: 37
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
  * its prewarm cron were retired).
@@ -251,6 +251,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(32);
+    expect(derived.size).toBe(37);
   });
 });
