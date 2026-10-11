@@ -57,7 +57,9 @@ export function parsePendingConsentDecision(candidate: unknown): PendingConsentD
     !Number.isInteger(record.version) ||
     record.version < CONSENT_VERSION ||
     typeof record.decidedAt !== 'string' ||
-    !Number.isFinite(Date.parse(record.decidedAt))
+    !Number.isFinite(Date.parse(record.decidedAt)) ||
+    // Only an explicit answer is ever pending; a region default must never reach the account.
+    (record.basis !== undefined && record.basis !== 'explicit')
   )
     return null;
   const stamp = pendingDecision.basedOnDecidedAt;

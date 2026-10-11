@@ -82,10 +82,16 @@ describe('the region default record', () => {
     },
   );
 
-  it('never travels as a pending account write', () => {
-    expect(parsePendingConsentDecision({ record: regionDefault, basedOnDecidedAt: null })?.record).not.toHaveProperty(
-      'basis',
-    );
+  it('is refused as a persisted pending account write, rather than stripped into a grant', () => {
+    expect(parsePendingConsentDecision({ record: regionDefault, basedOnDecidedAt: null })).toBeNull();
+    expect(
+      parsePendingConsentDecision({ record: { ...regionDefault, basis: 'guessed' }, basedOnDecidedAt: null }),
+    ).toBeNull();
+    const explicit = parsePendingConsentDecision({
+      record: { ...accountGrant, basis: 'explicit' },
+      basedOnDecidedAt: null,
+    });
+    expect(explicit?.record).toEqual(accountGrant);
   });
 });
 

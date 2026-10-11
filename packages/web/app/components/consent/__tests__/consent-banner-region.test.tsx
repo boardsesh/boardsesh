@@ -5,6 +5,7 @@ import { createRegionDefaultConsent, serializeConsentCookieValue, type ConsentRe
 
 const transport = vi.hoisted(() => ({
   request: vi.fn(),
+  regionRequest: vi.fn(),
   // promptRequired the backend returns; an Error means the lookup fails.
   region: true as boolean | null | Error,
   pathname: '/',
@@ -18,7 +19,10 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children?: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ token: null }) }));
-vi.mock('@/app/lib/graphql/client', () => ({ executeGraphQL: transport.request }));
+vi.mock('@/app/lib/graphql/client', () => ({
+  executeGraphQL: transport.request,
+  createGraphQLHttpClient: () => ({ request: transport.regionRequest }),
+}));
 vi.mock('@/app/lib/analytics', () => ({ setAnalyticsFlagAccountId: vi.fn() }));
 vi.mock('@/app/lib/consent-pending-db', () => ({
   loadPendingConsent: async () => null,
@@ -56,16 +60,17 @@ beforeEach(() => {
   vi.resetModules();
   transport.region = true;
   transport.pathname = '/';
+  transport.regionRequest.mockReset().mockImplementation(async ({ document }: { document: string }) => {
+    if (document !== GET_CONSENT_REGION) throw new Error('unexpected operation');
+    if (transport.region instanceof Error) throw transport.region;
+    return {
+      consentRegion: {
+        countryCode: transport.region === false ? 'US' : null,
+        promptRequired: transport.region,
+      },
+    };
+  });
   transport.request.mockReset().mockImplementation(async (query: string) => {
-    if (query === GET_CONSENT_REGION) {
-      if (transport.region instanceof Error) throw transport.region;
-      return {
-        consentRegion: {
-          countryCode: transport.region === false ? 'US' : null,
-          promptRequired: transport.region,
-        },
-      };
-    }
     if (query === GET_MY_ANALYTICS_CONSENT) return { myAnalyticsConsent: null };
     throw new Error('unexpected operation');
   });
@@ -86,7 +91,7 @@ afterEach(() => {
 });
 
 function regionLookups(): number {
-  return transport.request.mock.calls.filter(([query]) => query === GET_CONSENT_REGION).length;
+  return transport.regionRequest.mock.calls.length;
 }
 
 describe('consent banner by region', () => {
@@ -104,6 +109,11 @@ describe('consent banner by region', () => {
     await waitFor(() => expect(consentCookie()).toMatch(/^v1\.granted\.\d+\.web\.region$/));
     expect(view.queryByTestId('consent-banner')).toBeNull();
     expect(document.documentElement.dataset.consent).toBe('granted');
+    // Writing the default leaves the hook's dependency unchanged: one lookup per page load.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(regionLookups()).toBe(1);
   });
 
   it('shows the banner when the region lookup fails', async () => {

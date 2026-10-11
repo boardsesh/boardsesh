@@ -1,5 +1,5 @@
 import { GET_CONSENT_REGION, type GetConsentRegionResponse } from '@boardsesh/graphql/operations/analytics-consent';
-import { executeGraphQL } from '@/app/lib/graphql/client';
+import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 
 /** Past this the banner shows: an answer we never got counts as "ask". */
 export const CONSENT_REGION_WAIT_MS = 5000;
@@ -24,11 +24,16 @@ export function lookUpConsentRegion(): Promise<boolean | null> {
 }
 
 async function requestConsentRegion(): Promise<boolean | null> {
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), CONSENT_REGION_WAIT_MS);
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, CONSENT_REGION_WAIT_MS);
   });
-  const answer = executeGraphQL<GetConsentRegionResponse>(GET_CONSENT_REGION)
+  const answer = createGraphQLHttpClient()
+    .request<GetConsentRegionResponse>({ document: GET_CONSENT_REGION, signal: controller.signal })
     .then(({ consentRegion }) =>
       typeof consentRegion?.promptRequired === 'boolean' ? consentRegion.promptRequired : null,
     )

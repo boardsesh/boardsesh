@@ -72,6 +72,10 @@ const TWO_UPPERCASE_LETTERS = /^[A-Z]{2}$/;
  * Codes that are two letters but name no single country: the ISO 3166-1
  * user-assigned range (AA, QM-QZ, XA-XZ, ZZ; geolocation uses XX and ZZ for
  * "unknown") and the exceptionally reserved EU and UK, which some lookups emit.
+ * That range includes XK, which many GeoIP databases use for Kosovo. Kosovo has
+ * no GDPR-equivalent law, so asking there is merely conservative; it is left in
+ * the "ask" group rather than special-cased, because a user-assigned code is
+ * not guaranteed to mean the same place in every database.
  */
 function isNotACountry(code: string): boolean {
   return code === 'AA' || code === 'ZZ' || code === 'EU' || code === 'UK' || code[0] === 'X' || /^Q[M-Z]$/.test(code);

@@ -23,6 +23,11 @@ import { useConsent } from './consent-provider';
 export function useConsentRegionPrompt(enabled: boolean): boolean {
   const { snapshot } = useConsent();
   const [promptRegion, setPromptRegion] = useState(false);
+  // A boolean, not the record, is the effect's dependency: writing the region
+  // default turns "no answer" into "region default", both true, so the effect
+  // does not run again. It re-runs only when an answer appears or disappears
+  // (a choice, a withdrawal from another tab), and the lookup itself is cached
+  // per page load either way.
   const regionCheckNeeded = enabled && (needsPrompt(snapshot.record) || isRegionDefaultConsent(snapshot.record));
 
   useEffect(() => {
