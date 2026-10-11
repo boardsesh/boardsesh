@@ -1,11 +1,6 @@
-import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activity-privacy';
+import { commentPrivacyCondition, listedSessionCondition, tickPrivacyCondition } from '../shared/activity-privacy';
 import { alias } from 'drizzle-orm/pg-core';
-import {
-  canAccessResource,
-  canViewActivityIdentity,
-  resourceAccessCondition,
-  visibleBoardIdentityIds,
-} from '../../../services/privacy';
+import { canAccessResource, canViewActivityIdentity, visibleBoardIdentityIds } from '../../../services/privacy';
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -49,18 +44,12 @@ function tickSnapshotFilter(snapshotAt?: string): SQL {
 /**
  * Whether the viewer may open the session that tick `tickAlias` was logged in
  * as a session card: the session's own policy without the unlisted link, plus
- * its host and anyone who joined it. A feed is a listing, so an unlisted
- * session's link alone never puts it there.
+ * its host and anyone who joined it (`listedSessionCondition`). A feed is a
+ * listing, so an unlisted session's link alone never puts it there.
  */
 function openableSessionSql(tickAlias: string, viewerUserId: string | null | undefined): SQL {
   const sessionId = sql`${sql.identifier(tickAlias)}.session_id`;
-  return sql`(${sessionId} IS NOT NULL AND ${resourceAccessCondition('session', sessionId, viewerUserId, {
-    allowUnlistedLink: false,
-    unlistedWhen: viewerUserId
-      ? sql`EXISTS (SELECT 1 FROM board_session_participants feed_session_member
-          WHERE feed_session_member.session_id = ${sessionId} AND feed_session_member.user_id = ${viewerUserId})`
-      : undefined,
-  })})`;
+  return sql`(${sessionId} IS NOT NULL AND ${listedSessionCondition(sessionId, viewerUserId)})`;
 }
 
 /**

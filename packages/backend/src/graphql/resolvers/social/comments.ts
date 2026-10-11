@@ -385,7 +385,7 @@ export const socialCommentQueries = {
       ${sprayProposalJoin}
       WHERE c."deleted_at" IS NULL
         AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"` })}
-        AND ${socialEntityPrivacyCondition(sql`c."entity_type"`, sql`c."entity_id"`, authenticatedUserId)}
+        AND ${socialEntityPrivacyCondition(sql`c."entity_type"`, sql`c."entity_id"`, authenticatedUserId, { discovery: true })}
         ${boardFilterWhere}
         ${sprayCommentVisibility}
         ${sprayProposalCommentVisibility}

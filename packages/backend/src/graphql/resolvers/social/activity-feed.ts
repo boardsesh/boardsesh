@@ -164,7 +164,11 @@ export const activityFeedQueries = {
         dbSchema.feedItems.actorId,
         myUserId,
       ),
-      socialEntityPrivacyCondition(dbSchema.feedItems.entityType, dbSchema.feedItems.entityId, myUserId),
+      // A feed is discovery: a comment on an unlisted session reaches only the
+      // people who would see that session listed, never its link holders.
+      socialEntityPrivacyCondition(dbSchema.feedItems.entityType, dbSchema.feedItems.entityId, myUserId, {
+        discovery: true,
+      }),
     ];
 
     // Rows fanned out before a climb was hidden by the community still sit in

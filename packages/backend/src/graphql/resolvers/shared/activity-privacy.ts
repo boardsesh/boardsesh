@@ -120,11 +120,38 @@ export function betaPrivacyCondition(
   )!;
 }
 
+/**
+ * Whether a session may surface for this viewer somewhere they did not open it
+ * by link: a feed or a listing. The session's own policy without the unlisted
+ * link, plus its host and anyone who joined it, so an unlisted session's link
+ * alone never puts it (or its id, which is that link) there.
+ */
+export function listedSessionCondition(sessionId: SQLWrapper, viewerId: string | null | undefined): SQL {
+  return resourceAccessCondition('session', sessionId, viewerId, {
+    allowUnlistedLink: false,
+    unlistedWhen: viewerId
+      ? sql`EXISTS (SELECT 1 FROM board_session_participants listed_session_member
+          WHERE listed_session_member.session_id = ${sessionId} AND listed_session_member.user_id = ${viewerId})`
+      : undefined,
+  });
+}
+
+export type SocialEntityReadOptions = {
+  /**
+   * The read surfaces entities the viewer did not ask for (the global comment
+   * feed, the activity feed). A session there needs `listedSessionCondition`;
+   * a direct read (a thread, a vote, a notification addressed to the viewer)
+   * keeps the unlisted link.
+   */
+  discovery?: boolean;
+};
+
 /** A UUID is an address, not permission to read its discussion or notifications. */
 export function socialEntityPrivacyCondition(
   entityType: SQLWrapper,
   entityId: SQLWrapper,
   viewerId: string | null | undefined,
+  options: SocialEntityReadOptions = {},
 ): SQL {
   // Resolve at most two comment references before checking the real entity.
   // Expanding every entity branch recursively produces a huge query plan (and
@@ -146,7 +173,7 @@ export function socialEntityPrivacyCondition(
         })}
     )
     SELECT 1 FROM privacy_entity_chain privacy_entity_target
-    WHERE ${terminalSocialEntityPrivacyCondition(sql`privacy_entity_target.entity_type`, sql`privacy_entity_target.entity_id`, viewerId)}
+    WHERE ${terminalSocialEntityPrivacyCondition(sql`privacy_entity_target.entity_type`, sql`privacy_entity_target.entity_id`, viewerId, options)}
   )`;
 }
 
@@ -154,6 +181,7 @@ function terminalSocialEntityPrivacyCondition(
   entityType: SQLWrapper,
   entityId: SQLWrapper,
   viewerId: string | null | undefined,
+  { discovery = false }: SocialEntityReadOptions,
 ): SQL {
   const tick = alias(schema.boardseshTicks, 'privacy_entity_tick');
   const climb = alias(schema.boardClimbs, 'privacy_entity_climb');
@@ -165,7 +193,7 @@ function terminalSocialEntityPrivacyCondition(
         .from(tick)
         .where(and(eq(tick.uuid, entityId), tickPrivacyCondition(viewerId, tick))),
     )}
-    WHEN ${entityType} = 'session' THEN ${resourceAccessCondition('session', entityId, viewerId)}
+    WHEN ${entityType} = 'session' THEN ${discovery ? listedSessionCondition(entityId, viewerId) : resourceAccessCondition('session', entityId, viewerId)}
     WHEN ${entityType} = 'board' THEN ${resourceAccessCondition('board', entityId, viewerId)}
     WHEN ${entityType} = 'climb' THEN ${exists(
       queryBuilder
