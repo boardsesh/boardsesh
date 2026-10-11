@@ -11,6 +11,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { eq, like, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { refreshPlaylistGradeSummariesFor } from '@boardsesh/db/queries';
+import { describeBandFailure } from '@boardsesh/db/jobs';
 import { db } from '../db/client';
 
 const BOARD = 'kilter';
@@ -18,6 +19,8 @@ const PREFIX = 'cohort-band-test-';
 const OWNER_ID = 'user-123'; // seeded by setup.ts
 
 const climb = (name: string) => PREFIX + name;
+/** `PLAYLIST_GRADE_SUMMARY_LOCK_NAMESPACE` in grade-summaries.ts. */
+const PLAYLIST_LOCK_NAMESPACE = 0x5047534c;
 
 async function resetFixtures() {
   await db.execute(sql`TRUNCATE TABLE playlist_climbs, playlist_ownership, playlists RESTART IDENTITY CASCADE`);
@@ -45,6 +48,28 @@ async function swapToHard(transaction: Parameters<Parameters<typeof db.transacti
   await transaction.delete(dbSchema.playlistClimbs).where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
   await transaction.insert(dbSchema.playlistClimbs).values({ playlistId, climbUuid: climb('hard'), angle: 40 });
   await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
+}
+
+/** The playlist's grade-summary lock, held by another connection while `run` runs. */
+async function withPlaylistLockHeld<T>(playlistId: bigint, run: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  let locked!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const lockTaken = new Promise<void>((resolve) => (locked = resolve));
+  const holder = db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`SELECT pg_advisory_xact_lock(${PLAYLIST_LOCK_NAMESPACE}, (${playlistId}::bigint % 2147483647)::int)`,
+    );
+    locked();
+    await released;
+  });
+  await lockTaken;
+  try {
+    return await run();
+  } finally {
+    release();
+    await holder;
+  }
 }
 
 async function maxDifficultyOf(playlistId: bigint) {
@@ -81,26 +106,45 @@ describe('cohort playlist grade band', () => {
     expect(await maxDifficultyOf(playlistId)).toBe(16);
   });
 
-  it('keeps the swap and the old band when the recompute fails and the caller catches it', async () => {
+  it('keeps the swap and the old band when the recompute times out on its lock and the caller catches it', async () => {
     const playlistId = await seedPlaylist();
+    const failure = await withPlaylistLockHeld(playlistId, () =>
+      db.transaction(async (transaction) => {
+        await transaction.delete(dbSchema.playlistClimbs).where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
+        await transaction.insert(dbSchema.playlistClimbs).values({ playlistId, climbUuid: climb('hard'), angle: 40 });
+        await transaction.execute(sql`SET LOCAL lock_timeout = '100ms'`);
+        try {
+          await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
+          return null;
+        } catch (error) {
+          return error;
+        }
+      }),
+    );
 
-    await db.transaction(async (transaction) => {
-      await transaction.delete(dbSchema.playlistClimbs).where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
-      await transaction.insert(dbSchema.playlistClimbs).values({ playlistId, climbUuid: climb('hard'), angle: 40 });
-      await expect(
-        refreshPlaylistGradeSummariesFor(transaction, [playlistId], {
-          onComputed: async () => {
-            throw new Error('recompute failed');
-          },
-        }),
-      ).rejects.toThrow('recompute failed');
-    });
-
+    expect(describeBandFailure(failure)).toMatch(/SQLSTATE 55P03$/);
     const climbs = await db
       .select({ climbUuid: dbSchema.playlistClimbs.climbUuid })
       .from(dbSchema.playlistClimbs)
       .where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
     expect(climbs).toEqual([{ climbUuid: climb('hard') }]);
     expect(await maxDifficultyOf(playlistId)).toBe(16);
+  });
+
+  it('describes a failed recompute by class and SQLSTATE, never by its SQL or parameters', async () => {
+    const playlistId = await seedPlaylist();
+    const failure = await withPlaylistLockHeld(playlistId, () =>
+      db.transaction(async (transaction) => {
+        await transaction.execute(sql`SET LOCAL lock_timeout = '100ms'`);
+        return refreshPlaylistGradeSummariesFor(transaction, [playlistId]).then(
+          () => null,
+          (error: unknown) => error,
+        );
+      }),
+    );
+
+    const description = describeBandFailure(failure);
+    expect(description).toBe('PostgresError, SQLSTATE 55P03');
+    expect(description).not.toMatch(/Failed query|params:|SELECT|INSERT/);
   });
 });

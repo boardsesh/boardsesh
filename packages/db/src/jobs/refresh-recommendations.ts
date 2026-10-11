@@ -18,7 +18,7 @@
  * deterministic `generated_recommendation` key and have their climbs replaced.
  */
 import { randomUUID } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { getSizeFullnessTiers } from '@boardsesh/board-constants/size-comparison';
 import { getProductSize, getSetsForLayoutAndSize, getLayout } from '@boardsesh/board-constants/product-sizes';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -281,19 +281,28 @@ function cohortPlaylistName(variantLabel: string, cohort: Cohort): string {
 }
 
 /**
- * A bounded description of a failed band recompute: error class and SQLSTATE.
- * Drizzle puts the whole statement and its parameters in `message`, which a
- * job log must never carry (`JobLogger`), so only the cause's code is kept.
+ * A bounded description of a failed band recompute: the error's class (the
+ * driver's, under drizzle's wrapper) and its SQLSTATE. Drizzle puts the whole
+ * statement and its parameters in `message`, which a job log must never carry
+ * (`JobLogger`), so the message is never read.
  */
-function describeBandFailure(error: unknown): string {
-  const name = error instanceof Error ? error.name : 'unknown error';
+export function describeBandFailure(error: unknown): string {
   const cause: unknown = error instanceof Error && error.cause !== undefined ? error.cause : error;
+  const name =
+    cause instanceof Error ? cause.constructor.name : error instanceof Error ? error.constructor.name : 'unknown error';
   const code =
     typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string'
       ? cause.code
       : 'none';
   return `${name}, SQLSTATE ${code}`;
 }
+
+/**
+ * How long the swap waits for a playlist's grade-summary lock before giving
+ * the band to the daily job. The fenced transaction also holds the run's
+ * ledger row, which the heartbeat needs, so the wait must be bounded.
+ */
+const BAND_LOCK_TIMEOUT = '5s';
 
 async function upsertCohortPlaylist(
   db: JobDatabase,
@@ -378,6 +387,9 @@ async function upsertCohortPlaylist(
     // own savepoint: if it fails, that rolls back alone, the swap still commits,
     // and the daily job repairs the band. A band must never cost the playlists.
     try {
+      // SET LOCAL lasts to the end of this transaction; the recompute is the
+      // only statement after it, so only its lock wait is bounded.
+      await transaction.execute(sql.raw(`SET LOCAL lock_timeout = '${BAND_LOCK_TIMEOUT}'`));
       await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
     } catch (error) {
       log.warn(

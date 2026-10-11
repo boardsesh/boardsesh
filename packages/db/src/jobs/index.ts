@@ -6,6 +6,7 @@
 export * from './types';
 export {
   runRefreshRecommendations,
+  describeBandFailure,
   posthogConfigFromEnvironment,
   POSTHOG_DEFAULT_HOST,
   POSTHOG_DEFAULT_PROJECT_ID,
