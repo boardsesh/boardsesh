@@ -9,10 +9,16 @@ import { nativeMobileDiagnostics } from '../../modules/mobile-diagnostics/src';
 import { bootstrapDiagnosticLaunch, canAttributePreviousNativeCrash } from './diagnostic-launch';
 import { SECURE_STORE_V2_OPTIONS } from './secure-store-options';
 import { readOtaBranch } from './ota-telemetry';
-import { beginDiagnosticOperation, initializeMobileDiagnostics, updateDiagnosticLaunch } from './mobile-diagnostics';
+import {
+  beginDiagnosticOperation,
+  initializeMobileDiagnostics,
+  setDiagnosticInstallationIdentityReader,
+  updateDiagnosticLaunch,
+} from './mobile-diagnostics';
 
 const LAUNCH_KEY = 'boardsesh_diagnostic_launch_v1';
 let previousSerialized: string | null = null;
+setDiagnosticInstallationIdentityReader(() => ({ easClientId: clientID }));
 initializeMobileDiagnostics(
   bootstrapDiagnosticLaunch({
     makeId: randomUUID,
@@ -23,7 +29,6 @@ initializeMobileDiagnostics(
     writeCurrent: (serialized) => SecureStore.setItem(LAUNCH_KEY, serialized, SECURE_STORE_V2_OPTIONS),
     metadata: {
       nativeStartupId: nativeMobileDiagnostics?.nativeStartupId ?? null,
-      easClientId: clientID,
       otaUpdateId: Updates.updateId,
       otaBranch: readOtaBranch(Updates.manifest),
       otaRuntimeVersion: Updates.runtimeVersion,

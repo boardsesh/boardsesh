@@ -339,7 +339,7 @@ it('reuses the report ID and diagnostics snapshot after a failed submission', as
   });
   const submit = container.querySelector('[data-button="feedbackDialog.submitBug"]')!;
   fireEvent.click(submit);
-  await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('feedbackDialog.errorRating', 'error'));
+  await vi.waitFor(() => expect(container.textContent).toContain('feedbackDialog.errorRating'));
   fireEvent.click(submit);
   await vi.waitFor(() => expect(feedbackMutation.mutateAsync).toHaveBeenCalledTimes(2));
   const firstDiagnostics = feedbackMutation.mutateAsync.mock.calls[0][0].diagnostics;

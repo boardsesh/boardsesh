@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDiagnosticRecorder, DIAGNOSTIC_LIMITS } from '../mobile-diagnostics';
+import { createDiagnosticRecorder, DIAGNOSTIC_LIMITS, type DiagnosticSnapshot } from '../mobile-diagnostics';
 import { bootstrapDiagnosticLaunch, canAttributePreviousNativeCrash } from '../diagnostic-launch';
 import { diagnosticGraphqlOperationName } from '../graphql/request-diagnostics';
 
@@ -89,6 +89,53 @@ describe('bounded operation diagnostics', () => {
     expect(JSON.stringify(snapshot)).not.toMatch(/secret|private/);
     snapshot.completed.data!.attributes.source = 'changed';
     expect(recorder.snapshot().completed.data?.attributes.source).not.toBe('changed');
+  });
+
+  it('excludes persistent identities from native/Sentry snapshots while enriching explicit feedback', () => {
+    const sinkSnapshots: DiagnosticSnapshot[] = [];
+    const recorder = createDiagnosticRecorder({ sink: (snapshot) => sinkSnapshots.push(snapshot) });
+    recorder.initialize({
+      launchId: 'ephemeral-launch',
+      easClientId: 'initial-installation',
+      posthogDistinctId: 'initial-account',
+      posthogSessionId: 'initial-replay',
+    });
+    recorder.updateLaunch({
+      easClientId: 'updated-installation',
+      posthogDistinctId: 'updated-account',
+      posthogSessionId: 'updated-replay',
+    });
+    recorder.setInstallationIdentityReader(() => ({ easClientId: 'feedback-installation' }));
+    recorder.setIdentityReader(() => ({
+      posthogDistinctId: 'consented-account',
+      posthogSessionId: 'consented-replay',
+    }));
+    recorder
+      .begin('auth', 'refresh', {
+        attributes: { easClientId: 'attribute-installation', posthogDistinctId: 'attribute-account' },
+      })
+      .finish('success');
+    expect(recorder.feedback()).toMatchObject({
+      launchId: 'ephemeral-launch',
+      easClientId: 'feedback-installation',
+      posthogDistinctId: 'consented-account',
+      posthogSessionId: 'consented-replay',
+    });
+    expect(recorder.analyticsFields().eas_client_id).toBe('feedback-installation');
+    expect(JSON.stringify([recorder.snapshot(), ...sinkSnapshots])).not.toMatch(
+      /easClientId|posthogDistinctId|posthogSessionId|installation|account|replay/,
+    );
+    recorder.setIdentityReader(() => ({ posthogDistinctId: null, posthogSessionId: null }));
+    expect(recorder.feedback()).toMatchObject({
+      easClientId: 'feedback-installation',
+      posthogDistinctId: null,
+      posthogSessionId: null,
+    });
+    recorder.setInstallationIdentityReader(() => {
+      throw new Error('SDK unavailable');
+    });
+    expect(recorder.feedback().easClientId).toBeUndefined();
+    expect(recorder.analyticsFields().eas_client_id).toBeNull();
   });
 
   it('survives failed telemetry integrations and resets across JS runtimes', () => {

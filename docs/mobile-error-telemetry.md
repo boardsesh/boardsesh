@@ -184,7 +184,9 @@ Native diagnostics decorates the existing privacy initializer: one SDK start,
 with the same release guard and redaction callbacks. JavaScript leaves native
 initialization disabled so it cannot replace those callbacks. The diagnostic
 identity reader supplies PostHog IDs only for explicit feedback while analytics
-consent is granted; persistent launch context and Sentry snapshots exclude them.
+consent is granted. EAS installation identity is read only for explicit feedback
+or consent-bound analytics; persistent launch context, Sentry snapshots and native
+abort snapshots exclude all three identity fields.
 
 Every JS runtime gets a `launchId`. Every new native process gets a
 `nativeStartupId` before React starts; OTA reloads retain that process ID. The

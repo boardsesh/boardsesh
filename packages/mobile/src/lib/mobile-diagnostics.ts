@@ -133,16 +133,22 @@ const LAUNCH_STRING_KEYS = [
   'nativeStartupId',
   'reportId',
   'lastUserOperationId',
-  'posthogDistinctId',
-  'posthogSessionId',
-  'easClientId',
   'otaUpdateId',
   'otaBranch',
   'otaRuntimeVersion',
 ] as const;
-function sanitizeLaunch(fields: Partial<FeedbackDiagnosticsInput>): FeedbackDiagnosticsInput {
+const FEEDBACK_IDENTITY_KEYS = ['posthogDistinctId', 'posthogSessionId', 'easClientId'] as const;
+type DiagnosticIdentity = Pick<FeedbackDiagnosticsInput, (typeof FEEDBACK_IDENTITY_KEYS)[number]>;
+
+function sanitizeLaunch(
+  fields: Partial<FeedbackDiagnosticsInput>,
+  includeFeedbackIdentity = false,
+): FeedbackDiagnosticsInput {
   const sanitized: FeedbackDiagnosticsInput = { schemaVersion: 1 };
-  for (const key of LAUNCH_STRING_KEYS) {
+  const allowedStringKeys = includeFeedbackIdentity
+    ? [...LAUNCH_STRING_KEYS, ...FEEDBACK_IDENTITY_KEYS]
+    : LAUNCH_STRING_KEYS;
+  for (const key of allowedStringKeys) {
     const field = fields[key];
     if (typeof field === 'string') sanitized[key] = field.slice(0, 200);
     else if (field === null) sanitized[key] = null;
@@ -180,7 +186,16 @@ export function createDiagnosticRecorder(
     options.makeId ?? (() => `${launch.launchId ?? 'prelaunch'}-${now().toString(36)}-${(++sequence).toString(36)}`);
   let launch: FeedbackDiagnosticsInput = { schemaVersion: 1 };
   let sink = options.sink;
-  let identityReader: (() => Partial<FeedbackDiagnosticsInput>) | undefined;
+  let identityReader: (() => DiagnosticIdentity) | undefined;
+  let installationIdentityReader: (() => Pick<DiagnosticIdentity, 'easClientId'>) | undefined;
+
+  function readOptionalIdentity(reader: (() => DiagnosticIdentity) | undefined): DiagnosticIdentity {
+    try {
+      return reader?.() ?? {};
+    } catch {
+      return {};
+    }
+  }
   const active = new Map<string, DiagnosticOperationSnapshot>();
   const completed: Partial<Record<DiagnosticFlow, DiagnosticOperationSnapshot>> = {};
   const latestStartedByFlow: Partial<Record<DiagnosticFlow, string>> = {};
@@ -311,24 +326,27 @@ export function createDiagnosticRecorder(
       sink = next;
       publish();
     },
-    setIdentityReader(this: void, next?: () => Partial<FeedbackDiagnosticsInput>) {
+    setIdentityReader(this: void, next?: () => DiagnosticIdentity) {
       identityReader = next;
     },
+    setInstallationIdentityReader(this: void, next?: () => Pick<DiagnosticIdentity, 'easClientId'>) {
+      installationIdentityReader = next;
+    },
     feedback(this: void): FeedbackDiagnosticsInput {
-      let identity: Partial<FeedbackDiagnosticsInput> = {};
-      try {
-        identity = identityReader?.() ?? {};
-      } catch {
-        /* Optional SDKs may be unavailable. */
-      }
-      return sanitizeLaunch({ ...launch, ...identity });
+      // Identity readers are called only for explicitly submitted feedback;
+      // persistent recorder state and native/Sentry snapshots never hold IDs.
+      return sanitizeLaunch(
+        { ...launch, ...readOptionalIdentity(installationIdentityReader), ...readOptionalIdentity(identityReader) },
+        true,
+      );
     },
     analyticsFields(this: void): Record<string, string | number | boolean | null> {
       return {
         diagnostic_schema_version: 1,
         launch_id: launch.launchId ?? null,
         native_startup_id: launch.nativeStartupId ?? null,
-        eas_client_id: launch.easClientId ?? null,
+        // Callers send these properties only through the consent-bound analytics client.
+        eas_client_id: readOptionalIdentity(installationIdentityReader).easClientId ?? null,
         ota_update_id: launch.otaUpdateId ?? null,
         ota_branch: launch.otaBranch ?? null,
         ota_runtime_version: launch.otaRuntimeVersion ?? null,
@@ -348,6 +366,7 @@ export const getDiagnosticSnapshot = recorder.snapshot;
 export const initializeMobileDiagnostics = recorder.initialize;
 export const setDiagnosticSink = recorder.setSink;
 export const setDiagnosticIdentityReader = recorder.setIdentityReader;
+export const setDiagnosticInstallationIdentityReader = recorder.setInstallationIdentityReader;
 export const getFeedbackDiagnostics = recorder.feedback;
 export const updateDiagnosticLaunch = recorder.updateLaunch;
 export const getDiagnosticAnalyticsProperties = recorder.analyticsFields;
