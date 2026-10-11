@@ -246,7 +246,7 @@ export {
   isScopeProtectedComplete,
   resetProtectedSyncState,
   resetPrivacyScopedProtectedSyncState,
-  LEGACY_FIRST_ASCENT_SCRUB_KEY,
+  CATALOGUE_PREPARED_FOR_KEY,
   deleteCheckpoint,
   deleteAllCheckpoints,
   deleteUserCheckpoints,

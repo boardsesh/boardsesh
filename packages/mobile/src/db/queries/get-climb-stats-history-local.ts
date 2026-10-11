@@ -36,6 +36,11 @@ export async function getClimbStatsHistoryLocal(
     `SELECT angle, ascensionist_count, quality_average, difficulty_average, display_difficulty, updated_at
      FROM board_climb_stats
      WHERE board_type = ? AND climb_uuid = ? AND ascensionist_count > 0
+       -- Only under a climb the device holds: a stats row can outlive a climb
+       -- that left the catalogue, and must not be answered for it.
+       AND EXISTS (
+         SELECT 1 FROM board_climbs climb
+         WHERE climb.uuid = board_climb_stats.climb_uuid AND climb.board_type = board_climb_stats.board_type)
      ORDER BY angle ASC`,
     [input.boardName, input.climbUuid],
   );

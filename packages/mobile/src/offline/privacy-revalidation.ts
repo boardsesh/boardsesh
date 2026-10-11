@@ -11,9 +11,10 @@ import {
   beginImmediateWrite,
   dropHoldIndexRowsForClimbs,
   invalidateLayoutHoldIndex,
+  resetPrivacyScopedProtectedSyncState,
   resetProtectedSyncState,
   runLocalWriteWithRetry,
-  LEGACY_FIRST_ASCENT_SCRUB_KEY,
+  CATALOGUE_PREPARED_FOR_KEY,
   OFFLINE_DB_BUSY_TIMEOUT_MS,
   OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
   OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
@@ -45,16 +46,17 @@ export function subscribePrivacyRevalidation(listener: () => void): () => void {
  *
  * Three gates close here, before anything is awaited:
  *  - local reads (`needsPrivacyRevalidation`, the catalogue read epoch);
- *  - the pull of protected rows (`isProtectedSyncAllowed` in the sync adapter
- *    reads `needsPrivacyRevalidation`), until the purge below has committed;
- *  - any protected page or saved-climb mirror already on its way: the engine's
+ *  - the pull of rows whose visibility depends on privacy, which is a spray
+ *    wall's (`isProtectedSyncAllowed` in the sync adapter reads
+ *    `needsPrivacyRevalidation`), until the purge below has committed;
+ *  - any such page, or a saved-climb mirror, already on its way: the engine's
  *    protected-withdrawal fence drops it.
  *
- * The fence is deliberately that narrow (issue #6306). This used to bump the
- * engine's GLOBAL purge epoch and purge every enabled scope, which aborted
- * artifact transfers, imports and the paged download of rows that are public
- * for every viewer. A privacy event arrives on every launch and reconnect, so
- * a large board's download restarted from nothing each time.
+ * Nothing of a catalogue board is fenced or stopped (issue #6306). This used to
+ * bump the engine's GLOBAL purge epoch and purge every enabled scope, which
+ * aborted artifact transfers, imports and the paged download of the public
+ * catalogue. A privacy event arrives on every launch and reconnect, so a large
+ * board's download restarted from nothing each time.
  */
 export function requirePrivacyRevalidation(): void {
   revalidationGeneration += 1;
@@ -82,13 +84,6 @@ export async function waitForPrivacyRevalidation(): Promise<void> {
 /** SQLite's bound-parameter floor is 999; one statement binds a board type beside the uuids. */
 const UUIDS_PER_STATEMENT = 900;
 
-type WithdrawnClimb = {
-  uuid: string;
-  board_type: string | null;
-  layout_id: number | null;
-  is_replaceable: number;
-};
-
 function inBatches<Item>(items: readonly Item[]): Item[][] {
   const batches: Item[][] = [];
   for (let start = 0; start < items.length; start += UUIDS_PER_STATEMENT) {
@@ -97,57 +92,29 @@ function inBatches<Item>(items: readonly Item[]): Item[][] {
   return batches;
 }
 
-/**
- * The purge itself: delete every copy of another climber's protected row, and
- * reset the protected sync cursors so the server is asked again for the ones
- * this viewer may still see. One transaction, so a cursor can never outlive the
- * rows it covered.
- *
- * Three kinds of climb are withdrawn, each with its stats and grades:
- *  - a climb another climber owns;
- *  - a spray climb with no owner, because a wall is private;
- *  - a draft the viewer does not own. A draft is kept only for its owner, so
- *    one with no owner is kept for nobody.
- *
- * It runs on every privacy event, which is every launch, so it is written to
- * cost what was withdrawn rather than what is downloaded: ONE pass over
- * `board_climbs` finds the rows (there is no index on `user_id`, and adding one
- * is a schema migration), and everything after it is keyed by those uuids. The
- * reference catalogue, its cursors and the `scope-complete:` markers are not
- * touched. Returns how many withdrawn rows had to be kept.
- */
-async function purgeWithdrawnRows(transaction: SqlExecutor, viewerId: string): Promise<number> {
-  // NULL author ids are manufacturer catalogue data on every board but spray,
-  // where a wall is private and a climb with no owner has no local access rule.
-  // The exception is a draft: a draft belongs to its owner alone, so a draft
-  // with a server version and no owner is withdrawn on every board. (A draft
-  // another climber owns is already covered by the first arm.)
-  const withdrawn = `((user_id IS NOT NULL AND user_id <> ?)
-      OR (board_type = 'spray' AND user_id IS NULL)
-      OR (user_id IS NULL AND COALESCE(is_draft, 0) = 1 AND COALESCE(sync_seq, 0) > 0))`;
-  // is_draft also arrives from server downloads. A positive sync_seq proves
-  // that copy is replaceable cache, unless a queued write still references
-  // it. Keep drafts without a server version as possible unsynced work from
-  // an older account, and keep access closed while those protected rows remain.
-  // The viewer's own rows are already excluded by `withdrawn` above.
-  const isReplaceable = `((COALESCE(is_draft, 0) <> 1 OR COALESCE(sync_seq, 0) > 0) AND NOT EXISTS (
-      SELECT 1 FROM pending_mutations mutation WHERE json_valid(mutation.payload) AND (
-        json_extract(mutation.payload, '$.climbUuid') = board_climbs.uuid OR
-        json_extract(mutation.payload, '$.uuid') = board_climbs.uuid
-      )
-    ))`;
-  const withdrawnClimbs = await transaction.getAllAsync<WithdrawnClimb>(
-    `SELECT uuid, board_type, layout_id, ${isReplaceable} AS is_replaceable FROM board_climbs WHERE ${withdrawn}`,
-    [viewerId],
-  );
-  const replaceableClimbs = withdrawnClimbs.filter((climb) => climb.is_replaceable === 1);
+type RemovableClimb = { uuid: string; board_type: string | null; layout_id: number | null };
 
-  // Stats and grades are keyed by climb rather than user, so they go before
-  // their author row. Grouped by board type so each delete seeks the
-  // (board_type, climb_uuid, angle) primary key; without the board type it
-  // would scan a table of several hundred thousand rows per batch.
+// A copy is replaceable cache when the server has a version of it and no queued
+// write still refers to it. `is_draft` also arrives from server downloads, so a
+// positive `sync_seq` is what proves the server has it; a row with none may be
+// work that has not synced, and it is kept.
+const IS_REPLACEABLE = `(COALESCE(sync_seq, 0) > 0 AND NOT EXISTS (
+    SELECT 1 FROM pending_mutations mutation WHERE json_valid(mutation.payload) AND (
+      json_extract(mutation.payload, '$.climbUuid') = board_climbs.uuid OR
+      json_extract(mutation.payload, '$.uuid') = board_climbs.uuid
+    )
+  ))`;
+
+/**
+ * Delete these climbs with everything that hangs off them: stats, grades, and
+ * their place in the derived holds index. Keyed by uuid throughout.
+ */
+async function deleteClimbsWithDependents(transaction: SqlExecutor, climbs: readonly RemovableClimb[]): Promise<void> {
+  // Stats and grades are keyed by climb, and go before it. Grouped by board
+  // type so each delete seeks the (board_type, climb_uuid, angle) primary key;
+  // without the board type it would scan the table per batch.
   const uuidsByBoardType = new Map<string | null, string[]>();
-  for (const climb of replaceableClimbs) {
+  for (const climb of climbs) {
     const uuids = uuidsByBoardType.get(climb.board_type) ?? [];
     uuids.push(climb.uuid);
     uuidsByBoardType.set(climb.board_type, uuids);
@@ -168,19 +135,18 @@ async function purgeWithdrawnRows(transaction: SqlExecutor, viewerId: string): P
     }
   }
 
-  // The derived holds index holds each climb's holds under its uuid, so those
-  // rows go with the climb. An indexed climb's local id would stay behind in
-  // its layout's postings, so a layout that lost one loses its postings and
-  // watermarks too, and rebuilds once its protected rows are back. A layout
-  // that lost nothing the index held (nothing at all, or only drafts, which
-  // are never indexed) keeps its index.
-  const replaceableUuids = replaceableClimbs.map((climb) => climb.uuid);
-  const indexedUuids = new Set(await dropHoldIndexRowsForClimbs(transaction, replaceableUuids));
-  for (const batch of inBatches(replaceableUuids)) {
+  // The holds index holds each climb's holds under its uuid, so those rows go
+  // with the climb. An indexed climb's local id would stay behind in its
+  // layout's postings, so a layout that lost one loses its postings and
+  // watermarks too and rebuilds. A layout that lost nothing the index held
+  // (drafts and unlisted climbs are never indexed) keeps its index.
+  const uuids = climbs.map((climb) => climb.uuid);
+  const indexedUuids = new Set(await dropHoldIndexRowsForClimbs(transaction, uuids));
+  for (const batch of inBatches(uuids)) {
     await transaction.runAsync(`DELETE FROM board_climbs WHERE uuid IN (${batch.map(() => '?').join(', ')})`, batch);
   }
   const layoutsThatLostIndexedClimbs = new Map<string, { boardType: string; layoutId: number }>();
-  for (const climb of replaceableClimbs) {
+  for (const climb of climbs) {
     if (!indexedUuids.has(climb.uuid) || climb.board_type === null || climb.layout_id === null) continue;
     layoutsThatLostIndexedClimbs.set(`${climb.board_type}:${climb.layout_id}`, {
       boardType: climb.board_type,
@@ -190,45 +156,175 @@ async function purgeWithdrawnRows(transaction: SqlExecutor, viewerId: string): P
   for (const { boardType, layoutId } of layoutsThatLostIndexedClimbs.values()) {
     await invalidateLayoutHoldIndex(transaction, boardType, layoutId, { dropPostings: true });
   }
+}
 
-  // ONCE, not on every event. A bundle from before the two-stream sync stored a
-  // first-ascent name the server had filled in for whoever was asking, so every
-  // stats row may hold one. The protected stream ships none, so after this one
-  // pass a row can only gain a name from the reference stream, where it is the
-  // manufacturer's public credit. Blanking the whole table each time would
-  // erase those for good now that the reference cursor is never reset, and it
-  // rewrote several hundred thousand rows per launch. Nothing on the device
-  // reads either column. See LEGACY_FIRST_ASCENT_SCRUB_KEY for how an older
-  // bundle re-arms it.
-  const alreadyScrubbed = await transaction.getFirstAsync<{ value: string }>(
-    'SELECT value FROM sync_meta WHERE key = ?',
-    [LEGACY_FIRST_ASCENT_SCRUB_KEY],
+/**
+ * What a privacy event withdraws: the rows whose visibility depends on privacy,
+ * which is spray walls and nothing else. One transaction, so a cursor can never
+ * outlive the rows it covered.
+ *
+ * A published climb on a catalogue board is public whoever set it, and that
+ * board's protected rows are the climber's own, so nothing of a catalogue board
+ * is deleted, no cursor of one is reset, and `board_climbs` is not scanned: the
+ * one read below seeks the wall rows through the `board_type` index. This runs
+ * on every launch.
+ *
+ * Returns how many withdrawn wall climbs had to be kept (unsynced work, or a
+ * row a queued write refers to).
+ */
+async function withdrawWallRows(transaction: SqlExecutor, viewerId: string): Promise<number> {
+  const wallClimbs = await transaction.getAllAsync<RemovableClimb & { is_replaceable: number }>(
+    `SELECT uuid, board_type, layout_id, ${IS_REPLACEABLE} AS is_replaceable
+     FROM board_climbs WHERE board_type = 'spray' AND (user_id IS NULL OR user_id <> ?)`,
+    [viewerId],
   );
-  if (!alreadyScrubbed) {
-    await transaction.runAsync(
-      'UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL WHERE fa_username IS NOT NULL OR fa_at IS NOT NULL',
-    );
-    await transaction.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-      LEGACY_FIRST_ASCENT_SCRUB_KEY,
-      '1',
-    ]);
-  }
+  const replaceable = wallClimbs.filter((climb) => climb.is_replaceable === 1);
+  await deleteClimbsWithDependents(transaction, replaceable);
 
   // A wall has no local access predicate at all, so every one goes and the
   // server is asked again; the spray photo files are cleared by the caller.
   await transaction.runAsync('DELETE FROM spray_walls');
   await transaction.runAsync('DELETE FROM followed_author_snapshots');
 
-  // A retained protected cursor would skip the removed rows forever. The
-  // reference cursors, the `scope-complete:` markers and the artifact marker
-  // stay: nothing they describe was deleted, and without them a board would
-  // read as not downloaded and crawl again from the start.
-  await resetProtectedSyncState(transaction);
+  // A wall's protected cursor would skip the removed rows forever. Every other
+  // cursor, the `scope-complete:` markers and the artifact markers stay: nothing
+  // they describe was deleted.
+  await resetPrivacyScopedProtectedSyncState(transaction);
 
-  return withdrawnClimbs.length - replaceableClimbs.length;
+  return wallClimbs.length - replaceable.length;
 }
 
-/** Keep the climber's own writes; all other authored catalogue rows are replaceable cache. */
+/** Marks a preparation done by this version of the rule, for one account. */
+const PREPARED_RULE_VERSION = '2';
+/** Climbs deleted per transaction while preparing, so no single hold is long. */
+const PREPARE_BATCH_CLIMBS = 2000;
+/** Stats rows examined per transaction by the first-ascent scrub. */
+const SCRUB_BATCH_ROWIDS = 50_000;
+
+type PreparedFlag = { viewerId: string; keptForeignRows: number };
+
+function parsePreparedFlag(raw: string | undefined): PreparedFlag | null {
+  if (!raw) return null;
+  const [ruleVersion, keptForeignRows, ...viewerParts] = raw.split(':');
+  const kept = Number(keptForeignRows);
+  if (ruleVersion !== PREPARED_RULE_VERSION || !Number.isInteger(kept) || viewerParts.length === 0) return null;
+  return { viewerId: viewerParts.join(':'), keptForeignRows: kept };
+}
+
+/**
+ * Make the downloaded catalogue fit the account that is signed in. Runs ONCE
+ * per account on a device, and again only when that changes: another account
+ * signs in, or a bundle from before the two-stream sync has run in between
+ * (see CATALOGUE_PREPARED_FOR_KEY). A privacy event does not come here.
+ *
+ *  1. Forget every protected cursor. On a catalogue board that stream is one
+ *     climber's own drafts and unlisted climbs, so the previous account's
+ *     cursor would skip this account's rows below it. A sign-out resets them
+ *     too, but one performed by an earlier bundle did not know they existed.
+ *  2. Delete the climbs only their owner is sent, where the owner is not this
+ *     climber: a draft or an unlisted climb the server has a version of. That
+ *     is what an earlier bundle downloaded for everyone, and what the previous
+ *     account left behind. The usual protections hold: a row with no server
+ *     sequence stays, a row a queued write refers to stays, the climber's own
+ *     rows stay.
+ *  3. Blank the first-ascent names an earlier bundle stored where the name
+ *     came from Boardsesh ticks: on climbs with an owner, on wall climbs, and
+ *     on stats rows whose climb is gone. The manufacturer credit on a climb
+ *     with no owner is the public one and is kept.
+ *
+ * Batched in short transactions: step 2 is tens of thousands of rows on a
+ * board downloaded by an earlier bundle. Returns how many foreign rows step 2
+ * had to keep; while that is not zero the catalogue stays closed, and the next
+ * revalidation looks again.
+ */
+async function prepareCatalogueForViewer(
+  db: OfflineDatabase,
+  viewerId: string,
+  assertCurrent: () => void,
+): Promise<number> {
+  const stored = parsePreparedFlag(
+    (
+      await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+        CATALOGUE_PREPARED_FOR_KEY,
+      ])
+    )?.value,
+  );
+  if (stored?.viewerId === viewerId && stored.keptForeignRows === 0) return 0;
+
+  const inWriteTransaction = (body: (transaction: SqlExecutor) => Promise<void>): Promise<void> =>
+    runLocalWriteWithRetry(
+      () =>
+        db.withExclusiveTransactionAsync(async (transaction) => {
+          assertCurrent();
+          await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
+          assertCurrent();
+          await body(transaction);
+        }),
+      backgroundWriteRetry,
+    );
+
+  if (stored?.viewerId !== viewerId) await inWriteTransaction(resetProtectedSyncState);
+
+  // Only its owner is sent a draft or an unlisted climb. `rowid` keyset, so the
+  // table is walked once however many batches that takes.
+  const notThisClimbers = `(is_draft = 1 OR is_listed = 0) AND (user_id IS NULL OR user_id <> ?)`;
+  let afterRowid = 0;
+  for (;;) {
+    const batch = await db.getAllAsync<RemovableClimb & { rowid: number }>(
+      `SELECT rowid, uuid, board_type, layout_id FROM board_climbs
+       WHERE rowid > ? AND ${notThisClimbers} AND ${IS_REPLACEABLE}
+       ORDER BY rowid LIMIT ?`,
+      [afterRowid, viewerId, PREPARE_BATCH_CLIMBS],
+    );
+    if (batch.length === 0) break;
+    afterRowid = batch[batch.length - 1].rowid;
+    await inWriteTransaction(async (transaction) => {
+      // Still not this climber's and still replaceable, under this lock.
+      const stillRemovable = await transaction.getAllAsync<RemovableClimb>(
+        `SELECT uuid, board_type, layout_id FROM board_climbs
+         WHERE rowid IN (${batch.map(() => '?').join(', ')}) AND ${notThisClimbers} AND ${IS_REPLACEABLE}`,
+        [...batch.map((climb) => climb.rowid), viewerId],
+      );
+      await deleteClimbsWithDependents(transaction, stillRemovable);
+    });
+  }
+
+  const lastStatsRow = await db.getFirstAsync<{ max_rowid: number | null }>(
+    'SELECT MAX(rowid) AS max_rowid FROM board_climb_stats',
+  );
+  for (let fromRowid = 0; fromRowid < (lastStatsRow?.max_rowid ?? 0); fromRowid += SCRUB_BATCH_ROWIDS) {
+    await inWriteTransaction(async (transaction) => {
+      await transaction.runAsync(
+        `UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL
+         WHERE rowid > ? AND rowid <= ?
+           AND (fa_username IS NOT NULL OR fa_at IS NOT NULL)
+           AND (board_type = 'spray' OR NOT EXISTS (
+             SELECT 1 FROM board_climbs climb
+             WHERE climb.uuid = board_climb_stats.climb_uuid AND climb.user_id IS NULL))`,
+        [fromRowid, fromRowid + SCRUB_BATCH_ROWIDS],
+      );
+    });
+  }
+
+  const kept = await db.getFirstAsync<{ kept: number }>(
+    `SELECT COUNT(*) AS kept FROM board_climbs WHERE ${notThisClimbers} AND NOT ${IS_REPLACEABLE}`,
+    [viewerId],
+  );
+  const keptForeignRows = kept?.kept ?? 0;
+  await inWriteTransaction(async (transaction) => {
+    await transaction.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      CATALOGUE_PREPARED_FOR_KEY,
+      `${PREPARED_RULE_VERSION}:${keptForeignRows}:${viewerId}`,
+    ]);
+  });
+  return keptForeignRows;
+}
+
+/**
+ * Bring the downloaded catalogue back in line after a privacy event: authorize
+ * the viewer, prepare the catalogue for them if that has not been done, and
+ * withdraw the wall rows the event may have taken away.
+ */
 export function revalidatePrivateCatalog(
   db: OfflineDatabase,
   viewerId: string,
@@ -277,6 +373,12 @@ export function revalidatePrivateCatalog(
       if (attempt === 1) throw new Error('Credential kept changing during catalogue authorization');
       credential = afterResponse;
     }
+    // Once per account, and before the catalogue is opened to it. A failure
+    // here fails the revalidation, so the catalogue stays closed and the bridge
+    // retries.
+    const keptForeignRows = await prepareCatalogueForViewer(db, viewerId, assertCurrent);
+    assertCurrent();
+    if (!isCatalogCredentialCurrent(credential)) throw new Error('Account changed during catalogue revalidation');
     // Retry a rolled-back transaction on a fresh connection/snapshot. Acquire
     // the writer lock before the first read so busy_timeout can be honored.
     await runLocalWriteWithRetry(
@@ -285,7 +387,7 @@ export function revalidatePrivateCatalog(
           assertCurrent();
           await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
           assertCurrent();
-          const preservedCount = await purgeWithdrawnRows(transaction, viewerId);
+          const preservedCount = keptForeignRows + (await withdrawWallRows(transaction, viewerId));
           if (preservedCount > 0) {
             await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY]);
           } else {

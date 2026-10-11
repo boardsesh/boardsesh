@@ -8,6 +8,7 @@ import {
   getProtectedCheckpoint,
   setProtectedCheckpoint,
   isScopeProtectedComplete,
+  resetPrivacyScopedProtectedSyncState,
   resetProtectedSyncState,
   resetScopeProtectedSyncState,
   deleteCheckpoint,
@@ -18,7 +19,7 @@ import {
   isScopeDownloadComplete,
   getDownloadedScopeKeys,
   ensureScopeDownloadStartedAt,
-  LEGACY_FIRST_ASCENT_SCRUB_KEY,
+  CATALOGUE_PREPARED_FOR_KEY,
 } from '../checkpoints';
 import type { ProtectedCheckpoint, SyncCheckpoint } from '../checkpoints';
 import { getDeletionsCoverageAt, setDeletionsCoverageAt } from '../deletions-coverage';
@@ -345,7 +346,7 @@ describe('two cursors in one checkpoint row', () => {
         'schema-refresh:board_climbs:kilter:1:10': '{"revision":1,"complete":true}',
         'holds-index:kilter:1:10': '{"syncSeq":5}',
         'privacy:catalog-viewer:v1': '{"viewerId":"viewer"}',
-        [LEGACY_FIRST_ASCENT_SCRUB_KEY]: '1',
+        [CATALOGUE_PREPARED_FOR_KEY]: '2:0:viewer',
         // Unreadable rows must be skipped, not fail the statement: the privacy
         // purge runs this in its transaction and could never commit otherwise.
         'checkpoint:board_climbs:kilter:2:10': 'not-valid-json{',
@@ -359,6 +360,34 @@ describe('two cursors in one checkpoint row', () => {
       await resetProtectedSyncState(db);
 
       expect(await db.getAllAsync('SELECT key, value FROM sync_meta ORDER BY key')).toEqual(before);
+    });
+
+    // A privacy event: only a board whose rows depend on privacy is replayed.
+    it('resets the walls alone when asked for the boards a privacy event concerns', async () => {
+      const scopes = ['kilter:1:10', 'tension:9:6', 'spray:7:7', 'spray:8:8'];
+      for (const scopeKey of scopes) {
+        for (const tableName of BOARD_DATA_TABLES) {
+          const key = getCheckpointKey(tableName, scopeKey);
+          if (!scopeKey.startsWith('spray') && tableName !== 'spray_walls') await setCheckpoint(db, key, REFERENCE);
+          await setProtectedCheckpoint(db, key, PROTECTED);
+        }
+      }
+      const catalogueBefore = await db.getAllAsync(
+        "SELECT key, value FROM sync_meta WHERE key NOT LIKE '%:spray:%' ORDER BY key",
+      );
+
+      await resetPrivacyScopedProtectedSyncState(db);
+
+      for (const scopeKey of ['spray:7:7', 'spray:8:8']) {
+        expect(await isScopeProtectedComplete(db, scopeKey)).toBe(false);
+        for (const tableName of BOARD_DATA_TABLES)
+          expect(await rawValue(getCheckpointKey(tableName, scopeKey))).toBeNull();
+      }
+      // A catalogue board keeps both of its cursors, byte for byte.
+      expect(
+        await db.getAllAsync("SELECT key, value FROM sync_meta WHERE key NOT LIKE '%:spray:%' ORDER BY key"),
+      ).toEqual(catalogueBefore);
+      expect(await isScopeProtectedComplete(db, 'kilter:1:10')).toBe(true);
     });
 
     it('resets one scope and leaves its neighbours, when asked for one scope', async () => {
@@ -460,7 +489,7 @@ describe('deleteUserCheckpoints', () => {
         revision: 1,
       });
     }
-    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [LEGACY_FIRST_ASCENT_SCRUB_KEY, '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [CATALOGUE_PREPARED_FOR_KEY, '2:0:viewer']);
     expect(await isScopeProtectedComplete(db, 'kilter:1:5')).toBe(true);
 
     await deleteUserCheckpoints(db);
@@ -470,10 +499,11 @@ describe('deleteUserCheckpoints', () => {
       expect(await getCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`)).toEqual(reference);
       expect(await getProtectedCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`)).toBeNull();
     }
-    // The rows stay scrubbed, so the note that they were stays too.
-    expect(
-      await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [LEGACY_FIRST_ASCENT_SCRUB_KEY]),
-    ).toEqual({ value: '1' });
+    // The note of which account the catalogue was prepared for stays: it is
+    // how the next account is told apart from this one.
+    expect(await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [CATALOGUE_PREPARED_FOR_KEY])).toEqual({
+      value: '2:0:viewer',
+    });
   });
 
   it('clears the deletions-coverage marker so it cannot leak into the next account', async () => {

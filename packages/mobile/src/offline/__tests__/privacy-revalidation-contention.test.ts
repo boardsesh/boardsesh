@@ -49,6 +49,22 @@ afterEach(async () => {
   if (directory) rmSync(directory, { recursive: true, force: true });
 });
 
+/**
+ * The first revalidation for an account also prepares the catalogue for it, in
+ * transactions of its own. These tests are about the one every later event
+ * runs, so that is done first.
+ */
+async function prepareForViewer() {
+  await privacy.revalidatePrivateCatalog(database, 'viewer');
+  request.mockClear();
+}
+
+/** A wall climb the event withdraws: wall rows are what depends on privacy. */
+const insertWithdrawnWallClimb = () =>
+  database.runAsync(
+    "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, sync_seq) VALUES ('withdrawn', 'spray', 7, 'other', 5)",
+  );
+
 async function contendNextPurge(onFirstFailure: () => void = () => {}) {
   request.mockImplementation(async () => {
     expect(
@@ -117,11 +133,8 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
   }, 15000);
 
   it('takes the writer lock before reading a catalogue snapshot', async () => {
-    // A spray row throughout this file: it is the kind a privacy event still
-    // withdraws, so whether it survives shows whether the purge committed.
-    await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'spray', 1, 'other')",
-    );
+    await prepareForViewer();
+    await insertWithdrawnWallClimb();
     const exclusive = database.withExclusiveTransactionAsync.bind(database);
     let interloperError: unknown;
     let interloperCommitted = false;
@@ -154,6 +167,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
   });
 
   it('retries acquisition on a fresh transaction after a competing writer releases', async () => {
+    await prepareForViewer();
     const attempts = await contendNextPurge();
 
     await expect(privacy.revalidatePrivateCatalog(database, 'viewer')).resolves.toBeUndefined();
@@ -165,9 +179,8 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
   }, 15000);
 
   it('does not stamp a changed credential after waiting for the writer lock', async () => {
-    await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'spray', 1, 'other')",
-    );
+    await prepareForViewer();
+    await insertWithdrawnWallClimb();
     const attempts = await contendNextPurge(() => {
       auth.token = 'new-account-token';
       auth.generation += 1;
@@ -214,7 +227,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
     await privacy.revalidatePrivateCatalog(database, 'viewer');
     request.mockClear();
     await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'spray', 1, 'other')",
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('withdrawn', 'kilter', 1, 'other')",
     );
     const failure = new Error(message);
     const exclusive = database.withExclusiveTransactionAsync.bind(database);

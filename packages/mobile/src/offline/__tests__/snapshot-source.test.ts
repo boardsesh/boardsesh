@@ -447,19 +447,40 @@ function seedRetainedArtifact(uri: string, builtAt: string, sizeBytes = 1_000): 
 }
 
 describe('fetchManifest', () => {
-  it('excludes old public artifacts and accepts only privacy-safe manifest entries', async () => {
-    const protectedEntry = { ...ENTRY, privacyVersion: 1 };
+  // Exactly the rule this client imports. An artifact built under the rule
+  // before it has no owned climbs, and importing it at its real watermark would
+  // skip every owned published climb below that watermark for good.
+  it('keeps only the artifacts built under the current rule, and drops a grades file built under another', async () => {
+    const grades = {
+      key: 'board-snapshots/v1/kilter/1/grades.db',
+      url: 'https://example.test/kilter-1-grades.db',
+      bytes: 10,
+      contentEncoding: 'gzip',
+      builtAt: '2026-06-01T00:00:00.000Z',
+      schemaVersion: 12,
+      tables: {
+        board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '1', rowCount: 1 },
+      },
+    };
+    const current = { ...ENTRY, layoutId: 1, privacyVersion: 2, grades: { ...grades, privacyVersion: 2 } };
+    const currentWithOldGrades = { ...ENTRY, layoutId: 2, privacyVersion: 2, grades: { ...grades, privacyVersion: 1 } };
     const manifestBody = {
       formatVersion: 2,
       generatedAt: '2026-06-01T00:00:00.000Z',
-      entries: [ENTRY, protectedEntry],
+      entries: [
+        { ...ENTRY, layoutId: 3 },
+        { ...ENTRY, layoutId: 4, privacyVersion: 1 },
+        { ...ENTRY, layoutId: 5, privacyVersion: 3 },
+        current,
+        currentWithOldGrades,
+      ],
     };
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(manifestBody)),
     );
     const result = await mobileSnapshotSource.fetchManifest();
-    expect(result).toEqual({ ...manifestBody, entries: [protectedEntry] });
+    expect(result).toEqual({ ...manifestBody, entries: [current, { ...currentWithOldGrades, grades: undefined }] });
     vi.unstubAllGlobals();
   });
 

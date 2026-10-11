@@ -34,6 +34,7 @@ import {
   SnapshotArtifactTruncatedError,
   SnapshotBackgroundTransferInterruptedError,
   SnapshotPermanentMissError,
+  SNAPSHOT_PRIVACY_VERSION,
   type SnapshotArtifactHandle,
   type SnapshotDownloadOptions,
   type SnapshotGradesArtifact,
@@ -403,15 +404,20 @@ async function fetchManifest(): Promise<unknown> {
     if (!response.ok) throw new Error(`snapshot manifest fetch failed with HTTP ${response.status}`);
     const manifest = parseSnapshotManifest(await response.json());
     if (!manifest) return null;
-    // Never install a pre-privacy artifact, including a cached file with an
-    // unchanged URL. Missing safe artifacts use authenticated paged sync.
+    // Only artifacts built under the one rule this client imports
+    // (`SNAPSHOT_PRIVACY_VERSION`): every published and listed climb, whoever
+    // set it, and no draft or unlisted climb. An artifact built before that
+    // left owned climbs out, and the import stamps the artifact's real
+    // watermark, so importing one would skip every owned published climb below
+    // it for good. That includes a cached file with an unchanged URL. A board
+    // with no importable artifact downloads through the paged pull.
     return {
       ...manifest,
       entries: manifest.entries
-        .filter((entry) => entry.privacyVersion === 1)
+        .filter((entry) => entry.privacyVersion === SNAPSHOT_PRIVACY_VERSION)
         .map((entry) => ({
           ...entry,
-          grades: entry.grades?.privacyVersion === 1 ? entry.grades : undefined,
+          grades: entry.grades?.privacyVersion === SNAPSHOT_PRIVACY_VERSION ? entry.grades : undefined,
         })),
     };
   } finally {

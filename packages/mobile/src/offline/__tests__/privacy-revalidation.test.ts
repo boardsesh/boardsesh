@@ -197,27 +197,25 @@ describe('downloaded catalogue privacy', () => {
     readSpy.mockRestore();
   });
 
-  it('removes other authors and copied FA names, preserving personal ticks, the reference cursor and the download', async () => {
+  it('keeps every published climb, whoever set it, with personal ticks, every cursor and the download', async () => {
     database = createTestDatabase();
     await runMigrations(database);
     for (const [uuid, userId] of [
       ['own-climb', 'viewer'],
-      ['protected-climb', 'other'],
+      ['published-by-another', 'other'],
       ['manufacturer', null],
     ]) {
-      await database.runAsync('INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES (?, ?, ?, ?)', [
-        uuid,
-        'kilter',
-        1,
-        userId,
-      ]);
+      await database.runAsync(
+        'INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES (?, ?, ?, ?, 0, 1, 5)',
+        [uuid, 'kilter', 1, userId],
+      );
       await database.runAsync(
         'INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username) VALUES (?, ?, ?, ?)',
         ['kilter', uuid, 40, 'Copied identity'],
       );
     }
     await database.runAsync(
-      "INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid) VALUES ('own-tick', 'viewer', 'protected-climb')",
+      "INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid) VALUES ('own-tick', 'viewer', 'published-by-another')",
     );
     const scopeKey = 'kilter:1:1';
     const referenceCursor = { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '10' };
@@ -227,21 +225,32 @@ describe('downloaded catalogue privacy', () => {
     await revalidatePrivateCatalog(database, 'viewer');
     expect(isCatalogReadCurrent(previousEpoch)).toBe(false);
     await waitForPrivacyRevalidation();
+    // A published climb is public: no privacy setting takes it off the device.
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs ORDER BY uuid')).toEqual([
       { uuid: 'manufacturer' },
       { uuid: 'own-climb' },
+      { uuid: 'published-by-another' },
     ]);
     expect(await database.getAllAsync('SELECT uuid FROM boardsesh_ticks')).toEqual([{ uuid: 'own-tick' }]);
-    expect(await database.getAllAsync('SELECT fa_username FROM board_climb_stats')).toEqual([
-      { fa_username: null },
-      { fa_username: null },
+    // A first-ascent name an earlier bundle copied from Boardsesh ticks goes,
+    // once; the manufacturer's credit on a climb with no owner stays.
+    expect(
+      await database.getAllAsync('SELECT climb_uuid, fa_username FROM board_climb_stats ORDER BY climb_uuid'),
+    ).toEqual([
+      { climb_uuid: 'manufacturer', fa_username: 'Copied identity' },
+      { climb_uuid: 'own-climb', fa_username: null },
+      { climb_uuid: 'published-by-another', fa_username: null },
     ]);
-    // What is public for every viewer was not touched, so it is not pulled
-    // again and the board still reads as downloaded (issue #6306). Only the
-    // protected side is asked for again.
+    // The board still reads as downloaded and its public catalogue is not
+    // pulled again (issue #6306).
     expect(await getCheckpoint(database, getCheckpointKey('board_climbs', scopeKey))).toEqual(referenceCursor);
     expect(await isScopeDownloadComplete(database, scopeKey)).toBe(true);
+    // The first revalidation for an account forgets the protected cursors, which
+    // are the previous account's. A later event leaves them alone.
     expect(await isScopeProtectedComplete(database, scopeKey)).toBe(false);
+    await markScopeDownloaded(database, scopeKey);
+    await revalidatePrivateCatalog(database, 'viewer');
+    expect(await isScopeProtectedComplete(database, scopeKey)).toBe(true);
     expect(await canReadPrivateCatalog(database)).toBe(true);
     expect(await getAuthorizedCatalogViewerId(database)).toBe('viewer');
     auth.token = 'another-account-token';
@@ -266,130 +275,9 @@ describe('downloaded catalogue privacy', () => {
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'old-draft' }]);
     expect(await database.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY])).toBeNull();
   });
-  // A draft is kept only for its owner. One another climber owns goes, and so
-  // does one with no owner: it is kept for nobody.
-  describe('drafts', () => {
-    const SCOPE_KEY = 'kilter:1:1';
-    const seedDraft = async (uuid: string, userId: string | null, syncSeq: number | null) => {
-      await database.runAsync(
-        `INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq)
-         VALUES (?, 'kilter', 1, ?, 1, ?)`,
-        [uuid, userId, syncSeq],
-      );
-      for (const table of ['board_climb_stats', 'board_climb_grades']) {
-        await database.runAsync(`INSERT INTO ${table} (board_type, climb_uuid, angle) VALUES ('kilter', ?, 40)`, [
-          uuid,
-        ]);
-      }
-    };
-    const uuidsIn = async (table: string, column: string) =>
-      (await database.getAllAsync<Record<string, string>>(`SELECT ${column} FROM ${table} ORDER BY ${column}`)).map(
-        (row) => row[column],
-      );
-
-    beforeEach(async () => {
-      database = createTestDatabase();
-      await runMigrations(database);
-    });
-
-    it('deletes a server-sourced draft with no owner, with its stats and grades', async () => {
-      await seedDraft('ownerless-draft', null, 12);
-      // A published climb with no owner is the manufacturer catalogue and stays.
-      await database.runAsync(
-        "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq) VALUES ('catalogue', 'kilter', 1, NULL, 0, 13)",
-      );
-      await database.runAsync(
-        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES ('kilter', 'catalogue', 40)",
-      );
-
-      await revalidatePrivateCatalog(database, 'viewer');
-
-      expect(await uuidsIn('board_climbs', 'uuid')).toEqual(['catalogue']);
-      expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual(['catalogue']);
-      expect(await uuidsIn('board_climb_grades', 'climb_uuid')).toEqual([]);
-      expect(await canReadPrivateCatalog(database)).toBe(true);
-    });
-
-    it('deletes a draft another climber owns, with its stats and grades', async () => {
-      await seedDraft('downloaded-foreign-draft', 'other', 10);
-
-      await revalidatePrivateCatalog(database, 'viewer');
-
-      expect(await uuidsIn('board_climbs', 'uuid')).toEqual([]);
-      expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual([]);
-      expect(await uuidsIn('board_climb_grades', 'climb_uuid')).toEqual([]);
-      expect(await canReadPrivateCatalog(database)).toBe(true);
-    });
-
-    it('keeps the viewer’s own draft, synced or not', async () => {
-      await seedDraft('owned-draft', 'viewer', 11);
-      await seedDraft('owned-unsynced-draft', 'viewer', null);
-
-      await revalidatePrivateCatalog(database, 'viewer');
-
-      expect(await uuidsIn('board_climbs', 'uuid')).toEqual(['owned-draft', 'owned-unsynced-draft']);
-      expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual(['owned-draft', 'owned-unsynced-draft']);
-      expect(await canReadPrivateCatalog(database)).toBe(true);
-    });
-
-    it('keeps a draft with no owner and no server sequence: it may be work that has not synced', async () => {
-      await seedDraft('local-draft-null-sequence', null, null);
-      await seedDraft('local-draft-zero-sequence', null, 0);
-
-      await revalidatePrivateCatalog(database, 'viewer');
-
-      expect(await uuidsIn('board_climbs', 'uuid')).toEqual(['local-draft-null-sequence', 'local-draft-zero-sequence']);
-      expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual([
-        'local-draft-null-sequence',
-        'local-draft-zero-sequence',
-      ]);
-      // Not a withdrawn row at all, so it does not hold catalogue access closed.
-      expect(await canReadPrivateCatalog(database)).toBe(true);
-    });
-
-    it('keeps a draft a queued mutation still references, and keeps catalogue access closed while it stays', async () => {
-      await seedDraft('queued-ownerless-draft', null, 14);
-      await database.runAsync(
-        "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'queued')",
-        [JSON.stringify({ climbUuid: 'queued-ownerless-draft' })],
-      );
-
-      await revalidatePrivateCatalog(database, 'viewer');
-
-      expect(await uuidsIn('board_climbs', 'uuid')).toEqual(['queued-ownerless-draft']);
-      expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual(['queued-ownerless-draft']);
-      expect(await uuidsIn('board_climb_grades', 'climb_uuid')).toEqual(['queued-ownerless-draft']);
-      expect(await canReadPrivateCatalog(database)).toBe(false);
-    });
-
-    it('leaves the reference cursor and the completed download alone, so a deleted draft is not pulled again', async () => {
-      await seedDraft('ownerless-draft', null, 12);
-      const referenceCursors = new Map<string, unknown>();
-      for (const tableName of ['board_climbs', 'board_climb_stats', 'board_climb_grades']) {
-        const key = getCheckpointKey(tableName, SCOPE_KEY);
-        await setCheckpoint(database, key, { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '99' });
-        referenceCursors.set(key, await database.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [key]));
-      }
-      await markScopeDownloadComplete(database, SCOPE_KEY);
-
-      await revalidatePrivateCatalog(database, 'viewer');
-
-      expect(await uuidsIn('board_climbs', 'uuid')).toEqual([]);
-      for (const [key, value] of referenceCursors) {
-        expect(await database.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [key])).toEqual(value);
-      }
-      expect(await isScopeDownloadComplete(database, SCOPE_KEY)).toBe(true);
-    });
-
-    it('withdraws a spray draft with no owner like any other spray climb with none', async () => {
-      await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, sync_seq) VALUES
-        ('unowned-spray-draft', 'spray', NULL, 1, 13)`);
-
-      await revalidatePrivateCatalog(database, 'viewer');
-
-      expect(await uuidsIn('board_climbs', 'uuid')).toEqual([]);
-    });
-  });
+  // Drafts and unlisted climbs are kept only for their owner. That is settled
+  // once per account, not per event: see "preparing the catalogue for an
+  // account, once" in privacy-revalidation-sync-meta.test.ts.
 
   it('retains unsynced foreign drafts and outbox references even with a server version', async () => {
     database = createTestDatabase();

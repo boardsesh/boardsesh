@@ -1,16 +1,21 @@
-// What a privacy revalidation does to the device's sync state, and what it
-// leaves exactly as it was (issue #6306).
+// What a privacy revalidation does to the device, and what it leaves exactly as
+// it was (issue #6306).
 //
 // It runs on every launch, reconnect and token refresh, and whenever any climber
 // changes something privacy-related. It used to delete every board cursor and
 // every completion marker, and abort every transfer in flight, so each of those
-// events made the phone crawl its boards again from nothing. Now it resets the
-// protected half of the sync state and nothing else.
+// events made the phone crawl its boards again from nothing.
 //
-// The engine's own suites model a revalidation as `resetProtectedSyncState` plus
-// the row deletes (`simulatePrivacyRevalidation` in the two-stream fixtures).
-// The first describe pins that the REAL function changes `sync_meta` in exactly
-// that way, so the model cannot drift from it unnoticed.
+// A published climb is public whoever set it, so an event now touches a
+// catalogue board not at all. It withdraws spray walls, whose visibility does
+// depend on privacy, and resets their protected cursors. What used to ride on
+// every event and is really about the ACCOUNT (other people's drafts and
+// unlisted climbs, the previous account's cursors, stored first-ascent names)
+// runs once per account instead.
+//
+// The engine's own suites model an event as `simulatePrivacyRevalidation` in the
+// two-stream fixtures. The first describe pins that the REAL function changes
+// `sync_meta` in exactly that way, so the model cannot drift from it unnoticed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,7 +34,7 @@ vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request }) 
 
 import {
   BOARD_DATA_TABLES,
-  LEGACY_FIRST_ASCENT_SCRUB_KEY,
+  CATALOGUE_PREPARED_FOR_KEY,
   USER_DATA_TABLES,
   capturePurgeToken,
   ensureHoldIndex,
@@ -39,7 +44,7 @@ import {
   hasPurgeLanded,
   isScopeDownloadComplete,
   isScopeProtectedComplete,
-  resetProtectedSyncState,
+  resetPrivacyScopedProtectedSyncState,
   runMigrations,
   scopeSyncMetaKeys,
   setCheckpoint,
@@ -63,6 +68,7 @@ let database: TestSqliteDb;
 beforeEach(async () => {
   auth.token = 'accepted-token';
   auth.generation = 1;
+  auth.viewer = VIEWER;
   request.mockReset().mockImplementation(async () => ({ profile: { id: auth.viewer } }));
   database = createTestDatabase();
   await runMigrations(database);
@@ -124,77 +130,105 @@ async function seedEverySyncMetaFamily(db: TestSqliteDb): Promise<void> {
   }
 }
 
-describe('what a privacy revalidation changes in sync_meta', () => {
-  it('changes exactly what the engine’s protected reset changes, plus its own two keys', async () => {
+const PREPARED_FOR_VIEWER = `2:0:${VIEWER}`;
+
+async function insertClimb(
+  uuid: string,
+  climb: {
+    boardType?: string;
+    layoutId?: number;
+    owner?: string | null;
+    draft?: boolean;
+    listed?: boolean;
+    syncSeq?: number | null;
+    frames?: string;
+  } = {},
+): Promise<void> {
+  const boardType = climb.boardType ?? 'kilter';
+  await database.runAsync(
+    `INSERT INTO board_climbs
+       (uuid, board_type, layout_id, user_id, compatible_size_ids, frames, is_draft, is_listed, is_hidden, updated_at, sync_seq)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '2026-01-01T00:00:00Z', ?)`,
+    [
+      uuid,
+      boardType,
+      climb.layoutId ?? (boardType === 'spray' ? 7 : 1),
+      climb.owner === undefined ? null : climb.owner,
+      boardType === 'spray' ? '[7]' : '[10]',
+      climb.frames ?? 'p1r13p2r13',
+      climb.draft ? 1 : 0,
+      climb.listed === false ? 0 : 1,
+      climb.syncSeq === undefined ? 5 : climb.syncSeq,
+    ],
+  );
+  await database.runAsync(
+    `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username, fa_at) VALUES (?, ?, 40, 'A Name', '2020-01-01')`,
+    [boardType, uuid],
+  );
+  await database.runAsync('INSERT INTO board_climb_grades (board_type, climb_uuid, angle) VALUES (?, ?, 40)', [
+    boardType,
+    uuid,
+  ]);
+}
+const uuidsIn = async (table: string, column: string): Promise<string[]> =>
+  (await database.getAllAsync<Record<string, string>>(`SELECT ${column} FROM ${table} ORDER BY ${column}`)).map(
+    (row) => row[column],
+  );
+
+describe('what a privacy event changes in sync_meta', () => {
+  // A device already prepared for this account, which is every event but the
+  // first after an account signs in (see the last describe).
+  beforeEach(async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+  });
+
+  it('changes exactly what the engine’s wall-only reset changes, plus its own two keys', async () => {
     await seedEverySyncMetaFamily(database);
     const before = await syncMeta();
-    // The model: the same seed, with only the engine's reset applied.
-    const model = createTestDatabase();
-    await runMigrations(model);
-    await ensureMutationQueueTable(model);
-    await seedEverySyncMetaFamily(model);
-    await resetProtectedSyncState(model);
-    const modelled = await syncMeta(model);
-    model.close();
+    // The same starting state, with only the engine's reset applied.
+    const reference = createTestDatabase();
+    await runMigrations(reference);
+    await seedEverySyncMetaFamily(reference);
+    await resetPrivacyScopedProtectedSyncState(reference);
+    const expected = await syncMeta(reference);
+    reference.close();
 
     await revalidatePrivateCatalog(database, VIEWER);
 
     const after = await syncMeta();
-    const ownKeys = [CATALOG_VIEWER_KEY, LEGACY_FIRST_ASCENT_SCRUB_KEY];
-    for (const key of ownKeys) {
-      expect(after.has(key)).toBe(true);
-      after.delete(key);
-      modelled.delete(key);
-    }
-    expect([...after]).toEqual([...modelled]);
-    // And the reset is not a no-op here: it really did take something.
-    expect([...after]).not.toEqual([...before]);
+    const ownKeys = [CATALOG_VIEWER_KEY, CATALOGUE_PREPARED_FOR_KEY];
+    for (const key of ownKeys) after.delete(key);
+    expect([...after]).toEqual([...expected]);
+    // And the reset did do something: this is not a comparison of two no-ops.
+    expect([...expected]).not.toEqual([...before]);
   });
 
-  it('deletes only rows that carried nothing but a protected cursor', async () => {
+  it('leaves a catalogue board’s cursors byte for byte, the protected ones included', async () => {
     await seedEverySyncMetaFamily(database);
     const before = await syncMeta();
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    const after = await syncMeta();
-    const deleted = [...before.keys()].filter((key) => !after.has(key)).sort();
-    // A wall has no reference stream, so its checkpoint rows held only that.
-    expect(deleted).toEqual(BOARD_DATA_TABLES.map((tableName) => getCheckpointKey(tableName, 'spray:7:7')).sort());
-  });
-
-  it('keeps every reference cursor byte for byte, with no protected cursor left beside it', async () => {
-    await seedEverySyncMetaFamily(database);
 
     await revalidatePrivateCatalog(database, VIEWER);
 
     const after = await syncMeta();
     for (const scopeKey of ['kilter:1:10', 'tension:9:6']) {
-      for (const tableName of ['board_climbs', 'board_climb_stats', 'board_climb_grades']) {
-        expect(after.get(getCheckpointKey(tableName, scopeKey))).toBe(JSON.stringify(REFERENCE_CURSOR));
+      for (const tableName of BOARD_DATA_TABLES) {
+        const key = getCheckpointKey(tableName, scopeKey);
+        expect(after.get(key)).toEqual(before.get(key));
       }
-      expect(await isScopeProtectedComplete(database, scopeKey)).toBe(false);
+      expect(await isScopeProtectedComplete(database, scopeKey)).toBe(true);
+      expect(await isScopeDownloadComplete(database, scopeKey)).toBe(true);
     }
   });
 
-  it('keeps every other key and value: completion, bootstrap, refresh, holds index, user tables, deletions', async () => {
+  it('resets a wall’s protected cursors, and keeps its completion marker', async () => {
     await seedEverySyncMetaFamily(database);
-    const before = await syncMeta();
-    const boardCheckpointKeys = new Set(
-      ['kilter:1:10', 'tension:9:6', 'spray:7:7'].flatMap((scopeKey) =>
-        BOARD_DATA_TABLES.map((tableName) => getCheckpointKey(tableName, scopeKey)),
-      ),
-    );
 
     await revalidatePrivateCatalog(database, VIEWER);
 
-    const after = await syncMeta();
-    const untouched = [...before].filter(([key]) => !boardCheckpointKeys.has(key));
-    // More than a hundred keys across the three scopes: every marker family.
-    expect(untouched.length).toBeGreaterThan(30);
-    for (const [key, value] of untouched) expect([key, after.get(key)]).toEqual([key, value]);
-    for (const scopeKey of ['kilter:1:10', 'tension:9:6', 'spray:7:7']) {
-      expect(await isScopeDownloadComplete(database, scopeKey)).toBe(true);
+    expect(await isScopeProtectedComplete(database, 'spray:7:7')).toBe(false);
+    expect(await isScopeDownloadComplete(database, 'spray:7:7')).toBe(true);
+    for (const tableName of BOARD_DATA_TABLES) {
+      expect((await syncMeta()).has(getCheckpointKey(tableName, 'spray:7:7'))).toBe(false);
     }
   });
 
@@ -207,6 +241,7 @@ describe('what a privacy revalidation changes in sync_meta', () => {
     await revalidatePrivateCatalog(database, VIEWER);
 
     expect([...(await syncMeta())]).toEqual([...afterFirst]);
+    expect(afterFirst.get(CATALOGUE_PREPARED_FOR_KEY)).toBe(PREPARED_FOR_VIEWER);
   });
 });
 
@@ -216,7 +251,7 @@ describe('what a privacy event stops, and what it does not', () => {
 
     requirePrivacyRevalidation();
 
-    // The one thing fenced: a protected page or a saved-climb mirror in flight.
+    // The one thing fenced: a wall page or a saved-climb mirror in flight.
     expect(hasProtectedWithdrawalLanded(token)).toBe(true);
     // Not a global purge and not a scope purge. Those are what artifact
     // transfers, imports, reference pages, the user tables, the deletions stream
@@ -235,262 +270,37 @@ describe('what a privacy event stops, and what it does not', () => {
   });
 });
 
-describe('first-ascent names an earlier bundle stored', () => {
-  const stats = () =>
-    database.getAllAsync<{ climb_uuid: string; fa_username: string | null; fa_at: string | null }>(
-      'SELECT climb_uuid, fa_username, fa_at FROM board_climb_stats ORDER BY climb_uuid',
-    );
-  const seedStats = (climbUuid: string, faUsername: string) =>
-    database.runAsync(
-      "INSERT OR REPLACE INTO board_climb_stats (board_type, climb_uuid, angle, fa_username, fa_at) VALUES ('kilter', ?, 40, ?, '2020-01-01T00:00:00Z')",
-      [climbUuid, faUsername],
-    );
-
-  it('are blanked once, across the whole table', async () => {
-    await seedStats('catalogue', 'Somebody');
-    await seedStats('authored', 'A Private Climber');
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(await stats()).toEqual([
-      { climb_uuid: 'authored', fa_username: null, fa_at: null },
-      { climb_uuid: 'catalogue', fa_username: null, fa_at: null },
-    ]);
-  });
-
-  it('are not blanked again: a manufacturer credit that arrives later survives every event after it', async () => {
-    await revalidatePrivateCatalog(database, VIEWER);
-    // The reference stream delivers a public credit. Nothing resets that
-    // stream's cursor any more, so blanking it would lose it for good.
-    await seedStats('catalogue', 'Manufacturer Setter');
-
-    for (let event = 0; event < 3; event += 1) await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(await stats()).toEqual([
-      { climb_uuid: 'catalogue', fa_username: 'Manufacturer Setter', fa_at: '2020-01-01T00:00:00Z' },
-    ]);
-  });
-
-  it('cost no whole-table write after the first event', async () => {
-    await revalidatePrivateCatalog(database, VIEWER);
-    const exclusive = database.withExclusiveTransactionAsync.bind(database);
-    const statements: string[] = [];
-    vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementation((task) =>
-      exclusive(async (transaction) => {
-        const run = transaction.runAsync.bind(transaction);
-        transaction.runAsync = ((sql: string, ...params: unknown[]) => {
-          statements.push(sql);
-          return run(sql, ...(params as []));
-        }) as typeof transaction.runAsync;
-        await task(transaction);
-      }),
-    );
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(statements.length).toBeGreaterThan(0);
-    expect(statements.filter((sql) => /UPDATE\s+board_climb_stats/i.test(sql))).toEqual([]);
-    // Nor a sweep of the holds index or the stats and grades by anything but key.
-    expect(statements.filter((sql) => /NOT IN \(SELECT uuid FROM board_climbs\)/i.test(sql))).toEqual([]);
-  });
-
-  it('are blanked again after an older bundle ran, which deletes the note that it was done', async () => {
-    await revalidatePrivateCatalog(database, VIEWER);
-    // The older bundle's revalidation: every stats checkpoint goes, and its one
-    // stream then stores names filled in for whoever was asking.
-    await database.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', ['checkpoint:board_climb_stats:%']);
-    await seedStats('authored', 'A Private Climber');
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(await stats()).toEqual([{ climb_uuid: 'authored', fa_username: null, fa_at: null }]);
-  });
-});
-
-describe('the holds index', () => {
-  const SCOPE = { boardType: 'kilter', layoutId: 1, sizeId: 12 };
-  const OTHER_LAYOUT = { boardType: 'kilter', layoutId: 2, sizeId: 12 };
-  const parseHoldRows = (_boardType: string, frames: string) =>
-    [...frames.matchAll(/p(\d+)r\d+/g)].map((match) => ({ holdId: Number(match[1]), holdState: 'HAND' }));
-  const indexOptions = { parseHoldRows, yieldToHost: async () => {} };
-
-  async function seedClimb(uuid: string, userId: string | null, layoutId: number, isDraft = 0): Promise<void> {
-    await database.runAsync(
-      `INSERT INTO board_climbs
-         (uuid, board_type, layout_id, user_id, compatible_size_ids, frames, is_listed, is_draft, updated_at, sync_seq)
-       VALUES (?, 'kilter', ?, ?, '[12]', 'p1r13p2r13', 1, ?, '2026-01-01T00:00:00Z', 5)`,
-      [uuid, layoutId, userId, isDraft],
-    );
-  }
-  const indexedUuids = async () =>
-    (
-      await database.getAllAsync<{ uuid: string }>(
-        'SELECT hic.uuid FROM holds_index_climbs hic JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id ORDER BY hic.uuid',
-      )
-    ).map((row) => row.uuid);
-  const mappedUuids = async () =>
-    (await database.getAllAsync<{ uuid: string }>('SELECT uuid FROM holds_index_climbs ORDER BY uuid')).map(
-      (row) => row.uuid,
-    );
-  const postingLayouts = async () =>
-    (
-      await database.getAllAsync<{ layout_id: number }>(
-        'SELECT DISTINCT layout_id FROM board_climb_hold_postings ORDER BY layout_id',
-      )
-    ).map((row) => row.layout_id);
-  const watermarkKeys = async () =>
-    (
-      await database.getAllAsync<{ key: string }>(
-        "SELECT key FROM sync_meta WHERE key LIKE 'holds-index:%' ORDER BY key",
-      )
-    ).map((row) => row.key);
-
-  /** Two downloaded layouts with a built index; layout 1 also holds `layoutOneExtra`. */
-  async function seedIndexedBoards(layoutOneExtra: () => Promise<void>): Promise<void> {
-    await seedClimb('catalogue-1', null, 1);
-    await layoutOneExtra();
-    await seedClimb('catalogue-2', null, 2);
-    for (const scope of [SCOPE, OTHER_LAYOUT]) {
-      await markScopeDownloaded(database, `kilter:${scope.layoutId}:12`);
-      await ensureHoldIndex(database, scope, indexOptions);
-    }
-  }
-  const withAnotherClimbersClimb = () => seedIndexedBoards(() => seedClimb('friend-1', 'friend', 1));
-
-  it('loses every trace of a withdrawn climb: its hold set, its uuid, and the postings that named it', async () => {
-    await withAnotherClimbersClimb();
-    expect(await indexedUuids()).toEqual(['catalogue-1', 'catalogue-2', 'friend-1']);
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(await indexedUuids()).toEqual(['catalogue-1', 'catalogue-2']);
-    expect(await mappedUuids()).toEqual(['catalogue-1', 'catalogue-2']);
-    // Layout 1's postings went with it, and its watermark, so it is rebuilt.
-    expect(await postingLayouts()).toEqual([2]);
-    expect(await watermarkKeys()).toEqual(['holds-index:kilter:2:12']);
-  });
-
-  it('keeps the index of a layout that lost nothing', async () => {
-    await withAnotherClimbersClimb();
-    const before = await database.getAllAsync(
-      'SELECT hold_id, hex(climb_ids) AS ids FROM board_climb_hold_postings WHERE layout_id = 2 ORDER BY hold_id',
-    );
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(
-      await database.getAllAsync(
-        'SELECT hold_id, hex(climb_ids) AS ids FROM board_climb_hold_postings WHERE layout_id = 2 ORDER BY hold_id',
-      ),
-    ).toEqual(before);
-  });
-
-  it('keeps the index of a layout that lost only drafts, which were never in it', async () => {
-    await seedIndexedBoards(() => seedClimb('ownerless-draft', null, 1, 1));
-    expect(await indexedUuids()).toEqual(['catalogue-1', 'catalogue-2']);
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    // The draft went, and nothing the index held went with it.
-    expect(await database.getAllAsync('SELECT uuid FROM board_climbs WHERE layout_id = 1')).toEqual([
-      { uuid: 'catalogue-1' },
-    ]);
-    expect(await postingLayouts()).toEqual([1, 2]);
-    expect(await watermarkKeys()).toEqual(['holds-index:kilter:1:12', 'holds-index:kilter:2:12']);
-  });
-
-  it('is not rebuilt until the protected rows are back', async () => {
-    await withAnotherClimbersClimb();
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    // The board is still downloaded, its protected streams are mid-replay.
-    expect((await ensureHoldIndex(database, SCOPE, indexOptions)).status).toBe('not-downloaded');
-    expect(await watermarkKeys()).toEqual(['holds-index:kilter:2:12']);
-  });
-});
-
-describe('everything else it removes', () => {
-  it('deletes every wall row, and the snapshots of followed authors', async () => {
-    await database.runAsync(
-      "INSERT INTO spray_walls (layout_id, board_uuid, name, reference_width, reference_height) VALUES (7, 'wall', 'Garage', 1, 1)",
-    );
-    await database.runAsync("INSERT INTO followed_author_snapshots (user_id, snapshot) VALUES ('viewer', '[]')");
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(await database.getAllAsync('SELECT layout_id FROM spray_walls')).toEqual([]);
-    expect(await database.getAllAsync('SELECT user_id FROM followed_author_snapshots')).toEqual([]);
-  });
-
-  it('deletes hundreds of withdrawn climbs across boards, each with its own stats and grades', async () => {
-    // More than one statement's worth of uuids, on two board types.
-    const withdrawnCount = 2000;
-    await database.execAsync('BEGIN');
-    for (let index = 0; index < withdrawnCount; index += 1) {
-      const boardType = index % 2 === 0 ? 'kilter' : 'tension';
-      await database.runAsync(
-        "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, sync_seq) VALUES (?, ?, 1, 'other', ?)",
-        [`withdrawn-${index}`, boardType, index + 1],
-      );
-      await database.runAsync('INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES (?, ?, 40)', [
-        boardType,
-        `withdrawn-${index}`,
-      ]);
-      await database.runAsync('INSERT INTO board_climb_grades (board_type, climb_uuid, angle) VALUES (?, ?, 40)', [
-        boardType,
-        `withdrawn-${index}`,
-      ]);
-    }
-    await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, sync_seq) VALUES ('mine', 'kilter', 1, 'viewer', 1)",
-    );
-    await database.runAsync(
-      "INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES ('kilter', 'mine', 40)",
-    );
-    await database.runAsync(
-      "INSERT INTO board_climb_grades (board_type, climb_uuid, angle) VALUES ('kilter', 'mine', 40)",
-    );
-    await database.execAsync('COMMIT');
-
-    await revalidatePrivateCatalog(database, VIEWER);
-
-    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'mine' }]);
-    expect(await database.getAllAsync('SELECT climb_uuid FROM board_climb_stats')).toEqual([{ climb_uuid: 'mine' }]);
-    expect(await database.getAllAsync('SELECT climb_uuid FROM board_climb_grades')).toEqual([{ climb_uuid: 'mine' }]);
-  });
-});
-
-// The two halves of a withdrawal are one transaction: the copies go, and the
-// cursor that covered them goes with them. A cursor that outlived its rows
-// would skip them for good. Rows that outlived a reset would be on the device
-// with nothing left to say the server had been asked about them.
-describe('one transaction for the rows and the cursors that covered them', () => {
-  const SCOPE_KEY = 'kilter:1:10';
-  const foreignClimbs = () =>
-    database.getAllAsync<{ uuid: string }>("SELECT uuid FROM board_climbs WHERE user_id = 'other'");
-
+describe('what a privacy event does to a catalogue board', () => {
   beforeEach(async () => {
-    await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, sync_seq) VALUES ('theirs', 'kilter', 1, 'other', 7)",
-    );
-    await database.runAsync(
-      "INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES ('kilter', 'theirs', 40)",
-    );
-    await markScopeDownloaded(database, SCOPE_KEY);
+    // The device has already been prepared for this account.
+    await revalidatePrivateCatalog(database, VIEWER);
+    await insertClimb('manufacturer');
+    await insertClimb('another-climbers', { owner: 'somebody-else' });
+    await insertClimb('mine', { owner: VIEWER });
+    await insertClimb('my-draft', { owner: VIEWER, draft: true, listed: false });
   });
 
-  it('issues the row deletes and the cursor reset inside the same exclusive transaction', async () => {
-    const statementsByTransaction: string[][] = [];
+  it('deletes none of its climbs, other climbers’ published ones included', async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    const everything = ['another-climbers', 'manufacturer', 'mine', 'my-draft'];
+    expect(await uuidsIn('board_climbs', 'uuid')).toEqual(everything);
+    expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual(everything);
+    expect(await uuidsIn('board_climb_grades', 'climb_uuid')).toEqual(everything);
+  });
+
+  it('does not read through board_climbs to do it', async () => {
+    const plans: string[] = [];
     const exclusive = database.withExclusiveTransactionAsync.bind(database);
     vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementation((task) =>
       exclusive(async (transaction) => {
-        const statements: string[] = [];
-        statementsByTransaction.push(statements);
-        const run = transaction.runAsync.bind(transaction);
-        const recorder = vi.spyOn(transaction, 'runAsync').mockImplementation((source, ...params) => {
-          statements.push(source);
-          return run(source, ...params);
+        const read = transaction.getAllAsync.bind(transaction);
+        const recorder = vi.spyOn(transaction, 'getAllAsync').mockImplementation(async (source, ...params) => {
+          if (source.includes('FROM board_climbs')) {
+            const plan = await read<{ detail: string }>(`EXPLAIN QUERY PLAN ${source}`, ...params);
+            plans.push(...plan.map((step) => step.detail));
+          }
+          return read(source, ...params);
         });
         try {
           await task(transaction);
@@ -502,41 +312,365 @@ describe('one transaction for the rows and the cursors that covered them', () =>
 
     await revalidatePrivateCatalog(database, VIEWER);
 
-    const withRowDeletes = statementsByTransaction.filter((statements) =>
-      statements.some((source) => source.startsWith('DELETE FROM board_climbs')),
-    );
-    expect(withRowDeletes).toHaveLength(1);
-    const [purge] = withRowDeletes;
-    expect(purge.some((source) => source.startsWith('DELETE FROM board_climb_stats'))).toBe(true);
-    expect(purge.some((source) => source.includes("json_remove(value, '$.protected')"))).toBe(true);
-    // No other transaction touched a protected cursor.
-    const resets = statementsByTransaction.filter((statements) =>
-      statements.some((source) => source.includes("json_remove(value, '$.protected')")),
-    );
-    expect(resets).toEqual([purge]);
+    // The wall rows are found through the board-type index, never by walking a
+    // downloaded catalogue of several hundred thousand climbs. This runs on
+    // every launch.
+    const climbSteps = plans.filter((detail) => detail.includes('board_climbs'));
+    expect(climbSteps).not.toEqual([]);
+    for (const detail of climbSteps) expect(detail).toMatch(/^SEARCH board_climbs USING (COVERING )?INDEX/);
   });
 
-  it('rolls both back together when the revalidation fails after them, and stays closed', async () => {
+  it('writes nothing to a board table', async () => {
+    const written: string[] = [];
     const exclusive = database.withExclusiveTransactionAsync.bind(database);
-    vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementationOnce((task) =>
+    vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementation((task) =>
       exclusive(async (transaction) => {
-        // The credential changes while the purge runs. The check that follows
-        // the purge refuses to commit under it.
-        auth.token = 'rotated-during-purge';
-        await task(transaction);
+        const run = transaction.runAsync.bind(transaction);
+        const recorder = vi.spyOn(transaction, 'runAsync').mockImplementation(async (source, ...params) => {
+          const result = await run(source, ...params);
+          if (result.changes > 0 && /board_climb/.test(source)) written.push(source);
+          return result;
+        });
+        try {
+          await task(transaction);
+        } finally {
+          recorder.mockRestore();
+        }
       }),
     );
 
-    await expect(revalidatePrivateCatalog(database, VIEWER)).rejects.toThrow('Account changed');
+    await revalidatePrivateCatalog(database, VIEWER);
 
-    // Neither half landed without the other: the row is still here, and so is
-    // the cursor that covers it.
-    expect(await foreignClimbs()).toEqual([{ uuid: 'theirs' }]);
-    expect(await isScopeProtectedComplete(database, SCOPE_KEY)).toBe(true);
-    // And nothing reads that row. The catalogue stays closed and protected
-    // pulls stay held back until a revalidation succeeds.
-    expect(needsPrivacyRevalidation()).toBe(true);
+    expect(written).toEqual([]);
+  });
+});
+
+describe('what a privacy event withdraws: spray walls', () => {
+  beforeEach(async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+    await insertClimb('my-wall-climb', { boardType: 'spray', owner: VIEWER });
+    await insertClimb('their-wall-climb', { boardType: 'spray', owner: 'somebody-else' });
+    await insertClimb('ownerless-wall-climb', { boardType: 'spray', owner: null });
+    await insertClimb('catalogue', { owner: 'somebody-else' });
+    await database.runAsync(
+      "INSERT INTO spray_walls (layout_id, board_uuid, name, reference_width, reference_height, holds) VALUES (7, 'wall', 'Garage', 1, 1, '[]')",
+    );
+    await database.runAsync("INSERT INTO followed_author_snapshots (user_id, snapshot) VALUES ('viewer', '{}')");
+    await markScopeDownloaded(database, 'spray:7:7');
+  });
+
+  it('deletes every wall climb that is not the climber’s own, with its stats and grades, and every wall', async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await uuidsIn('board_climbs', 'uuid')).toEqual(['catalogue', 'my-wall-climb']);
+    expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual(['catalogue', 'my-wall-climb']);
+    expect(await uuidsIn('board_climb_grades', 'climb_uuid')).toEqual(['catalogue', 'my-wall-climb']);
+    expect(await database.getAllAsync('SELECT layout_id FROM spray_walls')).toEqual([]);
+    expect(await database.getAllAsync('SELECT user_id FROM followed_author_snapshots')).toEqual([]);
+  });
+
+  it('keeps a wall climb that may be unsynced work or that a queued write refers to, and stays closed', async () => {
+    await insertClimb('their-unsynced', { boardType: 'spray', owner: 'somebody-else', syncSeq: null });
+    await insertClimb('queued', { boardType: 'spray', owner: 'somebody-else' });
+    await database.runAsync(
+      "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'queued')",
+      [JSON.stringify({ climbUuid: 'queued' })],
+    );
+
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await uuidsIn('board_climbs', 'uuid')).toEqual(['catalogue', 'my-wall-climb', 'queued', 'their-unsynced']);
     expect(await canReadPrivateCatalog(database)).toBe(false);
-    await expect(waitForPrivacyRevalidation()).rejects.toThrow('Privacy revalidation is required');
+  });
+
+  it('takes a withdrawn wall climb out of the holds index', async () => {
+    const WALL = { boardType: 'spray', layoutId: 7, sizeId: 7 };
+    const parseHoldRows = (_boardType: string, frames: string) =>
+      [...frames.matchAll(/p(\d+)r\d+/g)].map((match) => ({ holdId: Number(match[1]), holdState: 'HAND' }));
+    expect((await ensureHoldIndex(database, WALL, { parseHoldRows, yieldToHost: async () => {} })).status).toBe(
+      'complete',
+    );
+    const indexedUuids = () => uuidsIn('holds_index_climbs', 'uuid');
+    expect(await indexedUuids()).toContain('their-wall-climb');
+
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await indexedUuids()).toEqual(['my-wall-climb']);
+    expect(
+      await database.getAllAsync("SELECT hold_id FROM board_climb_hold_postings WHERE board_type = 'spray'"),
+    ).toEqual([]);
+    // And it is not rebuilt until the wall's rows are back.
+    expect((await ensureHoldIndex(database, WALL, { parseHoldRows, yieldToHost: async () => {} })).status).toBe(
+      'not-downloaded',
+    );
+  });
+
+  describe('in one transaction, with the cursors that covered the rows', () => {
+    const wallClimbs = () => uuidsIn('board_climbs', 'uuid');
+
+    it('issues the row deletes and the cursor reset inside the same exclusive transaction', async () => {
+      const statementsByTransaction: string[][] = [];
+      const exclusive = database.withExclusiveTransactionAsync.bind(database);
+      vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementation((task) =>
+        exclusive(async (transaction) => {
+          const statements: string[] = [];
+          statementsByTransaction.push(statements);
+          const run = transaction.runAsync.bind(transaction);
+          const recorder = vi.spyOn(transaction, 'runAsync').mockImplementation((source, ...params) => {
+            statements.push(source);
+            return run(source, ...params);
+          });
+          try {
+            await task(transaction);
+          } finally {
+            recorder.mockRestore();
+          }
+        }),
+      );
+
+      await revalidatePrivateCatalog(database, VIEWER);
+
+      const withRowDeletes = statementsByTransaction.filter((statements) =>
+        statements.some((source) => source.startsWith('DELETE FROM board_climbs')),
+      );
+      expect(withRowDeletes).toHaveLength(1);
+      const [purge] = withRowDeletes;
+      expect(purge.some((source) => source.startsWith('DELETE FROM board_climb_stats'))).toBe(true);
+      expect(purge.some((source) => source.startsWith('DELETE FROM spray_walls'))).toBe(true);
+      expect(purge.some((source) => source.includes("json_remove(value, '$.protected')"))).toBe(true);
+      // No other transaction touched a protected cursor.
+      const resets = statementsByTransaction.filter((statements) =>
+        statements.some((source) => source.includes("json_remove(value, '$.protected')")),
+      );
+      expect(resets).toEqual([purge]);
+    });
+
+    it('rolls both back together when the revalidation fails after them, and stays closed', async () => {
+      const exclusive = database.withExclusiveTransactionAsync.bind(database);
+      let transactions = 0;
+      vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementation((task) =>
+        exclusive(async (transaction) => {
+          transactions += 1;
+          // The credential changes while the purge runs. The check that follows
+          // the purge refuses to commit under it.
+          auth.token = 'rotated-during-purge';
+          await task(transaction);
+        }),
+      );
+
+      await expect(revalidatePrivateCatalog(database, VIEWER)).rejects.toThrow('Account changed');
+
+      expect(transactions).toBe(1);
+      // Neither half landed without the other: the rows are still here, and so
+      // is the cursor that covers them.
+      expect(await wallClimbs()).toContain('their-wall-climb');
+      expect(await isScopeProtectedComplete(database, 'spray:7:7')).toBe(true);
+      // And nothing reads those rows. The catalogue stays closed and wall pulls
+      // stay held back until a revalidation succeeds.
+      expect(needsPrivacyRevalidation()).toBe(true);
+      expect(await canReadPrivateCatalog(database)).toBe(false);
+      await expect(waitForPrivacyRevalidation()).rejects.toThrow('Privacy revalidation is required');
+    });
+  });
+});
+
+// A draft or an unlisted climb is sent to its owner alone. A device that ran a
+// bundle from before that rule holds everybody's, and a device another account
+// used holds theirs.
+describe('preparing the catalogue for an account, once', () => {
+  const allClimbs = () => uuidsIn('board_climbs', 'uuid');
+
+  beforeEach(async () => {
+    await insertClimb('published', { owner: 'somebody-else' });
+    await insertClimb('their-draft', { owner: 'somebody-else', draft: true, listed: false });
+    await insertClimb('their-unlisted', { owner: 'somebody-else', listed: false });
+    await insertClimb('ownerless-draft', { owner: null, draft: true });
+    await insertClimb('ownerless-unlisted', { owner: null, listed: false });
+    await insertClimb('my-draft', { owner: VIEWER, draft: true, listed: false });
+    await insertClimb('my-unlisted', { owner: VIEWER, listed: false });
+  });
+
+  it('deletes the drafts and unlisted climbs that are not the climber’s own, with their stats and grades', async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    const kept = ['my-draft', 'my-unlisted', 'published'];
+    expect(await allClimbs()).toEqual(kept);
+    expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual(kept);
+    expect(await uuidsIn('board_climb_grades', 'climb_uuid')).toEqual(kept);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
+  it('keeps a row with no server sequence and a row a queued write refers to, and keeps the catalogue closed while they stay', async () => {
+    await insertClimb('their-unsynced-draft', { owner: 'somebody-else', draft: true, syncSeq: null });
+    await insertClimb('queued-draft', { owner: 'somebody-else', draft: true });
+    await database.runAsync(
+      "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'queued')",
+      [JSON.stringify({ climbUuid: 'queued-draft' })],
+    );
+
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await allClimbs()).toEqual(['my-draft', 'my-unlisted', 'published', 'queued-draft', 'their-unsynced-draft']);
+    expect(await canReadPrivateCatalog(database)).toBe(false);
+
+    // It looks again on the next event, and opens once they are gone.
+    await database.runAsync("DELETE FROM pending_mutations WHERE idempotency_key = 'queued'");
+    await database.runAsync("DELETE FROM board_climbs WHERE uuid = 'their-unsynced-draft'");
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await allClimbs()).toEqual(['my-draft', 'my-unlisted', 'published']);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
+  it('runs once: a draft that arrives later is not this pass’s business, and no later event walks the table', async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+    // The server sends the climber only their own; this row stands for anything
+    // that is on the device afterwards.
+    await insertClimb('arrived-later', { owner: 'somebody-else', draft: true });
+    const reads: string[] = [];
+    const read = database.getAllAsync.bind(database);
+    vi.spyOn(database, 'getAllAsync').mockImplementation((source, ...params) => {
+      reads.push(source);
+      return read(source, ...params);
+    });
+
+    await revalidatePrivateCatalog(database, VIEWER);
+    const readsDuringTheEvent = [...reads];
+
+    expect(await allClimbs()).toContain('arrived-later');
+    // The only reads of the climbs table are the event's own seek for wall rows.
+    const climbReads = readsDuringTheEvent.filter((source) => /FROM board_climbs\b/.test(source));
+    expect(climbReads.filter((source) => !source.includes("board_type = 'spray'"))).toEqual([]);
+  });
+
+  it('runs again for another account: their rows go, and every protected cursor is forgotten', async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+    await markScopeDownloaded(database, 'kilter:1:10');
+    await setCheckpoint(database, getCheckpointKey('board_climbs', 'kilter:1:10'), REFERENCE_CURSOR);
+    expect(await isScopeProtectedComplete(database, 'kilter:1:10')).toBe(true);
+
+    // Another account signs in on this device. An earlier bundle's sign-out
+    // left the first account's protected cursor and their own drafts behind.
+    auth.viewer = 'next-climber';
+    auth.token = 'next-token';
+    auth.generation += 1;
+    await revalidatePrivateCatalog(database, 'next-climber');
+
+    expect(await allClimbs()).toEqual(['published']);
+    expect(await isScopeProtectedComplete(database, 'kilter:1:10')).toBe(false);
+    // The public catalogue's cursor and the completed download are untouched.
+    expect((await syncMeta()).get(getCheckpointKey('board_climbs', 'kilter:1:10'))).toBe(
+      JSON.stringify(REFERENCE_CURSOR),
+    );
+    expect(await isScopeDownloadComplete(database, 'kilter:1:10')).toBe(true);
+    expect((await syncMeta()).get(CATALOGUE_PREPARED_FOR_KEY)).toBe('2:0:next-climber');
+  });
+
+  it('runs again after an earlier bundle ran, which deletes the note that it was done', async () => {
+    await revalidatePrivateCatalog(database, VIEWER);
+    // What that bundle's revalidation does to the stats checkpoints.
+    await database.runAsync("DELETE FROM sync_meta WHERE key LIKE 'checkpoint:board_climb_stats:%'");
+    await insertClimb('pulled-by-the-earlier-bundle', { owner: 'somebody-else', draft: true });
+
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await allClimbs()).toEqual(['my-draft', 'my-unlisted', 'published']);
+  });
+
+  it('takes a deleted climb out of the holds index, and leaves the index of a layout that lost nothing', async () => {
+    const KILTER = { boardType: 'kilter', layoutId: 1, sizeId: 10 };
+    const parseHoldRows = (_boardType: string, frames: string) =>
+      [...frames.matchAll(/p(\d+)r\d+/g)].map((match) => ({ holdId: Number(match[1]), holdState: 'HAND' }));
+    // An earlier bundle indexed this one while it was listed.
+    await insertClimb('unlisted-since', { owner: 'somebody-else' });
+    await markScopeDownloaded(database, 'kilter:1:10');
+    expect((await ensureHoldIndex(database, KILTER, { parseHoldRows, yieldToHost: async () => {} })).status).toBe(
+      'complete',
+    );
+    await database.runAsync("UPDATE board_climbs SET is_listed = 0 WHERE uuid = 'unlisted-since'");
+
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await uuidsIn('holds_index_climbs', 'uuid')).not.toContain('unlisted-since');
+    expect(
+      await database.getAllAsync(
+        'SELECT hic.uuid FROM holds_index_climbs hic JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id ORDER BY hic.uuid',
+      ),
+    ).toEqual([{ uuid: 'published' }]);
+  });
+
+  it('deletes tens of thousands in short transactions', async () => {
+    const strangers = 4500;
+    await database.execAsync('BEGIN');
+    for (let index = 0; index < strangers; index += 1) {
+      await insertClimb(`unlisted-${index}`, { owner: null, listed: false });
+    }
+    await database.execAsync('COMMIT');
+    let deletingTransactions = 0;
+    const exclusive = database.withExclusiveTransactionAsync.bind(database);
+    vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementation((task) =>
+      exclusive(async (transaction) => {
+        const run = transaction.runAsync.bind(transaction);
+        let deleted = false;
+        const recorder = vi.spyOn(transaction, 'runAsync').mockImplementation((source, ...params) => {
+          if (source.startsWith('DELETE FROM board_climbs')) deleted = true;
+          return run(source, ...params);
+        });
+        try {
+          await task(transaction);
+        } finally {
+          recorder.mockRestore();
+          if (deleted) deletingTransactions += 1;
+        }
+      }),
+    );
+
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await allClimbs()).toEqual(['my-draft', 'my-unlisted', 'published']);
+    expect(await uuidsIn('board_climb_stats', 'climb_uuid')).toEqual(['my-draft', 'my-unlisted', 'published']);
+    // 4,504 rows at 2,000 a transaction.
+    expect(deletingTransactions).toBe(3);
+  });
+
+  describe('first-ascent names an earlier bundle stored', () => {
+    const names = async () =>
+      Object.fromEntries(
+        (
+          await database.getAllAsync<{ climb_uuid: string; fa_username: string | null }>(
+            'SELECT climb_uuid, fa_username FROM board_climb_stats',
+          )
+        ).map((row) => [row.climb_uuid, row.fa_username]),
+      );
+
+    it('are blanked where they came from Boardsesh ticks, and kept where they are the manufacturer’s credit', async () => {
+      await insertClimb('manufacturer', { owner: null });
+      await insertClimb('wall-climb', { boardType: 'spray', owner: VIEWER });
+      await database.runAsync(
+        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username) VALUES ('kilter', 'no-climb-row', 40, 'A Name')",
+      );
+
+      await revalidatePrivateCatalog(database, VIEWER);
+
+      expect(await names()).toEqual({
+        manufacturer: 'A Name',
+        published: null,
+        'my-draft': null,
+        'my-unlisted': null,
+        'wall-climb': null,
+        'no-climb-row': null,
+      });
+    });
+
+    it('are not looked at again by a later event', async () => {
+      await revalidatePrivateCatalog(database, VIEWER);
+      await database.runAsync(
+        "UPDATE board_climb_stats SET fa_username = 'Delivered Later' WHERE climb_uuid = 'published'",
+      );
+
+      await revalidatePrivateCatalog(database, VIEWER);
+
+      expect((await names()).published).toBe('Delivered Later');
+    });
   });
 });

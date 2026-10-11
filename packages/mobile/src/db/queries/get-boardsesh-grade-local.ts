@@ -46,6 +46,14 @@ function mapCommon(row: GradeRow): BoardseshGrade {
 const GRADE_COLUMNS =
   'angle, local_grade, universal_grade, grade_low, grade_high, confidence, ascensionist_count, computed_at';
 
+// A grade row is read only under a climb the device holds. A climb that left
+// the catalogue is deleted with its rows, but a row can outlive its climb (a
+// grade delivered just before the climb was withdrawn), and it must not be
+// answered for a climb that is no longer here.
+const CLIMB_IS_HERE = `EXISTS (
+  SELECT 1 FROM board_climbs climb
+  WHERE climb.uuid = board_climb_grades.climb_uuid AND climb.board_type = board_climb_grades.board_type)`;
+
 /** The Boardsesh grade for one climb at one angle, or null when no row exists. */
 export async function getBoardseshGradeLocal(
   db: OfflineDatabase,
@@ -53,7 +61,7 @@ export async function getBoardseshGradeLocal(
 ): Promise<BoardseshGrade | null> {
   const row = await db.getFirstAsync<GradeRow>(
     `SELECT ${GRADE_COLUMNS} FROM board_climb_grades
-     WHERE board_type = ? AND climb_uuid = ? AND angle = ? LIMIT 1`,
+     WHERE board_type = ? AND climb_uuid = ? AND angle = ? AND ${CLIMB_IS_HERE} LIMIT 1`,
     [input.boardName, input.climbUuid, input.angle],
   );
   return row ? mapCommon(row) : null;
@@ -66,7 +74,7 @@ export async function getBoardseshGradesForAnglesLocal(
 ): Promise<BoardseshGradeAtAngle[]> {
   const rows = await db.getAllAsync<GradeRow>(
     `SELECT ${GRADE_COLUMNS} FROM board_climb_grades
-     WHERE board_type = ? AND climb_uuid = ? ORDER BY angle ASC`,
+     WHERE board_type = ? AND climb_uuid = ? AND ${CLIMB_IS_HERE} ORDER BY angle ASC`,
     [input.boardName, input.climbUuid],
   );
   return rows.map((row) => ({ angle: row.angle, ...mapCommon(row) }));

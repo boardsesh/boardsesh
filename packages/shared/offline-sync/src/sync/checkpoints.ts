@@ -550,18 +550,22 @@ export async function resetScopeProtectedSyncState(db: SqlExecutor, scopeKey: st
 }
 
 /**
- * Set once mobile's privacy revalidation has blanked the first-ascent names an
- * earlier bundle stored. Those came through the single stream, where the server
- * filled each name in for whoever was asking; the protected stream ships none.
+ * Names the account the downloaded catalogue was last prepared for (mobile's
+ * `prepareCatalogueForViewer`). Preparing is what runs once per account on a
+ * device and never per privacy event: it resets every protected cursor, removes
+ * the drafts and unlisted climbs that are not this climber's, and blanks the
+ * first-ascent names an earlier bundle stored on owned climbs.
  *
  * It sits under the stats checkpoint prefix on purpose, with a scope part no
  * real scope key can equal (a scope key always has two colons). A bundle from
- * before the split deletes `checkpoint:board_climb_stats:%` on every
- * revalidation and then pulls stats again with viewer-dependent names. Taking
- * this row with them is what makes the scrub run again when a newer bundle
- * returns. Nothing reads it as a checkpoint.
+ * before the two-stream sync deletes `checkpoint:board_climb_stats:%` on every
+ * privacy revalidation, and then pulls rows this rule withholds. Taking this
+ * row with them is what makes the preparation run again when a newer bundle
+ * returns. A sign-out leaves it, since it looks like a board checkpoint, and
+ * the next account's id then differs from the one it names. Nothing reads it
+ * as a checkpoint.
  */
-export const LEGACY_FIRST_ASCENT_SCRUB_KEY = getCheckpointKey('board_climb_stats', 'legacy-first-ascent-scrub');
+export const CATALOGUE_PREPARED_FOR_KEY = getCheckpointKey('board_climb_stats', 'prepared-for-viewer');
 
 export async function deleteCheckpoint(db: SqlExecutor, key: string): Promise<void> {
   await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [key]);

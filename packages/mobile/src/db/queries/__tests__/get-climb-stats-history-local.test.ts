@@ -27,6 +27,19 @@ describe('getClimbStatsHistoryLocal', () => {
   beforeEach(async () => {
     db = createTestDatabase();
     await runMigrations(db);
+    // The climbs these stats hang off. A stats row is only read under a climb
+    // the device holds.
+    await db.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES ('c1', 'kilter', 1), ('c2', 'kilter', 1)",
+    );
+  });
+
+  it('answers nothing for a climb the device does not hold, though a stats row for it is still here', async () => {
+    // A climb that left the catalogue is deleted with its rows. A row delivered
+    // just before that can outlive it.
+    await insertStats(db, { climbUuid: 'withdrawn', angle: 40, ascents: 12 });
+
+    expect(await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'withdrawn' })).toEqual([]);
   });
 
   it('returns one entry per angle with ascents, in the GraphQL shape, ascending by angle', async () => {
