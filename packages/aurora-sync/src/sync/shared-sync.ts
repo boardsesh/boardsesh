@@ -103,17 +103,35 @@ async function processBatches<T>(data: T[], processor: (batch: T[]) => Promise<v
 
 /**
  * Conflict policy for board_climbs.is_draft / is_listed on the Aurora shared
- * sync. For NON-user climbs (user_id IS NULL — Aurora catalog rows) take the
- * incoming flags VERBATIM: Aurora only re-sends rows it changed, so its flags
- * are authoritative and an upstream delist (listed → hidden) or re-draft
+ * sync. Exported for tests.
+ *
+ * For NON-user climbs (user_id IS NULL — Aurora catalog rows) take the incoming
+ * flags VERBATIM: Aurora only re-sends rows it changed, so its flags are
+ * authoritative and an upstream delist (listed → hidden) or re-draft
  * (published → draft) must propagate so the climb leaves search. For user
- * climbs (Boardsesh-created) the stored flags are preserved. Exported for tests.
+ * climbs (Boardsesh-created) the stored flags are preserved.
+ *
+ * "User climb" means minted in Boardsesh, and `synced` is what says so:
+ * Boardsesh writes `synced = false` on every climb it mints on a board this
+ * sync covers and nothing flips it, while every Aurora import writes `true`
+ * (`clear-aurora-board.ts` relies on the same marker). An Aurora climb can
+ * have an owner too: a draft the user sync imported from a linked account is
+ * stamped with that account, because a draft is returned to its owner alone,
+ * and the owner backfill assigns older ones. It is still Aurora's climb, so its
+ * flags follow upstream like any catalogue row's. Without that an imported
+ * draft could never be published here, and an upstream delist of a climb that
+ * has an owner would never arrive.
+ *
+ * `user_id` is not in this policy, so nothing here can clear an owner. An
+ * imported draft keeps its owner when upstream publishes it: a published,
+ * listed climb is public whoever owns it.
  */
 export function climbListingConflictSet() {
   const climbsSchema = UNIFIED_TABLES.climbs;
+  const upstreamOwnsFlags = sql`(${climbsSchema.userId} IS NULL OR ${climbsSchema.synced})`;
   return {
-    isDraft: sql`CASE WHEN ${climbsSchema.userId} IS NULL THEN excluded.is_draft ELSE ${climbsSchema.isDraft} END`,
-    isListed: sql`CASE WHEN ${climbsSchema.userId} IS NULL THEN excluded.is_listed ELSE ${climbsSchema.isListed} END`,
+    isDraft: sql`CASE WHEN ${upstreamOwnsFlags} THEN excluded.is_draft ELSE ${climbsSchema.isDraft} END`,
+    isListed: sql`CASE WHEN ${upstreamOwnsFlags} THEN excluded.is_listed ELSE ${climbsSchema.isListed} END`,
   };
 }
 
@@ -849,12 +867,15 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
   //   - USER climbs (user_id set — Boardsesh-created): flags are preserved on
   //     conflict. A Boardsesh climb is never synced through this path, but the
   //     ownership guard protects it belt-and-suspenders if a UUID ever collides.
+  //   - AURORA climbs that have an owner (a draft the user sync imported from
+  //     a linked account, `synced` and stamped with that account): Aurora's own
+  //     climb, so its flags are verbatim as well. The owner stays.
   // Everything else (frames/edges/setter/layout/angle) is preserved on
   // conflict — Aurora seeds these on insert, but we don't trust remote
   // re-edits to overwrite our copy.
   const climbSet = {
-    // is_draft/is_listed: verbatim for catalog rows, preserved for user
-    // climbs. See climbListingConflictSet.
+    // is_draft/is_listed: verbatim for every Aurora row, preserved for climbs
+    // minted in Boardsesh. See climbListingConflictSet.
     ...climbListingConflictSet(),
     name: sql`excluded.name`,
     description: sql`excluded.description`,

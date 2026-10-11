@@ -1,6 +1,6 @@
 import { userSync } from '../api/user-sync-api';
 import { type SyncOptions, type UserSyncData, type AuroraBoardName, USER_TABLES } from '../api/types';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql, type SQL } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import {
@@ -219,6 +219,36 @@ async function selectCircuitOwnerDecision(
 }
 
 /**
+ * Conflict policy for `board_climbs.user_id` on the draft import. An owner
+ * already on the row always stays: a re-import, a run with no Boardsesh account
+ * behind it, or a second Boardsesh account linked to the same manufacturer
+ * account can none of them clear it or take the draft over. A row with no owner
+ * takes the importing account, which is how a draft imported before this stamp
+ * existed gets one the next time upstream re-sends it. Exported for tests.
+ */
+export function draftClimbOwnerConflictSql(): SQL {
+  const climbsSchema = UNIFIED_TABLES.climbs;
+  return sql`COALESCE(${climbsSchema.userId}, excluded.user_id)`;
+}
+
+/**
+ * Which stored rows the draft import may write over: drafts, and nothing else.
+ *
+ * A uuid in a `draft_climbs` page can already be stored as a published climb:
+ * the catalogue sync published it first, or its owner published it in
+ * Boardsesh. Writing the draft over it would take a public climb back to a
+ * draft, replace its holds under the climbers who have it, and, for a climb
+ * nobody owned, hand it to the importing account. The page only says what the
+ * draft looked like; whether the climb is published is the catalogue sync's to
+ * say, and it takes a climb back to a draft when upstream does
+ * (`climbListingConflictSet`). Exported for tests.
+ */
+export function draftClimbConflictWhere(): SQL {
+  const climbsSchema = UNIFIED_TABLES.climbs;
+  return sql`${climbsSchema.isDraft} IS TRUE`;
+}
+
+/**
  * Exported for unit tests: the circuits branch carries the duplicate-account
  * ownership guard (#3526) and there is no other seam to drive it through
  * without a live Aurora API.
@@ -322,14 +352,18 @@ export async function upsertTableData(
           createdAt: item.created_at || new Date().toISOString(),
           synced: true,
           syncError: null,
-          userId: null,
+          // A draft is returned to its owner alone, and a draft with no owner
+          // to no one, so the import stamps the Boardsesh account it runs for.
+          userId: nextAuthUserId || null,
         }));
         await db
           .insert(climbsSchema)
           .values(values)
           .onConflictDoUpdate({
             target: climbsSchema.uuid,
+            setWhere: draftClimbConflictWhere(),
             set: {
+              userId: draftClimbOwnerConflictSql(),
               layoutId: sql`excluded.layout_id`,
               setterId: sql`excluded.setter_id`,
               setterUsername: sql`excluded.setter_username`,
