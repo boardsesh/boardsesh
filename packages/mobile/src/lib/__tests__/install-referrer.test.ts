@@ -304,6 +304,25 @@ it('caches attribution while denied and publishes once after a later effective g
   expect(analytics.track).toHaveBeenCalledOnce();
   expect(analytics.setPersonProperties).toHaveBeenCalledOnce();
 });
+it('caches attribution on the region default and publishes only after an explicit Allow', async () => {
+  const { updateConsentState, getConsentSnapshot } = await import('../consent-state');
+  // Analytics is on (outside the prompt regions, confirmed this launch), but not by the climber's own Allow.
+  updateConsentState({ record: { ...getConsentSnapshot().record!, basis: 'region_default' }, regionConfirmed: true });
+  const fetchNative = vi.fn(async () => ({
+    installReferrer: 'utm_source=gym&utm_campaign=pilot',
+    referrerClickTimestampSeconds: 100,
+    installBeginTimestampSeconds: 200,
+  }));
+  await maybeFetchAndAttachInstallReferrer(fetchNative);
+  expect(analytics.track).not.toHaveBeenCalled();
+  expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  expect(preferenceStore.values.has('installReferrerPublished')).toBe(false);
+
+  grantAnalyticsForTest();
+  await maybeFetchAndAttachInstallReferrer(fetchNative);
+  expect(analytics.track).toHaveBeenCalledOnce();
+  expect(analytics.setPersonProperties).toHaveBeenCalledOnce();
+});
 it('a native referrer fetch finishing after withdrawal never publishes', async () => {
   let finishFetch:
     | ((result: {

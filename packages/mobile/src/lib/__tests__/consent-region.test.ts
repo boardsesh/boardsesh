@@ -1,13 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET_CONSENT_REGION } from '@boardsesh/graphql/operations/analytics-consent';
 
-const { request } = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('../graphql/client', () => ({ getHttpClient: () => ({ request }) }));
+const { request, client } = vi.hoisted(() => ({ request: vi.fn(), client: { throws: false } }));
+vi.mock('../graphql/client', () => ({
+  getHttpClient: () => {
+    if (client.throws) throw new Error('no backend URL');
+    return { request };
+  },
+}));
 
-import { CONSENT_REGION_WAIT_MS, lookUpConsentRegion, resetConsentRegionLookup } from '../consent-region';
+import {
+  CONSENT_REGION_MAX_AGE_MS,
+  CONSENT_REGION_WAIT_MS,
+  expireConsentRegionLookup,
+  isGlobalPrivacyControlEnabled,
+  lookUpConsentRegion,
+  resetConsentRegionLookup,
+} from '../consent-region';
 
 beforeEach(() => {
   request.mockReset();
+  client.throws = false;
   resetConsentRegionLookup();
 });
 afterEach(() => {
@@ -57,5 +70,69 @@ describe('lookUpConsentRegion', () => {
     await vi.advanceTimersByTimeAsync(1);
     await expect(lookup).resolves.toBeNull();
     expect(signal?.aborted).toBe(true);
+  });
+});
+
+describe('expireConsentRegionLookup', () => {
+  it('keeps a fresh answer and asks again once it is a day old', async () => {
+    request.mockResolvedValue({ consentRegion: { countryCode: 'US', promptRequired: false } });
+    const startedAt = Date.now();
+    await lookUpConsentRegion();
+    expect(expireConsentRegionLookup(startedAt + CONSENT_REGION_MAX_AGE_MS - 1)).toBe(false);
+    await lookUpConsentRegion();
+    expect(request).toHaveBeenCalledOnce();
+
+    expect(expireConsentRegionLookup(startedAt + CONSENT_REGION_MAX_AGE_MS)).toBe(true);
+    request.mockResolvedValue({ consentRegion: { countryCode: 'DE', promptRequired: true } });
+    await expect(lookUpConsentRegion()).resolves.toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed lookup on the next resume, but never one still in flight', async () => {
+    let fail!: (error: Error) => void;
+    request.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const pending = lookUpConsentRegion();
+    expect(expireConsentRegionLookup()).toBe(false);
+    fail(new Error('offline'));
+    await expect(pending).resolves.toBeNull();
+    expect(expireConsentRegionLookup()).toBe(true);
+  });
+});
+
+describe('lookUpConsentRegion failures', () => {
+  it('reports unknown when the HTTP client cannot be built, instead of rejecting', async () => {
+    client.throws = true;
+    await expect(lookUpConsentRegion()).resolves.toBeNull();
+  });
+});
+
+describe('isGlobalPrivacyControlEnabled', () => {
+  it('is off in the native app, which sends no Sec-GPC', async () => {
+    request.mockResolvedValue({
+      consentRegion: { countryCode: 'US', promptRequired: false, globalPrivacyControl: false },
+    });
+    await lookUpConsentRegion();
+    expect(isGlobalPrivacyControlEnabled()).toBe(false);
+  });
+
+  it('follows the Sec-GPC header the backend saw from the browser app', async () => {
+    request.mockResolvedValue({
+      consentRegion: { countryCode: 'US', promptRequired: false, globalPrivacyControl: true },
+    });
+    await lookUpConsentRegion();
+    expect(isGlobalPrivacyControlEnabled()).toBe(true);
+  });
+
+  it('follows navigator.globalPrivacyControl in a browser', () => {
+    vi.stubGlobal('navigator', { globalPrivacyControl: true });
+    try {
+      expect(isGlobalPrivacyControlEnabled()).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

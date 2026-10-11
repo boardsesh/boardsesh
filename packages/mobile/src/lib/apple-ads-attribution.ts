@@ -7,7 +7,7 @@ import {
 import type { ConsentRecord } from '@boardsesh/consent';
 import { getAppleAdsAttributionToken } from '../../modules/apple-ads-attribution/src';
 import { capture, getAnalyticsIdentity, setPersonProperties } from './analytics';
-import { getConsentSnapshot, isConsentAuthorityGranted, isProductAnalyticsGranted } from './consent-state';
+import { getConsentSnapshot, isAttributionAuthorityGranted, isAttributionPublicationGranted } from './consent-state';
 import { getHttpClient } from './graphql/client';
 import { getPreference, setPreference } from './preference-store';
 import { getVerifiedAuthResult } from './verified-auth-result';
@@ -33,8 +33,9 @@ export async function exchangeAppleAdsAttribution(
   try {
     const response = await getHttpClient().request<{ exchangeAppleAdsAttribution: AppleAdsAttributionResult }>({
       document: EXCHANGE_APPLE_ADS_ATTRIBUTION,
-      // Name the four wire fields: device-only fields such as `basis` are not
-      // part of AppleAdsConsentInput and would fail GraphQL validation.
+      // Name the wire fields: device-only fields such as `ownerAccountId` are
+      // not part of AppleAdsConsentInput and would fail GraphQL validation.
+      // `basis` lets the backend refuse anything but the climber's own Allow.
       variables: {
         token,
         consent: {
@@ -42,6 +43,7 @@ export async function exchangeAppleAdsAttribution(
           version: consent.version,
           source: consent.source,
           decidedAt: consent.decidedAt,
+          basis: consent.basis ?? 'explicit',
         },
       },
       signal,
@@ -82,7 +84,7 @@ function publishAppleAdsAttribution(
 ): boolean {
   const result = record.result;
   if (
-    !isProductAnalyticsGranted() ||
+    !isAttributionPublicationGranted() ||
     getAnalyticsIdentity()?.distinctId !== distinctId ||
     (result?.status !== 'ATTRIBUTED' && result?.status !== 'UNATTRIBUTED')
   )
@@ -102,7 +104,7 @@ function publishAppleAdsAttribution(
     apple_ads_supply_placement: attribution?.supplyPlacement ?? undefined,
   };
   if (!setPersonProperties(undefined, properties)) return false;
-  if (!isProductAnalyticsGranted() || getAnalyticsIdentity()?.distinctId !== distinctId) return false;
+  if (!isAttributionPublicationGranted() || getAnalyticsIdentity()?.distinctId !== distinctId) return false;
   return (
     !emitEvent ||
     capture('Install Attributed', properties, {
@@ -139,8 +141,9 @@ export function createNativeAppleAdsAttributionController() {
       const snapshot = getConsentSnapshot();
       return snapshot.authSettled && snapshot.accountResolved ? snapshot.accountId : null;
     },
-    authorityGranted: isConsentAuthorityGranted,
-    publicationGranted: isProductAnalyticsGranted,
+    // Attribution needs the climber's own Allow: the region default never enables it.
+    authorityGranted: isAttributionAuthorityGranted,
+    publicationGranted: isAttributionPublicationGranted,
     identity: getAnalyticsIdentity,
     read: () => getPreference<unknown>(APPLE_ADS_ATTRIBUTION_STORAGE_KEY, { strictParsing: true }),
     write: (record) => setPreference(APPLE_ADS_ATTRIBUTION_STORAGE_KEY, record),

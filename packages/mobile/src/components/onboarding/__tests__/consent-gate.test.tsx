@@ -4,6 +4,7 @@ import { createRegionDefaultConsent, type ConsentRecord, type ConsentSource } fr
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getConsentSnapshot,
+  isConsentAuthorityGranted,
   isProductAnalyticsGranted,
   setBrowserConsentReader,
   updateConsentState,
@@ -29,7 +30,12 @@ const coordinator = vi.hoisted(() => ({
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
 const posthog = vi.hoisted(() => ({ setFlagIdentity: vi.fn(), subscribeInitialized: vi.fn(() => () => {}) }));
 // promptRequired from the backend: true (e.g. DE), false (e.g. US), null (unknown or failed).
-const region = vi.hoisted(() => ({ lookup: vi.fn<() => Promise<boolean | null>>() }));
+const region = vi.hoisted(() => ({
+  lookup: vi.fn<() => Promise<boolean | null>>(),
+  // True when a resume finds the last answer stale (a day old, or failed).
+  expire: vi.fn<() => boolean>(),
+  globalPrivacyControl: false,
+}));
 const regionDefault = vi.hoisted(() => ({
   apply: vi.fn<(source: ConsentSource) => void>(),
   clear: vi.fn<() => void>(),
@@ -72,13 +78,17 @@ vi.mock('../../../providers/consent-provider', async () => {
   };
 });
 vi.mock('../../../lib/consent-storage', () => ({ readLocalConsent: localConsent.read }));
-vi.mock('../../../lib/consent-region', () => ({ lookUpConsentRegion: region.lookup }));
+vi.mock('../../../lib/consent-region', () => ({
+  lookUpConsentRegion: region.lookup,
+  expireConsentRegionLookup: region.expire,
+  isGlobalPrivacyControlEnabled: () => region.globalPrivacyControl,
+}));
 vi.mock('../../../lib/posthog-client', () => ({
   setPosthogFlagIdentity: posthog.setFlagIdentity,
   subscribePosthogInitialized: posthog.subscribeInitialized,
 }));
 
-import { ConsentGate } from '../ConsentGate';
+import { ConsentGate, resetRegionDefaultGuard } from '../ConsentGate';
 
 const granted: ConsentRecord = {
   analytics: 'granted',
@@ -100,6 +110,9 @@ beforeEach(() => {
   coordinator.snapshot = { accountResolved: true, syncing: false };
   coordinator.sync.mockReset().mockResolvedValue(undefined);
   region.lookup.mockReset().mockResolvedValue(true);
+  region.expire.mockReset().mockReturnValue(false);
+  region.globalPrivacyControl = false;
+  resetRegionDefaultGuard();
   localConsent.read.mockReset().mockImplementation(async () => getConsentSnapshot().record);
   setBrowserConsentReader(() => getConsentSnapshot().record);
   updateConsentState({
@@ -113,6 +126,7 @@ beforeEach(() => {
     accountId: null,
     sdkReady: false,
     flagsResolved: false,
+    regionConfirmed: false,
   });
   consumeConsentDestination();
 });
@@ -243,8 +257,9 @@ describe('ConsentGate', () => {
     expect(getConsentSnapshot().settled).toBe(false);
     expect(router.push).not.toHaveBeenCalled();
 
-    // The id arrives and the account has no answer of its own: ask.
+    // The id arrives and the account read finds no answer of its own: ask.
     profile.authenticatedUserId = 'account-a';
+    coordinator.snapshot = { accountResolved: true, syncing: false };
     coordinator.sync.mockResolvedValue(undefined);
     await act(async () => {
       updateConsentState({ record: null, accountResolved: true });
@@ -401,8 +416,9 @@ describe('ConsentGate regions', () => {
     region.lookup.mockResolvedValue(false);
     auth.isAuthenticated = true;
     profile.authenticatedUserId = 'account-a';
+    coordinator.snapshot = { accountResolved: false, syncing: true };
     coordinator.sync.mockImplementation(async () => {
-      updateConsentState({ record: { ...granted, analytics: 'denied' } });
+      updateConsentState({ record: { ...granted, analytics: 'denied' }, accountResolved: true });
     });
     render(<ConsentGate />);
     await flushEffects();
@@ -434,7 +450,7 @@ describe('ConsentGate regions', () => {
     expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
   });
 
-  it('keeps a region default when an offline launch cannot tell the region', async () => {
+  it('keeps a region default when an offline launch cannot tell the region, but sends nothing', async () => {
     region.lookup.mockResolvedValue(null);
     updateConsentState({ record: createRegionDefaultConsent('android') });
     render(<ConsentGate />);
@@ -443,6 +459,161 @@ describe('ConsentGate regions', () => {
     expect(regionDefault.clear).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
     expect(getConsentSnapshot().settled).toBe(true);
+    expect(getConsentSnapshot().regionConfirmed).toBe(false);
+    expect(isConsentAuthorityGranted()).toBe(false);
+  });
+
+  it('sends nothing on a stored region default until this launch confirms the region', async () => {
+    let answer!: (promptRequired: boolean | null) => void;
+    region.lookup.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    updateConsentState({ record: createRegionDefaultConsent('ios') });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    // Settled (no prompt, deep links proceed), but the default is not "on" yet.
+    expect(getConsentSnapshot().settled).toBe(true);
+    expect(isConsentAuthorityGranted()).toBe(false);
+    expect(isProductAnalyticsGranted()).toBe(false);
+
+    await act(async () => {
+      answer(false);
+    });
+    await flushEffects();
+    expect(getConsentSnapshot().regionConfirmed).toBe(true);
+    expect(isConsentAuthorityGranted()).toBe(true);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('confirms a region default it just applied, so a fresh install outside Europe tracks', async () => {
+    region.lookup.mockResolvedValue(false);
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(regionDefault.apply).toHaveBeenCalledOnce();
+    expect(isConsentAuthorityGranted()).toBe(true);
+  });
+
+  it('re-checks the region on a resume once the last answer is stale, and asks in a prompt region', async () => {
+    region.lookup.mockResolvedValue(false);
+    updateConsentState({ record: createRegionDefaultConsent('ios') });
+    render(<ConsentGate />);
+    await flushEffects();
+    expect(region.lookup).toHaveBeenCalledTimes(1);
+    expect(isConsentAuthorityGranted()).toBe(true);
+
+    // A resume within a day reuses the answer.
+    await act(async () => {
+      for (const listener of [...appState.listeners]) listener('active');
+    });
+    await flushEffects();
+    expect(region.lookup).toHaveBeenCalledTimes(1);
+
+    // A day later, now in Germany: capture holds while it asks, then the default goes.
+    let answer!: (promptRequired: boolean | null) => void;
+    region.lookup.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    region.expire.mockReturnValue(true);
+    await act(async () => {
+      for (const listener of [...appState.listeners]) listener('active');
+    });
+    await flushEffects();
+    expect(region.lookup).toHaveBeenCalledTimes(2);
+    expect(isConsentAuthorityGranted()).toBe(false);
+
+    await act(async () => {
+      answer(true);
+    });
+    await flushEffects();
+    expect(regionDefault.clear).toHaveBeenCalledOnce();
+    expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
+    expect(isConsentAuthorityGranted()).toBe(false);
+  });
+
+  it('applies the region default once per launch even when an account read drops it', async () => {
+    region.lookup.mockResolvedValue(false);
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'account-a';
+    render(<ConsentGate />);
+    await flushEffects();
+    expect(regionDefault.apply).toHaveBeenCalledOnce();
+
+    // Something (an older merge rule) clears the default after the account read.
+    await act(async () => {
+      updateConsentState({ record: null, accountResolved: true });
+    });
+    await flushEffects();
+    expect(regionDefault.apply).toHaveBeenCalledOnce();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(getConsentSnapshot().settled).toBe(true);
+    expect(isConsentAuthorityGranted()).toBe(false);
+  });
+
+  it('holds tracking on a default applied at the five-second cap until the account read, then lets a denial win', async () => {
+    vi.useFakeTimers();
+    region.lookup.mockResolvedValue(false);
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'account-a';
+    coordinator.snapshot = { accountResolved: false, syncing: true };
+    let finishRead!: () => void;
+    coordinator.sync.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    render(<ConsentGate />);
+    await flushEffects();
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(regionDefault.apply).toHaveBeenCalledOnce();
+    expect(getConsentSnapshot().regionConfirmed).toBe(true);
+    expect(getConsentSnapshot().accountResolved).toBe(false);
+    expect(isConsentAuthorityGranted()).toBe(false);
+
+    await act(async () => {
+      updateConsentState({
+        record: { ...granted, analytics: 'denied', ownerAccountId: 'account-a' },
+        accountResolved: true,
+      });
+      finishRead();
+    });
+    await flushEffects();
+    expect(getConsentSnapshot().record?.analytics).toBe('denied');
+    expect(isConsentAuthorityGranted()).toBe(false);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('treats Global Privacy Control as a no on the browser app: no default, no prompt', async () => {
+    region.lookup.mockResolvedValue(false);
+    region.globalPrivacyControl = true;
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(getConsentSnapshot().settled).toBe(true);
+    expect(isConsentAuthorityGranted()).toBe(false);
+  });
+
+  it('drops a stored region default under Global Privacy Control', async () => {
+    region.lookup.mockResolvedValue(false);
+    region.globalPrivacyControl = true;
+    updateConsentState({ record: createRegionDefaultConsent('web') });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(regionDefault.clear).toHaveBeenCalledOnce();
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it('never looks up the region in screenshot mode', async () => {

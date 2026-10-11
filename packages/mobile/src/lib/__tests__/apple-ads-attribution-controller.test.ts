@@ -49,6 +49,7 @@ function fixture(accountId: string | null = OWNER, cache: unknown = null) {
     accountId,
     sdkReady: true,
     flagsResolved: true,
+    regionConfirmed: true,
     record: { analytics: 'granted', version: 1, source: 'ios', decidedAt: '2026-10-10T07:59:00Z' },
   };
   const authority = () =>
@@ -110,6 +111,22 @@ describe('Apple Ads attribution lifecycle', () => {
     expect(harness.dependencies.token).not.toHaveBeenCalled();
     expect(harness.dependencies.exchange).not.toHaveBeenCalled();
     expect(harness.dependencies.publish).not.toHaveBeenCalled();
+  });
+
+  it('never acquires a token on the region default, only after an explicit Allow', async () => {
+    const harness = fixture();
+    harness.snapshot.record = { ...harness.snapshot.record!, basis: 'region_default' };
+    const controller = createAppleAdsAttributionController(harness.dependencies);
+    await controller.reconcile();
+    expect(harness.dependencies.token).not.toHaveBeenCalled();
+    expect(harness.dependencies.exchange).not.toHaveBeenCalled();
+    expect(harness.dependencies.publish).not.toHaveBeenCalled();
+
+    harness.allow();
+    harness.snapshot.record = { analytics: 'granted', version: 1, source: 'ios', decidedAt: '2026-10-10T08:02:00Z' };
+    await controller.reconcile();
+    expect(harness.dependencies.exchange).toHaveBeenCalledOnce();
+    expect(harness.dependencies.publish).toHaveBeenCalledOnce();
   });
 
   it('persists normalized attribution, publishes once, and never stores a token', async () => {

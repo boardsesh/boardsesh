@@ -1,4 +1,10 @@
-import { isAnalyticsGranted, needsPrompt, type ConsentRecord, type DeviceConsentRecord } from '@boardsesh/consent';
+import {
+  isAnalyticsGranted,
+  isRegionDefaultConsent,
+  needsPrompt,
+  type ConsentRecord,
+  type DeviceConsentRecord,
+} from '@boardsesh/consent';
 
 export type MobileConsentSnapshot = {
   /** The device answer; `ownerAccountId` says which account it was given under (none when signed out). */
@@ -12,6 +18,13 @@ export type MobileConsentSnapshot = {
   accountId: string | null;
   sdkReady: boolean;
   flagsResolved: boolean;
+  /**
+   * This launch's region lookup said the prompt is not needed here. A stored
+   * region default counts as "on" only once it has, so it sends nothing before
+   * the lookup answers, and nothing when the lookup fails. Reset when a long
+   * background makes the answer stale (see ConsentGate).
+   */
+  regionConfirmed: boolean;
 };
 
 let snapshot: MobileConsentSnapshot = {
@@ -25,6 +38,7 @@ let snapshot: MobileConsentSnapshot = {
   accountId: null,
   sdkReady: false,
   flagsResolved: false,
+  regionConfirmed: false,
 };
 const listeners = new Set<() => void>();
 let readBrowserConsent: (() => ConsentRecord | null) | null = null;
@@ -90,10 +104,23 @@ export function isConsentAuthorityGranted(): boolean {
     snapshot.flagsResolved &&
     snapshot.authSettled &&
     snapshot.accountResolved &&
-    isAnalyticsGranted(snapshot.record)
+    isAnalyticsGranted(snapshot.record) &&
+    (!isRegionDefaultConsent(snapshot.record) || snapshot.regionConfirmed)
   );
 }
 
 export function isProductAnalyticsGranted(): boolean {
   return isConsentAuthorityGranted() && snapshot.sdkReady;
+}
+
+/**
+ * Install attribution (Apple Ads, the Play install referrer) needs the
+ * climber's own Allow everywhere. The region default does not turn it on.
+ */
+export function isAttributionAuthorityGranted(): boolean {
+  return isConsentAuthorityGranted() && !isRegionDefaultConsent(snapshot.record);
+}
+
+export function isAttributionPublicationGranted(): boolean {
+  return isProductAnalyticsGranted() && !isRegionDefaultConsent(snapshot.record);
 }

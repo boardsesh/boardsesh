@@ -2,7 +2,7 @@ import { installReferrerNative, type NativeInstallReferrerResult } from '../../m
 import { setPersonProperties, track } from './analytics';
 import { reportError } from './error-reporting';
 import { getPreference, setPreference } from './preference-store';
-import { isProductAnalyticsGranted } from './consent-state';
+import { isAttributionPublicationGranted } from './consent-state';
 
 // Android-only: Play Install Referrer is a Play Store mechanism with no iOS
 // equivalent in this PR (an iOS equivalent — SKAdNetwork / Apple Search Ads
@@ -112,13 +112,17 @@ export async function maybeFetchAndAttachInstallReferrer(
 }
 
 let publicationInFlight = false;
+/**
+ * Publishes only after the climber's own Allow: install attribution is not
+ * part of the region default outside the prompt regions.
+ */
 export async function publishStoredInstallReferrer(): Promise<void> {
-  if (!isProductAnalyticsGranted() || publicationInFlight) return;
+  if (!isAttributionPublicationGranted() || publicationInFlight) return;
   publicationInFlight = true;
   try {
     if (await getPreference<boolean>(INSTALL_REFERRER_PUBLISHED_KEY)) return;
     const result = await getPreference<NativeInstallReferrerResult>(INSTALL_REFERRER_RESULT_KEY);
-    if (!result || !isProductAnalyticsGranted()) return;
+    if (!result || !isAttributionPublicationGranted()) return;
     const parsed = parseInstallReferrer(result.installReferrer);
     const installChannel = classifyInstallChannel(parsed);
     // Person properties are written for every install, whatever its channel —

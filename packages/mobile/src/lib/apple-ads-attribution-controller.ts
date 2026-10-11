@@ -1,4 +1,4 @@
-import { isAnalyticsGranted, type ConsentRecord } from '@boardsesh/consent';
+import { isAnalyticsGranted, isRegionDefaultConsent, type ConsentRecord } from '@boardsesh/consent';
 import {
   normalizeAppleAdsAttributionPayload,
   type AppleAdsAttributionResult,
@@ -84,6 +84,12 @@ export function parseStoredAppleAdsAttribution(candidate: unknown): StoredAppleA
 
 /** One bounded worker, with synchronous cancellation and serialized disk writes. */
 export function createAppleAdsAttributionController(dependencies: AppleAdsAttributionDependencies) {
+  // Attribution needs the climber's own Allow everywhere. The region default
+  // that turns analytics on outside the prompt regions never enables it, even
+  // when a caller's authority check would let it through.
+  const explicitAllow = () => !isRegionDefaultConsent(dependencies.snapshot().record);
+  const authorityGranted = () => dependencies.authorityGranted() && explicitAllow();
+  const publicationGranted = () => dependencies.publicationGranted() && explicitAllow();
   let stored: StoredAppleAdsAttribution | null = null;
   let loaded = false;
   let disposed = false;
@@ -133,7 +139,7 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
       consentStamp = snapshot.record?.decidedAt;
       retryAt = 0;
     }
-    if (!dependencies.authorityGranted()) cancel();
+    if (!authorityGranted()) cancel();
     if (!stored) return;
     const denied = snapshot.loaded && (snapshot.killed || !isAnalyticsGranted(snapshot.record));
     const verifiedAccountId = dependencies.verifiedAccountId();
@@ -163,7 +169,7 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
   }
 
   function current(capturedGeneration: number): boolean {
-    return !disposed && generation === capturedGeneration && dependencies.authorityGranted();
+    return !disposed && generation === capturedGeneration && authorityGranted();
   }
 
   function eligibleOwner(): boolean {
@@ -175,12 +181,11 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
   }
 
   async function publish(): Promise<void> {
-    if (!stored?.result || stored.result.status === 'TEST' || !eligibleOwner() || !dependencies.publicationGranted())
-      return;
+    if (!stored?.result || stored.result.status === 'TEST' || !eligibleOwner() || !publicationGranted()) return;
     // Publication requires the ownership lock to survive a process restart.
     // A previous failed write must not become permission to publish in memory.
     await persist();
-    if (!stored?.result || !eligibleOwner() || !dependencies.publicationGranted()) return;
+    if (!stored?.result || !eligibleOwner() || !publicationGranted()) return;
     const identity = dependencies.identity();
     if (!identity) return;
     const expectedId = stored.ownerId ?? identity.anonymousId;
@@ -202,7 +207,7 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
     }
     observeAuthority();
     if (persistencePending) await writes;
-    if (disposed || !dependencies.authorityGranted()) return;
+    if (disposed || !authorityGranted()) return;
     if (!stored) {
       stored = {
         version: 1,
@@ -217,7 +222,7 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
       await persist();
     }
     observeAuthority();
-    if (!eligibleOwner() || !dependencies.authorityGranted()) return;
+    if (!eligibleOwner() || !authorityGranted()) return;
     if (stored.result) {
       await publish();
       return;

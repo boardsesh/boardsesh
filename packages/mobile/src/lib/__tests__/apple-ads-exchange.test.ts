@@ -7,8 +7,8 @@ vi.mock('../../../modules/apple-ads-attribution/src', () => ({ getAppleAdsAttrib
 vi.mock('../analytics', () => ({ capture: vi.fn(), getAnalyticsIdentity: vi.fn(), setPersonProperties: vi.fn() }));
 vi.mock('../consent-state', () => ({
   getConsentSnapshot: vi.fn(),
-  isConsentAuthorityGranted: vi.fn(),
-  isProductAnalyticsGranted: vi.fn(),
+  isAttributionAuthorityGranted: vi.fn(),
+  isAttributionPublicationGranted: vi.fn(),
 }));
 vi.mock('../preference-store', () => ({ getPreference: vi.fn(), setPreference: vi.fn() }));
 vi.mock('../verified-auth-result', () => ({ getVerifiedAuthResult: vi.fn() }));
@@ -74,15 +74,27 @@ describe('Apple Ads mobile transport boundary', () => {
 });
 
 describe('Apple Ads consent variables', () => {
-  it('sends only the four AppleAdsConsentInput fields, never device-only ones', async () => {
+  it('sends the AppleAdsConsentInput fields with the basis, never device-only ones', async () => {
     request.mockReset().mockResolvedValue({
       exchangeAppleAdsAttribution: { status: 'UNATTRIBUTED', attribution: null },
+    });
+    await exchangeAppleAdsAttribution(
+      'SENSITIVE_TOKEN',
+      { ...consent, ownerAccountId: 'account-a', basedOnDecidedAt: null } as typeof consent,
+      new AbortController().signal,
+    );
+    expect(request.mock.calls[0]?.[0].variables.consent).toEqual({ ...consent, basis: 'explicit' });
+  });
+
+  it('names a region default so the backend can refuse it', async () => {
+    request.mockReset().mockResolvedValue({
+      exchangeAppleAdsAttribution: { status: 'CONSENT_REQUIRED', attribution: null },
     });
     await exchangeAppleAdsAttribution(
       'SENSITIVE_TOKEN',
       { ...consent, basis: 'region_default' },
       new AbortController().signal,
     );
-    expect(request.mock.calls[0]?.[0].variables.consent).toEqual(consent);
+    expect(request.mock.calls[0]?.[0].variables.consent).toEqual({ ...consent, basis: 'region_default' });
   });
 });
