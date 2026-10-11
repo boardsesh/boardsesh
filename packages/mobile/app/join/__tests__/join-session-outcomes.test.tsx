@@ -54,6 +54,10 @@ const preview = vi.hoisted(() => ({
 // Every Button's onPress in render order; the confirmation card's first is Join.
 const buttons = vi.hoisted(() => ({ presses: [] as Array<() => void> }));
 
+vi.mock('../../../src/components/privacy/RequestResourceAccess', () => ({ RequestResourceAccess: () => null }));
+vi.mock('../../../src/components/launch-update/hold-until-launch-ready', () => ({
+  holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
+}));
 vi.mock('../../../src/lib/analytics', () => ({ track: analytics.track }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -114,7 +118,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 vi.mock('../../../src/lib/board-path-to-user-board', () => ({
   resolveBoardForSession: vi.fn(async () => ({ uuid: 'board-1', boardType: 'kilter', layoutId: 1 })),
 }));
-vi.mock('../../../src/theme/tokens', () => ({ spacing: {}, borderRadius: {} }));
+vi.mock('../../../src/theme/tokens', () => ({ spacing: {}, cardCorners: {} }));
 
 import JoinSessionScreen from '../[sessionId]';
 
