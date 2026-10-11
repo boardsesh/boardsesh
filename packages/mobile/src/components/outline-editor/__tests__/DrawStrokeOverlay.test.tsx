@@ -546,7 +546,6 @@ describe('Pencil surface opt-ins', () => {
   });
 });
 
-
 it('stops UI-thread samples after Undo and resumes only with a fresh stroke', () => {
   const active = shared(false);
   const stroke = mount(false, false, { strokeLiveSV: active });
