@@ -531,11 +531,11 @@ const LiveClimbAttributeIcons = React.memo(function LiveClimbAttributeIcons({
     qualityAverage: climb.quality_average,
     difficulty: climb.difficulty,
   });
-  const resolvedGrade = resolveGrade({ ...climb, difficulty: liveStats.difficulty });
+  const resolvedGrade = resolveGrade({ ...climb, difficulty: liveStats.difficulty }, boardName);
   // Match LiveClimbGrade's primary selection exactly. A crowd-versus-setter
   // delta is misleading if the row instead puts a personal grade first.
   const myGrade = useMyGrade(climb.uuid, angle, { rowDifficulty: climb.myDifficulty });
-  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat, boardName) : null;
   const derived = derivePersonalGradeDisplay(mine?.label ?? null, resolvedGrade.label);
   const showsMine = isPersonalGradePrimary(derived, gradeIsConsensus, consensusGrade) && mine !== null;
   // `difficulty_error` was measured against the row's original display grade.

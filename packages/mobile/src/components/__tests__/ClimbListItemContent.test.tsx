@@ -148,12 +148,20 @@ vi.mock('../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: string }) =>
     createElement('i', { 'data-icon': name, 'data-color': color }),
 }));
-vi.mock('../ClimbAttributeIcons', () => ({
-  ClimbAttributeIcons: ({ difficultyError }: { difficultyError?: string | number | null }) =>
-    difficultyError == null
-      ? null
-      : createElement('span', { 'data-testid': 'climb-grade-error' }, String(difficultyError)),
-}));
+vi.mock('../ClimbAttributeIcons', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../ClimbAttributeIcons')>();
+  return {
+    ClimbAttributeIcons: (props: Parameters<typeof actual.ClimbAttributeIcons>[0]) =>
+      createElement(
+        'div',
+        null,
+        createElement(actual.ClimbAttributeIcons, props),
+        props.difficultyError == null
+          ? null
+          : createElement('span', { 'data-testid': 'climb-grade-error' }, String(props.difficultyError)),
+      ),
+  };
+});
 vi.mock('../ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () => null }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
@@ -310,7 +318,7 @@ describe('ClimbListItemContent grade-error badge', () => {
       for (const listener of liveStatsOverride.listeners) listener();
     });
 
-    expect(resolveGrade).toHaveBeenCalledWith(expect.objectContaining({ difficulty: '6c/V5' }));
+    expect(resolveGrade).toHaveBeenCalledWith(expect.objectContaining({ difficulty: '6c/V5' }), 'kilter');
     expect(gradeNode(container)?.textContent).toBe('V5');
     expect(queryByTestId('climb-grade-error')).toBeNull();
   });
@@ -330,6 +338,29 @@ describe('ClimbListItemContent grade-error badge', () => {
       />,
     );
     expect(gradeNode(container)?.textContent).toBe('V5');
+    expect(queryByTestId('climb-grade-error')).toBeNull();
+  });
+
+  it('uses MoonBoard mapping when suppressing a personal-grade badge', () => {
+    gradePreferenceOverride.boardseshActive = false;
+    resolveGrade.mockImplementation((_climb, boardName) => ({
+      label: boardName === 'moonboard' ? 'V4' : 'V4',
+      color: '#111111',
+      isBoardsesh: false,
+    }));
+    myGradeOverride.current = { status: 'set', difficultyId: 19, climbedAt: null };
+    const { queryByTestId, container } = render(
+      <ClimbListItemContent
+        climb={climbWithGradeError}
+        boardName="moonboard"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(gradeNode(container)?.textContent).toBe('V4+');
+    expect(resolveGrade.mock.calls.every(([, boardName]) => boardName === 'moonboard')).toBe(true);
     expect(queryByTestId('climb-grade-error')).toBeNull();
   });
 
