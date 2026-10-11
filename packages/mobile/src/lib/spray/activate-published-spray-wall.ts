@@ -18,7 +18,7 @@ export type ActivatePublishedSprayWallOptions = {
 export async function activatePublishedSprayWall(
   queryClient: QueryClient,
   wallUuid: string,
-  activateBoard: (board: UserBoard) => Promise<void>,
+  activateBoard: (board: UserBoard) => Promise<void | boolean>,
   { onStage, isLive }: ActivatePublishedSprayWallOptions = {},
 ): Promise<void> {
   onStage?.('fetch_board');
@@ -31,5 +31,6 @@ export async function activatePublishedSprayWall(
   queryClient.setQueryData(['board', wallUuid], { board });
   void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
   if (isLive && !isLive()) return;
-  await activateBoard(board);
+  const activated = await activateBoard(board);
+  if (activated === false) throw new Error('Published wall activation was cancelled');
 }

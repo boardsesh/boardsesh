@@ -95,6 +95,18 @@ describe('activating a published spray wall', () => {
     queryClient.clear();
   });
 
+  it('does not report a successful bind when the active-board generation cancels it', async () => {
+    const queryClient = new QueryClient();
+    request.mockResolvedValue({ board: privateBoard });
+    const activateBoard = vi.fn(async () => false);
+
+    await expect(activatePublishedSprayWall(queryClient, privateBoard.uuid, activateBoard)).rejects.toThrow(
+      'activation was cancelled',
+    );
+    expect(queryClient.getQueryData(['activeBoard'])).toBeUndefined();
+    queryClient.clear();
+  });
+
   it('does not activate a wall that disappeared after publication', async () => {
     const queryClient = new QueryClient();
     request.mockResolvedValue({ board: null });

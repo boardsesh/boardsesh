@@ -20,7 +20,7 @@ import { activatePublishedSprayWall } from './activate-published-spray-wall';
  * front of the toast overlay (the Boards modal route and the native board
  * sheet), which would hide it. Resolves whether the wall was opened.
  */
-export function useOpenSprayWall(activate: (board: UserBoard) => Promise<void>) {
+export function useOpenSprayWall(activate: (board: UserBoard) => Promise<void | boolean>) {
   const queryClient = useQueryClient();
   const { t } = useTranslation('boards');
   const inFlightRef = useRef(false);
