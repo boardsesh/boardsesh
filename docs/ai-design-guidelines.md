@@ -1040,8 +1040,9 @@ release velocity and retain the host's post-render handoff.
 On iOS, root screens use UIKit's collapsing large titles and automatic content
 insets. Controls pinned under that bar float over the list on iOS 26 and sit on a
 painted band elsewhere ("Controls pinned under the bar"). Native header controls
-use 44pt slots; floating controls keep their 48pt slots. A standalone avatar draws one circular background, while grouped bar items
-use UIKit's shared material. Home's scope selector scrolls with the feed, and the
+use 44pt slots; floating controls keep their 48pt slots. A standalone avatar draws
+one circular background, while grouped bar items use UIKit's shared material.
+Home's scope selector scrolls with the feed, and the
 on-wall climb capsule stays in the navigation bar's centre slot. Each tab's layout
 owns its localized title; opening a transparent drawer must not rewrite that
 title from the globally focused route. While the climb capsule is present, the

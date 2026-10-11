@@ -9,7 +9,11 @@ export const SCROLL_EDGE_SLACK = 2;
 
 type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
 
-/** Spread onto the list. None of them sets React state. */
+/**
+ * Spread onto the list. None of them sets React state. The last three take no
+ * argument because they read none: a handler with fewer parameters is still
+ * assignable to React Native's `(event) => void` props.
+ */
 export type ScrollEdgeListProps = {
   onScroll: (event: ScrollEvent) => void;
   onScrollBeginDrag: (event: ScrollEvent) => void;
