@@ -2,11 +2,15 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { GET } from '../route';
 
 /**
  * Sentinels stand in for the drizzle handles `@/app/lib/db/db` exports.
- * Authorization must use the primary: a replica can retain a withdrawn climb.
+ * Asserting on identity (not just "was called") is what actually pins the
+ * replica seam: `executeRows` accepts any drizzle instance, so a regression
+ * back to `dbz` (primary) would still "work" and only this test would catch it.
  */
 const setterRouteState = vi.hoisted(() => ({
   getSetterOgSummaryMock: vi.fn(),
@@ -116,7 +120,7 @@ describe('api/og/setter route', () => {
     setterRouteState.capturedElement = null;
   });
 
-  it('authorizes the aggregate query against current primary privacy settings', async () => {
+  it('reads the tick-aggregate query off the replica seam (dbzRead), not the primary', async () => {
     setterRouteState.getSetterOgSummaryMock.mockResolvedValue({
       displayName: 'Alex',
       avatarUrl: null,
@@ -128,8 +132,44 @@ describe('api/og/setter route', () => {
     expect(response.status).toBe(200);
     expect(setterRouteState.executeRowsMock).toHaveBeenCalledTimes(1);
     const [dbArg] = setterRouteState.executeRowsMock.mock.calls[0];
-    expect(dbArg).toBe(setterRouteState.dbzSentinel);
-    expect(dbArg).not.toBe(setterRouteState.dbzReadSentinel);
+    expect(dbArg).toBe(setterRouteState.dbzReadSentinel);
+    expect(dbArg).not.toBe(setterRouteState.dbzSentinel);
+  });
+
+  it("counts a private account's published climbs: only listed, draft and spray-wall rules apply", async () => {
+    setterRouteState.getSetterOgSummaryMock.mockResolvedValue({
+      displayName: 'Alex',
+      avatarUrl: null,
+    });
+    setterRouteState.executeRowsMock.mockResolvedValue([]);
+
+    await GET(makeRequest({ username: 'alex' }));
+
+    const [, query] = setterRouteState.executeRowsMock.mock.calls[0] as [unknown, SQL];
+    const rendered = new PgDialect().sqlToQuery(query).sql.toLowerCase().replace(/\s+/g, ' ');
+    expect(rendered).toContain('bc.is_listed = true');
+    expect(rendered).toContain('bc.is_draft = false');
+    // The spray-wall predicate is the wall's own rule and stays.
+    expect(rendered).toContain('spray_walls');
+    // A published, listed climb is public whoever set it: no account privacy,
+    // item audience or follow relation is consulted for it.
+    expect(rendered).not.toContain('content_privacy');
+    expect(rendered).not.toContain('user_profiles');
+    expect(rendered).not.toContain('is_private');
+  });
+
+  it('keeps the card out of shared caches, because it draws the linked account identity', async () => {
+    setterRouteState.getSetterOgSummaryMock.mockResolvedValue({
+      displayName: 'Alex',
+      avatarUrl: '/avatars/alex.png',
+    });
+    setterRouteState.executeRowsMock.mockResolvedValue([]);
+
+    const response = await GET(makeRequest({ username: 'alex', v: 'abc123' }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
   });
 
   it('bounds the whole DB phase (summary + grade aggregate) under a single og-setter read deadline', async () => {

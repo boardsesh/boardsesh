@@ -6,7 +6,11 @@ import type { BoardName } from '@boardsesh/shared-schema';
 vi.mock('server-only', () => ({}));
 // A drizzle instance with no client behind it: building and rendering a query
 // never touches the connection, and the test must not need a database.
-vi.mock('@/app/lib/db/db', () => ({ dbz: drizzle({} as never), executeRows: async () => [] }));
+vi.mock('@/app/lib/db/db', () => ({
+  dbz: drizzle({} as never),
+  dbzRead: drizzle({} as never),
+  executeRows: async () => [],
+}));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: async () => [] }));
 
 const { buildSetterClimbsQuery, buildSetterProfileQuery } = await import('../server-setter-data');
@@ -93,6 +97,21 @@ describe('the setter page queries', () => {
       expect(sql).toMatch(/"board_climbs"\."is_hidden" = \$\d+/);
       expect(rendered.params).toContain(true);
       expect(rendered.params).toContain(false);
+    }
+  });
+
+  it("lists a private account's published climbs: no account or item privacy is consulted", () => {
+    // A published, listed climb is public to everyone, whoever set it. Account
+    // privacy (`user_profiles.is_private`), the item audience
+    // (`content_privacy`) and the follow relation belong to the setter's
+    // identity, never to the climb list or the count that decides the page
+    // exists. The spray-wall predicate is the wall's own rule and stays.
+    for (const rendered of [climbs, profile]) {
+      const sql = normalise(rendered.sql);
+      expect(sql).not.toContain('content_privacy');
+      expect(sql).not.toContain('user_profiles');
+      expect(sql).not.toContain('is_private');
+      expect(sql).toContain('spray_walls');
     }
   });
 

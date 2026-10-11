@@ -552,7 +552,10 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return unavailableResponse();
   }
 
-  return xmlResponse(body, 'private, no-store', sourceHeaders(shard, source));
+  // Climbs and setters list published, listed climbs, which are public whoever
+  // set them, so the page keeps its CDN window. The privacy filter above only
+  // drops a climb that was unlisted, drafted or hidden after the store ran.
+  return xmlResponse(body, shard.cacheControl, sourceHeaders(shard, source));
 }
 
 /** `{ 'X-Sitemap-Climbs-Source': 'live' }`, or nothing when the shard reported none. */
