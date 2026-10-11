@@ -50,6 +50,7 @@ import { selectByVariant } from '../../../src/theme/variants';
 import { spacing } from '../../../src/theme/tokens';
 import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
 import { useHasBeenFocused } from '../../../src/hooks/use-has-been-focused';
+import { usePlaylistGradeBand } from '../../../src/hooks/use-playlist-grade-band';
 
 const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
   'LIKED_CLIMBS',
@@ -513,6 +514,7 @@ export default function DiscoverLibrary() {
     [goToPlaylist, togglePlaylistPin],
   );
 
+  const formatPlaylistGradeBand = usePlaylistGradeBand();
   const renderCommunityPlaylist = useCallback(
     ({ item: playlist, index }: ListRenderItemInfo<DiscoverablePlaylist>) => (
       <DiscoverPlaylistCard
@@ -527,16 +529,17 @@ export default function DiscoverLibrary() {
           creatorName: playlist.creatorName,
           climbCount: t('detail.climbCount', { count: playlist.climbCount }),
         })}
+        gradeLabel={formatPlaylistGradeBand(playlist.gradeSummary, playlist.boardType)}
         onOpen={goToPlaylist}
         isPinned={isAuthenticated && pinnedPlaylistUuids.has(playlist.uuid)}
         onPin={isAuthenticated ? togglePlaylistPin : undefined}
       />
     ),
-    [goToPlaylist, isAuthenticated, pinnedPlaylistUuids, t, togglePlaylistPin],
+    [formatPlaylistGradeBand, goToPlaylist, isAuthenticated, pinnedPlaylistUuids, t, togglePlaylistPin],
   );
   const communityInvalidation = useMemo(
-    () => ({ isAuthenticated, pinnedPlaylistUuids, t }),
-    [isAuthenticated, pinnedPlaylistUuids, t],
+    () => ({ formatPlaylistGradeBand, isAuthenticated, pinnedPlaylistUuids, t }),
+    [formatPlaylistGradeBand, isAuthenticated, pinnedPlaylistUuids, t],
   );
   const openAllPlaylists = useCallback(() => router.push('/(tabs)/discover/all'), []);
   const openCommunityPlaylists = useCallback(() => router.push('/(tabs)/discover/community'), []);

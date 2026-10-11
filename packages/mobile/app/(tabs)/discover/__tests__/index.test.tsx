@@ -27,6 +27,8 @@ type PlaylistItem = {
   color?: string;
   icon?: string;
   isPinnedByMe?: boolean;
+  boardType?: string;
+  gradeSummary?: { gradedClimbCount: number; p10Difficulty: number; p90Difficulty: number } | null;
 };
 
 type SmartCountItem = {
@@ -358,9 +360,11 @@ vi.mock('../../../../src/components/playlist/PlaylistCard', () => ({
     onTogglePin,
     onPress,
     climbCount,
+    gradeLabel,
   }: {
     name: string;
     metaLabel?: string;
+    gradeLabel?: string | null;
     isPinned?: boolean;
     onTogglePin?: () => void;
     onPress?: () => void;
@@ -368,7 +372,12 @@ vi.mock('../../../../src/components/playlist/PlaylistCard', () => ({
   }) =>
     createElement(
       'div',
-      { 'data-card': name, 'data-pinned': isPinned ? 'true' : 'false', 'data-count': climbCount },
+      {
+        'data-card': name,
+        'data-pinned': isPinned ? 'true' : 'false',
+        'data-count': climbCount,
+        'data-grade': gradeLabel ?? '',
+      },
       createElement('span', null, metaLabel ? `${name} ${metaLabel}` : name),
       createElement('button', { 'aria-label': `open-${name}`, onClick: onPress }, 'open'),
       onTogglePin ? createElement('button', { 'aria-label': `pin-${name}`, onClick: onTogglePin }, 'pin') : null,
@@ -838,6 +847,34 @@ describe('DiscoverLibrary error handling', () => {
     const { container, queryByLabelText } = renderHub();
     expect(container.querySelector('[data-scroll-section="library.sections.community"]')).not.toBeNull();
     expect(queryByLabelText('library.sections.community library.allPlaylists.seeAll')).toBeNull();
+  });
+
+  it('shows each community playlist\u2019s grade band, and none for a playlist without graded climbs', () => {
+    communityHook.popular = [
+      {
+        uuid: 'graded',
+        name: 'Graded picks',
+        climbCount: 12,
+        creatorId: 'creator-2',
+        creatorName: 'Jess',
+        boardType: 'kilter',
+        gradeSummary: { gradedClimbCount: 12, p10Difficulty: 16, p90Difficulty: 20 },
+      },
+      {
+        uuid: 'ungraded',
+        name: 'Fresh sets',
+        climbCount: 3,
+        creatorId: 'creator-3',
+        creatorName: 'Sam',
+        boardType: 'kilter',
+        gradeSummary: null,
+      },
+    ];
+
+    const { container } = renderHub();
+
+    expect(container.querySelector('[data-card="Graded picks"]')?.getAttribute('data-grade')).toBe('V3\u2013V5');
+    expect(container.querySelector('[data-card="Fresh sets"]')?.getAttribute('data-grade')).toBe('');
   });
 
   it('orders for-you smart cards in the mobile product order', () => {

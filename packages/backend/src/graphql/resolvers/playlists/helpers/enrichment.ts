@@ -84,7 +84,36 @@ export type PublicPlaylistRow = {
   creatorName: string;
   climbCount: number;
   generatedRecommendation: string | null;
+  /** From the LEFT JOIN on `playlist_grade_summaries`: all null when the playlist has no summary. */
+  gradedClimbCount?: number | null;
+  gradeMin?: number | null;
+  gradeP10?: number | null;
+  gradeMedian?: number | null;
+  gradeP90?: number | null;
+  gradeMax?: number | null;
 };
+
+/** The `PlaylistGradeSummary` of a public playlist row, or null when it has none. */
+export function formatGradeSummary(p: PublicPlaylistRow) {
+  if (
+    p.gradedClimbCount == null ||
+    p.gradeMin == null ||
+    p.gradeP10 == null ||
+    p.gradeMedian == null ||
+    p.gradeP90 == null ||
+    p.gradeMax == null
+  ) {
+    return null;
+  }
+  return {
+    gradedClimbCount: p.gradedClimbCount,
+    minDifficulty: p.gradeMin,
+    p10Difficulty: p.gradeP10,
+    medianDifficulty: p.gradeMedian,
+    p90Difficulty: p.gradeP90,
+    maxDifficulty: p.gradeMax,
+  };
+}
 
 /** Transform a public playlist DB row into the GraphQL response shape. */
 export function formatPublicPlaylist(p: PublicPlaylistRow) {
@@ -103,6 +132,7 @@ export function formatPublicPlaylist(p: PublicPlaylistRow) {
     creatorId: p.creatorId,
     creatorName: p.creatorName,
     isGeneratedRecommendation: p.generatedRecommendation !== null,
+    gradeSummary: formatGradeSummary(p),
   };
 }
 

@@ -24,6 +24,7 @@ import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
 import { logger } from '../../../utils/logger';
 import { lockSprayClimbAgainstDelete } from '../climbs/spray-climb-lock';
+import { refreshPlaylistGradeSummariesFor } from '@boardsesh/db/queries';
 
 type ClimbBoardScope = { boardType: string; layoutId: number };
 
@@ -91,6 +92,24 @@ function climbFitsPlaylistBoard(
 ): boolean {
   if (climbScope.boardType !== playlistScope.boardType) return false;
   return playlistScope.layoutId === null || climbScope.layoutId === playlistScope.layoutId;
+}
+
+/**
+ * Bring the playlist's grade band up to date after its climbs changed, so the
+ * card and Discover's grade filter see the change now instead of after the
+ * daily job. After the write commits and outside its transaction: a failure
+ * here is logged, never surfaced, because the climb was added or removed and
+ * the daily job repairs the summary (docs/playlist-grade-summaries.md).
+ */
+async function refreshGradeSummaryAfterClimbChange(playlistId: bigint): Promise<void> {
+  try {
+    await refreshPlaylistGradeSummariesFor(db, [playlistId]);
+  } catch (error) {
+    logger.warn('[PlaylistGradeSummaries] Could not refresh after a climb change', {
+      playlistId: playlistId.toString(),
+      error,
+    });
+  }
 }
 
 function playlistResult(playlist: dbSchema.Playlist, climbCount: number): Record<string, unknown> {
@@ -551,6 +570,8 @@ export const playlistMutations = {
       { isolationLevel: 'read committed' },
     );
 
+    if (!wasAlreadyInPlaylist) await refreshGradeSummaryAfterClimbChange(playlistId);
+
     return {
       id: playlistClimb.id.toString(),
       playlistId: validatedInput.playlistId,
@@ -622,6 +643,7 @@ export const playlistMutations = {
     // changed, so a no-op remove doesn't bump it.
     if (removed) {
       await db.update(dbSchema.playlists).set({ updatedAt: new Date() }).where(eq(dbSchema.playlists.id, playlistId));
+      await refreshGradeSummaryAfterClimbChange(playlistId);
     }
 
     return removed;

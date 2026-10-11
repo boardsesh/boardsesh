@@ -29,3 +29,4 @@ export * from './background-jobs';
 export * from './spray-walls/import-progress';
 
 export * from './privacy';
+export * from './playlists/index';

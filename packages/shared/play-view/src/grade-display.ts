@@ -141,6 +141,31 @@ export function formatGradeByDifficultyId(
   return formatGrade(grade.difficulty_name, format, boardName);
 }
 
+/** What a grade band joins its two ends with (`"V3–V5"`). */
+const GRADE_BAND_SEPARATOR = '–';
+
+/**
+ * A playlist's grade band, `"V3–V5"`, from its low and high difficulty ids
+ * (the 10th and 90th percentile of its climbs). One label when both ends read
+ * the same (`"V4"`, which also covers 6b..6b+ under the V format), one end when
+ * the other is off the scale, and null when neither is on it.
+ *
+ * `'both'` draws the V format: two `"V3 / 6A"` labels joined is too long for
+ * the cards this sits on, and the V grade is the default the app falls back to.
+ */
+export function formatGradeBand(
+  lowDifficultyId: number | null | undefined,
+  highDifficultyId: number | null | undefined,
+  format: GradeDisplayFormat,
+  boardName?: string | null,
+): string | null {
+  const bandFormat: GradeDisplayFormat = format === 'both' ? 'v-grade' : format;
+  const low = formatGradeByDifficultyId(lowDifficultyId, bandFormat, boardName);
+  const high = formatGradeByDifficultyId(highDifficultyId, bandFormat, boardName);
+  if (!low || !high) return low ?? high;
+  return low === high ? low : `${low}${GRADE_BAND_SEPARATOR}${high}`;
+}
+
 /**
  * Convert a hex color to HSL components.
  * @returns Object with h (0-360), s (0-1), l (0-1)

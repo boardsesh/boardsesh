@@ -7,6 +7,7 @@ import {
   hexToHSL,
   formatGrade,
   formatGradeByDifficultyId,
+  formatGradeBand,
   formatVGrade,
   formatFontGrade,
   softenColor,
@@ -253,6 +254,35 @@ describe('formatGradeByDifficultyId', () => {
     expect(formatGradeByDifficultyId(null, 'both')).toBeNull();
     expect(formatGradeByDifficultyId(undefined, 'both')).toBeNull();
     expect(formatGradeByDifficultyId(999, 'both')).toBeNull();
+  });
+});
+
+describe('formatGradeBand', () => {
+  it('joins the two ends in the chosen format', () => {
+    expect(formatGradeBand(16, 20, 'v-grade')).toBe('V3–V5');
+    expect(formatGradeBand(16, 20, 'font')).toBe('6A–6C');
+  });
+
+  it('draws the V format for both, which keeps the band short enough for a card', () => {
+    expect(formatGradeBand(16, 20, 'both')).toBe('V3–V5');
+  });
+
+  it('collapses a band whose ends read the same into one label', () => {
+    expect(formatGradeBand(18, 18, 'v-grade')).toBe('V4');
+    // 4a and 4c are both V0.
+    expect(formatGradeBand(10, 12, 'v-grade')).toBe('V0');
+    expect(formatGradeBand(10, 12, 'font')).toBe('4A–4C');
+  });
+
+  it("uses the board's own scale", () => {
+    // MoonBoard reads 6A as V2.
+    expect(formatGradeBand(16, 16, 'v-grade', 'moonboard')).toBe('V2');
+  });
+
+  it('falls back to the end that is on the scale, and to null when neither is', () => {
+    expect(formatGradeBand(16, 999, 'v-grade')).toBe('V3');
+    expect(formatGradeBand(null, 20, 'v-grade')).toBe('V5');
+    expect(formatGradeBand(null, undefined, 'v-grade')).toBeNull();
   });
 });
 

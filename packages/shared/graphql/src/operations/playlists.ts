@@ -492,6 +492,18 @@ export type DiscoverablePlaylist = {
   creatorId: string;
   creatorName: string;
   isGeneratedRecommendation: boolean;
+  /**
+   * The playlist's grade band. Only `DISCOVER_PLAYLISTS` selects it, so a row
+   * from another query leaves it undefined; null means no climb has a grade.
+   */
+  gradeSummary?: PlaylistGradeSummary | null;
+};
+
+/** Difficulty ids on the playlist board's grade scale (10th..90th percentile band). */
+export type PlaylistGradeSummary = {
+  gradedClimbCount: number;
+  p10Difficulty: number;
+  p90Difficulty: number;
 };
 
 export type DiscoverPlaylistsInput = {
@@ -508,6 +520,12 @@ export type DiscoverPlaylistsInput = {
   /** Inclusive climb-count ceiling. */
   maxClimbs?: number;
   generatedRecommendation?: boolean | null;
+  /** Lowest difficulty id the band may start at (the playlist's 10th-percentile grade). */
+  minGrade?: number | null;
+  /** Highest difficulty id the band may end at (the playlist's 90th-percentile grade). */
+  maxGrade?: number | null;
+  /** Only playlists by climbers the signed-in viewer follows. Empty when signed out. */
+  followedOnly?: boolean | null;
   sortBy?: 'recent' | 'popular';
   page?: number;
   pageSize?: number;
@@ -560,6 +578,11 @@ export const DISCOVER_PLAYLISTS = gql`
         creatorId
         creatorName
         isGeneratedRecommendation
+        gradeSummary {
+          gradedClimbCount
+          p10Difficulty
+          p90Difficulty
+        }
       }
       totalCount
       hasMore

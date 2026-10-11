@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runRefreshClimbGrades, runRefreshClimbNeighbors, type JobDatabase } from '@boardsesh/db/jobs';
 import {
   CLIMB_POPULARITY_REFRESH_QUEUE,
+  PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE,
   CRON_JOB_DELETE_AFTER_SECONDS,
   initializeJobQueueSchema,
   parseWorkerLogin,
@@ -140,6 +141,7 @@ describe('owner-only queue initialization', () => {
       for (const queue of [
         POPULAR_BOARD_CONFIGS_REFRESH_QUEUE,
         CLIMB_POPULARITY_REFRESH_QUEUE,
+        PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE,
         SPRAY_DETECTION_QUEUE,
       ]) {
         await runtime.deleteAllJobs(queue);
@@ -156,6 +158,10 @@ describe('owner-only queue initialization', () => {
       await runtime.schedule(CLIMB_POPULARITY_REFRESH_QUEUE, '23 * * * *', null, { tz: 'UTC' });
       expect(await runtime.send(CLIMB_POPULARITY_REFRESH_QUEUE, {})).toBeTruthy();
       expect(await runtime.send(CLIMB_POPULARITY_REFRESH_QUEUE, {})).toBeNull();
+      // The playlist grade summary refresh: the same contract, daily.
+      await runtime.schedule(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, '41 4 * * *', null, { tz: 'UTC' });
+      expect(await runtime.send(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, {})).toBeTruthy();
+      expect(await runtime.send(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, {})).toBeNull();
       const id = await runtime.send(SPRAY_DETECTION_QUEUE, { detectionId: randomUUID() });
       expect(id).toBeTruthy();
       const jobs = await runtime.fetch(SPRAY_DETECTION_QUEUE);

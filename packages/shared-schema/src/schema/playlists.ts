@@ -322,6 +322,30 @@ export const playlistsTypeDefs = /* GraphQL */ `
     creatorName: String!
     "Whether this is a system-generated recommendation playlist"
     isGeneratedRecommendation: Boolean!
+    "Grade spread of the playlist's climbs. Null when none of its climbs has a grade yet."
+    gradeSummary: PlaylistGradeSummary
+  }
+
+  """
+  The grade spread of a playlist's climbs. Every value is a difficulty id on the
+  playlist board's grade scale (the same ids SearchClimbs' minGrade/maxGrade take),
+  from ROUND(display_difficulty) at each climb's playlist angle. A climb saved
+  without an angle (synced circuits) is graded at its most-repeated angle.
+  Refreshed when climbs are added or removed, and daily for grade drift.
+  """
+  type PlaylistGradeSummary {
+    "Climbs that have a grade; the values below cover only these"
+    gradedClimbCount: Int!
+    "Easiest graded climb"
+    minDifficulty: Int!
+    "10th percentile: the low end of the band cards show and the grade filter checks"
+    p10Difficulty: Int!
+    "Median grade"
+    medianDifficulty: Int!
+    "90th percentile: the high end of the band cards show and the grade filter checks"
+    p90Difficulty: Int!
+    "Hardest graded climb"
+    maxDifficulty: Int!
   }
 
   """
@@ -348,6 +372,23 @@ export const playlistsTypeDefs = /* GraphQL */ `
     maxClimbs: Int
     "Filter by generated recommendation status"
     generatedRecommendation: Boolean
+    """
+    Only playlists whose grade band starts at or above this difficulty id: the
+    10th-percentile grade is >= minGrade, so one easy warm-up does not let a hard
+    list in. A playlist with no graded climb is left out whenever a grade bound is set.
+    """
+    minGrade: Int
+    """
+    Only playlists whose grade band ends at or below this difficulty id: the
+    90th-percentile grade is <= maxGrade, so one outlier V10 does not keep a V3
+    list out of a V3-V5 search.
+    """
+    maxGrade: Int
+    """
+    Only playlists by climbers the signed-in viewer follows. Resolved on the server
+    from the viewer's follows. Signed out, the result is empty.
+    """
+    followedOnly: Boolean
     "Sort by: 'recent' (default) or 'popular' (climbers who pinned or followed it, then size)"
     sortBy: String
     "Page number"

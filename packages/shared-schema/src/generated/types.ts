@@ -2221,14 +2221,31 @@ export type DiscoverPlaylistsInput = {
   creatorIds?: InputMaybe<Array<Scalars['ID']['input']>>;
   /** Exclude these creators. The viewer's own playlists, for a discovery surface. */
   excludeCreatorIds?: InputMaybe<Array<Scalars['ID']['input']>>;
+  /**
+   * Only playlists by climbers the signed-in viewer follows. Resolved on the server
+   * from the viewer's follows. Signed out, the result is empty.
+   */
+  followedOnly?: InputMaybe<Scalars['Boolean']['input']>;
   /** Filter by generated recommendation status */
   generatedRecommendation?: InputMaybe<Scalars['Boolean']['input']>;
   /** Layout ID (optional — omit to discover across all layouts) */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   /** Only playlists with at most this many climbs. A 600-climb list is an export, not a playlist. */
   maxClimbs?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * Only playlists whose grade band ends at or below this difficulty id: the
+   * 90th-percentile grade is <= maxGrade, so one outlier V10 does not keep a V3
+   * list out of a V3-V5 search.
+   */
+  maxGrade?: InputMaybe<Scalars['Int']['input']>;
   /** Only playlists with at least this many climbs */
   minClimbs?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * Only playlists whose grade band starts at or above this difficulty id: the
+   * 10th-percentile grade is >= minGrade, so one easy warm-up does not let a hard
+   * list in. A playlist with no graded climb is left out whenever a grade bound is set.
+   */
+  minGrade?: InputMaybe<Scalars['Int']['input']>;
   /** Filter by name (partial match) */
   name?: InputMaybe<Scalars['String']['input']>;
   /** Page number */
@@ -2269,6 +2286,8 @@ export type DiscoverablePlaylist = {
   creatorName: Scalars['String']['output'];
   /** Description */
   description?: Maybe<Scalars['String']['output']>;
+  /** Grade spread of the playlist's climbs. Null when none of its climbs has a grade yet. */
+  gradeSummary?: Maybe<PlaylistGradeSummary>;
   /** Display icon */
   icon?: Maybe<Scalars['String']['output']>;
   /** Database ID */
@@ -5983,6 +6002,29 @@ export type PlaylistCreator = {
   playlistCount: Scalars['Int']['output'];
   /** User ID */
   userId: Scalars['ID']['output'];
+};
+
+/**
+ * The grade spread of a playlist's climbs. Every value is a difficulty id on the
+ * playlist board's grade scale (the same ids SearchClimbs' minGrade/maxGrade take),
+ * from ROUND(display_difficulty) at each climb's playlist angle. A climb saved
+ * without an angle (synced circuits) is graded at its most-repeated angle.
+ * Refreshed when climbs are added or removed, and daily for grade drift.
+ */
+export type PlaylistGradeSummary = {
+  __typename?: 'PlaylistGradeSummary';
+  /** Climbs that have a grade; the values below cover only these */
+  gradedClimbCount: Scalars['Int']['output'];
+  /** Hardest graded climb */
+  maxDifficulty: Scalars['Int']['output'];
+  /** Median grade */
+  medianDifficulty: Scalars['Int']['output'];
+  /** Easiest graded climb */
+  minDifficulty: Scalars['Int']['output'];
+  /** 10th percentile: the low end of the band cards show and the grade filter checks */
+  p10Difficulty: Scalars['Int']['output'];
+  /** 90th percentile: the high end of the band cards show and the grade filter checks */
+  p90Difficulty: Scalars['Int']['output'];
 };
 
 /**
@@ -11484,6 +11526,7 @@ export type ResolversTypes = ResolversObject<{
   PlaylistClimb: ResolverTypeWrapper<PlaylistClimb>;
   PlaylistClimbsResult: ResolverTypeWrapper<PlaylistClimbsResult>;
   PlaylistCreator: ResolverTypeWrapper<PlaylistCreator>;
+  PlaylistGradeSummary: ResolverTypeWrapper<PlaylistGradeSummary>;
   PopularBoardConfig: ResolverTypeWrapper<PopularBoardConfig>;
   PopularBoardConfigConnection: ResolverTypeWrapper<PopularBoardConfigConnection>;
   PopularBoardConfigsInput: PopularBoardConfigsInput;
@@ -11973,6 +12016,7 @@ export type ResolversParentTypes = ResolversObject<{
   PlaylistClimb: PlaylistClimb;
   PlaylistClimbsResult: PlaylistClimbsResult;
   PlaylistCreator: PlaylistCreator;
+  PlaylistGradeSummary: PlaylistGradeSummary;
   PopularBoardConfig: PopularBoardConfig;
   PopularBoardConfigConnection: PopularBoardConfigConnection;
   PopularBoardConfigsInput: PopularBoardConfigsInput;
@@ -13313,6 +13357,7 @@ export type DiscoverablePlaylistResolvers<
   creatorId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   creatorName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gradeSummary?: Resolver<Maybe<ResolversTypes['PlaylistGradeSummary']>, ParentType, ContextType>;
   icon?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   isGeneratedRecommendation?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -15384,6 +15429,19 @@ export type PlaylistCreatorResolvers<
   displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   playlistCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PlaylistGradeSummaryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PlaylistGradeSummary'] = ResolversParentTypes['PlaylistGradeSummary'],
+> = ResolversObject<{
+  gradedClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  maxDifficulty?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  medianDifficulty?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  minDifficulty?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  p10Difficulty?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  p90Difficulty?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -18141,6 +18199,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   PlaylistClimb?: PlaylistClimbResolvers<ContextType>;
   PlaylistClimbsResult?: PlaylistClimbsResultResolvers<ContextType>;
   PlaylistCreator?: PlaylistCreatorResolvers<ContextType>;
+  PlaylistGradeSummary?: PlaylistGradeSummaryResolvers<ContextType>;
   PopularBoardConfig?: PopularBoardConfigResolvers<ContextType>;
   PopularBoardConfigConnection?: PopularBoardConfigConnectionResolvers<ContextType>;
   PrivacyContentAudience?: PrivacyContentAudienceResolvers<ContextType>;

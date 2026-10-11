@@ -169,6 +169,58 @@ describe('legacy manufacturer-board replay compatibility', () => {
   });
 });
 
+describe('legacy DiscoverPlaylists replay compatibility', () => {
+  const selection = 'gradeSummary { gradedClimbCount p10Difficulty p90Difficulty }';
+  const legacy = 'query DiscoverPlaylists { discoverPlaylists { playlists { uuid name } hasMore } }';
+  const current = `query DiscoverPlaylists { discoverPlaylists { playlists { uuid name ${selection} } hasMore } }`;
+  const fixture = (playlists: unknown[]): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'DiscoverPlaylists',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: {},
+    response: { data: { discoverPlaylists: { playlists, hasMore: false } } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('replays every recorded playlist with no grade band, without mutating the recording', () => {
+    const recorded = fixture([
+      { uuid: 'a', name: 'A' },
+      { uuid: 'b', name: 'B' },
+    ]);
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          discoverPlaylists: {
+            playlists: [
+              { uuid: 'a', name: 'A', gradeSummary: null },
+              { uuid: 'b', name: 'B', gradeSummary: null },
+            ],
+            hasMore: false,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('keeps every other document change subject to drift checks', () => {
+    const recorded = fixture([{ uuid: 'a', name: 'A' }]);
+    expect(replayCompatibleFixtureResponse(current.replace('uuid name', 'uuid name color'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(current.replace('p90Difficulty', 'maxDifficulty'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy, recorded)).toBeNull();
+  });
+
+  it('refuses a recording that already carries a grade band', () => {
+    const recorded = fixture([{ uuid: 'a', name: 'A', gradeSummary: { p10Difficulty: 16 } }]);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toBeNull();
+  });
+});
+
 describe('canonicalJson', () => {
   it('sorts object keys at every depth', () => {
     expect(canonicalJson({ zebra: 1, alpha: { yak: 2, bison: 3 } })).toBe('{"alpha":{"bison":3,"yak":2},"zebra":1}');

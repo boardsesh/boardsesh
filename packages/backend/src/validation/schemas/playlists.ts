@@ -128,6 +128,10 @@ export const DiscoverPlaylistsInputSchema = z
     minClimbs: z.number().int().min(1).max(1000).optional(),
     maxClimbs: z.number().int().min(1).max(10000).optional(),
     generatedRecommendation: z.boolean().nullable().optional(),
+    // Difficulty ids, the same numbers SearchClimbs' grade band takes.
+    minGrade: z.number().int().min(1).max(100).nullable().optional(),
+    maxGrade: z.number().int().min(1).max(100).nullable().optional(),
+    followedOnly: z.boolean().nullable().optional(),
     sortBy: z.enum(['recent', 'popular']).optional(),
     page: z.number().int().min(0).optional(),
     pageSize: z.number().int().min(1).max(100).optional(),
@@ -138,6 +142,10 @@ export const DiscoverPlaylistsInputSchema = z
   .refine((input) => input.minClimbs == null || input.maxClimbs == null || input.minClimbs <= input.maxClimbs, {
     message: 'minClimbs must be less than or equal to maxClimbs',
     path: ['minClimbs'],
+  })
+  .refine((input) => input.minGrade == null || input.maxGrade == null || input.minGrade <= input.maxGrade, {
+    message: 'minGrade must be less than or equal to maxGrade',
+    path: ['minGrade'],
   });
 
 export const GetPlaylistCreatorsInputSchema = z.object({

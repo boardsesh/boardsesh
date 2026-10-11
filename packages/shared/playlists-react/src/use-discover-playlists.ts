@@ -20,6 +20,19 @@ export type UseDiscoverPlaylistsOptions = {
   pageSize?: number;
   /** Optional generated recommendation filter. */
   generatedRecommendation?: boolean;
+  /**
+   * Lowest difficulty id a playlist's grade band may start at (its
+   * 10th-percentile grade). Playlists with no graded climb are left out
+   * whenever either grade bound is set. Changing it resets pagination.
+   */
+  minGrade?: number;
+  /** Highest difficulty id a playlist's grade band may end at (its 90th-percentile grade). */
+  maxGrade?: number;
+  /**
+   * Only playlists by climbers the signed-in viewer follows, resolved on the
+   * server. Signed out, both streams come back empty. Changing it resets pagination.
+   */
+  followedOnly?: boolean;
   /** Whether requests should run. Defaults to true. */
   enabled?: boolean;
   /** SSR-provided initial data. When supplied, the first page fetch is skipped. */
@@ -51,7 +64,7 @@ export type UseDiscoverPlaylistsResult = {
  *  - Two parallel page cursors, one per sort. `hasMore` is the OR.
  *  - On `loadMore`, fetches the next page of *only* the streams that still
  *    have more — exhausted streams are left untouched.
- *  - Filter (boardType/layoutId) changes reset both cursors and refetch
+ *  - Filter (board, grade band, followedOnly) changes reset both cursors and refetch
  *    page 0 of each.
  *  - Three consecutive loadMore failures freeze the hook to prevent the
  *    IntersectionObserver from retrying forever.
@@ -63,6 +76,9 @@ export function useDiscoverPlaylists({
   angle,
   pageSize = 10,
   generatedRecommendation,
+  minGrade,
+  maxGrade,
+  followedOnly,
   enabled = true,
   initialData,
   initialPopularHasMore,
@@ -129,6 +145,9 @@ export function useDiscoverPlaylists({
         ...(sizeId !== undefined && { sizeId }),
         ...(angle !== undefined && { angle }),
         ...(generatedRecommendation !== undefined && { generatedRecommendation }),
+        ...(minGrade !== undefined && { minGrade }),
+        ...(maxGrade !== undefined && { maxGrade }),
+        ...(followedOnly !== undefined && { followedOnly }),
       };
 
       try {
@@ -187,7 +206,19 @@ export function useDiscoverPlaylists({
         isFetchingRef.current = false;
       }
     },
-    [boardType, layoutId, sizeId, angle, pageSize, generatedRecommendation, enabled, executeGraphQL],
+    [
+      boardType,
+      layoutId,
+      sizeId,
+      angle,
+      pageSize,
+      generatedRecommendation,
+      minGrade,
+      maxGrade,
+      followedOnly,
+      enabled,
+      executeGraphQL,
+    ],
   );
 
   // Reset + re-fetch when filters change. Skip the very first run if SSR

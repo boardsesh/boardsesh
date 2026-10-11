@@ -16,6 +16,7 @@ import { startBatchSchedules } from './services/batch-schedules';
 import { db } from './db/client';
 import { startPopularBoardConfigsRefresh } from './services/popular-board-configs';
 import { startClimbPopularityRefresh } from './services/climb-popularity-refresh';
+import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summary-refresh';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -46,6 +47,11 @@ async function main() {
   // table as last refreshed, or the old aggregation for a board never built.
   await startClimbPopularityRefresh(jobQueue).catch((error: unknown) => {
     logger.error('[ClimbPopularity] Could not register the refresh job', { error });
+  });
+  // Not fatal: without the job, summaries still follow every climb added or
+  // removed through the app; only upstream grade drift and synced circuits wait.
+  await startPlaylistGradeSummaryRefresh(jobQueue).catch((error: unknown) => {
+    logger.error('[PlaylistGradeSummaries] Could not register the refresh job', { error });
   });
 
   let shuttingDown = false;

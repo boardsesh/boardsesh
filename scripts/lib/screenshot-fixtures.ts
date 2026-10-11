@@ -126,22 +126,31 @@ export function normalizeDocument(query: string): string {
 }
 
 /**
- * The pinned manufacturer-board recordings predate this nullable spray-only
- * field. Adapt those responses in memory; never rewrite their bytes or hashes.
+ * The selection a pinned DiscoverPlaylists recording predates: the nullable
+ * grade band on each playlist (#6217). Replayed as null, so a capture shows
+ * the cards without a band, exactly as they rendered when recorded.
+ */
+const DISCOVER_PLAYLISTS_GRADE_SELECTION = 'gradeSummary { gradedClimbCount p10Difficulty p90Difficulty }';
+
+/**
+ * Pinned recordings that predate a nullable field the current document now
+ * selects. Adapt those responses in memory; never rewrite their bytes or hashes.
  * An exact selection match keeps every other document/schema change detectable.
+ *
+ * - GetBoard / GetMyBoards: the spray-only `sprayImport`, null on every
+ *   manufacturer board.
+ * - DiscoverPlaylists: each playlist's `gradeSummary`.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
   fixture: GraphqlFixtureFile,
 ): { response: unknown } | null {
   const operationName = resolveOperationName({ query: requestQuery });
-  if (operationName !== fixture.operationName || !['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) {
-    return null;
-  }
+  if (operationName !== fixture.operationName) return null;
+  if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
+  if (!['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) return null;
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
-  const normalized = normalizeDocument(requestQuery);
-  if (normalized.split(selection).length !== 2) return null;
-  if (normalizeDocument(normalized.replace(selection, '')) !== normalizeDocument(fixture.query)) return null;
+  if (!matchesWithoutSelection(requestQuery, selection, fixture)) return null;
   if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
   const response = fixture.response;
   const data = fixture.response.data;
@@ -164,6 +173,39 @@ export function replayCompatibleFixtureResponse(
       data: {
         ...data,
         myBoards: { ...data.myBoards, boards: data.myBoards.boards.map((board) => ({ ...board, sprayImport: null })) },
+      },
+    },
+  };
+}
+
+/** The request is the recorded document plus exactly one copy of `selection`, and nothing else. */
+function matchesWithoutSelection(requestQuery: string, selection: string, fixture: GraphqlFixtureFile): boolean {
+  const normalized = normalizeDocument(requestQuery);
+  if (normalized.split(selection).length !== 2) return false;
+  return normalizeDocument(normalized.replace(selection, '')) === normalizeDocument(fixture.query);
+}
+
+function replayDiscoverPlaylistsWithoutGrades(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  if (!matchesWithoutSelection(requestQuery, DISCOVER_PLAYLISTS_GRADE_SELECTION, fixture)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const response = fixture.response;
+  const data = fixture.response.data;
+  const result = data.discoverPlaylists;
+  if (!isRecord(result) || !Array.isArray(result.playlists)) return null;
+  // A recording that already carries a band is not one this shim was written for.
+  if (!result.playlists.every((playlist) => isRecord(playlist) && playlist.gradeSummary === undefined)) return null;
+  return {
+    response: {
+      ...response,
+      data: {
+        ...data,
+        discoverPlaylists: {
+          ...result,
+          playlists: result.playlists.map((playlist: Record<string, unknown>) => ({ ...playlist, gradeSummary: null })),
+        },
       },
     },
   };

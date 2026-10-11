@@ -42,6 +42,10 @@ const climbPopularitySchema = readFileSync(
   new URL('../../../db/drizzle/0242_climb_popularity.sql', import.meta.url),
   'utf8',
 );
+const playlistGradeSummariesSchema = readFileSync(
+  new URL('../../../db/drizzle/0264_playlist_grade_summaries.sql', import.meta.url),
+  'utf8',
+);
 const climbStatsRecomputePendingSchema = readFileSync(
   new URL('../../../db/drizzle/0246_climb_stats_recompute_pending.sql', import.meta.url),
   'utf8',
@@ -1977,6 +1981,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${climbNeighborResumableBuildsSchema}
   DROP TABLE IF EXISTS board_climb_popularity, board_climb_popularity_runs;
   ${climbPopularitySchema}
+  DROP TABLE IF EXISTS playlist_grade_summaries;
+  ${playlistGradeSummariesSchema}
 
   CREATE UNIQUE INDEX IF NOT EXISTS "playlists_generated_recommendation_idx" ON "playlists" ("generated_recommendation");
 

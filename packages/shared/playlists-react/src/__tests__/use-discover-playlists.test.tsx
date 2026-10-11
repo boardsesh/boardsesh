@@ -123,6 +123,52 @@ describe('useDiscoverPlaylists (shared)', () => {
     );
   });
 
+  it('forwards the grade band and the following filter, and refetches page 0 when they change', async () => {
+    const executeGraphQL = vi.fn(async () => ({
+      discoverPlaylists: { playlists: [makeDiscoverable('graded')], totalCount: 1, hasMore: false },
+    })) as unknown as ExecutePlaylistsGraphQL;
+    const { wrapper } = buildWrapper({ executeGraphQL });
+
+    const { result, rerender } = renderHook(
+      ({ maxGrade }: { maxGrade: number }) => useDiscoverPlaylists({ minGrade: 16, maxGrade, followedOnly: true }),
+      { wrapper, initialProps: { maxGrade: 20 } },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(executeGraphQL).toHaveBeenCalledTimes(2);
+    for (const sortBy of ['popular', 'recent']) {
+      expect(executeGraphQL).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          input: expect.objectContaining({ minGrade: 16, maxGrade: 20, followedOnly: true, sortBy, page: 0 }),
+        }),
+      );
+    }
+
+    rerender({ maxGrade: 22 });
+    await waitFor(() => expect(executeGraphQL).toHaveBeenCalledTimes(4));
+    expect(executeGraphQL).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.objectContaining({ input: expect.objectContaining({ maxGrade: 22, page: 0 }) }),
+    );
+  });
+
+  it('leaves the grade and following inputs off when they are not set', async () => {
+    const executeGraphQL = vi.fn(async () => ({
+      discoverPlaylists: { playlists: [], totalCount: 0, hasMore: false },
+    })) as unknown as ExecutePlaylistsGraphQL;
+    const { wrapper } = buildWrapper({ executeGraphQL });
+
+    const { result } = renderHook(() => useDiscoverPlaylists({}), { wrapper });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const [, variables] = (executeGraphQL as unknown as { mock: { calls: [string, { input: object }][] } }).mock
+      .calls[0];
+    expect(variables.input).not.toHaveProperty('minGrade');
+    expect(variables.input).not.toHaveProperty('maxGrade');
+    expect(variables.input).not.toHaveProperty('followedOnly');
+  });
+
   it('forwards the community playlist filter to both streams', async () => {
     const executeGraphQL = vi.fn(async () => ({
       discoverPlaylists: { playlists: [makeDiscoverable('community')], totalCount: 1, hasMore: false },

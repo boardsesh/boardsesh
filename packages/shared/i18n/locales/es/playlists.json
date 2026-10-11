@@ -26,6 +26,7 @@
       "community": "Playlists de la comunidad"
     },
     "communityByline": "{{creatorName}} - {{climbCount}}",
+    "gradeBand": "Grados {{band}}",
     "allPlaylists": {
       "title": "Mis listas",
       "seeAll": "Ver todas",

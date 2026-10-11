@@ -1,4 +1,4 @@
-import { eq, and, or, isNull, inArray, notInArray, desc, sql, isNotNull } from 'drizzle-orm';
+import { eq, and, or, isNull, inArray, notInArray, desc, sql, isNotNull, gte, lte } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -28,6 +28,13 @@ const PUBLIC_PLAYLIST_SELECT = {
   creatorName: sql<string>`COALESCE(${dbSchema.users.name}, 'Anonymous')`,
   climbCount: sql<number>`count(DISTINCT ${dbSchema.playlistClimbs.id})::int`,
   generatedRecommendation: dbSchema.playlists.generatedRecommendation,
+  // LEFT JOINed, so all null for a playlist with no graded climb.
+  gradedClimbCount: dbSchema.playlistGradeSummaries.gradedClimbCount,
+  gradeMin: dbSchema.playlistGradeSummaries.minDifficulty,
+  gradeP10: dbSchema.playlistGradeSummaries.p10Difficulty,
+  gradeMedian: dbSchema.playlistGradeSummaries.medianDifficulty,
+  gradeP90: dbSchema.playlistGradeSummaries.p90Difficulty,
+  gradeMax: dbSchema.playlistGradeSummaries.maxDifficulty,
 } as const;
 
 /** Shared GROUP BY columns for public playlist queries. */
@@ -45,16 +52,26 @@ const PUBLIC_PLAYLIST_GROUP_BY = [
   dbSchema.playlistOwnership.userId,
   dbSchema.users.name,
   dbSchema.playlists.generatedRecommendation,
+  dbSchema.playlistGradeSummaries.gradedClimbCount,
+  dbSchema.playlistGradeSummaries.minDifficulty,
+  dbSchema.playlistGradeSummaries.p10Difficulty,
+  dbSchema.playlistGradeSummaries.medianDifficulty,
+  dbSchema.playlistGradeSummaries.p90Difficulty,
+  dbSchema.playlistGradeSummaries.maxDifficulty,
 ] as const;
 
-/** Build the base query for public playlists with owner join + climb join. */
+/** One summary row per playlist (its primary key), so this join never multiplies rows. */
+const PLAYLIST_GRADE_SUMMARY_JOIN = eq(dbSchema.playlistGradeSummaries.playlistId, dbSchema.playlists.id);
+
+/** Build the base query for public playlists with owner join + climb join + grade summary. */
 function publicPlaylistBaseQuery() {
   return db
     .select(PUBLIC_PLAYLIST_SELECT)
     .from(dbSchema.playlists)
     .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
     .innerJoin(dbSchema.playlistClimbs, eq(dbSchema.playlistClimbs.playlistId, dbSchema.playlists.id))
-    .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId));
+    .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId))
+    .leftJoin(dbSchema.playlistGradeSummaries, PLAYLIST_GRADE_SUMMARY_JOIN);
 }
 
 /** Build the count query for public playlists. */
@@ -64,7 +81,8 @@ function publicPlaylistCountQuery() {
     .from(dbSchema.playlists)
     .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
     .innerJoin(dbSchema.playlistClimbs, eq(dbSchema.playlistClimbs.playlistId, dbSchema.playlists.id))
-    .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId));
+    .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId))
+    .leftJoin(dbSchema.playlistGradeSummaries, PLAYLIST_GRADE_SUMMARY_JOIN);
 }
 
 // Re-export for search.ts to reuse
@@ -89,6 +107,9 @@ export const discoverPlaylists = async (
       excludeCreatorIds?: string[];
       minClimbs?: number;
       maxClimbs?: number;
+      minGrade?: number | null;
+      maxGrade?: number | null;
+      followedOnly?: boolean | null;
       sortBy?: 'recent' | 'popular';
       generatedRecommendation?: boolean | null;
       page?: number;
@@ -101,11 +122,16 @@ export const discoverPlaylists = async (
 
   const page = input.page ?? 0;
   const pageSize = input.pageSize ?? 20;
+  const viewerId = _ctx.isAuthenticated ? _ctx.userId : null;
 
-  const conditions = [
-    eq(dbSchema.playlists.isPublic, true),
-    playlistVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
-  ];
+  // "Following" is the viewer's own follows. Signed out there are none, so the
+  // honest answer is an empty page, not an error the Discover screen would
+  // have to tell apart from a failed load.
+  if (input.followedOnly && !viewerId) {
+    return { playlists: [], totalCount: 0, hasMore: false };
+  }
+
+  const conditions = [eq(dbSchema.playlists.isPublic, true), playlistVisibilityCondition(viewerId)];
 
   if (input.boardType) {
     conditions.push(eq(dbSchema.playlists.boardType, input.boardType));
@@ -124,6 +150,28 @@ export const discoverPlaylists = async (
   // slots and silently shrank the grid they were removed from.
   if (input.excludeCreatorIds && input.excludeCreatorIds.length > 0) {
     conditions.push(notInArray(dbSchema.playlistOwnership.userId, input.excludeCreatorIds));
+  }
+  if (input.followedOnly && viewerId) {
+    // Resolved here from user_follows, never a list the client sends.
+    conditions.push(
+      inArray(
+        dbSchema.playlistOwnership.userId,
+        db
+          .select({ followingId: dbSchema.userFollows.followingId })
+          .from(dbSchema.userFollows)
+          .where(eq(dbSchema.userFollows.followerId, viewerId)),
+      ),
+    );
+  }
+  // The grade band is the playlist's 10th..90th percentile, so one outlier at
+  // either end does not move a list in or out. A playlist with no graded climb
+  // has no summary row; the LEFT JOIN leaves these columns null and the
+  // comparison drops it.
+  if (input.minGrade != null) {
+    conditions.push(gte(dbSchema.playlistGradeSummaries.p10Difficulty, input.minGrade));
+  }
+  if (input.maxGrade != null) {
+    conditions.push(lte(dbSchema.playlistGradeSummaries.p90Difficulty, input.maxGrade));
   }
   if (input.generatedRecommendation != null) {
     conditions.push(
@@ -147,7 +195,7 @@ export const discoverPlaylists = async (
   const whereClause = and(
     ...conditions,
     eq(dbSchema.playlistOwnership.role, 'owner'),
-    playlistCreatorVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
+    playlistCreatorVisibilityCondition(viewerId),
   );
 
   // A size band, not just a floor. The floor drops one-climb scratch lists; the
@@ -185,6 +233,7 @@ export const discoverPlaylists = async (
               .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
               .innerJoin(dbSchema.playlistClimbs, eq(dbSchema.playlistClimbs.playlistId, dbSchema.playlists.id))
               .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId))
+              .leftJoin(dbSchema.playlistGradeSummaries, PLAYLIST_GRADE_SUMMARY_JOIN)
               .where(whereClause)
               .groupBy(dbSchema.playlists.id)
               .having(havingClause)
