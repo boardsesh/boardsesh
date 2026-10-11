@@ -297,12 +297,38 @@ export function describeBandFailure(error: unknown): string {
   return `${name}, SQLSTATE ${code}`;
 }
 
-/**
- * How long the swap waits for a playlist's grade-summary lock before giving
- * the band to the daily job. The fenced transaction also holds the run's
- * ledger row, which the heartbeat needs, so the wait must be bounded.
- */
+/** How long a cohort band recompute waits for its playlist's lock before leaving the band to the daily job. */
 const BAND_LOCK_TIMEOUT = '5s';
+
+/**
+ * Recompute a rewritten cohort playlist's grade band inside its climb-swap
+ * transaction, so it never shows yesterday's band or misses a grade filter
+ * until the daily grade-summary job runs.
+ *
+ * Runs in its own savepoint with a bounded lock wait (the fenced transaction
+ * also holds the run's ledger row, which the heartbeat needs). If anything in
+ * it fails, the savepoint rolls back alone, taking the lock_timeout with it,
+ * the swap still commits, and the daily job repairs the band. A band must
+ * never cost the playlists.
+ */
+export async function refreshCohortPlaylistBand(
+  transaction: JobDatabase,
+  playlistId: bigint,
+  name: string,
+  log: JobLogger,
+): Promise<void> {
+  try {
+    await transaction.transaction(async (savepoint) => {
+      await savepoint.execute(sql.raw(`SET LOCAL lock_timeout = '${BAND_LOCK_TIMEOUT}'`));
+      await refreshPlaylistGradeSummariesFor(savepoint, [playlistId]);
+    });
+  } catch (error) {
+    log.warn(
+      `[recs]   grade band for ${name} not refreshed (${describeBandFailure(error)}); the daily grade-summary job will repair it`,
+      { title: 'grade band skipped' },
+    );
+  }
+}
 
 async function upsertCohortPlaylist(
   db: JobDatabase,
@@ -381,22 +407,7 @@ async function upsertCohortPlaylist(
       })),
     );
 
-    // Recompute the grade band in the same transaction as the climb swap, so a
-    // rewritten cohort playlist never shows yesterday's band or misses a grade
-    // filter until the daily grade-summary job runs. The recompute runs in its
-    // own savepoint: if it fails, that rolls back alone, the swap still commits,
-    // and the daily job repairs the band. A band must never cost the playlists.
-    try {
-      // SET LOCAL lasts to the end of this transaction; the recompute is the
-      // only statement after it, so only its lock wait is bounded.
-      await transaction.execute(sql.raw(`SET LOCAL lock_timeout = '${BAND_LOCK_TIMEOUT}'`));
-      await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
-    } catch (error) {
-      log.warn(
-        `[recs]   grade band for ${name} not refreshed (${describeBandFailure(error)}); the daily grade-summary job will repair it`,
-        { title: 'grade band skipped' },
-      );
-    }
+    await refreshCohortPlaylistBand(transaction, playlistId, name, log);
   });
 
   return { name, count: refs.length, skipped: false };
