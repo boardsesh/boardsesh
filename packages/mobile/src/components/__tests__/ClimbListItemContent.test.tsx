@@ -75,8 +75,23 @@ vi.mock('react-native', () => ({
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   StyleSheet: { create: (styles: unknown) => styles },
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
-  View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
-    createElement('div', { 'aria-label': accessibilityLabel }, children),
+  View: ({
+    children,
+    accessibilityLabel,
+    style,
+  }: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+    style?: unknown;
+  }) =>
+    createElement(
+      'div',
+      {
+        'aria-label': accessibilityLabel,
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
+      children,
+    ),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -1458,5 +1473,64 @@ describe('ClimbListItemContent original and mirror statuses', () => {
     );
     expect(directionRows(container)).toHaveLength(0);
     expect(container.querySelector('[aria-label="mobile.climbRow.ascentStatus.send"]')).not.toBeNull();
+  });
+});
+
+describe('multi-frame route pips', () => {
+  beforeEach(() => {
+    resetClimbRowDisplayForTests();
+    liveStatsOverride.current = null;
+    myGradeOverride.current = { status: 'unknown' };
+    statusLogbook.current = null;
+    gradeFormatOverride.current = 'v-grade';
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+  afterEach(() => resetClimbRowDisplayForTests());
+  it.each([undefined, null, 1])('adds no frame marker for count %s', (framesCount) => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, framesCount }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(container.querySelector('[data-icon="frames"]')).toBeNull();
+  });
+  it('overlays the picture without allocating a name-line box', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, framesCount: 4 }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    const pip = container.querySelector('[data-icon="frames"]')?.parentElement;
+    expect(pip).toBeTruthy();
+    expect(pip?.getAttribute('data-style')).toContain('absolute');
+  });
+  it('moves the marker to the name cluster when pictures are off', () => {
+    setClimbRowField('thumbnail', false);
+    thumbnailRender.mockClear();
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, framesCount: 4 }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    const pip = container.querySelector('[data-icon="frames"]')?.parentElement;
+    expect(pip).toBeTruthy();
+    expect(pip?.getAttribute('data-style')).not.toContain('absolute');
+    expect(pip?.parentElement?.textContent).toContain(baseClimb.name);
+    expect(thumbnailRender).not.toHaveBeenCalled();
   });
 });

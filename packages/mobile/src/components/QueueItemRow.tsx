@@ -14,6 +14,7 @@ import {
   type GestureUpdateEvent,
   type PanGestureHandlerEventPayload,
 } from 'react-native-gesture-handler';
+import { isMultiFrameClimb } from '../lib/is-multi-frame-climb';
 import { useTranslation } from 'react-i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -144,7 +145,7 @@ function QueueItemRowComponent({
   showcaseAvatarAnchor = false,
 }: QueueItemRowProps) {
   const { systemColors, brandColors } = useTheme();
-  const { t } = useTranslation('session');
+  const { t } = useTranslation(['session', 'climbs']);
   // The climber's thumbnail switch moves two things in this row with it: where
   // the separator starts, and whether the trailing control may set the height.
   const hasThumbnail = useClimbRowField('thumbnail');
@@ -482,9 +483,12 @@ function QueueItemRowComponent({
   // memoized because a test asserts its identity across re-renders, but a string
   // has no such contract and memoizing it would only add a deps array to keep true.
   const positionLabel = t('mobile.queue.positionLabel', { position });
-  const rowAccessibilityLabel = addedBy
+  const baseRowAccessibilityLabel = addedBy
     ? `${climbName}, ${positionLabel}, ${t('mobile.queue.addedByAria', { name: addedBy.name })}`
     : `${climbName}, ${positionLabel}`;
+  const rowAccessibilityLabel = isMultiFrameClimb(item.climb?.framesCount)
+    ? `${baseRowAccessibilityLabel}, ${t('mobile.climbRow.frameCount', { ns: 'climbs', count: item.climb.framesCount })}`
+    : baseRowAccessibilityLabel;
 
   const rowContent = (
     // touchAction="pan-y" (web only): RNGH otherwise defaults the row's DOM node

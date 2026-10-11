@@ -1,3 +1,4 @@
+import { parseFramesSegments } from '@boardsesh/board-constants/hold-states';
 import { type useRouter } from 'expo-router';
 import type { SessionDetailTick } from '@boardsesh/shared-schema';
 import type { ClimbListItemClimb } from '../components/ClimbListItemContent';
@@ -34,6 +35,7 @@ export function sessionTickToClimb(tick: SessionDetailTick): ClimbListItemClimb 
     uuid: tick.climbUuid,
     name: tick.climbName ?? '',
     frames: tick.frames,
+    framesCount: parseFramesSegments(tick.frames).length,
     difficulty: tick.difficultyName ?? '',
     ascensionist_count: 0,
     quality_average: '0',

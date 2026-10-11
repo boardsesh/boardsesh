@@ -16,6 +16,7 @@ import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { DraftChip, climbChipStyles } from './DraftChip';
+import { ClimbFramesBadge, isMultiFrameClimb } from './ClimbFramesBadge';
 import { ProjectChip } from './ProjectChip';
 import {
   ClimbPlaylistChips,
@@ -61,6 +62,8 @@ export type ClimbListItemClimb = {
   uuid: string;
   name: string;
   frames: string;
+  /** Multi-frame routes receive a fixed pip, over the picture or beside the name. */
+  framesCount?: number | null;
   difficulty: string;
   mirrored?: boolean | null;
   is_draft?: boolean | null;
@@ -1038,6 +1041,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   const separateAttributesLine = hasLostHolds && allowNameWrapping;
   const nameAttributes = (
     <>
+      {!layout.hasThumbnail && isMultiFrameClimb(climb.framesCount) ? (
+        <ClimbFramesBadge framesCount={climb.framesCount} placement="inline" />
+      ) : null}
       <ClimbAttributeIcons
         benchmarkDifficulty={climb.benchmark_difficulty}
         characteristics={climb.characteristics}
@@ -1095,6 +1101,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             setIds={setIds}
             mirrored={climb.mirrored ?? false}
           />
+          {isMultiFrameClimb(climb.framesCount) ? <ClimbFramesBadge framesCount={climb.framesCount} /> : null}
         </View>
       ) : null}
 

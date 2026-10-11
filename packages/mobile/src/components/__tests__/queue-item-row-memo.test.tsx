@@ -76,10 +76,6 @@ const a11y = vi.hoisted(() => ({
 const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
 
 vi.mock('react-native', () => {
-  const passthrough =
-    (tag: string) =>
-    ({ children }: { children?: ReactNode }) =>
-      createElement(tag, null, children);
   return {
     Platform: platform,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
@@ -318,6 +314,15 @@ describe('QueueItemRow React.memo', () => {
     a11y.row = null;
     a11y.tick = null;
     vi.clearAllMocks();
+  });
+
+  it('announces frame counts when route metadata arrives for the same queue climb', () => {
+    const item = makeItem('route', 'Long Route');
+    const props = { position: 1, board, isCurrentClimb: false, onPress, onRemove };
+    const { rerender } = render(<QueueItemRow {...props} item={item} />);
+    expect(a11y.row?.accessibilityLabel).not.toContain('mobile.climbRow.frameCount');
+    rerender(<QueueItemRow {...props} item={{ ...item, climb: { ...item.climb, framesCount: 4 } }} />);
+    expect(a11y.row?.accessibilityLabel).toContain('mobile.climbRow.frameCount');
   });
 
   it('reveals a short swipe, commits a full release, and ignores cancelled releases', () => {

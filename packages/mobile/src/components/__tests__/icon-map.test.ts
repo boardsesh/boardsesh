@@ -3,7 +3,7 @@ import { iconMap, type IconMapping, type IconName } from '../icon-map';
 
 describe('iconMap', () => {
   it('every entry has both ios and android string values', () => {
-    for (const [iconName, mapping] of Object.entries(iconMap)) {
+    for (const mapping of Object.values(iconMap)) {
       expect(typeof mapping.ios).toBe('string');
       expect(mapping.ios.length).toBeGreaterThan(0);
       expect(typeof mapping.android).toBe('string');
@@ -19,16 +19,6 @@ describe('iconMap', () => {
       expect(mapping.iosOpticalCenterRatio).toBeGreaterThan(0);
       expect(mapping.iosOpticalCenterRatio).toBeLessThanOrEqual(0.2);
     }
-  });
-
-  it('has no duplicate ios values within the map', () => {
-    const iosValues = Object.values(iconMap).map((mapping) => mapping.ios);
-    const iosSet = new Set(iosValues);
-    // Some legitimate duplicates exist (e.g. bluetooth and bluetooth.connected share the same ios icon)
-    // so we just verify all keys are unique (implicit from object structure), not ios values
-    const keys = Object.keys(iconMap);
-    const keySet = new Set(keys);
-    expect(keySet.size).toBe(keys.length);
   });
 
   it('has unique keys', () => {
@@ -58,6 +48,10 @@ describe('iconMap', () => {
     expect(iconMap['chevron.left']).toBeDefined();
     expect(iconMap.close).toBeDefined();
     expect(iconMap.back).toBeDefined();
+  });
+
+  it('maps frame counts to stable stack glyphs', () => {
+    expect(iconMap.frames).toEqual({ ios: 'rectangle.stack', android: 'card-multiple-outline' });
   });
 
   it('contains action icons', () => {

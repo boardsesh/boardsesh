@@ -33,6 +33,7 @@ import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } fr
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
+import { isMultiFrameClimb } from '../../../lib/is-multi-frame-climb';
 import { tickToClimb } from '../../../lib/tick-to-climb';
 import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
@@ -149,7 +150,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   participant,
   onPress,
 }: SessionHistoryRowProps) {
-  const { t } = useTranslation('session');
+  const { t } = useTranslation(['session', 'climbs']);
   const { systemColors, brandColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const { openClimbActions } = useDrawerHost();
@@ -168,6 +169,13 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
       break;
   }
   const climb = tickToClimb(tick);
+  const historyRowLabel = t('mobile.session.historyRowAria', {
+    name: tick.climbName ?? t('detail.unknownClimb'),
+    status: statusLabel,
+  });
+  const rowAccessibilityLabel = isMultiFrameClimb(climb?.framesCount)
+    ? `${historyRowLabel}, ${t('mobile.climbRow.frameCount', { ns: 'climbs', count: climb.framesCount })}`
+    : historyRowLabel;
   const boardConfig = tick.layoutId
     ? renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard)
     : null;
@@ -209,10 +217,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
         feedback="opacity"
         opacityTo={0.7}
         accessibilityRole="button"
-        accessibilityLabel={t('mobile.session.historyRowAria', {
-          name: tick.climbName ?? t('detail.unknownClimb'),
-          status: statusLabel,
-        })}
+        accessibilityLabel={rowAccessibilityLabel}
         style={[styles.historyRow, { backgroundColor: systemColors.secondaryBackground }]}
       >
         <View style={styles.historyStatusSlot}>

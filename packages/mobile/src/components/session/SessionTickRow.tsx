@@ -20,6 +20,7 @@ import { brandColors, withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
+import { isMultiFrameClimb } from '../../lib/is-multi-frame-climb';
 import { sessionTickToClimb } from '../../lib/session-tick-mapping';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import {
@@ -96,7 +97,7 @@ export const SessionTickRow = memo(function SessionTickRow({
   participant,
   onPress,
 }: SessionTickRowProps) {
-  const { t } = useTranslation('session');
+  const { t } = useTranslation(['session', 'climbs']);
   const { systemColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
@@ -159,6 +160,10 @@ export const SessionTickRow = memo(function SessionTickRow({
   );
 
   const climb = sessionTickToClimb(tick);
+  const climbLabel = tick.climbName ?? t('detail.unknownClimb');
+  const rowAccessibilityLabel = isMultiFrameClimb(climb?.framesCount)
+    ? `${climbLabel}, ${t('mobile.climbRow.frameCount', { ns: 'climbs', count: climb.framesCount })}`
+    : climbLabel;
   // The layout-default fallback memoises internally (static board metadata), so
   // this per-row call is O(1) after the first lookup for the board.
   const boardConfig = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
@@ -174,7 +179,7 @@ export const SessionTickRow = memo(function SessionTickRow({
           feedback="opacity"
           opacityTo={0.7}
           accessibilityRole="button"
-          accessibilityLabel={tick.climbName ?? t('detail.unknownClimb')}
+          accessibilityLabel={rowAccessibilityLabel}
           style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
         >
           {isMultiUser ? (

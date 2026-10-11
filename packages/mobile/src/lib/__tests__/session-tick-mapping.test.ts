@@ -40,6 +40,9 @@ function makeTick(overrides: Partial<SessionDetailTick> = {}): SessionDetailTick
 }
 
 describe('sessionTickToClimb', () => {
+  it('counts multi-frame tick routes', () => {
+    expect(sessionTickToClimb(makeTick({ frames: 'p1r15,p2r15' }))?.framesCount).toBe(2);
+  });
   it('returns null without frames (falls back to the plain text row)', () => {
     expect(sessionTickToClimb(makeTick({ frames: null }))).toBeNull();
   });

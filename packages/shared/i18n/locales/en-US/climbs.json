@@ -622,7 +622,9 @@
       },
       "setAngleMarker": "set at {{angle}}°",
       "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees",
-      "communityGradeAria": "Community grade {{grade}}"
+      "communityGradeAria": "Community grade {{grade}}",
+      "frameCount_one": "{{count}} frame",
+      "frameCount_other": "{{count}} frames"
     },
     "climbRules": {
       "matchingAllowed": "Matching allowed",

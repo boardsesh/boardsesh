@@ -622,7 +622,9 @@
       },
       "setAngleMarker": "bei {{angle}}° geschraubt",
       "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad",
-      "communityGradeAria": "Community-Grad {{grade}}"
+      "communityGradeAria": "Community-Grad {{grade}}",
+      "frameCount_one": "{{count}} Bild",
+      "frameCount_other": "{{count}} Bilder"
     },
     "climbRules": {
       "matchingAllowed": "Matchen erlaubt",

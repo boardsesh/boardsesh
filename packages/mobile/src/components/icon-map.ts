@@ -123,6 +123,8 @@ export const iconMap = {
   'ascent.attempt': { ios: 'xmark.circle', android: 'close-circle-outline' },
   // Remove-one-frame in the create-climb route editor — a circled X, distinct
   // from the trash-can `delete` glyph the Clear-all-holds action already uses.
+  // Stable stack glyphs distinguish routes from single-frame boulders.
+  frames: { ios: 'rectangle.stack', android: 'card-multiple-outline' },
   'frame.remove': { ios: 'xmark.circle', android: 'close-circle-outline' },
   // Intrinsic climb-attribute glyphs shown after the name (web parity:
   // climb-card/climb-icons.tsx © benchmark + ⊘ no-match).
