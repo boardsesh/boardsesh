@@ -19,7 +19,7 @@
 // Pure: no I/O, no clock. The caller supplies the manifest (however it fetched
 // and cached it) and the scope's local checkpoint/attempt state.
 
-import type { SnapshotManifest, SnapshotManifestEntry } from './snapshot-manifest';
+import { SNAPSHOT_PRIVACY_VERSION, type SnapshotManifest, type SnapshotManifestEntry } from './snapshot-manifest';
 import { evaluateBootstrapEligibility, isBootstrapDoneHonoured, type BootstrapRetryState } from './bootstrap-retry';
 import { ARTIFACT_SCHEMA_VERSION } from '../db/migrations';
 
@@ -71,7 +71,11 @@ export function findSnapshotEntry(
  * field so the separate grades artifact — which carries its own
  * `schemaVersion` — is held to the same rule.
  */
-export function isSnapshotEntryUsable(entry: Pick<SnapshotManifestEntry, 'schemaVersion'>): boolean {
+export function isSnapshotEntryUsable(entry: Pick<SnapshotManifestEntry, 'schemaVersion' | 'privacyVersion'>): boolean {
+  // Built under the one rule this client imports (`SNAPSHOT_PRIVACY_VERSION`).
+  // The platform's snapshot source drops other entries before the engine sees
+  // them; this is the same test where the import and the size quote both ask.
+  if (entry.privacyVersion !== SNAPSHOT_PRIVACY_VERSION) return false;
   return entry.schemaVersion >= ARTIFACT_SCHEMA_VERSION;
 }
 

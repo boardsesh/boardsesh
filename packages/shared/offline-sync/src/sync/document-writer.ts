@@ -15,12 +15,18 @@ export function toSqliteValue(value: unknown): SqlValue {
  * A `board_climb_stats` document as a protected write may store it: with no
  * first-ascent credit (issue #6306).
  *
- * On a climb with a Boardsesh author that name is whoever first sent it, and
- * whether a viewer may see it depends on that climber's privacy. The protected
- * stream therefore ships NULL for both fields, and no reader on the device
- * selects either. Blanking them here as well means a row written this way can
- * never hold a name, whatever the response carried. Both keys are always set, so
- * an update of an existing row clears a name an earlier bundle stored there.
+ * The server sends the stored upstream credit for a climb with no Boardsesh
+ * owner, and none where the name would come from Boardsesh ticks: that name is
+ * whoever first sent the climb, and whether a viewer may see it depends on
+ * that climber's privacy. Every row of a protected page is of the second kind
+ * (the climber's own drafts and unlisted climbs, or a wall's climbs), so the
+ * server ships NULL for both fields there, and no reader on the device selects
+ * either. Blanking them here as well means a row written this way can never
+ * hold a name, whatever the response carried. Both keys are always set, so an
+ * update of an existing row clears a name an earlier bundle stored there.
+ *
+ * A REFERENCE page is written exactly as it arrives: the server has already
+ * decided, the same way for every viewer and for the snapshot artifact.
  */
 export function withoutFirstAscentCredit(document: Record<string, unknown>): Record<string, unknown> {
   return { ...document, fa_username: null, fa_at: null };

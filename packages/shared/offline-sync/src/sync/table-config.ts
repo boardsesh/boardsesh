@@ -396,12 +396,19 @@ export const BOARD_DATA_TABLES = Object.entries(TABLE_CONFIGS)
 /**
  * One of the two streams a per-board table is pulled through (issue #6306).
  *
- *  - `reference`: the public catalogue, the same rows for every viewer and
- *    exactly the rows a snapshot artifact carries. Its cursor is the artifact's
- *    watermark after an import, and a privacy event never resets it.
- *  - `protected`: rows the server authorizes per viewer, which is every climb
- *    with a Boardsesh author. Small, and the only stream a privacy event makes
- *    the device replay.
+ *  - `reference`: every published and listed climb, whoever set it, with its
+ *    stats and grades. The same rows for every viewer and exactly the rows a
+ *    snapshot artifact carries, so its cursor is the artifact's watermark after
+ *    an import. No privacy setting applies to it.
+ *  - `protected`: the rows only this viewer is sent. On a catalogue board that
+ *    is the climber's own drafts and unlisted climbs, a handful of rows that
+ *    change with the ACCOUNT and not with anybody's privacy settings. On a
+ *    spray wall it is everything, and it does depend on privacy
+ *    (`isPrivacyScopedBoardType`).
+ *
+ * A climb that stops being published and listed leaves the reference stream.
+ * The server writes a `board_climbs` deletion marker for it, so every device
+ * drops its copy, and its owner gets it back through the protected stream.
  */
 export type BoardSyncStream = 'reference' | 'protected';
 
@@ -422,6 +429,23 @@ const BOARD_TYPES_WITHOUT_REFERENCE: ReadonlySet<string> = new Set(['spray']);
 export function hasReferenceStream(boardType: string): boolean {
   return !BOARD_TYPES_WITHOUT_REFERENCE.has(boardType);
 }
+
+/**
+ * Whether a board type's protected stream depends on privacy: who may see a
+ * spray wall changes with its sharing, a gym's members and account privacy. A
+ * privacy event withdraws such a board's rows and makes the device ask again.
+ *
+ * Every other board's protected stream is the climber's own rows, which no
+ * privacy event changes, so nothing of theirs is withdrawn, fenced or replayed
+ * for one. The same set as "has no reference stream" today, and named apart
+ * because the two answer different questions.
+ */
+export function isPrivacyScopedBoardType(boardType: string): boolean {
+  return BOARD_TYPES_WITHOUT_REFERENCE.has(boardType);
+}
+
+/** The board types `isPrivacyScopedBoardType` answers true for. */
+export const PRIVACY_SCOPED_BOARD_TYPES: readonly string[] = [...BOARD_TYPES_WITHOUT_REFERENCE];
 
 /**
  * The streams one board scope pulls `tableName` through, in pull order.

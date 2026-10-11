@@ -245,6 +245,7 @@ export {
   setProtectedCheckpoint,
   isScopeProtectedComplete,
   resetProtectedSyncState,
+  resetPrivacyScopedProtectedSyncState,
   LEGACY_FIRST_ASCENT_SCRUB_KEY,
   deleteCheckpoint,
   deleteAllCheckpoints,
@@ -269,6 +270,7 @@ export {
   BOARD_DATA_TABLES,
   boardSyncStreamsFor,
   hasReferenceStream,
+  isPrivacyScopedBoardType,
 } from './sync/table-config';
 export type { BoardSyncStream, TableSyncConfig } from './sync/table-config';
 export {
@@ -301,7 +303,11 @@ export type { AbandonedDownloadInfo, ScopeTeardownResult, ScopeUsage } from './s
 export { claimAbandonedDownloadTerminal } from './sync/download-terminal-registry';
 
 // --- Board-snapshot manifest (Phase 2 export ↔ Phase 3 bootstrap) ----------------
-export { parseSnapshotManifest, SNAPSHOT_MANIFEST_FORMAT_VERSION } from './sync/snapshot-manifest';
+export {
+  parseSnapshotManifest,
+  SNAPSHOT_MANIFEST_FORMAT_VERSION,
+  SNAPSHOT_PRIVACY_VERSION,
+} from './sync/snapshot-manifest';
 export type {
   SnapshotManifest,
   SnapshotManifestEntry,

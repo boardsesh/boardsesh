@@ -44,11 +44,12 @@ let _isSigningOut = false;
 let _globalWipeEpoch = 0;
 
 // Monotonic generation of PROTECTED withdrawals: a privacy event took back the
-// device's copies of other climbers' rows (issue #6306). It fences one kind of
-// work only, the writes that put such rows on the device: a protected sync page
-// and the saved-climb mirror. Everything else keeps running, which is the point.
-// A privacy event used to bump the global epoch above, and that restarted every
-// download on the phone at each launch.
+// device's copies of rows whose visibility depends on privacy, which is a spray
+// wall's (issue #6306). It fences one kind of work only, the writes that put
+// such rows on the device: a wall's sync pages and the saved-climb mirror.
+// Everything else keeps running, which is the point. A privacy event used to
+// bump the global epoch above, and that restarted every download on the phone
+// at each launch.
 let _protectedWithdrawalEpoch = 0;
 
 /**

@@ -29,14 +29,15 @@
 //    also keeps it safe from a teardown landing between chunks: the teardown
 //    deletes that marker in the same transaction as the index rows.
 //
-//  - AND ONLY ONCE THE PROTECTED STREAM IS BACK (issue #6306). A privacy event
-//    deletes other climbers' climbs and the next pull brings the permitted ones
-//    back with the `sync_seq` they always had. A build between those two would
-//    stamp a watermark above rows that are about to return, and they would never
-//    be indexed. So the build also needs `isScopeProtectedComplete`, under the
-//    same write-lock re-check. A protected page that does land at or below a
-//    watermark drops it (`invalidateLayoutHoldIndex`), which covers a climb the
-//    viewer has only just been allowed to see.
+//  - A SPRAY WALL ALSO NEEDS ITS PROTECTED STREAM BACK (issue #6306). A privacy
+//    event deletes the wall's climbs the viewer does not own, and the next pull
+//    brings the permitted ones back with the `sync_seq` they always had. A build
+//    between those two would index half a wall. So a board whose rows depend
+//    on privacy (`isPrivacyScopedBoardType`) also needs
+//    `isScopeProtectedComplete`, under the same write-lock re-check. A
+//    catalogue board does not: its protected stream is the climber's own drafts
+//    and unlisted climbs, which are never indexed, so its index has nothing to
+//    wait for and still answers offline while that stream is replayed.
 //
 //  - FIRST BUILD, then INCREMENTAL. With no watermark, the build records the
 //    scope's MAX(sync_seq), walks the scope in uuid order (so new local ids and
@@ -63,6 +64,7 @@ import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '.
 import { offlineBoardKey, parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter } from '../sync/board-scope-sql';
 import { isScopeDownloadComplete, isScopeProtectedComplete } from '../sync/checkpoints';
+import { isPrivacyScopedBoardType } from '../sync/table-config';
 import { invalidateKeysForTable, scopedInvalidateFilters } from '../sync/invalidate-keys';
 import { runPullWrite } from '../sync/pull-write';
 import {
@@ -116,8 +118,9 @@ export type EnsureHoldIndexResult = {
   /**
    * `complete` — the index covers every climb of the scope.
    * `aborted` — `shouldContinue` said stop, or the scope changed under the build.
-   * `not-downloaded` — the scope has no `scope-complete:` marker, or its
-   * protected stream is still being replayed after a privacy event, so nothing ran.
+   * `not-downloaded` — the scope has no `scope-complete:` marker, or it is a
+   * spray wall whose rows are still being replayed after a privacy event, so
+   * nothing ran.
    */
   status: 'complete' | 'aborted' | 'not-downloaded';
   /** Climbs read from `board_climbs` and committed. */
@@ -650,9 +653,10 @@ async function buildHoldIndex(
 
   // Read BEFORE anything else: a teardown that lands after this point changes it.
   const generation = await readHoldIndexGeneration(db, boardType, layoutId);
-  /** Both halves of the scope are on the device: see the header's two ONLY rules. */
+  /** Everything the index is built from is on the device: see the header's two rules. */
   const isScopeIndexable = async (executor: SqlExecutor): Promise<boolean> =>
-    (await isScopeDownloadComplete(executor, scopeKey)) && (await isScopeProtectedComplete(executor, scopeKey));
+    (await isScopeDownloadComplete(executor, scopeKey)) &&
+    (!isPrivacyScopedBoardType(boardType) || (await isScopeProtectedComplete(executor, scopeKey)));
   if (!(await isScopeIndexable(db))) return { ...result, status: 'not-downloaded' };
 
   const filter = climbsScopeFilter(scope);

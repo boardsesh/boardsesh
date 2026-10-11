@@ -2,7 +2,7 @@ import type { SqlExecutor } from '../database';
 import { parseOfflineBoardKey } from '../offline-board-key';
 import { DELETIONS_COVERAGE_KEY } from './retention';
 import { LOCAL_USER_ID_KEY } from './local-user-owner';
-import { BOARD_DATA_TABLES, boardSyncStreamsFor } from './table-config';
+import { BOARD_DATA_TABLES, PRIVACY_SCOPED_BOARD_TYPES, boardSyncStreamsFor } from './table-config';
 
 export type SyncCheckpoint = {
   updatedAt: string;
@@ -32,9 +32,10 @@ export type SyncCheckpoint = {
  */
 export type ProtectedCheckpoint = SyncCheckpoint & {
   /**
-   * The stream has reached its tail since the cursor was last RESET (a privacy
-   * event, an import, a sign-out), so no protected row is missing from the
-   * device that it once held. That is all it says.
+   * The stream has reached its tail since the cursor was last RESET (a change
+   * of account, an import, and for a spray wall a privacy event), so no
+   * protected row is missing from the device that it once held. That is all
+   * it says.
    *
    * It does not say the stream is at its tail now, and it does not say every
    * row carries the current revision's columns. It is sticky through both a
@@ -53,13 +54,6 @@ export type ProtectedCheckpoint = SyncCheckpoint & {
    * few pages, so it needs none of the reference stream's metered-link replay.
    */
   revision: number;
-  /**
-   * Wall-clock ms at which this stream was last pulled to its tail. Kept only
-   * for the streams the pull client rations (protected stats and grades, see
-   * `PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS`); absent everywhere else, and
-   * absent reads as "not pulled recently".
-   */
-  pulledAt?: number;
 };
 
 /**
@@ -89,7 +83,7 @@ function parseStoredCheckpoint(raw: string | null | undefined): StoredCheckpoint
 function parseProtectedCheckpoint(row: StoredCheckpointRow | null): ProtectedCheckpoint | null {
   const stored = row?.protected;
   if (typeof stored !== 'object' || stored === null) return null;
-  const { updatedAt, syncSeq, complete, revision, pulledAt } = stored as Record<string, unknown>;
+  const { updatedAt, syncSeq, complete, revision } = stored as Record<string, unknown>;
   // Anything that is not a cursor this bundle could have written reads as
   // absent, never as a guess: a replay from the epoch is always safe.
   if (
@@ -103,13 +97,7 @@ function parseProtectedCheckpoint(row: StoredCheckpointRow | null): ProtectedChe
   ) {
     return null;
   }
-  return {
-    updatedAt,
-    syncSeq,
-    complete,
-    revision,
-    ...(typeof pulledAt === 'number' && Number.isFinite(pulledAt) ? { pulledAt } : {}),
-  };
+  return { updatedAt, syncSeq, complete, revision };
 }
 
 /**
@@ -433,7 +421,6 @@ export async function setProtectedCheckpoint(
     syncSeq: checkpoint.syncSeq,
     complete: checkpoint.complete,
     revision: checkpoint.revision,
-    ...(checkpoint.pulledAt === undefined ? {} : { pulledAt: checkpoint.pulledAt }),
   };
   await db.runAsync(
     `INSERT INTO sync_meta (key, value) VALUES (?, ?)
@@ -499,17 +486,38 @@ const HOLDS_PROTECTED_CURSOR = `CASE WHEN json_valid(value) THEN json_type(value
  * pull replays them from the epoch. Reference cursors are left exactly where
  * they are.
  *
- * Mobile's privacy revalidation runs this in the SAME transaction that deletes
- * other climbers' rows. A protected cursor that outlived those rows would skip
- * them for good, because the pull is a strict `>` keyset.
+ * For a CHANGE OF ACCOUNT. A catalogue board's protected stream is one
+ * climber's own drafts and unlisted climbs, so a cursor the previous account
+ * left would skip the next account's rows below it for good: the pull is a
+ * strict `>` keyset. `deleteUserCheckpoints` runs this on sign-out, and mobile
+ * runs it again when it finds a viewer it has not prepared the device for,
+ * which covers a sign-out an earlier bundle performed without knowing the
+ * cursor was there.
  *
  * A row that only ever carried a protected cursor is deleted outright rather
  * than left as an empty shell. GLOB, not LIKE: `_` is a wildcard to LIKE, and
  * GLOB keeps the prefix range scan on `sync_meta`'s primary key.
  */
 export async function resetProtectedSyncState(db: SqlExecutor): Promise<void> {
+  await resetProtectedSyncStateOf(db, '*');
+}
+
+/**
+ * The same reset for the boards whose protected rows depend on privacy
+ * (`isPrivacyScopedBoardType`: spray walls), and for no other board.
+ *
+ * For a PRIVACY EVENT. Mobile's revalidation runs it in the SAME transaction
+ * that deletes the wall rows it can no longer vouch for; a protected cursor
+ * that outlived those rows would skip them for good. A catalogue board is not
+ * touched: no privacy setting changes which of its rows this device may hold.
+ */
+export async function resetPrivacyScopedProtectedSyncState(db: SqlExecutor): Promise<void> {
+  for (const boardType of PRIVACY_SCOPED_BOARD_TYPES) await resetProtectedSyncStateOf(db, `${boardType}:*`);
+}
+
+async function resetProtectedSyncStateOf(db: SqlExecutor, scopeKeyGlob: string): Promise<void> {
   for (const tableName of BOARD_DATA_TABLES) {
-    const scopedKeys = `checkpoint:${tableName}:*`;
+    const scopedKeys = `checkpoint:${tableName}:${scopeKeyGlob}`;
     await db.runAsync(`DELETE FROM sync_meta WHERE key GLOB ? AND ${DELETE_PROTECTED_ONLY_ROWS}`, [scopedKeys]);
     await db.runAsync(
       `UPDATE sync_meta SET value = json_remove(value, '$.protected') WHERE key GLOB ? AND ${HOLDS_PROTECTED_CURSOR}`,
@@ -519,11 +527,17 @@ export async function resetProtectedSyncState(db: SqlExecutor): Promise<void> {
 }
 
 /**
- * The same reset for ONE scope. The snapshot import runs it in its final
- * checkpoint transaction: reconciling against an artifact removes local rows the
- * artifact does not carry, and a few of those can be protected rows this device
- * cannot tell apart from stale reference ones. Replaying the scope's protected
- * streams puts them back.
+ * The same reset for ONE scope. The snapshot import runs it twice: in the
+ * transaction that reconciles against the artifact, and again in its final
+ * checkpoint transaction.
+ *
+ * An artifact holds the published version of a climb as of its build. The
+ * climber's own climb may have left the reference set since (it is now a
+ * draft, or unlisted) and come back through the protected stream, and the
+ * import would write the older published copy over it, which the replayed
+ * deletion marker then removes. Replaying the scope's protected streams puts
+ * the climber's row back. In the reconcile transaction too, so an import that
+ * fails part-way has already asked for the replay.
  */
 export async function resetScopeProtectedSyncState(db: SqlExecutor, scopeKey: string): Promise<void> {
   const keys = BOARD_DATA_TABLES.map((tableName) => getCheckpointKey(tableName, scopeKey));

@@ -2,12 +2,13 @@
 // import leaves behind, how the pull carries on from it, and what a device that
 // arrives from an earlier bundle, or goes back to one, ends up doing.
 //
-// An artifact holds a layout's reference rows. Since the privacy work it holds
-// nothing with a Boardsesh author, and for a while the import made up for that
-// by stamping its cursors at the epoch, so the whole board was crawled again
-// behind every import and again after every privacy event. Here the import
-// stamps the artifact's real watermark, and the authored rows come through the
-// protected stream.
+// An artifact holds a layout's reference rows: every published and listed
+// climb, whoever set it, as of its build. For a while artifacts left out every
+// owned climb, and the import made up for that by stamping its cursors at the
+// epoch, so the whole board was crawled again behind every import and again
+// after every privacy event. Here the import stamps the artifact's real
+// watermark, and the only rows that come another way are the climber's own
+// drafts and unlisted climbs, through the protected stream.
 //
 // File-backed SQLite throughout: the import ATTACHes the artifact inside an
 // exclusive transaction, which only a file-backed double runs the way a phone
@@ -28,8 +29,9 @@ import {
   isScopeDownloadComplete,
   isScopeProtectedComplete,
 } from '../checkpoints';
+import { stampLocalUserId } from '../local-user-owner';
 import { pullSync, type ScopeDownloadCompleteInfo, type SyncOptions } from '../pull-client';
-import { getBootstrapDoneMarker } from '../snapshot-bootstrap';
+import { getBootstrapDoneMarker, getBootstrapMetadataByScope } from '../snapshot-bootstrap';
 import type { SnapshotManifestEntry } from '../snapshot-manifest';
 import {
   buildSnapshotArtifacts,
@@ -37,11 +39,13 @@ import {
   createTwoStreamBackend,
   cursorAt,
   EPOCH,
+  leftReferenceMarker,
   manifestOf,
   olderBundleSetCheckpoint,
   simulateOlderBundleRevalidation,
   simulatePrivacyRevalidation,
   type ServerClimb,
+  type ServerDeletion,
   type TwoStreamBackendOptions,
 } from './helpers/two-stream-fixtures';
 
@@ -58,6 +62,7 @@ const catalogueClimb = (sequence: number): ServerClimb => ({
   stats: { faUsername: 'Manufacturer Setter' },
   grade: true,
 });
+// Published and listed, so public and in the artifact, whoever set them.
 const ownClimb: ServerClimb = { uuid: 'viewer-own', ownerId: VIEWER, cursor: cursorAt(40), stats: {}, grade: true };
 const friendClimb: ServerClimb = {
   uuid: 'friend-climb',
@@ -66,12 +71,22 @@ const friendClimb: ServerClimb = {
   stats: {},
   grade: true,
 };
+// A draft: sent to its owner alone, and never in an artifact.
+const DRAFT = { is_draft: true, is_listed: false };
+const ownDraft: ServerClimb = {
+  uuid: 'viewer-draft',
+  ownerId: VIEWER,
+  cursor: cursorAt(45),
+  fields: DRAFT,
+  stats: {},
+  grade: true,
+};
 
 // What the artifact was built from, and one manufacturer climb set since.
-const ARTIFACT_CLIMBS = [catalogueClimb(10), catalogueClimb(11), catalogueClimb(50)];
+const ARTIFACT_CLIMBS = [catalogueClimb(10), catalogueClimb(11), ownClimb, friendClimb, catalogueClimb(50)];
 const ARTIFACT_WATERMARK = cursorAt(50);
 const newerCatalogueClimb = catalogueClimb(90);
-const SERVER_CLIMBS = [...ARTIFACT_CLIMBS, newerCatalogueClimb, ownClimb, friendClimb];
+const SERVER_CLIMBS = [...ARTIFACT_CLIMBS, newerCatalogueClimb, ownDraft];
 const ALL_CLIMB_UUIDS = SERVER_CLIMBS.map((climb) => climb.uuid).sort();
 const REFERENCE_QUERIES = ['syncClimbs', 'syncClimbStats', 'syncClimbGrades'];
 
@@ -87,15 +102,12 @@ beforeEach(async () => {
   db = createTestDatabase(join(workDirectory, 'client.db'));
   await runMigrations(db);
   await ensureMutationQueueTable(db);
+  await stampLocalUserId(db, VIEWER);
   queryClient = { invalidateQueries: vi.fn() };
   __resetDrainerStateForTests();
   layoutPath = join(workDirectory, 'kilter-1.db');
   gradesPath = join(workDirectory, 'kilter-1-grades.db');
-  artifactEntry = await buildSnapshotArtifacts({
-    layoutPath,
-    gradesPath,
-    climbs: SERVER_CLIMBS.filter((climb) => climb !== newerCatalogueClimb),
-  });
+  artifactEntry = await buildSnapshotArtifacts({ layoutPath, gradesPath, climbs: [...ARTIFACT_CLIMBS, ownDraft] });
 });
 
 afterEach(() => {
@@ -110,6 +122,10 @@ const localGrades = async (): Promise<string[]> =>
   (await db.getAllAsync<{ climb_uuid: string }>('SELECT climb_uuid FROM board_climb_grades ORDER BY climb_uuid')).map(
     (row) => row.climb_uuid,
   );
+const localStats = async (): Promise<string[]> =>
+  (await db.getAllAsync<{ climb_uuid: string }>('SELECT climb_uuid FROM board_climb_stats ORDER BY climb_uuid')).map(
+    (row) => row.climb_uuid,
+  );
 
 function backend(
   climbs: ServerClimb[] | (() => ServerClimb[]) = SERVER_CLIMBS,
@@ -118,17 +134,36 @@ function backend(
   return createTwoStreamBackend({ climbs: typeof climbs === 'function' ? climbs : () => climbs, ...extra });
 }
 
-/** A source that publishes the format-2 manifest listing the two artifacts. */
-const formatTwoSource = (extra: Partial<Parameters<typeof createSnapshotSource>[0]> = {}) =>
+/** A source that publishes the manifest listing the two artifacts. */
+const artifactSource = (extra: Partial<Parameters<typeof createSnapshotSource>[0]> = {}) =>
   createSnapshotSource({ manifest: () => manifestOf([artifactEntry]), layoutPath, gradesPath, ...extra });
 
 const sync = (fetch: ReturnType<typeof backend>['fetch'], options: SyncOptions = {}) =>
   pullSync(db, queryClient, fetch, { enabledBoards: [SCOPE_KEY], ...options });
 
+/**
+ * See every write an import issues, before it runs, and optionally fail one. The
+ * import works on the connection its exclusive transaction hands it, which for
+ * a database on disk is not `db` itself.
+ */
+function onImportStatement(observe: (source: string) => void): void {
+  const exclusive = db.withExclusiveTransactionAsync.bind(db);
+  vi.spyOn(db, 'withExclusiveTransactionAsync').mockImplementation((task) =>
+    exclusive(async (transaction) => {
+      const run = transaction.runAsync.bind(transaction);
+      vi.spyOn(transaction, 'runAsync').mockImplementation((source, ...params) => {
+        observe(source);
+        return run(source, ...params);
+      });
+      await task(transaction);
+    }),
+  );
+}
+
 describe('downloading a board from a snapshot', () => {
   it('stamps the artifact’s real watermark and pulls only what the artifact does not hold', async () => {
     const server = backend();
-    const snapshot = formatTwoSource();
+    const snapshot = artifactSource();
     const completions: ScopeDownloadCompleteInfo[] = [];
 
     await sync(server.fetch, {
@@ -143,22 +178,27 @@ describe('downloading a board from a snapshot', () => {
     for (const queryName of REFERENCE_QUERIES) {
       expect(server.requestsFor(queryName, 'REFERENCE').map((request) => request.cursor)).toEqual([ARTIFACT_WATERMARK]);
     }
-    // The authored rows are not in the artifact: they come from the epoch.
+    // The climber's own draft is not in an artifact: it comes from the epoch.
     expect(server.requestsFor('syncClimbs', 'PROTECTED').map((request) => request.cursor)).toEqual([undefined]);
     expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
     expect(await localGrades()).toEqual(ALL_CLIMB_UUIDS);
+    // Other climbers' published climbs came out of the file, with their owner.
+    expect(await db.getFirstAsync("SELECT user_id FROM board_climbs WHERE uuid = 'friend-climb'")).toEqual({
+      user_id: 'friend',
+    });
     expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(newerCatalogueClimb.cursor);
     expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
     expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(true);
     expect(await getBootstrapDoneMarker(db, SCOPE_KEY)).toBe('2');
     expect(completions).toHaveLength(1);
     expect(completions[0]).toMatchObject({ method: 'snapshot', audienceMode: 'split' });
-    expect(completions[0].phases.protectedRows).toBe(6);
+    // The draft, its stats row and its grade row.
+    expect(completions[0].phases.protectedRows).toBe(3);
   });
 
   it('settles: the cycles that follow import nothing and start no stream over', async () => {
     const server = backend();
-    const snapshot = formatTwoSource();
+    const snapshot = artifactSource();
     const options = { snapshotSource: snapshot.source };
     await sync(server.fetch, options);
     server.requests.length = 0;
@@ -173,20 +213,22 @@ describe('downloading a board from a snapshot', () => {
   });
 
   describe('and then living through privacy events', () => {
-    it('keeps the board downloaded and never downloads either artifact again', async () => {
+    it('keeps the board downloaded, downloads neither artifact again, and starts no stream over', async () => {
       const server = backend();
-      const snapshot = formatTwoSource();
+      const snapshot = artifactSource();
       const fetchManifest = vi.spyOn(snapshot.source, 'fetchManifest');
       const onScopeDownloadComplete = vi.fn();
       const options = { snapshotSource: snapshot.source, onScopeDownloadComplete };
       await sync(server.fetch, options);
       const manifestFetchesForTheDownload = fetchManifest.mock.calls.length;
+      server.requests.length = 0;
 
       const artifactDownloads: number[] = [];
       const gradesDownloads: number[] = [];
       for (let event = 0; event < 4; event += 1) {
         await simulatePrivacyRevalidation(db, VIEWER);
         expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+        expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
         await sync(server.fetch, options);
         artifactDownloads.push(snapshot.downloadArtifact.mock.calls.length);
         gradesDownloads.push(snapshot.downloadGradesArtifact.mock.calls.length);
@@ -200,99 +242,185 @@ describe('downloading a board from a snapshot', () => {
       // Not even the manifest is asked for again.
       expect(fetchManifest).toHaveBeenCalledTimes(manifestFetchesForTheDownload);
       expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
-      expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
       expect(await getBootstrapDoneMarker(db, SCOPE_KEY)).toBe('2');
-      // Reference: asked from the watermark for the download, then only ever
-      // from the tail it reached. Never from the epoch.
-      for (const queryName of REFERENCE_QUERIES) {
-        expect(server.requestsFor(queryName, 'REFERENCE').every((request) => request.cursor !== undefined)).toBe(true);
-      }
+      // Every request after the download resumed from a cursor, protected ones
+      // included: an event resets nothing on a catalogue board.
+      expect(server.requestsFor().every((request) => request.cursor !== undefined)).toBe(true);
     });
 
-    it('carries on importing when the event lands during the artifact transfer', async () => {
+    it('imports and finishes in the same cycle when the event lands during the artifact transfer', async () => {
       const server = backend();
       const onSnapshotBootstrapError = vi.fn();
       const onScopeDownloadComplete = vi.fn();
       let eventFired = false;
-      const snapshot = formatTwoSource({
+      const snapshot = artifactSource({
         duringLayoutDownload: async () => {
           if (eventFired) return;
           eventFired = true;
           await simulatePrivacyRevalidation(db, VIEWER);
         },
       });
-      const options = { snapshotSource: snapshot.source, onSnapshotBootstrapError, onScopeDownloadComplete };
 
-      await sync(server.fetch, options);
+      await sync(server.fetch, { snapshotSource: snapshot.source, onSnapshotBootstrapError, onScopeDownloadComplete });
 
-      // The 110 MB transfer was not thrown away: it imported, in this cycle.
+      // The 110 MB transfer was not thrown away, and nothing waited for a
+      // second cycle.
       expect(onSnapshotBootstrapError).not.toHaveBeenCalled();
-      expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
-      expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(newerCatalogueClimb.cursor);
-      expect(await localClimbs()).toEqual([...ARTIFACT_CLIMBS, newerCatalogueClimb].map((climb) => climb.uuid).sort());
-      // Only the protected rows wait for the next cycle.
-      expect(server.requestsFor(undefined, 'PROTECTED')).toHaveLength(0);
-      expect(onScopeDownloadComplete).not.toHaveBeenCalled();
-
-      await sync(server.fetch, options);
-
       expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
       expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
       expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
     });
   });
 
-  // The reconcile removes local rows the artifact does not carry. The watermark
-  // is real, so that is true of every authored climb on the device.
+  // The reconcile removes local rows the artifact does not carry: at or below
+  // the watermark and missing from the file means deleted, or no longer public.
   describe('over rows the device already holds', () => {
-    /** A scope part-way through a paged download: reference rows up to `cursor`, and some authored ones. */
-    async function seedPartialDownload(): Promise<void> {
-      await sync(backend([catalogueClimb(10), ownClimb, friendClimb]).fetch);
+    const takenBackToDraft: ServerClimb = {
+      uuid: 'friend-unpublished',
+      ownerId: 'friend',
+      cursor: cursorAt(30),
+      stats: {},
+      grade: true,
+    };
+
+    /** A scope part-way through a paged download. */
+    async function seedPartialDownload(climbs: ServerClimb[]): Promise<void> {
+      await sync(backend(climbs).fetch);
       await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`scope-complete:${SCOPE_KEY}`]);
     }
+    /** A cycle whose protected streams cannot be reached, so what is left is what the import kept. */
+    const importOnly = async (snapshot: ReturnType<typeof artifactSource>) => {
+      const server = backend(SERVER_CLIMBS, {
+        onRequest: (request) => {
+          if (request.audience === 'PROTECTED') throw new Error('connection dropped');
+        },
+      });
+      await sync(server.fetch, { snapshotSource: snapshot.source }).catch(() => {});
+    };
 
-    it('keeps the climber’s own and other climbers’ climbs through the import', async () => {
-      await seedPartialDownload();
-      const snapshot = formatTwoSource();
-      // No protected pull this cycle, so what is left is what the import kept.
-      await sync(backend().fetch, { snapshotSource: snapshot.source, isProtectedSyncAllowed: () => false });
+    it('keeps the climber’s own draft, which no artifact holds', async () => {
+      await seedPartialDownload([catalogueClimb(10), ownDraft]);
+      const snapshot = artifactSource();
+
+      await importOnly(snapshot);
 
       expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
       expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
-      expect(await localGrades()).toEqual(ALL_CLIMB_UUIDS);
+      expect(await localStats()).toContain('viewer-draft');
+      expect(await localGrades()).toContain('viewer-draft');
     });
 
-    it('replays the protected streams afterwards, which restores an ownerless authored climb the reconcile took', async () => {
-      // A climb whose author deleted their account: still protected, still
-      // public, and with no `user_id` nothing on the device can tell it from a
-      // reference row the artifact has dropped.
-      const orphanedClimb: ServerClimb = {
-        uuid: 'authored-then-orphaned',
-        ownerId: 'deleted-account',
-        cursor: cursorAt(30),
-        fields: { user_id: null },
-        stats: {},
-      };
-      const climbs = [...SERVER_CLIMBS, orphanedClimb];
-      await sync(backend([catalogueClimb(10), ownClimb, orphanedClimb]).fetch);
-      await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`scope-complete:${SCOPE_KEY}`]);
-      expect(await getProtectedCheckpoint(db, CLIMBS_KEY)).toMatchObject({ complete: true });
-      const server = backend(climbs);
+    it('removes another climber’s climb that is no longer in the catalogue, with its stats and grades', async () => {
+      // On the device as a published climb. Its setter has since taken it back
+      // to a draft, so the artifact, built after that, does not have it.
+      await seedPartialDownload([catalogueClimb(10), takenBackToDraft]);
+      expect(await localGrades()).toEqual(['catalogue-10', 'friend-unpublished']);
+      const snapshot = artifactSource();
 
-      await sync(server.fetch, { snapshotSource: formatTwoSource().source });
+      await importOnly(snapshot);
 
-      // The import reset the scope's protected cursors, so the replay started
-      // from the epoch and brought the row back.
-      expect(server.requestsFor('syncClimbs', 'PROTECTED').map((request) => request.cursor)).toEqual([undefined]);
-      expect(await localClimbs()).toEqual([...ALL_CLIMB_UUIDS, orphanedClimb.uuid].sort());
-      expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(true);
+      expect(await localClimbs()).not.toContain('friend-unpublished');
+      expect(await localStats()).not.toContain('friend-unpublished');
+      expect(await localGrades()).not.toContain('friend-unpublished');
+    });
+
+    describe('when the climber’s own climb has become a draft since the artifact was built', () => {
+      // The file holds the published copy (40). The server holds the draft (70)
+      // and a marker for the copy; the device already has both.
+      const ownAsDraft: ServerClimb = { ...ownClimb, cursor: cursorAt(70), fields: DRAFT };
+      const climbsNow = [catalogueClimb(10), catalogueClimb(11), friendClimb, catalogueClimb(50), ownAsDraft];
+      const deletions: ServerDeletion[] = [leftReferenceMarker(ownAsDraft)];
+      const ownRow = () => db.getAllAsync("SELECT is_draft, sync_seq FROM board_climbs WHERE uuid = 'viewer-own'");
+
+      beforeEach(async () => {
+        await sync(backend([catalogueClimb(10), ownAsDraft], { deletions: () => deletions }).fetch);
+        await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`scope-complete:${SCOPE_KEY}`]);
+        expect(await ownRow()).toEqual([{ is_draft: 1, sync_seq: 70 }]);
+        expect(await getProtectedCheckpoint(db, CLIMBS_KEY)).toMatchObject({ ...cursorAt(70), complete: true });
+      });
+
+      it('puts the draft back after the import wrote the older published copy over it', async () => {
+        const server = backend(climbsNow, { deletions: () => deletions });
+
+        await sync(server.fetch, { snapshotSource: artifactSource().source });
+
+        // The import rewound the deletions cursor, the marker removed the
+        // published copy, and the protected replay it asked for brought the
+        // draft back.
+        expect(server.requestsFor('syncClimbs', 'PROTECTED').map((request) => request.cursor)).toEqual([undefined]);
+        expect(await ownRow()).toEqual([{ is_draft: 1, sync_seq: 70 }]);
+        expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+      });
+
+      // DATA LOSS found in review of #6329. The protected reset used to sit in
+      // the import's last transaction only, so an import that died after its
+      // climbs batch left the published copy on the device, under a protected
+      // cursor that had already passed the draft.
+      it('puts the draft back when the import fails after its reconcile', async () => {
+        const server = backend(climbsNow, { deletions: () => deletions });
+        const onSnapshotBootstrapError = vi.fn();
+        onImportStatement((source) => {
+          if (source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) throw new Error('disk I/O error');
+        });
+
+        await sync(server.fetch, { snapshotSource: artifactSource().source, onSnapshotBootstrapError });
+
+        expect(onSnapshotBootstrapError).toHaveBeenCalledTimes(1);
+        // No reference cursor was stamped by the failed import...
+        expect(await getBootstrapDoneMarker(db, SCOPE_KEY)).toBeNull();
+        // ...and the replay it had already asked for restored the draft.
+        expect(server.requestsFor('syncClimbs', 'PROTECTED').map((request) => request.cursor)).toEqual([undefined]);
+        expect(await ownRow()).toEqual([{ is_draft: 1, sync_seq: 70 }]);
+        expect(await getProtectedCheckpoint(db, CLIMBS_KEY)).toMatchObject({ ...cursorAt(70), complete: true });
+      });
     });
   });
 });
 
-// One row per case in the design's mixed-version table. A device gets here from
-// a bundle that pulled one stream per table and reset every cursor on each
-// privacy event, and it may go back to one.
+// The artifact rule this client imports is exactly one (`SNAPSHOT_PRIVACY_VERSION`).
+describe('an artifact built under another rule', () => {
+  it.each([
+    ['the rule before it, with every owned climb left out', 1],
+    ['no rule at all', undefined],
+    ['a rule this build has not heard of', 3],
+  ])('is not downloaded (%s): the board comes through the paged pull instead', async (_label, privacyVersion) => {
+    const entry = {
+      ...artifactEntry,
+      privacyVersion,
+      grades: artifactEntry.grades && { ...artifactEntry.grades, privacyVersion },
+    };
+    const snapshot = createSnapshotSource({ manifest: () => manifestOf([entry]), layoutPath, gradesPath });
+    const server = backend();
+    const completions: ScopeDownloadCompleteInfo[] = [];
+
+    await sync(server.fetch, {
+      snapshotSource: snapshot.source,
+      onScopeDownloadComplete: (info) => completions.push(info),
+    });
+
+    expect(snapshot.downloadArtifact).not.toHaveBeenCalled();
+    expect(snapshot.downloadGradesArtifact).not.toHaveBeenCalled();
+    expect(server.requestsFor('syncClimbs', 'REFERENCE').map((request) => request.cursor)).toEqual([undefined]);
+    // Importing a rule-1 file at its watermark would have skipped these for good.
+    expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
+    expect(completions.map((info) => info.method)).toEqual(['paged']);
+  });
+
+  it('does not take a grades file of another rule beside a layout file of this one', async () => {
+    const entry = { ...artifactEntry, grades: artifactEntry.grades && { ...artifactEntry.grades, privacyVersion: 1 } };
+    const snapshot = createSnapshotSource({ manifest: () => manifestOf([entry]), layoutPath, gradesPath });
+
+    await sync(backend().fetch, { snapshotSource: snapshot.source });
+
+    expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
+    expect(snapshot.downloadGradesArtifact).not.toHaveBeenCalled();
+    expect(await localGrades()).toEqual(ALL_CLIMB_UUIDS);
+  });
+});
+
+// One row per case in the mixed-version table. A device gets here from a bundle
+// that pulled one stream per table and reset every cursor on each privacy event,
+// and it may go back to one.
 describe('arriving from, and returning to, a bundle from before the split', () => {
   /** The single cursor an earlier bundle kept per table: a position in the one stream of every visible row. */
   const olderBundleCursors = async (
@@ -320,7 +448,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [`scope-complete:${SCOPE_KEY}`, '1']);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [`bootstrap-done:${SCOPE_KEY}`, '1']);
     const server = backend();
-    const snapshot = formatTwoSource();
+    const snapshot = artifactSource();
     const onScopeDownloadComplete = vi.fn();
 
     await sync(server.fetch, { snapshotSource: snapshot.source, onScopeDownloadComplete });
@@ -342,7 +470,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
   });
 
   describe('a board that was part-way through a paged download', () => {
-    // Through sequence 40: three manufacturer climbs and the climber's own.
+    // Through sequence 40: two manufacturer climbs and the climber's own published one.
     const MID_CRAWL = 40;
     beforeEach(async () => {
       await seedRowsThrough(MID_CRAWL);
@@ -365,7 +493,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
 
     it('heals from an artifact once one is published', async () => {
       const server = backend();
-      const snapshot = formatTwoSource();
+      const snapshot = artifactSource();
       const completions: ScopeDownloadCompleteInfo[] = [];
 
       await sync(server.fetch, {
@@ -384,8 +512,8 @@ describe('arriving from, and returning to, a bundle from before the split', () =
     });
   });
 
-  // A bundle with the privacy work imported a format-2 artifact and stamped its
-  // cursors at the epoch, to crawl the authored rows the artifact left out.
+  // A bundle with the privacy work imported an artifact and stamped its cursors
+  // at the epoch, to crawl the owned climbs artifacts then left out.
   describe('a board an earlier bundle imported with epoch stamps', () => {
     beforeEach(async () => {
       await seedRowsThrough(50, ARTIFACT_CLIMBS);
@@ -395,7 +523,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
 
     it('imports the artifact again for its real watermark, and never crawls the board from the epoch', async () => {
       const server = backend();
-      const snapshot = formatTwoSource();
+      const snapshot = artifactSource();
       const onBootstrapMetadataChanged = vi.fn();
 
       await sync(server.fetch, { snapshotSource: snapshot.source, onBootstrapMetadataChanged });
@@ -413,7 +541,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
 
     it('waits for an unmetered link to do it, and crawls on meanwhile', async () => {
       const server = backend();
-      const snapshot = formatTwoSource();
+      const snapshot = artifactSource();
 
       await sync(server.fetch, { snapshotSource: snapshot.source, isOnUnmeteredNetwork: () => false });
 
@@ -436,7 +564,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
     it.each(['1', 'heal'])('imports again when an artifact is published (marker %s)', async (marker) => {
       await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [`bootstrap-done:${SCOPE_KEY}`, marker]);
       const server = backend();
-      const snapshot = formatTwoSource();
+      const snapshot = artifactSource();
       const completions: ScopeDownloadCompleteInfo[] = [];
 
       await sync(server.fetch, {
@@ -450,6 +578,56 @@ describe('arriving from, and returning to, a bundle from before the split', () =
       expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
       expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
       expect(completions.map((info) => info.method)).toEqual(['snapshot']);
+    });
+
+    // Found in review of #6329: with the marker set aside and no cursor, the
+    // board read as a fresh download, and only a heal asks whether the link is
+    // metered. 110 MB plus 27 MB of grades over cellular, which nobody chose.
+    it.each(['1', 'heal'])(
+      'does not download it on a metered link, where nobody confirmed the size (marker %s)',
+      async (marker) => {
+        await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [`bootstrap-done:${SCOPE_KEY}`, marker]);
+        const server = backend();
+        const snapshot = artifactSource();
+        const completions: ScopeDownloadCompleteInfo[] = [];
+        const options = {
+          snapshotSource: snapshot.source,
+          isOnUnmeteredNetwork: () => false,
+          onScopeDownloadComplete: (info: ScopeDownloadCompleteInfo) => completions.push(info),
+        };
+        // My Boards does not call this a board downloaded the fast way.
+        expect((await getBootstrapMetadataByScope(db, [SCOPE_KEY])).get(SCOPE_KEY)?.isBootstrapDone).toBe(false);
+
+        await sync(server.fetch, options);
+        await sync(server.fetch, options);
+
+        expect(snapshot.downloadArtifact).not.toHaveBeenCalled();
+        expect(snapshot.downloadGradesArtifact).not.toHaveBeenCalled();
+        // The paged pull got it there instead, and says so.
+        expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+        expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
+        expect(await getBootstrapDoneMarker(db, SCOPE_KEY)).toBeNull();
+        expect(completions.map((info) => info.method)).toEqual(['paged']);
+      },
+    );
+
+    it('keeps the marker it set aside until something replaces it, so a later cycle still knows', async () => {
+      await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [`bootstrap-done:${SCOPE_KEY}`, '1']);
+      const snapshot = artifactSource();
+      // The crawl cannot finish this cycle either.
+      const server = backend(SERVER_CLIMBS, {
+        onRequest: (request) => {
+          if (request.queryName === 'syncClimbStats') throw new Error('connection dropped');
+        },
+      });
+
+      await sync(server.fetch, { snapshotSource: snapshot.source, isOnUnmeteredNetwork: () => false }).catch(() => {});
+      // A board with a cursor now, and still a download nobody confirmed.
+      expect(await getCheckpoint(db, CLIMBS_KEY)).not.toBeNull();
+      expect(await getBootstrapDoneMarker(db, SCOPE_KEY)).toBe('1');
+      await sync(backend().fetch, { snapshotSource: snapshot.source, isOnUnmeteredNetwork: () => false });
+
+      expect(snapshot.downloadArtifact).not.toHaveBeenCalled();
     });
 
     it('crawls its way out when there is no artifact to import', async () => {
@@ -471,8 +649,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
     });
   });
 
-  // Production still publishes format 1 until the release sequence replaces it
-  // (docs/privacy.md). This client cannot use it and must not try.
+  // A manifest in the older format. This client cannot use it and must not try.
   describe('a manifest in the format from before the privacy split', () => {
     const formatOneSource = () =>
       createSnapshotSource({
@@ -496,6 +673,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
       expect(server.requestsFor('syncClimbs', 'REFERENCE').map((request) => request.cursor)).toEqual([
         undefined,
         cursorAt(11),
+        cursorAt(41),
         cursorAt(90),
       ]);
       expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
@@ -524,12 +702,12 @@ describe('arriving from, and returning to, a bundle from before the split', () =
   });
 
   describe('going back to an earlier bundle after this one wrote the new shape', () => {
-    let snapshot: ReturnType<typeof formatTwoSource>;
+    let snapshot: ReturnType<typeof artifactSource>;
     let completions: ScopeDownloadCompleteInfo[];
     let options: SyncOptions;
 
     beforeEach(async () => {
-      snapshot = formatTwoSource();
+      snapshot = artifactSource();
       completions = [];
       options = { snapshotSource: snapshot.source, onScopeDownloadComplete: (info) => completions.push(info) };
       await sync(backend().fetch, options);
@@ -537,13 +715,13 @@ describe('arriving from, and returning to, a bundle from before the split', () =
 
     it('costs one protected replay when the earlier bundle only pulled a delta', async () => {
       // Its `setCheckpoint` replaced each row it advanced, which dropped the
-      // protected cursor that was in it. The row it wrote on the way carried a
-      // first-ascent name filled in for this viewer.
+      // protected cursor that was in it. The draft's stats row it wrote on the
+      // way carried a first-ascent name.
       const pulledByEarlierBundle = cursorAt(95);
       for (const key of [CLIMBS_KEY, STATS_KEY, GRADES_KEY])
         await olderBundleSetCheckpoint(db, key, pulledByEarlierBundle);
       await db.runAsync(
-        "UPDATE board_climb_stats SET fa_username = 'A Private Climber' WHERE climb_uuid = 'friend-climb'",
+        "UPDATE board_climb_stats SET fa_username = 'A Private Climber' WHERE climb_uuid = 'viewer-draft'",
       );
       const server = backend();
 
@@ -558,7 +736,7 @@ describe('arriving from, and returning to, a bundle from before the split', () =
       expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
       expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(true);
       expect(
-        await db.getAllAsync("SELECT fa_username FROM board_climb_stats WHERE climb_uuid = 'friend-climb'"),
+        await db.getAllAsync("SELECT fa_username FROM board_climb_stats WHERE climb_uuid = 'viewer-draft'"),
       ).toEqual([{ fa_username: null }]);
       expect(completions).toHaveLength(1);
     });
@@ -599,5 +777,65 @@ describe('arriving from, and returning to, a bundle from before the split', () =
       await sync(server.fetch, options);
       expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(2);
     });
+
+    it('does not import once more on a metered link: the paged pull brings the board back instead', async () => {
+      await simulateOlderBundleRevalidation(db, VIEWER);
+      const server = backend();
+
+      await sync(server.fetch, { ...options, isOnUnmeteredNetwork: () => false });
+
+      expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
+      expect(server.requestsFor('syncClimbs', 'REFERENCE').map((request) => request.cursor)).toEqual([undefined]);
+      expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
+      expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+    });
+  });
+});
+
+// The retro-fit imports a grades artifact into a board that is already
+// downloaded and has never pulled a grade. It keeps the rows whose climb is on
+// the device and stamps the grades cursor at the file's real watermark, so the
+// device has to hold every climb the build knew of first.
+describe('retro-fitting grades into a board that is already downloaded', () => {
+  /** A finished board whose grades were never pulled, with its climbs cursor at `climbsThrough`. */
+  async function seedBoardWithoutGrades(climbsThrough: number): Promise<void> {
+    const delivered = SERVER_CLIMBS.filter((climb) => Number(climb.cursor.syncSeq) <= climbsThrough).map((climb) => ({
+      ...climb,
+      grade: false,
+    }));
+    await sync(backend(delivered).fetch);
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [GRADES_KEY]);
+    expect(await localGrades()).toEqual([]);
+  }
+
+  it('imports them once the board holds every climb of the build', async () => {
+    await seedBoardWithoutGrades(50);
+    const server = backend();
+    const snapshot = artifactSource();
+
+    await sync(server.fetch, { snapshotSource: snapshot.source });
+
+    expect(snapshot.downloadGradesArtifact).toHaveBeenCalledTimes(1);
+    expect(snapshot.downloadArtifact).not.toHaveBeenCalled();
+    // The grades stream resumes from the file's watermark.
+    expect(server.requestsFor('syncClimbGrades', 'REFERENCE').map((request) => request.cursor)).toEqual([
+      ARTIFACT_WATERMARK,
+    ]);
+    expect(await localGrades()).toEqual(ALL_CLIMB_UUIDS);
+  });
+
+  it('crawls them instead while a climb the build knew of is not on the device yet', async () => {
+    // The board last pulled its climbs at 11. The file was built at 50, and has
+    // grade rows for climbs 40, 41 and 50, which are not here to match them to.
+    await seedBoardWithoutGrades(11);
+    const server = backend();
+    const snapshot = artifactSource();
+
+    await sync(server.fetch, { snapshotSource: snapshot.source });
+
+    expect(snapshot.downloadGradesArtifact).not.toHaveBeenCalled();
+    expect(server.requestsFor('syncClimbGrades', 'REFERENCE').map((request) => request.cursor)).toEqual([undefined]);
+    // Every grade row arrived, the late climbs' included.
+    expect(await localGrades()).toEqual(ALL_CLIMB_UUIDS);
   });
 });

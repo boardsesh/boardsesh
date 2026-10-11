@@ -10,11 +10,12 @@
 // test pins that equivalence.
 //
 // WHICH PULL RESUMES (issue #6306). An artifact carries the REFERENCE rows only:
-// climbs that are public for every viewer. The watermarks stamped here are
-// therefore the reference stream's cursors, and they are the artifact's real
-// watermarks. Climbs with a Boardsesh author are never in an artifact. They come
-// through the protected stream, which this import resets for the scope so it
-// replays from the epoch: a few small pages.
+// every published and listed climb, whoever set it, which is public for every
+// viewer. The watermarks stamped here are therefore the reference stream's
+// cursors, and they are the artifact's real watermarks. A draft or an unlisted
+// climb is never in an artifact. The climber's own come through the protected
+// stream, which this import resets for the scope so it replays from the epoch:
+// a handful of rows.
 //
 // Platform I/O is injected via `SnapshotSource`: the shared engine never fetches,
 // downloads, or gunzips — it ATTACHes a decompressed artifact file the adapter
@@ -33,6 +34,7 @@ import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
 import { TABLE_CONFIGS } from './table-config';
 import { reportExtraColumn, SnapshotSchemaCompatibilityError } from './schema-compatibility';
 import { markSchemaRefreshComplete } from './schema-refresh';
+import { LOCAL_USER_ID_KEY } from './local-user-owner';
 import {
   compareCheckpoints,
   getCheckpointKey,
@@ -55,6 +57,7 @@ import {
   BOOTSTRAP_RETRY_PREFIX,
   LEGACY_BOOTSTRAP_DONE_HEAL_VALUE,
   clearBootstrapPagedFallback,
+  isBootstrapDoneHonoured,
   isTerminal,
   parseBootstrapRetryState,
   type BootstrapRetryState,
@@ -550,6 +553,7 @@ export async function getBootstrapMetadataByScope(
     ...BOOTSTRAP_METADATA_PATTERNS,
   ]);
   const metadataByScope = new Map<string, MutableBootstrapScopeMetadata>();
+  const doneMarkers = new Map<string, string>();
 
   for (const row of rows) {
     const attemptsScopeKey = row.key.startsWith(BOOTSTRAP_ATTEMPTS_PREFIX)
@@ -592,7 +596,7 @@ export async function getBootstrapMetadataByScope(
       isTerminal: false,
     };
     if (attemptsScopeKey) existing.attempts = parseBootstrapAttempts(row.value);
-    if (doneScopeKey) existing.isBootstrapDone = true;
+    if (doneScopeKey) doneMarkers.set(scopeKey, row.value);
     if (fallbackScopeKey) existing.isPagedFallback = true;
     if (retryScopeKey) {
       const retryState: BootstrapRetryState | null = parseBootstrapRetryState(row.value);
@@ -609,6 +613,19 @@ export async function getBootstrapMetadataByScope(
     }
     if (completeScopeKey) existing.isScopeComplete = true;
     metadataByScope.set(scopeKey, existing);
+  }
+
+  // The marker counts only while the engine would honour it. One it is about
+  // to set aside (an earlier bundle's, on a board that never finished) must not
+  // be shown as "downloaded the fast way": that board is about to import again.
+  for (const [scopeKey, bootstrapDoneMarker] of doneMarkers) {
+    const metadata = metadataByScope.get(scopeKey);
+    if (!metadata) continue;
+    metadata.isBootstrapDone = isBootstrapDoneHonoured({
+      bootstrapDoneMarker,
+      hasBoardCheckpoint: metadata.hasBoardCheckpoint,
+      isScopeComplete: metadata.isScopeComplete,
+    });
   }
 
   return metadataByScope;
@@ -838,29 +855,71 @@ async function scopedWatermarks(
   return { board_climbs: climbWatermark, board_climb_stats: statsWatermark };
 }
 
+/** Climbs, or stats keys, one reconcile transaction deletes. Keyed deletes, so each hold is short. */
+const RECONCILE_BATCH_ROWS = 400;
+
 /**
- * Remove the scope's local rows the artifact no longer carries: reference rows
- * the server deleted or moved out of the scope since this device last saw them.
+ * Remove the scope's local rows the artifact no longer carries: climbs the
+ * server deleted, moved out of the scope, or took out of the public catalogue
+ * (they became a draft, or unlisted) since this device last saw them.
  *
- * ONLY ROWS WITH NO OWNER (issue #6306). The watermark is the artifact's real
- * one, so "at or below the watermark and absent from the artifact" is true of
- * every climb with a Boardsesh author: an artifact never carries those. Without
- * the `user_id IS NULL` guard this would delete the climber's own climbs, their
- * unsynced drafts, and every other protected climb on the board, on each
- * import. A stats row follows its climb, so it is spared with it.
+ * An artifact holds every published and listed climb as of its watermark,
+ * whoever set it. So a climb at or below the watermark that the artifact lacks
+ * is one of those, and it goes, with its stats and grades. THREE KINDS OF ROW
+ * ARE NEVER TOUCHED, because the artifact not having them says nothing:
+ *  - the climber's own rows. Their drafts and unlisted climbs are never in an
+ *    artifact, and arrive through the protected stream;
+ *  - a row with no server sequence: local work the server has not seen;
+ *  - a row a queued mutation refers to.
+ * With no signed-in account on record, every owned row is treated as possibly
+ * the climber's own.
  *
- * One protected kind still goes: a climb whose author deleted their account
- * keeps no `user_id`, so nothing here can tell it from a stale reference row.
- * The import's final transaction resets the scope's protected cursors, and the
- * replay that follows brings those back.
+ * BATCHED (the #6329 review measured 1.74 s in one hold on a laptop, over a
+ * full catalogue, against a local write budget of 9 s). The two anti-joins
+ * against the artifact, which are the expensive part, are READS and run in
+ * autocommit holding nothing. The deletes are keyed by what those found, a
+ * few hundred rows per exclusive transaction, and each repeats the cheap
+ * half of the test under its own lock, so a row that changed between the read
+ * and the delete is left alone.
+ *
+ * The FIRST transaction also resets the scope's protected cursors
+ * (`resetScopeProtectedSyncState`). It always runs, deletes or none: from the
+ * first row batch on, the import can have written an older published copy over
+ * the climber's own row, and an import that fails after that must already have
+ * asked for the replay that puts it back.
  */
 async function reconcileScope(
   txn: SqlExecutor,
   scope: OfflineBoardScope,
+  scopeKey: string,
   watermarks: Record<SnapshotTableName, SyncCheckpoint>,
+  runExclusive: (body: () => Promise<void>) => Promise<void>,
 ): Promise<void> {
   const mainClimbScope = climbsScopeFilter(scope, 'main_climb.');
   const snapshotClimbScope = climbsScopeFilter(scope, 'snapshot_climb.');
+
+  const viewerId =
+    (await txn.getFirstAsync<{ value: string }>('SELECT value FROM main.sync_meta WHERE key = ?', [LOCAL_USER_ID_KEY]))
+      ?.value ?? null;
+  // The outbox is created by the platform, not by a migration.
+  const hasOutbox =
+    (await txn.getFirstAsync<{ present: number }>(
+      "SELECT 1 AS present FROM main.sqlite_master WHERE type = 'table' AND name = 'pending_mutations'",
+    )) !== null;
+  const notOwn =
+    viewerId === null ? 'main_climb.user_id IS NULL' : '(main_climb.user_id IS NULL OR main_climb.user_id <> ?)';
+  const notQueued = hasOutbox
+    ? `AND NOT EXISTS (
+         SELECT 1 FROM main.pending_mutations mutation
+         WHERE json_valid(mutation.payload) AND (
+           json_extract(mutation.payload, '$.climbUuid') = main_climb.uuid OR
+           json_extract(mutation.payload, '$.uuid') = main_climb.uuid))`
+    : '';
+  /** A climb the reconcile is allowed to remove, on the `main_climb` alias. */
+  const removable = {
+    sql: `COALESCE(main_climb.sync_seq, 0) > 0 AND ${notOwn} ${notQueued}`,
+    params: viewerId === null ? [] : [viewerId],
+  };
 
   const sizeScoped = isSizeScopedBoard(scope.boardType);
   const localStatsSize = sizeScoped
@@ -870,18 +929,11 @@ async function reconcileScope(
     ? ' AND snapshot_climb.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(snapshot_climb.compatible_size_ids) WHERE value = ?)'
     : '';
 
-  const statsParams: (string | number)[] = [
-    scope.boardType,
-    ...checkpointLeqParams(watermarks.board_climb_stats),
-    scope.boardType,
-    scope.layoutId,
-  ];
-  if (sizeScoped) statsParams.push(scope.sizeId);
-  statsParams.push(scope.boardType, scope.layoutId);
-  if (sizeScoped) statsParams.push(scope.sizeId);
-
-  await txn.runAsync(
-    `DELETE FROM main.board_climb_stats AS main_stats
+  // READS, in autocommit. Stats first, as before: a stats row the artifact
+  // dropped for a climb it kept.
+  const staleStats = await txn.getAllAsync<{ climb_uuid: string; angle: number }>(
+    `SELECT main_stats.climb_uuid AS climb_uuid, main_stats.angle AS angle
+     FROM main.board_climb_stats AS main_stats
      WHERE main_stats.board_type = ?
        AND ${checkpointLeqSql('main_stats.')}
        AND EXISTS (
@@ -889,7 +941,7 @@ async function reconcileScope(
          WHERE main_climb.uuid = main_stats.climb_uuid
            AND main_climb.board_type = ?
            AND main_climb.layout_id = ?${localStatsSize}
-           AND main_climb.user_id IS NULL
+           AND ${removable.sql}
        )
        AND NOT EXISTS (
          SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climb_stats snapshot_stats
@@ -903,21 +955,87 @@ async function reconcileScope(
                AND snapshot_climb.layout_id = ?${snapshotStatsSize}
            )
        )`,
-    statsParams,
+    [
+      scope.boardType,
+      ...checkpointLeqParams(watermarks.board_climb_stats),
+      scope.boardType,
+      scope.layoutId,
+      ...(sizeScoped ? [scope.sizeId] : []),
+      ...removable.params,
+      scope.boardType,
+      scope.layoutId,
+      ...(sizeScoped ? [scope.sizeId] : []),
+    ],
   );
-
-  await txn.runAsync(
-    `DELETE FROM main.board_climbs AS main_climb
+  const staleClimbs = await txn.getAllAsync<{ uuid: string }>(
+    `SELECT main_climb.uuid AS uuid FROM main.board_climbs AS main_climb
      WHERE ${mainClimbScope.sql}
-       AND main_climb.user_id IS NULL
        AND ${checkpointLeqSql('main_climb.')}
+       AND ${removable.sql}
        AND NOT EXISTS (
          SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climbs snapshot_climb
          WHERE snapshot_climb.uuid = main_climb.uuid
            AND ${snapshotClimbScope.sql}
        )`,
-    [...mainClimbScope.params, ...checkpointLeqParams(watermarks.board_climbs), ...snapshotClimbScope.params],
+    [
+      ...mainClimbScope.params,
+      ...checkpointLeqParams(watermarks.board_climbs),
+      ...removable.params,
+      ...snapshotClimbScope.params,
+    ],
   );
+
+  // WRITES. The reset rides in the first transaction, which runs even when
+  // there is nothing to delete.
+  let isFirstTransaction = true;
+  const runReconcileTransaction = (body: () => Promise<void>): Promise<void> =>
+    runExclusive(async () => {
+      if (isFirstTransaction) await resetScopeProtectedSyncState(txn, scopeKey);
+      isFirstTransaction = false;
+      await body();
+    });
+
+  for (let start = 0; start < staleStats.length; start += RECONCILE_BATCH_ROWS) {
+    const batch = staleStats.slice(start, start + RECONCILE_BATCH_ROWS);
+    await runReconcileTransaction(async () => {
+      await txn.runAsync(
+        `DELETE FROM main.board_climb_stats AS main_stats
+         WHERE main_stats.board_type = ?
+           AND (main_stats.climb_uuid, main_stats.angle) IN (VALUES ${batch.map(() => '(?, ?)').join(', ')})
+           AND ${checkpointLeqSql('main_stats.')}`,
+        [
+          scope.boardType,
+          ...batch.flatMap((row) => [row.climb_uuid, row.angle]),
+          ...checkpointLeqParams(watermarks.board_climb_stats),
+        ],
+      );
+    });
+  }
+
+  for (let start = 0; start < staleClimbs.length; start += RECONCILE_BATCH_ROWS) {
+    const batch = staleClimbs.slice(start, start + RECONCILE_BATCH_ROWS).map((row) => row.uuid);
+    // Still stale, still removable: re-read under this transaction's lock.
+    const stillStale = {
+      sql: `SELECT main_climb.uuid FROM main.board_climbs AS main_climb
+            WHERE main_climb.uuid IN (${batch.map(() => '?').join(', ')})
+              AND ${checkpointLeqSql('main_climb.')}
+              AND ${removable.sql}`,
+      params: [...batch, ...checkpointLeqParams(watermarks.board_climbs), ...removable.params],
+    };
+    await runReconcileTransaction(async () => {
+      // A climb's stats and grade rows go with it, whatever their own version:
+      // rows under a climb that is gone are not part of the board.
+      for (const dependentTable of ['board_climb_stats', 'board_climb_grades']) {
+        await txn.runAsync(
+          `DELETE FROM main.${dependentTable} WHERE board_type = ? AND climb_uuid IN (${stillStale.sql})`,
+          [scope.boardType, ...stillStale.params],
+        );
+      }
+      await txn.runAsync(`DELETE FROM main.board_climbs WHERE uuid IN (${stillStale.sql})`, stillStale.params);
+    });
+  }
+
+  if (isFirstTransaction) await runReconcileTransaction(async () => {});
 }
 
 /** One batch's committed progress, as the import observes it between locks. */
@@ -1041,18 +1159,15 @@ async function importScopeBatched(
   // `json_each` membership parse ONE time instead of once per stats row, and
   // gives the climbs import a dense rowid to batch on.
   //
-  // `user_id IS NULL` selects every row of a well-formed artifact, which holds
-  // reference climbs only. It is here so a file that is not well-formed cannot
-  // put another climber's climb on the device: an owned climb is never a
-  // reference row, the reference cursor this import stamps does not have to
-  // cover it, and the protected stream delivers it to a viewer who may see it.
-  // The stats import below reads this table, so their stats stay out with them.
+  // Every climb of the scope, whoever set it: an artifact holds the published
+  // and listed climbs, and an owned one is as public as any other. The stats
+  // import below reads this table.
   const climbScope = climbsScopeFilter(scope);
   await txn.execAsync(`DROP TABLE IF EXISTS temp.${IMPORT_STAGING_TABLE}`);
   await txn.execAsync(`CREATE TEMP TABLE ${IMPORT_STAGING_TABLE} (uuid TEXT PRIMARY KEY)`);
   await txn.runAsync(
     `INSERT OR IGNORE INTO temp.${IMPORT_STAGING_TABLE} (uuid)
-     SELECT uuid FROM ${SNAPSHOT_ALIAS}.board_climbs WHERE ${climbScope.sql} AND user_id IS NULL`,
+     SELECT uuid FROM ${SNAPSHOT_ALIAS}.board_climbs WHERE ${climbScope.sql}`,
     climbScope.params,
   );
   const stagedRow = await txn.getFirstAsync<{ max_rowid: number }>(
@@ -1329,11 +1444,12 @@ function defaultImportSleep(ms: number): Promise<void> {
 
 /**
  * Warm one board scope from a downloaded artifact. ATTACHes the file, integrity-
- * checks it, verifies the meta, then imports the scoped climbs + stats,
- * reconciles stale scoped rows absent from the artifact, and stamps both
- * REFERENCE cursors at the scoped imported-row watermarks. The scope's protected
- * cursors are reset in that same final transaction, so the pull that follows
- * replays the protected streams from the epoch.
+ * checks it, verifies the meta, reconciles stale scoped rows absent from the
+ * artifact, imports the scoped climbs + stats, and stamps both REFERENCE
+ * cursors at the scoped imported-row watermarks. The scope's protected cursors
+ * are reset in the reconcile's first transaction and again in the final one,
+ * so the pull that follows replays the protected streams from the epoch,
+ * whether or not the import got to its end.
  *
  * NO LONGER ONE TRANSACTION (issue #4310). It is: an autocommit preamble
  * (COMMIT the wrapper's empty transaction, ATTACH, quick_check, meta verify,
@@ -1540,20 +1656,19 @@ export async function bootstrapScopeFromSnapshot(params: {
           }
         };
 
-        // Reconcile FIRST and in its own transaction, keeping today's
-        // delete-then-insert order. Still unbatched: two DELETEs with nested
-        // correlated EXISTS/NOT EXISTS. Cheap on a fresh scope (nothing local to
-        // delete), NOT bounded on a heal-over-partial (#4313) or a second size
-        // of an already-downloaded layout — which is why it is measured
-        // separately and counted into importLockMaxMs rather than hidden.
-        // `importReconcileMs` is work-plus-hold: the lock-acquisition wait is
-        // subtracted, so the follow-up trigger for batching this reads reconcile
-        // cost rather than whoever else held the lock.
+        // Reconcile FIRST, keeping today's delete-then-insert order. Its two
+        // anti-joins against the artifact are reads in autocommit; its deletes
+        // are keyed and batched, each in a short transaction of its own (see
+        // `reconcileScope`). Cheap on a fresh scope (nothing local to delete),
+        // real work on a heal-over-partial (#4313), a re-import over a full
+        // catalogue, or a second size of an already-downloaded layout, which is
+        // why it is measured separately. `importReconcileMs` is the whole
+        // step, reads included, with the lock-acquisition wait subtracted, so
+        // it reads reconcile cost rather than whoever else held the lock. The
+        // longest single hold is in `importLockMaxMs` with every other batch.
         const reconcileStartedAt = Date.now();
         const waitBeforeReconcile = importLockWaitMs;
-        await runExclusive(async () => {
-          await reconcileScope(txn, scope, stampedWatermarks);
-        });
+        await reconcileScope(txn, scope, scopeKey, stampedWatermarks, runExclusive);
         importReconcileMs = Date.now() - reconcileStartedAt - (importLockWaitMs - waitBeforeReconcile);
 
         const rowsStartedAt = Date.now();
@@ -1596,12 +1711,16 @@ export async function bootstrapScopeFromSnapshot(params: {
               : stampedWatermarks.board_climb_stats;
           await rewindDeletionsCheckpoint(txn, deletionsReplayFrom ?? minWatermark);
 
-          // With the cursors, for the same crash reason: the reconcile above can
-          // have removed protected rows this device cannot recognise (see
-          // `reconcileScope`), and a protected cursor left past them would never
-          // fetch them again. `setCheckpoint` kept those cursors when it stamped
-          // the two reference ones, so they are cleared explicitly, for all of
-          // the scope's tables.
+          // Once more, with the cursors (the reconcile's first transaction did
+          // it too). The row batches can have written an older published copy
+          // over the climber's own climb that has since become a draft, and the
+          // deletion marker replayed from the rewind above removes that copy;
+          // a protected cursor left past the draft would never fetch it again.
+          // A protected pull cannot have run in between, but a second reset is
+          // one statement and keeps this transaction right on its own.
+          // `setCheckpoint` kept those cursors when it stamped the two
+          // reference ones, so they are cleared explicitly, for all of the
+          // scope's tables.
           await resetScopeProtectedSyncState(txn, scopeKey);
         });
 

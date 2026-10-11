@@ -1854,7 +1854,7 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
       generatedAt: BUILT_AT,
       entries: [
         {
-          privacyVersion: 1,
+          privacyVersion: 2,
           boardType: 'kilter',
           layoutId: 1,
           key: 'board-snapshots/v1/kilter/1/2026-06-01.db',

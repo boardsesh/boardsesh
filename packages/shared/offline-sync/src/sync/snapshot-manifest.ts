@@ -61,9 +61,10 @@ export type SnapshotGradesArtifact = {
    * Which publication rule the artifact was built under. 2: published, listed
    * climbs whoever set them; no draft, no unlisted climb. 1 was the rule before
    * it (climbs with no Boardsesh owner, drafts and unlisted ones included) and
-   * is no longer written.
+   * is no longer written. A plain number: a client reads whatever a manifest
+   * says and takes exactly `SNAPSHOT_PRIVACY_VERSION`.
    */
-  privacyVersion?: 1 | 2;
+  privacyVersion?: number;
   // S3 object key, e.g. `board-snapshots/v1-gzip/kilter/1/<iso>-grades.db`.
   key: string;
   url: string;
@@ -86,9 +87,10 @@ export type SnapshotManifestEntry = {
    * Which publication rule the artifact was built under. 2: published, listed
    * climbs whoever set them; no draft, no unlisted climb. 1 was the rule before
    * it (climbs with no Boardsesh owner, drafts and unlisted ones included) and
-   * is no longer written.
+   * is no longer written. A plain number: a client reads whatever a manifest
+   * says and takes exactly `SNAPSHOT_PRIVACY_VERSION`.
    */
-  privacyVersion?: 1 | 2;
+  privacyVersion?: number;
   /**
    * How this entry's SQLite files are laid out on disk, the layout artifact and
    * its grades sibling alike. Absent is shape 1: rowid tables in arrival order,
@@ -140,8 +142,8 @@ export type SnapshotManifestEntry = {
   tables: Record<SnapshotTableName, SnapshotTableStats>;
   // The layout's separate grades artifact, when it has grade rows. ADDITIVE:
   // The optional grades block keeps the same per-entry shape. Format 2
-  // marks the privacy-filtered dataset: format-1 clients must use paged sync
-  // because they cannot replay authored rows omitted from these artifacts.
+  // marks the filtered dataset: format-1 clients must use paged sync. Which
+  // rows a format-2 file holds is `privacyVersion`'s to say.
   grades?: SnapshotGradesArtifact;
 };
 
@@ -153,6 +155,26 @@ export type SnapshotManifest = {
 };
 
 export const SNAPSHOT_MANIFEST_FORMAT_VERSION = 2 as const;
+
+/**
+ * The only artifact rule this client imports: an artifact holds every climb
+ * that is published and listed, WHOEVER set it, with its stats and grades, and
+ * no draft and no unlisted climb.
+ *
+ * Exactly this value, never "at least". The import stamps the reference
+ * cursor at the artifact's real watermark, so the artifact has to hold every
+ * row the reference stream carries up to there:
+ *  - absent: built before artifacts were filtered at all. It can hold another
+ *    climber's draft.
+ *  - `1`: built with every owned climb left out. Importing it at its watermark
+ *    would skip every owned published climb below that watermark for good.
+ *  - anything newer is a rule this build does not know.
+ * A scope with no importable artifact downloads through the paged pull.
+ *
+ * A plain number in the entry types, like `artifactShape`: the export job has
+ * to be able to read and rebuild entries of any rule.
+ */
+export const SNAPSHOT_PRIVACY_VERSION = 2 as const;
 
 const SNAPSHOT_TABLE_NAMES: readonly SnapshotTableName[] = ['board_climbs', 'board_climb_stats'];
 const SNAPSHOT_GRADES_TABLE_NAMES: readonly SnapshotGradesTableName[] = ['board_climb_grades'];

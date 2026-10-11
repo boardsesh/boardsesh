@@ -98,6 +98,7 @@ function makeEntry(): SnapshotManifestEntry {
     key: 'board-snapshots/v1/tension/11/2026-06-01.db',
     url: 'https://example.test/tension-11.db',
     bytes: 4096,
+    privacyVersion: 2,
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
     schemaVersion: LATEST_SCHEMA_VERSION,

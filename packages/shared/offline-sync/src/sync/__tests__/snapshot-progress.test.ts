@@ -30,6 +30,7 @@ function gzipEntry(overrides: Partial<SnapshotManifestEntry> = {}): SnapshotMani
     url: 'https://cdn.example/kilter-1.db',
     bytes: WIRE_BYTES,
     uncompressedBytes: DECODED_BYTES,
+    privacyVersion: 2,
     contentEncoding: 'gzip',
     builtAt: '2026-08-01T00:00:00.000Z',
     schemaVersion: 3,
