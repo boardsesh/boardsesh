@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import MuiTypography from '@mui/material/Typography';
@@ -10,7 +10,7 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
-import { createGraphQLClient, subscribe } from '@/app/lib/realtime/graphql-client';
+import { acquireRealtimeClient, subscribe } from '@/app/lib/realtime/graphql-client';
 import {
   ADD_COMMENT,
   type AddCommentMutationVariables,
@@ -35,7 +35,6 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
   const { token, isAuthenticated } = useWsAuthToken();
   const currentUserId = session?.user?.id ?? null;
   const { showMessage } = useSnackbar();
-  const wsClientRef = useRef<ReturnType<typeof createGraphQLClient> | null>(null);
   const resolvedTitle = title ?? t('comment.discussionTitle');
 
   // Live comment updates, for the readers who can actually take part.
@@ -52,8 +51,8 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
     const wsUrl = getBackendWsUrl();
     if (!wsUrl) return;
 
-    const wsClient = createGraphQLClient({ url: wsUrl, authToken: token });
-    wsClientRef.current = wsClient;
+    // The tab's shared socket: the privacy bridge is already subscribed on it.
+    const { client: wsClient, release } = acquireRealtimeClient({ url: wsUrl, authToken: token });
 
     const unsub = subscribe<CommentUpdatesSubscriptionResponse, CommentUpdatesSubscriptionVariables>(
       wsClient,
@@ -79,8 +78,7 @@ export default function CommentSection({ entityType, entityId, title }: CommentS
 
     return () => {
       unsub();
-      void wsClient.dispose();
-      wsClientRef.current = null;
+      release();
     };
   }, [entityType, entityId, token, isAuthenticated]);
 

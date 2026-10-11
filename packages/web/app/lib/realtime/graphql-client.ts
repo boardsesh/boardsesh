@@ -89,3 +89,37 @@ export function createGraphQLClient(
     },
   });
 }
+
+type SharedRealtimeClient = { key: string; client: ExtendedClient; holders: number };
+let sharedRealtimeClient: SharedRealtimeClient | null = null;
+
+/**
+ * The tab's one authenticated realtime socket. graphql-ws multiplexes every
+ * subscription over a single connection, so the privacy bridge and live
+ * comment threads share it instead of each opening their own. Call `release`
+ * when done; the socket is disposed when its last holder lets go. A different
+ * token gets a fresh client, and the old one closes once its holders move on.
+ */
+export function acquireRealtimeClient({ url, authToken }: { url: string; authToken: string | null }): {
+  client: ExtendedClient;
+  release: () => void;
+} {
+  const key = `${url}\n${authToken ?? ''}`;
+  if (sharedRealtimeClient?.key !== key) {
+    sharedRealtimeClient = { key, client: createGraphQLClient({ url, authToken }), holders: 0 };
+  }
+  const entry = sharedRealtimeClient;
+  entry.holders += 1;
+  let released = false;
+  return {
+    client: entry.client,
+    release: () => {
+      if (released) return;
+      released = true;
+      entry.holders -= 1;
+      if (entry.holders > 0) return;
+      if (sharedRealtimeClient === entry) sharedRealtimeClient = null;
+      void entry.client.dispose();
+    },
+  };
+}

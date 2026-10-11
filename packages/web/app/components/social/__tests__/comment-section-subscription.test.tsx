@@ -40,10 +40,11 @@ vi.mock('@/app/lib/backend-url', () => ({
   getBackendWsUrl: () => 'wss://ws.example.test/graphql',
 }));
 
-const mockCreateGraphQLClient = vi.fn(() => ({ dispose: vi.fn() }));
+const mockRelease = vi.fn();
+const mockAcquireRealtimeClient = vi.fn(() => ({ client: {}, release: mockRelease }));
 const mockSubscribe = vi.fn(() => vi.fn());
 vi.mock('@/app/lib/realtime/graphql-client', () => ({
-  createGraphQLClient: (...args: unknown[]) => mockCreateGraphQLClient(...(args as [])),
+  acquireRealtimeClient: (...args: unknown[]) => mockAcquireRealtimeClient(...(args as [])),
   subscribe: (...args: unknown[]) => mockSubscribe(...(args as [])),
 }));
 
@@ -62,7 +63,8 @@ vi.mock('../comment-list', () => ({
 
 describe('CommentSection live updates', () => {
   beforeEach(() => {
-    mockCreateGraphQLClient.mockClear();
+    mockAcquireRealtimeClient.mockClear();
+    mockRelease.mockClear();
     mockSubscribe.mockClear();
     mockAuthState = { token: 'test-token', isLoading: false, isAuthenticated: true, error: null };
   });
@@ -76,17 +78,23 @@ describe('CommentSection live updates', () => {
     // the HTTP-fetched comment list.
     expect(screen.getByTestId('comment-list')).toBeTruthy();
     await waitFor(() => {
-      expect(mockCreateGraphQLClient).not.toHaveBeenCalled();
+      expect(mockAcquireRealtimeClient).not.toHaveBeenCalled();
     });
     expect(mockSubscribe).not.toHaveBeenCalled();
   });
 
-  it('opens exactly one WebSocket for a signed-in reader', async () => {
-    render(<CommentSection entityType="climb" entityId="climb-1" />);
+  it("subscribes once on the tab's shared socket for a signed-in reader and releases it on unmount", async () => {
+    const view = render(<CommentSection entityType="climb" entityId="climb-1" />);
 
     await waitFor(() => {
-      expect(mockCreateGraphQLClient).toHaveBeenCalledTimes(1);
+      expect(mockAcquireRealtimeClient).toHaveBeenCalledTimes(1);
+    });
+    expect(mockAcquireRealtimeClient).toHaveBeenCalledWith({
+      url: 'wss://ws.example.test/graphql',
+      authToken: 'test-token',
     });
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(mockRelease).toHaveBeenCalledOnce();
   });
 });

@@ -3,7 +3,6 @@
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import type { Persister } from '@tanstack/react-query-persist-client';
 import { GET_PRIVACY_SETTINGS, type PrivacySettings } from '@boardsesh/graphql/operations/privacy';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
@@ -15,7 +14,6 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
   const { data: session, status } = useSession();
   const { token } = useWsAuthToken(status === 'authenticated');
   const queryClient = useQueryClient();
-  const router = useRouter();
   const viewerId = session?.user?.id;
   const viewerRef = useRef(viewerId);
   viewerRef.current = viewerId;
@@ -37,6 +35,11 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
     if (!url) return;
     let cancelled = false;
     let dispose: (() => void) | undefined;
+    // Withdraw and refetch the cached client queries. The persisted cache only
+    // ever holds the viewer's own profile queries, which are withdrawn too, so
+    // dropping it removes nothing else. Server-rendered markup already on
+    // screen is not re-rendered; the next navigation renders it for the
+    // current viewer.
     const revoke = () => {
       if (cancelled || viewerRef.current !== viewerId) return;
       void Promise.all([revokeWebPrivacySnapshots(queryClient), Promise.resolve(persister.removeClient())]).catch(
@@ -44,14 +47,14 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
           console.error('Failed to withdraw privacy snapshots:', error);
         },
       );
-      router.refresh();
     };
     // The websocket wrapper extends the browser WebSocket constructor.
     // Load it only in an effect so SSR never evaluates that browser global.
     void import('@/app/lib/realtime/graphql-client')
-      .then(({ createGraphQLClient }) => {
+      .then(({ acquireRealtimeClient }) => {
         if (cancelled) return;
-        const client = createGraphQLClient({ url, authToken: token, connectionName: 'privacy' });
+        // Share the tab's realtime socket rather than opening one just for this.
+        const { client, release } = acquireRealtimeClient({ url, authToken: token });
         const unsubscribe = client.subscribe<{ privacyChanged: boolean }>(
           { query: 'subscription PrivacyChanged { privacyChanged }' },
           {
@@ -62,7 +65,7 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
         );
         dispose = () => {
           unsubscribe();
-          void client.dispose();
+          release();
         };
       })
       .catch((error: unknown) => {
@@ -73,6 +76,6 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
       cancelled = true;
       dispose?.();
     };
-  }, [!!settings, viewerId, token, queryClient, persister, router]);
+  }, [!!settings, viewerId, token, queryClient, persister]);
   return null;
 }
