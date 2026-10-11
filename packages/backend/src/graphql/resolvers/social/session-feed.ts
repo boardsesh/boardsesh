@@ -1,6 +1,11 @@
 import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activity-privacy';
 import { alias } from 'drizzle-orm/pg-core';
-import { canAccessResource, canViewActivityIdentity, resourceAccessCondition } from '../../../services/privacy';
+import {
+  canAccessResource,
+  canViewActivityIdentity,
+  resourceAccessCondition,
+  visibleBoardIdentityIds,
+} from '../../../services/privacy';
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -39,6 +44,50 @@ type SessionFeedFilterOptions = {
 
 function tickSnapshotFilter(snapshotAt?: string): SQL {
   return snapshotAt ? sql`AND t.climbed_at <= ${snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``;
+}
+
+/**
+ * Whether the viewer may open the session that tick `tickAlias` was logged in
+ * as a session card: the session's own policy without the unlisted link, plus
+ * its host and anyone who joined it. A feed is a listing, so an unlisted
+ * session's link alone never puts it there.
+ */
+function openableSessionSql(tickAlias: string, viewerUserId: string | null | undefined): SQL {
+  const sessionId = sql`${sql.identifier(tickAlias)}.session_id`;
+  return sql`(${sessionId} IS NOT NULL AND ${resourceAccessCondition('session', sessionId, viewerUserId, {
+    allowUnlistedLink: false,
+    unlistedWhen: viewerUserId
+      ? sql`EXISTS (SELECT 1 FROM board_session_participants feed_session_member
+          WHERE feed_session_member.session_id = ${sessionId} AND feed_session_member.user_id = ${viewerUserId})`
+      : undefined,
+  })})`;
+}
+
+/**
+ * A tick that belongs on its climber's daily card: the viewer may read it (its
+ * author decides), and no session card the viewer can open holds it. A tick in
+ * a session the viewer cannot open still shows, without that session.
+ */
+function dailyCardTickSql(tickAlias: string, viewerUserId: string | null | undefined): SQL {
+  return sql`(NOT ${openableSessionSql(tickAlias, viewerUserId)}
+    AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, tickAlias))})`;
+}
+
+/** No session card the viewer can open already covers this climber's day. */
+function noOpenableSessionThatDaySql(
+  tickAlias: string,
+  viewerUserId: string | null | undefined,
+  snapshotAt?: string,
+): SQL {
+  const ticks = sql.identifier(tickAlias);
+  return sql`NOT EXISTS (
+    SELECT 1 FROM boardsesh_ticks session_tick
+    WHERE session_tick.user_id = ${ticks}.user_id
+      AND session_tick.climbed_at::date = ${ticks}.climbed_at::date
+      AND ${openableSessionSql('session_tick', viewerUserId)}
+      AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 'session_tick'))}
+      ${snapshotAt ? sql`AND session_tick.climbed_at <= ${snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
+  )`;
 }
 
 function tickScopeFilter(boardIdFilter: number | null, snapshotAt?: string): SQL {
@@ -160,11 +209,14 @@ export async function getSessionFeed(
 
   let sessionRows;
   try {
-    const sessionBoardFilter = sql`
-        AND (t.session_id IS NULL OR ${resourceAccessCondition('session', sql`t.session_id`, viewerUserId)})
-        ${userId ? sql`AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))}` : sql``}
-        ${boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``}
-        ${pagination ? sql`AND t.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
+    const tickScope = tickScopeFilter(boardIdFilter, pagination?.snapshotAt);
+    const readableTick = sql`AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))}`;
+    // Session cards: sessions the viewer may open. A per-user feed counts only
+    // that climber's readable logs; the social feeds keep whole-session totals.
+    const sessionCardFilter = sql`
+        AND ${openableSessionSql('t', viewerUserId)}
+        ${userId ? readableTick : sql``}
+        ${tickScope}
       `;
     // Per-user scope: a single userId ("your sessions") counts only that
     // climber's ticks per session. Empty on social/home/following feeds, which
@@ -183,7 +235,10 @@ export async function getSessionFeed(
           FROM boardsesh_ticks t
           INNER JOIN eligible_users eu ON eu.user_id = t.user_id
           WHERE t.session_id IS NOT NULL
-            ${sessionBoardFilter}
+            AND ${openableSessionSql('t', viewerUserId)}
+            -- A card is eligible through a log the viewer may read.
+            ${readableTick}
+            ${tickScope}
         ),
         `
       : sql``;
@@ -201,16 +256,11 @@ export async function getSessionFeed(
             ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
             AND bcs.board_type = t.board_type
             AND bcs.angle = t.angle
-          WHERE t.session_id IS NULL
-            ${sessionBoardFilter}
-            AND NOT EXISTS (
-              SELECT 1
-              FROM boardsesh_ticks session_tick
-              WHERE session_tick.user_id = t.user_id
-                AND session_tick.session_id IS NOT NULL
-                AND session_tick.climbed_at::date = t.climbed_at::date
-                ${pagination ? sql`AND session_tick.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
-            )
+          -- Logs outside any session the viewer can open, each one its author's
+          -- to show: a log in somebody else's restricted session lands here too.
+          WHERE ${dailyCardTickSql('t', viewerUserId)}
+            ${tickScope}
+            AND ${noOpenableSessionThatDaySql('t', viewerUserId, pagination?.snapshotAt)}
         ),
         daily_base AS (
           SELECT
@@ -391,7 +441,7 @@ export async function getSessionFeed(
           FROM boardsesh_ticks t
           ${participantFilterEnabled ? sql`INNER JOIN eligible_sessions es ON es.session_id = t.session_id` : sql``}
           WHERE t.session_id IS NOT NULL
-            ${sessionBoardFilter}
+            ${sessionCardFilter}
             ${sessionUserFilter}
           GROUP BY t.session_id
         ),
@@ -464,7 +514,7 @@ export async function getSessionFeed(
     fetchParticipantsBatch(sessionIds, filterOptions, viewerUserId),
     fetchDailyParticipantsBatch(dailyHighlightKeys, filterOptions, viewerUserId),
     fetchGradeDistributionBatch(sessionIds, filterOptions),
-    fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
+    fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions, viewerUserId),
     fetchSessionMetaBatch(sessionIds),
     fetchBoardTypesBatch(sessionIds, filterOptions),
     fetchHardestSendsBatch(sessionIds, filterOptions, viewerUserId),
@@ -590,18 +640,14 @@ export const sessionFeedQueries = {
       ? []
       : await dbRead.select().from(dbSchema.boardSessions).where(eq(dbSchema.boardSessions.id, sessionId)).limit(1);
 
+    // A daily card holds the same logs the feed put on it: the climber's readable
+    // logs that day outside any session the viewer can open.
     const tickWhere = dailySession
       ? and(
           eq(dbSchema.boardseshTicks.userId, dailySession.userId),
-          isNull(dbSchema.boardseshTicks.sessionId),
           sql`${dbSchema.boardseshTicks.climbedAt}::date = ${dailySession.day}::date`,
-          sql`NOT EXISTS (
-            SELECT 1
-            FROM boardsesh_ticks session_tick
-            WHERE session_tick.user_id = ${dbSchema.boardseshTicks.userId}
-              AND session_tick.session_id IS NOT NULL
-              AND session_tick.climbed_at::date = ${dbSchema.boardseshTicks.climbedAt}::date
-          )`,
+          dailyCardTickSql('boardsesh_ticks', viewerUserId),
+          noOpenableSessionThatDaySql('boardsesh_ticks', viewerUserId),
         )
       : eq(dbSchema.boardseshTicks.sessionId, sessionId);
 
@@ -723,7 +769,7 @@ export const sessionFeedQueries = {
     // query, keyed by tickUuid so each tick reads an O(1) Map entry. Scoped by
     // the direct beta↔tick link, so the carousel shows only the crew's own clips
     // (not every community video for the climbs).
-    const betaLinksByTick = await fetchBetaLinksByTick(tickUuids);
+    const betaLinksByTick = await fetchBetaLinksByTick(tickUuids, viewerUserId);
 
     // A session can be a crew, so each tick is drawn on ITS climber's board, not
     // the session owner's. One query covers everyone in the session.
@@ -1302,10 +1348,10 @@ async function fetchDailyParticipantsBatch(
       (COALESCE(SUM(GREATEST(t.attempt_count - 1, 0)) FILTER (WHERE t.status = 'send'), 0)
         + COALESCE(SUM(t.attempt_count) FILTER (WHERE t.status = 'attempt'), 0))::int AS attempts
     FROM daily_keys
-    JOIN boardsesh_ticks t ON t.user_id = daily_keys.user_id AND t.climbed_at::date = daily_keys.day AND t.session_id IS NULL
+    JOIN boardsesh_ticks t ON t.user_id = daily_keys.user_id AND t.climbed_at::date = daily_keys.day
     LEFT JOIN users u ON u.id = t.user_id
     LEFT JOIN user_profiles up ON up.user_id = t.user_id
-    WHERE ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))}
+    WHERE ${dailyCardTickSql('t', viewerUserId)}
       AND ${sprayTickVisibleSql('t', viewerUserId)} ${tickScopeFilter(boardIdFilter, snapshotAt)}
     GROUP BY daily_keys.session_id, t.user_id, up.display_name, u.name, up.avatar_url, u.image
   `);
@@ -1562,6 +1608,7 @@ async function fetchHardestSendsBatch(
 async function fetchDailyGradeDistributionBatch(
   dailyHighlightKeys: DailyHighlightKey[],
   { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (dailyHighlightKeys.length === 0) return new Map();
 
@@ -1590,7 +1637,7 @@ async function fetchDailyGradeDistributionBatch(
     INNER JOIN boardsesh_ticks t
       ON t.user_id = keys.user_id
       AND t.climbed_at::date = keys.day
-      AND t.session_id IS NULL
+      AND ${dailyCardTickSql('t', viewerUserId)}
     LEFT JOIN board_climb_aliases bca ON bca.board_type = t.board_type AND bca.alias_uuid = t.climb_uuid
     LEFT JOIN board_climb_stats bcs
       ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
@@ -1603,6 +1650,21 @@ async function fetchDailyGradeDistributionBatch(
   `);
 
   return foldGradeDistributionRows(rowsFromResult<GradeDistributionRow>(result));
+}
+
+/**
+ * The board a clip was filmed on is named only to people who may see that
+ * board; the clip itself follows its author. One query for every clip given.
+ */
+async function blankHiddenBetaBoards<T extends { boardId: number | null }>(
+  rows: readonly T[],
+  viewerUserId: string | null | undefined,
+): Promise<T[]> {
+  const visible = await visibleBoardIdentityIds(
+    rows.map((row) => row.boardId),
+    viewerUserId,
+  );
+  return rows.map((row) => (row.boardId == null || visible.has(row.boardId) ? row : { ...row, boardId: null }));
 }
 
 function mapBetaLinkRow(row: BetaLinkRow): BetaLinksGqlRow {
@@ -1638,7 +1700,10 @@ function mapBetaLinkRow(row: BetaLinkRow): BetaLinksGqlRow {
  * is intentionally NOT surfaced here — it lives on the climb's play-drawer beta
  * list, where "all the beta for this climb" is the correct scope.
  */
-async function fetchBetaLinksByTick(tickUuids: string[]): Promise<Map<string, BetaLinksGqlRow[]>> {
+async function fetchBetaLinksByTick(
+  tickUuids: string[],
+  viewerUserId: string | null | undefined,
+): Promise<Map<string, BetaLinksGqlRow[]>> {
   const map = new Map<string, BetaLinksGqlRow[]>();
   if (tickUuids.length === 0) return map;
 
@@ -1666,7 +1731,7 @@ async function fetchBetaLinksByTick(tickUuids: string[]): Promise<Map<string, Be
     )
     .orderBy(desc(dbSchema.boardBetaLinks.createdAt));
 
-  for (const row of betaRows) {
+  for (const row of await blankHiddenBetaBoards(betaRows, viewerUserId)) {
     const tickUuid = row.betaLinkTickUuid;
     if (!tickUuid) continue;
     const existing = map.get(tickUuid);
@@ -1690,7 +1755,7 @@ async function fetchFeaturedBetaBatch(
     fetchSessionFeaturedBetaRows(sessionIds, filterOptions, viewerUserId),
     fetchDailyFeaturedBetaRows(dailyHighlightKeys, filterOptions, viewerUserId),
   ]);
-  const betaRows = [...sessionBetaRows, ...dailyBetaRows];
+  const betaRows = await blankHiddenBetaBoards([...sessionBetaRows, ...dailyBetaRows], viewerUserId);
   if (betaRows.length === 0) return new Map();
 
   const tickHighlights = await fetchTickHighlightsByUuid(
@@ -1828,7 +1893,7 @@ async function fetchDailyFeaturedBetaRows(
       INNER JOIN boardsesh_ticks t
         ON t.user_id = keys.user_id
         AND t.climbed_at::date = keys.day
-        AND t.session_id IS NULL
+        AND ${dailyCardTickSql('t', viewerUserId)}
       ${betaCandidateJoinSql()}
       LEFT JOIN board_climb_aliases bca_beta ON bca_beta.board_type = t.board_type AND bca_beta.alias_uuid = t.climb_uuid
       LEFT JOIN board_climb_stats bcs_beta
