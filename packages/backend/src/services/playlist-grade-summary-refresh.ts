@@ -10,7 +10,7 @@
  *   writes only the summaries whose values moved, so an unchanged night costs
  *   reads and no writes.
  * - **The first backfill.** While the table is empty, registering the job also
- *   queues one run now instead of waiting for the next 04:41 UTC. Once any
+ *   queues one run now instead of waiting for the next 07:41 UTC. Once any
  *   summary exists nothing more runs on boot. The `exclusive` queue collapses
  *   every replica's request into one run.
  */
@@ -21,8 +21,12 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
 
-/** Daily at 04:41 UTC, away from the :00, :17 and :23 jobs and the overnight catalog syncs. */
-export const PLAYLIST_GRADE_SUMMARY_REFRESH_CRON = '41 4 * * *';
+/**
+ * Daily at 07:41 UTC: after the 06:00 `refresh-recommendations` run rewrites the
+ * generated "Best of" playlists outside the mutations, and clear of the 06:15-07:15
+ * nightlies and the :00, :17 and :23 jobs.
+ */
+export const PLAYLIST_GRADE_SUMMARY_REFRESH_CRON = '41 7 * * *';
 
 /**
  * A run stops starting new chunks after this long, under the queue's 1,800 s

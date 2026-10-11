@@ -159,7 +159,7 @@ describe('owner-only queue initialization', () => {
       expect(await runtime.send(CLIMB_POPULARITY_REFRESH_QUEUE, {})).toBeTruthy();
       expect(await runtime.send(CLIMB_POPULARITY_REFRESH_QUEUE, {})).toBeNull();
       // The playlist grade summary refresh: the same contract, daily.
-      await runtime.schedule(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, '41 4 * * *', null, { tz: 'UTC' });
+      await runtime.schedule(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, '41 7 * * *', null, { tz: 'UTC' });
       expect(await runtime.send(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, {})).toBeTruthy();
       expect(await runtime.send(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, {})).toBeNull();
       const id = await runtime.send(SPRAY_DETECTION_QUEUE, { detectionId: randomUUID() });
