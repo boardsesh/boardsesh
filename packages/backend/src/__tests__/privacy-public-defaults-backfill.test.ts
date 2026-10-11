@@ -15,6 +15,10 @@ const BACKFILL = readFileSync(`${drizzleDir}0265_privacy_public_defaults_backfil
 const GUARD_TAG = 'privacy_public_defaults_backfill_b1';
 const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const owner = 'backfill-owner';
+// Owns the rows that are themselves a privacy signal (a board made private
+// before the cutoff, an edited policy), so they do not mark `owner` as
+// privacy-minded and hide what the main case is testing.
+const otherOwner = 'backfill-other-owner';
 const ownerContext = { userId: owner, isAuthenticated: true, connectionId: 'backfill-owner' } as ConnectionContext;
 
 async function runBackfill(): Promise<void> {
@@ -68,11 +72,14 @@ beforeEach(async () => {
     sql`CREATE TABLE IF NOT EXISTS _bs_migration_guards (tag text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
   );
   await db.execute(sql`DELETE FROM _bs_migration_guards WHERE tag = ${GUARD_TAG}`);
-  await db.execute(sql`TRUNCATE TABLE resource_grants, resource_privacy, user_boards, user_profiles CASCADE`);
+  await db.execute(
+    sql`TRUNCATE TABLE resource_grants, resource_privacy, content_privacy, user_boards, user_profiles CASCADE`,
+  );
   await db
     .insert(schema.users)
     .values([
       { id: owner, email: `${owner}@test.com` },
+      { id: otherOwner, email: `${otherOwner}@test.com` },
       { id: SYSTEM_OWNER, email: 'system@test.com' },
     ])
     .onConflictDoNothing();
@@ -82,6 +89,7 @@ describe('0265 privacy public-defaults backfill', () => {
   it('makes untouched default-private boards public and leaves every deliberate choice alone', async () => {
     const legacyDefault = await insertBoard();
     const beforeCutoff = await insertBoard({
+      ownerId: otherOwner,
       createdAt: new Date('2026-10-08T21:27:50Z'),
       updatedAt: new Date('2026-10-08T21:27:50Z'),
     });
@@ -109,10 +117,10 @@ describe('0265 privacy public-defaults backfill', () => {
     await db
       .insert(schema.resourcePrivacy)
       .values({ kind: 'board', resourceId: untouchedOnlyMe.uuid, ownerId: owner, audience: 'only_me' });
-    const editedOnlyMe = await insertBoard();
+    const editedOnlyMe = await insertBoard({ ownerId: otherOwner });
     await db
       .insert(schema.resourcePrivacy)
-      .values({ kind: 'board', resourceId: editedOnlyMe.uuid, ownerId: owner, audience: 'only_me', revision: 1 });
+      .values({ kind: 'board', resourceId: editedOnlyMe.uuid, ownerId: otherOwner, audience: 'only_me', revision: 1 });
     // A create that chose a location audience alongside isPublic: false.
     const onlyMeSharedLocation = await insertBoard();
     await db.insert(schema.resourcePrivacy).values({
@@ -152,6 +160,68 @@ describe('0265 privacy public-defaults backfill', () => {
       locationAudience: 'members',
     });
     expect(await boardRow(locationShown.uuid)).toMatchObject({ hideLocation: false });
+  });
+
+  it('keeps default-shaped boards private for an owner who chose privacy anywhere else', async () => {
+    const signals: Array<[string, (ownerId: string) => Promise<unknown>]> = [
+      [
+        'private board before the cutoff',
+        (ownerId) =>
+          insertBoard({
+            ownerId,
+            createdAt: new Date('2026-10-01T00:00:00Z'),
+            updatedAt: new Date('2026-10-01T00:00:00Z'),
+          }),
+      ],
+      [
+        'edited board policy',
+        async (ownerId) => {
+          const board = await insertBoard({ ownerId, isPublic: true });
+          await db
+            .insert(schema.resourcePrivacy)
+            .values({ kind: 'board', resourceId: board.uuid, ownerId, audience: 'public', revision: 1 });
+        },
+      ],
+      [
+        'Only me session',
+        (ownerId) =>
+          db
+            .insert(schema.resourcePrivacy)
+            .values({ kind: 'session', resourceId: `session-${ownerId}`, ownerId, audience: 'only_me' }),
+      ],
+      [
+        'Only me item',
+        (ownerId) =>
+          db
+            .insert(schema.contentPrivacy)
+            .values({ entityType: 'tick', entityId: `tick-${ownerId}`, ownerId, audience: 'only_me' }),
+      ],
+      [
+        'deliberately private account',
+        (ownerId) => db.insert(schema.userProfiles).values({ userId: ownerId, isPrivate: true, privacyRevision: 1 }),
+      ],
+    ];
+    const defaults: Array<[string, string]> = [];
+    for (const [index, [label, addSignal]] of signals.entries()) {
+      const signalOwner = `backfill-minded-${index}`;
+      await db.insert(schema.users).values({ id: signalOwner, email: `${signalOwner}@test.com` });
+      await addSignal(signalOwner);
+      const candidate = await insertBoard({ ownerId: signalOwner });
+      const policyCandidate = await insertBoard({ ownerId: signalOwner });
+      await db
+        .insert(schema.resourcePrivacy)
+        .values({ kind: 'board', resourceId: policyCandidate.uuid, ownerId: signalOwner, audience: 'only_me' });
+      defaults.push([label, candidate.uuid], [label, policyCandidate.uuid]);
+    }
+    // The same shape with no signal anywhere still goes public.
+    const control = await insertBoard();
+
+    await runBackfill();
+
+    for (const [label, uuid] of defaults) {
+      expect((await boardRow(uuid)).isPublic, label).toBe(false);
+    }
+    expect((await boardRow(control.uuid)).isPublic).toBe(true);
   });
 
   it('makes untouched flag-private accounts public and keeps every account that chose', async () => {

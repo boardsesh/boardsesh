@@ -26,36 +26,55 @@
 --     `only_me` location nobody has edited (revision 0). A private board with
 --     its location shown, or one switched private after creation, was a
 --     deliberate choice and stays private. hide_location is never touched.
+--   * and the owner has shown no privacy intent anywhere else: no private
+--     account (checked after the account update below, so only a deliberate
+--     one counts), no board or session policy they edited (revision > 0), no
+--     Only me session or item, and no board they made private before the
+--     cutoff, when the default was public.
 --   * profiles: private with the followers session default, never edited
 --     (privacy revision 0, setup never completed, updated_at = created_at).
 --     Expected to change no rows in production: the flag was never turned on.
+--
+-- Residual, decided by the owner: on the #6254 bundle private WAS the
+-- preselected default, so a board a climber left private on purpose looks the
+-- same as one they never touched. Such boards go public unless the owner-intent
+-- guard above catches them. The first two dry-run counts are those boards.
 --
 -- A board a climber makes private after this runs can look the same as a
 -- default one, so a second run could undo their choice. The guard row below
 -- makes this run exactly once; its tag is a semantic identity and must NOT
 -- change if the file is renumbered.
 --
--- Dry run (same predicates, read-only):
+-- Dry run (read-only; the CTE is the owner-intent guard, evaluated before the
+-- account update, which production expects to match nothing):
 --
 --   SHOW timezone;
 --
---   -- boards with no policy row
---   SELECT count(*) FROM user_boards b
---    WHERE b.deleted_at IS NULL AND b.created_at >= '2026-10-08 21:27:51'
---      AND b.is_public = false AND b.is_unlisted = false AND b.hide_location = true
---      AND b.updated_at = b.created_at AND b.board_type <> 'spray'
---      AND b.owner_id <> '00000000-0000-0000-0000-000000000000'
---      AND NOT EXISTS (SELECT 1 FROM resource_privacy p WHERE p.kind = 'board' AND p.resource_id = b.uuid)
---      AND NOT EXISTS (SELECT 1 FROM resource_grants g WHERE g.kind = 'board' AND g.resource_id = b.uuid);
---
---   -- boards with an untouched Only me policy row
---   SELECT count(*) FROM user_boards b
---     JOIN resource_privacy p ON p.kind = 'board' AND p.resource_id = b.uuid
---    WHERE b.deleted_at IS NULL AND b.created_at >= '2026-10-08 21:27:51'
---      AND b.is_unlisted = false AND b.hide_location = true AND b.updated_at = b.created_at
---      AND b.board_type <> 'spray' AND b.owner_id <> '00000000-0000-0000-0000-000000000000'
---      AND p.audience = 'only_me' AND p.location_audience = 'only_me' AND p.revision = 0
---      AND NOT EXISTS (SELECT 1 FROM resource_grants g WHERE g.kind = 'board' AND g.resource_id = b.uuid);
+--   WITH privacy_minded AS (
+--          SELECT user_id AS owner_id FROM user_profiles WHERE is_private
+--     UNION SELECT owner_id FROM resource_privacy
+--            WHERE owner_id IS NOT NULL AND (revision > 0 OR (kind = 'session' AND audience = 'only_me'))
+--     UNION SELECT owner_id FROM content_privacy WHERE owner_id IS NOT NULL AND audience = 'only_me'
+--     UNION SELECT owner_id FROM user_boards
+--            WHERE is_public = false AND board_type <> 'spray' AND created_at < '2026-10-08 21:27:51'
+--   ),
+--   candidates AS (
+--     SELECT b.uuid, b.owner_id, p.resource_id IS NOT NULL AS has_policy
+--       FROM user_boards b
+--       LEFT JOIN resource_privacy p ON p.kind = 'board' AND p.resource_id = b.uuid
+--      WHERE b.deleted_at IS NULL AND b.created_at >= '2026-10-08 21:27:51'
+--        AND b.is_public = false AND b.is_unlisted = false AND b.hide_location = true
+--        AND b.updated_at = b.created_at AND b.board_type <> 'spray'
+--        AND b.owner_id <> '00000000-0000-0000-0000-000000000000'
+--        AND (p.resource_id IS NULL
+--             OR (p.audience = 'only_me' AND p.location_audience = 'only_me' AND p.revision = 0))
+--        AND NOT EXISTS (SELECT 1 FROM resource_grants g WHERE g.kind = 'board' AND g.resource_id = b.uuid)
+--   )
+--   SELECT count(*) FILTER (WHERE NOT has_policy AND m.owner_id IS NULL) AS will_flip_no_policy,
+--          count(*) FILTER (WHERE has_policy AND m.owner_id IS NULL) AS will_flip_only_me_policy,
+--          count(*) FILTER (WHERE m.owner_id IS NOT NULL) AS kept_owner_showed_privacy_intent
+--     FROM candidates c
+--     LEFT JOIN (SELECT DISTINCT owner_id FROM privacy_minded) m ON m.owner_id = c.owner_id;
 --
 --   -- NOT changed, for the owner to decide: default-shaped boards edited since
 --   -- creation (a rename or serial bind looks the same as a privacy switch)
@@ -83,15 +102,39 @@ CREATE TABLE IF NOT EXISTS _bs_migration_guards (
 
 DO $$
 DECLARE
+  v_profiles bigint;
   v_boards bigint;
   v_policy_boards bigint;
   v_locations bigint;
-  v_profiles bigint;
 BEGIN
   IF EXISTS (SELECT 1 FROM _bs_migration_guards WHERE tag = 'privacy_public_defaults_backfill_b1') THEN
     RAISE NOTICE 'Privacy public-defaults backfill already applied, skipping (guard row present)';
     RETURN;
   END IF;
+
+  -- Accounts created private by the flag, untouched since. First, so that a
+  -- private account left afterwards is a deliberate one for the guard below.
+  UPDATE user_profiles
+     SET is_private = false,
+         default_session_audience = NULL,
+         updated_at = now()
+   WHERE is_private
+     AND default_session_audience = 'followers'
+     AND privacy_revision = 0
+     AND privacy_onboarding_version = 0
+     AND updated_at = created_at
+     AND created_at >= '2026-10-08 21:27:51';
+  GET DIAGNOSTICS v_profiles = ROW_COUNT;
+
+  -- Owners who chose privacy somewhere else. Their default-shaped boards stay
+  -- private: leaving a board private looks like intent from them.
+  CREATE TEMP TABLE _b1_privacy_minded_owners ON COMMIT DROP AS
+         SELECT user_id AS owner_id FROM user_profiles WHERE is_private
+   UNION SELECT owner_id FROM resource_privacy
+          WHERE owner_id IS NOT NULL AND (revision > 0 OR (kind = 'session' AND audience = 'only_me'))
+   UNION SELECT owner_id FROM content_privacy WHERE owner_id IS NOT NULL AND audience = 'only_me'
+   UNION SELECT owner_id FROM user_boards
+          WHERE is_public = false AND board_type <> 'spray' AND created_at < '2026-10-08 21:27:51';
 
   -- Boards created through the legacy booleans with the flipped default.
   UPDATE user_boards b
@@ -109,6 +152,9 @@ BEGIN
      )
      AND NOT EXISTS (
        SELECT 1 FROM resource_grants g WHERE g.kind = 'board' AND g.resource_id = b.uuid
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM _b1_privacy_minded_owners m WHERE m.owner_id = b.owner_id
      );
   GET DIAGNOSTICS v_boards = ROW_COUNT;
 
@@ -135,6 +181,9 @@ BEGIN
        AND NOT EXISTS (
          SELECT 1 FROM resource_grants g WHERE g.kind = 'board' AND g.resource_id = b.uuid
        )
+       AND NOT EXISTS (
+         SELECT 1 FROM _b1_privacy_minded_owners m WHERE m.owner_id = b.owner_id
+       )
     RETURNING p.resource_id
   )
   UPDATE user_boards b
@@ -153,21 +202,8 @@ BEGIN
    WHERE location_audience = 'followers';
   GET DIAGNOSTICS v_locations = ROW_COUNT;
 
-  -- Accounts created private by the flag, untouched since.
-  UPDATE user_profiles
-     SET is_private = false,
-         default_session_audience = NULL,
-         updated_at = now()
-   WHERE is_private
-     AND default_session_audience = 'followers'
-     AND privacy_revision = 0
-     AND privacy_onboarding_version = 0
-     AND updated_at = created_at
-     AND created_at >= '2026-10-08 21:27:51';
-  GET DIAGNOSTICS v_profiles = ROW_COUNT;
-
   INSERT INTO _bs_migration_guards (tag) VALUES ('privacy_public_defaults_backfill_b1');
 
-  RAISE NOTICE 'Privacy public-defaults backfill: % boards without a policy, % boards with an Only me policy, % followers locations narrowed, % accounts',
-    v_boards, v_policy_boards, v_locations, v_profiles;
+  RAISE NOTICE 'Privacy public-defaults backfill: % accounts, % boards without a policy, % boards with an Only me policy, % followers locations narrowed',
+    v_profiles, v_boards, v_policy_boards, v_locations;
 END $$;
