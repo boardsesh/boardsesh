@@ -144,7 +144,7 @@ const insertSession = async (seed: SessionSeed) => {
     INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, ended_at, is_public)
     VALUES (
       ${seed.id}, ${BOARD_PATH}, ${seed.createdBy === undefined ? HOST_ID : seed.createdBy}, 'Tuesday projecting',
-      ${seed.boardId ?? null}, ${seed.status ?? 'active'}, ${seed.ended ? sql`now()` : sql`NULL`}, false
+      ${seed.boardId ?? null}, ${seed.status ?? 'active'}, ${seed.ended ? sql`now()` : sql`NULL`}, true
     )
   `);
 };
@@ -423,12 +423,12 @@ describe('sessionInvitePreview (real DB)', () => {
     ])('names neither a %s board nor its gym', async (_label, sessionId) => {
       const result = await preview(sessionId);
 
-      expect(result.state).toBe('dormant');
+      expect(result.state).toBe('not_found');
+      expect(result.hostName).toBeNull();
       expect(result.boardName).toBeNull();
       expect(result.gymName).toBeNull();
-      // The path is what `session` already hands the same link holder, and the
-      // app needs it to join.
-      expect(result.boardPath).toBe(BOARD_PATH);
+      expect(result.boardPath).toBeNull();
+      expect(presence.getSessionUsers).not.toHaveBeenCalled();
     });
 
     it('names the board but not the gym when the board hides its location', async () => {
@@ -457,13 +457,13 @@ describe('sessionInvitePreview (real DB)', () => {
 
     it('withholds the path of a hidden spray wall, attached or only named by the path', async () => {
       await db.execute(sql`
-        INSERT INTO board_sessions (id, board_path, created_by_user_id, status)
-        VALUES (${SESSION.sprayPathOnly}, 'spray/4242/1/1/40', ${HOST_ID}, 'active')
+        INSERT INTO board_sessions (id, board_path, created_by_user_id, status, is_public)
+        VALUES (${SESSION.sprayPathOnly}, 'spray/4242/1/1/40', ${HOST_ID}, 'active', true)
       `);
 
       spray.readableByAnyone = true;
       expect((await preview(SESSION.sprayBoard)).boardPath).toBe(BOARD_PATH);
-      expect((await preview(SESSION.sprayPathOnly)).boardPath).toBe('spray/4242/1/1/40');
+      expect((await preview(SESSION.sprayPathOnly)).state).toBe('not_found');
 
       spray.readableByAnyone = false;
       const attached = await preview(SESSION.sprayBoard);
@@ -471,7 +471,7 @@ describe('sessionInvitePreview (real DB)', () => {
       expect(attached.boardPath).toBeNull();
 
       const pathOnly = await preview(SESSION.sprayPathOnly);
-      expect(pathOnly.state).toBe('dormant');
+      expect(pathOnly.state).toBe('not_found');
       expect(pathOnly.boardPath).toBeNull();
       expect(JSON.stringify(pathOnly)).not.toContain('4242');
     });
@@ -479,8 +479,8 @@ describe('sessionInvitePreview (real DB)', () => {
     it('withholds the path of a hidden spray wall named only by its slug, with no board row attached', async () => {
       const spraySlugPath = `/b/${PREFIX}-board-spray/40`;
       await db.execute(sql`
-        INSERT INTO board_sessions (id, board_path, created_by_user_id, status)
-        VALUES (${SESSION.spraySlugOnly}, ${spraySlugPath}, ${HOST_ID}, 'active')
+        INSERT INTO board_sessions (id, board_path, created_by_user_id, status, is_public)
+        VALUES (${SESSION.spraySlugOnly}, ${spraySlugPath}, ${HOST_ID}, 'active', true)
       `);
 
       spray.readableByAnyone = true;
@@ -493,11 +493,7 @@ describe('sessionInvitePreview (real DB)', () => {
       expect(JSON.stringify(hidden)).not.toContain(`${PREFIX}-board-spray`);
     });
 
-    // ACCEPTED exposure, pinned so a change to it is a decision and not an
-    // accident: the name of a private board is withheld, its slug path is not.
-    // The app cannot join a dormant session without the path. See the resolver
-    // docblock.
-    it('returns the slug path of a private named board while withholding its name', async () => {
+    it('denies the slug path of a private named board', async () => {
       const privateSlugPath = `/b/${PREFIX}-board-private/40`;
       await db.execute(sql`
         INSERT INTO board_sessions (id, board_path, created_by_user_id, status, board_id)
@@ -506,15 +502,72 @@ describe('sessionInvitePreview (real DB)', () => {
 
       const result = await preview(SESSION.privateNamedBoard);
 
-      expect(result.state).toBe('dormant');
+      expect(result.state).toBe('not_found');
+      expect(result.hostName).toBeNull();
       expect(result.boardName).toBeNull();
       expect(result.gymName).toBeNull();
-      expect(result.boardPath).toBe(privateSlugPath);
+      expect(result.boardPath).toBeNull();
+      expect(presence.getSessionUsers).not.toHaveBeenCalled();
     });
 
-    it('answers for a session that is not shown in live listings, as joining by link already does', async () => {
-      // Every seeded session has is_public = false.
-      expect((await preview(SESSION.dormant)).state).toBe('dormant');
+    it('denies an invite-only session without reading its presence', async () => {
+      await db.execute(sql`UPDATE board_sessions SET is_public = false WHERE id = ${SESSION.dormant}`);
+      try {
+        expect(await preview(SESSION.dormant)).toEqual({
+          sessionId: SESSION.dormant,
+          state: 'not_found',
+          hostName: null,
+          boardName: null,
+          boardPath: null,
+          gymName: null,
+        });
+        expect(presence.getSessionUsers).not.toHaveBeenCalled();
+      } finally {
+        await db.execute(sql`UPDATE board_sessions SET is_public = true WHERE id = ${SESSION.dormant}`);
+      }
+    });
+
+    it('honors an invite-only override on a legacy-public session', async () => {
+      await db.execute(sql`
+        INSERT INTO resource_privacy (kind, resource_id, audience, location_audience)
+        VALUES ('session', ${SESSION.dormant}, 'invite_only', 'only_me')
+      `);
+      try {
+        const result = await preview(SESSION.dormant);
+        expect(result.state).toBe('not_found');
+        expect(result.hostName).toBeNull();
+        expect(result.boardPath).toBeNull();
+        expect(presence.getSessionUsers).not.toHaveBeenCalled();
+      } finally {
+        await db.execute(sql`DELETE FROM resource_privacy WHERE kind = 'session' AND resource_id = ${SESSION.dormant}`);
+      }
+    });
+
+    it('withholds a private host identity even on a public session', async () => {
+      await db.execute(sql`UPDATE user_profiles SET is_private = true WHERE user_id = ${HOST_ID}`);
+      try {
+        const result = await preview(SESSION.live);
+        expect(result.state).toBe('dormant');
+        expect(result.hostName).toBeNull();
+        expect(result.boardName).toBe('Hangar Kilter');
+      } finally {
+        await db.execute(sql`UPDATE user_profiles SET is_private = false WHERE user_id = ${HOST_ID}`);
+      }
+    });
+
+    it('honors a newer board location override despite the public legacy flag', async () => {
+      const boardUuid = `${PREFIX}-board-gym`;
+      await db.execute(sql`
+        INSERT INTO resource_privacy (kind, resource_id, audience, location_audience)
+        VALUES ('board', ${boardUuid}, 'public', 'only_me')
+      `);
+      try {
+        const result = await preview(SESSION.live);
+        expect(result.boardName).toBe('Hangar Kilter');
+        expect(result.gymName).toBeNull();
+      } finally {
+        await db.execute(sql`DELETE FROM resource_privacy WHERE kind = 'board' AND resource_id = ${boardUuid}`);
+      }
     });
   });
 

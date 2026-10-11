@@ -5,6 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { roomManager } from '../../../services/room-manager';
 import { dbRead } from '../../../db/client';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
+import { canAccessResource, canViewActivityIdentity, canViewResourceLocation } from '../../../services/privacy';
 
 /**
  * The public face of a session invite link (#6004).
@@ -16,40 +17,15 @@ import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-ac
  * asleep reads as "not found" for a session that is still running, and it
  * knows nothing about the gym.
  *
- * WHAT A LINK HOLDER LEARNS, and nothing else:
+ * An anonymous visitor gets the lifecycle state and public host, board and
+ * gym metadata only when the session and every referenced board permit it.
+ * An invite-only URL never grants host approval; a denied resource returns
+ * the same metadata-free shape as an unknown session. Host identity and gym
+ * location use the current account and resource privacy policies too.
  *
- *  - the state: live, dormant, ended or not_found;
- *  - the host's display name (never the email, never an id);
- *  - the board path, which `session` already hands the same caller, unless it
- *    points at a spray wall an anonymous visitor cannot read. For a named board
- *    the path is `/b/{slug}/{angle}`, and the slug is built from the board's
- *    name. That is returned even when the board is private and its name is
- *    withheld: see ACCEPTED below;
- *  - the board's name and the gym's name, each only when that row is one an
- *    anonymous visitor could already open on its own page.
- *
- * No roster, no participant count, no queue, no user or board ids. An ended or
- * missing session returns the state alone.
- *
- * `isPublic` on the session is NOT a gate here. It controls whether a session
- * appears in live-session listings; `joinSession` lets any link holder into a
- * session with `isPublic = false`, so the invite page describing it tells them
- * nothing the link does not already give them.
- *
- * The answer never depends on who is asking, so a signed-in caller sees
- * exactly what an anonymous one does and a private board stays unnamed even
- * for its owner. The caller that needs more is a member, and has `session`.
- *
- * ACCEPTED: a private (non-spray) board's slug reaches a link holder through
- * `boardPath`, for as long as the session is open and not only while someone
- * is connected. The app cannot join without the path, and withholding it would
- * put "nobody is connected" back in front of every invite to a private gym or
- * home board, which is the bug this query exists to fix. The same holder gets
- * the same path from `session` whenever the host is connected, and any
- * signed-in account can already resolve a private board from its slug
- * (`boardBySlug`). www does not show it: `inviteBoardLabel` drops a named path
- * whose board is not named. A spray wall is different, because its slug opens
- * nothing for someone who cannot read the wall, so there the path is withheld.
+ * The answer always uses anonymous scope, including for authenticated callers,
+ * so the SSR invite page never caches information specific to a signed-in user.
+ * Members needing additional details use the authenticated `session` query.
  */
 
 const { boardSessions, userBoards, gyms, users, userProfiles } = dbSchema;
@@ -82,8 +58,11 @@ function publicDisplayName(...candidates: Array<string | null>): string | null {
 }
 
 export async function resolveSessionInvitePreview(sessionId: string): Promise<SessionInvitePreview> {
+  if (!(await canAccessResource('session', sessionId, null))) return stateOnly(sessionId, 'not_found');
+
   const rows = await dbRead
     .select({
+      createdByUserId: boardSessions.createdByUserId,
       status: boardSessions.status,
       endedAt: boardSessions.endedAt,
       origin: boardSessions.origin,
@@ -91,6 +70,7 @@ export async function resolveSessionInvitePreview(sessionId: string): Promise<Se
       profileDisplayName: userProfiles.displayName,
       accountName: users.name,
       boardName: userBoards.name,
+      boardUuid: userBoards.uuid,
       boardType: userBoards.boardType,
       boardLayoutId: userBoards.layoutId,
       boardIsPublic: userBoards.isPublic,
@@ -176,17 +156,20 @@ export async function resolveSessionInvitePreview(sessionId: string): Promise<Se
     row.boardHidesLocation === false &&
     row.gymName !== null &&
     row.gymIsPublic === true &&
-    row.gymDeletedAt === null;
+    row.gymDeletedAt === null &&
+    row.boardUuid !== null &&
+    (await canViewResourceLocation(row.boardUuid, null));
+
+  const hostIdentityIsPublic =
+    row.createdByUserId !== null && (await canViewActivityIdentity(row.createdByUserId, null, { sessionId }));
 
   return {
     sessionId,
     state,
-    hostName: publicDisplayName(row.profileDisplayName, row.accountName),
+    hostName: hostIdentityIsPublic ? publicDisplayName(row.profileDisplayName, row.accountName) : null,
     boardName: boardIsOpenToAnyone ? row.boardName : null,
-    // The path is what `session` already hands this caller for a live session,
-    // and the app needs it to join. A hidden spray wall is the exception: its
-    // path carries the wall's layout id or slug, so it is withheld. The app
-    // then says the session is running and the host has to be connected.
+    // The audience guard checks every referenced board. Retain the spray
+    // visibility check for its additional moderation rules.
     boardPath: wallIsHidden ? null : row.boardPath,
     gymName: gymIsOpenToAnyone ? row.gymName : null,
   };
