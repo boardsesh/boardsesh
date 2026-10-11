@@ -4,6 +4,7 @@ import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import {
   climbDraftVisibilityCondition,
+  ownedOrPublicReferenceClimbCondition,
   playlistClimbEntityClimbUuid,
   playlistClimbEntityPlaylistUuid,
   sprayClimbVisibilityCondition,
@@ -21,12 +22,11 @@ import {
 const queryBuilder = new QueryBuilder();
 
 /**
- * The climb a tick, beta link, comment thread, vote or proposal points at may
- * be read: it is published, or it is the viewer's own draft, and it is not on
- * a spray wall the viewer may not see. No account privacy, item audience or
+ * The climb a comment thread, vote, proposal or one climb's own logs point at
+ * may be read: it is published, or it is the viewer's own draft, and it is not
+ * on a spray wall the viewer may not see. No account privacy, item audience or
  * follow relation applies to a published climb, and an unlisted one still
- * resolves by reference, so its ticks and comments show. The spray half is
- * the wall's own rule.
+ * resolves by reference. The spray half is the wall's own rule.
  */
 function readableClimbCondition(
   climb: { userId: SQLWrapper; isDraft: SQLWrapper; boardType: SQLWrapper; layoutId: SQLWrapper },
@@ -39,10 +39,36 @@ function readableClimbCondition(
 }
 
 /**
- * A log follows its author: their account privacy plus the tick's own audience.
- * The session and wall never hide it; unreadable board identity is projected away.
- * The climb clause still protects foreign drafts and unreadable spray walls.
- * Raw owner reads may retain a missing climb; enriched feeds may not retain its name.
+ * The climb a tick or beta link in a list or feed points at may be shown: it is
+ * published and listed, or it is the viewer's own, and it is not on a spray
+ * wall the viewer may not see. An unlisted climb stays out of browse surfaces,
+ * so its logs do too; only its own page, read by reference, shows them.
+ */
+function listedClimbCondition(
+  climb: { userId: SQLWrapper; isDraft: SQLWrapper; isListed: SQLWrapper; boardType: SQLWrapper; layoutId: SQLWrapper },
+  viewerId: string | null | undefined,
+): SQL {
+  return and(
+    ownedOrPublicReferenceClimbCondition(
+      { isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId },
+      viewerId,
+    ),
+    sprayClimbVisibilityCondition({ boardType: climb.boardType, layoutId: climb.layoutId }, viewerId),
+  )!;
+}
+
+/**
+ * Which climbs a tick may be shown on. `listed` (the default) is for feeds,
+ * logbooks, profiles and every other list: an unlisted climb's logs stay out.
+ * `by-reference` is for the logs on one climb's own page, which a direct link
+ * to an unlisted climb still opens.
+ */
+export type TickClimbScope = 'listed' | 'by-reference';
+
+/**
+ * Logs follow their author and item audience. Session and board privacy hides
+ * board identity only; draft, publication and spray-wall rules still apply.
+ * Raw owner reads can retain a missing climb without exposing its cached name.
  */
 export function tickPrivacyCondition(
   viewerId: string | null | undefined,
@@ -53,6 +79,7 @@ export function tickPrivacyCondition(
     boardType: SQLWrapper;
   } = schema.boardseshTicks,
   allowOwnWithoutClimb = false,
+  climbScope: TickClimbScope = 'listed',
 ): SQL {
   const climb = alias(schema.boardClimbs, 'privacy_tick_climb');
   const climbAlias = alias(schema.boardClimbAliases, 'privacy_tick_climb_alias');
@@ -66,17 +93,25 @@ export function tickPrivacyCondition(
   );
   return and(
     contentVisibilityCondition('tick', ticks.uuid, ticks.userId, viewerId),
-    // A tick never reveals another climber's draft, or a climb on a wall the
-    // viewer cannot see. It is never hidden because of who set its climb.
-    // Enriched feeds may retain denormalized names after deletion, so only
-    // raw owner reads allow a missing parent.
+    // A tick never reveals another climber's draft, an unlisted climb outside
+    // that climb's own page, or a climb on a wall the viewer cannot see. It is
+    // never hidden because of who set its climb. Enriched feeds may retain
+    // denormalized names after deletion, so only raw owner reads allow a
+    // missing parent.
     or(
       allowOwnWithoutClimb && viewerId ? eq(ticks.userId, viewerId) : sql`false`,
       exists(
         queryBuilder
           .select({ uuid: climb.uuid })
           .from(climb)
-          .where(and(referencedClimb, readableClimbCondition(climb, viewerId))),
+          .where(
+            and(
+              referencedClimb,
+              climbScope === 'by-reference'
+                ? readableClimbCondition(climb, viewerId)
+                : listedClimbCondition(climb, viewerId),
+            ),
+          ),
       ),
     ),
   )!;
@@ -122,7 +157,9 @@ export function betaPrivacyCondition(
           and(
             eq(climb.uuid, beta.climbUuid),
             eq(climb.boardType, beta.boardType),
-            readableClimbCondition(climb, viewerId),
+            // Beta is listed (recent beta, profiles, the climb's own section):
+            // an unlisted climb's beta stays out like its logs.
+            listedClimbCondition(climb, viewerId),
           ),
         ),
     ),

@@ -101,7 +101,9 @@ export function climbLogConditions({
   ticks?: TicksTable;
 }): SQL[] {
   return [
-    tickPrivacyCondition(viewerUserId, ticks),
+    // The logs on this climb's own page: an unlisted climb opens by its link,
+    // and so do its logs. Feeds and lists keep the default `listed` scope.
+    tickPrivacyCondition(viewerUserId, ticks, false, 'by-reference'),
     eq(ticks.boardType, boardType),
     climbUuidCondition(ticks, boardType, canonicalClimbUuid),
     // Worked out once from this climb's own rows, not probed per row: a twin

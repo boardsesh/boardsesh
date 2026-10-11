@@ -11,6 +11,8 @@ import {
   tickPrivacyCondition,
 } from '../graphql/resolvers/shared/activity-privacy';
 import { userMutations } from '../graphql/resolvers/users/mutations';
+import { socialFeedQueries } from '../graphql/resolvers/social/feed';
+import { climbLogsQueries } from '../graphql/resolvers/social/climb-logs';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +47,8 @@ const LINKED_ONLY = 'matrix-linked-only';
 const DELETED_PUBLISHED = 'matrix-deleted-published';
 const DRAFT = 'matrix-draft';
 const UNLISTED = 'matrix-unlisted';
+/** The deleted author's draft: ownerless once the account is gone, so nobody's. */
+const DELETED_DRAFT = 'matrix-deleted-draft';
 const ALL_CLIMBS = [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY, DELETED_PUBLISHED, DRAFT, UNLISTED];
 
 const ctxFor = (userId: string): ConnectionContext =>
@@ -115,6 +119,11 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     await insertClimb(DELETED_PUBLISHED, DELETED_AUTHOR, { setterUsername: 'matrix-deleted-setter' });
     await insertClimb(DRAFT, PRIVATE_AUTHOR, { isDraft: true, isListed: false });
     await insertClimb(UNLISTED, PRIVATE_AUTHOR, { isListed: false });
+    await insertClimb(DELETED_DRAFT, DELETED_AUTHOR, {
+      isDraft: true,
+      isListed: false,
+      setterUsername: 'matrix-deleted-setter',
+    });
 
     // The first send is a private account's, explicitly followers-only; the
     // second is a public account's.
@@ -144,6 +153,18 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       ownerId: PRIVATE_SENDER,
       audience: 'followers',
     });
+
+    // Notifications the deleted author caused, written while the account existed.
+    await db.insert(schema.notifications).values(
+      [DELETED_PUBLISHED, DELETED_DRAFT].map((climbUuid) => ({
+        uuid: `matrix-n-${climbUuid}`,
+        recipientId: STRANGER,
+        actorId: DELETED_AUTHOR,
+        type: 'new_climb' as const,
+        entityType: 'climb' as const,
+        entityId: climbUuid,
+      })),
+    );
 
     await userMutations.deleteAccount(null, { input: { removeSetterName: false } }, ctxFor(DELETED_AUTHOR));
   });
@@ -301,5 +322,74 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(true);
     expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER)).toBe(false);
     expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER)).toBe(true);
+  });
+
+  it("still delivers a deleted author's published climb in a notification, never their draft", async () => {
+    const allowed = async (uuid: string, viewerId: string) => {
+      const [row] = await db
+        .select({ actorId: schema.notifications.actorId, allowed: notificationPrivacyCondition(viewerId) })
+        .from(schema.notifications)
+        .where(eq(schema.notifications.uuid, uuid));
+      return row;
+    };
+    for (const viewerId of [STRANGER, FOLLOWER]) {
+      // The account is gone, so the actor is cleared; the published climb stays public.
+      expect(await allowed(`matrix-n-${DELETED_PUBLISHED}`, viewerId)).toEqual({ actorId: null, allowed: true });
+      // The draft has no owner left, so it goes to no one.
+      expect(await allowed(`matrix-n-${DELETED_DRAFT}`, viewerId)).toEqual({ actorId: null, allowed: false });
+    }
+    const draft = await climbQueries.climb({}, { ...boardInput, climbUuid: DELETED_DRAFT }, ctxFor(STRANGER));
+    expect(draft).toBeNull();
+  });
+
+  it("keeps an unlisted climb's logs out of both ascent feeds, and on its own page", async () => {
+    await db.insert(schema.userFollows).values({ followerId: FOLLOWER, followingId: PUBLIC_SENDER });
+    // Newest of everything, so a leak would sit at the top of either feed.
+    const now = new Date().toISOString();
+    await db.insert(schema.boardseshTicks).values([
+      {
+        uuid: 'matrix-unlisted-tick',
+        userId: PUBLIC_SENDER,
+        boardType: BOARD,
+        climbUuid: UNLISTED,
+        angle: ANGLE,
+        status: 'send',
+        climbedAt: now,
+      },
+      {
+        uuid: 'matrix-listed-tick',
+        userId: PUBLIC_SENDER,
+        boardType: BOARD,
+        climbUuid: PRIVATE_PUBLISHED,
+        angle: ANGLE,
+        status: 'send',
+        climbedAt: now,
+      },
+    ]);
+    const feedClimbs = async (items: Promise<unknown>) =>
+      ((await items) as { items: Array<{ climbUuid?: string }> }).items.map((item) => item.climbUuid);
+
+    for (const ctx of [ctxFor(STRANGER), anonymous]) {
+      const global = await feedClimbs(
+        socialFeedQueries.globalAscentsFeed({}, { input: { limit: 50, offset: 0 } }, ctx),
+      );
+      expect(global).toContain(PRIVATE_PUBLISHED);
+      expect(global).not.toContain(UNLISTED);
+    }
+    const following = await feedClimbs(
+      socialFeedQueries.followingAscentsFeed({}, { input: { limit: 50, offset: 0 } }, ctxFor(FOLLOWER)),
+    );
+    expect(following).toContain(PRIVATE_PUBLISHED);
+    expect(following).not.toContain(UNLISTED);
+
+    // The climb's own page opens by its link, and so do its logs.
+    for (const ctx of [ctxFor(STRANGER), anonymous]) {
+      const logs = await climbLogsQueries.climbLogs(
+        undefined,
+        { input: { boardType: BOARD, climbUuid: UNLISTED } },
+        ctx,
+      );
+      expect(logs.items.map((item) => item.uuid)).toContain('matrix-unlisted-tick');
+    }
   });
 });
