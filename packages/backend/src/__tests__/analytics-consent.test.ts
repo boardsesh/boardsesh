@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { randomUUID } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
 import type { AnalyticsConsent, ConnectionContext, SetAnalyticsConsentInput } from '@boardsesh/shared-schema';
+import { CONSENT_VERSION } from '@boardsesh/consent';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import {
@@ -195,6 +196,7 @@ describe('setAnalyticsConsent', () => {
     ['an unknown source', { analytics: 'granted', version: 1, source: 'desktop' }],
     ['a zero version', { analytics: 'granted', version: 0, source: 'web' }],
     ['a fractional version', { analytics: 'granted', version: 1.5, source: 'web' }],
+    ['a version this server never asked under', { analytics: 'denied', version: CONSENT_VERSION + 1, source: 'web' }],
     ['a non-date basedOnDecidedAt', { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: 'later' }],
     ['a non-ISO date', { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: 'October 2, 2026' }],
     [

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ANALYTICS_CONSENT_CHOICES, CONSENT_SOURCES } from '@boardsesh/consent';
+import { ANALYTICS_CONSENT_CHOICES, CONSENT_SOURCES, CONSENT_VERSION } from '@boardsesh/consent';
 
 /**
  * `setAnalyticsConsent` input. The unions come from `@boardsesh/consent`, the
@@ -8,9 +8,11 @@ import { ANALYTICS_CONSENT_CHOICES, CONSENT_SOURCES } from '@boardsesh/consent';
  */
 export const SetAnalyticsConsentInputSchema = z.object({
   analytics: z.enum(ANALYTICS_CONSENT_CHOICES),
-  // Bounded so a junk number can't be stored as a "version" forever; real
-  // versions are single digits.
-  version: z.number().int().positive().max(1_000),
+  // A client can only have asked under a version this server knows. Anything
+  // higher is junk, and a stored future version would count as current on every
+  // device until CONSENT_VERSION caught up with it. Deploy the backend first
+  // when bumping CONSENT_VERSION.
+  version: z.number().int().positive().max(CONSENT_VERSION),
   source: z.enum(CONSENT_SOURCES),
   basedOnDecidedAt: z
     .string()

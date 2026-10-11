@@ -81,7 +81,9 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 - `myAnalyticsConsent: AnalyticsConsent` is the newest row, or null when the
   climber never answered. Signed-in only.
 - `setAnalyticsConsent(input: { analytics, version, source, basedOnDecidedAt })`
-  appends a row and returns the account's current answer.
+  appends a row and returns the account's current answer. `version` must be
+  between 1 and the server's `CONSENT_VERSION`; deploy the backend first when
+  bumping it.
   - The server stamps `decided_at`; a client clock is never trusted. The stamp
     is whole milliseconds and at least 1 ms after the user's previous row, so
     the ISO string a client echoes back names exactly one row.
