@@ -7,7 +7,12 @@ import { climbQueries } from '../graphql/resolvers/climbs/queries';
 import { favoriteClimbsQuery } from '../graphql/resolvers/favorites/favorite-climbs-query';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 import { analyzeGradeOutlier } from '../graphql/resolvers/social/proposals/grade-analysis';
-import { redactBoardStats } from '../services/board-session-privacy';
+import {
+  canReadClimbContent,
+  redactBoardClimbs,
+  redactBoardStats,
+  redactQueueClimb,
+} from '../services/board-session-privacy';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 // ---------------------------------------------------------------------------
@@ -44,6 +49,8 @@ const OWNED_DRAFT = 'draft-read-owned';
 const OWNERLESS_DRAFT = 'draft-read-ownerless';
 const DELETED_ACCOUNT_DRAFT = 'draft-read-deleted-account';
 const DRAFTS = [OWNED_DRAFT, OWNERLESS_DRAFT, DELETED_ACCOUNT_DRAFT];
+/** Published and listed, with a draft flag that was never set. NULL is not a draft. */
+const NULL_DRAFT_FLAG = 'draft-read-null-flag';
 const ALL_CLIMBS = [PUBLISHED, ...DRAFTS];
 
 const PLAYLIST_UUID = 'draft-read-playlist';
@@ -117,6 +124,17 @@ describeWithDatabase('draft climbs on the read paths outside sync (real DB)', ()
         VALUES (${BOARD}, ${climb.uuid}, ${ANGLE}, 20, 21, 19, 23, 'confirmed', 12, 'draft-read', 'draft-read')
       `);
     }
+
+    // Outside ALL_CLIMBS on purpose: the list and playlist cases above are
+    // written against four climbs, and this one is only read in a live session.
+    await db.execute(sql`
+      INSERT INTO board_climbs
+        (uuid, board_type, layout_id, name, frames, frames_count, is_draft, is_listed, compatible_size_ids,
+         required_set_ids)
+      VALUES
+        (${NULL_DRAFT_FLAG}, ${BOARD}, ${LAYOUT_ID}, ${`Name of ${NULL_DRAFT_FLAG}`}, 'p1r12p2r13', 1, NULL, true,
+         '{1}'::int[], '{1}'::int[])
+    `);
 
     // A public playlist that names every climb, drafts included: anyone can put
     // a uuid they hold on a playlist of their own.
@@ -256,6 +274,59 @@ describeWithDatabase('draft climbs on the read paths outside sync (real DB)', ()
           expect(redacted).toMatchObject({ climbsSentCount: 3, distinctClimbersCount: 2, hardestGrade: 'V8' });
         }
       }
+    });
+  });
+
+  // The live-session reads use the publication test the board sync uses. A
+  // climb every device holds must not come back blank in a queue, and that
+  // includes a published climb whose draft flag is NULL: `is_draft = false`
+  // reads NULL as a draft, `IS NOT TRUE` does not.
+  describe('a climb in a live session', () => {
+    const queueClimb = (uuid: string) => ({
+      uuid,
+      name: `Name of ${uuid}`,
+      setter_username: 'setter',
+      frames: 'p1r12p2r13',
+      angle: ANGLE,
+      ascensionist_count: 12,
+      difficulty: 'V5',
+      quality_average: '3',
+      stars: 3,
+      difficulty_error: '0',
+      benchmark_difficulty: null,
+    });
+
+    it('is readable by everyone when it is published, a NULL draft flag included, and a draft only by its owner', async () => {
+      for (const [, , viewerId] of VIEWERS) {
+        const readable = [...readableBy(viewerId), NULL_DRAFT_FLAG];
+        for (const uuid of [...ALL_CLIMBS, NULL_DRAFT_FLAG]) {
+          expect(await canReadClimbContent(uuid, viewerId), `${uuid} for ${String(viewerId)}`).toBe(
+            readable.includes(uuid),
+          );
+        }
+      }
+    });
+
+    it('keeps the details of a published climb with a NULL draft flag in the queue, and blanks a draft', async () => {
+      for (const [, , viewerId] of VIEWERS) {
+        expect((await redactQueueClimb(queueClimb(NULL_DRAFT_FLAG), viewerId)).name).toBe(`Name of ${NULL_DRAFT_FLAG}`);
+        expect((await redactQueueClimb(queueClimb(OWNERLESS_DRAFT), viewerId)).name).toBe('');
+      }
+    });
+
+    it('keeps it named in the board’s history too', async () => {
+      const history = [NULL_DRAFT_FLAG, PUBLISHED, OWNERLESS_DRAFT].map((climbUuid, index) => ({
+        climbUuid,
+        name: `Name of ${climbUuid}`,
+        frames: 'p1r12p2r13',
+        sentByUserId: null,
+        sentAt: '2026-05-01T00:00:00.000Z',
+        seq: index + 1,
+      }));
+      // No board holds these sequence numbers, so there is no stored
+      // provenance and no identity to show: only the climb details are at stake.
+      const redacted = await redactBoardClimbs(history, 0, STRANGER);
+      expect(redacted.map((climb) => climb.name)).toEqual([`Name of ${NULL_DRAFT_FLAG}`, `Name of ${PUBLISHED}`, null]);
     });
   });
 });
