@@ -7,6 +7,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
+import {
+  isSessionPreviewEnded,
+  isSessionPreviewHostAway,
+  trackSessionJoinOutcome,
+} from '../../src/lib/session-join-analytics';
+import { useSessionJoinOutcomeTracking } from '../../src/hooks/use-session-join-outcome-tracking';
 import { Text } from '../../src/components/Text';
 import { Button } from '../../src/components/Button';
 import { Card } from '../../src/components/Card';
@@ -51,6 +57,9 @@ function JoinSessionScreen() {
   const { sessionId, source } = useLocalSearchParams<{ sessionId: string; source?: string }>();
   const liveSessionSource = parseLiveSessionJoinSource(source);
   const { t } = useTranslation('session');
+  // Counts the invites that dead-end here (not found, ended, sign-in needed,
+  // failed to load). Reads the same preview query as below.
+  useSessionJoinOutcomeTracking(sessionId);
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -60,7 +69,7 @@ function JoinSessionScreen() {
   const { sessionId: activeSessionId } = useQueueSessionId();
   const { joinSession, clearSession } = useQueueActions();
 
-  const preview = useSessionPreview(sessionId);
+  const preview = useSessionPreview(sessionId, { inviteFallback: true });
   const myBoards = useMyBoards(undefined, { enabled: isAuthenticated });
   const createBoard = useCreateBoard();
 
@@ -117,11 +126,17 @@ function JoinSessionScreen() {
       // board so the event still fires for named-board (`/b/{slug}`) sessions,
       // whose path can't be parsed.
       const parsedBoard = parseBoardPath(session.boardPath);
-      track(SHARED_EVENTS.SessionJoined, {
-        session_id: session.id,
-        board_name: parsedBoard?.boardName ?? userBoard.boardType,
-        layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
-      });
+      // Opening an invite for the session you are already in is not a join.
+      if (!alreadyInSession) {
+        track(SHARED_EVENTS.SessionJoined, {
+          session_id: session.id,
+          // Same id under the name the invite events use, so one funnel can
+          // hold host and joiner to the same session.
+          sessionId: session.id,
+          board_name: parsedBoard?.boardName ?? userBoard.boardType,
+          layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
+        });
+      }
       // The last step of the live-sessions funnel (Shelf Viewed → Card Tapped →
       // Live Session Joined). Only joins that started on a live-session card
       // carry a source; invite links don't.
@@ -132,6 +147,7 @@ function JoinSessionScreen() {
       router.replace('/(tabs)/record');
     } catch (error) {
       if (__DEV__) console.warn('[join] failed to join session', error);
+      trackSessionJoinOutcome(session.id, 'error', 'join');
       showToast(t('mobileJoin.joinError'), 'error');
       setIsJoining(false);
     }
@@ -214,7 +230,9 @@ function JoinSessionScreen() {
     );
   }
 
-  // Not found (session query resolved to null).
+  // Not found: neither the live session query nor the invite preview knows
+  // this id. A running session with nobody connected is NOT this branch; the
+  // invite fallback turns it into a joinable preview.
   if (!session) {
     return (
       <View style={containerStyle}>
@@ -230,8 +248,30 @@ function JoinSessionScreen() {
     );
   }
 
+  // Running, nobody connected, and no wall to join on: the invite is good, so
+  // say what will fix it instead of "not found".
+  if (isSessionPreviewHostAway(session)) {
+    return (
+      <View style={containerStyle}>
+        <View style={styles.centered}>
+          <Icon name="clock" size={40} color={systemColors.secondaryLabel} />
+          <Text variant="title3" style={styles.centeredTitle}>
+            {t('mobileJoin.hostAway')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredTitle}>
+            {session.invite?.hostName
+              ? t('mobileJoin.hostAwayBody', { host: session.invite.hostName })
+              : t('mobileJoin.hostAwayBodyNoHost')}
+          </Text>
+          <Button title={t('mobileJoin.retry')} variant="filled" size="large" onPress={() => void preview.refetch()} />
+          <Button title={t('mobileJoin.cancel')} variant="text" onPress={() => router.back()} />
+        </View>
+      </View>
+    );
+  }
+
   // Ended.
-  if (session.endedAt != null) {
+  if (isSessionPreviewEnded(session)) {
     return (
       <View style={containerStyle}>
         <View style={styles.centered}>
@@ -245,15 +285,23 @@ function JoinSessionScreen() {
     );
   }
 
+  // The line under the card's title. A preview rebuilt from the invite has no
+  // roster: `dormant` says nobody is connected, and `live` (the host came back
+  // mid-load) names the board alone instead of counting an empty list as "0".
+  let boardLine: string;
+  if (session.invite?.state === 'dormant') boardLine = t('mobileJoin.boardLabelDormant', { board: boardLabel });
+  else if (session.invite?.state === 'live') boardLine = boardLabel;
+  else boardLine = t('mobileJoin.boardLabel', { board: boardLabel, count: session.users.length });
+
   // Loaded + active — confirmation card.
   return (
     <View style={[containerStyle, styles.confirmContainer]}>
       <Card style={styles.card}>
         <Text variant="title2" style={styles.cardTitle}>
-          {t('mobileJoin.confirmTitle', { host: hostName })}
+          {t('mobileJoin.confirmTitle', { host: session.invite?.hostName ?? hostName })}
         </Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.boardLabel}>
-          {t('mobileJoin.boardLabel', { board: boardLabel, count: session.users.length })}
+          {boardLine}
         </Text>
 
         <View style={styles.avatarRow}>

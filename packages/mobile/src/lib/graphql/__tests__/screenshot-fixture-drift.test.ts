@@ -788,6 +788,15 @@ describe('queries the capture flows can reach', () => {
     ).toEqual([]);
   });
 
+  it('keeps captured join sessions live so invite fallback remains unsent', () => {
+    const sessionFixtures = manifest.graphql.filter((entry) => entry.operationName === 'GetSession');
+    expect(sessionFixtures.length).toBeGreaterThan(0);
+    for (const entry of sessionFixtures) {
+      const response = readFixture(entry.file).response as { data?: { session?: unknown } };
+      expect(response.data?.session, entry.file).toBeTruthy();
+    }
+  });
+
   it('keeps the unsent list to queries that are still unrecorded and still sent by the app', () => {
     const stale = QUERIES_NO_CAPTURE_SENDS.filter(
       (name) => !registeredQueryNames.includes(name) || recorded.has(name) || defaulted.has(name),

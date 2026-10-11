@@ -33,7 +33,7 @@ auth and two other flows: `/api/auth/session`, `/api/auth/providers-config`,
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `/api/v1/[board]/proxy/{login,saveAscent,saveClimb,getLogbook,user-sync}` | **None** — already migrated to GraphQL (see `docs/branch-deploys.md`)                       | W-25a + W-25b: all five deleted, URLs 404 (see below)         |
 | `/api/internal/favorites`                                                 | Only web session-app UI slated for teardown (`climb-actions/*`)                             | deleted with that UI (see `deleted-private-surfaces.test.ts`) |
-| `/api/internal/join/[sessionId]`                                          | `app/join/[sessionId]/page.tsx`, `join-redirect.tsx`                                        | **KEEP** — session share links                                |
+| `/api/internal/join/[sessionId]`                                          | **None** since #6004: `/join/[sessionId]` is a server-rendered invite page, not a redirect      | deleted in #6004                                              |
 | `/api/internal/controllers`                                               | `account/controllers-section.tsx`                                                           | **KEEP** — kept by W-21 (#4440)                               |
 | `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343` | **KEEP** — `/app` + kiosk auth bridge                         |
 
@@ -366,11 +366,13 @@ Kept, all with live importers: `gym-welcome-db`, `moonboard-climbs-db`,
   Taking the epic row's "delete `lib/ble/*` except `capacitor-utils.ts`"
   literally reds the whole typecheck in files that have nothing to do with
   Bluetooth. It is pinned in `KEPT_BLE_FILES`.
-- **`middleware.ts`'s `?session=` → `CLIMB_SESSION_COOKIE` rewrite** — it lost
-  its last client-side _reader_ here, but `api/internal/join/[sessionId]/route.ts`
-  still _writes_ the same cookie and the app reads it. Written-and-not-read on
-  www is the correct state; removing it is a separate call that belongs with
-  W-19's `/session` review.
+- **`middleware.ts`'s `?session=` → `CLIMB_SESSION_COOKIE` rewrite** — kept
+  here because `api/internal/join/[sessionId]/route.ts` still wrote the same
+  cookie. **Resolved in #6004**: nothing read the cookie on www or in the app
+  (the app joins through `/join/{id}` and its own stored session id), so the
+  join route, `climb-session-cookie.ts` and the cookie write are all deleted.
+  The middleware still 307s a `?session=` URL to the clean one, for the CDN
+  cache key; it drops the id.
 
 ### The machine-checkable finish line
 

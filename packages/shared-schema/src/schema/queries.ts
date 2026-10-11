@@ -66,6 +66,15 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     sessionStatus(sessionId: ID!): SessionStatus
 
+    """
+    What a session invite link points at: host display name, board, gym and
+    whether the session is live, dormant, ended or missing. No authentication
+    required and rate limited. Unlike session, it answers for a dormant
+    session (running, nobody connected) instead of returning null, and it never
+    returns the roster.
+    """
+    sessionInvitePreview(sessionId: ID!): SessionInvitePreview!
+
     # ============================================
     # Board Configuration Queries
     # ============================================
