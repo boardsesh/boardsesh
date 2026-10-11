@@ -101,6 +101,37 @@ export function matchClimbRowPreset(display: ClimbRowDisplay): ClimbRowPresetId 
 /** Only what the climber changed. A field left out follows the shipped default. */
 export type ClimbRowOverrides = Partial<Record<ClimbRowFieldId, boolean>>;
 
+// The two switches that had an AsyncStorage key of their own before this record.
+// Builds from before it still read and write those keys, and a phone can move
+// between the two kinds of build in either direction (an OTA rollback; a tester
+// leaving a preview), so the old keys and this record are kept in step, both ways.
+export const CLIMB_ROW_LEGACY_FIELD_IDS = [
+  'playlistTags',
+  'quickActions',
+] as const satisfies readonly ClimbRowFieldId[];
+export type ClimbRowLegacyFieldId = (typeof CLIMB_ROW_LEGACY_FIELD_IDS)[number];
+
+export function isClimbRowLegacyFieldId(fieldId: ClimbRowFieldId): fieldId is ClimbRowLegacyFieldId {
+  return CLIMB_ROW_LEGACY_FIELD_IDS.some((legacyFieldId) => legacyFieldId === fieldId);
+}
+
+/**
+ * What this build last knew a field's old key to hold.
+ *
+ * - A boolean or `null`: the value last read from the key, or last written to
+ *   it from here. `null` is a key with no explicit choice in it.
+ * - `'decided'`: the climber chose this field here before the old key was ever
+ *   read, so whatever the key turns out to hold must not replace that choice.
+ *
+ * A field with no entry has never been read. Comparing an entry with a fresh
+ * read is how a write by an older build shows up: the two differ.
+ */
+export type ClimbRowLegacyBaseline = boolean | null | 'decided';
+export type ClimbRowLegacyBaselines = Partial<Record<ClimbRowLegacyFieldId, ClimbRowLegacyBaseline>>;
+
+/** The two old keys as read: anything but an explicit boolean counts as no choice. */
+export type ClimbRowLegacyValues = Record<ClimbRowLegacyFieldId, unknown>;
+
 export type StoredClimbRowDisplay = {
   version: 1;
   overrides: ClimbRowOverrides;
@@ -110,12 +141,9 @@ export type StoredClimbRowDisplay = {
    * that a newer hand-made one replaced, has nothing left to go back to.
    */
   lastCustom?: Record<ClimbRowPresetFieldId, boolean>;
-  /** The two older AsyncStorage choices have been copied in (or were absent). */
-  legacyMigrated?: true;
+  /** Per old key, what it was last known to hold. Left out until one is known. */
+  legacy?: ClimbRowLegacyBaselines;
 };
-
-/** The two choices that had their own AsyncStorage key before this record. */
-export type LegacyClimbRowChoices = { playlistTags: unknown; quickActions: unknown };
 
 function isRecord(candidate: unknown): candidate is Record<string, unknown> {
   return typeof candidate === 'object' && candidate !== null;
@@ -141,12 +169,33 @@ function contentFieldsOf(display: ClimbRowDisplay): Record<ClimbRowPresetFieldId
 function buildStored(
   overrides: ClimbRowOverrides,
   lastCustom: StoredClimbRowDisplay['lastCustom'],
-  legacyMigrated: StoredClimbRowDisplay['legacyMigrated'],
+  legacy: StoredClimbRowDisplay['legacy'],
 ): StoredClimbRowDisplay {
   const stored: StoredClimbRowDisplay = { version: 1, overrides };
   if (lastCustom) stored.lastCustom = lastCustom;
-  if (legacyMigrated) stored.legacyMigrated = true;
+  if (legacy && CLIMB_ROW_LEGACY_FIELD_IDS.some((fieldId) => legacy[fieldId] !== undefined)) stored.legacy = legacy;
   return stored;
+}
+
+/** The old keys a preset, or a restored mix, speaks for: every one but `quickActions`. */
+const PRESET_LEGACY_FIELD_IDS = CLIMB_ROW_PRESET_FIELD_IDS.filter(
+  (fieldId): fieldId is ClimbRowPresetFieldId & ClimbRowLegacyFieldId => isClimbRowLegacyFieldId(fieldId),
+);
+
+/**
+ * The baselines after the climber chose these fields here. A field whose old key
+ * has never been read becomes `'decided'`, in the same record as the choice, so
+ * the choice still stands at the next launch even if nothing else got written.
+ */
+function legacyAfterDeciding(
+  legacy: StoredClimbRowDisplay['legacy'],
+  decidedFieldIds: readonly ClimbRowLegacyFieldId[],
+): StoredClimbRowDisplay['legacy'] {
+  const neverRead = decidedFieldIds.filter((fieldId) => legacy?.[fieldId] === undefined);
+  if (neverRead.length === 0) return legacy;
+  const baselines: ClimbRowLegacyBaselines = { ...legacy };
+  for (const fieldId of neverRead) baselines[fieldId] = 'decided';
+  return baselines;
 }
 
 /** The overrides a preset or a restored mix must leave alone. */
@@ -176,10 +225,20 @@ function sanitiseLastCustom(candidate: unknown): StoredClimbRowDisplay['lastCust
   return matchClimbRowPreset(remembered) === 'custom' ? contentFieldsOf(remembered) : undefined;
 }
 
+function sanitiseLegacy(candidate: unknown): StoredClimbRowDisplay['legacy'] {
+  if (!isRecord(candidate)) return undefined;
+  const legacy: ClimbRowLegacyBaselines = {};
+  for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
+    const baseline = candidate[fieldId];
+    if (typeof baseline === 'boolean' || baseline === null || baseline === 'decided') legacy[fieldId] = baseline;
+  }
+  return legacy;
+}
+
 /**
  * Whatever was read from storage, as a record this build understands. A wrong
- * version, a non-object, an unknown field id and a non-boolean value are all
- * dropped; nothing here throws, because a row that cannot read its settings
+ * version, a non-object, an unknown field id and a value of the wrong type are
+ * all dropped; nothing here throws, because a row that cannot read its settings
  * must still draw.
  */
 export function sanitiseStoredClimbRowDisplay(stored: unknown): StoredClimbRowDisplay {
@@ -190,12 +249,14 @@ export function sanitiseStoredClimbRowDisplay(stored: unknown): StoredClimbRowDi
   return buildStored(
     overrides,
     showsPreset ? sanitiseLastCustom(stored.lastCustom) : undefined,
-    stored.legacyMigrated === true ? true : undefined,
+    sanitiseLegacy(stored.legacy),
   );
 }
 
 export function sameStoredClimbRowDisplay(first: StoredClimbRowDisplay, second: StoredClimbRowDisplay): boolean {
-  if (first.legacyMigrated !== second.legacyMigrated) return false;
+  // `undefined` (never read) and `null` (read, nothing there) are different baselines.
+  if (!CLIMB_ROW_LEGACY_FIELD_IDS.every((fieldId) => first.legacy?.[fieldId] === second.legacy?.[fieldId]))
+    return false;
   if (!CLIMB_ROW_FIELD_IDS.every((fieldId) => first.overrides[fieldId] === second.overrides[fieldId])) return false;
   const firstCustom = first.lastCustom;
   const secondCustom = second.lastCustom;
@@ -213,7 +274,11 @@ export function withClimbRowField(
   // A flip that leaves the presets makes this row the newest hand-made mix, so
   // the older remembered one has nothing left to restore.
   const showsPreset = matchClimbRowPreset(resolveClimbRowDisplay(overrides)) !== 'custom';
-  return buildStored(overrides, showsPreset ? stored.lastCustom : undefined, stored.legacyMigrated);
+  return buildStored(
+    overrides,
+    showsPreset ? stored.lastCustom : undefined,
+    isClimbRowLegacyFieldId(fieldId) ? legacyAfterDeciding(stored.legacy, [fieldId]) : stored.legacy,
+  );
 }
 
 /**
@@ -230,7 +295,7 @@ export function withClimbRowPreset(stored: StoredClimbRowDisplay, presetId: Clim
     matchClimbRowPreset(currentDisplay) === 'custom' ? contentFieldsOf(currentDisplay) : stored.lastCustom;
   const overrides = overridesOutsidePresets(stored.overrides);
   if (presetId !== 'default') Object.assign(overrides, CLIMB_ROW_PRESETS[presetId]);
-  return buildStored(overrides, lastCustom, stored.legacyMigrated);
+  return buildStored(overrides, lastCustom, legacyAfterDeciding(stored.legacy, PRESET_LEGACY_FIELD_IDS));
 }
 
 /** The remembered hand-made mix, back on screen. No remembered mix: no change. */
@@ -239,28 +304,54 @@ export function withClimbRowLastCustomRestored(stored: StoredClimbRowDisplay): S
   return buildStored(
     { ...overridesOutsidePresets(stored.overrides), ...stored.lastCustom },
     undefined,
-    stored.legacyMigrated,
+    legacyAfterDeciding(stored.legacy, PRESET_LEGACY_FIELD_IDS),
   );
 }
 
 /**
- * The two older choices, copied in once. Only an explicit stored boolean counts:
- * a key that was never written keeps following the default. A field the climber
- * has already decided here (an override on file, or a change made this launch,
- * which `default` records by clearing) wins over the older value.
+ * The two old keys, read at launch and reconciled with this record.
+ *
+ * Per field, against the baseline: equal, nothing happened since we last
+ * looked. Different, or never read, an older build's value is waiting in the
+ * key and comes in. It comes in only as an explicit boolean, and never over a
+ * choice the climber has already made here: one made before the key was ever
+ * read (`'decided'`), or one made this launch while this read was in flight.
+ * Either way the baseline becomes what was read.
  */
-export function withClimbRowLegacyChoices(
+export function withClimbRowLegacyRead(
   stored: StoredClimbRowDisplay,
-  legacyChoices: LegacyClimbRowChoices,
+  legacyValues: ClimbRowLegacyValues,
   changedFieldIds: ReadonlySet<ClimbRowFieldId>,
 ): StoredClimbRowDisplay {
   const overrides = { ...stored.overrides };
-  for (const fieldId of ['playlistTags', 'quickActions'] as const) {
-    const legacyChoice = legacyChoices[fieldId];
-    if (typeof legacyChoice !== 'boolean') continue;
-    if (changedFieldIds.has(fieldId) || typeof overrides[fieldId] === 'boolean') continue;
-    overrides[fieldId] = legacyChoice;
+  const legacy: ClimbRowLegacyBaselines = { ...stored.legacy };
+  for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
+    const legacyValue = legacyValues[fieldId];
+    const read = typeof legacyValue === 'boolean' ? legacyValue : null;
+    const baseline = legacy[fieldId];
+    if (baseline === read) continue;
+    if (read !== null && baseline !== 'decided' && !changedFieldIds.has(fieldId)) overrides[fieldId] = read;
+    legacy[fieldId] = read;
   }
   const showsPreset = matchClimbRowPreset(resolveClimbRowDisplay(overrides)) !== 'custom';
-  return buildStored(overrides, showsPreset ? stored.lastCustom : undefined, true);
+  return buildStored(overrides, showsPreset ? stored.lastCustom : undefined, legacy);
+}
+
+/** A choice made here has reached its old key, which now holds `value`. */
+export function withClimbRowLegacyMirrored(
+  stored: StoredClimbRowDisplay,
+  fieldId: ClimbRowLegacyFieldId,
+  value: boolean,
+): StoredClimbRowDisplay {
+  if (stored.legacy?.[fieldId] === value) return stored;
+  return buildStored(stored.overrides, stored.lastCustom, { ...stored.legacy, [fieldId]: value });
+}
+
+/**
+ * The record after every setting was reset from outside: the shipped defaults,
+ * but still knowing what the old keys hold. Without that, the next launch would
+ * read them as new and bring the pre-reset choices straight back.
+ */
+export function withClimbRowDisplayReset(stored: StoredClimbRowDisplay): StoredClimbRowDisplay {
+  return buildStored({}, undefined, stored.legacy);
 }

@@ -242,8 +242,9 @@ type ClimbListRowProps = {
   showSeparator?: boolean;
   /**
    * Show the playlist-membership tag row in the default content layout. Only the
-   * main filtered climb list opts in; the chips still gate on the user setting +
-   * fetched data. Ignored when `renderContent` supplies a custom layout.
+   * main filtered climb list opts in; the content still needs the user setting,
+   * and the tags their fetched data. Ignored when `renderContent` supplies a
+   * custom layout.
    */
   showPlaylistChips?: boolean;
   /**

@@ -181,8 +181,9 @@ type ClimbListItemContentProps = {
    * Render the third row of playlist-membership tags under the subtitle. Opt-in
    * per surface (default off) so only the main filtered climb list shows them —
    * the queue, session, and logbook rows that also reuse this visual stay clean.
-   * The chips additionally gate on the user's "Show playlist tags" setting and on
-   * fetched membership data, so passing `true` alone doesn't force them on.
+   * Passing `true` alone doesn't force them on: the row mounts the tag strip only
+   * while the climber's "Show playlist tags" setting is also on, and the strip
+   * draws nothing until membership data has been fetched.
    */
   showPlaylistChips?: boolean;
   /**

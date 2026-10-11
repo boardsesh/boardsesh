@@ -21,13 +21,11 @@ describe('climbRowSeparatorInset', () => {
     expect(climbRowSeparatorInset(false)).toBe(16);
   });
 
-  // The figures each host had hardcoded before this function replaced them.
-  it.each([
-    ['the queue row (12 padding + 28 position slot + 12 gap)', 12 + 28 + 12, 140],
-    ['the playlist edit row (12 padding + 36 remove slot + 12 gap)', 12 + 36 + 12, 148],
-    ['the workout preview row (12 padding)', 12, 100],
-  ])('keeps the separator of %s where it was', (_host, leadingInset, expectedInset) => {
-    expect(climbRowSeparatorInset(true, leadingInset)).toBe(expectedInset);
+  // Where each real host ends up is pinned against the host itself, in
+  // climb-row-separator-hosts.test.tsx. This file is the arithmetic only.
+  it('adds the thumbnail and one gap to a host’s own leading inset', () => {
+    expect(climbRowSeparatorInset(true, 52)).toBe(52 + 76 + 12);
+    expect(climbRowSeparatorInset(true, 12)).toBe(12 + 76 + 12);
   });
 
   it('falls back to the host’s own leading inset without a thumbnail', () => {

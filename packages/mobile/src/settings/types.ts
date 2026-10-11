@@ -186,9 +186,10 @@ export type AppSettings = {
   otaLeaveBlockedUpdateId: string | null;
   /**
    * What a climb list row shows: the climber's switches, as overrides on the
-   * shipped defaults. `null` until the first change or the one-time copy of the
-   * two older AsyncStorage choices. In this store, not AsyncStorage, because a
-   * switch changes the row's geometry and that has to be known before first paint.
+   * shipped defaults, plus what the two older AsyncStorage keys were last known
+   * to hold. `null` until the first change or the first read of those keys. In
+   * this store, not AsyncStorage, because a switch changes the row's geometry and
+   * that has to be known before first paint.
    *
    * Read and written ONLY by `lib/climb-row-display-preference.ts`, which keeps
    * its own snapshot. Rows must not `useSetting` this key: every settings write

@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLIMB_ROW_FIELD_IDS,
+  CLIMB_ROW_LEGACY_FIELD_IDS,
   CLIMB_ROW_PRESET_FIELD_IDS,
   CLIMB_ROW_PRESET_IDS,
   CLIMB_ROW_PRESETS,
   DEFAULT_CLIMB_ROW_DISPLAY,
+  isClimbRowLegacyFieldId,
   matchClimbRowPreset,
   resolveClimbRowDisplay,
   sameStoredClimbRowDisplay,
   sanitiseStoredClimbRowDisplay,
+  withClimbRowDisplayReset,
   withClimbRowField,
   withClimbRowLastCustomRestored,
-  withClimbRowLegacyChoices,
+  withClimbRowLegacyMirrored,
+  withClimbRowLegacyRead,
   withClimbRowPreset,
   type ClimbRowDisplay,
   type ClimbRowFieldId,
@@ -167,12 +171,28 @@ describe('sanitiseStoredClimbRowDisplay', () => {
     expect(stored).toEqual({ version: 1, overrides: { thumbnail: false, quickActions: false } });
   });
 
-  it('keeps the legacy marker only when it is exactly true', () => {
-    expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacyMigrated: true }).legacyMigrated).toBe(
-      true,
-    );
-    for (const marker of [false, 'true', 1, null]) {
-      expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacyMigrated: marker })).toEqual(EMPTY);
+  it('keeps a baseline for each old key: a boolean, null, or decided', () => {
+    for (const baseline of [true, false, null, 'decided'] as const) {
+      const legacy = { playlistTags: baseline, quickActions: baseline };
+      expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacy })).toEqual({ ...EMPTY, legacy });
+    }
+  });
+
+  it('tells a key that was read and held nothing from one that was never read', () => {
+    const stored = sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacy: { playlistTags: null } });
+    expect(stored.legacy).toEqual({ playlistTags: null });
+    expect(stored.legacy && 'quickActions' in stored.legacy).toBe(false);
+  });
+
+  it('drops a baseline of any other kind, and one for a field that never had an old key', () => {
+    const stored = sanitiseStoredClimbRowDisplay({
+      version: 1,
+      overrides: {},
+      legacy: { playlistTags: 'true', quickActions: 1, thumbnail: true, glitter: false },
+    });
+    expect(stored).toEqual(EMPTY);
+    for (const legacy of ['decided', null, [true], 7]) {
+      expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacy })).toEqual(EMPTY);
     }
   });
 
@@ -228,7 +248,13 @@ describe('sameStoredClimbRowDisplay', () => {
   it.each<[string, StoredClimbRowDisplay, StoredClimbRowDisplay]>([
     ['an override', EMPTY, { version: 1, overrides: { sends: true } }],
     ['an override’s value', { version: 1, overrides: { sends: true } }, { version: 1, overrides: { sends: false } }],
-    ['the legacy marker', EMPTY, { version: 1, overrides: {}, legacyMigrated: true }],
+    ['a baseline', EMPTY, { version: 1, overrides: {}, legacy: { quickActions: true } }],
+    [
+      'a baseline’s value',
+      { version: 1, overrides: {}, legacy: { quickActions: true } },
+      { version: 1, overrides: {}, legacy: { quickActions: 'decided' } },
+    ],
+    ['a key read as empty versus never read', EMPTY, { version: 1, overrides: {}, legacy: { playlistTags: null } }],
     ['a remembered mix', EMPTY, { version: 1, overrides: {}, lastCustom: remembered }],
     [
       'the remembered mix’s values',
@@ -253,8 +279,31 @@ describe('withClimbRowField', () => {
     expect(before).toEqual({ version: 1, overrides: { sends: false } });
   });
 
-  it('keeps the legacy marker', () => {
-    expect(withClimbRowField({ ...EMPTY, legacyMigrated: true }, 'sends', false).legacyMigrated).toBe(true);
+  it('leaves the baselines alone for a field that never had an old key', () => {
+    expect(withClimbRowField(EMPTY, 'sends', false).legacy).toBeUndefined();
+    const read: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: true, quickActions: null } };
+    expect(withClimbRowField(read, 'sends', false).legacy).toEqual({ playlistTags: true, quickActions: null });
+  });
+
+  it.each(CLIMB_ROW_LEGACY_FIELD_IDS)(
+    'marks %s decided when its old key has never been read, in the same record as the choice',
+    (fieldId) => {
+      const decided = withClimbRowField(EMPTY, fieldId, false);
+      expect(decided.overrides).toEqual({ [fieldId]: false });
+      expect(decided.legacy).toEqual({ [fieldId]: 'decided' });
+    },
+  );
+
+  it.each([true, false, null, 'decided'] as const)('keeps a baseline that is already %s', (baseline) => {
+    const read: StoredClimbRowDisplay = { ...EMPTY, legacy: { quickActions: baseline } };
+    expect(withClimbRowField(read, 'quickActions', false).legacy).toEqual({ quickActions: baseline });
+  });
+});
+
+describe('the fields with an old key', () => {
+  it('are the playlist tags and the quick-actions button', () => {
+    expect(CLIMB_ROW_LEGACY_FIELD_IDS).toEqual(['playlistTags', 'quickActions']);
+    expect(CLIMB_ROW_FIELD_IDS.filter(isClimbRowLegacyFieldId)).toEqual(['playlistTags', 'quickActions']);
   });
 });
 
@@ -278,6 +327,17 @@ describe('withClimbRowPreset', () => {
 
   it.each(CLIMB_ROW_PRESET_IDS)('adds no quick-actions override of its own (%s)', (presetId) => {
     expect('quickActions' in withClimbRowPreset(EMPTY, presetId).overrides).toBe(false);
+  });
+
+  // Default writes no override, so without this nothing would record that the
+  // climber chose: the tags' old key would be read as new at the next launch.
+  it.each(CLIMB_ROW_PRESET_IDS)('marks the tags decided, and only the tags (%s)', (presetId) => {
+    expect(withClimbRowPreset(EMPTY, presetId).legacy).toEqual({ playlistTags: 'decided' });
+  });
+
+  it('keeps baselines that were already read', () => {
+    const read: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: true, quickActions: false } };
+    expect(withClimbRowPreset(read, 'default').legacy).toEqual({ playlistTags: true, quickActions: false });
   });
 });
 
@@ -340,71 +400,163 @@ describe('the remembered hand-made mix', () => {
   });
 });
 
-describe('withClimbRowLegacyChoices', () => {
-  it('copies explicit choices and marks the copy done', () => {
-    const migrated = withClimbRowLegacyChoices(EMPTY, { playlistTags: true, quickActions: false }, NOTHING_CHANGED);
-    expect(migrated).toEqual({
-      version: 1,
-      overrides: { playlistTags: true, quickActions: false },
-      legacyMigrated: true,
+describe('withClimbRowLegacyRead', () => {
+  const read = (playlistTags: unknown, quickActions: unknown) => ({ playlistTags, quickActions });
+
+  describe('a key that has never been read', () => {
+    it('brings an explicit choice in and records what the key held', () => {
+      expect(withClimbRowLegacyRead(EMPTY, read(true, false), NOTHING_CHANGED)).toEqual({
+        version: 1,
+        overrides: { playlistTags: true, quickActions: false },
+        legacy: { playlistTags: true, quickActions: false },
+      });
+    });
+
+    it('brings in an explicit choice that equals the default too', () => {
+      const synced = withClimbRowLegacyRead(EMPTY, read(false, true), NOTHING_CHANGED);
+      expect(synced.overrides).toEqual({ playlistTags: false, quickActions: true });
+    });
+
+    it.each([
+      ['never written', null],
+      ['undefined', undefined],
+      ['a string', 'true'],
+      ['a number', 1],
+      ['an object', { enabled: true }],
+    ])('brings nothing in for a key that is %s, and records it as empty', (_label, legacyValue) => {
+      expect(withClimbRowLegacyRead(EMPTY, read(legacyValue, legacyValue), NOTHING_CHANGED)).toEqual({
+        version: 1,
+        overrides: {},
+        legacy: { playlistTags: null, quickActions: null },
+      });
+    });
+
+    it('does not replace a field changed this launch, and still brings the other in', () => {
+      const changed = withClimbRowField(EMPTY, 'playlistTags', false);
+      const synced = withClimbRowLegacyRead(changed, read(true, false), new Set<ClimbRowFieldId>(['playlistTags']));
+      expect(synced.overrides).toEqual({ playlistTags: false, quickActions: false });
+      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: false });
     });
   });
 
-  it('copies an explicit choice that equals the default too', () => {
-    const migrated = withClimbRowLegacyChoices(EMPTY, { playlistTags: false, quickActions: true }, NOTHING_CHANGED);
-    expect(migrated.overrides).toEqual({ playlistTags: false, quickActions: true });
+  describe('a field decided here before its key was read', () => {
+    it('keeps the choice at a later launch, when nothing was changed this launch', () => {
+      const decided = withClimbRowField(EMPTY, 'quickActions', true);
+      const synced = withClimbRowLegacyRead(decided, read(null, false), NOTHING_CHANGED);
+      expect(displayOf(synced).quickActions).toBe(true);
+      // From here on the key is known, so a later write by an older build shows.
+      expect(synced.legacy).toEqual({ playlistTags: null, quickActions: false });
+    });
+
+    it('keeps a Default preset, which leaves no override to protect it', () => {
+      const onDefault = withClimbRowPreset(EMPTY, 'default');
+      expect(onDefault.overrides).toEqual({});
+      const synced = withClimbRowLegacyRead(onDefault, read(true, null), NOTHING_CHANGED);
+      expect(displayOf(synced).playlistTags).toBe(false);
+      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: null });
+    });
   });
 
-  it.each([
-    ['never written', null],
-    ['undefined', undefined],
-    ['a string', 'true'],
-    ['a number', 1],
-    ['an object', { enabled: true }],
-  ])('ignores a legacy value that is %s, and still marks the copy done', (_label, legacyValue) => {
-    const migrated = withClimbRowLegacyChoices(
-      EMPTY,
-      { playlistTags: legacyValue, quickActions: legacyValue },
-      NOTHING_CHANGED,
+  describe('a key read before', () => {
+    const known: StoredClimbRowDisplay = {
+      version: 1,
+      overrides: { playlistTags: true, quickActions: true },
+      legacy: { playlistTags: true, quickActions: true },
+    };
+
+    it('changes nothing while the key still holds what it held', () => {
+      expect(sameStoredClimbRowDisplay(withClimbRowLegacyRead(known, read(true, true), NOTHING_CHANGED), known)).toBe(
+        true,
+      );
+    });
+
+    it('leaves a choice made here alone when its key is unchanged, even if the two differ', () => {
+      // A choice whose copy to the old key failed: the key still holds the older value.
+      const unmirrored: StoredClimbRowDisplay = { ...known, overrides: { playlistTags: false, quickActions: true } };
+      const synced = withClimbRowLegacyRead(unmirrored, read(true, true), NOTHING_CHANGED);
+      expect(displayOf(synced).playlistTags).toBe(false);
+    });
+
+    it('brings in a value an older build wrote since', () => {
+      const synced = withClimbRowLegacyRead(known, read(true, false), NOTHING_CHANGED);
+      expect(synced.overrides).toEqual({ playlistTags: true, quickActions: false });
+      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: false });
+    });
+
+    it('brings in a first explicit choice an older build made in a key that held nothing', () => {
+      const emptyKeys: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: null, quickActions: null } };
+      const synced = withClimbRowLegacyRead(emptyKeys, read(null, false), NOTHING_CHANGED);
+      expect(synced.overrides).toEqual({ quickActions: false });
+      expect(synced.legacy).toEqual({ playlistTags: null, quickActions: false });
+    });
+
+    it('does not let that value replace a field changed this launch', () => {
+      const synced = withClimbRowLegacyRead(known, read(true, false), new Set<ClimbRowFieldId>(['quickActions']));
+      expect(displayOf(synced).quickActions).toBe(true);
+      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: false });
+    });
+
+    it('keeps the choice when the key no longer holds one, and records that', () => {
+      const synced = withClimbRowLegacyRead(known, read(null, true), NOTHING_CHANGED);
+      expect(synced.overrides).toEqual({ playlistTags: true, quickActions: true });
+      expect(synced.legacy).toEqual({ playlistTags: null, quickActions: true });
+    });
+  });
+
+  it('keeps a remembered mix when the tags brought in leave the row on a preset', () => {
+    // Default with nothing overriding the tags: the older choice lands, and
+    // Default plus tags is the Everything preset.
+    const onDefault: StoredClimbRowDisplay = { ...EMPTY, lastCustom: { ...CLIMB_ROW_PRESETS.default, setter: false } };
+    const synced = withClimbRowLegacyRead(onDefault, read(true, null), NOTHING_CHANGED);
+    expect(matchClimbRowPreset(displayOf(synced))).toBe('everything');
+    expect(synced.lastCustom).toEqual({ ...CLIMB_ROW_PRESETS.default, setter: false });
+  });
+});
+
+describe('withClimbRowLegacyMirrored', () => {
+  it('records that the old key now holds the value written to it', () => {
+    const decided = withClimbRowField(EMPTY, 'playlistTags', true);
+    expect(decided.legacy).toEqual({ playlistTags: 'decided' });
+    const mirrored = withClimbRowLegacyMirrored(decided, 'playlistTags', true);
+    expect(mirrored.legacy).toEqual({ playlistTags: true });
+    expect(mirrored.overrides).toEqual({ playlistTags: true });
+  });
+
+  it('touches only that key’s baseline, and keeps a remembered mix', () => {
+    const before = withClimbRowPreset(withClimbRowField(EMPTY, 'setter', false), 'namesOnly');
+    const mirrored = withClimbRowLegacyMirrored({ ...before, legacy: { quickActions: false } }, 'playlistTags', false);
+    expect(mirrored.legacy).toEqual({ playlistTags: false, quickActions: false });
+    expect(mirrored.overrides).toEqual(before.overrides);
+    expect(mirrored.lastCustom).toEqual(before.lastCustom);
+  });
+
+  it('gives the same record back when the baseline already says so', () => {
+    const known: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: false } };
+    expect(withClimbRowLegacyMirrored(known, 'playlistTags', false)).toBe(known);
+  });
+});
+
+describe('withClimbRowDisplayReset', () => {
+  it('goes back to the default row but keeps what is known of the old keys', () => {
+    const before = withClimbRowPreset(
+      withClimbRowLegacyRead(
+        withClimbRowField(EMPTY, 'setter', false),
+        { playlistTags: true, quickActions: false },
+        NOTHING_CHANGED,
+      ),
+      'namesOnly',
     );
-    expect(migrated).toEqual({ version: 1, overrides: {}, legacyMigrated: true });
+    expect(before.lastCustom).toBeDefined();
+
+    const reset = withClimbRowDisplayReset(before);
+
+    expect(reset).toEqual({ version: 1, overrides: {}, legacy: { playlistTags: true, quickActions: false } });
+    // So the next launch finds the keys unchanged and brings nothing back.
+    const nextLaunch = withClimbRowLegacyRead(reset, { playlistTags: true, quickActions: false }, NOTHING_CHANGED);
+    expect(displayOf(nextLaunch)).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
   });
 
-  it('lets a field changed this launch win, and still copies the other', () => {
-    const changed = withClimbRowField(EMPTY, 'playlistTags', false);
-    const migrated = withClimbRowLegacyChoices(
-      changed,
-      { playlistTags: true, quickActions: false },
-      new Set<ClimbRowFieldId>(['playlistTags']),
-    );
-    expect(migrated.overrides).toEqual({ playlistTags: false, quickActions: false });
-  });
-
-  it('lets a field cleared by the default preset this launch win', () => {
-    const onDefault = withClimbRowPreset(EMPTY, 'default');
-    const migrated = withClimbRowLegacyChoices(
-      onDefault,
-      { playlistTags: true, quickActions: null },
-      new Set<ClimbRowFieldId>(CLIMB_ROW_PRESET_FIELD_IDS),
-    );
-    expect(displayOf(migrated).playlistTags).toBe(false);
-  });
-
-  it('lets an override already on file win, whenever it was made', () => {
-    const migrated = withClimbRowLegacyChoices(
-      { version: 1, overrides: { quickActions: true } },
-      { playlistTags: null, quickActions: false },
-      NOTHING_CHANGED,
-    );
-    expect(migrated.overrides).toEqual({ quickActions: true });
-  });
-
-  it('keeps a remembered mix when the copied tags leave the row on a preset', () => {
-    // Default from an earlier launch whose copy failed: nothing overrides the tags,
-    // so the older choice lands, and Default plus tags is the Everything preset.
-    const onDefault = withClimbRowPreset(withClimbRowField(EMPTY, 'setter', false), 'default');
-    const migrated = withClimbRowLegacyChoices(onDefault, { playlistTags: true, quickActions: null }, NOTHING_CHANGED);
-    expect(matchClimbRowPreset(displayOf(migrated))).toBe('everything');
-    expect(migrated.lastCustom).toEqual({ ...CLIMB_ROW_PRESETS.default, setter: false });
+  it('is an empty record when the old keys were never read', () => {
+    expect(withClimbRowDisplayReset(withClimbRowField(EMPTY, 'sends', false))).toEqual(EMPTY);
   });
 });
