@@ -22,9 +22,9 @@ import { db } from '../db/client';
 import { logger } from '../utils/logger';
 
 /**
- * Daily at 07:41 UTC: after the 06:00 `refresh-recommendations` run rewrites the
- * generated "Best of" playlists outside the mutations, and clear of the 06:15-07:15
- * nightlies and the :00, :17 and :23 jobs.
+ * Daily at 07:41 UTC: after the 06:00 `refresh-recommendations` run (which
+ * recomputes its cohort playlists' bands itself; this run repairs any it had
+ * to skip), and clear of the 06:15-07:15 nightlies and the :00, :17 and :23 jobs.
  */
 export const PLAYLIST_GRADE_SUMMARY_REFRESH_CRON = '41 7 * * *';
 

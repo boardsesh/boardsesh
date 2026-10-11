@@ -10,7 +10,7 @@ import {
 
 /**
  * Keeps `playlist_grade_summaries` in step with each playlist's climbs and
- * their grades. Two callers:
+ * their grades. Three callers:
  *
  *  - The playlist mutations, with the one playlist whose climbs just changed.
  *  - The backend's daily `playlist-grade-summary-refresh` job, with every
@@ -18,6 +18,8 @@ import {
  *    when an upstream catalog sync rewrites `display_difficulty`, and the
  *    Aurora and Kilter circuit syncs write `playlist_climbs` without going
  *    through the mutations, so the job is what catches both.
+ *  - The nightly `refresh-recommendations` job, with each cohort playlist it
+ *    rewrites, inside the transaction that swaps its climbs.
  *
  * Every write is an upsert that skips unchanged rows, plus a delete of the
  * rows whose playlist no longer has a graded climb. A rerun over unchanged
@@ -192,8 +194,8 @@ export type PlaylistGradeSummaryWriteOptions = {
  * the climbs, upsert the rows whose values moved, delete the rows of
  * playlists left with no graded climb.
  *
- * Every writer of the table goes through here (the mutations and the daily
- * job), so two recomputes of one playlist never interleave. The later one
+ * Every writer of the table goes through here (the mutations, the daily job
+ * and the nightly cohort-playlist rewrite), so two recomputes of one playlist never interleave. The later one
  * reads after the earlier one has written, and a climb change that commits
  * while a recompute is computing is followed by its own recompute, which waits
  * for the lock and reads it. So the last write always reflects the climbs as
