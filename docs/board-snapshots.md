@@ -448,8 +448,8 @@ The shape is how an artifact's SQLite file stores its rows. The tables, columns,
 are the same in every shape, so it is not part of `format_version` or `schema_version`.
 
 - **Shape 1** is the device schema copied as it stands: rowid tables, filled in the order Postgres streams
-  the rows, with the three secondary indexes the phone's own queries use (`idx_climbs_search`,
-  `idx_stats_lookup`, `idx_stats_difficulty`).
+  the rows, with the three secondary indexes the phone's schema has had since migration v1
+  (`idx_climbs_search`, `idx_stats_lookup`, `idx_stats_difficulty`).
 - **Shape 2**, the default, creates `board_climbs`, `board_climb_stats` and `board_climb_grades`
   `WITHOUT ROWID`, carries no secondary index, and vacuums the file once it is built. A `WITHOUT ROWID`
   table is its own primary-key b-tree, so the two primary-key autoindexes go as well, and the vacuum
@@ -479,21 +479,41 @@ seek, now on the table itself instead of an index.
 The import does get cheaper on shape 2, because it reads the artifact and writes the phone's primary-key
 index front to back. On a desktop, with the node test double standing in for expo-sqlite, the shipped
 import of `kilter:1` size 10 (373,099 climbs, 360,708 stats) used 5.3 s of CPU on a shape-2 file against
-8.4 s on shape 1, and the grades import 0.8 s against 1.7 s. How much of that a phone sees is not yet
-measured.
+8.4 s on shape 1, and the grades import 0.8 s against 1.7 s. Those runs were at device schema v12; v13's
+`idx_stats_ascents` is one more index the phone fills during an import of either shape. How much of the
+difference a phone sees is not yet measured.
 
 **In the manifest.** A shape-2 entry carries `artifactShape: 2`, which covers the layout file and its
 grades file. A shape-1 entry carries no `artifactShape` at all, exactly like every entry published before
 the field existed. Only the export reads it, to find entries built in the other shape. A client must not
 gate on it, and `parseSnapshotManifest` accepts a shape number it has never seen.
 
-**What is left out, and where that is decided.** The three indexes are named in `SHAPE_2_OMITTED_INDEXES`
-in the export script, not in the shared `DEVICE_ONLY_STATEMENTS`. That shared list is also read on the
-device (`artifactSchemaVersion` derives `ARTIFACT_SCHEMA_VERSION` from it), and a shape-1 run has to put
-the indexes back. The phone still creates all three in its own database from migration v1. The rewrite
-refuses what it does not recognise: a `CREATE TABLE` in another form, a table with no primary key, a
-listed index that no migration creates, or a new index on an artifact table. That last one fails
-`snapshot-export-ddl.test.ts` until the index is listed in `DEVICE_ONLY_STATEMENTS`.
+**What is left out, and where that is decided.** The phone has five secondary indexes on the artifact
+tables, and two lists keep them out of an artifact:
+
+| Index                  | Table               | Device migration | Shape 1 artifact | Shape 2 artifact | Left out by                 |
+| ---------------------- | ------------------- | ---------------- | ---------------- | ---------------- | --------------------------- |
+| `idx_climbs_search`    | `board_climbs`      | v1               | carried          | left out         | `SHAPE_2_OMITTED_INDEXES`   |
+| `idx_stats_lookup`     | `board_climb_stats` | v1               | carried          | left out         | `SHAPE_2_OMITTED_INDEXES`   |
+| `idx_stats_difficulty` | `board_climb_stats` | v1               | carried          | left out         | `SHAPE_2_OMITTED_INDEXES`   |
+| `idx_climbs_sync_seq`  | `board_climbs`      | v10              | left out         | left out         | `DEVICE_ONLY_STATEMENTS`    |
+| `idx_stats_ascents`    | `board_climb_stats` | v13              | left out         | left out         | `DEVICE_ONLY_STATEMENTS`    |
+
+So a shape-2 artifact carries none of them, and the phone has all five after an import: it creates them
+in its own database from its own migrations and fills them as the import writes rows into its own
+tables. Nothing about either list reaches the device schema.
+
+The three v1 indexes are named in `SHAPE_2_OMITTED_INDEXES` in the export script, not in the shared
+`DEVICE_ONLY_STATEMENTS`. That shared list is also read on the device (`artifactSchemaVersion` derives
+`ARTIFACT_SCHEMA_VERSION` from it), and a shape-1 run has to put those three back. The shared list is
+applied first, for every shape, so a device-only index never reaches the shape-2 rewrite: v13 added
+`idx_stats_ascents` after shape 2 was written and neither the build nor `ARTIFACT_SCHEMA_VERSION` (12,
+with the device at 13) moved.
+
+The rewrite refuses what it does not recognise: a `CREATE TABLE` in another form, a table with no primary
+key, a listed index that no migration creates, or a new index on an artifact table that is in neither
+list. That last one fails `snapshot-export-ddl.test.ts` until the index is listed in
+`DEVICE_ONLY_STATEMENTS`.
 
 **What it costs the export.** Rows arrive in an order unrelated to the primary key, so each build
 connection gets a 64 MiB page cache; at SQLite's 2 MB default the build is slower than shape 1. The vacuum

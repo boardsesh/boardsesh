@@ -12,7 +12,7 @@
 
 import { describe, it, expect, afterEach } from 'vite-plus/test';
 import { DatabaseSync } from 'node:sqlite';
-import { DEVICE_ONLY_STATEMENTS, DEVICE_ONLY_TABLES, MIGRATIONS } from '@boardsesh/offline-sync';
+import { artifactSchemaVersion, DEVICE_ONLY_STATEMENTS, DEVICE_ONLY_TABLES, MIGRATIONS } from '@boardsesh/offline-sync';
 import {
   boardSnapshotDdlStatements,
   configuredSnapshotArtifactShape,
@@ -23,8 +23,17 @@ import {
 
 const ARTIFACT_TABLES = ['board_climb_stats', 'board_climbs', 'snapshot_meta'];
 
-/** The device's secondary indexes on artifact tables that a shape-2 artifact leaves out. */
+/**
+ * The device's v1 secondary indexes on artifact tables: the three a shape-1
+ * artifact carries and a shape-2 artifact leaves out.
+ */
 const SECONDARY_INDEXES = ['idx_climbs_search', 'idx_stats_difficulty', 'idx_stats_lookup'];
+
+/**
+ * The device's later indexes on artifact tables (v10, v13). They are in
+ * DEVICE_ONLY_STATEMENTS and have never been in an artifact of either shape.
+ */
+const DEVICE_ONLY_INDEXES = ['idx_climbs_sync_seq', 'idx_stats_ascents'];
 
 type TableLayout = {
   /** Table name to whether it is a WITHOUT ROWID table. */
@@ -107,21 +116,30 @@ describe('boardSnapshotDdlStatements', () => {
     }
   });
 
+  // Device-only statements are dropped for EVERY artifact shape, and before the
+  // shape-2 rewrite looks at anything: an index it has never heard of would
+  // otherwise make it refuse the whole build.
   it('leaves out statements only the device needs, such as the sync_seq index on board_climbs', () => {
     expect(DEVICE_ONLY_STATEMENTS.some((statement) => statement.includes('idx_climbs_sync_seq'))).toBe(true);
-    for (const statement of boardSnapshotDdlStatements()) {
-      expect(statement).not.toContain('idx_climbs_sync_seq');
-      expect(statement).not.toMatch(/hold_sets|hold_postings|holds_index/);
+    for (const artifactShape of [1, 2] as const) {
+      for (const statement of boardSnapshotDdlStatements(['board_climbs', 'board_climb_stats'], artifactShape)) {
+        expect(statement).not.toContain('idx_climbs_sync_seq');
+        expect(statement).not.toMatch(/hold_sets|hold_postings|holds_index/);
+      }
     }
   });
 
   it('leaves out the ascents ranking index, which the import never reads the artifact by', () => {
     expect(DEVICE_ONLY_STATEMENTS.some((statement) => statement.includes('idx_stats_ascents'))).toBe(true);
-    for (const statement of boardSnapshotDdlStatements()) {
+    const shape1 = boardSnapshotDdlStatements(['board_climbs', 'board_climb_stats'], 1);
+    const shape2 = boardSnapshotDdlStatements(['board_climbs', 'board_climb_stats'], 2);
+    for (const statement of [...shape1, ...shape2]) {
       expect(statement).not.toContain('idx_stats_ascents');
     }
-    // The indexes the artifact has always carried are still there.
-    expect(boardSnapshotDdlStatements().some((statement) => statement.includes('idx_stats_lookup'))).toBe(true);
+    // Shape 1 still carries the indexes an artifact always carried. Shape 2
+    // carries no index statement at all, device-only or otherwise.
+    expect(shape1.some((statement) => statement.includes('idx_stats_lookup'))).toBe(true);
+    expect(shape2.filter((statement) => /^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(statement))).toEqual([]);
   });
 
   it('keeps the grades artifact to board_climb_grades and snapshot_meta', () => {
@@ -206,12 +224,15 @@ describe('the device schema is untouched by artifact shapes', () => {
   // Shape 2 leaves three indexes out of the ARTIFACT. The phone's own queries
   // still need all three, and it creates them from migration v1 exactly as
   // before: nothing about the shape reaches MIGRATIONS.
-  it('still creates all three secondary indexes on rowid tables from its own migrations', () => {
+  it('still creates every one of its indexes on rowid tables from its own migrations', () => {
     const device = layoutAfterApplying(
       MIGRATIONS.flatMap((migration) => migration.statements.map((statement) => statement.trim())),
     );
 
-    for (const indexName of SECONDARY_INDEXES) expect(device.indexes).toContain(indexName);
+    // The three a shape-2 artifact leaves out, and the two no artifact ever had.
+    for (const indexName of [...SECONDARY_INDEXES, ...DEVICE_ONLY_INDEXES]) {
+      expect(device.indexes).toContain(indexName);
+    }
     expect(device.withoutRowid.board_climbs).toBe(false);
     expect(device.withoutRowid.board_climb_stats).toBe(false);
     expect(device.withoutRowid.board_climb_grades).toBe(false);
@@ -224,6 +245,44 @@ describe('the device schema is untouched by artifact shapes', () => {
   it('keeps the three indexes out of the shared device-only list the device also reads', () => {
     for (const statement of DEVICE_ONLY_STATEMENTS) {
       for (const indexName of SECONDARY_INDEXES) expect(statement).not.toContain(indexName);
+    }
+  });
+
+  // A device-only index is a schema migration on the phone (v10, v13) and no
+  // change to any artifact, in either shape. So it must not make the artifacts
+  // already published look stale, and it must not change a byte of the DDL an
+  // artifact is built from.
+  it('does not move the artifact schema version or the artifact DDL when the device adds an index of its own', () => {
+    for (const indexName of DEVICE_ONLY_INDEXES) {
+      expect(
+        DEVICE_ONLY_STATEMENTS.some((statement) => statement.includes(indexName)),
+        indexName,
+      ).toBe(true);
+    }
+    const isDeviceOnly = (statement: string): boolean => DEVICE_ONLY_STATEMENTS.includes(statement.trim());
+
+    // v13 is `idx_stats_ascents` and nothing else. Clients on it still accept a
+    // v12 artifact. Filtered to explicit versions, so a later migration that
+    // does change an artifact table cannot turn this into a false alarm.
+    const throughV13 = MIGRATIONS.filter((migration) => migration.version <= 13);
+    expect(throughV13.at(-1)?.statements.every(isDeviceOnly)).toBe(true);
+    expect(artifactSchemaVersion(throughV13)).toBe(12);
+    expect(artifactSchemaVersion(throughV13)).toBe(
+      artifactSchemaVersion(MIGRATIONS.filter((migration) => migration.version <= 12)),
+    );
+
+    // The artifact DDL with the device-only statements, and with them deleted
+    // from the migrations altogether: identical, in both shapes.
+    const withoutDeviceOnlyStatements = MIGRATIONS.map((migration) => ({
+      version: migration.version,
+      statements: migration.statements.filter((statement) => !isDeviceOnly(statement)),
+    }));
+    for (const artifactShape of [1, 2] as const) {
+      for (const tables of [['board_climbs', 'board_climb_stats'], ['board_climb_grades']] as const) {
+        expect(boardSnapshotDdlStatements(tables, artifactShape)).toEqual(
+          boardSnapshotDdlStatements(tables, artifactShape, withoutDeviceOnlyStatements),
+        );
+      }
     }
   });
 });
@@ -370,7 +429,9 @@ describe('boardSnapshotDdlStatements: what the shape-2 rewrite refuses', () => {
       ...DEVICE_ONLY_STATEMENTS,
     ]);
     expect(statements).toContain('ALTER TABLE board_climbs ADD COLUMN is_hidden INTEGER;');
-    expect(statements.join('\n')).not.toContain('idx_climbs_sync_seq');
+    // Dropped BEFORE the rewrite's own index check: neither is in its list, so
+    // seeing either one there would have thrown instead.
+    for (const indexName of DEVICE_ONLY_INDEXES) expect(statements.join('\n')).not.toContain(indexName);
   });
 
   it('leaves shape 1 able to build from every statement shape 2 refuses', () => {

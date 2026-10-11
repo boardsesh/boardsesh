@@ -187,7 +187,7 @@ const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
  *
  * Shape 1 is the device schema copied as it stands: rowid tables, filled in the
  * order Postgres streamed the rows, carrying the three secondary indexes the
- * phone's own queries use. For kilter layout 1 (387,101 climbs, 372,669 stats)
+ * phone's schema has had since v1. For kilter layout 1 (387,101 climbs, 372,669 stats)
  * that is 284.3 MB decoded and 110.2 MB gzipped. The three secondary indexes
  * are 36.5 MB of it and the two primary-key autoindexes another 39.2 MB, and
  * every row sits at a position unrelated to its key.
@@ -228,9 +228,14 @@ export function configuredSnapshotArtifactShape(): SnapshotArtifactShape {
 }
 
 /**
- * The device's secondary indexes on artifact tables, and the table each one is
- * on. A shape-2 artifact leaves all three out; the phone still creates them in
- * its own database from migration v1.
+ * The device's v1 secondary indexes on artifact tables, and the table each one
+ * is on. A shape-2 artifact leaves all three out; the phone still creates them
+ * in its own database from migration v1.
+ *
+ * The device's later indexes on these tables (`idx_climbs_sync_seq`, v10;
+ * `idx_stats_ascents`, v13) are not here. They are in DEVICE_ONLY_STATEMENTS,
+ * which drops them for every shape before this list is consulted, so no
+ * artifact has ever carried them.
  *
  * Deliberately a list of its own and not more entries in the shared
  * DEVICE_ONLY_STATEMENTS. That list is not export-only: `artifactSchemaVersion`
@@ -370,8 +375,10 @@ export function boardSnapshotDdlStatements(
   for (const migration of [...migrations].sort((left, right) => left.version - right.version)) {
     for (const statement of migration.statements) {
       if (!referencesSnapshotTable(statement)) continue;
-      // Statements the device needs but an artifact must not carry (the holds
-      // index's sync_seq index on board_climbs): dropped by exact text.
+      // Statements the device needs but no artifact carries, in any shape (the
+      // sync_seq index on board_climbs, the ascents ranking index on
+      // board_climb_stats): dropped by exact text. This has to come before the
+      // shape-2 rewrite below, which refuses an index it has no entry for.
       if (deviceOnlyStatements.has(statement.trim())) continue;
       const deviceOnlyTable = referencedDeviceOnlyTable(statement);
       if (deviceOnlyTable) {
