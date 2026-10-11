@@ -481,7 +481,7 @@ columns of `boardsesh_ticks` (`user_id`, `board_type`, `climb_uuid`, `angle`,
 never comments or sessions) and on `user_boards (id, gym_id)` for the grade
 model's evidence, and the writes
 above: `board_setter_stats`, `board_climb_send_stats`, `playlists`,
-`playlist_ownership`, `playlist_climbs`, `sync_deletions` (INSERT, from the
+`playlist_ownership`, `playlist_climbs`, `playlist_grade_summaries` (the generated playlists' grade bands), `sync_deletions` (INSERT, from the
 `playlist_climbs` delete trigger), `board_climb_stats_history`,
 `board_shared_syncs` (the weekly snapshot watermark), `board_hold_features`,
 `user_hold_classifications`, `board_climb_grades`, `board_grade_coefficients`,

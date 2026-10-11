@@ -459,6 +459,11 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     { table: 'playlists', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
     { table: 'playlist_ownership', privileges: ['SELECT', 'INSERT'] },
     { table: 'playlist_climbs', privileges: ['SELECT', 'INSERT', 'DELETE'] },
+    // The generated playlists' grade bands, recomputed when the job swaps their
+    // climbs (refreshPlaylistGradeSummariesFor: upsert, delete). Granted with
+    // the table's own migration, so a worker image that ships the recompute
+    // can't start ahead of the grant (docs/background-workers.md).
+    { table: 'playlist_grade_summaries', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
     // Written by the playlist_climbs delete trigger (offline sync tombstones).
     { table: 'sync_deletions', privileges: ['INSERT'] },
     { table: 'board_climb_stats_history', privileges: ['SELECT', 'INSERT'] },
