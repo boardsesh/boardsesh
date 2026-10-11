@@ -46,7 +46,7 @@ vi.mock('@boardsesh/ble-protocol', async (importOriginal) => {
     MAX_BLUETOOTH_MESSAGE_SIZE: 20,
     effectiveChunkSizeForMtu: (mtu: number) => Math.min(Math.max(mtu - 3, 20), 244),
     INTER_CHUNK_DELAY_MS: 0,
-    parseSerialNumber: vi.fn(),
+    parseSerialNumber: actual.parseSerialNumber,
     isRetryableAndroidConnectError: actual.isRetryableAndroidConnectError,
   };
 });
