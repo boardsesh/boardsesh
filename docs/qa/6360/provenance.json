@@ -1,7 +1,7 @@
 {
   "issue": 6360,
   "productionCommit": "b997f8990aac354b4f5136a419ef264137c43c8f",
-  "captureCommit": "7ba0b799ff",
+  "captureCommit": "7ba0b799ff27ebb263ee1a865aaeea5f93b74dc3",
   "androidRun": "https://github.com/boardsesh/boardsesh/actions/runs/38140113366",
   "androidDevice": "Pixel 2",
   "androidFontScales": {
@@ -11,5 +11,11 @@
   "appearance": "dark",
   "fixtures": "replay",
   "state": "Pre-session; rest armed locally, rest length Off; synthetic privacy rollout flag disabled",
-  "screenshots": "Unedited native screenshots from CI artifacts; no session started"
+  "screenshots": "Unedited native screenshots from CI artifacts; no session started",
+  "iosRun": "https://github.com/boardsesh/boardsesh/actions/runs/38140108862",
+  "iosDevice": "iPhone 16 Pro Max",
+  "iosContentSizes": {
+    "default": "large",
+    "large": "accessibility-extra-large"
+  }
 }
