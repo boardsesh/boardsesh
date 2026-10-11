@@ -633,8 +633,11 @@ export function r2LifecycleRuleMatches(existing: readonly R2LifecycleRule[], des
 function describeR2LifecycleRule(rule: R2LifecycleRule): string {
   const maxAgeSeconds = rule.deleteObjectsTransition?.condition?.maxAge;
   const scope = rule.conditions.prefix ? `objects under ${rule.conditions.prefix}` : 'every object';
-  const expiry =
-    typeof maxAgeSeconds === 'number' ? `after ${String(maxAgeSeconds / 86_400)} days` : 'on its own schedule';
+  // Whole days read as days. Anything else is printed in seconds, exactly as
+  // declared, so the plan never shows a rounded or fractional age.
+  const age = (seconds: number): string =>
+    seconds % 86_400 === 0 ? `${String(seconds / 86_400)} days` : `${String(seconds)} seconds`;
+  const expiry = typeof maxAgeSeconds === 'number' ? `after ${age(maxAgeSeconds)}` : 'on its own schedule';
   return `Delete ${scope} ${expiry}; preserve other lifecycle rules.`;
 }
 

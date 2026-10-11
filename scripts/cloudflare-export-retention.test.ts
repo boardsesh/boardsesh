@@ -80,6 +80,18 @@ describe('OTA source-map retention', () => {
     ]);
     expect(diffR2Bucket(sourcemapBucket, liveSourcemapBucket([OTA_SOURCEMAP_LIFECYCLE_RULE]))).toEqual([]);
   });
+
+  it('prints an age that is not whole days in seconds, as declared', () => {
+    const halfDayRule: R2LifecycleRule = {
+      ...OTA_SOURCEMAP_LIFECYCLE_RULE,
+      deleteObjectsTransition: { condition: { type: 'Age', maxAge: 129_600 } },
+    };
+    expect(diffR2Bucket({ ...sourcemapBucket, lifecycleRule: halfDayRule }, liveSourcemapBucket([]))).toEqual([
+      expect.objectContaining({
+        detail: 'Delete objects under sourcemaps/ after 129600 seconds; preserve other lifecycle rules.',
+      }),
+    ]);
+  });
 });
 
 describe('generated export retention', () => {

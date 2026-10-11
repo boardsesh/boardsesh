@@ -503,6 +503,41 @@ describe('exact-byte production promotion', () => {
     );
   });
 
+  it('names a source map only for the platform whose export has one', async () => {
+    const fixture = stageFixture();
+    const maps = writeSourcemaps(fixture);
+    rmSync(join(fixture.root, 'android', maps.android.path));
+    const server = fetchServer(fixture);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await promoteArchivedOta({
+        receiptPath: fixture.receiptPath,
+        iosExport: fixture.iosExport,
+        androidExport: fixture.androidExport,
+        manifestUrl: 'https://updates.example/manifest',
+        token: 'test-token',
+        fetchImpl: server.fetchImpl,
+      });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('android: staged export has no source map'));
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('ios: staged export has no source map'));
+    } finally {
+      warn.mockRestore();
+    }
+    const bodyFor = (platform: 'ios' | 'android') => {
+      const request = server.calls.find(
+        (call) =>
+          call.url.pathname.includes('/requestUploadUrl/production') &&
+          call.url.searchParams.get('platform') === platform,
+      );
+      return JSON.parse(request?.init.body as string) as { sourcemap?: { path: string } };
+    };
+    expect(bodyFor('ios').sourcemap?.path).toBe(maps.ios.path);
+    expect(bodyFor('android')).not.toHaveProperty('sourcemap');
+    expect(server.calls.filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/production'))).toHaveLength(
+      2,
+    );
+  });
+
   it('names the staged source map beside the files, and uploads nothing when the server already holds it', async () => {
     const fixture = stageFixture();
     const maps = writeSourcemaps(fixture);
