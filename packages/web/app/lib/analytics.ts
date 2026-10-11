@@ -95,6 +95,8 @@ function installConsentTransport(client: PostHog, backendProxyHost: string | nul
       // answer, so a rollout neither re-rolls per load nor flips on Allow.
       // Signed in, the request already carries the account id.
       const distinctId = await getFlagsBrowserDistinctId();
+      // No secure random source: fail closed, flags keep their defaults.
+      if (distinctId === null) throw new Error('No secure random source for the flags id');
       options = { ...options, body: withAnonymousFlagsIdentity(options.body, distinctId, hasAnalyticsConsent()) };
       if (retiredClients.has(client) || suspendedClients.has(client)) {
         throw new Error('Analytics consent does not permit this request');

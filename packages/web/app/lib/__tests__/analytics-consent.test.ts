@@ -264,6 +264,23 @@ describe('web analytics consent lifecycle', () => {
     });
     expect(lastSentBody().distinct_id).toBe(beforeAllow.distinct_id);
   });
+  it('fails a signed-out flag request closed when the browser has no crypto', async () => {
+    vi.stubGlobal('crypto', undefined);
+    try {
+      const analytics = await import('../analytics');
+      analytics.readPosthogFeatureFlags([]);
+      await expect(
+        harness.clients[0].fetch('https://posthog.test/flags/?v=2', {
+          method: 'POST',
+          headers: {},
+          body: JSON.stringify({ distinct_id: 'memory-anonymous' }),
+        }),
+      ).rejects.toThrow('No secure random source');
+      expect(harness.network).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('leaves signed-in flags on the account id', async () => {
     const analytics = await import('../analytics');
     analytics.setAnalyticsFlagAccountId('account-a');

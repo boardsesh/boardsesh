@@ -87,8 +87,10 @@ export const POSTHOG_PERSON_DELETION_QUEUE = 'posthog-person-deletion';
 /**
  * Twelve tries with doubling delays capped at six hours cover a PostHog outage
  * of about a day: 60 s, 2 min, 4 min ... then 6 h, 6 h. A job (the account id
- * and a reason, nothing else) is kept 7 days after it completes or fails, so
- * an operator can retry a failed erasure by hand.
+ * and a reason, nothing else) waits up to 14 days for a worker while queued or
+ * between retries (`retentionSeconds`, pg-boss's default, stated here), and is
+ * kept 7 days after it completes or fails (`deleteAfterSeconds`) so an operator
+ * can retry a failed erasure by hand.
  */
 export const POSTHOG_PERSON_DELETION_QUEUE_OPTIONS = {
   retryLimit: 12,
@@ -96,6 +98,7 @@ export const POSTHOG_PERSON_DELETION_QUEUE_OPTIONS = {
   retryBackoff: true,
   retryDelayMax: 6 * 60 * 60,
   expireInSeconds: 120,
+  retentionSeconds: 14 * 24 * 60 * 60,
   deleteAfterSeconds: 7 * 24 * 60 * 60,
 } as const;
 

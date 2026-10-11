@@ -54,8 +54,9 @@ async function main() {
   await startPlaylistGradeSummaryRefresh(jobQueue).catch((error: unknown) => {
     logger.error('[PlaylistGradeSummaries] Could not register the refresh job', { error });
   });
-  // Not fatal: erasure jobs stay queued (pg-boss keeps them up to 14 days)
-  // and the next replica that registers the worker sends them.
+  // Not fatal: a queued erasure waits up to 14 days for a worker
+  // (`retentionSeconds` on the queue; a finished one is kept 7 days), and the
+  // next replica that registers the worker sends it.
   await startPosthogPersonDeletion(jobQueue).catch((error: unknown) => {
     logger.error('[PostHogErasure] Could not register the PostHog person deletion worker', { error });
   });

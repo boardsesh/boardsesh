@@ -335,9 +335,11 @@ What happens next is PostHog's:
 Responses: 2xx is done (a non-empty `deletion_errors` retries); 404 is done,
 nothing to delete; 401, 403, 408, 429, 5xx, a timeout or a network error retry;
 any other 4xx is logged as an error and not retried. Retries back off from
-60 seconds to a 6-hour cap, 12 tries, about a day in all. A finished or failed
-job (the account id and a reason, nothing else) is kept 7 days so a failed
-erasure can be retried by hand, then pg-boss deletes it.
+60 seconds to a 6-hour cap, 12 tries, about a day in all. A queued job waits up
+to 14 days for a worker (`retentionSeconds`), so a backend that cannot start
+the worker for a while loses nothing. A finished or failed job (the account id
+and a reason, nothing else) is kept 7 days so a failed erasure can be retried
+by hand, then pg-boss deletes it.
 
 Configuration on the backend service: `POSTHOG_PERSONAL_API_KEY`, a personal
 API key with the `person:write` scope (the capture key cannot delete);

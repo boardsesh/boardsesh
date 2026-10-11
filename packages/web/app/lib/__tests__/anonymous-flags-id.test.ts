@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { getPreference } from '../user-preferences-db';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,6 +24,51 @@ describe('getAnonymousFlagsId', () => {
     const secondLoad = await loadModule();
     expect(await secondLoad.getAnonymousFlagsId()).toBe(id);
     expect(await secondLoad.getFlagsBrowserDistinctId()).toBe(`flags-browser:${id}`);
+  });
+});
+
+describe('getAnonymousFlagsId without Web Crypto', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses getRandomValues outside a secure context', async () => {
+    const { removePreference } = await import('../user-preferences-db');
+    await removePreference('anonymousFlagsId');
+    const getRandomValues = vi.fn(<T extends ArrayBufferView>(array: T) => {
+      new Uint8Array(array.buffer).fill(0x5c);
+      return array;
+    });
+    vi.stubGlobal('crypto', { getRandomValues });
+    const load = await loadModule();
+    expect(await load.getAnonymousFlagsId()).toMatch(UUID);
+    expect(getRandomValues).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed, without throwing, when the browser has no crypto at all', async () => {
+    const { removePreference } = await import('../user-preferences-db');
+    await removePreference('anonymousFlagsId');
+    vi.stubGlobal('crypto', undefined);
+    const mathRandom = vi.spyOn(Math, 'random');
+    const load = await loadModule();
+
+    await expect(load.getAnonymousFlagsId()).resolves.toBeNull();
+    await expect(load.getFlagsBrowserDistinctId()).resolves.toBeNull();
+    expect(await getPreference('anonymousFlagsId')).toBeNull();
+    expect(mathRandom).not.toHaveBeenCalled();
+    mathRandom.mockRestore();
+  });
+
+  it('fails closed when crypto itself throws', async () => {
+    const { removePreference } = await import('../user-preferences-db');
+    await removePreference('anonymousFlagsId');
+    vi.stubGlobal('crypto', {
+      getRandomValues: () => {
+        throw new Error('QuotaExceededError');
+      },
+    });
+    const load = await loadModule();
+    await expect(load.getAnonymousFlagsId()).resolves.toBeNull();
   });
 });
 

@@ -18,33 +18,47 @@ const ANONYMOUS_FLAGS_ID_KEY = 'anonymousFlagsId';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let knownId: string | null = null;
-let pending: Promise<string> | null = null;
+let pending: Promise<string | null> | null = null;
 
-function randomId(): string {
-  // randomUUID exists only in secure contexts; getRandomValues everywhere.
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+/**
+ * A UUID from Web Crypto, or null when the browser has none. randomUUID exists
+ * only in secure contexts; getRandomValues almost everywhere. Never throws and
+ * never falls back to Math.random: a guessable id fails closed instead.
+ */
+function secureRandomId(): string | null {
+  try {
+    const webCrypto = globalThis.crypto;
+    if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
+    if (typeof webCrypto?.getRandomValues !== 'function') return null;
+    const bytes = webCrypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  } catch {
+    return null;
+  }
 }
 
-async function loadOrCreate(): Promise<string> {
+async function loadOrCreate(): Promise<string | null> {
   // getPreference/setPreference swallow IndexedDB failures (private windows,
   // blocked storage); the id then lasts for this page load only.
   const stored = await getPreference<unknown>(ANONYMOUS_FLAGS_ID_KEY);
   if (typeof stored === 'string' && UUID_PATTERN.test(stored)) return stored;
-  const created = randomId();
+  const created = secureRandomId();
+  if (!created) return null;
   await setPreference(ANONYMOUS_FLAGS_ID_KEY, created);
   return created;
 }
 
-/** This browser's flags-only id. Never rejects. */
-export function getAnonymousFlagsId(): Promise<string> {
+/**
+ * This browser's flags-only id, or null without a secure random source.
+ * Never rejects: a storage failure falls back to an id for this page load.
+ */
+export function getAnonymousFlagsId(): Promise<string | null> {
   if (knownId) return Promise.resolve(knownId);
   pending ??= loadOrCreate()
-    .catch(() => randomId())
+    .catch(() => secureRandomId())
     .then((id) => {
       knownId = id;
       return id;
@@ -55,9 +69,10 @@ export function getAnonymousFlagsId(): Promise<string> {
   return pending;
 }
 
-/** The distinct id a signed-out flag request uses. */
-export async function getFlagsBrowserDistinctId(): Promise<string> {
-  return `flags-browser:${await getAnonymousFlagsId()}`;
+/** The distinct id a signed-out flag request uses, or null (fail closed). */
+export async function getFlagsBrowserDistinctId(): Promise<string | null> {
+  const id = await getAnonymousFlagsId();
+  return id ? `flags-browser:${id}` : null;
 }
 
 /**
