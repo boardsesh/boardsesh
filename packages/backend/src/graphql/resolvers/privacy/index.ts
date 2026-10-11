@@ -395,9 +395,13 @@ export const privacyQueries = {
   },
   contentAudience: async (
     _: unknown,
-    { entityType, entityId }: { entityType: PrivacyContentType; entityId: string },
+    // `climb` is a retired enum value that installed app builds still ask for.
+    { entityType, entityId }: { entityType: PrivacyContentType | 'climb'; entityId: string },
     ctx: ConnectionContext,
   ) => {
+    // A published climb is public to everyone, so a climb has no audience to
+    // read or edit. The answer is the same for any uuid, so it discloses nothing.
+    if (entityType === 'climb') return { audience: 'public', isExplicit: false, canEdit: false };
     const viewerId = actor(ctx);
     const ownerId = await contentOwner(entityType, entityId, viewerId);
     if (viewerId !== ownerId && !(await canViewContent(viewerId, entityType, entityId, ownerId))) notFound();

@@ -74,6 +74,8 @@ enum PrivacyContentType {
   tick
   session
   comment
+  "Retired: climbs have no audience. contentAudience answers public; setContentAudience rejects it."
+  climb @deprecated(reason: "A published climb is public to everyone, so a climb has no audience.")
   playlist
   beta
 }
@@ -5721,6 +5723,9 @@ type NewClimbCreatedEvent {
 }
 
 input SaveClimbInput {
+  "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
+  privacy: PrivacyPublicationInput
+    @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
   boardType: String!
   layoutId: Int!
   name: String!
@@ -5772,6 +5777,9 @@ enum MoonBoardMethod {
 }
 
 input SaveMoonBoardClimbInput {
+  "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
+  privacy: PrivacyPublicationInput
+    @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
   boardType: String!
   layoutId: Int!
   name: String!
@@ -5803,6 +5811,9 @@ updated by its setter within 24 hours of its first publish, on every board,
 spray walls included. The edit is made in place; no revision is recorded.
 """
 input UpdateClimbInput {
+  "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
+  privacy: PrivacyPublicationInput
+    @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
   uuid: ID!
   boardType: String!
   name: String

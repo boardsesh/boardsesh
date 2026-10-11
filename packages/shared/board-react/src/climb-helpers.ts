@@ -72,7 +72,6 @@ export type UpdateClimbResponse = {
 export function toSaveClimbInput(boardName: BoardName, options: SaveClimbOptions): SaveClimbInput {
   return {
     boardType: boardName,
-
     layoutId: options.layout_id,
     sizeId: options.size_id,
     name: options.name,

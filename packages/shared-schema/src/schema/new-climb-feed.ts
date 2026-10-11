@@ -72,6 +72,9 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   }
 
   input SaveClimbInput {
+    "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
+    privacy: PrivacyPublicationInput
+      @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
     boardType: String!
     layoutId: Int!
     name: String!
@@ -123,6 +126,9 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   }
 
   input SaveMoonBoardClimbInput {
+    "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
+    privacy: PrivacyPublicationInput
+      @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
     boardType: String!
     layoutId: Int!
     name: String!
@@ -154,6 +160,9 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   spray walls included. The edit is made in place; no revision is recorded.
   """
   input UpdateClimbInput {
+    "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
+    privacy: PrivacyPublicationInput
+      @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
     uuid: ID!
     boardType: String!
     name: String
