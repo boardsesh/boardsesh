@@ -444,7 +444,7 @@ describe('OTA source-map artifact validation', () => {
 });
 
 describe('official Sentry uploader invocation', () => {
-  it.each(['7.11.0', '8.24.0'])('accepts the audited Sentry React Native uploader %s', (version) => {
+  it.each(['7.11.0', '8.24.0', '8.28.0'])('accepts the audited Sentry React Native uploader %s', (version) => {
     const fixture = createMobileFixture();
     const uploaderPath = installFixtureSentryUploader(fixture, version);
     if (version === '8.24.0') {
@@ -467,7 +467,7 @@ describe('official Sentry uploader invocation', () => {
     const fixture = createMobileFixture();
     installFixtureSentryUploader(fixture, version);
     expect(() => resolveInstalledSentryUploader(fixture.mobileDir)).toThrow(
-      `Unsupported @sentry/react-native version ${version}; audited versions: 7.11.0, 8.24.0.`,
+      `Unsupported @sentry/react-native version ${version}; audited versions: 7.11.0, 8.24.0, 8.28.0.`,
     );
   });
 
@@ -505,7 +505,7 @@ describe('official Sentry uploader invocation', () => {
       const relativeJsBundlePath = 'www.bundle/component.js';
       const jsBundlePath = join(fixture.outputDir, relativeJsBundlePath);
       mkdirSync(dirname(jsBundlePath), { recursive: true });
-      writeFileSync(jsBundlePath, 'component bundle');
+      writeFileSync(jsBundlePath, `component bundle\n//# debugId=${VALID_DEBUG_ID}`);
       writeFileSync(`${jsBundlePath}.map`, originalSourceMap);
       rewriteMetadata(fixture, {
         [platform]: {
