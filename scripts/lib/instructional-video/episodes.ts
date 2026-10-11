@@ -205,7 +205,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'personal-grades',
         label: 'Turn on Use my grades',
-        focus: { x: 0, y: 0.45, width: 1, height: 0.1 },
+        focus: { x: 0, y: 0.405, width: 1, height: 0.095 },
       },
       {
         id: 'progress-filter',
@@ -236,7 +236,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'calendar',
         label: 'Kilter · climbing calendar',
-        focus: { x: 0, y: 0.61, width: 1, height: 0.205 },
+        focus: { x: 0, y: 0.445, width: 1, height: 0.235 },
       },
     ],
   },
