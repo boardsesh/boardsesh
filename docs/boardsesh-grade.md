@@ -60,14 +60,39 @@ not the number a climber sees first.
 shows you for it — in the list, in the play drawer header, and in the Grades
 section. If you have not, you get the crowd's number as before (the Boardsesh
 grade where the toggle is on and one is trusted, otherwise the Aurora grade).
-Where your grade and the crowd's differ, the crowd's stays on screen, demoted;
-where they agree, nothing is added at all. The play drawer header puts it under
-your grade, marked. A climb list row keeps one grade in its grade column and
-puts the community grade at the front of the line under the name
-("V4 · 1.2k sends · 4.5★ · setterx"), unless the climber has switched that off.
-The row shows the same token beside a Boardsesh grade that reads differently
-from the community's; the rule is `deriveClimbRowGrade` in
-`packages/mobile/src/lib/climb-row-grade.ts`.
+
+What happens to the other grades depends on the surface.
+
+**Play drawer header.** Where your grade and the crowd's number read
+differently, the crowd's sits under yours, marked. Where they agree, nothing is
+added.
+
+**Climb list row.** The grade column holds one grade. A second one can lead the
+line under the name ("V4 · 1.2k sends · 4.5★ · setterx"), and that token is
+always the community grade, never the Boardsesh grade. The rule is
+`deriveClimbRowGrade` in `packages/mobile/src/lib/climb-row-grade.ts`:
+
+- The token shows when the column holds another grade (yours, or a Boardsesh
+  grade) that reads differently from the community's, unless the climber has
+  switched the token off in the Climb list settings.
+- Your grade wears the `person` mark when it reads differently from the grade
+  the row would otherwise show: the Boardsesh grade where that toggle is on,
+  otherwise the community grade. It is also marked when there is no other grade.
+- The `≈` on an estimated Boardsesh grade is not a difference, for the token or
+  for the mark.
+- Under the "V5 / 6C" format the token is one half of the community grade: the
+  V half when the V halves differ, otherwise the Font half.
+
+With both toggles on, the mark and the token compare against different grades.
+A row then shows your grade and the community's, and the Boardsesh grade is in
+the play drawer:
+
+| Yours | Boardsesh | Community | Row |
+|---|---|---|---|
+| V4 | V6 | V5 | V4 marked, token V5 |
+| V4 | V5 | V4 | V4 marked, no token |
+| V5 | ≈V5 | V4 | V5 unmarked, token V4 |
+| V5 | ≈V5 | V5 | V5 unmarked, no token |
 
 Your grade is the difficulty of your LATEST graded tick for
 `(user, board_type, climb_uuid, angle)`, ordered `(climbed_at DESC, uuid DESC)`.

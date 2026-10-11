@@ -10,7 +10,9 @@ import { createElement, type ReactNode } from 'react';
 // One such change has been made: the grade column holds one grade. Where it is
 // not the community's (the climber's own, or a Boardsesh grade) and the two read
 // differently, the community's grade leads the detail line instead of standing
-// under the climber's own. "the community grade switch" below pins it.
+// under the climber's own. "the community grade switch" below pins it. With it,
+// under the climber's own grade the "set at N°" marker moves to the detail line,
+// beside the community's numbers it is about.
 
 type StatusEntry = { status: 'flash' | 'send' | 'attempt'; is_ascent: boolean; tries: number; is_mirror: boolean };
 
@@ -18,6 +20,8 @@ const live = vi.hoisted(() => ({
   statsCalls: 0,
   gradeCalls: 0,
   myGradeCalls: 0,
+  // "Use my grades", on for these tests so a row can carry the climber's own.
+  personalGrades: true,
   myGrade: { status: 'unknown' } as { status: 'unknown' } | { status: 'set'; difficultyId: number; climbedAt: null },
   logbook: null as { logbookByClimbAngle: Map<string, StatusEntry[]> } | null,
   thumbnailProps: [] as Record<string, unknown>[],
@@ -83,17 +87,21 @@ vi.mock('@boardsesh/board-react', () => ({
 }));
 
 vi.mock('../../hooks/use-display-grade', () => ({
+  useBoardseshGradesActive: () => false,
+  // One call per mounted leaf that works a grade out.
   useDisplayGrade: () => {
     live.gradeCalls += 1;
     return { boardseshActive: false, resolveGrade: () => ({ label: 'V4', color: '#44AA44', isBoardsesh: false }) };
   },
 }));
+vi.mock('../../hooks/use-personal-grades', () => ({ usePersonalGradesActive: () => live.personalGrades }));
 vi.mock('../../hooks/use-my-grade', () => ({
   // The row's way to the climber's own grade, and so to the logbook: one call per
-  // mounted leaf that subscribes.
+  // mounted leaf that subscribes. No grade while personal grades are off, like
+  // the real hook.
   useMyGrade: () => {
     live.myGradeCalls += 1;
-    return live.myGrade;
+    return live.personalGrades ? live.myGrade : { status: 'none' };
   },
 }));
 vi.mock('../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v-grade' }) }));
@@ -199,6 +207,7 @@ beforeEach(() => {
   live.statsCalls = 0;
   live.gradeCalls = 0;
   live.myGradeCalls = 0;
+  live.personalGrades = true;
   live.myGrade = { status: 'unknown' };
   live.logbook = null;
   live.thumbnailProps = [];
@@ -289,18 +298,18 @@ describe('the default climb row', () => {
       />,
     );
 
-    // The one deliberate change to the default row: the community's V4 leads the
-    // detail line instead of standing under your V10 with a two-heads glyph.
+    // The deliberate change to the default row: the community's V4 leads the
+    // detail line instead of standing under your V10 with a two-heads glyph, and
+    // the set-angle marker went with it, in front of the numbers it is about.
     expect(outline(container)).toEqual([
       'thumbnail',
       'body:Boulder Problem',
-      'footnote:V4 · 12 sends · 4.5★ · setterx',
+      'footnote:mobile.climbRow.setAngleMarker · V4 · 12 sends · 4.5★ · setterx',
       'caption1:40° · 3 tries',
       'icon:favorite.fill',
       'icon:tick.outline',
       'icon:person',
       'title3:V10',
-      'caption2:mobile.climbRow.setAngleMarker',
     ]);
     // Glyph sizes and the labels a screen reader composes the row from.
     expect(container.querySelector('[data-icon="favorite.fill"]')?.getAttribute('data-size')).toBe('16');
@@ -312,23 +321,24 @@ describe('the default climb row', () => {
         node.getAttribute('aria-label'),
       ]),
     ).toEqual([
-      ['text', 'mobile.climbRow.communityGradeAria · 12 sends · 4.5★ · setterx'],
+      ['text', 'mobile.climbRow.setAngleMarkerAria · mobile.climbRow.communityGradeAria · 12 sends · 4.5★ · setterx'],
       ['image', 'mobile.climbRow.favorited'],
       ['image', 'mobile.climbRow.ascentStatus.send'],
-      ['text', 'mobile.climbRow.setAngleMarkerAria'],
     ]);
   });
 
-  it('keeps the grade column of a marked grade as it was: the mark, the grade, the set-angle line', () => {
-    live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
-
+  it('keeps a cross-angle row as it was while the column shows the community grade: the marker under it', () => {
     const { container } = render(<ClimbListItemContent climb={{ ...climb, statsAngle: 45 }} {...board} />);
     const grade = container.querySelector('[data-variant="title3"]');
     const setAngleMarker = container.querySelector('[data-variant="caption2"]');
 
-    // A marked grade gives up its 40pt floor to the glyph, as before.
-    expect(styleOf(grade)).toMatchObject({ fontWeight: '700', minWidth: 0, textAlign: 'right' });
-    expect(styleOf(grade?.parentElement)).toEqual({ flexDirection: 'row', alignItems: 'center', gap: 3 });
+    expect(outline(container)).toEqual([
+      'thumbnail',
+      'body:Boulder Problem',
+      'footnote:12 sends · 4.5★ · setterx',
+      'title3:V4',
+      'caption2:mobile.climbRow.setAngleMarker',
+    ]);
     expect(styleOf(grade?.parentElement?.parentElement)).toEqual({ alignItems: 'flex-end', gap: 1 });
     expect(styleOf(setAngleMarker)).toEqual({
       fontWeight: '600',
@@ -336,8 +346,23 @@ describe('the default climb row', () => {
       marginTop: -2,
       color: '#8E8E93',
     });
-    // Two children and no more: nothing stacks between the grade and the marker.
+    expect(setAngleMarker?.getAttribute('aria-label')).toBe('mobile.climbRow.setAngleMarkerAria');
+    // Two children and no more: the grade and the marker.
     expect(grade?.parentElement?.parentElement?.children).toHaveLength(2);
+  });
+
+  it('keeps the grade column of a marked grade as it was, less the line that stood under it', () => {
+    live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
+
+    const { container } = render(<ClimbListItemContent climb={{ ...climb, statsAngle: 45 }} {...board} />);
+    const grade = container.querySelector('[data-variant="title3"]');
+
+    // A marked grade gives up its 40pt floor to the glyph, as before.
+    expect(styleOf(grade)).toMatchObject({ fontWeight: '700', minWidth: 0, textAlign: 'right' });
+    expect(styleOf(grade?.parentElement)).toEqual({ flexDirection: 'row', alignItems: 'center', gap: 3 });
+    expect(styleOf(grade?.parentElement?.parentElement)).toEqual({ alignItems: 'flex-end', gap: 1 });
+    // One child: the grade's row. Nothing stacks under the climber's own grade.
+    expect(grade?.parentElement?.parentElement?.children).toHaveLength(1);
   });
 
   it('leaves playlist tags off, even on the surface that can show them', () => {
@@ -521,22 +546,37 @@ describe('the community grade switch', () => {
     expect(outline(staged.container)).toContain('footnote:12 sends · 4.5★ · setterx');
   });
 
-  // What the token costs a row: one more reader of the logbook while it is on,
-  // and never another reader of the stats store.
+  // What the token costs a row. Never another reader of the stats store. One
+  // more reader of the logbook, and one more grade worked out, only where the
+  // climber's own grade can be in the column: with "Use my grades" off (and no
+  // Boardsesh grades, as in this file) the detail line works nothing out.
   it.each([
-    { switched: 'on', communityGrade: true, logbookReaders: 2 },
-    { switched: 'off', communityGrade: false, logbookReaders: 1 },
+    { personalGrades: true, communityGrade: true, gradeReaders: 2 },
+    { personalGrades: true, communityGrade: false, gradeReaders: 1 },
+    { personalGrades: false, communityGrade: true, gradeReaders: 1 },
+    { personalGrades: false, communityGrade: false, gradeReaders: 1 },
   ])(
-    'switched $switched, the row has two stats readers and $logbookReaders logbook readers for the grade',
-    ({ communityGrade, logbookReaders }) => {
+    'personal grades $personalGrades, token $communityGrade: two stats readers, $gradeReaders grade and logbook readers',
+    ({ personalGrades, communityGrade, gradeReaders }) => {
+      live.personalGrades = personalGrades;
       render(
         <ClimbListItemContent climb={climb} {...board} display={{ ...DEFAULT_CLIMB_ROW_DISPLAY, communityGrade }} />,
       );
 
       expect(live.statsCalls).toBe(2);
-      expect(live.myGradeCalls).toBe(logbookReaders);
+      expect(live.myGradeCalls).toBe(gradeReaders);
+      expect(live.gradeCalls).toBe(gradeReaders);
     },
   );
+
+  it('draws the same default row whether personal grades are on or off, for a climb with no grade of yours', () => {
+    const withPersonalGrades = render(<ClimbListItemContent climb={climb} {...board} />);
+    live.personalGrades = false;
+    const withoutPersonalGrades = render(<ClimbListItemContent climb={climb} {...board} />);
+
+    expect(withoutPersonalGrades.container.innerHTML).toBe(withPersonalGrades.container.innerHTML);
+    expect(outline(withoutPersonalGrades.container)).toContain('footnote:12 sends · 4.5★ · setterx');
+  });
 });
 
 describe('staged leaves, for the settings preview', () => {
@@ -549,6 +589,7 @@ describe('staged leaves, for the settings preview', () => {
         qualityAverage="4.2"
         setterUsername="sample"
         communityGrade={showCommunityGrade ? 'V4' : null}
+        setAtAngle={null}
       />
     ),
     Grade: () => <ClimbGradeView label="V5" color="#123456" markedAsMine isProject={false} setAtAngle={null} />,
@@ -614,6 +655,7 @@ describe('staged leaves, for the settings preview', () => {
           qualityAverage="4.5"
           setterUsername="setterx"
           communityGrade={null}
+          setAtAngle={null}
         />
       ),
       Grade: () => (

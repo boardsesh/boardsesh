@@ -13,6 +13,7 @@ describe('deriveClimbRowGrade', () => {
         label: 'V4',
         markedAsMine: false,
         communityGradeToken: null,
+        setAngleMarkerPlace: 'gradeColumn',
       });
     });
 
@@ -37,6 +38,7 @@ describe('deriveClimbRowGrade', () => {
         label: '',
         markedAsMine: false,
         communityGradeToken: null,
+        setAngleMarkerPlace: 'gradeColumn',
       });
     });
 
@@ -57,8 +59,8 @@ describe('deriveClimbRowGrade', () => {
     });
   });
 
-  // The mark is today's rule, unchanged: `derivePersonalGradeDisplay` decides it
-  // against the grade the climber's own replaced.
+  // The mark says the number in the column is yours and not the one the row
+  // would otherwise show. So it compares with the grade yours replaced.
   describe('the person mark', () => {
     it('marks the climber’s grade when it reads differently from the one it replaced', () => {
       expect(deriveClimbRowGrade({ personalLabel: 'V10', communityLabel: 'V0' }).markedAsMine).toBe(true);
@@ -74,6 +76,17 @@ describe('deriveClimbRowGrade', () => {
       expect(
         deriveClimbRowGrade({ personalLabel: 'V5', boardseshLabel: 'V5', communityLabel: 'V4' }).markedAsMine,
       ).toBe(false);
+    });
+
+    it('does not count the estimate mark on the grade it replaced as a difference', () => {
+      // "V5" in place of "≈V5" is the same number: nothing to mark.
+      expect(deriveClimbRowGrade({ personalLabel: 'V5', boardseshLabel: '≈V5' }).markedAsMine).toBe(false);
+      expect(
+        deriveClimbRowGrade({ personalLabel: 'V5 / 6C', boardseshLabel: '≈V5 / 6C', communityLabel: 'V4 / 6B' })
+          .markedAsMine,
+      ).toBe(false);
+      // A different number is still marked.
+      expect(deriveClimbRowGrade({ personalLabel: 'V4', boardseshLabel: '≈V5' }).markedAsMine).toBe(true);
     });
 
     it('marks the climber’s grade when it is the only one there is', () => {
@@ -95,6 +108,7 @@ describe('deriveClimbRowGrade', () => {
         label: 'V10',
         markedAsMine: true,
         communityGradeToken: 'V0',
+        setAngleMarkerPlace: 'detailLine',
       });
     });
 
@@ -118,6 +132,7 @@ describe('deriveClimbRowGrade', () => {
         label: 'V5',
         markedAsMine: false,
         communityGradeToken: 'V4',
+        setAngleMarkerPlace: 'gradeColumn',
       });
     });
 
@@ -131,24 +146,80 @@ describe('deriveClimbRowGrade', () => {
       expect(deriveClimbRowGrade({ boardseshLabel: '≈V5', communityLabel: 'V4' }).communityGradeToken).toBe('V4');
     });
 
-    it('compares against the grade in the column, not the one the climber’s grade replaced', () => {
-      // Your V5 agrees with Boardsesh but not with the community: the token shows.
-      expect(
-        deriveClimbRowGrade({ personalLabel: 'V5', boardseshLabel: 'V5', communityLabel: 'V4' }).communityGradeToken,
-      ).toBe('V4');
-      // Your V4 disagrees with Boardsesh but agrees with the community: it does not.
-      expect(
-        deriveClimbRowGrade({ personalLabel: 'V4', boardseshLabel: '≈V5', communityLabel: 'V4' }).communityGradeToken,
-      ).toBeNull();
-    });
-
     it('follows the climber’s grade format', () => {
       // The same climb read in Font grades: no scale maths in this module.
       expect(deriveClimbRowGrade({ personalLabel: '7A', communityLabel: '7A' }).communityGradeToken).toBeNull();
       expect(deriveClimbRowGrade({ personalLabel: '7A', communityLabel: '6B' }).communityGradeToken).toBe('6B');
     });
 
-    it('shows only the V half under the both-systems format', () => {
+    it('is never shown on a climb nobody has graded', () => {
+      // A Project: with no grade for the column there is no community grade either.
+      expect(deriveClimbRowGrade({}).communityGradeToken).toBeNull();
+      expect(
+        deriveClimbRowGrade({ personalLabel: null, boardseshLabel: null, communityLabel: '' }).communityGradeToken,
+      ).toBeNull();
+    });
+  });
+
+  // With Boardsesh grades on AND a grade of the climber's own, the mark and the
+  // token compare against different grades, on purpose: the mark against the
+  // Boardsesh grade the climber's own replaced, the token (always the
+  // community's grade, never Boardsesh's) against the column. The Boardsesh
+  // grade itself is not on the row; it is in the play drawer.
+  describe('a grade of the climber’s own, with Boardsesh grades on', () => {
+    it('marks yours and shows the community’s when all three read differently', () => {
+      expect(deriveClimbRowGrade({ personalLabel: 'V4', boardseshLabel: 'V6', communityLabel: 'V5' })).toEqual({
+        source: 'personal',
+        label: 'V4',
+        markedAsMine: true,
+        // The community's V5, not the Boardsesh V6 that yours replaced.
+        communityGradeToken: 'V5',
+        setAngleMarkerPlace: 'detailLine',
+      });
+    });
+
+    it('marks yours with no token when it agrees with the community but not with Boardsesh', () => {
+      expect(deriveClimbRowGrade({ personalLabel: 'V4', boardseshLabel: 'V5', communityLabel: 'V4' })).toEqual({
+        source: 'personal',
+        label: 'V4',
+        markedAsMine: true,
+        communityGradeToken: null,
+        setAngleMarkerPlace: 'detailLine',
+      });
+    });
+
+    it('leaves yours unmarked beside an estimate of the same number, whatever the community says', () => {
+      expect(deriveClimbRowGrade({ personalLabel: 'V5', boardseshLabel: '≈V5', communityLabel: 'V5' })).toEqual({
+        source: 'personal',
+        label: 'V5',
+        markedAsMine: false,
+        communityGradeToken: null,
+        setAngleMarkerPlace: 'detailLine',
+      });
+      expect(deriveClimbRowGrade({ personalLabel: 'V5', boardseshLabel: '≈V5', communityLabel: 'V4' })).toEqual({
+        source: 'personal',
+        label: 'V5',
+        markedAsMine: false,
+        communityGradeToken: 'V4',
+        setAngleMarkerPlace: 'detailLine',
+      });
+    });
+
+    it('shows the community’s grade unmarked when yours agrees with Boardsesh', () => {
+      expect(deriveClimbRowGrade({ personalLabel: 'V5', boardseshLabel: 'V5', communityLabel: 'V4' })).toEqual({
+        source: 'personal',
+        label: 'V5',
+        markedAsMine: false,
+        communityGradeToken: 'V4',
+        setAngleMarkerPlace: 'detailLine',
+      });
+    });
+  });
+
+  // "V5 / 6C": two grades in one label. The token is one of the community's two,
+  // the first that reads differently from the same half of the column.
+  describe('under the both-systems format', () => {
+    it('shows the V half when the V halves differ', () => {
       // The column already reads "V10 / 7C+". Both halves again would take twice
       // the width and could look like a second scale.
       expect(deriveClimbRowGrade({ personalLabel: 'V10 / 7C+', communityLabel: 'V5+ / 6C+' })).toEqual({
@@ -156,13 +227,36 @@ describe('deriveClimbRowGrade', () => {
         label: 'V10 / 7C+',
         markedAsMine: true,
         communityGradeToken: 'V5+',
+        setAngleMarkerPlace: 'detailLine',
       });
       expect(deriveClimbRowGrade({ boardseshLabel: '≈V5 / 6C', communityLabel: 'V4 / 6B' }).communityGradeToken).toBe(
         'V4',
       );
     });
 
-    it('still compares the whole label under the both-systems format', () => {
+    it('shows the Font half when only that half differs, instead of repeating the column', () => {
+      // Yours 4c against the community's 4a: "V0" beside "V0 / 4C" would say nothing.
+      expect(deriveClimbRowGrade({ personalLabel: 'V0 / 4C', communityLabel: 'V0 / 4A' })).toEqual({
+        source: 'personal',
+        label: 'V0 / 4C',
+        markedAsMine: true,
+        communityGradeToken: '4A',
+        setAngleMarkerPlace: 'detailLine',
+      });
+      // A Boardsesh 5b against the community's 5a, estimated or not.
+      expect(deriveClimbRowGrade({ boardseshLabel: 'V1 / 5B', communityLabel: 'V1 / 5A' }).communityGradeToken).toBe(
+        '5A',
+      );
+      expect(deriveClimbRowGrade({ boardseshLabel: '≈V1 / 5B', communityLabel: 'V1 / 5A' }).communityGradeToken).toBe(
+        '5A',
+      );
+      // MoonBoard's scale, where 5c and 6a are both V2.
+      expect(deriveClimbRowGrade({ personalLabel: 'V2 / 6A', communityLabel: 'V2 / 5C' }).communityGradeToken).toBe(
+        '5C',
+      );
+    });
+
+    it('shows no token when neither half differs', () => {
       expect(
         deriveClimbRowGrade({ personalLabel: 'V5+ / 6C+', communityLabel: 'V5+ / 6C+' }).communityGradeToken,
       ).toBeNull();
@@ -171,15 +265,34 @@ describe('deriveClimbRowGrade', () => {
       ).toBeNull();
     });
 
-    it('is never shown on a climb nobody has graded', () => {
-      // A Project: with no grade for the column there is no community grade either.
-      expect(deriveClimbRowGrade({}).communityGradeToken).toBeNull();
-      expect(deriveClimbRowGrade({ personalLabel: null, boardseshLabel: null, communityLabel: '' })).toEqual({
-        source: 'none',
-        label: '',
-        markedAsMine: false,
-        communityGradeToken: null,
-      });
+    it('shows no token when the community has no half the column lacks', () => {
+      // A community label with one grade that the column already leads with.
+      expect(deriveClimbRowGrade({ personalLabel: 'V0 / 4C', communityLabel: 'V0' }).communityGradeToken).toBeNull();
+    });
+  });
+
+  // The marker says the community's numbers were read at another angle.
+  describe('the set-angle marker’s place', () => {
+    it('is under the grade while the column shows the community’s or a Boardsesh grade', () => {
+      expect(deriveClimbRowGrade({ communityLabel: 'V4' }).setAngleMarkerPlace).toBe('gradeColumn');
+      expect(deriveClimbRowGrade({ boardseshLabel: '≈V5', communityLabel: 'V4' }).setAngleMarkerPlace).toBe(
+        'gradeColumn',
+      );
+    });
+
+    it('is in the detail line once the column shows the climber’s own grade', () => {
+      // Your grade was logged at the angle on the wall: the marker under it would
+      // say your number came from another angle.
+      expect(deriveClimbRowGrade({ personalLabel: 'V10', communityLabel: 'V4' }).setAngleMarkerPlace).toBe(
+        'detailLine',
+      );
+      // Also when yours reads the same as the community's and draws no token.
+      expect(deriveClimbRowGrade({ personalLabel: 'V4', communityLabel: 'V4' }).setAngleMarkerPlace).toBe('detailLine');
+      expect(deriveClimbRowGrade({ personalLabel: 'V4' }).setAngleMarkerPlace).toBe('detailLine');
+    });
+
+    it('stays under the grade slot of a climb nobody has graded', () => {
+      expect(deriveClimbRowGrade({}).setAngleMarkerPlace).toBe('gradeColumn');
     });
   });
 });

@@ -1,29 +1,26 @@
-// Which grade a climb row puts in its grade column, and whether the community's
-// grade also gets a place in the detail line under the name.
+// Which grade a climb row puts in its grade column, and what else the row says
+// about grades: the `person` mark, the community grade token in the detail line
+// under the name, and where the "set at N°" marker sits.
 //
 // A climb can have three grades: the climber's own, the Boardsesh grade, and the
 // community consensus. The column shows ONE of them, picked by the app-wide
-// grade settings. When that one is not the community's, and the two read
-// differently, the community's grade leads the detail line as a plain token
-// ("V4 · 1.2k sends · 4.5★ · setterx").
+// grade settings. The detail line can lead with a second one, and that token is
+// always the community's ("V4 · 1.2k sends · 4.5★ · setterx").
 //
-// Two leaves of the row need this answer: the grade column and the detail line.
-// Both call the one function below, so they can never disagree about which grade
-// is big and whether there is a token.
+// Two leaves of the row need these answers: the grade column and the detail
+// line. Both get them from the one function below, so they can never disagree.
 //
 // Pure on purpose (no React, no formatting). Callers render each grade for the
 // climber's grade format and board, and pass the labels in.
-//
-// Modelled on `deriveGradeTokenModel` from the unmerged grade-value-composition
-// branch, with three changes: it knows the Boardsesh grade as a third number, it
-// keeps today's rule for the `person` mark instead of marking every grade of the
-// climber's own, and it lives here because its only reader is the mobile row.
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
 import { splitGradeLabel } from '@boardsesh/play-view';
 import { ESTIMATE_PREFIX } from './boardsesh-grade-display';
 
 /** Whose grade the column shows. `'none'` when the climb has no grade at all. */
 export type ClimbRowGradeSource = 'personal' | 'boardsesh' | 'community' | 'none';
+
+/** Where a row's "set at N°" marker sits. */
+export type ClimbRowSetAngleMarkerPlace = 'gradeColumn' | 'detailLine';
 
 export type ClimbRowGradeLabels = {
   /**
@@ -53,6 +50,14 @@ export type ClimbRowGrade = {
    * differently.
    */
   communityGradeToken: string | null;
+  /**
+   * Where the row's "set at N°" marker belongs, on a row that has one. The
+   * marker says the community's numbers were read at another angle, so it sits
+   * with them: under the column's grade while that is the community's or the
+   * Boardsesh grade, and in the detail line once the column shows the climber's
+   * own, which was logged at the angle on the wall.
+   */
+  setAngleMarkerPlace: ClimbRowSetAngleMarkerPlace;
 };
 
 function present(label: string | null | undefined): string | null {
@@ -65,20 +70,52 @@ function withoutEstimatePrefix(label: string): string {
 }
 
 /**
- * The column's grade, its mark, and the detail line's token.
+ * The community's grade as the detail line shows it beside the column's grade,
+ * or null when it would say nothing the column does not.
  *
- * The column: the climber's own grade, else the Boardsesh grade, else the
- * community's. The `person` mark follows `derivePersonalGradeDisplay`, unchanged:
- * the climber's grade is marked when it reads differently from the grade it
- * replaced, or when it replaced nothing.
+ * A label is one grade, or two under the "V5 / 6C" format. The token is the
+ * community's first half that reads differently from the column's same half:
+ * the V half when those differ, which keeps the token on the scale the column
+ * leads with, and otherwise the Font half ("V0 / 4C" beside a community "V0 /
+ * 4A" shows "4A", because "V0" would repeat the column). No half differs: no
+ * token.
+ */
+function communityTokenBeside(columnLabel: string, communityLabel: string): string | null {
+  const columnHalves = splitGradeLabel(withoutEstimatePrefix(columnLabel));
+  return splitGradeLabel(communityLabel).find((half, index) => half !== columnHalves[index]) ?? null;
+}
+
+/**
+ * The column's grade, its mark, the detail line's token, and the set-angle
+ * marker's place.
  *
- * The token compares RENDERED LABELS, never difficulty ids, for the reason that
- * function gives: several ids render to one label (4a, 4b and 4c are all "V0"),
- * and a token repeating the column would be a second number stating no
- * difference. The `≈` on an estimated Boardsesh grade is not a difference
- * either. Labels are compared whole, so the answer follows the climber's grade
- * format; under the "V5 / 6C" format the token then shows only its V half, which
- * keeps it on the column's scale and costs the line no extra width.
+ * THE COLUMN shows the climber's own grade, else the Boardsesh grade, else the
+ * community's.
+ *
+ * THE MARK (`person`) says the number in the column is the climber's, not the
+ * one this row would otherwise show. So it compares the climber's grade with
+ * what it replaced: the Boardsesh grade for a climber with those on, else the
+ * community's. It is left off when the two read the same, and put on when there
+ * was nothing to replace.
+ *
+ * THE TOKEN is always the community's grade, never the Boardsesh grade: one
+ * token, one meaning, the one its switch is named for. It compares the
+ * community's grade with whatever the column shows.
+ *
+ * With Boardsesh grades on and a grade of the climber's own, those are two
+ * different comparisons, on purpose. The row then shows the climber's grade and
+ * the community's, and the Boardsesh grade is not on the row at all: it is in
+ * the play drawer.
+ *
+ *   mine V4, Boardsesh V6, community V5:  V4 marked, token V5
+ *   mine V4, Boardsesh V5, community V4:  V4 marked, no token
+ *   mine V5, Boardsesh ≈V5, community V4: V5 unmarked, token V4
+ *
+ * Both compare RENDERED LABELS, never difficulty ids: several ids render to one
+ * label (4a, 4b and 4c are all "V0"), and a second number stating no difference
+ * is noise. For the same reason the `≈` on an estimated Boardsesh grade is not
+ * a difference, in either comparison. Comparing labels also makes the answer
+ * follow the climber's grade format, with no scale maths here.
  *
  * A climb nobody has graded (a Project) never gets a token: with no label in the
  * column there is no community grade to show.
@@ -94,18 +131,25 @@ export function deriveClimbRowGrade({
   // What the column shows for a climber with no grade of their own.
   const crowd = boardsesh ?? community;
   const label = personal ?? crowd;
-  if (label === null) return { source: 'none', label: '', markedAsMine: false, communityGradeToken: null };
+  if (label === null) {
+    return {
+      source: 'none',
+      label: '',
+      markedAsMine: false,
+      communityGradeToken: null,
+      setAngleMarkerPlace: 'gradeColumn',
+    };
+  }
 
   const source: ClimbRowGradeSource = personal !== null ? 'personal' : boardsesh !== null ? 'boardsesh' : 'community';
-  // All three: the community has a grade, the column shows another one, and the
-  // two read differently.
-  const hasCommunityToken = community !== null && source !== 'community' && withoutEstimatePrefix(label) !== community;
 
   return {
     source,
     label,
     // Never set without a grade of the climber's own: that function marks nothing then.
-    markedAsMine: derivePersonalGradeDisplay(personal, crowd).markPrimary,
-    communityGradeToken: hasCommunityToken ? splitGradeLabel(community)[0] : null,
+    markedAsMine: derivePersonalGradeDisplay(personal, crowd === null ? null : withoutEstimatePrefix(crowd))
+      .markPrimary,
+    communityGradeToken: community !== null && source !== 'community' ? communityTokenBeside(label, community) : null,
+    setAngleMarkerPlace: source === 'personal' ? 'detailLine' : 'gradeColumn',
   };
 }
