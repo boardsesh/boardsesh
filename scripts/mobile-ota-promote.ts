@@ -60,8 +60,8 @@ import { adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
 import type { XpremAdminClient, XpremId } from './lib/xprem-admin.mts';
 
 export { validateExport };
-import { uploadMobileSourceMaps, assertSourceMapExportHashes } from './mobile-upload-sourcemaps';
-import { SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS } from './lib/mobile-publish-retry';
+import { uploadMobileSourceMaps, assertSourceMapExportHashes } from './mobile-upload-sourcemaps.ts';
+import { SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS } from './lib/mobile-publish-retry.ts';
 
 export type { OtaPlatform } from './lib/ota-publish-protocol.ts';
 

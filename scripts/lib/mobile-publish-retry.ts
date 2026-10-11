@@ -9,7 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { SURFABILITY_CONFIRM_BUDGET_MINUTES, SURFABILITY_PROBE_BUDGET_MINUTES } from './ota-branch-probe';
+import { SURFABILITY_CONFIRM_BUDGET_MINUTES, SURFABILITY_PROBE_BUDGET_MINUTES } from './ota-branch-probe.ts';
 
 /**
  * Backoff ladder for one platform, in wait order: 34 minutes total, sized to
