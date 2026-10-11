@@ -82,7 +82,7 @@ const privacySchema = readFileSync(
 // has. It writes `sync_deletions`, `board_climb_stats` and `board_climb_grades`,
 // so it installs after all three exist.
 const referenceMembershipSchema = readFileSync(
-  new URL('../../../db/drizzle/0264_climb_reference_membership.sql', import.meta.url),
+  new URL('../../../db/drizzle/0265_climb_reference_membership.sql', import.meta.url),
   'utf8',
 );
 
