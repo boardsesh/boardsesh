@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestSqliteDb } from '../../testing/sqlite-test-db';
 import { rejectBinaryDatabaseResults } from '../../testing/reject-binary-results';
-import { markScopeDownloadComplete } from '../../sync/checkpoints';
+import { markScopeDownloaded } from '../../testing/downloaded-scope';
 import { ensureHoldIndex } from '../hold-index';
 import {
   HOLD_ROLE,
@@ -193,7 +193,7 @@ describe('findSimilarClimbCandidates', () => {
 
   beforeEach(async () => {
     ({ db, close } = await openTestDatabase());
-    await markScopeDownloadComplete(db, 'kilter:1:12');
+    await markScopeDownloaded(db, 'kilter:1:12');
     let seq = 1;
     for (const climb of climbs) {
       await insertClimb(db, {
@@ -208,7 +208,7 @@ describe('findSimilarClimbCandidates', () => {
       layoutId: 2,
       frames: climbs[0].holds.map((h) => `p${h}r13`).join(''),
     });
-    await markScopeDownloadComplete(db, 'kilter:2:12');
+    await markScopeDownloaded(db, 'kilter:2:12');
     await ensureHoldIndex(db, { boardType: 'kilter', layoutId: 1, sizeId: 12 }, { parseHoldRows });
     await ensureHoldIndex(db, { boardType: 'kilter', layoutId: 2, sizeId: 12 }, { parseHoldRows });
   });

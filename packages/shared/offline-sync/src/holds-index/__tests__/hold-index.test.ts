@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestSqliteDb } from '../../testing/sqlite-test-db';
 import { rejectBinaryDatabaseResults } from '../../testing/reject-binary-results';
-import { markScopeDownloadComplete } from '../../sync/checkpoints';
+import { markScopeDownloaded } from '../../testing/downloaded-scope';
 import { offlineBoardKey, type OfflineBoardScope } from '../../offline-board-key';
 import {
   HOLD_INDEX_GENERATION_PREFIX,
@@ -53,7 +53,7 @@ function stopAfter(allowed: number): () => boolean {
 
 beforeEach(async () => {
   ({ db, close } = await openTestDatabase());
-  await markScopeDownloadComplete(db, offlineBoardKey(KILTER_12));
+  await markScopeDownloaded(db, offlineBoardKey(KILTER_12));
 });
 
 afterEach(() => close());
@@ -289,7 +289,7 @@ describe('ensureHoldIndex — first build', () => {
     await ensureHoldIndex(db, KILTER_12, { parseHoldRows });
 
     await insertClimb({ uuid: 'size-8', seq: 3, sizes: [8], frames: 'p2r13' });
-    await markScopeDownloadComplete(db, offlineBoardKey(KILTER_8));
+    await markScopeDownloaded(db, offlineBoardKey(KILTER_8));
     const result = await ensureHoldIndex(db, KILTER_8, { parseHoldRows });
 
     expect(result.status).toBe('complete');
@@ -307,7 +307,7 @@ describe('ensureHoldIndex — first build', () => {
 
   it('indexes MoonBoard without a size filter', async () => {
     const moonboard: OfflineBoardScope = { boardType: 'moonboard', layoutId: 2, sizeId: 1 };
-    await markScopeDownloadComplete(db, offlineBoardKey(moonboard));
+    await markScopeDownloaded(db, offlineBoardKey(moonboard));
     await insertClimb({ uuid: 'moon', seq: 1, boardType: 'moonboard', layoutId: 2, sizes: null, frames: 'p1r42' });
 
     await ensureHoldIndex(db, moonboard, { parseHoldRows });
@@ -446,7 +446,7 @@ describe('teardown racing a build', () => {
   }
 
   beforeEach(async () => {
-    await markScopeDownloadComplete(db, offlineBoardKey(KILTER_8));
+    await markScopeDownloaded(db, offlineBoardKey(KILTER_8));
     for (let index = 1; index <= 4; index += 1) {
       await insertClimb({ uuid: `shared-${index}`, seq: index, sizes: [8, 12], frames: `p${index}r12` });
     }
@@ -513,7 +513,7 @@ describe('an incremental chunk racing a tombstone', () => {
 describe('clearBoardTypeHoldIndex', () => {
   it("takes a board type's hold sets, postings, watermarks and local ids, gone climbs included, and nothing else", async () => {
     const spray: OfflineBoardScope = { boardType: 'spray', layoutId: 4, sizeId: 4 };
-    await markScopeDownloadComplete(db, offlineBoardKey(spray));
+    await markScopeDownloaded(db, offlineBoardKey(spray));
     await insertClimb({ uuid: 'wall-climb', seq: 1, boardType: 'spray', layoutId: 4, sizes: [4] });
     await insertClimb({ uuid: 'wall-climb-tombstoned', seq: 2, boardType: 'spray', layoutId: 4, sizes: [4] });
     await insertClimb({ uuid: 'kilter-climb', seq: 3 });
@@ -588,7 +588,7 @@ describe('single flight', () => {
   });
 
   it('serialises two sizes of one layout, and both end consistent', async () => {
-    await markScopeDownloadComplete(db, offlineBoardKey(KILTER_8));
+    await markScopeDownloaded(db, offlineBoardKey(KILTER_8));
     await insertClimb({ uuid: 'twelve', seq: 1, sizes: [12], frames: 'p1r12' });
     await insertClimb({ uuid: 'eight', seq: 2, sizes: [8], frames: 'p1r12' });
 

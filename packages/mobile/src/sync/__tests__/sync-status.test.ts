@@ -139,6 +139,7 @@ describe('sync-status store', () => {
     notifyScopeDownloadComplete({
       scopeKey: 'kilter:1:5',
       method: 'paged',
+      audienceMode: 'split',
       durationMs: 100,
       phases: emptyScopeDownloadPhases(),
     });
@@ -156,6 +157,7 @@ describe('sync-status store', () => {
     notifyScopeDownloadComplete({
       scopeKey: 'tension:2:10',
       method: 'paged',
+      audienceMode: 'split',
       durationMs: 200,
       phases: emptyScopeDownloadPhases(),
     });

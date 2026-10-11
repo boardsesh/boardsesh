@@ -43,6 +43,7 @@ import { processMutation, type GraphQLFetch } from '../../mutation-queue/handler
 import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
+import { markScopeDownloaded } from '../../testing/downloaded-scope';
 import { getDeletionsCoverageAt } from '../deletions-coverage';
 import { EMPTY_BOOTSTRAP_RETRY_STATE, writeBootstrapRetryState } from '../bootstrap-retry';
 import { compareCheckpoints, setCheckpoint } from '../checkpoints';
@@ -85,6 +86,9 @@ type DeletionRecord = { tableName: string; recordId: string; deletedAt: string }
  * empty `syncDeletions`. Dispatch is by query name, exactly how `pullSync`'s
  * `syncTable` reaches a resolver (`query.includes(config.queryName)`), so this
  * exercises the full pull loop including the hasMore→empty-page termination.
+ *
+ * A board table is asked for twice, once per stream. The documents are served
+ * on the reference stream (they have no owner), and the protected one is empty.
  */
 function makeSingleTableFetch(options: {
   queryName: string;
@@ -93,11 +97,11 @@ function makeSingleTableFetch(options: {
   deletions?: DeletionRecord[];
 }): GraphQLFetch {
   const cursor = options.cursor ?? DEFAULT_CURSOR;
-  return vi.fn(async <T>(query: string): Promise<T> => {
+  return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
     if (query.includes('syncDeletions')) {
       return { syncDeletions: { deletions: options.deletions ?? [], cursor, hasMore: false } } as T;
     }
-    if (query.includes(options.queryName)) {
+    if (query.includes(options.queryName) && variables?.audience !== 'PROTECTED') {
       return { [options.queryName]: { documents: options.documents, cursor, hasMore: false } } as T;
     }
     // Every other sync query returns an empty page so the loop is well-formed.
@@ -117,10 +121,17 @@ function createMockQueryClient(): QueryInvalidator {
   return { invalidateQueries: vi.fn().mockResolvedValue(undefined) } as unknown as QueryInvalidator;
 }
 
-/** Reads the JSON checkpoint a sync wrote into sync_meta for a table. */
+/**
+ * Reads what a sync wrote into sync_meta under `key`. For a checkpoint row that
+ * is the top-level cursor (a board table's row also carries its protected
+ * stream's cursor, which these suites do not look at); for a marker, its value.
+ */
 async function readCheckpoint(db: TestSqliteDb, key: string): Promise<typeof DEFAULT_CURSOR | null> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]);
-  return row ? (JSON.parse(row.value) as typeof DEFAULT_CURSOR) : null;
+  if (!row) return null;
+  const stored = JSON.parse(row.value) as (typeof DEFAULT_CURSOR & { referenceUnset?: boolean }) | null;
+  if (stored === null || typeof stored !== 'object') return stored;
+  return stored.referenceUnset ? null : { updatedAt: stored.updatedAt, syncSeq: stored.syncSeq };
 }
 
 describe('sync layer — real-DDL integration', () => {
@@ -384,6 +395,8 @@ describe('sync layer — real-DDL integration', () => {
             if (column === 'angle') return [column, 40];
             if (column === 'is_draft' || column === 'is_listed') return [column, index % 2 === 0];
             if (column === 'frames') return [column, { p: index }];
+            // The reference stream carries climbs with no owner.
+            if (column === 'user_id') return [column, null];
             return [column, `${column}-${index}`];
           }),
         ),
@@ -748,7 +761,7 @@ describe('sync layer — real-DDL integration', () => {
     it('a board_climbs tombstone takes the climb out of the holds index, unless the guard keeps the climb', async () => {
       // The holds index is derived on the device, so nothing on the server ever
       // tombstones it; the climb's tombstone has to cascade locally.
-      await db.runAsync("INSERT INTO sync_meta (key, value) VALUES ('scope-complete:kilter:1:12', '1')");
+      await markScopeDownloaded(db, 'kilter:1:12');
       for (const [uuid, updatedAt] of [
         ['gone', '2024-05-01T00:00:00Z'],
         ['re-added', '2024-06-02T00:00:00Z'],
@@ -1495,7 +1508,7 @@ describe('query invalidation over one pull cycle', () => {
   function makeCycleFetch(
     pages: Record<string, Record<string, unknown>[]>,
     deletions: DeletionRecord[] = [],
-    onRequest?: (resolver: string) => void,
+    onRequest?: (resolver: string, audience: unknown) => void,
   ): GraphQLFetch {
     return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
       if (query.includes('syncDeletions')) {
@@ -1504,9 +1517,11 @@ describe('query invalidation over one pull cycle', () => {
       const queryName = extractQueryName(query);
       const { boardType, layoutId } = (variables ?? {}) as { boardType?: string; layoutId?: number };
       const board = boardType ? `@${boardType}:${layoutId}` : '';
-      onRequest?.(`${queryName}${board}`);
-      // Past its first page a table has nothing more: the cursor is set.
-      const documents = variables?.cursor ? [] : (pages[`${queryName}${board}`] ?? []);
+      onRequest?.(`${queryName}${board}`, variables?.audience);
+      // Past its first page a table has nothing more: the cursor is set. The
+      // pages hold reference rows, so the protected stream has none of them.
+      const documents =
+        variables?.cursor || variables?.audience === 'PROTECTED' ? [] : (pages[`${queryName}${board}`] ?? []);
       return { [queryName]: { documents, cursor: DEFAULT_CURSOR, hasMore: false } } as T;
     }) as unknown as GraphQLFetch;
   }
@@ -1585,8 +1600,8 @@ describe('query invalidation over one pull cycle', () => {
       makeCycleFetch(
         { syncTicks: [tickDocument], 'syncClimbs@kilter:1': [climbDocument('kilter-climb', 'kilter', 1, 5)] },
         [],
-        (resolver) => {
-          if (resolver === 'syncClimbs@kilter:1') events.push('board pull');
+        (resolver, audience) => {
+          if (resolver === 'syncClimbs@kilter:1' && audience === 'REFERENCE') events.push('board pull');
         },
       ),
       { enabledBoards: [KILTER] },
@@ -1704,6 +1719,8 @@ describe('query invalidation over one pull cycle', () => {
 // it only fits a scope that is cooling down. A scope the phase turns away because
 // it already imported an artifact, or already completed, has no retry coming:
 // skipped once, it is skipped on every cycle and the board never syncs again.
+//
+// The two-stream cases built on this one are in two-stream-sync.integration.test.ts.
 describe('a scope the snapshot bootstrap has finished with still runs its paged pull', () => {
   const SCOPE_KEY = 'kilter:1:12';
   const VIEWER_ID = 'viewer';
@@ -1753,7 +1770,11 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
     rmSync(workDirectory, { recursive: true, force: true });
   });
 
-  /** Pages climbs on the resolvers' strict `>` keyset; every other table is empty. */
+  /**
+   * Pages climbs on the resolvers' strict `>` keyset; every other table is
+   * empty. A climb with no owner is served on the reference stream and an owned
+   * one on the protected stream, as the server splits them.
+   */
   function makeClimbServer(climbs: () => ServerClimb[]): GraphQLFetch {
     return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
       if (query.includes('syncDeletions')) {
@@ -1761,9 +1782,14 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
       }
       const cursor = variables?.cursor as typeof DEFAULT_CURSOR | undefined;
       const queryName = extractQueryName(query);
+      const isProtectedRequest = variables?.audience === 'PROTECTED';
       const pendingClimbs =
         queryName === 'syncClimbs'
-          ? climbs().filter((climb) => !cursor || compareCheckpoints(climb.cursor, cursor) > 0)
+          ? climbs().filter(
+              (climb) =>
+                (climb.document.user_id !== null) === isProtectedRequest &&
+                (!cursor || compareCheckpoints(climb.cursor, cursor) > 0),
+            )
           : [];
       const lastPendingClimb = pendingClimbs[pendingClimbs.length - 1];
       return {
@@ -1881,9 +1907,10 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
     await pullSync(db, queryClient, server, syncOptions);
 
     // The authenticated replay brought the withdrawn row back and the board
-    // serves offline again.
+    // serves offline again. The reference cursor stops at the last reference
+    // climb: the authored one arrived through the protected stream.
     expect(await localClimbUuids()).toEqual(['authored-climb', 'reference-climb']);
-    expect(await readCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toEqual(AUTHORED_CURSOR);
+    expect(await readCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toEqual(REFERENCE_CURSOR);
     expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
     // It came back over GraphQL. The kept marker still stops a second artifact
     // install, which is what the revalidation keeps it for.

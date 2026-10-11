@@ -43,6 +43,14 @@ let _isSigningOut = false;
 // only the work it can actually invalidate (issue #4370).
 let _globalWipeEpoch = 0;
 
+// Monotonic generation of PROTECTED withdrawals: a privacy event took back the
+// device's copies of other climbers' rows (issue #6306). It fences one kind of
+// work only, the writes that put such rows on the device: a protected sync page
+// and the saved-climb mirror. Everything else keeps running, which is the point.
+// A privacy event used to bump the global epoch above, and that restarted every
+// download on the phone at each launch.
+let _protectedWithdrawalEpoch = 0;
+
 /**
  * Per-namespace purge generation, keyed by `purgeNamespaceKey(scope)` —
  * `boardType:layoutId`, exactly removeBoardScopeData's DELETE predicate. A
@@ -68,6 +76,8 @@ export type PurgeToken = {
   readonly global: number;
   /** A COPY of every namespace epoch known at capture time. */
   readonly namespaces: ReadonlyMap<string, number>;
+  /** The protected-withdrawal generation at capture time. See beginProtectedWithdrawal. */
+  readonly protectedWithdrawal: number;
 };
 
 /**
@@ -82,7 +92,11 @@ export type PurgeToken = {
  * holds at most one entry per layout the user removed this app session.
  */
 export function capturePurgeToken(): PurgeToken {
-  return { global: _globalWipeEpoch, namespaces: new Map(_purgeEpochs) };
+  return {
+    global: _globalWipeEpoch,
+    namespaces: new Map(_purgeEpochs),
+    protectedWithdrawal: _protectedWithdrawalEpoch,
+  };
 }
 
 /**
@@ -247,6 +261,34 @@ function notifyPurgeSettled(namespace: string): void {
 export function beginGlobalPurge(): void {
   _globalWipeEpoch += 1;
   notifyTeardown();
+}
+
+/**
+ * A privacy event is withdrawing every protected row the device holds for other
+ * climbers (issue #6306). Call it BEFORE the transaction that deletes them.
+ *
+ * A protected page answers "what may this viewer see" as of the moment the
+ * server built it. One built before the event and written after the delete
+ * would put a withdrawn row back, with a cursor past it that the strict `>`
+ * pull never revisits. Every protected write compares the generation it
+ * captured when its cycle was queued, so the write is dropped whether the event
+ * landed while the page was on the wire or while it waited for the write lock.
+ *
+ * Reference pages, artifact transfers and imports, user tables, the deletions
+ * stream and the outbox are not fenced. Their rows are either public for every
+ * viewer or the climber's own, so no privacy event can make one of them wrong.
+ *
+ * Monotonic like the global epoch, and for the same reason: nothing to unset,
+ * nothing a throw can leave latched. It notifies no teardown listener, because
+ * the only work those cancel is an artifact transfer, which this must not stop.
+ */
+export function beginProtectedWithdrawal(): void {
+  _protectedWithdrawalEpoch += 1;
+}
+
+/** Has a protected withdrawal started since the token was captured? */
+export function hasProtectedWithdrawalLanded(token: PurgeToken): boolean {
+  return token.protectedWithdrawal !== _protectedWithdrawalEpoch;
 }
 
 // Read by the pull client too: an in-flight pullSync page must stop writing the
@@ -753,6 +795,7 @@ export function __resetDrainerStateForTests(): void {
   // Epoch checks are relative (capture-then-compare), so a residual value is
   // technically harmless — reset anyway so no test inherits another's wipes.
   _globalWipeEpoch = 0;
+  _protectedWithdrawalEpoch = 0;
   _purgeEpochs.clear();
   // A leaked latch would block that namespace's work for every later test.
   _purgesInFlight.clear();

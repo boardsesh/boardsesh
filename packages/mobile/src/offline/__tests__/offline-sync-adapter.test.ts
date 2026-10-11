@@ -136,6 +136,11 @@ vi.mock('../../lib/error-reporting', () => ({
 const trackMock = vi.fn();
 vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
 
+// Whether a privacy revalidation is pending. The real module pulls in the
+// catalogue-access and SQLite write paths, none of which this binding touches.
+const privacy = vi.hoisted(() => ({ revalidationPending: false }));
+vi.mock('../privacy-revalidation', () => ({ needsPrivacyRevalidation: () => privacy.revalidationPending }));
+
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { getUserStartedDownloads, rememberDownloadTrigger, setSetting } from '../../settings';
 import {
@@ -157,6 +162,7 @@ import {
   reportScopeDownloadAbandoned,
   reportScopeDownloadAbandonedOnSignOut,
   reportScopeDownloadAbandonedOnDisable,
+  __resetAudienceUnsupportedDedupeForTests,
   __resetCoverageVerdictDedupeForTests,
   __resetCycleErrorDedupeForTests,
   __resetMeteredStateForTests,
@@ -186,6 +192,7 @@ const NO_PHASES = {
   climbsPullMs: 0,
   statsPullMs: 0,
   gradesPullMs: 0,
+  protectedPullMs: 0,
 };
 
 // What the adapter actually emits from a zeroed breakdown: download/import/bytes
@@ -197,6 +204,8 @@ const NO_PHASE_PROPS = {
   climbsPullMs: 0,
   statsPullMs: 0,
   gradesPullMs: 0,
+  audienceMode: 'split',
+  protectedPullMs: 0,
 };
 
 // What a download event carries on iOS when nothing held the screen and the JS
@@ -217,6 +226,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   __resetSyncStatusForTests();
   __resetCycleErrorDedupeForTests();
+  __resetAudienceUnsupportedDedupeForTests();
+  privacy.revalidationPending = false;
   appStateListener = null;
   netInfoListener = null;
   onlineManagerIsOnline.mockReturnValue(true);
@@ -757,6 +768,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 1234,
       phases: { ...NO_PHASES, downloadMs: 900, importMs: 200, gradesPullMs: 134, gradesRows: 500, artifactBytes: 42 },
     });
@@ -771,6 +783,8 @@ describe('snapshot-bootstrap bindings', () => {
       climbsPullMs: 0,
       statsPullMs: 0,
       gradesPullMs: 134,
+      audienceMode: 'split',
+      protectedPullMs: 0,
       gradesRows: 500,
       ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
@@ -789,6 +803,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 1234,
       phases: { ...NO_PHASES, gradesPullMs: 134 },
     });
@@ -813,6 +828,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 1234,
       phases: { ...NO_PHASES, gradesArtifactRows: 41232, gradesRows: 0 },
     });
@@ -835,6 +851,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 1234,
       bootstrapHealed: true,
       phases: NO_PHASES,
@@ -842,6 +859,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:6',
       method: 'paged',
+      audienceMode: 'split',
       durationMs: 900,
       phases: NO_PHASES,
     });
@@ -861,7 +879,13 @@ describe('snapshot-bootstrap bindings', () => {
       { onScopeDownloadComplete },
     );
     const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
-    const info = { scopeKey: 'kilter:1:5', method: 'paged' as const, durationMs: 500, phases: NO_PHASES };
+    const info = {
+      scopeKey: 'kilter:1:5',
+      method: 'paged' as const,
+      audienceMode: 'split' as const,
+      durationMs: 500,
+      phases: NO_PHASES,
+    };
 
     options.onScopeDownloadComplete?.(info);
 
@@ -1018,6 +1042,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 10,
       phases: NO_PHASES,
     });
@@ -1256,6 +1281,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:5',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 1000,
       bytes: 103_000_000,
       rowCount: 40_000,
@@ -1282,6 +1308,7 @@ describe('snapshot-bootstrap bindings', () => {
     options.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:6',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 2000,
       phases: NO_PHASES,
     });
@@ -1312,7 +1339,13 @@ describe('snapshot-bootstrap bindings', () => {
     expect(customBootstrapError).toHaveBeenCalled();
     expect(reportHandledError).not.toHaveBeenCalled();
 
-    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'paged', durationMs: 500, phases: NO_PHASES });
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'paged',
+      audienceMode: 'split',
+      durationMs: 500,
+      phases: NO_PHASES,
+    });
     expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
       scopeKey: 'kilter:1:5',
       method: 'paged',
@@ -1408,7 +1441,13 @@ describe('download keep-awake bindings (issue #4310)', () => {
     const options = schedulerOptions();
     options.onProgress?.(downloadFrame);
 
-    options.onScopeDownloadComplete?.({ scopeKey: KILTER, method: 'snapshot', durationMs: 20_000, phases: NO_PHASES });
+    options.onScopeDownloadComplete?.({
+      scopeKey: KILTER,
+      method: 'snapshot',
+      audienceMode: 'split',
+      durationMs: 20_000,
+      phases: NO_PHASES,
+    });
 
     expect(trackMock).toHaveBeenCalledWith(
       SHARED_EVENTS.OfflineBoardDownloadCompleted,
@@ -1431,6 +1470,7 @@ describe('download keep-awake bindings (issue #4310)', () => {
       options.onScopeDownloadComplete?.({
         scopeKey: KILTER,
         method: 'snapshot',
+        audienceMode: 'split',
         durationMs: 500_000,
         phases: NO_PHASES,
       });
@@ -1487,7 +1527,13 @@ describe('download keep-awake bindings (issue #4310)', () => {
       reason: 'network',
       aborted: false,
     });
-    options.onScopeDownloadComplete?.({ scopeKey: KILTER, method: 'snapshot', durationMs: 20_000, phases: NO_PHASES });
+    options.onScopeDownloadComplete?.({
+      scopeKey: KILTER,
+      method: 'snapshot',
+      audienceMode: 'split',
+      durationMs: 20_000,
+      phases: NO_PHASES,
+    });
 
     const downloadEvents = trackMock.mock.calls.filter(
       ([eventName]) =>
@@ -1605,6 +1651,125 @@ describe('connectivity probe on the pull path (issue #4238)', () => {
     expect(overridden.isOnline?.()).toBe(true);
     expect(customProbe).toHaveBeenCalled();
     expect(onlineManagerIsOnline).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #6306. The engine pulls a board's protected rows only while this probe
+// says a privacy revalidation is not pending, and reports a backend that does
+// not know the two-stream sync through this reporter.
+describe('two-stream sync bindings', () => {
+  const schedulerEntryPoints = [
+    [
+      'startSyncScheduler',
+      () => {
+        startSyncScheduler(
+          db,
+          queryClient,
+          graphqlFetch,
+          () => [],
+          async () => {},
+        );
+        return startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+      },
+    ],
+    [
+      'triggerSync',
+      () => {
+        triggerSync(
+          db,
+          queryClient,
+          graphqlFetch,
+          () => [],
+          async () => {},
+        );
+        return triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+      },
+    ],
+  ] as const;
+
+  it.each(schedulerEntryPoints)('%s holds protected pulls back while a revalidation is pending', (_name, start) => {
+    const options = start();
+
+    expect(options.isProtectedSyncAllowed?.()).toBe(true);
+    privacy.revalidationPending = true;
+    expect(options.isProtectedSyncAllowed?.()).toBe(false);
+    privacy.revalidationPending = false;
+    expect(options.isProtectedSyncAllowed?.()).toBe(true);
+  });
+
+  it('pullSync holds them back too, and a caller’s own probe can only add to that', async () => {
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['spray:7:7'] });
+    const defaulted = pullSyncCore.mock.calls[0][3] as SyncOptions;
+    expect(defaulted.isProtectedSyncAllowed?.()).toBe(true);
+    privacy.revalidationPending = true;
+    expect(defaulted.isProtectedSyncAllowed?.()).toBe(false);
+
+    // A caller that says yes cannot pull through a pending revalidation...
+    await pullSync(db, queryClient, graphqlFetch, { isProtectedSyncAllowed: () => true });
+    const permissiveCaller = pullSyncCore.mock.calls[1][3] as SyncOptions;
+    expect(permissiveCaller.isProtectedSyncAllowed?.()).toBe(false);
+    // ...and one that says no is honoured when nothing is pending.
+    privacy.revalidationPending = false;
+    await pullSync(db, queryClient, graphqlFetch, { isProtectedSyncAllowed: () => false });
+    const cautiousCaller = pullSyncCore.mock.calls[2][3] as SyncOptions;
+    expect(cautiousCaller.isProtectedSyncAllowed?.()).toBe(false);
+  });
+
+  it.each(schedulerEntryPoints)(
+    '%s reports a backend without the audience argument once per launch',
+    (_name, start) => {
+      const options = start();
+      const cause = new Error('Unknown argument "audience" on field "Query.syncClimbs".');
+
+      options.onAudienceUnsupported?.({ tableName: 'board_climbs', scopeKey: 'kilter:1:10', cause });
+      options.onAudienceUnsupported?.({ tableName: 'board_climbs', scopeKey: 'tension:9:6', cause });
+      options.onAudienceUnsupported?.({ tableName: 'board_climbs', scopeKey: 'kilter:1:10', cause });
+
+      // One fact about the deployment, not one per board per cycle. A handled
+      // warning with no board, layout or climber in it, and no product event.
+      expect(reportHandledError).toHaveBeenCalledTimes(1);
+      const [reported, context] = reportHandledError.mock.calls[0] as [Error, Record<string, unknown>];
+      expect(reported.message).toBe('Sync backend does not support the audience argument');
+      expect(reported.cause).toBe(cause);
+      expect(context).toEqual({
+        level: 'warning',
+        tags: { source: 'offline-sync', kind: 'audience-unsupported' },
+        extra: { tableName: 'board_climbs' },
+      });
+      expect(trackMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sends the protected pull time and the split marker on a completed download, and a row count only when it has one', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      audienceMode: 'split',
+      durationMs: 1234,
+      phases: { ...NO_PHASES, protectedPullMs: 870, protectedRows: 3772 },
+    });
+    options.onScopeDownloadComplete?.({
+      scopeKey: 'kilter:1:6',
+      method: 'paged',
+      audienceMode: 'split',
+      durationMs: 900,
+      phases: { ...NO_PHASES, protectedPullMs: 40 },
+    });
+
+    const [counted, uncounted] = trackMock.mock.calls.map(([, properties]) => properties as Record<string, unknown>);
+    expect(counted).toMatchObject({ audienceMode: 'split', protectedPullMs: 870, protectedRows: 3772 });
+    expect(uncounted).toMatchObject({ audienceMode: 'split', protectedPullMs: 40 });
+    // Absent, never zero: a resumed replay did not count the rows before it.
+    expect(Object.hasOwn(uncounted, 'protectedRows')).toBe(false);
   });
 });
 

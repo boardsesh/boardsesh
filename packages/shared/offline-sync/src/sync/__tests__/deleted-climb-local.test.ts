@@ -4,7 +4,7 @@ import { runMigrations } from '../../db/migrations';
 import { removeDeletedClimbLocally } from '../deleted-climb-local';
 import { ensureHoldIndex } from '../../holds-index/hold-index';
 import { getHoldSet } from '../../holds-index/query';
-import { markScopeDownloadComplete } from '../checkpoints';
+import { markScopeDownloaded } from '../../testing/downloaded-scope';
 
 const scope = { boardType: 'spray', layoutId: 123, sizeId: 123 };
 const parseHoldRows = (_boardType: string, frames: string) => [{ holdId: Number(frames), holdState: 'STARTING' }];
@@ -53,7 +53,7 @@ describe('removeDeletedClimbLocally (#5960)', () => {
     db = createTestDatabase();
     await runMigrations(db);
     // The holds index only builds for a fully downloaded scope.
-    await markScopeDownloadComplete(db, 'spray:123:123');
+    await markScopeDownloaded(db, 'spray:123:123');
     await seedClimb(db, 'gone', '11');
     await seedClimb(db, 'kept', '22');
     await ensureHoldIndex(db, scope, { parseHoldRows, yieldToHost: async () => {} });

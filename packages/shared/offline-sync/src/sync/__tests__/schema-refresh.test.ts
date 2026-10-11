@@ -9,7 +9,9 @@ import { TABLE_CONFIGS, refreshRevisionFor } from '../table-config';
 import {
   compareCheckpoints,
   getCheckpoint,
+  getProtectedCheckpoint,
   setCheckpoint,
+  setProtectedCheckpoint,
   markScopeDownloadComplete,
   isScopeDownloadComplete,
 } from '../checkpoints';
@@ -53,10 +55,19 @@ function climb(uuid: string, sequence = 10) {
   };
 }
 
+/**
+ * A climbs request on the reference stream. The climbs these suites serve have
+ * no owner, so the server would return them here and nothing on the protected
+ * stream, which every cycle also asks for once.
+ */
+function isReferenceClimbsRequest(query: string, variables?: Record<string, unknown>): boolean {
+  return query.includes('syncClimbs(') && variables?.audience !== 'PROTECTED';
+}
+
 function source(documents = [climb('hidden')], onPage?: (cursor: SyncCheckpoint | undefined) => void) {
   const fetch = vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
     if (query.includes('syncDeletions')) return { syncDeletions: { deletions: [], cursor: HEAD, hasMore: false } } as T;
-    if (query.includes('syncClimbs(')) {
+    if (isReferenceClimbsRequest(query, variables)) {
       const cursor = variables?.cursor as SyncCheckpoint | undefined;
       onPage?.(cursor);
       const remaining = documents.filter(
@@ -147,7 +158,7 @@ describe('reference schema refresh', () => {
     await seedLegacy();
     const normal = source();
     const malformed = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
-      if (query.includes('syncClimbs(') && (variables?.cursor as SyncCheckpoint)?.syncSeq === '0') {
+      if (isReferenceClimbsRequest(query, variables) && (variables?.cursor as SyncCheckpoint)?.syncSeq === '0') {
         const incomplete: Record<string, unknown> = { ...climb('hidden') };
         delete incomplete.is_hidden;
         return {
@@ -192,7 +203,7 @@ describe('reference schema refresh', () => {
     await seedLegacy();
     const normal = source([climb('hidden'), climb('second', 11)]);
     const fails = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
-      if (query.includes('syncClimbs(') && (variables?.cursor as SyncCheckpoint)?.syncSeq === '10') {
+      if (isReferenceClimbsRequest(query, variables) && (variables?.cursor as SyncCheckpoint)?.syncSeq === '10') {
         throw new Error('second page unavailable');
       }
       return normal(query, variables) as Promise<T>;
@@ -234,7 +245,7 @@ describe('reference schema refresh', () => {
     expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ revision: 1, complete: true });
     expect(await isScopeDownloadComplete(db, SCOPE)).toBe(true);
     await sync(fetch);
-    const climbCalls = fetch.mock.calls.filter(([query]) => query.includes('syncClimbs('));
+    const climbCalls = fetch.mock.calls.filter(([query, variables]) => isReferenceClimbsRequest(query, variables));
     expect(climbCalls).toHaveLength(3); // delta + refresh, then delta only
   });
 
@@ -243,7 +254,7 @@ describe('reference schema refresh', () => {
     unmetered = false;
     const fetch = source();
     await sync(fetch);
-    expect(fetch.mock.calls.filter(([query]) => query.includes('syncClimbs('))).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([query, variables]) => isReferenceClimbsRequest(query, variables))).toHaveLength(1);
     expect(await hiddenFlag()).toBeNull();
     expect(await isScopeDownloadComplete(db, SCOPE)).toBe(true);
     expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toBeNull();
@@ -270,7 +281,7 @@ describe('reference schema refresh', () => {
     const fetch = source(documents);
     await sync(fetch);
     const cursors = fetch.mock.calls
-      .filter(([query]) => query.includes('syncClimbs('))
+      .filter(([query, variables]) => isReferenceClimbsRequest(query, variables))
       .map(([, variables]) => variables?.cursor);
     expect(cursors).toEqual([HEAD, expect.objectContaining(OLD)]);
     expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true, syncSeq: '11' });
@@ -279,7 +290,7 @@ describe('reference schema refresh', () => {
   it('does not replay a fresh full paged download', async () => {
     const fetch = source();
     await sync(fetch);
-    expect(fetch.mock.calls.filter(([query]) => query.includes('syncClimbs('))).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([query, variables]) => isReferenceClimbsRequest(query, variables))).toHaveLength(1);
     expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true, mode: 'download' });
   });
 
@@ -299,7 +310,7 @@ describe('reference schema refresh', () => {
     setBackgrounded(false);
     const fetch = source(documents);
     await sync(fetch);
-    expect(fetch.mock.calls.filter(([query]) => query.includes('syncClimbs('))).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([query, variables]) => isReferenceClimbsRequest(query, variables))).toHaveLength(1);
     expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true });
   });
 
@@ -354,7 +365,7 @@ describe('reference schema refresh', () => {
     await seedLegacy();
     const normal = source();
     const fetch = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
-      if (query.includes('syncClimbs(') && (variables?.cursor as SyncCheckpoint)?.syncSeq === '0') {
+      if (isReferenceClimbsRequest(query, variables) && (variables?.cursor as SyncCheckpoint)?.syncSeq === '0') {
         return {
           syncClimbs: {
             documents: kind === 'empty' ? [] : [climb('hidden')],
@@ -384,8 +395,13 @@ describe('reference schema refresh', () => {
 
 // #6024: spray scopes replay once more so `retired_by_reset` reaches climbs an
 // older bundle pulled and dropped the field from. Catalogue scopes must not.
+//
+// A spray wall has no reference stream, so since #6306 that replay is the
+// protected stream's own: a cursor behind the table's revision is not resumed.
+// It is a wall's worth of rows, so it runs on any link.
 describe('spray-only refresh for retired_by_reset', () => {
   const SPRAY_SCOPE = 'spray:7:7';
+  const SPRAY_CLIMBS_KEY = `checkpoint:board_climbs:${SPRAY_SCOPE}`;
 
   function sprayClimb(uuid: string, retired: boolean | null) {
     return {
@@ -430,87 +446,88 @@ describe('spray-only refresh for retired_by_reset', () => {
     return fetch as typeof fetch & GraphQLFetch;
   }
 
+  const climbRequests = (fetch: ReturnType<typeof sprayFetch>) =>
+    fetch.mock.calls.filter(([query]) => query.includes('syncClimbs(')).map(([, variables]) => variables);
+
+  /** A downloaded wall whose climb was retired while the phone ran a bundle that dropped the field. */
+  async function seedWallPulledAtRevisionOne() {
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, is_hidden, updated_at, sync_seq)
+       VALUES ('old-set', 'spray', 7, '[7]', 0, ?, 10)`,
+      [OLD.updatedAt],
+    );
+    await markScopeDownloadComplete(db, SPRAY_SCOPE);
+    await setProtectedCheckpoint(db, SPRAY_CLIMBS_KEY, { ...HEAD, complete: true, revision: 1 });
+  }
+
+  const retiredFlag = async () =>
+    (
+      await db.getFirstAsync<{ retired_by_reset: number | null }>(
+        "SELECT retired_by_reset FROM board_climbs WHERE uuid = 'old-set'",
+      )
+    )?.retired_by_reset;
+
   it('raises the revision for spray scopes only', () => {
     expect(refreshRevisionFor('board_climbs', 'spray')).toBe(2);
     expect(refreshRevisionFor('board_climbs', 'kilter')).toBe(1);
     expect(refreshRevisionFor('board_climbs', undefined)).toBe(1);
   });
 
-  it('replays a spray scope completed at revision 1 and fills the retired flag', async () => {
-    // A downloaded wall whose climb was retired while this phone ran a bundle
-    // that dropped the field: the row is NULL, the checkpoint is past it, and
-    // the scope's refresh state says revision 1 is done.
-    await db.runAsync(
-      `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, is_hidden, updated_at, sync_seq)
-       VALUES ('old-set', 'spray', 7, '[7]', 0, ?, 10)`,
-      [OLD.updatedAt],
-    );
-    await setCheckpoint(db, `checkpoint:board_climbs:${SPRAY_SCOPE}`, HEAD);
-    await markScopeDownloadComplete(db, SPRAY_SCOPE);
-    await writeSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE, {
-      ...HEAD,
-      revision: 1,
-      complete: true,
-      mode: 'download',
-    });
+  it('pulls a spray scope through the protected stream only', async () => {
+    const fetch = sprayFetch([sprayClimb('old-set', false)]);
+    await pullSync(db, queryClient, fetch, { enabledBoards: [SPRAY_SCOPE] });
 
-    await pullSync(db, queryClient, sprayFetch([sprayClimb('old-set', true)]), {
-      enabledBoards: [SPRAY_SCOPE],
-      isOnUnmeteredNetwork: () => true,
-    });
+    expect(climbRequests(fetch).map((variables) => variables?.audience)).toEqual(['PROTECTED']);
+    // The reference cursor is never set for a wall.
+    expect(await getCheckpoint(db, SPRAY_CLIMBS_KEY)).toBeNull();
+    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toBeNull();
+  });
 
-    expect(
-      (
-        await db.getFirstAsync<{ retired_by_reset: number | null }>(
-          "SELECT retired_by_reset FROM board_climbs WHERE uuid = 'old-set'",
-        )
-      )?.retired_by_reset,
-    ).toBe(1);
-    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 2, complete: true });
+  it('replays a spray scope pulled at revision 1 from the epoch and fills the retired flag, on a metered link too', async () => {
+    await seedWallPulledAtRevisionOne();
+    const fetch = sprayFetch([sprayClimb('old-set', true)]);
+
+    await pullSync(db, queryClient, fetch, { enabledBoards: [SPRAY_SCOPE], isOnUnmeteredNetwork: () => false });
+
+    expect(climbRequests(fetch).map((variables) => variables?.cursor)).toEqual([undefined]);
+    expect(await retiredFlag()).toBe(1);
+    expect(await getProtectedCheckpoint(db, SPRAY_CLIMBS_KEY)).toMatchObject({ revision: 2, complete: true });
+
+    // Once: the next cycle resumes from the cursor it stamped.
+    const next = sprayFetch([sprayClimb('old-set', true)]);
+    await pullSync(db, queryClient, next, { enabledBoards: [SPRAY_SCOPE] });
+    expect(climbRequests(next).map((variables) => variables?.cursor)).toEqual([{ ...OLD, syncSeq: '10' }]);
   });
 
   // #6161: an OTA preview pointed at a prod backend without migration 0255. The
   // replay must not fail the whole sync, and must retry once the column exists.
-  it('defers the replay against a backend without retired_by_reset and lets the cycle finish', async () => {
-    await db.runAsync(
-      `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, is_hidden, updated_at, sync_seq)
-       VALUES ('old-set', 'spray', 7, '[7]', 0, ?, 10)`,
-      [OLD.updatedAt],
-    );
-    await setCheckpoint(db, `checkpoint:board_climbs:${SPRAY_SCOPE}`, HEAD);
-    await markScopeDownloadComplete(db, SPRAY_SCOPE);
-    const revisionOne = { ...HEAD, revision: 1, complete: true, mode: 'download' as const };
-    await writeSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE, revisionOne);
-
+  it('lets the cycle finish against a backend without retired_by_reset, and replays again when it has the column', async () => {
+    await seedWallPulledAtRevisionOne();
     const legacy: Record<string, unknown> = { ...sprayClimb('old-set', null) };
     delete legacy.retired_by_reset;
     const oldBackend = sprayFetch([legacy as ReturnType<typeof sprayClimb>]);
     const phases: string[] = [];
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      await expect(
-        pullSync(db, queryClient, oldBackend, {
-          enabledBoards: [SPRAY_SCOPE],
-          isOnUnmeteredNetwork: () => true,
-          onProgress: (progress) => phases.push(progress.phase),
-        }),
-      ).resolves.toBeUndefined();
-    } finally {
-      warn.mockRestore();
-    }
+
+    await expect(
+      pullSync(db, queryClient, oldBackend, {
+        enabledBoards: [SPRAY_SCOPE],
+        onProgress: (progress) => phases.push(progress.phase),
+      }),
+    ).resolves.toBeUndefined();
 
     // The replay really ran, and the cycle still reached its idle tail.
-    expect(oldBackend.mock.calls.some(([, variables]) => (variables?.cursor as SyncCheckpoint)?.syncSeq === '0')).toBe(
-      true,
-    );
+    expect(climbRequests(oldBackend).map((variables) => variables?.cursor)).toEqual([undefined]);
     expect(phases.at(-1)).toBe('idle');
-    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toEqual(revisionOne);
+    // Not stamped at the revision the page could not deliver. The wall stays
+    // readable: it was complete before and its rows are still here.
+    expect(await getProtectedCheckpoint(db, SPRAY_CLIMBS_KEY)).toMatchObject({ revision: 0, complete: true });
+    expect(await retiredFlag()).toBeNull();
 
-    await pullSync(db, queryClient, sprayFetch([sprayClimb('old-set', true)]), {
-      enabledBoards: [SPRAY_SCOPE],
-      isOnUnmeteredNetwork: () => true,
-    });
-    expect(await getSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE)).toMatchObject({ revision: 2, complete: true });
+    const newBackend = sprayFetch([sprayClimb('old-set', true)]);
+    await pullSync(db, queryClient, newBackend, { enabledBoards: [SPRAY_SCOPE] });
+    expect(climbRequests(newBackend).map((variables) => variables?.cursor)).toEqual([undefined]);
+    expect(await retiredFlag()).toBe(1);
+    expect(await getProtectedCheckpoint(db, SPRAY_CLIMBS_KEY)).toMatchObject({ revision: 2, complete: true });
   });
 
   it('does not replay a catalogue scope already complete at revision 1', async () => {
@@ -523,6 +540,31 @@ describe('spray-only refresh for retired_by_reset', () => {
     });
     const fetch = source();
     await sync(fetch);
-    expect(fetch.mock.calls.filter(([query]) => query.includes('syncClimbs('))).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([query, variables]) => isReferenceClimbsRequest(query, variables))).toHaveLength(1);
+  });
+
+  it('never runs the reference replay for a spray scope, whatever its old refresh state says', async () => {
+    // State an earlier bundle left: one cursor, and a refresh row at revision 1.
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, is_hidden, updated_at, sync_seq)
+       VALUES ('old-set', 'spray', 7, '[7]', 0, ?, 10)`,
+      [OLD.updatedAt],
+    );
+    await setCheckpoint(db, SPRAY_CLIMBS_KEY, HEAD);
+    await markScopeDownloadComplete(db, SPRAY_SCOPE);
+    await writeSchemaRefreshState(db, 'board_climbs', SPRAY_SCOPE, {
+      ...HEAD,
+      revision: 1,
+      complete: true,
+      mode: 'download',
+    });
+    const fetch = sprayFetch([sprayClimb('old-set', true)]);
+
+    await pullSync(db, queryClient, fetch, { enabledBoards: [SPRAY_SCOPE], isOnUnmeteredNetwork: () => true });
+
+    // One protected replay from the epoch (it has no protected cursor yet), and
+    // no second request for the wall's climbs.
+    expect(climbRequests(fetch)).toEqual([expect.objectContaining({ audience: 'PROTECTED', cursor: undefined })]);
+    expect(await retiredFlag()).toBe(1);
   });
 });

@@ -8,6 +8,8 @@
 //                            drain does not spend retry budget on a backend
 //                            that is known to be down
 //   - scheduler wake-ups   → AppState 'active' transitions + connectivity edges
+//   - privacy gate         → protected rows are not pulled while a privacy
+//                            revalidation is pending (`isProtectedSyncAllowed`)
 //   - schema-drift + cycle telemetry → Sentry / PostHog / dev console
 //   - download keep-awake  → every progress frame also feeds the store that
 //                            decides whether a user-started download should
@@ -55,6 +57,7 @@ import {
   type SyncOptions,
   type SyncProgressSink,
   type AbandonedDownloadInfo,
+  type AudienceUnsupportedInfo,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { getErrorStatus, isNetworkError, isServerUnavailableError } from '@boardsesh/offline-sync/error-classification';
@@ -77,6 +80,7 @@ import {
 } from './download-keep-awake-store';
 import { createSprayWallDeletedSink, sprayWallPhotoSink } from './spray-photo-sink';
 import { holdIndexSyncOptions } from './hold-index-parser';
+import { needsPrivacyRevalidation } from './privacy-revalidation';
 
 // Exported so non-drain reporters can record the one dimension that decides
 // whether a failed local write actually lost data: a tick that falls through to
@@ -406,6 +410,7 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   rowCount,
   downloadMs,
   importMs,
+  audienceMode,
   phases,
 }) => {
   track(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
@@ -425,6 +430,13 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     climbsPullMs: phases.climbsPullMs,
     statsPullMs: phases.statsPullMs,
     gradesPullMs: phases.gradesPullMs,
+    // The two-stream sync (issue #6306). The three `*PullMs` above time the
+    // reference streams since then; this is the protected ones, which carry
+    // every climb with a Boardsesh author. Counts and durations only: nothing
+    // here says whose rows they were.
+    audienceMode,
+    protectedPullMs: phases.protectedPullMs,
+    ...(phases.protectedRows === undefined ? {} : { protectedRows: phases.protectedRows }),
     ...(phases.gradesRows === undefined ? {} : { gradesRows: phases.gradesRows }),
     ...(phases.gradesArtifactRows === undefined ? {} : { gradesArtifactRows: phases.gradesArtifactRows }),
     ...(phases.importVerifyMs === undefined ? {} : { importVerifyMs: phases.importVerifyMs }),
@@ -540,6 +552,37 @@ const reportBootstrapRetryScheduled: BootstrapRetryScheduledReporter = (info) =>
 const reportBootstrapPathRecovered: BootstrapPathRecoveredReporter = (info) => {
   track(SHARED_EVENTS.OfflineSnapshotPathRecovered, { ...info });
 };
+
+// The backend rejected the sync `audience` argument, so it predates the
+// two-stream sync: it was rolled back past it (issue #6306). The engine pulls no
+// board table against such a backend and says so on every cycle that meets it.
+// That is one fact about the deployment, not one per phone per cycle, so it is
+// reported once per launch. A handled warning rather than a product event: the
+// number that matters is whether it is happening at all, and the release note
+// for a backend rollback is where it gets acted on.
+let audienceUnsupportedReported = false;
+
+const reportAudienceUnsupported = ({ tableName, cause }: AudienceUnsupportedInfo): void => {
+  if (audienceUnsupportedReported) return;
+  audienceUnsupportedReported = true;
+  reportHandledError(new Error('Sync backend does not support the audience argument', { cause }), {
+    level: 'warning',
+    tags: { source: 'offline-sync', kind: 'audience-unsupported' },
+    extra: { tableName },
+  });
+};
+
+export function __resetAudienceUnsupportedDedupeForTests(): void {
+  audienceUnsupportedReported = false;
+}
+
+/**
+ * Protected rows are pulled only while no privacy revalidation is pending: from
+ * the moment a privacy event withdraws them until the purge of the device's
+ * copies has committed, a page would be written into rows that are about to be
+ * deleted. Reference rows are never held back by this.
+ */
+const isProtectedSyncAllowed = (): boolean => !needsPrivacyRevalidation();
 
 // Last connectivity state NetInfo reported. `null` means it has not reported
 // yet, which on a cold launch is a real window and not a formality: the
@@ -855,6 +898,8 @@ export function startSyncScheduler(
     // The device-derived holds index (similar climbs + hold heatmap on device),
     // built at the end of each cycle; see hold-index-parser.ts.
     holdIndex: holdIndexSyncOptions,
+    isProtectedSyncAllowed,
+    onAudienceUnsupported: reportAudienceUnsupported,
   });
 }
 
@@ -887,6 +932,8 @@ export function triggerSync(
     // The device-derived holds index (similar climbs + hold heatmap on device),
     // built at the end of each cycle; see hold-index-parser.ts.
     holdIndex: holdIndexSyncOptions,
+    isProtectedSyncAllowed,
+    onAudienceUnsupported: reportAudienceUnsupported,
   });
 }
 
@@ -915,6 +962,10 @@ export function pullSync(
     onDocumentsPulled: options?.onDocumentsPulled ?? sprayWallPhotoSink,
     onRowsDeleted: options?.onRowsDeleted ?? createSprayWallDeletedSink(queryClient),
     holdIndex: options?.holdIndex ?? holdIndexSyncOptions,
+    // Composed, not defaulted: a caller must not be able to pull protected rows
+    // through a pending privacy revalidation by passing its own probe.
+    isProtectedSyncAllowed: () => isProtectedSyncAllowed() && (options?.isProtectedSyncAllowed?.() ?? true),
+    onAudienceUnsupported: options?.onAudienceUnsupported ?? reportAudienceUnsupported,
     // Caller-provided error/drift/coverage reporters keep their existing
     // override semantics; scope completion is the one callback deliberately
     // composed because both telemetry and per-scope UI invalidation are required.

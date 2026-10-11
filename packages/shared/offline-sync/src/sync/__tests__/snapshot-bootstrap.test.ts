@@ -56,7 +56,15 @@ import {
   MAX_STRUCTURAL_REARMS,
   MAX_TRANSPORT_DOWNLOAD_FAILURES,
 } from '../bootstrap-retry';
-import { getCheckpoint, setCheckpoint, markScopeDownloadComplete, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
+import {
+  getCheckpoint,
+  getProtectedCheckpoint,
+  isScopeProtectedComplete,
+  setCheckpoint,
+  setProtectedCheckpoint,
+  markScopeDownloadComplete,
+  DELETIONS_CHECKPOINT_KEY,
+} from '../checkpoints';
 import { removeBoardScopeData } from '../scope-teardown';
 import { runMigrations, ARTIFACT_SCHEMA_VERSION, LATEST_SCHEMA_VERSION, MIGRATIONS } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
@@ -98,6 +106,8 @@ type ClimbInput = {
   name?: string;
   updatedAt?: string;
   syncSeq?: number;
+  /** An owner. A well-formed artifact never has one; set it to model a file that is not. */
+  userId?: string;
 };
 
 type StatInput = {
@@ -142,8 +152,8 @@ function buildArtifact(spec: ArtifactSpec): void {
     for (const climb of spec.climbs) {
       db.prepare(
         `INSERT OR REPLACE INTO board_climbs
-          (uuid, board_type, layout_id, name, is_draft, is_listed, compatible_size_ids, updated_at, sync_seq)
-         VALUES (?, ?, ?, ?, 0, 1, ?, ?, ?)`,
+          (uuid, board_type, layout_id, name, is_draft, is_listed, compatible_size_ids, updated_at, sync_seq, user_id)
+         VALUES (?, ?, ?, ?, 0, 1, ?, ?, ?, ?)`,
       ).run(
         climb.uuid,
         climb.boardType ?? 'kilter',
@@ -152,6 +162,7 @@ function buildArtifact(spec: ArtifactSpec): void {
         climb.compatibleSizeIds === null ? null : JSON.stringify(climb.compatibleSizeIds),
         climb.updatedAt ?? spec.climbsWatermark.updatedAt,
         climb.syncSeq ?? Number(spec.climbsWatermark.syncSeq),
+        climb.userId ?? null,
       );
     }
     for (const stat of spec.stats) {
@@ -283,6 +294,11 @@ function compareCursor(a: Cursor, b: Cursor): number {
  * returns any `climbServerRows` strictly after the incoming cursor (else an empty
  * tail page). Every other query is an empty page. Captures the cursor each board
  * query received so delta continuity can be asserted.
+ *
+ * The rows it serves have no owner, so they are REFERENCE rows: the reference
+ * stream returns them and the protected stream, which every cycle also asks
+ * once per table, returns nothing. The `captured*Cursors` arrays are the
+ * reference stream's; `capturedProtectedCursors` holds the other one's.
  */
 function makeGraphqlFetch(options?: {
   climbServerRows?: Array<{ doc: Record<string, unknown>; cursor: Cursor }>;
@@ -291,12 +307,18 @@ function makeGraphqlFetch(options?: {
   const capturedClimbCursors: Array<Cursor | undefined> = [];
   const capturedStatsCursors: Array<Cursor | undefined> = [];
   const capturedGradeCursors: Array<Cursor | undefined> = [];
+  const capturedProtectedCursors: Array<{ field: string; cursor: Cursor | undefined }> = [];
   const emptyCursor: Cursor = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
   const fetch = vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
     const cursor = variables?.cursor as Cursor | undefined;
     if (query.includes('syncDeletions')) {
       return { syncDeletions: { deletions: [], cursor: emptyCursor, hasMore: false } } as T;
+    }
+    if (variables?.audience === 'PROTECTED') {
+      const field = query.match(/\{\s*\n?\s*(sync[A-Za-z]+)\(/)?.[1] ?? 'unknown';
+      capturedProtectedCursors.push({ field, cursor });
+      return { [field]: { documents: [], cursor: cursor ?? emptyCursor, hasMore: false } } as T;
     }
     if (query.includes('syncClimbGrades')) {
       capturedGradeCursors.push(cursor);
@@ -331,7 +353,13 @@ function makeGraphqlFetch(options?: {
 
   // Keep the generic call signature pullSync expects AND the mock's `.mock`.
   const typedFetch = fetch as unknown as GraphqlFetchMock;
-  return { fetch: typedFetch, capturedClimbCursors, capturedStatsCursors, capturedGradeCursors };
+  return {
+    fetch: typedFetch,
+    capturedClimbCursors,
+    capturedStatsCursors,
+    capturedGradeCursors,
+    capturedProtectedCursors,
+  };
 }
 
 /**

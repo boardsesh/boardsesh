@@ -7,8 +7,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ensureHoldIndex, markScopeDownloadComplete, offlineBoardKey, runMigrations } from '@boardsesh/offline-sync';
-import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import { ensureHoldIndex, offlineBoardKey, runMigrations } from '@boardsesh/offline-sync';
+import { createTestDatabase, markScopeDownloaded, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { parseFramesToHoldRows } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { HoldRowParser } from '@boardsesh/offline-sync';
@@ -92,7 +92,7 @@ async function insertStat(
 }
 
 async function buildIndex(db: TestSqliteDb, scope: { boardType: string; layoutId: number; sizeId: number }) {
-  await markScopeDownloadComplete(db, offlineBoardKey(scope));
+  await markScopeDownloaded(db, offlineBoardKey(scope));
   const result = await ensureHoldIndex(db, scope, { parseHoldRows });
   expect(result.status).toBe('complete');
 }

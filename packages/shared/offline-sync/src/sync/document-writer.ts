@@ -11,6 +11,21 @@ export function toSqliteValue(value: unknown): SqlValue {
   return value as SqlValue;
 }
 
+/**
+ * A `board_climb_stats` document as a protected write may store it: with no
+ * first-ascent credit (issue #6306).
+ *
+ * On a climb with a Boardsesh author that name is whoever first sent it, and
+ * whether a viewer may see it depends on that climber's privacy. The protected
+ * stream therefore ships NULL for both fields, and no reader on the device
+ * selects either. Blanking them here as well means a row written this way can
+ * never hold a name, whatever the response carried. Both keys are always set, so
+ * an update of an existing row clears a name an earlier bundle stored there.
+ */
+export function withoutFirstAscentCredit(document: Record<string, unknown>): Record<string, unknown> {
+  return { ...document, fa_username: null, fa_at: null };
+}
+
 /** Shared transaction-level writer for pull pages and canonical saved-climb mirrors. */
 export async function writePullDocuments(
   transaction: SqlExecutor,
