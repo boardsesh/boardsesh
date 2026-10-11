@@ -6,6 +6,7 @@ name: Tutorial - choose holds, regions and similar climbs
 - scrollUntilVisible:
     element: Hold types
     direction: DOWN
+    timeout: 90000
 - tapOn: Hold types
 - tapOn: 'Any.*'
 # A central hold on the seeded Kilter layout; assert a filter was painted.
@@ -39,6 +40,7 @@ name: Tutorial - choose holds, regions and similar climbs
 - scrollUntilVisible:
     element: Similar Climbs
     direction: DOWN
+    timeout: 90000
 - tapOn: Similar Climbs
 - extendedWaitUntil:
     notVisible: 'Preparing similar climbs…'
@@ -56,6 +58,7 @@ name: Tutorial - choose holds, regions and similar climbs
 - scrollUntilVisible:
     element: Hold types
     direction: DOWN
+    timeout: 90000
 - tapOn: Hold types
 - tapOn: Heatmap
 - extendedWaitUntil:

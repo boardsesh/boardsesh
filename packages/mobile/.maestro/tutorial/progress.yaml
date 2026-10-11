@@ -6,16 +6,26 @@ name: Tutorial - your grades and combined progress
 - scrollUntilVisible:
     element: Use my grades
     direction: DOWN
+    timeout: 90000
+    centerElement: true
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
 - runFlow:
     when:
-      visible:
-        text: 'Use my grades.*'
-        checked: false
+      notVisible:
+        rightOf: Use my grades
+        below: Use my grades
+        above: Climb view
+        checked: true
     commands:
-      - tapOn: 'Use my grades.*'
+      - tapOn:
+          rightOf: Use my grades
+          below: Use my grades
+          above: Climb view
+          checked: false
 - assertVisible:
-    text: 'Use my grades.*'
+    rightOf: Use my grades
+    below: Use my grades
+    above: Climb view
     checked: true
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/personal-grades')}
 - extendedWaitUntil:
@@ -59,6 +69,7 @@ name: Tutorial - your grades and combined progress
 - scrollUntilVisible:
     element: 'Calendar'
     direction: DOWN
+    timeout: 90000
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/calendar')}
 - extendedWaitUntil:
     visible: tutorial-pause

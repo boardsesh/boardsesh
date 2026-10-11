@@ -7,6 +7,7 @@ name: Tutorial setup - require a completed local hold index
 - scrollUntilVisible:
     element: 'Hold types'
     direction: DOWN
+    timeout: 90000
 - tapOn: 'Hold types'
 - waitForAnimationToEnd
 - runFlow:

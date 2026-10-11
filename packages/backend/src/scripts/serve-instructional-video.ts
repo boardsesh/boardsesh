@@ -29,12 +29,17 @@ async function main(): Promise<void> {
     await closePool();
     await shutdownPosthog();
   };
-  process.on('SIGTERM', () => {
-    void stop().then(() => process.exit(0));
-  });
-  process.on('SIGINT', () => {
-    void stop().then(() => process.exit(0));
-  });
+  const stopOnSignal = (): void => {
+    void stop().then(
+      () => process.exit(0),
+      (error: unknown) => {
+        logger.error('[tutorial-demo] Server shutdown failed', { error });
+        process.exit(1);
+      },
+    );
+  };
+  process.on('SIGTERM', stopOnSignal);
+  process.on('SIGINT', stopOnSignal);
 }
 void main().catch((error: unknown) => {
   logger.error('[tutorial-demo] Server failed', { error });

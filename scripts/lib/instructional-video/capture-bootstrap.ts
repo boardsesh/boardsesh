@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
+import type { Server } from 'node:http';
 import { createServer } from 'node:net';
 
 /** A foreign Metro must never supply this recorder's bundle or backend settings. */
@@ -56,4 +57,26 @@ export async function warmTutorialMetro(child: ChildProcess, port: number): Prom
   if (!bundle.ok) throw new Error(`Android bundle failed: HTTP ${bundle.status}`);
   await bundle.arrayBuffer();
   assertOwnedChild();
+}
+
+export async function listenTutorialSignals(server: Server, onError: (error: Error) => void): Promise<void> {
+  await new Promise<void>((ready, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject);
+      ready();
+    });
+  });
+  server.on('error', onError);
+}
+
+/** Links come from authored recipes or the local dev-client URL, not external input. */
+export function openTutorialLink(
+  adb: string,
+  serial: string,
+  link: string,
+  command: (binary: string, args: string[]) => string,
+): void {
+  const guestQuotedLink = "'" + link.replaceAll("'", "'\\''") + "'";
+  command(adb, ['-s', serial, 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', guestQuotedLink]);
 }

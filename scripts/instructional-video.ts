@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { captureTutorial } from './lib/instructional-video/capture';
@@ -132,6 +132,16 @@ async function main(): Promise<void> {
     : undefined;
   if (episode.releaseVersion && !sourceRef)
     throw new Error('Release video requires --source-ref. Complete its reviewed capture recipe first (#6335).');
+  if (episode.releaseVersion) {
+    const missingFlows = episode.takes
+      .filter((take) => !options.only || options.only.includes(take.chapterId))
+      .flatMap((take) => [take.flow, ...(take.setupFlows ?? [])])
+      .filter((flow) => !existsSync(resolve(TUTORIAL_REPO_ROOT, flow)));
+    if (missingFlows.length)
+      throw new Error(
+        `Release ${episode.releaseVersion} capture recipe is incomplete (#6335). Add the reviewed flows first: ${missingFlows.join(', ')}.`,
+      );
+  }
   if (
     sourceRef &&
     !options.renderOnly &&

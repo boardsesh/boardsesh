@@ -203,7 +203,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'personal-grades',
         label: 'Turn on Use my grades',
-        focus: { x: 0.04, y: 0.3, width: 0.92, height: 0.5 },
+        focus: { x: 0.04, y: 0.42, width: 0.92, height: 0.1 },
       },
       {
         id: 'progress-filter',

@@ -17,7 +17,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CrewParticipant } from './capture-crew';
 import { extractTutorialFrames } from './capture-media';
-import { assertTutorialMetroPortFree, warmTutorialMetro } from './capture-bootstrap';
+import {
+  assertTutorialMetroPortFree,
+  warmTutorialMetro,
+  openTutorialLink,
+  listenTutorialSignals,
+} from './capture-bootstrap';
 import { tutorialModifiedSourcePaths } from './source';
 import {
   assertLocalTutorialBackend,
@@ -115,6 +120,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     throw new Error('Supply --apk-path or TUTORIAL_ANDROID_APK with the cached Android dev-client APK.');
   const nativeArtifactSha256 = sha(readFileSync(apk));
   const sourceCommit = command('git', ['rev-parse', 'HEAD'], env).trim();
+  const sourceDirtyAtStart = tutorialModifiedSourcePaths(ROOT, sourceCommit).length > 0;
   const captureSource = createHash('sha256');
   const captureSources = new Set([
     ...command(
@@ -151,6 +157,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     (take) => !options.chapterIds || options.chapterIds.includes(take.chapterId),
   );
   const serial = options.serial ?? `emulator-${PORT}`;
+  const openLink = (link: string) => openTutorialLink(adb, serial, link, (binary, args) => command(binary, args, env));
   let emulator: ChildProcess | undefined;
   let metro: ChildProcess | undefined;
   let crew: CrewParticipant | undefined;
@@ -255,7 +262,9 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
           : 'ok',
     );
   });
-  await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
+  await listenTutorialSignals(server, (error) => {
+    signalFailure = error;
+  });
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Signal server has no port');
   const signalUrl = `http://127.0.0.1:${address.port}`;
@@ -458,7 +467,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       child.stderr?.on('data', (chunk: Buffer) => {
         output += chunk.toString();
       });
-      const timer = setTimeout(() => void stop(child), 150_000);
+      const timer = setTimeout(() => void stop(child), 240_000);
       try {
         await new Promise<void>((done, reject) => {
           child.once('error', reject);
@@ -477,6 +486,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       await flow('packages/mobile/.maestro/showcase/android/session-end.yaml', 'abort-session-end');
       activeSession = false;
     };
+    let appLaunched = false;
     for (const take of selectedTakes) {
       console.log(`[tutorial] Preparing chapter ${take.id}`);
       const takeDir = join(work, 'takes', take.id);
@@ -499,6 +509,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
           const cached = JSON.parse(readFileSync(cachedPath, 'utf8')) as TutorialTakeManifest;
           if (
             tutorialManifestProblems(cached, take, fingerprint).length === 0 &&
+            cached.sourceDirty === sourceDirtyAtStart &&
             existsSync(join(takeDir, 'raw.mp4')) &&
             readdirSync(join(takeDir, 'frames')).filter((name) => /^\d{6}\.jpg$/.test(name)).length ===
               cached.frameCount
@@ -513,45 +524,21 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       rmSync(takeDir, { recursive: true, force: true });
       mkdirSync(join(takeDir, 'frames'), { recursive: true });
       const baseline = readFileSync(metroLog, 'utf8').length;
-      command(adb, ['-s', serial, 'shell', 'am', 'force-stop', APP], env);
-      command(
-        adb,
-        [
-          '-s',
-          serial,
-          'shell',
-          'am',
-          'start',
-          '-a',
-          'android.intent.action.VIEW',
-          '-d',
-          androidDevClientUrl(metroPort),
-        ],
-        env,
-      );
-      await waitFor(
-        () =>
-          readFileSync(metroLog, 'utf8').slice(baseline).includes('authReady=true fontsReady=true splashCanHide=true'),
-        300_000,
-        'signed-in app home',
-      );
+      if (!appLaunched) {
+        command(adb, ['-s', serial, 'shell', 'am', 'force-stop', APP], env);
+        openLink(androidDevClientUrl(metroPort));
+        await waitFor(
+          () =>
+            readFileSync(metroLog, 'utf8')
+              .slice(baseline)
+              .includes('authReady=true fontsReady=true splashCanHide=true'),
+          300_000,
+          'signed-in app home',
+        );
+        appLaunched = true;
+      } else openLink('com.boardsesh.app://home');
       await flow('packages/mobile/.maestro/tutorial/home-ready.yaml', `${take.id}-home-ready`);
-      // Routes are trusted authored recipe templates; quote them for adb's guest shell.
-      command(
-        adb,
-        [
-          '-s',
-          serial,
-          'shell',
-          'am',
-          'start',
-          '-a',
-          'android.intent.action.VIEW',
-          '-d',
-          `'${`com.boardsesh.app://${take.route}`.replaceAll("'", "'\\''")}'`,
-        ],
-        env,
-      );
+      openLink(`com.boardsesh.app://${take.route}`);
       await sleep(2500);
       for (const setup of take.setupFlows ?? []) await flow(setup, `${take.id}-setup`);
       if (take.requiresDownload)
@@ -561,21 +548,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         await flow('packages/mobile/.maestro/tutorial/crew-setup.yaml', 'crew-session');
         const beforeRelaunch = readFileSync(metroLog, 'utf8').length;
         command(adb, ['-s', serial, 'shell', 'am', 'force-stop', APP], env);
-        command(
-          adb,
-          [
-            '-s',
-            serial,
-            'shell',
-            'am',
-            'start',
-            '-a',
-            'android.intent.action.VIEW',
-            '-d',
-            androidDevClientUrl(metroPort),
-          ],
-          env,
-        );
+        openLink(androidDevClientUrl(metroPort));
         let sessionId = '';
         await waitFor(
           () => {
@@ -644,7 +617,9 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       const remote = `/sdcard/tutorial-${take.id}-${Date.now()}.mp4`;
       console.log(`[tutorial] Recording chapter ${take.id}`);
       const started = Date.now();
-      const recorderArgs = buildScreenrecordArgs(serial, remote, 170);
+      const recorderArgs = buildScreenrecordArgs(serial, remote, 180);
+      // The pinned Android system image supports bounded recordings beyond 180s.
+      recorderArgs[recorderArgs.indexOf('--time-limit') + 1] = '300';
       recorderArgs.splice(recorderArgs.length - 1, 0, '--size', `${geometry.width}x${geometry.height}`);
       const recorder = spawn(adb, recorderArgs, {
         cwd: ROOT,
@@ -753,7 +728,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         frameCount,
         seconds: frameCount / 30,
         sourceCommit,
-        sourceDirty: tutorialModifiedSourcePaths(ROOT).length > 0,
+        sourceDirty: sourceDirtyAtStart || tutorialModifiedSourcePaths(ROOT, sourceCommit).length > 0,
         nativeArtifactSha256,
         fingerprint,
         marks: relativeMarks,

@@ -25,6 +25,7 @@ name: Tutorial - real photo spray wall
 - scrollUntilVisible:
     element: Use my look on spray walls
     direction: DOWN
+    timeout: 90000
 - runFlow:
     when:
       visible:
@@ -44,6 +45,7 @@ name: Tutorial - real photo spray wall
 - scrollUntilVisible:
     element: Open details for Tutorial Spray Wall
     direction: DOWN
+    timeout: 90000
 - tapOn: Open details for Tutorial Spray Wall
 - tapOn: Share link
 - assertVisible: Share this wall
