@@ -656,6 +656,7 @@ describe('TabLayout', () => {
   });
 
   it('gives the hold-outline editor the whole content area, keeping only the sidebar', () => {
+    cfg.variant = 'material';
     // The editor is a drawing canvas, so both trailing panes step aside — not for
     // redundancy like the wall tab, but because every point of width is working
     // space to zoom a hold into. The sidebar stays: this is a wider canvas, not a
@@ -675,6 +676,7 @@ describe('TabLayout', () => {
   });
 
   it('keeps both trailing panes on the profile tab itself', () => {
+    cfg.variant = 'material';
     // The suppression is scoped to the canvas route, not the whole profile stack —
     // browsing Settings beside the play pane is the normal shell.
     cfg.widthClass = 'regular';
