@@ -47,6 +47,9 @@ export type ConsentRecord = {
 /**
  * The device's copy of an answer. See `createConsentSyncCoordinator`.
  *
+ * A region default (`basis: 'region_default'`) never carries `ownerAccountId`
+ * or `basedOnDecidedAt`: it is nobody's answer and is never written anywhere.
+ *
  * - `ownerAccountId` is the account that was signed in when this device made
  *   the answer or adopted it from the account. Null or missing means it was
  *   made signed out (or predates this field, or came from the shared web
@@ -73,9 +76,10 @@ export function isConsentRecordOwnedBy(record: DeviceConsentRecord | null, accou
 }
 
 /**
- * Field-by-field equality, including `ownerAccountId` (missing equals null) and
+ * Field-by-field equality, including `ownerAccountId` (missing equals null),
  * `basedOnDecidedAt` (missing differs from null: confirmed vs made against no
- * answer). Key order and extra wire fields (`__typename`) do not matter.
+ * answer) and `basis` (missing equals `explicit`). Key order and extra wire
+ * fields (`__typename`) do not matter.
  */
 export function isSameConsentRecord(left: DeviceConsentRecord | null, right: DeviceConsentRecord | null): boolean {
   if (left === null || right === null) return left === right;
@@ -85,7 +89,8 @@ export function isSameConsentRecord(left: DeviceConsentRecord | null, right: Dev
     left.decidedAt === right.decidedAt &&
     left.source === right.source &&
     (left.ownerAccountId ?? null) === (right.ownerAccountId ?? null) &&
-    left.basedOnDecidedAt === right.basedOnDecidedAt
+    left.basedOnDecidedAt === right.basedOnDecidedAt &&
+    (left.basis ?? 'explicit') === (right.basis ?? 'explicit')
   );
 }
 

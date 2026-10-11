@@ -59,11 +59,14 @@ describe('consentPromptRequired', () => {
     ['YT', 'Mayotte, France'],
     ['MF', 'Saint-Martin, France'],
     ['AX', 'Åland, Finland'],
+    ['CN', 'China, PIPL'],
+    ['KR', 'South Korea, PIPA'],
   ])('asks in %s (%s)', (country) => {
     expect(consentPromptRequired(country)).toBe(true);
   });
 
-  it.each(['US', 'AU', 'BR', 'CA', 'NZ', 'JP', 'ZA', 'MX', 'IN'])('does not ask in %s', (country) => {
+  // CA includes Quebec: Cloudflare reports no province, and Law 25 is left out on purpose.
+  it.each(['US', 'AU', 'BR', 'CA', 'NZ', 'JP', 'ZA', 'MX', 'IN', 'HK', 'TW', 'SG'])('does not ask in %s', (country) => {
     expect(consentPromptRequired(country)).toBe(false);
   });
 

@@ -1,8 +1,8 @@
 /**
  * Where Boardsesh asks the analytics question.
  *
- * The prompt is shown in the places where GDPR, or a law that copies it, makes
- * product analytics consent-based. Everywhere else analytics starts on as a
+ * The prompt is shown in the places where GDPR, a law that copies it, or
+ * another consent-based privacy law makes product analytics consent-based. Everywhere else analytics starts on as a
  * device-local default the climber can switch off in Settings (see
  * `createRegionDefaultConsent`). An unknown or unreadable location always asks:
  * when in doubt, prompt. See docs/analytics-consent.md.
@@ -57,12 +57,22 @@ const EEA_NON_EU = ['IS', 'LI', 'NO'] as const;
  */
 const GDPR_EQUIVALENT = ['CH', 'GB', 'GG', 'GI', 'IM', 'JE'] as const;
 
+/**
+ * Privacy laws built on consent rather than GDPR: China's PIPL has no
+ * legitimate-interest basis, and South Korea's PIPA asks for consent to
+ * collect personal information. Also a policy choice, kept apart so it can be
+ * dropped. Quebec's Law 25 is not here: Cloudflare reports Quebec as CA, and
+ * asking all of Canada for one province is not the trade we chose.
+ */
+const CONSENT_BASED_LAWS = ['CN', 'KR'] as const;
+
 /** Every ISO 3166-1 alpha-2 code whose visitors are asked before analytics runs. */
 export const CONSENT_PROMPT_COUNTRIES: readonly string[] = [
   ...EU_MEMBER_STATES,
   ...EU_TERRITORIES_WITH_OWN_CODES,
   ...EEA_NON_EU,
   ...GDPR_EQUIVALENT,
+  ...CONSENT_BASED_LAWS,
 ];
 
 const PROMPT_COUNTRY_SET: ReadonlySet<string> = new Set(CONSENT_PROMPT_COUNTRIES);

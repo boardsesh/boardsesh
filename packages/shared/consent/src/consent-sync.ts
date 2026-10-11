@@ -108,7 +108,11 @@ export type ConsentSyncOptions = {
   onError?: (error: unknown) => void;
 };
 
-/** The account's answer as this device's copy, bound to that account. Drops wire-only fields such as `__typename`. */
+/**
+ * The account's answer as this device's copy, bound to that account. Drops
+ * wire-only fields such as `__typename`, and never copies `basis`: an account
+ * answer is always explicit.
+ */
 function accountCopy(record: ConsentRecord, accountId: string): DeviceConsentRecord {
   return {
     analytics: record.analytics,
@@ -151,6 +155,11 @@ export type AccountConsentMerge = {
  * this device (merge rule 3). When the account has no current answer, the
  * device holds none either: the prompt comes back and nothing is tracked until
  * the climber answers for this account.
+ *
+ * A region default is checked first. It is nobody's answer, so it is never
+ * written, and it is not this account's answer to clear either: with no account
+ * answer the device keeps it (asking again would only re-apply it, one account
+ * read per turn), and any account answer, grant or denial, replaces it.
  */
 export function mergeAccountConsent(
   local: DeviceConsentRecord | null,
@@ -159,6 +168,11 @@ export function mergeAccountConsent(
 ): AccountConsentMerge {
   const currentLocal = isCurrentConsentRecord(local) ? local : null;
   const currentServer = isCurrentConsentRecord(server) ? server : null;
+  if (isRegionDefaultConsent(currentLocal)) {
+    return currentServer === null
+      ? { record: currentLocal, push: null }
+      : { record: accountCopy(currentServer, accountId), push: null };
+  }
   if (currentLocal !== null && isConsentRecordOwnedBy(currentLocal, accountId)) {
     // Same answer: hold the account's copy. Nothing to write.
     if (

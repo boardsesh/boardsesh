@@ -5,6 +5,8 @@ import {
   createRegionDefaultConsent,
   isAnalyticsGranted,
   isRegionDefaultConsent,
+  isSameConsentRecord,
+  mergeAccountConsent,
   needsPrompt,
   parseConsentCookieValue,
   parsePendingConsentDecision,
@@ -109,6 +111,46 @@ describe('resolveConsent with a region default', () => {
   });
 });
 
+describe('mergeAccountConsent with a region default', () => {
+  it('keeps the region default when the account has no answer, and writes nothing', () => {
+    const merged = mergeAccountConsent(regionDefault, null, 'account-a');
+    expect(merged.record).toBe(regionDefault);
+    expect(merged.push).toBeNull();
+  });
+
+  it('replaces it with the account grant, as an account copy with no basis', () => {
+    const merged = mergeAccountConsent(regionDefault, accountGrant, 'account-a');
+    expect(merged).toEqual({ record: { ...accountGrant, ownerAccountId: 'account-a' }, push: null });
+    expect(merged.record).not.toHaveProperty('basis');
+    expect(merged.record).not.toHaveProperty('basedOnDecidedAt');
+  });
+
+  it('replaces it with the account denial', () => {
+    const merged = mergeAccountConsent(regionDefault, accountDenial, 'account-a');
+    expect(merged).toEqual({ record: { ...accountDenial, ownerAccountId: 'account-a' }, push: null });
+    expect(isRegionDefaultConsent(merged.record)).toBe(false);
+  });
+
+  it('is never pushed, even if storage bound it to this account with a write token', () => {
+    const bound = { ...regionDefault, ownerAccountId: 'account-a', basedOnDecidedAt: null };
+    expect(mergeAccountConsent(bound, null, 'account-a')).toEqual({ record: bound, push: null });
+  });
+});
+
+describe('isSameConsentRecord and basis', () => {
+  it('tells a region default from an explicit grant made at the same moment', () => {
+    const explicit: ConsentRecord = {
+      analytics: 'granted',
+      version: regionDefault.version,
+      decidedAt: regionDefault.decidedAt,
+      source: regionDefault.source,
+    };
+    expect(isSameConsentRecord(regionDefault, explicit)).toBe(false);
+    expect(isSameConsentRecord(explicit, { ...explicit, basis: 'explicit' })).toBe(true);
+    expect(isSameConsentRecord(regionDefault, { ...regionDefault })).toBe(true);
+  });
+});
+
 describe('account sync with a region default', () => {
   it('never writes the region default to an empty account', async () => {
     const { coordinator, writeAccountConsent } = signedInCoordinator(regionDefault, null);
@@ -129,11 +171,27 @@ describe('account sync with a region default', () => {
     expect(coordinator.getSnapshot().record).toBe(regionDefault);
   });
 
+  it('keeps the region default across repeated account reads without a write', async () => {
+    const { coordinator, readAccountConsent, writeAccountConsent } = signedInCoordinator(regionDefault, null);
+    await coordinator.sync();
+    await coordinator.sync();
+    expect(readAccountConsent).toHaveBeenCalledTimes(2);
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+    expect(coordinator.getSnapshot().record).toBe(regionDefault);
+  });
+
+  it('gives way to an account grant and writes nothing', async () => {
+    const { coordinator, writeAccountConsent } = signedInCoordinator(regionDefault, accountGrant);
+    await coordinator.sync();
+    expect(coordinator.getSnapshot().record).toEqual({ ...accountGrant, ownerAccountId: 'account-a' });
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+  });
+
   it('gives way to an account denial and writes nothing', async () => {
     const { coordinator, writeAccountConsent, persistLocalConsent } = signedInCoordinator(regionDefault, accountDenial);
     await coordinator.sync();
-    expect(coordinator.getSnapshot().record).toEqual(accountDenial);
-    expect(persistLocalConsent).toHaveBeenLastCalledWith(accountDenial);
+    expect(coordinator.getSnapshot().record).toEqual({ ...accountDenial, ownerAccountId: 'account-a' });
+    expect(persistLocalConsent).toHaveBeenLastCalledWith({ ...accountDenial, ownerAccountId: 'account-a' });
     expect(writeAccountConsent).not.toHaveBeenCalled();
   });
 
