@@ -393,15 +393,18 @@ describe('the shipped client import on a shape-2 artifact', () => {
 
     // The checkpoints a later delta pull resumes from are those watermarks.
     const scopeKey = scopeKeyOf(KILTER_SIZE_10);
-    expect(JSON.parse(shape2State.syncMeta[`checkpoint:board_climbs:${scopeKey}`])).toEqual(
-      shape2Outcome.layout.climbsWatermark,
-    );
-    expect(JSON.parse(shape2State.syncMeta[`checkpoint:board_climb_stats:${scopeKey}`])).toEqual(
-      shape2Outcome.layout.statsWatermark,
-    );
-    expect(JSON.parse(shape2State.syncMeta[`checkpoint:board_climb_grades:${scopeKey}`])).toEqual(
-      shape2Outcome.grades.gradesWatermark,
-    );
+    expect(JSON.parse(shape2State.syncMeta[`checkpoint:board_climbs:${scopeKey}`])).toEqual({
+      ...shape2Outcome.layout.climbsWatermark,
+      rule: 2,
+    });
+    expect(JSON.parse(shape2State.syncMeta[`checkpoint:board_climb_stats:${scopeKey}`])).toEqual({
+      ...shape2Outcome.layout.statsWatermark,
+      rule: 2,
+    });
+    expect(JSON.parse(shape2State.syncMeta[`checkpoint:board_climb_grades:${scopeKey}`])).toEqual({
+      ...shape2Outcome.grades.gradesWatermark,
+      rule: 2,
+    });
   });
 
   it('imports a whole layout (a board that is not size-scoped) to the same outcome as shape 1', async () => {
