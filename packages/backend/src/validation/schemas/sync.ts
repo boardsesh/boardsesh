@@ -64,4 +64,10 @@ export const SyncRequiredBoardScopeIdSchema = z.number().int().positive();
  */
 export const SyncBoardScopeIdSchema = SyncRequiredBoardScopeIdSchema.optional().nullable();
 
+/**
+ * Optional audience for the per-board sync resolvers. Null/undefined means the
+ * single-stream pull every client older than the split sends.
+ */
+export const SyncAudienceSchema = z.enum(['REFERENCE', 'PROTECTED']).optional().nullable();
+
 export type SyncCursorInputValidated = z.infer<typeof SyncCursorInputSchema>;

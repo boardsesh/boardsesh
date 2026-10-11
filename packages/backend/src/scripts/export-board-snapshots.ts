@@ -53,6 +53,7 @@ import {
   type SnapshotTableName,
 } from '@boardsesh/offline-sync';
 import { createPool, closePool } from '@boardsesh/db/client';
+import { publicReferenceClimbSql, REFERENCE_EXCLUDED_BOARD_TYPES } from '@boardsesh/db/queries';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -271,26 +272,17 @@ export function boardSnapshotDdlStatements(
 
 // --- Postgres discovery + streaming ------------------------------------------
 
-/**
- * Board types this job must never publish a snapshot for.
- *
- * Snapshots go to a PUBLIC bucket under guessable keys
- * (`<prefix>/<board>/<layout>/*.db`), and each one carries every climb of that
- * `(board_type, layout_id)` partition. A spray wall's partition is one
- * climber's private wall — an explicitly private-by-default surface whose photo
- * is behind a 15-minute presigned URL — so publishing its climbs would hand out
- * exactly the data the private bucket exists to withhold.
- *
- * This is an exclusion by board TYPE rather than a per-wall visibility check on
- * purpose: `is_public` on a wall governs who may view it in the app, and a
- * nightly dump of every public wall's climbs to an unauthenticated bucket is not
- * something a climber opted into by sharing a link.
- */
-const SNAPSHOT_EXCLUDED_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+// Which climbs an artifact carries. The same text scopes the `REFERENCE` sync
+// stream (resolvers/sync/queries.ts), so the rows a phone imports and the rows
+// that stream resumes from the artifact's watermark cannot drift apart.
+const REFERENCE_CLIMB = publicReferenceClimbSql('board_climbs');
+const REFERENCE_CLIMB_BC = publicReferenceClimbSql('bc');
 
 /**
- * Every (board_type, layout_id) pair that has at least one climb, minus the
- * board types {@link SNAPSHOT_EXCLUDED_BOARD_TYPES} withholds.
+ * Every (board_type, layout_id) pair that has at least one reference climb,
+ * minus the board types {@link REFERENCE_EXCLUDED_BOARD_TYPES} withholds (spray:
+ * a wall's partition is one climber's private wall, and this job publishes to a
+ * public bucket under guessable keys).
  */
 export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<LayoutPair>): Promise<LayoutPair[]> {
   const boardCondition = filter?.boardType ? sqlClient`board_type = ${filter.boardType}` : sqlClient`TRUE`;
@@ -298,16 +290,14 @@ export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<Layou
   const rows = await sqlClient<{ board_type: string; layout_id: number }[]>`
     SELECT DISTINCT board_type, layout_id
     FROM board_climbs
-    WHERE ${boardCondition} AND ${layoutCondition} AND user_id IS NULL AND NOT is_boardsesh_authored
-      AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
-        WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
+    WHERE ${boardCondition} AND ${layoutCondition} AND ${sqlClient.unsafe(REFERENCE_CLIMB)}
     ORDER BY board_type, layout_id
   `;
   // Filtered here rather than in the SQL predicate so an explicit
   // `--board-type spray` on the CLI is excluded too, not just a full sweep.
   return rows
     .map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }))
-    .filter((pair) => !SNAPSHOT_EXCLUDED_BOARD_TYPES.has(pair.boardType));
+    .filter((pair) => !REFERENCE_EXCLUDED_BOARD_TYPES.has(pair.boardType));
 }
 
 function assertSafeColumns(columns: readonly string[]): void {
@@ -321,18 +311,14 @@ function assertSafeColumns(columns: readonly string[]): void {
 // Scope predicates matching the resolvers exactly. `now()` is transaction-start
 // time and constant across the whole export transaction, so the streamed rows and
 // the watermark query below apply the identical stability boundary.
-const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND user_id IS NULL AND NOT is_boardsesh_authored
-    AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
-      WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
+const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND ${REFERENCE_CLIMB}
     AND updated_at < now() - make_interval(secs => $3)`;
 
 const STATS_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
-        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
-        AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
-          WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
+        AND ${REFERENCE_CLIMB_BC}
     )
     AND updated_at < now() - make_interval(secs => $3)`;
 
@@ -344,9 +330,7 @@ const GRADES_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
-        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
-        AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
-          WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
+        AND ${REFERENCE_CLIMB_BC}
     )
     AND computed_at < now() - make_interval(secs => $3)`;
 

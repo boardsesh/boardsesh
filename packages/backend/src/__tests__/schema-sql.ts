@@ -73,6 +73,13 @@ const privacySchema = readFileSync(
   new URL('../../../db/drizzle/0261_account_resource_privacy.sql', import.meta.url),
   'utf8',
 );
+// The partial index the PROTECTED sync stream reads through, from the generated
+// migration so the plan tests run against the predicate production has. It
+// names `is_boardsesh_authored`, so it installs after the privacy schema.
+const protectedSyncIndexSchema = readFileSync(
+  new URL('../../../db/drizzle/0263_protected_sync_index.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
@@ -2148,4 +2155,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sprayWallDeletionSchema}
   ${sessionBoardsSchema}
   ${privacySchema}
+  ${protectedSyncIndexSchema}
 `;
