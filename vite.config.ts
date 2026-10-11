@@ -458,6 +458,14 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:backfill-clamped-send-attempts',
         cache: false,
       },
+      // Assigns an owner to draft and unlisted climbs that have none, where
+      // exactly one account links the manufacturer account that set them.
+      // Dry-run by default and prints counts only; `-- --apply` is the only
+      // write path. Run by hand against DB_URL, same pattern as db:dedupe-gyms.
+      'db:backfill-climb-owners': {
+        command: 'pnpm --filter @boardsesh/db run db:backfill-climb-owners',
+        cache: false,
+      },
 
       // --- Codegen (GraphQL types for client + backend resolvers) ---
       // Direct workspace-binary invocation; no remote package runner.
