@@ -619,7 +619,7 @@
     "searchClimbers": "Find a climber to invite",
     "requestAccess": "Request access",
     "publishLinkTitle": "Share by link?",
-    "publishLinkMessage": "Anyone with the link can open this board. Keep its location hidden unless you choose to share it.",
+    "publishLinkMessage": "Anyone with the link can open this board, even though it stays off search and the map. The link is built from the board's name, so it isn't secret. Keep its location hidden unless you choose to share it.",
     "publishLink": "Share by link",
     "publishResourceMessage": "Anyone can open this session or board. Your other private activity stays limited to people you approve."
   }

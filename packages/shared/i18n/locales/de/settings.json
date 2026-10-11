@@ -619,7 +619,7 @@
     "searchClimbers": "Person zum Einladen suchen",
     "requestAccess": "Zugriff anfragen",
     "publishLinkTitle": "Per Link teilen?",
-    "publishLinkMessage": "Alle mit dem Link können dieses Board öffnen. Lass den Standort verborgen, wenn du ihn nicht teilen möchtest.",
+    "publishLinkMessage": "Alle mit dem Link können dieses Board öffnen, auch wenn es in Suche und Karte nicht auftaucht. Der Link enthält den Namen des Boards, er ist also nicht geheim. Lass den Standort verborgen, wenn du ihn nicht teilen möchtest.",
     "publishLink": "Per Link teilen",
     "publishResourceMessage": "Alle können diese Session oder dieses Board öffnen. Deine anderen privaten Aktivitäten sehen weiterhin nur Personen, die du bestätigst."
   }

@@ -619,7 +619,7 @@
     "searchClimbers": "Buscar a alguien para invitar",
     "requestAccess": "Solicitar acceso",
     "publishLinkTitle": "¿Compartir mediante enlace?",
-    "publishLinkMessage": "Cualquiera con el enlace puede abrir este plafón. Mantén su ubicación oculta si no quieres compartirla.",
+    "publishLinkMessage": "Cualquiera con el enlace puede abrir este plafón, aunque no aparezca en la búsqueda ni en el mapa. El enlace se forma con el nombre del plafón, así que no es secreto. Mantén su ubicación oculta si no quieres compartirla.",
     "publishLink": "Compartir enlace",
     "publishResourceMessage": "Cualquiera puede abrir esta sesión o este plafón. El resto de tu actividad privada sigue limitado a las personas que apruebes."
   }
