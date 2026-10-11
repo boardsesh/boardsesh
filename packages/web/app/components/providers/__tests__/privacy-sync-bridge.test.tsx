@@ -2,7 +2,7 @@
 import React from 'react';
 import { QueryClient } from '@tanstack/react-query';
 import { render, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Sink = { next: () => void; error: (error: unknown) => void; complete: () => void };
 const mocks = vi.hoisted(() => ({
@@ -43,7 +43,7 @@ vi.mock('@/app/lib/realtime/websocket-connection-manager', () => ({
   connectionManager: { registerClient: vi.fn(() => () => {}) },
 }));
 import { PrivacySyncBridge } from '../privacy-sync-bridge';
-import { acquireRealtimeClient } from '@/app/lib/realtime/graphql-client';
+import { __resetSharedRealtimeClientForTests, acquireRealtimeClient } from '@/app/lib/realtime/graphql-client';
 
 const sensitiveKeys = [
   ['userProfile', 'private-user'],
@@ -57,6 +57,12 @@ const transportKeys = [
 ];
 
 describe('website privacy revocation', () => {
+  beforeEach(() => {
+    __resetSharedRealtimeClientForTests();
+    mocks.createClient.mockClear();
+    mocks.sinks.length = 0;
+  });
+
   it('withdraws protected queries over the shared socket, without a page reload, while controls are disabled', async () => {
     mocks.queryClient = new QueryClient();
     for (const key of [...sensitiveKeys, ...transportKeys]) mocks.queryClient.setQueryData(key, { copied: true });

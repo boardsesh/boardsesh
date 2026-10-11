@@ -21,7 +21,7 @@ vi.mock('../websocket-connection-manager', () => ({
   connectionManager: { registerClient: vi.fn(() => () => {}) },
 }));
 
-import { acquireRealtimeClient, createGraphQLClient } from '../graphql-client';
+import { __resetSharedRealtimeClientForTests, acquireRealtimeClient, createGraphQLClient } from '../graphql-client';
 import { WEB_CLIENT_VERSION } from '@/app/lib/client-identity';
 
 const BROWSER_IDENTITY = `boardsesh-web/${WEB_CLIENT_VERSION}`;
@@ -64,6 +64,7 @@ describe('web realtime createGraphQLClient connectionParams', () => {
 describe('acquireRealtimeClient', () => {
   beforeEach(() => {
     shared.capturedOptions.length = 0;
+    __resetSharedRealtimeClientForTests();
   });
 
   it('hands every holder of the same token one client and disposes it after the last release', () => {

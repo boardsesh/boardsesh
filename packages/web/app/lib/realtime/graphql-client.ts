@@ -123,3 +123,8 @@ export function acquireRealtimeClient({ url, authToken }: { url: string; authTok
     },
   };
 }
+
+/** Test-only: forget the shared client so a failed test cannot leak it into the next. */
+export function __resetSharedRealtimeClientForTests(): void {
+  sharedRealtimeClient = null;
+}

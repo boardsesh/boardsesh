@@ -141,6 +141,10 @@ describe('privacy revocation', () => {
       ['searchClimbs', { boardName: 'spray', layoutId: 9001 }],
       ['infiniteSearchClimbs', { boardName: 'spray', layoutId: 9001 }],
       ['searchClimbsCount', { boardName: 'spray', layoutId: 9001 }],
+      // A search key whose input moved or vanished cannot be shown not to be spray.
+      ['searchClimbs', 'viewer', { boardName: 'spray', layoutId: 9001 }],
+      ['searchClimbs'],
+      ['infiniteSearchClimbs', { layoutId: 1 }],
       ['someFutureQuery', 'id'],
     ];
     for (const key of sensitiveKeys) queryClient.setQueryData(key, { copied: 'identity' });
@@ -177,8 +181,11 @@ describe('privacy revocation', () => {
     const queryClient = new QueryClient();
     const kilterSearch = ['infiniteSearchClimbs', { boardName: 'kilter', layoutId: 1 }];
     const kilterCount = ['searchClimbsCount', { boardName: 'kilter', layoutId: 1 }];
+    // The followed-authors filter appends the viewer after the input.
+    const followedSearch = ['searchClimbs', { boardName: 'tension', layoutId: 9 }, 'viewer'];
     queryClient.setQueryData(kilterSearch, { climbs: ['first page'] });
     queryClient.setQueryData(kilterCount, 120);
+    queryClient.setQueryData(followedSearch, { climbs: ['followed page'] });
     let resolveRefetch!: (page: { climbs: string[] }) => void;
     const observer = new QueryObserver(queryClient, {
       queryKey: kilterSearch,
@@ -198,6 +205,10 @@ describe('privacy revocation', () => {
       await invalidation;
       expect(observer.getCurrentResult().data).toEqual({ climbs: ['authorized page'] });
       expect(queryClient.getQueryState(kilterCount)).toMatchObject({ data: 120, isInvalidated: true });
+      expect(queryClient.getQueryState(followedSearch)).toMatchObject({
+        data: { climbs: ['followed page'] },
+        isInvalidated: true,
+      });
     } finally {
       unsubscribe();
       queryClient.clear();

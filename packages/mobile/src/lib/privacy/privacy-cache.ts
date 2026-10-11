@@ -49,16 +49,28 @@ const CATALOGUE_SEARCH_QUERY_ROOTS = new Set(['searchClimbs', 'infiniteSearchCli
 
 type PrivacyQueryTreatment = 'keep' | 'refetch' | 'withdraw';
 
-function isSprayWallSearch(queryKey: readonly unknown[]): boolean {
-  const input = queryKey[1];
-  return typeof input === 'object' && input !== null && 'boardName' in input && input.boardName === 'spray';
+/**
+ * The board a climb search key searches, from whichever key element carries the
+ * search input. Null when no element names a board, so a reshaped key fails
+ * closed instead of passing a spray wall's search off as a catalogue one.
+ */
+function searchedBoardName(queryKey: readonly unknown[]): string | null {
+  for (const part of queryKey.slice(1)) {
+    if (typeof part === 'object' && part !== null && 'boardName' in part && typeof part.boardName === 'string') {
+      return part.boardName;
+    }
+  }
+  return null;
 }
 
 /** How a privacy event treats a cached query, decided by its key. */
 export function privacyQueryTreatment(queryKey: readonly unknown[]): PrivacyQueryTreatment {
   const root = String(queryKey[0]);
   if (PRIVACY_NEUTRAL_QUERY_ROOTS.has(root)) return 'keep';
-  if (CATALOGUE_SEARCH_QUERY_ROOTS.has(root) && !isSprayWallSearch(queryKey)) return 'refetch';
+  if (CATALOGUE_SEARCH_QUERY_ROOTS.has(root)) {
+    const boardName = searchedBoardName(queryKey);
+    if (boardName !== null && boardName !== 'spray') return 'refetch';
+  }
   return 'withdraw';
 }
 
