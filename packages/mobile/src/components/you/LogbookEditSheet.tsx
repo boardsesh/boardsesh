@@ -255,14 +255,18 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
           subtitle={ascent ? formatBoardDisplayName(ascent.boardType) : undefined}
           accentColor={getGradeColor(selectedGradeName ?? ascent?.difficultyName) ?? null}
           leading={{ kind: 'cancel', onPress: handleClose }}
-          trailing={boardPickerOpen ? undefined : {
-            kind: 'confirm',
-            label: tTick('mobile.tick.save'),
-            onPress: save,
-            loading: updateTick.isPending,
-            disabled: isMutating,
-            prominent: true,
-          }}
+          trailing={
+            boardPickerOpen
+              ? undefined
+              : {
+                  kind: 'confirm',
+                  label: tTick('mobile.tick.save'),
+                  onPress: save,
+                  loading: updateTick.isPending,
+                  disabled: isMutating,
+                  prominent: true,
+                }
+          }
           error={lastError}
           reserveErrorSlot
         />
