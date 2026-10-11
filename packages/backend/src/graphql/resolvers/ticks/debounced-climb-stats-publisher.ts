@@ -20,6 +20,17 @@ const REDIS_KEY_PREFIX = 'boardsesh:debounce:climb-stats:';
  * Keyed by `${boardType}|${climbUuid}|${angle}`.
  */
 const pending = new Map<string, ReturnType<typeof setTimeout>>();
+const inFlight = new Set<Promise<void>>();
+
+/** Cancel queued callbacks and await running work before resetting test fixtures. */
+export async function resetClimbStatsPublisherForTests(): Promise<void> {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('Climb stats publisher reset is available only in tests');
+  }
+  for (const timer of pending.values()) clearTimeout(timer);
+  pending.clear();
+  await Promise.allSettled(inFlight);
+}
 
 function buildKey(boardType: string, climbUuid: string, angle: number): string {
   return `${boardType}|${climbUuid}|${angle}`;
@@ -74,104 +85,116 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
 
   pending.set(
     key,
-    setTimeout(async () => {
+    setTimeout(() => {
       pending.delete(key);
-      logger.info(`[debouncedClimbStats] firing ${key}`);
+      const recomputeTask = (async () => {
+        logger.info(`[debouncedClimbStats] firing ${key}`);
 
-      // Best-effort multi-instance dedup: if we can confirm via Redis that
-      // we still own the latest nonce, clean up the key. If GET throws, the
-      // nonce doesn't match (another instance won OR our SET never landed),
-      // or Redis went away — fall through to the recompute anyway.
-      // recomputeClimbStats is idempotent, so duplicate runs across
-      // instances are harmless; a silent drop is not.
-      if (redisClientManager.isRedisConnected()) {
-        try {
-          const { publisher } = redisClientManager.getClients();
-          const current = await publisher.get(redisKey);
-          if (current === nonce) {
-            await publisher.del(redisKey);
+        // Best-effort multi-instance dedup: if we can confirm via Redis that
+        // we still own the latest nonce, clean up the key. If GET throws, the
+        // nonce doesn't match (another instance won OR our SET never landed),
+        // or Redis went away — fall through to the recompute anyway.
+        // recomputeClimbStats is idempotent, so duplicate runs across
+        // instances are harmless; a silent drop is not.
+        if (redisClientManager.isRedisConnected()) {
+          try {
+            const { publisher } = redisClientManager.getClients();
+            const current = await publisher.get(redisKey);
+            if (current === nonce) {
+              await publisher.del(redisKey);
+            }
+          } catch (err) {
+            logger.error(`[debouncedClimbStats] Redis GET failed for ${key}, recomputing anyway:`, err);
           }
-        } catch (err) {
-          logger.error(`[debouncedClimbStats] Redis GET failed for ${key}, recomputing anyway:`, err);
         }
-      }
 
-      try {
-        await recomputeClimbStats(boardType, climbUuid, angle);
-      } catch (error) {
-        logger.error(`[debouncedClimbStats] Failed to recompute stats for ${key}:`, error);
-        return;
-      }
-
-      // Read the COMPLETE canonical row from the primary. The mutation and
-      // recompute have just committed, so a replica read here could publish an
-      // older count/revision and prematurely erase the optimistic floor.
-      // Duplicate recomputes are deliberately allowed by the fail-open Redis
-      // gate above; unchanged rows retain sync_seq and clients reject duplicate
-      // revisions with BigInt comparison.
-      try {
-        const [row] = await db
-          .select({
-            layoutId: dbSchema.boardClimbs.layoutId,
-            ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
-            qualityAverage: dbSchema.boardClimbStats.qualityAverage,
-            difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
-            displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
-            faUsername: privateSafeFirstAscentName(
-              {
-                boardType: dbSchema.boardClimbStats.boardType,
-                climbUuid: dbSchema.boardClimbStats.climbUuid,
-                angle: dbSchema.boardClimbStats.angle,
-                username: dbSchema.boardClimbStats.faUsername,
-              },
-              null,
-            ),
-            faAt: dbSchema.boardClimbStats.faAt,
-            // Preserve the bigint exactly across the JS boundary.
-            syncSeq: sql<string>`${dbSchema.boardClimbStats.syncSeq}::text`,
-          })
-          .from(dbSchema.boardClimbStats)
-          .innerJoin(
-            dbSchema.boardClimbs,
-            and(
-              eq(dbSchema.boardClimbs.boardType, dbSchema.boardClimbStats.boardType),
-              eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbStats.climbUuid),
-            ),
-          )
-          .where(
-            and(
-              eq(dbSchema.boardClimbStats.boardType, boardType),
-              eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
-              eq(dbSchema.boardClimbStats.angle, angle),
-            ),
-          )
-          .limit(1);
-
-        if (!row) {
-          logger.debug(`[debouncedClimbStats] No canonical row/layout for ${key}; skipping publish`);
+        try {
+          await recomputeClimbStats(boardType, climbUuid, angle);
+        } catch (error) {
+          logger.error(`[debouncedClimbStats] Failed to recompute stats for ${key}:`, error);
           return;
         }
-        const difficulty =
-          row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardType);
-        pubsub.publishClimbStatsEvent(`${boardType}:${row.layoutId}`, {
-          boardType,
-          layoutId: row.layoutId,
-          climbUuid,
-          angle,
-          ascensionistCount: row.ascensionistCount ?? 0,
-          qualityAverage: row.qualityAverage,
-          difficultyAverage: row.difficultyAverage,
-          displayDifficulty: row.displayDifficulty,
-          difficulty,
-          faUsername: row.faUsername,
-          faAt: row.faAt,
-          syncSeq: row.syncSeq,
-        });
-      } catch (error) {
-        // Recompute remains successful if event enrichment/fan-out fails. The
-        // client refreshes retained keys on subscription errors/reconnects.
-        logger.error(`[debouncedClimbStats] Failed to publish canonical stats for ${key}:`, error);
-      }
+
+        // Read the COMPLETE canonical row from the primary. The mutation and
+        // recompute have just committed, so a replica read here could publish an
+        // older count/revision and prematurely erase the optimistic floor.
+        // Duplicate recomputes are deliberately allowed by the fail-open Redis
+        // gate above; unchanged rows retain sync_seq and clients reject duplicate
+        // revisions with BigInt comparison.
+        try {
+          const [row] = await db
+            .select({
+              layoutId: dbSchema.boardClimbs.layoutId,
+              ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+              qualityAverage: dbSchema.boardClimbStats.qualityAverage,
+              difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
+              displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
+              faUsername: privateSafeFirstAscentName(
+                {
+                  boardType: dbSchema.boardClimbStats.boardType,
+                  climbUuid: dbSchema.boardClimbStats.climbUuid,
+                  angle: dbSchema.boardClimbStats.angle,
+                  username: dbSchema.boardClimbStats.faUsername,
+                },
+                null,
+              ),
+              faAt: dbSchema.boardClimbStats.faAt,
+              // Preserve the bigint exactly across the JS boundary.
+              syncSeq: sql<string>`${dbSchema.boardClimbStats.syncSeq}::text`,
+            })
+            .from(dbSchema.boardClimbStats)
+            .innerJoin(
+              dbSchema.boardClimbs,
+              and(
+                eq(dbSchema.boardClimbs.boardType, dbSchema.boardClimbStats.boardType),
+                eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbStats.climbUuid),
+              ),
+            )
+            .where(
+              and(
+                eq(dbSchema.boardClimbStats.boardType, boardType),
+                eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
+                eq(dbSchema.boardClimbStats.angle, angle),
+              ),
+            )
+            .limit(1);
+
+          if (!row) {
+            logger.debug(`[debouncedClimbStats] No canonical row/layout for ${key}; skipping publish`);
+            return;
+          }
+          const difficulty =
+            row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardType);
+          pubsub.publishClimbStatsEvent(`${boardType}:${row.layoutId}`, {
+            boardType,
+            layoutId: row.layoutId,
+            climbUuid,
+            angle,
+            ascensionistCount: row.ascensionistCount ?? 0,
+            qualityAverage: row.qualityAverage,
+            difficultyAverage: row.difficultyAverage,
+            displayDifficulty: row.displayDifficulty,
+            difficulty,
+            faUsername: row.faUsername,
+            faAt: row.faAt,
+            syncSeq: row.syncSeq,
+          });
+        } catch (error) {
+          // Recompute remains successful if event enrichment/fan-out fails. The
+          // client refreshes retained keys on subscription errors/reconnects.
+          logger.error(`[debouncedClimbStats] Failed to publish canonical stats for ${key}:`, error);
+        }
+      })();
+      inFlight.add(recomputeTask);
+      void recomputeTask.then(
+        () => {
+          inFlight.delete(recomputeTask);
+        },
+        (error: unknown) => {
+          inFlight.delete(recomputeTask);
+          logger.error(`[debouncedClimbStats] Callback failed for ${key}:`, error);
+        },
+      );
     }, DEBOUNCE_MS),
   );
 }

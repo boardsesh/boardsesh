@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -82,6 +82,7 @@ import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
 import { climbMutations } from '../graphql/resolvers/climbs/mutations';
 import { deleteClimbMutations } from '../graphql/resolvers/climbs/delete-climb';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { resetClimbStatsPublisherForTests } from '../graphql/resolvers/ticks/debounced-climb-stats-publisher';
 import { favoriteMutations } from '../graphql/resolvers/favorites/mutations';
 import { playlistMutations } from '../graphql/resolvers/playlists/mutations';
 import { socialCommentMutations } from '../graphql/resolvers/social/comments';
@@ -402,6 +403,7 @@ async function referenceCounts(climbUuid: string, ids: Awaited<ReturnType<typeof
 }
 
 beforeEach(async () => {
+  await resetClimbStatsPublisherForTests();
   await db.execute(sql`
     TRUNCATE TABLE "spray_walls", "user_boards", "board_climbs", "board_climb_holds", "board_climb_stats",
                    "board_climb_stats_history", "board_layouts", "board_product_sizes",
@@ -424,6 +426,10 @@ beforeEach(async () => {
     ON CONFLICT (board_type, difficulty) DO NOTHING
   `);
   reconcileHold.current = null;
+});
+
+afterEach(async () => {
+  await resetClimbStatsPublisherForTests();
 });
 
 describe('deleteClimb: who may delete what', () => {

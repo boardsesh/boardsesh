@@ -122,7 +122,8 @@ const { activityFeedQueries } = await import('../graphql/resolvers/social/activi
 const { sessionFeedQueries } = await import('../graphql/resolvers/social/session-feed');
 const { smartPlaylist } = await import('../graphql/resolvers/playlists/queries/smart-playlists');
 const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
-const { queueClimbStatsRecompute } = await import('../graphql/resolvers/ticks/debounced-climb-stats-publisher');
+const { queueClimbStatsRecompute, resetClimbStatsPublisherForTests } =
+  await import('../graphql/resolvers/ticks/debounced-climb-stats-publisher');
 const { generateSessionSummary } = await import('../graphql/resolvers/sessions/session-summary');
 const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/favorite-climbs-query');
 const { playlistQueries } = await import('../graphql/resolvers/playlists/queries');
@@ -300,6 +301,7 @@ function framesFor(holdIds: number[]): string {
 }
 
 beforeEach(async () => {
+  await resetClimbStatsPublisherForTests();
   // `spray_walls` cascades from `user_boards`, which cascades from `users`; the
   // catalogue rows a wall writes are keyed on a sequence that never rolls back,
   // so they are cleared explicitly rather than left to accumulate.
@@ -360,7 +362,8 @@ beforeEach(async () => {
   vi.mocked(storage.isS3Configured).mockReturnValue(true);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await resetClimbStatsPublisherForTests();
   vi.clearAllMocks();
 });
 

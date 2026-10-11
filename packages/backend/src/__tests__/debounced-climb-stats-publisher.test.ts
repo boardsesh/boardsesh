@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import {
   queueClimbStatsRecompute,
   recomputeClimbStatsNow,
+  resetClimbStatsPublisherForTests,
 } from '../graphql/resolvers/ticks/debounced-climb-stats-publisher';
 import { logger } from '../utils/logger';
 
@@ -78,8 +79,54 @@ describe('queueClimbStatsRecompute', () => {
     ];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await resetClimbStatsPublisherForTests();
     vi.useRealTimers();
+  });
+
+  it('cancels a queued callback before fixture cleanup', async () => {
+    queueClimbStatsRecompute('kilter', 'CLIMB-1', 40);
+    await resetClimbStatsPublisherForTests();
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(recomputeClimbStatsMock).not.toHaveBeenCalled();
+    expect(publishStatsMock).not.toHaveBeenCalled();
+  });
+
+  it('waits for a callback already running before fixture cleanup', async () => {
+    let releaseRecompute: () => void = () => undefined;
+    const blockedRecompute = new Promise<void>((resolve) => {
+      releaseRecompute = resolve;
+    });
+    recomputeClimbStatsMock.mockReturnValueOnce(blockedRecompute);
+    mockRedisConnected = false;
+    queueClimbStatsRecompute('kilter', 'CLIMB-1', 40);
+    vi.advanceTimersByTime(2000);
+    expect(recomputeClimbStatsMock).toHaveBeenCalledTimes(1);
+    let resetComplete = false;
+    const reset = resetClimbStatsPublisherForTests().then(() => {
+      resetComplete = true;
+    });
+    await Promise.resolve();
+    expect(resetComplete).toBe(false);
+    releaseRecompute();
+    await reset;
+    expect(resetComplete).toBe(true);
+    expect(publishStatsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles an unexpected callback rejection while draining the test fixture', async () => {
+    queueClimbStatsRecompute('kilter', 'CLIMB-1', 40);
+    const failure = new Error('Synthetic callback failure');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    vi.spyOn(logger, 'info').mockImplementationOnce(() => {
+      throw failure;
+    });
+    vi.advanceTimersByTime(2000);
+    await expect(resetClimbStatsPublisherForTests()).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(`[debouncedClimbStats] Callback failed for ${KEY}:`, failure);
+    await expect(resetClimbStatsPublisherForTests()).resolves.toBeUndefined();
+    expect(recomputeClimbStatsMock).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('runs the recompute after the debounce delay', async () => {
