@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { canAttributeTickToBoard, requiredSetIdsForMoonBoard, type TickClimbIdentity } from '@boardsesh/board-config';
-import { resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
+import { resolveCanonicalClimbUuid, resourceAccessCondition } from '@boardsesh/db/queries';
 import * as schema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -36,11 +36,23 @@ export async function findTickClimb(database: TickBoardDb, boardType: string, cl
   };
 }
 
-export async function tickBoardFitsClimb(database: TickBoardDb, boardId: number, climb: TickClimbIdentity | null) {
+export async function tickBoardFitsClimb(
+  database: TickBoardDb,
+  boardId: number,
+  climb: TickClimbIdentity | null,
+  userId: string,
+  options: { allowUnlistedLink: boolean },
+) {
   const [board] = await database
     .select()
     .from(schema.userBoards)
-    .where(and(eq(schema.userBoards.id, boardId), isNull(schema.userBoards.deletedAt)))
+    .where(
+      and(
+        eq(schema.userBoards.id, boardId),
+        isNull(schema.userBoards.deletedAt),
+        resourceAccessCondition('board', schema.userBoards.uuid, userId, options),
+      ),
+    )
     .limit(1);
   return board && canAttributeTickToBoard(climb, board) ? board : null;
 }
@@ -80,7 +92,7 @@ export const tickBoardQueries = {
             .where(
               and(
                 eq(schema.userBoards.id, tick.boardId),
-                or(eq(schema.userBoards.ownerId, userId), eq(schema.userBoards.isPublic, true)),
+                resourceAccessCondition('board', schema.userBoards.uuid, userId, { allowUnlistedLink: false }),
                 isNull(schema.userBoards.deletedAt),
               ),
             )
@@ -93,7 +105,7 @@ export const tickBoardQueries = {
     const compatibleSizes = climb.compatibleSizeIds ?? [];
     const conditions = and(
       isNull(schema.userBoards.deletedAt),
-      or(eq(schema.userBoards.ownerId, userId), eq(schema.userBoards.isPublic, true)),
+      resourceAccessCondition('board', schema.userBoards.uuid, userId, { allowUnlistedLink: false }),
       listableSprayWallCondition(userId),
       or(
         eq(schema.userBoards.ownerId, userId),

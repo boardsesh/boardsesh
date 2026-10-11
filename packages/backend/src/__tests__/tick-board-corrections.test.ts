@@ -253,6 +253,59 @@ describe('tick board corrections', () => {
       tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, { ...ctx, userId: otherUser }),
     ).rejects.toMatchObject({ extensions: { code: 'TICK_NOT_FOUND' } });
   });
+  it.each(['invite_only', 'only_me', 'revoked'] as const)(
+    'honors current %s board access for options, saves and corrections',
+    async (restriction) => {
+      const [board] = await db
+        .insert(schema.userBoards)
+        .values({
+          uuid: uuidv4(),
+          slug: uuidv4(),
+          ownerId: otherUser,
+          name: 'Restricted compatible wall',
+          isPublic: true,
+          boardType: 'kilter',
+          layoutId: 8,
+          sizeId: 25,
+          setIds: '26,27',
+        })
+        .returning();
+      await db.insert(schema.boardFollows).values({ userId, boardUuid: board.uuid });
+      if (restriction === 'revoked') {
+        await db
+          .insert(schema.resourceGrants)
+          .values({ kind: 'board', resourceId: board.uuid, userId, status: 'revoked' });
+      } else {
+        await db
+          .insert(schema.resourcePrivacy)
+          .values({ kind: 'board', resourceId: board.uuid, ownerId: otherUser, audience: restriction });
+      }
+      try {
+        const newTickUuid = await save(board, { boardUuid: board.uuid });
+        expect((await readTick(newTickUuid)).boardId).toBeNull();
+        const uuid = await save(homewall, { boardUuid: homewall.uuid });
+        // A historic tick still pointing at the now-restricted wall does not
+        // grant the tick owner permission to read that wall's name/config.
+        await db.update(schema.boardseshTicks).set({ boardId: board.id }).where(eq(schema.boardseshTicks.uuid, uuid));
+        const options = await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, ctx);
+        expect(options.currentBoard).toBeNull();
+        expect(options.boards.some((choice) => choice.uuid === board.uuid)).toBe(false);
+        await expect(
+          tickMutations.updateTick(
+            undefined,
+            { uuid, input: { boardUuid: board.uuid, comment: 'Rejected edit' } },
+            ctx,
+          ),
+        ).rejects.toMatchObject({ extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
+        expect((await readTick(uuid)).comment).toBe('');
+      } finally {
+        await db.delete(schema.resourcePrivacy).where(eq(schema.resourcePrivacy.resourceId, board.uuid));
+        await db.delete(schema.resourceGrants).where(eq(schema.resourceGrants.resourceId, board.uuid));
+        await db.delete(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
+      }
+    },
+  );
+
   it('pages saved and recent compatible boards, excluding private and unrelated boards', async () => {
     const createBoard = async (name: string, isPublic = true) => {
       const [board] = await db

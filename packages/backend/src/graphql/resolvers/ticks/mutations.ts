@@ -1,5 +1,5 @@
 import { pubsub } from '../../../pubsub/index';
-import { setContentPrivacy, betaPrivacyEntityId } from '../../../services/privacy';
+import { setContentPrivacy, betaPrivacyEntityId, resourceAccessCondition } from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm/alias';
@@ -893,9 +893,15 @@ async function lockUpdateTickMutationSurface(
       : await tx
           .select()
           .from(dbSchema.userBoards)
-          .where(and(eq(dbSchema.userBoards.id, canonicalBoardId), listableSprayWallCondition(userId)))
+          .where(
+            and(
+              eq(dbSchema.userBoards.id, canonicalBoardId),
+              listableSprayWallCondition(userId),
+              resourceAccessCondition('board', dbSchema.userBoards.uuid, userId),
+            ),
+          )
           .limit(1);
-  if (!selectedBoard || (!selectedBoard.isPublic && selectedBoard.ownerId !== userId)) {
+  if (!selectedBoard) {
     throw new GraphQLError('Board is no longer available', { extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
   }
   return { snapshotTicks, selectedBoard };
@@ -1397,7 +1403,10 @@ export const tickMutations = {
         // its network/catalog work does not lengthen the row-lock hold time.
         const canonicalBoardId = boardId === null ? null : await lockCanonicalTickBoardId(tx, boardId);
         const lockedBoardId =
-          canonicalBoardId != null && (await tickBoardFitsClimb(tx, canonicalBoardId, catalogClimb))
+          canonicalBoardId != null &&
+          (await tickBoardFitsClimb(tx, canonicalBoardId, catalogClimb, userId, {
+            allowUnlistedLink: boardAssociationSource === 'boardUuid',
+          }))
             ? canonicalBoardId
             : null;
         const boardAssociationBecameUnavailable = boardId !== null && lockedBoardId === null;
@@ -1757,24 +1766,24 @@ export const tickMutations = {
           updates.attemptCount = 1;
         }
 
-      const updatedTicks = await tx
-        .update(dbSchema.boardseshTicks)
-        .set(updates)
-        .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
-        .returning();
-      const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
-      if (validatedInput.privacy) {
-        for (const affectedUuid of affectedUuids) {
-          await setContentPrivacy(
-            tx,
-            userId,
-            'tick',
-            affectedUuid,
-            validatedInput.privacy.audience,
-            validatedInput.privacy.privacyRevision,
-          );
+        const updatedTicks = await tx
+          .update(dbSchema.boardseshTicks)
+          .set(updates)
+          .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
+          .returning();
+        const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
+        if (validatedInput.privacy) {
+          for (const affectedUuid of affectedUuids) {
+            await setContentPrivacy(
+              tx,
+              userId,
+              'tick',
+              affectedUuid,
+              validatedInput.privacy.audience,
+              validatedInput.privacy.privacyRevision,
+            );
+          }
         }
-      }
 
         // Keep linked beta videos at the angle of the edited ascent.
         let movedBetaLinks = false;
@@ -1810,16 +1819,16 @@ export const tickMutations = {
           await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
         }
 
-      // An edit can move climbed_at, which moves the tick between runs — so both the
-      // window it left and the one it joined need redrawing. Reconciling the old
-      // timestamp first leaves the tick's new home authoritative.
-      for (const climbedAt of new Set([
-        ...existingTicks.map((tick) => tick.climbedAt),
-        ...updatedTicks.map((tick) => tick.climbedAt),
-      ])) {
-        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
-        inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
-      }
+        // An edit can move climbed_at, which moves the tick between runs — so both the
+        // window it left and the one it joined need redrawing. Reconciling the old
+        // timestamp first leaves the tick's new home authoritative.
+        for (const climbedAt of new Set([
+          ...existingTicks.map((tick) => tick.climbedAt),
+          ...updatedTicks.map((tick) => tick.climbedAt),
+        ])) {
+          const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+          inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
+        }
 
         const [attributedBoard] =
           updatedTarget.boardId == null
