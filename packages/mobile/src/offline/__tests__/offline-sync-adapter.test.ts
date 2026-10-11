@@ -31,6 +31,8 @@ vi.mock('@tanstack/react-query', () => ({
 type AppStateListener = (state: string) => void;
 let appStateListener: AppStateListener | null = null;
 const appStateRemove = vi.fn();
+// iOS unless a case says otherwise: `suspendedMs` is sent there and nowhere else.
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
 vi.mock('react-native', () => ({
   AppState: {
     addEventListener: (_event: string, listener: AppStateListener) => {
@@ -38,6 +40,7 @@ vi.mock('react-native', () => ({
       return { remove: appStateRemove };
     },
   },
+  Platform: platform,
 }));
 
 type NetInfoState = {
@@ -67,12 +70,17 @@ const startSyncSchedulerCore = vi.fn((..._args: unknown[]) => vi.fn());
 const triggerSyncCore = vi.fn();
 const pullSyncCore = vi.fn(async (..._args: unknown[]) => {});
 const setBackgroundedCore = vi.fn();
+// Which scopes the local database says are fully downloaded (issue #4310's
+// end-of-cycle check). Empty unless a test says otherwise.
+const completedScopeKeys = new Set<string>();
+const isScopeDownloadCompleteCore = vi.fn(async (_db: unknown, scopeKey: string) => completedScopeKeys.has(scopeKey));
 vi.mock('@boardsesh/offline-sync', () => ({
   drainMutationQueue: (...args: unknown[]) => drainMutationQueueCore(...args),
   startSyncScheduler: (...args: unknown[]) => startSyncSchedulerCore(...args),
   triggerSync: (...args: unknown[]) => triggerSyncCore(...args),
   pullSync: (...args: unknown[]) => pullSyncCore(...args),
   setBackgrounded: (...args: unknown[]) => setBackgroundedCore(...args),
+  isScopeDownloadComplete: (db: unknown, scopeKey: string) => isScopeDownloadCompleteCore(db, scopeKey),
 }));
 
 // The connectivity store (issue #4862). The adapter reads its snapshot for the
@@ -129,7 +137,14 @@ const trackMock = vi.fn();
 vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { rememberDownloadTrigger } from '../../settings';
+import { getUserStartedDownloads, rememberDownloadTrigger, setSetting } from '../../settings';
+import {
+  __resetDownloadKeepAwakeForTests,
+  getPendingUserStartedDownloads,
+  isDownloadKeepAwakeActive,
+  markUserStartedDownload,
+  subscribeDownloadKeepAwake,
+} from '../download-keep-awake-store';
 import { __resetSyncStatusForTests, setSyncProgress } from '../../sync';
 import {
   drainMutationQueue,
@@ -155,6 +170,7 @@ import type {
   SchedulerOptions,
   SnapshotSource,
   SyncOptions,
+  SyncProgress,
 } from '@boardsesh/offline-sync';
 
 // The engine package is vi.mock'd above, so its `emptyScopeDownloadPhases`
@@ -183,12 +199,21 @@ const NO_PHASE_PROPS = {
   gradesPullMs: 0,
 };
 
+// What a download event carries on iOS when nothing held the screen and the JS
+// thread never stopped (issue #4310): present and false/zero, never absent.
+const NO_KEEP_AWAKE_PROPS = { keepAwake: false, suspendedMs: 0 };
+
 const db = {} as OfflineDatabase;
 const invalidateQueries = vi.fn();
 const queryClient = { invalidateQueries } as unknown as import('@tanstack/react-query').QueryClient;
 const graphqlFetch = vi.fn() as unknown as import('@boardsesh/offline-sync').GraphQLFetch;
 
 beforeEach(() => {
+  // Before the mocks are cleared: dropping its app-state subscription calls the
+  // mocked `remove`, which the trigger-binding cases count.
+  __resetDownloadKeepAwakeForTests();
+  completedScopeKeys.clear();
+  platform.OS = 'ios';
   vi.clearAllMocks();
   __resetSyncStatusForTests();
   __resetCycleErrorDedupeForTests();
@@ -747,6 +772,7 @@ describe('snapshot-bootstrap bindings', () => {
       statsPullMs: 0,
       gradesPullMs: 134,
       gradesRows: 500,
+      ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
     });
   });
@@ -845,6 +871,7 @@ describe('snapshot-bootstrap bindings', () => {
       method: 'paged',
       durationMs: 500,
       ...NO_PHASE_PROPS,
+      ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
     });
   });
@@ -1135,6 +1162,7 @@ describe('snapshot-bootstrap bindings', () => {
       reason: 'network',
       aborted: false,
       errorMessage: 'The request timed out.',
+      ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
     });
     expect(reportHandledError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ level: 'warning' }));
@@ -1173,6 +1201,7 @@ describe('snapshot-bootstrap bindings', () => {
       reason: 'aborted-wipe',
       aborted: true,
       errorMessage: 'null',
+      ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
     });
     expect(reportHandledError).not.toHaveBeenCalled();
@@ -1243,6 +1272,7 @@ describe('snapshot-bootstrap bindings', () => {
       downloadMs: 800,
       importMs: 150,
       ...NO_PHASE_PROPS,
+      ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
     });
 
@@ -1260,6 +1290,7 @@ describe('snapshot-bootstrap bindings', () => {
       method: 'snapshot',
       durationMs: 2000,
       ...NO_PHASE_PROPS,
+      ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
     });
   });
@@ -1287,6 +1318,7 @@ describe('snapshot-bootstrap bindings', () => {
       method: 'paged',
       durationMs: 500,
       ...NO_PHASE_PROPS,
+      ...NO_KEEP_AWAKE_PROPS,
       offlineEngineEnabled: false,
     });
 
@@ -1296,6 +1328,236 @@ describe('snapshot-bootstrap bindings', () => {
       SHARED_EVENTS.OfflineBoardDownloadStarted,
       expect.objectContaining({ scopeKey: 'kilter:1:5', pathIntent: 'paged' }),
     );
+  });
+});
+
+describe('download keep-awake bindings (issue #4310)', () => {
+  const KILTER = 'kilter:1:10';
+  const KILTER_SCOPE = { boardType: 'kilter', layoutId: 1, sizeId: 10 };
+  const downloadFrame: SyncProgress = {
+    phase: 'bootstrap',
+    currentTable: KILTER,
+    documentsProcessed: 0,
+    snapshot: { scopeKey: KILTER, stage: 'download', fraction: 0.5, wireBytes: 110_000_000, wireBytesDone: 55_000_000 },
+  };
+  const idleFrame: SyncProgress = { phase: 'idle', currentTable: null, documentsProcessed: 0 };
+
+  /** A person tapped Download for Kilter, and the root component is mounted. */
+  function startKilterDownload(): void {
+    setSetting('syncEnabledBoards', [KILTER]);
+    markUserStartedDownload(KILTER);
+    subscribeDownloadKeepAwake(() => {});
+  }
+
+  function schedulerOptions(): SchedulerOptions {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [KILTER],
+      async () => {},
+    );
+    return startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+  }
+
+  it('feeds the scheduler’s progress frames to the keep-awake store, with no caller sink needed', () => {
+    startKilterDownload();
+    const options = schedulerOptions();
+
+    options.onProgress?.(downloadFrame);
+
+    expect(isDownloadKeepAwakeActive()).toBe(true);
+  });
+
+  it('feeds an ad-hoc download kick’s frames to it too', () => {
+    startKilterDownload();
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [KILTER],
+      async () => {},
+    );
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+
+    options.onProgress?.(downloadFrame);
+
+    expect(isDownloadKeepAwakeActive()).toBe(true);
+  });
+
+  it('never lets the keep-awake tracking fail a sync cycle', () => {
+    const onProgress = vi.fn();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [KILTER],
+      async () => {},
+      { onProgress },
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    // A frame the store cannot read stands in for any throw from inside it.
+    const unreadableFrame = null as unknown as SyncProgress;
+
+    expect(() => options.onProgress?.(unreadableFrame)).not.toThrow();
+    expect(onProgress).toHaveBeenCalledWith(unreadableFrame);
+  });
+
+  it('reports keepAwake on Completed, then lets the screen lock again', () => {
+    startKilterDownload();
+    const options = schedulerOptions();
+    options.onProgress?.(downloadFrame);
+
+    options.onScopeDownloadComplete?.({ scopeKey: KILTER, method: 'snapshot', durationMs: 20_000, phases: NO_PHASES });
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadCompleted,
+      expect.objectContaining({ scopeKey: KILTER, keepAwake: true, suspendedMs: 0 }),
+    );
+    expect(isDownloadKeepAwakeActive()).toBe(false);
+    expect(getUserStartedDownloads()).toEqual([]);
+  });
+
+  it('reports how long the JS thread was stopped during the download', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-10-11T12:00:00.000Z'));
+      startKilterDownload();
+      const options = schedulerOptions();
+      options.onProgress?.(downloadFrame);
+      // The phone locked for eight minutes mid-transfer: no timer ran.
+      vi.setSystemTime(Date.now() + 480_000);
+
+      options.onScopeDownloadComplete?.({
+        scopeKey: KILTER,
+        method: 'snapshot',
+        durationMs: 500_000,
+        phases: NO_PHASES,
+      });
+
+      expect(trackMock).toHaveBeenCalledWith(
+        SHARED_EVENTS.OfflineBoardDownloadCompleted,
+        expect.objectContaining({ keepAwake: true, suspendedMs: 480_000 }),
+      );
+    } finally {
+      // The cycle never ended here, so its heartbeat is still ticking.
+      __resetDownloadKeepAwakeForTests();
+      vi.useRealTimers();
+    }
+  });
+
+  it('carries keepAwake on a failure that leaves the download pending', () => {
+    startKilterDownload();
+    const options = schedulerOptions();
+    options.onProgress?.(downloadFrame);
+
+    options.onSnapshotBootstrapError?.({
+      scopeKey: KILTER,
+      stage: 'download',
+      attempt: 0,
+      cause: null,
+      expected: true,
+      reason: 'aborted-background',
+      aborted: true,
+    });
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineBoardDownloadFailed,
+      expect.objectContaining({ reason: 'aborted-background', keepAwake: true, suspendedMs: 0 }),
+    );
+    // Still a download the person is waiting on.
+    expect(getPendingUserStartedDownloads()).toEqual([KILTER]);
+  });
+
+  // React Native on Android stops JS timers when the activity pauses while JS
+  // keeps running, so a heartbeat gap there is not suspension. Absent, not 0:
+  // a zero would read as a measured clean run.
+  it.each(['android', 'web'])('sends suspendedMs on iOS only: %s gets keepAwake alone', (os) => {
+    platform.OS = os;
+    startKilterDownload();
+    const options = schedulerOptions();
+    options.onProgress?.(downloadFrame);
+
+    options.onSnapshotBootstrapError?.({
+      scopeKey: KILTER,
+      stage: 'download',
+      attempt: 1,
+      cause: new Error('The request timed out.'),
+      expected: true,
+      reason: 'network',
+      aborted: false,
+    });
+    options.onScopeDownloadComplete?.({ scopeKey: KILTER, method: 'snapshot', durationMs: 20_000, phases: NO_PHASES });
+
+    const downloadEvents = trackMock.mock.calls.filter(
+      ([eventName]) =>
+        eventName === SHARED_EVENTS.OfflineBoardDownloadFailed ||
+        eventName === SHARED_EVENTS.OfflineBoardDownloadCompleted,
+    );
+    expect(downloadEvents).toHaveLength(2);
+    for (const [, properties] of downloadEvents) {
+      expect((properties as Record<string, unknown>).keepAwake).toBe(true);
+      expect(Object.hasOwn(properties as Record<string, unknown>, 'suspendedMs')).toBe(false);
+    }
+  });
+
+  // No attempt ran, and a removal or toggle-off has already dropped the board's
+  // record by the time it reports, so a value here would read false for a
+  // download that did hold the screen.
+  it.each([
+    ['a removal', () => reportScopeDownloadAbandoned({ scopeKey: KILTER, scope: KILTER_SCOPE })],
+    ['a sign-out', () => reportScopeDownloadAbandonedOnSignOut({ scopeKey: KILTER })],
+    ['a toggle-off', () => reportScopeDownloadAbandonedOnDisable({ scopeKey: KILTER })],
+  ])('sends neither keep-awake prop on a download abandoned by %s', (_label, reportAbandoned) => {
+    startKilterDownload();
+    schedulerOptions().onProgress?.(downloadFrame);
+
+    reportAbandoned();
+
+    const [, properties] = trackMock.mock.calls.find(
+      ([eventName]) => eventName === SHARED_EVENTS.OfflineBoardDownloadFailed,
+    ) as [string, Record<string, unknown>];
+    expect(Object.hasOwn(properties, 'keepAwake')).toBe(false);
+    expect(Object.hasOwn(properties, 'suspendedMs')).toBe(false);
+  });
+
+  it('forgets a user-started download whose board is already complete when a cycle ends', async () => {
+    startKilterDownload();
+    completedScopeKeys.add(KILTER);
+    const options = schedulerOptions();
+
+    options.onProgress?.(idleFrame);
+    await vi.waitFor(() => expect(getPendingUserStartedDownloads()).toEqual([]));
+
+    expect(isScopeDownloadCompleteCore).toHaveBeenCalledWith(db, KILTER);
+    expect(getUserStartedDownloads()).toEqual([]);
+  });
+
+  it('keeps a user-started download that is still incomplete when a cycle ends', async () => {
+    startKilterDownload();
+    const options = schedulerOptions();
+
+    options.onProgress?.(idleFrame);
+    await vi.waitFor(() => expect(isScopeDownloadCompleteCore).toHaveBeenCalledTimes(1));
+
+    expect(getPendingUserStartedDownloads()).toEqual([KILTER]);
+  });
+
+  it('reads no database at the end of a cycle with nothing pending', () => {
+    schedulerOptions().onProgress?.(idleFrame);
+
+    expect(isScopeDownloadCompleteCore).not.toHaveBeenCalled();
+  });
+
+  it('keeps a pending download when the completion read fails', async () => {
+    startKilterDownload();
+    isScopeDownloadCompleteCore.mockRejectedValueOnce(new Error('database is locked'));
+    const options = schedulerOptions();
+
+    options.onProgress?.(idleFrame);
+    await vi.waitFor(() => expect(isScopeDownloadCompleteCore).toHaveBeenCalledTimes(1));
+
+    expect(getPendingUserStartedDownloads()).toEqual([KILTER]);
   });
 });
 
@@ -1359,7 +1621,11 @@ describe('triggerSync / pullSync bindings', () => {
     );
 
     const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
-    expect(options.onProgress).toBe(onProgress);
+    // Wrapped, not handed over: the keep-awake store listens in (issue #4310).
+    const frame: SyncProgress = { phase: 'deletions', currentTable: null, documentsProcessed: 3 };
+    options.onProgress?.(frame);
+    expect(onProgress).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith(frame);
     expect(options.onSchemaDrift).toBeTypeOf('function');
     expect(options.onCycleError).toBeTypeOf('function');
   });

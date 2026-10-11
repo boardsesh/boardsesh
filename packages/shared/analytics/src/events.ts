@@ -856,7 +856,7 @@ export const SHARED_EVENTS = {
   // statsPullMs, gradesPullMs, gradesRows?, gradesArtifactRows?,
   // importVerifyMs?, importReconcileMs?, importRowsMs?, importLockMaxMs?,
   // importBatches?, gradesDownloadMs?, gradesVerifyMs?, gradesLockMs?,
-  // offlineEngineEnabled }.
+  // keepAwake, suspendedMs? (iOS only), offlineEngineEnabled }.
   // Every optional prop is ABSENT rather than faked when this cycle cannot vouch
   // for it — most often because the completing delta pull landed in a later cycle
   // than the import. That biases those props toward the healthy population;
@@ -906,13 +906,47 @@ export const SHARED_EVENTS = {
   //    grades artifact, whose transfer and (still unbatched) exclusive
   //    transaction were invisible to every phase field — most of the ~11s p50
   //    gap between `durationMs` and the sum of the phases.
+  //
+  // KEEP-AWAKE AND SUSPENSION (issue #4310), also on `Offline Board Download
+  // Failed` for every reason except the three 'abandoned-*' ones:
+  //  - `keepAwake`: the app held the screen on for this download at some point
+  //    since it was started or since the app last launched. Only a download a
+  //    person started (a tap or a retry, not a setting acting on its own) can
+  //    be true. DO NOT compare `true` against `false` to measure the effect:
+  //    `false` is not a control group. Once this ships it is mostly the
+  //    automatic downloads (`trigger` 'auto-download-all' | 'adopt-auto' |
+  //    'owned-wall'), which differ in board and size. The honest comparison is
+  //    before and after this change, on the tapped triggers.
+  //  - `suspendedMs`: iOS ONLY, absent on every other platform. The sum of the
+  //    gaps over 3 s in a 1 s JS timer while this board was the one
+  //    downloading. On iOS a gap that long means the process was suspended.
+  //    On Android React Native stops JS timers when the activity pauses while
+  //    JS keeps running, so the same gap there is ordinary work and is not
+  //    sent. It covers THIS CYCLE only, the same as the phase timings: a
+  //    transfer the phone locked on reports the lock inside `downloadMs`, and
+  //    `suspendedMs` is how much of it that was. Filter on `suspendedMs = 0`
+  //    for clean-run phase percentiles. Subtracting it gives a LOWER bound,
+  //    not the real phase time: iOS keeps a transfer going while the app is
+  //    suspended, so some of the gap was work. It does not cover `durationMs`,
+  //    which also counts the time between cycles and across app launches.
+  //    Each event reports the suspension since the board's previous event in
+  //    the cycle, so summing it over one cycle's events never counts a gap
+  //    twice. Expect 0 on a paged crawl even when the phone was locked:
+  //    backgrounding interrupts that cycle within a second, before the process
+  //    is suspended (on a simulator, 17.9 s and 38.8 s in the background both
+  //    reported 0). It can only be non-zero for work that keeps its cycle
+  //    alive through a suspension, such as the snapshot import.
   // Mobile-only today (the engine is shared, so a future web offline consumer
   // would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
   // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' |
   // 'board-removed' | 'abandoned', attempt, expected, reason, aborted,
-  // errorMessage, offlineEngineEnabled }.
+  // errorMessage, keepAwake?, suspendedMs? (iOS only), offlineEngineEnabled }.
+  // `keepAwake` and `suspendedMs` are defined on the Completed event above.
+  // Neither is sent on the three 'abandoned-*' reasons, where no attempt ran.
+  // On a `reason: 'aborted-background'` report, `suspendedMs` is how long the
+  // phone was away before the transfer was found dead.
   // `expected: true` is a transport/reachability failure — a phone in a tunnel,
   // not a defect — and is the normal case, not an alarm. These previously went
   // only to Sentry, where they could not be joined to the funnel.

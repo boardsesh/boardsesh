@@ -264,6 +264,38 @@ export function forgetDownloadAllTap(): void {
   setSetting(DOWNLOAD_ALL_TAP_SETTING_KEY, false);
 }
 
+// --- Downloads a person started (issue #4310) -----------------------------------
+
+const USER_STARTED_SETTING_KEY = 'offlineUserStartedDownloads';
+
+/**
+ * Scope keys of the downloads a person started that have not finished. A value
+ * written by a build with a different shape reads as empty, so it can never
+ * hold the screen awake for a board nobody asked for.
+ */
+export function getUserStartedDownloads(): string[] {
+  const stored: unknown = getSetting(USER_STARTED_SETTING_KEY);
+  if (!Array.isArray(stored)) return [];
+  return stored.filter((scopeKey): scopeKey is string => typeof scopeKey === 'string');
+}
+
+/** Record that a person started or retried `scopeKey`'s download. Writes only on a change. */
+export function rememberUserStartedDownload(scopeKey: string): void {
+  const current = getUserStartedDownloads();
+  if (current.includes(scopeKey)) return;
+  setSetting(USER_STARTED_SETTING_KEY, [...current, scopeKey]);
+}
+
+/** Drop `scopeKey`: its download finished, or its board is no longer downloaded. */
+export function forgetUserStartedDownload(scopeKey: string): void {
+  const current = getUserStartedDownloads();
+  if (!current.includes(scopeKey)) return;
+  setSetting(
+    USER_STARTED_SETTING_KEY,
+    current.filter((storedScopeKey) => storedScopeKey !== scopeKey),
+  );
+}
+
 // --- Spray wall archive state for offline walls ---------------------------------
 
 const SPRAY_ARCHIVE_SETTING_KEY = 'offlineSprayWallArchiveV1';

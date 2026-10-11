@@ -69,6 +69,7 @@ import { toBoardName } from '@boardsesh/board-config';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
 import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProvider';
 import { OfflineSyncBridge, OfflineEngineFlagSync } from '../src/components/offline-sync-bridge';
+import { OfflineDownloadKeepAwake } from '../src/components/offline-download-keep-awake';
 import { OwnedSprayWallsOfflinePin } from '../src/components/owned-spray-walls-offline-pin';
 import { ConnectivityBridge } from '../src/components/connectivity-bridge';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
@@ -1001,6 +1002,10 @@ function RootLayout() {
                                                                         </ThemedNavigation>
                                                                         <PersistentQueueBar />
                                                                         <OfflineSyncBridge />
+                                                                        {/* Holds the screen awake while a board download the
+                                                            climber started is running (#4310). Renders nothing
+                                                            and re-renders only when the lock changes hands. */}
+                                                                        <OfflineDownloadKeepAwake />
                                                                         <OwnedSprayWallsOfflinePin />
                                                                         {/* Rest timer runtime (#5378): renders nothing, and mounts
                                                             its queue/session subscriptions only once the flag is on

@@ -9,6 +9,9 @@
 //                            that is known to be down
 //   - scheduler wake-ups   → AppState 'active' transitions + connectivity edges
 //   - schema-drift + cycle telemetry → Sentry / PostHog / dev console
+//   - download keep-awake  → every progress frame also feeds the store that
+//                            decides whether a user-started download should
+//                            hold the screen on (issue #4310)
 //
 // RULE: mobile code never imports drainMutationQueue / startSyncScheduler /
 // triggerSync / pullSync from '@boardsesh/offline-sync' directly — always from
@@ -18,7 +21,7 @@
 // run a whole pull cycle offline, reporting a snapshot-bootstrap failure per
 // enabled-but-undownloaded board on the way.
 
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { onlineManager, type QueryClient } from '@tanstack/react-query';
 // The adapter is the one sanctioned importer of the raw engine entry points.
@@ -29,6 +32,7 @@ import {
   triggerSync as triggerSyncCore,
   pullSync as pullSyncCore,
   setBackgrounded,
+  isScopeDownloadComplete,
   type DrainOptions,
   type MutationDeadLetterReporter,
   type MutationDeliveryEvent,
@@ -45,6 +49,7 @@ import {
   type ScopeDownloadStartReporter,
   type SchedulerTriggers,
   type SchemaDriftReporter,
+  type SnapshotBootstrapErrorReport,
   type SnapshotBootstrapErrorReporter,
   type SnapshotSource,
   type SyncOptions,
@@ -64,6 +69,12 @@ import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
 import { getSyncStatusSnapshot } from '../sync/sync-status';
+import {
+  clearUserStartedDownload,
+  getPendingUserStartedDownloads,
+  noteDownloadProgress,
+  takeDownloadTelemetry,
+} from './download-keep-awake-store';
 import { createSprayWallDeletedSink, sprayWallPhotoSink } from './spray-photo-sink';
 import { holdIndexSyncOptions } from './hold-index-parser';
 
@@ -176,6 +187,29 @@ const reportSchemaDrift: SchemaDriftReporter = (drift) => {
   });
 };
 
+// The failure reasons that end a download for good, as opposed to one attempt
+// at it. Each fires at most once per `Offline Board Download Started`.
+const ABANDONED_REASONS: readonly SnapshotBootstrapErrorReport['reason'][] = [
+  'abandoned-removed',
+  'abandoned-signed-out',
+  'abandoned-disabled',
+];
+
+/**
+ * The keep-awake props a download event carries (issue #4310), read from the
+ * store and reset there.
+ *
+ * `suspendedMs` is sent on iOS only. It is the sum of the gaps in a JS timer,
+ * and on iOS a gap means the process was suspended. React Native on Android
+ * stops JS timers when the activity pauses while JS keeps running, so the same
+ * gap there is ordinary work: 60 progress frames 3.5 s apart would read as
+ * 210 s of "suspension". Absent is the honest value off iOS.
+ */
+function downloadKeepAwakeProps(scopeKey: string): { keepAwake: boolean; suspendedMs?: number } {
+  const { keepAwake, suspendedMs } = takeDownloadTelemetry(scopeKey);
+  return Platform.OS === 'ios' ? { keepAwake, suspendedMs } : { keepAwake };
+}
+
 // Offline-download telemetry. Both handlers are wired unconditionally (like
 // reportSchemaDrift above). reportSnapshotBootstrapError is inert without a
 // `snapshotSource` (the engine only calls it from the bootstrap phase, which
@@ -207,6 +241,14 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   // `aborted` rides along so a failure-RATE query can exclude the teardowns (a
   // pocketed phone, a board removed elsewhere in the app) that are now reported
   // here for funnel completeness rather than because anything broke.
+  //
+  // The keep-awake props (issue #4310) ride on every report of an attempt, and
+  // `keepAwake` carries forward to the download's next event. The three
+  // `abandoned-*` reports carry neither: no attempt ran, and by the time a
+  // removal or a toggle-off reports, the board has left `syncEnabledBoards`
+  // and the store has dropped its record. A value there would read false for
+  // a download that did hold the screen.
+  const downloadAbandoned = ABANDONED_REASONS.includes(reason);
   track(SHARED_EVENTS.OfflineBoardDownloadFailed, {
     scopeKey,
     stage,
@@ -215,6 +257,7 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
     reason,
     aborted,
     errorMessage: cause instanceof Error ? cause.message : String(cause),
+    ...(downloadAbandoned ? {} : downloadKeepAwakeProps(scopeKey)),
     offlineEngineEnabled: isOfflineEngineEnabled(),
   });
   // A teardown is not a defect and there are as many of them as there are lock
@@ -350,6 +393,10 @@ export const reportScopeDownloadAbandonedOnDisable = ({ scopeKey }: { scopeKey: 
 // their OWN `IS NOT NULL` filter, NOT `importMs` — the grades retrofit path fires
 // them for an already-bootstrapped scope in a cycle with no whole-layout import,
 // which is the still-crawling population of #4719.
+// `keepAwake` (issue #4310) is always present, `suspendedMs` on iOS only.
+// `suspendedMs` covers this cycle only, like the phases, so `suspendedMs = 0`
+// is the filter for clean-run phase numbers; see the store for how a gap is
+// attributed to a board.
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
   scopeKey,
   method,
@@ -389,6 +436,7 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     ...(phases.gradesDownloadMs === undefined ? {} : { gradesDownloadMs: phases.gradesDownloadMs }),
     ...(phases.gradesVerifyMs === undefined ? {} : { gradesVerifyMs: phases.gradesVerifyMs }),
     ...(phases.gradesLockMs === undefined ? {} : { gradesLockMs: phases.gradesLockMs }),
+    ...downloadKeepAwakeProps(scopeKey),
     // Stamped so the funnel stays readable once #4312 bakes the flag on: the
     // engine gate, not the raw flag value.
     offlineEngineEnabled: isOfflineEngineEnabled(),
@@ -433,6 +481,9 @@ function combinedScopeDownloadCompleteReporter(
 ): ScopeDownloadCompleteReporter {
   return (info) => {
     reportScopeDownloadComplete(info);
+    // After the event has read its telemetry: the download is done, so the
+    // screen lock goes back and the store forgets the board.
+    clearUserStartedDownload(info.scopeKey);
     if (queryClient) {
       for (const queryKey of DOWNLOAD_STATE_QUERY_KEYS) {
         void queryClient.invalidateQueries({ queryKey });
@@ -725,6 +776,42 @@ export function drainMutationQueue(
   });
 }
 
+/**
+ * A user-started download whose board is already complete on disk has nothing
+ * left to hold the screen on for. `Offline Board Download Completed` clears the
+ * usual case; this catches the ones that event never fires for: a board turned
+ * off and on again with its rows kept, and an entry left behind by a crash
+ * between the completion marker and the event. Run at the end of each cycle,
+ * one primary-key read per pending download, which is almost always none.
+ */
+async function forgetCompletedUserStartedDownloads(db: OfflineDatabase): Promise<void> {
+  try {
+    for (const scopeKey of getPendingUserStartedDownloads()) {
+      if (await isScopeDownloadComplete(db, scopeKey)) clearUserStartedDownload(scopeKey);
+    }
+  } catch {
+    // A database that cannot answer now is asked again at the end of the next cycle.
+  }
+}
+
+/**
+ * The scheduler's progress sink, with the keep-awake store listening in.
+ *
+ * The store's half is fenced off: the engine calls this from inside a running
+ * cycle, where a throw would read as a failed pull, and holding the screen on
+ * is never worth failing a sync over.
+ */
+function downloadTrackingProgressSink(db: OfflineDatabase, onProgress: SyncProgressSink | undefined): SyncProgressSink {
+  return (progress) => {
+    try {
+      if (noteDownloadProgress(progress) === 'idle') void forgetCompletedUserStartedDownloads(db);
+    } catch (error) {
+      if (__DEV__) console.warn('[Sync] download keep-awake tracking failed:', error);
+    }
+    onProgress?.(progress);
+  };
+}
+
 // A named bag rather than trailing positionals so callers (and their tests)
 // never depend on argument order for the optional seams.
 export type SyncRunOptions = {
@@ -749,7 +836,7 @@ export function startSyncScheduler(
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
     isOnline,
-    onProgress: options?.onProgress,
+    onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
     snapshotSource: options?.snapshotSource,
@@ -781,7 +868,7 @@ export function triggerSync(
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
     isOnline,
-    onProgress: options?.onProgress,
+    onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
     snapshotSource: options?.snapshotSource,
@@ -803,6 +890,10 @@ export function triggerSync(
   });
 }
 
+// Not wrapped in downloadTrackingProgressSink on purpose. The one caller
+// (refresh-published-spray-climbs.ts) refreshes a wall after a publish; a board
+// download someone tapped starts through triggerSync or the scheduler, and both
+// feed the screen hold.
 export function pullSync(
   db: OfflineDatabase,
   queryClient: QueryClient,

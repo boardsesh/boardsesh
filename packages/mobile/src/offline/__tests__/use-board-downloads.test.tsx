@@ -19,8 +19,10 @@ const spies = vi.hoisted(() => ({
   drainMutationQueue: vi.fn(),
   graphqlRequest: vi.fn(),
   hasUsableInternetConnection: vi.fn(),
+  markUserStartedDownload: vi.fn(),
   rememberOfflineBoards: vi.fn(),
   rememberDownloadTrigger: vi.fn(),
+  restoreBootstrapRetryBudget: vi.fn(),
   setOfflineBoardEnabled: vi.fn(),
   track: vi.fn(),
   triggerSync: vi.fn(),
@@ -32,6 +34,13 @@ vi.mock('../offline-sync-adapter', () => ({
   drainMutationQueue: spies.drainMutationQueue,
   hasUsableInternetConnection: spies.hasUsableInternetConnection,
   triggerSync: spies.triggerSync,
+}));
+// The keep-awake store reads and writes settings of its own; what this suite
+// owns is WHICH enables reach it (issue #4310).
+vi.mock('../download-keep-awake-store', () => ({ markUserStartedDownload: spies.markUserStartedDownload }));
+vi.mock('@boardsesh/offline-sync', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/offline-sync')>()),
+  restoreBootstrapRetryBudget: spies.restoreBootstrapRetryBudget,
 }));
 vi.mock('../use-snapshot-source', () => ({ useSnapshotSource: () => fixtures.snapshotSource }));
 vi.mock('../../lib/graphql/client', () => ({
@@ -215,6 +224,65 @@ describe('useBoardDownloads', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('marking a download as started by a person (issue #4310)', () => {
+    it('marks each scope once for a tap, after the scope is enabled', () => {
+      const boards = [makeBoard('garage', 'kilter', 1, 10), makeBoard('gym', 'kilter', 1, 10)];
+      const { result } = renderHook(() => useBoardDownloads());
+
+      result.current.enableBoardsOffline(boards, { trigger: 'toggle', source: 'manage' });
+
+      expect(spies.markUserStartedDownload).toHaveBeenCalledTimes(1);
+      expect(spies.markUserStartedDownload).toHaveBeenCalledWith('kilter:1:10');
+      // The store drops a mark for a board that is not enabled yet.
+      expect(spies.setOfflineBoardEnabled.mock.invocationCallOrder[0]).toBeLessThan(
+        spies.markUserStartedDownload.mock.invocationCallOrder[0] ?? 0,
+      );
+    });
+
+    it('marks a tap from a surface that names no trigger', () => {
+      const { result } = renderHook(() => useBoardDownloads());
+
+      result.current.enableBoardsOffline(makeBoard('garage', 'kilter', 1, 10));
+
+      expect(spies.markUserStartedDownload).toHaveBeenCalledWith('kilter:1:10');
+    });
+
+    it('marks a board armed with no signal, so its later download still counts', async () => {
+      const { result } = renderHook(() => useBoardDownloads());
+
+      result.current.armBoardsOffline(makeBoard('garage', 'kilter', 1, 10), { trigger: 'similar_climbs' });
+      await act(async () => Promise.resolve());
+
+      expect(spies.markUserStartedDownload).toHaveBeenCalledWith('kilter:1:10');
+    });
+
+    it.each(['auto-download-all', 'adopt-auto', 'owned-wall'] as const)(
+      'does not mark an enable the app made by itself (%s)',
+      (trigger) => {
+        const { result } = renderHook(() => useBoardDownloads());
+
+        result.current.enableBoardsOffline(makeBoard('garage', 'kilter', 1, 10), { trigger });
+
+        expect(spies.setOfflineBoardEnabled).toHaveBeenCalledTimes(1);
+        expect(spies.markUserStartedDownload).not.toHaveBeenCalled();
+      },
+    );
+
+    it('marks a retry before it kicks the cycle', async () => {
+      spies.restoreBootstrapRetryBudget.mockResolvedValue(undefined);
+      const { result } = renderHook(() => useBoardDownloads());
+
+      await act(async () => result.current.retryFastDownload(makeBoard('garage', 'kilter', 1, 10)));
+
+      expect(spies.restoreBootstrapRetryBudget).toHaveBeenCalledWith(fixtures.database, 'kilter:1:10');
+      expect(spies.markUserStartedDownload).toHaveBeenCalledWith('kilter:1:10');
+      expect(spies.triggerSync).toHaveBeenCalledTimes(1);
+      expect(spies.markUserStartedDownload.mock.invocationCallOrder[0]).toBeLessThan(
+        spies.triggerSync.mock.invocationCallOrder[0] ?? 0,
+      );
+    });
   });
 
   it('does nothing for an empty board list on either entry point', () => {
