@@ -6190,7 +6190,7 @@ export type PrivacyContentAudience = {
   isExplicit: Scalars['Boolean']['output'];
 };
 
-export type PrivacyContentType = 'beta' | 'climb' | 'comment' | 'playlist' | 'session' | 'tick';
+export type PrivacyContentType = 'beta' | 'comment' | 'playlist' | 'session' | 'tick';
 
 export type PrivacyFollowRequest = {
   __typename?: 'PrivacyFollowRequest';
@@ -8589,7 +8589,6 @@ export type SaveClimbInput = {
   name: Scalars['String']['input'];
   /** Matching disallowed. Wins over the legacy 'No match' description prefix; null or omitted falls back to that prefix and otherwise means false. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
-  privacy?: InputMaybe<PrivacyPublicationInput>;
   /**
    * Accepted and ignored. Remix after a reset was retired, and no lineage is written.
    * @deprecated Remix after a reset was retired. Accepted and ignored.
@@ -8635,7 +8634,6 @@ export type SaveMoonBoardClimbInput = {
   /** MoonBoard method as a characteristic token. Omit for the 'feet follow hands' default. */
   method?: InputMaybe<MoonBoardMethod>;
   name: Scalars['String']['input'];
-  privacy?: InputMaybe<PrivacyPublicationInput>;
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
 };
@@ -10766,7 +10764,6 @@ export type UpdateClimbInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   /** Matching disallowed. Null or omitted preserves the stored value, so an old client cannot clear it. When set it wins over the legacy 'No match' description prefix in the same call. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
-  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size. */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**

@@ -74,7 +74,6 @@ enum PrivacyContentType {
   tick
   session
   comment
-  climb
   playlist
   beta
 }
@@ -5722,7 +5721,6 @@ type NewClimbCreatedEvent {
 }
 
 input SaveClimbInput {
-  privacy: PrivacyPublicationInput
   boardType: String!
   layoutId: Int!
   name: String!
@@ -5774,7 +5772,6 @@ enum MoonBoardMethod {
 }
 
 input SaveMoonBoardClimbInput {
-  privacy: PrivacyPublicationInput
   boardType: String!
   layoutId: Int!
   name: String!
@@ -5806,7 +5803,6 @@ updated by its setter within 24 hours of its first publish, on every board,
 spray walls included. The edit is made in place; no revision is recorded.
 """
 input UpdateClimbInput {
-  privacy: PrivacyPublicationInput
   uuid: ID!
   boardType: String!
   name: String

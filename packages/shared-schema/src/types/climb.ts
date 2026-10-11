@@ -1,4 +1,3 @@
-import type { PrivacyPublicationInput } from './privacy';
 // Climb and Hold types
 import type { MoonBoardHoldsInput } from './new-climb-feed';
 import type { RenderBoardConfig } from './activity-feed';
@@ -323,7 +322,6 @@ export type ClimbStatsEvent = {
 };
 
 export type SaveClimbInput = {
-  privacy?: PrivacyPublicationInput;
   boardType: string;
   layoutId: number;
   name: string;
@@ -375,7 +373,6 @@ export type SaveClimbInput = {
 };
 
 export type SaveMoonBoardClimbInput = {
-  privacy?: PrivacyPublicationInput;
   boardType: string;
   layoutId: number;
   name: string;
@@ -407,7 +404,6 @@ export type SaveClimbResult = {
  * edit the wall can update it with no time limit. The backend enforces all of it.
  */
 export type UpdateClimbInput = {
-  privacy?: PrivacyPublicationInput;
   uuid: string;
   boardType: string;
   name?: string | null;

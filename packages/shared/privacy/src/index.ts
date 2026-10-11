@@ -3,7 +3,7 @@ export type PrivacyAudience = 'public' | 'followers' | 'only_me';
 export type PrivacyResourceAudience = PrivacyAudience | 'unlisted' | 'invite_only';
 export type PrivacyLocationAudience = PrivacyAudience | 'members';
 export type PrivacyResourceKind = 'board' | 'session';
-export type PrivacyContentType = 'tick' | 'session' | 'comment' | 'climb' | 'playlist' | 'beta';
+export type PrivacyContentType = 'tick' | 'session' | 'comment' | 'playlist' | 'beta';
 export interface PrivacySettings {
   isPrivate: boolean;
   privacyRevision: number;

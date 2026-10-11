@@ -72,7 +72,6 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   }
 
   input SaveClimbInput {
-    privacy: PrivacyPublicationInput
     boardType: String!
     layoutId: Int!
     name: String!
@@ -124,7 +123,6 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   }
 
   input SaveMoonBoardClimbInput {
-    privacy: PrivacyPublicationInput
     boardType: String!
     layoutId: Int!
     name: String!
@@ -156,7 +154,6 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   spray walls included. The edit is made in place; no revision is recorded.
   """
   input UpdateClimbInput {
-    privacy: PrivacyPublicationInput
     uuid: ID!
     boardType: String!
     name: String

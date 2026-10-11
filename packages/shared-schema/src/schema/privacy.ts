@@ -25,7 +25,6 @@ export const privacyTypeDefs = /* GraphQL */ `
     tick
     session
     comment
-    climb
     playlist
     beta
   }
