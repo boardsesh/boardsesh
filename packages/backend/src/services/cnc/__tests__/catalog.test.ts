@@ -27,18 +27,19 @@ function entryFor(sizeId: number) {
 
 describe('CNC catalogue', () => {
   it('sells exactly the four canonical Kilter Homewall sizes', () => {
-    expect(CNC_CATALOG.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25]);
-    expect(CNC_CATALOG.map((entry) => entry.label)).toEqual(['7x10', '10x10', '8x12', '10x12']);
-    expect(CNC_CATALOG.every((entry) => entry.boardName === 'kilter' && entry.layoutId === 8)).toBe(true);
+    const kilterEntries = CNC_CATALOG.filter((entry) => entry.boardName === 'kilter');
+    expect(kilterEntries.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25]);
+    expect(kilterEntries.map((entry) => entry.label)).toEqual(['7x10', '10x10', '8x12', '10x12']);
+    expect(kilterEntries.every((entry) => entry.boardName === 'kilter' && entry.layoutId === 8)).toBe(true);
   });
 
   it('has a version string orders can be pinned to', () => {
-    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.3');
+    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.4');
   });
 
   it('takes its default set ids from board-constants rather than a second hardcoded list', () => {
     for (const entry of CNC_CATALOG) {
-      const expected = getSetsForLayoutAndSize('kilter', 8, entry.sizeId)
+      const expected = getSetsForLayoutAndSize(entry.boardName, entry.layoutId, entry.sizeId)
         .map((set) => set.id)
         .join(',');
       expect(entry.setIds).toBe(expected);
@@ -283,5 +284,40 @@ describe('CNC_CATALOG_VERSION', () => {
 
   it('is a dated, sortable version string', () => {
     expect(CNC_CATALOG_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+  });
+});
+
+describe('Tension Board 2 catalogue', () => {
+  it.each([10, 11])('offers all five sizes for layout %i, without kickers or T-nut options', (layoutId) => {
+    const entries = CNC_CATALOG.filter((entry) => entry.boardName === 'tension' && entry.layoutId === layoutId);
+    expect(entries.map((entry) => entry.sizeId)).toEqual([9, 8, 7, 6, 10]);
+    for (const entry of entries) {
+      expect(entry.kickerOptional).toBe(false);
+      expect(entry.manufacturingOptions.map((option) => option.key)).not.toContain('tnutHoleDiameterMm');
+      const checked = validateCatalogOptions(entry, {});
+      expect(checked).toMatchObject({
+        ok: true,
+        options: {
+          tb2DimensionStandard: 'metric',
+          tb2Engraving: layoutId === 10 ? 'both' : 'spray',
+        },
+      });
+    }
+  });
+
+  it.each(['none', 'mirror', 'spray', 'both'])('validates the canonical tuple for %s', (mode) => {
+    const layoutId = mode === 'spray' ? 11 : 10;
+    const entry = findCatalogEntry({ boardName: 'tension', layoutId, sizeId: 10 })!;
+    expect(validateCatalogOptions(entry, { tb2Engraving: mode, tb2DimensionStandard: 'imperial' }).ok).toBe(true);
+    const other = findCatalogEntry({ boardName: 'tension', layoutId: layoutId === 10 ? 11 : 10, sizeId: 10 })!;
+    expect(validateCatalogOptions(other, { tb2Engraving: mode }).ok).toBe(false);
+    expect(entry.setIds).toBe(layoutId === 10 ? '12,13,14,15' : '12,13');
+  });
+
+  it('rejects arbitrary dimensions and dimensions from another board family', () => {
+    const entry = findCatalogEntry({ boardName: 'tension', layoutId: 10, sizeId: 9 })!;
+    expect(validateCatalogOptions(entry, { tb2DimensionStandard: 'custom' }).ok).toBe(false);
+    expect(validateCatalogOptions(entry, { gridPitchMm: 101.6 }).ok).toBe(false);
+    expect(validateCatalogOptions(entryFor(25), { tb2Engraving: 'both' }).ok).toBe(false);
   });
 });
