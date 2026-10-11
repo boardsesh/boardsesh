@@ -93,19 +93,22 @@ export async function updateSessionBoardPathIfChanged(
         .values(parents.map((parentId) => ({ sessionId, boardId: parentId })))
         .onConflictDoNothing();
     await tx.update(sessions).set({ boardPath, boardId, lastActivity: new Date() }).where(eq(sessions.id, sessionId));
+    // Moving onto a wall someone cannot read takes the session away from them, so
+    // other apps must drop their copies. Moving onto a wall everyone can read, or
+    // back onto one the session already references, changes nobody's access.
+    // Decided here, after the session_boards insert and under the wall's row
+    // lock, so a privacy edit to that wall commits either before this read or
+    // after this transaction, never in between.
+    const narrowsReaders = addedParentId !== null && (await wallRestrictsReaders(tx, addedParentId));
     return {
       previous: existing.boardPath,
       parentChanged: existing.boardId !== boardId || previousPathBoardId !== boardId,
-      addedParentId,
+      narrowsReaders,
     };
   });
   if (!transition) return null;
   if (transition.parentChanged) await notifyResourcePrivacyChanged('session', sessionId);
-  // Moving onto a wall someone cannot read takes the session away from them, so
-  // other apps must drop their copies. Moving onto a wall everyone can read, or
-  // back onto one the session already references, changes nobody's access.
-  if (transition.addedParentId !== null && (await wallRestrictsReaders(transition.addedParentId)))
-    pubsub.publishPrivacyChanged('switchSessionWall');
+  if (transition.narrowsReaders) pubsub.publishPrivacyChanged('switchSessionWall');
   return transition.previous;
 }
 
@@ -113,17 +116,20 @@ export async function updateSessionBoardPathIfChanged(
  * Whether some viewer cannot read this wall without a link. Session access
  * treats unlisted walls as restricted too (`sessionBoardAccessCondition`), and
  * a public wall can still deny individual viewers through a revoked grant.
+ *
+ * Takes FOR SHARE on the wall's row. Privacy edits lock that row FOR UPDATE and
+ * a legacy board edit updates it, so both wait for the caller's transaction.
  */
-async function wallRestrictsReaders(boardId: number): Promise<boolean> {
-  const [board] = await db
+async function wallRestrictsReaders(tx: Pick<typeof db, 'select'>, boardId: number): Promise<boolean> {
+  const [board] = await tx
     .select({ uuid: userBoards.uuid })
     .from(userBoards)
     .where(eq(userBoards.id, boardId))
-    .limit(1);
+    .for('share');
   if (!board) return true;
-  const privacy = await getResourcePrivacy('board', board.uuid);
+  const privacy = await getResourcePrivacy('board', board.uuid, tx);
   if (privacy?.audience !== 'public') return true;
-  const [revoked] = await db
+  const [revoked] = await tx
     .select({ userId: resourceGrants.userId })
     .from(resourceGrants)
     .where(

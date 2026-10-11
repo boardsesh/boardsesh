@@ -111,10 +111,11 @@ export interface ResourcePrivacyState {
 export async function getResourcePrivacy(
   kind: PrivacyResourceKind,
   resourceId: string,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<ResourcePrivacyState | null> {
   let legacy: { ownerId: string | null; audience: PrivacyResourceAudience; locationAudience: PrivacyLocationAudience };
   if (kind === 'board') {
-    const [board] = await db
+    const [board] = await executor
       .select()
       .from(schema.userBoards)
       .where(and(eq(schema.userBoards.uuid, resourceId), sql`${schema.userBoards.deletedAt} IS NULL`))
@@ -133,7 +134,7 @@ export async function getResourcePrivacy(
       locationAudience: board.hideLocation ? 'only_me' : 'public',
     };
   } else {
-    const [session] = await db
+    const [session] = await executor
       .select()
       .from(schema.boardSessions)
       .where(eq(schema.boardSessions.id, resourceId))
@@ -145,7 +146,7 @@ export async function getResourcePrivacy(
       locationAudience: 'only_me',
     };
   }
-  const [override] = await db
+  const [override] = await executor
     .select()
     .from(schema.resourcePrivacy)
     .where(and(eq(schema.resourcePrivacy.kind, kind), eq(schema.resourcePrivacy.resourceId, resourceId)))

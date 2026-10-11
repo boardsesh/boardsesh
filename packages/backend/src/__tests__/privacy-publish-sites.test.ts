@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -274,6 +274,42 @@ describe('privacyChanged publish sites', () => {
     expect(await switchTo(first)).toEqual([]);
   });
 
+  it('decides a wall switch after an edit to that wall that was still in flight', async () => {
+    const start = await insertBoard(true);
+    const target = await insertBoard(true);
+    const sessionId = randomUUID();
+    await ensureSessionRecordExists(sessionId, `/b/${start.slug}/40`, owner);
+
+    // A board edit making the target private, written but not yet committed.
+    let commitEdit = () => {};
+    const editMayCommit = new Promise<void>((resolve) => {
+      commitEdit = resolve;
+    });
+    let markEditWritten = () => {};
+    const editWritten = new Promise<void>((resolve) => {
+      markEditWritten = resolve;
+    });
+    const edit = db.transaction(async (transaction) => {
+      await transaction.update(schema.userBoards).set({ isPublic: false }).where(eq(schema.userBoards.id, target.id));
+      markEditWritten();
+      await editMayCommit;
+    });
+    await editWritten;
+
+    let switched = false;
+    const publishes = publishesDuring(async () => {
+      await updateSessionBoardPathIfChanged(sessionId, `/b/${target.slug}/40`, owner);
+      switched = true;
+    });
+    // The switch reads the wall under its row lock, so it waits for the edit
+    // instead of deciding on the public row the edit is about to replace.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(switched).toBe(false);
+    commitEdit();
+    await edit;
+    expect(await publishes).toEqual(['switchSessionWall']);
+  });
+
   it('publishes a playlist edit only when its visibility flips', async () => {
     const uuid = randomUUID();
     const [playlist] = await db
@@ -439,6 +475,74 @@ describe('privacyChanged publish sites', () => {
       ),
     ).toEqual(['saveTick']);
     expect(await climberSessionIds()).toHaveLength(before - 1);
+  });
+
+  it('publishes a merge that hides comments on a non-public session from their readers', async () => {
+    process.env.INFERRED_SESSIONS_ENABLED = 'true';
+    const followersOnly = async (tickUuids: string[]) => {
+      const sessions = await db
+        .selectDistinct({ sessionId: schema.boardseshTicks.sessionId })
+        .from(schema.boardseshTicks)
+        .where(inArray(schema.boardseshTicks.uuid, tickUuids));
+      for (const { sessionId } of sessions)
+        await db
+          .update(schema.resourcePrivacy)
+          .set({ audience: 'followers' })
+          .where(and(eq(schema.resourcePrivacy.kind, 'session'), eq(schema.resourcePrivacy.resourceId, sessionId!)));
+      return sessions.map(({ sessionId }) => sessionId!);
+    };
+    const bridgeTheGap = (day: number) =>
+      publishesDuring(() =>
+        tickMutations.saveTick(
+          null,
+          {
+            input: {
+              boardType: 'kilter',
+              climbUuid,
+              angle: 40,
+              isMirror: false,
+              status: 'send',
+              attemptCount: 1,
+              isBenchmark: false,
+              comment: '',
+              climbedAt: new Date(day + 5 * HOUR).toISOString(),
+            },
+          },
+          context(climber),
+        ),
+      );
+
+    // Two followers-only sessions merge into a followers-only session: the
+    // policy is unchanged and there is nothing else to hide, so no publish.
+    const quietDay = BASE + 15 * 24 * HOUR;
+    await followersOnly([await insertTick(quietDay), await insertTick(quietDay + 10 * HOUR)]);
+    const before = (await climberSessionIds()).length;
+    expect(await bridgeTheGap(quietDay)).toEqual([]);
+    expect(await climberSessionIds()).toHaveLength(before - 1);
+
+    // The same merge with a follower's comment on each session. The merged-away
+    // session's comment is limited to its author, so other readers lose it.
+    const commentedDay = BASE + 20 * 24 * HOUR;
+    const sessionIds = await followersOnly([
+      await insertTick(commentedDay),
+      await insertTick(commentedDay + 10 * HOUR),
+    ]);
+    await db.insert(schema.comments).values(
+      sessionIds.map((sessionId) => ({
+        uuid: randomUUID(),
+        userId: follower,
+        entityType: 'session' as const,
+        entityId: sessionId,
+        body: 'Strong session',
+      })),
+    );
+    expect(await bridgeTheGap(commentedDay)).toEqual(['saveTick']);
+    const restricted = await db
+      .select({ audience: schema.contentPrivacy.audience })
+      .from(schema.contentPrivacy)
+      .innerJoin(schema.comments, eq(schema.comments.uuid, schema.contentPrivacy.entityId))
+      .where(and(eq(schema.contentPrivacy.entityType, 'comment'), inArray(schema.comments.entityId, sessionIds)));
+    expect(restricted).toEqual([{ audience: 'only_me' }]);
   });
 
   it('stays silent when a setter with a linked account is followed or unfollowed', async () => {
