@@ -2414,6 +2414,15 @@ describe('pullSync bootstrap: healing a scope stranded mid-crawl', () => {
 
   it('never heals a scope that already serves the whole catalog offline', async () => {
     await seedStrandedMidCrawl();
+    // Downloaded under the publication rule in force, so there is nothing an
+    // artifact could add. (A finished board an EARLIER rule downloaded is caught
+    // up once: see the mixed-version cases in two-stream-import.)
+    await setCheckpoint(
+      db,
+      'checkpoint:board_climbs:kilter:1:5',
+      { updatedAt: '2026-04-01T00:00:00Z', syncSeq: '5' },
+      { stampRule: true },
+    );
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
       'scope-complete:kilter:1:5',
       '1',

@@ -5,6 +5,7 @@ import {
   USER_DATA_TABLES,
   BOARD_DATA_TABLES,
   boardSyncStreamsFor,
+  hasReferenceStream,
   isPrivacyScopedBoardType,
   refreshColumnsFor,
   refreshRevisionFor,
@@ -13,9 +14,11 @@ import {
 import {
   getCheckpoint,
   getProtectedCheckpoint,
+  getReferenceRuleGaps,
   compareCheckpoints,
   setCheckpoint,
   setProtectedCheckpoint,
+  startsReferenceStream,
   getCheckpointKey,
   markScopeDownloadComplete,
   isScopeDownloadComplete,
@@ -42,6 +45,10 @@ import {
   getGradesBootstrapAttempts,
   recordGradesBootstrapAttempt,
   MAX_GRADES_BOOTSTRAP_ATTEMPTS,
+  getRuleCatchUpState,
+  recordRuleCatchUpFailure,
+  clearRuleCatchUpState,
+  MAX_RULE_CATCH_UP_FAILURES,
   markBootstrapDone,
   isBootstrapDone,
   getBootstrapDoneMarker,
@@ -661,6 +668,13 @@ export type SyncOptions = {
    */
   onAudienceUnsupported?: (info: AudienceUnsupportedInfo) => void;
   /**
+   * Observational: a finished board was brought up to the current publication
+   * rule from an artifact, or an attempt to do so failed and was charged to
+   * the scope's catch-up budget (`catchUpLayoutToRule`). Not part of the
+   * download funnel: the board was already downloaded and stays readable.
+   */
+  onRuleCatchUp?: (info: RuleCatchUpInfo) => void;
+  /**
    * Connectivity probe, mirroring `DrainOptions.isOnline` (drainer.ts). A pull
    * that starts with no connection can only fail every request it makes, and
    * the snapshot bootstrap phase would report each enabled-but-undownloaded
@@ -738,6 +752,23 @@ export type SyncOptions = {
 export type AudienceUnsupportedInfo = {
   tableName: string;
   scopeKey: string;
+  cause: unknown;
+};
+
+/** One attempt to bring a finished board up to the current publication rule. See SyncOptions.onRuleCatchUp. */
+export type RuleCatchUpInfo = {
+  scopeKey: string;
+  boardType: string;
+  outcome: 'imported' | 'failed';
+  /** Where a failed attempt failed; null when it imported. */
+  stage: 'download' | 'import' | null;
+  /** The layout artifact's wire size. */
+  artifactBytes: number;
+  /** Failures charged to this scope so far, this one included. */
+  failures: number;
+  /** Set when no further attempt will be made. */
+  gaveUp: boolean;
+  importMs: number | null;
   cause: unknown;
 };
 
@@ -1076,6 +1107,11 @@ async function syncTable(
     !hasPurgeLanded(purgeToken, purgeKey) &&
     !isBackgrounded() &&
     (!isPrivacyScopedPull || protectedPullAllowed());
+  // A reference pull of a board table that begins at the start of its stream
+  // delivers every row under the rule the server applies today, so its cursor
+  // may say so (`getReferenceRuleGaps`). One that resumes a cursor an earlier
+  // rule advanced may not: rows that rule withheld are behind it.
+  const stampsReferenceRule = !!boardScope && !isProtectedStream && !refresh && startsReferenceStream(checkpoint);
   let lastCursor: SyncCheckpoint = checkpoint ?? REFRESH_START_CURSOR;
   // Whether some earlier call already advanced this cursor, so the caller can
   // tell "these are all the rows" from "these are the tail of a crawl someone
@@ -1208,7 +1244,7 @@ async function syncTable(
               };
               await setProtectedCheckpoint(transaction, checkpointKey, protectedState);
             } else if (!refresh) {
-              await setCheckpoint(transaction, checkpointKey, result.cursor);
+              await setCheckpoint(transaction, checkpointKey, result.cursor, { stampRule: stampsReferenceRule });
             }
             if (clearDownloadCoverage && boardScope) {
               await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
@@ -2151,6 +2187,165 @@ async function runBootstrapPhase(params: {
     return null;
   };
 
+  /**
+   * THE PUBLICATION-RULE CATCH-UP (issue #6306): bring a FINISHED board up to
+   * the rule the server applies today, once, from the layout's artifact.
+   *
+   * A board downloaded before rule 2 can be missing published climbs: the
+   * earlier rule withheld a climb from a viewer its author's privacy settings
+   * excluded, and the board's cursors went past it. Rule 2 makes those climbs
+   * public, but they did not change, so no delta carries them. The cursors say
+   * which boards these are (`getReferenceRuleGaps`).
+   *
+   * The artifact holds every published, listed climb of the layout, so one
+   * import over the finished board supplies them. It is the import a fresh
+   * board gets, told that the board's cursors are ahead of the artifact
+   * (`overFinishedScope`): it moves them back to the artifact's first, so the
+   * pull that follows delivers again whatever changed since the build, and
+   * the board is exactly the server's reference set when that pull ends. The
+   * stamps the import leaves on the cursors are what stop it running twice.
+   *
+   * QUIET, and separate from the download funnel. The board is downloaded and
+   * stays readable throughout, so this emits no Started, no progress frame
+   * (which would hold the screen on) and no funnel failure, and it never
+   * touches the scope's bootstrap budget or its paged-fallback marker.
+   *
+   * NOBODY ASKED FOR IT TODAY, so it waits for a link that is not metered,
+   * like a heal, and it has a budget of its own (`MAX_RULE_CATCH_UP_FAILURES`).
+   * Until an artifact built under the rule is published it does nothing.
+   *
+   * The alternatives were to pull the reference streams again from the start
+   * (about 2,200 pages for Kilter's main layout, against one file) or to ask
+   * the server for the rows an earlier rule withheld, which the sync contract
+   * has no argument for.
+   */
+  const catchUpLayoutToRule = async (scope: BoardScope): Promise<TeardownVerdict['kind'] | 'imported' | 'waiting'> => {
+    const evaluatedAt = now();
+    const budget = await getRuleCatchUpState(db, scope.scopeKey);
+    if (budget.failures >= MAX_RULE_CATCH_UP_FAILURES) return 'waiting';
+    if (budget.retryAfter !== null && evaluatedAt < budget.retryAfter) return 'waiting';
+    // Asked before the manifest, so a phone on cellular spends nothing on this.
+    if (!(await isOnUnmeteredNetwork())) return 'waiting';
+
+    const resolution = await resolveManifestOnce(source, manifestCache);
+    const manifestVerdict = teardownVerdict(scope.scopeKey);
+    if (manifestVerdict) return manifestVerdict.kind;
+    settleManifestPublicationStateOnce(db, resolution, manifestCache, { countError: false });
+    const entry =
+      resolution.status === 'ok' ? findSnapshotEntry(resolution.manifest, scope.boardType, scope.layoutId) : null;
+    // No artifact built under the rule yet. Asked again next cycle; the
+    // manifest is one cached request for every board.
+    if (!entry || !isSnapshotEntryUsable(entry)) return 'waiting';
+
+    const chargeFailure = async (stage: 'download' | 'import', cause: unknown): Promise<void> => {
+      const charged = await recordRuleCatchUpFailure(db, scope.scopeKey, evaluatedAt);
+      options?.onRuleCatchUp?.({
+        scopeKey: scope.scopeKey,
+        boardType: scope.boardType,
+        outcome: 'failed',
+        stage,
+        artifactBytes: entry.bytes,
+        failures: charged.failures,
+        gaveUp: charged.failures >= MAX_RULE_CATCH_UP_FAILURES,
+        importMs: null,
+        cause,
+      });
+    };
+
+    // One artifact serves every size of a layout, and a fresh sibling may have
+    // fetched it earlier this cycle.
+    const layoutKey = purgeNamespaceKey(scope);
+    let transfer = downloadByLayout.get(layoutKey);
+    if (!transfer) {
+      const started: LayoutDownloadRecord = {
+        file: null,
+        cause: null,
+        permanentMiss: false,
+        downloadMs: 0,
+        abortedReason: null,
+        backgroundedDuringTransfer: false,
+      };
+      // The same rule as the bootstrap's transfer: a wipe or this board's
+      // removal cancels it, a backgrounding does not.
+      const abortController = new AbortController();
+      const unsubscribeTeardown = onTeardown(() => {
+        const verdict = teardownVerdict(scope.scopeKey);
+        if (verdict && verdict.reason !== 'aborted-background') abortController.abort();
+      });
+      try {
+        started.file = (await source.downloadArtifact(entry, { signal: abortController.signal })) ?? null;
+      } catch (error) {
+        started.cause = error;
+      } finally {
+        unsubscribeTeardown();
+      }
+      transfer = started;
+      downloadByLayout.set(layoutKey, transfer);
+      if (transfer.file) artifactImported.set(transfer.file.filePath, false);
+      // A cycle being torn down did not fail. The file, if it landed, is
+      // handed back unimported and a source that retains keeps it.
+      const downloadVerdict = teardownVerdict(scope.scopeKey);
+      if (downloadVerdict) return downloadVerdict.kind;
+      if (!transfer.file) {
+        await chargeFailure('download', transfer.cause);
+        return 'waiting';
+      }
+    }
+    // A sibling's transfer that did not land was settled by whoever started it.
+    const download = transfer.file;
+    if (!download) return 'waiting';
+    const preImportVerdict = teardownVerdict(scope.scopeKey);
+    if (preImportVerdict) return preImportVerdict.kind;
+
+    const importStartedAt = Date.now();
+    try {
+      await bootstrapScopeFromSnapshot({
+        db,
+        scope,
+        scopeKey: scope.scopeKey,
+        filePath: download.filePath,
+        onSchemaDrift,
+        overFinishedScope: true,
+      });
+    } catch (error) {
+      const importVerdict =
+        error instanceof SnapshotWipedError
+          ? (teardownVerdict(scope.scopeKey) ?? { reason: 'aborted-wipe' as const, kind: 'cycle' as const })
+          : teardownVerdict(scope.scopeKey);
+      if (importVerdict) return importVerdict.kind;
+      // Built for an older device schema: tonight's export rebuilds it, and the
+      // manifest check above filters this build out until then.
+      if (error instanceof SnapshotSchemaStaleError) return 'waiting';
+      await chargeFailure('import', error);
+      return 'waiting';
+    }
+    const importMs = Date.now() - importStartedAt;
+    artifactImported.set(download.filePath, true);
+    await clearRuleCatchUpState(db, scope.scopeKey);
+    // What tells the holds index, at the end of the cycle, to sweep the hold
+    // sets of climbs the reconcile removed.
+    bootstrapTimings.set(scope.scopeKey, { bytes: entry.bytes, importMs });
+    for (const tableName of ['board_climbs', 'board_climb_stats'] as const) {
+      invalidations.add(TABLE_CONFIGS[tableName].invalidateKeys, scope);
+    }
+    invalidations.flush();
+    options?.onRuleCatchUp?.({
+      scopeKey: scope.scopeKey,
+      boardType: scope.boardType,
+      outcome: 'imported',
+      stage: null,
+      artifactBytes: entry.bytes,
+      failures: budget.failures,
+      gaveUp: false,
+      importMs,
+      cause: null,
+    });
+    // The grades of the climbs that just arrived, from the grades artifact.
+    // Its cursor is stamped only now that the climbs are here; if this fails
+    // the retro-fit branch asks again on a later cycle.
+    return (await importGradesForScope(scope, entry)) ?? 'imported';
+  };
+
   const reportSettledFailure = (
     scope: BoardScope,
     stage: 'manifest' | 'download' | 'import',
@@ -2314,6 +2509,23 @@ async function runBootstrapPhase(params: {
           ) {
             skipPagedPull.add(scope.scopeKey);
           }
+          // A finished board whose cursors an earlier publication rule advanced
+          // is brought up to the current one, once (`catchUpLayoutToRule`).
+          // That step imports the grades of the climbs it brings, so when it
+          // ran nothing below does. While it waits (a metered link, a cooldown,
+          // no artifact yet) the scope is treated as it always was.
+          const ruleGaps =
+            isScopeComplete && hasReferenceStream(scope.boardType)
+              ? await getReferenceRuleGaps(db, scope.scopeKey)
+              : { layout: false, grades: false };
+          if (ruleGaps.layout) {
+            const catchUp = await catchUpLayoutToRule(scope);
+            if (catchUp === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            if (catchUp !== 'waiting') continue;
+          }
           // RETRO-FIT (issue #4310): a scope with a COMPLETE climb catalog but
           // NO grades checkpoint has never consumed a single grade page
           // (`syncTable` checkpoints per page), so it is still facing the full
@@ -2343,9 +2555,22 @@ async function runBootstrapPhase(params: {
           // after the whole-layout artifact) or serving a snapshot cooldown the
           // retry taxonomy imposed (#4313), and a cooldown means no artifact
           // bytes for this scope this cycle — grades included.
+          //
+          // THE SAME IMPORT also serves a finished board whose GRADES cursor an
+          // earlier publication rule advanced while its climbs are current: the
+          // grades of the climbs that rule withheld are behind that cursor.
+          // Nobody asked for those bytes today, so that case waits for a link
+          // that is not metered and stops asking once the grades budget is
+          // spent.
           if ((isAlreadyBootstrapped || isScopeComplete) && source.downloadGradesArtifact) {
             const gradesCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_grades', scope.scopeKey));
-            if (!gradesCheckpoint) {
+            const gradesPredateTheRule =
+              gradesCheckpoint !== null &&
+              ruleGaps.grades &&
+              !ruleGaps.layout &&
+              (await getGradesBootstrapAttempts(db, scope.scopeKey)) < MAX_GRADES_BOOTSTRAP_ATTEMPTS &&
+              (await isOnUnmeteredNetwork());
+            if (!gradesCheckpoint || gradesPredateTheRule) {
               const retrofitResolution = await resolveManifestOnce(source, manifestCache);
               const retrofitVerdict = teardownVerdict(scope.scopeKey);
               if (retrofitVerdict) {

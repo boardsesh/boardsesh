@@ -7,6 +7,7 @@ import {
   setCheckpoint,
   getProtectedCheckpoint,
   setProtectedCheckpoint,
+  getReferenceRuleGaps,
   isScopeProtectedComplete,
   resetPrivacyScopedProtectedSyncState,
   resetProtectedSyncState,
@@ -403,6 +404,129 @@ describe('two cursors in one checkpoint row', () => {
       expect(await isScopeProtectedComplete(db, 'kilter:1:10')).toBe(false);
       expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:10')).toEqual(REFERENCE);
       expect(await isScopeProtectedComplete(db, 'kilter:1:1')).toBe(true);
+    });
+  });
+});
+
+// Issue #6306. Each reference cursor row says which publication rule its rows
+// were delivered under, so a board an earlier rule downloaded can be told from
+// one this rule did. The stamp sits in the row, beside the cursor.
+describe('the publication rule a reference cursor was advanced under', () => {
+  const SCOPE_KEY = 'kilter:1:10';
+  const keyOf = (tableName: string) => getCheckpointKey(tableName, SCOPE_KEY);
+  const TAIL: SyncCheckpoint = { updatedAt: '2026-06-01T00:00:00.000Z', syncSeq: '900' };
+  const START: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
+  const PROTECTED: ProtectedCheckpoint = { ...START, complete: true, revision: 1 };
+  let db: TestSqliteDb;
+  const stored = async (tableName: string): Promise<Record<string, unknown>> =>
+    JSON.parse(
+      (await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [keyOf(tableName)]))!
+        .value,
+    );
+  /** The row as a bundle from before the stamp wrote it. */
+  const olderBundleWrites = (tableName: string, cursor: SyncCheckpoint) =>
+    db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      keyOf(tableName),
+      JSON.stringify(cursor),
+    ]);
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('is written only when asked for, and kept by every later write of the cursor', async () => {
+    await setCheckpoint(db, keyOf('board_climbs'), START);
+    expect(await stored('board_climbs')).toEqual(START);
+
+    await setCheckpoint(db, keyOf('board_climbs'), TAIL, { stampRule: true });
+    expect(await stored('board_climbs')).toEqual({ ...TAIL, rule: 2 });
+
+    const later = { updatedAt: '2026-07-01T00:00:00.000Z', syncSeq: '950' };
+    await setCheckpoint(db, keyOf('board_climbs'), later);
+    expect(await stored('board_climbs')).toEqual({ ...later, rule: 2 });
+    expect(await getCheckpoint(db, keyOf('board_climbs'))).toEqual(later);
+  });
+
+  it('lives beside the protected cursor, and neither write disturbs the other', async () => {
+    await setCheckpoint(db, keyOf('board_climbs'), TAIL, { stampRule: true });
+    await setProtectedCheckpoint(db, keyOf('board_climbs'), PROTECTED);
+    await setCheckpoint(db, keyOf('board_climbs'), TAIL);
+    expect(await stored('board_climbs')).toEqual({ ...TAIL, rule: 2, protected: PROTECTED });
+
+    await resetScopeProtectedSyncState(db, SCOPE_KEY);
+    expect(await stored('board_climbs')).toEqual({ ...TAIL, rule: 2 });
+  });
+
+  it('is not carried onto a cursor row that had none, and goes when an earlier bundle rewrites the row', async () => {
+    await olderBundleWrites('board_climbs', TAIL);
+    await setCheckpoint(db, keyOf('board_climbs'), TAIL);
+    expect(await stored('board_climbs')).toEqual(TAIL);
+
+    await setCheckpoint(db, keyOf('board_climbs'), TAIL, { stampRule: true });
+    await olderBundleWrites('board_climbs', TAIL);
+    expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: true, grades: false });
+  });
+
+  describe('which cursors of a scope predate the rule', () => {
+    it('none, on a scope with no cursor at all', async () => {
+      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
+    });
+
+    it('none, when every cursor carries the stamp', async () => {
+      for (const tableName of ['board_climbs', 'board_climb_stats', 'board_climb_grades']) {
+        await setCheckpoint(db, keyOf(tableName), TAIL, { stampRule: true });
+      }
+      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
+    });
+
+    it.each(['board_climbs', 'board_climb_stats'])(
+      'the layout, when the %s cursor is past the start with no stamp',
+      async (tableName) => {
+        for (const other of ['board_climbs', 'board_climb_stats', 'board_climb_grades']) {
+          await setCheckpoint(db, keyOf(other), TAIL, { stampRule: true });
+        }
+        await olderBundleWrites(tableName, TAIL);
+        expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: true, grades: false });
+      },
+    );
+
+    it('the grades alone, when only their cursor has no stamp', async () => {
+      await setCheckpoint(db, keyOf('board_climbs'), TAIL, { stampRule: true });
+      await setCheckpoint(db, keyOf('board_climb_stats'), TAIL, { stampRule: true });
+      await olderBundleWrites('board_climb_grades', TAIL);
+      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: true });
+    });
+
+    // Nothing is behind a cursor that has not left the start: the pull that
+    // resumes from it delivers the whole stream, and stamps it.
+    it('not a cursor an earlier bundle left at the start of the stream', async () => {
+      for (const tableName of ['board_climbs', 'board_climb_stats', 'board_climb_grades']) {
+        await olderBundleWrites(tableName, START);
+      }
+      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
+    });
+
+    it('not a row that only carries a protected cursor', async () => {
+      await setProtectedCheckpoint(db, keyOf('board_climbs'), PROTECTED);
+      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
+    });
+
+    it('a cursor stamped with any other rule', async () => {
+      await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+        keyOf('board_climbs'),
+        JSON.stringify({ ...TAIL, rule: 1 }),
+      ]);
+      await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+        keyOf('board_climb_grades'),
+        JSON.stringify({ ...TAIL, rule: 3 }),
+      ]);
+      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: true, grades: true });
+    });
+
+    it('only the scope asked about', async () => {
+      await olderBundleWrites('board_climbs', TAIL);
+      expect(await getReferenceRuleGaps(db, 'kilter:1:7')).toEqual({ layout: false, grades: false });
     });
   });
 });

@@ -37,7 +37,9 @@ import { markSchemaRefreshComplete } from './schema-refresh';
 import { LOCAL_USER_ID_KEY } from './local-user-owner';
 import {
   compareCheckpoints,
+  getCheckpoint,
   getCheckpointKey,
+  getReferenceRuleGaps,
   parseTopLevelCheckpoint,
   resetScopeProtectedSyncState,
   rewindDeletionsCheckpoint,
@@ -45,6 +47,7 @@ import {
   setCheckpoint,
   type SyncCheckpoint,
 } from './checkpoints';
+import { invalidateLayoutHoldIndex } from '../holds-index/hold-index';
 import { capturePurgeToken, hasPurgeLanded, isSigningOut } from '../mutation-queue/drainer';
 import { ARTIFACT_SCHEMA_VERSION } from '../db/migrations';
 import { applyBulkImportPragmas, applyBusyTimeout } from '../db/pragmas';
@@ -649,6 +652,59 @@ export async function recordGradesBootstrapAttempt(db: SqlExecutor, scopeKey: st
 }
 
 /**
+ * How often the publication-rule catch-up (pull-client.ts,
+ * `catchUpLayoutToRule`) may fail for one scope, and how long it waits after
+ * each failure. Its own budget, apart from the bootstrap's: the board it works
+ * on is finished and readable, so a failure costs the climber nothing but the
+ * bytes, and those must not be spent on every cycle. Three failed downloads of
+ * a Kilter layout are about 330 MB over a link that is not metered, spread
+ * over at least 30 hours; after that the board stays as it is.
+ */
+export const MAX_RULE_CATCH_UP_FAILURES = 3;
+export const RULE_CATCH_UP_RETRY_DELAYS_MS = [6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000] as const;
+// Package-internal, like BOOTSTRAP_DONE_PREFIX: scope-teardown.ts clears it.
+export const RULE_CATCH_UP_PREFIX = 'rule-catch-up:';
+
+export type RuleCatchUpState = { failures: number; retryAfter: number | null };
+
+export async function getRuleCatchUpState(db: SqlExecutor, scopeKey: string): Promise<RuleCatchUpState> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    `${RULE_CATCH_UP_PREFIX}${scopeKey}`,
+  ]);
+  try {
+    const stored: unknown = row ? JSON.parse(row.value) : null;
+    if (typeof stored === 'object' && stored !== null) {
+      const { failures, retryAfter } = stored as Record<string, unknown>;
+      if (typeof failures === 'number' && Number.isSafeInteger(failures) && failures >= 0) {
+        return { failures, retryAfter: typeof retryAfter === 'number' ? retryAfter : null };
+      }
+    }
+  } catch {
+    // An unreadable row is a budget nobody has spent from.
+  }
+  return { failures: 0, retryAfter: null };
+}
+
+export async function recordRuleCatchUpFailure(
+  db: SqlExecutor,
+  scopeKey: string,
+  now: number,
+): Promise<RuleCatchUpState> {
+  const failures = (await getRuleCatchUpState(db, scopeKey)).failures + 1;
+  const delay = RULE_CATCH_UP_RETRY_DELAYS_MS[failures - 1];
+  const next: RuleCatchUpState = { failures, retryAfter: delay === undefined ? null : now + delay };
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${RULE_CATCH_UP_PREFIX}${scopeKey}`,
+    JSON.stringify(next),
+  ]);
+  return next;
+}
+
+export async function clearRuleCatchUpState(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${RULE_CATCH_UP_PREFIX}${scopeKey}`]);
+}
+
+/**
  * Permanent "this scope was warmed from a snapshot" marker (cheap, unambiguous).
  *
  * The VALUE carries whether the import landed on a scope that had already
@@ -882,11 +938,11 @@ const RECONCILE_BATCH_ROWS = 400;
  * half of the test under its own lock, so a row that changed between the read
  * and the delete is left alone.
  *
- * The FIRST transaction also resets the scope's protected cursors
- * (`resetScopeProtectedSyncState`). It always runs, deletes or none: from the
- * first row batch on, the import can have written an older published copy over
- * the climber's own row, and an import that fails after that must already have
- * asked for the replay that puts it back.
+ * The FIRST transaction also runs `beforeFirstWrite`, deletes or none. That is
+ * where the import moves every cursor it has to move BEFORE it writes a row:
+ * from the first row batch on it can have written an older copy over a newer
+ * one, and an import that fails after that must already have asked for the
+ * pull that puts the newer one back (see `bootstrapScopeFromSnapshot`).
  */
 async function reconcileScope(
   txn: SqlExecutor,
@@ -894,6 +950,7 @@ async function reconcileScope(
   scopeKey: string,
   watermarks: Record<SnapshotTableName, SyncCheckpoint>,
   runExclusive: (body: () => Promise<void>) => Promise<void>,
+  beforeFirstWrite: () => Promise<void>,
 ): Promise<void> {
   const mainClimbScope = climbsScopeFilter(scope, 'main_climb.');
   const snapshotClimbScope = climbsScopeFilter(scope, 'snapshot_climb.');
@@ -985,12 +1042,12 @@ async function reconcileScope(
     ],
   );
 
-  // WRITES. The reset rides in the first transaction, which runs even when
-  // there is nothing to delete.
+  // WRITES. `beforeFirstWrite` rides in the first transaction, which runs even
+  // when there is nothing to delete.
   let isFirstTransaction = true;
   const runReconcileTransaction = (body: () => Promise<void>): Promise<void> =>
     runExclusive(async () => {
-      if (isFirstTransaction) await resetScopeProtectedSyncState(txn, scopeKey);
+      if (isFirstTransaction) await beforeFirstWrite();
       isFirstTransaction = false;
       await body();
     });
@@ -1500,6 +1557,20 @@ export async function bootstrapScopeFromSnapshot(params: {
    */
   existingCheckpoints?: Partial<Record<SnapshotTableName, SyncCheckpoint>>;
   /**
+   * The scope already holds a FINISHED catalogue whose cursors are at the tail,
+   * past this artifact (the publication-rule catch-up, `getReferenceRuleGaps`).
+   * The import then goes over rows that are newer than the artifact's, so it
+   * starts by moving the scope's two reference cursors and the deletions
+   * cursor BACK to the artifact's, in the same transaction as the reconcile's
+   * first write. Whatever happens after that, the next pull delivers again
+   * every row the artifact's older copy was written over, and every deletion
+   * of a row the artifact brought back.
+   *
+   * Never together with `existingCheckpoints`: that guard exists to stop a
+   * cursor moving backwards, which here is the point.
+   */
+  overFinishedScope?: boolean;
+  /**
    * Fired after each row batch COMMITs, with the lock released — what the
    * download UI's `import` stage now draws a real progress bar from instead of
    * the indeterminate spinner it showed while one transaction ran. A throw from
@@ -1521,6 +1592,7 @@ export async function bootstrapScopeFromSnapshot(params: {
     filePath,
     onSchemaDrift,
     existingCheckpoints,
+    overFinishedScope = false,
     onBatch,
     batchRows = SNAPSHOT_IMPORT_BATCH_ROWS,
     sleep = defaultImportSleep,
@@ -1668,7 +1740,36 @@ export async function bootstrapScopeFromSnapshot(params: {
         // longest single hold is in `importLockMaxMs` with every other batch.
         const reconcileStartedAt = Date.now();
         const waitBeforeReconcile = importLockWaitMs;
-        await reconcileScope(txn, scope, scopeKey, stampedWatermarks, runExclusive);
+        // Where the tombstone replay has to start for the rows this import
+        // brings in. New artifacts carry a metadata-only sync_deletions row
+        // whose timestamp is the oldest of run builtAt, the export
+        // transaction's stability boundary, and the start of every active
+        // transaction the exporter's observer counts (every role's with
+        // pg_read_all_stats, otherwise its own role's). That covers a long
+        // DELETE transaction which was invisible to the artifact's REPEATABLE
+        // READ snapshot but later commits with an older deleted_at.
+        // Old/malformed artifacts retain the pre-existing min(scoped
+        // watermarks) compatibility path. New live gzip exports refuse
+        // publication without the stronger boundary above.
+        const minWatermark =
+          compareCheckpoints(stampedWatermarks.board_climbs, stampedWatermarks.board_climb_stats) <= 0
+            ? stampedWatermarks.board_climbs
+            : stampedWatermarks.board_climb_stats;
+        const deletionsReplayBoundary = deletionsReplayFrom ?? minWatermark;
+        await reconcileScope(txn, scope, scopeKey, stampedWatermarks, runExclusive, async () => {
+          // The climber's own climb may have left the public catalogue since
+          // the build; see the final transaction below.
+          await resetScopeProtectedSyncState(txn, scopeKey);
+          if (!overFinishedScope) return;
+          for (const tableName of SNAPSHOT_TABLES) {
+            const key = getCheckpointKey(tableName, scopeKey);
+            const current = await getCheckpoint(txn, key);
+            if (current && compareCheckpoints(current, stampedWatermarks[tableName]) > 0) {
+              await setCheckpoint(txn, key, stampedWatermarks[tableName]);
+            }
+          }
+          await rewindDeletionsCheckpoint(txn, deletionsReplayBoundary);
+        });
         importReconcileMs = Date.now() - reconcileStartedAt - (importLockWaitMs - waitBeforeReconcile);
 
         const rowsStartedAt = Date.now();
@@ -1681,13 +1782,19 @@ export async function bootstrapScopeFromSnapshot(params: {
         // rows without markers re-import idempotently, markers without rows are
         // unrecoverable (see this function's docblock and scope-teardown.ts).
         await runExclusive(async () => {
-          await setCheckpoint(txn, getCheckpointKey('board_climbs', scopeKey), stampedWatermarks.board_climbs);
+          // Stamped with the rule the artifact was built under: the caller only
+          // imports one built under the current rule (`isSnapshotEntryUsable`),
+          // and it holds every row of the scope up to these watermarks.
+          await setCheckpoint(txn, getCheckpointKey('board_climbs', scopeKey), stampedWatermarks.board_climbs, {
+            stampRule: true,
+          });
           await markSchemaRefreshComplete(txn, 'board_climbs', scopeKey, stampedWatermarks.board_climbs);
           await markSchemaRefreshComplete(txn, 'board_climb_stats', scopeKey, stampedWatermarks.board_climb_stats);
           await setCheckpoint(
             txn,
             getCheckpointKey('board_climb_stats', scopeKey),
             stampedWatermarks.board_climb_stats,
+            { stampRule: true },
           );
 
           // Rewind the global deletions cursor IN THE SAME transaction as the
@@ -1695,21 +1802,15 @@ export async function bootstrapScopeFromSnapshot(params: {
           // bootstrap-eligible again, so a crash between them and a separate
           // rewind would leave board-row deletions in `(replay boundary,
           // deletions-head]` permanently unreplayed against the imported rows.
-          //
-          // New artifacts carry a metadata-only sync_deletions row whose
-          // timestamp is the oldest of run builtAt, the export transaction's
-          // stability boundary, and the start of every active transaction the
-          // exporter's observer counts (every role's with pg_read_all_stats,
-          // otherwise its own role's). That covers a long DELETE transaction
-          // which was invisible to the artifact's REPEATABLE READ snapshot but
-          // later commits with an older deleted_at. Old/malformed artifacts retain the pre-existing
-          // min(scoped watermarks) compatibility path. New live gzip exports
-          // refuse publication without the stronger boundary above.
-          const minWatermark =
-            compareCheckpoints(stampedWatermarks.board_climbs, stampedWatermarks.board_climb_stats) <= 0
-              ? stampedWatermarks.board_climbs
-              : stampedWatermarks.board_climb_stats;
-          await rewindDeletionsCheckpoint(txn, deletionsReplayFrom ?? minWatermark);
+          await rewindDeletionsCheckpoint(txn, deletionsReplayBoundary);
+
+          // An import over a finished scope wrote climbs behind the watermark
+          // of an index that was already built, and its reconcile may have
+          // deleted indexed ones. Send the layout back to a first build, which
+          // rewrites only the hold sets that changed.
+          if (overFinishedScope) {
+            await invalidateLayoutHoldIndex(txn, scope.boardType, scope.layoutId, { dropPostings: true });
+          }
 
           // Once more, with the cursors (the reconcile's first transaction did
           // it too). The row batches can have written an older published copy
@@ -1941,7 +2042,14 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
 
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
-        await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
+        // The rows kept were the ones whose climb is on the device. That is
+        // every grade the rule gives this scope only when the climbs are: a
+        // board whose climbs cursor an earlier rule advanced is missing the
+        // climbs that rule withheld, and their grades were just dropped.
+        const holdsEveryClimbOfTheRule = !(await getReferenceRuleGaps(txn, scopeKey)).layout;
+        await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark, {
+          stampRule: holdsEveryClimbOfTheRule,
+        });
         await markSchemaRefreshComplete(txn, GRADES_TABLE, scopeKey, watermark);
         // COMMIT here rather than leaving it for the wrapper, so gradesLockMs
         // covers the whole hold, then hand the wrapper an empty transaction.

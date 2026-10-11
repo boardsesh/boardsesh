@@ -573,6 +573,12 @@ protected stream is the climber's own drafts and unlisted climbs. What that buys
 - **A climb that leaves the catalogue is removed by a deletion marker**, with its
   stats, grades and holds-index entries. Its owner gets it back through the
   protected stream.
+- **A board downloaded before the rule is caught up once.** Its cursors are past
+  the published climbs the earlier rule withheld from this viewer, and those climbs
+  have not changed since. Each reference cursor row records the rule its rows were
+  delivered under; a finished board without that stamp imports the layout's rule-2
+  artifact over itself, on a link that is not metered, and pulls the delta since
+  the build. The board stays readable and is not announced as a download.
 - **A backend without `audience`** (a rollback) gets no board-table pull at all:
   the cycle skips them, reports once per launch through
   `SyncOptions.onAudienceUnsupported`, and carries on with the user tables.

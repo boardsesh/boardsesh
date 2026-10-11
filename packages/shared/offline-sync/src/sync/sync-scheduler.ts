@@ -103,6 +103,8 @@ export type SchedulerOptions = {
   isProtectedSyncAllowed?: SyncOptions['isProtectedSyncAllowed'];
   /** Threaded through to pullSync's SyncOptions: the backend rejected the `audience` argument. */
   onAudienceUnsupported?: SyncOptions['onAudienceUnsupported'];
+  /** Threaded through to pullSync's SyncOptions: a finished board was caught up to the publication rule, or an attempt failed. */
+  onRuleCatchUp?: SyncOptions['onRuleCatchUp'];
 };
 
 let isSyncing = false;
@@ -197,6 +199,7 @@ async function runSync(request: SyncRunRequest): Promise<void> {
       holdIndex: options?.holdIndex,
       isProtectedSyncAllowed: options?.isProtectedSyncAllowed,
       onAudienceUnsupported: options?.onAudienceUnsupported,
+      onRuleCatchUp: options?.onRuleCatchUp,
       // Lifecycle-only callbacks. The active scheduler may be newer than this
       // run (for example after a React effect replacement), so resolve it at
       // callback time and require the same database before handing it a wake.

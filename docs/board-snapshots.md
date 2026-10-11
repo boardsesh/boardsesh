@@ -702,7 +702,8 @@ engine does). A board scope (`boardType:layoutId:sizeId`) qualifies in one of tw
 
 Both also require that neither retry budget is spent and that any scheduled cooldown has elapsed. A
 `scope-complete:` scope is never healed — it already serves the whole catalog locally, so ~100 MB buys it
-nothing. The ordinary paged sync still downloads `board_climb_grades` before a scope is reported complete
+nothing. (The one-time publication-rule catch-up is a separate step with its own rules: see
+[The client half](#the-client-half-two-cursors-per-table-6306).) The ordinary paged sync still downloads `board_climb_grades` before a scope is reported complete
 (it is not in `SNAPSHOT_TABLES`), so a heal removes part of the slow path, not all of it. One artifact
 download is shared across every size of the same `(boardType, layoutId)` within a cycle.
 
@@ -2094,12 +2095,17 @@ only when every stream has reached its tail.
 is no device schema migration and an older bundle still reads what it expects:
 
 ```json
-{ "updatedAt": "…", "syncSeq": "…",
+{ "updatedAt": "…", "syncSeq": "…", "rule": 2,
   "protected": { "updatedAt": "…", "syncSeq": "…", "complete": true, "revision": 2 } }
 ```
 
 - The top level is the reference cursor. `protected` is the protected cursor. A
   missing `protected` means "replay from epoch, not complete", which fails closed.
+- `rule` is the publication rule every row at or below the reference cursor was
+  delivered under. An import of a rule-2 artifact writes it, and so does a pull
+  that begins at the start of its stream; every later write keeps it. A cursor
+  past the start with no `rule` was advanced under an earlier rule. See the
+  catch-up below.
 - `complete` means the stream has reached its tail since it was last reset, so
   nothing the device held is missing. It does not mean "at the tail now". It stays
   set while a later delta or a revision replay is part-way through, because
@@ -2111,6 +2117,8 @@ is no device schema migration and an older bundle still reads what it expects:
 - An older bundle ignores the extra fields. Its `setCheckpoint` rewrites the row
   without them and its revalidation deletes the row. Either way this bundle finds
   no protected cursor and replays the protected streams, which is a handful of rows.
+  It also finds no `rule`, and nothing on the device says which rule the server
+  that bundle reached was applying, so the board is caught up once more.
 - A reference write keeps `protected` in place with a `json_set` upsert. The upsert
   tests `json_valid` in a `CASE`, so a malformed row is overwritten instead of
   failing the transaction.
@@ -2147,6 +2155,47 @@ the watermark and fetch only what the artifact does not hold.
   crawls its grades the ordinary way.
 - An artifact whose layout watermark in the manifest is behind the scope's own
   cursor is not downloaded: the import would refuse to move a cursor backwards.
+
+**A board downloaded under an earlier rule is caught up once**
+(`catchUpLayoutToRule` in `pull-client.ts`). Before rule 2 the server withheld a
+published climb from a viewer its author's privacy settings excluded, and a finished
+board's cursors went past it. Rule 2 makes that climb public, but it has not changed,
+so no delta carries it. That is every board downloaded before this bundle, whether an
+artifact or the paged pull brought it. `getReferenceRuleGaps` finds them: a finished
+catalogue board with a climbs or stats cursor past the start and no `rule`.
+
+- The layout's rule-2 artifact is imported over the board. The import is the one a
+  fresh board gets, told that the board's cursors are ahead of the artifact
+  (`overFinishedScope`): in the reconcile's first transaction, before it writes a
+  row, it moves the two reference cursors and the deletions cursor back to the
+  artifact's. The pull that follows then delivers again whatever changed since the
+  build, and the board equals the server's reference set when it ends. An import that
+  fails part-way has therefore already asked for that pull.
+- The grades artifact follows in the same step. Its import keeps the grade rows whose
+  climb is on the device, so it stamps `rule` on the grades cursor only when the
+  climbs and stats cursors already carry it. A board whose grades cursor alone lacks
+  the stamp imports the grades artifact alone.
+- The layout's holds-index watermarks and postings are dropped in the import's last
+  transaction: climbs arrived behind them. The next build rewrites only the hold sets
+  that changed.
+- It is quiet. The board stays `scope-complete:` and readable throughout. Nothing is
+  announced to the download funnel, no progress frame is emitted (one would hold the
+  screen on), and neither the bootstrap budget nor the paged-fallback marker is
+  touched. `SyncOptions.onRuleCatchUp` reports an import, or a failure, for error
+  tracking.
+- Nobody asked for the download that day, so it waits for a link that is not metered,
+  like a heal, and does nothing until a rule-2 artifact is published. A failed
+  download or import is charged to a budget of its own (`rule-catch-up:<scope>`):
+  three failures per board, with 6 and then 24 hours between attempts. After the
+  third the board stays as it was.
+- Cost on the largest board, Kilter layout 1: one layout artifact (110.2 MB gzipped
+  in shape 1, 82.4 MB in shape 2) and one grades artifact (27.1 MB or 16.8 MB), then a
+  delta of at most one export interval. The alternative on today's contract is to pull
+  the three reference streams again from the start, about 2,200 pages. What the
+  import is for is small: 3,366 of that layout's 387,101 climbs have an owner
+  (standby, 2026-10-11), and the withheld ones are a part of those. A sync argument
+  that returned only owned reference climbs would make this about ten pages; the
+  contract has none.
 
 **A privacy event changes nothing on a catalogue board.** It resets a spray wall's
 protected cursors and nothing else in `sync_meta`, so a finished board stays
@@ -2192,13 +2241,14 @@ and unlisted climbs. Local reads and the sync of the climber's own tables carry 
 
 | The device arrives with | What this bundle does |
 | --- | --- |
-| A board that finished downloading under an earlier bundle | Keeps it, crawls nothing, pulls the climber's own drafts once |
+| A board that finished downloading under an earlier bundle | Keeps it and crawls nothing. Pulls the climber's own drafts once. On a link that is not metered, imports the rule-2 artifact over it once, for the climbs the earlier rule withheld |
+| A board this bundle downloaded, by import or page by page | Never imports over it |
 | A paged download part-way through | Resumes the reference crawl from its cursor; heals from an artifact once one is published |
 | An earlier bundle's import with epoch stamps | Imports the artifact again for its real watermark; never crawls from epoch; waits for an unmetered link |
 | A stuck board: `bootstrap-done:` and no cursor | Sets the marker aside and imports on an unmetered link; on a metered one, or with no artifact, the paged pull brings it back |
 | A manifest in format 1, or artifacts marked with another rule | Downloads nothing from it and crawls the reference catalogue once, and not again after a privacy event |
 | A rule-2 manifest | Imports, stamps the real watermark, pulls only what the artifact does not hold |
-| A return from an earlier bundle after this one wrote the new shape | A handful of protected rows after a delta pull; resumes an earlier bundle's re-crawl; imports once more only when no cursor is left, and only on an unmetered link |
+| A return from an earlier bundle after this one wrote the new shape | A handful of protected rows after a delta pull, and one more import over the board on a link that is not metered; resumes an earlier bundle's re-crawl; imports as a download only when no cursor is left, and only on an unmetered link |
 
 **Once per account** the platform prepares the catalogue for the signed-in climber:
 it forgets the protected cursors (the previous account's), deletes the drafts and

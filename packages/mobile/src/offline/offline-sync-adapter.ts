@@ -58,6 +58,7 @@ import {
   type SyncProgressSink,
   type AbandonedDownloadInfo,
   type AudienceUnsupportedInfo,
+  type RuleCatchUpInfo,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { getErrorStatus, isNetworkError, isServerUnavailableError } from '@boardsesh/offline-sync/error-classification';
@@ -576,6 +577,38 @@ export function __resetAudienceUnsupportedDedupeForTests(): void {
   audienceUnsupportedReported = false;
 }
 
+// A board downloaded under an earlier publication rule is brought up to the
+// current one once, from its artifact (issue #6306). The board was downloaded
+// before and stays readable, so neither outcome belongs in the download
+// funnel. A failed attempt goes to error tracking with its cause, at most
+// three times per board; an import leaves a breadcrumb.
+const reportRuleCatchUp = ({
+  scopeKey,
+  boardType,
+  outcome,
+  stage,
+  artifactBytes,
+  failures,
+  gaveUp,
+  importMs,
+  cause,
+}: RuleCatchUpInfo): void => {
+  if (outcome === 'imported') {
+    addErrorBreadcrumb({
+      category: 'offline-sync',
+      message: 'Downloaded board brought up to the publication rule',
+      level: 'info',
+      data: { scopeKey, artifactBytes, importMs },
+    });
+    return;
+  }
+  reportHandledError(new Error(`Publication-rule catch-up failed for ${scopeKey} at stage "${stage}"`, { cause }), {
+    level: 'warning',
+    tags: { source: 'offline-sync', kind: 'rule-catch-up', stage: stage ?? 'unknown', boardType },
+    extra: { scopeKey, artifactBytes, failures, gaveUp },
+  });
+};
+
 /**
  * Protected rows are pulled only while no privacy revalidation is pending: from
  * the moment a privacy event withdraws them until the purge of the device's
@@ -900,6 +933,7 @@ export function startSyncScheduler(
     holdIndex: holdIndexSyncOptions,
     isProtectedSyncAllowed,
     onAudienceUnsupported: reportAudienceUnsupported,
+    onRuleCatchUp: reportRuleCatchUp,
   });
 }
 
@@ -934,6 +968,7 @@ export function triggerSync(
     holdIndex: holdIndexSyncOptions,
     isProtectedSyncAllowed,
     onAudienceUnsupported: reportAudienceUnsupported,
+    onRuleCatchUp: reportRuleCatchUp,
   });
 }
 
@@ -966,6 +1001,7 @@ export function pullSync(
     // through a pending privacy revalidation by passing its own probe.
     isProtectedSyncAllowed: () => isProtectedSyncAllowed() && (options?.isProtectedSyncAllowed?.() ?? true),
     onAudienceUnsupported: options?.onAudienceUnsupported ?? reportAudienceUnsupported,
+    onRuleCatchUp: options?.onRuleCatchUp ?? reportRuleCatchUp,
     // Caller-provided error/drift/coverage reporters keep their existing
     // override semantics; scope completion is the one callback deliberately
     // composed because both telemetry and per-scope UI invalidation are required.

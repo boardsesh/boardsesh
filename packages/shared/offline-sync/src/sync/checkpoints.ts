@@ -2,6 +2,7 @@ import type { SqlExecutor } from '../database';
 import { parseOfflineBoardKey } from '../offline-board-key';
 import { DELETIONS_COVERAGE_KEY } from './retention';
 import { LOCAL_USER_ID_KEY } from './local-user-owner';
+import { SNAPSHOT_PRIVACY_VERSION } from './snapshot-manifest';
 import { BOARD_DATA_TABLES, PRIVACY_SCOPED_BOARD_TYPES, boardSyncStreamsFor } from './table-config';
 
 export type SyncCheckpoint = {
@@ -66,7 +67,7 @@ export type ProtectedCheckpoint = SyncCheckpoint & {
  */
 const UNSET_REFERENCE_CURSOR: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
-type StoredCheckpointRow = Partial<Record<'updatedAt' | 'syncSeq' | 'referenceUnset' | 'protected', unknown>>;
+type StoredCheckpointRow = Partial<Record<'updatedAt' | 'syncSeq' | 'referenceUnset' | 'protected' | 'rule', unknown>>;
 
 function parseStoredCheckpoint(raw: string | null | undefined): StoredCheckpointRow | null {
   if (!raw) return null;
@@ -380,24 +381,103 @@ export function parseTopLevelCheckpoint(raw: string | null | undefined): SyncChe
 }
 
 /**
- * Write the top-level cursor, keeping a protected cursor the row already holds.
+ * Write the top-level cursor, keeping a protected cursor and a rule stamp the
+ * row already holds.
  *
  * One upsert rather than a read and a write, so it stays atomic for the callers
  * that run it outside a transaction. `CASE` and not `AND`: SQLite evaluates the
  * arms of a `CASE` in order, so `json_type` is never handed a value
  * `json_valid` has just rejected, which would fail the statement, and with it
  * the page it belongs to.
+ *
+ * `stampRule` records that every row at or below this cursor reached the
+ * device under the current publication rule (see `getReferenceRuleGaps`).
+ * Only two writers may say so: an import, and a reference pull that began at
+ * the start of its stream.
  */
-export async function setCheckpoint(db: SqlExecutor, key: string, checkpoint: SyncCheckpoint): Promise<void> {
+export async function setCheckpoint(
+  db: SqlExecutor,
+  key: string,
+  checkpoint: SyncCheckpoint,
+  options?: { stampRule?: boolean },
+): Promise<void> {
+  const cursor = { updatedAt: checkpoint.updatedAt, syncSeq: checkpoint.syncSeq };
+  const withProtected = `CASE WHEN json_type(sync_meta.value, '$.protected') = 'object'
+         THEN json_set(excluded.value, '$.protected', json(json_extract(sync_meta.value, '$.protected')))
+         ELSE excluded.value END`;
   await db.runAsync(
     `INSERT INTO sync_meta (key, value) VALUES (?, ?)
      ON CONFLICT (key) DO UPDATE SET value = CASE WHEN json_valid(sync_meta.value) THEN
-       CASE WHEN json_type(sync_meta.value, '$.protected') = 'object'
-         THEN json_set(excluded.value, '$.protected', json(json_extract(sync_meta.value, '$.protected')))
-         ELSE excluded.value END
+       CASE WHEN json_type(excluded.value, '$.rule') IS NULL AND json_type(sync_meta.value, '$.rule') = 'integer'
+         THEN json_set(${withProtected}, '$.rule', json_extract(sync_meta.value, '$.rule'))
+         ELSE ${withProtected} END
        ELSE excluded.value END`,
-    [key, JSON.stringify({ updatedAt: checkpoint.updatedAt, syncSeq: checkpoint.syncSeq })],
+    [key, JSON.stringify(options?.stampRule ? { ...cursor, rule: SNAPSHOT_PRIVACY_VERSION } : cursor)],
   );
+}
+
+const isStartOfStream = (cursor: SyncCheckpoint): boolean => Date.parse(cursor.updatedAt) === 0;
+
+/** Whether a reference pull resuming from this cursor starts at the beginning of its stream. */
+export function startsReferenceStream(cursor: SyncCheckpoint | null): boolean {
+  return cursor === null || isStartOfStream(cursor);
+}
+
+/** The board tables that have a reference stream, in the two groups an artifact delivers them in. */
+const LAYOUT_ARTIFACT_TABLES = ['board_climbs', 'board_climb_stats'] as const;
+const GRADES_ARTIFACT_TABLE = 'board_climb_grades';
+
+/**
+ * Which of a scope's reference cursors were advanced under an EARLIER
+ * publication rule, and so may sit past rows the current rule makes public.
+ *
+ * The rule decides which climbs the reference stream carries. Before rule 2 the
+ * server withheld a published climb from a viewer its author's privacy settings
+ * excluded; rule 2 gives every published, listed climb to everyone. A cursor
+ * that passed such a climb while it was withheld will never see it again: the
+ * climb did not change, so it is still behind the cursor. That is every board
+ * downloaded before this bundle.
+ *
+ * So each reference cursor row carries the rule its rows were delivered under,
+ * as `rule` beside the cursor:
+ *
+ *     { "updatedAt": "…", "syncSeq": "…", "rule": 2, "protected": { … } }
+ *
+ * `setCheckpoint` writes it for an import of an artifact built under the rule
+ * and for a pull that began at the start of the stream, and keeps it on every
+ * later write. A cursor with no stamp, past the start, is one an earlier rule
+ * advanced. A stream with no cursor, or one still at the start, has nothing
+ * behind it and is not a gap.
+ *
+ * IN THE ROW, like `protected`, and for the same reason. An earlier bundle
+ * rewrites the row without the field whenever it moves the cursor, and nothing
+ * says which rule the server it reached was applying. The stamp going with
+ * the rewrite is what makes this bundle look again.
+ *
+ * `layout` is the climbs and stats cursors, which the layout artifact repairs
+ * together. `grades` is the grades cursor, which has an artifact of its own.
+ */
+export async function getReferenceRuleGaps(
+  db: SqlExecutor,
+  scopeKey: string,
+): Promise<{ layout: boolean; grades: boolean }> {
+  const keys = [...LAYOUT_ARTIFACT_TABLES, GRADES_ARTIFACT_TABLE].map((tableName) =>
+    getCheckpointKey(tableName, scopeKey),
+  );
+  const rows = await db.getAllAsync<{ key: string; value: string }>(
+    `SELECT key, value FROM sync_meta WHERE key IN (${keys.map(() => '?').join(', ')})`,
+    keys,
+  );
+  const predatesRule = (tableName: string): boolean => {
+    const raw = rows.find((row) => row.key === getCheckpointKey(tableName, scopeKey))?.value;
+    const cursor = parseTopLevelCheckpoint(raw);
+    if (startsReferenceStream(cursor)) return false;
+    return parseStoredCheckpoint(raw)?.rule !== SNAPSHOT_PRIVACY_VERSION;
+  };
+  return {
+    layout: LAYOUT_ARTIFACT_TABLES.some((tableName) => predatesRule(tableName)),
+    grades: predatesRule(GRADES_ARTIFACT_TABLE),
+  };
 }
 
 /** The protected stream's cursor for one board table and scope, or null when it must replay. */
