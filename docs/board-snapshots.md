@@ -1725,7 +1725,91 @@ catalog manifest retains its own format version. Old entries
 are rebuilt and excluded from manifest merges until rebuilt. Clients reject older
 artifacts and replay live scope sync from epoch after import so the snapshot
 watermark cannot skip older authorized authored climbs. This temporarily duplicates
-reference downloads; a separate authored-content cursor can optimize it later.
+reference downloads; the sync audiences below are the server half of the fix.
+
+### Sync audiences (#6306)
+
+`syncClimbs`, `syncClimbStats` and `syncClimbGrades` take an optional
+`audience: SyncAudience` argument that splits a board's pull into two streams, each
+with its own cursor:
+
+| Audience | Rows | Depends on the viewer |
+| --- | --- | --- |
+| `REFERENCE` | Climbs with no Boardsesh owner, not Boardsesh-authored, and with no privacy policy row, plus their stats and grades. Exactly the rows an artifact carries. | No |
+| `PROTECTED` | Climbs that have, or once had, a Boardsesh author and that the caller may see, plus their stats and grades. | Yes |
+| omitted | Both, in one stream. What every client older than the split sends, and unchanged for them. | Yes |
+
+`REFERENCE` is selected by ownership, not by visibility. An unowned climb that is a
+draft, unlisted, or hidden by moderation is in it, exactly as it is in the snapshot
+artifact and in the pull with no audience today. The set is the same for every
+viewer; that is not a claim that every row in it is listed. The split does not change
+which rows these are.
+
+The partition rule: the two streams are disjoint, and together they are exactly the
+rows the same request returns with no audience. A climb the caller may see that is
+not a reference climb always has, or once had, an author. With no owner, no author
+flag and no policy row it would be a reference climb, and with a policy row and no
+owner nobody may see it.
+
+One predicate decides what a reference climb is: `publicReferenceClimbSql` in
+`packages/db/src/queries/privacy.ts`. The per-layout export, the catalogue export and
+the `REFERENCE` stream all build their SQL from it, and all three take spray from
+`REFERENCE_EXCLUDED_BOARD_TYPES` in the same file. That is what lets a phone resume
+`REFERENCE` from an artifact's watermark: a row at or below the watermark that the
+stream carried and the artifact did not would never be delivered.
+`snapshot-export-golden.test.ts` compares an artifact against a `REFERENCE` pull row
+for row.
+
+Details that differ by stream:
+
+- **Spray walls have no reference set.** `REFERENCE` answers an empty page for any
+  spray layout without checking who is asking, so it cannot reveal which walls exist.
+  `PROTECTED` on a wall is every climb the caller may see there, behind the same
+  by-layout gate as before.
+- **First-ascent credit.** `REFERENCE` stats ship the stored manufacturer
+  `fa_username` and `fa_at`. `PROTECTED` stats ship `NULL` for both, on every board
+  type: a name there depends on who is asking, and a phone keeps its own protected rows
+  across a privacy event. No offline reader selects either column.
+- **Index.** `PROTECTED` reads `board_climbs` through the partial index
+  `board_climbs_protected_sync_idx (board_type, layout_id, updated_at, sync_seq) WHERE
+  (user_id IS NOT NULL OR is_boardsesh_authored)`. Kilter 1 has 3,366 such climbs among
+  387,101 (production standby, 2026-10-11). A query has to repeat that predicate to use
+  the index; `protectedClimbCandidateSql` is its text.
+- **Stats and grades.** A `PROTECTED` page is driven from the protected climbs: collect
+  them through the partial index, probe the reference table by primary key once per
+  climb, then sort and limit. The query fences that order with two `OFFSET 0`
+  subqueries, the second `LATERAL` to the first. The planner is not left to find it:
+  on the standby it planned the plain join as a walk of the 425,172-row stats cursor
+  index to return 252 rows. A scope with more than 10,000 candidates
+  (`SYNC_PROTECTED_JOIN_MAX_CLIMBS`) falls back to the cursor-order walk the other
+  streams use. Both shapes return the same pages, and both run under the serial-plan
+  guard. Setting the variable to 0 is not an off switch: it sends every layout down
+  the slower walk.
+- **Steady-state cost.** Neither shape is cheap between privacy events, because this
+  stream's cursor does not follow the table. An empty page echoes the cursor it was
+  given, so a sparse stream's cursor stays at the last protected row delivered,
+  however far the rest of the board has moved on. The driven page therefore costs the
+  same at the tail as from epoch: about 30,000 buffers and 20 ms for Kilter 1 on a
+  local fixture of its size, 3,212 buffers on a 400-candidate fixture. The walk passes
+  every stats or grades row changed since that cursor, on every pull. The server does
+  not limit this; the client is expected to bound how often it pulls the protected
+  stats and grades streams.
+
+What moves a row between streams, and whether a phone hears about it:
+
+| Change | Row bumped | How it reaches a phone |
+| --- | --- | --- |
+| Account made private or public, follow approved or removed, climb audience changed | No | `privacyChanged`, then a `PROTECTED` replay from epoch |
+| Account deleted, climb that was public | Yes: setting the author flag and clearing the owner each bump it | The retained climb stays in `PROTECTED` and arrives again past the old cursor |
+| Account deleted, climb that was restricted | Yes, the same two bumps | Nothing delivers it. Its ownerless policy row lets nobody see it, so it leaves `PROTECTED` for every viewer and no stream carries the bump. A phone drops its copy only on `privacyChanged` |
+| Climb hidden, unlisted, published or edited | Yes | The ordinary delta of the stream that holds it |
+| Climb hard-deleted | Tombstone | `syncDeletions`, whichever stream held it |
+
+Nothing can move a reference climb out of `REFERENCE` without a bump: a policy row
+needs an owner, and `setContentAudience` refuses a climb that has none.
+
+The client half (two cursors per table, and a privacy event that resets only the
+protected one) ships separately. Until it does, no client sends the argument.
 
 Before enabling `BOARDSESH_PRIVACY_ENABLED`, regenerate every artifact and remove or
 expire previously published layout, grades and catalog artifacts plus CDN copies.

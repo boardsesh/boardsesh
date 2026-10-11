@@ -32,6 +32,28 @@ export const syncTypeDefs = /* GraphQL */ `
     syncSeq: String!
   }
 
+  """
+  Which half of a board's climbs a per-board pull returns. The two halves are
+  disjoint, and together they are exactly the rows the same pull returns with no
+  audience at all.
+  """
+  enum SyncAudience {
+    """
+    Climbs with no Boardsesh owner, not Boardsesh-authored, and with no privacy
+    policy row, plus their stats and grades. The same rows for every viewer, and
+    the same rows the offline snapshot artifact carries. Selected by ownership,
+    not by visibility: an unowned draft, unlisted or hidden climb is included,
+    as it is when no audience is given. Always empty for spray walls.
+    """
+    REFERENCE
+    """
+    Climbs with a Boardsesh author that the caller may see, plus their stats and
+    grades. Authorized per viewer. Stats rows carry no first-ascent name or date.
+    For spray walls this is every climb the caller may see on the wall.
+    """
+    PROTECTED
+  }
+
   "Canonical saved-climb documents from one snapshot, without changing a pull cursor."
   type SyncClimbDocuments {
     "Authenticated account owning the client mirror, independent of the setter."

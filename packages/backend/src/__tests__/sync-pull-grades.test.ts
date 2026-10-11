@@ -1,8 +1,26 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult, SyncCursorInput } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
+import {
+  AUDIENCE_BOARD_TYPE,
+  AUDIENCE_FOLLOWER,
+  AUDIENCE_LAYOUT_ID,
+  AUDIENCE_OTHER_SIZE_ID,
+  AUDIENCE_OWNER,
+  AUDIENCE_PENDING_FOLLOWER,
+  AUDIENCE_SIZE_ID,
+  AUDIENCE_SPRAY_LAYOUT_ID,
+  AUDIENCE_STRANGER,
+  AUDIENCE_VIEWERS,
+  expectStreamsPartitionUnion,
+  keysOf,
+  pullAllDocuments,
+  pullAudiencePage,
+  pullAudienceStreams,
+  seedSyncAudienceFixture,
+} from './helpers/sync-audience-fixture';
 
 /**
  * Covers syncClimbGrades — the offline pull for board_climb_grades. Mirrors the
@@ -203,5 +221,151 @@ describe('syncClimbGrades — scoping via correlated board_climbs EXISTS', () =>
 describe('syncClimbGrades — auth requirement', () => {
   it('throws when the connection is unauthenticated', async () => {
     await expect(callSyncClimbGrades({ boardType: 'kilter' }, ctx(false))).rejects.toThrow(/Authentication required/);
+  });
+});
+
+// The audience split (#6306) for grades. Same fixture and same contract as the
+// climb and stats coverage in sync-pull-board-scope.test.ts.
+describe('syncClimbGrades — audience split', () => {
+  const RESOLVER = 'syncClimbGrades';
+  const LAYOUT = { boardType: AUDIENCE_BOARD_TYPE, layoutId: AUDIENCE_LAYOUT_ID };
+  const WALL = { boardType: 'spray', layoutId: AUDIENCE_SPRAY_LAYOUT_ID, sizeId: AUDIENCE_SPRAY_LAYOUT_ID };
+
+  // `ref-a` and `own-private` are graded at two angles, the rest at one.
+  const REFERENCE_GRADES = ['ref-a@40', 'ref-a@45', 'ref-b@40', 'ref-size-7@40'];
+  // Without an accepted follow: the public account's climb, the deleted
+  // account's retained one, and the private account's current Public choice.
+  const OPEN_TO_EVERYONE = ['deleted-public@40', 'own-public-consent@40', 'own-public@40'];
+  const PROTECTED_GRADES = {
+    [AUDIENCE_OWNER]: [
+      'deleted-public@40',
+      'own-only-me@40',
+      'own-private-size-7@40',
+      'own-private@40',
+      'own-private@45',
+      'own-public-consent@40',
+      'own-public@40',
+      'own-stale-consent@40',
+    ],
+    [AUDIENCE_FOLLOWER]: [
+      'deleted-public@40',
+      'own-private-size-7@40',
+      'own-private@40',
+      'own-private@45',
+      'own-public-consent@40',
+      'own-public@40',
+      'own-stale-consent@40',
+    ],
+    [AUDIENCE_PENDING_FOLLOWER]: OPEN_TO_EVERYONE,
+    [AUDIENCE_STRANGER]: OPEN_TO_EVERYONE,
+  };
+
+  beforeEach(async () => {
+    await seedSyncAudienceFixture();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  describe.each(AUDIENCE_VIEWERS)('for %s', (viewerId) => {
+    it('splits the grades into two disjoint streams that add up to the union', async () => {
+      const streams = await pullAudienceStreams({ resolver: RESOLVER, scope: LAYOUT, viewerId });
+      expectStreamsPartitionUnion(RESOLVER, streams);
+      expect(keysOf(RESOLVER, streams.reference)).toEqual(REFERENCE_GRADES);
+      expect(keysOf(RESOLVER, streams.protectedStream)).toEqual(PROTECTED_GRADES[viewerId]);
+    });
+
+    it('scopes both streams to a size, and to the whole board type when no layout is given', async () => {
+      for (const sizeId of [AUDIENCE_SIZE_ID, AUDIENCE_OTHER_SIZE_ID]) {
+        const sized = await pullAudienceStreams({ resolver: RESOLVER, scope: { ...LAYOUT, sizeId }, viewerId });
+        expectStreamsPartitionUnion(RESOLVER, sized);
+        const inSize = (key: string) => key.includes('-size-7@') === (sizeId === AUDIENCE_OTHER_SIZE_ID);
+        expect(keysOf(RESOLVER, sized.reference)).toEqual(REFERENCE_GRADES.filter(inSize));
+        expect(keysOf(RESOLVER, sized.protectedStream)).toEqual(PROTECTED_GRADES[viewerId].filter(inSize));
+      }
+
+      const everyLayout = await pullAudienceStreams({
+        resolver: RESOLVER,
+        scope: { boardType: AUDIENCE_BOARD_TYPE },
+        viewerId,
+      });
+      expectStreamsPartitionUnion(RESOLVER, everyLayout);
+      expect(keysOf(RESOLVER, everyLayout.reference)).toContain('other-layout-ref@40');
+      expect(keysOf(RESOLVER, everyLayout.protectedStream)).toContain('other-layout-own@40');
+    });
+
+    it('pages each stream to the same rows whatever the page size', async () => {
+      for (const audience of ['REFERENCE', 'PROTECTED'] as const) {
+        const inOnePage = await pullAllDocuments({ resolver: RESOLVER, scope: LAYOUT, viewerId, audience });
+        // Every grade shares one computed_at, so only sync_seq moves the cursor.
+        const twoAtATime = await pullAllDocuments({
+          resolver: RESOLVER,
+          scope: LAYOUT,
+          viewerId,
+          audience,
+          pageSize: 2,
+        });
+        expect(twoAtATime).toEqual(inOnePage);
+      }
+    });
+  });
+
+  it('serves the same REFERENCE grades to every viewer', async () => {
+    const [asOwner, ...asEveryoneElse] = await Promise.all(
+      AUDIENCE_VIEWERS.map((viewerId) =>
+        pullAllDocuments({ resolver: RESOLVER, scope: LAYOUT, viewerId, audience: 'REFERENCE' }),
+      ),
+    );
+    expect(asEveryoneElse).toHaveLength(AUDIENCE_VIEWERS.length - 1);
+    for (const asAnotherViewer of asEveryoneElse) {
+      expect(asAnotherViewer).toEqual(asOwner);
+    }
+  });
+
+  it('returns the same PROTECTED pages whether driven from the climbs or walked in cursor order', async () => {
+    const pageThrough = () =>
+      pullAllDocuments({
+        resolver: RESOLVER,
+        scope: { ...LAYOUT, sizeId: AUDIENCE_SIZE_ID },
+        viewerId: AUDIENCE_OWNER,
+        audience: 'PROTECTED',
+        pageSize: 2,
+      });
+    const firstPage = () =>
+      pullAudiencePage({
+        resolver: RESOLVER,
+        scope: LAYOUT,
+        viewerId: AUDIENCE_OWNER,
+        audience: 'PROTECTED',
+        limit: 3,
+      });
+
+    const drivenDocuments = await pageThrough();
+    const drivenFirstPage = await firstPage();
+    // Zero candidates allowed: every page takes the cursor-order walk.
+    vi.stubEnv('SYNC_PROTECTED_JOIN_MAX_CLIMBS', '0');
+    const walkedDocuments = await pageThrough();
+    const walkedFirstPage = await firstPage();
+
+    expect(drivenDocuments.length).toBeGreaterThan(2);
+    expect(walkedDocuments).toEqual(drivenDocuments);
+    // Same rows, same order, same cursor: a cursor from one shape resumes on the other.
+    expect(walkedFirstPage).toEqual(drivenFirstPage);
+    expect(drivenFirstPage.hasMore).toBe(true);
+  });
+
+  it('has no REFERENCE grades for a spray wall, and PROTECTED is what the viewer may see on it', async () => {
+    const cursor = { updatedAt: '2026-01-01T00:00:00.000Z', syncSeq: '7' };
+    for (const viewerId of [AUDIENCE_OWNER, AUDIENCE_STRANGER]) {
+      const page = await pullAudiencePage({ resolver: RESOLVER, scope: WALL, viewerId, audience: 'REFERENCE', cursor });
+      expect(page).toEqual({ documents: [], cursor: { updatedAt: cursor.updatedAt, syncSeq: '7' }, hasMore: false });
+    }
+
+    const asOwner = await pullAudienceStreams({ resolver: RESOLVER, scope: WALL, viewerId: AUDIENCE_OWNER });
+    expectStreamsPartitionUnion(RESOLVER, asOwner);
+    expect(keysOf(RESOLVER, asOwner.protectedStream)).toEqual(['spray-orphan@40', 'spray-own@40']);
+
+    const asStranger = await pullAudienceStreams({ resolver: RESOLVER, scope: WALL, viewerId: AUDIENCE_STRANGER });
+    expect(asStranger).toEqual({ union: [], reference: [], protectedStream: [] });
   });
 });
