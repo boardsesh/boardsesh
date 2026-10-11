@@ -850,10 +850,9 @@ export function mapRowToClimb(
 const RANKED_WALK_INDEX = 'idx_stats_ascents';
 
 /**
- * How many of the angle's stats rows one walk may read before it gives up, so a
- * filter that keeps almost nothing costs a bounded extra and not a second pass
- * over the board. On a laptop 12,000 rows is 31 ms, against the full query's
- * 500 ms.
+ * How many of the angle's stats rows one walk reads before it gives up, when
+ * the page is shallow. A filter that keeps almost nothing then costs a bounded
+ * extra, not a second pass over the board.
  */
 const RANKED_WALK_MIN_BUDGET = 12_000;
 
@@ -864,6 +863,86 @@ const RANKED_WALK_MIN_BUDGET = 12_000;
  * degrees: the default list keeps 97 in 100, a three-grade band 26 to 38.
  */
 const RANKED_WALK_BUDGET_PER_WANTED_ROW = 25;
+
+/**
+ * And it never exceeds this share of the layout's listed climbs. The full query
+ * visits every one of those, and a walked row costs about what a visited climb
+ * does, so an eighth of them caps a wasted walk at about an eighth of the full
+ * query it then falls back to.
+ *
+ * The share is of the LAYOUT because that is what the full query's cost follows,
+ * while the walk's follows the ranking, which every layout of the board type
+ * shares. Kilter Homewall (28,977 listed climbs) next to Kilter Original
+ * (298,088) on one phone: its full query is 92 ms on a laptop, and an uncapped
+ * walk past its 9,156 sent climbs at 40 degrees was 200 ms on top of that.
+ */
+const RANKED_WALK_LAYOUT_SHARE = 8;
+
+/** How long a layout's listed-climb count is reused. It only sizes the budget. */
+const LAYOUT_CLIMB_COUNT_TTL_MS = 5 * 60_000;
+
+type LayoutClimbCount = { total: number; readAtMs: number };
+
+// Per connection, so two databases never share a count.
+const layoutClimbCounts = new WeakMap<OfflineDatabase, Map<string, LayoutClimbCount>>();
+
+/** The layout's listed climbs, counted off `idx_climbs_search` and kept for five minutes. */
+async function countListedClimbsInLayout(db: OfflineDatabase, boardType: string, layoutId: number): Promise<number> {
+  let counts = layoutClimbCounts.get(db);
+  if (!counts) {
+    counts = new Map();
+    layoutClimbCounts.set(db, counts);
+  }
+  const key = `${boardType}:${layoutId}`;
+  const known = counts.get(key);
+  const nowMs = Date.now();
+  if (known && nowMs - known.readAtMs < LAYOUT_CLIMB_COUNT_TTL_MS) return known.total;
+  const row = await db.getFirstAsync<{ total: number }>(
+    'SELECT COUNT(*) AS total FROM board_climbs WHERE board_type = ? AND layout_id = ? AND is_listed = 1',
+    [boardType, layoutId],
+  );
+  const total = row?.total ?? 0;
+  counts.set(key, { total, readAtMs: nowMs });
+  return total;
+}
+
+/**
+ * How long a walk that came up short is remembered. Until then the same search
+ * is not walked again at that page or deeper, so a filter the ranking is sparse
+ * in pays for one wasted walk and not one per page of scrolling.
+ */
+const WALK_MISS_MEMORY_MS = 60_000;
+const WALK_MISS_MEMORY_SIZE = 32;
+
+type WalkMiss = { page: number; atMs: number };
+
+// Per connection, like the layout counts above.
+const walkMisses = new WeakMap<OfflineDatabase, Map<string, WalkMiss>>();
+
+/** Everything about a search except which page of it is asked for. */
+function walkMissKey(input: ClimbSearchInput, ownerUserId: string | null): string {
+  return JSON.stringify([ownerUserId, { ...input, page: null }]);
+}
+
+function hasRecentWalkMiss(db: OfflineDatabase, key: string, page: number): boolean {
+  const miss = walkMisses.get(db)?.get(key);
+  return miss !== undefined && page >= miss.page && Date.now() - miss.atMs < WALK_MISS_MEMORY_MS;
+}
+
+function rememberWalkMiss(db: OfflineDatabase, key: string, page: number): void {
+  let misses = walkMisses.get(db);
+  if (!misses) {
+    misses = new Map();
+    walkMisses.set(db, misses);
+  }
+  // Re-inserting moves the key to the end, so the first key is the oldest.
+  misses.delete(key);
+  misses.set(key, { page, atMs: Date.now() });
+  if (misses.size > WALK_MISS_MEMORY_SIZE) {
+    const oldest = misses.keys().next();
+    if (!oldest.done) misses.delete(oldest.value);
+  }
+}
 
 /**
  * Whether the walk can answer this search at all, and is worth trying.
@@ -892,6 +971,7 @@ function canWalkAscentsRanking(
 
 type RankedWalkQuery = {
   boardType: string;
+  layoutId: number;
   angle: number;
   selectSql: string;
   selectBinds: Bind[];
@@ -906,9 +986,15 @@ type RankedWalkQuery = {
  * `pageSize + 1` rows and the full query has to answer instead.
  */
 async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): Promise<LocalClimbRow[] | null> {
-  const { boardType, angle, pageSize, offset } = walk;
+  const { boardType, layoutId, angle, pageSize, offset } = walk;
   const wantedRows = offset + pageSize + 1;
-  const budget = Math.max(RANKED_WALK_MIN_BUDGET, wantedRows * RANKED_WALK_BUDGET_PER_WANTED_ROW);
+  const layoutClimbs = await countListedClimbsInLayout(db, boardType, layoutId);
+  const budget = Math.min(
+    Math.floor(layoutClimbs / RANKED_WALK_LAYOUT_SHARE),
+    Math.max(RANKED_WALK_MIN_BUDGET, wantedRows * RANKED_WALK_BUDGET_PER_WANTED_ROW),
+  );
+  // Fewer ranks than rows wanted cannot fill the page: go straight to the full query.
+  if (budget < wantedRows) return null;
 
   // The stats row at rank `budget`, read from the index alone. The walk stops
   // before it. No row means the whole angle is inside the budget.
@@ -926,16 +1012,20 @@ async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): P
   // CROSS JOIN pins the stats row as the outer loop, and INDEXED BY pins the
   // index: either one left to the planner could turn this back into a sort.
   // `ascensionist_count > 0` is the index's own predicate, spelled as its DDL
-  // spells it, which is what lets SQLite use a partial index here. The inner
-  // join on `c.uuid` (the primary key) yields one climb per stats row, so the
-  // tie-break on `s.climb_uuid` is the full query's `c.uuid`.
+  // spells it, which is what lets SQLite use a partial index here. The edge
+  // comes before it in the text because SQLite 3.50.3 (the build in the app)
+  // takes the first of the two as the index range and tests the other per row:
+  // edge first, the scan stops at the edge; edge second, it reads on to the end
+  // of the angle's sent climbs. The inner join on `c.uuid` (the primary key)
+  // yields one climb per stats row, so the tie-break on `s.climb_uuid` is the
+  // full query's `c.uuid`.
   const query = `
     SELECT
       ${walk.selectSql}
     FROM board_climb_stats s INDEXED BY ${RANKED_WALK_INDEX}
     CROSS JOIN board_climbs c ON c.uuid = s.climb_uuid
     ${BROWSED_GRADES_JOIN}
-    WHERE s.board_type = ? AND s.angle = ? AND s.ascensionist_count > 0 ${edgeSql}
+    WHERE s.board_type = ? AND s.angle = ? ${edgeSql} AND s.ascensionist_count > 0
       AND ${walk.whereSql}
     ORDER BY s.ascensionist_count DESC, s.climb_uuid DESC
     LIMIT ? OFFSET ?
@@ -1022,17 +1112,22 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   };
 
   if (canWalkAscentsRanking(input, sortBy, sortOrder, crossAngle)) {
-    const rankedRows = await readRankedWalkRows(db, {
-      boardType,
-      angle,
-      selectSql,
-      selectBinds,
-      whereSql,
-      whereBinds,
-      pageSize,
-      offset: page * pageSize,
-    });
-    if (rankedRows) return toResult(rankedRows);
+    const missKey = walkMissKey(input, ownerUserId);
+    if (!hasRecentWalkMiss(db, missKey, page)) {
+      const rankedRows = await readRankedWalkRows(db, {
+        boardType,
+        layoutId: input.layoutId,
+        angle,
+        selectSql,
+        selectBinds,
+        whereSql,
+        whereBinds,
+        pageSize,
+        offset: page * pageSize,
+      });
+      if (rankedRows) return toResult(rankedRows);
+      rememberWalkMiss(db, missKey, page);
+    }
   }
 
   // Random uses the seeded mixer (order direction is meaningless); every other
