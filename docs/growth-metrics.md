@@ -81,7 +81,7 @@ before grouping.
   date, www registers the browser UA as a super property. Do not filter www on
   `$virt_is_bot` for dates before that.
 - **Country is wrong on proxied events from the #6256 deploy (2026-10-10)
-  until the consent-proxy fix deploys.** The backend PostHog proxy stopped
+  until the #6342 backend deploy.** The backend PostHog proxy stopped
   forwarding the visitor IP for all traffic, so PostHog placed every web and
   app event at the backend's egress and overwrote person `$geoip_*` properties
   with it. Arm 2 of the www crawler rule below reads `country`, so it is not
@@ -931,7 +931,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | #2644 PRs B and C ship | PostHog capture needs consent: people-based counts drop to the consenting subset (see "Active users") |
 | #6336 OTA (2026-10-11) | The climbs grade row stays open once the Grade chip opens it (hidden by default, kept across launches); `Grade Filter Changed` and `Grade Row Toggled` start; `Climb Search Performed` carries `gradeFormat`. Under V grades one "V0" chip now sets `minGrade` 10 and `maxGrade` 12, so `minGrade != maxGrade` stops meaning "built a range" from this date. Count ranges from `Grade Filter Changed`: `withinRangeWindow = true` (the quick second tap) plus `gesture = 'hold'`. A range misfire is a `withinRangeWindow = true` change followed by a change back to one grade; `msSincePrevious` on that second event is the real gap between the two |
 | 2026-10-10 (#6256 backend deploy) | The proxy stops forwarding visitor IPs: event and person country become the backend's location |
-| Consent-proxy fix backend deploy | Consented capture is geolocated to the visitor again; country-based filters work from here |
+| #6342 backend deploy (fill in the date when it ships) | Consented capture is geolocated to the visitor again; country-based filters work from here |
 
 None of these repairs past data. Annotate them; do not backfill.
 
