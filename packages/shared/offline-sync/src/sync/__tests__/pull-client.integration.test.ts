@@ -46,6 +46,7 @@ import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test
 import { getDeletionsCoverageAt } from '../deletions-coverage';
 import { EMPTY_BOOTSTRAP_RETRY_STATE, writeBootstrapRetryState } from '../bootstrap-retry';
 import { compareCheckpoints, setCheckpoint } from '../checkpoints';
+import { markUserDataComplete } from '../local-user-owner';
 import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS } from '../retention';
 import type { SnapshotSource } from '../snapshot-bootstrap';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION, type SnapshotManifest } from '../snapshot-manifest';
@@ -1619,6 +1620,8 @@ describe('query invalidation over one pull cycle', () => {
     }
 
     it('says nothing for a board row this device never had', async () => {
+      // Isolate the no-op tombstone from the first-sync completion refresh.
+      await markUserDataComplete(db);
       await seedClimb('local-climb');
       const deletions: DeletionRecord[] = [
         { tableName: 'board_climbs', recordId: 'someone-elses-climb', deletedAt: '2024-06-01T00:00:00Z' },
