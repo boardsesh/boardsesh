@@ -19,14 +19,21 @@ export const ACTIVE_USERS_PLATFORMS: readonly ActiveUsersPlatform[] = ['web', 'i
 /**
  * Rows older than this many UTC days are deleted by the retention job. The
  * longest thing computed from the table is the trailing 30-day MAU, so 60 days
- * keeps every window the snapshot reads plus 30 days of slack, enough to re-run
- * a snapshot that failed up to a month late. Nothing computes yearly actives.
+ * keeps that whole window for any day up to {@link MAX_SNAPSHOT_BACKFILL_DAYS}
+ * back: a snapshot that failed can be re-run with `day` up to a month late.
+ * Nothing computes yearly actives.
  */
 export const USER_ACTIVITY_RETENTION_DAYS = 60;
 
 /** The trailing windows, in UTC days ending on (and including) the snapshot day. */
 const WEEKLY_WINDOW_DAYS = 7;
 const MONTHLY_WINDOW_DAYS = 30;
+
+/**
+ * How far back a re-run may count. Retention minus the monthly window, so the
+ * oldest re-runnable day still has all 30 days of rows behind it.
+ */
+export const MAX_SNAPSHOT_BACKFILL_DAYS = USER_ACTIVITY_RETENTION_DAYS - MONTHLY_WINDOW_DAYS;
 
 const ACTIVE_USERS_SYSTEM_DISTINCT_ID = 'system:active-users';
 
@@ -82,26 +89,61 @@ function platformPropertyName(prefix: string, platform: ActiveUsersPlatform): st
 }
 
 export type SnapshotActiveUsersOptions = {
-  /** Injected so a test can pin the day. The snapshot covers the UTC day before `now`. */
+  /** Injected so a test can pin the day. By default the snapshot covers the UTC day before `now`. */
   now?: Date;
+  /**
+   * A past UTC day (`YYYY-MM-DD`) to count instead of yesterday, for re-running
+   * a snapshot that failed: yesterday back to {@link MAX_SNAPSHOT_BACKFILL_DAYS}
+   * days before `now`'s day.
+   */
+  day?: string | null;
   database?: Database;
 };
 
+/** A `day` a snapshot cannot count: malformed, today or later, or past retention. */
+export class InvalidSnapshotDayError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidSnapshotDayError';
+  }
+}
+
+const UTC_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The day a snapshot counts: `requested` when valid, else yesterday. Throws on an invalid `requested`. */
+export function resolveSnapshotDay(now: Date, requested: string | null | undefined): string {
+  const yesterday = shiftUtcDay(utcDayOf(now), -1);
+  if (requested === null || requested === undefined) return yesterday;
+  // Round-tripping through Date rejects 2026-02-30 (it rolls over) and 2026-13-01 (invalid).
+  const parsed = UTC_DAY_PATTERN.test(requested) ? new Date(`${requested}T00:00:00.000Z`) : null;
+  if (!parsed || Number.isNaN(parsed.getTime()) || utcDayOf(parsed) !== requested) {
+    throw new InvalidSnapshotDayError(`day must be a UTC date as YYYY-MM-DD, got "${requested}"`);
+  }
+  const earliest = shiftUtcDay(utcDayOf(now), -MAX_SNAPSHOT_BACKFILL_DAYS);
+  // YYYY-MM-DD strings compare in date order.
+  if (requested > yesterday || requested < earliest) {
+    throw new InvalidSnapshotDayError(`day must be between ${earliest} and ${yesterday}, got ${requested}`);
+  }
+  return requested;
+}
+
 /**
- * Count yesterday's DAU and the trailing 7- and 30-day WAU and MAU (all UTC
- * days ending yesterday), overall and per platform, and send them to PostHog
- * as ONE `Active Users Snapshot` event on a fixed system id. Counts only: no
- * user id ever leaves the database.
+ * Count one UTC day's DAU and the trailing 7- and 30-day WAU and MAU ending on
+ * it, overall and per platform, and send them to PostHog as ONE `Active Users
+ * Snapshot` event on a fixed system id. Counts only: no user id ever leaves
+ * the database.
  *
- * Yesterday, not today: the job runs just after midnight UTC, when today has
- * barely started and yesterday is complete.
+ * Yesterday by default, not today: the job runs just after midnight UTC, when
+ * today has barely started and yesterday is complete. An operator re-running a
+ * failed snapshot passes the day it missed.
  */
 export async function snapshotActiveUsers({
   now = new Date(),
+  day: requestedDay,
   database = db,
 }: SnapshotActiveUsersOptions = {}): Promise<ActiveUsersSnapshotResult> {
   const startedAt = Date.now();
-  const day = shiftUtcDay(utcDayOf(now), -1);
+  const day = resolveSnapshotDay(now, requestedDay);
 
   const daily = await countActiveUsers(database, day, day);
   const weekly = await countActiveUsers(database, shiftUtcDay(day, -(WEEKLY_WINDOW_DAYS - 1)), day);
@@ -161,9 +203,10 @@ export type PurgeExpiredUserActivityOptions = {
 };
 
 /**
- * Delete activity rows older than {@link USER_ACTIVITY_RETENTION_DAYS} days. Idempotent: a second run finds nothing older than the cutoff. One
- * statement, because at steady state it deletes a single day's rows (one per
- * climber active that day), through the `day` index.
+ * Delete activity rows older than {@link USER_ACTIVITY_RETENTION_DAYS} days.
+ * Idempotent: a second run finds nothing older than the cutoff. One statement,
+ * because at steady state it deletes a single day's rows (one per climber
+ * active that day), through the `day` index.
  */
 export async function purgeExpiredUserActivity({
   now = new Date(),

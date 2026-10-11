@@ -10643,8 +10643,11 @@ extend type Query {
 extend type Mutation {
   "Record the signed-in climber's analytics consent answer and return the account's current answer."
   setAnalyticsConsent(input: SetAnalyticsConsentInput!): AnalyticsConsent!
-  "HTTP cron credentials only. Counts yesterday's DAU and the trailing WAU and MAU, and sends one aggregate PostHog event."
-  snapshotActiveUsers: ActiveUsersSnapshotResult!
+  """
+  HTTP cron credentials only. Counts one UTC day's DAU and the trailing WAU and MAU, and sends one aggregate PostHog event.
+  day (YYYY-MM-DD) re-runs a missed day, from yesterday back to 30 days ago; without it, yesterday.
+  """
+  snapshotActiveUsers(day: String): ActiveUsersSnapshotResult!
   "HTTP cron credentials only. Deletes user_activity_days rows older than 60 days."
   purgeExpiredUserActivity: UserActivityPurgeResult!
 }
