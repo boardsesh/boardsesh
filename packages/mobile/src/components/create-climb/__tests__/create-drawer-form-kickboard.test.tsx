@@ -84,18 +84,3 @@ describe('CreateDrawerForm no-kickboard switch', () => {
     expect(switchLabels('kilter')).toContain('mobile.create.settings.noKickboardLabel');
   });
 });
-
-// This suite exercises the existing flow before the server privacy rollout.
-vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: undefined }) }));
-vi.mock('../../privacy/ContentAudienceControl', () => ({
-  ContentAudienceControl: () => null,
-  SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
-}));
-vi.mock('../../privacy/ResourcePrivacyControl', () => ({
-  ResourcePrivacyControl: () => null,
-  SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
-}));
-vi.mock('../../privacy/AudiencePicker', () => ({
-  AudiencePicker: () => null,
-  SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
-}));
