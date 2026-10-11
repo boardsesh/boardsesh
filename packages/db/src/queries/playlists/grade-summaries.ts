@@ -1,6 +1,12 @@
 import { and, asc, eq, gt, inArray, isNotNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { alias, type PgDatabase, type PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { boardClimbStats, playlistClimbs, playlistGradeSummaries, playlists } from '../../schema/index';
+import {
+  boardClimbAliases,
+  boardClimbStats,
+  playlistClimbs,
+  playlistGradeSummaries,
+  playlists,
+} from '../../schema/index';
 
 /**
  * Keeps `playlist_grade_summaries` in step with each playlist's climbs and
@@ -61,6 +67,15 @@ export type PlaylistGradeSummaryRefreshResult = PlaylistGradeSummaryWriteResult 
 const fallbackStats = alias(boardClimbStats, 'fallback_stats');
 
 /**
+ * The climb a playlist row stands for. `addClimbToPlaylist` keeps the uuid it
+ * was sent, which can be a non-canonical alias (a duplicate Kilter uuid folded
+ * onto one climb), and `board_climb_stats` is keyed by the canonical uuid, so
+ * both grade lookups go through `board_climb_aliases` first. Requires the
+ * aliases LEFT JOIN in `computeSummaries`.
+ */
+const canonicalClimbUuid = sql<string>`COALESCE(${boardClimbAliases.canonicalUuid}, ${playlistClimbs.climbUuid})`;
+
+/**
  * The playlist climb's grade id: `ROUND(display_difficulty)` at the row's own
  * angle, which is the number the climb search's grade filter compares
  * (`gradeValueSql`, upstream source), or the most-repeated angle's for a
@@ -73,7 +88,7 @@ function climbGradeSql(db: PlaylistGradeSummaryDb): SQL<number | null> {
     .where(
       and(
         eq(fallbackStats.boardType, playlists.boardType),
-        eq(fallbackStats.climbUuid, playlistClimbs.climbUuid),
+        eq(fallbackStats.climbUuid, canonicalClimbUuid),
         isNotNull(fallbackStats.displayDifficulty),
       ),
     )
@@ -106,11 +121,19 @@ async function computeSummaries(db: PlaylistGradeSummaryDb, playlistScope: SQL):
     })
     .from(playlistClimbs)
     .innerJoin(playlists, eq(playlists.id, playlistClimbs.playlistId))
+    // At most one alias row per (board, uuid): its primary key.
+    .leftJoin(
+      boardClimbAliases,
+      and(
+        eq(boardClimbAliases.boardType, playlists.boardType),
+        eq(boardClimbAliases.aliasUuid, playlistClimbs.climbUuid),
+      ),
+    )
     .leftJoin(
       boardClimbStats,
       and(
         eq(boardClimbStats.boardType, playlists.boardType),
-        eq(boardClimbStats.climbUuid, playlistClimbs.climbUuid),
+        eq(boardClimbStats.climbUuid, canonicalClimbUuid),
         eq(boardClimbStats.angle, playlistClimbs.angle),
       ),
     )

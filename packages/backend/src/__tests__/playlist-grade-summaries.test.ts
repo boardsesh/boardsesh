@@ -99,6 +99,8 @@ async function discover(input: Record<string, unknown>, ctx: ConnectionContext =
 async function resetFixtures() {
   await db.execute(sql`TRUNCATE TABLE playlist_climbs, playlist_ownership, playlists RESTART IDENTITY CASCADE`);
   await db.delete(dbSchema.boardClimbStats).where(like(dbSchema.boardClimbStats.climbUuid, `${PREFIX}%`));
+  // The alias rows cascade with their canonical climbs.
+  await db.delete(dbSchema.boardClimbs).where(like(dbSchema.boardClimbs.uuid, `${PREFIX}%`));
   await db
     .delete(dbSchema.userFollows)
     .where(inArray(dbSchema.userFollows.followerId, [OWNER_ID, FOLLOWED_ID, STRANGER_ID]));
@@ -177,6 +179,43 @@ describe('playlist grade summaries', () => {
         medianDifficulty: 20,
         maxDifficulty: 22,
       });
+    });
+
+    it('grades a row saved under an alias uuid by its canonical climb, at its angle and through the fallback', async () => {
+      // Two canonical climbs, each known to the playlist only by an alias uuid.
+      await db.insert(dbSchema.boardClimbs).values(
+        ['canon-angle', 'canon-circuit'].map((name) => ({
+          uuid: climb(name),
+          boardType: BOARD,
+          layoutId: 1,
+          setterUsername: 'setter',
+          name,
+          frames: 'p1r12',
+          framesCount: 1,
+          isDraft: false,
+          isListed: true,
+          edgeLeft: 10,
+          edgeRight: 100,
+          edgeBottom: 10,
+          edgeTop: 150,
+        })),
+      );
+      await db.insert(dbSchema.boardClimbAliases).values([
+        { boardType: BOARD, aliasUuid: climb('alias-angle'), canonicalUuid: climb('canon-angle'), source: 'test' },
+        { boardType: BOARD, aliasUuid: climb('alias-circuit'), canonicalUuid: climb('canon-circuit'), source: 'test' },
+      ]);
+      await insertStats([
+        { name: 'canon-angle', angle: 40, grade: 18 },
+        { name: 'canon-circuit', angle: 45, grade: 24, ascents: 100 },
+      ]);
+      const playlistId = await createPlaylist('aliased', OWNER_ID, [
+        { name: 'alias-angle', angle: 40 },
+        { name: 'alias-circuit', angle: null },
+      ]);
+
+      await refreshPlaylistGradeSummariesFor(db, [playlistId]);
+
+      expect(await summaryOf(playlistId)).toMatchObject({ gradedClimbCount: 2, minDifficulty: 18, maxDifficulty: 24 });
     });
 
     it('writes no row for a playlist without a graded climb', async () => {

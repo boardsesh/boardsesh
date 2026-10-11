@@ -17,7 +17,7 @@ A playlist card shows the grade spread of its climbs ("V3–V5"), and `discoverP
 
 Every value is a grade id, `ROUND(display_difficulty)`. That is the number the climb search's grade filter compares (`gradeValueSql`, upstream source), so a playlist band and a climb band mean the same thing. Boardsesh grades and personal grades are not used.
 
-A climb's grade is `board_climb_stats.display_difficulty` at the `playlist_climbs` row's own angle. A row with a NULL angle (Aurora and Kilter circuit syncs) is graded at the climb's most-repeated angle, ties to the lower angle, skipping angles with no grade. Skipping those rows instead would leave most synced circuits with no band at all. A row with an angle that has no stats row stays ungraded; it never falls back.
+A climb's grade is `board_climb_stats.display_difficulty` at the `playlist_climbs` row's own angle. A row with a NULL angle (Aurora and Kilter circuit syncs) is graded at the climb's most-repeated angle, ties to the lower angle, skipping angles with no grade. Skipping those rows instead would leave most synced circuits with no band at all. A row with an angle that has no stats row stays ungraded; it never falls back. A row saved under a non-canonical alias uuid (a duplicate Kilter uuid; `addClimbToPlaylist` keeps the uuid it was sent) is resolved through `board_climb_aliases` to its canonical climb first, for both lookups, since `board_climb_stats` is keyed by the canonical uuid.
 
 A playlist with no graded climb has no row. The grade filter leaves it out.
 
