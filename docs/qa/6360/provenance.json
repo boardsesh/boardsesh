@@ -1,0 +1,15 @@
+{
+  "issue": 6360,
+  "productionCommit": "2cce83130e",
+  "captureCommit": "5831626c5f3efa0cccfcbe7eda2827fb36c29d45",
+  "androidRun": "https://github.com/boardsesh/boardsesh/actions/runs/38138055161",
+  "androidDevice": "Pixel 2",
+  "androidFontScales": {
+    "default": 1.0,
+    "large": 1.5
+  },
+  "appearance": "dark",
+  "fixtures": "replay",
+  "state": "Pre-session; rest armed locally, rest length Off; synthetic privacy rollout flag disabled",
+  "screenshots": "Unedited native screenshots from CI artifacts; no session started"
+}
