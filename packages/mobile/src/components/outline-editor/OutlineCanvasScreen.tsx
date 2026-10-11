@@ -860,6 +860,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           onStrokeStart={handleStrokeStart}
           onStrokeEnd={handleStrokeEnd}
           onStrokeCancel={handleStrokeCancel}
+          closeOnReturn={!canBrush || drawMode === 'redraw'}
         />
       ),
     [
@@ -871,6 +872,8 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       handleStrokeStart,
       handleStrokeEnd,
       handleStrokeCancel,
+      canBrush,
+      drawMode,
     ],
   );
 

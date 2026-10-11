@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   routeLayout: { width: 200, height: 200 },
   geometryPending: false,
   prefetchGeometry: vi.fn(),
+  closeOnReturn: true,
   overrides: [] as {
     placementId: number;
     kind: 'LED_INNER';
@@ -138,8 +139,10 @@ vi.mock('../DrawStrokeOverlay', async () => {
       onStrokeStart: () => void;
       onStrokeEnd: (points: number[]) => void;
       onStrokeCancel: () => void;
-    }) =>
-      createElement(
+      closeOnReturn: boolean;
+    }) => {
+      state.closeOnReturn = props.closeOnReturn;
+      return createElement(
         MockView,
         null,
         createElement(Pressable, {
@@ -152,7 +155,8 @@ vi.mock('../DrawStrokeOverlay', async () => {
         createElement(Pressable, { testID: 'stroke-start', onPress: props.onStrokeStart }),
         createElement(Pressable, { testID: 'stroke-end', onPress: () => props.onStrokeEnd(state.stroke) }),
         createElement(Pressable, { testID: 'stroke-cancel', onPress: props.onStrokeCancel }),
-      ),
+      );
+    },
   };
 });
 vi.mock('../EditToolbar', async () => {
@@ -219,6 +223,17 @@ beforeEach(() => {
 });
 
 describe('outline redraw then brush', () => {
+  it('closes redraw rings but keeps add and erase brush paths open', () => {
+    const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
+    fireEvent.click(screen.getByTestId('next'));
+    expect(state.closeOnReturn).toBe(true);
+    fireEvent.click(screen.getByTestId('stroke'));
+    fireEvent.click(screen.getByTestId('add'));
+    expect(state.closeOnReturn).toBe(false);
+    fireEvent.click(screen.getByTestId('erase'));
+    expect(state.closeOnReturn).toBe(false);
+  });
+
   it('brushes the first unsaved redraw on a hold with no stored outline', () => {
     const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
     fireEvent.click(screen.getByTestId('next'));

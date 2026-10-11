@@ -110,8 +110,6 @@ type InteractiveFilterBoardProps = {
   mirrored?: boolean;
   renderWidth: number;
   renderHeight: number;
-  /** Pinch-to-zoom ceiling. The outline editor raises it for single-hold work. */
-  maxScale?: number;
   /** Lit frames and unsaved geometry for the outline editor's preview. */
   frames?: string;
   holdGeometryOverride?: HoldGeometryOverride;

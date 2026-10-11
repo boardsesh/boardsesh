@@ -7,7 +7,24 @@ import {
   isAccessoryHostRoute,
   isAccessoryHiddenRoute,
   isTabsChromeRoute,
+  isOutlineEditorRoute,
 } from '../route-segments';
+
+describe('isOutlineEditorRoute', () => {
+  it.each(['profile', 'home', 'wall', 'climbs', 'discover', 'boards'])(
+    'suppresses panes for the %s Settings canvas',
+    (tab) => {
+      expect(isOutlineEditorRoute(['(tabs)', tab, 'settings', 'outline-canvas'])).toBe(true);
+    },
+  );
+
+  it('keeps panes on Settings and other routes', () => {
+    expect(isOutlineEditorRoute(['(tabs)', 'profile', 'settings'])).toBe(false);
+    expect(isOutlineEditorRoute(['(tabs)', 'profile', 'settings', 'outline-editor'])).toBe(false);
+    expect(isOutlineEditorRoute(['(tabs)', 'profile', 'outline-canvas'])).toBe(false);
+    expect(isOutlineEditorRoute(['settings', 'outline-canvas'])).toBe(false);
+  });
+});
 
 describe('isTabsRoute', () => {
   it('is true anywhere inside the tab navigator', () => {

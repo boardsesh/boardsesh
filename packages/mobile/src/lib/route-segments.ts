@@ -16,7 +16,6 @@ const PLAYER_ROUTE = 'play';
 // backing (docs/mobile-sheets-vs-routes.md rule 2), so where it IS over the live
 // tabs the tab bar never leaves while it is up.
 const ONBOARDING_ROUTE = 'onboarding';
-const PROFILE_TAB = 'profile';
 const OUTLINE_CANVAS_ROUTE = 'outline-canvas';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
@@ -176,7 +175,7 @@ export function tabsActiveSegment(segments: Segments): string | null {
 }
 
 /**
- * True on the admin hold-outline canvas (`/(tabs)/profile/outline-canvas`).
+ * True on the admin hold-outline canvas below a tab's Settings route.
  *
  * The editor is a full-bleed drawing surface: on a regular-width iPad the shell
  * suppresses BOTH trailing panes for it (the detail/play pane and the wall
@@ -185,5 +184,5 @@ export function tabsActiveSegment(segments: Segments): string | null {
  * a modal.
  */
 export function isOutlineEditorRoute(segments: Segments): boolean {
-  return segments[0] === TABS_GROUP && segments[1] === PROFILE_TAB && segments[2] === OUTLINE_CANVAS_ROUTE;
+  return isTabsRoute(segments) && segments[2] === 'settings' && segments[3] === OUTLINE_CANVAS_ROUTE;
 }
