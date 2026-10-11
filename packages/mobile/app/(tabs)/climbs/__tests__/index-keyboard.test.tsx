@@ -93,6 +93,11 @@ const mocks = vi.hoisted(() => ({
   nativeRootHeader: true,
   nativeSearch: false,
   renderNativeChrome: false,
+  // Render the chrome's filter rows (chips, grade rail, tokens) and hand the test
+  // the Grade chip's open/close callbacks.
+  renderFilterChrome: false,
+  openGrade: undefined as (() => void) | undefined,
+  closeGrade: undefined as (() => void) | undefined,
   stackOptions: [] as NativeStackNavigationOptions[],
 }));
 
@@ -336,13 +341,27 @@ vi.mock('../../../../src/components/ClimbFilterSheet', () => ({
 vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
   const { NativeRootHeader } = await import('../../../../src/components/chrome/NativeRootHeader');
   return {
-    ClimbTopChrome: ({ onHeightChange }: { onHeightChange: (height: number) => void }) =>
-      mocks.renderNativeChrome
+    ClimbTopChrome: ({
+      onHeightChange,
+      filterChrome,
+      onOpenGrade,
+      onCloseGrade,
+    }: {
+      onHeightChange: (height: number) => void;
+      filterChrome?: ReactNode;
+      onOpenGrade?: () => void;
+      onCloseGrade?: () => void;
+    }) => {
+      mocks.openGrade = onOpenGrade;
+      mocks.closeGrade = onCloseGrade;
+      if (mocks.renderFilterChrome) return createElement('div', { 'data-testid': 'top-chrome' }, filterChrome);
+      return mocks.renderNativeChrome
         ? createElement(NativeRootHeader, {
             centerContent: createElement('button', null, 'Current climb'),
             onHeightChange,
           })
-        : null,
+        : null;
+    },
   };
 });
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
@@ -354,7 +373,9 @@ vi.mock('../../../../src/lib/haptics', () => ({
   hapticHeavy: () => {},
   hapticSuccess: () => {},
 }));
-vi.mock('../../../../src/components/grade', () => ({ GradeRangeRail: () => null }));
+vi.mock('../../../../src/components/grade', () => ({
+  GradeRangeRail: () => createElement('div', { 'data-testid': 'grade-range-rail' }),
+}));
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
@@ -581,6 +602,9 @@ beforeEach(() => {
   mocks.nativeRootHeader = true;
   mocks.nativeSearch = false;
   mocks.renderNativeChrome = false;
+  mocks.renderFilterChrome = false;
+  mocks.openGrade = undefined;
+  mocks.closeGrade = undefined;
   mocks.stackOptions.length = 0;
 });
 
@@ -1255,5 +1279,22 @@ describe('ClimbList row highlight', () => {
     // Exactly one row is selected — the previewed uuid clears itself on the next
     // committing open, so the two can never both claim a row.
     expect((await findByText('Moonage')).getAttribute('data-selected')).toBe('false');
+  });
+});
+
+// The native header is a UIKit bar outside the screen's view tree, so nothing the
+// screen positions itself can sit above it. The grade rail has to be a row of the
+// chrome, which the header lays out below itself and the list insets by.
+describe('ClimbList grade rail placement', () => {
+  it('opens the grade rail as a row of the top chrome and closes it again', () => {
+    mocks.renderFilterChrome = true;
+    const { getByTestId, queryByTestId } = render(<ClimbList />);
+    expect(queryByTestId('grade-range-rail')).toBeNull();
+
+    act(() => mocks.openGrade?.());
+    expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
+
+    act(() => mocks.closeGrade?.());
+    expect(queryByTestId('grade-range-rail')).toBeNull();
   });
 });

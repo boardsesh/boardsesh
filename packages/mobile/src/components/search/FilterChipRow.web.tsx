@@ -172,7 +172,7 @@ function FilterChipRowComponent({
           </MenuChip>
         ) : null}
 
-        {/* Grade → toggles the range rail overlay. */}
+        {/* Grade → toggles the range rail. */}
         {pinnedChips.includes('grade') ? (
           <Chip
             mode="outlined"
