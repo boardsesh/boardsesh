@@ -203,6 +203,13 @@ export function publicReferenceClimbSql(alias: string): string {
  * Boardsesh author. Whether THIS viewer may see it is a separate question,
  * answered by {@link contentVisibilityCondition}.
  *
+ * The two columns are the two halves of that sentence. `user_id` is the
+ * Boardsesh account that set the climb, and is NULL on every imported
+ * manufacturer climb. `is_boardsesh_authored` is what account deletion leaves
+ * behind once it clears `user_id`. Either one keeps a climb out of the
+ * reference catalogue, so this is the exact complement of the owner and author
+ * terms of {@link publicReferenceClimbSql}.
+ *
  * The text is the predicate of `board_climbs_protected_sync_idx`, character for
  * character apart from the alias. Postgres only uses a partial index when the
  * query implies its predicate, so a query that should use the index must carry
