@@ -1,10 +1,9 @@
 import { useSyncExternalStore } from 'react';
 import { getSetting, setSetting, subscribeSettings } from '../settings/hooks';
-import { getPreference, setPreference } from './preference-store';
+import { getPreference, removePreference, setPreference } from './preference-store';
 import {
   CLIMB_ROW_FIELD_IDS,
-  CLIMB_ROW_PRESET_FIELD_IDS,
-  isClimbRowLegacyFieldId,
+  CLIMB_ROW_LEGACY_FIELD_IDS,
   resolveClimbRowDisplay,
   sameStoredClimbRowDisplay,
   sanitiseStoredClimbRowDisplay,
@@ -44,21 +43,40 @@ const LEGACY_STORAGE_KEYS: Record<ClimbRowLegacyFieldId, string> = {
   quickActions: 'showClimbQuickActionsButton',
 };
 
-let stored = sanitiseStoredClimbRowDisplay(getSetting(SETTINGS_KEY));
+// One call to that storage is given up on after this long. The calls run one
+// after another, so one that never answered would hold up every later one for
+// the rest of the session.
+const LEGACY_STORAGE_TIMEOUT_MS = 10_000;
+
+const NO_RECORD: StoredClimbRowDisplay = Object.freeze({ version: 1, overrides: Object.freeze({}) });
+
+function readOnPhone(): StoredClimbRowDisplay | null {
+  const persisted = getSetting(SETTINGS_KEY);
+  return persisted === null ? null : sanitiseStoredClimbRowDisplay(persisted);
+}
+
+// The record as this module last SAW it on the phone: at import, before each
+// change and straight after each write. `null` while it has seen none. Kept
+// apart from what is in memory, because the two can differ and each way means
+// something else: a write that did not stick leaves memory ahead, and a record
+// the import-time read missed leaves the phone ahead.
+let seenOnPhone = readOnPhone();
+let stored = seenOnPhone ?? NO_RECORD;
 let display = resolveClimbRowDisplay(stored.overrides);
 const listeners = new Set<() => void>();
-// What the climber touched since launch. The read of the old keys is
-// asynchronous, so a choice made while it is in flight must not be replaced by
-// the older value it comes back with.
-const changedThisLaunch = new Set<ClimbRowFieldId>();
 let legacySynced = false;
 let legacySync: Promise<void> | null = null;
 // Everything that touches the old keys runs one after another, so a read cannot
 // land between a write and the baseline that write sets.
 let legacyQueue: Promise<void> = Promise.resolve();
+// Per old key, the newest write waiting in that queue, so a value already on its
+// way is not queued a second time.
+const queuedMirrors = new Map<ClimbRowLegacyFieldId, { value: boolean }>();
 // Bumped by the test reset, so work still in flight cannot land in the next test.
 let generation = 0;
 let writing = false;
+
+function ignore(): void {}
 
 /** Takes a record as the current one. Listeners hear about it only when a reader's answer moved. */
 function adopt(next: StoredClimbRowDisplay): void {
@@ -70,112 +88,174 @@ function adopt(next: StoredClimbRowDisplay): void {
   if (displayChanged || lastCustomChanged) for (const listener of listeners) listener();
 }
 
-function write(record: StoredClimbRowDisplay): void {
-  // The settings store signals our own write like any other. There is nothing to
-  // learn from it, and a write that did not stick must not read as a reset.
+function write(record: StoredClimbRowDisplay | null): void {
+  // The settings store signals our own write like any other; there is nothing to
+  // learn from that signal.
   writing = true;
   try {
     setSetting(SETTINGS_KEY, record);
   } finally {
     writing = false;
   }
+  // Look at what stuck instead of assuming. After a write that was lost this
+  // stays what it was, which is how memory is known to be ahead.
+  seenOnPhone = readOnPhone();
 }
 
 /**
- * Takes the record on the phone as the current one when memory holds something
- * else. False when there is no record to take.
+ * Looks at the phone and takes what is news there. Memory is never judged
+ * against the phone directly, only against what was last seen on it:
+ *
+ * - The same as last seen: nothing happened. Memory stands, also when it is
+ *   ahead because a write did not stick.
+ * - A record that was not there, or has changed: the read at import missed it
+ *   (it can come back empty while a record exists). It becomes the current one,
+ *   so nothing is built on the empty read and written over it.
+ * - A record that was seen and is gone: every setting was reset
+ *   (`resetAllSettings` clears the whole store). That is a choice by the
+ *   climber, and is applied and written back as one.
+ * - No record, and none seen before: a fresh install, or a first write that did
+ *   not stick. Not a reset; memory stands.
  */
-function adoptRecordOnPhone(): boolean {
-  const persisted = getSetting(SETTINGS_KEY);
-  if (persisted === null) return false;
-  const read = sanitiseStoredClimbRowDisplay(persisted);
-  if (!sameStoredClimbRowDisplay(read, stored)) adopt(read);
-  return true;
+function syncWithPhone(): void {
+  const onPhone = readOnPhone();
+  if (onPhone === null) {
+    if (seenOnPhone === null) return;
+    const reset = withClimbRowDisplayReset(stored);
+    if (!sameStoredClimbRowDisplay(reset, stored)) adopt(reset);
+    write(reset);
+    flushLegacyPending();
+    return;
+  }
+  if (seenOnPhone !== null && sameStoredClimbRowDisplay(onPhone, seenOnPhone)) return;
+  seenOnPhone = onPhone;
+  if (!sameStoredClimbRowDisplay(onPhone, stored)) adopt(onPhone);
 }
 
 /**
  * A change on top of what is on the phone now: one in-memory publish, then one
- * write.
- *
- * It looks before it builds. The read at import can have come back empty while a
- * record exists, and a change built on that empty read would overwrite the real
- * one. Finding no record says nothing (a fresh install looks the same), so then
- * memory stands.
+ * write. The write happens whenever the result is not what the phone holds, so a
+ * change after a lost write carries the lost one with it.
  */
 function mutate(change: (current: StoredClimbRowDisplay) => StoredClimbRowDisplay): void {
-  adoptRecordOnPhone();
+  syncWithPhone();
   const next = change(stored);
-  if (sameStoredClimbRowDisplay(next, stored)) return;
-  adopt(next);
-  write(next);
+  if (!sameStoredClimbRowDisplay(next, stored)) adopt(next);
+  if (!sameStoredClimbRowDisplay(next, seenOnPhone ?? NO_RECORD)) write(next);
 }
 
-// The key can change underneath this module: `resetAllSettings` clears the whole
-// store. The settings store signals every write without saying which key, so look
-// at this one each time; that is one small parse per settings write, of which
-// there are a handful per session.
+// The settings store signals every write without saying which key, so look at
+// this one each time. That is one small parse per settings write, of which there
+// are a handful per session.
 subscribeSettings(() => {
-  if (writing || adoptRecordOnPhone()) return;
-  // No record after a signal: every setting was reset. Back to the defaults, but
-  // still knowing what the old keys hold, and with that written back. Otherwise
-  // the next launch would read those keys as new and undo the reset.
-  const kept = withClimbRowDisplayReset(stored);
-  if (!sameStoredClimbRowDisplay(kept, stored)) adopt(kept);
-  if (kept.legacy) write(kept);
+  if (!writing) syncWithPhone();
 });
 
-function enqueueLegacyStorage(task: () => Promise<void>): Promise<void> {
-  // A failure is expected (iOS denies the backing file on a background launch
-  // before the first unlock) and must not stop what is queued behind it.
-  const settled = legacyQueue.then(task).catch(() => {});
-  legacyQueue = settled;
-  return settled;
-}
+type LegacyStorageOutcome<Result> = { completed: true; result: Result } | { completed: false };
 
-/** Copies a choice made here to its old key, then records that the key holds it. */
-function mirrorToLegacyKey(fieldId: ClimbRowLegacyFieldId): void {
-  const value = display[fieldId];
-  const startedIn = generation;
-  void enqueueLegacyStorage(async () => {
-    await setPreference(LEGACY_STORAGE_KEYS[fieldId], value);
-    if (startedIn !== generation) return;
-    mutate((current) => withClimbRowLegacyMirrored(current, fieldId, value));
+/**
+ * One call to the old keys' storage. It can fail (iOS denies the backing file on
+ * a background launch before the first unlock) and it can never answer; both are
+ * expected, both come back as not completed, and neither is an error. This is
+ * the only place such a failure is caught, so a fault in this module's own code
+ * is never mistaken for one.
+ */
+function callLegacyStorage<Result>(call: () => Promise<Result>): Promise<LegacyStorageOutcome<Result>> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      resolve({ completed: false });
+    }, LEGACY_STORAGE_TIMEOUT_MS);
+    call().then(
+      (result) => {
+        clearTimeout(timeout);
+        resolve({ completed: true, result });
+      },
+      () => {
+        clearTimeout(timeout);
+        resolve({ completed: false });
+      },
+    );
   });
 }
 
-/** A choice the climber made here: applied, kept ahead of a read still in flight, and mirrored. */
-function decide(
-  fieldIds: readonly ClimbRowFieldId[],
-  change: (current: StoredClimbRowDisplay) => StoredClimbRowDisplay,
-): void {
-  for (const fieldId of fieldIds) changedThisLaunch.add(fieldId);
+/**
+ * Runs a task after the ones queued before it. The queue moves on whatever
+ * happened to a task, but the promise handed back still rejects when the task
+ * threw: storage failures never reach here (`callLegacyStorage` turns them into
+ * an outcome), so a rejection is a fault in our own code and must stay visible.
+ */
+function enqueueLegacyStorage(task: () => Promise<void>): Promise<void> {
+  const run = legacyQueue.then(task);
+  legacyQueue = run.then(ignore, ignore);
+  return run;
+}
+
+/** Writes a pending value to its old key and, once it has landed, records that the key holds it. */
+function queueMirror(fieldId: ClimbRowLegacyFieldId, value: boolean): void {
+  const startedIn = generation;
+  const queued = { value };
+  queuedMirrors.set(fieldId, queued);
+  void enqueueLegacyStorage(async () => {
+    try {
+      // A newer choice has replaced this one while it waited: its own write is
+      // queued behind, and this one would only put a stale value on disk.
+      if (startedIn !== generation || stored.legacyPending?.[fieldId] !== value) return;
+      const written = await callLegacyStorage(() => setPreference(LEGACY_STORAGE_KEYS[fieldId], value));
+      if (startedIn !== generation || !written.completed) return;
+      mutate((current) => withClimbRowLegacyMirrored(current, fieldId, value));
+    } finally {
+      if (queuedMirrors.get(fieldId) === queued) queuedMirrors.delete(fieldId);
+    }
+  });
+}
+
+/** Queues a write for every pending value that has none on its way yet. */
+function flushLegacyPending(): void {
+  for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
+    const value = stored.legacyPending?.[fieldId];
+    if (value !== undefined && queuedMirrors.get(fieldId)?.value !== value) queueMirror(fieldId, value);
+  }
+}
+
+/**
+ * A choice the climber made here. The record it produces already names what is
+ * owed to the old keys, and is written before any of that is attempted.
+ */
+function decide(change: (current: StoredClimbRowDisplay) => StoredClimbRowDisplay): void {
   mutate(change);
-  for (const fieldId of fieldIds) if (isClimbRowLegacyFieldId(fieldId)) mirrorToLegacyKey(fieldId);
+  flushLegacyPending();
 }
 
 /**
  * Reads the two old keys and reconciles them with the record, once per launch.
- * Kicked at launch; never rejects.
+ * Kicked at launch. A storage failure never rejects it.
  *
  * Every launch, not once per install: an older build can have changed a key
  * since this one last ran (a tester back from a preview), and that only shows as
- * a difference from the stored baseline.
+ * a difference from the stored baseline. It is also where a write to an old key
+ * that failed, or was cut off, is found and made again.
  *
- * A rejected read changes nothing and leaves the launch unsynced, so it is tried
- * again by the next reader that mounts and, failing that, on the next launch.
+ * A read that fails or never answers changes nothing and leaves the launch
+ * unsynced, so it is tried again by the next reader that mounts and, failing
+ * that, on the next launch.
  */
 export function ensureClimbRowLegacySynced(): Promise<void> {
   if (legacySynced) return Promise.resolve();
   if (legacySync) return legacySync;
   const startedIn = generation;
   const sync: Promise<void> = enqueueLegacyStorage(async () => {
-    const [playlistTags, quickActions] = await Promise.all([
-      getPreference<unknown>(LEGACY_STORAGE_KEYS.playlistTags),
-      getPreference<unknown>(LEGACY_STORAGE_KEYS.quickActions),
-    ]);
     if (startedIn !== generation) return;
-    mutate((current) => withClimbRowLegacyRead(current, { playlistTags, quickActions }, changedThisLaunch));
+    const read = await callLegacyStorage(() =>
+      Promise.all([
+        getPreference<unknown>(LEGACY_STORAGE_KEYS.playlistTags),
+        getPreference<unknown>(LEGACY_STORAGE_KEYS.quickActions),
+      ]),
+    );
+    if (startedIn !== generation || !read.completed) return;
+    const [playlistTags, quickActions] = read.result;
+    mutate((current) => withClimbRowLegacyRead(current, { playlistTags, quickActions }));
     legacySynced = true;
+    flushLegacyPending();
   }).finally(() => {
     if (legacySync === sync) legacySync = null;
   });
@@ -184,8 +264,8 @@ export function ensureClimbRowLegacySynced(): Promise<void> {
 }
 
 function subscribe(listener: () => void): () => void {
-  // The retry for a read of the old keys that was rejected earlier this launch.
-  // One boolean test per mount once it has succeeded, so rows can afford it.
+  // The retry for a read of the old keys that failed earlier this launch. One
+  // boolean test per mount once it has succeeded, so rows can afford it.
   if (!legacySynced) void ensureClimbRowLegacySynced();
   listeners.add(listener);
   return () => {
@@ -235,28 +315,36 @@ export function useClimbRowHasLastCustom(): boolean {
 }
 
 export function setClimbRowField(fieldId: ClimbRowFieldId, value: boolean): void {
-  decide([fieldId], (current) => withClimbRowField(current, fieldId, value));
+  decide((current) => withClimbRowField(current, fieldId, value));
 }
 
 export function applyClimbRowPreset(presetId: ClimbRowPresetId): void {
-  decide(CLIMB_ROW_PRESET_FIELD_IDS, (current) => withClimbRowPreset(current, presetId));
+  decide((current) => withClimbRowPreset(current, presetId));
 }
 
 export function restoreLastCustomClimbRow(): void {
-  // Asked of the record on the phone, like every other change.
-  adoptRecordOnPhone();
-  if (!stored.lastCustom) return;
-  decide(CLIMB_ROW_PRESET_FIELD_IDS, withClimbRowLastCustomRestored);
+  decide(withClimbRowLastCustomRestored);
 }
 
-/** Back to a fresh install: an empty record, nothing changed, nothing in flight. */
+/**
+ * A fresh install, for suites that import this module statically: no record,
+ * nothing in the two old keys, and nothing from before the call able to land
+ * after it. What was queued is dropped before it writes; what was already
+ * writing has landed by now and is removed with the keys.
+ *
+ * The next read of the old keys waits for that removal. A suite that exercises
+ * the launch read fills the keys AFTER this call, or takes a module that has
+ * never run with `vi.resetModules()` and a fresh import.
+ */
 export function resetClimbRowDisplayForTests(): void {
   generation += 1;
-  changedThisLaunch.clear();
   legacySynced = false;
   legacySync = null;
-  legacyQueue = Promise.resolve();
-  const fresh: StoredClimbRowDisplay = { version: 1, overrides: {} };
-  adopt(fresh);
-  write(fresh);
+  queuedMirrors.clear();
+  legacyQueue = Promise.all(Object.values(LEGACY_STORAGE_KEYS).map((key) => removePreference(key))).then(
+    ignore,
+    ignore,
+  );
+  adopt(NO_RECORD);
+  write(null);
 }

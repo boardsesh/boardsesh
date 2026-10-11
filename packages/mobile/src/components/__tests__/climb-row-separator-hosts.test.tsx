@@ -3,11 +3,16 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { Climb } from '@boardsesh/shared-schema';
 
 // Where each host of the climb row starts its separator. Every host here is the
 // real module, drawing with the real spacing tokens, thumbnail width and inset
 // helper: nothing below stands in for a number this file asserts. A host that
 // hands the helper the wrong leading inset fails here.
+//
+// Each inset is checked twice: against the figure it has always been, and
+// against the row the host actually draws (its padding, any slot in front, the
+// thumbnail and its gaps), so a host cannot move its row and leave the line behind.
 
 vi.mock('react-native', async () => {
   const { flattenStyle } = await import('../../../test/flatten-style');
@@ -34,6 +39,9 @@ vi.mock('react-native-reanimated', async () => {
   return {
     default: { View: AnimatedView },
     useAnimatedStyle: (build: () => unknown) => build(),
+    useAnimatedReaction: () => undefined,
+    interpolate: () => 0,
+    Extrapolation: { CLAMP: 'clamp' },
     useSharedValue: (initial: unknown) => {
       const shared = useRef({ value: initial });
       return shared.current;
@@ -55,9 +63,19 @@ vi.mock('react-native-gesture-handler', () => {
   };
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-    Gesture: { Pan: makeGesture, Tap: makeGesture, LongPress: makeGesture, Exclusive: makeGesture },
+    Gesture: {
+      Pan: makeGesture,
+      Tap: makeGesture,
+      LongPress: makeGesture,
+      Exclusive: makeGesture,
+      Simultaneous: makeGesture,
+    },
   };
 });
+
+vi.mock('react-native-gesture-handler/ReanimatedSwipeable', () => ({
+  default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -78,14 +96,23 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn(), hapticMedium: vi.fn() }));
+vi.mock('../../lib/haptics', () => ({
+  hapticSelection: vi.fn(),
+  hapticLight: vi.fn(),
+  hapticMedium: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 vi.mock('../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ formatGrade: () => 'V4' }) }));
 vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
 vi.mock('../Icon', () => ({ Icon: () => null }));
-vi.mock('../PressableSurface', () => ({
-  PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-}));
+vi.mock('../PressableSurface', async () => {
+  const { flattenStyle } = await import('../../../test/flatten-style');
+  // The workout preview lays its row out on a PressableSurface, so its style is reported too.
+  const Surface = ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children);
+  return { PressableSurface: Surface, StaticPressableSurface: Surface };
+});
 // The row visual is not what is measured here, only where the line under it starts.
 vi.mock('../ClimbListItemContent', () => ({ ClimbListItemContent: () => null }));
 // Keeps the native image renderer out, and the real thumbnail size in.
@@ -132,8 +159,9 @@ import { QueueList } from '../play-drawer/QueueList';
 import { PlaylistEditClimbRow } from '../playlist/PlaylistEditClimbRow';
 import type { PlaylistDragControls } from '../playlist/use-playlist-drag';
 import { WorkoutPreviewRow } from '../session-screen/pre-session/WorkoutPreviewRow';
+import { ClimbListRow } from '../ClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
-import { climbListRowStyles } from '../climb-list-row-styles';
+import { THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
 
 const HAIRLINE = 0.5;
 
@@ -149,7 +177,17 @@ const climb = {
 };
 const queueItem = { uuid: 'q1', climb, addedBy: null, source: null } as unknown as ClimbQueueItem;
 
-type DrawnStyle = { height?: number; marginStart?: number; marginLeft?: number; [property: string]: unknown };
+type DrawnStyle = {
+  height?: number;
+  width?: number;
+  marginStart?: number;
+  marginLeft?: number;
+  flexDirection?: string;
+  gap?: number;
+  columnGap?: number;
+  paddingHorizontal?: number;
+  paddingStart?: number;
+};
 
 function drawnStyles(container: HTMLElement): DrawnStyle[] {
   return [...container.querySelectorAll('[data-style]')].map(
@@ -157,29 +195,63 @@ function drawnStyles(container: HTMLElement): DrawnStyle[] {
   );
 }
 
-/** The one hairline a host draws under its row, and where it starts. */
-function separatorInset(container: HTMLElement): number | undefined {
-  const hairlines = drawnStyles(container).filter((style) => style.height === HAIRLINE);
-  expect(hairlines).toHaveLength(1);
-  return hairlines[0].marginStart ?? hairlines[0].marginLeft;
+/** Where a host's row separators start: every hairline it draws with a start inset. */
+function separatorInsets(container: HTMLElement): Array<number | undefined> {
+  return drawnStyles(container)
+    .filter((style) => style.height === HAIRLINE)
+    .map((style) => style.marginStart ?? style.marginLeft)
+    .filter((inset) => inset !== undefined);
 }
 
-/** How far in a host's first column starts: its leading padding, straight off the drawn row. */
-function leadingPadding(container: HTMLElement): unknown {
-  const row = drawnStyles(container).find((style) => style.flexDirection === 'row' && 'columnGap' in style);
-  return row?.paddingHorizontal ?? row?.paddingStart;
+/** The row a host lays the climb out in, read off what it drew: its leading padding and the gap between its columns. */
+function drawnRow(container: HTMLElement): { leadingPadding: number; columnGap: number } {
+  const row = drawnStyles(container).find(
+    (style) =>
+      style.flexDirection === 'row' &&
+      (style.columnGap ?? style.gap) !== undefined &&
+      (style.paddingHorizontal ?? style.paddingStart) !== undefined,
+  );
+  if (!row) throw new Error('The host drew no padded row with a column gap');
+  return {
+    leadingPadding: Number(row.paddingHorizontal ?? row.paddingStart),
+    columnGap: Number(row.columnGap ?? row.gap),
+  };
 }
+
+const listRowProps = { ...board, climb: climb as unknown as Climb };
 
 describe('where each climb row host starts its separator', () => {
-  it('the Climbs list row and its loading placeholder: 104, under the text column', () => {
-    expect(climbListRowStyles.separator.marginLeft).toBe(104);
-    expect(climbListRowStyles.contentRow.paddingHorizontal).toBe(16);
+  it('the Climbs list row: 104, under the text column', () => {
+    const { container } = render(<ClimbListRow {...listRowProps} />);
+    const row = drawnRow(container);
 
-    const { container } = render(<ClimbListRowSkeleton />);
-    expect(separatorInset(container)).toBe(104);
+    expect(separatorInsets(container)).toEqual([104]);
+    expect(row).toEqual({ leadingPadding: 16, columnGap: 12 });
+    expect(row.leadingPadding + THUMBNAIL_WIDTH + row.columnGap).toBe(104);
   });
 
-  it('the queue row: 140, past its 12pt padding, the position slot and the thumbnail', () => {
+  // The row merges a caller's style over its own, last. A caller that sets the
+  // inset means it; one that only tints the line keeps the row's inset.
+  it('the Climbs list row keeps its inset under a caller’s separator style, unless that style sets one', () => {
+    const tinted = render(<ClimbListRow {...listRowProps} separatorStyle={{ opacity: 0.5 }} />);
+    expect(separatorInsets(tinted.container)).toEqual([104]);
+
+    const fullWidth = render(<ClimbListRow {...listRowProps} separatorStyle={{ marginLeft: 0 }} />);
+    expect(separatorInsets(fullWidth.container)).toEqual([0]);
+
+    const none = render(<ClimbListRow {...listRowProps} showSeparator={false} />);
+    expect(separatorInsets(none.container)).toEqual([]);
+  });
+
+  it('the loading placeholder: 104, the same as the row it stands in for', () => {
+    const { container } = render(<ClimbListRowSkeleton />);
+    const row = drawnRow(container);
+
+    expect(separatorInsets(container)).toEqual([104]);
+    expect(row.leadingPadding + THUMBNAIL_WIDTH + row.columnGap).toBe(104);
+  });
+
+  it('the queue row: 140, past its padding, the position slot and the thumbnail', () => {
     expect(POSITION_SLOT_WIDTH).toBe(28);
     expect(QUEUE_ROW_LEADING_INSET).toBe(52);
 
@@ -193,15 +265,14 @@ describe('where each climb row host starts its separator', () => {
         onRemove={vi.fn()}
       />,
     );
+    const row = drawnRow(container);
 
-    expect(separatorInset(container)).toBe(140);
-    // The constant has to describe the row it is exported from: its padding, its
-    // slot and one gap are what push the thumbnail in.
-    const drawn = drawnStyles(container);
-    const slot = drawn.find((style) => style.width === POSITION_SLOT_WIDTH);
-    expect(slot).toBeDefined();
-    expect(leadingPadding(container)).toBe(12);
-    expect(12 + POSITION_SLOT_WIDTH + 12).toBe(QUEUE_ROW_LEADING_INSET);
+    expect(separatorInsets(container)).toEqual([140]);
+    // The exported constant has to describe the row it comes from: the padding,
+    // slot and gap that row actually draws are what push the thumbnail in.
+    expect(drawnStyles(container).some((style) => style.width === POSITION_SLOT_WIDTH)).toBe(true);
+    expect(row.leadingPadding + POSITION_SLOT_WIDTH + row.columnGap).toBe(QUEUE_ROW_LEADING_INSET);
+    expect(QUEUE_ROW_LEADING_INSET + THUMBNAIL_WIDTH + row.columnGap).toBe(140);
   });
 
   it('a queue suggestion row: 140 too, lining up with the queue rows above it', () => {
@@ -225,17 +296,16 @@ describe('where each climb row host starts its separator', () => {
         reorderQueue={vi.fn()}
       />,
     );
+    const row = drawnRow(container);
 
-    // The list also draws a full-width divider; a row separator is the hairline with a start inset.
-    const rowSeparators = drawnStyles(container).filter(
-      (style) => style.height === HAIRLINE && style.marginStart !== undefined,
-    );
-    expect(rowSeparators.map((style) => style.marginStart)).toEqual([140]);
+    // The list also draws a full-width divider, which has no start inset.
+    expect(separatorInsets(container)).toEqual([140]);
     // Its spacer reserves the queue row's position slot, so the thumbnails line up as well.
     expect(drawnStyles(container).some((style) => style.width === POSITION_SLOT_WIDTH)).toBe(true);
+    expect(row.leadingPadding + POSITION_SLOT_WIDTH + row.columnGap + THUMBNAIL_WIDTH + row.columnGap).toBe(140);
   });
 
-  it('the playlist edit row: 148, past its 12pt padding, the remove control and the thumbnail', () => {
+  it('the playlist edit row: 148, past its padding, the remove control and the thumbnail', () => {
     const drag = {
       shared: {
         activeUuid: { value: null },
@@ -258,12 +328,16 @@ describe('where each climb row host starts its separator', () => {
         onReorder={vi.fn()}
       />,
     );
+    const row = drawnRow(container);
+    // The drag handle on the trailing edge is drawn in the same slot as the remove control in front.
+    const controlSlot = drawnStyles(container).find((style) => style.height === 44 && style.width !== undefined);
 
-    expect(separatorInset(container)).toBe(148);
-    expect(leadingPadding(container)).toBe(12);
+    expect(separatorInsets(container)).toEqual([148]);
+    expect(controlSlot?.width).toBe(36);
+    expect(row.leadingPadding + Number(controlSlot?.width) + row.columnGap + THUMBNAIL_WIDTH + row.columnGap).toBe(148);
   });
 
-  it('the workout preview row: 100, past its 12pt padding and the thumbnail', () => {
+  it('the workout preview row: 100, past its padding and the thumbnail', () => {
     const { container } = render(
       <WorkoutPreviewRow
         item={queueItem}
@@ -275,7 +349,9 @@ describe('where each climb row host starts its separator', () => {
         onRefresh={vi.fn()}
       />,
     );
+    const row = drawnRow(container);
 
-    expect(separatorInset(container)).toBe(100);
+    expect(separatorInsets(container)).toEqual([100]);
+    expect(row.leadingPadding + THUMBNAIL_WIDTH + row.columnGap).toBe(100);
   });
 });

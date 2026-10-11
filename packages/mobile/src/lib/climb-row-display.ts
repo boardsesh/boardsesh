@@ -116,18 +116,33 @@ export function isClimbRowLegacyFieldId(fieldId: ClimbRowFieldId): fieldId is Cl
 }
 
 /**
- * What this build last knew a field's old key to hold.
- *
- * - A boolean or `null`: the value last read from the key, or last written to
- *   it from here. `null` is a key with no explicit choice in it.
- * - `'decided'`: the climber chose this field here before the old key was ever
- *   read, so whatever the key turns out to hold must not replace that choice.
- *
- * A field with no entry has never been read. Comparing an entry with a fresh
- * read is how a write by an older build shows up: the two differ.
+ * What a build from before this record shows for an old key with no explicit
+ * choice in it. Facts about those builds, not this build's defaults: they stay
+ * as they are if the shipped defaults above ever change.
  */
-export type ClimbRowLegacyBaseline = boolean | null | 'decided';
-export type ClimbRowLegacyBaselines = Partial<Record<ClimbRowLegacyFieldId, ClimbRowLegacyBaseline>>;
+export const CLIMB_ROW_LEGACY_KEY_DEFAULTS: Readonly<Record<ClimbRowLegacyFieldId, boolean>> = Object.freeze({
+  playlistTags: false,
+  quickActions: true,
+});
+
+/**
+ * What this build last knew a field's old key to hold: the value last read from
+ * it, or last confirmed written to it from here. `null` is a key with no
+ * explicit choice in it. A field with no entry has never been read.
+ *
+ * Comparing an entry with a fresh read is how a write by an older build shows
+ * up: the two differ.
+ */
+export type ClimbRowLegacyBaselines = Partial<Record<ClimbRowLegacyFieldId, boolean | null>>;
+
+/**
+ * A value chosen here that its old key is not yet known to hold. Recorded in the
+ * same write as the choice, BEFORE the write to the old key is attempted, so a
+ * write that fails, or lands after the app has died, is still known about at the
+ * next launch. While a field has an entry, nothing read from its old key
+ * replaces the choice: at worst that is one of our own overtaken writes.
+ */
+export type ClimbRowLegacyPending = Partial<Record<ClimbRowLegacyFieldId, boolean>>;
 
 /** The two old keys as read: anything but an explicit boolean counts as no choice. */
 export type ClimbRowLegacyValues = Record<ClimbRowLegacyFieldId, unknown>;
@@ -143,6 +158,8 @@ export type StoredClimbRowDisplay = {
   lastCustom?: Record<ClimbRowPresetFieldId, boolean>;
   /** Per old key, what it was last known to hold. Left out until one is known. */
   legacy?: ClimbRowLegacyBaselines;
+  /** Per old key, a value chosen here and not yet confirmed written to it. */
+  legacyPending?: ClimbRowLegacyPending;
 };
 
 function isRecord(candidate: unknown): candidate is Record<string, unknown> {
@@ -165,15 +182,20 @@ function contentFieldsOf(display: ClimbRowDisplay): Record<ClimbRowPresetFieldId
   return contentFields;
 }
 
-/** Rebuilds the record field by field, so an absent optional key stays absent. */
-function buildStored(
-  overrides: ClimbRowOverrides,
-  lastCustom: StoredClimbRowDisplay['lastCustom'],
-  legacy: StoredClimbRowDisplay['legacy'],
-): StoredClimbRowDisplay {
-  const stored: StoredClimbRowDisplay = { version: 1, overrides };
+/** Rebuilds the record field by field, so an absent or empty optional key stays absent. */
+function buildStored(parts: {
+  overrides: ClimbRowOverrides;
+  lastCustom: StoredClimbRowDisplay['lastCustom'];
+  legacy: StoredClimbRowDisplay['legacy'];
+  legacyPending: StoredClimbRowDisplay['legacyPending'];
+}): StoredClimbRowDisplay {
+  const { lastCustom, legacy, legacyPending } = parts;
+  const stored: StoredClimbRowDisplay = { version: 1, overrides: parts.overrides };
   if (lastCustom) stored.lastCustom = lastCustom;
   if (legacy && CLIMB_ROW_LEGACY_FIELD_IDS.some((fieldId) => legacy[fieldId] !== undefined)) stored.legacy = legacy;
+  if (legacyPending && CLIMB_ROW_LEGACY_FIELD_IDS.some((fieldId) => legacyPending[fieldId] !== undefined)) {
+    stored.legacyPending = legacyPending;
+  }
   return stored;
 }
 
@@ -183,19 +205,17 @@ const PRESET_LEGACY_FIELD_IDS = CLIMB_ROW_PRESET_FIELD_IDS.filter(
 );
 
 /**
- * The baselines after the climber chose these fields here. A field whose old key
- * has never been read becomes `'decided'`, in the same record as the choice, so
- * the choice still stands at the next launch even if nothing else got written.
+ * The pending values after the climber chose these fields here: what each now
+ * shows is owed to its old key, replacing anything owed before.
  */
-function legacyAfterDeciding(
-  legacy: StoredClimbRowDisplay['legacy'],
+function pendingAfterDeciding(
+  pending: StoredClimbRowDisplay['legacyPending'],
   decidedFieldIds: readonly ClimbRowLegacyFieldId[],
-): StoredClimbRowDisplay['legacy'] {
-  const neverRead = decidedFieldIds.filter((fieldId) => legacy?.[fieldId] === undefined);
-  if (neverRead.length === 0) return legacy;
-  const baselines: ClimbRowLegacyBaselines = { ...legacy };
-  for (const fieldId of neverRead) baselines[fieldId] = 'decided';
-  return baselines;
+  display: ClimbRowDisplay,
+): ClimbRowLegacyPending {
+  const owed: ClimbRowLegacyPending = { ...pending };
+  for (const fieldId of decidedFieldIds) owed[fieldId] = display[fieldId];
+  return owed;
 }
 
 /** The overrides a preset or a restored mix must leave alone. */
@@ -230,9 +250,19 @@ function sanitiseLegacy(candidate: unknown): StoredClimbRowDisplay['legacy'] {
   const legacy: ClimbRowLegacyBaselines = {};
   for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
     const baseline = candidate[fieldId];
-    if (typeof baseline === 'boolean' || baseline === null || baseline === 'decided') legacy[fieldId] = baseline;
+    if (typeof baseline === 'boolean' || baseline === null) legacy[fieldId] = baseline;
   }
   return legacy;
+}
+
+function sanitiseLegacyPending(candidate: unknown): StoredClimbRowDisplay['legacyPending'] {
+  if (!isRecord(candidate)) return undefined;
+  const pending: ClimbRowLegacyPending = {};
+  for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
+    const owed = candidate[fieldId];
+    if (typeof owed === 'boolean') pending[fieldId] = owed;
+  }
+  return pending;
 }
 
 /**
@@ -246,17 +276,20 @@ export function sanitiseStoredClimbRowDisplay(stored: unknown): StoredClimbRowDi
   const overrides = sanitiseOverrides(stored.overrides);
   // A remembered mix only means something while a preset is showing.
   const showsPreset = matchClimbRowPreset(resolveClimbRowDisplay(overrides)) !== 'custom';
-  return buildStored(
+  return buildStored({
     overrides,
-    showsPreset ? sanitiseLastCustom(stored.lastCustom) : undefined,
-    sanitiseLegacy(stored.legacy),
-  );
+    lastCustom: showsPreset ? sanitiseLastCustom(stored.lastCustom) : undefined,
+    legacy: sanitiseLegacy(stored.legacy),
+    legacyPending: sanitiseLegacyPending(stored.legacyPending),
+  });
 }
 
 export function sameStoredClimbRowDisplay(first: StoredClimbRowDisplay, second: StoredClimbRowDisplay): boolean {
-  // `undefined` (never read) and `null` (read, nothing there) are different baselines.
-  if (!CLIMB_ROW_LEGACY_FIELD_IDS.every((fieldId) => first.legacy?.[fieldId] === second.legacy?.[fieldId]))
-    return false;
+  for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
+    // `undefined` (never read) and `null` (read, nothing there) are different baselines.
+    if (first.legacy?.[fieldId] !== second.legacy?.[fieldId]) return false;
+    if (first.legacyPending?.[fieldId] !== second.legacyPending?.[fieldId]) return false;
+  }
   if (!CLIMB_ROW_FIELD_IDS.every((fieldId) => first.overrides[fieldId] === second.overrides[fieldId])) return false;
   const firstCustom = first.lastCustom;
   const secondCustom = second.lastCustom;
@@ -271,14 +304,18 @@ export function withClimbRowField(
   value: boolean,
 ): StoredClimbRowDisplay {
   const overrides = { ...stored.overrides, [fieldId]: value };
+  const display = resolveClimbRowDisplay(overrides);
   // A flip that leaves the presets makes this row the newest hand-made mix, so
   // the older remembered one has nothing left to restore.
-  const showsPreset = matchClimbRowPreset(resolveClimbRowDisplay(overrides)) !== 'custom';
-  return buildStored(
+  const showsPreset = matchClimbRowPreset(display) !== 'custom';
+  return buildStored({
     overrides,
-    showsPreset ? stored.lastCustom : undefined,
-    isClimbRowLegacyFieldId(fieldId) ? legacyAfterDeciding(stored.legacy, [fieldId]) : stored.legacy,
-  );
+    lastCustom: showsPreset ? stored.lastCustom : undefined,
+    legacy: stored.legacy,
+    legacyPending: isClimbRowLegacyFieldId(fieldId)
+      ? pendingAfterDeciding(stored.legacyPending, [fieldId], display)
+      : stored.legacyPending,
+  });
 }
 
 /**
@@ -295,63 +332,115 @@ export function withClimbRowPreset(stored: StoredClimbRowDisplay, presetId: Clim
     matchClimbRowPreset(currentDisplay) === 'custom' ? contentFieldsOf(currentDisplay) : stored.lastCustom;
   const overrides = overridesOutsidePresets(stored.overrides);
   if (presetId !== 'default') Object.assign(overrides, CLIMB_ROW_PRESETS[presetId]);
-  return buildStored(overrides, lastCustom, legacyAfterDeciding(stored.legacy, PRESET_LEGACY_FIELD_IDS));
+  return buildStored({
+    overrides,
+    lastCustom,
+    legacy: stored.legacy,
+    legacyPending: pendingAfterDeciding(
+      stored.legacyPending,
+      PRESET_LEGACY_FIELD_IDS,
+      resolveClimbRowDisplay(overrides),
+    ),
+  });
 }
 
 /** The remembered hand-made mix, back on screen. No remembered mix: no change. */
 export function withClimbRowLastCustomRestored(stored: StoredClimbRowDisplay): StoredClimbRowDisplay {
   if (!stored.lastCustom) return stored;
-  return buildStored(
-    { ...overridesOutsidePresets(stored.overrides), ...stored.lastCustom },
-    undefined,
-    legacyAfterDeciding(stored.legacy, PRESET_LEGACY_FIELD_IDS),
-  );
+  const overrides = { ...overridesOutsidePresets(stored.overrides), ...stored.lastCustom };
+  return buildStored({
+    overrides,
+    lastCustom: undefined,
+    legacy: stored.legacy,
+    legacyPending: pendingAfterDeciding(
+      stored.legacyPending,
+      PRESET_LEGACY_FIELD_IDS,
+      resolveClimbRowDisplay(overrides),
+    ),
+  });
 }
 
 /**
- * The two old keys, read at launch and reconciled with this record.
+ * The two old keys, read at launch and reconciled with this record. Per field,
+ * in this order:
  *
- * Per field, against the baseline: equal, nothing happened since we last
- * looked. Different, or never read, an older build's value is waiting in the
- * key and comes in. It comes in only as an explicit boolean, and never over a
- * choice the climber has already made here: one made before the key was ever
- * read (`'decided'`), or one made this launch while this read was in flight.
- * Either way the baseline becomes what was read.
+ * 1. A value is pending for the key: nothing read replaces the choice. A read
+ *    equal to it means the write landed, so the entry is cleared.
+ * 2. Otherwise the read is compared with the baseline. Equal, nothing happened
+ *    since we last looked. Different, or never read, an older build's choice is
+ *    waiting in the key and comes in, when it is an explicit boolean.
+ * 3. The baseline becomes what was read.
+ * 4. Heal: if a build that only knows the old key would now show something else
+ *    than this record does, the value shown here becomes pending, so the caller
+ *    writes it. This is what retries a write that failed or was cut off, and it
+ *    asks nothing for a climber who never chose: both sides show the default.
+ *
+ * Whatever is pending afterwards still has to be written by the caller.
  */
 export function withClimbRowLegacyRead(
   stored: StoredClimbRowDisplay,
   legacyValues: ClimbRowLegacyValues,
-  changedFieldIds: ReadonlySet<ClimbRowFieldId>,
 ): StoredClimbRowDisplay {
   const overrides = { ...stored.overrides };
   const legacy: ClimbRowLegacyBaselines = { ...stored.legacy };
+  const legacyPending: ClimbRowLegacyPending = {};
   for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
     const legacyValue = legacyValues[fieldId];
     const read = typeof legacyValue === 'boolean' ? legacyValue : null;
-    const baseline = legacy[fieldId];
-    if (baseline === read) continue;
-    if (read !== null && baseline !== 'decided' && !changedFieldIds.has(fieldId)) overrides[fieldId] = read;
+    const owed = stored.legacyPending?.[fieldId];
+    if (owed !== undefined) {
+      if (read !== owed) legacyPending[fieldId] = owed;
+    } else if (read !== null && legacy[fieldId] !== read) {
+      overrides[fieldId] = read;
+    }
     legacy[fieldId] = read;
   }
-  const showsPreset = matchClimbRowPreset(resolveClimbRowDisplay(overrides)) !== 'custom';
-  return buildStored(overrides, showsPreset ? stored.lastCustom : undefined, legacy);
+  const display = resolveClimbRowDisplay(overrides);
+  for (const fieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
+    const shownByOlderBuild = legacy[fieldId] ?? CLIMB_ROW_LEGACY_KEY_DEFAULTS[fieldId];
+    if (shownByOlderBuild !== display[fieldId]) legacyPending[fieldId] = display[fieldId];
+  }
+  const showsPreset = matchClimbRowPreset(display) !== 'custom';
+  return buildStored({ overrides, lastCustom: showsPreset ? stored.lastCustom : undefined, legacy, legacyPending });
 }
 
-/** A choice made here has reached its old key, which now holds `value`. */
+/**
+ * A write of `value` to a field's old key has landed. It confirms the pending
+ * value only when that is still the one written: then the key is known to hold
+ * it and nothing is owed. A newer choice has replaced it otherwise, and its own
+ * write is still to come, so the record is left exactly as it is.
+ */
 export function withClimbRowLegacyMirrored(
   stored: StoredClimbRowDisplay,
   fieldId: ClimbRowLegacyFieldId,
   value: boolean,
 ): StoredClimbRowDisplay {
-  if (stored.legacy?.[fieldId] === value) return stored;
-  return buildStored(stored.overrides, stored.lastCustom, { ...stored.legacy, [fieldId]: value });
+  if (stored.legacyPending?.[fieldId] !== value) return stored;
+  const legacyPending: ClimbRowLegacyPending = {};
+  for (const otherFieldId of CLIMB_ROW_LEGACY_FIELD_IDS) {
+    const owed = stored.legacyPending[otherFieldId];
+    if (otherFieldId !== fieldId && owed !== undefined) legacyPending[otherFieldId] = owed;
+  }
+  return buildStored({
+    overrides: stored.overrides,
+    lastCustom: stored.lastCustom,
+    legacy: { ...stored.legacy, [fieldId]: value },
+    legacyPending,
+  });
 }
 
 /**
- * The record after every setting was reset from outside: the shipped defaults,
- * but still knowing what the old keys hold. Without that, the next launch would
- * read them as new and bring the pre-reset choices straight back.
+ * The record after every setting was reset from outside. A reset is a choice
+ * like any other: back to the shipped defaults, and each old key is owed its
+ * default, so a read still in flight cannot bring the old choices back and a
+ * build that only knows the old keys shows the reset too. Both keys, whatever
+ * the baselines say: at this point they can be stale, or not there yet.
  */
 export function withClimbRowDisplayReset(stored: StoredClimbRowDisplay): StoredClimbRowDisplay {
-  return buildStored({}, undefined, stored.legacy);
+  return buildStored({
+    overrides: {},
+    lastCustom: undefined,
+    legacy: stored.legacy,
+    legacyPending: pendingAfterDeciding(undefined, CLIMB_ROW_LEGACY_FIELD_IDS, DEFAULT_CLIMB_ROW_DISPLAY),
+  });
 }

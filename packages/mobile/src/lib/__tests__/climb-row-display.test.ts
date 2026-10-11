@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLIMB_ROW_FIELD_IDS,
   CLIMB_ROW_LEGACY_FIELD_IDS,
+  CLIMB_ROW_LEGACY_KEY_DEFAULTS,
   CLIMB_ROW_PRESET_FIELD_IDS,
   CLIMB_ROW_PRESET_IDS,
   CLIMB_ROW_PRESETS,
@@ -18,13 +19,11 @@ import {
   withClimbRowLegacyRead,
   withClimbRowPreset,
   type ClimbRowDisplay,
-  type ClimbRowFieldId,
   type ClimbRowPresetFieldId,
   type StoredClimbRowDisplay,
 } from '../climb-row-display';
 
 const EMPTY: StoredClimbRowDisplay = { version: 1, overrides: {} };
-const NOTHING_CHANGED: ReadonlySet<ClimbRowFieldId> = new Set();
 
 function contentOf(display: ClimbRowDisplay): Record<string, boolean> {
   return Object.fromEntries(CLIMB_ROW_PRESET_FIELD_IDS.map((fieldId) => [fieldId, display[fieldId]]));
@@ -171,8 +170,8 @@ describe('sanitiseStoredClimbRowDisplay', () => {
     expect(stored).toEqual({ version: 1, overrides: { thumbnail: false, quickActions: false } });
   });
 
-  it('keeps a baseline for each old key: a boolean, null, or decided', () => {
-    for (const baseline of [true, false, null, 'decided'] as const) {
+  it('keeps a baseline for each old key: a boolean, or null for a key with no choice in it', () => {
+    for (const baseline of [true, false, null]) {
       const legacy = { playlistTags: baseline, quickActions: baseline };
       expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacy })).toEqual({ ...EMPTY, legacy });
     }
@@ -188,11 +187,31 @@ describe('sanitiseStoredClimbRowDisplay', () => {
     const stored = sanitiseStoredClimbRowDisplay({
       version: 1,
       overrides: {},
-      legacy: { playlistTags: 'true', quickActions: 1, thumbnail: true, glitter: false },
+      legacy: { playlistTags: 'true', quickActions: 'decided', thumbnail: true, glitter: false },
     });
     expect(stored).toEqual(EMPTY);
     for (const legacy of ['decided', null, [true], 7]) {
       expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacy })).toEqual(EMPTY);
+    }
+  });
+
+  it('keeps a pending value for each old key, booleans only', () => {
+    for (const owed of [true, false]) {
+      const legacyPending = { playlistTags: owed, quickActions: !owed };
+      expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacyPending })).toEqual({
+        ...EMPTY,
+        legacyPending,
+      });
+    }
+    const stored = sanitiseStoredClimbRowDisplay({
+      version: 1,
+      overrides: {},
+      // `null` is a baseline, not something that can be owed to a key.
+      legacyPending: { playlistTags: null, quickActions: 'false', thumbnail: true },
+    });
+    expect(stored).toEqual(EMPTY);
+    for (const legacyPending of [true, null, [true], 'playlistTags']) {
+      expect(sanitiseStoredClimbRowDisplay({ version: 1, overrides: {}, legacyPending })).toEqual(EMPTY);
     }
   });
 
@@ -225,7 +244,17 @@ describe('sanitiseStoredClimbRowDisplay', () => {
   });
 
   it('gives back an equal record for one it produced', () => {
-    const produced = withClimbRowPreset(withClimbRowField(EMPTY, 'setter', false), 'everything');
+    const produced = withClimbRowLegacyRead(
+      withClimbRowPreset(
+        withClimbRowField(withClimbRowField(EMPTY, 'setter', false), 'quickActions', false),
+        'everything',
+      ),
+      { playlistTags: null, quickActions: true },
+    );
+    // Every optional part is in play: a remembered mix, a baseline and a pending value.
+    expect(produced.lastCustom).toBeDefined();
+    expect(produced.legacy).toBeDefined();
+    expect(produced.legacyPending).toBeDefined();
     const reread = sanitiseStoredClimbRowDisplay(JSON.parse(JSON.stringify(produced)));
     expect(reread).toEqual(produced);
     expect(sameStoredClimbRowDisplay(reread, produced)).toBe(true);
@@ -252,9 +281,20 @@ describe('sameStoredClimbRowDisplay', () => {
     [
       'a baseline’s value',
       { version: 1, overrides: {}, legacy: { quickActions: true } },
-      { version: 1, overrides: {}, legacy: { quickActions: 'decided' } },
+      { version: 1, overrides: {}, legacy: { quickActions: false } },
     ],
     ['a key read as empty versus never read', EMPTY, { version: 1, overrides: {}, legacy: { playlistTags: null } }],
+    ['a pending value', EMPTY, { version: 1, overrides: {}, legacyPending: { playlistTags: false } }],
+    [
+      'a pending value’s value',
+      { version: 1, overrides: {}, legacyPending: { playlistTags: true } },
+      { version: 1, overrides: {}, legacyPending: { playlistTags: false } },
+    ],
+    [
+      'which key a value is pending for',
+      { version: 1, overrides: {}, legacyPending: { playlistTags: true } },
+      { version: 1, overrides: {}, legacyPending: { quickActions: true } },
+    ],
     ['a remembered mix', EMPTY, { version: 1, overrides: {}, lastCustom: remembered }],
     [
       'the remembered mix’s values',
@@ -279,24 +319,41 @@ describe('withClimbRowField', () => {
     expect(before).toEqual({ version: 1, overrides: { sends: false } });
   });
 
-  it('leaves the baselines alone for a field that never had an old key', () => {
-    expect(withClimbRowField(EMPTY, 'sends', false).legacy).toBeUndefined();
-    const read: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: true, quickActions: null } };
-    expect(withClimbRowField(read, 'sends', false).legacy).toEqual({ playlistTags: true, quickActions: null });
+  it('owes nothing to an old key for a field that never had one', () => {
+    expect(withClimbRowField(EMPTY, 'sends', false)).toEqual({ version: 1, overrides: { sends: false } });
+    const known: StoredClimbRowDisplay = {
+      ...EMPTY,
+      legacy: { playlistTags: true, quickActions: null },
+      legacyPending: { quickActions: false },
+    };
+    const flipped = withClimbRowField(known, 'sends', false);
+    expect(flipped.legacy).toEqual({ playlistTags: true, quickActions: null });
+    expect(flipped.legacyPending).toEqual({ quickActions: false });
   });
 
   it.each(CLIMB_ROW_LEGACY_FIELD_IDS)(
-    'marks %s decided when its old key has never been read, in the same record as the choice',
+    'owes the new value of %s to its old key, in the same record as the choice',
     (fieldId) => {
-      const decided = withClimbRowField(EMPTY, fieldId, false);
-      expect(decided.overrides).toEqual({ [fieldId]: false });
-      expect(decided.legacy).toEqual({ [fieldId]: 'decided' });
+      for (const value of [true, false]) {
+        const decided = withClimbRowField(EMPTY, fieldId, value);
+        expect(decided).toEqual({ version: 1, overrides: { [fieldId]: value }, legacyPending: { [fieldId]: value } });
+      }
     },
   );
 
-  it.each([true, false, null, 'decided'] as const)('keeps a baseline that is already %s', (baseline) => {
-    const read: StoredClimbRowDisplay = { ...EMPTY, legacy: { quickActions: baseline } };
-    expect(withClimbRowField(read, 'quickActions', false).legacy).toEqual({ quickActions: baseline });
+  it('owes it whatever the baseline says: a baseline can be out of date until the keys are read', () => {
+    const known: StoredClimbRowDisplay = { ...EMPTY, legacy: { quickActions: false } };
+    const decided = withClimbRowField(known, 'quickActions', false);
+    expect(decided.legacy).toEqual({ quickActions: false });
+    expect(decided.legacyPending).toEqual({ quickActions: false });
+  });
+
+  it('replaces a value still owed from an earlier choice, and leaves the other key’s alone', () => {
+    const owing: StoredClimbRowDisplay = { ...EMPTY, legacyPending: { playlistTags: true, quickActions: false } };
+    expect(withClimbRowField(owing, 'playlistTags', false).legacyPending).toEqual({
+      playlistTags: false,
+      quickActions: false,
+    });
   });
 });
 
@@ -331,13 +388,24 @@ describe('withClimbRowPreset', () => {
 
   // Default writes no override, so without this nothing would record that the
   // climber chose: the tags' old key would be read as new at the next launch.
-  it.each(CLIMB_ROW_PRESET_IDS)('marks the tags decided, and only the tags (%s)', (presetId) => {
-    expect(withClimbRowPreset(EMPTY, presetId).legacy).toEqual({ playlistTags: 'decided' });
-  });
+  it.each(CLIMB_ROW_PRESET_IDS)(
+    'owes the tags it sets to their old key, and nothing for quick actions (%s)',
+    (presetId) => {
+      expect(withClimbRowPreset(EMPTY, presetId).legacyPending).toEqual({
+        playlistTags: CLIMB_ROW_PRESETS[presetId].playlistTags,
+      });
+    },
+  );
 
-  it('keeps baselines that were already read', () => {
-    const read: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: true, quickActions: false } };
-    expect(withClimbRowPreset(read, 'default').legacy).toEqual({ playlistTags: true, quickActions: false });
+  it('keeps the baselines, and a quick-actions value still owed', () => {
+    const known: StoredClimbRowDisplay = {
+      ...EMPTY,
+      legacy: { playlistTags: true, quickActions: false },
+      legacyPending: { quickActions: true },
+    };
+    const applied = withClimbRowPreset(known, 'default');
+    expect(applied.legacy).toEqual({ playlistTags: true, quickActions: false });
+    expect(applied.legacyPending).toEqual({ playlistTags: false, quickActions: true });
   });
 });
 
@@ -398,6 +466,18 @@ describe('the remembered hand-made mix', () => {
     const onPreset = withClimbRowPreset(EMPTY, 'everything');
     expect(withClimbRowLastCustomRestored(onPreset)).toBe(onPreset);
   });
+
+  it('owes the restored tags to their old key, replacing what the preset owed', () => {
+    const onPreset = withClimbRowPreset(handMade, 'namesOnly');
+    expect(onPreset.legacyPending).toEqual({ playlistTags: false });
+    expect(withClimbRowLastCustomRestored(onPreset).legacyPending).toEqual({ playlistTags: true });
+  });
+});
+
+describe('what an older build shows for an old key with no choice in it', () => {
+  it('is tags off and the quick-actions button on', () => {
+    expect(CLIMB_ROW_LEGACY_KEY_DEFAULTS).toEqual({ playlistTags: false, quickActions: true });
+  });
 });
 
 describe('withClimbRowLegacyRead', () => {
@@ -405,7 +485,7 @@ describe('withClimbRowLegacyRead', () => {
 
   describe('a key that has never been read', () => {
     it('brings an explicit choice in and records what the key held', () => {
-      expect(withClimbRowLegacyRead(EMPTY, read(true, false), NOTHING_CHANGED)).toEqual({
+      expect(withClimbRowLegacyRead(EMPTY, read(true, false))).toEqual({
         version: 1,
         overrides: { playlistTags: true, quickActions: false },
         legacy: { playlistTags: true, quickActions: false },
@@ -413,8 +493,9 @@ describe('withClimbRowLegacyRead', () => {
     });
 
     it('brings in an explicit choice that equals the default too', () => {
-      const synced = withClimbRowLegacyRead(EMPTY, read(false, true), NOTHING_CHANGED);
+      const synced = withClimbRowLegacyRead(EMPTY, read(false, true));
       expect(synced.overrides).toEqual({ playlistTags: false, quickActions: true });
+      expect(synced.legacyPending).toBeUndefined();
     });
 
     it.each([
@@ -424,40 +505,22 @@ describe('withClimbRowLegacyRead', () => {
       ['a number', 1],
       ['an object', { enabled: true }],
     ])('brings nothing in for a key that is %s, and records it as empty', (_label, legacyValue) => {
-      expect(withClimbRowLegacyRead(EMPTY, read(legacyValue, legacyValue), NOTHING_CHANGED)).toEqual({
+      expect(withClimbRowLegacyRead(EMPTY, read(legacyValue, legacyValue))).toEqual({
         version: 1,
         overrides: {},
         legacy: { playlistTags: null, quickActions: null },
       });
     });
 
-    it('does not replace a field changed this launch, and still brings the other in', () => {
-      const changed = withClimbRowField(EMPTY, 'playlistTags', false);
-      const synced = withClimbRowLegacyRead(changed, read(true, false), new Set<ClimbRowFieldId>(['playlistTags']));
-      expect(synced.overrides).toEqual({ playlistTags: false, quickActions: false });
-      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: false });
+    it('asks for no write for a climber who never chose: both sides show the default', () => {
+      const synced = withClimbRowLegacyRead(EMPTY, read(null, null));
+      expect(synced.legacyPending).toBeUndefined();
+      const again = withClimbRowLegacyRead(synced, read(null, null));
+      expect(sameStoredClimbRowDisplay(again, synced)).toBe(true);
     });
   });
 
-  describe('a field decided here before its key was read', () => {
-    it('keeps the choice at a later launch, when nothing was changed this launch', () => {
-      const decided = withClimbRowField(EMPTY, 'quickActions', true);
-      const synced = withClimbRowLegacyRead(decided, read(null, false), NOTHING_CHANGED);
-      expect(displayOf(synced).quickActions).toBe(true);
-      // From here on the key is known, so a later write by an older build shows.
-      expect(synced.legacy).toEqual({ playlistTags: null, quickActions: false });
-    });
-
-    it('keeps a Default preset, which leaves no override to protect it', () => {
-      const onDefault = withClimbRowPreset(EMPTY, 'default');
-      expect(onDefault.overrides).toEqual({});
-      const synced = withClimbRowLegacyRead(onDefault, read(true, null), NOTHING_CHANGED);
-      expect(displayOf(synced).playlistTags).toBe(false);
-      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: null });
-    });
-  });
-
-  describe('a key read before', () => {
+  describe('a key read before, with nothing pending for it', () => {
     const known: StoredClimbRowDisplay = {
       version: 1,
       overrides: { playlistTags: true, quickActions: true },
@@ -465,41 +528,131 @@ describe('withClimbRowLegacyRead', () => {
     };
 
     it('changes nothing while the key still holds what it held', () => {
-      expect(sameStoredClimbRowDisplay(withClimbRowLegacyRead(known, read(true, true), NOTHING_CHANGED), known)).toBe(
-        true,
-      );
-    });
-
-    it('leaves a choice made here alone when its key is unchanged, even if the two differ', () => {
-      // A choice whose copy to the old key failed: the key still holds the older value.
-      const unmirrored: StoredClimbRowDisplay = { ...known, overrides: { playlistTags: false, quickActions: true } };
-      const synced = withClimbRowLegacyRead(unmirrored, read(true, true), NOTHING_CHANGED);
-      expect(displayOf(synced).playlistTags).toBe(false);
+      expect(sameStoredClimbRowDisplay(withClimbRowLegacyRead(known, read(true, true)), known)).toBe(true);
     });
 
     it('brings in a value an older build wrote since', () => {
-      const synced = withClimbRowLegacyRead(known, read(true, false), NOTHING_CHANGED);
-      expect(synced.overrides).toEqual({ playlistTags: true, quickActions: false });
-      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: false });
+      expect(withClimbRowLegacyRead(known, read(true, false))).toEqual({
+        version: 1,
+        overrides: { playlistTags: true, quickActions: false },
+        legacy: { playlistTags: true, quickActions: false },
+      });
     });
 
     it('brings in a first explicit choice an older build made in a key that held nothing', () => {
       const emptyKeys: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: null, quickActions: null } };
-      const synced = withClimbRowLegacyRead(emptyKeys, read(null, false), NOTHING_CHANGED);
-      expect(synced.overrides).toEqual({ quickActions: false });
-      expect(synced.legacy).toEqual({ playlistTags: null, quickActions: false });
+      expect(withClimbRowLegacyRead(emptyKeys, read(null, false))).toEqual({
+        version: 1,
+        overrides: { quickActions: false },
+        legacy: { playlistTags: null, quickActions: false },
+      });
     });
 
-    it('does not let that value replace a field changed this launch', () => {
-      const synced = withClimbRowLegacyRead(known, read(true, false), new Set<ClimbRowFieldId>(['quickActions']));
-      expect(displayOf(synced).quickActions).toBe(true);
-      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: false });
-    });
-
-    it('keeps the choice when the key no longer holds one, and records that', () => {
-      const synced = withClimbRowLegacyRead(known, read(null, true), NOTHING_CHANGED);
+    it('keeps the choice when the key no longer holds one, and owes it back to the key', () => {
+      // The key was cleared from outside; an older build would now show tags off.
+      const synced = withClimbRowLegacyRead(known, read(null, true));
       expect(synced.overrides).toEqual({ playlistTags: true, quickActions: true });
       expect(synced.legacy).toEqual({ playlistTags: null, quickActions: true });
+      expect(synced.legacyPending).toEqual({ playlistTags: true });
+    });
+  });
+
+  describe('healing a key that does not show what this record shows', () => {
+    // A choice made here whose write was never recorded at all: the state a
+    // build from before pending values could leave behind.
+    const unmirrored: StoredClimbRowDisplay = {
+      version: 1,
+      overrides: { playlistTags: false },
+      legacy: { playlistTags: true, quickActions: null },
+    };
+
+    it('owes the value shown here to a key that holds another, without touching the choice', () => {
+      const synced = withClimbRowLegacyRead(unmirrored, read(true, null));
+      expect(displayOf(synced).playlistTags).toBe(false);
+      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: null });
+      expect(synced.legacyPending).toEqual({ playlistTags: false });
+    });
+
+    it('measures an empty key by what an older build shows for it, not by null', () => {
+      // Quick actions off here, key empty: an older build shows the button.
+      const hidden: StoredClimbRowDisplay = {
+        ...EMPTY,
+        overrides: { quickActions: false },
+        legacy: { quickActions: null },
+      };
+      expect(withClimbRowLegacyRead(hidden, read(null, null)).legacyPending).toEqual({ quickActions: false });
+      // Tags off here, key empty: an older build shows them off too. Nothing owed.
+      const tagsOff: StoredClimbRowDisplay = {
+        ...EMPTY,
+        overrides: { playlistTags: false },
+        legacy: { playlistTags: null },
+      };
+      expect(withClimbRowLegacyRead(tagsOff, read(null, null)).legacyPending).toBeUndefined();
+    });
+
+    it('owes nothing once a value an older build wrote has been brought in', () => {
+      const synced = withClimbRowLegacyRead(unmirrored, read(false, false));
+      expect(synced.overrides).toEqual({ playlistTags: false, quickActions: false });
+      expect(synced.legacyPending).toBeUndefined();
+    });
+  });
+
+  describe('a key with a value pending for it', () => {
+    const owing: StoredClimbRowDisplay = {
+      version: 1,
+      overrides: { playlistTags: false },
+      legacy: { playlistTags: true, quickActions: null },
+      legacyPending: { playlistTags: false },
+    };
+
+    it('reads its own value back as a write that landed: known, and no longer owed', () => {
+      expect(withClimbRowLegacyRead(owing, read(false, null))).toEqual({
+        version: 1,
+        overrides: { playlistTags: false },
+        legacy: { playlistTags: false, quickActions: null },
+      });
+    });
+
+    it('never lets what it reads replace the choice, and keeps owing it', () => {
+      // The write failed or was cut off: the key still holds the older value.
+      const synced = withClimbRowLegacyRead(owing, read(true, null));
+      expect(displayOf(synced).playlistTags).toBe(false);
+      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: null });
+      expect(synced.legacyPending).toEqual({ playlistTags: false });
+    });
+
+    it('treats a value it never wrote last as its own overtaken write, not an older build’s choice', () => {
+      // Key and baseline false; on, then off again before the first write
+      // returned; the first write reached the disk and the app died.
+      const overtaken: StoredClimbRowDisplay = {
+        version: 1,
+        overrides: { playlistTags: false },
+        legacy: { playlistTags: false, quickActions: null },
+        legacyPending: { playlistTags: false },
+      };
+      const synced = withClimbRowLegacyRead(overtaken, read(true, null));
+      expect(displayOf(synced).playlistTags).toBe(false);
+      expect(synced.legacyPending).toEqual({ playlistTags: false });
+    });
+
+    it('keeps owing a value an empty key already seems to show, until it is really written', () => {
+      // Default applied before the key was read; the write failed; the key is empty.
+      const onDefault = withClimbRowPreset(EMPTY, 'default');
+      expect(onDefault).toEqual({ version: 1, overrides: {}, legacyPending: { playlistTags: false } });
+      const synced = withClimbRowLegacyRead(onDefault, read(null, null));
+      expect(synced.legacyPending).toEqual({ playlistTags: false });
+    });
+
+    it('keeps a Default preset, which leaves no override to protect it', () => {
+      const synced = withClimbRowLegacyRead(withClimbRowPreset(EMPTY, 'default'), read(true, null));
+      expect(displayOf(synced).playlistTags).toBe(false);
+      expect(synced.legacy).toEqual({ playlistTags: true, quickActions: null });
+      expect(synced.legacyPending).toEqual({ playlistTags: false });
+    });
+
+    it('still brings the other key’s value in', () => {
+      const synced = withClimbRowLegacyRead(owing, read(true, false));
+      expect(synced.overrides).toEqual({ playlistTags: false, quickActions: false });
     });
   });
 
@@ -507,56 +660,159 @@ describe('withClimbRowLegacyRead', () => {
     // Default with nothing overriding the tags: the older choice lands, and
     // Default plus tags is the Everything preset.
     const onDefault: StoredClimbRowDisplay = { ...EMPTY, lastCustom: { ...CLIMB_ROW_PRESETS.default, setter: false } };
-    const synced = withClimbRowLegacyRead(onDefault, read(true, null), NOTHING_CHANGED);
+    const synced = withClimbRowLegacyRead(onDefault, read(true, null));
     expect(matchClimbRowPreset(displayOf(synced))).toBe('everything');
     expect(synced.lastCustom).toEqual({ ...CLIMB_ROW_PRESETS.default, setter: false });
   });
 });
 
 describe('withClimbRowLegacyMirrored', () => {
-  it('records that the old key now holds the value written to it', () => {
-    const decided = withClimbRowField(EMPTY, 'playlistTags', true);
-    expect(decided.legacy).toEqual({ playlistTags: 'decided' });
-    const mirrored = withClimbRowLegacyMirrored(decided, 'playlistTags', true);
-    expect(mirrored.legacy).toEqual({ playlistTags: true });
-    expect(mirrored.overrides).toEqual({ playlistTags: true });
+  const decided = withClimbRowField(EMPTY, 'playlistTags', true);
+
+  it('confirms the pending value: the key is known to hold it and nothing is owed', () => {
+    expect(decided.legacyPending).toEqual({ playlistTags: true });
+    expect(withClimbRowLegacyMirrored(decided, 'playlistTags', true)).toEqual({
+      version: 1,
+      overrides: { playlistTags: true },
+      legacy: { playlistTags: true },
+    });
   });
 
-  it('touches only that key’s baseline, and keeps a remembered mix', () => {
-    const before = withClimbRowPreset(withClimbRowField(EMPTY, 'setter', false), 'namesOnly');
-    const mirrored = withClimbRowLegacyMirrored({ ...before, legacy: { quickActions: false } }, 'playlistTags', false);
-    expect(mirrored.legacy).toEqual({ playlistTags: false, quickActions: false });
+  it('leaves the record exactly as it is when a newer choice has replaced the one written', () => {
+    const flippedBack = withClimbRowField(decided, 'playlistTags', false);
+    expect(withClimbRowLegacyMirrored(flippedBack, 'playlistTags', true)).toBe(flippedBack);
+  });
+
+  it('leaves the record as it is when nothing was pending for that key', () => {
+    const known: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: false } };
+    expect(withClimbRowLegacyMirrored(known, 'playlistTags', true)).toBe(known);
+    expect(withClimbRowLegacyMirrored(known, 'playlistTags', false)).toBe(known);
+  });
+
+  it('touches only that key, and keeps a remembered mix', () => {
+    const before = withClimbRowField(
+      withClimbRowPreset(withClimbRowField(EMPTY, 'setter', false), 'namesOnly'),
+      'quickActions',
+      false,
+    );
+    expect(before.legacyPending).toEqual({ playlistTags: false, quickActions: false });
+    const mirrored = withClimbRowLegacyMirrored(before, 'playlistTags', false);
+    expect(mirrored.legacy).toEqual({ playlistTags: false });
+    expect(mirrored.legacyPending).toEqual({ quickActions: false });
     expect(mirrored.overrides).toEqual(before.overrides);
     expect(mirrored.lastCustom).toEqual(before.lastCustom);
-  });
-
-  it('gives the same record back when the baseline already says so', () => {
-    const known: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: false } };
-    expect(withClimbRowLegacyMirrored(known, 'playlistTags', false)).toBe(known);
   });
 });
 
 describe('withClimbRowDisplayReset', () => {
-  it('goes back to the default row but keeps what is known of the old keys', () => {
+  it('goes back to the default row, keeps the baselines and owes both old keys their default', () => {
     const before = withClimbRowPreset(
-      withClimbRowLegacyRead(
-        withClimbRowField(EMPTY, 'setter', false),
-        { playlistTags: true, quickActions: false },
-        NOTHING_CHANGED,
-      ),
+      withClimbRowLegacyRead(withClimbRowField(EMPTY, 'setter', false), { playlistTags: true, quickActions: false }),
       'namesOnly',
     );
     expect(before.lastCustom).toBeDefined();
 
     const reset = withClimbRowDisplayReset(before);
 
-    expect(reset).toEqual({ version: 1, overrides: {}, legacy: { playlistTags: true, quickActions: false } });
-    // So the next launch finds the keys unchanged and brings nothing back.
-    const nextLaunch = withClimbRowLegacyRead(reset, { playlistTags: true, quickActions: false }, NOTHING_CHANGED);
-    expect(displayOf(nextLaunch)).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    expect(reset).toEqual({
+      version: 1,
+      overrides: {},
+      legacy: { playlistTags: true, quickActions: false },
+      legacyPending: { playlistTags: false, quickActions: true },
+    });
   });
 
-  it('is an empty record when the old keys were never read', () => {
-    expect(withClimbRowDisplayReset(withClimbRowField(EMPTY, 'sends', false))).toEqual(EMPTY);
+  it('owes both keys their default even when the baselines say they already show it', () => {
+    // A baseline can be out of date at this point, and a write may be on its way.
+    const known: StoredClimbRowDisplay = { ...EMPTY, legacy: { playlistTags: false, quickActions: true } };
+    expect(withClimbRowDisplayReset(known).legacyPending).toEqual({ playlistTags: false, quickActions: true });
+    expect(withClimbRowDisplayReset(EMPTY).legacyPending).toEqual({ playlistTags: false, quickActions: true });
+  });
+
+  it('holds against a read of the old keys that lands afterwards, whatever it finds', () => {
+    const reset = withClimbRowDisplayReset({ ...EMPTY, overrides: { playlistTags: true, quickActions: false } });
+    for (const found of [
+      { playlistTags: true, quickActions: false },
+      { playlistTags: null, quickActions: null },
+      { playlistTags: false, quickActions: true },
+    ]) {
+      expect(displayOf(withClimbRowLegacyRead(reset, found))).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    }
+  });
+});
+
+// The four ways the old key and this record can come apart, each followed to the
+// launch where they agree again. `key` is what is on disk, as a build that only
+// knows the old key would read it.
+describe('timelines for one old key', () => {
+  type Phone = { key: boolean | null; record: StoredClimbRowDisplay };
+  const tags = (phone: Phone) => displayOf(phone.record).playlistTags;
+  const shownByOlderBuild = (phone: Phone) => phone.key ?? CLIMB_ROW_LEGACY_KEY_DEFAULTS.playlistTags;
+
+  /** A launch: the key is read, and whatever is then pending is written and confirmed. */
+  function launch(phone: Phone, writesLand = true): Phone {
+    let record = withClimbRowLegacyRead(phone.record, { playlistTags: phone.key, quickActions: null });
+    let key = phone.key;
+    const owed = record.legacyPending?.playlistTags;
+    if (owed !== undefined && writesLand) {
+      key = owed;
+      record = withClimbRowLegacyMirrored(record, 'playlistTags', owed);
+    }
+    return { key, record };
+  }
+
+  it('a write that fails, or is cut off, is made again at the next launch', () => {
+    const synced = launch({ key: true, record: EMPTY });
+    expect(tags(synced)).toBe(true);
+
+    // Tags off; the write to the old key never lands.
+    const afterChoice: Phone = { key: true, record: withClimbRowField(synced.record, 'playlistTags', false) };
+    expect(shownByOlderBuild(afterChoice)).toBe(true);
+
+    // A launch where the write fails again: the choice holds, and stays owed.
+    const stillFailing = launch(afterChoice, false);
+    expect(tags(stillFailing)).toBe(false);
+    expect(stillFailing.record.legacyPending).toEqual({ playlistTags: false });
+
+    // A launch where it lands: a rollback now shows what the climber chose.
+    const healed = launch(stillFailing);
+    expect(tags(healed)).toBe(false);
+    expect(shownByOlderBuild(healed)).toBe(false);
+    expect(healed.record.legacy?.playlistTags).toBe(false);
+    expect(healed.record.legacyPending).toBeUndefined();
+  });
+
+  it('an overtaken write that lands alone does not undo the last choice', () => {
+    const synced = launch({ key: false, record: EMPTY });
+
+    // On, then off before the first write returned. The first write reached the
+    // disk; the app died before the second, and before anything was confirmed.
+    const twoFlips = withClimbRowField(withClimbRowField(synced.record, 'playlistTags', true), 'playlistTags', false);
+    const died: Phone = { key: true, record: twoFlips };
+
+    const relaunched = launch(died);
+    expect(tags(relaunched)).toBe(false);
+    expect(shownByOlderBuild(relaunched)).toBe(false);
+    expect(relaunched.record.legacyPending).toBeUndefined();
+  });
+
+  it('a choice made on an older build in between still arrives', () => {
+    const preview = launch({ key: null, record: EMPTY });
+    expect(tags(preview)).toBe(false);
+
+    const shipped = launch({ key: true, record: preview.record });
+    expect(tags(shipped)).toBe(true);
+    expect(shipped.record.legacyPending).toBeUndefined();
+  });
+
+  it('a reset holds across a launch, and reaches the old key', () => {
+    const synced = launch({ key: true, record: EMPTY });
+    expect(tags(synced)).toBe(true);
+
+    const reset: Phone = { key: true, record: withClimbRowDisplayReset(synced.record) };
+    const relaunched = launch(reset);
+
+    expect(tags(relaunched)).toBe(false);
+    expect(shownByOlderBuild(relaunched)).toBe(false);
   });
 });

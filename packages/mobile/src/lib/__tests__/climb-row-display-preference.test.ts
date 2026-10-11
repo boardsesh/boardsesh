@@ -20,7 +20,9 @@ const { mmkv, mmkvSet, legacyStorage, readLegacy, writeLegacy, removeLegacy, cap
     writeLegacy: vi.fn(async (key: string, serialised: string): Promise<void> => {
       legacyStorage.set(key, serialised);
     }),
-    removeLegacy: vi.fn(),
+    removeLegacy: vi.fn(async (key: string): Promise<void> => {
+      legacyStorage.delete(key);
+    }),
     // The `subscribe` function the store last handed React. Renders are batched,
     // so counting them cannot tell one publish from several; a raw listener can.
     captured: { subscribe: null as null | ((listener: () => void) => () => void) },
@@ -73,6 +75,11 @@ function persisted(): unknown {
   return JSON.parse(mmkv.get(SETTINGS_KEY) ?? 'null');
 }
 
+/** An old key as a build that only knows the old keys would read it. */
+function oldKey(key: string): unknown {
+  return JSON.parse(legacyStorage.get(key) ?? 'null');
+}
+
 function deferred<Resolved>() {
   let resolve!: (resolved: Resolved) => void;
   const promise = new Promise<Resolved>((resolvePromise) => {
@@ -88,15 +95,27 @@ function settle(): Promise<void> {
   });
 }
 
+/** A write to an old key that reaches the disk and is never heard from again. */
+function landsWithoutAnswering(answer: Promise<void>) {
+  return async (key: string, serialised: string): Promise<void> => {
+    legacyStorage.set(key, serialised);
+    await answer;
+  };
+}
+
 beforeEach(() => {
   mmkv.clear();
   legacyStorage.clear();
-  mmkvSet.mockClear();
+  mmkvSet.mockReset().mockImplementation((key: string, serialised: string) => {
+    mmkv.set(key, serialised);
+  });
   readLegacy.mockReset().mockImplementation(async (key: string) => legacyStorage.get(key) ?? null);
   writeLegacy.mockReset().mockImplementation(async (key: string, serialised: string) => {
     legacyStorage.set(key, serialised);
   });
-  removeLegacy.mockClear();
+  removeLegacy.mockReset().mockImplementation(async (key: string) => {
+    legacyStorage.delete(key);
+  });
   captured.subscribe = null;
 });
 afterEach(async () => {
@@ -148,10 +167,7 @@ describe('writes', () => {
   });
 
   it('publishes a preset once and writes it once', async () => {
-    // The tags' old key already holds what this preset sets, so copying the
-    // choice to it leaves the record as it is.
-    legacyStorage.set(LEGACY_TAGS_KEY, 'false');
-    seedStored({}, { legacy: { playlistTags: false, quickActions: null } });
+    seedStored({});
     const store = await launch();
     const { result } = renderHook(store.useClimbRowDisplay);
     const publishes = vi.fn();
@@ -167,10 +183,6 @@ describe('writes', () => {
     expect(mmkvSet).toHaveBeenCalledTimes(1);
     expect(mmkvSet).toHaveBeenCalledWith(SETTINGS_KEY, expect.any(String));
     expect(matchClimbRowPreset(result.current)).toBe('namesOnly');
-
-    await settle();
-    expect(publishes).toHaveBeenCalledTimes(1);
-    expect(mmkvSet).toHaveBeenCalledTimes(1);
     unsubscribe?.();
   });
 
@@ -296,6 +308,47 @@ describe('what a reader re-renders for', () => {
     expect(renders).toBe(2);
     expect(result.current).toBe(false);
   });
+
+  // Every mounted row subscribes. What this build knows or owes about the old
+  // keys changes behind every choice and at every launch; none of it is drawn.
+  it('tells no reader when only what is known or owed about the old keys changes', async () => {
+    legacyStorage.set(LEGACY_QUICK_ACTIONS_KEY, 'true');
+    const store = await launch();
+    let renders = 0;
+    renderHook(() => {
+      renders += 1;
+      return store.useClimbRowDisplay();
+    });
+    const publishes = vi.fn();
+    const unsubscribe = captured.subscribe?.(publishes);
+
+    // The launch read: two baselines recorded, and an override equal to the default.
+    await store.ensureClimbRowLegacySynced();
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { quickActions: true },
+      legacy: { playlistTags: null, quickActions: true },
+    });
+    expect(publishes).not.toHaveBeenCalled();
+
+    // A choice: heard once. Its write to the old key landing: a pending value
+    // cleared and a baseline moved, heard by no one.
+    act(() => store.setClimbRowField('playlistTags', true));
+    expect(publishes).toHaveBeenCalledTimes(1);
+    expect(persisted()).toMatchObject({ legacyPending: { playlistTags: true } });
+    mmkvSet.mockClear();
+    await act(settle);
+
+    expect(mmkvSet).toHaveBeenCalledTimes(1);
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { quickActions: true, playlistTags: true },
+      legacy: { playlistTags: true, quickActions: true },
+    });
+    expect(publishes).toHaveBeenCalledTimes(1);
+    expect(renders).toBe(2);
+    unsubscribe?.();
+  });
 });
 
 describe('the record changing underneath the store', () => {
@@ -311,17 +364,19 @@ describe('the record changing underneath the store', () => {
     expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
   });
 
-  it('writes over the reset record, not the one it remembered', async () => {
+  it('writes the next switch over the reset record, not the one it remembered', async () => {
     seedStored({ thumbnail: false });
     const store = await launch();
     store.resetAllSettings();
     store.setClimbRowField('sends', false);
-    expect(persisted()).toEqual({ version: 1, overrides: { sends: false }, ...KEYS_READ_EMPTY });
+    expect(persisted()).toMatchObject({ overrides: { sends: false } });
+    expect(store.getClimbRowDisplay()).toEqual({ ...DEFAULT_CLIMB_ROW_DISPLAY, sends: false });
   });
 
-  // The old keys are never deleted, so after a reset they still hold the choices
-  // made before it. Forgetting that they had been read would bring them back.
-  it('stays on the defaults after a reset, with choices still sitting in the old keys', async () => {
+  // A reset is a choice like any other. The old keys are never deleted, so
+  // without owing them the defaults they would bring the old choices back at the
+  // next launch, and a build that only knows the old keys would never see it.
+  it('makes a reset hold: on this launch, on the next, and for a build that only knows the old keys', async () => {
     legacyStorage.set(LEGACY_TAGS_KEY, 'true');
     legacyStorage.set(LEGACY_QUICK_ACTIONS_KEY, 'false');
     const store = await launch();
@@ -331,21 +386,87 @@ describe('the record changing underneath the store', () => {
     store.resetAllSettings();
 
     expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
-    expect(persisted()).toEqual({ version: 1, overrides: {}, legacy: { playlistTags: true, quickActions: false } });
+    // Written back at once, owing each old key its default.
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: {},
+      legacy: { playlistTags: true, quickActions: false },
+      legacyPending: { playlistTags: false, quickActions: true },
+    });
 
-    // A reader mounting later this launch does not bring them back...
     const { result } = renderHook(store.useClimbRowDisplay);
     await settle();
     expect(result.current).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(true);
+    expect(persisted()).toEqual({ version: 1, overrides: {}, legacy: { playlistTags: false, quickActions: true } });
 
-    // ...and neither does the next launch's read of the old keys.
     const relaunched = await launch();
     await relaunched.ensureClimbRowLegacySynced();
-    expect(readLegacy).toHaveBeenCalledWith(LEGACY_TAGS_KEY);
     expect(relaunched.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
   });
 
-  it('keeps what it knows of the old keys through a second reset in a row', async () => {
+  it('makes a reset hold when the writes to the old keys fail and only the next launch can make them', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+    writeLegacy.mockRejectedValue(new Error('disk full'));
+
+    store.resetAllSettings();
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+
+    writeLegacy.mockReset().mockImplementation(async (key: string, serialised: string) => {
+      legacyStorage.set(key, serialised);
+    });
+    const relaunched = await launch();
+    await relaunched.ensureClimbRowLegacySynced();
+    expect(relaunched.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+  });
+
+  it('makes a reset hold against the first read of the old keys, still in flight', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    legacyStorage.set(LEGACY_QUICK_ACTIONS_KEY, 'false');
+    // On the phone, but its old keys have never been read.
+    seedStored({ thumbnail: false }, {});
+    const slowTagsRead = deferred<string | null>();
+    readLegacy.mockImplementationOnce(() => slowTagsRead.promise);
+    const store = await launch();
+    const sync = store.ensureClimbRowLegacySynced();
+
+    store.resetAllSettings();
+    slowTagsRead.resolve('true');
+    await sync;
+
+    // The read found choices in both keys; the reset came after them.
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(true);
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+  });
+
+  it('makes a reset hold against a read in flight that finds a key an older build changed since', async () => {
+    // The baseline says the key shows the default. It is out of date.
+    seedStored({}, { legacy: { playlistTags: false, quickActions: true } });
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const slowTagsRead = deferred<string | null>();
+    readLegacy.mockImplementationOnce(() => slowTagsRead.promise);
+    const store = await launch();
+    const sync = store.ensureClimbRowLegacySynced();
+
+    store.resetAllSettings();
+    slowTagsRead.resolve('true');
+    await sync;
+    await settle();
+
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+  });
+
+  it('carries a second reset in a row', async () => {
     legacyStorage.set(LEGACY_TAGS_KEY, 'true');
     const store = await launch();
     await store.ensureClimbRowLegacySynced();
@@ -353,7 +474,12 @@ describe('the record changing underneath the store', () => {
     store.resetAllSettings();
     store.resetAllSettings();
 
-    expect(persisted()).toEqual({ version: 1, overrides: {}, legacy: { playlistTags: true, quickActions: null } });
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: {},
+      legacy: { playlistTags: true, quickActions: null },
+      legacyPending: { playlistTags: false, quickActions: true },
+    });
   });
 
   // The read at import can come back empty while a record exists. Nothing may be
@@ -379,38 +505,23 @@ describe('the record changing underneath the store', () => {
   });
 
   it('reconciles the old keys on top of a record the import-time read missed', async () => {
-    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    legacyStorage.set(LEGACY_TAGS_KEY, 'false');
     const slowTagsRead = deferred<string | null>();
     readLegacy.mockImplementationOnce(() => slowTagsRead.promise);
     const store = await launch();
     const sync = store.ensureClimbRowLegacySynced();
-    seedStored({ thumbnail: false, playlistTags: false }, { legacy: { playlistTags: true, quickActions: null } });
+    seedStored({ thumbnail: false, playlistTags: false }, { legacy: { playlistTags: false, quickActions: null } });
 
-    slowTagsRead.resolve('true');
+    slowTagsRead.resolve('false');
     await sync;
 
     // The key still holds what the real record says it held: nothing comes in.
     expect(persisted()).toEqual({
       version: 1,
       overrides: { thumbnail: false, playlistTags: false },
-      legacy: { playlistTags: true, quickActions: null },
+      legacy: { playlistTags: false, quickActions: null },
     });
     expect(store.getClimbRowDisplay()).toMatchObject({ thumbnail: false, playlistTags: false });
-  });
-
-  // The other half of looking first: an empty read is not a reset. Only the
-  // settings store's own signal is, and never the one our own write causes.
-  it('keeps a switch for the session when its write is lost, and builds the next one on it', async () => {
-    const store = await launch();
-    mmkvSet.mockImplementationOnce(() => {});
-
-    store.setClimbRowField('thumbnail', false);
-    expect(persisted()).toBeNull();
-    expect(store.getClimbRowDisplay().thumbnail).toBe(false);
-
-    store.setClimbRowField('sends', false);
-    expect(store.getClimbRowDisplay()).toMatchObject({ thumbnail: false, sends: false });
-    expect(persisted()).toEqual({ version: 1, overrides: { thumbnail: false, sends: false } });
   });
 
   it('applies a preset on top of a record the import-time read missed, keeping its quick-actions choice', async () => {
@@ -423,23 +534,257 @@ describe('the record changing underneath the store', () => {
     expect(persisted()).toMatchObject({ lastCustom: { setter: false } });
   });
 
-  it('resetClimbRowDisplayForTests goes back to a fresh install', async () => {
+  it('restores the remembered mix of a record the import-time read missed', async () => {
+    const store = await launch();
+    // Names only showing, with a remembered mix behind it.
+    seedStored(namesOnlyOverrides(), { ...KEYS_READ_EMPTY, lastCustom: { ...presetFieldsOn(), setter: false } });
+
+    store.restoreLastCustomClimbRow();
+
+    expect(store.getClimbRowDisplay()).toEqual({ ...DEFAULT_CLIMB_ROW_DISPLAY, setter: false });
+  });
+});
+
+/** The Default preset's content values, as a remembered mix is stored. */
+function presetFieldsOn() {
+  return {
+    thumbnail: true,
+    communityGrade: true,
+    sends: true,
+    rating: true,
+    setter: true,
+    sentMark: true,
+    playlistTags: false,
+  };
+}
+
+function namesOnlyOverrides() {
+  return {
+    thumbnail: false,
+    communityGrade: false,
+    sends: false,
+    rating: false,
+    setter: false,
+    sentMark: true,
+    playlistTags: false,
+  };
+}
+
+// A record write can be lost. Memory is then ahead of the phone, and nothing but
+// a real reset may take that away.
+describe('a write of the record that did not stick', () => {
+  it('keeps the switch through an unrelated settings write, on a fresh install', async () => {
+    const store = await launch();
+    mmkvSet.mockImplementationOnce(() => {});
+
+    store.setClimbRowField('thumbnail', false);
+    expect(persisted()).toBeNull();
+    store.setSetting('theme', 'dark');
+
+    expect(store.getClimbRowDisplay().thumbnail).toBe(false);
+  });
+
+  it('keeps the switch through an unrelated settings write, with an older record on the phone', async () => {
+    seedStored({ sends: false });
+    const store = await launch();
+    mmkvSet.mockImplementationOnce(() => {});
+
+    store.setClimbRowField('thumbnail', false);
+    expect(persisted()).toEqual({ version: 1, overrides: { sends: false }, ...KEYS_READ_EMPTY });
+    store.setSetting('theme', 'dark');
+
+    expect(store.getClimbRowDisplay()).toMatchObject({ thumbnail: false, sends: false });
+  });
+
+  it('carries the lost switch with the next one', async () => {
+    seedStored({ sends: false });
+    const store = await launch();
+    mmkvSet.mockImplementationOnce(() => {});
+    store.setClimbRowField('thumbnail', false);
+
+    store.setClimbRowField('rating', false);
+
+    expect(store.getClimbRowDisplay()).toMatchObject({ thumbnail: false, sends: false, rating: false });
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { sends: false, thumbnail: false, rating: false },
+      ...KEYS_READ_EMPTY,
+    });
+  });
+
+  it('writes the lost switch when the same choice is made again, though memory already has it', async () => {
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+    mmkvSet.mockImplementationOnce(() => {});
+    store.setClimbRowField('thumbnail', false);
+    expect(persisted()).toEqual({ version: 1, overrides: {}, ...KEYS_READ_EMPTY });
+
+    store.setClimbRowField('thumbnail', false);
+
+    expect(persisted()).toEqual({ version: 1, overrides: { thumbnail: false }, ...KEYS_READ_EMPTY });
+  });
+
+  it('still takes a reset afterwards', async () => {
+    seedStored({ sends: false });
+    const store = await launch();
+    mmkvSet.mockImplementationOnce(() => {});
+    store.setClimbRowField('thumbnail', false);
+
+    store.resetAllSettings();
+
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+  });
+});
+
+describe('resetClimbRowDisplayForTests', () => {
+  it('goes back to a fresh install: no record, default row, nothing remembered', async () => {
     seedStored({});
     const store = await launch();
     store.setClimbRowField('setter', false);
     store.applyClimbRowPreset('everything');
     const hasLastCustom = renderHook(store.useClimbRowHasLastCustom);
     expect(hasLastCustom.result.current).toBe(true);
+    await act(settle);
 
     act(() => store.resetClimbRowDisplayForTests());
-    // Nothing still in flight from before the reset lands after it.
-    mmkvSet.mockClear();
-    await settle();
 
     expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
     expect(hasLastCustom.result.current).toBe(false);
-    expect(persisted()).toEqual({ version: 1, overrides: {} });
-    expect(mmkvSet).not.toHaveBeenCalled();
+    expect(persisted()).toBeNull();
+  });
+
+  it('empties the old keys, so the next reader brings nothing in', async () => {
+    seedStored({});
+    const store = await launch();
+    store.setClimbRowField('playlistTags', true);
+    store.setClimbRowField('quickActions', false);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
+
+    store.resetClimbRowDisplayForTests();
+    const { result } = renderHook(store.useClimbRowDisplay);
+    await act(settle);
+
+    expect([...legacyStorage]).toEqual([]);
+    expect(result.current).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    expect(persisted()).toEqual({ version: 1, overrides: {}, ...KEYS_READ_EMPTY });
+  });
+
+  it('drops a write to an old key that was queued and had not started', async () => {
+    seedStored({});
+    const store = await launch();
+    store.setClimbRowField('playlistTags', true);
+
+    store.resetClimbRowDisplayForTests();
+    await settle();
+
+    expect(writeLegacy).not.toHaveBeenCalled();
+    expect([...legacyStorage]).toEqual([]);
+    expect(persisted()).toBeNull();
+  });
+
+  it('lets nothing from a write already in flight land afterwards', async () => {
+    seedStored({});
+    const store = await launch();
+    const answer = deferred<void>();
+    writeLegacy.mockImplementationOnce(landsWithoutAnswering(answer.promise));
+    store.setClimbRowField('playlistTags', true);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+
+    store.resetClimbRowDisplayForTests();
+    answer.resolve();
+    await settle();
+
+    // Its value went with the keys, and its answer changed nothing.
+    expect([...legacyStorage]).toEqual([]);
+    expect(persisted()).toBeNull();
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+  });
+
+  it('writes a choice made again after the call once, not once more for the write it dropped', async () => {
+    seedStored({});
+    const store = await launch();
+    store.setClimbRowField('playlistTags', true);
+
+    store.resetClimbRowDisplayForTests();
+    store.setClimbRowField('playlistTags', true);
+    await settle();
+
+    expect(writeLegacy).toHaveBeenCalledTimes(1);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+  });
+
+  it('does not take the answer to a write from before the call for the same choice made after it', async () => {
+    seedStored({});
+    const store = await launch();
+    const answer = deferred<void>();
+    writeLegacy.mockImplementationOnce(landsWithoutAnswering(answer.promise));
+    store.setClimbRowField('playlistTags', true);
+    await settle();
+    // The old keys are slow to empty, so the choice made again waits behind that.
+    const removal = deferred<void>();
+    removeLegacy.mockImplementation(async (key: string) => {
+      await removal.promise;
+      legacyStorage.delete(key);
+    });
+
+    store.resetClimbRowDisplayForTests();
+    store.setClimbRowField('playlistTags', true);
+    answer.resolve();
+    await settle();
+    removal.resolve();
+    await settle();
+
+    // Written again after the keys were emptied, and confirmed by that write.
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(persisted()).toEqual({ version: 1, overrides: { playlistTags: true }, legacy: { playlistTags: true } });
+  });
+
+  it('drops a read of the old keys that was queued and had not started', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    const sync = store.ensureClimbRowLegacySynced();
+
+    store.resetClimbRowDisplayForTests();
+    await sync;
+    await settle();
+
+    expect(readLegacy).not.toHaveBeenCalled();
+    expect(persisted()).toBeNull();
+  });
+
+  it('drops a read of the old keys still in flight', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const slowTagsRead = deferred<string | null>();
+    readLegacy.mockImplementationOnce(() => slowTagsRead.promise);
+    const store = await launch();
+    const sync = store.ensureClimbRowLegacySynced();
+    await settle();
+    expect(readLegacy).toHaveBeenCalledTimes(2);
+
+    store.resetClimbRowDisplayForTests();
+    slowTagsRead.resolve('true');
+    await sync;
+    await settle();
+
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    expect(persisted()).toBeNull();
+  });
+
+  it('is not taken for a reset of every setting by the next settings write', async () => {
+    seedStored({ thumbnail: false });
+    const store = await launch();
+    store.resetClimbRowDisplayForTests();
+    mmkvSet.mockClear();
+
+    store.setSetting('theme', 'dark');
+    await settle();
+
+    // Only the theme was written: nothing was owed to the old keys.
+    expect(mmkvSet.mock.calls.map(([key]) => key)).toEqual(['theme']);
+    expect(writeLegacy).not.toHaveBeenCalled();
   });
 });
 
@@ -481,17 +826,21 @@ describe('reading the two old keys at launch', () => {
     mmkvSet.mockClear();
     const relaunched = await launch();
     await relaunched.ensureClimbRowLegacySynced();
+    await settle();
 
     expect(readLegacy).toHaveBeenCalledTimes(4);
     expect(mmkvSet).not.toHaveBeenCalled();
+    expect(writeLegacy).not.toHaveBeenCalled();
     expect(relaunched.getClimbRowDisplay().playlistTags).toBe(true);
   });
 
-  it('records keys that were never written as empty, and stays on the defaults', async () => {
+  it('writes nothing to the old keys for a climber who never chose', async () => {
     const store = await launch();
     await store.ensureClimbRowLegacySynced();
+    await settle();
     expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
     expect(persisted()).toEqual({ version: 1, overrides: {}, ...KEYS_READ_EMPTY });
+    expect(writeLegacy).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -532,6 +881,28 @@ describe('reading the two old keys at launch', () => {
     await sync;
 
     expect(store.getClimbRowDisplay().playlistTags).toBe(false);
+  });
+
+  it('lets a mix restored while the read is in flight win', async () => {
+    // Names only showing, with a remembered mix that has tags on. The old keys
+    // have never been read, and the tags' key holds an explicit "off".
+    seedStored(namesOnlyOverrides(), { lastCustom: { ...presetFieldsOn(), playlistTags: true, setter: false } });
+    legacyStorage.set(LEGACY_TAGS_KEY, 'false');
+    const slowTagsRead = deferred<string | null>();
+    readLegacy.mockImplementationOnce(() => slowTagsRead.promise);
+    const store = await launch();
+    const sync = store.ensureClimbRowLegacySynced();
+
+    store.restoreLastCustomClimbRow();
+    // On file at once, before any write to the old key is attempted.
+    expect(persisted()).toMatchObject({ legacyPending: { playlistTags: true } });
+    expect(writeLegacy).not.toHaveBeenCalled();
+    slowTagsRead.resolve('false');
+    await sync;
+    await settle();
+
+    expect(store.getClimbRowDisplay()).toMatchObject({ playlistTags: true, setter: false });
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
   });
 
   it('shares one read between callers', async () => {
@@ -590,11 +961,19 @@ describe('rolling back to a build that only knows the old keys', () => {
 
     store.setClimbRowField('playlistTags', false);
     store.setClimbRowField('quickActions', false);
+    // Owed in the same write as the choice, before either key is touched.
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { playlistTags: false, quickActions: false },
+      legacy: { playlistTags: true, quickActions: null },
+      legacyPending: { playlistTags: false, quickActions: false },
+    });
+    expect(writeLegacy).not.toHaveBeenCalled();
     await settle();
 
-    expect(JSON.parse(legacyStorage.get(LEGACY_TAGS_KEY) ?? 'null')).toBe(false);
-    expect(JSON.parse(legacyStorage.get(LEGACY_QUICK_ACTIONS_KEY) ?? 'null')).toBe(false);
-    // And this build knows the keys hold them, so its next launch brings nothing in.
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
+    // Confirmed: this build knows the keys hold them, and owes nothing.
     expect(persisted()).toEqual({
       version: 1,
       overrides: { playlistTags: false, quickActions: false },
@@ -611,15 +990,15 @@ describe('rolling back to a build that only knows the old keys', () => {
 
     store.applyClimbRowPreset('everything');
     await settle();
-    expect(JSON.parse(legacyStorage.get(LEGACY_TAGS_KEY) ?? 'null')).toBe(true);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
 
     store.restoreLastCustomClimbRow();
     await settle();
-    expect(JSON.parse(legacyStorage.get(LEGACY_TAGS_KEY) ?? 'null')).toBe(false);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
 
     store.applyClimbRowPreset('default');
     await settle();
-    expect(JSON.parse(legacyStorage.get(LEGACY_TAGS_KEY) ?? 'null')).toBe(false);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
 
     expect(writeLegacy.mock.calls.map(([key]) => key)).toEqual([LEGACY_TAGS_KEY, LEGACY_TAGS_KEY, LEGACY_TAGS_KEY]);
     expect(legacyStorage.get(LEGACY_QUICK_ACTIONS_KEY)).toBe('false');
@@ -634,7 +1013,7 @@ describe('rolling back to a build that only knows the old keys', () => {
     expect(writeLegacy).not.toHaveBeenCalled();
   });
 
-  it('writes quick flips in order, so the key ends on the last one even when a write is slow', async () => {
+  it('ends on the last of several quick flips, and skips a write a newer flip has overtaken', async () => {
     seedStored({});
     const store = await launch();
     await store.ensureClimbRowLegacySynced();
@@ -645,21 +1024,98 @@ describe('rolling back to a build that only knows the old keys', () => {
     });
 
     store.setClimbRowField('playlistTags', true);
+    await settle();
+    // The first write is under way. Two more flips queue behind it.
     store.setClimbRowField('playlistTags', false);
     store.setClimbRowField('playlistTags', true);
     await settle();
-    // The second and third wait behind the first.
     expect(writeLegacy).toHaveBeenCalledTimes(1);
 
     slowFirstWrite.resolve();
     await settle();
 
-    expect(writeLegacy.mock.calls.map(([, serialised]) => serialised)).toEqual(['true', 'false', 'true']);
-    expect(legacyStorage.get(LEGACY_TAGS_KEY)).toBe('true');
-    expect(persisted()).toMatchObject({ overrides: { playlistTags: true }, legacy: { playlistTags: true } });
+    // "Off" never reached the disk: by its turn the climber was back on "on".
+    expect(writeLegacy.mock.calls.map(([, serialised]) => serialised)).toEqual(['true']);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { playlistTags: true },
+      legacy: { playlistTags: true, quickActions: null },
+    });
   });
 
-  it('keeps the choice here when the write to the old key fails, and carries on with later ones', async () => {
+  it('writes each of several flips that its turn still finds wanted', async () => {
+    seedStored({});
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+
+    store.setClimbRowField('playlistTags', true);
+    await settle();
+    store.setClimbRowField('playlistTags', false);
+    await settle();
+
+    expect(writeLegacy.mock.calls.map(([, serialised]) => serialised)).toEqual(['true', 'false']);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+  });
+
+  // The write to the old key is tried once per choice. When it fails, or the app
+  // dies first, the value stays owed on file and the next launch makes the write.
+  it('makes a write that failed again at the next launch, so the rollback still finds the choice', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+    writeLegacy.mockRejectedValueOnce(new Error('disk full'));
+
+    store.setClimbRowField('playlistTags', false);
+    await settle();
+    expect(store.getClimbRowDisplay().playlistTags).toBe(false);
+    // A rollback now would show tags on. The record says so: still owed.
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { playlistTags: false },
+      legacy: { playlistTags: true, quickActions: null },
+      legacyPending: { playlistTags: false },
+    });
+
+    const relaunched = await launch();
+    await relaunched.ensureClimbRowLegacySynced();
+    expect(relaunched.getClimbRowDisplay().playlistTags).toBe(false);
+    await settle();
+
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { playlistTags: false },
+      legacy: { playlistTags: false, quickActions: null },
+    });
+  });
+
+  it('makes a write the app died before again at the next launch', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+    // The storage call is made and never does anything: the process is gone.
+    const neverAnswers = deferred<void>();
+    writeLegacy.mockImplementationOnce(() => neverAnswers.promise);
+
+    store.setClimbRowField('playlistTags', false);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+
+    const relaunched = await launch();
+    await relaunched.ensureClimbRowLegacySynced();
+    await settle();
+
+    expect(relaunched.getClimbRowDisplay().playlistTags).toBe(false);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    // Let the dead launch's call end, so its timeout cannot fire into a later test.
+    neverAnswers.resolve();
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+  });
+
+  it('makes a failed write again with the next choice, without waiting for a launch', async () => {
     seedStored({});
     const store = await launch();
     await store.ensureClimbRowLegacySynced();
@@ -667,18 +1123,53 @@ describe('rolling back to a build that only knows the old keys', () => {
 
     store.setClimbRowField('quickActions', false);
     await settle();
-    expect(store.getClimbRowDisplay().quickActions).toBe(false);
-    // Not written, so not recorded as written.
-    expect(persisted()).toEqual({ version: 1, overrides: { quickActions: false }, ...KEYS_READ_EMPTY });
+    expect(legacyStorage.has(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
 
     store.setClimbRowField('playlistTags', true);
     await settle();
-    expect(legacyStorage.get(LEGACY_TAGS_KEY)).toBe('true');
 
-    // The key still holds what it held, so the next launch leaves the choice alone.
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
+  });
+
+  // Key and baseline off. Tags on, then off again while the first write is under
+  // way. The first write reaches the disk; the app dies before the second, and
+  // before anything is confirmed. Read back cold, the key says "on".
+  it('keeps the last of two quick flips when only the first write lands before the app dies', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'false');
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+    const neverAnswers = deferred<void>();
+    writeLegacy.mockImplementationOnce(landsWithoutAnswering(neverAnswers.promise));
+
+    store.setClimbRowField('playlistTags', true);
+    await settle();
+    store.setClimbRowField('playlistTags', false);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { playlistTags: false },
+      legacy: { playlistTags: false, quickActions: null },
+      legacyPending: { playlistTags: false },
+    });
+
     const relaunched = await launch();
     await relaunched.ensureClimbRowLegacySynced();
-    expect(relaunched.getClimbRowDisplay()).toMatchObject({ quickActions: false, playlistTags: true });
+    // Its own overtaken write, not an older build's choice: the switch stays off.
+    expect(relaunched.getClimbRowDisplay().playlistTags).toBe(false);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { playlistTags: false },
+      legacy: { playlistTags: false, quickActions: null },
+    });
+
+    neverAnswers.resolve();
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(relaunched.getClimbRowDisplay().playlistTags).toBe(false);
   });
 });
 
@@ -710,7 +1201,7 @@ describe('coming back from a build that only knows the old keys', () => {
     await preview.ensureClimbRowLegacySynced();
     preview.setClimbRowField('playlistTags', true);
     await settle();
-    expect(legacyStorage.get(LEGACY_TAGS_KEY)).toBe('true');
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
 
     legacyStorage.set(LEGACY_TAGS_KEY, 'false');
 
@@ -733,27 +1224,27 @@ describe('coming back from a build that only knows the old keys', () => {
     await settle();
 
     expect(store.getClimbRowDisplay().quickActions).toBe(true);
-    expect(legacyStorage.get(LEGACY_QUICK_ACTIONS_KEY)).toBe('true');
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(true);
   });
 });
 
 // The read of an old key can fail for a whole launch, and so can the write that
 // copies a choice to it. A choice made here must outlast both.
 describe('a choice made before the old key could be read', () => {
-  it('is on file at once, marked as decided', async () => {
+  it('is on file at once, with its value owed to the key', async () => {
     legacyStorage.set(LEGACY_TAGS_KEY, 'true');
     readLegacy.mockRejectedValue(new Error('locked storage'));
     writeLegacy.mockRejectedValue(new Error('locked storage'));
     const store = await launch();
     await store.ensureClimbRowLegacySynced();
 
-    // Default writes no override; the baseline is all that records the choice.
+    // Default writes no override; the pending value is all that records the choice.
     store.applyClimbRowPreset('default');
 
-    expect(persisted()).toEqual({ version: 1, overrides: {}, legacy: { playlistTags: 'decided' } });
+    expect(persisted()).toEqual({ version: 1, overrides: {}, legacyPending: { playlistTags: false } });
   });
 
-  it('is not replaced by the old key on the next launch, although the write to that key failed', async () => {
+  it('is not replaced by the old key on the next launch, and reaches it then', async () => {
     legacyStorage.set(LEGACY_TAGS_KEY, 'true');
     legacyStorage.set(LEGACY_QUICK_ACTIONS_KEY, 'false');
     readLegacy.mockRejectedValue(new Error('locked storage'));
@@ -763,38 +1254,131 @@ describe('a choice made before the old key could be read', () => {
     store.applyClimbRowPreset('default');
     store.setClimbRowField('quickActions', true);
     await settle();
-    expect(legacyStorage.get(LEGACY_TAGS_KEY)).toBe('true');
-    expect(legacyStorage.get(LEGACY_QUICK_ACTIONS_KEY)).toBe('false');
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
 
     readLegacy.mockReset().mockImplementation(async (key: string) => legacyStorage.get(key) ?? null);
+    writeLegacy.mockReset().mockImplementation(async (key: string, serialised: string) => {
+      legacyStorage.set(key, serialised);
+    });
     const relaunched = await launch();
     await relaunched.ensureClimbRowLegacySynced();
-
     expect(relaunched.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
-    // The keys are known now, so a later change by an older build still shows.
+    await settle();
+
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(true);
     expect(persisted()).toEqual({
       version: 1,
       overrides: { quickActions: true },
-      legacy: { playlistTags: true, quickActions: false },
+      legacy: { playlistTags: false, quickActions: true },
     });
   });
 
-  it('is not replaced when the read lands later the same launch and the write then fails', async () => {
-    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
-    const slowTagsRead = deferred<string | null>();
-    readLegacy.mockImplementationOnce(() => slowTagsRead.promise);
-    writeLegacy.mockRejectedValue(new Error('disk full'));
+  it('is written to a key it already seems to match, so it does not stay owed for good', async () => {
+    // Default applied with the key empty and the write failing: an older build
+    // shows tags off either way, but nothing here knows the key holds that.
+    writeLegacy.mockRejectedValueOnce(new Error('disk full'));
     const store = await launch();
-
-    const sync = store.ensureClimbRowLegacySynced();
-    store.setClimbRowField('playlistTags', false);
-    slowTagsRead.resolve('true');
-    await sync;
+    store.applyClimbRowPreset('default');
     await settle();
-    expect(store.getClimbRowDisplay().playlistTags).toBe(false);
+    expect(persisted()).toMatchObject({ legacyPending: { playlistTags: false } });
 
     const relaunched = await launch();
     await relaunched.ensureClimbRowLegacySynced();
-    expect(relaunched.getClimbRowDisplay().playlistTags).toBe(false);
+    await settle();
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    expect(persisted()).toEqual({ version: 1, overrides: {}, legacy: { playlistTags: false, quickActions: null } });
+
+    // With nothing owed any more, a later choice on an older build arrives.
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const afterOlderBuild = await launch();
+    await afterOlderBuild.ensureClimbRowLegacySynced();
+    expect(afterOlderBuild.getClimbRowDisplay().playlistTags).toBe(true);
+  });
+});
+
+describe('a storage call for the old keys that never answers', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('gives a write up after ten seconds, and makes the next one', async () => {
+    seedStored({});
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+    vi.useFakeTimers();
+    writeLegacy.mockImplementationOnce(() => new Promise<void>(() => {}));
+
+    store.setClimbRowField('playlistTags', true);
+    store.setClimbRowField('quickActions', false);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(writeLegacy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(writeLegacy).toHaveBeenCalledTimes(2);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
+    // The one that never answered stays owed.
+    expect(persisted()).toEqual({
+      version: 1,
+      overrides: { playlistTags: true, quickActions: false },
+      legacy: { playlistTags: null, quickActions: false },
+      legacyPending: { playlistTags: true },
+    });
+  });
+
+  it('gives the launch read up after ten seconds, leaves the launch unsynced and lets writes through', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    vi.useFakeTimers();
+    readLegacy.mockImplementationOnce(() => new Promise<string | null>(() => {}));
+
+    const sync = store.ensureClimbRowLegacySynced();
+    store.setClimbRowField('quickActions', false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await sync;
+
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
+    expect(store.getClimbRowDisplay().playlistTags).toBe(false);
+
+    // Unsynced, so the next call reads again, and this time is answered.
+    await store.ensureClimbRowLegacySynced();
+    expect(store.getClimbRowDisplay().playlistTags).toBe(true);
+  });
+
+  it('leaves no timer behind once a call has answered', async () => {
+    seedStored({});
+    const store = await launch();
+    vi.useFakeTimers();
+
+    const sync = store.ensureClimbRowLegacySynced();
+    store.setClimbRowField('playlistTags', true);
+    await vi.advanceTimersByTimeAsync(0);
+    await sync;
+
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// Only a failure of the old keys' storage is expected. A fault in this module's
+// own code, thrown while a queued task runs, has to stay visible.
+describe('a fault while a queued task runs', () => {
+  it('rejects the launch sync instead of passing for a storage failure, and the queue carries on', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    mmkvSet.mockImplementationOnce(() => {
+      throw new Error('record write failed');
+    });
+
+    await expect(store.ensureClimbRowLegacySynced()).rejects.toThrow('record write failed');
+
+    // Unsynced, so it is tried again; and the queue behind it was not blocked.
+    await store.ensureClimbRowLegacySynced();
+    expect(store.getClimbRowDisplay().playlistTags).toBe(true);
+    store.setClimbRowField('quickActions', false);
+    await settle();
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
   });
 });
