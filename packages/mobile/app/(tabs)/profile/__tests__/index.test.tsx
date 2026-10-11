@@ -117,10 +117,13 @@ vi.mock('../../../../src/components/you/LogbookTab', () => ({
   LogbookTab: ({
     userId,
     renderHeader,
+    scrollEdge,
   }: {
     userId: string | undefined;
     renderHeader?: (controls: ReactNode, onHeightChange: (height: number) => void) => ReactNode;
+    scrollEdge?: ScrollEdgeBackdrop;
   }) => {
+    ctrl.listScrollEdge.logbook = scrollEdge;
     rendered.logbook.push({ userId });
     return createElement(
       'div',
@@ -201,25 +204,21 @@ describe('YouScreen (own profile)', () => {
     expect(rendered.progress.at(-1)?.topInset).toBe(72);
   });
 
-  // The segmented control floats over the list on iOS 26. Logbook's header also
-  // holds a bare text heading, search and sort chips, so it keeps its band.
-  it('keeps the Logbook header opaque and lets every other sub-tab float', () => {
+  it('lets every sub-tab header float, including Logbook filters', () => {
     const { container } = render(<YouScreen />);
     const opaqueControls = () => container.querySelector('[data-chrome]')?.getAttribute('data-opaque-controls');
 
-    for (const floatingTab of ['progress', 'sessions', 'climbs', 'social']) {
+    for (const floatingTab of ['progress', 'sessions', 'logbook', 'climbs', 'social']) {
       fireEvent.click(container.querySelector(`[data-select-tab="${floatingTab}"]`)!);
       expect(opaqueControls()).toBe('false');
     }
-    fireEvent.click(container.querySelector('[data-select-tab="logbook"]')!);
-    expect(opaqueControls()).toBe('true');
   });
 
   // The blur behind the floating segmented control shows only while the visible
   // sub-tab's list is scrolled under it. The lists write that to a store the
   // screen holds, and the blur (inside the top chrome) reads it.
   describe('the scroll-edge store', () => {
-    const SUB_TABS_WITH_FLOATING_HEADER = ['progress', 'sessions', 'climbs', 'social'];
+    const SUB_TABS_WITH_FLOATING_HEADER = ['progress', 'sessions', 'logbook', 'climbs', 'social'];
     const selectTab = (container: HTMLElement, tab: string) =>
       fireEvent.click(container.querySelector(`[data-select-tab="${tab}"]`)!);
     const scrollEvent = (offsetY: number) =>
@@ -279,13 +278,6 @@ describe('YouScreen (own profile)', () => {
 
       expect(store.isScrolledUnder()).toBe(true);
       expect(rendered.progress).toHaveLength(rendersWired);
-    });
-
-    // Logbook keeps its painted band, so nothing subscribes and nothing is wired.
-    it('leaves the Logbook chrome out of it', () => {
-      const { container } = render(<YouScreen />);
-      selectTab(container, 'logbook');
-      expect(ctrl.chromeScrollEdge).toBeUndefined();
     });
   });
 });

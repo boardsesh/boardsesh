@@ -137,6 +137,7 @@ vi.mock('../LogbookChipRow', () => ({ LogbookChipRow: () => null }));
 vi.mock('../LogbookFacetRail', () => ({ LogbookFacetRail: () => null }));
 
 import { LogbookTab } from '../LogbookTab';
+import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 function renderHeader(controls: ReactNode, onHeightChange: (height: number) => void) {
   state.measure = onHeightChange;
@@ -158,6 +159,56 @@ afterEach(() => {
 });
 
 describe('Logbook composed profile header', () => {
+  it('reports list scrolling to the floating header and clears it on unmount', () => {
+    const scrollEdge = createScrollEdgeBackdrop();
+    const { unmount } = render(<LogbookTab userId="me" renderHeader={renderHeader} scrollEdge={scrollEdge} />);
+    for (const [listener, callback] of Object.entries(scrollEdge.listProps)) {
+      expect(state.listProps?.[listener as keyof NonNullable<typeof state.listProps>]).toBe(callback);
+    }
+    act(() =>
+      scrollEdge.listProps.onScroll({ nativeEvent: { contentOffset: { x: 0, y: 400 } } } as Parameters<
+        typeof scrollEdge.listProps.onScroll
+      >[0]),
+    );
+    expect(scrollEdge.isScrolledUnder()).toBe(true);
+    unmount();
+    expect(scrollEdge.isScrolledUnder()).toBe(false);
+  });
+
+  it.each(['missing-user', 'loading', 'error', 'offline'] as const)(
+    'clears the floating backdrop when %s replaces the list',
+    (status) => {
+      const scrollEdge = createScrollEdgeBackdrop();
+      const { rerender, queryByTestId } = render(
+        <LogbookTab userId="me" renderHeader={renderHeader} scrollEdge={scrollEdge} />,
+      );
+      act(() =>
+        scrollEdge.listProps.onScroll({ nativeEvent: { contentOffset: { x: 0, y: 400 } } } as Parameters<
+          typeof scrollEdge.listProps.onScroll
+        >[0]),
+      );
+      expect(scrollEdge.isScrolledUnder()).toBe(true);
+      state.pending = status === 'loading';
+      state.error = status === 'error';
+      state.offline = status === 'offline';
+      rerender(
+        <LogbookTab
+          userId={status === 'missing-user' ? undefined : 'me'}
+          renderHeader={renderHeader}
+          scrollEdge={scrollEdge}
+        />,
+      );
+      expect(queryByTestId('results')).toBeNull();
+      expect(scrollEdge.isScrolledUnder()).toBe(false);
+      state.pending = false;
+      state.error = false;
+      state.offline = false;
+      rerender(<LogbookTab userId="me" renderHeader={renderHeader} scrollEdge={scrollEdge} />);
+      expect(queryByTestId('results')).toBeTruthy();
+      expect(scrollEdge.isScrolledUnder()).toBe(false);
+    },
+  );
+
   it('keeps native results mounted invisibly until measurement and counts supplementary height once', () => {
     const { getByTestId } = render(<LogbookTab userId="me" renderHeader={renderHeader} />);
     const resultsFrame = getByTestId('results').parentElement!;

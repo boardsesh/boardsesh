@@ -90,24 +90,27 @@ export default function YouScreen() {
 
   const renderLogbookHeader = useCallback(
     (controls: ReactNode, onHeightChange: (height: number) => void) => (
-      // Opaque for now: the Logbook heading is bare text, so this block cannot
-      // float over its rows the way the other sub-tabs' segmented control does.
       <ProfileTopChrome
         activeTab="logbook"
         onSelectTab={handleSelectTab}
         onHeightChange={onHeightChange}
-        opaqueControls
+        scrollEdge={scrollEdge.backdrop}
       >
         {controls}
       </ProfileTopChrome>
     ),
-    [handleSelectTab],
+    [handleSelectTab, scrollEdge.backdrop],
   );
 
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
       {activeTab === 'logbook' ? (
-        <LogbookTab userId={userId} renderHeader={renderLogbookHeader} screenshotBoardType={screenshotBoardType} />
+        <LogbookTab
+          userId={userId}
+          renderHeader={renderLogbookHeader}
+          screenshotBoardType={screenshotBoardType}
+          scrollEdge={scrollEdge.list}
+        />
       ) : (
         <ReadableColumn style={styles.page}>
           {activeTab === 'progress' ? (

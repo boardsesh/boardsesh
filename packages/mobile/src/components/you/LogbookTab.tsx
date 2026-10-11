@@ -1,5 +1,6 @@
 import { ReadableColumn } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
 import { PressableSurface } from '../PressableSurface';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -86,6 +87,7 @@ type LogbookTabProps = {
   viewerIsOwner?: boolean;
   /** Compose controls into a measured profile header instead of the in-flow toolbar. */
   renderHeader?: (controls: ReactNode, onHeightChange: (height: number) => void) => ReactNode;
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 // One list unit for both modes: in grouped (date-ordered) views it is the
@@ -104,6 +106,7 @@ export function LogbookTab({
   viewerIsOwner = true,
   renderHeader,
   screenshotBoardType,
+  scrollEdge,
 }: LogbookTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -667,50 +670,54 @@ export function LogbookTab({
               </PressableSurface>
             </View>
           ) : (
-            <FlashList
-              testID="logbook-screen"
-              data={listRows}
-              renderItem={renderItem}
-              keyExtractor={keyExtractor}
-              getItemType={getRowType}
-              // The native controls are measured after this list mounts. Keeping
-              // a row anchored would scroll away the padding added for them.
-              maintainVisibleContentPosition={hasComposedHeader && nativeRootHeader ? { disabled: true } : undefined}
-              contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-              onEndReached={handleEndReached}
-              onEndReachedThreshold={0.5}
-              contentContainerStyle={{ paddingTop: scrollHeaderInset, paddingBottom }}
-              scrollIndicatorInsets={{ top: scrollHeaderInset }}
-              refreshControl={
-                <RefreshControl
-                  refreshing={feed.isRefetching}
-                  onRefresh={handleRefresh}
-                  tintColor={brandColors.primary}
-                />
-              }
-              ListFooterComponent={
-                feed.isFetchingNextPage ? (
-                  <View style={styles.footer}>
-                    <ActivityIndicator size="small" />
-                  </View>
-                ) : null
-              }
-              ListEmptyComponent={
-                <View style={styles.empty}>
-                  <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
-                  <Text variant="headline" style={styles.emptyTitle}>
-                    {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
-                  </Text>
-                  {/* Unfiltered only: a logbook emptied by a filter says nothing about
-                  whether a board account is linked. */}
-                  <BoardLinkPrompt
-                    key={userId}
-                    viewerIsOwner={viewerIsOwner}
-                    hasNoSends={activeFilterCount === 0 && !name}
+            <>
+              <ScrollEdgeListReset edge={scrollEdge} />
+              <FlashList
+                testID="logbook-screen"
+                data={listRows}
+                renderItem={renderItem}
+                keyExtractor={keyExtractor}
+                getItemType={getRowType}
+                {...scrollEdge?.listProps}
+                // The native controls are measured after this list mounts. Keeping
+                // a row anchored would scroll away the padding added for them.
+                maintainVisibleContentPosition={hasComposedHeader && nativeRootHeader ? { disabled: true } : undefined}
+                contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+                onEndReached={handleEndReached}
+                onEndReachedThreshold={0.5}
+                contentContainerStyle={{ paddingTop: scrollHeaderInset, paddingBottom }}
+                scrollIndicatorInsets={{ top: scrollHeaderInset }}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={feed.isRefetching}
+                    onRefresh={handleRefresh}
+                    tintColor={brandColors.primary}
                   />
-                </View>
-              }
-            />
+                }
+                ListFooterComponent={
+                  feed.isFetchingNextPage ? (
+                    <View style={styles.footer}>
+                      <ActivityIndicator size="small" />
+                    </View>
+                  ) : null
+                }
+                ListEmptyComponent={
+                  <View style={styles.empty}>
+                    <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
+                    <Text variant="headline" style={styles.emptyTitle}>
+                      {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
+                    </Text>
+                    {/* Unfiltered only: a logbook emptied by a filter says nothing about
+                  whether a board account is linked. */}
+                    <BoardLinkPrompt
+                      key={userId}
+                      viewerIsOwner={viewerIsOwner}
+                      hasNoSends={activeFilterCount === 0 && !name}
+                    />
+                  </View>
+                }
+              />
+            </>
           )}
         </View>
       </ReadableColumn>
