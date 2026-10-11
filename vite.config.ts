@@ -859,6 +859,7 @@ export default defineConfig({
       },
       'typecheck:board-react': {
         command: 'pnpm --filter @boardsesh/board-react run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:create-climb-react': {
         command: 'pnpm --filter @boardsesh/create-climb-react run typecheck',
