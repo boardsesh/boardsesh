@@ -32,7 +32,7 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
   their binary. Only a **store update** recovers one.
 - There is no cross-server backport and V2 cannot be revived — its bucket is gone. Recovery for a
   stranded install is store-side only.
-- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.2.5` —
+- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.2.6` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
   and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
   migration gate below; the bucket name alone does not distinguish R2 from Tigris. Its endpoint is
@@ -53,9 +53,9 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 ### Versions: the CLI pin and the server image
 
 One version governs both halves of the self-hosted path, and each half has a constant:
-`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (currently **`eoas@3.2.5`**) is the CLI we publish with,
+`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (currently **`eoas@3.2.6`**) is the CLI we publish with,
 and `OTA_SERVER_VERSION` in `infra/railway/config.ts` is the image Railway runs
-(`ghcr.io/mercuretechnologies/xprem:v3.2.5`). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+(`ghcr.io/mercuretechnologies/xprem:v3.2.6`). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
 if this doc, the setup runbook or the rollback helper drifts off either — root `scripts/` has no
 typecheck task, so nothing else would catch it.
 
@@ -138,6 +138,31 @@ What the retry has to respect:
 After any bump: re-verify `/hc` = 200, `/ready` = 200, a header-carrying manifest + asset probe, and
 run `eoas doctor`.
 
+#### The 3.2.6 upgrade (3.2.5 to 3.2.6)
+
+3.2.6 adds Observe error tracking: errors grouped by fingerprint, and stack traces symbolicated
+from source maps stored with each update. Both need the Enterprise licence.
+
+- **The first boot is short.** Postgres gets `updates.sourcemap_hash`, the `sourcemap_indexes` table,
+  `device_identity.channel_name` and one `CREATE INDEX CONCURRENTLY` on `updates`. ClickHouse gets
+  `observe_logs.error_fingerprint` and the `error_occurrences` and `error_groups` tables. There is
+  no backfill.
+- **The upload protocol gained one optional field.** `requestUploadUrl` accepts a `sourcemap` item
+  (path and hash) beside `files`. A 3.2.6 server accepts a publish without it, so a PR branch still
+  pinned to eoas 3.2.5 keeps publishing. Between the two CLI versions only `publish` and its asset
+  helper changed; `rollback`, `republish` and `doctor` are byte-identical.
+- **Source maps are off until `UPLOAD_SOURCEMAPS` is set.** The server ignores the `sourcemap` item
+  until then, so the Errors view groups errors from the first boot with raw Hermes stack traces.
+  See [Error tracking in Observe](#error-tracking-in-observe-alongside-sentry).
+- **Update health reads the SDK's own signals.** A fatal exception reported by `expo-app-metrics`
+  marks the running update faulty, and a later first render clears it. The app recovers from
+  worklet-serialization fatals in `global-error-capture.ts`. Going by import order, the SDK's
+  handler runs first and records them as fatal before the app swallows them, so a device may be
+  marked faulty without having crashed. This is unmeasured: check the faulty count on a rollout
+  before trusting it.
+- **The control center stays on 3.2.4.** The 3.2.4 and 3.2.6 packages have the same nine files and
+  the same unpacked size (39,240 bytes).
+
 ### Standing rules
 
 - **Never drop `expo-app-id`, `expo-channel-name`, or `xprem-branch`.** Self-hosted clients bake all
@@ -145,7 +170,7 @@ run `eoas doctor`.
 - **Move the `eoas` pin and the V3 server image in one commit.** A CLI that trails the server can 404
   on app-scoped routes, and since 3.2.0 a CLI that leads it cannot upload at all. `vp run
   ota:image-bump` moves both together, `infra/railway/plan.ts` blocks an image ahead of the pin, and
-  the publish waits for the server to roll (see [The 3.2 upgrade](#the-32-upgrade-312-to-324)).
+  the publish waits for the server to roll (see [The 3.2 upgrade](#the-32-upgrade-312-to-325)).
   Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
   remaps channels, and runs rollouts — treat the admin login as production-release access (one admin,
@@ -394,7 +419,7 @@ its external map and uploads the OTA bundle to our storage via the server. `eoas
 URL from `updates.url` in `app.config.ts`, so `EXPO_UPDATES_URL` must be present.
 **Auth is `EOO_TOKEN`, not an Expo token:** the V3 control-plane server rejects Expo tokens, so
 publish/rollback need an app-scoped `eoo_` key minted in the dashboard. The CLI is pinned to
-**`eoas@3.2.5`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
+**`eoas@3.2.6`** via `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (V3 routes are app-scoped; a `v2`
 CLI 404s) — see [Versions](#versions-the-cli-pin-and-the-server-image) for the pin↔image rule. Every
 self-hosted publish also passes `--upload-rate 5` to pace its asset uploads; the reasoning is below.
 
@@ -444,7 +469,7 @@ superseded.
   only: `requestUploadUrl` loads the previous update's `metadata.json` for the same
   app/branch/runtimeVersion/platform, server-side-copies everything already there, and hands back
   upload URLs for the remainder — roughly 380 uploads down to a handful on a repeat publish to a
-  branch. **It needs the Railway image on `xprem:v3.2.5`**; until then the CLI-side halves above are
+  branch. **It needs the Railway image on `xprem:v3.2.6`**; until then the CLI-side halves above are
   what we have. It degrades safely (an unavailable copy just falls back to a normal upload).
 
 The whole-command retry ladder below is therefore now a **backstop**, not the first line of defence.
@@ -1644,6 +1669,63 @@ entry. The interface pin's separate removal condition remains in `pnpm-workspace
 
 Where the rows land, and what they cost to keep: `docs/railway.md`.
 
+### Error tracking in Observe (alongside Sentry)
+
+Since xprem 3.2.6, Observe has an Errors view: errors grouped by fingerprint, with occurrence,
+device and crash counts, per update. It needs no app change. Two sources already feed it:
+
+- **`reportError`** (`packages/mobile/src/lib/error-reporting.ts`) sends every handled error to Sentry
+  and to Observe from one funnel, so the two agree on what counted as an error.
+- **The SDK's own global handler** records uncaught JavaScript errors.
+
+Sentry stays on. Observe answers "which update did this error arrive with"; Sentry keeps the rest:
+
+| | Observe | Sentry |
+| --- | --- | --- |
+| Handled errors through `reportError` | Yes | Yes |
+| Uncaught JavaScript errors | Yes | Yes |
+| Unhandled promise rejections | No | Yes |
+| Native crashes | Some arrive as `native.exception`; never symbolicated | Yes, with dSYM and R8 mapping |
+| Errors from a store binary's embedded bundle | Listed, never symbolicated | Symbolicated |
+| Tags, breadcrumbs, the `beforeSend` noise filter | No | Yes |
+
+Two call sites report to Sentry only, by calling `captureToSentry` directly: the create-climb
+handoff and the global handler that recovers from worklet-serialization fatals.
+
+**Source maps.** A stack trace is symbolicated when the update that produced it has a stored map:
+
+1. `eoas publish` dumps the Hermes map next to the bundle and names it in `requestUploadUrl`, as a
+   `sourcemap` item (path and hash) beside `files`.
+2. The server records the hash on the update and leases an upload, unless it already holds that map.
+3. Production updates are promoted by `scripts/mobile-ota-promote.ts`, not by eoas. It names the
+   same map from the staged export, and the server reuses the copy the staging publish stored. An
+   export with no map still promotes, with a warning in the log.
+4. A background job indexes the map, and a sweep symbolicates new errors every minute.
+
+Storage needs `UPLOAD_SOURCEMAPS=true` and `S3_BUCKET_SOURCEMAPS_NAME` on the OTA server. Until
+both are declared in `infra/railway/config.ts`, the server ignores every `sourcemap` item. The maps
+live in the private `boardsesh-ota-sourcemaps` bucket and expire after 35 days
+([cloudflare.md](./cloudflare.md#ota-source-maps)).
+
+**Storage is part of publishing once it is on.** With `UPLOAD_SOURCEMAPS` set, the server records
+the map on the update and checks its store at lease and at finalize. If the store is unreachable, or
+the server's credential cannot read the bucket, every publish fails: eoas on `pr-staging` and
+`pr-<n>`, and the promote to `production`. Nothing half-publishes at the lease, because it fails
+before any upload. To publish again, unset `UPLOAD_SOURCEMAPS` on the OTA service in Railway; the
+server then ignores source maps and updates go out unsymbolicated.
+
+Limits to know before reading a trace:
+
+- **31 days.** The Errors view and symbolication cover errors received in the last 31 days.
+- **35 days per map.** A map is deleted 35 days after it was uploaded. An update still running
+  after that gets raw traces for errors xprem has not already symbolicated.
+- **128 MB.** xprem does not index a larger map. The iOS map was 44 MB on 2026-10-10.
+- **JavaScript frames only.** Native and Hermes-internal frames stay as the device reported them.
+- **No map, no symbols.** An update published before storage was on, or from a branch still pinned
+  to an older eoas, keeps raw traces. So does the embedded bundle of a store binary.
+- **The licence must be active when a map is indexed.** If it lapses, the index shows as Unusable
+  until a key is activated and the map reindexed from the dashboard.
+
 ## Health monitoring & rollback
 
 A default production OTA reaches **every** matching install, on the launch that downloads it when that finishes inside the gate's cap and on the next launch otherwise, but V3 also supports
@@ -2144,7 +2226,7 @@ configuration and signing identity.
    before boot. It seals the signing key in Postgres; **never regenerate it** (doing so makes every
    sealed key unreadable).
 4. **Deploy the server** — Railway service running
-   `ghcr.io/mercuretechnologies/xprem:v3.2.5`, which `infra/railway/config.ts` declares and
+   `ghcr.io/mercuretechnologies/xprem:v3.2.6`, which `infra/railway/config.ts` declares and
    `vp run railway:apply` keeps deployed (see the
    [deployment](https://mercuretechnologies.github.io/expo-open-ota/docs/deployment/railway) /
    [env reference](https://mercuretechnologies.github.io/expo-open-ota/docs/reference/environment)
@@ -2203,7 +2285,7 @@ configuration and signing identity.
    build).
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
-main` after the first publish, and its assets load. `vp dlx eoas@3.2.5 doctor --channel=production`
+main` after the first publish, and its assets load. `vp dlx eoas@3.2.6 doctor --channel=production`
    should be clean.
 
 ### Durability: Postgres holds the only private key
@@ -2342,7 +2424,7 @@ EXPO_UPDATES_URL=https://example.test/manifest vp exec expo prebuild
 Production/TestFlight builds use xprem's
 [Branch Surfing API](https://mercure-technologies.gitbook.io/xprem/concepts/branch-surfing)
 through the `qa-surf.ts` adapter, which retains the config and surf modules from
-`@xprem/control-center@3.1.2`. The app does not mount the package's `ControlCenter` UI.
+`@xprem/control-center@3.2.4`. The app does not mount the package's `ControlCenter` UI.
 Its floating edge target and light-only sheet were removed for #5287 after reports of
 the sheet opening while closing climb search.
 

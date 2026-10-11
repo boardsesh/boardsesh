@@ -34,7 +34,7 @@ import { XPREM_BUNDLE_MARKERS, adminBaseUrl, missingBundleMarkers } from './lib/
 const LOG = '[ota-api-probe]';
 
 /** The bundle the client was written against. A different name is expected after any server upgrade. */
-export const BUNDLE_LAST_READ = 'index-Cnt5-VRw.js';
+export const BUNDLE_LAST_READ = 'index-B64wUOnp.js';
 
 export interface ProbeResult {
   bundleName: string;

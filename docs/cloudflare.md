@@ -16,6 +16,8 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 - `boardsesh-ota-v3` holds XPRem's OTA updates and serves them at `ota-assets.boardsesh.com`.
   Objects are public by URL, named by content hash, edge cached and compressed; see
   [OTA assets host](#ota-assets-host) below.
+- `boardsesh-ota-sourcemaps` holds the Hermes source maps xprem stores with each OTA update, without
+  a domain; see [OTA source maps](#ota-source-maps) below.
 
 See `docs/user-media-storage.md`, `docs/static-assets.md`, `docs/board-snapshots.md`, and
 `docs/mobile-ota-updates.md` for the storage-specific contracts and cutover runbooks.
@@ -45,6 +47,26 @@ a warning.
 
 Anyone holding an object's URL can download it, production and `pr-*` preview bundles alike. That is accepted: the
 bundle is the compiled form of this public repository. Never store anything in this bucket that is not an OTA asset.
+
+### OTA source maps
+
+`boardsesh-ota-sourcemaps` is private: no custom domain, no `r2.dev` URL. xprem writes one Hermes source map per
+published update and platform under `sourcemaps/{appId}/<hash>.map`, plus an index beside it, and reads them back to
+symbolicate Observe errors.
+
+- **Why its own bucket.** xprem refuses to boot with source maps in a bucket that `CDN_BASE_URL` fronts, and
+  `boardsesh-ota-v3` is exactly that. A map also carries the source with its comments, which the bundle does not.
+- **Retention.** Lifecycle rule `boardsesh-ota-sourcemaps-35d` deletes objects under `sourcemaps/` after 35 days.
+  Every publish stores a map, previews included, and the iOS map was 44 MB on 2026-10-10, so the bucket only grows
+  without the rule. Keys carry no branch, so the rule cannot spare production maps.
+- **What the 35 days cost.** The clock runs from the upload, not from the error. An update still running 35 days
+  after it was published, typically the last OTA of an old binary, gets raw stack traces for any error xprem has
+  not already symbolicated. Errors grouped before then keep their trace, which lives in ClickHouse. Measure the
+  bucket after a week of uploads before changing the window: nothing expires for the first 35 days.
+- **One credential, two buckets.** xprem takes a single S3 credential for both buckets. The OTA server's R2 token
+  needs Object Read & Write on `boardsesh-ota-v3` and on `boardsesh-ota-sourcemaps`. Editing a token replaces all of
+  its policies, so name both buckets in the same edit.
+- **A new bucket takes two converges.** The first creates it, the second installs the lifecycle rule.
 
 **R2 has two independent public access paths.** A custom domain and the managed `r2.dev` development URL can each
 publish every object in a bucket. The config disables `r2.dev` for every declared bucket; production public buckets

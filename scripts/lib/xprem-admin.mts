@@ -9,8 +9,14 @@
  * returns `/api/apps/{appId}`), in the public bundle served by our server:
  *
  *   bundle:  https://updates.boardsesh.com/dashboard/assets/index-Cnt5-VRw.js
- *   server:  xprem 3.2.5 (OTA_SERVER_VERSION in infra/railway/config.ts)
+ *   server:  xprem 3.2.5
  *   read on: 2026-10-05
+ *
+ * Re-checked for xprem 3.2.6 on 2026-10-11, bundle `index-B64wUOnp.js`: every
+ * marker below is in the bundle the 3.2.6 image ships, and the source of that
+ * client class (apps/dashboard/src/lib/api.ts) differs from v3.2.5 only by new
+ * Observe, error and source-map calls and one removed call this file never made
+ * (`observe/update-health/segments`).
  *
  * Two checks stand behind that reading, and they cover different things:
  *   - scripts/lib/xprem-admin.test.ts pins the requests THIS file makes, against

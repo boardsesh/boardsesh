@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { USER_EXPORT_LIFECYCLE_RULE, desiredR2Buckets, type R2LifecycleRule } from '../infra/cloudflare/config';
+import {
+  OTA_SOURCEMAP_LIFECYCLE_RULE,
+  USER_EXPORT_LIFECYCLE_RULE,
+  desiredR2Buckets,
+  type R2LifecycleRule,
+} from '../infra/cloudflare/config';
 import { diffR2Bucket, mergeR2LifecycleRule, type LiveR2Bucket } from '../infra/cloudflare/plan';
 import { applyR2LifecycleRule } from './cloudflare-apply';
 
@@ -37,6 +42,46 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('OTA source-map retention', () => {
+  const sourcemapBucket = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-ota-sourcemaps')!;
+  const liveSourcemapBucket = (lifecycleRules: R2LifecycleRule[]): LiveR2Bucket => ({
+    name: sourcemapBucket.name,
+    exists: true,
+    customDomains: [],
+    r2DevDomainEnabled: false,
+    cors: null,
+    lifecycleRules,
+  });
+
+  it('keeps the bucket unreachable: no custom domain, no r2.dev URL', () => {
+    // A source map embeds the app's source. xprem also refuses to store maps in
+    // a bucket its CDN fronts, so this one must never gain a hostname.
+    expect(sourcemapBucket.customDomain).toBeNull();
+    expect(sourcemapBucket.r2DevDomainEnabled).toBe(false);
+  });
+
+  it('expires maps after 35 days, past the 31 days xprem symbolicates', () => {
+    expect(OTA_SOURCEMAP_LIFECYCLE_RULE).toEqual({
+      id: 'boardsesh-ota-sourcemaps-35d',
+      enabled: true,
+      conditions: { prefix: 'sourcemaps/' },
+      deleteObjectsTransition: { condition: { type: 'Age', maxAge: 3_024_000 } },
+    });
+  });
+
+  it('plans its own rule in its own words, then reports nothing once it is set', () => {
+    expect(diffR2Bucket(sourcemapBucket, liveSourcemapBucket([]))).toEqual([
+      expect.objectContaining({
+        resource: 'r2-bucket',
+        blocked: false,
+        summary: 'R2 boardsesh-ota-sourcemaps: will set lifecycle rule boardsesh-ota-sourcemaps-35d',
+        detail: 'Delete objects under sourcemaps/ after 35 days; preserve other lifecycle rules.',
+      }),
+    ]);
+    expect(diffR2Bucket(sourcemapBucket, liveSourcemapBucket([OTA_SOURCEMAP_LIFECYCLE_RULE]))).toEqual([]);
+  });
+});
+
 describe('generated export retention', () => {
   it('expires only export copies and preserves foreign lifecycle transitions verbatim', () => {
     expect(mergeR2LifecycleRule([foreignRule], USER_EXPORT_LIFECYCLE_RULE)).toEqual([
@@ -54,7 +99,11 @@ describe('generated export retention', () => {
 
   it('plans retention for a private bucket and converges without disturbing unrelated rules', () => {
     expect(diffR2Bucket(privateBucket, liveBucket([foreignRule]))).toEqual([
-      expect.objectContaining({ resource: 'r2-bucket', blocked: false }),
+      expect.objectContaining({
+        resource: 'r2-bucket',
+        blocked: false,
+        detail: 'Delete objects under user-data-exports/ after 14 days; preserve other lifecycle rules.',
+      }),
     ]);
     expect(diffR2Bucket(privateBucket, liveBucket([foreignRule, USER_EXPORT_LIFECYCLE_RULE]))).toEqual([]);
   });

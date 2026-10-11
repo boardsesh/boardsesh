@@ -6,7 +6,7 @@ import { BUNDLE_LAST_READ, BundleUnavailableError, formatProbe, probeAdminApi } 
 
 const BASE = 'https://updates.example';
 
-/** A bundle that spells every path the way the 3.2.5 dashboard does. */
+/** A bundle that spells every path the way the 3.2.5 and 3.2.6 dashboards do. */
 const INTACT_BUNDLE = XPREM_BUNDLE_MARKERS.map(({ marker }) => `x=${marker};`).join('\n');
 
 function dashboard(bundleSource: string | null, bundleName = 'index-AbC_123-x.js'): typeof fetch {
