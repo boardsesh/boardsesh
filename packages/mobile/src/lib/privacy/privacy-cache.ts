@@ -1,4 +1,4 @@
-import type { QueryClient } from '@tanstack/react-query';
+import type { Query, QueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { sanitizeActiveBoard } from '../active-board-snapshot';
 import { reportHandledError } from '../error-reporting';
@@ -40,11 +40,13 @@ const PRIVACY_NEUTRAL_QUERY_ROOTS = new Set([
   'qaPreviews',
 ]);
 
-// Refetched but not blanked: climb search lists. A private account's
-// followers-only climbs are filtered per viewer, so a revocation must reach
-// them, but clearing them would empty the main climb list on every launch for
-// a change that rarely touches it. A spray wall's search stays fully withdrawn:
-// the whole wall's catalogue sits behind its privacy.
+// Refetched but not blanked while on screen: climb search lists. A private
+// account's followers-only climbs are filtered per viewer, so a revocation must
+// reach them, but clearing them would empty the main climb list on every launch
+// for a change that rarely touches it. One that is off screen is withdrawn like
+// any other query: invalidation only refetches what is on screen, so it would
+// otherwise come back with its old rows. A spray wall's search stays fully
+// withdrawn: the whole wall's catalogue sits behind its privacy.
 const CATALOGUE_SEARCH_QUERY_ROOTS = new Set(['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount']);
 
 type PrivacyQueryTreatment = 'keep' | 'refetch' | 'withdraw';
@@ -130,7 +132,10 @@ export async function invalidatePrivacyQueries(
     predicate: (query: { queryKey: readonly unknown[] }) => privacyQueryTreatment(query.queryKey) !== 'keep',
   };
   const withdrawFilters = {
-    predicate: (query: { queryKey: readonly unknown[] }) => privacyQueryTreatment(query.queryKey) === 'withdraw',
+    predicate: (query: Query) => {
+      const treatment = privacyQueryTreatment(query.queryKey);
+      return treatment === 'withdraw' || (treatment === 'refetch' && !query.isActive());
+    },
   };
   // Keep the selected wall usable while catalogue withdrawal is in flight or
   // offline. Its reference and local hardware settings are independent of the

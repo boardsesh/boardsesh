@@ -177,7 +177,7 @@ describe('privacy revocation', () => {
     queryClient.clear();
   });
 
-  it('refetches catalogue climb lists without blanking them', async () => {
+  it('refetches an on-screen climb list without blanking it and withdraws off-screen ones', async () => {
     const queryClient = new QueryClient();
     const kilterSearch = ['infiniteSearchClimbs', { boardName: 'kilter', layoutId: 1 }];
     const kilterCount = ['searchClimbsCount', { boardName: 'kilter', layoutId: 1 }];
@@ -204,11 +204,9 @@ describe('privacy revocation', () => {
       resolveRefetch({ climbs: ['authorized page'] });
       await invalidation;
       expect(observer.getCurrentResult().data).toEqual({ climbs: ['authorized page'] });
-      expect(queryClient.getQueryState(kilterCount)).toMatchObject({ data: 120, isInvalidated: true });
-      expect(queryClient.getQueryState(followedSearch)).toMatchObject({
-        data: { climbs: ['followed page'] },
-        isInvalidated: true,
-      });
+      // Nothing observes these, so invalidation would not refetch them.
+      expect(queryClient.getQueryData(kilterCount)).toBeUndefined();
+      expect(queryClient.getQueryData(followedSearch)).toBeUndefined();
     } finally {
       unsubscribe();
       queryClient.clear();
