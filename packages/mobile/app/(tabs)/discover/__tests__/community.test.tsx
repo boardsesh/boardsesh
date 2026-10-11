@@ -141,7 +141,7 @@ vi.mock('../../../../src/components/grade', () => ({
     ),
 }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
-  useGrades: () => ({ data: [{ difficultyId: 16, name: '6a/V3' }] }),
+  useGrades: (boardName: string) => ({ data: boardName ? [{ difficultyId: 16, name: '6a/V3' }] : undefined }),
   useProfile: () => ({
     data: viewer.profileId ? { id: viewer.profileId } : undefined,
     isLoading: viewer.profileLoading,
@@ -427,6 +427,8 @@ describe('CommunityPlaylistsScreen states', () => {
     expect(container.querySelector('[data-spinner="true"]')).not.toBeNull();
     expect(queryByText('library.community.empty.title')).toBeNull();
     expect(queryByText('library.community.resultCount:{"count":0}')).toBeNull();
+    // No board yet, so no grade scale: the Grade chip waits for one.
+    expect(queryByText('library.community.gradeLabel')).toBeNull();
   });
 
   it('waits for the profile before fetching, showing a spinner meanwhile', () => {

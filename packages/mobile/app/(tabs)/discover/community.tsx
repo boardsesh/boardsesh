@@ -369,37 +369,46 @@ export default function CommunityPlaylistsScreen() {
             onSelect={setSize}
             accessibilityLabel={t('library.community.sizeLabel')}
           />
-          <PressableSurface
-            onPress={toggleGradeRail}
-            accessibilityRole="button"
-            accessibilityLabel={t('library.community.gradeA11y', {
-              band: gradeBandLabel ?? t('library.community.gradeAny'),
-            })}
-            accessibilityState={{ expanded: gradeRailOpen }}
-            style={[styles.gradeChip, { backgroundColor: systemColors.tertiaryFill }]}
-          >
-            <Text variant="subheadline" style={styles.gradeChipLabel}>
-              {t('library.community.gradeLabel')}
-            </Text>
-            <Text
-              variant="subheadline"
-              numberOfLines={1}
-              color={gradeBandLabel ? brandColors.primary : systemColors.secondaryLabel}
-              style={styles.gradeChipValue}
-            >
-              {gradeBandLabel ?? t('library.community.gradeAny')}
-            </Text>
-            <Icon name={gradeRailOpen ? 'chevron.up' : 'chevron.down'} size={12} color={systemColors.tertiaryLabel} />
-          </PressableSurface>
-          {gradeRailOpen && grades ? (
-            <GradeRangeRail
-              grades={grades}
-              bound={gradeBound}
-              onChange={setGradeBound}
-              boardName={boardType}
-              contentInsetLeft={0}
-              contentInsetRight={0}
-            />
+          {/* No active board, no grade scale to pick from: the chip waits for one. */}
+          {grades && grades.length > 0 ? (
+            <>
+              <PressableSurface
+                onPress={toggleGradeRail}
+                accessibilityRole="button"
+                accessibilityLabel={t('library.community.gradeA11y', {
+                  band: gradeBandLabel ?? t('library.community.gradeAny'),
+                })}
+                accessibilityState={{ expanded: gradeRailOpen }}
+                style={[styles.gradeChip, { backgroundColor: systemColors.tertiaryFill }]}
+              >
+                <Text variant="subheadline" style={styles.gradeChipLabel}>
+                  {t('library.community.gradeLabel')}
+                </Text>
+                <Text
+                  variant="subheadline"
+                  numberOfLines={1}
+                  color={gradeBandLabel ? brandColors.primary : systemColors.secondaryLabel}
+                  style={styles.gradeChipValue}
+                >
+                  {gradeBandLabel ?? t('library.community.gradeAny')}
+                </Text>
+                <Icon
+                  name={gradeRailOpen ? 'chevron.up' : 'chevron.down'}
+                  size={12}
+                  color={systemColors.tertiaryLabel}
+                />
+              </PressableSurface>
+              {gradeRailOpen ? (
+                <GradeRangeRail
+                  grades={grades}
+                  bound={gradeBound}
+                  onChange={setGradeBound}
+                  boardName={boardType}
+                  contentInsetLeft={0}
+                  contentInsetRight={0}
+                />
+              ) : null}
+            </>
           ) : null}
           {summary.length > 0 ? (
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.summary}>
