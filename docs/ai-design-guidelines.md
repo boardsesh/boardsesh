@@ -909,6 +909,11 @@ Leave text unrestricted at accessibility sizes, and let React Native own the
 leaf host's safe-area placement. A padded card must cancel its horizontal inset
 once around the whole group of self-insetting controls so labels share one gutter.
 
+Rest timer cadence uses content-width scrolling tabs above a font scale of 1.3,
+matching the iOS segmented control's large-text fallback. Keep the selection
+haptic and same-cadence guard when swapping controls so a tap cannot restart a
+running rest window.
+
 ---
 
 ## Dark mode

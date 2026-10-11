@@ -62,6 +62,7 @@ const harness = vi.hoisted(() => ({
   sessionId: null as string | null,
   isSharedSession: false,
   inAppBoardConnection: 'connectedByMe',
+  fontScale: 1,
 }));
 
 const haptics = vi.hoisted(() => ({ medium: vi.fn(), selection: vi.fn(), light: vi.fn() }));
@@ -129,7 +130,7 @@ vi.mock('react-native', () => ({
       children,
     ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  useWindowDimensions: () => ({ width: 393, height: 852, scale: 3, fontScale: 1 }),
+  useWindowDimensions: () => ({ width: 393, height: 852, scale: 3, fontScale: harness.fontScale }),
 }));
 
 vi.mock('react-native-reanimated', () => {
@@ -295,6 +296,26 @@ vi.mock('../../SegmentedControl', () => ({
     ),
 }));
 
+vi.mock('../../navigation/ScrollableTabs', () => ({
+  ScrollableTabs: ({ options, selectedKey, onSelect, accessibilityLabel }: SegmentedProps) =>
+    createElement(
+      'div',
+      { 'data-scrolling-tabs': accessibilityLabel },
+      options.map((option) =>
+        createElement(
+          'button',
+          {
+            key: option.key,
+            'data-tab': option.key,
+            'aria-selected': option.key === selectedKey,
+            onClick: () => onSelect(option.key),
+          },
+          option.label,
+        ),
+      ),
+    ),
+}));
+
 vi.mock('../../tick/TickDestructiveRow', () => ({
   TickDestructiveRow: ({ label, icon, onPress }: { label: string; icon?: string; onPress: () => void }) =>
     createElement('button', { 'data-destructive': label, 'data-icon': icon ?? 'delete', onClick: onPress }, label),
@@ -340,6 +361,7 @@ describe('RestTimerSheet', () => {
     harness.sessionId = 'session-1';
     harness.isSharedSession = false;
     harness.inAppBoardConnection = 'connectedByMe';
+    harness.fontScale = 1;
     haptics.medium.mockClear();
     haptics.selection.mockClear();
     settingsStore.values = {
@@ -539,6 +561,26 @@ describe('RestTimerSheet', () => {
     // only thing that produces that.
     expect(getRestTimerState().anchorMs).toBe(NOW_MS + 5_000);
     expect(getRestTimerState().armedForSessionId).toBe('session-1');
+  });
+
+  it('keeps large-text cadence selection and haptics without restarting the selected window', () => {
+    harness.fontScale = 1.5;
+    settingsStore.values.restTimerMode = 'onTheMinute';
+    armRestTimer('onTheMinute', NOW_MS, 'session-1');
+    const { anchorMs, cycleId } = getRestTimerState();
+    const { container } = renderSheet();
+    expect(container.querySelector('[data-scrolling-tabs="mobile.restTimer.modeAria"]')).not.toBeNull();
+    expect(container.querySelector('[data-segmented]')).toBeNull();
+
+    fireEvent.click(container.querySelector('[data-tab="onTheMinute"]') as HTMLElement);
+    expect(getRestTimerState()).toMatchObject({ anchorMs, cycleId });
+    expect(haptics.selection).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(container.querySelector('[data-tab="afterTick"]') as HTMLElement);
+    expect(settingsStore.values.restTimerMode).toBe('afterTick');
+    expect(getRestTimerState()).toMatchObject({ anchorMs: null, armedForSessionId: 'session-1' });
+    expect(haptics.selection).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-tab="afterTick"]')?.getAttribute('aria-selected')).toBe('true');
   });
 
   it('leaves the timer alone when the already-selected cadence is tapped again (#5664)', () => {
