@@ -1140,6 +1140,7 @@ describe('no-op write guards (recorded from the real write path)', () => {
     expect(climbStoredTuple).toBe(
       '("board_climbs"."is_draft", "board_climbs"."is_listed", "board_climbs"."name", "board_climbs"."description", "board_climbs"."characteristics")',
     );
+    // No `userId`: the catalogue sync has no way to clear or replace an owner.
     expect(Object.keys(climb.set)).toEqual(['isDraft', 'isListed', 'name', 'description', 'characteristics']);
 
     const beta = recordedGuard((recordedSet) => 'thumbnail' in recordedSet);
@@ -1238,6 +1239,23 @@ describe('climb conflict policies (SQL)', () => {
     expect(draftSql).toContain('"is_draft"');
     // No lingering "only flip toward visible" GREATEST/OR-style pinning.
     expect(listedSql).not.toContain('= false and excluded');
+  });
+
+  it('is_listed / is_draft: an Aurora climb that has an owner still follows upstream, so an imported draft can be published', () => {
+    const { isListed, isDraft } = climbListingConflictSet();
+    // `synced` is the provenance marker: true on every Aurora import, false on
+    // every climb minted in Boardsesh.
+    const upstreamOwnsFlags = '("board_climbs"."user_id" is null or "board_climbs"."synced")';
+    expect(render(isDraft)).toBe(
+      `case when ${upstreamOwnsFlags} then excluded.is_draft else "board_climbs"."is_draft" end`,
+    );
+    expect(render(isListed)).toBe(
+      `case when ${upstreamOwnsFlags} then excluded.is_listed else "board_climbs"."is_listed" end`,
+    );
+  });
+
+  it('user_id: not part of the policy, so no conflict can clear or replace an owner', () => {
+    expect(Object.keys(climbListingConflictSet())).toEqual(['isDraft', 'isListed']);
   });
 
   it('upstream_ascensionist_count: authoritative incoming, no GREATEST', () => {
