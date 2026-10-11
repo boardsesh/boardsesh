@@ -1,5 +1,5 @@
 /**
- * Exercises migration 0250 against isolated PostgreSQL sessions.
+ * Exercises migration 0264 against isolated PostgreSQL sessions.
  *
  * Each fixture uses only a temporary table and index; closing the session
  * removes them. CI supplies a dedicated stock PostgreSQL service through
@@ -31,12 +31,14 @@ type AliasIndexState = {
 const migrationDatabaseUrl = process.env.MIGRATION_INDEX_TEST_DB_URL;
 const expectedDatabaseName = process.env.MIGRATION_INDEX_TEST_EXPECTED_DATABASE;
 const requiredFixtureFlag = process.env.MIGRATION_INDEX_TEST_REQUIRED;
-const migrationSqlPath = fileURLToPath(new URL('../../drizzle/0261_mushy_retro_girl.sql', import.meta.url));
+const migrationSqlPath = fileURLToPath(
+  new URL('../../drizzle/0264_board_climb_aliases_alias_uuid_index.sql', import.meta.url),
+);
 const migrationSql = await readFile(migrationSqlPath, 'utf8');
 const migrationStatement = migrationSql.match(/CREATE INDEX IF NOT EXISTS[\s\S]*?;/i)?.[0];
 
 if (!migrationStatement) {
-  throw new Error('migration 0250 must contain the executable IF NOT EXISTS index statement');
+  throw new Error('migration 0264 must contain the executable IF NOT EXISTS index statement');
 }
 if (requiredFixtureFlag !== undefined && requiredFixtureFlag !== '1') {
   throw new Error('MIGRATION_INDEX_TEST_REQUIRED must be 1 when set');
@@ -146,7 +148,7 @@ function assertExpectedIndex(state: AliasIndexState[]): AliasIndexState {
 }
 
 void describe(
-  'migration 0250 alias UUID index',
+  'migration 0264 alias UUID index',
   { skip: testDatabaseUrl ? false : 'set MIGRATION_INDEX_TEST_DB_URL to an owned loopback PostgreSQL fixture' },
   () => {
     void it('creates the expected index when it is absent', async () => {
