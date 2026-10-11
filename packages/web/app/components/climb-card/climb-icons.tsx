@@ -15,6 +15,11 @@ type ClimbIconsProps = {
   /** Already-translated "any feet" label, or null when the climb keeps the marked
    *  holds. Same shape as `methodLabel` — the parent resolves it via i18n. */
   anyFeetLabel?: string | null;
+  /** Already-translated "stiff"/"soft" grade-discrepancy badge, or null when the
+   *  crowd average doesn't notably disagree with the display grade (or there
+   *  aren't enough ascents to trust it yet). Same shape as `methodLabel` — the
+   *  parent resolves it via resolveGradeErrorLabel. */
+  gradeErrorLabel?: string | null;
 };
 
 const benchmarkIconSx = {
@@ -48,6 +53,7 @@ export default function ClimbIcons({
   isNoMatch = false,
   methodLabel = null,
   anyFeetLabel = null,
+  gradeErrorLabel = null,
 }: ClimbIconsProps) {
   const benchmarkValue = benchmarkDifficulty != null ? Number(benchmarkDifficulty) : null;
   const isBenchmarkOrClassic =
@@ -65,6 +71,11 @@ export default function ClimbIcons({
       {anyFeetLabel && (
         <Typography component="span" sx={methodLabelSx}>
           {anyFeetLabel}
+        </Typography>
+      )}
+      {gradeErrorLabel && (
+        <Typography component="span" sx={methodLabelSx}>
+          {gradeErrorLabel}
         </Typography>
       )}
     </>

@@ -4,6 +4,7 @@ import { getBoardCapabilities, type BoardCapabilities } from '../board-capabilit
 
 const AURORA_ROW: BoardCapabilities = {
   crowdGrade: true,
+  userGradeSort: true,
   // Aurora grades every angle independently, so the browsed angle is the right
   // one to read and search stays pinned to it unless a caller opts out (#5405).
   angleBoundClimbs: false,
@@ -25,6 +26,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
   soill: AURORA_ROW,
   moonboard: {
     crowdGrade: false,
+    userGradeSort: true,
     // One grade per problem, at the angle it was set at — so the same shape as
     // Woods, but held false because the fallback costs 1 ms -> 936 ms on its
     // largest layout and 88% of its searches are at the angle that was never
@@ -38,6 +40,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
   },
   woods: {
     crowdGrade: false,
+    userGradeSort: false,
     // 5,392 listed climbs share 5,398 stats rows — one per climb, at its set angle.
     angleBoundClimbs: true,
     climbCreation: true,
@@ -55,6 +58,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     // frame per climb. Its angle is fixed at creation, so climbs are browsed at
     // the only angle they exist at and need no cross-angle stats fallback.
     crowdGrade: false,
+    userGradeSort: false,
     angleBoundClimbs: false,
     climbCreation: true,
     explicitClimbRules: false,
@@ -88,6 +92,12 @@ describe('getBoardCapabilities', () => {
     for (const boardName of SUPPORTED_BOARDS) {
       expect(getBoardCapabilities(boardName).climbCreation).toBe(true);
     }
+  });
+
+  it('offers user-grade sorting only where the average is not a setter grade', () => {
+    expect(getBoardCapabilities('moonboard').userGradeSort).toBe(true);
+    expect(getBoardCapabilities('woods').userGradeSort).toBe(false);
+    expect(getBoardCapabilities('spray').userGradeSort).toBe(false);
   });
 
   it('states both climb rules explicitly on Woods only', () => {
