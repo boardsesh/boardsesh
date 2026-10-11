@@ -374,8 +374,11 @@ it('selects TB2 dimensions and engraving and submits the matching tuple', async 
   await previewThisWall();
   fireEvent.mouseDown(await screen.findByRole('combobox', { name: 'Board' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Tension Board 2' }));
-  await waitFor(() => expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull());
-  expect(screen.getByRole('button', { name: 'Get a free preview' })).toBeDefined();
+  expect(
+    screen.getByText('You have changed the wall since these sheets. Update the preview to see the new ones.'),
+  ).toBeDefined();
+  expect(screen.getByRole('button', { name: 'Update preview' })).toBeDefined();
+  expect(screen.queryByRole('button', { name: 'Finalise and buy' })).toBeNull();
   expect(lastLayoutConfig()).toMatchObject({
     boardName: 'tension',
     sizeId: 9,
@@ -399,7 +402,9 @@ it('selects TB2 dimensions and engraving and submits the matching tuple', async 
   });
   fireEvent.click(primaryAction());
   await waitFor(() =>
-    expect(sentCall('mutation CreateCncPreview')).toMatchObject({
+    expect(
+      graphqlRequest.mock.calls.filter((args) => String(args[0]).includes('mutation CreateCncPreview')).at(-1)?.[1],
+    ).toMatchObject({
       config: {
         boardName: 'tension',
         layoutId: 11,
