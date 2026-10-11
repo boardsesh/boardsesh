@@ -222,6 +222,20 @@ describe('cncLayout', () => {
     expect(fetchLayoutMock).toHaveBeenCalledTimes(1);
   });
 
+  it.each([false, true])(
+    'rejects spray geometry before calling the generator (includeHoles=%s)',
+    async (includeHoles) => {
+      await expect(
+        cncPackQueries.cncLayout(
+          undefined,
+          { config: config({ boardName: 'spray' }), includeHoles },
+          includeHoles ? authCtx(OWNER_ID) : anonCtx(),
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+      expect(fetchLayoutMock).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects a size that is not on sale before calling the generator', async () => {
     await expect(
       cncPackQueries.cncLayout(undefined, { config: config({ sizeId: 999 }) }, anonCtx()),

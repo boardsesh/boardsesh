@@ -584,6 +584,9 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
 
+  'Query.cncLayout':
+    'static CNC catalogue panel geometry, never climb metadata; resolveCncConfig rejects spray before calling the generator (cnc-packs/queries.test.ts pins preview and authenticated hole requests)',
+
   // --- similar climbs: never materialised for a wall --------------------------
   'Query.similarClimbs':
     'a non-admin (the sweep owner included) reads board_climb_neighbors, which the nightly job never computes for spray layouts, so a wall answers []; only an admin reaches the live query, and it keeps the sprayLayoutIsReadable gate (docs/similar-climbs.md)',
