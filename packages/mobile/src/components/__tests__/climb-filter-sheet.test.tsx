@@ -12,7 +12,17 @@ vi.mock('../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { createElement, forwardRef, useEffect, useImperativeHandle, type ReactNode } from 'react';
+import {
+  cloneElement,
+  createElement,
+  forwardRef,
+  isValidElement,
+  useEffect,
+  useImperativeHandle,
+  useState,
+  StrictMode,
+  type ReactNode,
+} from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
@@ -97,7 +107,7 @@ const createBoardHoldsMocks = vi.hoisted(() => ({
 }));
 
 // A spy (not a bare stub) so a test can inspect the `name` it was called with —
-// needed to assert the "Show N" preview reflects an in-sheet name edit (#3606).
+// needed to assert the matching count reflects an in-sheet name edit (#3606).
 // Typed explicitly: an inferred `() => {}` gives `.mock.calls` the `[][]` tuple
 // type and `lastCall?.[3]` fails to typecheck (TS2493).
 const searchInputMocks = vi.hoisted(() => ({
@@ -264,42 +274,45 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, params?: { count?: number }) => `${key}${params?.count ?? ''}` }),
 }));
 
-vi.mock('@boardsesh/climb-filters', () => ({
-  SORT_OPTIONS: ['popular', 'difficulty'],
-  GRADE_ACCURACY_VALUES: ['0', '0.2', '0.1', '0.05'],
-  DEFAULT_CLIMB_FILTER_STATE: {
-    sortBy: 'popular',
-    sortOrder: 'desc',
-    status: 'any',
-    boulders: true,
-    routes: false,
-  },
-  DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
-  hasActiveClimbFilters: filterActivityMocks.hasActiveClimbFilters,
-  hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
-  applyStatusChange: (_filters: unknown, status: string) => ({ status }),
-  normalizeRetiredFilters: (filters: unknown) => filters,
-  toClimbSearchInput: searchInputMocks.toClimbSearchInput,
-  newSortSeed: () => '424242',
-  mergeBoardFilters: searchInputMocks.mergeBoardFilters,
-  formatMinAscentsFilterCount: (count: number) => String(count),
-  countFilteredHolds: (holdsFilter?: Record<string, unknown>) => Object.keys(holdsFilter ?? {}).length,
-  // "Your progress" selector (PRIMARY card single-select).
-  PROGRESS_FILTER_VALUES: ['all', 'untried', 'projects', 'sent', 'unsent'],
-  flagsToProgress: (flags?: Record<string, unknown>) => {
-    if (flags?.showOnlyCompleted) return 'sent';
-    if (flags?.showOnlyAttempted) return 'projects';
-    if (flags?.hideAttempted && flags?.hideCompleted) return 'untried';
-    if (flags?.hideCompleted) return 'unsent';
-    return 'all';
-  },
-  progressToFlags: () => ({
-    hideAttempted: undefined,
-    hideCompleted: undefined,
-    showOnlyAttempted: undefined,
-    showOnlyCompleted: undefined,
-  }),
-}));
+vi.mock('@boardsesh/climb-filters', async (importOriginal) => {
+  const { applyStatusChange } = await importOriginal<typeof import('@boardsesh/climb-filters')>();
+  return {
+    SORT_OPTIONS: ['popular', 'difficulty'],
+    GRADE_ACCURACY_VALUES: ['0', '0.2', '0.1', '0.05'],
+    DEFAULT_CLIMB_FILTER_STATE: {
+      sortBy: 'popular',
+      sortOrder: 'desc',
+      status: 'any',
+      boulders: true,
+      routes: false,
+    },
+    DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
+    hasActiveClimbFilters: filterActivityMocks.hasActiveClimbFilters,
+    hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
+    applyStatusChange,
+    normalizeRetiredFilters: (filters: unknown) => filters,
+    toClimbSearchInput: searchInputMocks.toClimbSearchInput,
+    newSortSeed: () => '424242',
+    mergeBoardFilters: searchInputMocks.mergeBoardFilters,
+    formatMinAscentsFilterCount: (count: number) => String(count),
+    countFilteredHolds: (holdsFilter?: Record<string, unknown>) => Object.keys(holdsFilter ?? {}).length,
+    // "Your progress" selector (PRIMARY card single-select).
+    PROGRESS_FILTER_VALUES: ['all', 'untried', 'projects', 'sent', 'unsent'],
+    flagsToProgress: (flags?: Record<string, unknown>) => {
+      if (flags?.showOnlyCompleted) return 'sent';
+      if (flags?.showOnlyAttempted) return 'projects';
+      if (flags?.hideAttempted && flags?.hideCompleted) return 'untried';
+      if (flags?.hideCompleted) return 'unsent';
+      return 'all';
+    },
+    progressToFlags: () => ({
+      hideAttempted: undefined,
+      hideCompleted: undefined,
+      showOnlyAttempted: undefined,
+      showOnlyCompleted: undefined,
+    }),
+  };
+});
 
 vi.mock('../../lib/graphql/hooks', () => ({
   useGrades: () => ({ data: [] }),
@@ -423,10 +436,9 @@ vi.mock('../use-sheet-column-style', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../use-sheet-column-style')>()),
   useSheetColumnStyle: () => DETENT_COLUMN,
 }));
-// The top bar's two actions as plain buttons labelled with their text, so the
-// cases below press Reset and Apply by label as they did in the old header and
-// footer. A disabled action swallows the tap, like the real bar.
-type TopBarActionMock = { label?: string; kind?: string; onPress: () => void; disabled?: boolean };
+// Model the header action targets without native UI. A disabled Reset ignores
+// taps, and the matching count remains ordinary text in the scroll body.
+type TopBarActionMock = { label?: string; kind?: string; onPress: () => void; disabled?: boolean; prominent?: boolean };
 vi.mock('../SheetTopBar', () => ({
   SheetTopBar: ({
     title,
@@ -447,6 +459,7 @@ vi.mock('../SheetTopBar', () => ({
               {
                 key: index,
                 'data-slot': index === 0 ? 'leading' : 'trailing',
+                'data-prominent': String(!!action.prominent),
                 disabled: action.disabled,
                 onClick: action.disabled ? undefined : action.onPress,
               },
@@ -456,7 +469,35 @@ vi.mock('../SheetTopBar', () => ({
       ),
     ),
 }));
-vi.mock('../grade', () => ({ GradeRangeRail: () => null }));
+vi.mock('../grade', () => ({
+  GradeRangeRail: ({ onChange }: { onChange: (grade: { minGradeId: number; maxGradeId: number }) => void }) =>
+    createElement('button', {
+      'data-testid': 'grade-range',
+      onClick: () => onChange({ minGradeId: 12, maxGradeId: 14 }),
+    }),
+}));
+
+type FilterSheetProps = Parameters<typeof ClimbFilterSheet>[0];
+
+// The production parent echoes each committed selection back into props without
+// closing. Keep that ownership contract in the component tests, including when
+// a test supplies newer external props through rerender.
+function CommittedSelectionHarness({ children }: { children: ReactNode }) {
+  if (!isValidElement<FilterSheetProps>(children)) throw new Error('Expected a filter sheet');
+  const { currentFilters: filters, currentBoardFilters: boardFilters } = children.props;
+  const [selection, setSelection] = useState({ filters, boardFilters });
+  useEffect(() => {
+    setSelection({ filters, boardFilters });
+  }, [filters, boardFilters]);
+  return cloneElement(children, {
+    currentFilters: selection.filters,
+    currentBoardFilters: selection.boardFilters,
+    onSelectionChange: (nextFilters: ClimbFilters, nextBoardFilters: ClimbBoardFilterState) => {
+      children.props.onSelectionChange(nextFilters, nextBoardFilters);
+      setSelection({ filters: nextFilters, boardFilters: nextBoardFilters });
+    },
+  });
+}
 
 function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet>[0]> = {}) {
   const props: Parameters<typeof ClimbFilterSheet>[0] = {
@@ -465,13 +506,13 @@ function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet
     currentFilters,
     currentBoardFilters,
     searchName: '',
-    onApply: vi.fn(),
+    onSelectionChange: vi.fn(),
     onNameChange: vi.fn(),
     onClearName: vi.fn(),
     ...overrides,
   };
 
-  return { ...render(<ClimbFilterSheet {...props} />), props };
+  return { ...render(<ClimbFilterSheet {...props} />, { wrapper: CommittedSelectionHarness }), props };
 }
 
 // Simulate the climbs screen regaining focus after a sub-picker route pops.
@@ -489,9 +530,9 @@ function simulateNativeClose() {
   });
 }
 
-// Tap Apply, then let the native close land, which is when Apply commits.
-function applyAndClose(applyButton: HTMLElement) {
-  fireEvent.click(applyButton);
+// Tap Close, then let the native animation finish.
+function closeAndFinish(closeButton: HTMLElement) {
+  fireEvent.click(closeButton);
   simulateNativeClose();
 }
 
@@ -508,16 +549,16 @@ beforeEach(() => {
   authMock.isAuthenticated = true;
 });
 
-// QA on #5414: committing on the tap made the parent unmount the sheet in the
-// same render as the dismiss, so the slide-down never played and the list swapped
-// under a vanishing sheet. Apply must commit only once the native close lands.
-describe('ClimbFilterSheet Apply waits for the native close', () => {
-  it('puts Reset leading and the live "Show N" Apply trailing in the top bar, over the sheet column', () => {
-    const { container, getByText } = renderFilterSheet();
+describe('ClimbFilterSheet live selections and dismissal', () => {
+  it('places Close leading, secondary Reset trailing, and the count in the scroll body', () => {
+    const { container, getByText, queryByText } = renderFilterSheet();
     expect(container.querySelector('[data-top-bar="mobile.filter.title"]')).not.toBeNull();
-    expect(getByText('mobile.filter.reset').getAttribute('data-slot')).toBe('leading');
-    expect(getByText('mobile.filter.showCount12').getAttribute('data-slot')).toBe('trailing');
-    expect(container.querySelector('[data-column="true"]')).not.toBeNull();
+    expect(getByText('close').getAttribute('data-slot')).toBe('leading');
+    expect(getByText('mobile.filter.reset').getAttribute('data-slot')).toBe('trailing');
+    expect(getByText('mobile.filter.reset').getAttribute('data-prominent')).toBe('false');
+    expect(getByText('mobile.filter.matchingCount12').closest('button')).toBeNull();
+    expect(getByText('mobile.filter.automaticChanges')).toBeDefined();
+    expect(queryByText('mobile.filter.showCount12')).toBeNull();
   });
 
   it('pads the column by the keyboard overlap so the name search stays above it', () => {
@@ -525,7 +566,6 @@ describe('ClimbFilterSheet Apply waits for the native close', () => {
     const columnStyle = () =>
       JSON.parse(container.querySelector('[data-column="true"]')?.getAttribute('data-style') ?? 'null');
     expect(columnStyle()).toEqual(DETENT_COLUMN);
-    // Android (this file's platform): the IME height plus the window inset, 0 here.
     act(() =>
       keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
     );
@@ -534,11 +574,10 @@ describe('ClimbFilterSheet Apply waits for the native close', () => {
     expect(columnStyle()).toEqual(DETENT_COLUMN);
   });
 
-  it('hands the native sheet one in-flow child, the sheet column, carrying the detent bound (#3330)', () => {
+  it('hands the native sheet one in-flow child carrying the detent bound (#3330)', () => {
     const { container } = renderFilterSheet();
     const column = container.querySelector('[data-column="true"]') as HTMLElement;
     expect(JSON.parse(column.getAttribute('data-style') ?? 'null')).toEqual(DETENT_COLUMN);
-    // Anything else under the sheet is the dev-only #3922 probe, which is out of flow.
     const inFlowSiblings = [...(column.parentElement?.children ?? [])].filter((element) => {
       if (element === column) return false;
       const style = JSON.parse(element.getAttribute('data-style') ?? '{}') ?? {};
@@ -547,142 +586,166 @@ describe('ClimbFilterSheet Apply waits for the native close', () => {
     expect(inFlowSiblings).toEqual([]);
   });
 
-  it('separates the Following switch from the setter picker and applies its own filter', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+  it('commits a switch immediately while keeping the sheet open', () => {
+    const onSelectionChange = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByTestId } = renderFilterSheet({ onSelectionChange, onDismiss });
     const toggle = getByTestId('switch-authors.followingClimbs');
     expect(JSON.parse(toggle.parentElement?.getAttribute('data-style') ?? '{}')).toMatchObject({ marginTop: 16 });
     fireEvent.click(toggle);
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      { ...currentFilters, onlyFollowedAuthors: true },
+      currentBoardFilters,
+    );
     expect(toggle.getAttribute('data-value')).toBe('true');
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ onlyFollowedAuthors: true }), currentBoardFilters);
-  });
-  it('dismisses on the tap, then applies and closes, in that order, once the native close lands', () => {
-    const onApply = vi.fn();
-    const onDismiss = vi.fn();
-    const { getByText } = renderFilterSheet({ onApply, onDismiss });
-
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-
-    expect(bottomSheetModalProps.dismiss).toHaveBeenCalledTimes(1);
-    expect(onApply).not.toHaveBeenCalled();
     expect(onDismiss).not.toHaveBeenCalled();
-
-    simulateNativeClose();
-
-    expect(onApply).toHaveBeenCalledTimes(1);
-    expect(onApply).toHaveBeenCalledWith(currentFilters, currentBoardFilters);
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-    expect(onApply.mock.invocationCallOrder[0]).toBeLessThan(onDismiss.mock.invocationCallOrder[0]);
-  });
-
-  it('commits through the latest onApply and onDismiss when the parent re-renders during the slide-down', () => {
-    const staleOnApply = vi.fn();
-    const staleOnDismiss = vi.fn();
-    const rendered = renderFilterSheet({ onApply: staleOnApply, onDismiss: staleOnDismiss });
-
-    fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
-    // The parent's onApply changes identity on every search keystroke.
-    const latestOnApply = vi.fn();
-    const latestOnDismiss = vi.fn();
-    rendered.rerender(<ClimbFilterSheet {...rendered.props} onApply={latestOnApply} onDismiss={latestOnDismiss} />);
-    simulateNativeClose();
-
-    expect(latestOnApply).toHaveBeenCalledTimes(1);
-    expect(latestOnApply).toHaveBeenCalledWith(currentFilters, currentBoardFilters);
-    expect(latestOnDismiss).toHaveBeenCalledTimes(1);
-    expect(latestOnApply.mock.invocationCallOrder[0]).toBeLessThan(latestOnDismiss.mock.invocationCallOrder[0]);
-    expect(staleOnApply).not.toHaveBeenCalled();
-    expect(staleOnDismiss).not.toHaveBeenCalled();
-  });
-
-  it('drops the draft on a pan-down close without Apply', () => {
-    const onApply = vi.fn();
-    const onDismiss = vi.fn();
-    const { getByTestId } = renderFilterSheet({ onApply, onDismiss });
-
-    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
-    simulateNativeClose();
-
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-    expect(onApply).not.toHaveBeenCalled();
-  });
-
-  it('ignores a second Apply tap while the first is still closing the sheet', () => {
-    const onApply = vi.fn();
-    const { getByText } = renderFilterSheet({ onApply });
-
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-    simulateNativeClose();
-
-    expect(bottomSheetModalProps.dismiss).toHaveBeenCalledTimes(1);
-    expect(onApply).toHaveBeenCalledTimes(1);
-  });
-
-  it('ignores the sub-picker rows while an Apply is closing the sheet', () => {
-    const { getByText, getByLabelText } = renderFilterSheet();
-
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-    fireEvent.click(getByLabelText('mobile.filter.setters'));
-    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
-    fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
-
-    expect(routerPush).not.toHaveBeenCalled();
+    expect(bottomSheetModalProps.dismiss).not.toHaveBeenCalled();
     expect(managedSheetProps.latest?.open).toBe(true);
   });
 
-  it('still applies once if the parent unmounts the sheet before the native close lands', () => {
-    const onApply = vi.fn();
-    const onDismiss = vi.fn();
-    const { getByText, unmount } = renderFilterSheet({ onApply, onDismiss });
-
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-    unmount();
-
-    expect(onApply).toHaveBeenCalledTimes(1);
-    expect(onApply).toHaveBeenCalledWith(currentFilters, currentBoardFilters);
-    // The parent already closed the filters; nothing else to close.
-    expect(onDismiss).not.toHaveBeenCalled();
+  it('publishes once per event under Strict Mode and never during render or mount', () => {
+    const onSelectionChange = vi.fn();
+    const { getByTestId } = render(
+      <StrictMode>
+        <ClimbFilterSheet
+          onDismiss={vi.fn()}
+          boardConfig={boardConfig}
+          currentFilters={currentFilters}
+          currentBoardFilters={currentBoardFilters}
+          onSelectionChange={onSelectionChange}
+          onNameChange={vi.fn()}
+          onClearName={vi.fn()}
+        />
+      </StrictMode>,
+    );
+    expect(onSelectionChange).not.toHaveBeenCalled();
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
   });
 
-  it('does not apply twice when the native close lands and the sheet then unmounts', () => {
-    const onApply = vi.fn();
-    const { getByText, unmount } = renderFilterSheet({ onApply });
-
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    unmount();
-
-    expect(onApply).toHaveBeenCalledTimes(1);
+  it('normalizes My drafts after an auth flip before publishing another choice', () => {
+    const onSelectionChange = vi.fn();
+    const rendered = renderFilterSheet({ onSelectionChange, currentFilters: { ...currentFilters, status: 'drafts' } });
+    authMock.isAuthenticated = false;
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} />);
+    expect(rendered.queryByTestId('segment-drafts')).toBeNull();
+    fireEvent.click(rendered.getByTestId('switch-mobile.filter.betaVideosDescription'));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'any', onlyWithBetaVideos: true }),
+      currentBoardFilters,
+    );
   });
 
-  it('ignores a native close that arrives after the sheet was torn down mid-slide', () => {
-    const onApply = vi.fn();
+  it('commits a grade immediately and debounces only the matching-count request', () => {
+    vi.useFakeTimers();
+    try {
+      const onSelectionChange = vi.fn();
+      const { getByTestId } = renderFilterSheet({ onSelectionChange });
+      searchInputMocks.toClimbSearchInput.mockClear();
+      fireEvent.click(getByTestId('grade-range'));
+      expect(onSelectionChange).toHaveBeenCalledWith(
+        { ...currentFilters, minGrade: 12, maxGrade: 14 },
+        currentBoardFilters,
+      );
+      expect(searchInputMocks.toClimbSearchInput).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(249);
+      });
+      expect(searchInputMocks.toClimbSearchInput).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual({
+        ...currentFilters,
+        minGrade: 12,
+        maxGrade: 14,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the last selection when the next event is a swipe dismissal', () => {
+    const onSelectionChange = vi.fn();
     const onDismiss = vi.fn();
-    const { getByText, unmount } = renderFilterSheet({ onApply, onDismiss });
-
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-    unmount();
-    expect(onApply).toHaveBeenCalledTimes(1);
-
-    // SwiftUI's onDismiss landing late, through the unmounted sheet's closure.
+    const { getByTestId } = renderFilterSheet({ onSelectionChange, onDismiss });
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    expect(onSelectionChange).toHaveBeenCalledWith({ ...currentFilters, onlyRatedByMe: true }, currentBoardFilters);
     simulateNativeClose();
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange.mock.invocationCallOrder[0]).toBeLessThan(onDismiss.mock.invocationCallOrder[0]);
+  });
 
-    // No second apply, and no close of a Filters sheet the climber may have reopened.
-    expect(onApply).toHaveBeenCalledTimes(1);
+  it('combines consecutive controls before a parent render and publishes outside React updaters', () => {
+    const onSelectionChange = vi.fn();
+    const { getByTestId } = renderFilterSheet({ onSelectionChange });
+    act(() => {
+      fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+      fireEvent.click(getByTestId('switch-authors.followingClimbs'));
+    });
+    expect(onSelectionChange).toHaveBeenCalledTimes(2);
+    expect(onSelectionChange).toHaveBeenLastCalledWith(
+      { ...currentFilters, onlyRatedByMe: true, onlyFollowedAuthors: true },
+      currentBoardFilters,
+    );
+  });
+
+  it('dismisses on Close and notifies the parent once after the native animation', () => {
+    const onSelectionChange = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByText } = renderFilterSheet({ onSelectionChange, onDismiss });
+    fireEvent.click(getByText('close'));
+    expect(bottomSheetModalProps.dismiss).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+    simulateNativeClose();
+    simulateNativeClose();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('reads the latest dismissal callback during the slide-down', () => {
+    const staleOnDismiss = vi.fn();
+    const rendered = renderFilterSheet({ onDismiss: staleOnDismiss });
+    fireEvent.click(rendered.getByText('close'));
+    const latestOnDismiss = vi.fn();
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} onDismiss={latestOnDismiss} />);
+    simulateNativeClose();
+    expect(latestOnDismiss).toHaveBeenCalledTimes(1);
+    expect(staleOnDismiss).not.toHaveBeenCalled();
+  });
+
+  it('ignores repeated Close taps and sub-picker rows during the slide-down', () => {
+    const { getByText, getByLabelText } = renderFilterSheet();
+    fireEvent.click(getByText('close'));
+    fireEvent.click(getByText('close'));
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
+    fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
+    expect(bottomSheetModalProps.dismiss).toHaveBeenCalledTimes(1);
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it('does not recommit on unmount and ignores a late native close', () => {
+    const onSelectionChange = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByText, getByTestId, unmount } = renderFilterSheet({ onSelectionChange, onDismiss });
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    fireEvent.click(getByText('close'));
+    const lateClose = bottomSheetModalProps.latest?.onChange;
+    unmount();
+    act(() => lateClose?.(-1));
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it('drops a pending Apply when the board changes before the sheet unmounts', () => {
-    const onApply = vi.fn();
-    const rendered = renderFilterSheet({ onApply });
-
-    fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
-    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, sizeId: 11 }} />);
-    rendered.unmount();
-
-    // The draft's setter, holds and zone filters belong to the old board.
-    expect(onApply).not.toHaveBeenCalled();
+  it('ignores a native close after the presentation board or angle changed', () => {
+    const onDismiss = vi.fn();
+    const rendered = renderFilterSheet({ onDismiss });
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, angle: 45 }} />);
+    simulateNativeClose();
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 });
 
@@ -735,27 +798,27 @@ describe('ClimbFilterSheet sub-pickers', () => {
     expect(managedSheetProps.latest?.open).toBe(false);
   });
 
-  it('applies straight from an apply handoff with the latest draft, without re-presenting', () => {
-    const onApply = vi.fn();
+  it('applies straight from an apply handoff with the latest committed selection, without re-presenting', () => {
+    const onSelectionChange = vi.fn();
     const onDismiss = vi.fn();
-    const { getByLabelText, getByTestId } = renderFilterSheet({ onApply, onDismiss });
+    const { getByLabelText, getByTestId } = renderFilterSheet({ onSelectionChange, onDismiss });
 
-    // A draft edit made before opening the picker must ride along.
+    // A live edit made before opening the picker must ride along.
     fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
     fireEvent.click(getByLabelText('mobile.filter.setters'));
     act(() => {
       emitSetterFilterSelection(['route-setter'], { apply: true });
     });
 
-    expect(onApply).toHaveBeenCalledTimes(1);
-    expect(onApply).toHaveBeenCalledWith(
+    expect(onSelectionChange).toHaveBeenCalledTimes(2);
+    expect(onSelectionChange).toHaveBeenCalledWith(
       { ...currentFilters, onlyRatedByMe: true, setter: ['route-setter'] },
       currentBoardFilters,
     );
     // The suspended sheet has no native close to wait for, so it closes itself,
     // after committing the filters.
     expect(onDismiss).toHaveBeenCalledTimes(1);
-    expect(onApply.mock.invocationCallOrder[0]).toBeLessThan(onDismiss.mock.invocationCallOrder[0]);
+    expect(onSelectionChange.mock.invocationCallOrder[0]).toBeLessThan(onDismiss.mock.invocationCallOrder[0]);
     expect(bottomSheetModalProps.dismiss).not.toHaveBeenCalled();
 
     // The pop then refocuses the climbs screen. Even if the parent hasn't
@@ -764,38 +827,40 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
     expect(managedSheetProps.latest?.open).toBe(false);
     expect(bottomSheetModalProps.mountCount).toBe(1);
-    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledTimes(2);
   });
 
   it('applies an empty apply handoff as no setter filter', () => {
-    const onApply = vi.fn();
-    const { getByLabelText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByLabelText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
     act(() => {
       emitSetterFilterSelection([], { apply: true });
     });
 
-    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: undefined }, currentBoardFilters);
+    expect(onSelectionChange).toHaveBeenCalledWith({ ...currentFilters, setter: undefined }, currentBoardFilters);
   });
 
-  it('applies a setter handoff through the latest onApply and onDismiss after the parent re-renders them', () => {
-    const staleOnApply = vi.fn();
+  it('applies a setter handoff through the latest onSelectionChange and onDismiss after the parent re-renders them', () => {
+    const staleOnSelectionChange = vi.fn();
     const staleOnDismiss = vi.fn();
-    const rendered = renderFilterSheet({ onApply: staleOnApply, onDismiss: staleOnDismiss });
+    const rendered = renderFilterSheet({ onSelectionChange: staleOnSelectionChange, onDismiss: staleOnDismiss });
 
     fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
-    // The parent's onApply changes identity on every search keystroke.
-    const latestOnApply = vi.fn();
+    // The parent's onSelectionChange changes identity on every search keystroke.
+    const latestOnSelectionChange = vi.fn();
     const latestOnDismiss = vi.fn();
-    rendered.rerender(<ClimbFilterSheet {...rendered.props} onApply={latestOnApply} onDismiss={latestOnDismiss} />);
+    rendered.rerender(
+      <ClimbFilterSheet {...rendered.props} onSelectionChange={latestOnSelectionChange} onDismiss={latestOnDismiss} />,
+    );
     act(() => {
       emitSetterFilterSelection(['route-setter'], { apply: true });
     });
 
-    expect(latestOnApply).toHaveBeenCalledTimes(1);
+    expect(latestOnSelectionChange).toHaveBeenCalledTimes(1);
     expect(latestOnDismiss).toHaveBeenCalledTimes(1);
-    expect(staleOnApply).not.toHaveBeenCalled();
+    expect(staleOnSelectionChange).not.toHaveBeenCalled();
     expect(staleOnDismiss).not.toHaveBeenCalled();
   });
 
@@ -867,8 +932,8 @@ describe('ClimbFilterSheet sub-pickers', () => {
   });
 
   it('merges the setters handed back from the route, re-presents on focus, and applies them', () => {
-    const onApply = vi.fn();
-    const { getByLabelText, getByText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByLabelText, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
     act(() => {
@@ -878,91 +943,71 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
     expect(managedSheetProps.latest?.open).toBe(true);
 
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['route-setter'] }, currentBoardFilters);
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      { ...currentFilters, setter: ['route-setter'] },
+      currentBoardFilters,
+    );
   });
 
-  it('keeps local draft edits when parent filter props change while a sub-route is open', () => {
-    const onApply = vi.fn();
-    const rendered = renderFilterSheet({ onApply });
-
+  it('uses the latest committed parent selection during a sub-picker handoff', () => {
+    const onSelectionChange = vi.fn();
+    const rendered = renderFilterSheet({ onSelectionChange });
     fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
-    act(() => {
-      emitSetterFilterSelection(['route-setter']);
-    });
-
     rendered.rerender(
       <ClimbFilterSheet
         {...rendered.props}
-        currentFilters={{ ...currentFilters, setter: ['parent-update'] }}
+        currentFilters={{ ...currentFilters, onlyRatedByMe: true }}
         currentBoardFilters={{ ...currentBoardFilters, onlyBenchmarks: true }}
       />,
     );
+    act(() => emitSetterFilterSelection(['route-setter']));
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      { ...currentFilters, onlyRatedByMe: true, setter: ['route-setter'] },
+      { ...currentBoardFilters, onlyBenchmarks: true },
+    );
+  });
+
+  it('suspends without finalizing the filters and resumes after the native close', () => {
+    const onDismiss = vi.fn();
+    const rendered = renderFilterSheet({ onDismiss });
+    fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
+    simulateNativeClose();
+    expect(onDismiss).not.toHaveBeenCalled();
     simulateScreenRefocus();
-    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
-
-    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['route-setter'] }, currentBoardFilters);
+    expect(managedSheetProps.latest?.open).toBe(true);
+    simulateNativeClose();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('syncs parent filters again after dismissing without Apply', () => {
-    const onApply = vi.fn();
-    const rendered = renderFilterSheet({ onApply });
-
-    fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
+  it.each(['setters', 'holds', 'zone'] as const)('ignores a stale %s handoff after the board changes', (picker) => {
+    const onSelectionChange = vi.fn();
+    const onDismiss = vi.fn();
+    const rendered = renderFilterSheet({ onSelectionChange, onDismiss });
+    const label =
+      picker === 'setters'
+        ? 'mobile.filter.setters'
+        : picker === 'holds'
+          ? 'mobile.holdFilter.title'
+          : 'mobile.zoneFilter.title';
+    fireEvent.click(rendered.getByLabelText(label));
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, sizeId: 11 }} />);
     act(() => {
-      emitSetterFilterSelection(['route-setter']);
+      if (picker === 'setters') emitSetterFilterSelection(['old-board-setter'], { apply: true });
+      if (picker === 'holds') emitHoldsFilterSelection({ '99': { HAND: 'include' } });
+      if (picker === 'zone')
+        emitZoneFilterSelection({ zoneBox: currentBoardFilters.zoneBox ?? null, zoneMode: 'allHolds' });
     });
-
-    // Genuine user close (pan-down) clears the draft-edits guard.
-    act(() => {
-      bottomSheetModalProps.latest?.onChange?.(-1);
-    });
-    rendered.rerender(
-      <ClimbFilterSheet
-        {...rendered.props}
-        currentFilters={{ ...currentFilters, setter: ['parent-update'] }}
-        currentBoardFilters={{ ...currentBoardFilters, onlyBenchmarks: true }}
-      />,
-    );
-    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
-
-    expect(onApply).toHaveBeenCalledWith(
-      { ...currentFilters, setter: ['parent-update'] },
-      { ...currentBoardFilters, onlyBenchmarks: true },
-    );
-  });
-
-  it('syncs parent filters again after Reset then dismiss without Apply', () => {
-    const onApply = vi.fn();
-    const rendered = renderFilterSheet({ onApply });
-
-    fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
-    act(() => {
-      emitSetterFilterSelection(['route-setter']);
-    });
-    fireEvent.click(rendered.getByText('mobile.filter.reset'));
-
-    act(() => {
-      bottomSheetModalProps.latest?.onChange?.(-1);
-    });
-    rendered.rerender(
-      <ClimbFilterSheet
-        {...rendered.props}
-        currentFilters={{ ...currentFilters, setter: ['parent-update'] }}
-        currentBoardFilters={{ ...currentBoardFilters, onlyBenchmarks: true }}
-      />,
-    );
-    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
-
-    expect(onApply).toHaveBeenCalledWith(
-      { ...currentFilters, setter: ['parent-update'] },
-      { ...currentBoardFilters, onlyBenchmarks: true },
-    );
+    simulateScreenRefocus();
+    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(managedSheetProps.latest?.open).toBe(false);
   });
 
   it('pushes the hold filter route and applies the handed-back hold filter', () => {
-    const onApply = vi.fn();
-    const { getByLabelText, getByText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByLabelText, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByLabelText('mobile.holdFilter.title'));
 
@@ -975,7 +1020,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
         setIds: '1,2',
         angle: '40',
         holdsFilter: JSON.stringify(currentBoardFilters.holdsFilter),
-        // The draft the heatmap on that screen counts over.
+        // The committed selection used by the heatmap.
         heatmapSearch: JSON.stringify({
           filters: currentFilters,
           boardFilters: currentBoardFilters,
@@ -989,17 +1034,17 @@ describe('ClimbFilterSheet sub-pickers', () => {
       emitHoldsFilterSelection({ '99': { HAND: 'include' } });
     });
     simulateScreenRefocus();
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    closeAndFinish(getByText('close'));
 
-    expect(onApply).toHaveBeenCalledWith(currentFilters, {
+    expect(onSelectionChange).toHaveBeenCalledWith(currentFilters, {
       ...currentBoardFilters,
       holdsFilter: { '99': { HAND: 'include' } },
     });
   });
 
   it('pushes the zone route and applies the handed-back zone + pruned holds', () => {
-    const onApply = vi.fn();
-    const { getByLabelText, getByText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByLabelText, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
 
@@ -1025,9 +1070,9 @@ describe('ClimbFilterSheet sub-pickers', () => {
       });
     });
     simulateScreenRefocus();
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    closeAndFinish(getByText('close'));
 
-    expect(onApply).toHaveBeenCalledWith(currentFilters, {
+    expect(onSelectionChange).toHaveBeenCalledWith(currentFilters, {
       holdsFilter: { '77': { FOOT: 'include' } },
       zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
       zoneMode: 'allHolds',
@@ -1175,29 +1220,29 @@ describe('ClimbFilterSheet Other angles switch', () => {
   });
 
   it('applies includeOtherAngles when turned on', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ boardConfig: woodsBoardConfig, onApply });
+    const onSelectionChange = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ boardConfig: woodsBoardConfig, onSelectionChange });
 
     fireEvent.click(getByTestId(otherAnglesSwitchId));
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    closeAndFinish(getByText('close'));
 
-    const appliedFilters = onApply.mock.calls.at(-1)?.[0] as ClimbFilters | undefined;
+    const appliedFilters = onSelectionChange.mock.calls.at(-1)?.[0] as ClimbFilters | undefined;
     expect(appliedFilters?.includeOtherAngles).toBe(true);
   });
 
   it('clears it back to undefined when turned off, so the filter reads as inactive', () => {
-    const onApply = vi.fn();
+    const onSelectionChange = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({
       boardConfig: woodsBoardConfig,
       currentFilters: { ...currentFilters, includeOtherAngles: true },
-      onApply,
+      onSelectionChange,
     });
 
     expect(getByTestId(otherAnglesSwitchId).getAttribute('data-value')).toBe('true');
     fireEvent.click(getByTestId(otherAnglesSwitchId));
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    closeAndFinish(getByText('close'));
 
-    const appliedFilters = onApply.mock.calls.at(-1)?.[0] as ClimbFilters | undefined;
+    const appliedFilters = onSelectionChange.mock.calls.at(-1)?.[0] as ClimbFilters | undefined;
     expect(appliedFilters).toBeDefined();
     expect(appliedFilters?.includeOtherAngles).toBeUndefined();
   });
@@ -1206,7 +1251,7 @@ describe('ClimbFilterSheet Other angles switch', () => {
 // Kilter's app counts a climb once per angle, so its totals run about double
 // ours. The note under Show explains that, and only where the comparison exists.
 describe('ClimbFilterSheet climb-count note', () => {
-  it('shows the note under Show on a Kilter board', () => {
+  it('shows the explanation beneath the matching count on a Kilter board', () => {
     const { queryByText } = renderFilterSheet();
 
     expect(queryByText('mobile.filter.countNote')).not.toBeNull();
@@ -1227,17 +1272,17 @@ describe('ClimbFilterSheet climb-count note', () => {
 
 describe('ClimbFilterSheet random sort', () => {
   it('shows a reshuffle button for random and mints a fresh seed on tap', () => {
-    const onApply = vi.fn();
+    const onSelectionChange = vi.fn();
     // Start already on random with an old seed; the reshuffle button must overwrite it.
     const { getByText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       currentFilters: { ...currentFilters, sortBy: 'random', sortSeed: 'old' },
     });
 
     fireEvent.click(getByText('mobile.filter.sort.reshuffle'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    closeAndFinish(getByText('close'));
 
-    const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
+    const applied = onSelectionChange.mock.calls.at(-1)?.[0] as ClimbFilters;
     expect(applied.sortBy).toBe('random');
     // newSortSeed is mocked to '424242', so the stale 'old' seed is replaced.
     expect(applied.sortSeed).toBe('424242');
@@ -1296,46 +1341,73 @@ describe('ClimbFilterSheet flat sections', () => {
   });
 
   it('applies onlyRatedByMe when the rated-by-me switch is turned on', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    closeAndFinish(getByText('close'));
 
-    const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
+    const applied = onSelectionChange.mock.calls.at(-1)?.[0] as ClimbFilters;
     expect(applied.onlyRatedByMe).toBe(true);
   });
 
   it('selecting the "Unrepeated" popularity bucket sets status to projects', () => {
-    const onApply = vi.fn();
-    const { getByLabelText, getByText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByLabelText, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByLabelText('mobile.filter.popularityUnrepeated'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    closeAndFinish(getByText('close'));
 
-    const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
+    const applied = onSelectionChange.mock.calls.at(-1)?.[0] as ClimbFilters;
     expect(applied.status).toBe('projects');
   });
 
+  it('publishes the Collection transition atomically, clearing Benchmarks when selecting My drafts', () => {
+    const onSelectionChange = vi.fn();
+    const { getByTestId } = renderFilterSheet({
+      onSelectionChange,
+      currentBoardFilters: { ...currentBoardFilters, onlyBenchmarks: true },
+    });
+    fireEvent.click(getByTestId('segment-drafts'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'drafts' }), {
+      ...currentBoardFilters,
+      onlyBenchmarks: undefined,
+    });
+  });
+
+  it('keeps Popularity when Collection changes without leaving My drafts', () => {
+    const onSelectionChange = vi.fn();
+    const { getByTestId } = renderFilterSheet({
+      onSelectionChange,
+      currentFilters: { ...currentFilters, minAscents: 10 },
+    });
+    fireEvent.click(getByTestId('segment-benchmarks'));
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      { ...currentFilters, minAscents: 10 },
+      { ...currentBoardFilters, onlyBenchmarks: true },
+    );
+  });
+
   it('selecting Collection "My drafts" sets status to drafts', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByTestId('segment-drafts'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).status).toBe('drafts');
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange.mock.calls.at(-1)?.[0]).toMatchObject({ status: 'drafts' });
   });
 
   it('selecting Collection "Benchmarks" clears a drafts status (mutually exclusive)', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+    const onSelectionChange = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByTestId('segment-drafts'));
     fireEvent.click(getByTestId('segment-benchmarks'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    const call = onApply.mock.calls.at(-1);
-    expect((call?.[0] as ClimbFilters).status).toBe('any');
-    expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBe(true);
+    closeAndFinish(getByText('close'));
+    const call = onSelectionChange.mock.calls.at(-1);
+    expect(call?.[0]).toMatchObject({ status: 'any' });
+    expect(call?.[1]).toMatchObject({ onlyBenchmarks: true });
   });
 });
 
@@ -1343,21 +1415,50 @@ describe('ClimbFilterSheet flat sections', () => {
 // term in place (no wire existed to clear it), and the maintainer separately
 // asked for the name to be a visible, editable first row in the sheet.
 describe('ClimbFilterSheet name field (#3606)', () => {
-  it('clears the name via onClearName on Reset, but NOT on Apply', () => {
-    // Reset is only enabled while the draft has active filters.
-    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+  it('publishes Reset once with both filter groups cleared, without closing', () => {
+    const onSelectionChange = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByText } = renderFilterSheet({ searchName: 'crimp', onSelectionChange, onDismiss });
+    fireEvent.click(getByText('mobile.filter.reset'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      { sortBy: 'popular', sortOrder: 'desc', status: 'any', boulders: true, routes: false },
+      {},
+    );
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(bottomSheetModalProps.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('clears the name via Reset and leaves Close free of clearing or selection side effects', () => {
     const onClearName = vi.fn();
-    const onApply = vi.fn();
-    const { getByText } = renderFilterSheet({ searchName: 'crimpy', onClearName, onApply });
-
-    // Guards against the wiring landing on the wrong button — a plausible
-    // copy-paste inversion given Reset/Apply sit in the same header/footer.
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onClearName).not.toHaveBeenCalled();
-    expect(onApply).toHaveBeenCalledTimes(1);
-
+    const onSelectionChange = vi.fn();
+    const { getByText } = renderFilterSheet({ searchName: 'crimpy', onClearName, onSelectionChange });
     fireEvent.click(getByText('mobile.filter.reset'));
     expect(onClearName).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    closeAndFinish(getByText('close'));
+    expect(onClearName).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not clear a name when the sheet is swiped away', () => {
+    const onClearName = vi.fn();
+    const onSelectionChange = vi.fn();
+    renderFilterSheet({ searchName: 'crimpy', onClearName, onSelectionChange });
+    simulateNativeClose();
+    expect(onClearName).not.toHaveBeenCalled();
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('ignores name input and inline clear after the board or angle changes', () => {
+    const onNameChange = vi.fn();
+    const onClearName = vi.fn();
+    const rendered = renderFilterSheet({ searchName: 'old-board-name', onNameChange, onClearName });
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, angle: 45 }} />);
+    fireEvent.change(rendered.getByLabelText('mobile.filter.section.name'), { target: { value: 'late text' } });
+    fireEvent.click(rendered.getByLabelText('actions.clear'));
+    expect(onNameChange).not.toHaveBeenCalled();
+    expect(onClearName).not.toHaveBeenCalled();
   });
 
   // The issue's literal repro: a lone climb-name search with every other control
@@ -1429,7 +1530,7 @@ describe('ClimbFilterSheet name field (#3606)', () => {
     expect(input.value).toBe('sloper ');
   });
 
-  it('reflects an in-sheet name edit in the "Show N" preview after the debounce', () => {
+  it('reflects an in-sheet name edit in the matching count after the debounce', () => {
     vi.useFakeTimers();
     try {
       const { getByLabelText } = renderFilterSheet();
@@ -1470,17 +1571,17 @@ describe('ClimbFilterSheet without a Holds filter', () => {
 });
 
 // #5659 review: on iOS a locked Tall/Wide (chip-row lock) must survive the sheet's
-// draft too, or the "Show N" count is taken without it while Apply's list gets it
+// selection too, or the matching count is taken without it while the list gets it
 // back from the lock.
 describe('ClimbFilterSheet with a locked Tall/Wide', () => {
   // Kilter Homewall 10x12: both Tall and Wide apply.
   const homewall = { ...boardConfig, layoutId: 8, sizeId: 25 };
 
-  it('keeps a locked dimension in the draft through Reset', () => {
+  it('keeps a locked dimension in the live selection through Reset', () => {
     filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
-    const onApply = vi.fn();
+    const onSelectionChange = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       boardConfig: homewall,
       currentFilters: { ...currentFilters, onlyTallClimbs: true, onlyWideClimbs: true },
       lockedDimensions: { tall: true, wide: false },
@@ -1490,8 +1591,8 @@ describe('ClimbFilterSheet with a locked Tall/Wide', () => {
 
     expect(getByTestId('switch-mobile.filter.tall').getAttribute('data-value')).toBe('true');
     expect(getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('false');
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    const [appliedFilters] = onApply.mock.calls[0] as [ClimbFilters, ClimbBoardFilterState];
+    closeAndFinish(getByText('close'));
+    const [appliedFilters] = onSelectionChange.mock.calls[0] as [ClimbFilters, ClimbBoardFilterState];
     expect(appliedFilters.onlyTallClimbs).toBe(true);
     expect(appliedFilters.onlyWideClimbs).toBeFalsy();
     // Reset still cleared everything else.
@@ -1499,9 +1600,9 @@ describe('ClimbFilterSheet with a locked Tall/Wide', () => {
   });
 
   it('holds a locked switch on and ignores taps on it, while an unlocked one still toggles', () => {
-    const onApply = vi.fn();
+    const onSelectionChange = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       boardConfig: homewall,
       currentFilters: { ...currentFilters, onlyTallClimbs: true },
       lockedDimensions: { tall: true, wide: false },
@@ -1516,8 +1617,8 @@ describe('ClimbFilterSheet with a locked Tall/Wide', () => {
     fireEvent.click(wideSwitch);
     expect(wideSwitch.getAttribute('data-value')).toBe('true');
 
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith(
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledWith(
       expect.objectContaining({ onlyTallClimbs: true, onlyWideClimbs: true }),
       currentBoardFilters,
     );
@@ -1540,11 +1641,11 @@ describe('ClimbFilterSheet with a locked Tall/Wide', () => {
 
   // Review of 8a0ac8b14: a pin toggle in the sheet rebuilt `lockedDimensions` on
   // the screen, re-ran the parent sync and put back every filter Reset had cleared.
-  it('keeps a Reset draft reset when the screen re-renders with an equal but new lockedDimensions', () => {
+  it('keeps the committed Reset when the screen re-renders with an equal but new lockedDimensions', () => {
     filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
-    const onApply = vi.fn();
+    const onSelectionChange = vi.fn();
     const rendered = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       boardConfig: homewall,
       currentFilters: { ...currentFilters, onlyWideClimbs: true },
       lockedDimensions: { tall: false, wide: false },
@@ -1557,23 +1658,27 @@ describe('ClimbFilterSheet with a locked Tall/Wide', () => {
     rendered.rerender(<ClimbFilterSheet {...rendered.props} lockedDimensions={{ tall: false, wide: false }} />);
 
     expect(rendered.getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('false');
-    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
-    const [appliedFilters] = onApply.mock.calls[0] as [ClimbFilters, ClimbBoardFilterState];
+    closeAndFinish(rendered.getByText('close'));
+    const [appliedFilters] = onSelectionChange.mock.calls[0] as [ClimbFilters, ClimbBoardFilterState];
     expect(appliedFilters.onlyWideClimbs).toBeFalsy();
     expect(appliedFilters.setter).toBeUndefined();
   });
 
-  it('seeds a locked dimension into the draft even before the lock has re-applied it', () => {
-    const onApply = vi.fn();
+  it('renders and publishes a locked dimension even before the lock has re-applied it', () => {
+    const onSelectionChange = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       boardConfig: homewall,
       lockedDimensions: { tall: false, wide: true },
     });
 
     expect(getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('true');
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ onlyWideClimbs: true }), currentBoardFilters);
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      expect.objectContaining({ onlyWideClimbs: true }),
+      currentBoardFilters,
+    );
   });
 });
 

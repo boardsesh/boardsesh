@@ -495,6 +495,10 @@
       "benchmark": "Benchmarks",
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
+      "close": "Cerrar filtros",
+      "automaticChanges": "Los cambios se aplican automáticamente",
+      "matchingCount_one": "{{count}} bloque",
+      "matchingCount_other": "{{count}} bloques",
       "countNote": "Cada bloque cuenta una vez, no una por ángulo.",
       "sort": {
         "ascents": "Ascensos",

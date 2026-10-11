@@ -88,16 +88,15 @@ type ClimbFilterSheetProps = {
   boardConfig: BoardSearchConfig | null;
   currentFilters: ClimbFilters;
   currentBoardFilters: ClimbBoardFilterState;
-  /** Current committed name term, so the live "Show N" count matches Apply and
-   *  the in-sheet name field seeds correctly. */
+  /** Current committed name term; seeds the name field and matching count. */
   searchName?: string;
   /** Last-used grade id; centres the grade rail on a familiar grade when unset. */
   lastUsedGradeId?: number;
-  onApply: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
+  /** Commits a selection immediately without closing the sheet. */
+  onSelectionChange: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
   /** Fired per keystroke as the in-sheet name field changes (mirrors into the
-   *  parent's live search — name is committed outside the Apply-gated draft
-   *  model, same as the top-bar search field). Required: the sheet only owns the
-   *  field's display state, so an unwired caller would render a name field that
+   *  parent's live search, same as the top-bar search field). Required: the sheet
+   *  only owns the field's display state, so an unwired caller would render a name field that
    *  looks like it filters and doesn't. */
   onNameChange: (text: string) => void;
   /** Fired by Reset and the field's inline × — the ONE clearing path for name,
@@ -108,8 +107,8 @@ type ClimbFilterSheetProps = {
   /**
    * Tall/Wide dimensions whose chip-row lock is in force (iOS only; see
    * lib/dimension-chips.ts). Their switch shows on and is disabled, and the
-   * draft keeps them set (seeded and through Reset), so the "Show N" count
-   * matches the list the lock will enforce after Apply.
+   * selection keeps them set (including through Reset), so the matching count
+   * agrees with the list.
    */
   lockedDimensions?: LockedDimensions;
 };
@@ -121,9 +120,8 @@ type ClimbFilterSheetProps = {
 // Popularity buckets; the enum value survives only for recent-filter replay.
 
 // `statusForAuth` (in ../lib/climb-filter-types) coerces a persisted signed-out
-// `drafts` status to `any` at the SOURCE — the moment filters enter local state —
-// so the "My drafts" switch never renders one frame on for a signed-out user.
-// Applied in the useState initializer + the parent-sync effect.
+// `drafts` status to `any` before rendering or publishing selections, so the
+// sheet never shows signed-out draft controls or commits an invalid selection.
 
 // Popularity buckets consolidate the old min-ascents chips + the "established"
 // status into one control. undefined = Any; 2 = Established (≥2 ascents). The
@@ -174,10 +172,10 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
   );
 }
 
-// Identifies the wall a filter draft was built for. Setter, holds and zone
-// filters only mean something on that board, so a draft never outlives it.
+// A presentation belongs to one board and angle. Late native closes and
+// sub-picker results must not affect a search that replaced that scope.
 function boardKeyOf(config: BoardSearchConfig | null): string | null {
-  return config ? `${config.boardName}|${config.layoutId}|${config.sizeId}|${config.setIds}` : null;
+  return config ? `${config.boardName}|${config.layoutId}|${config.sizeId}|${config.setIds}|${config.angle}` : null;
 }
 
 export function hasActiveFilters(filters: ClimbFilters): boolean {
@@ -191,7 +189,7 @@ export function ClimbFilterSheet({
   currentBoardFilters,
   searchName,
   lastUsedGradeId,
-  onApply,
+  onSelectionChange,
   onNameChange,
   onClearName,
   lockedDimensions = NO_LOCKED_DIMENSIONS,
@@ -219,20 +217,17 @@ export function ClimbFilterSheet({
   // The epoch whose offset has already been restored — makes the restore in
   // onContentSizeChange one-shot per remount, not re-fire on later content growth.
   const restoredScrollEpochRef = useRef(0);
-  const hasLocalDraftEditsRef = useRef(false);
-  // The draft Apply snapshotted, committed once the native close arrives (see
-  // handleApply). Non-null also blocks a second Apply and the sub-picker openers.
-  // `boardKey` is the board the draft was built for (see the unmount fallback).
-  const pendingApplyRef = useRef<{
-    filters: ClimbFilters;
-    boardFilters: ClimbBoardFilterState;
-    boardKey: string | null;
-  } | null>(null);
-  // Latest board, read by the unmount fallback after props are gone.
-  const boardConfigRef = useRef(boardConfig);
-  boardConfigRef.current = boardConfig;
-  // False once unmounted, so a close delivered late through a stale closure is ignored.
+  const presentationBoardKeyRef = useRef(boardKeyOf(boardConfig));
+  const boardKeyRef = useRef(boardKeyOf(boardConfig));
+  boardKeyRef.current = boardKeyOf(boardConfig);
+  // Native callbacks can arrive after unmount, or after a close already finished.
   const isMountedRef = useRef(true);
+  const closingRef = useRef(false);
+  const dismissedRef = useRef(false);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
   const boardName = boardConfig?.boardName ?? '';
   const { data: grades } = useGrades(boardName);
   // Kilter's app counts one row per (climb, angle); see docs/kilter-sync.md.
@@ -243,27 +238,26 @@ export function ClimbFilterSheet({
   // still be undone from here.
   const isSprayWall = boardName === SPRAY_BOARD_NAME;
 
-  const [localFilters, setLocalFilters] = useState<ClimbFilters>(() =>
-    withLockedDimensions(statusForAuth(normalizeRetiredFilters(currentFilters), isAuthenticated), lockedDimensions),
+  // The parent owns the committed selection. Refs also capture a just-published
+  // change, so two handlers in one event never build on an older render.
+  const selectedFilters = useMemo(
+    () =>
+      withLockedDimensions(statusForAuth(normalizeRetiredFilters(currentFilters), isAuthenticated), lockedDimensions),
+    [currentFilters, isAuthenticated, lockedDimensions],
   );
-  const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
-  // The name field's own draft — seeded from the committed `searchName` prop.
-  // Name lives outside the Apply-gated draft model (it's committed live via the
-  // parent's debounce, same as the top-bar search field), so this is a plain
-  // display draft, not part of localFilters/DEFAULT_FILTERS.
+  const selectedBoardFilters = currentBoardFilters;
+  const selectedFiltersRef = useRef(selectedFilters);
+  selectedFiltersRef.current = selectedFilters;
+  const selectedBoardFiltersRef = useRef(selectedBoardFilters);
+  selectedBoardFiltersRef.current = selectedBoardFilters;
+  const normalizationRef = useRef({ isAuthenticated, lockedDimensions });
+  normalizationRef.current = { isAuthenticated, lockedDimensions };
+
+  // Only the name field keeps a display draft, matching the parent search bar's
+  // debounce and preserving a trailing space while the climber types.
   const [nameDraft, setNameDraft] = useState(searchName ?? '');
-  // Ref snapshot of the draft, read (not the reactive `nameDraft`) inside the
-  // resync effect below so the effect's own deps stay just [searchName] — same
-  // shape as the parent's top-bar sync effect, which reads visibleSearchTextRef.
   const nameDraftRef = useRef(nameDraft);
   nameDraftRef.current = nameDraft;
-  // Latest-draft snapshots for the setter handoff's apply path, which runs from a
-  // pub/sub listener and must apply the draft as it is now, not as of subscribe.
-  const localFiltersRef = useRef(localFilters);
-  localFiltersRef.current = localFilters;
-  const localBoardFiltersRef = useRef(localBoardFilters);
-  localBoardFiltersRef.current = localBoardFilters;
-
   // Resync the field from an external `searchName` change (board switch, recent
   // pill, cancel) — but ignore a trim-only difference, exactly like the parent's
   // own top-bar sync effect (packages/mobile/app/(tabs)/climbs/index.tsx), so a
@@ -274,8 +268,8 @@ export function ClimbFilterSheet({
   }, [searchName]);
   // The sub-pickers (setters / holds / zone) are pushed routes, not stacked
   // sheets (native sheets can't stack above this one). While a sub-route is open
-  // we suspend — dismiss the native sheet without unmounting, so the draft below
-  // survives — and re-present on focus when the route pops. pendingResumeRef
+  // we suspend — dismiss the native sheet without unmounting, preserving its scroll
+  // position — and re-present on focus when the route pops. pendingResumeRef
   // distinguishes "returned from a sub-route" from the initial focus-on-mount.
   const router = useRouter();
   const [suspended, setSuspended] = useState(false);
@@ -289,42 +283,17 @@ export function ClimbFilterSheet({
   // its native host each present; this just makes the code path uniform).
   const [presentEpoch, setPresentEpoch] = useState(0);
 
-  // Read through a ref, NOT listed as a dep of the sync below: after Reset clears
-  // hasLocalDraftEditsRef, any re-run of that sync re-seeds the draft from the
-  // committed filters and so undoes the Reset. A lock that changes while the
-  // sheet is open still shows, because each switch reads `lockedDimensions`.
-  const lockedDimensionsRef = useRef(lockedDimensions);
-  lockedDimensionsRef.current = lockedDimensions;
+  const isCurrentPresentation = useCallback(
+    () => isMountedRef.current && !dismissedRef.current && presentationBoardKeyRef.current === boardKeyRef.current,
+    [],
+  );
 
-  // Sync committed parent filters only until the user starts editing. After that,
-  // local edits are draft-only until Apply and must not be overwritten by parent
-  // ref churn while the sheet is open.
   useEffect(() => {
-    if (hasLocalDraftEditsRef.current) return;
-    // These direct setters intentionally bypass the draft-guard wrappers:
-    // parent prop sync should not mark committed state as an in-flight edit.
-    setLocalFilters(
-      withLockedDimensions(
-        statusForAuth(normalizeRetiredFilters(currentFilters), isAuthenticated),
-        lockedDimensionsRef.current,
-      ),
-    );
-    setLocalBoardFilters(currentBoardFilters);
-  }, [currentFilters, currentBoardFilters, isAuthenticated]);
-
-  // Safety net for an auth flip while the user is mid-edit. The parent-sync effect
-  // also reacts to isAuthenticated, but it early-returns once there are local draft
-  // edits — so it won't coerce then. This effect has no edit guard, so it still drops
-  // a now-invalid drafts status if the user signs out with unsaved filter edits open.
-  // (When not editing, both effects fire and set the same value — idempotent.) Direct
-  // setter (not a user edit); statusForAuth returns the same reference when there's
-  // nothing to change, so it can't loop or churn.
-  useEffect(() => {
-    if (isAuthenticated) return;
-    // Past the guard isAuthenticated is always false; pass the literal to make the
-    // "drop drafts" intent explicit at the call site.
-    setLocalFilters((previous) => statusForAuth(previous, false));
-  }, [isAuthenticated]);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const detentSnapPoints = useMemo(() => [`${SHEET_DETENT_FRACTION * 100}%`], []);
   const snapPoints = useMemo(() => androidSafeSnapPoints(detentSnapPoints), [detentSnapPoints]);
@@ -333,9 +302,8 @@ export function ClimbFilterSheet({
   // scrolls, and the rows past the detent are unreachable (#3330). The shared
   // hook pins the column to this single detent's height; Android bounds the
   // column natively, so it keeps flex:1. This sheet stays on the raw native
-  // sheet rather than ModalSheet because Apply commits from the native close
-  // (see handleApply) and the sub-picker round trip restores the scroll offset
-  // through its own scroll ref, neither of which the wrapper exposes.
+  // sheet rather than ModalSheet because the sub-picker round trip restores
+  // the scroll offset through its own scroll ref.
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
   // The sheet mounts only while open, and has one detent: nothing to raise.
   const {
@@ -368,13 +336,13 @@ export function ClimbFilterSheet({
   // rest; elsewhere a climb is not tied to one angle, so there is nothing to widen.
   const showOtherAnglesControl = getBoardCapabilities(boardName).angleBoundClimbs;
 
-  // Live "Show N" preview for the in-progress edits (matches what Apply yields).
+  // Matching count for the committed selections.
   // Debounced so rapid chip/toggle taps — and now keystrokes in the name field —
   // don't each fire a count request. `name` rides along so an in-sheet name edit
   // is reflected in the preview the same way a chip/toggle edit is.
   const [debouncedEdits, setDebouncedEdits] = useState({
-    filters: localFilters,
-    boardFilters: localBoardFilters,
+    filters: selectedFilters,
+    boardFilters: selectedBoardFilters,
     name: nameDraft,
   });
   // Set by the sub-picker handoffs (setters / holds / zone). A handed-back result
@@ -382,7 +350,7 @@ export function ClimbFilterSheet({
   // once and the count is already loading (or cached) when the sheet re-presents.
   const flushPreviewRef = useRef(false);
   useEffect(() => {
-    const nextEdits = { filters: localFilters, boardFilters: localBoardFilters, name: nameDraft };
+    const nextEdits = { filters: selectedFilters, boardFilters: selectedBoardFilters, name: nameDraft };
     if (flushPreviewRef.current) {
       flushPreviewRef.current = false;
       setDebouncedEdits(nextEdits);
@@ -390,7 +358,7 @@ export function ClimbFilterSheet({
     }
     const handle = setTimeout(() => setDebouncedEdits(nextEdits), 250);
     return () => clearTimeout(handle);
-  }, [localFilters, localBoardFilters, nameDraft]);
+  }, [selectedFilters, selectedBoardFilters, nameDraft]);
   // Built with the same helper the setters route uses for its own count, so both
   // screens share one React Query key for the same picks.
   const previewInput = useMemo(() => {
@@ -473,41 +441,64 @@ export function ClimbFilterSheet({
     [t],
   );
 
-  const updateLocalFilters = useCallback((nextFilters: SetStateAction<ClimbFilters>) => {
-    hasLocalDraftEditsRef.current = true;
-    setLocalFilters(nextFilters);
-  }, []);
+  const publishSelection = useCallback(
+    (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => {
+      if (!isCurrentPresentation() || closingRef.current) return;
+      const { isAuthenticated: authenticated, lockedDimensions: locked } = normalizationRef.current;
+      const nextFilters = withLockedDimensions(statusForAuth(normalizeRetiredFilters(filters), authenticated), locked);
+      selectedFiltersRef.current = nextFilters;
+      selectedBoardFiltersRef.current = boardFilters;
+      onSelectionChangeRef.current(nextFilters, boardFilters);
+    },
+    [isCurrentPresentation],
+  );
 
-  const updateLocalBoardFilters = useCallback((nextBoardFilters: SetStateAction<ClimbBoardFilterState>) => {
-    hasLocalDraftEditsRef.current = true;
-    setLocalBoardFilters(nextBoardFilters);
-  }, []);
+  const updateFilters = useCallback(
+    (nextFilters: SetStateAction<ClimbFilters>) => {
+      const filters = typeof nextFilters === 'function' ? nextFilters(selectedFiltersRef.current) : nextFilters;
+      publishSelection(filters, selectedBoardFiltersRef.current);
+    },
+    [publishSelection],
+  );
+
+  const updateBoardFilters = useCallback(
+    (nextBoardFilters: SetStateAction<ClimbBoardFilterState>) => {
+      const boardFilters =
+        typeof nextBoardFilters === 'function' ? nextBoardFilters(selectedBoardFiltersRef.current) : nextBoardFilters;
+      publishSelection(selectedFiltersRef.current, boardFilters);
+    },
+    [publishSelection],
+  );
 
   const setFiltersPatch = useCallback(
     (patch: Partial<ClimbFilters>) => {
-      updateLocalFilters((previous) => ({ ...previous, ...patch }));
+      updateFilters((previous) => ({ ...previous, ...patch }));
     },
-    [updateLocalFilters],
+    [updateFilters],
   );
 
   // Per-keystroke: update the field's own display state immediately, and mirror
   // the raw text out to the parent (which commits it live via its own debounce —
-  // name is not part of the Apply-gated draft, see the `nameDraft` comment above).
+  // name is independent of the filter selection, see `nameDraft` above).
   const handleNameTextChange = useCallback(
     (text: string) => {
+      if (!isCurrentPresentation() || closingRef.current) return;
+      nameDraftRef.current = text;
       setNameDraft(text);
       onNameChange(text);
     },
-    [onNameChange],
+    [isCurrentPresentation, onNameChange],
   );
 
   // The ONE clearing path for name, shared by the inline × and Reset (#3606) —
   // clears the field's own display state and asks the parent to clear the
   // committed name + the top-bar/native-search-bar mirror.
   const handleClearNameField = useCallback(() => {
+    if (!isCurrentPresentation() || closingRef.current) return;
+    nameDraftRef.current = '';
     setNameDraft('');
     onClearName();
-  }, [onClearName]);
+  }, [isCurrentPresentation, onClearName]);
 
   const handleSortByChange = useCallback(
     (sortBy: SortOption) =>
@@ -525,23 +516,31 @@ export function ClimbFilterSheet({
   );
   const handleStatusChange = useCallback(
     (status: StatusFilter) => {
-      updateLocalFilters((previous) => ({ ...previous, ...applyStatusChange(previous, status) }));
+      updateFilters((previous) => ({ ...previous, ...applyStatusChange(previous, status) }));
     },
-    [updateLocalFilters],
+    [updateFilters],
   );
   // Collection — a single-select over Benchmarks (board filter) + My drafts
   // (status), which are mutually exclusive. Selecting one clears the other; only a
   // lingering *drafts* status is cleared (never 'projects'/Unrepeated, which lives
   // in the Popularity group and can coexist with Benchmarks).
   const handleCollectionChange = useCallback(
-    (value: CollectionFilter) => {
-      updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value === 'benchmarks' || undefined }));
-      if (value === 'drafts') handleStatusChange('drafts');
-      else if (localFilters.status === 'drafts') handleStatusChange('any');
+    (collection: CollectionFilter) => {
+      const filters = selectedFiltersRef.current;
+      const nextFilters =
+        collection === 'drafts'
+          ? { ...filters, ...applyStatusChange(filters, 'drafts') }
+          : filters.status === 'drafts'
+            ? { ...filters, ...applyStatusChange(filters, 'any') }
+            : filters;
+      publishSelection(nextFilters, {
+        ...selectedBoardFiltersRef.current,
+        onlyBenchmarks: collection === 'benchmarks' || undefined,
+      });
     },
-    [updateLocalBoardFilters, handleStatusChange, localFilters.status],
+    [publishSelection],
   );
-  const collectionFilter = getCollectionFilter(localFilters, localBoardFilters);
+  const collectionFilter = getCollectionFilter(selectedFilters, selectedBoardFilters);
   const offerBenchmarks = !isSprayWall || collectionFilter === 'benchmarks';
   const collectionOptions = useMemo(
     () => [
@@ -563,13 +562,13 @@ export function ClimbFilterSheet({
       // radio's projects→any transition (applyStatusChange('any') = same fields).
       // Drafts is a separate switch now, so it's only cleared by a numeric bucket
       // (which drafts would render inert), never by tapping "Any".
-      updateLocalFilters((previous) => {
+      updateFilters((previous) => {
         const clearsProjects = previous.status === 'projects';
         const clearsDrafts = bucket != null && previous.status === 'drafts';
         return { ...previous, minAscents: bucket, ...(clearsProjects || clearsDrafts ? { status: 'any' } : {}) };
       });
     },
-    [updateLocalFilters],
+    [updateFilters],
   );
   const handleAccuracyChange = useCallback(
     (value: GradeAccuracyValue | 'off') => setFiltersPatch({ gradeAccuracy: value === 'off' ? undefined : value }),
@@ -577,15 +576,15 @@ export function ClimbFilterSheet({
   );
   const handleGradeChange = useCallback(
     (grade: { minGradeId: number | undefined; maxGradeId: number | undefined }) => {
-      updateLocalFilters((previous) => ({ ...previous, minGrade: grade.minGradeId, maxGrade: grade.maxGradeId }));
+      updateFilters((previous) => ({ ...previous, minGrade: grade.minGradeId, maxGrade: grade.maxGradeId }));
     },
-    [updateLocalFilters],
+    [updateFilters],
   );
   // Climb-type toggle (main's #2496 control). A 3-way control means there's no
   // UI path to "neither", so the never-both-off invariant is structural (see
   // toClimbSearchInput). "Both" = show everything; boulders-only is the default.
   // Same derivation as the chip row (getClimbTypeFilter) so they never disagree.
-  const climbTypeKey = getClimbTypeFilter(localFilters);
+  const climbTypeKey = getClimbTypeFilter(selectedFilters);
   const showClimbTypeControl = !isSprayWall || climbTypeKey !== 'boulders';
   const handleClimbTypeChange = useCallback(
     (key: string) => {
@@ -604,69 +603,20 @@ export function ClimbFilterSheet({
     [t],
   );
 
-  // Apply commits in the close callback, not on the tap. Committing on the tap
-  // made the parent unmount this sheet in the same render as the dismiss, so the
-  // native slide-down never played and the list swapped under a vanishing sheet.
-  // The draft is snapshotted here; the draft-edits guard stays set until the
-  // close so a parent re-sync can't revert the controls while the sheet slides.
-  const handleApply = useCallback(() => {
-    if (pendingApplyRef.current) return;
-    pendingApplyRef.current = {
-      filters: localFilters,
-      boardFilters: localBoardFilters,
-      boardKey: boardKeyOf(boardConfigRef.current),
-    };
-    // Dismiss the raw native ref directly (not via the coordinator handle). This
-    // is intentional and safe: the resulting native onChange(-1) routes back
-    // through managed.onChange → onClose (handleSheetDismiss, which commits the
-    // snapshot) → coordinator.notifyClosed, which opens the settle window. Keep
-    // it that way — don't assume the coordinator drove this close.
+  // All selections are committed already. Closing only waits for the native
+  // animation before releasing the parent, and can never discard a last edit.
+  const handleClose = useCallback(() => {
+    if (!isCurrentPresentation() || closingRef.current || pendingResumeRef.current) return;
+    closingRef.current = true;
     sheetRef.current?.dismiss();
-  }, [localFilters, localBoardFilters]);
+  }, [isCurrentPresentation]);
 
-  // Latest callbacks for the close handler, the unmount fallback and the setter
-  // handoff listener. The parent's onApply changes on every search keystroke;
-  // reading it through a ref keeps those stable instead of re-created each time.
-  const onApplyRef = useRef(onApply);
-  onApplyRef.current = onApply;
-  const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
-
-  // The native close: iOS fires it from SwiftUI's onDismiss after the slide-down,
-  // Android after hide() settles (the patched wrapper runs it even when the native
-  // call rejects), and a pan-down or a displacement takes the same path. A pending
-  // Apply commits first, then the parent closes; without one the draft is dropped.
-  // Reads the callbacks at close time, so a parent re-render during the slide-down
-  // commits through the latest onApply.
   const handleSheetDismiss = useCallback(() => {
-    // SwiftUI can still deliver onDismiss after the parent tore the sheet down
-    // mid-slide. The unmount fallback already handled that Apply, and closing now
-    // would shut a Filters sheet the climber has since reopened.
-    if (!isMountedRef.current) return;
-    hasLocalDraftEditsRef.current = false;
-    const pendingApply = pendingApplyRef.current;
-    pendingApplyRef.current = null;
-    if (pendingApply) onApplyRef.current(pendingApply.filters, pendingApply.boardFilters);
+    if (!isCurrentPresentation() || pendingResumeRef.current || suspended) return;
+    dismissedRef.current = true;
+    closingRef.current = true;
     onDismissRef.current();
-  }, []);
-
-  // Fallback for a close that never arrives: the parent can tear the sheet down
-  // mid-slide (the grade chip or native search cancel flip its open state), and a
-  // SwiftUI host removed mid-animation never delivers onDismiss. The tap already
-  // meant "apply", so commit it rather than silently dropping it. Skipped when the
-  // board changed underneath (a board switch unmounts the sheet too): that draft's
-  // setter, holds and zone filters belong to the old board.
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      // Marked first, so a late native close can't also act on this Apply.
-      isMountedRef.current = false;
-      const pendingApply = pendingApplyRef.current;
-      pendingApplyRef.current = null;
-      if (!pendingApply || pendingApply.boardKey !== boardKeyOf(boardConfigRef.current)) return;
-      onApplyRef.current(pendingApply.filters, pendingApply.boardFilters);
-    };
-  }, []);
+  }, [isCurrentPresentation, suspended]);
 
   // The parent mounts this sheet only while it should be open, so present/dismiss
   // route through the coordinator (serialized, no overlapping native
@@ -681,17 +631,12 @@ export function ClimbFilterSheet({
   });
 
   const handleReset = useCallback(() => {
+    if (!isCurrentPresentation() || closingRef.current) return;
     hapticSelection();
-    // A locked Tall/Wide survives Reset here just as it does on the chip row.
-    updateLocalFilters(withLockedDimensions(DEFAULT_FILTERS, lockedDimensions));
-    updateLocalBoardFilters(DEFAULT_CLIMB_BOARD_FILTER_STATE);
-    // Clear the name field too (#3606) — CALLS handleClearNameField rather than
-    // repeating its two lines, so Reset and the inline × are two callers of one
-    // function, not two copies that can silently drift apart if the clearing
-    // logic grows.
+    // Publish both groups together so no query observes a half-reset selection.
+    publishSelection(DEFAULT_FILTERS, DEFAULT_CLIMB_BOARD_FILTER_STATE);
     handleClearNameField();
-    hasLocalDraftEditsRef.current = false;
-  }, [updateLocalBoardFilters, updateLocalFilters, handleClearNameField, lockedDimensions]);
+  }, [isCurrentPresentation, publishSelection, handleClearNameField]);
 
   // The Holds row is always visible now (no Refine accordion to expand), so
   // prewarm the create-board hold geometry as soon as the sheet is visible with
@@ -718,8 +663,7 @@ export function ClimbFilterSheet({
   }, []);
 
   const openSetters = useCallback(() => {
-    // Also ignored while an Apply is sliding the sheet closed.
-    if (!boardConfig || pendingResumeRef.current || pendingApplyRef.current) return;
+    if (!boardConfig || !isCurrentPresentation() || pendingResumeRef.current || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/setters',
@@ -729,22 +673,22 @@ export function ClimbFilterSheet({
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
-        setters: JSON.stringify(localFiltersRef.current.setter ?? []),
-        // The draft's count input, so the route's "Show N climbs" button counts
-        // the same search this sheet would apply, with its own picks swapped in.
-        // Read from the latest-draft refs so this callback stays stable across
+        setters: JSON.stringify(selectedFiltersRef.current.setter ?? []),
+        // The current count input, so the route's "Show N climbs" button counts
+        // the same search, with its own picks swapped in.
+        // Read from the latest-selection refs so this callback stays stable across
         // name keystrokes and filter edits.
         countInput: JSON.stringify(
           buildCountPreviewInput(
-            localFiltersRef.current,
-            localBoardFiltersRef.current,
+            selectedFiltersRef.current,
+            selectedBoardFiltersRef.current,
             boardConfig,
             nameDraftRef.current,
           ),
         ),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, router]);
+  }, [beginSubPickerSuspend, boardConfig, isCurrentPresentation, router]);
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
@@ -759,7 +703,7 @@ export function ClimbFilterSheet({
   }, [presentEpoch]);
 
   const openHoldFilter = useCallback(() => {
-    if (!boardConfig || pendingResumeRef.current || pendingApplyRef.current) return;
+    if (!boardConfig || !isCurrentPresentation() || pendingResumeRef.current || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/holds',
@@ -769,20 +713,20 @@ export function ClimbFilterSheet({
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
-        holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
-        // The draft the heatmap counts over (it drops the hold picks itself).
-        // Read from the latest-draft refs, like the setters route's count input.
+        holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
+        // The selection the heatmap counts over (it drops the hold picks itself).
+        // Read from the latest-selection refs, like the setters route's count input.
         heatmapSearch: JSON.stringify({
-          filters: localFiltersRef.current,
-          boardFilters: localBoardFiltersRef.current,
+          filters: selectedFiltersRef.current,
+          boardFilters: selectedBoardFiltersRef.current,
           searchText: nameDraftRef.current,
         }),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, localBoardFilters.holdsFilter, router]);
+  }, [beginSubPickerSuspend, boardConfig, isCurrentPresentation, router]);
 
   const openZoneFilter = useCallback(() => {
-    if (!boardConfig || pendingResumeRef.current || pendingApplyRef.current) return;
+    if (!boardConfig || !isCurrentPresentation() || pendingResumeRef.current || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/zone',
@@ -792,72 +736,65 @@ export function ClimbFilterSheet({
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
-        zoneBox: JSON.stringify(localBoardFilters.zoneBox ?? null),
-        zoneMode: localBoardFilters.zoneMode ?? 'allHolds',
-        holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
+        zoneBox: JSON.stringify(selectedBoardFiltersRef.current.zoneBox ?? null),
+        zoneMode: selectedBoardFiltersRef.current.zoneMode ?? 'allHolds',
+        holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
       },
     });
-  }, [
-    beginSubPickerSuspend,
-    boardConfig,
-    localBoardFilters.holdsFilter,
-    localBoardFilters.zoneBox,
-    localBoardFilters.zoneMode,
-    router,
-  ]);
+  }, [beginSubPickerSuspend, boardConfig, isCurrentPresentation, router]);
 
   // Re-present after a sub-picker route pops (back chevron OR swipe-back both
   // re-focus this screen). On initial mount the screen is already focused with no
   // pending resume, so this is a no-op until a sub-route has actually been pushed.
   // The setters route's "Show N climbs" button never gets here: its apply handoff
-  // applies and closes, so the parent unmounts this sheet while still suspended.
+  // commits the picks and closes, so the parent unmounts this suspended sheet.
   useFocusEffect(
     useCallback(() => {
-      if (pendingResumeRef.current) {
+      if (pendingResumeRef.current && isCurrentPresentation()) {
         pendingResumeRef.current = false;
         setSuspended(false);
         // Remount the native sheet host so the re-present is a first present (#3330).
         setPresentEpoch((epoch) => epoch + 1);
       }
-    }, []),
+    }, [isCurrentPresentation]),
   );
 
   const handleSelectedSettersChange = useCallback(
     (selectedSetters: string[], options: SetterFilterHandoffOptions) => {
-      const setter = selectedSetters.length > 0 ? selectedSetters : undefined;
-      if (options.apply) {
-        // "Show N climbs" on the setters route: apply the latest draft with the
-        // picks merged. The sheet is suspended, so no native close will come to
-        // commit it (unlike the sheet's own Apply): apply, then close the filters
-        // directly, which unmounts this suspended sheet. Clearing the pending
-        // resume makes sure the pop's refocus can't re-present it either.
-        hasLocalDraftEditsRef.current = false;
-        pendingResumeRef.current = false;
-        onApplyRef.current({ ...localFiltersRef.current, setter }, localBoardFiltersRef.current);
-        onDismissRef.current();
-        return;
-      }
+      if (!isCurrentPresentation() || closingRef.current) return;
       flushPreviewRef.current = true;
-      updateLocalFilters((previous) => ({ ...previous, setter }));
+      const setter = selectedSetters.length > 0 ? selectedSetters : undefined;
+      updateFilters((previous) => ({ ...previous, setter }));
+      if (options.apply) {
+        // The route's existing "Show N climbs" affordance means return to the
+        // list. Selection is already committed; the suspended sheet needs no
+        // second commit or native close, and must not re-present on focus.
+        pendingResumeRef.current = false;
+        dismissedRef.current = true;
+        closingRef.current = true;
+        onDismissRef.current();
+      }
     },
-    [updateLocalFilters],
+    [isCurrentPresentation, updateFilters],
   );
 
   const handleHoldsFilterChange = useCallback(
     (holdsFilter: HoldsFilter) => {
+      if (!isCurrentPresentation() || closingRef.current) return;
       flushPreviewRef.current = true;
-      updateLocalBoardFilters((previous) => ({
+      updateBoardFilters((previous) => ({
         ...previous,
         holdsFilter: Object.keys(holdsFilter).length > 0 ? holdsFilter : undefined,
       }));
     },
-    [updateLocalBoardFilters],
+    [isCurrentPresentation, updateBoardFilters],
   );
 
   const handleZoneFilterChange = useCallback(
     (selection: ZoneFilterSelection) => {
+      if (!isCurrentPresentation() || closingRef.current) return;
       flushPreviewRef.current = true;
-      updateLocalBoardFilters((previous) => {
+      updateBoardFilters((previous) => {
         const nextBoardFilters: ClimbBoardFilterState = {
           ...previous,
           zoneBox: selection.zoneBox,
@@ -870,15 +807,14 @@ export function ClimbFilterSheet({
         return nextBoardFilters;
       });
     },
-    [updateLocalBoardFilters],
+    [isCurrentPresentation, updateBoardFilters],
   );
 
   // The setter / hold / zone sub-pickers are pushed routes; each hands its result
-  // back through these handoffs when it pops (focus-cleanup), merging into the
-  // draft below. The setters route can also hand back with `apply` from its
-  // footer button, which applies instead of merging. Kept subscribed for the
-  // lifetime of the (suspended-but-mounted) sheet so the result lands even while
-  // the route is on top.
+  // back through these handoffs when it pops (focus-cleanup), committing the
+  // picks immediately. The setters route can also ask to return to the list.
+  // Kept subscribed while the sheet is suspended so results still arrive with
+  // the route on top.
   useEffect(() => {
     const unsubscribeSetters = subscribeToSetterFilterSelection(handleSelectedSettersChange);
     const unsubscribeHolds = subscribeToHoldsFilterSelection(handleHoldsFilterChange);
@@ -890,22 +826,19 @@ export function ClimbFilterSheet({
     };
   }, [handleSelectedSettersChange, handleHoldsFilterChange, handleZoneFilterChange]);
 
-  const holdFilterCount = countFilteredHolds(localBoardFilters.holdsFilter);
-  const zoneActive = localBoardFilters.zoneBox != null;
+  const holdFilterCount = countFilteredHolds(selectedBoardFilters.holdsFilter);
+  const zoneActive = selectedBoardFilters.zoneBox != null;
 
   const trackColor = systemColors.fill;
-  const accuracyValue: GradeAccuracyValue | 'off' = localFilters.gradeAccuracy ?? 'off';
-  const applyLabel =
-    previewCount != null ? t('mobile.filter.showCount', { count: previewCount }) : t('mobile.filter.apply');
-  // Reset greys out until there's actually something to reset, so the top bar
-  // isn't a second always-on violet across from Apply.
+  const accuracyValue: GradeAccuracyValue | 'off' = selectedFilters.gradeAccuracy ?? 'off';
+  // Reset greys out until there's actually something to reset.
   // The name counts as something to reset (#3606): it lives outside
   // ClimbFilters, so neither hasActive* helper can see it, and a lone climb-name
   // search — the issue's own repro — would otherwise leave Reset disabled with
   // the one thing the user wants gone still on screen. Same `.length > 0` rule
   // as the inline × below, so the two clear affordances appear together.
   const anyActive =
-    hasActiveClimbFilters(localFilters) || hasActiveBoardFilters(localBoardFilters) || nameDraft.length > 0;
+    hasActiveClimbFilters(selectedFilters) || hasActiveBoardFilters(selectedBoardFilters) || nameDraft.length > 0;
 
   return (
     <BottomSheetModal
@@ -941,8 +874,8 @@ export function ClimbFilterSheet({
       >
         <SheetTopBar
           title={t('mobile.filter.title')}
-          leading={{ kind: 'text', label: t('mobile.filter.reset'), onPress: handleReset, disabled: !anyActive }}
-          trailing={{ kind: 'forward', label: applyLabel, onPress: handleApply, prominent: true }}
+          leading={{ kind: 'close', onPress: handleClose, accessibilityLabel: t('mobile.filter.close') }}
+          trailing={{ kind: 'forward', label: t('mobile.filter.reset'), onPress: handleReset, disabled: !anyActive }}
         />
 
         <BottomSheetScrollView
@@ -954,7 +887,7 @@ export function ClimbFilterSheet({
           scrollEventThrottle={32}
           onContentSizeChange={handleScrollContentSizeChange}
           // This sheet never hosted a text input before the name field below —
-          // without this, a first tap on Apply/Reset/another row while the
+          // without this, a first tap on Close/Reset/another row while the
           // keyboard is up over the field can be swallowed (standard RN
           // ScrollView gotcha; the tap dismisses the keyboard instead of firing).
           keyboardShouldPersistTaps="handled"
@@ -962,7 +895,14 @@ export function ClimbFilterSheet({
           {/* Flat, labeled sections — no accordions. The scroll body is one column
               child (styles.body) so the native sheet scrolls. */}
           <View style={styles.body}>
-            {/* What the "Show N climbs" count in the top bar counts. */}
+            {previewCount != null ? (
+              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.countNote}>
+                {t('mobile.filter.matchingCount', { count: previewCount })}
+              </Text>
+            ) : null}
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.countNote}>
+              {t('mobile.filter.automaticChanges')}
+            </Text>
             {showCountNote ? (
               <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.countNote}>
                 {t('mobile.filter.countNote')}
@@ -971,7 +911,7 @@ export function ClimbFilterSheet({
 
             {/* 1 · NAME — climb-name search term, first row so Reset has something
                 visible to reset (#3606). Committed live via onNameChange/onClearName,
-                same as the top-bar search field — NOT part of localFilters/Apply. */}
+                same as the top-bar search field. */}
             <View style={styles.sectionFirst}>
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.name')}
@@ -1006,9 +946,8 @@ export function ClimbFilterSheet({
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.difficulty')}
               </Text>
-              {/* Grade — inline and sheet-local, so dismissing the filter sheet does
-                not commit grade edits until Apply. The rail's own title is replaced
-                by a pinnable label row. */}
+              {/* The inline grade rail updates the live selection. Its own title
+                is replaced by a pinnable label row. */}
               <View style={styles.pinnableLabelRow}>
                 <Text variant="footnote" style={styles.subsectionLabel}>
                   {t('mobile.filter.gradeRange')}
@@ -1017,7 +956,7 @@ export function ClimbFilterSheet({
               </View>
               <GradeRangeRail
                 grades={grades ?? []}
-                bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
+                bound={{ minGradeId: selectedFilters.minGrade, maxGradeId: selectedFilters.maxGrade }}
                 lastUsedGradeId={lastUsedGradeId}
                 boardName={boardName}
                 onChange={handleGradeChange}
@@ -1060,7 +999,7 @@ export function ClimbFilterSheet({
                     <Chip
                       key={value}
                       label={progressLabels[value]}
-                      selected={flagsToProgress(localFilters) === value}
+                      selected={flagsToProgress(selectedFilters) === value}
                       onPress={() => setFiltersPatch(progressToFlags(value))}
                     />
                   ))}
@@ -1078,18 +1017,18 @@ export function ClimbFilterSheet({
                 <View style={styles.ratingRow}>
                   <Chip
                     label={t('mobile.filter.anyRating')}
-                    selected={localFilters.minUserRating == null}
+                    selected={selectedFilters.minUserRating == null}
                     onPress={() => setFiltersPatch({ minUserRating: undefined })}
                   />
                   <StarRating
-                    value={localFilters.minUserRating}
+                    value={selectedFilters.minUserRating}
                     onChange={(value) => setFiltersPatch({ minUserRating: value })}
                     clearValue={undefined}
                   />
                 </View>
                 <SwitchRow
                   label={t('mobile.filter.onlyRatedByMe')}
-                  value={!!localFilters.onlyRatedByMe}
+                  value={!!selectedFilters.onlyRatedByMe}
                   onValueChange={(value) => setFiltersPatch({ onlyRatedByMe: value || undefined })}
                 />
               </View>
@@ -1127,11 +1066,11 @@ export function ClimbFilterSheet({
               <View style={styles.ratingRow}>
                 <Chip
                   label={t('mobile.filter.anyRating')}
-                  selected={localFilters.minRating == null}
+                  selected={selectedFilters.minRating == null}
                   onPress={() => setFiltersPatch({ minRating: undefined })}
                 />
                 <StarRating
-                  value={localFilters.minRating}
+                  value={selectedFilters.minRating}
                   onChange={(value) => setFiltersPatch({ minRating: value })}
                   clearValue={undefined}
                 />
@@ -1151,14 +1090,14 @@ export function ClimbFilterSheet({
               <View style={styles.chipRow}>
                 <Chip
                   label={t('mobile.filter.popularityUnrepeated')}
-                  selected={localFilters.status === 'projects'}
+                  selected={selectedFilters.status === 'projects'}
                   onPress={() => handleStatusChange('projects')}
                 />
                 {POPULARITY_BUCKETS.map((bucket) => (
                   <Chip
                     key={bucket ?? 'any'}
                     label={popularityLabel(bucket)}
-                    selected={localFilters.minAscents === bucket && localFilters.status !== 'projects'}
+                    selected={selectedFilters.minAscents === bucket && selectedFilters.status !== 'projects'}
                     onPress={() => handlePopularity(bucket)}
                   />
                 ))}
@@ -1195,7 +1134,7 @@ export function ClimbFilterSheet({
                   <SwitchRow
                     label={t('mobile.filter.otherAngles')}
                     description={t('mobile.filter.otherAnglesDescription')}
-                    value={!!localFilters.includeOtherAngles}
+                    value={!!selectedFilters.includeOtherAngles}
                     onValueChange={(value) => setFiltersPatch({ includeOtherAngles: value || undefined })}
                   />
                 </>
@@ -1223,7 +1162,7 @@ export function ClimbFilterSheet({
                     description={
                       lockedDimensions.tall ? t('mobile.filter.tallLockedHint') : t('mobile.filter.tallDescription')
                     }
-                    value={lockedDimensions.tall || !!localFilters.onlyTallClimbs}
+                    value={lockedDimensions.tall || !!selectedFilters.onlyTallClimbs}
                     disabled={lockedDimensions.tall}
                     onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
                   />
@@ -1243,7 +1182,7 @@ export function ClimbFilterSheet({
                     description={
                       lockedDimensions.wide ? t('mobile.filter.wideLockedHint') : t('mobile.filter.wideDescription')
                     }
-                    value={lockedDimensions.wide || !!localFilters.onlyWideClimbs}
+                    value={lockedDimensions.wide || !!selectedFilters.onlyWideClimbs}
                     disabled={lockedDimensions.wide}
                     onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
                   />
@@ -1266,8 +1205,8 @@ export function ClimbFilterSheet({
                 <Text variant="body">{t('mobile.filter.setters')}</Text>
                 <View style={styles.tappableRowTrailing}>
                   <Text variant="footnote" style={styles.tappableRowValue}>
-                    {localFilters.setter && localFilters.setter.length > 0
-                      ? formatSetterSelection(localFilters.setter)
+                    {selectedFilters.setter && selectedFilters.setter.length > 0
+                      ? formatSetterSelection(selectedFilters.setter)
                       : t('mobile.filter.none')}
                   </Text>
                   <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
@@ -1278,7 +1217,7 @@ export function ClimbFilterSheet({
                 <View style={styles.followingSection}>
                   <SwitchRow
                     label={t('authors.followingClimbs')}
-                    value={!!localFilters.onlyFollowedAuthors}
+                    value={!!selectedFilters.onlyFollowedAuthors}
                     onValueChange={(enabled) => setFiltersPatch({ onlyFollowedAuthors: enabled || undefined })}
                   />
                 </View>
@@ -1342,7 +1281,7 @@ export function ClimbFilterSheet({
               </View>
               <SwitchRow
                 label={t('mobile.filter.betaVideosDescription')}
-                value={!!localFilters.onlyWithBetaVideos}
+                value={!!selectedFilters.onlyWithBetaVideos}
                 onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
               />
             </View>
@@ -1367,14 +1306,14 @@ export function ClimbFilterSheet({
                   <Chip
                     key={option}
                     label={sortLabels[option]}
-                    selected={localFilters.sortBy === option}
+                    selected={selectedFilters.sortBy === option}
                     onPress={() => handleSortByChange(option)}
                   />
                 ))}
               </View>
               {/* For random, direction is meaningless — swap the asc/desc control for
                   an explicit reshuffle button (re-tapping the Random chip also works). */}
-              {localFilters.sortBy === 'random' ? (
+              {selectedFilters.sortBy === 'random' ? (
                 <>
                   <View style={styles.subsectionGap} />
                   <Button
@@ -1394,7 +1333,7 @@ export function ClimbFilterSheet({
                   <View style={styles.controlGap} />
                   <SegmentedControl
                     options={sortOrderOptions}
-                    selectedKey={localFilters.sortOrder}
+                    selectedKey={selectedFilters.sortOrder}
                     onSelect={handleSortOrderChange}
                     textVariant="footnote"
                     trackColor={trackColor}

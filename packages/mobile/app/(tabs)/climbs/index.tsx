@@ -2,6 +2,7 @@ import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
+import { useLiveClimbFilters, type ClimbFilterSelection } from '../../../src/hooks/use-live-climb-filters';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
@@ -27,6 +28,7 @@ import {
   mergeBoardFilters,
   countActiveFilters,
   hasActiveBoardFilters,
+  normalizeRetiredFilters,
   flagsToProgress,
   progressToFlags,
   applyStatusChange,
@@ -157,7 +159,7 @@ import {
 } from '../../../src/lib/recent-filter-store';
 import { getLastSearch, saveLastSearch, boardConfigKey } from '../../../src/lib/last-search-store';
 import { getFilterSummary, buildClimbFilterSummary } from '../../../src/lib/filter-summary';
-import { filtersForBoard } from '../../../src/lib/climb-filter-types';
+import { filtersForBoard, statusForAuth } from '../../../src/lib/climb-filter-types';
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
@@ -256,6 +258,15 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 });
 
 function ClimbListInner() {
+  const {
+    data: activeBoard,
+    isPending: isBoardPending,
+    isSuccess: isBoardResolved,
+    isError: isBoardRestoreError,
+    isFetching: isBoardFetching,
+    refetch: refetchActiveBoard,
+  } = useActiveBoard();
+
   const { isPad, widthClass } = useDeviceLayout();
   // A regular-width iPad places the grade picker in a transient popover on the
   // Grade chip; everywhere else it is a row of the chrome that stays once opened.
@@ -315,18 +326,8 @@ function ClimbListInner() {
   const { systemColors, variant, brandColors, features } = useTheme();
   const colorScheme = useAppColorScheme();
   const { addToQueue } = useQueueActions();
-  const {
-    filters,
-    boardFilters,
-    name,
-    setFilters,
-    setBoardFilters,
-    setGrade,
-    setName,
-    replaceSearch,
-    patchFilters,
-    patchBoardFilters,
-  } = useClimbSearch();
+  const { filters, boardFilters, name, setGrade, setName, replaceSearch, patchFilters, patchBoardFilters } =
+    useClimbSearch();
   // The user's pinned chips: which filter controls appear in the persistent chip
   // row (defaults reproduce today's set). Drives both the chip row and the token
   // "receipt" dedup below.
@@ -374,7 +375,56 @@ function ClimbListInner() {
   // keystrokes 2..n; the setter is gated on `useNativeSearch` so Android — where
   // the pills can never show — never re-renders the whole list per keystroke.
   const [searchTextEmpty, setSearchTextEmpty] = useState(true);
-  const [showFilters, setShowFilters] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const filterScopeKey = activeBoard
+    ? `${boardConfigKey({
+        boardName: activeBoard.boardType,
+        layoutId: activeBoard.layoutId,
+        sizeId: activeBoard.sizeId,
+        setIds: activeBoard.setIds,
+        angle: activeBoard.angle,
+      })}|${isAuthenticated}`
+    : null;
+  const filterScopeRef = useRef(filterScopeKey);
+  filterScopeRef.current = filterScopeKey;
+  const committedSearchNameRef = useRef(name);
+  committedSearchNameRef.current = name;
+  const finishFiltersRef = useRef<((selection: ClimbFilterSelection) => void) | null>(null);
+  const normalizedFilters = useMemo(
+    () => statusForAuth(normalizeRetiredFilters(filters), isAuthenticated),
+    [filters, isAuthenticated],
+  );
+  const filterSelection = useMemo(
+    () => ({ filters: normalizedFilters, boardFilters }),
+    [normalizedFilters, boardFilters],
+  );
+  const handleFilterSelectionChange = useCallback(
+    (nextFilters: ClimbFilters, nextBoardFilters: ClimbBoardFilterState) => {
+      replaceSearch(
+        statusForAuth(normalizeRetiredFilters(nextFilters), isAuthenticated),
+        committedSearchNameRef.current,
+        nextBoardFilters,
+      );
+    },
+    [replaceSearch, isAuthenticated],
+  );
+  const finishFilterSession = useCallback((selection: ClimbFilterSelection) => {
+    finishFiltersRef.current?.(selection);
+  }, []);
+  const {
+    showFilters,
+    openFilters,
+    hideFilters,
+    runWhileOpen,
+    closeFilters: handleDismissFilters,
+    onSelectionChange: handleLiveFilterSelectionChange,
+    querySelection: { filters: queryFilters, boardFilters: queryBoardFilters },
+  } = useLiveClimbFilters({
+    scopeKey: filterScopeKey,
+    selection: filterSelection,
+    onSelectionChange: handleFilterSelectionChange,
+    onDismiss: finishFilterSession,
+  });
   const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
   // Measured height of the chrome the list has to clear: the whole floating glass
   // chrome (incl. the top safe-area inset), or only the controls block under the
@@ -398,24 +448,21 @@ function ClimbListInner() {
   const handleOpenFilters = useCallback(() => {
     blurSearchInputs();
     setGradePopoverOpen(false);
-    setShowFilters(true);
-  }, [blurSearchInputs]);
-  const handleDismissFilters = useCallback(() => {
-    setShowFilters(false);
-  }, []);
+    openFilters();
+  }, [blurSearchInputs, openFilters]);
   // The Grade chip. On a regular-width iPad it presents and dismisses the
   // popover. Everywhere else it shows and hides the grade row, and the setting
   // remembers which.
   const handleOpenGrade = useCallback(() => {
     if (isRegularWidthPad) {
       blurSearchInputs();
-      setShowFilters(false);
+      hideFilters();
       setGradePopoverOpen(true);
       return;
     }
     setGradeRowShown(true);
     track(SHARED_EVENTS.GradeRowToggled, { shown: true });
-  }, [blurSearchInputs, isRegularWidthPad, setGradeRowShown]);
+  }, [blurSearchInputs, isRegularWidthPad, setGradeRowShown, hideFilters]);
   const handleCloseGrade = useCallback(() => {
     // Also when the popover reports itself dismissed after the chip already
     // closed it: in popover mode a close never reaches the row's setting.
@@ -450,7 +497,11 @@ function ClimbListInner() {
       visibleSearchTextRef.current = text;
       if (useNativeSearch) setSearchTextEmpty(nextName.length === 0);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      const originatingScope = filterScopeRef.current;
       debounceTimerRef.current = setTimeout(() => {
+        debounceTimerRef.current = null;
+        if (originatingScope !== filterScopeRef.current) return;
+        committedSearchNameRef.current = nextName;
         setName(nextName);
       }, SEARCH_DEBOUNCE_MS);
     },
@@ -466,12 +517,14 @@ function ClimbListInner() {
 
   const handleNativeSearchCancel = useCallback(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    setShowFilters(false);
+    debounceTimerRef.current = null;
+    hideFilters();
     visibleSearchTextRef.current = '';
+    committedSearchNameRef.current = '';
     setSearchTextEmpty(true);
     setName('');
     nativeSearchRef.current?.clearText();
-  }, [setName]);
+  }, [setName, hideFilters]);
 
   // Composed for the filter sheet's in-line name field (#3606): mirror the raw
   // keystroke into the top bar/native search bar FIRST via applyVisibleSearchText
@@ -486,24 +539,29 @@ function ClimbListInner() {
       // ORDER MATTERS — see the comment above: mirror the raw text first, THEN
       // let handleSearchChange's normalized write win by running second.
       // Swapping these two lines silently regresses the top-bar mirror.
-      applyVisibleSearchText(text);
-      handleSearchChange(text);
+      runWhileOpen(() => {
+        applyVisibleSearchText(text);
+        handleSearchChange(text);
+      });
     },
-    [applyVisibleSearchText, handleSearchChange],
+    [applyVisibleSearchText, handleSearchChange, runWhileOpen],
   );
 
   // The ONE clearing path for name, shared by the filter sheet's Reset button and
   // its inline × (#3606) — mirrors handleNativeSearchCancel's clearing sequence
-  // but deliberately does NOT touch setShowFilters: Reset must not close the sheet.
+  // but deliberately keeps Filters open: Reset must not close the sheet.
   const handleClearName = useCallback(() => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
     visibleSearchTextRef.current = '';
+    committedSearchNameRef.current = '';
     setName('');
     applyVisibleSearchText('');
   }, [applyVisibleSearchText, setName]);
+
+  const handleSheetClearName = useCallback(() => runWhileOpen(handleClearName), [runWhileOpen, handleClearName]);
 
   const handleSearchFocus = useCallback(() => {
     setGradePopoverOpen(false);
@@ -516,27 +574,23 @@ function ClimbListInner() {
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
     };
-  }, []);
-
-  const { isAuthenticated } = useAuth();
+  }, [filterScopeKey]);
 
   // Load recent filters on mount. Pass auth state so auth-gated fields get
   // stripped from pills written by a prior signed-in session.
   useEffect(() => {
+    let cancelled = false;
     getRecentFilters({ isAuthenticated })
-      .then(setRecentFilters)
+      .then((recent) => {
+        if (!cancelled) setRecentFilters(recent);
+      })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated]);
-
-  const {
-    data: activeBoard,
-    isPending: isBoardPending,
-    isSuccess: isBoardResolved,
-    isError: isBoardRestoreError,
-    isFetching: isBoardFetching,
-    refetch: refetchActiveBoard,
-  } = useActiveBoard();
 
   // One-time board-history reveal banner: armed when the user binds a board from
   // the onboarding hand-off (app/boards/index.tsx) and consumed on focus so it
@@ -656,7 +710,7 @@ function ClimbListInner() {
       .then((saved) => {
         if (cancelled) return;
         if (saved) {
-          replaceSearch(saved.filters, saved.searchText, saved.boardFilters);
+          replaceSearch(statusForAuth(saved.filters, isAuthenticated), saved.searchText, saved.boardFilters);
           visibleSearchTextRef.current = '';
           applyVisibleSearchText(saved.searchText);
         } else {
@@ -770,14 +824,14 @@ function ClimbListInner() {
     () =>
       mergeBoardFilters(
         toClimbSearchInput(
-          filtersForBoard(filters, boardName),
+          filtersForBoard(queryFilters, boardName),
           { boardName, layoutId, sizeId, setIds, angle },
           { page: 0, pageSize: PAGE_SIZE },
           { name, personalGrades },
         ),
-        boardFilters,
+        queryBoardFilters,
       ),
-    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters, personalGrades],
+    [boardName, layoutId, sizeId, setIds, angle, name, queryFilters, queryBoardFilters, personalGrades],
   );
 
   const {
@@ -894,7 +948,7 @@ function ClimbListInner() {
     // Placeholder rows are the PREVIOUS search's results. Tracking them would log
     // the old result count under the new filters and burn the track key, so the
     // real result for these filters would never be logged.
-    if (!firstSearchPage || isPlaceholderData) return;
+    if (!firstSearchPage || isPlaceholderData || showFilters) return;
     // Skip the default state (no search text, no active filters): the initial
     // tab-mount load is not a user search/apply, and web suppresses it the same
     // way (only fires when at least one filter/term is active).
@@ -966,6 +1020,7 @@ function ClimbListInner() {
   }, [
     firstSearchPage,
     isPlaceholderData,
+    showFilters,
     visibleClimbs,
     name,
     filters,
@@ -1390,40 +1445,44 @@ function ClimbListInner() {
     [openAddToPlaylist],
   );
 
-  // Commits the sheet's filters only. Closing belongs to handleDismissFilters: the
-  // sheet calls onApply from its native close callback (after the slide-down) and
-  // then onDismiss, so the list swaps after the sheet has left, never under it.
-  const handleApplyFilters = useCallback(
-    (newFilters: ClimbFilters, newBoardFilters: ClimbBoardFilterState) => {
-      setFilters(newFilters);
-      setBoardFilters(newBoardFilters);
+  // Preferences commit on every control change. Only ending a filter session
+  // records a recent preset; a temporary sub-picker suspension does not.
+  finishFiltersRef.current = (finalSelection) => {
+    const finalScope = filterScopeRef.current;
+    const finalName = debounceTimerRef.current
+      ? normalizeSearchName(visibleSearchTextRef.current)
+      : committedSearchNameRef.current;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = null;
+    committedSearchNameRef.current = finalName;
+    replaceSearch(finalSelection.filters, finalName, finalSelection.boardFilters);
 
-      // Recent pills capture climb filters + name only (not board-renderer
-      // filters), so we still gate on those for the pill.
-      const currentSearch = name;
-      if (hasActiveFilters(newFilters) || currentSearch.length > 0) {
-        const label = getFilterSummary(newFilters, currentSearch, gradesRef.current, t, gradeStops);
-        addRecentFilter(label, newFilters, currentSearch)
-          .then(() => getRecentFilters({ isAuthenticated }))
-          .then(setRecentFilters)
-          .catch(() => {});
-      }
-    },
-    [t, isAuthenticated, name, setFilters, setBoardFilters, gradeStops],
-  );
+    // Recent pills store climb filters + name, not board-renderer filters.
+    if (hasActiveFilters(finalSelection.filters) || finalName.length > 0) {
+      const label = getFilterSummary(finalSelection.filters, finalName, gradesRef.current, t, gradeStops);
+      addRecentFilter(label, finalSelection.filters, finalName)
+        .then(() => getRecentFilters({ isAuthenticated }))
+        .then((recent) => {
+          if (filterScopeRef.current === finalScope) setRecentFilters(recent);
+        })
+        .catch(() => {});
+    }
+  };
 
   const handleApplyRecentFilter = useCallback(
     (pillFilters: ClimbFilters, pillSearchText: string) => {
       // Pills are shared across boards; keep only what this board can show.
-      replaceSearch(filtersForBoard(pillFilters, boardName), pillSearchText);
+      replaceSearch(filtersForBoard(statusForAuth(pillFilters, isAuthenticated), boardName), pillSearchText);
       visibleSearchTextRef.current = '';
       applyVisibleSearchText(pillSearchText);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+      committedSearchNameRef.current = pillSearchText;
       Keyboard.dismiss();
       searchHeaderRef.current?.blur();
       setIsSearchFocused(false);
     },
-    [applyVisibleSearchText, replaceSearch, boardName],
+    [applyVisibleSearchText, replaceSearch, boardName, isAuthenticated],
   );
 
   const handleClearRecentFilters = useCallback(() => {
@@ -2396,15 +2455,16 @@ function ClimbListInner() {
 
       {showFilters ? (
         <ClimbFilterSheet
+          key={filterScopeKey}
           onDismiss={handleDismissFilters}
           boardConfig={boardConfig}
           currentFilters={filters}
           currentBoardFilters={boardFilters}
           searchName={name}
           lastUsedGradeId={lastUsedGrade}
-          onApply={handleApplyFilters}
+          onSelectionChange={handleLiveFilterSelectionChange}
           onNameChange={handleSheetNameChange}
-          onClearName={handleClearName}
+          onClearName={handleSheetClearName}
           lockedDimensions={lockedDimensions}
         />
       ) : null}

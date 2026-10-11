@@ -300,14 +300,15 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    a route and not a sheet. **If a sheet only needs to hand off to ONE sub-surface at a time**
    (not stack several), it can stay a sheet and instead **suspend → push a route → re-present**:
    set its controlled `open` to `false` (a coordinator self-dismiss, so it doesn't unmount and
-   the draft survives), `router.push` the sub-route, and flip `open` back to `true` on a
+   its local state survives), `router.push` the sub-route, and flip `open` back to `true` on a
    `useFocusEffect` when the screen re-focuses (covers the back chevron _and_ swipe-back). The
    sub-route hands its result back through a tiny pub/sub handoff. This is how `ClimbFilterSheet`
-   opens the `setters` / `holds` / `zone` filters. The sheet's own Apply commits in its close
-   callback, which fires after the native slide-down, so the parent never unmounts the sheet
-   mid-animation. A sub-route can also commit directly: the setters route's "Show N climbs" button
-   sends its handoff with `apply: true`, and the sheet calls `onApply` then `onDismiss` itself,
-   because a suspended sheet has no native close to wait for.
+   opens the `setters` / `holds` / `zone` filters and restores its scroll position on return.
+   Climb filters commit as their controls change; the sheet's X and swipe only close it after
+   the native slide-down. Returned picker selections join the live filters while suspension
+   preserves the sheet's position. The setters route's "Show N climbs" button remains a shortcut
+   to results: its `apply: true` handoff updates the selection and closes the suspended sheet,
+   which has no native close to wait for.
 
 2. **Never `fullScreenModal` over the iOS 26 `NativeTabs`.** A `fullScreenModal` snapshots the
    presenting tab view controller for its transition; the native bottom-accessory glass platter
@@ -407,9 +408,17 @@ Is it a secondary surface OVER the current screen, or its own full surface?
 ## Where actions go
 
 Sheet and screen actions sit at the top, Apple HIG style: leading Cancel / close / back, a
-centred title, a trailing confirm. A top bar never moves with the keyboard, the bottom inset or
-error text, so this removes the bottom-button yank (buttons jumping after a sheet opens, or when
-the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet footer appears.
+centred title, and a trailing confirm when the task needs one. A top bar never moves with the
+keyboard, the bottom inset or error text, so this removes the bottom-button yank (buttons jumping
+after a sheet opens, or when the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a
+new sheet footer appears.
+
+**Climb filters apply live.** `ClimbFilterSheet` commits filter selections as controls change,
+including Reset and returned setter, hold and zone selections. Its pinned header is X / Filters /
+Reset: the short secondary Reset stays trailing, with no confirm action. X, swipe and other dismiss
+paths only close the sheet; they keep the latest selections. The matching climb count is
+informational, wrapping text in the scroll body alongside the automatic-apply explanation and
+the Kilter count note. No Search, Show or Done button is needed to commit the filters.
 
 - **Sheets.** Pass `<SheetTopBar>` (`src/components/SheetTopBar.tsx`) through the `header` prop of
   `ModalSheet` / `Sheet`. The header sits above the body and outside its scroll. Trailing is the
@@ -427,7 +436,8 @@ the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet 
   iOS 26 a confirm is a ✓ in a brand circle the size of the leading X; its label is the spoken name. A
   destructive commit is red text, never a red ✓. Send and prominent forward actions are a brand capsule
   in a sheet. On Material all of them are brand text with no fill. A Done with nothing to commit is no
-  trailing action: give the surface a leading X instead. In a native header on iOS 26,
+  confirm action: give the surface a leading X instead. A live filter sheet can keep its short
+  secondary Reset in the trailing slot. In a native header on iOS 26,
   `useHeaderActions` renders the trailing side as native bar items (see the guidelines for the loading
   and accessory cases). A screen that sets `headerRight` itself with `setOptions` wraps it in
   `ownHeaderRight()` so a native item never hides it. A leading action takes `disabled` too, with the
@@ -448,8 +458,9 @@ the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet 
   leading action on every step: the hook never clears, so a step that leaves it out keeps the
   last step's chevron.
 - **Secondary content actions** ("Reset", "Start the corners again", "Take a photo") sit inline
-  next to the content they act on, the way Photos puts Reset over the crop. Never stack them under
-  a primary button.
+  next to the content they act on, the way Photos puts Reset over the crop. The live climb filter
+  sheet keeps its short Reset pinned alongside Close, with no confirm action. Never stack secondary
+  actions under a primary button.
 - **Errors** go in a slot that is already there: `SheetTopBar`'s `error` with `reserveErrorSlot`,
   or a reserved line under the field. Showing an error never moves a control.
 - **What stays at the bottom.** Composers (`CommentSheet`'s input and Send, Messages style), bottom
@@ -626,8 +637,10 @@ drafts.
   it → `transparentModal` + opaque backing route. The exception that proves rule 1.
 - **Boards picker / share-beta / join** — self-contained flows from a tab → `modal` card.
 - **Setters / hold / zone filters** — opened from the climb filter sheet, which suspends and
-  pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
-  boards → pushed routes (rule 3); setters is a searchable list route.
+  pushes them (rule 1, the suspend→push→re-present pattern). Return restores the sheet's scroll
+  position and applies the picker selection live; the setters route's "Show N climbs" shortcut
+  returns directly to results. Hold/zone are full-screen interactive boards → pushed routes
+  (rule 3); setters is a searchable list route.
 - **Onboarding** (the walkthrough, replayed from Settings) — an immersive cover presented
   over the live tabs, so `transparentModal` + an opaque backing, like the player (rule 2). It was a
   `fullScreenModal` until #5654. Like the player it counts as a tabs-chrome route

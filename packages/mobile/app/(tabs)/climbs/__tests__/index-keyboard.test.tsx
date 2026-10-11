@@ -18,6 +18,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { NativeStackNavigationOptions } from 'expo-router';
 import type { ScrollEdgeBackdrop } from '../../../../src/hooks/use-scroll-edge-backdrop';
+import type { ClimbFilterSheet } from '../../../../src/components/ClimbFilterSheet';
+import type { ClimbFilters } from '../../../../src/lib/climb-filter-types';
+import type { BoardSearchConfig, ClimbBoardFilterState } from '@boardsesh/climb-filters';
+import { hasActiveClimbFilters } from '@boardsesh/climb-filters';
+
+type FilterSheetProps = Parameters<typeof ClimbFilterSheet>[0];
 
 const mocks = vi.hoisted(() => ({
   // The climb the drawer host reports as previewed, i.e. shown without being
@@ -56,6 +62,13 @@ const mocks = vi.hoisted(() => ({
     boardFilters: {} as Record<string, unknown>,
     name: '',
   },
+  statefulSearch: false,
+  searchListeners: new Set<() => void>(),
+  setName: vi.fn(),
+  replaceSearch: vi.fn(),
+  filterSheetProps: undefined as FilterSheetProps | undefined,
+  searchInput: undefined as { filters: unknown; boardFilters: unknown; name: string } | undefined,
+  isAuthenticated: true,
   // Offline empty-state fixtures: connectivity, whether the search itself
   // failed, and what the active board's catalog looks like on this device.
   isOffline: false,
@@ -87,6 +100,7 @@ const mocks = vi.hoisted(() => ({
   getLastSearch: vi.fn(),
   saveLastSearch: vi.fn(),
   getRecentFilters: vi.fn(),
+  addRecentFilter: vi.fn(),
   getLogbook: vi.fn(),
   track: vi.fn(),
   ensureBackgroundsCached: vi.fn(),
@@ -307,12 +321,17 @@ vi.mock('@boardsesh/analytics', () => ({
   },
 }));
 
-vi.mock('@boardsesh/climb-filters', () => ({
+vi.mock('@boardsesh/climb-filters', async (importOriginal) => ({
+  hasActiveClimbFilters: (await importOriginal<typeof import('@boardsesh/climb-filters')>()).hasActiveClimbFilters,
+  normalizeRetiredFilters: (await importOriginal<typeof import('@boardsesh/climb-filters')>()).normalizeRetiredFilters,
   DEFAULT_CLIMB_FILTER_STATE: {},
   DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
   // Carries the filters through, so a changed filter is a changed search.
-  toClimbSearchInput: (filters: unknown) => ({ filters }),
-  mergeBoardFilters: (input: unknown) => input,
+  toClimbSearchInput: (filters: unknown, _board: unknown, _page: unknown, options: { name: string }) => ({
+    filters,
+    name: options.name,
+  }),
+  mergeBoardFilters: (input: { filters: unknown; name: string }, boardFilters: unknown) => ({ ...input, boardFilters }),
   countActiveFilters: () => 0,
   hasActiveBoardFilters: () => false,
   // Consumed by filter-chip-menus (imported via index.tsx for the chip row).
@@ -332,19 +351,26 @@ vi.mock('@boardsesh/board-react', () => ({
 
 // Reads mocks.searchState (mutated per-test) instead of the real reducer, so a
 // test can force a specific filter/name without driving the UI through it.
-vi.mock('../../../../src/providers/climb-search-provider', () => ({
-  ClimbSearchProvider: ({ children }: { children?: ReactNode }) => children,
-  useClimbSearch: () => ({
-    ...mocks.searchState,
-    setFilters: vi.fn(),
-    setBoardFilters: vi.fn(),
-    setGrade: mocks.setGrade,
-    setName: vi.fn(),
-    replaceSearch: vi.fn(),
-    patchFilters: vi.fn(),
-    patchBoardFilters: vi.fn(),
-  }),
-}));
+vi.mock('../../../../src/providers/climb-search-provider', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    mocks.searchListeners.add(listener);
+    return () => mocks.searchListeners.delete(listener);
+  };
+  return {
+    ClimbSearchProvider: ({ children }: { children?: ReactNode }) => children,
+    useClimbSearch: () => ({
+      ...useSyncExternalStore(subscribe, () => mocks.searchState),
+      setFilters: vi.fn(),
+      setBoardFilters: vi.fn(),
+      setGrade: mocks.setGrade,
+      setName: mocks.setName,
+      replaceSearch: mocks.replaceSearch,
+      patchFilters: vi.fn(),
+      patchBoardFilters: vi.fn(),
+    }),
+  };
+});
 
 vi.mock('../../../../src/components/ClimbListRow', () => ({
   // `selected` is surfaced, not swallowed: the row highlight is the only feedback
@@ -437,8 +463,11 @@ vi.mock('../../../../src/components/Button', () => ({
 }));
 
 vi.mock('../../../../src/components/ClimbFilterSheet', () => ({
-  ClimbFilterSheet: () => null,
-  hasActiveFilters: () => false,
+  ClimbFilterSheet: (props: FilterSheetProps) => {
+    mocks.filterSheetProps = props;
+    return createElement('div', { 'data-testid': 'filter-sheet' });
+  },
+  hasActiveFilters: (filters: ClimbFilters) => mocks.statefulSearch && hasActiveClimbFilters(filters),
 }));
 
 vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
@@ -619,18 +648,21 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
   // Honours `enabled` the way React Query does: a disabled query — the per-board
   // restore still in flight — has no data and is not loading either, so the
   // previous board's rows cannot leak into the render through this mock.
-  useInfiniteSearchClimbs: (_input: unknown, enabled = true) => ({
-    data: enabled ? { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] } : undefined,
-    isLoading: enabled && mocks.isClimbsLoading,
-    isError: mocks.searchFailed,
-    error: mocks.searchError,
-    isFetchingNextPage: mocks.isFetchingNextPage,
-    isRefetching: mocks.isRefetching,
-    isPlaceholderData: mocks.isPlaceholderData,
-    fetchNextPage: vi.fn(),
-    hasNextPage: false,
-    refetch: mocks.refetchClimbs,
-  }),
+  useInfiniteSearchClimbs: (input: typeof mocks.searchInput, enabled = true) => {
+    mocks.searchInput = input;
+    return {
+      data: enabled ? { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] } : undefined,
+      isLoading: enabled && mocks.isClimbsLoading,
+      isError: mocks.searchFailed,
+      error: mocks.searchError,
+      isFetchingNextPage: mocks.isFetchingNextPage,
+      isRefetching: mocks.isRefetching,
+      isPlaceholderData: mocks.isPlaceholderData,
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      refetch: mocks.refetchClimbs,
+    };
+  },
 }));
 
 vi.mock('../../../../src/lib/graphql/operations', () => ({ SEARCH_CLIMBS: 'SEARCH_CLIMBS' }));
@@ -687,21 +719,24 @@ vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => mocks.setActiveBoard,
 }));
 
-vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../../src/providers/auth-provider', () => ({
+  useAuth: () => ({ isAuthenticated: mocks.isAuthenticated }),
+}));
 vi.mock('../../../../src/lib/background-image-cache', () => ({
   ensureBackgroundsCached: mocks.ensureBackgroundsCached,
 }));
 
 vi.mock('../../../../src/lib/recent-filter-store', () => ({
   getRecentFilters: mocks.getRecentFilters,
-  addRecentFilter: vi.fn(),
+  addRecentFilter: mocks.addRecentFilter,
   clearRecentFilters: vi.fn(),
 }));
 
 vi.mock('../../../../src/lib/last-search-store', () => ({
   getLastSearch: mocks.getLastSearch,
   saveLastSearch: mocks.saveLastSearch,
-  boardConfigKey: () => 'kilter:1:10:1:40',
+  boardConfigKey: (board: BoardSearchConfig) =>
+    `${board.boardName}|${board.layoutId}|${board.sizeId}|${board.setIds}|${board.angle}`,
 }));
 
 vi.mock('../../../../src/lib/filter-summary', () => ({
@@ -742,9 +777,11 @@ beforeEach(() => {
   mocks.getLastSearch.mockReset();
   mocks.saveLastSearch.mockReset();
   mocks.getRecentFilters.mockReset();
+  mocks.addRecentFilter.mockReset();
   mocks.getLastSearch.mockResolvedValue(null);
   mocks.saveLastSearch.mockResolvedValue(undefined);
   mocks.getRecentFilters.mockResolvedValue([]);
+  mocks.addRecentFilter.mockResolvedValue(undefined);
   mocks.track.mockClear();
   mocks.ensureBackgroundsCached.mockClear();
   mocks.imagePrefetch.mockClear();
@@ -758,6 +795,25 @@ beforeEach(() => {
   mocks.push.mockClear();
   mocks.isClimbsLoading = false;
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
+  mocks.statefulSearch = false;
+  mocks.searchListeners.clear();
+  mocks.filterSheetProps = undefined;
+  mocks.searchInput = undefined;
+  mocks.isAuthenticated = true;
+  mocks.setName.mockReset();
+  mocks.setName.mockImplementation((name: string) => {
+    if (!mocks.statefulSearch) return;
+    mocks.searchState = { ...mocks.searchState, name };
+    for (const listener of mocks.searchListeners) listener();
+  });
+  mocks.replaceSearch.mockReset();
+  mocks.replaceSearch.mockImplementation(
+    (filters: ClimbFilters, name: string, boardFilters: ClimbBoardFilterState = {}) => {
+      if (!mocks.statefulSearch) return;
+      mocks.searchState = { filters, boardFilters, name };
+      for (const listener of mocks.searchListeners) listener();
+    },
+  );
   mocks.isOffline = false;
   mocks.searchFailed = false;
   mocks.searchError = null;
@@ -2094,5 +2150,175 @@ describe('ClimbList scroll reset on a new search', () => {
     mocks.searchState = GRADED_SEARCH;
     rerender(<ClimbList />);
     expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: 0, animated: false });
+  });
+});
+
+describe('ClimbList live filter session integration', () => {
+  const selectedFilters: ClimbFilters = { sortBy: 'ascents', sortOrder: 'desc', status: 'any', minGrade: 14 };
+  const selectedBoardFilters: ClimbBoardFilterState = { onlyBenchmarks: true };
+  const latestSheet = () => {
+    if (!mocks.filterSheetProps) throw new Error('Expected an open filter sheet');
+    return mocks.filterSheetProps;
+  };
+  const openSheet = async () => {
+    mocks.statefulSearch = true;
+    const view = render(<ClimbList />);
+    await view.findByText('Moonage');
+    vi.useFakeTimers();
+    act(() => mocks.openFilters?.());
+    expect(view.getByTestId('filter-sheet')).toBeDefined();
+    return view;
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  it('flushes the raw name and latest pair on a quick close, recording one final recent', async () => {
+    const view = await openSheet();
+    const sheet = latestSheet();
+    const finalFilters = { ...selectedFilters, minGrade: 20 };
+    act(() => {
+      sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onNameChange('  crimp  ');
+      sheet.onSelectionChange(finalFilters, selectedBoardFilters);
+    });
+    expect(mocks.searchState).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: '' });
+    expect(mocks.searchInput).toMatchObject({ filters: {}, boardFilters: {}, name: '' });
+    expect(mocks.addRecentFilter).not.toHaveBeenCalled();
+
+    await act(async () => {
+      sheet.onDismiss();
+      sheet.onDismiss();
+    });
+    expect(view.queryByTestId('filter-sheet')).toBeNull();
+    expect(mocks.searchState).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: 'crimp' });
+    expect(mocks.searchInput).toEqual({ filters: finalFilters, boardFilters: selectedBoardFilters, name: 'crimp' });
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, 'crimp');
+
+    act(() => mocks.openFilters?.());
+    expect(view.getByTestId('filter-sheet')).toBeDefined();
+    act(() => {
+      sheet.onDismiss();
+      vi.advanceTimersByTime(300);
+    });
+    expect(view.getByTestId('filter-sheet')).toBeDefined();
+    expect(mocks.addRecentFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the name query at 300 ms without another filter delay or intermediate recent', async () => {
+    await openSheet();
+    const sheet = latestSheet();
+    act(() => {
+      sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onNameChange('crimp');
+    });
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(mocks.searchInput).toEqual({ filters: selectedFilters, boardFilters: selectedBoardFilters, name: '' });
+    expect(mocks.addRecentFilter).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(49);
+    });
+    expect(mocks.searchState.name).toBe('');
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(mocks.searchInput).toEqual({ filters: selectedFilters, boardFilters: selectedBoardFilters, name: 'crimp' });
+    expect(mocks.addRecentFilter).not.toHaveBeenCalled();
+    await act(async () => latestSheet().onDismiss());
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', selectedFilters, 'crimp');
+  });
+
+  it('records only the final grade-only preset after rapid edits and a close', async () => {
+    await openSheet();
+    const sheet = latestSheet();
+    const finalFilters = { ...selectedFilters, minGrade: 20 };
+    act(() => {
+      sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onSelectionChange(finalFilters, selectedBoardFilters);
+    });
+    expect(mocks.addRecentFilter).not.toHaveBeenCalled();
+    await act(async () => {
+      sheet.onDismiss();
+      sheet.onDismiss();
+    });
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, '');
+  });
+
+  it('normalizes a signed-out restored draft before rendering, querying and recording the final preset', async () => {
+    mocks.isAuthenticated = false;
+    mocks.getLastSearch.mockResolvedValue({
+      filters: { ...selectedFilters, status: 'drafts', hideCompleted: true, onlyRatedByMe: true },
+      boardFilters: selectedBoardFilters,
+      searchText: '',
+      updatedAt: 1,
+    });
+    await openSheet();
+    const expectedFilters = {
+      ...selectedFilters,
+      hideAttempted: undefined,
+      hideCompleted: undefined,
+      showOnlyAttempted: undefined,
+      showOnlyCompleted: undefined,
+      minUserRating: undefined,
+      onlyRatedByMe: undefined,
+      onlyFollowedAuthors: undefined,
+    };
+    expect(mocks.searchState.filters).toEqual(expectedFilters);
+    expect(latestSheet().currentFilters).toEqual(expectedFilters);
+    expect(mocks.searchInput).toEqual({ filters: expectedFilters, boardFilters: selectedBoardFilters, name: '' });
+    await act(async () => latestSheet().onDismiss());
+    expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', expectedFilters, '');
+    expect(mocks.searchState.filters).toEqual(expectedFilters);
+  });
+
+  it.each(['board', 'angle', 'signed out'] as const)(
+    'rejects pending and stale field/selection/close callbacks after changing %s',
+    async (scopeChange) => {
+      const view = await openSheet();
+      const oldSheet = latestSheet();
+      act(() => oldSheet.onNameChange('unfinished old name'));
+      mocks.getLastSearch.mockResolvedValue({ filters: {}, boardFilters: {}, searchText: 'new scope', updatedAt: 1 });
+      if (scopeChange === 'signed out') mocks.isAuthenticated = false;
+      else if (scopeChange === 'angle') mocks.activeBoard = { ...mocks.activeBoard!, angle: 45 };
+      else mocks.activeBoard = { boardType: 'tension', layoutId: 10, sizeId: 7, setIds: '4', angle: 35 };
+      await act(async () => view.rerender(<ClimbList />));
+      expect(view.queryByTestId('filter-sheet')).toBeNull();
+      expect(mocks.searchState.name).toBe('new scope');
+      mocks.setName.mockClear();
+      mocks.replaceSearch.mockClear();
+
+      act(() => {
+        oldSheet.onNameChange('late old name');
+        oldSheet.onClearName();
+        oldSheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+        oldSheet.onDismiss();
+        vi.advanceTimersByTime(350);
+      });
+      expect(mocks.setName).not.toHaveBeenCalled();
+      expect(mocks.replaceSearch).not.toHaveBeenCalled();
+      expect(mocks.searchState).toEqual({ filters: {}, boardFilters: {}, name: 'new scope' });
+      expect(mocks.addRecentFilter).not.toHaveBeenCalled();
+    },
+  );
+
+  it('clears a pending name through Reset without closing or restoring it later', async () => {
+    const view = await openSheet();
+    const sheet = latestSheet();
+    act(() => {
+      sheet.onSelectionChange(selectedFilters, selectedBoardFilters);
+      sheet.onNameChange('unfinished');
+      sheet.onSelectionChange({ sortBy: 'ascents', sortOrder: 'desc', status: 'any' }, {});
+      sheet.onClearName();
+      vi.advanceTimersByTime(300);
+    });
+    expect(view.getByTestId('filter-sheet')).toBeDefined();
+    expect(mocks.searchState).toEqual({
+      filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any' },
+      boardFilters: {},
+      name: '',
+    });
+    await act(async () => latestSheet().onDismiss());
+    expect(mocks.addRecentFilter).not.toHaveBeenCalled();
   });
 });
