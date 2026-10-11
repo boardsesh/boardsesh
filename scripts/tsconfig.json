@@ -47,6 +47,7 @@
     "publish-help-shots.ts",
     "convert-help-shots.ts",
     "lib/help-shots.ts",
+    "lib/help-clips.ts",
     "lib/showcase-video/**/*.ts",
     "showcase-video-*.ts",
     "../packages/web/scripts/render-showcase-video.ts",
