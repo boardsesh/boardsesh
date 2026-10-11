@@ -575,8 +575,10 @@ describe('the shipped client import on a shape-2 artifact', () => {
 
       // The statements the import ACTUALLY ran, planned against this artifact.
       const climbsInsert = executedSql.find((source) => source.includes('INSERT OR REPLACE INTO main.board_climbs'));
+      // Stats snapshots now use a revision-guarded UPSERT; inspect its actual
+      // SELECT plan without assuming the retired unconditional replace verb.
       const statsInsert = executedSql.find((source) =>
-        source.includes('INSERT OR REPLACE INTO main.board_climb_stats'),
+        /INSERT(?: OR REPLACE)? INTO main\.board_climb_stats/.test(source),
       );
       if (!climbsInsert || !statsInsert) throw new Error('the import ran no batch insert');
       const planDb = new DatabaseSync(':memory:');
