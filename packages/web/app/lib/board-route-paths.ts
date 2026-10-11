@@ -1,5 +1,5 @@
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from '@boardsesh/i18n';
+import { WEB_LOCALES, DEFAULT_LOCALE } from '@boardsesh/i18n';
 
 const BOARD_NAMES = new Set(SUPPORTED_BOARDS);
 // Path-prefixed locales only — the default (en-US) is served at the root with
@@ -8,7 +8,7 @@ const BOARD_NAMES = new Set(SUPPORTED_BOARDS);
 // locale-cookie middleware actively redirects to these URLs, so stripping the
 // prefix here is what keeps peer-broadcast analytics firing on localized board
 // routes.
-const PATH_LOCALES = new Set<string>(SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE));
+const PATH_LOCALES = new Set<string>(WEB_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE));
 
 function getPathSegments(pathname: string): string[] {
   const segments = pathname.split('?')[0].split('/').filter(Boolean);

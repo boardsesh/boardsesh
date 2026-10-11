@@ -2235,8 +2235,15 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
       'export const SUPPORTED_BOARDS',
     );
     const i18nConfig = readFileSync('packages/shared/i18n/src/config.ts', 'utf8');
-    const supportedLocales = stringArrayLiteral(i18nConfig, 'export const SUPPORTED_LOCALES');
-    const defaultLocale = i18nConfig.match(/export const DEFAULT_LOCALE: Locale = '([^']+)'/)?.[1];
+    // WEB_LOCALES, not SUPPORTED_LOCALES: the app also runs in app-only locales
+    // (zh-Hans) that www never routes, so they must not get a cache-rule prefix.
+    const supportedLocales = stringArrayLiteral(i18nConfig, 'export const WEB_LOCALES');
+    const appOnlyLocales = stringArrayLiteral(i18nConfig, 'export const APP_ONLY_LOCALES');
+    expect(appOnlyLocales).toContain('zh-Hans');
+    for (const appOnlyLocale of appOnlyLocales) {
+      expect([...WWW_HTML_CACHE_LOCALE_PREFIXES]).not.toContain(`/${appOnlyLocale}`);
+    }
+    const defaultLocale = i18nConfig.match(/export const DEFAULT_LOCALE: WebLocale = '([^']+)'/)?.[1];
 
     expect(schemaBoards.length).toBeGreaterThan(1);
     expect(defaultLocale).toBeDefined();

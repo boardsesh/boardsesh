@@ -1,0 +1,246 @@
+{
+  "metadata": {
+    "library": {
+      "title": "适用于 Kilter、Tension 和 MoonBoard 的攀爬线路单",
+      "description": "岩友们创建的公开线路单，加上 Boardsesh 每晚重新生成的合集。在应用里打开一个，直接开爬。"
+    },
+    "detail": {
+      "fallbackTitle": "线路单",
+      "fallbackDescription": "在 Boardsesh 上查看这个线路单里的线路。",
+      "privateTitle": "私密线路单",
+      "privateDescription": "这个线路单是私密的。",
+      "generatedDescription_one": "{{name}} 里有 {{count}} 条 {{board}} 线路。在 Boardsesh 里打开线路单，直接开爬。",
+      "generatedDescription_other": "{{name}} 里有 {{count}} 条 {{board}} 线路。在 Boardsesh 里打开线路单，直接开爬。",
+      "ogAlt": "Boardsesh 上的线路单 {{name}}"
+    }
+  },
+  "library": {
+    "signInBanner": {
+      "title": "登录后使用你的收藏库",
+      "description": "记录完攀，管理线路单。",
+      "cta": "登录"
+    },
+    "sections": {
+      "pinned": "已置顶",
+      "forYou": "为你推荐",
+      "community": "社区线路单"
+    },
+    "communityByline": "{{creatorName}} - {{climbCount}}",
+    "allPlaylists": {
+      "title": "我的线路单",
+      "seeAll": "查看全部",
+      "searchPlaceholder": "按标题筛选",
+      "clearSearch": "清除搜索",
+      "loadMoreError": "没能加载你的全部线路单。",
+      "noResults": "没有与“{{query}}”匹配的线路单"
+    },
+    "pin": {
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "pinAriaLabel": "置顶线路单",
+      "unpinAriaLabel": "取消置顶线路单",
+      "pinFailed": "置顶失败",
+      "unpinFailed": "取消置顶失败"
+    },
+    "smart": {
+      "fiveStars": {
+        "title": "五星线路",
+        "description": "你评了五星的线路。"
+      },
+      "mostRepeated": {
+        "title": "重复最多",
+        "description": "你一爬再爬的线路。"
+      },
+      "projects": {
+        "title": "项目",
+        "description": "你磕得最多但还没完攀的线路。"
+      },
+      "likedClimbs": {
+        "title": "喜欢的线路",
+        "description": "你点过红心的全部线路。",
+        "empty": {
+          "title": "还没有喜欢的线路",
+          "supporting": "点一下线路上的红心，就能收藏到这里。"
+        }
+      },
+      "crowdFavorites": {
+        "title": "大众最爱",
+        "description": "你的训练板上完攀人数最多、而你还没爬过的经典线路。"
+      },
+      "hiddenGems": {
+        "title": "隐藏宝藏",
+        "description": "你的训练板上评分很高、但还没火起来的线路。"
+      },
+      "atYourLevel": {
+        "title": "适合你的水平",
+        "description": "难度在你水平附近、专为你的训练板挑选的线路。"
+      },
+      "fresh": {
+        "title": "新鲜出炉",
+        "description": "值得关注的定线员为你的训练板定的新线路。"
+      },
+      "notFound": {
+        "title": "找不到这个智能线路单",
+        "description": "这个智能线路单不存在。"
+      },
+      "empty": "这个智能线路单里还没有线路。"
+    },
+    "empty": {
+      "title": "还没有线路单",
+      "description": "把你的项目和常爬的线路存进线路单，方便随时找到。",
+      "createCta": "创建线路单"
+    },
+    "createFab": {
+      "ariaLabel": "创建线路单"
+    },
+    "errors": {
+      "loadTitle": "收藏库加载失败",
+      "loadDescription": "加载你的收藏库时出错了，请重试。",
+      "tryAgain": "重试"
+    }
+  },
+  "detail": {
+    "share": "分享线路单",
+    "actions": "线路单操作",
+    "activateAll": "开始线路单",
+    "addToQueue": {
+      "action": "加入队列",
+      "subtitle": "保留队列里已有的线路",
+      "queueFull": "队列已满，最多 {{max}} 条线路",
+      "nothingToAdd": "这里暂时没有适合你训练板的线路",
+      "alreadyAdding": "正在添加这个线路单",
+      "failed": "没能加入队列，再试一次。"
+    },
+    "boardMismatch": {
+      "title": "切换到 {{board}} 才能爬这个线路单",
+      "subtitle": "这些是 {{board}} 的线路。切换训练板后才能加入队列。",
+      "cta": "切换训练板"
+    },
+    "unrenderableClimb": {
+      "subtitle": "这条线路缺少训练板数据。"
+    },
+    "menu": {
+      "addClimbs": "添加线路",
+      "editDetails": "编辑详情",
+      "editClimbs": "排序和移除线路",
+      "delete": "删除"
+    },
+    "visibility": {
+      "public": "公开",
+      "private": "私密"
+    },
+    "shareText": "来 Boardsesh 看看这个线路单",
+    "shareFallbackTitle": "线路单",
+    "shareSuccess": "链接已复制到剪贴板！",
+    "shareError": "分享失败",
+    "deleted": "线路单已删除",
+    "deleteFailed": "线路单删除失败",
+    "queueReplace": {
+      "title": "开始线路单？",
+      "message_one": "从这里起按顺序播放线路单。排在当前线路之后的那条线路会被移出队列。",
+      "message_other": "从这里起按顺序播放线路单。排在当前线路之后的 {{count}} 条线路会被移出队列。",
+      "cancel": "取消",
+      "confirm": "开始线路单",
+      "loadFailed": "线路单没能开始，再试一次。",
+      "addInstead": "加入队列"
+    },
+    "deleteConfirm": {
+      "title": "删除线路单？",
+      "message": "这会永久删除“{{name}}”及其中的线路，且无法撤销。",
+      "confirm": "删除",
+      "cancel": "取消"
+    },
+    "discussion": "讨论",
+    "empty": "这个线路单里还没有线路",
+    "climbCount_one": "{{count}} 条线路",
+    "climbCount_other": "{{count}} 条线路",
+    "openInApp": "在应用里爬这个线路单",
+    "followerCount_one": "{{count}} 位粉丝",
+    "followerCount_other": "{{count}} 位粉丝",
+    "followFailed": "关注状态更新失败",
+    "errors": {
+      "notFoundTitle": "找不到这个线路单",
+      "notFoundDescription": "这个线路单可能已被删除，或者你没有查看权限。",
+      "loadTitle": "线路单加载失败",
+      "loadDescription": "加载这个线路单时出错了，请重试。",
+      "tryAgain": "重试"
+    }
+  },
+  "editClimbs": {
+    "done": "完成",
+    "editDetailsAria": "编辑线路单详情",
+    "removeAria": "移除 {{name}}",
+    "dragHandleAria": "拖动以调整 {{name}} 的顺序",
+    "removeConfirm": {
+      "title": "移除线路？",
+      "message": "要把“{{name}}”从这个线路单中移除吗？",
+      "confirm": "移除",
+      "cancel": "取消"
+    },
+    "removeFailed": "线路没能移除",
+    "reorderFailed": "新顺序没能保存"
+  },
+  "edit": {
+    "title": "编辑线路单",
+    "fields": {
+      "name": "线路单名称",
+      "description": "描述",
+      "color": "颜色",
+      "icon": "图标",
+      "iconHint": "输入任意表情符号，或在下方选一个",
+      "removeIcon": "移除",
+      "visibility": "可见性",
+      "publicHint": "公开线路单：任何拿到链接的人都能查看",
+      "privateHint": "私密线路单：只有你能看到"
+    },
+    "actions": {
+      "save": "保存",
+      "saving": "保存中…"
+    },
+    "validation": {
+      "nameRequired": "请输入线路单名称",
+      "nameTooLong": "名称不能超过 100 个字符",
+      "descriptionTooLong": "描述不能超过 500 个字符"
+    },
+    "messages": {
+      "updated": "线路单已更新",
+      "updateFailed": "线路单更新失败"
+    }
+  },
+  "create": {
+    "drawerTitle": "创建线路单",
+    "submit": "创建",
+    "submitting": "创建中…",
+    "fields": {
+      "name": "名称",
+      "namePlaceholder": "例如：小边硬线",
+      "description": "描述",
+      "descriptionPlaceholder": "描述（可选）…",
+      "color": "颜色"
+    }
+  },
+  "bottomTabBar": {
+    "discover": "发现",
+    "selectBoardForPlaylist": "创建线路单前请先选择训练板",
+    "createdPlaylistToast": "已创建线路单“{{name}}”",
+    "createPlaylistFailed": "线路单创建失败"
+  },
+  "directory": {
+    "h1": "值得一条条爬完的线路单",
+    "lead_one": "在应用里打开一个，直接开爬。共有 {{formattedCount}} 个公开线路单可选。",
+    "lead_other": "在应用里打开一个，直接开爬。共有 {{formattedCount}} 个公开线路单可选。",
+    "leadNoCount": "在应用里打开一个，直接开爬。",
+    "curated": {
+      "title": "每晚更新",
+      "lead": "根据大家最近的完攀，为每块训练板整理的大众最爱、新线路和隐藏宝藏。"
+    },
+    "community": {
+      "title": "岩友们的收藏",
+      "lead": "按收藏人数排序。"
+    },
+    "empty": {
+      "title": "还没有公开线路单",
+      "body": "在应用里创建一个，它就会出现在这里。"
+    }
+  }
+}

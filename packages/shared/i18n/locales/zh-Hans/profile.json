@@ -1,0 +1,163 @@
+{
+  "metadata": {
+    "profile": {
+      "description": "{{name}} 在 Boardsesh 上的攀爬主页",
+      "fallbackTitle": "个人主页",
+      "fallbackDescription": "查看攀爬主页和数据",
+      "notFoundTitle": "找不到这个主页",
+      "notFoundDescription": "找不到这个攀爬主页。",
+      "ogAlt": "{{name}} 的攀爬主页",
+      "title": "{{name}} 的攀爬训练",
+      "titleWithBoard": "{{name}} 的 {{board}} 训练"
+    },
+    "statistics": {
+      "title": "数据统计"
+    },
+    "sessions": {
+      "title": "训练"
+    },
+    "climbs": {
+      "title": "创建的线路"
+    },
+    "setter": {
+      "title": "{{name}} - 定线员",
+      "description": "{{name}} 在 Boardsesh 上创建的线路",
+      "fallbackTitle": "定线员主页",
+      "fallbackDescription": "在 Boardsesh 上查看定线员主页和线路",
+      "ogAlt": "{{name}} 的定线员主页"
+    }
+  },
+  "page": {
+    "lastThreeMonths": "最近 3 个月",
+    "activityChartLabel": "最近 3 个月的活跃情况",
+    "displayNameFallback": "岩友",
+    "betaVideos": "TA 的 beta"
+  },
+  "nav": {
+    "statistics": {
+      "title": "数据统计",
+      "subtitleSent": "已完攀 {{count}} 条线路",
+      "subtitleEmpty": "难度、进步曲线等"
+    },
+    "sessions": {
+      "title": "训练",
+      "subtitle": "攀爬训练与动态"
+    },
+    "createdClimbs": {
+      "title": "创建的线路",
+      "subtitleOwn": "你创建的线路",
+      "subtitleOther": "TA 创建的线路"
+    }
+  },
+  "stats": {
+    "problems": "条线路",
+    "send": "完攀",
+    "flash": "Flash",
+    "calendar": "日历",
+    "calendarAria": "攀爬日历：{{days}} 个活跃日，{{count}} 条线路",
+    "calendarLess": "少",
+    "calendarMore": "多",
+    "percentile": "百分位",
+    "topPercent": "前 {{value}}%",
+    "moreSentThan": "完攀线路数超过 {{value}}% 的岩友",
+    "activity": "活跃情况",
+    "gradeDistribution": "难度分布",
+    "flashVsRedpoint": "Flash 与红点对比",
+    "vPoints": "V 积分",
+    "vPointsTotal": "共 {{value}}",
+    "weekAxisLabel": "周",
+    "chartTooltipTotal": "合计",
+    "gradeDistributionAria": "各训练板的难度分布",
+    "weeklyAttemptsAria": "按难度统计的每周尝试次数",
+    "flashRedpointAria": "按难度统计的 Flash 与红点",
+    "layoutTooltip": "{{name}}：{{count}} 条线路（{{percentage}}%）",
+    "periodComparison": {
+      "controlLabel": "对比时段",
+      "trailing": "上一时段",
+      "yearOverYear": "去年",
+      "sends": "完攀",
+      "percentChange": "{{value}}%",
+      "vsTrailing": "对比上一时段",
+      "vsYearOverYear": "对比去年同期",
+      "firstPeriod": "首个有记录的时段",
+      "noComparisonData": "还没有完攀"
+    },
+    "boardOverview": {
+      "title": "你的所有训练板",
+      "allTime": "所有训练板 · 全部时间",
+      "climbsLabel_one": "条线路已完攀",
+      "climbsLabel_other": "条线路已完攀",
+      "layouts_one": "{{count}} 种训练板布局",
+      "layouts_other": "{{count}} 种训练板布局",
+      "climbs_one": "已完攀 {{count}} 条线路",
+      "climbs_other": "已完攀 {{count}} 条线路",
+      "bestSend": "最佳完攀",
+      "showAll": "显示全部 {{count}} 块训练板",
+      "showLess": "收起",
+      "empty": "下一条就是你的首次完攀。每块训练板的记录都会出现在这里。",
+      "rowAria": "{{name}}：累计完攀 {{count}} 条不同线路",
+      "recordAria": "最佳完攀：{{grade}}",
+      "publicTitle": "TA 的所有训练板",
+      "publicEmpty": "还没有完攀记录。"
+    },
+    "progress": {
+      "title": "你的进步",
+      "filters": "筛选进步数据",
+      "scope": "{{board}} · {{period}}",
+      "allTime": "全部时间",
+      "lastYear": "最近一年",
+      "lastMonth": "最近一个月",
+      "lastWeek": "最近一周",
+      "today": "今天",
+      "custom": "自定义日期",
+      "activity": "已记录的攀爬",
+      "activityCaption": "完攀、重复完攀和尝试",
+      "lifetimeRecords": "历史最佳 · {{board}}",
+      "filteredEmpty": "这个时段没有攀爬记录。换个时间范围试试。",
+      "publicTitle": "攀爬进步"
+    }
+  },
+  "empty": {
+    "userNotFound": "找不到这位用户",
+    "noAscentData": "这个时段没有完攀数据",
+    "noClimbingData": "这个时段没有攀爬数据"
+  },
+  "filter": {
+    "pageTitle": "数据统计",
+    "drawer": {
+      "title": "筛选",
+      "board": "训练板",
+      "timeRange": "时间范围",
+      "from": "从",
+      "to": "到"
+    }
+  },
+  "mobile": {
+    "account": "账号",
+    "signOut": "退出登录"
+  },
+  "setter": {
+    "shareAriaLabel": "分享定线员主页",
+    "shareTitle": "{{name}} - 定线员",
+    "shareText": "来 Boardsesh 看看 {{name}} 的线路",
+    "linkCopied": "链接已复制到剪贴板！",
+    "shareFailed": "分享失败",
+    "follower_one": "粉丝",
+    "follower_other": "粉丝",
+    "climb_one": "条线路",
+    "climb_other": "条线路",
+    "seoHeading": "{{name}} 定的线路",
+    "seoSummary_one": "{{name}} 在 Boardsesh 上有 1 条线路，位于 {{boards}}。",
+    "seoSummary_other": "{{name}} 在 Boardsesh 上有 {{count}} 条线路，位于 {{boards}}。",
+    "climbsHeading": "{{name}} 的全部线路",
+    "empty": "这一页没有线路。",
+    "browseBoard": "查看 {{boardName}} 上的全部线路",
+    "browsePlaylists": "用这些线路创建线路单",
+    "pagination": {
+      "aria": "线路分页",
+      "previous": "上一页线路",
+      "next": "更多线路",
+      "pageLabel": "第 {{page}} 页"
+    }
+  }
+}
