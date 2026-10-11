@@ -201,7 +201,7 @@ describe('downloaded catalogue privacy', () => {
     readSpy.mockRestore();
   });
 
-  it('keeps published climbs of other authors, clears copied FA names and preserves personal ticks', async () => {
+  it('keeps published, listed climbs of other authors, clears copied FA names and preserves personal ticks', async () => {
     database = createTestDatabase();
     await runMigrations(database);
     for (const [uuid, userId] of [
@@ -209,12 +209,10 @@ describe('downloaded catalogue privacy', () => {
       ['protected-climb', 'other'],
       ['manufacturer', null],
     ]) {
-      await database.runAsync('INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES (?, ?, ?, ?)', [
-        uuid,
-        'kilter',
-        1,
-        userId,
-      ]);
+      await database.runAsync(
+        'INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed) VALUES (?, ?, ?, ?, 0, 1)',
+        [uuid, 'kilter', 1, userId],
+      );
       await database.runAsync(
         'INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username) VALUES (?, ?, ?, ?)',
         ['kilter', uuid, 40, 'Copied identity'],
@@ -233,8 +231,8 @@ describe('downloaded catalogue privacy', () => {
     await revalidatePrivateCatalog(database, 'viewer', [scopeKey]);
     expect(isCatalogReadCurrent(previousEpoch)).toBe(false);
     await waitForPrivacyRevalidation();
-    // A published climb is public whatever its author's privacy settings, so the
-    // board keeps its rows, its cursor and its "downloaded" marker.
+    // Another account's published, listed climb stays on a catalogue board, so
+    // the board keeps its rows, its cursor and its "downloaded" marker.
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs ORDER BY uuid')).toEqual([
       { uuid: 'manufacturer' },
       { uuid: 'own-climb' },
@@ -322,11 +320,11 @@ describe('downloaded catalogue privacy', () => {
     expect(await canReadPrivateCatalog(database)).toBe(false);
   });
 
-  it('preserves another account drafts and queued climb references without granting catalogue access', async () => {
+  it("preserves another account's draft and a queued reference to its unlisted climb without granting catalogue access", async () => {
     database = createTestDatabase();
     await runMigrations(database);
     await database.runAsync(
-      "INSERT INTO board_climbs (uuid, board_type, user_id, is_draft) VALUES ('other-draft', 'kilter', 'other', 1), ('queued-reference', 'kilter', 'other', 0)",
+      "INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, is_listed) VALUES ('other-draft', 'kilter', 'other', 1, 0), ('queued-reference', 'kilter', 'other', 0, 0)",
     );
     await database.runAsync(
       "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'unsynced')",
@@ -343,12 +341,12 @@ describe('downloaded catalogue privacy', () => {
     expect(await canReadPrivateCatalog(database)).toBe(false);
   });
 
-  it("opens access over another account's published climbs, even one a queued tick references", async () => {
+  it("opens access over another account's published, listed climbs, even one a queued tick references", async () => {
     database = createTestDatabase();
     await runMigrations(database);
-    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq) VALUES
-      ('published', 'kilter', 1, 'other', 0, 5),
-      ('queued-published', 'kilter', 1, 'other', 0, 6)`);
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('published', 'kilter', 1, 'other', 0, 1, 5),
+      ('queued-published', 'kilter', 1, 'other', 0, 1, 6)`);
     await database.runAsync(
       "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'queued-tick')",
       [JSON.stringify({ climbUuid: 'queued-published' })],
@@ -364,9 +362,9 @@ describe('downloaded catalogue privacy', () => {
   it("keeps access closed for another account's draft with no server sequence beside published climbs", async () => {
     database = createTestDatabase();
     await runMigrations(database);
-    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq) VALUES
-      ('published', 'kilter', 1, 'other', 0, 5),
-      ('unsynced-draft', 'kilter', 1, 'other', 1, NULL)`);
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('published', 'kilter', 1, 'other', 0, 1, 5),
+      ('unsynced-draft', 'kilter', 1, 'other', 1, 0, NULL)`);
     await revalidatePrivateCatalog(database, 'viewer', []);
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs ORDER BY uuid')).toEqual([
       { uuid: 'published' },
@@ -374,6 +372,51 @@ describe('downloaded catalogue privacy', () => {
     ]);
     expect(await database.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY])).toBeNull();
     expect(await canReadPrivateCatalog(database)).toBe(false);
+  });
+
+  it("withdraws another account's unlisted climb with its stats and grades, and keeps the viewer's own", async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('foreign-unlisted', 'kilter', 1, 'other', 0, 0, 5),
+      ('foreign-listed', 'kilter', 1, 'other', 0, 1, 6),
+      ('own-unlisted', 'kilter', 1, 'viewer', 0, 0, 7),
+      ('manufacturer-unlisted', 'kilter', 1, NULL, 0, 0, 8)`);
+    for (const climbUuid of ['foreign-unlisted', 'foreign-listed', 'own-unlisted', 'manufacturer-unlisted']) {
+      await database.runAsync(
+        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES ('kilter', ?, 40)",
+        [climbUuid],
+      );
+      await database.runAsync(
+        "INSERT INTO board_climb_grades (board_type, climb_uuid, angle) VALUES ('kilter', ?, 40)",
+        [climbUuid],
+      );
+    }
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    const kept = [{ uuid: 'foreign-listed' }, { uuid: 'manufacturer-unlisted' }, { uuid: 'own-unlisted' }];
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs ORDER BY uuid')).toEqual(kept);
+    expect(await database.getAllAsync('SELECT climb_uuid AS uuid FROM board_climb_stats ORDER BY uuid')).toEqual(kept);
+    expect(await database.getAllAsync('SELECT climb_uuid AS uuid FROM board_climb_grades ORDER BY uuid')).toEqual(kept);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
+  it("keeps access closed while a queued write still names another account's unlisted climb", async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq)
+      VALUES ('queued-unlisted', 'kilter', 1, 'other', 0, 0, 5)`);
+    await database.runAsync(
+      "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'queued-tick')",
+      [JSON.stringify({ climbUuid: 'queued-unlisted' })],
+    );
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'queued-unlisted' }]);
+    expect(await canReadPrivateCatalog(database)).toBe(false);
+    // Once the outbox has drained, the next event can withdraw the row and open access.
+    await database.runAsync('DELETE FROM pending_mutations');
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
   });
 });
 
@@ -408,7 +451,10 @@ async function seedHoldIndex(boardType: string, layoutId: number, scopeKey: stri
 /** Every row a downloaded board keeps on the device, read back in full. */
 async function readDownloadedCopy(boardType: string) {
   return {
-    climbs: await database.getAllAsync('SELECT * FROM board_climbs WHERE board_type = ? ORDER BY uuid', [boardType]),
+    climbs: await database.getAllAsync<{ uuid: string }>(
+      'SELECT * FROM board_climbs WHERE board_type = ? ORDER BY uuid',
+      [boardType],
+    ),
     stats: await database.getAllAsync(
       'SELECT * FROM board_climb_stats WHERE board_type = ? ORDER BY climb_uuid, angle',
       [boardType],
@@ -438,10 +484,10 @@ describe('a privacy event on a device with downloaded boards', () => {
   });
 
   it('leaves a catalogue board, its cursors, completion marker and holds index exactly as they were', async () => {
-    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq) VALUES
-      ('community-climb', 'kilter', 1, 'other', 0, 5),
-      ('manufacturer-climb', 'kilter', 1, NULL, 0, 6),
-      ('own-climb', 'kilter', 1, 'viewer', 0, 7)`);
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('community-climb', 'kilter', 1, 'other', 0, 1, 5),
+      ('manufacturer-climb', 'kilter', 1, NULL, 0, 1, 6),
+      ('own-climb', 'kilter', 1, 'viewer', 0, 1, 7)`);
     await database.runAsync(`INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count)
       VALUES ('kilter', 'community-climb', 40, 12)`);
     await database.runAsync(`INSERT INTO board_climb_grades (board_type, climb_uuid, angle, local_grade)
@@ -473,6 +519,7 @@ describe('a privacy event on a device with downloaded boards', () => {
 
     expect(duringRepair).toEqual({ kilter: false, spray: true });
     // No global purge: the drain, the user tables and every other board carry on.
+    // A snapshot import reads these same two guards, so one in flight carries on too.
     expect(hasPurgeLanded(beforeEvent)).toBe(false);
     expect(hasPurgeLanded(beforeEvent, 'kilter:1')).toBe(false);
     expect(hasPurgeLanded(beforeEvent, 'spray:7')).toBe(true);
@@ -524,9 +571,9 @@ describe('a privacy event on a device with downloaded boards', () => {
   });
 
   it('withdraws a spray wall without touching the catalogue board beside it', async () => {
-    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq) VALUES
-      ('community-climb', 'kilter', 1, 'other', 0, 5),
-      ('spray-other', 'spray', 7, 'other', 0, 6)`);
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('community-climb', 'kilter', 1, 'other', 0, 1, 5),
+      ('spray-other', 'spray', 7, 'other', 0, 1, 6)`);
     await seedDownloadedScope(KILTER_SCOPE);
     await seedDownloadedScope(SPRAY_SCOPE);
     await seedHoldIndex('kilter', 1, KILTER_SCOPE, ['community-climb']);
@@ -545,12 +592,32 @@ describe('a privacy event on a device with downloaded boards', () => {
     expect(await isScopeDownloadComplete(database, KILTER_SCOPE)).toBe(true);
   });
 
-  it("rebuilds the holds index of a catalogue layout only when it loses another account's draft", async () => {
-    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq) VALUES
-      ('downloaded-foreign-draft', 'kilter', 1, 'other', 1, 10),
-      ('kilter-climb', 'kilter', 1, NULL, 0, 11),
-      ('tension-climb', 'tension', 9, 'other', 0, 12)`);
-    await seedHoldIndex('kilter', 1, KILTER_SCOPE, ['downloaded-foreign-draft', 'kilter-climb']);
+  it("leaves a catalogue layout's holds index untouched when it loses only drafts and unlisted climbs", async () => {
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('downloaded-foreign-draft', 'kilter', 1, 'other', 1, 0, 10),
+      ('foreign-unlisted', 'kilter', 1, 'other', 0, 0, 11),
+      ('community-climb', 'kilter', 1, 'other', 0, 1, 12),
+      ('manufacturer-climb', 'kilter', 1, NULL, 0, 1, 13)`);
+    await seedDownloadedScope(KILTER_SCOPE);
+    // Drafts and unlisted climbs are never indexed, so only the listed two are in it.
+    await seedHoldIndex('kilter', 1, KILTER_SCOPE, ['community-climb', 'manufacturer-climb']);
+    const { climbs: _climbs, ...indexAndMarkers } = await readDownloadedCopy('kilter');
+
+    await revalidatePrivateCatalog(database, 'viewer', [KILTER_SCOPE]);
+
+    const { climbs, ...indexAndMarkersAfterEvent } = await readDownloadedCopy('kilter');
+    expect(climbs.map((climb) => climb.uuid)).toEqual(['community-climb', 'manufacturer-climb']);
+    // No cleared postings, no reset watermark, no bumped generation: nothing to rebuild.
+    expect(indexAndMarkersAfterEvent).toEqual(indexAndMarkers);
+  });
+
+  it("starts a catalogue layout's holds index over when a withdrawn climb is still in it", async () => {
+    // An index that has not caught up yet with a climb that stopped being listed.
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('unlisted-since-indexed', 'kilter', 1, 'other', 0, 0, 10),
+      ('kilter-climb', 'kilter', 1, NULL, 0, 1, 11),
+      ('tension-climb', 'tension', 9, 'other', 0, 1, 12)`);
+    await seedHoldIndex('kilter', 1, KILTER_SCOPE, ['unlisted-since-indexed', 'kilter-climb']);
     await seedHoldIndex('tension', 9, 'tension:9:1', ['tension-climb']);
 
     await revalidatePrivateCatalog(database, 'viewer', [KILTER_SCOPE, 'tension:9:1']);
@@ -559,7 +626,7 @@ describe('a privacy event on a device with downloaded boards', () => {
       { uuid: 'kilter-climb' },
       { uuid: 'tension-climb' },
     ]);
-    // Kilter layout 1 lost a row, so its index starts over. Tension lost nothing.
+    // Kilter layout 1 lost an indexed row, so its index starts over. Tension lost nothing.
     expect(await database.getAllAsync('SELECT board_type FROM board_climb_hold_postings')).toEqual([
       { board_type: 'tension' },
     ]);
@@ -576,9 +643,73 @@ describe('a privacy event on a device with downloaded boards', () => {
     ).toEqual({ value: '10' });
   });
 
+  it.each([
+    { state: 'a wall row', seed: "INSERT INTO spray_walls (layout_id, name) VALUES (7, 'Garage')" },
+    {
+      state: 'a climb',
+      seed: "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('spray-own', 'spray', 7, 'viewer')",
+    },
+    {
+      state: 'only the start stamp of a first download',
+      seed: "INSERT INTO sync_meta (key, value) VALUES ('scope-download-started:spray:7:7', '1')",
+    },
+  ])('fences a spray wall that is switched off but still has $state on the device', async ({ seed }) => {
+    await database.runAsync(seed);
+    const beforeEvent = capturePurgeToken();
+    let latchedDuringRepair: boolean | undefined;
+    request.mockImplementationOnce(async () => {
+      latchedDuringRepair = hasPurgeLanded(capturePurgeToken(), 'spray:7');
+      return { profile: { id: 'viewer' } };
+    });
+
+    // The wall is not in the enabled list: its download was switched off.
+    await revalidatePrivateCatalog(database, 'viewer', [KILTER_SCOPE]);
+
+    // Fenced before the server was asked, so well before the reset.
+    expect(latchedDuringRepair).toBe(true);
+    expect(hasPurgeLanded(beforeEvent, 'spray:7')).toBe(true);
+    expect(hasPurgeLanded(beforeEvent)).toBe(false);
+    expect(hasPurgeLanded(beforeEvent, 'kilter:1')).toBe(false);
+    expect(hasPurgeLanded(capturePurgeToken(), 'spray:7')).toBe(false);
+  });
+
+  it("re-authorizes a new account over the rows the previous account's session left", async () => {
+    // A forced sign-out keeps board rows, so these outlive the account that synced them.
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+      ('previous-listed', 'kilter', 1, 'previous', 0, 1, 5),
+      ('previous-draft', 'kilter', 1, 'previous', 1, 0, 6),
+      ('previous-unlisted', 'kilter', 1, 'previous', 0, 0, 7)`);
+    for (const climbUuid of ['previous-listed', 'previous-draft', 'previous-unlisted']) {
+      await database.runAsync(
+        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES ('kilter', ?, 40)",
+        [climbUuid],
+      );
+    }
+    await seedDownloadedScope(KILTER_SCOPE);
+    auth.viewer = 'previous';
+    await revalidatePrivateCatalog(database, 'previous', [KILTER_SCOPE]);
+    expect(await getAuthorizedCatalogViewerId(database)).toBe('previous');
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toHaveLength(3);
+
+    auth.viewer = 'next';
+    auth.token = 'next-account-token';
+    auth.generation += 1;
+    expect(await canReadPrivateCatalog(database)).toBe(false);
+    await revalidatePrivateCatalog(database, 'next', [KILTER_SCOPE]);
+
+    // The draft and the unlisted climb go to their owner alone. The board stays downloaded.
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'previous-listed' }]);
+    expect(await database.getAllAsync('SELECT climb_uuid FROM board_climb_stats')).toEqual([
+      { climb_uuid: 'previous-listed' },
+    ]);
+    expect(await getCheckpoint(database, getCheckpointKey('board_climbs', KILTER_SCOPE))).toEqual(DOWNLOADED_CURSOR);
+    expect(await isScopeDownloadComplete(database, KILTER_SCOPE)).toBe(true);
+    expect(await getAuthorizedCatalogViewerId(database)).toBe('next');
+  });
+
   it('leaves sync_meta byte for byte across three events in a row', async () => {
-    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, sync_seq)
-      VALUES ('community-climb', 'kilter', 1, 'other', 0, 5)`);
+    await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq)
+      VALUES ('community-climb', 'kilter', 1, 'other', 0, 1, 5)`);
     await seedDownloadedScope(KILTER_SCOPE);
     await seedHoldIndex('kilter', 1, KILTER_SCOPE, ['community-climb']);
     const readSyncMeta = () =>

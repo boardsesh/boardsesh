@@ -41,9 +41,9 @@ export function subscribePrivacyRevalidation(listener: () => void): () => void {
 
 /**
  * Close local reads synchronously, including when the schema is not ready yet.
- * Sync and downloads carry on: a published climb is public, so an event has
- * nothing to take back from a catalogue board. Spray walls are purged per wall
- * by `revalidatePrivateCatalog`.
+ * Sync and downloads carry on: an event takes nothing from a catalogue board
+ * that a page in flight could put back. Spray walls are purged per wall by
+ * `revalidatePrivateCatalog`.
  */
 export function requirePrivacyRevalidation(): void {
   revalidationGeneration += 1;
@@ -68,9 +68,30 @@ export async function waitForPrivacyRevalidation(): Promise<void> {
 }
 
 /**
- * Re-authorize the downloaded catalogue for this viewer. Catalogue boards keep
- * their rows, cursors and completion markers. Spray walls are withdrawn and
- * fetched again, because access to a wall does depend on privacy.
+ * `spray:<layoutId>` for every wall this device holds rows or sync markers for,
+ * whether or not its download is still switched on. A first download writes its
+ * start stamp before its first page, so a wall with no row yet is found too.
+ */
+async function listLocalSprayNamespaces(db: OfflineDatabase): Promise<string[]> {
+  const walls = await db.getAllAsync<{ layout_id: number }>(
+    `SELECT layout_id FROM spray_walls
+     UNION SELECT layout_id FROM board_climbs WHERE board_type = 'spray' AND layout_id IS NOT NULL`,
+  );
+  const markers = await db.getAllAsync<{ key: string }>("SELECT key FROM sync_meta WHERE key LIKE '%:spray:%'");
+  const namespaces = new Set(walls.map((wall) => purgeNamespaceKey({ boardType: 'spray', layoutId: wall.layout_id })));
+  for (const marker of markers) {
+    // Every per-scope key ends in its scope key, `spray:<layoutId>:<sizeId>`.
+    const scope = parseOfflineBoardKey(marker.key.slice(marker.key.lastIndexOf(':spray:') + 1));
+    if (scope) namespaces.add(purgeNamespaceKey(scope));
+  }
+  return [...namespaces];
+}
+
+/**
+ * Re-authorize the downloaded catalogue for this viewer. A catalogue board keeps
+ * its published, listed climbs, its cursors and its completion marker; another
+ * account's drafts and unlisted climbs are withdrawn from it. Spray walls are
+ * withdrawn whole and fetched again, because access to a wall depends on privacy.
  */
 export function revalidatePrivateCatalog(
   db: OfflineDatabase,
@@ -90,10 +111,17 @@ export function revalidatePrivateCatalog(
   // Spray walls only: their rows and cursors are reset below, so a page already
   // on the wire must not land afterwards. A catalogue scope keeps both, and
   // purging it would abort a download for nothing.
-  const releases = enabledScopeKeys.flatMap((scopeKey) => {
+  const releases: (() => void)[] = [];
+  const purgedSprayNamespaces = new Set<string>();
+  const purgeSprayNamespace = (namespace: string) => {
+    if (purgedSprayNamespaces.has(namespace)) return;
+    purgedSprayNamespaces.add(namespace);
+    releases.push(beginScopePurge(namespace));
+  };
+  for (const scopeKey of enabledScopeKeys) {
     const scope = parseOfflineBoardKey(scopeKey);
-    return scope?.boardType === 'spray' ? [beginScopePurge(purgeNamespaceKey(scope))] : [];
-  });
+    if (scope?.boardType === 'spray') purgeSprayNamespace(purgeNamespaceKey(scope));
+  }
   const task = (async () => {
     if (previous) await previous.catch(() => {});
     assertCurrent();
@@ -105,6 +133,12 @@ export function revalidatePrivateCatalog(
     );
     assertCurrent();
     if (!canAuthorize()) throw new PrivacyRevalidationDeferredError();
+    // A wall switched off mid-cycle has left the enabled list, but that cycle
+    // still pulls it. Fence every wall with state on this device before the
+    // server is contacted: a page that beats this lands ahead of the reset below
+    // and is withdrawn by it, and nothing lands after.
+    for (const namespace of await listLocalSprayNamespaces(db)) purgeSprayNamespace(namespace);
+    assertCurrent();
     let credential = await captureCatalogCredential();
     assertCurrent();
     const [{ getHttpClient }, { GET_PROFILE }] = await Promise.all([
@@ -136,12 +170,14 @@ export function revalidatePrivateCatalog(
           assertCurrent();
           await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
           assertCurrent();
-          // A published climb is public whatever its author's privacy settings, so a
-          // catalogue board gives up only another account's unpublished draft. A
-          // spray wall gives up everything the viewer did not author, because access
-          // to the wall itself depends on privacy. NULL author ids on a catalogue
-          // board remain valid manufacturer data.
-          const withdrawn = `((user_id IS NOT NULL AND user_id <> ? AND (board_type = 'spray' OR COALESCE(is_draft, 0) = 1))
+          // On a catalogue board a climb that is published and listed stays, whatever
+          // its author's privacy settings. A draft or an unlisted climb goes to its
+          // owner alone, so another account's is withdrawn; a row that does not say
+          // it is listed counts as unlisted. A spray wall gives up everything the
+          // viewer did not author, because access to the wall itself depends on
+          // privacy. NULL author ids on a catalogue board remain valid manufacturer
+          // data.
+          const withdrawn = `((user_id IS NOT NULL AND user_id <> ? AND (board_type = 'spray' OR COALESCE(is_draft, 0) = 1 OR COALESCE(is_listed, 0) <> 1))
       OR (board_type = 'spray' AND user_id IS NULL))`;
           // is_draft also arrives from server downloads. A positive sync_seq proves
           // that copy is replaceable cache, unless a queued write still references
@@ -154,12 +190,18 @@ export function revalidatePrivateCatalog(
         json_extract(mutation.payload, '$.uuid') = board_climbs.uuid
       )
     )`;
-          // The holds index is cleared for every spray wall, and for a catalogue
-          // layout only when it is about to lose a row. Any other board's index is
-          // built from rows that all stay, so it stays too.
+          // The holds index is cleared for every spray wall. A catalogue layout
+          // keeps its index: drafts and unlisted climbs are never indexed, so the
+          // rows it loses are not in it. The one exception is an index that has not
+          // yet caught up with a climb that stopped being listed; clearing that
+          // layout rebuilds it without the row.
           const layouts = await transaction.getAllAsync<{ board_type: string; layout_id: number }>(
             `SELECT DISTINCT board_type, layout_id FROM board_climbs
-             WHERE layout_id IS NOT NULL AND (board_type = 'spray' OR ${replaceable})`,
+             WHERE layout_id IS NOT NULL AND (board_type = 'spray' OR (${replaceable} AND EXISTS (
+               SELECT 1 FROM holds_index_climbs local_id
+               JOIN board_climb_hold_sets hold_set ON hold_set.climb_id = local_id.id
+               WHERE local_id.uuid = board_climbs.uuid
+             )))`,
             [viewerId],
           );
           for (const layout of layouts) {
@@ -183,9 +225,9 @@ export function revalidatePrivateCatalog(
           await transaction.runAsync('DELETE FROM followed_author_snapshots');
           // A retained high-water mark would skip the withdrawn spray rows forever,
           // and a retained completion marker would serve a wall with holes in it.
-          // A catalogue scope lost nothing the server would send again, so its
-          // cursors and marker stay: deleting them made every event restart a crawl
-          // of the whole board (#6306).
+          // A catalogue scope lost only rows this device is not meant to keep, so
+          // its cursors and marker stay: deleting them made every event restart a
+          // crawl of the whole board (#6306).
           for (const table of BOARD_DATA_TABLES) {
             await transaction.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`checkpoint:${table}:spray:%`]);
           }
@@ -193,10 +235,12 @@ export function revalidatePrivateCatalog(
           await transaction.runAsync(
             'DELETE FROM holds_index_climbs WHERE uuid NOT IN (SELECT uuid FROM board_climbs)',
           );
-          // What still matches `withdrawn` could not be deleted: another account's
-          // draft with no server version or with a queued write naming it, or the
-          // same on a spray wall. Published catalogue climbs of other accounts are
-          // on every device by design and are not counted.
+          // What still matches `withdrawn` is a row this viewer must not read that
+          // could not be deleted: another account's draft with no server version
+          // (possibly its unsynced work), or its draft, unlisted climb or spray row
+          // that a queued write still names. Access stays closed while one remains.
+          // Published, listed catalogue climbs of other accounts are on every
+          // device by design and are not counted.
           const preserved = await transaction.getFirstAsync<{ count: number }>(
             `SELECT count(*) AS count FROM board_climbs WHERE ${withdrawn}`,
             [viewerId],

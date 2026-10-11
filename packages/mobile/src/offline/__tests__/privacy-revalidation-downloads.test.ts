@@ -257,4 +257,23 @@ describe('a privacy event and the sync engine', () => {
     expect(await getCheckpoint(database, getCheckpointKey('board_climbs', SPRAY_SCOPE))).toBeNull();
     expect(await isScopeDownloadComplete(database, SPRAY_SCOPE)).toBe(false);
   });
+
+  it('discards a page for a spray wall that was switched off while it downloaded', async () => {
+    const server = createSyncServer({
+      'syncClimbs@spray:7': [climbDocument('spray-climb', 'spray', 7, 7)],
+    });
+    const pageOnWire = server.holdNextPage('syncClimbs@spray:7');
+    // The cycle keeps the list of boards it started with.
+    const download = pullSync(database, queryClient, server.fetch, syncOptions([SPRAY_SCOPE]));
+    await pageOnWire.requested;
+
+    // By the time the event arrives the wall has left the enabled list.
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    pageOnWire.release();
+    await download;
+
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+    expect(await getCheckpoint(database, getCheckpointKey('board_climbs', SPRAY_SCOPE))).toBeNull();
+    expect(await isScopeDownloadComplete(database, SPRAY_SCOPE)).toBe(false);
+  });
 });
