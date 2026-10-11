@@ -155,7 +155,7 @@ export function PreSessionView({
   // sessions: every Start opens on, and turning it off is a per-session choice.
   const [isPublic, setIsPublic] = useState(true);
   const { data: privacySettings } = usePrivacySettings();
-  const [sessionAudience, setSessionAudience] = useState<'public' | 'followers' | 'invite_only' | null>(null);
+  const [sessionAudience, setSessionAudience] = useState<(typeof SESSION_AUDIENCES)[number] | null>(null);
   const effectiveSessionAudience =
     sessionAudience ??
     (privacySettings?.defaultSessionAudience === 'invite_only'

@@ -541,8 +541,6 @@ export const privacyMutations = {
   updateResourcePrivacy: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const userId = await privacyActor(ctx);
     const update = validateInput(resourceSchema, input, 'input');
-    if (update.kind === 'session' && update.audience === 'unlisted')
-      throw new GraphQLError('Sessions do not support unlisted audiences', { extensions: { code: 'BAD_USER_INPUT' } });
     const current = await requireResourceOwner(update.kind, update.resourceId, userId);
     if (update.kind === 'board') {
       const [board] = await db

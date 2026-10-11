@@ -14,7 +14,7 @@ import {
  * Create session input validation schema
  */
 export const CreateSessionInputSchema = z.object({
-  audience: z.enum(['public', 'followers', 'invite_only']).nullish(),
+  audience: z.enum(['public', 'unlisted', 'followers', 'invite_only']).nullish(),
   boardPath: BoardPathSchema,
   latitude: LatitudeSchema,
   longitude: LongitudeSchema,

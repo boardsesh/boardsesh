@@ -273,7 +273,7 @@ export const sessionMutations = {
       const defaultAudience = defaults?.defaultSessionAudience ?? 'public';
       const audience =
         input.audience ??
-        (input.isPublic === false ? legacyResourceAudience(defaultAudience, 'unlisted') : defaultAudience);
+        (input.isPublic === false ? legacyResourceAudience(defaultAudience, 'unlisted', 'session') : defaultAudience);
       const isPublic = audience === 'public';
       if (!isPublic) requireAuthenticated(ctx);
       const boardId = await resolveSessionBoardId(input.boardPath, ctx.userId);

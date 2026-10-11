@@ -485,7 +485,7 @@ export const CREATE_SESSION = gql`
 `;
 
 export type CreateSessionInput = {
-  audience?: 'public' | 'followers' | 'invite_only';
+  audience?: 'public' | 'unlisted' | 'followers' | 'invite_only';
   boardPath: string;
   latitude: number;
   longitude: number;

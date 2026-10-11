@@ -1067,7 +1067,8 @@ export async function ensureSessionRecordExists(
   const boardId = await resolveSessionBoardId(boardPath, userId);
   const defaultAudience = userId ? (await getPrivacySettings(userId)).defaultSessionAudience : 'public';
   // A legacy private session is unlisted: off the listings, the link still joins.
-  const audience = isPublic === false ? legacyResourceAudience(defaultAudience, 'unlisted') : defaultAudience;
+  const audience =
+    isPublic === false ? legacyResourceAudience(defaultAudience, 'unlisted', 'session') : defaultAudience;
   return db.transaction(async (tx) => {
     const inserted = await tx
       .insert(sessions)

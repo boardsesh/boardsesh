@@ -9,7 +9,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 
 export const SOCIAL_AUDIENCES = ['public', 'followers', 'only_me'] as const;
-export const SESSION_AUDIENCES = ['public', 'followers', 'invite_only'] as const;
+export const SESSION_AUDIENCES = ['public', 'unlisted', 'followers', 'invite_only'] as const;
 export const BOARD_AUDIENCES = ['public', 'unlisted', 'followers', 'invite_only'] as const;
 
 /** Inline expansion also works inside native sheets without stacking presenters. */

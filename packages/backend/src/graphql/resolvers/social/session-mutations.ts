@@ -167,7 +167,7 @@ export const sessionEditMutations = {
             eq(dbSchema.resourcePrivacy.resourceId, validated.sessionId),
           );
           const [policy] = await transaction.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
-          const audience = legacyResourceAudience(policy?.audience, nextIsPublic ? 'public' : 'unlisted');
+          const audience = legacyResourceAudience(policy?.audience, nextIsPublic ? 'public' : 'unlisted', 'session');
           nextIsPublic = audience === 'public';
           updates.isPublic = nextIsPublic;
           if (policy && audience !== policy.audience) {
