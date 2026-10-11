@@ -358,9 +358,9 @@ export default function MoreScreen() {
   ];
 
   const climbListDensityOptions: { key: ClimbListDensity; label: string }[] = [
-    { key: 'compact', label: t('mobile.more.climbListDensity.compact') },
-    { key: 'default', label: t('mobile.more.climbListDensity.standard') },
-    { key: 'rich', label: t('mobile.more.climbListDensity.rich') },
+    { key: 'compact', label: t('mobile.settings.climbListDensity.compact') },
+    { key: 'default', label: t('mobile.settings.climbListDensity.standard') },
+    { key: 'rich', label: t('mobile.settings.climbListDensity.rich') },
   ];
 
   const gradeFormatOptions: { key: GradeDisplayFormat; label: string }[] = [
@@ -615,13 +615,13 @@ export default function MoreScreen() {
   // segments under a header that says nothing about row size.
   sections.push({
     key: 'climbListDensity',
-    title: t('mobile.more.climbListDensity.title'),
-    footer: t('mobile.more.climbListDensity.description'),
+    title: t('mobile.settings.climbListDensity.title'),
+    footer: t('mobile.settings.climbListDensity.description'),
     rows: [
       {
         kind: 'segmented',
         key: 'climbListDensity',
-        label: t('mobile.more.climbListDensity.title'),
+        label: t('mobile.settings.climbListDensity.title'),
         options: climbListDensityOptions,
         selectedKey: climbListDensity,
         onSelect: (key) => {
