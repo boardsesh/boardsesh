@@ -31,6 +31,17 @@ public React Native Sentry startup APIs, removing native event users and device 
 without patching Sentry. Android has separate error and transaction callbacks; the Apple
 `beforeSend` callback covers both. No account identity is assigned to Sentry.
 
+There is no iOS `beforeSendTransaction` to add, and none is missing. sentry-cocoa has no such
+option: `SentryOptions` exposes `beforeSend`, `beforeSendSpan` and `beforeSendLog`, and
+`SentryClient.prepareEvent` runs `beforeSend` on every event except user feedback, transactions
+included. Checked against sentry-cocoa 9.24.0, the version `@sentry/react-native` 8.24.0 pins
+(`sentry_cocoa_version` in its `RNSentry.podspec`): the call is guarded only by
+`eventIsNotUserFeedback`. So the generated iOS block's `beforeSend`, which clears `event.user` and
+`context.device.id`, already scrubs native transactions the way Android's
+`setBeforeSendTransaction` does. When bumping the React Native SDK, re-check that guard in
+`Sources/Sentry/SentryClient.m`; if Cocoa ever stops routing transactions through `beforeSend`, the
+iOS block needs its own transaction hook.
+
 The two platforms start differently on purpose. Android calls `RNSentrySDK.init`, which starts
 from the callback alone when the app has no `sentry.options.json`. iOS builds its options in code
 with `RNSentryStart` (`createOptions`, React defaults, our callbacks, React finals, `start`) and

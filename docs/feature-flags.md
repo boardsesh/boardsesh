@@ -100,6 +100,35 @@ every render, and still fails closed when PostHog does.
    directory kept its `noindex` past its launch because the reason for it was the
    duplicate-gym queue, not the flag.
 
+## Anonymous bucketing
+
+A percentage rollout puts a climber in a bucket by hashing the flag request's distinct id. Signed
+out, that id is one random UUID per app install (`flags-install:<uuid>`,
+`packages/mobile/src/lib/anonymous-install-id.ts`, in the app's preference store) or per browser
+(`flags-browser:<uuid>`, `packages/web/app/lib/anonymous-flags-id.ts`, in IndexedDB), whatever the
+consent answer. Before this, a signed-out climber without consent got a new id every launch or
+hard page load, so a 20% rollout re-rolled on every launch, and Allow switched to the SDK's own
+anonymous id and re-rolled it once more. Now the bucket holds across launches and across Allow /
+No thanks. Signing in moves the climber to the account's bucket once; from then on it follows the
+account across devices.
+
+The id is functional. www sends it on flag requests and nowhere else. The app also uses it as the
+distinct id of its anonymous OTA health report (`ota-install:<uuid>`), which has no person, no
+account and no GeoIP. It never lives in PostHog's own storage, is never sent beside an account id,
+and is not a device identifier. A flag request creates no PostHog person.
+
+What this means for targeting:
+
+- **Kill switches and percentage rollouts work for everyone**, consented or not, signed in or out.
+- **Conditions on what the request carries still work**: OS, app version and build, and the
+  proxy's edge-verified country (`donation-links` below depends on that).
+- **Conditions on stored person properties or cohorts cannot match a climber who declined.**
+  Without consent the app sends no person traits, the account was never identified, and a
+  withdrawal erases the PostHog person ([analytics-consent.md](./analytics-consent.md#erasure)).
+  An email- or cohort-targeted flag therefore evaluates to its default for a declining account,
+  even when the account's email is on the list. Target testers and staff some other way (the QA
+  tester gate, a build property) when it must reach them whatever they answered.
+
 ## Mobile flags
 
 `privacy-consent-step-kill: true` suppresses the privacy step and disables product analytics,
@@ -109,11 +138,11 @@ local consent, settled authentication and current-account consent synchronizatio
 kill switch off asks users with no choice before tracking resumes.
 
 Before consent, one SDK client serves functional flags from memory through the first-party proxy.
-Signed-in targeting uses only the current settled account ID; signed-out users use a launch-only
-identifier. Requests omit cookies and remove persisted anonymous/device identifiers and person
-or group traits. Feature-flag reads never emit `$feature_flag_called`. Consented anonymous users
-retain their SDK identity and bucketing. An unresolved signed-in account cannot opt the product
-client in, even when the local choice says Allow; flags still work while account sync is offline.
+Signed-in targeting uses only the current settled account ID; signed-out users use the install's
+flags id (below). Requests omit cookies and remove persisted anonymous/device identifiers and person
+or group traits. Feature-flag reads never emit `$feature_flag_called`. An unresolved signed-in
+account cannot opt the product client in, even when the local choice says Allow; flags still work
+while account sync is offline.
 
 Self-hosted Observe is first-party operational diagnostics, independent of the analytics choice.
 Dispatch stays off until the functional flags resolve; startup sampling remains `1` so launch

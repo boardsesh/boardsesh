@@ -252,15 +252,16 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 
 | Tracker | Basis | Notes |
 | --- | --- | --- |
-| PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. |
+| PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. Withdrawal after a grant, and account deletion, erase the PostHog person ([Erasure](#erasure)). |
+| Feature-flag bucketing id (web, app) | Functional, not asked | One random UUID per browser (IndexedDB) or app install (app preferences), sent only as the distinct id of a signed-out flag request, so a rollout does not re-roll per load or flip on Allow. Never on a captured event, never next to an account id. See [feature-flags.md](./feature-flags.md#anonymous-bucketing). |
 | PostHog session replay | Consent | Off unless analytics is on and the climber also switches replay on; never on by default. |
 | Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
-| Android install-referrer attribution | Consent, everywhere | `Install Attributed` and the install person properties are sent only after the climber's own Allow (`isAttributionPublicationGranted`). The region default does not enable them. |
+| Android install-referrer attribution | Consent, everywhere | The Play referrer is not even read before the climber's own Allow: reading it is access to information on the device for attribution (ePrivacy Art. 5(3)). Play keeps it for 90 days after install, and the first Allow triggers the read. `Install Attributed` and the install person properties are sent only after the climber's own Allow (`isAttributionPublicationGranted`). The region default does not enable them. |
 | iOS Apple Ads attribution | Consent, everywhere | Native token acquisition, the first-party backend exchange with Apple, and campaign-linked PostHog publication require the climber's own current Allow; the region default never enables them. The exchange sends `basis`, and the backend refuses anything but `explicit` (absent, from an older app, reads as explicit). Tokens are never persisted or sent to diagnostics. |
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
-| OTA health ping | Legitimate interest | Anonymous, per launch (PR C). |
+| OTA health ping | Legitimate interest | Anonymous: one random id per install (`ota-install:<uuid>`, the same id that buckets signed-out flags), no account, no person profile, no GeoIP. Per install so adoption and emergency rates count phones, not launches. |
 
 ## Backend PostHog events are non-personal
 
@@ -289,6 +290,70 @@ whatever a climber's consent and still identify nobody. Live Activity events
 and `Tick Climb Not In Catalog` no longer carry a user id; count distinct
 `climbUuid` for the latter.
 
+Live Activity events (and their `... Attribution Gap` twins) carry
+`sessionHash` instead of the party-session id, and widget navigation adds
+`boundSessionHash`: an HMAC-SHA256 of the id keyed with
+`POSTHOG_SESSION_HASH_SALT`, so one session's start, pushes, taps and end can be
+joined into a funnel. A plain hash would not do: session ids travel in join
+links, and anyone holding one could recompute it. With the salt unset, both
+properties are omitted. Rotating the salt breaks joins across the rotation.
+
+## Erasure
+
+PostHog keeps a person per identified climber: the account id as distinct id,
+the anonymous ids merged into it at sign-in, `email`, the Apple Ads and
+install-referrer properties, their events and their recordings. Two things
+erase it.
+
+- **Account deletion.** `deleteAccount` queues the erasure in its own
+  transaction, before the user row goes.
+- **Withdrawal after a grant.** `setAnalyticsConsent` queues it when it writes
+  a denial and the account's previous answer was a grant (any version). A
+  repeated denial, or a denial with no grant before it, queues nothing: nothing
+  was captured since.
+
+The job is the `posthog-person-deletion` pg-boss queue, created by the
+migrator and worked by every backend replica
+(`packages/backend/src/services/analytics/posthog-person-deletion.ts`). It is
+enqueued in a savepoint of the caller's transaction, so it exists exactly when
+the deletion or withdrawal commits, and a queue failure rolls back only the job
+and logs `posthog_person_deletion_not_queued`; the deletion still commits. The
+PostHog call never runs inside that transaction.
+
+The job sends `POST /api/projects/<id>/persons/bulk_delete/` with
+`distinct_ids: [<account id>]`, `delete_events: true` and
+`delete_recordings: true`. Deleting by the account id removes the merged
+person, so the anonymous ids identify() merged into it at sign-in go with it.
+What happens next is PostHog's:
+
+- The person record and its distinct ids are removed in the background shortly
+  after the request (`persons_queued_for_deletion` in the response).
+- Events and recordings are deleted by a later PostHog batch, which can take
+  days. `GET /api/projects/<id>/persons/deletion_status/` lists what is still
+  pending. Only events captured before the request are deleted.
+
+Responses: 2xx is done (a non-empty `deletion_errors` retries); 404 is done,
+nothing to delete; 401, 403, 408, 429, 5xx, a timeout or a network error retry;
+any other 4xx is logged as an error and not retried. Retries back off from
+60 seconds to a 6-hour cap, 12 tries, about a day in all. A finished or failed
+job (the account id and a reason, nothing else) is kept 7 days so a failed
+erasure can be retried by hand, then pg-boss deletes it.
+
+Configuration on the backend service: `POSTHOG_PERSONAL_API_KEY`, a personal
+API key with the `person:write` scope (the capture key cannot delete);
+`POSTHOG_PROJECT_ID`, default `412845`; `POSTHOG_API_HOST`, default
+`https://us.posthog.com` (the private API host, not the `us.i.posthog.com`
+ingestion host). Only a production backend calls PostHog, the same gate as
+backend capture. Without the key, every attempt logs
+`posthog_person_deletion_unconfigured` and retries, so setting the key within
+the retry window still erases the person.
+
+Not covered: a device that said Allow and was never signed in. Its person is
+keyed by an SDK-generated id the server never sees, and withdrawal on that
+device resets the SDK, so nothing new joins it. A re-grant within seconds of a
+withdrawal can lose the events captured before the job runs; erring that way is
+deliberate.
+
 ## First-party active users
 
 `user_activity_days` holds one row per signed-in climber per UTC day per
@@ -305,14 +370,21 @@ platform. It is how MAU survives opt-outs.
   backend replica. With two replicas and about 1.1 platforms per climber, 10,000
   daily climbers would mean at most about 22,000 INSERTs a day, one every four
   seconds. The table holds about 1.1 rows per active climber per day, so about
-  400 × DAU rows at the 13-month cap. It is not a write-hot table in the
+  66 × DAU rows at the 60-day cap. It is not a write-hot table in the
   [postgres-query-costs](./postgres-query-costs.md) sense.
+- **What counts as active.** Signed-in climbers only, and any authenticated
+  request counts: a background refetch or a WebSocket reconnect the app makes on
+  its own counts the day as much as a tap does. Signed-out visitors are not in
+  it at all.
 - **Platform.** HTTP clients send `x-boardsesh-platform: web|ios|android`;
   graphql-ws clients send `clientPlatform` in `connection_init` (browsers can't
   set headers on a WebSocket upgrade). Anything else is counted as `unknown`.
   The constants are `CLIENT_PLATFORM_HEADER` and
   `CLIENT_PLATFORM_CONNECTION_PARAM` in `@boardsesh/shared-schema`. Backend CORS
-  allows the header. Until PRs B and C send it, every row is `unknown`.
+  allows the header. The app sends both. www sends the header on HTTP and
+  `clientPlatform: 'web'` on its WebSocket. Until October 2026 the www socket
+  sent nothing, so a www climber with a socket open landed in both `web` and
+  `unknown` on the same day; read `unknown` before then as mostly www.
 - **Snapshot.** The scheduler's `snapshot-active-users` job (00:20 UTC) calls
   the cron-only `snapshotActiveUsers` mutation. It counts yesterday's DAU and
   the trailing 7-day WAU and 30-day MAU, overall and per platform, and sends
@@ -322,7 +394,11 @@ platform. It is how MAU survives opt-outs.
   `monthlyActiveUsers`, and the same per platform (`dailyActiveUsersIos`,
   `monthlyActiveUsersWeb`, ...). Counts only.
 - **Retention.** The scheduler's `purge-user-activity` job (07:30 UTC) calls
-  `purgeExpiredUserActivity`, which deletes rows older than 13 months.
+  `purgeExpiredUserActivity`, which deletes rows older than 60 days
+  (`USER_ACTIVITY_RETENTION_DAYS`). The longest window anything reads is the
+  trailing 30-day MAU; the other 30 days let a failed snapshot be re-run up to
+  a month late. Nothing computes yearly actives; one that wants them needs a
+  longer retention argued here first.
 - **Known gap.** A signed-out climber who declines can't be deduplicated
   without storing an identifier, so they are not in MAU.
 
@@ -420,6 +496,9 @@ identifier, full URL or referrer.
 
 Website PostHog starts opted out with memory persistence so flags still work.
 Signed-in flag evaluation may use the account ID without identify/capture.
+Signed out, every flag request buckets on the browser's flags-only id from
+IndexedDB, with or without consent, so Allow does not move a visitor to another
+rollout bucket ([feature-flags.md](./feature-flags.md#anonymous-bucketing)).
 Allow replaces the client with a persisted instance and opts in; product
 identify is allowed only then. Withdrawal blocks capture and retries immediately,
 opts out, discards all four SDK event/log queues, resets identity, opts out again,

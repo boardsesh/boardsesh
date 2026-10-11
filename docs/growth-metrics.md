@@ -26,8 +26,18 @@ counts (see [analytics-consent.md](./analytics-consent.md)).
   `…Unknown`. A climber on two platforms counts once overall and once on each.
 - **Who counts:** signed-in climbers only. Signed-out visitors are not in it,
   and a signed-out climber who declines analytics can't be counted anywhere.
-- **Platform:** `unknown` until the web and app clients send
-  `x-boardsesh-platform` / `clientPlatform` (PRs B and C of #2644).
+- **What counts as active:** any authenticated request to the backend, not a
+  climber doing something. A background refetch, a sync, or a WebSocket that
+  reconnects on its own after the phone wakes all count the day. Read the MAU
+  as "signed-in climbers whose app or browser talked to us", which runs higher
+  than "climbers who opened Boardsesh on purpose".
+- **Platform:** each client says which it is (`x-boardsesh-platform` on HTTP,
+  `clientPlatform` on the WebSocket). www's socket sent nothing until October
+  2026, so before then a www climber with a socket open counted under both
+  `web` and `unknown` on the same day; `unknown` from that period is mostly www.
+- **Retention:** 60 days of rows, enough for the 30-day window and a late
+  re-run. A past day's counts live on in its snapshot event; the rows behind
+  them do not.
 - **PostHog MAU is no longer comparable.** Since the consent prompt shipped
   (PRs B and C of #2644), PostHog sees climbers in the prompt regions (EU, EEA,
   UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`) only after they

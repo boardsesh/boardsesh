@@ -1573,6 +1573,13 @@ mounted once near the root beside `AnalyticsScreenTracker`:
 
 - **`OTA Update Status`** — fired once per launch with the running bundle:
   `{ isEnabled, isEmbeddedLaunch, updateId, channel, branch, runtimeVersion, createdAtIso, isEmergencyLaunch }`.
+  It is sent whatever the analytics answer, anonymously
+  (`packages/mobile/src/lib/anonymous-ota-health.ts`): no person profile, no GeoIP, no account,
+  and an explicit property allowlist. Its distinct id is `ota-install:<uuid>`, one random id per
+  install from the app's preference store (`anonymous-install-id.ts`, the same id that buckets
+  signed-out feature flags), so `count(DISTINCT distinct_id)` is installs and a phone
+  crash-looping on a bad bundle counts once. JS older than this sends `ota-launch:<uuid>`, a new id
+  per launch.
   `isEmbeddedLaunch === false` means the install is running an **OTA'd**
   bundle (not the one baked into the binary); group by `updateId` to size the rollout of a specific
   JS-only fix; `runtimeVersion` is the fingerprint cohort that can receive OTAs at all. `channel`
@@ -1722,8 +1729,9 @@ because "nothing published yet" is a diagnosis rather than a fault.
 ### The health check (`scripts/mobile-ota-health-check.ts`)
 
 `vp run mobile:ota-health-check` queries PostHog (HogQL) for `OTA Update Status` events on the
-`production` channel over a window and reports launch count, target-update launch count, and the
-emergency-launch rate:
+`production` channel over a window and reports, per install (distinct `distinct_id`): installs that
+reported, installs with at least one emergency launch, and installs running the target update.
+Raw launch counts ride along for context:
 
 ```bash
 vp run mobile:ota-health-check                                  # latest production update, last 24h
@@ -1732,9 +1740,9 @@ vp run mobile:ota-health-check -- --update-id <id>             # adoption contex
 vp run mobile:ota-health-check -- --min-samples 50 --threshold 0.1
 ```
 
-It **exits non-zero only when the emergency-launch rate exceeds `--threshold` (default 10%) AND the
-window has at least `--min-samples` launches (default 30)** — so the low-volume minutes right after a
-publish, or a one-off device failure, never trip it. Every other outcome (healthy, inconclusive,
+It **exits non-zero only when the share of installs with an emergency launch exceeds `--threshold`
+(default 10%) AND at least `--min-samples` installs reported (default 30)** — so the low-volume
+minutes right after a publish, or one phone crash-looping, never trip it. Every other outcome (healthy, inconclusive,
 missing key, API/network error) exits 0, so it's safe as a non-blocking gate.
 
 Two notes on what it measures:
@@ -1742,7 +1750,11 @@ Two notes on what it measures:
 - An emergency launch runs the **embedded** bundle, so its `updateId` is the embedded one — you
   can't attribute the failure to the bad update's id. The gate therefore measures the **fleet-wide**
   production emergency rate over the window, not a per-`updateId` rate. The target update's adoption
-  (launches successfully running it) is reported separately, for context only.
+  (installs successfully running it) is reported separately, for context only.
+- The same fact decides which id an emergency reports under: the embedded JS's. A store binary built
+  before the per-install id still reports its emergencies as `ota-launch:<uuid>`, one "install" per
+  launch, so on such binaries a crash loop still inflates the count until the binary is replaced.
+  Normal launches on an OTA'd bundle already use the install id.
 - The fleet relaunches over **hours**, so the value is a re-run later (manually, or wire it to a
   schedule), not the seconds after a publish.
 
