@@ -221,15 +221,15 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
           </View>
           <View style={styles.subtitleRow}>
             {playlistChips}
-          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitleText} numberOfLines={1}>
-            {subtitleParts.join(' · ')}
-            {setterUsername && onPressSetter ? (
-              <Text variant="caption1" onPress={onPressSetter} accessibilityRole="link">
-                {subtitleParts.length > 0 ? ' · ' : ''}
-                {setterUsername}
-              </Text>
-            ) : null}
-          </Text>
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitleText} numberOfLines={1}>
+              {subtitleParts.join(' · ')}
+              {setterUsername && onPressSetter ? (
+                <Text variant="caption1" onPress={onPressSetter} accessibilityRole="link">
+                  {subtitleParts.length > 0 ? ' · ' : ''}
+                  {setterUsername}
+                </Text>
+              ) : null}
+            </Text>
           </View>
           {/* One caption line, same grey as the subtitle: this is context for a
               climb you can still open by link or queue, not an error. */}
@@ -455,7 +455,6 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   subtitleText: {
-
     textAlign: 'center',
     // Yields when a playlist tag shares the line, so a long setter name
     // ellipsizes rather than shoving the tag out of the row.

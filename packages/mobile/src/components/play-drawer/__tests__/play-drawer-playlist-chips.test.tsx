@@ -39,7 +39,7 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
-      options?.playlists == null ? key : `${key}|${String(options.playlists)}`,
+      typeof options?.playlists === 'string' ? `${key}|${options.playlists}` : key,
   }),
 }));
 

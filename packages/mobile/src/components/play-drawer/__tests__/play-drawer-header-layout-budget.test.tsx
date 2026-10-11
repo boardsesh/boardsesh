@@ -9,11 +9,27 @@ import { createElement, type ReactNode } from 'react';
 vi.mock('react-native', () => ({
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
     createElement('div', { 'data-view': 'true', 'data-style': JSON.stringify(style ?? null) }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+  },
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
 }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  return { PressableSurface: Pressable };
+});
+vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+}));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../DraftChip', () => ({ DraftChip: () => null }));
+vi.mock('../../ProjectChip', () => ({ ProjectChip: () => null }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#abcdef',

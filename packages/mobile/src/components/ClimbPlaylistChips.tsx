@@ -1,6 +1,6 @@
 import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import React, { useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type ColorValue } from 'react-native';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
@@ -79,7 +79,7 @@ type PlaylistChipsRowProps = {
   /** Label colour for the `inline` variant, so the tag matches the caption text it
    *  joins rather than introducing a second grey on the same line. Ignored by the
    *  list variant, which is its own line and keeps the themed chip colour. */
-  inlineLabelColor?: string;
+  inlineLabelColor?: ColorValue;
   /**
    * Builds the VoiceOver label for the whole strip from every playlist name,
    * including the ones the "+N" token hides. Omit (the list-row default) to hide
@@ -231,59 +231,60 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climb
   return <PlaylistChipsRow playlistUuids={membership} />;
 });
 
-const createStyles = (textStyles: TypographyScale) => StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-    marginTop: spacing[1],
-    overflow: 'hidden',
-  },
-  // Riding inside an existing line of text instead of adding one: no top margin
-  // (the host row owns the spacing), free to shrink, and capped so it can never
-  // crowd out the stats it sits beside.
-  rowInline: {
-    marginTop: 0,
-    flexShrink: 1,
-    minWidth: 0,
-    maxWidth: INLINE_MAX_WIDTH,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-    paddingHorizontal: spacing[2],
-    paddingVertical: 2,
-    minHeight: 20,
-    // Let a chip shrink so a long name ellipsizes rather than shoving the "+N"
-    // token off the row.
-    flexShrink: 1,
-  },
-  // The overflow counter never shrinks — it must always stay visible.
-  overflowChip: {
-    flexShrink: 0,
-  },
-  // No container: a dot and a name, sized by the caption line it joins. Carries
-  // no minHeight, so the host row stays exactly one caption tall — which is what
-  // keeps the board art below the header from losing a single point.
-  chipInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: borderRadius.full,
-    flexShrink: 0,
-  },
-  emoji: {
-    fontSize: textStyles.caption1.fontSize,
-  },
-  label: {
-    fontWeight: '500',
-    flexShrink: 1,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+      marginTop: spacing[1],
+      overflow: 'hidden',
+    },
+    // Riding inside an existing line of text instead of adding one: no top margin
+    // (the host row owns the spacing), free to shrink, and capped so it can never
+    // crowd out the stats it sits beside.
+    rowInline: {
+      marginTop: 0,
+      flexShrink: 1,
+      minWidth: 0,
+      maxWidth: INLINE_MAX_WIDTH,
+    },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+      paddingHorizontal: spacing[2],
+      paddingVertical: 2,
+      minHeight: 20,
+      // Let a chip shrink so a long name ellipsizes rather than shoving the "+N"
+      // token off the row.
+      flexShrink: 1,
+    },
+    // The overflow counter never shrinks — it must always stay visible.
+    overflowChip: {
+      flexShrink: 0,
+    },
+    // No container: a dot and a name, sized by the caption line it joins. Carries
+    // no minHeight, so the host row stays exactly one caption tall — which is what
+    // keeps the board art below the header from losing a single point.
+    chipInline: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+      flexShrink: 1,
+      minWidth: 0,
+    },
+    dot: {
+      width: 8,
+      height: 8,
+      borderRadius: borderRadius.full,
+      flexShrink: 0,
+    },
+    emoji: {
+      fontSize: textStyles.caption1.fontSize,
+    },
+    label: {
+      fontWeight: '500',
+      flexShrink: 1,
+    },
+  });
