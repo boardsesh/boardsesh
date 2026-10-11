@@ -3,7 +3,11 @@ import type { BoardPresenceClimb, BoardPresenceStats, SessionUser } from '@board
 
 vi.hoisted(() => vi.resetModules());
 
-const privacy = vi.hoisted(() => ({ canViewActivityIdentity: vi.fn(), canViewContent: vi.fn() }));
+const privacy = vi.hoisted(() => ({
+  canViewActivityIdentity: vi.fn(),
+  canViewContent: vi.fn(),
+  visibleActivityUserIds: vi.fn(),
+}));
 const readable = vi.hoisted(() => ({
   climbs: [] as { uuid: string; userId: string | null; isListed: boolean; isDraft: boolean }[],
 }));
@@ -38,6 +42,7 @@ beforeEach(() => {
   vi.stubEnv('NEXTAUTH_SECRET', 'privacy-unit-test-secret');
   vi.clearAllMocks();
   privacy.canViewActivityIdentity.mockResolvedValue(false);
+  privacy.visibleActivityUserIds.mockResolvedValue(new Set());
   readable.climbs = [{ uuid: display.climbUuid, userId: null, isListed: true, isDraft: false }];
   privacy.canViewContent.mockResolvedValue(true);
 });
@@ -56,21 +61,29 @@ describe('board history identity', () => {
       sentByAvatarUrl: null,
     });
     // The sender's account decides; the session the send was in is not consulted.
-    expect(privacy.canViewActivityIdentity).toHaveBeenCalledWith('climber-1', 'stranger');
+    expect(privacy.visibleActivityUserIds).toHaveBeenCalledWith(['climber-1'], 'stranger');
+  });
+  it('checks every sender on a page in one lookup', async () => {
+    privacy.visibleActivityUserIds.mockResolvedValue(new Set(['climber-1']));
+    const page = [display, { ...display, seq: 8, sentByUserId: 'climber-2' }, { ...display, seq: 9 }];
+    const redacted = await redactBoardClimbs(page, 'viewer');
+    expect(redacted.map((climb) => climb.sentByUserId)).toEqual(['climber-1', null, 'climber-1']);
+    expect(privacy.visibleActivityUserIds).toHaveBeenCalledTimes(1);
+    expect(privacy.canViewActivityIdentity).not.toHaveBeenCalled();
   });
   it('rechecks an existing cached display after a follower is revoked', async () => {
-    privacy.canViewActivityIdentity.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    privacy.visibleActivityUserIds.mockResolvedValueOnce(new Set(['climber-1'])).mockResolvedValueOnce(new Set());
     expect((await redactBoardClimbs([display], 'follower'))[0].sentByUserId).toBe('climber-1');
     expect((await redactBoardClimbs([display], 'follower'))[0].sentByUserId).toBeNull();
     expect(display.sentByUserId).toBe('climber-1');
   });
   it('names a historical row with no session or policy version by its climber account alone', async () => {
     const historical = { ...display, sessionId: null, identityPolicyVersion: undefined };
-    privacy.canViewActivityIdentity.mockResolvedValue(true);
+    privacy.visibleActivityUserIds.mockResolvedValue(new Set(['climber-1']));
     expect((await redactBoardClimbs([historical], 'stranger'))[0].sentByUserId).toBe('climber-1');
-    privacy.canViewActivityIdentity.mockResolvedValue(false);
+    privacy.visibleActivityUserIds.mockResolvedValue(new Set());
     expect((await redactBoardClimbs([historical], 'stranger'))[0].sentByUserId).toBeNull();
-    expect(privacy.canViewActivityIdentity).toHaveBeenLastCalledWith('climber-1', 'stranger');
+    expect(privacy.visibleActivityUserIds).toHaveBeenLastCalledWith(['climber-1'], 'stranger');
   });
   it('retains chronology but removes private climb content', async () => {
     // The primary SQL policy excludes the inaccessible authored source row.

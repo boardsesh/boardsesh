@@ -71,6 +71,19 @@ export async function canViewUserActivity(viewerId: ViewerId, subjectId: string)
     .limit(1);
   return !!subject;
 }
+/** `canViewUserActivity` for a page of climbers: one query for all of them. */
+export async function visibleActivityUserIds(
+  subjectUserIds: readonly (string | null | undefined)[],
+  viewerId: ViewerId,
+): Promise<Set<string>> {
+  const candidates = [...new Set(subjectUserIds.filter((userId): userId is string => !!userId))];
+  if (candidates.length === 0) return new Set();
+  const rows = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(and(inArray(schema.users.id, candidates), userActivityVisibilityCondition(schema.users.id, viewerId)));
+  return new Set(rows.map((row) => row.id));
+}
 /** Account/item policy only: the session or wall an item sits in never hides it. */
 export async function canViewContent(
   viewerId: ViewerId,

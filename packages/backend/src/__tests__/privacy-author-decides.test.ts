@@ -145,6 +145,27 @@ describe('author decides', () => {
     expect(await canAccessResource('session', 'author-decides-deleted-session', null)).toBe(true);
     expect(await canReadSocialEntity('session', 'author-decides-deleted-session', null)).toBe(true);
     expect(await canReadSocialEntity('tick', 'author-decides-on-deleted-board', STRANGER)).toBe(true);
+
+    // The deleted board is no longer named, like any board the viewer cannot
+    // see: the row stays with its board fields blank. Its climber keeps the name.
+    const forStranger = await tickQueries.userAscentsFeed(
+      null,
+      { userId: CLIMBER, input: { limit: 10 } },
+      viewer(STRANGER),
+    );
+    expect(forStranger.items.find((item) => item.uuid === 'author-decides-on-deleted-board')).toMatchObject({
+      boardId: null,
+      boardDisplayName: null,
+    });
+    expect(JSON.stringify(forStranger)).not.toContain('Deleted Wall');
+    const forClimber = await tickQueries.userAscentsFeed(
+      null,
+      { userId: CLIMBER, input: { limit: 10 } },
+      viewer(CLIMBER),
+    );
+    expect(forClimber.items.find((item) => item.uuid === 'author-decides-on-deleted-board')).toMatchObject({
+      boardId: deletedBoardId,
+    });
   });
 
   it('reads a tick whose session row is missing by its author’s policy', async () => {

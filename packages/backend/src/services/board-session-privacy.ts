@@ -12,7 +12,7 @@ import type {
 } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { boardClimbs, boardSessions, userBoards } from '@boardsesh/db/schema';
-import { canViewActivityIdentity, canViewContent } from './privacy';
+import { canViewActivityIdentity, canViewContent, visibleActivityUserIds } from './privacy';
 
 /** Session protocol IDs must never double as profile IDs. */
 export function sessionParticipantId(sessionId: string, userId: string): string {
@@ -163,19 +163,22 @@ export async function redactBoardClimbs(
           );
   const readableUuids = new Set(readableClimbs.map((climb) => climb.uuid));
 
-  return Promise.all(
-    climbs.map(async (climb) => {
-      // The sender's account privacy alone decides attribution, whatever session
-      // (or none) the send was in and however old the history event is.
-      const showIdentity = !!climb.sentByUserId && (await canViewActivityIdentity(climb.sentByUserId, viewerId));
-      const visibleClimb = !readableUuids.has(climb.climbUuid)
-        ? { ...climb, name: null, frames: null, setter: null, grade: null, gradeColor: null, queueItemUuid: null }
-        : climb;
-      return showIdentity
-        ? visibleClimb
-        : { ...visibleClimb, sentByUserId: null, sentByDisplayName: null, sentByAvatarUrl: null };
-    }),
+  // The sender's account privacy alone decides attribution, whatever session
+  // (or none) the send was in and however old the history event is. One query
+  // for every sender on the page.
+  const visibleSenders = await visibleActivityUserIds(
+    climbs.map((climb) => climb.sentByUserId),
+    viewerId,
   );
+  return climbs.map((climb) => {
+    const showIdentity = !!climb.sentByUserId && visibleSenders.has(climb.sentByUserId);
+    const visibleClimb = !readableUuids.has(climb.climbUuid)
+      ? { ...climb, name: null, frames: null, setter: null, grade: null, gradeColor: null, queueItemUuid: null }
+      : climb;
+    return showIdentity
+      ? visibleClimb
+      : { ...visibleClimb, sentByUserId: null, sentByDisplayName: null, sentByAvatarUrl: null };
+  });
 }
 
 export async function redactBoardStats(
