@@ -51,5 +51,7 @@ name: Tutorial setup - private crew session
     visible: NuVu
     timeout: 20000
 - extendedWaitUntil:
-    visible: 'On the wall: NuVu,.*'
+    # Player pill names the driver; NuVu is the separate title above. The
+    # recorder additionally verifies its exact UUID as the sole joined row.
+    visible: 'On the wall\. Alex is lighting the wall\..*'
     timeout: 20000
