@@ -170,6 +170,25 @@ describe('web analytics consent lifecycle', () => {
     );
     expect(harness.network).toHaveBeenCalledOnce();
   });
+  it.each([
+    ['the backend proxy', 'https://api.boardsesh.com/api/posthog', { 'x-boardsesh-analytics-consent': 'granted' }],
+    ['a direct PostHog override', 'https://posthog.test', {}],
+  ])('tells %s that consented capture may keep the visitor IP, never on flags', async (_label, host, consentHeader) => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', host);
+    harness.granted = true;
+    const analytics = await import('../analytics');
+    analytics.readPosthogFeatureFlags([]);
+    const client = harness.clients[0];
+    const headers = { 'Content-Type': 'application/json' };
+    await client.fetch(`${host}/batch/`, { method: 'POST', headers });
+    await client.fetch(`${host}/flags/?v=2`, { method: 'POST', headers });
+    expect(harness.network).toHaveBeenNthCalledWith(
+      1,
+      `${host}/batch/`,
+      expect.objectContaining({ headers: { ...headers, ...consentHeader } }),
+    );
+    expect(harness.network).toHaveBeenNthCalledWith(2, `${host}/flags/?v=2`, expect.objectContaining({ headers }));
+  });
   it('keeps the grant after identity reset on sign-out', async () => {
     harness.granted = true;
     const analytics = await import('../analytics');

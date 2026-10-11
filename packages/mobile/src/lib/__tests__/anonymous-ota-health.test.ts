@@ -36,6 +36,8 @@ it('health uses an ephemeral launch identity and first-party transport with no c
   const event = JSON.parse(request.body).batch[0];
   expect(url).toMatch(/\/api\/posthog\/batch\/$/);
   expect(request.credentials).toBe('omit');
+  // No analytics-consent header, so the proxy strips the IP from this anonymous event.
+  expect(request.headers).toEqual({ 'Content-Type': 'application/json' });
   expect(event.distinct_id).toMatch(/^ota-launch:/);
   expect(event.properties.$process_person_profile).toBe(false);
   expect(event.properties).not.toHaveProperty('email');

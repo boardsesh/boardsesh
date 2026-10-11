@@ -3,7 +3,7 @@ import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from './analytics-paths';
 import { getWebConsentRecord, hasAnalyticsConsent, subscribeWebConsent } from './consent';
-import { isAnalyticsGranted } from '@boardsesh/consent';
+import { ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED, isAnalyticsGranted } from '@boardsesh/consent';
 
 import { getBackendHttpUrl } from './backend-url';
 import { getSessionInboundCampaign, type InboundCampaign } from './inbound-campaign';
@@ -54,7 +54,7 @@ function retirePosthog(client: PostHog): void {
   client.setPersistedProperty = () => {};
   void client.shutdown(100).catch(() => {});
 }
-function installConsentTransport(client: PostHog): void {
+function installConsentTransport(client: PostHog, viaBackendProxy: boolean): void {
   const sdkFetch = client.fetch.bind(client);
   const requests = new Set<AbortController>();
   activeRequests.set(client, requests);
@@ -68,8 +68,15 @@ function installConsentTransport(client: PostHog): void {
     options.signal?.addEventListener('abort', abort, { once: true });
     if (options.signal?.aborted) controller.abort();
     requests.add(controller);
+    // Consented capture tells our proxy it may forward the visitor IP for GeoIP.
+    // Flags never carry it, and a direct-to-PostHog override never sends it (its
+    // CORS policy does not list our header).
+    const headers =
+      viaBackendProxy && !flagsRequest
+        ? { ...options.headers, [ANALYTICS_CONSENT_HEADER]: ANALYTICS_CONSENT_HEADER_GRANTED }
+        : options.headers;
     try {
-      return await sdkFetch(url, { ...options, signal: controller.signal });
+      return await sdkFetch(url, { ...options, headers, signal: controller.signal });
     } finally {
       requests.delete(controller);
       options.signal?.removeEventListener('abort', abort);
@@ -200,7 +207,7 @@ function getPosthog(): PostHog | null {
   });
 
   posthogPersisted = hasAnalyticsConsent();
-  installConsentTransport(posthogClient);
+  installConsentTransport(posthogClient, /\/api\/posthog\/?$/.test(host));
   if (posthogPersisted) void posthogClient.optIn().catch(() => {});
   else void posthogClient.optOut().catch(() => {});
   registerWebSuperProperties(posthogClient);

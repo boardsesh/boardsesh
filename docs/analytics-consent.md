@@ -276,9 +276,19 @@ Withdrawing discards the buffered metrics. Reset on sign-out reapplies the
 existing device opt state and web super properties. HTTP GraphQL requests send
 x-boardsesh-platform: web so signed-in first-party activity remains counted.
 
-The backend PostHog proxy strips client IP and HTTP User-Agent headers from
-flags and capture traffic. Granted analytics explicitly supplies its consented
-user-agent event property; operational events use minimal payloads.
+The backend PostHog proxy never forwards the HTTP User-Agent. It forwards the
+visitor IP (`X-Forwarded-For`: the first incoming hop, else the socket peer)
+only on capture whose request carries `x-boardsesh-analytics-consent: granted`
+(`ANALYTICS_CONSENT_HEADER` in `@boardsesh/consent`). Web and app add that
+header only to capture sent with a current Allow; www adds it only when it
+talks to our proxy, not to a direct-to-PostHog override. Everything else is
+stripped: flags, the public config request, the anonymous OTA health event,
+kiosk telemetry and any older client. The default is strip, so a missing or
+mistyped header can only lose a consented event's location, never locate an
+anonymous one. Without the forwarded IP, PostHog geolocated consented events
+and overwrote person `$geoip_*` properties with the backend's own location.
+Granted analytics explicitly supplies its consented user-agent event property;
+operational events use minimal payloads.
 Functional flag requests retain allowlisted OS, app version/build, namespace,
 and device-type properties without analytics consent. The proxy overwrites
 GeoIP properties with only a current, edge-verified country and sets

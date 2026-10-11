@@ -280,10 +280,12 @@ export function applyCorsHeaders(req: IncomingMessage, res: ServerResponse): boo
   // lists "content-encoding" in the preflight's Access-Control-Request-Headers.
   // X-Boardsesh-Platform labels a request web/ios/android for the first-party
   // active-user count (CLIENT_PLATFORM_HEADER, #2644). X-Boardsesh-Client
-  // identifies the app. Browser clients need both allowed for preflight.
+  // identifies the app. X-Boardsesh-Analytics-Consent marks consented PostHog
+  // capture, the only proxied traffic that keeps the visitor IP
+  // (ANALYTICS_CONSENT_HEADER). Browser clients need all three allowed for preflight.
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform, X-Boardsesh-Client',
+    'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform, X-Boardsesh-Client, X-Boardsesh-Analytics-Consent',
   );
 
   if (req.method === 'OPTIONS') {

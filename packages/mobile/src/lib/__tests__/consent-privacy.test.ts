@@ -60,6 +60,26 @@ describe('mobile consent privacy boundaries', () => {
     expect(requestSignal?.aborted).toBe(true);
     await pending;
   });
+  it('marks consented capture for the proxy and leaves flags unmarked', async () => {
+    const fetchSpy = vi
+      .spyOn(PostHog.prototype, 'fetch')
+      .mockResolvedValue({ status: 200, text: async () => '', json: async () => ({}) });
+    const client = new ConsentPostHog('phc_test');
+    await client.fetch('https://backend/api/posthog/batch/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.headers).toEqual({
+      'Content-Type': 'application/json',
+      'x-boardsesh-analytics-consent': 'granted',
+    });
+    await client.fetch('https://backend/api/posthog/flags/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.headers).toEqual({ 'Content-Type': 'application/json' });
+  });
   it('flags retain functional build targeting without consent and scrub personal traits', async () => {
     const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
     updateConsentState({ accountId: 'account-b', authSettled: true, accountResolved: false, sdkReady: false });

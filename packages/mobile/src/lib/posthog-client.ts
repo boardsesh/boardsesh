@@ -11,7 +11,7 @@ import {
 import { createConsentPosthogStorage } from './consent-posthog-storage';
 import { posthogStorageBackend } from './posthog-storage-backend';
 import { BACKEND_URL } from './env';
-import { isAnalyticsGranted } from '@boardsesh/consent';
+import { ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED, isAnalyticsGranted } from '@boardsesh/consent';
 import { notifyAnalyticsIdentityChanged } from './analytics-identity-events';
 import { applySessionReplayConsent } from './session-replay-consent';
 import { applyNativeReplayPrivacy } from './replay-privacy';
@@ -84,6 +84,8 @@ export function registerAppSuperProperties(client: Pick<PostHog, 'register'>): v
 // (OTA or native) is built, not merely present at runtime.
 const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
 // The first-party proxy strips network identity headers for both native and web.
+// Capture sent with a current Allow carries ANALYTICS_CONSENT_HEADER, and only
+// then does the proxy forward the visitor IP for GeoIP.
 const host = `${BACKEND_URL}/api/posthog`;
 const captureRequests = new Set<AbortController>();
 let initializingIdentity = false;
@@ -174,7 +176,12 @@ export class ConsentPostHog extends PostHog {
     captureRequests.add(controller);
     try {
       if (!isProductAnalyticsGranted() || epoch !== getConsentSnapshot().authEpoch) controller.abort();
-      return await super.fetch(url, { ...options, credentials: 'omit', signal: controller.signal });
+      return await super.fetch(url, {
+        ...options,
+        headers: { ...options.headers, [ANALYTICS_CONSENT_HEADER]: ANALYTICS_CONSENT_HEADER_GRANTED },
+        credentials: 'omit',
+        signal: controller.signal,
+      });
     } finally {
       captureRequests.delete(controller);
       options.signal?.removeEventListener('abort', abort);

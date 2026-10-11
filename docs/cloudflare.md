@@ -118,7 +118,9 @@ interactive agents. CI and S3 publication still use their stored credentials.
 The backend PostHog proxy reads only the `CF-IPCountry` country header supplied
 by [Cloudflare IP Geolocation](https://developers.cloudflare.com/network/ip-geolocation/).
 Keep the zone's IP Geolocation setting on; absent country fails closed as `XX`.
-No visitor IP, city, coordinates, or HTTP User-Agent is forwarded to PostHog.
+Flag requests forward no visitor IP, city, coordinates, or HTTP User-Agent to
+PostHog. Only consented capture forwards the visitor IP, for GeoIP; see
+[analytics consent](./analytics-consent.md#website-and-browser-app).
 
 The backend accepts that header only when the socket peer is in Cloudflare's
 published IPv4/IPv6 ranges, or a private reverse-proxy socket has a Cloudflare
