@@ -131,6 +131,15 @@ describe('the paged setters shard', () => {
     expect(index.xml.match(/\/sitemaps\/setters\//g)).toHaveLength(3);
   });
 
+  it('serves a page on the setter CDN window, not private no-store', async () => {
+    // Setter pages list published, listed climbs, which are public whoever set
+    // them, so nothing on this page can be withdrawn by account privacy.
+    const response = await pagedShardRouteHandler('setters', '1.xml');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('public, s-maxage=21600, stale-while-revalidate=604800');
+  });
+
   it('404s the page past the end rather than serving an empty urlset', async () => {
     // An empty `<urlset>` on a page the index advertises tells Google the
     // surface was deleted; a 404 tells a crawler to stop asking.

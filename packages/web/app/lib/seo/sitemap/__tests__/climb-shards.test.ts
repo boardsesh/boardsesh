@@ -160,7 +160,7 @@ describe('the paged climbs shard', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/xml; charset=utf-8');
-    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('cache-control')).toBe('public, s-maxage=21600, stale-while-revalidate=604800');
     expect(await response.text()).toContain('<urlset');
   });
 
