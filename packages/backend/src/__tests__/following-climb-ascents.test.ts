@@ -351,6 +351,25 @@ describe('who counts as followed', () => {
   });
 });
 
+describe('home-board privacy', () => {
+  // A private home board (not a spray wall) hides only its own name and place.
+  // The log on it is its climber's, so it follows the climber's account.
+  it('shows a followed climber’s log on somebody else’s private board', async () => {
+    const [board] = (await db.execute(sql`
+      INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public)
+      VALUES ('fca-private-home', 'fca-private-home', ${WALL_OWNER}, 'kilter', 1, 10, '1', 'Fca garage', false)
+      RETURNING id
+    `)) as unknown as Array<{ id: number }>;
+    await insertTick({ userId: ALEX, boardId: Number(board.id) });
+
+    const answer = await ask(VIEWER);
+
+    expect(answer.items.map((item) => item.userId)).toEqual([ALEX]);
+    expect(answer.summary.climberCount).toBe(1);
+    expect(JSON.stringify(answer)).not.toContain('Fca garage');
+  });
+});
+
 describe('spray-wall privacy', () => {
   it('hides a log on a PRIVATE wall from a follower who cannot see the wall', async () => {
     const { climbUuid } = await seedWall({ isPublic: false });

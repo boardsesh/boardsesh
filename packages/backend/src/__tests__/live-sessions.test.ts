@@ -21,6 +21,7 @@ import { db } from '../db/client';
 import { pubsub } from '../pubsub/index';
 import { roomManager, type SessionConnectionLiveness } from '../services/room-manager';
 import { resolveLiveSessionBoards, parseSessionBoardPath } from '../services/live-sessions';
+import { resolvePublicPreviewSessionForBoard } from '../services/board-queue-preview';
 import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { sessionQueries } from '../graphql/resolvers/sessions/queries';
@@ -936,17 +937,28 @@ describe('followedLiveSessions — spray walls', () => {
     expect(await followedLiveSessions(VIEWER, { boardUuid: wall.uuid })).toEqual([]);
   });
 
-  it('hides a followed climber’s session when its parent spray wall is hidden', async () => {
+  it('lists a followed climber’s session on a hidden spray wall without naming the wall', async () => {
     await follow(VIEWER, FRIEND);
     const wall = await makeSprayWall({ name: 'Hidden Spray Wall' });
     const sessionId = await makeSession({ createdBy: FRIEND, boardPath: wall.path });
     await goLive(sessionId, FRIEND, wall.path);
     await addTick({ sessionId, userId: FRIEND, boardId: wall.id });
+    const current = makeQueueItem('Hidden Spray Problem');
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
     await db
       .update(dbSchema.sprayWalls)
       .set({ hiddenAt: new Date() })
       .where(eq(dbSchema.sprayWalls.boardUuid, wall.uuid));
-    expect(await followedLiveSessions(VIEWER)).toEqual([]);
+
+    // The session follows its host; the hidden wall only loses its name.
+    const [session] = await followedLiveSessions(VIEWER);
+    expect(session.sessionId).toBe(sessionId);
+    expect(session.reasons).toEqual(['FOLLOWING_USER']);
+    expect(session.board).toBeNull();
+    expect(session.currentClimb).toBeNull();
+    expect(JSON.stringify(session)).not.toContain('Hidden Spray Wall');
+    expect(JSON.stringify(session)).not.toContain(wall.uuid);
+    expect(JSON.stringify(session)).not.toContain('Hidden Spray Problem');
   });
 });
 
@@ -1057,13 +1069,52 @@ describe('session privacy switch', () => {
     expect(await readIsPublic(result.id)).toBe(false);
   });
 
-  it('requires host approval before a private link permits joining or reading', async () => {
+  it('keeps a legacy private session off the listings while its link still joins and reads', async () => {
+    const board = await makeBoard({ ownerId: VIEWER, name: 'Legacy Private Wall' });
+    await follow(STRANGER, VIEWER);
+    await followBoard(STRANGER, board.uuid);
     const result = await sessionMutations.createSession(
       undefined,
       { input: createInput({ isPublic: false }) },
       authCtx(VIEWER),
     );
+    await db.update(dbSchema.boardSessions).set({ boardId: board.id }).where(eq(dbSchema.boardSessions.id, result.id));
     await goLive(result.id, VIEWER, result.boardPath);
+    await addTick({ sessionId: result.id, userId: VIEWER, boardId: board.id });
+
+    // No policy row: the legacy switch reads as unlisted, not invite-only.
+    const policies = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(eq(dbSchema.resourcePrivacy.resourceId, result.id));
+    expect(policies).toEqual([]);
+
+    // Not listed: Home's rail, the board sheet and the wall kiosk all skip it.
+    expect(ids(await followedLiveSessions(STRANGER))).not.toContain(result.id);
+    expect(
+      ids(await liveSessionQueries.boardLiveSessions(undefined, { boardId: board.id }, authCtx(STRANGER))),
+    ).not.toContain(result.id);
+    expect(await resolvePublicPreviewSessionForBoard(board.id)).toBeNull();
+
+    // The link still reads and joins, with no host approval.
+    const preview = await sessionQueries.session(undefined, { sessionId: result.id }, authCtx(STRANGER));
+    expect(preview?.id).toBe(result.id);
+    expect(preview?.isPublic).toBe(false);
+    await goLive(result.id, STRANGER, result.boardPath);
+    const users = await roomManager.getSessionUsers(result.id);
+    expect(new Set(users.map((user) => user.userId))).toEqual(new Set([STRANGER, VIEWER]));
+    // Once on the roster, the joiner sees it on their own rail.
+    expect(ids(await followedLiveSessions(STRANGER))).toContain(result.id);
+  });
+
+  it('requires host approval before an invite-only link permits joining or reading', async () => {
+    const result = await sessionMutations.createSession(
+      undefined,
+      { input: createInput({ isPublic: false, audience: 'invite_only' }) },
+      authCtx(VIEWER),
+    );
+    await goLive(result.id, VIEWER, result.boardPath);
+    expect(await sessionQueries.session(undefined, { sessionId: result.id }, authCtx(STRANGER))).toBeNull();
     await expect(goLive(result.id, STRANGER, result.boardPath)).rejects.toThrow('Not found');
     await approveSessionGuest(result.id, STRANGER);
     await goLive(result.id, STRANGER, result.boardPath);

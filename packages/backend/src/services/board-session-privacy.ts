@@ -1,4 +1,3 @@
-import { pubsub } from '../pubsub';
 import { createHmac } from 'node:crypto';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
@@ -12,7 +11,7 @@ import type {
   Climb,
 } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { boardClimbEvents, boardClimbs, boardSessions, userBoards } from '@boardsesh/db/schema';
+import { boardClimbs, boardSessions, userBoards } from '@boardsesh/db/schema';
 import { canViewActivityIdentity, canViewContent } from './privacy';
 
 /** Session protocol IDs must never double as profile IDs. */
@@ -40,10 +39,46 @@ export async function redactSessionUsers(
     users.map(async (user) => {
       if (!user.userId) return user;
       const id = sessionParticipantId(sessionId, user.userId);
-      if (await canViewActivityIdentity(user.userId, viewerId, { sessionId })) return { ...user, id };
+      if (await canViewActivityIdentity(user.userId, viewerId)) return { ...user, id };
       return { ...user, id, userId: null, username: '', avatarUrl: undefined };
     }),
   );
+}
+
+/**
+ * Every field that says which board an item happened on. The item (a tick, a
+ * session card, a live session) follows its author; the board's own privacy
+ * hides only these fields on it.
+ */
+const BOARD_IDENTITY_FIELDS = [
+  'boardId',
+  'boardUuid',
+  'boardSlug',
+  'boardName',
+  'boardDisplayName',
+  'locationName',
+  'gymName',
+  'gymUuid',
+  'latitude',
+  'longitude',
+  'distance',
+  'distanceMeters',
+] as const;
+type BoardIdentityField = (typeof BOARD_IDENTITY_FIELDS)[number];
+
+/**
+ * Blank the board's identity on an item the viewer may see but whose board
+ * they may not (`canViewBoardIdentity` / `boardIdentityVisibleCondition`).
+ * Keeps the row: only the fields above become null, and only those present.
+ */
+export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField, unknown>>>(
+  item: T,
+  boardIdentityVisible: boolean,
+): T {
+  if (boardIdentityVisible) return item;
+  const redacted: Record<string, unknown> = { ...item };
+  for (const field of BOARD_IDENTITY_FIELDS) if (field in redacted) redacted[field] = null;
+  return redacted as T;
 }
 
 export async function canReadClimbContent(climbUuid: string, viewerId: string | null | undefined): Promise<boolean> {
@@ -85,14 +120,11 @@ export async function redactQueueClimb(climb: Climb, viewerId: string | null | u
 export async function redactQueueItem(
   item: ClimbQueueItem,
   viewerId: string | null | undefined,
-  sessionId: string,
 ): Promise<ClimbQueueItem> {
   const userId = item.addedByUser?.id ?? item.addedBy;
-  const showAuthor = userId && (await canViewActivityIdentity(userId, viewerId, { sessionId }));
+  const showAuthor = userId && (await canViewActivityIdentity(userId, viewerId));
   const visibleTicks = await Promise.all(
-    (item.tickedBy ?? []).map(async (userId) =>
-      (await canViewActivityIdentity(userId, viewerId, { sessionId })) ? userId : null,
-    ),
+    (item.tickedBy ?? []).map(async (userId) => ((await canViewActivityIdentity(userId, viewerId)) ? userId : null)),
   );
   return {
     ...item,
@@ -106,22 +138,8 @@ export async function redactQueueItem(
 /** Keep climb chronology intact; only attribution is viewer-dependent. */
 export async function redactBoardClimbs(
   climbs: readonly BoardPresenceClimb[],
-  boardId: number,
   viewerId: string | null | undefined,
 ): Promise<BoardPresenceClimb[]> {
-  const sequences = climbs.map((climb) => climb.seq);
-  const provenance =
-    sequences.length === 0
-      ? []
-      : await db
-          .select({
-            seq: boardClimbEvents.seq,
-            sessionId: boardClimbEvents.sessionId,
-            identityPolicyVersion: boardClimbEvents.identityPolicyVersion,
-          })
-          .from(boardClimbEvents)
-          .where(and(eq(boardClimbEvents.boardId, boardId), inArray(boardClimbEvents.seq, sequences)));
-  const bySequence = new Map(provenance.map((entry) => [Number(entry.seq), entry]));
   const climbUuids = [...new Set(climbs.map((climb) => climb.climbUuid))];
   const readableClimbs =
     climbUuids.length === 0
@@ -147,13 +165,9 @@ export async function redactBoardClimbs(
 
   return Promise.all(
     climbs.map(async (climb) => {
-      const stored = bySequence.get(climb.seq);
-      const sessionId = stored?.sessionId ?? climb.sessionId;
-      const knownPolicy = (stored?.identityPolicyVersion ?? climb.identityPolicyVersion ?? 0) > 0 || !!sessionId;
-      const showIdentity =
-        !!climb.sentByUserId &&
-        (climb.sentByUserId === viewerId ||
-          (knownPolicy && (await canViewActivityIdentity(climb.sentByUserId, viewerId, { sessionId }))));
+      // The sender's account privacy alone decides attribution, whatever session
+      // (or none) the send was in and however old the history event is.
+      const showIdentity = !!climb.sentByUserId && (await canViewActivityIdentity(climb.sentByUserId, viewerId));
       const visibleClimb = !readableUuids.has(climb.climbUuid)
         ? { ...climb, name: null, frames: null, setter: null, grade: null, gradeColor: null, queueItemUuid: null }
         : climb;
@@ -180,7 +194,6 @@ export async function redactBoardStats(
     (hardest.sentByUserId === viewerId ||
       (hardest.tickUuid &&
         (await canViewActivityIdentity(hardest.sentByUserId, viewerId, {
-          sessionId: hardest.sessionId,
           entityType: 'tick',
           entityId: hardest.tickUuid,
         }))));
@@ -189,34 +202,29 @@ export async function redactBoardStats(
     : { ...stats, hardestSend: { ...hardest, sentByUserId: null, sentByDisplayName: null, sentByAvatarUrl: null } };
 }
 
-/** A cached BLE holder is identifiable only with current session provenance. */
+/** The Bluetooth holder is named by their own account privacy, session or not. */
 export async function redactBoardHolder(
   holder: BoardConnectionHolder | null,
-  boardId: number,
   viewerId: string | null | undefined,
 ): Promise<BoardConnectionHolder | null> {
   if (!holder) return null;
-  if (holder.userId && holder.userId === viewerId) return holder;
-  const sessionId = await pubsub.getBoardSession(String(boardId));
-  if (holder.userId && sessionId && (await canViewActivityIdentity(holder.userId, viewerId, { sessionId })))
-    return holder;
+  if (holder.userId && (await canViewActivityIdentity(holder.userId, viewerId))) return holder;
   return { ...holder, userId: null, displayName: null, avatarUrl: null };
 }
 
 export async function redactBoardEvent(
   event: BoardPresenceEvent,
-  boardId: number,
   viewerId: string | null | undefined,
 ): Promise<BoardPresenceEvent> {
   switch (event.__typename) {
     case 'BoardClimbSet':
-      return { ...event, climb: (await redactBoardClimbs([event.climb], boardId, viewerId))[0] };
+      return { ...event, climb: (await redactBoardClimbs([event.climb], viewerId))[0] };
     case 'BoardHistoryUpdated':
-      return { ...event, climbs: await redactBoardClimbs(event.climbs, boardId, viewerId) };
+      return { ...event, climbs: await redactBoardClimbs(event.climbs, viewerId) };
     case 'BoardStatsUpdated':
       return { ...event, stats: await redactBoardStats(event.stats, viewerId) };
     case 'BoardConnectionChanged': {
-      return { ...event, holder: await redactBoardHolder(event.holder, boardId, viewerId) };
+      return { ...event, holder: await redactBoardHolder(event.holder, viewerId) };
     }
     default:
       return event;

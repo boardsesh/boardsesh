@@ -13,10 +13,10 @@ import { redactQueueClimb, redactQueueItem, redactSessionUsers } from '../../../
 // These field projections also cover mutation payloads and buffered events;
 // the source of an identity must never determine its visibility.
 async function visibleIdentity(userId: string | null | undefined, ctx: ConnectionContext): Promise<boolean> {
-  return !!userId && canViewActivityIdentity(userId, ctx.userId, { sessionId: ctx.sessionId });
+  return !!userId && canViewActivityIdentity(userId, ctx.userId);
 }
 function queueProjection(item: ClimbQueueItem, ctx: ConnectionContext) {
-  return redactQueueItem(item, ctx.userId, ctx.sessionId ?? '');
+  return redactQueueItem(item, ctx.userId);
 }
 async function sessionUserProjection(user: SessionUser, ctx: ConnectionContext): Promise<SessionUser> {
   if (!ctx.sessionId) {

@@ -1,6 +1,7 @@
-import { sessionBoardAccessCondition, userActivityVisibilityCondition } from '@boardsesh/db/queries';
+import { userActivityVisibilityCondition } from '@boardsesh/db/queries';
 export {
   approvedFollowerCondition,
+  boardIdentityVisibleCondition,
   userActivityVisibilityCondition,
   contentVisibilityCondition,
   resourceAccessCondition,
@@ -27,7 +28,11 @@ export function requirePrivacyControls(): void {
   if (!privacyControlsEnabled())
     throw new GraphQLError('Privacy controls are not available yet', { extensions: { code: 'PRIVACY_UNAVAILABLE' } });
 }
-/** Old full-form booleans may narrow, but cannot replace a newer restricted audience. */
+/**
+ * Old full-form booleans may narrow, but cannot replace a newer restricted audience.
+ * A legacy private session asks for `unlisted` (off the listings, the link still
+ * joins), the same reading `resourceAccessCondition` gives an `is_public = false` row.
+ */
 export function legacyResourceAudience(
   current: PrivacyResourceAudience | undefined,
   requested: PrivacyResourceAudience,
@@ -66,7 +71,7 @@ export async function canViewUserActivity(viewerId: ViewerId, subjectId: string)
     .limit(1);
   return !!subject;
 }
-/** Account/item policy only. Callers must additionally apply enclosing wall/session access. */
+/** Account/item policy only: the session or wall an item sits in never hides it. */
 export async function canViewContent(
   viewerId: ViewerId,
   entityType: string,
@@ -142,7 +147,7 @@ export async function getResourcePrivacy(
     if (!session) return null;
     legacy = {
       ownerId: session.createdByUserId,
-      audience: session.isPublic ? 'public' : 'invite_only',
+      audience: session.isPublic ? 'public' : 'unlisted',
       locationAudience: 'only_me',
     };
   }
@@ -204,8 +209,7 @@ export async function canAccessResource(
 ): Promise<boolean> {
   const resource = await getResourcePrivacy(kind, resourceId);
   if (!resource) return false;
-  if (!canReadResource(resource.audience, await resourceViewer(resource, viewerId))) return false;
-  return kind !== 'session' || sessionBoardsAreReadable(resourceId, viewerId);
+  return canReadResource(resource.audience, await resourceViewer(resource, viewerId));
 }
 /** Numeric IDs, slugs and discovery are not unlisted-link capabilities. */
 export async function canAccessResourceWithoutLink(
@@ -215,19 +219,10 @@ export async function canAccessResourceWithoutLink(
 ): Promise<boolean> {
   const resource = await getResourcePrivacy(kind, resourceId);
   if (!resource) return false;
-  const hasAccess = canReadResource(
+  return canReadResource(
     resource.audience === 'unlisted' ? 'invite_only' : resource.audience,
     await resourceViewer(resource, viewerId),
   );
-  return hasAccess && (kind !== 'session' || (await sessionBoardsAreReadable(resourceId, viewerId)));
-}
-async function sessionBoardsAreReadable(sessionId: string, viewerId: ViewerId): Promise<boolean> {
-  const [accessible] = await db
-    .select({ id: schema.boardSessions.id })
-    .from(schema.boardSessions)
-    .where(and(eq(schema.boardSessions.id, sessionId), sessionBoardAccessCondition(schema.boardSessions.id, viewerId)))
-    .limit(1);
-  return !!accessible;
 }
 export async function requireResourceAccess(
   kind: PrivacyResourceKind,
@@ -246,18 +241,29 @@ export async function canViewResourceLocation(boardUuid: string, viewerId: Viewe
     hasResourceAccess: canReadResource(resource.audience, viewer),
   });
 }
-/** SQL equivalent of canAccessResource for filtering before pagination and counts. */
+/**
+ * Whether a climber's identity may accompany their activity. Decided by the
+ * author's account privacy and, given an item, that item's own audience. The
+ * session or board the activity happened in never decides it: those hide the
+ * board's name and place on the item (`canViewBoardIdentity`), not the climber.
+ */
 export async function canViewActivityIdentity(
   subjectUserId: string,
   viewerId: ViewerId,
-  context?: { sessionId?: string | null; boardId?: string | null; entityType?: string; entityId?: string },
+  item?: { entityType: string; entityId: string },
 ): Promise<boolean> {
   if (subjectUserId === viewerId) return true;
-  if (context?.sessionId && !(await canAccessResource('session', context.sessionId, viewerId))) return false;
-  if (context?.boardId && !(await canAccessResource('board', context.boardId, viewerId))) return false;
-  return context?.entityType && context.entityId
-    ? canViewContent(viewerId, context.entityType, context.entityId, subjectUserId)
+  return item
+    ? canViewContent(viewerId, item.entityType, item.entityId, subjectUserId)
     : canViewUserActivity(viewerId, subjectUserId);
+}
+/**
+ * Whether an item may name the board it happened on: name, place, gym and
+ * distance. A log is not a link, so an unlisted board is named only to people
+ * who already hold it. The item itself stays visible either way.
+ */
+export async function canViewBoardIdentity(boardUuid: string | null | undefined, viewerId: ViewerId): Promise<boolean> {
+  return !!boardUuid && canAccessResourceWithoutLink('board', boardUuid, viewerId);
 }
 
 export type PrivacyExecutor = Pick<typeof db, 'select' | 'insert'>;

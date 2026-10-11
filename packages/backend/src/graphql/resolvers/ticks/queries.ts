@@ -16,7 +16,12 @@ import {
 } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
 import { tickPrivacyCondition, betaPrivacyCondition } from '../shared/activity-privacy';
-import { canViewUserActivity, contentVisibilityCondition } from '../../../services/privacy';
+import { redactBoardIdentity } from '../../../services/board-session-privacy';
+import {
+  boardIdentityVisibleCondition,
+  canViewUserActivity,
+  contentVisibilityCondition,
+} from '../../../services/privacy';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -633,8 +638,13 @@ export const tickQueries = {
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
         boardName: dbSchema.userBoards.name,
-        boardIsPublic: dbSchema.userBoards.isPublic,
-        boardIsUnlisted: dbSchema.userBoards.isUnlisted,
+        // The ascent follows its climber; the board's own policy decides only
+        // whether the row may name the wall (the climber always sees their own).
+        boardIdentityVisible: boardIdentityVisibleCondition(
+          dbSchema.boardseshTicks.boardId,
+          ctx?.userId,
+          dbSchema.boardseshTicks.userId,
+        ),
         // The board the tick was logged against, for renderBoard's first rung.
         boardLayoutId: dbSchema.userBoards.layoutId,
         boardSizeId: dbSchema.userBoards.sizeId,
@@ -820,8 +830,7 @@ export const tickQueries = {
         compatibleSizeIds,
         requiredSetIds,
         boardName,
-        boardIsPublic,
-        boardIsUnlisted,
+        boardIdentityVisible,
         boardLayoutId,
         boardSizeId,
         boardSetIds,
@@ -834,18 +843,15 @@ export const tickQueries = {
         qualityAverage,
         effectiveQuality,
       }) => {
-        const canShowBoard =
-          tick.boardId != null && (ctx?.userId === userId || (boardIsPublic === true && boardIsUnlisted !== true));
         return {
           uuid: tick.uuid,
           climbUuid: tick.climbUuid,
           climbName: climbName || 'Unknown Climb',
           setterUsername,
           boardType: tick.boardType,
-          boardId: canShowBoard ? tick.boardId : null,
-          boardDisplayName: canShowBoard ? boardName : null,
+          ...redactBoardIdentity({ boardId: tick.boardId, boardDisplayName: boardName }, boardIdentityVisible === true),
           layoutId,
-          // Deliberately NOT behind `canShowBoard`: this is wall geometry, not
+          // Deliberately NOT behind the board-identity rule: this is wall geometry, not
           // board identity — it never reveals that a named board exists, and
           // gating it would send other viewers back to the wrong-size render.
           renderBoard: resolveRenderBoard({
@@ -1078,8 +1084,13 @@ export const tickQueries = {
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
         difficultyName: difficultyNameWithFallbackExpr,
         boardName: dbSchema.userBoards.name,
-        boardIsPublic: dbSchema.userBoards.isPublic,
-        boardIsUnlisted: dbSchema.userBoards.isUnlisted,
+        // The ascent follows its climber; the board's own policy decides only
+        // whether the row may name the wall (the climber always sees their own).
+        boardIdentityVisible: boardIdentityVisibleCondition(
+          dbSchema.boardseshTicks.boardId,
+          ctx?.userId,
+          dbSchema.boardseshTicks.userId,
+        ),
         // The board the tick was logged against, for renderBoard's first rung.
         boardLayoutId: dbSchema.userBoards.layoutId,
         boardSizeId: dbSchema.userBoards.sizeId,
@@ -1229,8 +1240,7 @@ export const tickQueries = {
       requiredSetIds,
       difficultyName,
       boardName,
-      boardIsPublic,
-      boardIsUnlisted,
+      boardIdentityVisible,
       boardLayoutId,
       boardSizeId,
       boardSetIds,
@@ -1249,10 +1259,8 @@ export const tickQueries = {
 
       const isNoMatch = resolveClimbNoMatch(tick.boardType, climbCharacteristics, climbDescription);
 
-      const canShowBoard =
-        tick.boardId != null && (ctx?.userId === userId || (boardIsPublic === true && boardIsUnlisted !== true));
       // Wall geometry, not board identity — see the flat feed for why this is
-      // not behind `canShowBoard`.
+      // not behind the board-identity rule.
       const renderBoard = resolveRenderBoard({
         boardType: tick.boardType,
         climbLayoutId: layoutId,
@@ -1272,8 +1280,7 @@ export const tickQueries = {
         climbName: climbName || 'Unknown Climb',
         setterUsername,
         boardType: tick.boardType,
-        boardId: canShowBoard ? tick.boardId : null,
-        boardDisplayName: canShowBoard ? boardName : null,
+        ...redactBoardIdentity({ boardId: tick.boardId, boardDisplayName: boardName }, boardIdentityVisible === true),
         layoutId,
         renderBoard,
         angle: tick.angle,

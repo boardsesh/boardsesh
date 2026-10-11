@@ -89,7 +89,7 @@ export const sessionQueries = {
     const queueState = await roomManager.getQueueState(sessionId);
 
     return {
-      events: await Promise.all(events.map((event) => redactQueueEvent(event, ctx.userId, sessionId))),
+      events: await Promise.all(events.map((event) => redactQueueEvent(event, ctx.userId))),
       currentSequence: queueState.sequence,
     };
   },

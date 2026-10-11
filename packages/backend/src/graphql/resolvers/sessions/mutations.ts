@@ -266,12 +266,14 @@ export const sessionMutations = {
       if (DEBUG) logger.info(`[createSession] Generated sessionId: ${sessionId}`);
 
       // Legacy callers keep the public default until an account selects a
-      // restrictive audience. An old isPublic:true is not new public consent.
+      // restrictive audience. An old isPublic:true is not new public consent,
+      // and an old isPublic:false means unlisted: off the listings, the invite
+      // link still joins. Only an explicit audience asks for invite-only.
       const defaults = ctx.userId ? await getPrivacySettings(ctx.userId) : null;
       const defaultAudience = defaults?.defaultSessionAudience ?? 'public';
       const audience =
         input.audience ??
-        (input.isPublic === false ? legacyResourceAudience(defaultAudience, 'invite_only') : defaultAudience);
+        (input.isPublic === false ? legacyResourceAudience(defaultAudience, 'unlisted') : defaultAudience);
       const isPublic = audience === 'public';
       if (!isPublic) requireAuthenticated(ctx);
       const boardId = await resolveSessionBoardId(input.boardPath, ctx.userId);

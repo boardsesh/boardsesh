@@ -1,4 +1,10 @@
-import { canAccessResource, canViewActivityIdentity, resourceAccessCondition } from './privacy';
+import {
+  canAccessResource,
+  canAccessResourceWithoutLink,
+  canViewActivityIdentity,
+  canViewResourceLocation,
+  resourceAccessCondition,
+} from './privacy';
 import { and, desc, eq, exists, gt, inArray, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import type {
   LiveSession,
@@ -100,7 +106,6 @@ type BoardRow = {
   ownerId: string;
   isPublic: boolean;
   isUnlisted: boolean;
-  hideLocation: boolean;
   deletedAt: Date | null;
   gymName: string | null;
 };
@@ -428,7 +433,6 @@ async function loadBoardRows(boardIds: readonly number[]): Promise<Map<number, B
       ownerId: dbSchema.userBoards.ownerId,
       isPublic: dbSchema.userBoards.isPublic,
       isUnlisted: dbSchema.userBoards.isUnlisted,
-      hideLocation: dbSchema.userBoards.hideLocation,
       deletedAt: dbSchema.userBoards.deletedAt,
       gymName: dbSchema.gyms.name,
     })
@@ -470,7 +474,8 @@ async function toVisibleBoard(
     name: row.name,
     slug: row.slug,
     boardType: row.boardType,
-    gymName: row.hideLocation && !isOwner ? null : row.gymName,
+    // The gym is the board's place: its location policy decides, not the name.
+    gymName: isOwner || (await canViewResourceLocation(row.uuid, viewerId)) ? row.gymName : null,
   };
 }
 
@@ -540,12 +545,21 @@ function recentParticipantRowExists(userCondition: SQL, now: Date): SQL {
 }
 
 /**
- * The SQL half of the visibility rule. A private session only passes when the
- * viewer created it or joined it inside the candidate window; the live roster
+ * The SQL half of the visibility rule. Listings are discovery, not a link: an
+ * unlisted session (a legacy private one) only passes for the viewer who
+ * created it or joined it inside the candidate window, and the live roster
  * confirms the latter afterwards.
  */
-function visibilityPrefilter(viewerId: string | null, _now: Date): SQL {
-  return resourceAccessCondition('session', boardSessions.id, viewerId);
+function visibilityPrefilter(viewerId: string | null, now: Date): SQL {
+  const listed = resourceAccessCondition('session', boardSessions.id, viewerId, { allowUnlistedLink: false });
+  if (!viewerId) return listed;
+  return anyOf(
+    listed,
+    allOf(
+      resourceAccessCondition('session', boardSessions.id, viewerId),
+      recentParticipantRowExists(eq(dbSchema.boardSessionParticipants.userId, viewerId), now),
+    ),
+  );
 }
 
 /**
@@ -815,19 +829,25 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
       : live;
   if (shortlist.length === 0) return [];
 
+  // `listed` is discovery access (no unlisted link); `linked` is what the
+  // invite link opens. A session the viewer may only reach by link is listed
+  // only once the live roster shows them in it.
   const sessionAccess = await Promise.all(
-    shortlist.map((candidate) => canAccessResource('session', candidate.id, viewerId)),
+    shortlist.map(async (candidate) => {
+      const listed = await canAccessResourceWithoutLink('session', candidate.id, viewerId);
+      return { listed, linked: listed || (await canAccessResource('session', candidate.id, viewerId)) };
+    }),
   );
   const rosters = await Promise.all(
-    shortlist.map((candidate, index) => (sessionAccess[index] ? loadRoster(candidate.id) : Promise.resolve([]))),
+    shortlist.map((candidate, index) => (sessionAccess[index].linked ? loadRoster(candidate.id) : Promise.resolve([]))),
   );
   const withRosters = shortlist.flatMap((candidate, index) => {
     const roster = rosters[index];
     const viewerIsMember =
       viewerId !== null &&
       (candidate.createdByUserId === viewerId || roster.some((member) => member.userId === viewerId));
-    // Visibility: a private session is pruned for everyone not in it.
-    if (!sessionAccess[index]) return [];
+    // Visibility: an unlisted or restricted session is pruned for everyone not in it.
+    if (!sessionAccess[index].listed && !(sessionAccess[index].linked && viewerIsMember)) return [];
     return [{ candidate, roster, viewerIsMember }];
   });
   if (withRosters.length === 0) return [];
@@ -907,9 +927,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
         (
           await Promise.all(
             members.map(async (member) =>
-              (await canViewActivityIdentity(member.userId, viewerId, { sessionId: candidate.id }))
-                ? member.userId
-                : null,
+              (await canViewActivityIdentity(member.userId, viewerId)) ? member.userId : null,
             ),
           )
         ).filter((userId): userId is string => userId !== null),
@@ -923,8 +941,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
         .map((member) => toUser(member.userId, member));
 
       const creatorId =
-        candidate.createdByUserId &&
-        (await canViewActivityIdentity(candidate.createdByUserId, viewerId, { sessionId: candidate.id }))
+        candidate.createdByUserId && (await canViewActivityIdentity(candidate.createdByUserId, viewerId))
           ? candidate.createdByUserId
           : null;
       const [board, currentClimb] = await Promise.all([

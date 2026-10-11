@@ -1614,7 +1614,7 @@ export const socialBoardQueries = {
 
     const enrichedEntries = await Promise.all(
       entries.map(async (entry, idx) => {
-        const showIdentity = await canViewActivityIdentity(entry.userId, ctx.userId, { boardId: boardUuid });
+        const showIdentity = await canViewActivityIdentity(entry.userId, ctx.userId);
         const userInfo = userMap.get(entry.userId);
         return {
           userId: showIdentity ? entry.userId : null,

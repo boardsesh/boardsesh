@@ -231,7 +231,8 @@ export async function findNearbySessions(
     .where(
       and(
         eq(sessions.discoverable, true),
-        resourceAccessCondition('session', sessions.id, viewerId),
+        // Nearby is discovery: an unlisted session's link never lists it.
+        resourceAccessCondition('session', sessions.id, viewerId, { allowUnlistedLink: false }),
         sessionBoardLocationCondition(sessions.id, viewerId),
         ne(sessions.status, 'ended'),
         gte(sessions.latitude, box.minLat),
@@ -273,8 +274,7 @@ export async function findNearbySessions(
       longitude: 0,
       createdAt: session.createdAt,
       createdByUserId:
-        session.createdByUserId &&
-        (await canViewActivityIdentity(session.createdByUserId, viewerId, { sessionId: session.id }))
+        session.createdByUserId && (await canViewActivityIdentity(session.createdByUserId, viewerId))
           ? session.createdByUserId
           : null,
       participantCount,

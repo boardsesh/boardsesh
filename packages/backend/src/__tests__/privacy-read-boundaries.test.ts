@@ -113,15 +113,22 @@ describe('SQL privacy boundaries against Postgres', () => {
     expect(await canReadDeletedComment(reply.uuid, stranger, reply.parentCommentId, null)).toBe(false);
     expect(await canReadDeletedComment(reply.uuid, stranger, reply.parentCommentId, approved)).toBe(true);
   });
-  it('keeps every own tick available, including restricted containers', async () => {
+  it('keeps every own tick available to its author', async () => {
     expect(await visibleTicks(owner)).toEqual([...tickIds].sort());
   });
-  it('allows accepted followers but excludes only-me and unapproved sessions', async () => {
-    expect(await visibleTicks(approved)).toEqual(['privacy-normal', 'privacy-public', 'privacy-stale-public']);
+  it('shows accepted followers what the author allows, whatever session a tick was logged in', async () => {
+    // privacy-session sits in somebody else's invite-only session the follower
+    // was never invited to. The tick follows its author, not that session.
+    expect(await visibleTicks(approved)).toEqual([
+      'privacy-normal',
+      'privacy-public',
+      'privacy-session',
+      'privacy-stale-public',
+    ]);
   });
-  it('does not grant access to pending requests or anonymous viewers', async () => {
+  it('gives pending requests and anonymous viewers only the author’s current public consent', async () => {
     expect(await visibleTicks(stranger)).toEqual(['privacy-public', 'privacy-session']);
-    expect(await visibleTicks()).toEqual(['privacy-public']);
+    expect(await visibleTicks()).toEqual(['privacy-public', 'privacy-session']);
   });
   it('checks private comments and their ancestors before exposing replies', async () => {
     const comments = await db
@@ -438,7 +445,7 @@ describe('SQL privacy boundaries against Postgres', () => {
     await db
       .delete(schema.userFollows)
       .where(and(eq(schema.userFollows.followerId, approved), eq(schema.userFollows.followingId, owner)));
-    expect(await visibleTicks(approved)).toEqual(['privacy-public']);
+    expect(await visibleTicks(approved)).toEqual(['privacy-public', 'privacy-session']);
     const viewer = { isAuthenticated: true, userId: approved } as ConnectionContext;
     const ownTicks = (await tickQueries.userTicks(null, { userId: approved, boardType: 'kilter' }, viewer)) as Array<{
       uuid: string;

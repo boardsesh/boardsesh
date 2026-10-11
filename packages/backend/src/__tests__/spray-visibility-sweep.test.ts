@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
@@ -2152,13 +2152,11 @@ describe('private spray social references and anonymous aggregates', () => {
   }
 
   /**
-   * The mixed session is a PUBLIC one on another board, holding a catalogue log
-   * beside the private wall's. It must not be attached to the wall's board: a
-   * session is readable only by people who can read every board it is attached
-   * to, and a tick is capped by its session (`tickPrivacyCondition`), so a
-   * session on the wall is hidden whole and takes its catalogue log with it.
-   * That is the block above's `world.sessionId`. This one asks what a session
-   * the viewer CAN open says about logs they cannot.
+   * The mixed session sits on the private wall's board and holds a catalogue log
+   * beside the wall's own. The wall never hides the session or the catalogue
+   * log (both follow their author); the spray wall rule hides only the wall's
+   * log. `setup.ts` truncates `board_sessions` before every test, so the feed
+   * case puts the row back.
    */
   async function restoreSession(): Promise<void> {
     await db
@@ -2168,18 +2166,13 @@ describe('private spray social references and anonymous aggregates', () => {
         boardPath: 'kilter/1/1/1/40',
         createdByUserId: OWNER,
         name: '6037 mixed session',
-        isPublic: true,
+        boardId: world.boardId,
         status: 'active',
         startedAt: new Date(),
         lastActivity: new Date(),
       })
       .onConflictDoNothing();
   }
-
-  // `setup.ts` truncates `board_sessions` before every test and the ticks keep
-  // their session id. A tick whose session row is missing is readable by its
-  // author alone, so every case here needs the row back, not only the feed ones.
-  beforeEach(restoreSession);
 
   beforeAll(async () => {
     await db.insert(dbSchema.boardClimbs).values({
@@ -2482,6 +2475,7 @@ describe('private spray social references and anonymous aggregates', () => {
   });
 
   it('keeps aggregate sends while hiding named private-only participants and their counts', async () => {
+    await restoreSession();
     const document =
       'query Privacy($input: ActivityFeedInput) { sessionGroupedFeed(input: $input) { sessions { sessionId totalSends tickCount participants { userId sends } } } }';
     for (const viewer of privacyViewers) {

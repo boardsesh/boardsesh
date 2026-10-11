@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../db/client', () => ({ db: { select: mocks.select, insert: mocks.insert } }));
 import {
   canAccessResource,
+  canAccessResourceWithoutLink,
   canViewContent,
   canViewResourceLocation,
   contentVisibilityCondition,
@@ -78,16 +79,15 @@ describe('resource access compatibility and revocation', () => {
     );
     expect(await canAccessResource('board', 'shared', null)).toBe(true);
   });
-  it('retains legacy private session participants until explicit revocation', async () => {
-    mocks.results.push(
-      [{ createdByUserId: 'host', isPublic: false }],
-      [],
-      [],
-      [{ userId: 'viewer' }],
-      [],
-      [{ id: 'legacy-session' }],
-    );
-    expect(await canAccessResource('session', 'legacy-session', 'viewer')).toBe(true);
+  it('reads a legacy private session as unlisted: the link opens it, listings need participation', async () => {
+    mocks.results.push([{ createdByUserId: 'host', isPublic: false }], []);
+    expect(await canAccessResource('session', 'legacy-session', null)).toBe(true);
+    mocks.results.push([{ createdByUserId: 'host', isPublic: false }], []);
+    expect(await canAccessResourceWithoutLink('session', 'legacy-session', null)).toBe(false);
+  });
+  it('retains legacy private session participants on listings until explicit revocation', async () => {
+    mocks.results.push([{ createdByUserId: 'host', isPublic: false }], [], [], [{ userId: 'viewer' }], []);
+    expect(await canAccessResourceWithoutLink('session', 'legacy-session', 'viewer')).toBe(true);
     mocks.results.push(
       [{ createdByUserId: 'host', isPublic: false }],
       [],
@@ -95,16 +95,17 @@ describe('resource access compatibility and revocation', () => {
       [{ userId: 'viewer' }],
       [],
     );
-    expect(await canAccessResource('session', 'legacy-session', 'viewer')).toBe(false);
+    expect(await canAccessResourceWithoutLink('session', 'legacy-session', 'viewer')).toBe(false);
   });
   it('never uses durable participation after explicit resource privacy is installed', async () => {
     mocks.results.push([{ createdByUserId: 'host', isPublic: false }], [{ audience: 'invite_only' }], [], []);
     expect(await canAccessResource('session', 'managed-session', 'viewer')).toBe(false);
     expect(mocks.select).toHaveBeenCalledTimes(4);
   });
-  it('does not widen an inaccessible parent board with a public session', async () => {
-    mocks.results.push([{ createdByUserId: 'host', isPublic: true }], [], []);
-    expect(await canAccessResource('session', 'public-session', null)).toBe(false);
+  it('reads a public session by its own policy, never looking up the boards it names', async () => {
+    mocks.results.push([{ createdByUserId: 'host', isPublic: true }], []);
+    expect(await canAccessResource('session', 'public-session', null)).toBe(true);
+    expect(mocks.select).toHaveBeenCalledTimes(2);
   });
   it('hides private location even when the public board is readable', async () => {
     mocks.results.push([{ ownerId: 'owner', isPublic: true, isUnlisted: false, hideLocation: true }], []);

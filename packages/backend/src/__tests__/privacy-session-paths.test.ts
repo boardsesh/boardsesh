@@ -1,8 +1,9 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
+import { eq } from 'drizzle-orm';
 import { resourceAccessCondition, sessionBoardLocationCondition } from '@boardsesh/db/queries';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { canAccessResource } from '../services/privacy';
+import { canAccessResource, canAccessResourceWithoutLink } from '../services/privacy';
 
 const ownerId = 'privacy-path-owner';
 let publicBoardId: number;
@@ -69,37 +70,76 @@ beforeEach(async () => {
   );
 });
 
-describe('legacy session paths stay within board privacy', () => {
-  it('caps path-only and stale-board sessions before discovery, without shadowing the outer session ID', async () => {
-    const sessions = await db
-      .select({ id: schema.boardSessions.id })
-      .from(schema.boardSessions)
-      .where(resourceAccessCondition('session', schema.boardSessions.id, null))
-      .orderBy(schema.boardSessions.id);
-    expect(sessions.map((session) => session.id)).toEqual(['path-catalog', 'path-hidden-location', 'path-public']);
+describe('legacy session paths', () => {
+  it('reads path-only and stale-board sessions by their own policy, without shadowing the outer session ID', async () => {
+    // A legacy private session is unlisted: the link reads it, discovery does not.
+    await db.update(schema.boardSessions).set({ isPublic: false }).where(eq(schema.boardSessions.id, 'path-private'));
+    const readable = async (options?: { allowUnlistedLink: false }) =>
+      (
+        await db
+          .select({ id: schema.boardSessions.id })
+          .from(schema.boardSessions)
+          .where(resourceAccessCondition('session', schema.boardSessions.id, null, options))
+          .orderBy(schema.boardSessions.id)
+      ).map((session) => session.id);
+    const everySession = [
+      'path-catalog',
+      'path-hidden-location',
+      'path-localized',
+      'path-missing',
+      'path-private',
+      'path-private-board',
+      'path-public',
+      'path-spray-missing',
+      'path-stale-public-board',
+    ];
+    // Private, missing and stale boards never hide the session itself.
+    expect(await readable()).toEqual(everySession);
+    expect(await readable({ allowUnlistedLink: false })).toEqual(
+      everySession.filter((sessionId) => sessionId !== 'path-private'),
+    );
   });
 
-  it('withholds location for a public wall referenced only by its legacy path', async () => {
-    const visibleLocations = await db
-      .select({ id: schema.boardSessions.id })
-      .from(schema.boardSessions)
-      .where(sessionBoardLocationCondition(schema.boardSessions.id, null))
-      .orderBy(schema.boardSessions.id);
-    expect(visibleLocations.map((session) => session.id)).toEqual(['path-catalog', 'path-public']);
+  it('withholds location for a hidden or private wall, but not for a wall that no longer resolves', async () => {
+    const visibleLocations = async (viewerId: string | null) =>
+      (
+        await db
+          .select({ id: schema.boardSessions.id })
+          .from(schema.boardSessions)
+          .where(sessionBoardLocationCondition(schema.boardSessions.id, viewerId))
+          .orderBy(schema.boardSessions.id)
+      ).map((session) => session.id);
+    expect(await visibleLocations(null)).toEqual(['path-catalog', 'path-missing', 'path-public', 'path-spray-missing']);
+    expect(await visibleLocations(ownerId)).toContain('path-hidden-location');
 
-    const ownerLocations = await db
-      .select({ id: schema.boardSessions.id })
-      .from(schema.boardSessions)
-      .where(sessionBoardLocationCondition(schema.boardSessions.id, ownerId));
-    expect(ownerLocations.some((session) => session.id === 'path-hidden-location')).toBe(true);
+    // A soft-deleted parent has no policy left to enforce.
+    await db.update(schema.userBoards).set({ deletedAt: new Date() }).where(eq(schema.userBoards.id, privateBoardId));
+    try {
+      expect(await visibleLocations(null)).toEqual([
+        'path-catalog',
+        'path-localized',
+        'path-missing',
+        'path-private',
+        'path-private-board',
+        'path-public',
+        'path-spray-missing',
+        'path-stale-public-board',
+      ]);
+    } finally {
+      await db.update(schema.userBoards).set({ deletedAt: null }).where(eq(schema.userBoards.id, privateBoardId));
+    }
   });
 
-  it('applies the same parent cap at runtime while retaining the known board owner’s access', async () => {
-    expect(await canAccessResource('session', 'path-private', null)).toBe(false);
-    expect(await canAccessResource('session', 'path-private', ownerId)).toBe(true);
-    expect(await canAccessResource('session', 'path-stale-public-board', null)).toBe(false);
-    expect(await canAccessResource('session', 'path-private-board', null)).toBe(false);
-    expect(await canAccessResource('session', 'path-missing', ownerId)).toBe(false);
+  it('authorizes a session at runtime by its own policy, never its boards', async () => {
+    expect(await canAccessResource('session', 'path-private', null)).toBe(true);
+    expect(await canAccessResource('session', 'path-stale-public-board', null)).toBe(true);
+    expect(await canAccessResource('session', 'path-private-board', null)).toBe(true);
+    expect(await canAccessResource('session', 'path-missing', ownerId)).toBe(true);
     expect(await canAccessResource('session', 'path-public', null)).toBe(true);
+
+    await db.update(schema.boardSessions).set({ isPublic: false }).where(eq(schema.boardSessions.id, 'path-private'));
+    expect(await canAccessResource('session', 'path-private', null)).toBe(true);
+    expect(await canAccessResourceWithoutLink('session', 'path-private', null)).toBe(false);
+    expect(await canAccessResourceWithoutLink('session', 'path-private', ownerId)).toBe(true);
   });
 });

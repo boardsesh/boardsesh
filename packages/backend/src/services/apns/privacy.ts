@@ -30,8 +30,7 @@ export async function projectLiveActivityContent(
   delete projected.boardConnection;
   projected.holderDisplayName = '';
   if (holder) {
-    const showIdentity =
-      !!holder.holderUserId && (await canViewActivityIdentity(holder.holderUserId, viewerId, { sessionId }));
+    const showIdentity = !!holder.holderUserId && (await canViewActivityIdentity(holder.holderUserId, viewerId));
     Object.assign(
       projected,
       deriveBoardConnection({

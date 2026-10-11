@@ -36,13 +36,13 @@ const item: ClimbQueueItem = {
 describe('queue replay projection', () => {
   it('redacts buffered additions exactly like live additions while preserving sequence and hashes', async () => {
     const event: QueueEvent = { __typename: 'QueueItemAdded', sequence: 42, stateHash: 'same-hash', item };
-    const projected = await redactQueueEvent(event, 'viewer', 'session-1');
+    const projected = await redactQueueEvent(event, 'viewer');
     expect(projected).toMatchObject({
       sequence: 42,
       stateHash: 'same-hash',
       item: { addedBy: undefined, tickedBy: [], climb: { uuid: 'private-climb', name: '', frames: '' } },
     });
-    expect(projection.redactQueueItem).toHaveBeenCalledWith(item, 'viewer', 'session-1');
+    expect(projection.redactQueueItem).toHaveBeenCalledWith(item, 'viewer');
     expect(event.item.addedBy).toBe('private-user');
   });
   it('projects full snapshots and removes unattributed frame payloads', async () => {
@@ -53,7 +53,6 @@ describe('queue replay projection', () => {
         state: { sequence: 42, stateHash: 'same-hash', queue: [item], currentClimbQueueItem: item },
       },
       'viewer',
-      'session-1',
     );
     expect(full).toMatchObject({
       state: { queue: [{ addedBy: undefined }], currentClimbQueueItem: { addedBy: undefined } },
@@ -70,7 +69,6 @@ describe('queue replay projection', () => {
           correlationId: null,
         },
         'viewer',
-        'session-1',
       ),
     ).toMatchObject({ sequence: 43, frames: null });
   });

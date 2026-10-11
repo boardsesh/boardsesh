@@ -33,7 +33,7 @@ export const boardPresenceQueries = {
     const board = await requireActiveBoardWithVisibilityById(boardId);
     await assertAnonReadableBoard(board, ctx.userId);
     await assertSprayBoardIsReadable(board, ctx.userId);
-    return redactBoardClimbs(await readMergedRecentHistory(boardId), boardId, ctx.userId);
+    return redactBoardClimbs(await readMergedRecentHistory(boardId), ctx.userId);
   },
   boardHistoryPage: async (
     _: unknown,
@@ -45,7 +45,7 @@ export const boardPresenceQueries = {
     await assertAnonReadableBoard(board, ctx.userId);
     await assertSprayBoardIsReadable(board, ctx.userId);
     const page = await readBoardHistoryPage(boardId, limit ?? 50, before);
-    return { ...page, entries: await redactBoardClimbs(page.entries, boardId, ctx.userId) };
+    return { ...page, entries: await redactBoardClimbs(page.entries, ctx.userId) };
   },
   /**
    * Backfill the recent "now on the wall" history for a board from the Redis
@@ -72,7 +72,7 @@ export const boardPresenceQueries = {
     // The anon gate above waves every authenticated caller through; a spray wall is
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
     await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
-    return redactBoardClimbs(await pubsub.getRecentBoardClimbs(String(boardId)), boardId, ctx.userId);
+    return redactBoardClimbs(await pubsub.getRecentBoardClimbs(String(boardId)), ctx.userId);
   },
 
   /**
@@ -175,7 +175,6 @@ export const boardPresenceQueries = {
         sentAt: row.confirmedAt,
         seq: Number(row.seq),
       })),
-      boardId,
       ctx.userId,
     );
   },
@@ -335,6 +334,6 @@ export const boardPresenceQueries = {
     // A spray wall's holder is its climbers' identity, so it also takes the
     // wall's own rule, like every other presence read here (hidden = owner only).
     await requireReadablePresenceBoard(boardId, ctx.userId);
-    return redactBoardHolder(await resolveBoardHolder(boardId), boardId, ctx.userId);
+    return redactBoardHolder(await resolveBoardHolder(boardId), ctx.userId);
   },
 };

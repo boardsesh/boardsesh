@@ -46,7 +46,7 @@ export const queueSubscriptions = {
         queueUpdates: {
           __typename: 'FullSync',
           sequence: fullSyncSequence,
-          state: await redactQueueState(queueState, ctx.userId, sessionId),
+          state: await redactQueueState(queueState, ctx.userId),
         } as QueueEvent,
       };
 
@@ -69,13 +69,13 @@ export const queueSubscriptions = {
             queueUpdates: {
               __typename: 'FullSync' as const,
               sequence: freshState.sequence,
-              state: await redactQueueState(freshState, ctx.userId, sessionId),
+              state: await redactQueueState(freshState, ctx.userId),
             },
           };
           continue;
         }
         if (event.__typename === 'PlaybackStateChanged' || event.sequence > fullSyncSequence) {
-          yield { queueUpdates: await redactQueueEvent(event, ctx.userId, sessionId) };
+          yield { queueUpdates: await redactQueueEvent(event, ctx.userId) };
         }
       }
     }),

@@ -93,9 +93,12 @@ export const sessionEditMutations = {
    * Publishes SessionNameChanged to live participants when the title actually
    * changes on an active session.
    *
-   * Legacy visibility edits retain newer restrictive resource audiences. Safe
-   * narrowing still re-drives the live listings and board queue preview; the
-   * explicit audience control is required to widen a protected session.
+   * Visibility (`isPublic`) is the legacy switch: private means unlisted, so
+   * the session leaves the live-sessions listings and the anonymous board queue
+   * preview while its invite link keeps joining. Legacy edits retain newer
+   * restrictive resource audiences. Safe narrowing still re-drives the live
+   * listings and board queue preview; the explicit audience control is
+   * required to widen a protected session.
    *
    * `lastActivity` moves only when the title or notes change. It is the
    * live-sessions dormancy clock, so a visibility-only edit on a dormant
@@ -164,7 +167,7 @@ export const sessionEditMutations = {
             eq(dbSchema.resourcePrivacy.resourceId, validated.sessionId),
           );
           const [policy] = await transaction.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
-          const audience = legacyResourceAudience(policy?.audience, nextIsPublic ? 'public' : 'invite_only');
+          const audience = legacyResourceAudience(policy?.audience, nextIsPublic ? 'public' : 'unlisted');
           nextIsPublic = audience === 'public';
           updates.isPublic = nextIsPublic;
           if (policy && audience !== policy.audience) {

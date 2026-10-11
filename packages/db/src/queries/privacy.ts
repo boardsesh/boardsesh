@@ -48,7 +48,7 @@ export function resourceAccessCondition(
       CASE WHEN privacy_board.owner_id = '00000000-0000-0000-0000-000000000000' THEN 'public' WHEN privacy_board.is_unlisted THEN 'unlisted' WHEN privacy_board.is_public THEN 'public' ELSE 'only_me' END AS audience
       FROM user_boards privacy_board WHERE privacy_board.deleted_at IS NULL`
       : sql`SELECT privacy_session.id AS id, privacy_session.created_by_user_id AS owner_id,
-      CASE WHEN privacy_session.is_public THEN 'public' ELSE 'invite_only' END AS audience FROM board_sessions privacy_session`;
+      CASE WHEN privacy_session.is_public THEN 'public' ELSE 'unlisted' END AS audience FROM board_sessions privacy_session`;
   const audienceIsPublic =
     options.allowUnlistedLink === false
       ? sql`COALESCE(privacy_override.audience, privacy_resource.audience) = 'public'`
@@ -70,12 +70,31 @@ export function resourceAccessCondition(
         )
       )
     ))`;
-  return kind === 'session'
-    ? sql`(${resourceCondition} AND ${sessionBoardAccessCondition(resourceIdColumn, viewerId)})`
-    : resourceCondition;
+  return resourceCondition;
 }
 
-/** All current and legacy references must continue to restrict the session. */
+/**
+ * Whether an item (a tick, a session card) may name the board it happened on:
+ * its name, place, gym or distance. The item's own visibility follows its
+ * author; this decides only the board fields on it. A log is not a link, so an
+ * unlisted board is named only to people who already hold it, and a deleted or
+ * unresolvable board is never named. Pass the item's author to keep their own
+ * logbook naming every wall they climbed on.
+ */
+export function boardIdentityVisibleCondition(
+  boardIdColumn: SQLWrapper,
+  viewerId: ViewerId,
+  authorIdColumn?: SQLWrapper,
+): SQL<boolean> {
+  const viewerIsAuthor = authorIdColumn && viewerId ? sql`${authorIdColumn} = ${viewerId} OR ` : sql``;
+  return sql<boolean>`(${boardIdColumn} IS NOT NULL AND (${viewerIsAuthor}EXISTS (
+    SELECT 1 FROM user_boards privacy_identity_board
+    WHERE privacy_identity_board.id = ${boardIdColumn} AND privacy_identity_board.deleted_at IS NULL
+      AND ${resourceAccessCondition('board', sql`privacy_identity_board.uuid`, viewerId, { allowUnlistedLink: false })}
+  )))`;
+}
+
+/** Every current and legacy board a session names, for location redaction. */
 function sessionBoardReferences(sessionIdColumn: SQLWrapper, viewerId: ViewerId): SQL {
   // Match the shared board-path parsers: repeated/leading slashes and an optional
   // two-letter locale are accepted. Legacy path-only sessions still name a wall.
@@ -103,22 +122,17 @@ function sessionBoardReferences(sessionIdColumn: SQLWrapper, viewerId: ViewerId)
     )`;
 }
 
-/** A session link never grants access to an attached private or unlisted board. */
-export function sessionBoardAccessCondition(sessionIdColumn: SQLWrapper, viewerId: ViewerId): SQL {
-  return sql`NOT EXISTS (
-    SELECT 1 FROM ${sessionBoardReferences(sessionIdColumn, viewerId)} privacy_parent_refs
-    LEFT JOIN user_boards privacy_parent_board ON privacy_parent_board.id = privacy_parent_refs.board_id
-    WHERE privacy_parent_board.id IS NULL OR NOT ${resourceAccessCondition('board', sql`privacy_parent_board.uuid`, viewerId, { allowUnlistedLink: false })}
-  )`;
-}
-
-/** Distances and coordinates must respect every referenced board's location policy. */
+/**
+ * Distances and coordinates must respect every referenced board's location policy.
+ * Only a live board that denies the viewer blocks: an unresolvable or soft-deleted
+ * parent has no policy left to enforce, so it never hides the session's own place.
+ */
 export function sessionBoardLocationCondition(sessionIdColumn: SQLWrapper, viewerId: ViewerId): SQL {
   return sql`NOT EXISTS (
     SELECT 1 FROM ${sessionBoardReferences(sessionIdColumn, viewerId)} privacy_parent_refs
-    LEFT JOIN user_boards privacy_parent_board ON privacy_parent_board.id = privacy_parent_refs.board_id
-    WHERE privacy_parent_board.id IS NULL
-      OR NOT ${resourceAccessCondition('board', sql`privacy_parent_board.uuid`, viewerId, { allowUnlistedLink: false })}
+    JOIN user_boards privacy_parent_board ON privacy_parent_board.id = privacy_parent_refs.board_id
+      AND privacy_parent_board.deleted_at IS NULL
+    WHERE NOT ${resourceAccessCondition('board', sql`privacy_parent_board.uuid`, viewerId, { allowUnlistedLink: false })}
       OR NOT ${resourceLocationCondition(sql`privacy_parent_board.uuid`, viewerId)}
   )`;
 }
@@ -166,11 +180,14 @@ export function privateSafeFirstAscentName(
     angle: qualify(stats.angle),
     username: qualify(stats.username),
   };
-  const tickVisible = sql`(${contentVisibilityCondition('tick', sql`privacy_fa_tick.uuid`, sql`privacy_fa_tick.user_id`, viewerId)}
-    AND (privacy_fa_tick.user_id = ${viewerId ?? null} OR (
-      (privacy_fa_tick.session_id IS NULL OR ${resourceAccessCondition('session', sql`privacy_fa_tick.session_id`, viewerId)})
-      AND (privacy_fa_tick.board_id IS NULL OR ${resourceAccessCondition('board', sql`(SELECT uuid FROM user_boards privacy_fa_board WHERE privacy_fa_board.id = privacy_fa_tick.board_id)`, viewerId)})
-    )))`;
+  // A first ascent is its author's activity: the session or wall it happened on
+  // never hides the name, only the author's account and the tick's own audience.
+  const tickVisible = contentVisibilityCondition(
+    'tick',
+    sql`privacy_fa_tick.uuid`,
+    sql`privacy_fa_tick.user_id`,
+    viewerId,
+  );
   // Never expose the stored Boardsesh FA string: it can outlive a deleted tick,
   // account restriction or profile rename while asynchronous recomputation runs.
   return sql<string | null>`CASE WHEN EXISTS (

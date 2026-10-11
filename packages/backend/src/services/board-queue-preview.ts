@@ -1,5 +1,5 @@
 import { canReadClimbContent } from './board-session-privacy';
-import { canAccessResource } from './privacy';
+import { canAccessResourceWithoutLink } from './privacy';
 import { and, desc, eq } from 'drizzle-orm';
 import type { BoardQueuePreview, BoardQueuePreviewItem, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -146,7 +146,7 @@ export async function resolvePublicPreviewSessionForBoard(
     )
     .orderBy(desc(dbSchema.boardSessions.lastActivity))
     .limit(1);
-  return row?.id && (await canAccessResource('session', row.id, null)) ? row.id : null;
+  return row?.id && (await canAccessResourceWithoutLink('session', row.id, null)) ? row.id : null;
 }
 
 /**

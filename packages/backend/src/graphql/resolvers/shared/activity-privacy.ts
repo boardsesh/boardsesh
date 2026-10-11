@@ -13,20 +13,27 @@ import {
 // Predicate construction must not depend on a database connection or its mocks.
 const queryBuilder = new QueryBuilder();
 
-/** Identifiable logs obey both their author/item audience and their containers. */
+/**
+ * A log follows its author: their account privacy plus the tick's own audience.
+ * The session and wall it was logged in never hide it; projections that name the
+ * wall blank those fields instead (`boardIdentityVisibleCondition`). The climb
+ * clause is separate: a public tick cannot reveal an authored climb whose
+ * audience has narrowed.
+ *
+ * `allowOwnWithoutClimb` is climb-only: raw owner reads (a climber's own
+ * logbook and counts) keep a tick whose climb row is gone. Enriched feeds may
+ * retain denormalized climb names after deletion, so they leave it off.
+ */
 export function tickPrivacyCondition(
   viewerId: string | null | undefined,
   ticks: {
     uuid: SQLWrapper;
     userId: SQLWrapper;
-    sessionId: SQLWrapper;
-    boardId: SQLWrapper;
     climbUuid: SQLWrapper;
     boardType: SQLWrapper;
   } = schema.boardseshTicks,
   allowOwnWithoutClimb = false,
 ): SQL {
-  const board = alias(schema.userBoards, 'privacy_tick_board');
   const climb = alias(schema.boardClimbs, 'privacy_tick_climb');
   const climbAlias = alias(schema.boardClimbAliases, 'privacy_tick_climb_alias');
   const canonicalClimbUuid = queryBuilder
@@ -37,23 +44,8 @@ export function tickPrivacyCondition(
     eq(climb.uuid, sql`COALESCE((${canonicalClimbUuid}), ${ticks.climbUuid})`),
     eq(climb.boardType, ticks.boardType),
   );
-  const containerAccess = and(
-    or(isNull(ticks.sessionId), resourceAccessCondition('session', ticks.sessionId, viewerId)),
-    or(
-      isNull(ticks.boardId),
-      exists(
-        queryBuilder
-          .select({ id: board.id })
-          .from(board)
-          .where(and(eq(board.id, ticks.boardId), resourceAccessCondition('board', board.uuid, viewerId))),
-      ),
-    ),
-  );
   return and(
     contentVisibilityCondition('tick', ticks.uuid, ticks.userId, viewerId),
-    // A public tick cannot reveal metadata from an authored climb whose
-    // audience has since narrowed. Enriched feeds may retain denormalized
-    // names after deletion, so only raw owner reads allow a missing parent.
     or(
       allowOwnWithoutClimb && viewerId ? eq(ticks.userId, viewerId) : sql`false`,
       exists(
@@ -73,8 +65,6 @@ export function tickPrivacyCondition(
           ),
       ),
     ),
-    // The author retains their own logbook even after losing access to a wall.
-    or(viewerId ? eq(ticks.userId, viewerId) : sql`false`, containerAccess),
   )!;
 }
 

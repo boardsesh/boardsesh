@@ -11,7 +11,8 @@ import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
-import { contentVisibilityCondition } from '../../../services/privacy';
+import { canAccessResource, canViewBoardIdentity, contentVisibilityCondition } from '../../../services/privacy';
+import { redactBoardIdentity } from '../../../services/board-session-privacy';
 import {
   socialEntityPrivacyCondition,
   commentPrivacyCondition,
@@ -219,6 +220,9 @@ export const activityFeedQueries = {
     );
 
     if (validatedInput.boardUuid) {
+      // A feed for one wall is that wall's activity: it needs the wall itself.
+      if (!(await canAccessResource('board', validatedInput.boardUuid, myUserId)))
+        return { items: [], cursor: null, hasMore: false };
       conditions.push(eq(dbSchema.feedItems.boardUuid, validatedInput.boardUuid));
     }
 
@@ -248,8 +252,21 @@ export const activityFeedQueries = {
     const hasMore = rows.length > limit;
     const resultRows = hasMore ? rows.slice(0, limit) : rows;
     const commentCountMap = await getCommentCountMap(resultRows, myUserId);
+    // Each row follows its author; the wall it names is shown only to people
+    // who may see that wall.
+    const boardUuids = [...new Set(resultRows.flatMap((row) => (row.boardUuid ? [row.boardUuid] : [])))];
+    const visibleBoardUuids = new Set(
+      (
+        await Promise.all(
+          boardUuids.map(async (boardUuid) => ((await canViewBoardIdentity(boardUuid, myUserId)) ? boardUuid : null)),
+        )
+      ).filter((boardUuid): boardUuid is string => boardUuid !== null),
+    );
     const items = resultRows.map((row) =>
-      mapFeedItemToGraphQL(row, commentCountMap.get(`${row.entityType}:${row.entityId}`) ?? 0),
+      mapFeedItemToGraphQL(
+        redactBoardIdentity(row, !!row.boardUuid && visibleBoardUuids.has(row.boardUuid)),
+        commentCountMap.get(`${row.entityType}:${row.entityId}`) ?? 0,
+      ),
     );
 
     let nextCursor: string | null = null;
@@ -290,7 +307,11 @@ export const activityFeedQueries = {
         .limit(1)
         .then((rows) => rows[0]);
 
-      if (!board) {
+      // A wall's trending list is the wall's activity, so it needs the wall.
+      if (
+        !board ||
+        !(await canAccessResource('board', validatedInput.boardUuid, ctx.isAuthenticated ? ctx.userId : null))
+      ) {
         return { items: [], cursor: null, hasMore: false };
       }
 

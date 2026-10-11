@@ -1,4 +1,4 @@
-import { canAccessResource } from './privacy';
+import { canAccessResourceWithoutLink } from './privacy';
 import { eq } from 'drizzle-orm';
 import type { BoardQueuePreview } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -34,7 +34,8 @@ export async function readBoardSessionPreviewGate(sessionId: string): Promise<Bo
     .where(eq(dbSchema.boardSessions.id, sessionId))
     .limit(1);
   return session
-    ? { ...session, isPublic: session.isPublic && (await canAccessResource('session', sessionId, null)) }
+    ? // A kiosk is a public listing: an unlisted session's link never reaches it.
+      { ...session, isPublic: session.isPublic && (await canAccessResourceWithoutLink('session', sessionId, null)) }
     : null;
 }
 

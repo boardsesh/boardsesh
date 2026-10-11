@@ -104,9 +104,9 @@ export async function buildSessionPayload(
           sequence: queueState.sequence,
           stateHash: queueState.stateHash,
           stateHashOrdered: queueState.stateHashOrdered ?? null,
-          queue: await Promise.all(queueState.queue.map((item) => redactQueueItem(item, ctx.userId, sessionId))),
+          queue: await Promise.all(queueState.queue.map((item) => redactQueueItem(item, ctx.userId))),
           currentClimbQueueItem: queueState.currentClimbQueueItem
-            ? await redactQueueItem(queueState.currentClimbQueueItem, ctx.userId, sessionId)
+            ? await redactQueueItem(queueState.currentClimbQueueItem, ctx.userId)
             : null,
         }
       : null,
@@ -132,9 +132,7 @@ export async function buildSessionPayload(
     // `goal` have one.
     createdByUserId:
       (inputs.createdByUserId ?? sessionData?.createdByUserId) &&
-      (await canViewActivityIdentity((inputs.createdByUserId ?? sessionData?.createdByUserId)!, ctx.userId, {
-        sessionId,
-      }))
+      (await canViewActivityIdentity((inputs.createdByUserId ?? sessionData?.createdByUserId)!, ctx.userId))
         ? inputs.createdByUserId !== undefined
           ? inputs.createdByUserId
           : (sessionData?.createdByUserId ?? null)
