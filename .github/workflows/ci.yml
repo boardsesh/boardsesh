@@ -1690,6 +1690,10 @@ jobs:
             " "$openapi_path"
           '
 
+  # The required context must aggregate every gating job. The guards job includes
+  # the ungated large-files check; do not restore the retired standalone jobs.
+  # scripts/__tests__/ci-status-rollup.test.ts checks the current job graph.
+  # See docs/ci-required-checks.md for absent-check recovery.
   ci-status:
     needs:
       - changes
