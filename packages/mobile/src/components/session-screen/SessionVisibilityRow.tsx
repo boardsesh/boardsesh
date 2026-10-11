@@ -8,8 +8,10 @@
 // subtitle says.
 
 import { useTranslation } from 'react-i18next';
+import { StyleSheet, View } from 'react-native';
 import { Card } from '../Card';
 import { SwitchRow } from '../SwitchRow';
+import { spacing } from '../../theme/tokens';
 
 type SessionVisibilityRowProps = {
   /** True when the session is (or will be) shown live. */
@@ -22,18 +24,27 @@ export function SessionVisibilityRow({ isPublic, onChange, disabled = false }: S
   const { t } = useTranslation('session');
   return (
     <Card>
-      <SwitchRow
-        label={t('mobile.sessionVisibility.title')}
-        description={
-          isPublic ? t('mobile.sessionVisibility.descriptionOn') : t('mobile.sessionVisibility.descriptionOff')
-        }
-        // The subtitle is the whole point of the row: who can see the session.
-        // Truncated, "Your crew and climbers on this board…" says nothing.
-        wrapDescription
-        value={isPublic}
-        onValueChange={onChange}
-        disabled={disabled}
-      />
+      <View style={styles.cardBleed}>
+        <SwitchRow
+          label={t('mobile.sessionVisibility.title')}
+          description={
+            isPublic ? t('mobile.sessionVisibility.descriptionOn') : t('mobile.sessionVisibility.descriptionOff')
+          }
+          // The subtitle is the whole point of the row: who can see the session.
+          // Truncated, "Your crew and climbers on this board…" says nothing.
+          wrapDescription
+          value={isPublic}
+          onValueChange={onChange}
+          disabled={disabled}
+        />
+      </View>
     </Card>
   );
 }
+
+const styles = StyleSheet.create({
+  // SwitchRow supplies the horizontal gutter, as it does in the timer card.
+  cardBleed: {
+    marginHorizontal: -spacing[4],
+  },
+});

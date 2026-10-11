@@ -23,7 +23,18 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: { marginHorizontal?: number; marginTop?: number } }) =>
+    createElement(
+      'div',
+      {
+        style: {
+          marginLeft: style?.marginHorizontal,
+          marginRight: style?.marginHorizontal,
+          marginTop: style?.marginTop,
+        },
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 
@@ -149,7 +160,7 @@ describe('RestTimerArmRow', () => {
     fireEvent.click(container.querySelector(ARM_SWITCH) as HTMLElement);
 
     // Same card gutter treatment as the length control above it.
-    expect(queryByTestId('cadence-section')?.getAttribute('data-inset')).toBe('false');
+    expect(queryByTestId('cadence-section')?.getAttribute('data-inset')).toBe('true');
   });
 
   it('never puts a running clock above its own on/off switch', () => {
@@ -160,9 +171,16 @@ describe('RestTimerArmRow', () => {
     expect(queryByTestId('arm-row-clock')).toBeNull();
   });
 
-  it('drops the sheet gutter on the length control, which already sits in a padded card', () => {
+  it('keeps the length control gutter inside the shared card bleed', () => {
     armRestTimer('afterTick', NOW_MS, 'session-1');
     const { getByTestId } = render(<RestTimerArmRow />);
-    expect(getByTestId('length-control').getAttribute('data-inset')).toBe('false');
+    const sharedWrapper = getByTestId('card').firstElementChild as HTMLElement;
+    expect(sharedWrapper.style.marginLeft).toBe('-16px');
+    expect(sharedWrapper.style.marginRight).toBe('-16px');
+    for (const control of ['length-control', 'cadence-section', 'auto-advance-row']) {
+      expect(sharedWrapper.contains(getByTestId(control))).toBe(true);
+    }
+    expect(sharedWrapper.querySelector(ARM_SWITCH)).not.toBeNull();
+    expect(getByTestId('length-control').getAttribute('data-inset')).toBe('true');
   });
 });

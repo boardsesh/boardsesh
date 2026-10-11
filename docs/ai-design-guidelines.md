@@ -902,6 +902,13 @@ renders a native Material **ripple** on Android and a reanimated **scale/opacity
 `RadioGroup`, `SwitchRow`, `ActivityIndicator`, plus board/climb/queue components. Prefer these over
 raw RN host components.
 
+**Native switch rows.** iOS `SwitchRow` measures its wrapping title and subtitle
+inside SwiftUI. Put minimum heights in a native `frame`, not on a React Native
+`Host` with `matchContents`: the host writes its measured height back to Yoga.
+Leave text unrestricted at accessibility sizes, and let React Native own the
+leaf host's safe-area placement. A padded card must cancel its horizontal inset
+once around the whole group of self-insetting controls so labels share one gutter.
+
 ---
 
 ## Dark mode

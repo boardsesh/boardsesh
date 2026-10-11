@@ -56,10 +56,8 @@ export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {
   const [targetSeconds, setTargetSeconds] = useSetting('restTimerTargetSeconds');
 
   return (
-    // `inset={false}` is the Record tab's padded `Card`. SectionHeader carries
-    // its own 16pt gutter, so inside a card that already pads 16 the block pulls
-    // back out through the card's padding and every child re-applies the gutter
-    // itself — one seam on both surfaces rather than a 32pt indent on one.
+    // `inset={false}` cancels a caller-owned card gutter. The Record card now
+    // cancels its gutter once around the whole group and uses the default here.
     <View style={inset ? null : styles.cardBleed}>
       {/* Label and value on ONE row: this is a field, not a section. A caption
           stacked over a lone pill left a third of the row empty and read as a
@@ -116,13 +114,12 @@ export function RestTimerAutoAdvanceRow() {
       : t('mobile.restTimer.autoAdvanceNeedsLength');
 
   return (
-    <View>
+    <View style={styles.autoAdvanceGroup}>
       <SwitchRow
         label={t('mobile.restTimer.autoAdvance')}
         // Short enough to read at a glance. The "only while the app is open"
-        // caveat moved to the group footnote below — SwiftUI derives the Toggle's
-        // VoiceOver name from BOTH its Text children (see SwitchRow.ios.tsx), so
-        // leaving it here made the spoken name a paragraph.
+        // caveat lives in the group footnote below: SwitchRow includes both its
+        // label and description in the accessible name.
         description={blockedReason ?? t('mobile.restTimer.autoAdvanceHint')}
         value={autoAdvance}
         onValueChange={setAutoAdvance}
@@ -151,9 +148,9 @@ export function RestTimerAutoAdvanceRow() {
  * for. With the rest length Off there is no length to name, so it falls back to
  * the plain mode name.
  *
- * `inset={false}` is the arm row's padded `Card`, exactly as for
- * {@link RestTimerLengthControl}: the header and the segmented control pull back
- * out through the card's padding so they share the length label's seam.
+ * `inset={false}` cancels a caller-owned card gutter, exactly as for
+ * {@link RestTimerLengthControl}. The Record card uses one shared wrapper for
+ * all its controls, so it keeps the default inset here.
  */
 export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = {}) {
   const { t } = useTranslation('session');
@@ -328,9 +325,7 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: spacing[2],
   },
-  // Pulls the block back out through the Record tab card's 16pt padding, so its
-  // SectionHeader lines up with the card's own content edge rather than indenting
-  // twice; every child re-applies TICK_GUTTER itself.
+  // Cancels a caller-owned card gutter; each child re-applies TICK_GUTTER.
   cardBleed: {
     marginHorizontal: -spacing[4],
   },
@@ -350,6 +345,9 @@ const styles = StyleSheet.create({
   cadenceContent: {
     paddingHorizontal: TICK_GUTTER,
     gap: spacing[2],
+  },
+  autoAdvanceGroup: {
+    marginTop: spacing[4],
   },
   transportRow: {
     flexDirection: 'row',
