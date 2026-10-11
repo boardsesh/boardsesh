@@ -18,18 +18,24 @@ const EMPTY_BOARD_SERIAL_CONFIGS: BoardSerialConfig[] = [];
 export function useMyBoardSerialConfigs(serialNumbers: string[]) {
   const authTokenQuery = useAuthToken();
   const authToken = authTokenQuery.data;
+  const enabled = serialNumbers.length > 0 && authToken != null;
   const query = useQuery({
     queryKey: ['myBoardSerialConfigs', authToken ?? null, serialNumbers],
     queryFn: () =>
       getHttpClient().request<GetMyBoardSerialConfigsQueryResponse>(GET_MY_BOARD_SERIAL_CONFIGS, { serialNumbers }),
-    enabled: serialNumbers.length > 0 && authToken != null,
+    enabled,
     retry: false,
   });
 
   return {
-    data: query.data?.myBoardSerialConfigs ?? EMPTY_BOARD_SERIAL_CONFIGS,
+    // A failed refetch may keep old query data. Offer the public/manual choices
+    // instead of treating a stale serial mapping as the climber's current pick.
+    data:
+      enabled && !query.isError
+        ? (query.data?.myBoardSerialConfigs ?? EMPTY_BOARD_SERIAL_CONFIGS)
+        : EMPTY_BOARD_SERIAL_CONFIGS,
     // Wait for auth hydration before declaring a scan empty; otherwise a saved
     // board can briefly appear as several public serial-collision candidates.
-    isResolving: authToken === undefined || (authToken !== null && query.isLoading),
+    isResolving: authToken === undefined || (enabled && (query.isLoading || query.isFetching)),
   };
 }
