@@ -10,6 +10,14 @@ manual changes). See docs/mobile-ota-updates.md.
 
 A new version shipped to the App Store and Play Store.
 
+### Improved
+
+- Climb thumbnails show their holds straight away as you scroll ([#6301](https://github.com/boardsesh/boardsesh/pull/6301))
+  The climb list keeps loading as you scroll, instead of stopping at the end
+  Opening a climb shows the board and its holds together
+- The climb list stops reloading itself over and over after you open the app. ([#6309](https://github.com/boardsesh/boardsesh/pull/6309))
+  Scrolling down right after launch keeps loading climbs.
+
 ## 2026-10-10
 
 ### App update
@@ -31,6 +39,7 @@ A new version shipped to the Play Store.
 
 ### Fixed
 
+- The crash only ever shipped to TestFlight. ([#6312](https://github.com/boardsesh/boardsesh/pull/6312))
 - Opening Boardsesh no longer throws you into a blank Safari tab ([#6300](https://github.com/boardsesh/boardsesh/pull/6300))
 - Private spray-wall climbs keep their threads and activity details private. Session totals still count every send, while named activity shows climbs you can see. Threads for deleted climbs are hidden. ([#6127](https://github.com/boardsesh/boardsesh/pull/6127))
 - Pop-up messages no longer hide behind the tab bar or float too high ([#6214](https://github.com/boardsesh/boardsesh/pull/6214))

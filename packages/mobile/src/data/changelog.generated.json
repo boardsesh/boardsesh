@@ -1,6 +1,29 @@
 {
-  "generatedAt": "2026-10-10T23:14:18.210Z",
+  "generatedAt": "2026-10-11T00:22:17.905Z",
   "entries": [
+    {
+      "prNumber": 6301,
+      "category": "improved",
+      "title": "Climb thumbnails show their holds straight away as you scroll",
+      "mergedAt": "2026-10-11T00:15:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6301",
+      "body": "The climb list keeps loading as you scroll, instead of stopping at the end\nOpening a climb shows the board and its holds together"
+    },
+    {
+      "prNumber": 6309,
+      "category": "improved",
+      "title": "The climb list stops reloading itself over and over after you open the app.",
+      "mergedAt": "2026-10-11T00:13:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6309",
+      "body": "Scrolling down right after launch keeps loading climbs."
+    },
+    {
+      "prNumber": 6312,
+      "category": "fixed",
+      "title": "The crash only ever shipped to TestFlight.",
+      "mergedAt": "2026-10-10T23:52:19Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6312"
+    },
     {
       "prNumber": 6300,
       "category": "fixed",
@@ -7089,6 +7112,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-11T10:52:18+11:00",
+      "sha": "89a5b76cc465a77dc8f54cf652d132640e438a91",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "be84baa80af050ea766e1eed6f9752f3051c4c3b"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-11T09:30:18+11:00",
