@@ -631,7 +631,10 @@ Boards, which restores both budgets behind the same size-disclosing confirm dial
 deadline wakes a drain+pull cycle; later scope deadlines remain armed, ad-hoc download triggers feed the
 same coordinator, and scheduler cleanup cancels its alarms. The paged skip is still a grace window: only a
 FRESH, non-terminal scope whose retry lands within 30 minutes waits for it. Past that window the crawl runs,
-and a scope that already holds rows keeps crawling while a failed heal cools down. Failures outside snapshot
+and a scope that already holds rows keeps crawling while a failed heal cools down. A `scope-complete:` or
+`bootstrap-done:` scope is never skipped: it has no retry to wait for, and it can be without a board
+checkpoint (a privacy revalidation resets them, and an empty table never writes one), so treating it as
+fresh stopped the board syncing for good (issue #6306). Failures outside snapshot
 bootstrap (queue drain, deletions, paged GraphQL, or SQLite) arm a separate 30-second cycle retry, so a
 foregrounded connected app does not depend on a later reconnect or foreground event to resume.
 
