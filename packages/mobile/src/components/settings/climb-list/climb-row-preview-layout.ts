@@ -9,15 +9,17 @@ export function climbRowPreviewLayout(fontScale: number, typeScale?: ClimbRowLay
   const display = { ...DEFAULT_CLIMB_ROW_DISPLAY };
   for (const field of CLIMB_ROW_FIELD_IDS) display[field] = true;
   const tallestRow = Math.max(
-    ...[false, true].map(
-      (thumbnail) =>
-        climbRowLayout({
-          display: { ...display, thumbnail },
-          fontScale,
-          typeScale,
-          supportsMirroring: true,
-          surface: { showAscentStatus: true, showPlaylistChips: true, detailLine: 'computed' },
-        }).estimatedHeight,
+    ...[false, true].flatMap((thumbnail) =>
+      [false, true].map(
+        (progress) =>
+          climbRowLayout({
+            display: { ...display, thumbnail, progress },
+            fontScale,
+            typeScale,
+            supportsMirroring: true,
+            surface: { showAscentStatus: true, showPlaylistChips: true, showProgress: true, detailLine: 'computed' },
+          }).estimatedHeight,
+      ),
     ),
   );
   const windowHeight = Math.max(CLIMB_ROW_PREVIEW_WINDOW_HEIGHT, tallestRow);

@@ -40,6 +40,7 @@ import {
 } from '@boardsesh/climb-filters';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { boardSupportsMirroring, getBoardCapabilities } from '@boardsesh/board-config';
+import { ClimbProgressProvider, type ClimbProgressTarget } from '../../../src/providers/climb-progress-provider';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import {
@@ -183,7 +184,11 @@ const INITIAL_SKELETON_ROW_COUNT = 10;
 const FOOTER_SKELETON_ROW_COUNT = 6;
 // What this list lets its rows show, for sizing their placeholders: the one
 // surface with playlist tags.
-const CLIMB_LIST_ROW_SURFACE: ClimbRowSurface = { ...DEFAULT_CLIMB_ROW_SURFACE, showPlaylistChips: true };
+const CLIMB_LIST_ROW_SURFACE: ClimbRowSurface = {
+  ...DEFAULT_CLIMB_ROW_SURFACE,
+  showPlaylistChips: true,
+  showProgress: true,
+};
 // Debounce persisting the per-board last search so rapid grade nudges don't
 // thrash secure-store.
 const SAVE_DEBOUNCE_MS = 600;
@@ -996,6 +1001,10 @@ function ClimbListInner() {
   // third-row playlist tags can render (gated inside the hook on the user
   // setting + auth). Memoize the uuid list so the fetch effect's dep is stable.
   const visibleClimbUuids = useMemo(() => visibleClimbs.map((climb) => climb.uuid), [visibleClimbs]);
+  const progressTargets = useMemo<ClimbProgressTarget[]>(
+    () => (boardName ? visibleClimbUuids.map((climbUuid) => ({ boardName: boardName as BoardName, climbUuid })) : []),
+    [boardName, visibleClimbUuids],
+  );
   useClimbListPlaylistMemberships({ boardName, layoutId, climbUuids: visibleClimbUuids });
 
   // Same batched shape for the favourite hearts: fetch the visible UUIDs' state
@@ -2019,6 +2028,7 @@ function ClimbListInner() {
         onOpenPlaylist={handleOpenAddToPlaylist}
         onAddToQueue={handleAddToQueue}
         showPlaylistChips
+        showProgress
         showFavorite
         // The row applies the climber's quick-actions setting itself, so a toggle
         // re-renders the rows and leaves this callback alone.
@@ -2189,140 +2199,142 @@ function ClimbListInner() {
       >
         {/* The no-board branches above unmount the list; it comes back at rest. */}
         <ScrollEdgeListReset edge={scrollEdge.list} />
-        <FlashList
-          ref={climbListRef}
-          testID="climb-list"
-          // Screen readers skip the tint, so announce the stale rows as loading.
-          accessibilityState={{ busy: isPlaceholderData }}
-          data={visibleClimbs}
-          renderItem={renderClimbItem}
-          keyExtractor={keyExtractor}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          onViewableItemsChanged={handleViewableItemsChanged}
-          viewabilityConfig={CLIMB_LIST_VIEWABILITY}
-          // The header is transparent on every path now, so the chrome owns the top
-          // inset and the list pads manually by the measured chrome height. Leaving
-          // this 'automatic' would double-inset under the (invisible) native header.
-          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-          // The scroll reset on a new search targets the inset top, a negative
-          // offset. React Native clamps a programmatic scroll at 0 unless told the
-          // list may be scrolled past its content bounds.
-          scrollToOverflowEnabled={nativeRootHeader}
-          {...scrollEdge.list?.listProps}
-          contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
-          scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          refreshControl={
-            // A placeholder fetch reads as a refetch; only a real pull shows the spinner.
-            <RefreshControl
-              refreshing={isRefetching && !isPlaceholderData}
-              onRefresh={handleRefresh}
-              tintColor={brandColors.primary}
-              // Under the UIKit header the filter chips are pinned over the top of
-              // the list, where the spinner appears. Draw it below them. Android
-              // and the other chromes keep the default position.
-              progressViewOffset={nativeRootHeader ? searchBarHeight : undefined}
-            />
-          }
-          ListHeaderComponent={listHeader}
-          ListFooterComponent={listFooter}
-          ListEmptyComponent={
-            showInitialSkeletons ? (
-              <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} supportsMirroring={rowsTrackDirections} />
-            ) : climbSearchError instanceof FollowedAuthorsUnavailableError ? (
-              <View style={styles.emptyContainer}>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {t('authors.syncNeeded')}
-                </Text>
-                <Button title={t('authors.retry')} onPress={() => void refetch()} />
-              </View>
-            ) : isClimbsError && !noUsableConnection ? (
-              <OfflineState reason="error" onRetry={handleRefresh} />
-            ) : offlineFilterUnavailable ? (
-              <View style={styles.emptyContainer}>
-                {/* The glyph carries the same blame as the title: a wifi-slash over
+        <ClimbProgressProvider targets={progressTargets}>
+          <FlashList
+            ref={climbListRef}
+            testID="climb-list"
+            // Screen readers skip the tint, so announce the stale rows as loading.
+            accessibilityState={{ busy: isPlaceholderData }}
+            data={visibleClimbs}
+            renderItem={renderClimbItem}
+            keyExtractor={keyExtractor}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            onViewableItemsChanged={handleViewableItemsChanged}
+            viewabilityConfig={CLIMB_LIST_VIEWABILITY}
+            // The header is transparent on every path now, so the chrome owns the top
+            // inset and the list pads manually by the measured chrome height. Leaving
+            // this 'automatic' would double-inset under the (invisible) native header.
+            contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+            // The scroll reset on a new search targets the inset top, a negative
+            // offset. React Native clamps a programmatic scroll at 0 unless told the
+            // list may be scrolled past its content bounds.
+            scrollToOverflowEnabled={nativeRootHeader}
+            {...scrollEdge.list?.listProps}
+            contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
+            scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            refreshControl={
+              // A placeholder fetch reads as a refetch; only a real pull shows the spinner.
+              <RefreshControl
+                refreshing={isRefetching && !isPlaceholderData}
+                onRefresh={handleRefresh}
+                tintColor={brandColors.primary}
+                // Under the UIKit header the filter chips are pinned over the top of
+                // the list, where the spinner appears. Draw it below them. Android
+                // and the other chromes keep the default position.
+                progressViewOffset={nativeRootHeader ? searchBarHeight : undefined}
+              />
+            }
+            ListHeaderComponent={listHeader}
+            ListFooterComponent={listFooter}
+            ListEmptyComponent={
+              showInitialSkeletons ? (
+                <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} supportsMirroring={rowsTrackDirections} />
+              ) : climbSearchError instanceof FollowedAuthorsUnavailableError ? (
+                <View style={styles.emptyContainer}>
+                  <Text variant="subheadline" style={styles.emptySubtitle}>
+                    {t('authors.syncNeeded')}
+                  </Text>
+                  <Button title={t('authors.retry')} onPress={() => void refetch()} />
+                </View>
+              ) : isClimbsError && !noUsableConnection ? (
+                <OfflineState reason="error" onRetry={handleRefresh} />
+              ) : offlineFilterUnavailable ? (
+                <View style={styles.emptyContainer}>
+                  {/* The glyph carries the same blame as the title: a wifi-slash over
                 "needs our server" would contradict itself. */}
-                <Icon
-                  name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
-                  size={48}
-                  color={systemColors.tertiaryLabel}
-                />
-                {/* "Needs a signal" is a lie when the phone has four bars and we
+                  <Icon
+                    name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
+                    size={48}
+                    color={systemColors.tertiaryLabel}
+                  />
+                  {/* "Needs a signal" is a lie when the phone has four bars and we
                 are the ones who are down, or when the climber chose Offline
                 mode. Literal keys — the i18n linter rejects a computed one. */}
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {offlineFilterReason === 'backend_unreachable'
-                    ? t('mobile.emptyState.offlineFilter.titleServer')
-                    : offlineFilterReason === 'offline_mode'
-                      ? t('mobile.emptyState.offlineFilter.titleOfflineMode')
-                      : t('mobile.emptyState.offlineFilter.title')}
-                </Text>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {t('mobile.emptyState.offlineFilter.subtitle')}
-                </Text>
-                <Button
-                  title={t('mobile.emptyState.offlineFilter.cta')}
-                  variant="outlined"
-                  onPress={handleClearNonGradeFilters}
-                  style={styles.emptyCta}
-                />
-              </View>
-            ) : offlineCatalogMissing ? (
-              <View style={styles.emptyContainer}>
-                <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('mobile.emptyState.offlineNoCatalog.title')}
-                </Text>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {t('mobile.emptyState.offlineNoCatalog.subtitle')}
-                </Text>
-                <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
-              </View>
-            ) : offlineCatalogQueued ? (
-              <View style={styles.emptyContainer}>
-                <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('mobile.emptyState.offlineCatalogQueued.title')}
-                </Text>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: activeBoard?.name ?? '' })}
-                </Text>
-              </View>
-            ) : isUnsetWall ? (
-              <View style={styles.emptyContainer}>
-                <Icon name="add" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('mobile.emptyState.unsetWall.title')}
-                </Text>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {t('mobile.emptyState.unsetWall.subtitle')}
-                </Text>
-                {canCreateClimb ? (
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {offlineFilterReason === 'backend_unreachable'
+                      ? t('mobile.emptyState.offlineFilter.titleServer')
+                      : offlineFilterReason === 'offline_mode'
+                        ? t('mobile.emptyState.offlineFilter.titleOfflineMode')
+                        : t('mobile.emptyState.offlineFilter.title')}
+                  </Text>
+                  <Text variant="subheadline" style={styles.emptySubtitle}>
+                    {t('mobile.emptyState.offlineFilter.subtitle')}
+                  </Text>
                   <Button
-                    title={t('mobile.emptyState.unsetWall.cta')}
+                    title={t('mobile.emptyState.offlineFilter.cta')}
                     variant="outlined"
-                    onPress={handleCreateClimb}
+                    onPress={handleClearNonGradeFilters}
                     style={styles.emptyCta}
                   />
-                ) : null}
-              </View>
-            ) : isEmpty ? (
-              <View style={styles.emptyContainer}>
-                <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
-                </Text>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {name.length > 0
-                    ? t('mobile.emptyState.noMatches.description', { query: name })
-                    : t('mobile.emptyState.noClimbs.subtitle')}
-                </Text>
-              </View>
-            ) : null
-          }
-        />
+                </View>
+              ) : offlineCatalogMissing ? (
+                <View style={styles.emptyContainer}>
+                  <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {t('mobile.emptyState.offlineNoCatalog.title')}
+                  </Text>
+                  <Text variant="subheadline" style={styles.emptySubtitle}>
+                    {t('mobile.emptyState.offlineNoCatalog.subtitle')}
+                  </Text>
+                  <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
+                </View>
+              ) : offlineCatalogQueued ? (
+                <View style={styles.emptyContainer}>
+                  <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {t('mobile.emptyState.offlineCatalogQueued.title')}
+                  </Text>
+                  <Text variant="subheadline" style={styles.emptySubtitle}>
+                    {t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: activeBoard?.name ?? '' })}
+                  </Text>
+                </View>
+              ) : isUnsetWall ? (
+                <View style={styles.emptyContainer}>
+                  <Icon name="add" size={48} color={systemColors.tertiaryLabel} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {t('mobile.emptyState.unsetWall.title')}
+                  </Text>
+                  <Text variant="subheadline" style={styles.emptySubtitle}>
+                    {t('mobile.emptyState.unsetWall.subtitle')}
+                  </Text>
+                  {canCreateClimb ? (
+                    <Button
+                      title={t('mobile.emptyState.unsetWall.cta')}
+                      variant="outlined"
+                      onPress={handleCreateClimb}
+                      style={styles.emptyCta}
+                    />
+                  ) : null}
+                </View>
+              ) : isEmpty ? (
+                <View style={styles.emptyContainer}>
+                  <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
+                  </Text>
+                  <Text variant="subheadline" style={styles.emptySubtitle}>
+                    {name.length > 0
+                      ? t('mobile.emptyState.noMatches.description', { query: name })
+                      : t('mobile.emptyState.noClimbs.subtitle')}
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
+        </ClimbProgressProvider>
         {/* Renders nothing. Not for placeholder rows: they belong to the previous
             search and are about to be replaced. Not with thumbnails switched off
             either: a hidden thumbnail starts no thumbnail-only rendering work. */}
@@ -2462,6 +2474,7 @@ function ClimbListSkeletonRows({ count, supportsMirroring }: { count: number; su
         <ClimbListRowSkeleton
           key={`climb-skeleton-${index}`}
           showPlaylistChips={CLIMB_LIST_ROW_SURFACE.showPlaylistChips}
+          showProgress
           supportsMirroring={supportsMirroring}
         />
       ))}

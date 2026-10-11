@@ -468,7 +468,8 @@
           "setter": "Routenbauer*in",
           "sentMark": "Begehungsmarkierung",
           "playlistTags": "Playlist-Tags anzeigen",
-          "quickActions": "Schnellaktionen-Button anzeigen"
+          "quickActions": "Schnellaktionen-Button anzeigen",
+          "progress": "Mein Fortschritt"
         },
         "sampleName": "Abendprojekt",
         "sampleSetter": "routenbauer",

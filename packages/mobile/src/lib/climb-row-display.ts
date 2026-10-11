@@ -14,6 +14,7 @@ export const CLIMB_ROW_FIELD_IDS = [
   'rating',
   'setter',
   'sentMark',
+  'progress',
   'playlistTags',
   'quickActions',
 ] as const;
@@ -28,6 +29,7 @@ export const DEFAULT_CLIMB_ROW_DISPLAY: ClimbRowDisplay = Object.freeze({
   rating: true,
   setter: true,
   sentMark: true,
+  progress: false,
   playlistTags: false,
   quickActions: true,
 });
@@ -54,6 +56,7 @@ export const CLIMB_ROW_PRESETS = {
     rating: false,
     setter: false,
     sentMark: true,
+    progress: false,
     playlistTags: false,
   },
   textOnly: {
@@ -63,6 +66,7 @@ export const CLIMB_ROW_PRESETS = {
     rating: true,
     setter: true,
     sentMark: true,
+    progress: false,
     playlistTags: false,
   },
   default: {
@@ -72,6 +76,7 @@ export const CLIMB_ROW_PRESETS = {
     rating: true,
     setter: true,
     sentMark: true,
+    progress: false,
     playlistTags: false,
   },
   everything: {
@@ -81,6 +86,7 @@ export const CLIMB_ROW_PRESETS = {
     rating: true,
     setter: true,
     sentMark: true,
+    progress: true,
     playlistTags: true,
   },
 } as const satisfies Record<ClimbRowPresetId, ClimbRowPresetFields>;

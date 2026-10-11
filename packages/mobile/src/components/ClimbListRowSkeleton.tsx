@@ -1,6 +1,7 @@
 import { View, StyleSheet, useWindowDimensions, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './ClimbListThumbnail';
 import { ClimbRowReservedLine } from './ClimbRowReservedLine';
+import { PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
 import type { TextVariant } from './Text';
 import { useClimbRowDisplay } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
@@ -19,6 +20,7 @@ import {
 type ClimbListRowSkeletonProps = {
   /** The rows this stands in for can show playlist tags. Only the Climbs list's can. */
   showPlaylistChips?: boolean;
+  showProgress?: boolean;
   /** The board whose climbs are loading mirrors, so its rows track each direction. */
   supportsMirroring?: boolean;
 };
@@ -55,6 +57,7 @@ function SkeletonTextLine({
  */
 export function ClimbListRowSkeleton({
   showPlaylistChips = false,
+  showProgress = false,
   supportsMirroring = false,
 }: ClimbListRowSkeletonProps) {
   const { systemColors } = useTheme();
@@ -63,7 +66,7 @@ export function ClimbListRowSkeleton({
   const { textStyles } = useTheme();
   const layout = climbRowLayout({
     display,
-    surface: { ...DEFAULT_CLIMB_ROW_SURFACE, showPlaylistChips },
+    surface: { ...DEFAULT_CLIMB_ROW_SURFACE, showPlaylistChips, showProgress },
     supportsMirroring,
     fontScale,
     typeScale: textStyles,
@@ -107,7 +110,10 @@ export function ClimbListRowSkeleton({
             ) : null}
             {layout.hasPersonalLine ? (
               <View style={styles.personalLine}>
-                <ClimbRowReservedLine variant="caption2" />
+                <ClimbRowReservedLine
+                  variant={layout.hasProgressLine ? 'footnote' : 'caption2'}
+                  {...(layout.hasProgressLine ? { maxFontSizeMultiplier: PROGRESS_MAX_FONT_SCALE } : null)}
+                />
               </View>
             ) : null}
             {layout.hasTagsLine ? (

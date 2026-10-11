@@ -20,6 +20,7 @@ import {
   type ClimbRowAscentStatusLeafProps,
 } from '../../ClimbListItemContent';
 import { ClimbPlaylistChipsView, type ClimbRowPlaylistChipsLeafProps } from '../../ClimbPlaylistChips';
+import { ClimbProgressView, type ClimbRowProgressLeafProps } from '../../ClimbProgressLine';
 import { useTheme } from '../../../providers/theme-provider';
 
 export function stagedGrades(difficulty: string, boardName: string, gradeFormat: GradeDisplayFormat) {
@@ -89,6 +90,27 @@ const PreviewStatus = memo(function PreviewStatus({ supportsMirroring, reserveLi
     />
   );
 });
+const PreviewProgress = memo(function PreviewProgress({
+  supportsMirroring,
+  showDirectionStatuses,
+  reserveLine,
+}: ClimbRowProgressLeafProps) {
+  return (
+    <ClimbProgressView
+      supportsMirroring={supportsMirroring}
+      showDirectionStatuses={showDirectionStatuses}
+      reserveLine={reserveLine}
+      progress={{
+        status: 'flash',
+        outcome: { kind: 'flash', sendCount: 3 },
+        mirror: 'both',
+        originalStatus: 'flash',
+        mirrorStatus: 'attempt',
+        latestClimbedAtMs: null,
+      }}
+    />
+  );
+});
 const PreviewPlaylists = memo(function PreviewPlaylists({ reserveLine }: ClimbRowPlaylistChipsLeafProps) {
   const { t } = useTranslation('common');
   const { brandColors } = useTheme();
@@ -147,6 +169,7 @@ export const CLIMB_ROW_PREVIEW_LEAVES: ClimbRowLeaves = {
   Grade: PreviewGrade,
   Subtitle: PreviewSubtitle,
   AscentStatus: PreviewStatus,
+  Progress: PreviewProgress,
   Favorite: ClimbFavoriteView,
   PlaylistChips: PreviewPlaylists,
 };
@@ -155,6 +178,14 @@ export const CLIMB_ROW_PLAIN_PREVIEW_LEAVES: ClimbRowLeaves = {
   Grade: PlainGrade,
   Subtitle: PlainSubtitle,
   AscentStatus: () => null,
+  Progress: ({ reserveLine }) => (
+    <ClimbProgressView
+      supportsMirroring={false}
+      showDirectionStatuses={false}
+      reserveLine={reserveLine}
+      progress={null}
+    />
+  ),
   Favorite: () => null,
   PlaylistChips: () => null,
 };

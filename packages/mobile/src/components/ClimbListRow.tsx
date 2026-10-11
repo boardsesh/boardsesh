@@ -248,6 +248,7 @@ type ClimbListRowProps = {
    * custom layout.
    */
   showPlaylistChips?: boolean;
+  showProgress?: boolean;
   /**
    * Show the favourite heart beside the ascent status in the default content
    * layout. Only the main filtered climb list opts in — it's the surface that
@@ -292,6 +293,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   separatorStyle,
   showSeparator = true,
   showPlaylistChips = false,
+  showProgress = false,
   showFavorite = false,
   showMoreButton = false,
   testID = 'climb-row',
@@ -567,6 +569,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
       setIds={setIds}
       angle={angle}
       showPlaylistChips={showPlaylistChips}
+      showProgress={showProgress}
       showFavorite={showFavorite}
     />
   );

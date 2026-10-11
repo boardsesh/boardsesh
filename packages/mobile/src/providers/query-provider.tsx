@@ -4,6 +4,7 @@ import { QueryCache, QueryClient, QueryClientProvider, MutationCache, focusManag
 import { reportHandledError } from '../lib/error-reporting';
 import { startConnectivityStore } from '../lib/connectivity/start-connectivity';
 import { shouldRetryQuery } from '../lib/graphql/query-retry';
+import { climbProgressCacheScopeFor } from '../lib/climb-progress-cache-owner';
 // React Query keys `refetchOnReconnect` / `refetchOnWindowFocus` off a browser's
 // `navigator.onLine` and window-focus events, neither of which exists on React
 // Native — so without these bridges it treats the app as permanently online and
@@ -67,7 +68,7 @@ export function reportMutationFailure(error: unknown, mutationKey: unknown): voi
 // defaultOptions.retry) are exhausted — a single chokepoint so API / GraphQL /
 // REST errors land in PostHog without instrumenting each call site.
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => reportQueryFailure(error, query.queryKey, query.queryHash),
     }),
@@ -110,6 +111,8 @@ export function createQueryClient(): QueryClient {
       },
     },
   });
+  climbProgressCacheScopeFor(queryClient);
+  return queryClient;
 }
 
 export function QueryProvider({ children }: { children: ReactNode }) {

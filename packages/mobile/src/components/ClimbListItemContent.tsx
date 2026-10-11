@@ -36,18 +36,9 @@ import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
 import { useClimbRowDisplay } from '../lib/climb-row-display-preference';
 import type { ClimbRowDisplay } from '../lib/climb-row-display';
-import type { IconName } from './icon-map';
+import { ASCENT_STATUS_ICON } from './ascent-status-icon';
+import { ClimbProgressLine, ClimbProgressView, type ClimbRowProgressLeafProps } from './ClimbProgressLine';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
-
-// Scan-line status marker. Status is carried by glyph SHAPE in a single neutral
-// grey — not a colour — so it can't be mistaken for the colour-coded grade right
-// beside it, and so it stays readable for colour-blind users. ⚡ flashed,
-// ✓ sent, ✗ attempted.
-const ASCENT_STATUS_ICON: Record<AscentStatusValue, IconName> = {
-  flash: 'flash',
-  send: 'tick.outline',
-  attempt: 'ascent.attempt',
-};
 
 // What the placeholder for a climb that has not resolved hands the tags line.
 const NO_PLAYLIST_CHIPS: readonly ClimbPlaylistChip[] = [];
@@ -212,6 +203,7 @@ export type ClimbRowThumbnailLeafProps = {
 
 export type ClimbRowLeaves = Readonly<{
   Thumbnail?: React.ComponentType<ClimbRowThumbnailLeafProps>;
+  Progress?: React.ComponentType<ClimbRowProgressLeafProps>;
   Subtitle: React.ComponentType<ClimbRowSubtitleLeafProps>;
   Grade: React.ComponentType<ClimbRowGradeLeafProps>;
   AscentStatus: React.ComponentType<ClimbRowAscentStatusLeafProps>;
@@ -257,6 +249,8 @@ type ClimbListItemContentProps = {
    * draws nothing until membership data has been fetched.
    */
   showPlaylistChips?: boolean;
+  /** Personal progress is opt-in for the three browse feeds; never reorder hosts. */
+  showProgress?: boolean;
   /**
    * Render the favourite heart beside the ascent status. Opt-in per surface
    * (default off) for the same reason as `showPlaylistChips`: only the main
@@ -908,6 +902,7 @@ const LIVE_CLIMB_ROW_LEAVES: ClimbRowLeaves = {
   Subtitle: LiveClimbSubtitle,
   Grade: LiveClimbGrade,
   AscentStatus: AscentStatusGlyph,
+  Progress: ClimbProgressLine,
   Favorite: FavoriteGlyph,
   PlaylistChips: ClimbPlaylistChips,
 };
@@ -934,6 +929,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   showAscentStatus = true,
   primarySubtitleOverride,
   showPlaylistChips = false,
+  showProgress = false,
   showFavorite = false,
   allowNameWrapping = true,
   display,
@@ -948,6 +944,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * fontScale * 2 }]
       : styles.climbName;
   const Thumbnail = leaves.Thumbnail ?? ClimbListThumbnail;
+  const Progress = leaves.Progress ?? ClimbProgressLine;
   // The row's one subscription to the Climb list settings. Its snapshot keeps its
   // identity until a switch changes, so this never re-renders a row on its own.
   const storedDisplay = useClimbRowDisplay();
@@ -962,6 +959,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     surface: {
       showAscentStatus,
       showPlaylistChips,
+      showProgress,
       detailLine: primarySubtitleOverride === undefined ? 'computed' : primarySubtitleOverride ? 'replaced' : 'hidden',
     },
     supportsMirroring,
@@ -996,7 +994,14 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           {/* Without a thumbnail, hold the lines the resolved row will have, so
               the row does not change height when its climb lands. */}
           {layout.reservesLateLines && layout.hasDetailLine ? <ClimbRowReservedLine variant="footnote" /> : null}
-          {layout.reservesLateLines && layout.hasPersonalLine ? (
+          {layout.reservesLateLines && layout.hasProgressLine ? (
+            <ClimbProgressView
+              progress={null}
+              supportsMirroring={supportsMirroring}
+              showDirectionStatuses={false}
+              reserveLine
+            />
+          ) : layout.reservesLateLines && layout.hasPersonalLine ? (
             <ClimbAscentStatusView supportsMirroring ascentStatus={null} mirrorStatus={null} reserveLine />
           ) : null}
           {layout.reservesLateLines && layout.hasTagsLine ? (
@@ -1078,7 +1083,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       />
     );
   const ascentStatus =
-    layout.sentMarkPlace === 'none' ? null : (
+    layout.sentMarkPlace === 'none' || layout.hasProgressLine ? null : (
       <leaves.AscentStatus
         climbUuid={climb.uuid}
         angle={angle}
@@ -1127,7 +1132,19 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {subtitleDetailText}
           </Text>
         ) : null}
-        {layout.sentMarkPlace === 'personalLine' ? ascentStatus : null}
+        {layout.hasProgressLine ? (
+          <Progress
+            boardName={boardName}
+            climbUuid={climb.uuid}
+            angle={angle}
+            holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+            supportsMirroring={supportsMirroring}
+            showDirectionStatuses={layout.sentMarkPlace === 'personalLine'}
+            reserveLine={layout.reservesLateLines}
+          />
+        ) : layout.sentMarkPlace === 'personalLine' ? (
+          ascentStatus
+        ) : null}
         {layout.hasTagsLine ? (
           <leaves.PlaylistChips climbUuid={climb.uuid} reserveLine={layout.reservesLateLines} />
         ) : null}

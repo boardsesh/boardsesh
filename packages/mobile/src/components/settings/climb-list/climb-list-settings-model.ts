@@ -59,6 +59,7 @@ export function buildClimbListSettingsModel(input: {
         footer: t('mobile.settings.climbList.personalFooter'),
         rows: [
           toggle('sentMark', t('mobile.settings.climbList.fields.sentMark')),
+          toggle('progress', t('mobile.settings.climbList.fields.progress')),
           toggle(
             'playlistTags',
             t('mobile.settings.climbList.fields.playlistTags'),

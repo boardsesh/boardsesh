@@ -4,14 +4,14 @@ Climbs → eye opens `/settings/climb-list` in the current tab. Settings also li
 
 ## Fields and presets
 
-`packages/mobile/src/lib/climb-row-display.ts` is the switch registry. Name, prominent grade, rule badges, warnings and interactions stay fixed. Thumbnail, community grade, sends, rating, setter, sent mark, playlist tags and quick actions are individual choices. Personal progress is added separately to the same registry.
+`packages/mobile/src/lib/climb-row-display.ts` is the switch registry. Name, prominent grade, rule badges, warnings and interactions stay fixed. Thumbnail, community grade, sends, rating, setter, sent mark, My progress, playlist tags and quick actions are individual choices. My progress is off by default.
 
-| Preset | Picture | Detail tokens | Sent mark | Playlist tags |
-| --- | --- | --- | --- | --- |
-| Names only | Off | Off | On | Off |
-| Text only | Off | On | On | Off |
-| Default | On | On | On | Off |
-| Everything | On | On | On | On |
+| Preset | Picture | Detail tokens | Sent mark | My progress | Playlist tags |
+| --- | --- | --- | --- | --- | --- |
+| Names only | Off | Off | On | Off | Off |
+| Text only | Off | On | On | Off | Off |
+| Default | On | On | On | Off | Off |
+| Everything | On | On | On | On | On |
 
 Quick actions is outside presets. Active preset is derived by comparing content fields. A manual mix reads Custom; applying a preset remembers that mix, and the Custom chip restores it. Default clears content overrides so shipped defaults can continue to apply.
 
@@ -21,9 +21,19 @@ The prominent grade still follows Settings → Grades. When the personal or Boar
 
 `climb-row-display-preference.ts` owns the synchronous MMKV snapshot. Leaves subscribe to this store directly, so unrelated Settings writes do not redraw list rows. The legacy playlist-tags and quick-actions keys are reconciled and mirrored for OTA rollback compatibility; failed writes stay pending until retried.
 
-`climb-row-layout.ts` decides which lines exist, the estimated height, and the separator inset. Thumbnail-off rows do not mount the native thumbnail renderer. Reserve late-loading tags and mirror status lines before those reads settle. The two reorder hosts keep one-line names and suppress personal progress; ordinary lists allow names to wrap from font scale 1.3.
+`climb-row-layout.ts` decides which lines exist, the estimated height, and the separator inset. Thumbnail-off rows do not mount the native thumbnail renderer. Reserve late-loading tags, progress and mirror status lines before those reads settle, including signed-out rows. The two reorder hosts keep one-line names and suppress personal progress; ordinary lists allow names to wrap from font scale 1.3.
 
-The preview window reserves the tallest supported row at the current font scale and theme, with a 117 pt minimum, so switches stay in place and large-text tags stay visible. It uses the active board's most-climbed row and stages a favorite, direction statuses, two playlists and a differing personal grade. Without board geometry its picture is a neutral block. A second, unmarked row appears when both fit.
+The preview window reserves the tallest supported row at the current font scale and theme, with a 117 pt minimum, so switches stay in place and large-text tags stay visible. It uses the list's full width and action gutter, including in the browser form. It uses the active board's most-climbed row and stages a favorite, direction statuses, two playlists and a differing personal grade. Without board geometry its picture is a neutral block. A second, unmarked row appears when both fit.
+
+## Frame counts and personal progress
+
+Climbs with multiple frames show a stack-and-count pip over the picture. With the picture hidden, it joins the name badges. Single-frame climbs keep the same row.
+
+My progress is supported by the main Climbs list, playlist detail and profile climbs, plus the staged Settings preview. Reorder rows never mount it or request its data. It shares one personal line with each direction's independent flash/send/attempt mark; an original send does not erase a mirror attempt. Enabling it removes the extra sent glyph beside the grade. Repeated sends display their count even when the first send was a flash.
+
+Each supported list groups UUIDs by board and calls `useLogbook` once per board batch. A stable progress store builds the board/climb/angle index once; memoized leaves use keyed `useSyncExternalStore` subscriptions, so logbook changes do not repaint board art or unrelated rows. Toggling progress preserves the list instance; disabled hosts mount no auth/query loaders. Holds-revision filtering happens before progress is derived. A passive ownership guard starts with the root query client. Credential changes withdraw copied ticks synchronously and old shared-cache query identities stay fenced until auth cleanup removes them. Empty anonymous accumulators can carry into login only when no authenticated batch or fetched-climb marker exists; a pending previous-account fetch remains fenced.
+
+Recency reads the clock inside a memo. It refreshes when the progress, locale or font scale changes, or when the row remounts; a row left mounted through midnight has no timer. The progress text caps at font scale 1.3, and recency drops before the outcome as space gets tighter. Direction statuses remain in the spoken label.
 
 ## Adding a switch
 

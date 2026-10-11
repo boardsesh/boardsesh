@@ -1,6 +1,7 @@
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
 import { spacing } from '../theme/tokens';
 import { textStyles } from '../theme/typography';
+import { PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
 import type { ClimbRowDisplay } from '../lib/climb-row-display';
 
 // The geometry of a climb row that depends on what the row shows. Pure, so every
@@ -90,6 +91,8 @@ export function climbRowSeparatorInset(showThumbnail: boolean, leadingInset: num
 export type ClimbRowSurface = {
   /** The host's `showAscentStatus`. False where the host shows the status itself. */
   showAscentStatus: boolean;
+  /** Only browse, playlist detail, profile climbs and Settings opt in. */
+  showProgress?: boolean;
   /** The host's `showPlaylistChips`. Only the Climbs list has the data for tags. */
   showPlaylistChips: boolean;
   /**
@@ -151,6 +154,7 @@ export type ClimbRowLayout = {
   sentMarkPlace: 'besideGrade' | 'personalLine' | 'none';
   /** The line for what the climber did on this climb. Today that is a mirror board's direction statuses. */
   hasPersonalLine: boolean;
+  hasProgressLine: boolean;
   hasTagsLine: boolean;
   /**
    * The lines whose content arrives after the row has painted (the logbook, the
@@ -183,11 +187,14 @@ function estimateClimbRowHeight(
   const lines = [lineHeight('body') * climbRowNameLines(fontScale, allowNameWrapping)];
   if (layout.hasDetailLine) lines.push(lineHeight('footnote'));
   if (layout.hasPersonalLine) {
-    const directionHeight = Math.max(CLIMB_ROW_DIRECTION_STATUS.iconSize, lineHeight('caption2'));
-    // One line for both directions where the line is reserved; one each where it is not.
-    lines.push(
-      layout.reservesLateLines ? directionHeight : 2 * directionHeight + CLIMB_ROW_DIRECTION_STATUS.stackedGap,
-    );
+    if (layout.hasProgressLine) lines.push(Math.max(13, lineHeight('footnote', PROGRESS_MAX_FONT_SCALE)));
+    else {
+      const directionHeight = Math.max(CLIMB_ROW_DIRECTION_STATUS.iconSize, lineHeight('caption2'));
+      // One line for both directions where the line is reserved; one each where it is not.
+      lines.push(
+        layout.reservesLateLines ? directionHeight : 2 * directionHeight + CLIMB_ROW_DIRECTION_STATUS.stackedGap,
+      );
+    }
   }
   if (layout.hasTagsLine) {
     const chipHeight = Math.max(
@@ -227,6 +234,7 @@ export function climbRowLayout({
   const hasComputedDetailLine =
     surface.detailLine === 'computed' && (display.sends || display.rating || display.setter);
   const showsSentMark = surface.showAscentStatus && display.sentMark;
+  const hasProgressLine = !!surface.showProgress && display.progress;
   const structure = {
     hasThumbnail,
     hasDetailLine: hasComputedDetailLine || surface.detailLine === 'replaced',
@@ -236,8 +244,15 @@ export function climbRowLayout({
         : hasComputedDetailLine
           ? 'detailLine'
           : 'nameLine',
-    sentMarkPlace: !showsSentMark ? 'none' : supportsMirroring ? 'personalLine' : 'besideGrade',
-    hasPersonalLine: showsSentMark && supportsMirroring,
+    sentMarkPlace: !showsSentMark
+      ? 'none'
+      : supportsMirroring
+        ? 'personalLine'
+        : hasProgressLine
+          ? 'none'
+          : 'besideGrade',
+    hasPersonalLine: hasProgressLine || (showsSentMark && supportsMirroring),
+    hasProgressLine,
     hasTagsLine: surface.showPlaylistChips && display.playlistTags,
     reservesLateLines: !hasThumbnail,
     minHeight: CLIMB_ROW_MIN_HEIGHT,

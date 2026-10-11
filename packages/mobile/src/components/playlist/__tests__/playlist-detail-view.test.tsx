@@ -36,6 +36,7 @@ type CapturedClimbListRowProps = {
   setIds: string;
   angle: number;
   unsupported?: boolean;
+  showProgress?: boolean;
   onPress?: (climb: { uuid: string; name: string }) => void;
   onAddToQueue?: (climb: SchemaClimb) => void;
   onOpenPlaylist?: (climb: SchemaClimb) => void;
@@ -666,6 +667,7 @@ describe('PlaylistDetailView', () => {
       setIds: '1,20',
       angle: 45,
       unsupported: false,
+      showProgress: true,
     });
   });
 
@@ -685,12 +687,14 @@ describe('PlaylistDetailView', () => {
       layoutId: 1,
       angle: 45,
       unsupported: false,
+      showProgress: true,
     });
     expect(capturedClimbRows[1]).toMatchObject({
       boardName: 'tension',
       layoutId: 9,
       angle: 35,
       unsupported: true,
+      showProgress: true,
     });
   });
 

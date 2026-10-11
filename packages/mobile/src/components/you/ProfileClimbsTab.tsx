@@ -9,6 +9,7 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers/climb-progress-provider';
 import { ClimbListRow } from '../ClimbListRow';
 import { useUserClimbs } from '../../lib/graphql/hooks';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
@@ -44,6 +45,16 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
 
   const feed = useUserClimbs(userId);
   const climbs = useMemo(() => feed.data?.pages.flatMap((page) => page.climbs) ?? [], [feed.data]);
+
+  const progressTargets = useMemo<ClimbProgressTarget[]>(() => {
+    const targets: ClimbProgressTarget[] = [];
+    for (const climb of climbs) {
+      if (!climb.boardType) continue;
+      const config = renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard);
+      if (config) targets.push({ boardName: config.boardName as BoardName, climbUuid: climb.uuid });
+    }
+    return targets;
+  }, [climbs]);
 
   const handlePress = useCallback(
     (climb: Climb) => {
@@ -109,6 +120,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
           angle={item.angle}
           onPress={handlePress}
           onOpenActions={handleOpenActions}
+          showProgress
         />
       );
     },
@@ -127,41 +139,43 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
     <View style={styles.flex}>
       {/* The loading branch above unmounts the list. */}
       <ScrollEdgeListReset edge={scrollEdge} />
-      <FlashList
-        data={climbs}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        {...scrollEdge?.listProps}
-        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-        contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
-        scrollIndicatorInsets={{ top: topInset }}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        ListEmptyComponent={
-          feed.isError ? (
-            <View style={styles.stateBlock}>
-              <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.stateTitle}>
-                {t('mobile.profile.climbsError')}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.stateBlock}>
-              <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.stateTitle}>
-                {t('mobile.profile.noClimbs')}
-              </Text>
-            </View>
-          )
-        }
-        ListFooterComponent={
-          feed.isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : null
-        }
-      />
+      <ClimbProgressProvider targets={progressTargets}>
+        <FlashList
+          data={climbs}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          {...scrollEdge?.listProps}
+          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+          contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
+          scrollIndicatorInsets={{ top: topInset }}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListEmptyComponent={
+            feed.isError ? (
+              <View style={styles.stateBlock}>
+                <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.stateTitle}>
+                  {t('mobile.profile.climbsError')}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.stateBlock}>
+                <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.stateTitle}>
+                  {t('mobile.profile.noClimbs')}
+                </Text>
+              </View>
+            )
+          }
+          ListFooterComponent={
+            feed.isFetchingNextPage ? (
+              <View style={styles.footer}>
+                <ActivityIndicator size="small" />
+              </View>
+            ) : null
+          }
+        />
+      </ClimbProgressProvider>
     </View>
   );
 }

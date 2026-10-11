@@ -58,7 +58,7 @@ describe('climbRowSeparatorInset', () => {
 });
 
 // The surfaces that reuse the row visual, as each sets its props.
-const CLIMBS_LIST: ClimbRowSurface = { ...DEFAULT_CLIMB_ROW_SURFACE, showPlaylistChips: true };
+const CLIMBS_LIST: ClimbRowSurface = { ...DEFAULT_CLIMB_ROW_SURFACE, showPlaylistChips: true, showProgress: true };
 const PLAYLIST_EDITOR: ClimbRowSurface = { ...DEFAULT_CLIMB_ROW_SURFACE, showAscentStatus: false };
 const SESSION_MULTI_USER: ClimbRowSurface = {
   showAscentStatus: false,
@@ -87,6 +87,7 @@ describe('climbRowLayout: the row’s structure', () => {
       communityGradePlace: 'detailLine',
       sentMarkPlace: 'besideGrade',
       hasPersonalLine: false,
+      hasProgressLine: false,
       hasTagsLine: false,
       reservesLateLines: false,
       minHeight: 44,
@@ -102,6 +103,7 @@ describe('climbRowLayout: the row’s structure', () => {
       communityGradePlace: 'detailLine',
       sentMarkPlace: 'besideGrade',
       hasPersonalLine: false,
+      hasProgressLine: false,
       hasTagsLine: false,
       reservesLateLines: true,
       minHeight: 44,
@@ -171,6 +173,7 @@ describe('climbRowLayout: the row’s structure', () => {
     expect(layoutOf({ surface: PLAYLIST_EDITOR, supportsMirroring })).toMatchObject({
       sentMarkPlace: 'none',
       hasPersonalLine: false,
+      hasProgressLine: false,
     });
   });
 
@@ -368,5 +371,43 @@ describe('climbRowSkeletonCount', () => {
     expect(climbRowSkeletonCount(10, 0)).toBe(10);
     expect(climbRowSkeletonCount(10, -5)).toBe(10);
     expect(climbRowSkeletonCount(10, Number.NaN)).toBe(10);
+  });
+});
+
+describe('personal progress geometry', () => {
+  it('reserves progress without a picture before auth or history settles', () => {
+    const layout = layoutOf({ display: { ...TEXT_ONLY, progress: true } });
+    expect(layout).toMatchObject({
+      hasProgressLine: true,
+      hasPersonalLine: true,
+      reservesLateLines: true,
+      sentMarkPlace: 'none',
+      estimatedHeight: 78,
+    });
+  });
+  it('combines mirror statuses and progress into one personal line', () => {
+    const display = { ...TEXT_ONLY, progress: true };
+    const layout = layoutOf({ display, supportsMirroring: true });
+    expect(layout).toMatchObject({
+      hasProgressLine: true,
+      hasPersonalLine: true,
+      sentMarkPlace: 'personalLine',
+      estimatedHeight: 78,
+    });
+    expect(layoutOf({ display: { ...display, sentMark: false }, supportsMirroring: true }).estimatedHeight).toBe(
+      layout.estimatedHeight,
+    );
+  });
+  it('leaves reorder hosts unchanged even with Everything selected', () => {
+    const display = { ...CLIMB_ROW_PRESETS.everything, quickActions: true };
+    expect(layoutOf({ display, surface: PLAYLIST_EDITOR })).toEqual(
+      layoutOf({ display: { ...display, progress: false }, surface: PLAYLIST_EDITOR }),
+    );
+  });
+  it('caps progress text height at 1.3 while names and details keep scaling', () => {
+    const display = { ...TEXT_ONLY, progress: true };
+    const before = layoutOf({ display, fontScale: 1.3 });
+    const after = layoutOf({ display, fontScale: 1.5 });
+    expect(after.estimatedHeight - before.estimatedHeight).toBeLessThan(16);
   });
 });

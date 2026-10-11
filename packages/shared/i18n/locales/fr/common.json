@@ -468,7 +468,8 @@
           "setter": "Ouvreur",
           "sentMark": "Marque de croix",
           "playlistTags": "Afficher les étiquettes de playlist",
-          "quickActions": "Afficher le bouton d'actions rapides"
+          "quickActions": "Afficher le bouton d'actions rapides",
+          "progress": "Ma progression"
         },
         "sampleName": "Projet du soir",
         "sampleSetter": "ouvreur",

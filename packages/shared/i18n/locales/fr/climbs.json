@@ -624,7 +624,16 @@
       "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés",
       "communityGradeAria": "Cotation de la communauté {{grade}}",
       "frameCount_one": "{{count}} image",
-      "frameCount_other": "{{count}} images"
+      "frameCount_other": "{{count}} images",
+      "progress": {
+        "flashed": "Flashé",
+        "sent": "Enchaîné",
+        "sentTimes": "Enchaîné ×{{count}}",
+        "tries_one": "{{count}} essai",
+        "tries_other": "{{count}} essais",
+        "today": "aujourd’hui",
+        "daysAgo": "{{count}} j"
+      }
     },
     "climbRules": {
       "matchingAllowed": "Deux mains par prise autorisées",

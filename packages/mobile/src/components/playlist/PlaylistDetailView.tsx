@@ -32,6 +32,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers/climb-progress-provider';
 import { ClimbListRow } from '../ClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
@@ -404,6 +405,14 @@ export function PlaylistDetailView({
     return resolvedRows;
   }, [climbs, renderBoard]);
 
+  const progressTargets = useMemo<ClimbProgressTarget[]>(() => {
+    const targets: ClimbProgressTarget[] = [];
+    for (const [climbUuid, row] of resolvedRowsByClimbUuid) {
+      if (row.kind === 'renderable') targets.push({ boardName: row.renderBoard.boardName as BoardName, climbUuid });
+    }
+    return targets;
+  }, [resolvedRowsByClimbUuid]);
+
   // Long press → reaction menu, using the row's resolved render board (a playlist can
   // mix boards, so this isn't always the active board).
   const handleOpenActions = useCallback(
@@ -460,6 +469,7 @@ export function PlaylistDetailView({
           onAddToQueue={handleAddToQueue}
           onOpenPlaylist={handleOpenPlaylist}
           unsupported={resolvedRow.incompatible}
+          showProgress
         />
       );
     },
@@ -500,7 +510,7 @@ export function PlaylistDetailView({
   const listEmptyComponent = isLoading ? (
     <View style={styles.skeletonList}>
       {SKELETON_PLACEHOLDERS.map((key) => (
-        <ClimbListRowSkeleton key={key} />
+        <ClimbListRowSkeleton key={key} showProgress={!editMode} />
       ))}
     </View>
   ) : isMaterial ? (
@@ -555,81 +565,83 @@ export function PlaylistDetailView({
     return (
       <View style={[styles.container, { backgroundColor: systemColors.background }]}>
         <ReadableColumn style={styles.container}>
-          <FlashList
-            data={climbs}
-            renderItem={renderItem}
-            keyExtractor={keyExtractor}
-            extraData={editMode}
-            scrollEnabled={!isDragging}
-            onEndReached={handleEndReached}
-            onEndReachedThreshold={0.5}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            refreshControl={refreshControl}
-            contentContainerStyle={{ paddingBottom: listPaddingBottom }}
-            ListHeaderComponent={
-              <>
-                <View onLayout={handleHeroLayout} style={styles.materialHero}>
-                  <View
-                    style={[
-                      styles.materialHeroBand,
-                      { paddingTop: headerBarHeight + spacing[4], backgroundColor: systemColors.secondaryBackground },
-                    ]}
-                  >
+          <ClimbProgressProvider targets={progressTargets} enabled={!editMode}>
+            <FlashList
+              data={climbs}
+              renderItem={renderItem}
+              keyExtractor={keyExtractor}
+              extraData={editMode}
+              scrollEnabled={!isDragging}
+              onEndReached={handleEndReached}
+              onEndReachedThreshold={0.5}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              refreshControl={refreshControl}
+              contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+              ListHeaderComponent={
+                <>
+                  <View onLayout={handleHeroLayout} style={styles.materialHero}>
                     <View
-                      style={[styles.materialHeroEmojiCircle, { backgroundColor: systemColors.tertiaryBackground }]}
+                      style={[
+                        styles.materialHeroBand,
+                        { paddingTop: headerBarHeight + spacing[4], backgroundColor: systemColors.secondaryBackground },
+                      ]}
                     >
-                      {heroEmojiIcon ? (
-                        <Text style={styles.materialHeroEmoji} allowFontScaling={false}>
-                          {heroEmojiIcon}
-                        </Text>
-                      ) : (
-                        <Icon name="tag" size={36} color={systemColors.secondaryLabel} />
-                      )}
-                    </View>
-                    <View style={styles.materialHeroNameRow}>
-                      <Text
-                        variant="title2"
-                        numberOfLines={2}
-                        color={systemColors.label}
-                        style={styles.materialHeroName}
+                      <View
+                        style={[styles.materialHeroEmojiCircle, { backgroundColor: systemColors.tertiaryBackground }]}
                       >
-                        {hero.name}
+                        {heroEmojiIcon ? (
+                          <Text style={styles.materialHeroEmoji} allowFontScaling={false}>
+                            {heroEmojiIcon}
+                          </Text>
+                        ) : (
+                          <Icon name="tag" size={36} color={systemColors.secondaryLabel} />
+                        )}
+                      </View>
+                      <View style={styles.materialHeroNameRow}>
+                        <Text
+                          variant="title2"
+                          numberOfLines={2}
+                          color={systemColors.label}
+                          style={styles.materialHeroName}
+                        >
+                          {hero.name}
+                        </Text>
+                        {renderEditDetailsCog(systemColors.label)}
+                      </View>
+                      <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                        {t('detail.climbCount', { count: hero.climbCount })}
                       </Text>
-                      {renderEditDetailsCog(systemColors.label)}
+                      {hero.followerLabel ? (
+                        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                          {hero.followerLabel}
+                        </Text>
+                      ) : null}
                     </View>
-                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
-                      {t('detail.climbCount', { count: hero.climbCount })}
-                    </Text>
-                    {hero.followerLabel ? (
-                      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
-                        {hero.followerLabel}
-                      </Text>
+                    {hero.description || hero.subtitle ? (
+                      <View style={styles.heroBelow}>
+                        {hero.description ? (
+                          <Text variant="footnote" numberOfLines={3} color={systemColors.secondaryLabel}>
+                            {hero.description}
+                          </Text>
+                        ) : null}
+                        {hero.subtitle ? (
+                          <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
+                            {hero.subtitle}
+                          </Text>
+                        ) : null}
+                      </View>
                     ) : null}
                   </View>
-                  {hero.description || hero.subtitle ? (
-                    <View style={styles.heroBelow}>
-                      {hero.description ? (
-                        <Text variant="footnote" numberOfLines={3} color={systemColors.secondaryLabel}>
-                          {hero.description}
-                        </Text>
-                      ) : null}
-                      {hero.subtitle ? (
-                        <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
-                          {hero.subtitle}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ) : null}
-                </View>
-                {bannerNode}
-                {addToQueueNode}
-                {headerSlot}
-              </>
-            }
-            ListFooterComponent={listFooterComponent}
-            ListEmptyComponent={listEmptyComponent}
-          />
+                  {bannerNode}
+                  {addToQueueNode}
+                  {headerSlot}
+                </>
+              }
+              ListFooterComponent={listFooterComponent}
+              ListEmptyComponent={listEmptyComponent}
+            />
+          </ClimbProgressProvider>
         </ReadableColumn>
 
         {/* Collapsing M3 top app bar — sits over the hero band; its title fades in
@@ -761,35 +773,37 @@ export function PlaylistDetailView({
           list lays its full-bleed hero out behind the island. */}
       <View pointerEvents="none" style={[styles.islandFill, { height: insets.top, backgroundColor: baseColor }]} />
       <ReadableColumn style={styles.container}>
-        <FlashList
-          data={climbs}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          extraData={editMode}
-          scrollEnabled={!isDragging}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          // The hero banner is full-bleed and runs up behind the status bar / dynamic
-          // island, owning the top inset itself (paddingTop above). Both props are
-          // needed so iOS doesn't inset the content down on the first frame (which
-          // would briefly expose the screen background behind the island).
-          contentInsetAdjustmentBehavior="never"
-          automaticallyAdjustContentInsets={false}
-          refreshControl={refreshControl}
-          contentContainerStyle={{ paddingBottom: listPaddingBottom }}
-          ListHeaderComponent={
-            <>
-              {header}
-              {bannerNode}
-              {addToQueueNode}
-              {headerSlot}
-            </>
-          }
-          ListFooterComponent={listFooterComponent}
-          ListEmptyComponent={listEmptyComponent}
-        />
+        <ClimbProgressProvider targets={progressTargets} enabled={!editMode}>
+          <FlashList
+            data={climbs}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            extraData={editMode}
+            scrollEnabled={!isDragging}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            // The hero banner is full-bleed and runs up behind the status bar / dynamic
+            // island, owning the top inset itself (paddingTop above). Both props are
+            // needed so iOS doesn't inset the content down on the first frame (which
+            // would briefly expose the screen background behind the island).
+            contentInsetAdjustmentBehavior="never"
+            automaticallyAdjustContentInsets={false}
+            refreshControl={refreshControl}
+            contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+            ListHeaderComponent={
+              <>
+                {header}
+                {bannerNode}
+                {addToQueueNode}
+                {headerSlot}
+              </>
+            }
+            ListFooterComponent={listFooterComponent}
+            ListEmptyComponent={listEmptyComponent}
+          />
+        </ClimbProgressProvider>
       </ReadableColumn>
 
       {/* Collapsed header bar — a progressive blur (matching the tabs' chrome)

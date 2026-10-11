@@ -53,8 +53,13 @@ vi.mock('react-native', async () => {
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { formattedCount?: string }) =>
-      key === 'sends' && options?.formattedCount ? `${options.formattedCount} sends` : key,
+    i18n: { language: 'en-US' },
+    t: (key: string, options?: { formattedCount?: string; count?: number }) =>
+      key === 'sends' && options?.formattedCount
+        ? `${options.formattedCount} sends`
+        : key === 'mobile.climbRow.progress.sentTimes'
+          ? `Sent ×${options?.count}`
+          : key,
   }),
 }));
 
@@ -189,9 +194,29 @@ describe('Climb list preview without an active board', () => {
     expect(container.textContent).toContain('V4');
     expect(container.querySelector('[data-icon="flash"]')).toBeTruthy();
     expect(container.querySelector('[data-icon="favorite.fill"]')).toBeTruthy();
+    const actions = container.querySelector('[data-icon="more.vertical"]')?.parentElement;
+    expect(JSON.parse(actions?.getAttribute('data-style') ?? '{}')).toMatchObject({ width: 44, marginEnd: -12 });
     expect(live.statsCalls).toBe(0);
     expect(live.myGradeCalls).toBe(0);
     expect(live.thumbnailProps).toHaveLength(0);
+  });
+  it('stages progress immediately without live reads or a trailing duplicate glyph', () => {
+    live.statsCalls = 0;
+    live.myGradeCalls = 0;
+    const { getByText, getAllByTestId, container } = render(
+      <ClimbRowSettingsPreview
+        display={{ ...DEFAULT_CLIMB_ROW_DISPLAY, progress: true }}
+        activePreset="custom"
+        hasLastCustom={false}
+        selectPreset={() => {}}
+        windowHeight={117}
+      />,
+    );
+    expect(getByText('Sent ×3')).toBeTruthy();
+    expect(getAllByTestId('climb-row-personal-line')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-icon="flash"]')).toHaveLength(1);
+    expect(live.statsCalls).toBe(0);
+    expect(live.myGradeCalls).toBe(0);
   });
   it.each(['v-grade', 'font', 'both'] as const)(
     'chooses differing displayed grades for %s, including the hardest climb',

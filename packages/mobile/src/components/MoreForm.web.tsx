@@ -193,6 +193,7 @@ export function MoreForm({ model }: MoreFormProps) {
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
       {model.sections.map((section) => {
         const allButtons = section.rows.every((row) => row.kind === 'button');
+        const fullBleed = section.rows.some((row) => row.kind === 'custom' && row.fullBleed);
         return (
           <View key={section.key} style={styles.section}>
             {section.title ? (
@@ -200,7 +201,13 @@ export function MoreForm({ model }: MoreFormProps) {
                 {section.title}
               </Text>
             ) : null}
-            {allButtons ? (
+            {fullBleed ? (
+              <View style={styles.fullBleed}>
+                {section.rows.map((row) => (
+                  <RenderRow key={row.key} row={row} />
+                ))}
+              </View>
+            ) : allButtons ? (
               section.rows.map((row) => <RenderRow key={row.key} row={row} />)
             ) : (
               <Surface style={styles.card} elevation={1}>
@@ -250,6 +257,9 @@ const createStyles = (textStyles: TypographyScale) =>
     card: {
       borderRadius: 12,
       overflow: 'hidden',
+    },
+    fullBleed: {
+      marginHorizontal: -spacing[4],
     },
     trailing: {
       flexDirection: 'row',

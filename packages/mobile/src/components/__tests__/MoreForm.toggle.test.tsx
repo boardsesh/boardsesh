@@ -6,11 +6,15 @@ import type { MoreFormModel } from '../MoreForm.types';
 
 const rowEvent = vi.hoisted(() => ({ onPress: null as (() => void) | null }));
 
-vi.mock('react-native', () => ({
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (styles: unknown) => styles },
-}));
+vi.mock('react-native', async () => {
+  const { flattenStyle } = await import('../../../test/flatten-style');
+  return {
+    ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+    View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+      createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
+    StyleSheet: { create: (styles: unknown) => styles },
+  };
+});
 vi.mock('react-native-paper', () => ({
   Divider: () => null,
   List: {
@@ -38,7 +42,7 @@ vi.mock('react-native-paper', () => ({
       );
     },
   },
-  Surface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Surface: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-surface': 'true' }, children),
   Switch: ({ disabled }: { disabled?: boolean }) =>
     createElement('span', { 'data-testid': 'visual-switch', 'data-disabled': disabled === true }),
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -85,4 +89,36 @@ it('disables row and thumb events, then allows recording when the row is enabled
   view.rerender(createElement(MoreForm, { model: makeModel() }));
   fireEvent.click(screen.getByRole('switch'));
   expect(onValueChange).toHaveBeenCalledTimes(2);
+});
+
+it('gives a full-bleed preview the screen width while keeping normal settings cards inset', () => {
+  const model: MoreFormModel = {
+    sections: [
+      {
+        key: 'preview',
+        rows: [
+          {
+            kind: 'custom',
+            key: 'row-preview',
+            fullBleed: true,
+            height: 177,
+            content: createElement('div', { 'data-testid': 'row-preview' }),
+          },
+        ],
+      },
+      {
+        key: 'settings',
+        rows: [{ kind: 'toggle', key: 'picture', label: 'Picture', value: true, onValueChange: vi.fn() }],
+      },
+    ],
+  };
+  const { container } = render(createElement(MoreForm, { model }));
+  const preview = screen.getByTestId('row-preview');
+  expect(preview.closest('[data-surface]')).toBeNull();
+  expect(JSON.parse(preview.parentElement?.getAttribute('data-style') ?? '{}')).toEqual({ height: 177 });
+  expect(JSON.parse(preview.parentElement?.parentElement?.getAttribute('data-style') ?? '{}')).toEqual({
+    marginHorizontal: -16,
+  });
+  expect(container.querySelectorAll('[data-surface]')).toHaveLength(1);
+  expect(screen.getByRole('switch').closest('[data-surface]')).toBeTruthy();
 });

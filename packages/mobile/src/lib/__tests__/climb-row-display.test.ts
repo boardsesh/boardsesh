@@ -42,6 +42,7 @@ describe('the default row', () => {
       rating: true,
       setter: true,
       sentMark: true,
+      progress: false,
       playlistTags: false,
       quickActions: true,
     });
@@ -659,7 +660,11 @@ describe('withClimbRowLegacyRead', () => {
   it('keeps a remembered mix when the tags brought in leave the row on a preset', () => {
     // Default with nothing overriding the tags: the older choice lands, and
     // Default plus tags is the Everything preset.
-    const onDefault: StoredClimbRowDisplay = { ...EMPTY, lastCustom: { ...CLIMB_ROW_PRESETS.default, setter: false } };
+    const onDefault: StoredClimbRowDisplay = {
+      ...EMPTY,
+      overrides: { progress: true },
+      lastCustom: { ...CLIMB_ROW_PRESETS.default, setter: false },
+    };
     const synced = withClimbRowLegacyRead(onDefault, read(true, null));
     expect(matchClimbRowPreset(displayOf(synced))).toBe('everything');
     expect(synced.lastCustom).toEqual({ ...CLIMB_ROW_PRESETS.default, setter: false });

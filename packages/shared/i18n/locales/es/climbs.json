@@ -624,7 +624,16 @@
       "setAngleMarkerAria": "La dificultad y las repeticiones son de {{angle}} grados",
       "communityGradeAria": "Grado de la comunidad {{grade}}",
       "frameCount_one": "{{count}} cuadro",
-      "frameCount_other": "{{count}} cuadros"
+      "frameCount_other": "{{count}} cuadros",
+      "progress": {
+        "flashed": "Flasheado",
+        "sent": "Encadenado",
+        "sentTimes": "Encadenado ×{{count}}",
+        "tries_one": "{{count}} intento",
+        "tries_other": "{{count}} intentos",
+        "today": "hoy",
+        "daysAgo": "{{count}} d"
+      }
     },
     "climbRules": {
       "matchingAllowed": "Se puede igualar",

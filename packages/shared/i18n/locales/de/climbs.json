@@ -624,7 +624,16 @@
       "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad",
       "communityGradeAria": "Community-Grad {{grade}}",
       "frameCount_one": "{{count}} Bild",
-      "frameCount_other": "{{count}} Bilder"
+      "frameCount_other": "{{count}} Bilder",
+      "progress": {
+        "flashed": "Geflasht",
+        "sent": "Getoppt",
+        "sentTimes": "Getoppt ×{{count}}",
+        "tries_one": "{{count}} Versuch",
+        "tries_other": "{{count}} Versuche",
+        "today": "heute",
+        "daysAgo": "{{count}} Tg."
+      }
     },
     "climbRules": {
       "matchingAllowed": "Matchen erlaubt",

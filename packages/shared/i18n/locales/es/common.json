@@ -743,7 +743,8 @@
           "setter": "Equipador",
           "sentMark": "Marca de encadene",
           "playlistTags": "Mostrar etiquetas de playlist",
-          "quickActions": "Mostrar botón de acciones rápidas"
+          "quickActions": "Mostrar botón de acciones rápidas",
+          "progress": "Mi progreso"
         },
         "sampleName": "Proyecto de tarde",
         "sampleSetter": "equipador",

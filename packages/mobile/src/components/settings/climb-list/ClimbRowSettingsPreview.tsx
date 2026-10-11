@@ -48,7 +48,7 @@ export function ClimbRowSettingsPreview({
     fontScale,
     typeScale: textStyles,
     supportsMirroring: boardSupportsMirroring(preview?.boardName ?? 'kilter', preview?.layoutId ?? 0),
-    surface: { showAscentStatus: true, showPlaylistChips: true, detailLine: 'computed' },
+    surface: { showAscentStatus: true, showPlaylistChips: true, showProgress: true, detailLine: 'computed' },
   });
   const showSecond = geometry.estimatedHeight * 2 <= windowHeight;
   const row = (plain: boolean) => (
@@ -65,6 +65,7 @@ export function ClimbRowSettingsPreview({
           leaves={plain ? CLIMB_ROW_PLAIN_PREVIEW_LEAVES : CLIMB_ROW_PREVIEW_LEAVES}
           showFavorite={!plain}
           showPlaylistChips={!plain}
+          showProgress
         />
       </View>
       {display.quickActions ? (
@@ -97,5 +98,5 @@ const styles = StyleSheet.create({
     gap: spacing[3],
   },
   content: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
-  actions: { width: 44, alignItems: 'center' },
+  actions: { width: 44, alignItems: 'center', marginEnd: -Math.min(spacing[4], (44 - 20) / 2) },
 });

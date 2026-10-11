@@ -468,7 +468,8 @@
           "setter": "Setter",
           "sentMark": "Sent mark",
           "playlistTags": "Show playlist tags",
-          "quickActions": "Show quick-actions button"
+          "quickActions": "Show quick-actions button",
+          "progress": "My progress"
         },
         "sampleName": "Evening project",
         "sampleSetter": "crewsetter",
