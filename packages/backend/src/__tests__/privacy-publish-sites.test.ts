@@ -265,12 +265,17 @@ describe('privacyChanged publish sites', () => {
     expect(await publishesDuring(() => privacyMutations.approveResourceAccess(null, access, context(owner)))).toEqual(
       [],
     );
-    expect(await publishesDuring(() => privacyMutations.revokeResourceAccess(null, access, context(owner)))).toEqual([
-      'revokeResourceAccess',
-    ]);
-    expect(await publishesDuring(() => privacyMutations.inviteResourceMember(null, access, context(owner)))).toEqual([
-      'inviteResourceMember',
-    ]);
+    const revoke = (userId: string) =>
+      publishesDuring(() => privacyMutations.revokeResourceAccess(null, { ...resource, userId }, context(owner)));
+    const invite = (userId: string) =>
+      publishesDuring(() => privacyMutations.inviteResourceMember(null, { ...resource, userId }, context(owner)));
+    expect(await revoke(member)).toEqual(['revokeResourceAccess']);
+    expect(await revoke(member)).toEqual([]);
+    expect(await invite(member)).toEqual(['inviteResourceMember']);
+    expect(await invite(member)).toEqual([]);
+    // Revoking someone with no grant still writes a revocation that outranks
+    // inherited follower access, so it publishes.
+    expect(await revoke(follower)).toEqual(['revokeResourceAccess']);
   });
 
   it('publishes an explicit tick audience choice, not tick edits that regroup sessions', async () => {

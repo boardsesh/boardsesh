@@ -273,6 +273,28 @@ async function notifyResourceChanged(kind: PrivacyResourceKind, resourceId: stri
   const { notifyResourcePrivacyChanged } = await import('../../../services/board-session-privacy');
   await notifyResourcePrivacyChanged(kind, resourceId);
 }
+/**
+ * The grant's status before an owner writes it, read under the resource lock.
+ * Null when there is no row. A repeated revoke or invite changes nobody's
+ * access, so it must not publish privacyChanged.
+ */
+async function lockedGrantStatus(
+  transaction: PrivacyTransaction,
+  input: { kind: PrivacyResourceKind; resourceId: string; userId: string },
+): Promise<string | null> {
+  const [grant] = await transaction
+    .select({ status: schema.resourceGrants.status })
+    .from(schema.resourceGrants)
+    .where(
+      and(
+        eq(schema.resourceGrants.kind, input.kind),
+        eq(schema.resourceGrants.resourceId, input.resourceId),
+        eq(schema.resourceGrants.userId, input.userId),
+      ),
+    )
+    .for('update');
+  return grant?.status ?? null;
+}
 /** Newly public beta must not wait behind an older empty anonymous cache. Runs before the publish. */
 async function invalidateBetaCache(): Promise<void> {
   const { invalidateRecentBetaLinksCache } = await import('../beta-videos/queries');
@@ -653,8 +675,10 @@ export const privacyMutations = {
     await requireResourceOwner(input.kind, input.resourceId, ownerId);
     if (ownerId === input.userId)
       throw new GraphQLError('The owner retains access', { extensions: { code: 'BAD_USER_INPUT' } });
-    await db.transaction(async (transaction) => {
+    const revoked = await db.transaction(async (transaction) => {
       await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
+      // A new revoked row counts as a change: it overrides inherited follower access.
+      const previous = await lockedGrantStatus(transaction, input);
       await transaction
         .insert(schema.resourceGrants)
         .values({ ...input, status: 'revoked', invitedBy: ownerId })
@@ -662,9 +686,10 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'revoked', invitedBy: ownerId, updatedAt: new Date() },
         });
+      return previous !== 'revoked';
     });
     await notifyResourceChanged(input.kind, input.resourceId);
-    pubsub.publishPrivacyChanged('revokeResourceAccess');
+    if (revoked) pubsub.publishPrivacyChanged('revokeResourceAccess');
     return true;
   },
   inviteResourceMember: async (
@@ -680,8 +705,9 @@ export const privacyMutations = {
       .where(eq(schema.users.id, input.userId))
       .limit(1);
     if (!invitee) notFound();
-    await db.transaction(async (transaction) => {
+    const invited = await db.transaction(async (transaction) => {
       await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
+      const previous = await lockedGrantStatus(transaction, input);
       await transaction
         .insert(schema.resourceGrants)
         .values({ ...input, status: 'approved', invitedBy: ownerId })
@@ -689,9 +715,10 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'approved', invitedBy: ownerId, updatedAt: new Date() },
         });
+      return previous !== 'approved';
     });
     await notifyResourceChanged(input.kind, input.resourceId);
-    pubsub.publishPrivacyChanged('inviteResourceMember');
+    if (invited) pubsub.publishPrivacyChanged('inviteResourceMember');
     return true;
   },
 };
