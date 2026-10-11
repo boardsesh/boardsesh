@@ -79,6 +79,7 @@ export function tutorialCaptureFingerprint(
   };
   for (const path of [
     take.flow,
+    'packages/mobile/.maestro/tutorial/home-ready.yaml',
     ...(take.setupFlows ?? []),
     ...(take.requiresDownload ? ['packages/mobile/.maestro/tutorial/download-ready.yaml'] : []),
     ...(take.session === 'crew'

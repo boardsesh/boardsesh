@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { tutorialDemoEnvironment } from './demo';
+import { resolveMediaBinary } from '../help-clips';
 
 const ports = { postgres: 15433, redis: 16380, s3: 15001, backend: 18089 };
 
@@ -33,6 +34,27 @@ describe('isolated instructional demo environment', () => {
       'POSTHOG_API_KEY',
     ])
       expect(configured[removed]).toBeUndefined();
+  });
+
+  it('preserves explicit media tool paths without admitting similarly named credentials', () => {
+    const inherited = {
+      PATH: '/tool-free-path',
+      FFMPEG_BIN: '/local video tools/ffmpeg',
+      FFPROBE_BIN: '/local video tools/ffprobe',
+      FFMPEG_API_KEY: 'inherited-secret',
+      FFPROBE_TOKEN: 'inherited-secret',
+      STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: 'production-r2',
+    };
+    const configured = tutorialDemoEnvironment(ports, inherited);
+    expect(configured.PATH).toBe(inherited.PATH);
+    expect(resolveMediaBinary('ffmpeg', configured)).toBe(inherited.FFMPEG_BIN);
+    expect(resolveMediaBinary('ffprobe', configured)).toBe(inherited.FFPROBE_BIN);
+    expect(configured.FFMPEG_API_KEY).toBeUndefined();
+    expect(configured.FFPROBE_TOKEN).toBeUndefined();
+    expect(configured.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    const defaults = tutorialDemoEnvironment(ports, {});
+    expect(defaults.FFMPEG_BIN).toBeUndefined();
+    expect(defaults.FFPROBE_BIN).toBeUndefined();
   });
 
   it('uses the same loopback backend for REST, WebSockets, storage and emulator forwarding', () => {

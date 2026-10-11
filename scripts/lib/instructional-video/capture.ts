@@ -16,6 +16,8 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CrewParticipant } from './capture-crew';
+import { extractTutorialFrames } from './capture-media';
+import { assertTutorialMetroPortFree, warmTutorialMetro } from './capture-bootstrap';
 import { tutorialModifiedSourcePaths } from './source';
 import {
   assertLocalTutorialBackend,
@@ -119,12 +121,16 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       'git',
       [
         'ls-files',
+        'packages/backend/src',
         'packages/mobile/app',
         'packages/mobile/src',
         'packages/shared',
         'packages/shared-schema',
         'packages/board-constants',
         'scripts/lib/android-sdk.ts',
+        'scripts/mobile-dev-start.ts',
+        'scripts/lib/metro-host.ts',
+        'scripts/lib/tailscale-hostname.ts',
         'scripts/lib/showcase-video/android.ts',
         'scripts/lib/showcase-video/contract.ts',
       ],
@@ -135,6 +141,8 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     'scripts/lib/instructional-video/capture.ts',
     'scripts/lib/instructional-video/capture-crew.ts',
     'scripts/lib/instructional-video/capture-contract.ts',
+    'scripts/lib/instructional-video/capture-media.ts',
+    'scripts/lib/instructional-video/capture-bootstrap.ts',
   ]);
   for (const path of [...captureSources].sort())
     if (existsSync(resolve(ROOT, path))) captureSource.update(path).update(readFileSync(resolve(ROOT, path)));
@@ -273,7 +281,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       writeFileSync(
         avdConfig,
         config.replace(/^hw\.lcd\.(width|height|density)=.*\n/gm, '') +
-          '\nhw.lcd.width=1080\nhw.lcd.height=2424\nhw.lcd.density=420\n',
+          '\nhw.lcd.width=720\nhw.lcd.height=1616\nhw.lcd.density=280\n',
       );
       const emulatorFd = openSync(join(work, 'emulator.log'), 'w');
       emulator = spawn(
@@ -325,7 +333,36 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     }
     if (command(adb, ['-s', serial, 'emu', 'avd', 'name'], env).split(/\r?\n/)[0].trim() !== AVD)
       throw new Error(`Refusing to use ${serial}: capture must run on dedicated ${AVD} AVD.`);
-    command(adb, ['-s', serial, 'install', '-r', '-g', resolve(apk)], env, 120_000);
+    let installedMatches = false;
+    try {
+      const installedPath = command(adb, ['-s', serial, 'shell', 'pm', 'path', APP], env, 10_000)
+        .split('\n')
+        .find((line) => line.startsWith('package:') && line.endsWith('/base.apk'))
+        ?.slice(8)
+        .trim();
+      if (installedPath && /^\/data\/app\/[A-Za-z0-9_~+=./-]+\/base\.apk$/.test(installedPath))
+        installedMatches =
+          command(adb, ['-s', serial, 'shell', 'sha256sum', installedPath], env, 20_000).trim().split(/\s+/)[0] ===
+          nativeArtifactSha256;
+    } catch {
+      /* No readable matching installation yet. */
+    }
+    console.log(`[tutorial] ${installedMatches ? 'Reusing' : 'Installing'} cached dev client on ${serial}`);
+    if (!installedMatches) {
+      command(adb, ['-s', serial, 'install', '-r', '-g', resolve(apk)], env, 120_000);
+      const installedPath = command(adb, ['-s', serial, 'shell', 'pm', 'path', APP], env, 10_000)
+        .split('\n')
+        .find((line) => line.startsWith('package:') && line.endsWith('/base.apk'))
+        ?.slice(8)
+        .trim();
+      if (
+        !installedPath ||
+        !/^\/data\/app\/[A-Za-z0-9_~+=./-]+\/base\.apk$/.test(installedPath) ||
+        command(adb, ['-s', serial, 'shell', 'sha256sum', installedPath], env, 20_000).trim().split(/\s+/)[0] !==
+          nativeArtifactSha256
+      )
+        throw new Error('Installed Boardsesh dev client does not match the supplied native artifact.');
+    }
     command(adb, ['-s', serial, 'shell', 'input', 'keyevent', '82'], env);
     for (const args of buildDemoModeCommands(serial)) command(adb, args, env);
     const geometry = measureTutorialScreen(
@@ -339,6 +376,8 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
     const metroEnv: NodeJS.ProcessEnv = {
       ...env,
       CI: '1',
+      REACT_NATIVE_PACKAGER_HOSTNAME: '127.0.0.1',
+      TAILSCALE_HOSTNAME: '127.0.0.1',
       BOARDSESH_APP_VARIANT: 'dev',
       EXPO_NO_DOTENV: '1',
       EXPO_PUBLIC_BACKEND_URL: backend.href.replace(/\/$/, ''),
@@ -358,35 +397,31 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       'EXPO_PUBLIC_SCREENSHOT_WORKOUT',
     ])
       delete metroEnv[key];
+    await assertTutorialMetroPortFree(metroPort);
     const metroFd = openSync(metroLog, 'w');
-    metro = spawn('vp', ['exec', 'expo', 'start', '--port', String(metroPort)], {
-      cwd: join(ROOT, 'packages/mobile'),
-      env: metroEnv,
-      detached: true,
-      stdio: ['ignore', metroFd, metroFd],
-    });
-    closeSync(metroFd);
-    await waitFor(
-      async () => {
-        if (metro?.exitCode !== null) throw new Error('Tutorial Metro exited; see metro.log');
-        try {
-          return (await fetch(`http://127.0.0.1:${metroPort}/status`, { signal: AbortSignal.timeout(2000) })).ok;
-        } catch {
-          return false;
-        }
+    console.log(`[tutorial] Starting Metro on ${metroPort}`);
+    metro = spawn(
+      'vp',
+      [
+        'run',
+        'dev:mobile',
+        '--',
+        '--host',
+        'lan',
+        '--port',
+        String(metroPort),
+        '--qa-notes-file',
+        resolve(ROOT, '.boardsesh/qa-notes.md'),
+      ],
+      {
+        cwd: ROOT,
+        env: metroEnv,
+        detached: true,
+        stdio: ['ignore', metroFd, metroFd],
       },
-      120_000,
-      'Metro',
     );
-    const manifestResponse = await fetch(`http://127.0.0.1:${metroPort}/`, {
-      headers: { 'expo-platform': 'android', accept: 'application/expo+json' },
-      signal: AbortSignal.timeout(60_000),
-    });
-    const bundleUrl = ((await manifestResponse.json()) as { launchAsset?: { url?: string } }).launchAsset?.url;
-    if (!bundleUrl) throw new Error('Metro manifest has no Android launch asset.');
-    const bundle = await fetch(bundleUrl, { signal: AbortSignal.timeout(300_000) });
-    await bundle.arrayBuffer();
-    if (!bundle.ok) throw new Error(`Android bundle failed: HTTP ${bundle.status}`);
+    closeSync(metroFd);
+    await warmTutorialMetro(metro, metroPort);
     const primaryAuth = await fetch(new URL('/auth/native/credentials', backend), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -443,6 +478,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       activeSession = false;
     };
     for (const take of selectedTakes) {
+      console.log(`[tutorial] Preparing chapter ${take.id}`);
       const takeDir = join(work, 'takes', take.id);
       const scenarioPath = env.TUTORIAL_SEED_FILE ?? join(options.workRoot, 'demo', 'seed.json');
       const fingerprint = tutorialCaptureFingerprint(
@@ -494,10 +530,13 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         env,
       );
       await waitFor(
-        () => readFileSync(metroLog, 'utf8').slice(baseline).includes('$screen /home'),
-        120_000,
+        () =>
+          readFileSync(metroLog, 'utf8').slice(baseline).includes('authReady=true fontsReady=true splashCanHide=true'),
+        300_000,
         'signed-in app home',
       );
+      await flow('packages/mobile/.maestro/tutorial/home-ready.yaml', `${take.id}-home-ready`);
+      // Routes are trusted authored recipe templates; quote them for adb's guest shell.
       command(
         adb,
         [
@@ -603,8 +642,11 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       const anchors: Record<string, TutorialAnchor[]> = {};
       let logOffset = readFileSync(metroLog, 'utf8').length;
       const remote = `/sdcard/tutorial-${take.id}-${Date.now()}.mp4`;
+      console.log(`[tutorial] Recording chapter ${take.id}`);
       const started = Date.now();
-      const recorder = spawn(adb, buildScreenrecordArgs(serial, remote, 170), {
+      const recorderArgs = buildScreenrecordArgs(serial, remote, 170);
+      recorderArgs.splice(recorderArgs.length - 1, 0, '--size', `${geometry.width}x${geometry.height}`);
+      const recorder = spawn(adb, recorderArgs, {
         cwd: ROOT,
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -679,44 +721,17 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       const ended = Date.now();
       command(adb, ['-s', serial, 'pull', remote, join(takeDir, 'raw.mp4')], env);
       command(adb, ['-s', serial, 'shell', 'rm', remote], env);
-      const trim = ((marks.get('flow-start') ?? recordStart) - started) / 1000;
-      const rawSeconds = Number(
-        command(
-          env.FFPROBE_BIN ?? 'ffprobe',
-          [
-            '-v',
-            'error',
-            '-show_entries',
-            'format=duration',
-            '-of',
-            'default=noprint_wrappers=1:nokey=1',
-            join(takeDir, 'raw.mp4'),
-          ],
+      const trim = ((marks.get('flow-start') ?? recordStart) - recordStart) / 1000;
+      const { seconds, frameCount } = extractTutorialFrames(
+        {
+          takeId: take.id,
+          takeDir,
+          trim,
+          geometry,
           env,
-        ),
-      );
-      if (!Number.isFinite(rawSeconds) || rawSeconds <= trim)
-        throw new Error(`Capture ${take.id} has invalid or truncated raw recording.`);
-      const seconds = Math.min(rawSeconds - trim, (ended - (marks.get('flow-start') ?? recordStart)) / 1000);
-      command(
-        env.FFMPEG_BIN ?? 'ffmpeg',
-        [
-          '-y',
-          '-loglevel',
-          'error',
-          '-i',
-          join(takeDir, 'raw.mp4'),
-          '-an',
-          '-vf',
-          `fps=30,trim=start=${trim.toFixed(3)}:duration=${seconds.toFixed(3)},setpts=PTS-STARTPTS,format=yuvj420p`,
-          '-q:v',
-          '3',
-          '-start_number',
-          '1',
-          join(takeDir, 'frames', '%06d.jpg'),
-        ],
-        env,
-        180_000,
+          recordedSeconds: (ended - (marks.get('flow-start') ?? recordStart)) / 1000,
+        },
+        (binary, args, timeout) => command(binary, args, env, timeout),
       );
       const flowStart = marks.get('flow-start') ?? recordStart;
       const relativeMarks = Object.fromEntries(
@@ -729,7 +744,6 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
           trimTutorialAnchors(samples, anchorTrim, geometry.screen, seconds),
         ]),
       );
-      const frameCount = readdirSync(join(takeDir, 'frames')).filter((name) => name.endsWith('.jpg')).length;
       const manifest: TutorialTakeManifest = {
         formatVersion: 1,
         takeId: take.id,

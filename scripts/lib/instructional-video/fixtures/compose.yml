@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 60
   redis:
-    image: redis:7.4.5-alpine
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
     ports:
       - '127.0.0.1:${TUTORIAL_REDIS_PORT}:6379'
     healthcheck:
@@ -27,7 +27,7 @@ services:
       timeout: 3s
       retries: 30
   s3:
-    image: motoserver/moto:5.1.22
+    image: motoserver/moto:5.1.22@sha256:1e3802c95726373544967b428201c548f0247c15b00db2d96a5ba0a77d8643b8
     environment:
       MOTO_PORT: '5000'
     ports:

@@ -34,9 +34,19 @@ export function tutorialDemoEnvironment(
   const environment: NodeJS.ProcessEnv = {};
   for (const [name, configured] of Object.entries(inherited)) {
     if (
-      ['PATH', 'HOME', 'TMPDIR', 'LANG', 'SHELL', 'USER', 'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT'].includes(
-        name,
-      )
+      [
+        'PATH',
+        'HOME',
+        'TMPDIR',
+        'LANG',
+        'SHELL',
+        'USER',
+        'JAVA_HOME',
+        'ANDROID_HOME',
+        'ANDROID_SDK_ROOT',
+        'FFMPEG_BIN',
+        'FFPROBE_BIN',
+      ].includes(name)
     )
       environment[name] = configured;
   }

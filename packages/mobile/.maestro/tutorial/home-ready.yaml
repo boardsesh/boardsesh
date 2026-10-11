@@ -1,0 +1,8 @@
+appId: com.boardsesh.app.dev
+name: Tutorial - authenticated native home readiness
+---
+- extendedWaitUntil:
+    visible: Climbing now
+    timeout: 30000
+- assertVisible: Home
+- assertVisible: Profile

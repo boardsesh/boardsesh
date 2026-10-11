@@ -12,7 +12,7 @@ Large footage, tool downloads, recordings and outputs live in ignored `.boardses
 
 ## Android prerequisites
 
-Use `vp install --frozen-lockfile`. The host needs Docker Compose, the repository Android SDK/JDK setup, Maestro CLI, ffmpeg, ffprobe and Playwright Chromium. The latest compatible cached dev-client APK is resolved automatically; use `--apk-path` to select an explicit APK. The APK loads this worktree's JS through Metro.
+Use `vp install --frozen-lockfile`. The host needs Docker Compose, the repository Android SDK/JDK setup, Maestro CLI, ffmpeg, ffprobe and Playwright Chromium. `FFMPEG_BIN` and `FFPROBE_BIN` can select explicit media binaries; these overrides also reach the isolated capture environment. The latest compatible cached dev-client APK is resolved automatically; use `--apk-path` to select an explicit APK. The APK loads this worktree's JS through Metro.
 
 The recorder creates a dedicated `Boardsesh_Tutorial` AVD, checks its identity before installing, and selects it explicitly with an ADB serial. It never uninstalls or clears an existing app. A machine without KVM uses software emulation, which can take several minutes to boot. Stop another capture before starting a second capture against the same work directory. Linux cannot capture iOS; that edition is tracked separately.
 
