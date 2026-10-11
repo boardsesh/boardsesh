@@ -16,7 +16,7 @@ Use `vp install --frozen-lockfile`. The host needs Docker Compose, the repositor
 
 The recorder creates a dedicated `Boardsesh_Tutorial` AVD, checks its identity before installing, and selects it explicitly with an ADB serial. It never uninstalls or clears an existing app. A machine without KVM uses software emulation, which can take several minutes to boot. Stop another capture before starting a second capture against the same work directory. Linux cannot capture iOS; that edition is tracked separately.
 
-The local demo uses its own Docker Compose project, persistent Postgres volume, Redis and a pinned Moto S3-compatible service. Its first start clones the baked development catalogue into `boardsesh_tutorial`; later starts reuse it. Repository migrations run against that database only. It seeds Alex, Sam, four demo walls, progress, published spray climbs and the existing real spray-wall photo with manually traced holds. Backend startup bypasses dotenv and production background workers, binds to loopback, and uses an explicit environment allowlist. No production account, R2 upload or shared development database is needed. Stopping retains the demo volume.
+The local demo uses its own Docker Compose project, persistent Postgres volume, Redis and a pinned Moto S3-compatible service. Its first start clones the baked development catalogue into `boardsesh_tutorial`; later starts reuse it. Repository migrations run against that database only. It seeds Alex, Sam, four demo walls, progress, published spray climbs and the existing real spray-wall photo with manually traced holds. Startup refreshes database planner statistics before the app reads progress. Backend startup bypasses dotenv and production background workers, binds to loopback, and uses an explicit environment allowlist. No production account, R2 upload or shared development database is needed. Stopping retains the demo volume.
 
 ## First draft
 
@@ -44,7 +44,7 @@ The local demo uses its own Docker Compose project, persistent Postgres volume, 
    vp run video:tutorial -- --draft --render-only
    ```
 
-   `--only` emits chapter cuts only. A complete build emits the master and overview. Capture cache keys cover the demo revision, APK, measured screen, source dependencies and nested flows. Editorial copy and voice changes reuse app footage. Segment cache keys additionally cover actual frame bytes, fonts and renderer code; cached encodes are probed before reuse.
+   `--only` emits chapter cuts only. A complete build emits the master and overview. Capture cache keys cover the demo revision, APK, measured screen, tracked and untracked runtime sources, assets, dependency/configuration files and nested flows. Modified app sources bypass capture reuse. Editorial copy and voice changes reuse app footage. Segment cache keys additionally cover actual frame bytes, fonts and renderer code; cached encodes are probed before reuse.
 
 5. Record the named sentences in `audio/evergreen/recording-pack.md` as WAV, M4A or MP3, one format per beat. Then supply the separate music file:
 
@@ -58,7 +58,7 @@ The local demo uses its own Docker Compose project, persistent Postgres volume, 
 
 Each take's `manifest.json` records source commit, native APK SHA-256, dependency fingerprint, measured pixel/dp screen, 30 fps frame count, named marks and normalized anchor samples. The renderer stops a beat before the next marked action; a short demonstration can pause while its sentence finishes. It does not stretch the rest countdown to imply automatic advancement. The workout capture waits for the live session's current climb to change after logging, without a manual Next gesture. The crew uses a second authenticated WebSocket participant against the local backend and checks its queue contribution.
 
-Similar climbs and heatmaps require a completed local download. Missing required marks, anchors, frames or download completion fail capture/render. Native crashes and automation failures leave diagnostic logs under the work directory. Do not bless a partially completed take by editing its manifest.
+Similar climbs and heatmaps require a completed local download. Missing required marks, anchors, frames or download completion fail capture/render. Session takes are accepted only after the app ends the exact captured session and the authenticated API confirms teardown. Native crashes and automation failures leave diagnostic logs under the work directory. Do not bless a partially completed take by editing its manifest.
 
 ## R2 publication
 

@@ -3,7 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { assertTutorialReleaseClean, tutorialModifiedSourcePaths } from '../lib/instructional-video/source';
+import {
+  assertTutorialReleaseClean,
+  tutorialCaptureSourceHash,
+  tutorialModifiedSourcePaths,
+} from '../lib/instructional-video/source';
 
 const temporaryRepositories: string[] = [];
 const git = (directory: string, args: readonly string[]): string =>
@@ -44,6 +48,49 @@ afterEach(() => {
 });
 
 describe('tutorial release source provenance', () => {
+  it('hashes successive edits to untracked app source and ignores staging boundaries', () => {
+    const directory = sourceRepository();
+    const initialHash = tutorialCaptureSourceHash(directory);
+    writeSource(directory, 'packages/mobile/src/new-screen.ts');
+    const addedHash = tutorialCaptureSourceHash(directory);
+    expect(addedHash).not.toBe(initialHash);
+    writeSource(directory, 'packages/mobile/src/new-screen.ts', 'export const revision = 2;\n');
+    const editedHash = tutorialCaptureSourceHash(directory);
+    expect(editedHash).not.toBe(addedHash);
+    git(directory, ['add', '.']);
+    git(directory, ['commit', '--quiet', '-m', 'Track screen addition']);
+    expect(tutorialCaptureSourceHash(directory)).toBe(editedHash);
+  });
+
+  it('invalidates capture for runtime configuration, dependencies, images and schema changes', () => {
+    const directory = sourceRepository();
+    let previousHash = tutorialCaptureSourceHash(directory);
+    for (const path of [
+      'pnpm-lock.yaml',
+      'package.json',
+      'packages/mobile/app.config.ts',
+      'packages/mobile/assets/wall.jpg',
+      'packages/db/drizzle/0001.sql',
+      'packages/backend/src/scripts/seed-instructional-video.ts',
+    ]) {
+      writeSource(directory, path, 'changed runtime input\n');
+      const updatedHash = tutorialCaptureSourceHash(directory);
+      expect(updatedHash, path).not.toBe(previousHash);
+      previousHash = updatedHash;
+    }
+    expect(tutorialModifiedSourcePaths(directory)).toContain('packages/mobile/assets/wall.jpg');
+  });
+
+  it('preserves capture across editorial changes and ignored local files', () => {
+    const directory = sourceRepository();
+    const initialHash = tutorialCaptureSourceHash(directory);
+    writeSource(directory, 'packages/web/scripts/render-instructional-video.ts');
+    writeSource(directory, 'marketing/instructional-video/stage.mjs');
+    writeSource(directory, 'scripts/lib/instructional-video/episodes.ts');
+    writeSource(directory, 'packages/mobile/src/ignored.ts');
+    expect(tutorialCaptureSourceHash(directory)).toBe(initialHash);
+  });
+
   it('accepts a clean reviewed tree and respects ignored local files', () => {
     const directory = sourceRepository();
     writeSource(directory, 'packages/mobile/src/ignored.ts');

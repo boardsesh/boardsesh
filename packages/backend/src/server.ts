@@ -778,9 +778,11 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   // Start HTTP server (WebSocket server is attached to it)
   const httpScheme = tlsEnabled ? 'https' : 'http';
   const wsScheme = tlsEnabled ? 'wss' : 'ws';
-  const listenHost = options.host ?? '0.0.0.0';
-  const urlHost = listenHost.includes(':') ? `[${listenHost}]` : listenHost;
   httpServer.listen({ port: PORT, host: options.host }, () => {
+    const boundAddress = httpServer.address();
+    const boundHost =
+      boundAddress && typeof boundAddress === 'object' ? boundAddress.address : (options.host ?? '0.0.0.0');
+    const urlHost = boundHost.includes(':') ? `[${boundHost}]` : boundHost;
     logger.info(`Boardsesh Backend is running on port ${PORT}${tlsEnabled ? ' (TLS)' : ''}`);
     logger.info(`  GraphQL HTTP: ${httpScheme}://${urlHost}:${PORT}/graphql`);
     logger.info(`  GraphQL WS: ${wsScheme}://${urlHost}:${PORT}/graphql`);
