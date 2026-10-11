@@ -1,4 +1,4 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import { sql, eq, and, isNull, inArray } from 'drizzle-orm';
 import { CLIMB_CHARACTERISTICS, isMethodCharacteristic } from '@boardsesh/shared-schema/characteristics';
@@ -112,7 +112,10 @@ export async function applyMoonBoardCatalog(
         counters,
       } = stageCatalogBatch({ problems: dump.problems, layoutId, existingIndex, existingClimbUuids, canonicalByAlias });
       const unlistedThisFile = await writeMoonBoardCatalogBatch(tx, {
-        climbs: climbRecords, stats: statsRecords, holds: holdsRecords, aliases: aliasRecords,
+        climbs: climbRecords,
+        stats: statsRecords,
+        holds: holdsRecords,
+        aliases: aliasRecords,
         withdrawnClimbUuids,
       });
       const present = new Set([...aliasRecords.map((row) => row.canonicalUuid), ...withdrawnClimbUuids]);
@@ -131,10 +134,16 @@ export async function applyMoonBoardCatalog(
 
 /** Shared writes for the run-locked CLI and transaction-locked daemon. */
 export async function writeMoonBoardCatalogBatch(
-  tx: ReturnType<typeof drizzle>,
+  tx: Pick<PostgresJsDatabase, 'insert' | 'update' | 'execute'>,
   batch: Pick<ReturnType<typeof stageCatalogBatch>, 'climbs' | 'stats' | 'holds' | 'aliases' | 'withdrawnClimbUuids'>,
 ): Promise<number> {
-  const {climbs: climbRecords, stats: statsRecords, holds: holdsRecords, aliases: aliasRecords, withdrawnClimbUuids} = batch;
+  const {
+    climbs: climbRecords,
+    stats: statsRecords,
+    holds: holdsRecords,
+    aliases: aliasRecords,
+    withdrawnClimbUuids,
+  } = batch;
   let unlistedThisFile = 0;
   // Climbs — for matched rows the identity columns are already correct, so
   // refresh only the method-derived fields (characteristics/description).

@@ -1,18 +1,14 @@
-import { mergeCatalogCharacteristicsSql } from '../src/queries/climbs/catalog-characteristics.js';
-import { CLIMB_CHARACTERISTICS, isMethodCharacteristic } from '@boardsesh/shared-schema/characteristics';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { sql, eq, and, isNull, inArray } from 'drizzle-orm';
-import { boardClimbs, boardClimbStats, boardClimbHolds, boardClimbAliases } from '../src/schema/boards/unified.js';
-import { blendedQualityAverageSql } from '../src/queries/climb-stats/quality-blend.js';
+import { eq, and, isNull } from 'drizzle-orm';
+import { boardClimbs, boardClimbAliases } from '../src/schema/boards/unified.js';
 import { fingerprintFromHolds } from './moonboard-2024-helpers.js';
 import {
   HOLDSETUP_TO_LAYOUT,
   buildExistingCatalogMatchIndex,
-  catalogAliasConflictUpdate,
   type MoonBoardCatalogFile,
 } from './moonboard-catalog-helpers.js';
 import { stageCatalogBatch } from './moonboard-catalog-batch.js';
@@ -107,9 +103,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // =============================================================================
 
 const DEFAULT_DIR = path.join(__dirname, '../data/moonboard/app-catalog');
-// 2000 rows/insert keeps every table under Postgres's 65,535 bind-param limit
-// (widest is board_climbs at ~24 cols) while cutting round-trips ~4× vs 500.
-const BATCH_SIZE = 2000;
 
 /**
  * Build the in-memory match index for the non-destructive merge:
@@ -537,7 +530,10 @@ async function importMoonBoardCatalog() {
               }
 
               unlistedThisFile = await writeMoonBoardCatalogBatch(tx, {
-                climbs: climbRecords, stats: statsRecords, holds: holdsRecords, aliases: aliasRecords,
+                climbs: climbRecords,
+                stats: statsRecords,
+                holds: holdsRecords,
+                aliases: aliasRecords,
                 withdrawnClimbUuids,
               });
 
