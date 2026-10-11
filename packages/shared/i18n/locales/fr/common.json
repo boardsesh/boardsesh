@@ -344,11 +344,6 @@
         "both": "Les deux"
       },
       "displayOptions": {
-        "title": "Affichage",
-        "playlistTags": "Afficher les étiquettes de playlist",
-        "playlistTagsDescription": "Voyez dans quelles playlists se trouve chaque bloc, directement dans la liste.",
-        "quickActionsButton": "Afficher le bouton d'actions rapides",
-        "quickActionsButtonDescription": "Ajoute un bouton ⋮ à chaque bloc qui ouvre file, croix, listes et plus. Tu peux toujours appuyer longuement à la place.",
         "boardseshGrades": "Afficher les grades Boardsesh",
         "boardseshGradesDescription": "Des grades calculés à partir de vraies croix sur plusieurs boards. Le grade de l'ouvreur reste affiché tant qu'il n'y a pas assez de croix.",
         "personalGrades": "Utiliser mes cotations",
@@ -445,6 +440,42 @@
         "sheetTitle": "Options d’affichage",
         "groupTitle": "Sous le bloc",
         "footer": "Les changements s’appliquent immédiatement. Masque tout pour voir uniquement le bloc, sans défilement vertical."
+      },
+      "climbList": {
+        "title": "Liste des blocs",
+        "openLabel": "Modifier la liste des blocs",
+        "picture": "Image",
+        "underName": "Sous le nom",
+        "yourClimbing": "Ta grimpe",
+        "actions": "Actions",
+        "gradesTitle": "Cotations",
+        "previewFooter": "Exemple. Les croix, favoris et étiquettes apparaissent sur les blocs qui en ont.",
+        "gradeFooter": "Choisis la cotation principale dans Réglages → Cotations.",
+        "personalFooter": "Les marques personnelles et listes nécessitent une connexion au compte et se chargent en ligne.",
+        "presetsLabel": "Réglage rapide",
+        "presets": {
+          "namesOnly": "Noms seuls",
+          "textOnly": "Texte seul",
+          "default": "Par défaut",
+          "everything": "Tout",
+          "custom": "Personnalisé"
+        },
+        "fields": {
+          "thumbnail": "Image de la board",
+          "communityGrade": "Cotation de la communauté",
+          "sends": "Croix",
+          "rating": "Note",
+          "setter": "Ouvreur",
+          "sentMark": "Marque de croix",
+          "playlistTags": "Afficher les étiquettes de playlist",
+          "quickActions": "Afficher le bouton d'actions rapides"
+        },
+        "sampleName": "Projet du soir",
+        "sampleSetter": "ouvreur",
+        "samplePlaylistOne": "Projets",
+        "samplePlaylistTwo": "Échauffement",
+        "playlistTagsDescription": "Voyez dans quelles playlists se trouve chaque bloc, directement dans la liste.",
+        "quickActionsDescription": "Ajoute un bouton ⋮ à chaque bloc qui ouvre file, croix, listes et plus. Tu peux toujours appuyer longuement à la place."
       }
     },
     "sendRecovery": {

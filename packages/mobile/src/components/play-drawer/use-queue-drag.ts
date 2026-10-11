@@ -9,8 +9,10 @@ import { dropRowIndex, resolveReorderCommit } from './queue-drag-math';
 // the list (gorhom's BottomSheetFlatList scroll/scroll-to-expand) instead of
 // lifting a row.
 const LONG_PRESS_MS = 120;
-// Fallback row height until the first future row reports its measured height.
-// Queue rows are ~thumbnail (96) + vertical padding + separator.
+// Fallback row height until the first future row reports its measured height:
+// about a row with a thumbnail (96) plus its vertical padding and separator. A
+// row without one is half that, but every row reports its own height when it
+// lays out, which is before any of them can be dragged.
 const DEFAULT_ROW_HEIGHT = 120;
 
 export type QueueDragShared = {
@@ -46,7 +48,7 @@ type UseQueueDragOptions = {
 export type QueueDragControls = {
   /** Shared values read by each row's animated style (lift + sibling shift). */
   shared: QueueDragShared;
-  /** Report a future row's measured height (call once from onLayout). */
+  /** Report a future row's measured height. Call from onLayout every time it fires: the latest height is the drag step. */
   onRowHeight: (height: number) => void;
   /** Build the long-press drag Pan for a future row's handle. */
   makeHandleGesture: (rowIndex: number, uuid: string, queueIndex: number) => GestureType;
@@ -99,10 +101,12 @@ export function useQueueDrag({
   const windowRef = useRef({ firstRowIndex: firstFutureRowIndex, firstQueueIndex: firstFutureQueueIndex });
   windowRef.current = { firstRowIndex: firstFutureRowIndex, firstQueueIndex: firstFutureQueueIndex };
 
-  // Track the latest measured row height (don't latch the first one) so a board
-  // switch with differently-shaped thumbnails keeps the drag step distance
-  // correct. Future rows are uniform, so the >1px guard avoids churn from the
-  // several rows reporting the same height.
+  // Track the latest measured row height (don't latch the first one), so the
+  // drag step stays right when rows change height under a mounted list: the
+  // climber switching the thumbnail off takes a row from about 112pt to as
+  // little as 44pt. Future rows are one height (a row without a thumbnail
+  // reserves its late lines so that stays true), so the >1px guard avoids churn
+  // from the several rows reporting the same height.
   const onRowHeight = useCallback(
     (height: number) => {
       if (height > 0 && Math.abs(rowHeight.value - height) > 1) {

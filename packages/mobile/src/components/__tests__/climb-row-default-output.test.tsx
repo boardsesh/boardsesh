@@ -13,6 +13,10 @@ import { createElement, type ReactNode } from 'react';
 // under the climber's own. "the community grade switch" below pins it. With it,
 // under the climber's own grade the "set at N°" marker moves to the detail line,
 // beside the community's numbers it is about.
+//
+// The row honours every switch now. What each one takes off the row, and what a
+// row without a thumbnail looks like, is in `climb-row-switches.test.tsx`; this
+// file stays about the row nobody configured.
 
 type StatusEntry = { status: 'flash' | 'send' | 'attempt'; is_ascent: boolean; tries: number; is_mirror: boolean };
 
@@ -30,6 +34,7 @@ const live = vi.hoisted(() => ({
 vi.mock('react-native', async () => {
   const { flattenStyle } = await import('../../../test/flatten-style');
   return {
+    useWindowDimensions: () => ({ fontScale: 1 }),
     Platform: { OS: 'ios', select: () => undefined },
     PlatformColor: (name: string) => name,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
@@ -106,7 +111,10 @@ vi.mock('../../hooks/use-my-grade', () => ({
 }));
 vi.mock('../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v-grade' }) }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93', fill: '#E5E5EA' } }),
+  useTheme: () => ({
+    textStyles: { body: { lineHeight: 22 } },
+    systemColors: { secondaryLabel: '#8E8E93', fill: '#E5E5EA' },
+  }),
 }));
 
 vi.mock('../Text', async () => {
@@ -464,26 +472,6 @@ describe('playlist tags, a switch the row honours', () => {
     );
     expect(stagedOn.queryByTestId('playlist-chips')).not.toBeNull();
   });
-
-  // Holds until the row honours them. Each later part that teaches the row a
-  // switch takes its field out of this list and asserts what that switch hides
-  // instead. The row is a loaded one, so a switch that started hiding something
-  // would show here.
-  it('does not change the row for a switch it does not honour yet', () => {
-    favoritesStore.setIsFavorited('c1', true);
-    live.logbook = { logbookByClimbAngle: new Map([['c1:40', [sent]]]) };
-    live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
-    const before = render(<ClimbListItemContent climb={climb} {...board} showFavorite showPlaylistChips />);
-    const untouched = before.container.innerHTML;
-
-    act(() => {
-      for (const fieldId of ['thumbnail', 'sends', 'rating', 'setter', 'sentMark'] as const) {
-        setClimbRowField(fieldId, false);
-      }
-    });
-
-    expect(before.container.innerHTML).toBe(untouched);
-  });
 });
 
 describe('the community grade switch', () => {
@@ -581,19 +569,39 @@ describe('the community grade switch', () => {
 
 describe('staged leaves, for the settings preview', () => {
   const sampleLeaves: ClimbRowLeaves = {
-    // A staged leaf gets the switch from the row, so the preview follows it.
-    Subtitle: ({ showCommunityGrade }) => (
+    // A staged leaf gets the switches from the row, so the preview follows them.
+    Subtitle: ({ place, showSends, showRating, showSetter, showCommunityGrade }) => (
       <ClimbSubtitleView
+        place={place}
         isDraft={false}
         ascensionistCount={1200}
         qualityAverage="4.2"
         setterUsername="sample"
+        showSends={showSends}
+        showRating={showRating}
+        showSetter={showSetter}
         communityGrade={showCommunityGrade ? 'V4' : null}
         setAtAngle={null}
       />
     ),
-    Grade: () => <ClimbGradeView label="V5" color="#123456" markedAsMine isProject={false} setAtAngle={null} />,
-    AscentStatus: () => <ClimbAscentStatusView supportsMirroring={false} ascentStatus="flash" mirrorStatus={null} />,
+    Grade: ({ reserveSetAngleLine }) => (
+      <ClimbGradeView
+        label="V5"
+        color="#123456"
+        markedAsMine
+        isProject={false}
+        setAtAngle={null}
+        reserveSetAngleLine={reserveSetAngleLine}
+      />
+    ),
+    AscentStatus: ({ reserveLine }) => (
+      <ClimbAscentStatusView
+        supportsMirroring={false}
+        ascentStatus="flash"
+        mirrorStatus={null}
+        reserveLine={reserveLine}
+      />
+    ),
     Favorite: () => <ClimbFavoriteView />,
     PlaylistChips: () => <div data-testid="sample-chips" />,
   };
@@ -648,18 +656,29 @@ describe('staged leaves, for the settings preview', () => {
 
     const matchingLeaves: ClimbRowLeaves = {
       ...sampleLeaves,
-      Subtitle: () => (
+      Subtitle: ({ place, showSends, showRating, showSetter }) => (
         <ClimbSubtitleView
+          place={place}
           isDraft={false}
           ascensionistCount={12}
           qualityAverage="4.5"
           setterUsername="setterx"
+          showSends={showSends}
+          showRating={showRating}
+          showSetter={showSetter}
           communityGrade={null}
           setAtAngle={null}
         />
       ),
-      Grade: () => (
-        <ClimbGradeView label="V4" color="#44AA44" markedAsMine={false} isProject={false} setAtAngle={null} />
+      Grade: ({ reserveSetAngleLine }) => (
+        <ClimbGradeView
+          label="V4"
+          color="#44AA44"
+          markedAsMine={false}
+          isProject={false}
+          setAtAngle={null}
+          reserveSetAngleLine={reserveSetAngleLine}
+        />
       ),
     };
     const stagedRow = render(<ClimbListItemContent climb={climb} {...board} showFavorite leaves={matchingLeaves} />);

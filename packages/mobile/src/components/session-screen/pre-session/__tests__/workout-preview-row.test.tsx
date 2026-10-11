@@ -68,6 +68,7 @@ vi.mock('../../../../theme/tokens', () => ({ spacing: {} }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
 import { WorkoutPreviewRow } from '../WorkoutPreviewRow';
+import { resetClimbRowDisplayForTests, setClimbRowField } from '../../../../lib/climb-row-display-preference';
 
 const board = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as QueueItemRowBoard;
 const item = {
@@ -109,6 +110,7 @@ function renderRow(overrides: { isRefreshing: boolean; refreshDisabled: boolean;
 
 beforeEach(() => {
   surfaces.entries = [];
+  resetClimbRowDisplayForTests();
 });
 
 describe('WorkoutPreviewRow refresh button', () => {
@@ -119,6 +121,38 @@ describe('WorkoutPreviewRow refresh button', () => {
 
   it('announces the visible climb details on the row action', () => {
     renderRow({ isRefreshing: false, refreshDisabled: false });
+    expect(rowButton()?.label).toBe('Test Climb, V4, 12 sends, 4 stars, setter');
+  });
+
+  // The label replaces what a screen reader would compose from the row, so a
+  // token the climber switched off the row must not be spoken either.
+  it.each([
+    { hidden: 'sends', label: 'Test Climb, V4, 4 stars, setter' },
+    { hidden: 'rating', label: 'Test Climb, V4, 12 sends, setter' },
+    { hidden: 'setter', label: 'Test Climb, V4, 12 sends, 4 stars' },
+  ] as const)('leaves $hidden out of the announcement once the climber hides it from the row', ({ hidden, label }) => {
+    setClimbRowField(hidden, false);
+
+    renderRow({ isRefreshing: false, refreshDisabled: false });
+
+    expect(rowButton()?.label).toBe(label);
+  });
+
+  it('announces the name and the grade alone with sends, rating and setter all hidden', () => {
+    for (const fieldId of ['sends', 'rating', 'setter'] as const) setClimbRowField(fieldId, false);
+
+    renderRow({ isRefreshing: false, refreshDisabled: false });
+
+    expect(rowButton()?.label).toBe('Test Climb, V4');
+  });
+
+  it('announces everything still with the switches that hide nothing it speaks', () => {
+    for (const fieldId of ['thumbnail', 'communityGrade', 'sentMark', 'quickActions'] as const) {
+      setClimbRowField(fieldId, false);
+    }
+
+    renderRow({ isRefreshing: false, refreshDisabled: false });
+
     expect(rowButton()?.label).toBe('Test Climb, V4, 12 sends, 4 stars, setter');
   });
 

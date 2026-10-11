@@ -65,6 +65,7 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { CLIMB_ROW_GUTTER } from '../climb-list-row-styles';
 import { climbRowSeparatorInset } from '../climb-row-layout';
+import { useClimbRowField } from '../../lib/climb-row-display-preference';
 
 /** Bottom scrim that keeps white title/meta legible across the palette (amber
  *  and green included) without per-colour luminance branching. */
@@ -903,6 +904,10 @@ function UnrenderablePlaylistClimbRow({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
   const { systemColors, opacity } = useTheme();
+  // This row stands among climb rows, so it follows their thumbnail switch: with
+  // thumbnails off it has no thumbnail-sized frame and its text starts at the
+  // gutter, like theirs.
+  const hasThumbnail = useClimbRowField('thumbnail');
   const subtitle = t('detail.unrenderableClimb.subtitle');
   const accessibilityLabel = `${climb.name}. ${subtitle}`;
 
@@ -919,14 +924,16 @@ function UnrenderablePlaylistClimbRow({
         accessibilityLabel={editMode ? undefined : accessibilityLabel}
       >
         <View style={[styles.unrenderableContent, { opacity: opacity.disabled }]}>
-          <View
-            style={[
-              styles.unrenderableThumbnail,
-              { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
-            ]}
-          >
-            <Icon name="warning" size={24} color={systemColors.secondaryLabel} />
-          </View>
+          {hasThumbnail ? (
+            <View
+              style={[
+                styles.unrenderableThumbnail,
+                { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
+              ]}
+            >
+              <Icon name="warning" size={24} color={systemColors.secondaryLabel} />
+            </View>
+          ) : null}
           <View style={styles.unrenderableText}>
             <Text variant="body" numberOfLines={1} color={systemColors.label} style={styles.unrenderableTitle}>
               {climb.name}
@@ -948,7 +955,12 @@ function UnrenderablePlaylistClimbRow({
           </PressableSurface>
         ) : null}
       </View>
-      <View style={[styles.unrenderableSeparator, { backgroundColor: systemColors.separator }]} />
+      <View
+        style={[
+          styles.unrenderableSeparator,
+          { marginStart: climbRowSeparatorInset(hasThumbnail), backgroundColor: systemColors.separator },
+        ]}
+      />
     </View>
   );
 }
@@ -1199,6 +1211,5 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     unrenderableSeparator: {
       height: StyleSheet.hairlineWidth,
-      marginStart: climbRowSeparatorInset(true),
     },
   });

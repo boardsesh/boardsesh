@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
@@ -17,7 +17,20 @@ import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { DraftChip, climbChipStyles } from './DraftChip';
 import { ProjectChip } from './ProjectChip';
-import { ClimbPlaylistChips, type ClimbRowPlaylistChipsLeafProps } from './ClimbPlaylistChips';
+import {
+  ClimbPlaylistChips,
+  ClimbPlaylistChipsView,
+  type ClimbPlaylistChip,
+  type ClimbRowPlaylistChipsLeafProps,
+} from './ClimbPlaylistChips';
+import { ClimbRowReservedLine } from './ClimbRowReservedLine';
+import {
+  CLIMB_ROW_DIRECTION_STATUS,
+  CLIMB_ROW_LINE_GAP,
+  CLIMB_ROW_MIN_TEXT_COLUMN_HEIGHT,
+  climbRowLayout,
+  climbRowNameLines,
+} from './climb-row-layout';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
 import { useClimbRowDisplay } from '../lib/climb-row-display-preference';
@@ -34,6 +47,9 @@ const ASCENT_STATUS_ICON: Record<AscentStatusValue, IconName> = {
   send: 'tick.outline',
   attempt: 'ascent.attempt',
 };
+
+// What the placeholder for a climb that has not resolved hands the tags line.
+const NO_PLAYLIST_CHIPS: readonly ClimbPlaylistChip[] = [];
 
 /**
  * Minimal structural climb shape this visual needs. Kept permissive so BOTH the
@@ -97,8 +113,18 @@ export type ClimbListItemClimb = {
 // hook throws outside its provider and would start network reads), so it builds
 // its own leaves from the exported views and staged data and passes them in.
 //
-// These are the props the row hands each leaf: what identifies the climb, never
-// what the leaf will draw.
+// These are the props the row hands each leaf: what identifies the climb, and
+// which of the climber's switches bear on the leaf, never what the leaf will
+// draw.
+
+/**
+ * Where the row mounts its detail leaf. `detailLine`: the line under the name.
+ * `nameLine`: the row has no detail line (sends, rating and setter are all
+ * off), and the leaf is there for the community grade alone, docked after the
+ * name instead of opening a line for one token.
+ */
+export type ClimbRowSubtitlePlace = 'detailLine' | 'nameLine';
+
 export type ClimbRowSubtitleLeafProps = {
   boardName: BoardName;
   layoutId: number;
@@ -108,12 +134,20 @@ export type ClimbRowSubtitleLeafProps = {
   ascensionistCount: number;
   qualityAverage: string;
   setterUsername: string;
+  place: ClimbRowSubtitlePlace;
+  // The climber's switches for the line's three own tokens. All false on the
+  // name line. Each says the token may be drawn; the leaf still decides whether
+  // this climb has one.
+  showSends: boolean;
+  showRating: boolean;
+  showSetter: boolean;
   /** The climber has the community grade switched on. The leaf still decides whether this climb has one to show. */
   showCommunityGrade: boolean;
   /**
    * The other angle the climb's grade and sends were read at, or null when it
    * is the angle on the wall. The leaf draws the marker only when the grade
-   * column hands it over (see `setAngleMarkerPlace`).
+   * column hands it over (see `setAngleMarkerPlace`). Always null on the name
+   * line: the marker never leaves the grade column for it.
    */
   setAtAngle: number | null;
   // What the community grade token is worked out from: the same four fields the
@@ -134,10 +168,18 @@ export type ClimbRowGradeLeafProps = {
   setAtAngle: number | null;
   /**
    * The row draws its computed detail line, so the set-angle marker can move
-   * there. False on a host that replaces or hides that line: the marker then has
-   * to stay under the grade.
+   * there. False on a host that replaces or hides that line, and on a row whose
+   * detail tokens are all switched off: the marker then has to stay under the
+   * grade.
    */
   hasComputedDetailLine: boolean;
+  /**
+   * Keep a line under the grade on a row that has a set-angle marker, also
+   * while the marker is in the detail line. The row asks for this when it has no
+   * thumbnail: the marker moves once the logbook lands, and nothing else would
+   * stop the row changing height when it does.
+   */
+  reserveSetAngleLine: boolean;
 };
 
 export type ClimbRowAscentStatusLeafProps = {
@@ -146,11 +188,27 @@ export type ClimbRowAscentStatusLeafProps = {
   supportsMirroring: boolean;
   /** `Climb.holdsRevisionNumber`, a primitive so the memo boundary holds. */
   holdsRevisionNumber: number | null;
+  /**
+   * On a board that mirrors: lay both directions out on ONE line and hold that
+   * line while neither has a status. The row asks for this when it has no
+   * thumbnail, for the reason given at `reserveSetAngleLine`.
+   */
+  reserveLine: boolean;
 };
 
 export type ClimbRowFavoriteLeafProps = { climbUuid: string };
 
+export type ClimbRowThumbnailLeafProps = {
+  frames: string;
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  mirrored: boolean;
+};
+
 export type ClimbRowLeaves = Readonly<{
+  Thumbnail?: React.ComponentType<ClimbRowThumbnailLeafProps>;
   Subtitle: React.ComponentType<ClimbRowSubtitleLeafProps>;
   Grade: React.ComponentType<ClimbRowGradeLeafProps>;
   AscentStatus: React.ComponentType<ClimbRowAscentStatusLeafProps>;
@@ -204,6 +262,8 @@ type ClimbListItemContentProps = {
    * scroll past and nothing on the rest.
    */
   showFavorite?: boolean;
+  /** Drag hosts keep names on one line so every reorder step has one height. */
+  allowNameWrapping?: boolean;
   /**
    * What the row shows. Omitted (every list does this), the row reads the
    * climber's Climb list settings itself, so no host has to thread them through.
@@ -321,8 +381,8 @@ const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: numb
  * `ClimbListItemContent`.
  *
  * The row's logbook subscribers are this, `LiveClimbGrade` and, only on a row
- * whose detail line can change with the climber's own grade,
- * `LiveMyGradeSubtitle`. Each is its own memo boundary. The two grade leaves have
+ * whose detail line can change with the climber's own grade, the detail leaf
+ * (`useMyGradeSubtitle`). Each is its own memo boundary. The two grade leaves have
  * to subscribe — your own grade wins over the crowd's, so the number and the
  * token beside it must move when a tick lands — but keep the subscription inside
  * these children. Hoisting any of them into `ClimbListItemContent` re-renders the
@@ -334,6 +394,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   angle,
   supportsMirroring,
   holdsRevisionNumber,
+  reserveLine,
 }: ClimbRowAscentStatusLeafProps) {
   // Unconditional hooks keep capability changes safe. The nonmirrorable board
   // keeps its existing aggregate glyph; each mirrorable direction is independent.
@@ -345,6 +406,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
       supportsMirroring={supportsMirroring}
       ascentStatus={ascentStatus}
       mirrorStatus={mirrorStatus}
+      reserveLine={reserveLine}
     />
   );
 });
@@ -355,16 +417,20 @@ export type ClimbAscentStatusViewProps = {
   ascentStatus: AscentStatusValue | null;
   /** The mirrored direction's status. Drawn only on a board that mirrors. */
   mirrorStatus: AscentStatusValue | null;
+  /** See `ClimbRowAscentStatusLeafProps.reserveLine`. Changes nothing on a board that cannot mirror. */
+  reserveLine: boolean;
 };
 
 /**
  * What `AscentStatusGlyph` draws: one glyph beside the grade, or a labelled
- * line per direction on a board that mirrors. Nothing when there is no status.
+ * status per direction on a board that mirrors. Nothing when there is no
+ * status, unless the line is reserved: then one line, filled or empty.
  */
 export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
   supportsMirroring,
   ascentStatus,
   mirrorStatus,
+  reserveLine,
 }: ClimbAscentStatusViewProps) {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
@@ -387,224 +453,219 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
     );
   }
 
-  if (!ascentStatus && !mirrorStatus) return null;
+  const hasStatus = !!ascentStatus || !!mirrorStatus;
+  if (!hasStatus && !reserveLine) return null;
   const directions = [
     { direction: 'original', status: ascentStatus, label: tSession('mobile.logbook.originalTag') },
     { direction: 'mirror', status: mirrorStatus, label: tSession('mobile.logbook.mirroredTag') },
   ];
-  return (
-    <View style={styles.directionStatuses}>
-      {directions.map(({ direction, status, label }) =>
-        status ? (
-          <View
-            key={direction}
-            accessible
-            accessibilityRole="text"
-            accessibilityLabel={t('mobile.climbRow.directionStatus', {
-              direction: label,
-              status: statusLabels[status],
-            })}
-            style={styles.directionStatus}
-          >
-            <Icon name={ASCENT_STATUS_ICON[status]} size={12} color={systemColors.secondaryLabel} />
-            <Text variant="caption2" color={systemColors.secondaryLabel}>
-              {label}
-            </Text>
-          </View>
-        ) : null,
-      )}
-    </View>
+  const directionStatuses = directions.map(({ direction, status, label }) =>
+    status ? (
+      <View
+        key={direction}
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={t('mobile.climbRow.directionStatus', {
+          direction: label,
+          status: statusLabels[status],
+        })}
+        style={reserveLine ? styles.directionStatusInline : styles.directionStatus}
+      >
+        <Icon
+          name={ASCENT_STATUS_ICON[status]}
+          size={CLIMB_ROW_DIRECTION_STATUS.iconSize}
+          color={systemColors.secondaryLabel}
+        />
+        <Text
+          variant="caption2"
+          color={systemColors.secondaryLabel}
+          // One line can only hold its height if neither label wraps.
+          numberOfLines={reserveLine ? 1 : undefined}
+          style={reserveLine ? styles.directionLabelInline : undefined}
+        >
+          {label}
+        </Text>
+      </View>
+    ) : null,
   );
+
+  // One line, there from the row's first paint. Empty, it is as tall as a
+  // status: the same caption, and never shorter than the glyph.
+  if (reserveLine) {
+    return (
+      <View style={styles.directionStatusLine} testID="climb-row-personal-line">
+        {hasStatus ? directionStatuses : <ClimbRowReservedLine variant="caption2" />}
+      </View>
+    );
+  }
+  return <View style={styles.directionStatuses}>{directionStatuses}</View>;
 });
 
-const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle({
-  boardName,
-  layoutId,
-  climbUuid,
-  angle,
-  isDraft,
-  ascensionistCount,
-  qualityAverage,
-  setterUsername,
-  showCommunityGrade,
-  setAtAngle,
-  difficulty,
-  myDifficulty,
-  boardseshDifficulty,
-  boardseshConfidence,
-}: ClimbRowSubtitleLeafProps) {
-  // The detail line's one stats subscription. The community grade token reads its
-  // difficulty from here, so switching the token on adds no stats subscriber.
-  const liveStats = useEffectiveClimbStats(boardName, layoutId, climbUuid, angle, {
-    ascensionistCount,
-    qualityAverage,
-    difficulty,
-  });
-  // Two setting reads pick the leaf, so the line only pays for what can change
-  // it. A token needs a grade in the column that is not the community's: the
-  // climber's own (personal grades) or a Boardsesh grade. With neither active
-  // there is nothing to work out.
+/**
+ * The row's detail leaf: the line under the name, or on a row with no such
+ * line the community grade docked on the name line.
+ *
+ * It draws nothing itself. It picks which leaf to mount, so the row pays for
+ * exactly what can change what it draws, and a switch that is off takes its
+ * subscription with it:
+ *
+ * - The stats store is read for the sends, the rating, and the community's
+ *   live difficulty while a token is worked out from it. A line that shows the
+ *   setter alone mounts no stats subscriber.
+ * - The logbook is read only where the climber's own grade can be in the
+ *   column, which is where it can change the token or move the set-angle marker.
+ */
+const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle(props: ClimbRowSubtitleLeafProps) {
+  const { place, showSends, showRating, showCommunityGrade, setAtAngle } = props;
+  // Two setting reads pick the leaf. A token needs a grade in the column that
+  // is not the community's: the climber's own (personal grades) or a Boardsesh
+  // grade. With neither active there is nothing to work out.
   const personalGradesActive = usePersonalGradesActive();
   const boardseshGradesActive = useBoardseshGradesActive();
 
   // The column can show the climber's own grade, which is in the logbook. Two
-  // things on this line follow it: the token (while its switch is on) and, on a
-  // row read at another angle, the set-angle marker, which moves here from the
-  // grade column. A row with neither stays off the logbook.
+  // things here follow it: the token (while its switch is on) and, on a row read
+  // at another angle, the set-angle marker, which moves to the detail line from
+  // the grade column. A row with neither stays off the logbook.
   if (personalGradesActive && (showCommunityGrade || setAtAngle !== null)) {
-    return (
-      <LiveMyGradeSubtitle
-        boardName={boardName}
-        climbUuid={climbUuid}
-        angle={angle}
-        isDraft={isDraft}
-        ascensionistCount={liveStats.ascensionistCount}
-        qualityAverage={liveStats.qualityAverage}
-        setterUsername={setterUsername}
-        showCommunityGrade={showCommunityGrade}
-        setAtAngle={setAtAngle}
-        difficulty={liveStats.difficulty}
-        myDifficulty={myDifficulty}
-        boardseshDifficulty={boardseshDifficulty}
-        boardseshConfidence={boardseshConfidence}
-      />
+    // The marker's place follows the climber's grade alone. With the token and
+    // both numbers off, nothing on the line comes from the stats store.
+    return showCommunityGrade || showSends || showRating ? (
+      <LiveMyGradeSubtitle {...props} />
+    ) : (
+      <MyGradeMarkerSubtitle {...props} />
     );
   }
 
   // No grade of the climber's own can be in the column, so only a Boardsesh
   // grade there can differ from the community's. That needs no logbook.
-  if (showCommunityGrade && boardseshGradesActive) {
-    return (
-      <LiveCrowdGradeSubtitle
-        boardName={boardName}
-        isDraft={isDraft}
-        ascensionistCount={liveStats.ascensionistCount}
-        qualityAverage={liveStats.qualityAverage}
-        setterUsername={setterUsername}
-        difficulty={liveStats.difficulty}
-        boardseshDifficulty={boardseshDifficulty}
-        boardseshConfidence={boardseshConfidence}
-      />
-    );
-  }
+  if (showCommunityGrade && boardseshGradesActive) return <LiveCrowdGradeSubtitle {...props} />;
 
-  // Nothing on this line depends on a grade: the token is off or the column can
-  // only show the community's own, and the marker stays under that grade.
-  return (
-    <ClimbSubtitleView
-      isDraft={isDraft}
-      ascensionistCount={liveStats.ascensionistCount}
-      qualityAverage={liveStats.qualityAverage}
-      setterUsername={setterUsername}
-      communityGrade={null}
-      setAtAngle={null}
-    />
-  );
+  // Nothing here depends on a grade: the token is off or the column can only
+  // show the community's own, and the marker stays under that grade. On the
+  // name line, where the leaf is there for the token alone, that leaves nothing
+  // to draw and nothing to subscribe to.
+  if (place === 'nameLine') return null;
+  if (showSends || showRating) return <LiveStatsSubtitle {...props} />;
+  // The setter alone, which the row already has: no store is read.
+  return subtitleView(props, props, null, null);
 });
 
-// What the two grade-reading detail lines are handed: the line's own tokens,
-// already live, and the fields the grade is worked out from. `difficulty` is the
-// community's, live: `LiveClimbSubtitle` owns the stats subscription.
-type LiveCrowdGradeSubtitleProps = Omit<ClimbSubtitleViewProps, 'communityGrade' | 'setAtAngle'> & {
-  boardName: BoardName;
-  difficulty: string | null;
-  boardseshDifficulty: number | null;
-  boardseshConfidence: string | null;
-};
+/** The community's numbers as a leaf below hands them to the view: live, or the row's own. */
+type SubtitleNumbers = { ascensionistCount: number; qualityAverage: string | null };
 
-type LiveMyGradeSubtitleProps = LiveCrowdGradeSubtitleProps & {
-  climbUuid: string;
-  angle: number;
-  myDifficulty: number | null | undefined;
-  showCommunityGrade: boolean;
-  setAtAngle: number | null;
-};
+/** The view, from the leaf's props, the numbers to show and the two answers a grade reader gives. */
+function subtitleView(
+  props: ClimbRowSubtitleLeafProps,
+  numbers: SubtitleNumbers,
+  communityGrade: string | null,
+  setAtAngle: number | null,
+) {
+  return (
+    <ClimbSubtitleView
+      place={props.place}
+      isDraft={props.isDraft}
+      ascensionistCount={numbers.ascensionistCount}
+      qualityAverage={numbers.qualityAverage}
+      setterUsername={props.setterUsername}
+      showSends={props.showSends}
+      showRating={props.showRating}
+      showSetter={props.showSetter}
+      communityGrade={communityGrade}
+      setAtAngle={setAtAngle}
+    />
+  );
+}
+
+/** The detail leaf's one stats subscription. The token reads its difficulty from here, so switching it on adds none. */
+function useSubtitleStats(props: ClimbRowSubtitleLeafProps) {
+  return useEffectiveClimbStats(props.boardName, props.layoutId, props.climbUuid, props.angle, {
+    ascensionistCount: props.ascensionistCount,
+    qualityAverage: props.qualityAverage,
+    difficulty: props.difficulty,
+  });
+}
 
 /**
- * The detail line on a row whose column can show the climber's own grade. This
- * is the detail line's one logbook subscriber, mounted by `LiveClimbSubtitle`
- * only where the answer can change what the line draws.
+ * What the climber's own grade decides for the detail leaf: the token, and
+ * whether the set-angle marker is drawn here. This is the detail leaf's one
+ * LOGBOOK subscription, so only the two leaves below call it, and
+ * `LiveClimbSubtitle` mounts them only where the answer can change what the
+ * line draws.
  *
  * It asks `useClimbRowGrade` the same question `LiveClimbGrade` asks, with the
  * same fields, so the token and the marker always match the grade in the column.
  */
-const LiveMyGradeSubtitle = React.memo(function LiveMyGradeSubtitle({
-  boardName,
-  climbUuid,
-  angle,
-  isDraft,
-  ascensionistCount,
-  qualityAverage,
-  setterUsername,
-  showCommunityGrade,
-  setAtAngle,
-  difficulty,
-  myDifficulty,
-  boardseshDifficulty,
-  boardseshConfidence,
-}: LiveMyGradeSubtitleProps) {
+function useMyGradeSubtitle(props: ClimbRowSubtitleLeafProps, communityDifficulty: string | null) {
   const { communityGradeToken, setAngleMarkerPlace } = useClimbRowGrade({
-    climbUuid,
-    angle,
-    boardName,
-    difficulty,
-    myDifficulty,
-    boardseshDifficulty,
-    boardseshConfidence,
+    climbUuid: props.climbUuid,
+    angle: props.angle,
+    boardName: props.boardName,
+    difficulty: communityDifficulty,
+    myDifficulty: props.myDifficulty,
+    boardseshDifficulty: props.boardseshDifficulty,
+    boardseshConfidence: props.boardseshConfidence,
   });
 
-  return (
-    <ClimbSubtitleView
-      isDraft={isDraft}
-      ascensionistCount={ascensionistCount}
-      qualityAverage={qualityAverage}
-      setterUsername={setterUsername}
-      communityGrade={showCommunityGrade ? communityGradeToken : null}
-      setAtAngle={setAngleMarkerPlace === 'detailLine' ? setAtAngle : null}
-    />
-  );
+  return {
+    communityGrade: props.showCommunityGrade ? communityGradeToken : null,
+    setAtAngle: setAngleMarkerPlace === 'detailLine' ? props.setAtAngle : null,
+  };
+}
+
+/** The detail leaf on a row whose column can show the climber's own grade: the stats store and the logbook. */
+const LiveMyGradeSubtitle = React.memo(function LiveMyGradeSubtitle(props: ClimbRowSubtitleLeafProps) {
+  const liveStats = useSubtitleStats(props);
+  const { communityGrade, setAtAngle } = useMyGradeSubtitle(props, liveStats.difficulty);
+
+  return subtitleView(props, liveStats, communityGrade, setAtAngle);
 });
 
 /**
- * The detail line on a row whose column can show a Boardsesh grade but never
+ * The same row with the token and both numbers switched off: the logbook, for
+ * the marker's place, and no stats store. The difficulty handed over is the
+ * row's own; the marker's place does not depend on it.
+ */
+const MyGradeMarkerSubtitle = React.memo(function MyGradeMarkerSubtitle(props: ClimbRowSubtitleLeafProps) {
+  const { communityGrade, setAtAngle } = useMyGradeSubtitle(props, props.difficulty);
+
+  return subtitleView(props, props, communityGrade, setAtAngle);
+});
+
+/**
+ * The detail leaf on a row whose column can show a Boardsesh grade but never
  * the climber's own. Same rule as `LiveMyGradeSubtitle`, with no logbook: a tick
  * landing re-renders nothing here. The set-angle marker never comes to this
  * line, because it only leaves the grade column for the climber's own grade.
  */
-const LiveCrowdGradeSubtitle = React.memo(function LiveCrowdGradeSubtitle({
-  boardName,
-  isDraft,
-  ascensionistCount,
-  qualityAverage,
-  setterUsername,
-  difficulty,
-  boardseshDifficulty,
-  boardseshConfidence,
-}: LiveCrowdGradeSubtitleProps) {
+const LiveCrowdGradeSubtitle = React.memo(function LiveCrowdGradeSubtitle(props: ClimbRowSubtitleLeafProps) {
+  const liveStats = useSubtitleStats(props);
   const { communityGradeToken } = useClimbRowCrowdGrade({
-    boardName,
-    difficulty,
-    boardseshDifficulty,
-    boardseshConfidence,
+    boardName: props.boardName,
+    difficulty: liveStats.difficulty,
+    boardseshDifficulty: props.boardseshDifficulty,
+    boardseshConfidence: props.boardseshConfidence,
   });
 
-  return (
-    <ClimbSubtitleView
-      isDraft={isDraft}
-      ascensionistCount={ascensionistCount}
-      qualityAverage={qualityAverage}
-      setterUsername={setterUsername}
-      communityGrade={communityGradeToken}
-      setAtAngle={null}
-    />
-  );
+  return subtitleView(props, liveStats, communityGradeToken, null);
+});
+
+/** The detail line with sends or rating on it and no grade to work out: the stats store, and nothing else. */
+const LiveStatsSubtitle = React.memo(function LiveStatsSubtitle(props: ClimbRowSubtitleLeafProps) {
+  return subtitleView(props, useSubtitleStats(props), null, null);
 });
 
 export type ClimbSubtitleViewProps = {
+  /** See `ClimbRowSubtitlePlace`. On the name line the view draws the community grade and nothing else. */
+  place: ClimbRowSubtitlePlace;
   isDraft: boolean;
   ascensionistCount: number;
   qualityAverage: string | null;
   setterUsername: string;
+  // The climber's switches for the line's three own tokens.
+  showSends: boolean;
+  showRating: boolean;
+  showSetter: boolean;
   /**
    * The community's grade for this line, or null for none. Already decided
    * (`deriveClimbRowGrade`): the view draws what it is given.
@@ -619,18 +680,41 @@ export type ClimbSubtitleViewProps = {
 };
 
 /**
- * The line under the name that `LiveClimbSubtitle` draws:
- * set at N° · community grade · sends · quality★ · setter.
+ * What `LiveClimbSubtitle` draws. As the line under the name:
+ * set at N° · community grade · sends · quality★ · setter, each of the last
+ * three only while its switch is on. Docked on the name line: the community
+ * grade alone, or nothing.
  */
 export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
+  place,
   isDraft,
   ascensionistCount,
   qualityAverage,
   setterUsername,
+  showSends,
+  showRating,
+  showSetter,
   communityGrade,
   setAtAngle,
 }: ClimbSubtitleViewProps) {
   const { t } = useTranslation('climbs');
+
+  // The same token as in the detail line, in the same grey, after the name and
+  // its glyphs. It is not a line: a climb without one draws nothing here.
+  if (place === 'nameLine') {
+    if (!communityGrade) return null;
+    return (
+      <Text
+        variant="footnote"
+        numberOfLines={1}
+        accessibilityLabel={t('mobile.climbRow.communityGradeAria', { grade: communityGrade })}
+        style={[styles.subtitle, styles.dockedCommunityGrade]}
+      >
+        {communityGrade}
+      </Text>
+    );
+  }
+
   // A draft says so with the chip beside its name (DraftChip), not in this line.
   const sends = !isDraft && ascensionistCount > 0 ? formatSends(ascensionistCount, t) : null;
   const rating = qualityAverage != null && parseFloat(qualityAverage) > 0 ? `${formatQuality(qualityAverage)}★` : null;
@@ -639,9 +723,10 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   // "Project" is said of the climb: it has no sends, no rating, no setter and
   // nothing about its grade for this line. It keys on that data, never on how
   // many tokens ended up in the line, or a climber who hides every token would
-  // read "Project" on every climb.
+  // read "Project" on every climb. It stands in for the send count, so it goes
+  // when the climber switches sends off.
   const nothingKnown = sends === null && rating === null && setter === null && !communityGrade && setAtAngle === null;
-  if (nothingKnown) {
+  if (showSends && nothingKnown) {
     return (
       <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
         {t('mobile.climbRow.projectFallback')}
@@ -668,7 +753,13 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   if (communityGrade) {
     tokens.push({ drawn: communityGrade, spoken: t('mobile.climbRow.communityGradeAria', { grade: communityGrade }) });
   }
-  for (const stat of [sends, rating, setter]) if (stat !== null) tokens.push({ drawn: stat });
+  const stats = [showSends ? sends : null, showRating ? rating : null, showSetter ? setter : null];
+  for (const stat of stats) if (stat !== null) tokens.push({ drawn: stat });
+
+  // Every token this climb has is switched off, or it has none of the ones
+  // that are on. The line is part of the row's shape, not of this climb's data,
+  // so it stays, empty: names line up down the list and every row is one height.
+  if (tokens.length === 0) return <ClimbRowReservedLine variant="footnote" />;
 
   return (
     <Text
@@ -693,6 +784,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   angle,
   setAtAngle,
   hasComputedDetailLine,
+  reserveSetAngleLine,
 }: ClimbRowGradeLeafProps) {
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
     ascensionistCount: climb.ascensionist_count,
@@ -731,6 +823,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
       markedAsMine={grade.markedAsMine}
       isProject={isProject}
       setAtAngle={marksSetAngleHere ? setAtAngle : null}
+      reserveSetAngleLine={reserveSetAngleLine && setAtAngle !== null}
     />
   );
 });
@@ -749,6 +842,12 @@ export type ClimbGradeViewProps = {
    * instead (the column shows the climber's own grade).
    */
   setAtAngle: number | null;
+  /**
+   * The row has a set-angle marker and keeps its line here even while the
+   * marker is drawn in the detail line: an empty line when `setAtAngle` is null.
+   * See `ClimbRowGradeLeafProps.reserveSetAngleLine`.
+   */
+  reserveSetAngleLine: boolean;
 };
 
 /** The grade column `LiveClimbGrade` draws. */
@@ -758,6 +857,7 @@ export const ClimbGradeView = React.memo(function ClimbGradeView({
   markedAsMine,
   isProject,
   setAtAngle,
+  reserveSetAngleLine,
 }: ClimbGradeViewProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('climbs');
@@ -794,6 +894,8 @@ export const ClimbGradeView = React.memo(function ClimbGradeView({
         >
           {t('mobile.climbRow.setAngleMarker', { angle: setAtAngle })}
         </Text>
+      ) : reserveSetAngleLine ? (
+        <ClimbRowReservedLine variant="caption2" style={styles.setAngleMarker} />
       ) : null}
     </View>
   );
@@ -814,6 +916,9 @@ const LIVE_CLIMB_ROW_LEAVES: ClimbRowLeaves = {
  * selected/dimmed overlays) — this keeps `ClimbListRow`'s search-list layout
  * byte-for-byte identical while letting the queue row reuse the same visual
  * around its own position indicator and trailing actions.
+ *
+ * With the thumbnail switched off the fragment is two blocks, and the text
+ * column starts where the host's row does.
  */
 const ClimbListItemContent = React.memo(function ClimbListItemContent({
   climb,
@@ -827,18 +932,43 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   primarySubtitleOverride,
   showPlaylistChips = false,
   showFavorite = false,
+  allowNameWrapping = true,
   display,
   leaves = LIVE_CLIMB_ROW_LEAVES,
 }: ClimbListItemContentProps) {
   const { t: tSession } = useTranslation('session');
+  const { fontScale } = useWindowDimensions();
+  const nameLines = climbRowNameLines(fontScale, allowNameWrapping);
+  const { textStyles: rowTextStyles } = useTheme();
+  const nameStyle =
+    nameLines === 2
+      ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * fontScale * 2 }]
+      : styles.climbName;
+  const Thumbnail = leaves.Thumbnail ?? ClimbListThumbnail;
   // The row's one subscription to the Climb list settings. Its snapshot keeps its
   // identity until a switch changes, so this never re-renders a row on its own.
   const storedDisplay = useClimbRowDisplay();
   const rowDisplay = display ?? storedDisplay;
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
-  // An optional piece of the row is drawn when the surface can show it (the
-  // `show*` prop) AND the climber has it switched on. One line per piece.
-  const showsPlaylistTags = showPlaylistChips && rowDisplay.playlistTags;
+  // Everything optional about the row is decided here, once: each piece is drawn
+  // when the host can show it (a `show*` prop) AND the climber has it switched
+  // on. Below, an element is mounted on one condition read off this answer, and
+  // an element that is not mounted holds no subscription.
+  const layout = climbRowLayout({
+    display: rowDisplay,
+    surface: {
+      showAscentStatus,
+      showPlaylistChips,
+      detailLine: primarySubtitleOverride === undefined ? 'computed' : primarySubtitleOverride ? 'replaced' : 'hidden',
+    },
+    supportsMirroring,
+  });
+  // With a thumbnail, its 96pt is the row's floor and a line that loads late
+  // grows inside it. Without one the text column carries the floor, and a late
+  // line holds its space from the first paint (`layout.reservesLateLines`).
+  const textColumnStyle = layout.hasThumbnail
+    ? styles.centerColumn
+    : [styles.centerColumn, styles.centerColumnWithoutThumbnail];
 
   const subtitleDetailText = useMemo(() => {
     const parts = subtitleDetailParts?.filter((part) => part.length > 0) ?? [];
@@ -846,7 +976,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   }, [subtitleDetailParts]);
 
   // Partially-synced peer item whose climb isn't resolved yet (#2527): render an
-  // "Unknown Climb" placeholder that keeps the three-block layout so the row
+  // "Unknown Climb" placeholder that keeps the row's blocks so the row
   // doesn't crash and its gutter/separator still line up with resolved rows.
   // useQueueResolveClimbs re-fetches the climb by uuid and swaps in the real one,
   // so this is transient for any item that carries a fetchable uuid.
@@ -855,11 +985,20 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   if (!climb || !isClimbResolved(climb)) {
     return (
       <>
-        <View style={styles.thumbnailContainer} />
-        <View style={styles.centerColumn}>
-          <Text variant="body" numberOfLines={1} style={styles.climbName}>
+        {layout.hasThumbnail ? <View style={styles.thumbnailContainer} /> : null}
+        <View style={textColumnStyle}>
+          <Text variant="body" numberOfLines={nameLines} style={nameStyle}>
             {tSession('mobile.queue.unknownClimb')}
           </Text>
+          {/* Without a thumbnail, hold the lines the resolved row will have, so
+              the row does not change height when its climb lands. */}
+          {layout.reservesLateLines && layout.hasDetailLine ? <ClimbRowReservedLine variant="footnote" /> : null}
+          {layout.reservesLateLines && layout.hasPersonalLine ? (
+            <ClimbAscentStatusView supportsMirroring ascentStatus={null} mirrorStatus={null} reserveLine />
+          ) : null}
+          {layout.reservesLateLines && layout.hasTagsLine ? (
+            <ClimbPlaylistChipsView chips={NO_PLAYLIST_CHIPS} reserveLine />
+          ) : null}
         </View>
         <View style={styles.rightSection} />
       </>
@@ -884,7 +1023,19 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   // in the detail line it is one more token in a line that stays one line.
   const setAtAngle = climb.statsAngle != null && climb.statsAngle !== angle ? climb.statsAngle : null;
   const hasComputedDetailLine = primarySubtitleOverride === undefined;
+  // Where the computed detail leaf goes, if anywhere: its own line, or with
+  // sends, rating and setter all off the name line, for the community grade
+  // alone. A host that replaces or hides the line gets neither, on purpose: its
+  // row is about one tick, and has no other line to carry the token.
+  const subtitlePlace: ClimbRowSubtitlePlace | null = !hasComputedDetailLine
+    ? null
+    : layout.hasDetailLine
+      ? 'detailLine'
+      : layout.communityGradePlace === 'nameLine'
+        ? 'nameLine'
+        : null;
   const hasLostHolds = missingHoldCount !== undefined;
+  const separateAttributesLine = hasLostHolds && allowNameWrapping;
   const nameAttributes = (
     <>
       <ClimbAttributeIcons
@@ -897,51 +1048,68 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       {hasLostHolds ? <LostHoldsChip count={missingHoldCount} /> : null}
     </>
   );
+  const subtitle =
+    subtitlePlace === null ? null : (
+      <leaves.Subtitle
+        boardName={boardName}
+        layoutId={layoutId}
+        climbUuid={climb.uuid}
+        angle={angle}
+        isDraft={climb.is_draft ?? false}
+        ascensionistCount={climb.ascensionist_count ?? 0}
+        qualityAverage={climb.quality_average}
+        setterUsername={climb.setter_username ?? ''}
+        place={subtitlePlace}
+        showSends={rowDisplay.sends}
+        showRating={rowDisplay.rating}
+        showSetter={rowDisplay.setter}
+        showCommunityGrade={layout.communityGradePlace === subtitlePlace}
+        setAtAngle={subtitlePlace === 'detailLine' ? setAtAngle : null}
+        difficulty={climb.difficulty}
+        myDifficulty={climb.myDifficulty}
+        boardseshDifficulty={climb.boardseshDifficulty ?? null}
+        boardseshConfidence={climb.boardseshConfidence ?? null}
+      />
+    );
+  const ascentStatus =
+    layout.sentMarkPlace === 'none' ? null : (
+      <leaves.AscentStatus
+        climbUuid={climb.uuid}
+        angle={angle}
+        supportsMirroring={supportsMirroring}
+        holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+        reserveLine={layout.reservesLateLines}
+      />
+    );
 
   return (
     <>
       {/* Left: portrait thumbnail with ascent badge */}
-      <View style={styles.thumbnailContainer}>
-        <ClimbListThumbnail
-          frames={climb.frames}
-          boardName={boardName}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          mirrored={climb.mirrored ?? false}
-        />
-      </View>
-
-      {/* Center: name (+ intrinsic-attribute glyphs) + subtitle */}
-      <View style={styles.centerColumn}>
-        <View style={styles.nameRow}>
-          <Text variant="body" numberOfLines={1} style={styles.climbName}>
-            {climb.name}
-          </Text>
-          {!hasLostHolds ? nameAttributes : null}
-        </View>
-        {hasLostHolds ? <View style={styles.attributesRow}>{nameAttributes}</View> : null}
-        {/* The community grade token lives in the computed detail line and nowhere
-            else. A host that replaces or hides that line (a session row, which
-            shows the sender's name there or nothing) gets no token, on purpose:
-            its row is about one tick, and has no other line to carry it. */}
-        {hasComputedDetailLine ? (
-          <leaves.Subtitle
+      {layout.hasThumbnail ? (
+        <View style={styles.thumbnailContainer}>
+          <Thumbnail
+            frames={climb.frames}
             boardName={boardName}
             layoutId={layoutId}
-            climbUuid={climb.uuid}
-            angle={angle}
-            isDraft={climb.is_draft ?? false}
-            ascensionistCount={climb.ascensionist_count ?? 0}
-            qualityAverage={climb.quality_average}
-            setterUsername={climb.setter_username ?? ''}
-            showCommunityGrade={rowDisplay.communityGrade}
-            setAtAngle={setAtAngle}
-            difficulty={climb.difficulty}
-            myDifficulty={climb.myDifficulty}
-            boardseshDifficulty={climb.boardseshDifficulty ?? null}
-            boardseshConfidence={climb.boardseshConfidence ?? null}
+            sizeId={sizeId}
+            setIds={setIds}
+            mirrored={climb.mirrored ?? false}
           />
+        </View>
+      ) : null}
+
+      {/* Center: name (+ intrinsic-attribute glyphs), then the detail, personal and tags lines */}
+      <View style={textColumnStyle}>
+        <View style={styles.nameRow}>
+          <Text variant="body" numberOfLines={nameLines} style={nameStyle}>
+            {climb.name}
+          </Text>
+          {!separateAttributesLine ? nameAttributes : null}
+          {subtitlePlace === 'nameLine' ? subtitle : null}
+        </View>
+        {separateAttributesLine ? <View style={styles.attributesRow}>{nameAttributes}</View> : null}
+        {subtitlePlace === 'detailLine' ? (
+          subtitle
         ) : primarySubtitleOverride ? (
           <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
             {primarySubtitleOverride}
@@ -952,35 +1120,24 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {subtitleDetailText}
           </Text>
         ) : null}
-        {showAscentStatus && supportsMirroring ? (
-          <leaves.AscentStatus
-            climbUuid={climb.uuid}
-            angle={angle}
-            supportsMirroring={supportsMirroring}
-            holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
-          />
+        {layout.sentMarkPlace === 'personalLine' ? ascentStatus : null}
+        {layout.hasTagsLine ? (
+          <leaves.PlaylistChips climbUuid={climb.uuid} reserveLine={layout.reservesLateLines} />
         ) : null}
-        {showsPlaylistTags ? <leaves.PlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
 
       {/* Right: favourite heart + ascent-status glyph + colorized grade */}
       <View style={styles.rightSection}>
         {showFavorite ? <leaves.Favorite climbUuid={climb.uuid} /> : null}
-        {showAscentStatus && !supportsMirroring ? (
-          <leaves.AscentStatus
-            climbUuid={climb.uuid}
-            angle={angle}
-            supportsMirroring={supportsMirroring}
-            holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
-          />
-        ) : null}
+        {layout.sentMarkPlace === 'besideGrade' ? ascentStatus : null}
         <leaves.Grade
           climb={climb}
           boardName={boardName}
           layoutId={layoutId}
           angle={angle}
           setAtAngle={setAtAngle}
-          hasComputedDetailLine={hasComputedDetailLine}
+          hasComputedDetailLine={subtitlePlace === 'detailLine'}
+          reserveSetAngleLine={layout.reservesLateLines}
         />
       </View>
     </>
@@ -1000,7 +1157,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
-    gap: 2,
+    gap: CLIMB_ROW_LINE_GAP,
+  },
+  // No thumbnail, so nothing else keeps a row with one short line of text as
+  // tall as a touch target.
+  centerColumnWithoutThumbnail: {
+    minHeight: CLIMB_ROW_MIN_TEXT_COLUMN_HEIGHT,
   },
   nameRow: {
     flexDirection: 'row',
@@ -1026,15 +1188,40 @@ const styles = StyleSheet.create({
   subtitle: {
     opacity: 0.6,
   },
+  // The community grade at the end of the name line. Like the chips there it
+  // never absorbs the row's truncation: the climb name does.
+  dockedCommunityGrade: {
+    marginStart: 6,
+    flexShrink: 0,
+  },
   // Under the subtitle so explicit direction labels never widen the grade rail.
   directionStatuses: {
-    gap: 1,
+    gap: CLIMB_ROW_DIRECTION_STATUS.stackedGap,
   },
   directionStatus: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: 3,
+  },
+  // The same two statuses on one line, for a row with no thumbnail. The floor is
+  // the glyph's size, so the line is one height with a status in it or without.
+  directionStatusLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: CLIMB_ROW_DIRECTION_STATUS.inlineGap,
+    minHeight: CLIMB_ROW_DIRECTION_STATUS.iconSize,
+    overflow: 'hidden',
+  },
+  directionStatusInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  directionLabelInline: {
+    flexShrink: 1,
   },
   rightSection: {
     flexShrink: 0,

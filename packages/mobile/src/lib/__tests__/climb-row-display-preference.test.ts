@@ -95,6 +95,11 @@ function settle(): Promise<void> {
   });
 }
 
+/** What the settings store does when its file cannot be written: it throws. */
+function failedWrite(): never {
+  throw new Error('mmkv write failed');
+}
+
 /** A write to an old key that reaches the disk and is never heard from again. */
 function landsWithoutAnswering(answer: Promise<void>) {
   return async (key: string, serialised: string): Promise<void> => {
@@ -234,6 +239,22 @@ describe('writes', () => {
     act(() => relaunched.restoreLastCustomClimbRow());
     expect(relaunched.getClimbRowDisplay()).toEqual({ ...DEFAULT_CLIMB_ROW_DISPLAY, setter: false });
     expect(relaunchedHasLastCustom.result.current).toBe(false);
+  });
+
+  it('tells its reader when a reset drops the remembered mix and the row itself does not move', async () => {
+    seedStored({});
+    const store = await launch();
+    const hasLastCustom = renderHook(store.useClimbRowHasLastCustom);
+    act(() => store.setClimbRowField('setter', false));
+    // Default is showing, with the hand-made mix remembered behind it.
+    act(() => store.applyClimbRowPreset('default'));
+    expect(hasLastCustom.result.current).toBe(true);
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+
+    act(() => store.resetAllSettings());
+
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    expect(hasLastCustom.result.current).toBe(false);
   });
 
   it('restoring with nothing remembered does nothing', async () => {
@@ -575,7 +596,7 @@ function namesOnlyOverrides() {
 describe('a write of the record that did not stick', () => {
   it('keeps the switch through an unrelated settings write, on a fresh install', async () => {
     const store = await launch();
-    mmkvSet.mockImplementationOnce(() => {});
+    mmkvSet.mockImplementationOnce(failedWrite);
 
     store.setClimbRowField('thumbnail', false);
     expect(persisted()).toBeNull();
@@ -587,7 +608,7 @@ describe('a write of the record that did not stick', () => {
   it('keeps the switch through an unrelated settings write, with an older record on the phone', async () => {
     seedStored({ sends: false });
     const store = await launch();
-    mmkvSet.mockImplementationOnce(() => {});
+    mmkvSet.mockImplementationOnce(failedWrite);
 
     store.setClimbRowField('thumbnail', false);
     expect(persisted()).toEqual({ version: 1, overrides: { sends: false }, ...KEYS_READ_EMPTY });
@@ -599,7 +620,7 @@ describe('a write of the record that did not stick', () => {
   it('carries the lost switch with the next one', async () => {
     seedStored({ sends: false });
     const store = await launch();
-    mmkvSet.mockImplementationOnce(() => {});
+    mmkvSet.mockImplementationOnce(failedWrite);
     store.setClimbRowField('thumbnail', false);
 
     store.setClimbRowField('rating', false);
@@ -615,7 +636,7 @@ describe('a write of the record that did not stick', () => {
   it('writes the lost switch when the same choice is made again, though memory already has it', async () => {
     const store = await launch();
     await store.ensureClimbRowLegacySynced();
-    mmkvSet.mockImplementationOnce(() => {});
+    mmkvSet.mockImplementationOnce(failedWrite);
     store.setClimbRowField('thumbnail', false);
     expect(persisted()).toEqual({ version: 1, overrides: {}, ...KEYS_READ_EMPTY });
 
@@ -627,12 +648,53 @@ describe('a write of the record that did not stick', () => {
   it('still takes a reset afterwards', async () => {
     seedStored({ sends: false });
     const store = await launch();
-    mmkvSet.mockImplementationOnce(() => {});
+    mmkvSet.mockImplementationOnce(failedWrite);
     store.setClimbRowField('thumbnail', false);
 
     store.resetAllSettings();
 
     expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+  });
+
+  it('does not throw into the handler, and what is owed to the old key still goes out', async () => {
+    const store = await launch();
+    await store.ensureClimbRowLegacySynced();
+    // The file could not be opened: every write fails for the rest of the launch.
+    mmkvSet.mockImplementation(failedWrite);
+
+    expect(() => store.setClimbRowField('quickActions', false)).not.toThrow();
+    await settle();
+
+    expect(store.getClimbRowDisplay().quickActions).toBe(false);
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
+  });
+
+  it('reads the old keys once at launch, however many readers mount afterwards', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    mmkvSet.mockImplementation(failedWrite);
+
+    await expect(store.ensureClimbRowLegacySynced()).resolves.toBeUndefined();
+    expect(store.getClimbRowDisplay().playlistTags).toBe(true);
+    renderHook(() => store.useClimbRowField('thumbnail'));
+    renderHook(() => store.useClimbRowField('thumbnail'));
+    await settle();
+
+    expect(readLegacy).toHaveBeenCalledTimes(2);
+  });
+
+  it('carries an import whose write was lost with the next choice', async () => {
+    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
+    const store = await launch();
+    mmkvSet.mockImplementationOnce(failedWrite);
+    await store.ensureClimbRowLegacySynced();
+    expect(persisted()).toBeNull();
+
+    store.setClimbRowField('quickActions', false);
+    await settle();
+
+    expect(persisted()).toMatchObject({ overrides: { playlistTags: true, quickActions: false } });
+    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
   });
 });
 
@@ -1359,26 +1421,5 @@ describe('a storage call for the old keys that never answers', () => {
 
     expect(oldKey(LEGACY_TAGS_KEY)).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
-  });
-});
-
-// Only a failure of the old keys' storage is expected. A fault in this module's
-// own code, thrown while a queued task runs, has to stay visible.
-describe('a fault while a queued task runs', () => {
-  it('rejects the launch sync instead of passing for a storage failure, and the queue carries on', async () => {
-    legacyStorage.set(LEGACY_TAGS_KEY, 'true');
-    const store = await launch();
-    mmkvSet.mockImplementationOnce(() => {
-      throw new Error('record write failed');
-    });
-
-    await expect(store.ensureClimbRowLegacySynced()).rejects.toThrow('record write failed');
-
-    // Unsynced, so it is tried again; and the queue behind it was not blocked.
-    await store.ensureClimbRowLegacySynced();
-    expect(store.getClimbRowDisplay().playlistTags).toBe(true);
-    store.setClimbRowField('quickActions', false);
-    await settle();
-    expect(oldKey(LEGACY_QUICK_ACTIONS_KEY)).toBe(false);
   });
 });

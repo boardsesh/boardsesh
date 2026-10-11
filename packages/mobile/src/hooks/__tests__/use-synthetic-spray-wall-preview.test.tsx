@@ -40,7 +40,7 @@ afterEach(() => {
 describe('useSyntheticSprayWallPreview', () => {
   it('is loading until the wall is registered, then draws it', () => {
     const { result } = renderHook(() => useSyntheticSprayWallPreview(LAYOUT_ID));
-    expect(result.current).toEqual({ status: 'loading', preview: null });
+    expect(result.current).toEqual({ status: 'loading', preview: null, climb: null });
 
     act(() => registerWall());
 
@@ -95,7 +95,7 @@ describe('useSyntheticSprayWallPreview', () => {
 
     act(() => unregisterSprayWall(LAYOUT_ID));
 
-    expect(result.current).toEqual({ status: 'loading', preview: null });
+    expect(result.current).toEqual({ status: 'loading', preview: null, climb: null });
   });
 
   it('has nothing to draw on a wall with no holds, or with no layout', () => {

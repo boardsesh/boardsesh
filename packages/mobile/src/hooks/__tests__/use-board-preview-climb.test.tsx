@@ -51,6 +51,7 @@ describe('useBoardPreviewClimb', () => {
     const { result } = renderHook(() => useBoardPreviewClimb());
 
     expect(result.current.status).toBe('ready');
+    expect(result.current.climb).toEqual({ frames: 'p1r12' });
     expect(result.current.preview).toMatchObject({
       frames: 'p1r12',
       boardName: 'kilter',
@@ -59,6 +60,7 @@ describe('useBoardPreviewClimb', () => {
       setIds: '1,20',
       boardWidth: 1080,
       boardHeight: 1350,
+      angle: 40,
     });
   });
 

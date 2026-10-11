@@ -65,6 +65,15 @@ export default function SettingsLayout() {
         name="board-look/accessibility"
         options={{ title: t('mobile.settings.boardLook.accessibility.title') }}
       />
+      <Stack.Screen
+        name="climb-list"
+        options={{
+          title: t('mobile.settings.climbList.title'),
+          headerLeft: () => (
+            <HeaderLeadingButton kind="back" onPress={leaveSettings} accessibilityLabel={t('ariaLabels.back')} />
+          ),
+        }}
+      />
       <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
       <Stack.Screen name="privacy-access" options={{ title: tSettings('privacy.manageAccess') }} />
       <Stack.Screen name="privacy" options={{ title: tSettings('privacy.title') }} />

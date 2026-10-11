@@ -67,6 +67,12 @@ vi.mock('@boardsesh/board-react', async () => {
 });
 
 vi.mock('react-native', () => ({
+  // The row asks `climb-row-layout` for its structure, which reads the spacing
+  // tokens; `theme/tokens` reaches `ios-colors`, which calls these at module load.
+  useWindowDimensions: () => ({ fontScale: 1 }),
+  Platform: { OS: 'ios', select: () => undefined },
+  PlatformColor: (name: string) => name,
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   StyleSheet: { create: (styles: unknown) => styles },
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
@@ -120,7 +126,11 @@ vi.mock('../../hooks/use-grade-format', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93' }, actionColors: { favorite: '#FF3B30' } }),
+  useTheme: () => ({
+    textStyles: { body: { lineHeight: 22 } },
+    systemColors: { secondaryLabel: '#8E8E93' },
+    actionColors: { favorite: '#FF3B30' },
+  }),
 }));
 
 vi.mock('../../lib/format-climb-stats', () => ({

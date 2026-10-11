@@ -11,6 +11,7 @@ import {
   Keyboard,
   InteractionManager,
   Platform,
+  useWindowDimensions,
   type ColorValue,
 } from 'react-native';
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
@@ -38,9 +39,16 @@ import {
   type GradeAccuracyValue,
 } from '@boardsesh/climb-filters';
 import { getTallWideScope } from '@boardsesh/board-constants';
-import { getBoardCapabilities } from '@boardsesh/board-config';
+import { boardSupportsMirroring, getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
+import {
+  DEFAULT_CLIMB_ROW_SURFACE,
+  climbRowLayout,
+  climbRowSkeletonCount,
+  type ClimbRowSurface,
+} from '../../../src/components/climb-row-layout';
+import { useClimbRowDisplay, useClimbRowField } from '../../../src/lib/climb-row-display-preference';
 import { shouldFetchNextPage, type NextPageTrigger } from '../../../src/lib/climb-list-pagination';
 import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
 import { PlayBoardPrewarmHost } from '../../../src/components/play-drawer/PlayBoardPrewarmHost';
@@ -168,8 +176,14 @@ const CLIMB_LIST_VIEWABILITY = { itemVisiblePercentThreshold: 1, minimumViewTime
 // truncation rather than overflowing the layout.
 const SUMMARY_MAX_CHARS = 28;
 const SEARCH_DEBOUNCE_MS = 300;
+// How many placeholder rows cover the list, and the tail of it, at the default
+// row height. `ClimbListSkeletonRows` draws more when the climber's rows are
+// shorter than that.
 const INITIAL_SKELETON_ROW_COUNT = 10;
 const FOOTER_SKELETON_ROW_COUNT = 6;
+// What this list lets its rows show, for sizing their placeholders: the one
+// surface with playlist tags.
+const CLIMB_LIST_ROW_SURFACE: ClimbRowSurface = { ...DEFAULT_CLIMB_ROW_SURFACE, showPlaylistChips: true };
 // Debounce persisting the per-board last search so rapid grade nudges don't
 // thrash secure-store.
 const SAVE_DEBOUNCE_MS = 600;
@@ -580,6 +594,11 @@ function ClimbListInner() {
   const sizeId = activeBoard?.sizeId ?? 0;
   const setIds = activeBoard?.setIds ?? '';
   const angle = activeBoard?.angle ?? 0;
+  // A board that mirrors gives its rows a line per direction, which the
+  // placeholder rows stand in for too.
+  const rowsTrackDirections = boardSupportsMirroring(boardName, layoutId);
+  // A climber who switched thumbnails off gets none warmed ahead of the scroll.
+  const rowsShowThumbnail = useClimbRowField('thumbnail');
 
   const hasBoardConfig = !!activeBoard;
   // An archived spray wall keeps its climbs, but nothing new is set on it.
@@ -1929,11 +1948,13 @@ function ClimbListInner() {
   const listFooter = useMemo(
     () => (
       <View>
-        {isFetchingNextPage ? <ClimbListSkeletonRows count={FOOTER_SKELETON_ROW_COUNT} /> : null}
+        {isFetchingNextPage ? (
+          <ClimbListSkeletonRows count={FOOTER_SKELETON_ROW_COUNT} supportsMirroring={rowsTrackDirections} />
+        ) : null}
         <Animated.View pointerEvents="none" style={listBottomSpacerStyle} />
       </View>
     ),
-    [isFetchingNextPage, listBottomSpacerStyle],
+    [isFetchingNextPage, listBottomSpacerStyle, rowsTrackDirections],
   );
 
   const stackOptions = useMemo(
@@ -2209,7 +2230,7 @@ function ClimbListInner() {
           ListFooterComponent={listFooter}
           ListEmptyComponent={
             showInitialSkeletons ? (
-              <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+              <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} supportsMirroring={rowsTrackDirections} />
             ) : climbSearchError instanceof FollowedAuthorsUnavailableError ? (
               <View style={styles.emptyContainer}>
                 <Text variant="subheadline" style={styles.emptySubtitle}>
@@ -2303,9 +2324,10 @@ function ClimbListInner() {
           }
         />
         {/* Renders nothing. Not for placeholder rows: they belong to the previous
-            search and are about to be replaced. */}
+            search and are about to be replaced. Not with thumbnails switched off
+            either: a hidden thumbnail starts no thumbnail-only rendering work. */}
         <PlayBoardPrewarmHost />
-        {hasBoardConfig && !isPlaceholderData ? (
+        {hasBoardConfig && !isPlaceholderData && rowsShowThumbnail ? (
           <ClimbListThumbnailPrewarmWindow
             store={visibleRowsStore}
             climbs={visibleClimbs}
@@ -2416,11 +2438,32 @@ const PlaceholderTint = memo(function PlaceholderTint({ active, color }: { activ
   );
 });
 
-function ClimbListSkeletonRows({ count }: { count: number }) {
+/**
+ * Placeholder rows for this list. `count` is how many rows of the default
+ * height cover the space; the climber's rows can be much shorter than that (a
+ * row with no thumbnail is as little as 44pt), so as many are drawn as it takes
+ * to cover the same space.
+ */
+function ClimbListSkeletonRows({ count, supportsMirroring }: { count: number; supportsMirroring: boolean }) {
+  const display = useClimbRowDisplay();
+  const { fontScale } = useWindowDimensions();
+  const { textStyles: typeScale } = useTheme();
+  const rowHeight = climbRowLayout({
+    display,
+    surface: CLIMB_LIST_ROW_SURFACE,
+    supportsMirroring,
+    fontScale,
+    typeScale,
+  }).estimatedHeight;
+
   return (
     <View>
-      {Array.from({ length: count }, (_item, index) => (
-        <ClimbListRowSkeleton key={`climb-skeleton-${index}`} />
+      {Array.from({ length: climbRowSkeletonCount(count, rowHeight) }, (_item, index) => (
+        <ClimbListRowSkeleton
+          key={`climb-skeleton-${index}`}
+          showPlaylistChips={CLIMB_LIST_ROW_SURFACE.showPlaylistChips}
+          supportsMirroring={supportsMirroring}
+        />
       ))}
     </View>
   );

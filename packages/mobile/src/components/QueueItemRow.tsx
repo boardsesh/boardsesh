@@ -20,10 +20,11 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
-import { climbRowSeparatorInset } from './climb-row-layout';
+import { CLIMB_ROW_VERTICAL_PADDING, climbRowSeparatorInset } from './climb-row-layout';
 import { BoardDriverAvatar } from './board-presence/BoardDriverAvatar';
 import { resolveQueueRowAttribution } from '../lib/queue-attribution';
 import { resolveClimbRenderBoard } from '../lib/boards/climb-render-board';
+import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { springs } from '../theme/animations';
@@ -46,8 +47,6 @@ export const POSITION_SLOT_WIDTH = 28;
 // Where the thumbnail starts: the row's 12pt padding, the slot above and the gap
 // after it. Exported for the same reason as the slot width.
 export const QUEUE_ROW_LEADING_INSET = spacing[3] + POSITION_SLOT_WIDTH + spacing[3];
-// Inset the separator to start under the climb name (after position + thumbnail).
-const SEPARATOR_INSET = climbRowSeparatorInset(true, QUEUE_ROW_LEADING_INSET);
 
 export type QueueItemRowBoard = {
   boardName: BoardName;
@@ -146,6 +145,9 @@ function QueueItemRowComponent({
 }: QueueItemRowProps) {
   const { systemColors, brandColors } = useTheme();
   const { t } = useTranslation('session');
+  // The climber's thumbnail switch moves two things in this row with it: where
+  // the separator starts, and whether the trailing control may set the height.
+  const hasThumbnail = useClimbRowField('thumbnail');
   const translateX = useSharedValue(0);
   const rowOpacity = useSharedValue(1);
   const rowHeight = useSharedValue<number | undefined>(undefined);
@@ -441,6 +443,9 @@ function QueueItemRowComponent({
 
   const showTick = !!tickGesture;
   const showDragHandle = !!dragHandleGesture && !isEditMode;
+  const trailingButtonStyle = hasThumbnail
+    ? styles.trailingButton
+    : [styles.trailingButton, styles.trailingButtonWithoutThumbnail];
 
   // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
   // `t` identity on plenty of renders, which would rebuild this array every time
@@ -516,6 +521,7 @@ function QueueItemRowComponent({
 
         {/* Shared climb visual: thumbnail + name/subtitle + grade */}
         <ClimbListItemContent
+          allowNameWrapping={false}
           climb={item.climb}
           boardName={rowBoard.boardName as BoardName}
           layoutId={rowBoard.layoutId}
@@ -560,7 +566,7 @@ function QueueItemRowComponent({
               onAccessibilityTap={handleTickPress}
               accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
               onAccessibilityAction={handleTickAccessibilityAction}
-              style={styles.trailingButton}
+              style={trailingButtonStyle}
             >
               <Icon name="tick.fill" size={26} color={brandColors.success} />
             </View>
@@ -572,7 +578,7 @@ function QueueItemRowComponent({
           // decision, tracked as a follow-up rather than guessed at here.
           <GestureDetector gesture={dragHandleGesture}>
             <View
-              style={styles.trailingButton}
+              style={trailingButtonStyle}
               accessibilityRole="button"
               accessibilityLabel={t('mobile.queue.dragHandleAria', { name: climbName })}
             >
@@ -616,8 +622,16 @@ function QueueItemRowComponent({
         )}
       </View>
 
-      {/* Separator */}
-      <View style={[styles.separator, { marginStart: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
+      {/* Separator: starts under the climb name, after the position and the thumbnail when there is one. */}
+      <View
+        style={[
+          styles.separator,
+          {
+            marginStart: climbRowSeparatorInset(hasThumbnail, QUEUE_ROW_LEADING_INSET),
+            backgroundColor: systemColors.separator,
+          },
+        ]}
+      />
     </Animated.View>
   );
 }
@@ -640,7 +654,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     columnGap: spacing[3],
-    paddingVertical: spacing[2],
+    paddingVertical: CLIMB_ROW_VERTICAL_PADDING,
     paddingHorizontal: spacing[3],
   },
   historyRow: {
@@ -661,6 +675,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+  },
+  // Without a thumbnail the row is as tall as its text. The 44pt target reaches
+  // into the row's own vertical padding instead of adding to the row, so a row
+  // with a handle is the same height as one without (edit mode, the current climb).
+  trailingButtonWithoutThumbnail: {
+    marginVertical: -CLIMB_ROW_VERTICAL_PADDING,
   },
   sentAtAngle: {
     flexShrink: 0,

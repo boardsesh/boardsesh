@@ -576,3 +576,7 @@ to compare a later release against.
 
 When in doubt, copy the structure of `app/(tabs)/climbs/index.tsx` — it is the worked example for
 rules 2, 3, and 4, and the surface every list/provider PR is measured against.
+
+## Configurable climb rows
+
+`climb-row-display-preference.ts` exposes a synchronous dedicated snapshot; a row reads it directly rather than receiving the entire Settings context. A field switched off does not mount its live leaf, thumbnail or prewarm worker. `climb-row-layout.ts` reserves late-loading mirror and playlist lines without an image; keep the skeleton and height estimates on the same function. The settings preview injects presentational leaves and stages personal marks, avoiding logbook/favorites/membership subscriptions. See [Climb list rows](climb-list-rows.md) for the registry and extension steps.

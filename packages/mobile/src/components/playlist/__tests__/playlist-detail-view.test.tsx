@@ -64,16 +64,26 @@ vi.mock('react-native', () => ({
     pointerEvents,
     onLayout,
     accessibilityLabel,
+    style,
   }: {
     children?: ReactNode;
     pointerEvents?: string;
     onLayout?: (e: unknown) => void;
     accessibilityLabel?: string;
+    style?: unknown;
   }) => {
     const attrs: Record<string, unknown> = {};
     if (pointerEvents) attrs['data-pointer-events'] = pointerEvents;
     if (onLayout) attrs['data-has-layout'] = 'true';
     if (accessibilityLabel) attrs['aria-label'] = accessibilityLabel;
+    // Where a view starts and how wide it is: enough to tell a thumbnail-sized
+    // frame, and a separator's inset.
+    const { marginStart, width } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+      marginStart?: number;
+      width?: number | string;
+    };
+    if (marginStart !== undefined) attrs['data-margin-start'] = marginStart;
+    if (width !== undefined) attrs['data-width'] = width;
     return createElement('div', attrs, children);
   },
   Pressable: ({
@@ -343,6 +353,7 @@ vi.mock('../PlaylistEditClimbRow', () => ({
 
 // ── Subject ───────────────────────────────────────────────────────────────────
 import { PlaylistDetailView, type PlaylistDetailViewProps } from '../PlaylistDetailView';
+import { resetClimbRowDisplayForTests, setClimbRowField } from '../../../lib/climb-row-display-preference';
 import { useButtonSurface } from '../../Button.surface';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -422,6 +433,7 @@ describe('PlaylistDetailView', () => {
     ctrl.variant = 'liquidGlass';
     capturedClimbRows.length = 0;
     capturedEditRows.length = 0;
+    resetClimbRowDisplayForTests();
   });
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -751,6 +763,41 @@ describe('PlaylistDetailView', () => {
     expect(getByText('detail.unrenderableClimb.subtitle')).not.toBeNull();
     expect(capturedClimbRows).toHaveLength(0);
     expect(onActivateClimb).not.toHaveBeenCalled();
+  });
+
+  // The row for a climb that cannot be drawn stands among climb rows, so it
+  // copies their shape: a thumbnail-sized frame and a separator past it, or with
+  // thumbnails switched off neither.
+  it('gives an unresolved climb a thumbnail-sized frame, with its separator past it', () => {
+    const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [UNKNOWN_BOARD_CLIMB] })} />);
+
+    expect(container.querySelector('[data-icon="warning"]')).not.toBeNull();
+    expect(container.querySelector('[data-width="76"]')).not.toBeNull();
+    // Gutter, thumbnail, gap.
+    expect(container.querySelector('[data-margin-start="104"]')).not.toBeNull();
+  });
+
+  it('drops that frame with thumbnails switched off, and starts the separator at the gutter', () => {
+    setClimbRowField('thumbnail', false);
+
+    const { container, getByText } = render(<PlaylistDetailView {...makeProps({ climbs: [UNKNOWN_BOARD_CLIMB] })} />);
+
+    // Still says which climb it is and why it is not drawn.
+    expect(getByText('Unknown Board Row')).not.toBeNull();
+    expect(getByText('detail.unrenderableClimb.subtitle')).not.toBeNull();
+    expect(container.querySelector('[data-icon="warning"]')).toBeNull();
+    expect(container.querySelector('[data-width="76"]')).toBeNull();
+    expect(container.querySelector('[data-margin-start="104"]')).toBeNull();
+    expect(container.querySelector('[data-margin-start="16"]')).not.toBeNull();
+  });
+
+  it('follows the switch on an unresolved row that is already on screen', () => {
+    const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [UNKNOWN_BOARD_CLIMB] })} />);
+
+    act(() => setClimbRowField('thumbnail', false));
+
+    expect(container.querySelector('[data-width="76"]')).toBeNull();
+    expect(container.querySelector('[data-margin-start="16"]')).not.toBeNull();
   });
 
   it('lets owners remove unresolved climbs in edit mode', () => {

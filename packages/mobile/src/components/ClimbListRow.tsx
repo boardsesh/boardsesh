@@ -32,6 +32,7 @@ import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
+import { CLIMB_ROW_VERTICAL_PADDING } from './climb-row-layout';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
@@ -298,6 +299,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
   const quickActionsEnabled = useClimbRowField('quickActions');
+  // A host that draws its own content draws its own thumbnail too, so the row
+  // around it keeps the geometry of a row that has one.
+  const thumbnailEnabled = useClimbRowField('thumbnail');
+  const hasThumbnail = thumbnailEnabled || renderContent !== undefined;
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
   // + accent stay visible in dark (lifted #A78BFA) as well as light.
   const highlight = useMemo(() => selectedRowColors(brand.primary), [brand.primary]);
@@ -618,7 +623,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
               <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
                 <View
                   testID="climb-row-more-button"
-                  style={styles.moreButton}
+                  style={hasThumbnail ? styles.moreButton : [styles.moreButton, styles.moreButtonWithoutThumbnail]}
                   accessible
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.climbRow.moreActions')}
@@ -642,9 +647,16 @@ const ClimbListRow = React.memo(function ClimbListRow({
         </GestureDetector>
       </ReanimatedSwipeable>
 
-      {/* Separator — inset to start at the text column (after the thumbnail) */}
+      {/* Separator — inset to start at the text column (after the thumbnail, when there is one) */}
       {showSeparator ? (
-        <View style={[climbListRowStyles.separator, { backgroundColor: systemColors.separator }, separatorStyle]} />
+        <View
+          style={[
+            climbListRowStyles.separator,
+            hasThumbnail ? null : climbListRowStyles.separatorWithoutThumbnail,
+            { backgroundColor: systemColors.separator },
+            separatorStyle,
+          ]}
+        />
       ) : null}
     </View>
   );
@@ -700,9 +712,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 4,
   },
-  // Trailing ⋮ affordance. A full 44pt tap target (no hitSlop, no negative margin —
-  // those stacked into ~16pt of overlap with the grade, risking accidental opens);
-  // the row's gap keeps it clear of the grade at the trailing edge.
+  // Trailing ⋮ affordance. A full 44pt tap target (no hitSlop, no negative margin
+  // toward the grade — those stacked into ~16pt of overlap with it, risking
+  // accidental opens); the row's gap keeps it clear of the grade at the trailing edge.
   moreButton: {
     width: 44,
     height: 44,
@@ -712,6 +724,13 @@ const styles = StyleSheet.create({
     // edge sits on the 16pt margin, like the thumbnail on the leading side,
     // instead of 28pt in. Only the empty half of the target overlaps padding.
     marginEnd: MORE_BUTTON_GUTTER_PULL,
+  },
+  // Without a thumbnail the row is as tall as its text, as little as 44pt. The
+  // target stays 44pt and reaches into the row's own vertical padding, so it
+  // never makes a row taller than its text does. It stays inside the row: no
+  // overlap with the row above or below.
+  moreButtonWithoutThumbnail: {
+    marginVertical: -CLIMB_ROW_VERTICAL_PADDING,
   },
   moreIconRotate: {
     transform: [{ rotate: '90deg' }],

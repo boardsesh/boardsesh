@@ -789,3 +789,7 @@ keyboard expansion path and pinned footers. Tick sheets keep Android's measured
 content-fitting path. Create's full-height 90%/100% editor and genuinely measured
 content are separate layout contracts. The production source guard follows multiline JSX
 `snapPoints` expressions and aliases; no legacy percentage allowlist remains.
+
+## Climb list display settings
+
+The Climbs header's eye opens `/settings/climb-list` through `scopedRouter`, so it stays in the originating tab's stack and Back returns to the list. This is a persistent preferences screen with several grouped switches, a staged row preview and preset chips; use a route, following Custom look. Mirrors exist in each tab and the account navigator. The root Settings stack registers the same route for its main navigation row. See [Climb list rows](climb-list-rows.md).

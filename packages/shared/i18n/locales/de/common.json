@@ -344,11 +344,6 @@
         "both": "Beide"
       },
       "displayOptions": {
-        "title": "Anzeige",
-        "playlistTags": "Playlist-Tags anzeigen",
-        "playlistTagsDescription": "Sieh direkt in der Liste, in welchen Playlists ein Boulder steckt.",
-        "quickActionsButton": "Schnellaktionen-Button anzeigen",
-        "quickActionsButtonDescription": "Gibt jedem Boulder einen ⋮-Button für Warteschlange, Eintrag, Playlists und mehr. Langes Drücken geht weiterhin.",
         "boardseshGrades": "Boardsesh-Grade anzeigen",
         "boardseshGradesDescription": "Grade aus echten Begehungen über alle Boards hinweg. Bis genug Begehungen da sind, bleibt der Grad der Routenbauer*in.",
         "personalGrades": "Meine Grade verwenden",
@@ -445,6 +440,42 @@
         "sheetTitle": "Ansichtsoptionen",
         "groupTitle": "Unter dem Boulder",
         "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen."
+      },
+      "climbList": {
+        "title": "Boulderliste",
+        "openLabel": "Boulderliste anpassen",
+        "picture": "Bild",
+        "underName": "Unter dem Namen",
+        "yourClimbing": "Dein Klettern",
+        "actions": "Aktionen",
+        "gradesTitle": "Schwierigkeitsgrade",
+        "previewFooter": "Beispiel. Begehungen, Favoriten und Tags erscheinen bei Bouldern, die sie haben.",
+        "gradeFooter": "Wähle den Hauptgrad unter Einstellungen → Schwierigkeitsgrade.",
+        "personalFooter": "Persönliche Markierungen und Playlists benötigen eine Anmeldung und laden online.",
+        "presetsLabel": "Schnellauswahl",
+        "presets": {
+          "namesOnly": "Nur Namen",
+          "textOnly": "Nur Text",
+          "default": "Standard",
+          "everything": "Alles",
+          "custom": "Benutzerdefiniert"
+        },
+        "fields": {
+          "thumbnail": "Boardbild",
+          "communityGrade": "Community-Grad",
+          "sends": "Begehungen",
+          "rating": "Bewertung",
+          "setter": "Routenbauer*in",
+          "sentMark": "Begehungsmarkierung",
+          "playlistTags": "Playlist-Tags anzeigen",
+          "quickActions": "Schnellaktionen-Button anzeigen"
+        },
+        "sampleName": "Abendprojekt",
+        "sampleSetter": "routenbauer",
+        "samplePlaylistOne": "Projekte",
+        "samplePlaylistTwo": "Aufwärmen",
+        "playlistTagsDescription": "Sieh direkt in der Liste, in welchen Playlists ein Boulder steckt.",
+        "quickActionsDescription": "Gibt jedem Boulder einen ⋮-Button für Warteschlange, Eintrag, Playlists und mehr. Langes Drücken geht weiterhin."
       }
     },
     "sendRecovery": {

@@ -3,11 +3,9 @@
 // is driving the wall in a party session). It sits in the centre of the
 // top-header islands row (iOS) / a slim band under the app bar (Android).
 //
-// Leads with the SENDER's avatar (whoever sent the climb to the board), so it
-// answers "who lit it + what's lit" at a glance — the core party-session signal a
-// lightbulb never carried. The avatar is INERT here (one Pressable opens the
-// read-only wall preview; the tap-sender-to-profile affordance lives in that
-// preview sheet). Fully-anonymous senders fall back to a neutral person glyph.
+// Material keeps the sender avatar; the compact glass pill reserves that space
+// for the climb name. Both include the sender in the screen-reader label and
+// open the wall preview, which retains the sender profile affordance.
 //
 // Two platform-native skins behind one stateful body (see selectByVariant below):
 //   - Liquid Glass (iOS): a NON-glass pill (HIG: no glass-on-glass over the
@@ -232,26 +230,6 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
         accessibilityHint={t('mobile.boardPresence.stripA11yHint')}
         style={styles.pressable}
       >
-        {/* The sender, leading. Inert + a11y-hidden so the pill reads as one node
-            (the profile tap lives in the wall-preview sheet). `userId={null}` is
-            deliberate — it only suppresses the avatar's own profile-link tap; the
-            face still resolves from `sentByAvatarUrl` (Avatar renders the image off
-            `uri`, not `userId`), so this never degrades a known sender's photo. A
-            sender with only a userId (no photo, no display name) has nothing
-            renderable as a face/monogram, so it correctly takes the person glyph. */}
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          {hasSenderIdentity ? (
-            <BoardDriverAvatar
-              uri={climb.sentByAvatarUrl}
-              name={senderName}
-              userId={null}
-              size={AVATAR_SIZE}
-              status="none"
-            />
-          ) : (
-            <Icon maxFontSizeMultiplier={1} name="profile.fill" size={18} color={brandColors.warning} />
-          )}
-        </View>
         <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={styles.capsuleNameViewer}>
           <Text
             variant="footnote"
@@ -317,7 +295,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: '100%',
-    paddingStart: spacing[1],
+    paddingStart: spacing[3],
     paddingEnd: spacing[3],
     gap: spacing[2],
   },

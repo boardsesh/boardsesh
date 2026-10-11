@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 
 // `useQueueDrag` reaches for reanimated shared values, gesture-handler gestures,
 // and haptics — all UI-thread / native concerns. Stub them so the hook runs in
@@ -29,10 +29,21 @@ vi.mock('react-native-reanimated', async () => {
 
 // A chainable Gesture.Pan() builder: every method returns the same builder so
 // `.activateAfterLongPress(...).onStart(...).onUpdate(...)` resolves.
+// Each callback handed to the builder (`onStart`, `onUpdate`, ...) is kept, so a
+// test can play a drag through the handlers the hook registered.
+const pan = vi.hoisted(() => ({ handlers: {} as Record<string, (event?: { translationY: number }) => void> }));
+
 vi.mock('react-native-gesture-handler', () => {
   const makeBuilder = () => {
     const builder: Record<string, (...args: unknown[]) => unknown> = {};
-    const proxy: typeof builder = new Proxy(builder, { get: () => () => proxy });
+    const proxy: typeof builder = new Proxy(builder, {
+      get: (_target, method) => (argument: unknown) => {
+        if (typeof method === 'string' && typeof argument === 'function') {
+          pan.handlers[method] = argument as (event?: { translationY: number }) => void;
+        }
+        return proxy;
+      },
+    });
     return proxy;
   };
   return {
@@ -125,5 +136,91 @@ describe('useQueueDrag identity stability', () => {
     expect(shared.activeRowIndex.value).toBe(-1);
     expect(shared.targetRowIndex.value).toBe(-1);
     expect(typeof shared.rowHeight.value).toBe('number');
+  });
+});
+
+// The drag works in whole rows: how far the finger has to travel to move one
+// slot is the row's height. Rows are not one fixed height any more. A climber
+// who switches the thumbnail off takes a queue row from about 112pt to as little
+// as 44pt, under a sheet that stays mounted, so the hook has to follow what the
+// rows measure rather than keep the first figure it was given.
+describe('useQueueDrag row height', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    pan.handlers = {};
+  });
+
+  /** Lifts row 3 and drags it down by `translationY`. */
+  function dragRowThree(translationY: number) {
+    act(() => {
+      pan.handlers.onStart();
+      pan.handlers.onUpdate({ translationY });
+    });
+  }
+
+  it('steps by a fallback height until a row has been measured', () => {
+    const { result } = renderHook((props: Options) => useQueueDrag(props), { initialProps: makeOptions() });
+
+    expect(result.current.controls.shared.rowHeight.value).toBe(120);
+  });
+
+  it('takes every new measurement, not only the first', () => {
+    const { result } = renderHook((props: Options) => useQueueDrag(props), { initialProps: makeOptions() });
+    const { shared, onRowHeight } = result.current.controls;
+
+    // With a thumbnail, then with the thumbnail switched off, then back on.
+    onRowHeight(112.5);
+    expect(shared.rowHeight.value).toBe(112.5);
+    onRowHeight(58.5);
+    expect(shared.rowHeight.value).toBe(58.5);
+    onRowHeight(112.5);
+    expect(shared.rowHeight.value).toBe(112.5);
+  });
+
+  it('ignores the same height reported again by the row’s neighbours, and a row that has not laid out', () => {
+    const { result } = renderHook((props: Options) => useQueueDrag(props), { initialProps: makeOptions() });
+    const { shared, onRowHeight } = result.current.controls;
+    onRowHeight(58.5);
+
+    onRowHeight(58.9);
+    onRowHeight(0);
+
+    expect(shared.rowHeight.value).toBe(58.5);
+  });
+
+  it('moves a row one slot per row height as measured now, so a shorter row needs a shorter drag', () => {
+    const { result } = renderHook((props: Options) => useQueueDrag(props), { initialProps: makeOptions() });
+    const { shared, onRowHeight, makeHandleGesture } = result.current.controls;
+    makeHandleGesture(3, 'climb-a', 3);
+
+    // 50pt is under half of a 112.5pt row: it has not reached the next slot.
+    onRowHeight(112.5);
+    dragRowThree(50);
+    expect(shared.targetRowIndex.value).toBe(3);
+    act(() => pan.handlers.onFinalize());
+
+    // The same 50pt is most of a 58.5pt row: one slot down.
+    onRowHeight(58.5);
+    dragRowThree(50);
+    expect(shared.targetRowIndex.value).toBe(4);
+
+    act(() => {
+      pan.handlers.onEnd();
+      pan.handlers.onFinalize();
+    });
+    expect(reorderQueue).toHaveBeenCalledTimes(1);
+    expect(reorderQueue).toHaveBeenCalledWith('climb-a', 3, 4);
+  });
+
+  it('keeps a long drag inside the future window whatever the row height', () => {
+    const { result } = renderHook((props: Options) => useQueueDrag(props), { initialProps: makeOptions() });
+    const { shared, onRowHeight, makeHandleGesture } = result.current.controls;
+    makeHandleGesture(3, 'climb-a', 3);
+    onRowHeight(44.5);
+
+    // Twenty rows' worth of travel; the window ends at row 6.
+    dragRowThree(900);
+
+    expect(shared.targetRowIndex.value).toBe(6);
   });
 });

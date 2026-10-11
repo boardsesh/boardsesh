@@ -344,11 +344,6 @@
         "both": "Both"
       },
       "displayOptions": {
-        "title": "Display",
-        "playlistTags": "Show playlist tags",
-        "playlistTagsDescription": "See which playlists each climb is in, right on the list.",
-        "quickActionsButton": "Show quick-actions button",
-        "quickActionsButtonDescription": "Add a ⋮ button to each climb that opens queue, tick, playlists and more. You can always long-press instead.",
         "boardseshGrades": "Show Boardsesh grades",
         "boardseshGradesDescription": "Grades built from real sends across boards. The setter's grade stays until enough sends come in.",
         "personalGrades": "Use my grades",
@@ -445,6 +440,42 @@
         "sheetTitle": "View options",
         "groupTitle": "Below the climb",
         "footer": "Changes apply immediately. Hide all for just the climb, without vertical scrolling."
+      },
+      "climbList": {
+        "title": "Climb list",
+        "openLabel": "Change climb list display",
+        "picture": "Picture",
+        "underName": "Under the name",
+        "yourClimbing": "Your climbing",
+        "actions": "Actions",
+        "gradesTitle": "Grades",
+        "previewFooter": "Example. Sends, saves and tags show on climbs that have them.",
+        "gradeFooter": "Choose which grade is big in Settings → Grades.",
+        "personalFooter": "Personal marks and playlists need sign-in and load when online.",
+        "presetsLabel": "Quick setup",
+        "presets": {
+          "namesOnly": "Names only",
+          "textOnly": "Text only",
+          "default": "Default",
+          "everything": "Everything",
+          "custom": "Custom"
+        },
+        "fields": {
+          "thumbnail": "Board picture",
+          "communityGrade": "Community grade",
+          "sends": "Sends",
+          "rating": "Rating",
+          "setter": "Setter",
+          "sentMark": "Sent mark",
+          "playlistTags": "Show playlist tags",
+          "quickActions": "Show quick-actions button"
+        },
+        "sampleName": "Evening project",
+        "sampleSetter": "crewsetter",
+        "samplePlaylistOne": "Projects",
+        "samplePlaylistTwo": "Warm-ups",
+        "playlistTagsDescription": "See which playlists each climb is in, right on the list.",
+        "quickActionsDescription": "Add a ⋮ button to each climb that opens queue, tick, playlists and more. You can always long-press instead."
       }
     },
     "sendRecovery": {

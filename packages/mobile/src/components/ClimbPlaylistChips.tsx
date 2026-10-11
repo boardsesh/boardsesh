@@ -7,6 +7,8 @@ import { usePlaylistsContextOptional } from '../providers/playlists-provider';
 import { useClimbPlaylistMemberships } from '../hooks/use-climb-playlist-memberships';
 import { normalizePlaylistColor, PLAYLIST_COLORS } from './playlist/playlist-colors';
 import { resolvePlaylistEmojiIcon } from './playlist/playlist-icon';
+import { ClimbRowReservedLine } from './ClimbRowReservedLine';
+import { CLIMB_ROW_TAGS_LINE } from './climb-row-layout';
 import { spacing, borderRadius } from '../theme/tokens';
 import { selectByVariant } from '../theme/variants';
 
@@ -18,12 +20,21 @@ import { selectByVariant } from '../theme/variants';
 const MAX_VISIBLE_CHIPS = 2;
 // Lowest-priority line in the row, so cap its growth under accessibility text
 // sizes rather than letting it push the row taller than the board thumbnail.
-const CHIP_MAX_FONT_SCALE = 1.3;
+const CHIP_MAX_FONT_SCALE = CLIMB_ROW_TAGS_LINE.maxFontScale;
 
 /** One playlist a climb is in, resolved to what its tag draws. */
 export type ClimbPlaylistChip = { key: string; name: string; dotColor: string; emoji: string | null };
 
-export type ClimbRowPlaylistChipsLeafProps = { climbUuid: string };
+export type ClimbRowPlaylistChipsLeafProps = {
+  climbUuid: string;
+  /**
+   * Hold the line's height while there is nothing to draw in it. The row asks
+   * for this when it has no thumbnail: memberships load after the row has
+   * painted, and nothing else would stop the row growing when they land. Left
+   * out, a climb in no playlists draws nothing.
+   */
+  reserveLine?: boolean;
+};
 
 /**
  * Third row of a climb list item: small playlist-membership tags. Isolated and
@@ -37,10 +48,12 @@ export type ClimbRowPlaylistChipsLeafProps = { climbUuid: string };
  * on, so a row with tags off pays for none of the subscriptions here.
  *
  * Renders nothing when: no provider is mounted (e.g. a preview/test host), the
- * climb is in no playlists, or memberships haven't loaded yet.
+ * climb is in no playlists, or memberships haven't loaded yet. With
+ * `reserveLine` it renders an empty line of the same height instead.
  */
 export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({
   climbUuid,
+  reserveLine = false,
 }: ClimbRowPlaylistChipsLeafProps) {
   const membership = useClimbPlaylistMemberships(climbUuid);
   const playlistsContext = usePlaylistsContextOptional();
@@ -66,24 +79,44 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({
     return resolved;
   }, [membership, playlistsById]);
 
-  return <ClimbPlaylistChipsView chips={chips} />;
+  return <ClimbPlaylistChipsView chips={chips} reserveLine={reserveLine} />;
 });
 
 /**
- * The tags `ClimbPlaylistChips` draws. Nothing for a climb in no playlists.
+ * The tags `ClimbPlaylistChips` draws. Nothing for a climb in no playlists, or
+ * with `reserveLine` an empty line as tall as a line of tags.
  * Display-only — hidden from the accessibility tree and `pointerEvents="none"`
  * so the whole row stays one clean target (membership management lives in the
  * actions sheet).
  */
 export const ClimbPlaylistChipsView = React.memo(function ClimbPlaylistChipsView({
   chips,
+  reserveLine = false,
 }: {
   chips: readonly ClimbPlaylistChip[];
+  reserveLine?: boolean;
 }) {
   const styles = useTypographyStyles(createStyles);
   const { variant, systemColors, m3 } = useTheme();
 
-  if (chips.length === 0) return null;
+  if (chips.length === 0) {
+    if (!reserveLine) return null;
+    // The line's own row and chip styles around a blank label, so the space held
+    // is the space a tag takes, at any text size.
+    return (
+      <View
+        style={styles.row}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        testID="climb-row-tags-line"
+      >
+        <View style={styles.chip}>
+          <ClimbRowReservedLine variant="caption1" maxFontSizeMultiplier={CHIP_MAX_FONT_SCALE} style={styles.label} />
+        </View>
+      </View>
+    );
+  }
 
   const visibleChips = chips.slice(0, MAX_VISIBLE_CHIPS);
   const overflowCount = chips.length - visibleChips.length;
@@ -102,14 +135,16 @@ export const ClimbPlaylistChipsView = React.memo(function ClimbPlaylistChipsView
 
   // No mount animation: FlashList recycles cells, so a recycled row scrolling
   // back into view would replay a fade for already-known membership (a visible
-  // flash). The row height is pinned by the thumbnail, so chips appearing causes
-  // no reflow — matches `AscentStatusGlyph`, which also just appears.
+  // flash). The row height is pinned by the thumbnail, or without one by the
+  // line reserved above, so chips appearing causes no reflow — matches
+  // `AscentStatusGlyph`, which also just appears.
   return (
     <View
       style={styles.row}
       pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
+      testID="climb-row-tags-line"
     >
       {visibleChips.map((chip) => (
         <View key={chip.key} style={[styles.chip, { backgroundColor: containerColor, borderRadius: chipRadius }]}>
@@ -148,7 +183,7 @@ const createStyles = (textStyles: TypographyScale) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing[1],
-      marginTop: spacing[1],
+      marginTop: CLIMB_ROW_TAGS_LINE.marginTop,
       overflow: 'hidden',
     },
     chip: {
@@ -156,8 +191,8 @@ const createStyles = (textStyles: TypographyScale) =>
       alignItems: 'center',
       gap: spacing[1],
       paddingHorizontal: spacing[2],
-      paddingVertical: 2,
-      minHeight: 20,
+      paddingVertical: CLIMB_ROW_TAGS_LINE.chipPaddingVertical,
+      minHeight: CLIMB_ROW_TAGS_LINE.chipMinHeight,
       // Let a chip shrink so a long name ellipsizes rather than shoving the "+N"
       // token off the row.
       flexShrink: 1,

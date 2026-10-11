@@ -729,6 +729,16 @@ describe('withClimbRowDisplayReset', () => {
     expect(withClimbRowDisplayReset(EMPTY).legacyPending).toEqual({ playlistTags: false, quickActions: true });
   });
 
+  it('replaces a value that was still owed with the default', () => {
+    // The climber turned tags on and the button off, neither write landed, then reset.
+    const owing: StoredClimbRowDisplay = {
+      ...EMPTY,
+      overrides: { playlistTags: true, quickActions: false },
+      legacyPending: { playlistTags: true, quickActions: false },
+    };
+    expect(withClimbRowDisplayReset(owing).legacyPending).toEqual({ playlistTags: false, quickActions: true });
+  });
+
   it('holds against a read of the old keys that lands afterwards, whatever it finds', () => {
     const reset = withClimbRowDisplayReset({ ...EMPTY, overrides: { playlistTags: true, quickActions: false } });
     for (const found of [

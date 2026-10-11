@@ -178,9 +178,8 @@ export const SHARED_EVENTS = {
   // failed seed from wiping the live queue, plus the re-seed it kicks off. Lets
   // us measure how often the seed lifecycle degrades in the field (#3878).
   QueueSeedFullSyncGuarded: 'Queue Seed FullSync Guarded',
-  // Fired when the climber toggles the "Show quick-actions button" setting, with an
-  // `enabled` prop — measures opt-in (control) vs opt-out (treatment) against the flag.
-  ClimbQuickActionsSettingChanged: 'Climb Quick Actions Setting Changed',
+  // Props: { kind: 'field' | 'preset', field?, value?, preset? }. Controller interactions only.
+  ClimbRowDisplayChanged: 'Climb Row Display Changed',
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
   ClimbShared: 'Climb Shared',

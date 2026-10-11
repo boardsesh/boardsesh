@@ -271,38 +271,25 @@ describe('WallStatusCapsule', () => {
     expect(getByText('V5 6C')).not.toBeNull();
   });
 
-  it('omits the grade text when the climb grade is null (name + avatar kept)', () => {
+  it('omits the grade text when the climb grade is null', () => {
     const { container, getByText } = render(<WallStatusCapsule climb={makeClimb({ grade: null })} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(getByText('Wax On')).not.toBeNull();
-    expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
+    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
   });
 
-  it("leads with the sender's avatar when there is a sender", () => {
+  it('reserves the glass sender avatar space for the climb name', () => {
     const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-    const avatar = container.querySelector('[data-driver-avatar]');
-    expect(avatar).not.toBeNull();
-    expect(avatar?.getAttribute('data-uri')).toBe('https://example.com/casey.jpg');
-    expect(avatar?.getAttribute('data-name')).toBe('Casey');
-    // No lightbulb / person-glyph fallback when a sender is present.
+    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
     expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
+    expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain('Casey');
   });
 
-  it('falls back to an amber person glyph (never a lightbulb) for a fully anonymous sender', () => {
+  it('keeps anonymous glass capsules free of a sender glyph', () => {
     const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: null });
     const { container } = render(<WallStatusCapsule climb={climb} />);
     expect(container.querySelector('[data-driver-avatar]')).toBeNull();
-    expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
-    expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
-  });
-
-  it('shows the person glyph for a userId-only sender (no photo, no display name)', () => {
-    // A known id but nothing renderable as a face/monogram — the person glyph is
-    // the correct fallback (and the avatar stays inert regardless of userId).
-    const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: 'u-x' });
-    const { container } = render(<WallStatusCapsule climb={climb} />);
-    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
-    expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
   });
 
   it('opens the read-only wall preview (converted climb) on tap', () => {

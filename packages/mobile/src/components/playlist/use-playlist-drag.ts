@@ -7,7 +7,8 @@ import { dropRowIndex } from '../play-drawer/queue-drag-math';
 // Press-and-hold this long on a handle before the drag arms — long enough that a
 // quick flick scrolls the list instead of lifting a row. Matches the queue.
 const LONG_PRESS_MS = 120;
-// Fallback row height until the first row reports its measured height.
+// Fallback row height until the first row reports its measured height, which
+// is before any row can be dragged.
 const DEFAULT_ROW_HEIGHT = 96;
 
 export type PlaylistDragShared = {
@@ -25,7 +26,7 @@ export type PlaylistDragShared = {
  */
 export type PlaylistDragControls = {
   shared: PlaylistDragShared;
-  /** Report a row's measured height (call once from onLayout). */
+  /** Report a row's measured height. Call from onLayout every time it fires: the latest height is the drag step. */
   onRowHeight: (height: number) => void;
   /** Build the long-press drag Pan for a row's handle. */
   makeHandleGesture: (rowIndex: number, uuid: string) => GestureType;
@@ -74,6 +75,11 @@ export function usePlaylistDrag({ reorder, itemCount }: UsePlaylistDragOptions):
   const reorderRef = useRef(reorder);
   reorderRef.current = reorder;
 
+  // Track the latest measured row height (don't latch the first one), so the
+  // drag step stays right when rows change height under a mounted list: the
+  // climber switching the thumbnail off takes a row from about 112pt to as
+  // little as 44pt. Edit rows are one height, so the >1px guard avoids churn
+  // from the several rows reporting the same height.
   const onRowHeight = useCallback(
     (height: number) => {
       if (height > 0 && Math.abs(rowHeight.value - height) > 1) {

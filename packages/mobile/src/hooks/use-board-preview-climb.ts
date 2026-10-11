@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { toBoardName } from '@boardsesh/board-config';
-import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
 import { useInfiniteSearchClimbs } from '../lib/graphql/hooks/use-infinite-search-climbs';
 import { getBoardRenderData } from '../lib/board-details';
@@ -25,6 +25,7 @@ export type BoardPreviewSource = {
   setIds: string;
   boardWidth: number;
   boardHeight: number;
+  angle?: number;
 };
 
 export type BoardPreviewClimb = {
@@ -37,6 +38,7 @@ export type BoardPreviewClimb = {
    */
   status: BoardPreviewStatus;
   preview: BoardPreviewSource | null;
+  climb: Climb | null;
 };
 
 /**
@@ -73,7 +75,8 @@ export function useBoardPreviewClimb(enabled = true): BoardPreviewClimb {
   const { data: exampleClimbData, isPending } = useInfiniteSearchClimbs(climbSearchInput, enabled && !!activeBoard, {
     staleTime: 60 * 60 * 1000,
   });
-  const exampleClimbFrames = exampleClimbData?.pages?.[0]?.climbs?.[0]?.frames ?? null;
+  const exampleClimb = exampleClimbData?.pages?.[0]?.climbs?.[0] ?? null;
+  const exampleClimbFrames = exampleClimb?.frames ?? null;
 
   // The board-look preview resolves its render data inside the memo below, so on
   // a wall it would answer `unavailable` on first render and keep answering it.
@@ -83,9 +86,9 @@ export function useBoardPreviewClimb(enabled = true): BoardPreviewClimb {
   return useMemo<BoardPreviewClimb>(() => {
     // `undefined` is the AsyncStorage read still in flight; `null` is a climber
     // who has not bound a board at all, which no amount of waiting fixes.
-    if (activeBoard === undefined) return { status: 'loading', preview: null };
-    if (!activeBoard) return { status: 'unavailable', preview: null };
-    if (!enabled) return { status: 'loading', preview: null };
+    if (activeBoard === undefined) return { status: 'loading', preview: null, climb: null };
+    if (!activeBoard) return { status: 'unavailable', preview: null, climb: null };
+    if (!enabled) return { status: 'loading', preview: null, climb: exampleClimb };
 
     const boardName = toBoardName(activeBoard.boardType) ?? 'kilter';
     const renderData = getBoardRenderData({
@@ -94,18 +97,20 @@ export function useBoardPreviewClimb(enabled = true): BoardPreviewClimb {
       sizeId: activeBoard.sizeId,
       setIds: activeBoard.setIds.split(',').map(Number).filter(Boolean),
     });
-    if (!renderData) return { status: 'unavailable', preview: null };
+    if (!renderData) return { status: 'unavailable', preview: null, climb: exampleClimb };
 
     if (!exampleClimbFrames) {
       // Still fetching is "wait"; a settled query with no climb is a board whose
       // catalogue this device has never seen.
-      return { status: isPending ? 'loading' : 'unavailable', preview: null };
+      return { status: isPending ? 'loading' : 'unavailable', preview: null, climb: exampleClimb };
     }
 
     return {
       status: 'ready',
+      climb: exampleClimb,
       preview: {
         frames: exampleClimbFrames,
+        angle: activeBoard.angle,
         boardName,
         layoutId: activeBoard.layoutId,
         sizeId: activeBoard.sizeId,
@@ -115,5 +120,5 @@ export function useBoardPreviewClimb(enabled = true): BoardPreviewClimb {
       },
     };
     // `sprayToken` recomputes this when the wall lands or is reset.
-  }, [activeBoard, enabled, exampleClimbFrames, isPending, sprayToken]);
+  }, [activeBoard, enabled, exampleClimb, exampleClimbFrames, isPending, sprayToken]);
 }

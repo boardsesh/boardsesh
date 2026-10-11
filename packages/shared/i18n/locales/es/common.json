@@ -619,11 +619,6 @@
         "both": "Ambos"
       },
       "displayOptions": {
-        "title": "Visualización",
-        "playlistTags": "Mostrar etiquetas de playlist",
-        "playlistTagsDescription": "Mira en qué playlists está cada bloque, directamente en la lista.",
-        "quickActionsButton": "Mostrar botón de acciones rápidas",
-        "quickActionsButtonDescription": "Añade un botón ⋮ a cada bloque que abre cola, encadene, listas y más. Siempre puedes mantener pulsado en su lugar.",
         "boardseshGrades": "Mostrar grados Boardsesh",
         "boardseshGradesDescription": "Grados calculados a partir de encadenes reales en varios plafones. El grado del setter se mantiene hasta que haya suficientes encadenes.",
         "personalGrades": "Usar mis grados",
@@ -720,6 +715,42 @@
         "sheetTitle": "Opciones de vista",
         "groupTitle": "Debajo del bloque",
         "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical."
+      },
+      "climbList": {
+        "title": "Lista de bloques",
+        "openLabel": "Cambiar la lista de bloques",
+        "picture": "Imagen",
+        "underName": "Bajo el nombre",
+        "yourClimbing": "Tu escalada",
+        "actions": "Acciones",
+        "gradesTitle": "Grados",
+        "previewFooter": "Ejemplo. Los encadenes, guardados y etiquetas aparecen en los bloques que los tienen.",
+        "gradeFooter": "Elige el grado principal en Ajustes → Grados.",
+        "personalFooter": "Las marcas personales y listas requieren iniciar sesión y se cargan con conexión.",
+        "presetsLabel": "Configuración rápida",
+        "presets": {
+          "namesOnly": "Solo nombres",
+          "textOnly": "Solo texto",
+          "default": "Predeterminado",
+          "everything": "Todo",
+          "custom": "Personalizado"
+        },
+        "fields": {
+          "thumbnail": "Imagen del plafón",
+          "communityGrade": "Grado de la comunidad",
+          "sends": "Encadenes",
+          "rating": "Valoración",
+          "setter": "Equipador",
+          "sentMark": "Marca de encadene",
+          "playlistTags": "Mostrar etiquetas de playlist",
+          "quickActions": "Mostrar botón de acciones rápidas"
+        },
+        "sampleName": "Proyecto de tarde",
+        "sampleSetter": "equipador",
+        "samplePlaylistOne": "Proyectos",
+        "samplePlaylistTwo": "Calentamiento",
+        "playlistTagsDescription": "Mira en qué playlists está cada bloque, directamente en la lista.",
+        "quickActionsDescription": "Añade un botón ⋮ a cada bloque que abre cola, encadene, listas y más. Siempre puedes mantener pulsado en su lugar."
       }
     },
     "sendRecovery": {

@@ -12,6 +12,7 @@ import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import { hapticSelection } from '../../../lib/haptics';
 import { formatQuality, formatSends } from '../../../lib/format-climb-stats';
+import { useClimbRowDisplay } from '../../../lib/climb-row-display-preference';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 
 type WorkoutPreviewRowProps = {
@@ -51,6 +52,10 @@ function WorkoutPreviewRowComponent({
   const { t: sessionT } = useTranslation('session');
   const { t: climbsT } = useTranslation('climbs');
   const { formatGrade } = useGradeFormat();
+  // What the climber has switched on for climb rows. The row visual reads it for
+  // itself; this row needs it for the two things it adds around that visual:
+  // the label it speaks, and where its separator starts.
+  const rowDisplay = useClimbRowDisplay();
   // Blocked while this row spins, or while another row holds the single refresh
   // slot. Only this row shows a spinner; the rest dim to read as "busy, wait".
   const refreshBlocked = isRefreshing || refreshDisabled;
@@ -72,13 +77,17 @@ function WorkoutPreviewRowComponent({
   const formattedGrade = climb ? (formatGrade(climb.difficulty, board.boardName) ?? climb.difficulty) : null;
   const quality = climb ? Number(formatQuality(climb.quality_average)) : 0;
   const qualityStarCount = Math.round(quality);
+  // The label replaces what a screen reader would compose from the row, so it
+  // follows the same switches: a token the row does not draw is not spoken.
   const rowAccessibilityLabel = climb
     ? [
         climbName,
         formattedGrade,
-        climb.ascensionist_count > 0 ? formatSends(climb.ascensionist_count, climbsT) : null,
-        qualityStarCount > 0 ? sessionT('playView.tickBar.starRating', { count: qualityStarCount }) : null,
-        climb.setter_username,
+        rowDisplay.sends && climb.ascensionist_count > 0 ? formatSends(climb.ascensionist_count, climbsT) : null,
+        rowDisplay.rating && qualityStarCount > 0
+          ? sessionT('playView.tickBar.starRating', { count: qualityStarCount })
+          : null,
+        rowDisplay.setter ? climb.setter_username : null,
       ]
         .filter(Boolean)
         .join(', ')
@@ -136,7 +145,18 @@ function WorkoutPreviewRowComponent({
         </PressableSurface>
       </View>
 
-      <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
+      {/* Inset to start under the climb name (after the thumbnail, when there is
+          one), matching the queue list's row separators. The row pads 12pt, not
+          the 16pt gutter. */}
+      <View
+        style={[
+          styles.separator,
+          {
+            marginStart: climbRowSeparatorInset(rowDisplay.thumbnail, ROW_LEADING_INSET),
+            backgroundColor: systemColors.separator,
+          },
+        ]}
+      />
     </View>
   );
 }
@@ -162,6 +182,9 @@ export const WorkoutPreviewRow = memo(WorkoutPreviewRowComponent, (prev, next) =
   );
 });
 
+// Where the row's first column starts: the row button's own leading padding.
+const ROW_LEADING_INSET = spacing[3];
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
@@ -173,7 +196,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     columnGap: spacing[3],
     paddingVertical: spacing[2],
-    paddingStart: spacing[3],
+    paddingStart: ROW_LEADING_INSET,
     paddingEnd: spacing[2],
   },
   missingClimbText: {
@@ -191,8 +214,5 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    // Inset to start under the climb name (after the thumbnail), matching the
-    // queue list's row separators. The row pads 12pt, not the 16pt gutter.
-    marginStart: climbRowSeparatorInset(true, spacing[3]),
   },
 });

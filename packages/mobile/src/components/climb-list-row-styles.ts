@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { CLIMB_ROW_GUTTER, climbRowSeparatorInset } from './climb-row-layout';
+import { CLIMB_ROW_GUTTER, CLIMB_ROW_VERTICAL_PADDING, climbRowSeparatorInset } from './climb-row-layout';
 import { spacing } from '../theme/tokens';
 
 // The gutter is defined with the rest of the row's geometry; re-exported here
@@ -18,12 +18,17 @@ export const climbListRowStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: CLIMB_ROW_GUTTER,
-    paddingVertical: spacing[2],
+    paddingVertical: CLIMB_ROW_VERTICAL_PADDING,
     gap: spacing[3],
   },
   // Separator inset to start at the text column (after the thumbnail).
   separator: {
     height: StyleSheet.hairlineWidth,
     marginLeft: climbRowSeparatorInset(true),
+  },
+  // Laid over `separator` on a row whose thumbnail is switched off: the text
+  // column then starts at the gutter, and so does the line under it.
+  separatorWithoutThumbnail: {
+    marginLeft: climbRowSeparatorInset(false),
   },
 });

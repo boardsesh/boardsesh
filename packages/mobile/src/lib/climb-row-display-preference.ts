@@ -94,6 +94,11 @@ function write(record: StoredClimbRowDisplay | null): void {
   writing = true;
   try {
     setSetting(SETTINGS_KEY, record);
+  } catch {
+    // The settings store throws when its file cannot be written (it stays that
+    // way for the rest of the launch once the file could not be opened). That is
+    // a write that did not stick, not a fault: the choice stands in memory, and
+    // what is owed to the old keys still goes out.
   } finally {
     writing = false;
   }

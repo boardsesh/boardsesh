@@ -13,7 +13,7 @@ vi.mock('../../../../src/components/PressableSurface', async () => {
   };
 });
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
-import { createElement, useImperativeHandle, type ReactNode, type Ref } from 'react';
+import { createElement, useEffect, useImperativeHandle, type ReactNode, type Ref } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { NativeStackNavigationOptions } from 'expo-router';
@@ -136,6 +136,12 @@ const mocks = vi.hoisted(() => ({
   refocusCount: 0,
   scrollToOffset: vi.fn(),
   stackOptions: [] as NativeStackNavigationOptions[],
+  // The system text size, and whether the list is fetching another page: the
+  // two things besides the climber's row switches that size the placeholders.
+  fontScale: 1,
+  isFetchingNextPage: false,
+  // Whether the scroll-ahead thumbnail warm-up is mounted right now.
+  thumbnailPrewarmMounted: false,
 }));
 
 type FlashListProps<Item> = {
@@ -169,6 +175,8 @@ vi.mock('react-native', () => ({
   Keyboard: { dismiss: mocks.dismissKeyboard },
   // The screen reads Platform.OS at module load (the iOS-only Tall/Wide lock).
   Platform: { OS: 'ios' },
+  // The placeholder rows are counted for the climber's text size.
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: mocks.fontScale }),
   // No `Image.prefetch` should ever fire for board art (#3191 — the native
   // Android image loader gets a 403 from the CDN/WAF for direct board-art
   // fetches). Exposed here so the pre-warm test can assert it stays unused.
@@ -370,13 +378,35 @@ vi.mock('../../../../src/components/ClimbListRow', () => ({
 }));
 
 vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
-  ClimbListRowSkeleton: () => createElement('div', { 'data-skeleton-row': 'true' }),
+  // What the screen tells a placeholder about the rows it stands in for is surfaced.
+  ClimbListRowSkeleton: ({
+    showPlaylistChips,
+    supportsMirroring,
+  }: {
+    showPlaylistChips?: boolean;
+    supportsMirroring?: boolean;
+  }) =>
+    createElement('div', {
+      'data-skeleton-row': 'true',
+      'data-tags': String(showPlaylistChips),
+      'data-mirrors': String(supportsMirroring),
+    }),
 }));
 
 // Both draw nothing: they warm board renders ahead of the scroll and at a tap.
-// Mocked so this screen test does not pull the native render hook in.
+// Mocked so this screen test does not pull the native render hook in. The
+// thumbnail warm-up reports whether it is mounted, which is all a test can ask
+// of a component that draws nothing.
 vi.mock('../../../../src/components/ClimbListScrollAhead', () => ({
-  ClimbListThumbnailPrewarmWindow: () => null,
+  ClimbListThumbnailPrewarmWindow: () => {
+    useEffect(() => {
+      mocks.thumbnailPrewarmMounted = true;
+      return () => {
+        mocks.thumbnailPrewarmMounted = false;
+      };
+    }, []);
+    return null;
+  },
   createVisibleRowsStore: () => ({ getFirst: () => 0, getLast: () => 0, set: () => {}, subscribe: () => () => {} }),
 }));
 
@@ -589,7 +619,7 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
     isLoading: enabled && mocks.isClimbsLoading,
     isError: mocks.searchFailed,
     error: mocks.searchError,
-    isFetchingNextPage: false,
+    isFetchingNextPage: mocks.isFetchingNextPage,
     isRefetching: mocks.isRefetching,
     isPlaceholderData: mocks.isPlaceholderData,
     fetchNextPage: vi.fn(),
@@ -693,6 +723,7 @@ vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }))
 import ClimbList from '../index';
 import { setPinnedChips } from '../../../../src/lib/pinned-chips-store';
 import { DEFAULT_PINNED_CHIPS } from '../../../../src/lib/pinnable-chips';
+import { resetClimbRowDisplayForTests, setClimbRowField } from '../../../../src/lib/climb-row-display-preference';
 
 beforeEach(() => {
   mocks.previewedClimbUuid.mockReturnValue(null);
@@ -760,6 +791,9 @@ beforeEach(() => {
   mocks.refocusCount = 0;
   mocks.scrollToOffset.mockClear();
   mocks.stackOptions.length = 0;
+  mocks.fontScale = 1;
+  mocks.isFetchingNextPage = false;
+  resetClimbRowDisplayForTests();
 });
 
 describe('ClimbList native header ownership', () => {
@@ -1545,6 +1579,116 @@ describe('ClimbList board-art pre-warm (#3191 regression guard)', () => {
     );
 
     expect(mocks.imagePrefetch).not.toHaveBeenCalled();
+  });
+});
+
+// A climber who hides the board picture gets rows a third as tall, and no
+// thumbnail drawn. Two things on this screen have to follow: the renders warmed
+// ahead of the scroll are thumbnail-only work, and a fixed count of placeholder
+// rows would cover a third of the screen.
+describe('ClimbList with the climber’s row switches', () => {
+  const skeletonRows = (container: HTMLElement) => [...container.querySelectorAll('[data-skeleton-row]')];
+  const loadingFirstPage = () => {
+    mocks.searchClimbs = [];
+    mocks.isClimbsLoading = true;
+  };
+
+  it('warms thumbnails ahead of the scroll while rows draw one', () => {
+    render(<ClimbList />);
+
+    expect(mocks.thumbnailPrewarmMounted).toBe(true);
+  });
+
+  it('mounts no thumbnail warm-up with thumbnails switched off', () => {
+    setClimbRowField('thumbnail', false);
+
+    render(<ClimbList />);
+
+    expect(mocks.thumbnailPrewarmMounted).toBe(false);
+  });
+
+  it('drops the warm-up the moment thumbnails go off, and starts it again when they come back', () => {
+    render(<ClimbList />);
+    expect(mocks.thumbnailPrewarmMounted).toBe(true);
+
+    act(() => setClimbRowField('thumbnail', false));
+    expect(mocks.thumbnailPrewarmMounted).toBe(false);
+
+    act(() => setClimbRowField('thumbnail', true));
+    expect(mocks.thumbnailPrewarmMounted).toBe(true);
+  });
+
+  // The next page's placeholders are counted once the first page's rows are
+  // up: until the board's last search has been read, the screen shows the
+  // first-page placeholders as well.
+  const loadingNextPage = async () => {
+    mocks.searchClimbs = [mocks.climb];
+    mocks.isFetchingNextPage = true;
+    const { container, findByText } = render(<ClimbList />);
+    await findByText('Moonage');
+    return container;
+  };
+
+  it('draws ten placeholder rows for the first page of default rows, six for the next page', async () => {
+    loadingFirstPage();
+    expect(skeletonRows(render(<ClimbList />).container)).toHaveLength(10);
+
+    mocks.isClimbsLoading = false;
+    expect(skeletonRows(await loadingNextPage())).toHaveLength(6);
+  });
+
+  // 10 rows of 112pt is 1120pt of placeholder. The same height in shorter rows:
+  it.each([
+    { label: 'text-only rows (58pt)', off: ['thumbnail'], rows: 20 },
+    { label: 'name-only rows (44pt)', off: ['thumbnail', 'sends', 'rating', 'setter'], rows: 26 },
+  ] as const)('draws $rows placeholder rows to cover the same height in $label', ({ off, rows }) => {
+    for (const fieldId of off) setClimbRowField(fieldId, false);
+    loadingFirstPage();
+
+    expect(skeletonRows(render(<ClimbList />).container)).toHaveLength(rows);
+  });
+
+  it('counts the next page’s placeholders the same way', async () => {
+    setClimbRowField('thumbnail', false);
+
+    // 6 rows of 112pt, in 58pt rows.
+    expect(skeletonRows(await loadingNextPage())).toHaveLength(12);
+  });
+
+  it('counts for the climber’s text size: taller lines, fewer rows, never fewer than with a thumbnail', () => {
+    setClimbRowField('thumbnail', false);
+    loadingFirstPage();
+    mocks.fontScale = 1.5;
+    // Two name lines plus detail: (44 + 18) × 1.5 + 2 + 16 = 111pt rows.
+    expect(skeletonRows(render(<ClimbList />).container)).toHaveLength(11);
+
+    mocks.fontScale = 3;
+    expect(skeletonRows(render(<ClimbList />).container)).toHaveLength(10);
+  });
+
+  it('follows a switch flipped while the placeholders are up', () => {
+    loadingFirstPage();
+    const { container } = render(<ClimbList />);
+    expect(skeletonRows(container)).toHaveLength(10);
+
+    act(() => setClimbRowField('thumbnail', false));
+
+    expect(skeletonRows(container)).toHaveLength(20);
+  });
+
+  it('tells each placeholder what this list’s rows can show: tags, and a line per direction on a board that mirrors', () => {
+    loadingFirstPage();
+    const kilter = skeletonRows(render(<ClimbList />).container);
+    expect(kilter[0].getAttribute('data-tags')).toBe('true');
+    expect(kilter[0].getAttribute('data-mirrors')).toBe('false');
+
+    mocks.activeBoard = { boardType: 'tension', layoutId: 10, sizeId: 6, setIds: '12', angle: 40 };
+    setClimbRowField('thumbnail', false);
+    const tension = skeletonRows(render(<ClimbList />).container);
+
+    expect(tension[0].getAttribute('data-mirrors')).toBe('true');
+    // 22 + 2 + 18 + 2 + 13 for the direction line, + 16: 73pt rows.
+    expect(tension).toHaveLength(16);
   });
 });
 

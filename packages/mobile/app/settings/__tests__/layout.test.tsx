@@ -78,6 +78,7 @@ const SETTINGS_PAGES = [
   'board-look/index',
   'board-look/custom',
   'board-look/accessibility',
+  'climb-list',
   'storage',
   'privacy-access',
   'privacy',
@@ -123,6 +124,16 @@ describe('the settings stack', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
     expect(routerMock.back).toHaveBeenCalledTimes(1);
     expect(routerMock.replace).not.toHaveBeenCalled();
+  });
+
+  it('gives direct eye entry into Climb list a back button', () => {
+    screenNames(SettingsLayout);
+    const options = screens.options.get('climb-list') as ScreenProps['options'];
+    expect(options?.headerLeft).toBeTypeOf('function');
+    routerMock.canGoBack.mockReturnValueOnce(true);
+    render(createElement('div', null, options?.headerLeft?.({ tintColor: '#000' })));
+    fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
+    expect(routerMock.back).toHaveBeenCalledOnce();
   });
 
   it('goes Home when Settings was opened with nothing underneath', () => {

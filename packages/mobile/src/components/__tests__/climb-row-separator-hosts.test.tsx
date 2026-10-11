@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -13,6 +13,9 @@ import type { Climb } from '@boardsesh/shared-schema';
 // Each inset is checked twice: against the figure it has always been, and
 // against the row the host actually draws (its padding, any slot in front, the
 // thumbnail and its gaps), so a host cannot move its row and leave the line behind.
+//
+// The second half does the same with the climber's thumbnail switch off, where
+// every host's line has to move back under its text.
 
 vi.mock('react-native', async () => {
   const { flattenStyle } = await import('../../../test/flatten-style');
@@ -21,6 +24,7 @@ vi.mock('react-native', async () => {
     ({ children, style }: { children?: ReactNode; style?: unknown }) =>
       createElement(tag, { 'data-style': JSON.stringify(flattenStyle(style)) }, children);
   return {
+    useWindowDimensions: () => ({ fontScale: 1 }),
     Platform: { OS: 'ios', select: () => undefined },
     PlatformColor: (name: string) => name,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
@@ -109,8 +113,13 @@ vi.mock('../Icon', () => ({ Icon: () => null }));
 vi.mock('../PressableSurface', async () => {
   const { flattenStyle } = await import('../../../test/flatten-style');
   // The workout preview lays its row out on a PressableSurface, so its style is reported too.
+  // The playlist editor's remove control takes its style as a function of the press state.
   const Surface = ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-    createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children);
+    createElement(
+      'div',
+      { 'data-style': JSON.stringify(flattenStyle(typeof style === 'function' ? style({ pressed: false }) : style)) },
+      children,
+    );
   return { PressableSurface: Surface, StaticPressableSurface: Surface };
 });
 // The row visual is not what is measured here, only where the line under it starts.
@@ -161,7 +170,9 @@ import type { PlaylistDragControls } from '../playlist/use-playlist-drag';
 import { WorkoutPreviewRow } from '../session-screen/pre-session/WorkoutPreviewRow';
 import { ClimbListRow } from '../ClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
+import { ClimbPreviewCard } from '../ClimbPreviewCard';
 import { THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
+import { resetClimbRowDisplayForTests, setClimbRowField } from '../../lib/climb-row-display-preference';
 
 const HAIRLINE = 0.5;
 
@@ -182,6 +193,8 @@ type DrawnStyle = {
   width?: number;
   marginStart?: number;
   marginLeft?: number;
+  marginVertical?: number;
+  paddingVertical?: number;
   flexDirection?: string;
   gap?: number;
   columnGap?: number;
@@ -219,6 +232,10 @@ function drawnRow(container: HTMLElement): { leadingPadding: number; columnGap: 
 }
 
 const listRowProps = { ...board, climb: climb as unknown as Climb };
+
+beforeEach(() => {
+  resetClimbRowDisplayForTests();
+});
 
 describe('where each climb row host starts its separator', () => {
   it('the Climbs list row: 104, under the text column', () => {
@@ -353,5 +370,230 @@ describe('where each climb row host starts its separator', () => {
 
     expect(separatorInsets(container)).toEqual([100]);
     expect(row.leadingPadding + THUMBNAIL_WIDTH + row.columnGap).toBe(100);
+  });
+});
+
+// With thumbnails off the row visual draws no thumbnail and its text starts
+// where the thumbnail did, so each host's line starts there too: at the host's
+// own leading inset, with nothing added for a thumbnail that is not drawn.
+describe('where each climb row host starts its separator with thumbnails switched off', () => {
+  const playlistDrag = {
+    shared: {
+      activeUuid: { value: null },
+      dragTranslateY: { value: 0 },
+      activeRowIndex: { value: -1 },
+      targetRowIndex: { value: -1 },
+      rowHeight: { value: 0 },
+    },
+    onRowHeight: vi.fn(),
+    makeHandleGesture: () => ({}),
+  } as unknown as PlaylistDragControls;
+
+  const hosts = [
+    {
+      host: 'the Climbs list row',
+      draw: () => render(<ClimbListRow {...listRowProps} />),
+      withThumbnail: 104,
+      withoutThumbnail: 16,
+      leadingSlot: 0,
+    },
+    {
+      host: 'the loading placeholder',
+      draw: () => render(<ClimbListRowSkeleton />),
+      withThumbnail: 104,
+      withoutThumbnail: 16,
+      leadingSlot: 0,
+    },
+    {
+      host: 'the climb preview at the top of a sheet',
+      draw: () => render(<ClimbPreviewCard climb={climb} {...board} />),
+      withThumbnail: 104,
+      withoutThumbnail: 16,
+      leadingSlot: 0,
+    },
+    {
+      host: 'the queue row',
+      draw: () =>
+        render(
+          <QueueItemRow
+            item={queueItem}
+            position={1}
+            board={board}
+            isCurrentClimb={false}
+            onPress={vi.fn()}
+            onRemove={vi.fn()}
+          />,
+        ),
+      withThumbnail: 140,
+      withoutThumbnail: 52,
+      leadingSlot: POSITION_SLOT_WIDTH,
+    },
+    {
+      host: 'a queue suggestion row',
+      draw: () =>
+        render(
+          <QueueList
+            queue={[]}
+            currentItemUuid={null}
+            board={board}
+            isEditMode={false}
+            showHistory
+            showFullHistory
+            selectedItems={new Set<string>()}
+            playlistSuggestionSource={null}
+            active
+            onToggleSelect={vi.fn()}
+            onClimbPress={vi.fn()}
+            onRemove={vi.fn()}
+            onShowFullHistory={vi.fn()}
+            onTickHistory={vi.fn()}
+            onSuggestionPress={vi.fn()}
+            reorderQueue={vi.fn()}
+          />,
+        ),
+      withThumbnail: 140,
+      withoutThumbnail: 52,
+      leadingSlot: POSITION_SLOT_WIDTH,
+    },
+    {
+      host: 'the playlist edit row',
+      draw: () =>
+        render(
+          <PlaylistEditClimbRow
+            climb={climb as unknown as Parameters<typeof PlaylistEditClimbRow>[0]['climb']}
+            board={board}
+            rowIndex={0}
+            drag={playlistDrag}
+            onRemove={vi.fn()}
+            onReorder={vi.fn()}
+          />,
+        ),
+      withThumbnail: 148,
+      withoutThumbnail: 60,
+      // Its remove control.
+      leadingSlot: 36,
+    },
+    {
+      host: 'the workout preview row',
+      draw: () =>
+        render(
+          <WorkoutPreviewRow
+            item={queueItem}
+            board={board}
+            isActive={false}
+            isRefreshing={false}
+            refreshDisabled={false}
+            onPress={vi.fn()}
+            onRefresh={vi.fn()}
+          />,
+        ),
+      withThumbnail: 100,
+      withoutThumbnail: 12,
+      leadingSlot: 0,
+    },
+  ];
+
+  it.each(hosts)('$host: $withoutThumbnail, where its text now starts', ({ draw, withoutThumbnail, leadingSlot }) => {
+    setClimbRowField('thumbnail', false);
+
+    const { container } = draw();
+    const row = drawnRow(container);
+
+    expect(separatorInsets(container)).toEqual([withoutThumbnail]);
+    // The row's own padding, plus the slot in front of the climb and the gap after it.
+    expect(row.leadingPadding + (leadingSlot > 0 ? leadingSlot + row.columnGap : 0)).toBe(withoutThumbnail);
+  });
+
+  it.each(hosts)(
+    '$host moves its line when the switch is flipped under it',
+    ({ draw, withThumbnail, withoutThumbnail }) => {
+      const { container } = draw();
+      expect(separatorInsets(container)).toEqual([withThumbnail]);
+
+      act(() => setClimbRowField('thumbnail', false));
+      expect(separatorInsets(container)).toEqual([withoutThumbnail]);
+
+      act(() => setClimbRowField('thumbnail', true));
+      expect(separatorInsets(container)).toEqual([withThumbnail]);
+    },
+  );
+
+  it.each(hosts)('$host ignores every other switch', ({ draw, withThumbnail }) => {
+    const { container } = draw();
+
+    act(() => {
+      for (const fieldId of ['communityGrade', 'sends', 'rating', 'setter', 'sentMark', 'quickActions'] as const) {
+        setClimbRowField(fieldId, false);
+      }
+      setClimbRowField('playlistTags', true);
+    });
+
+    expect(separatorInsets(container)).toEqual([withThumbnail]);
+  });
+});
+
+// A row without a thumbnail is as tall as its text, as little as 44pt. A 44pt
+// control inside the row's 8pt padding would make it 60pt, so the control
+// reaches into that padding instead. Beside a thumbnail nothing changes.
+describe('a host’s 44pt controls in a row without a thumbnail', () => {
+  /** Every 44pt-tall control the host drew, as its vertical margin (undefined for none). */
+  function controlMargins(container: HTMLElement): Array<number | undefined> {
+    return drawnStyles(container)
+      .filter((style) => style.height === 44)
+      .map((style) => style.marginVertical);
+  }
+  const rowPadding = (container: HTMLElement) =>
+    drawnStyles(container).find((style) => style.flexDirection === 'row' && style.paddingVertical !== undefined)
+      ?.paddingVertical;
+
+  const drawHistoryQueueRow = () =>
+    render(
+      <QueueItemRow
+        item={queueItem}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        isHistoryItem
+        onPress={vi.fn()}
+        onRemove={vi.fn()}
+        onTickHistory={vi.fn()}
+      />,
+    );
+  const drawPlaylistEditRow = () =>
+    render(
+      <PlaylistEditClimbRow
+        climb={climb as unknown as Parameters<typeof PlaylistEditClimbRow>[0]['climb']}
+        board={board}
+        rowIndex={0}
+        drag={
+          {
+            shared: {
+              activeUuid: { value: null },
+              dragTranslateY: { value: 0 },
+              activeRowIndex: { value: -1 },
+              targetRowIndex: { value: -1 },
+              rowHeight: { value: 0 },
+            },
+            onRowHeight: vi.fn(),
+            makeHandleGesture: () => ({}),
+          } as unknown as PlaylistDragControls
+        }
+        onRemove={vi.fn()}
+        onReorder={vi.fn()}
+      />,
+    );
+
+  it.each([
+    { host: 'the queue row’s trailing button', draw: drawHistoryQueueRow, controls: 1 },
+    { host: 'the playlist edit row’s remove control and drag handle', draw: drawPlaylistEditRow, controls: 2 },
+  ])('$host: full height beside a thumbnail, inside the padding without one', ({ draw, controls }) => {
+    const { container } = draw();
+    expect(controlMargins(container)).toEqual(Array.from({ length: controls }, () => undefined));
+
+    act(() => setClimbRowField('thumbnail', false));
+
+    // Exactly the row's own vertical padding, taken back.
+    expect(rowPadding(container)).toBe(8);
+    expect(controlMargins(container)).toEqual(Array.from({ length: controls }, () => -8));
   });
 });

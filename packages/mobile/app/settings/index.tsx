@@ -65,7 +65,9 @@ import { useBoardseshGradesPreference } from '../../src/lib/boardsesh-grades-pre
 import { usePersonalGradesPreference } from '../../src/lib/personal-grades-preference';
 import { usePersonalGradesActive } from '../../src/hooks/use-personal-grades';
 import { usePlayDrawerSectionControls } from '../../src/components/settings/use-play-drawer-section-controls';
-import { setClimbRowField, useClimbRowField } from '../../src/lib/climb-row-display-preference';
+import { useClimbRowDisplay } from '../../src/lib/climb-row-display-preference';
+import { matchClimbRowPreset } from '../../src/lib/climb-row-display';
+import { climbRowPresetLabel } from '../../src/components/settings/climb-list/climb-list-settings-model';
 import { useToast } from '../../src/providers/toast-provider';
 import {
   useFeatureFlag,
@@ -114,7 +116,7 @@ export default function MoreScreen() {
   const bottomChromeDiagnosticsEligible = useBottomChromeDiagnosticsEligible();
   const [bottomChromeDiagnostics, setBottomChromeDiagnostics] = useSetting('bottomChromeDiagnostics');
   const [qaPromptOnLaunch, setQaPromptOnLaunch] = useSetting('qaPromptOnLaunch');
-  const showPlaylistTags = useClimbRowField('playlistTags');
+  const climbRowDisplay = useClimbRowDisplay();
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
   // Personal grades are user config; the `personal-grades` flag only supplies
   // the default. The row therefore shows the RESOLVED value (setting, else
@@ -123,7 +125,7 @@ export default function MoreScreen() {
   // whatever the flag happens to say later.
   const { setEnabled: setPersonalGrades } = usePersonalGradesPreference();
   const personalGradesActive = usePersonalGradesActive();
-  const showQuickActionsButton = useClimbRowField('quickActions');
+
   const { settingsSection: climbDrawerSettingsSection } = usePlayDrawerSectionControls();
   const boardseshGradeFlagEnabled = useBoardseshGradeEnabled();
   // Kill switch for the whole community-moderation surface. Off hides the way in.
@@ -577,8 +579,8 @@ export default function MoreScreen() {
 
   // Grade Format (segmented) — description as the section footer.
   sections.push({
-    key: 'gradeFormat',
-    title: t('mobile.settings.gradeFormat.title'),
+    key: 'grades',
+    title: t('mobile.settings.climbList.gradesTitle'),
     footer: t('mobile.settings.gradeFormat.description'),
     rows: [
       {
@@ -593,39 +595,6 @@ export default function MoreScreen() {
             hapticSelection();
             setGradeFormat(next.key);
           }
-        },
-      },
-    ],
-  });
-
-  // Display options — show playlist tags toggle, plus the Boardsesh grades
-  // toggle when the `boardsesh-grade` flag is on (the row itself is the
-  // opt-in; the flag gates whether it's offered at all).
-  sections.push({
-    key: 'displayOptions',
-    title: t('mobile.settings.displayOptions.title'),
-    rows: [
-      {
-        kind: 'toggle',
-        key: 'playlistTags',
-        label: t('mobile.settings.displayOptions.playlistTags'),
-        subtitle: t('mobile.settings.displayOptions.playlistTagsDescription'),
-        value: showPlaylistTags,
-        onValueChange: (next) => {
-          hapticSelection();
-          setClimbRowField('playlistTags', next);
-        },
-      },
-      {
-        kind: 'toggle',
-        key: 'quickActionsButton',
-        label: t('mobile.settings.displayOptions.quickActionsButton'),
-        subtitle: t('mobile.settings.displayOptions.quickActionsButtonDescription'),
-        value: showQuickActionsButton,
-        onValueChange: (next) => {
-          hapticSelection();
-          track(SHARED_EVENTS.ClimbQuickActionsSettingChanged, { enabled: next });
-          setClimbRowField('quickActions', next);
         },
       },
       {
@@ -657,6 +626,22 @@ export default function MoreScreen() {
     ],
   });
 
+  sections.push({
+    key: 'climbList',
+    rows: [
+      {
+        kind: 'nav',
+        key: 'climbList',
+        label: t('mobile.settings.climbList.title'),
+        subtitle: climbRowPresetLabel(matchClimbRowPreset(climbRowDisplay), t),
+        badge: t('userDrawer.newBadge'),
+        onPress: () => {
+          hapticSelection();
+          router.push('/settings/climb-list');
+        },
+      },
+    ],
+  });
   sections.push(climbDrawerSettingsSection);
 
   const autoDisconnectTimeoutOptions = AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({

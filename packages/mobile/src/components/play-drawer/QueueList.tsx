@@ -18,6 +18,7 @@ import { ClimbListItemContent } from '../ClimbListItemContent';
 import { Text } from '../Text';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useClimbRowField } from '../../lib/climb-row-display-preference';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { usePartyProfile } from '../../providers/party-profile-provider';
 import { hapticSelection } from '../../lib/haptics';
@@ -87,6 +88,10 @@ function QueueListComponent({
 }: QueueListProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
+  // A suggestion row's separator starts under its text, like the queue rows'
+  // above it: past the thumbnail only while the climber shows one. A boolean
+  // that changes when a setting does, so it is safe among `renderRow`'s deps.
+  const hasThumbnail = useClimbRowField('thumbnail');
   // QueueList only renders inside QueueSheet (a native sheet), so it clears the
   // WINDOW's bottom inset, never the mount point's (#3776).
   const windowBottomInset = useWindowBottomInset();
@@ -373,7 +378,15 @@ function QueueListComponent({
                   angle={board.angle}
                 />
               </PressableSurface>
-              <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
+              <View
+                style={[
+                  styles.separator,
+                  {
+                    marginStart: climbRowSeparatorInset(hasThumbnail, QUEUE_ROW_LEADING_INSET),
+                    backgroundColor: systemColors.separator,
+                  },
+                ]}
+              />
             </View>
           );
 
@@ -396,6 +409,7 @@ function QueueListComponent({
       handleSuggestionPress,
       showAddedBy,
       viewerUserId,
+      hasThumbnail,
       systemColors.separator,
       systemColors.secondaryBackground,
       brandColors.primary,
@@ -466,6 +480,5 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginStart: climbRowSeparatorInset(true, QUEUE_ROW_LEADING_INSET),
   },
 });

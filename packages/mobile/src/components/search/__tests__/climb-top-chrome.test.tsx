@@ -42,6 +42,7 @@ const ctrl = vi.hoisted(() => ({
   board: null as BoardLabelFields | null,
   bluetooth: null as BluetoothCtx,
   setBoardAngle: vi.fn(),
+  push: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   wallClimb: null as { climbUuid: string; name: string } | null,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
@@ -93,6 +94,7 @@ vi.mock('expo-router', () => ({
     ctrl.focusEffects.push(effect);
   },
 }));
+vi.mock('../../../lib/routing/scoped-navigation', () => ({ scopedRouter: { push: ctrl.push } }));
 vi.mock('expo-linear-gradient', () => ({
   LinearGradient: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-gradient': 'true' }, children),
@@ -437,6 +439,17 @@ const namedBoard: BoardLabelFields = {
 };
 
 describe('ClimbTopChrome', () => {
+  it.each(['liquidGlass', 'material'] as const)('opens Climb list settings from the eye on %s', (variant) => {
+    ctrl.variant = variant;
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
+    const eye =
+      container.querySelector('[data-pressable="mobile.settings.climbList.openLabel"]') ??
+      container.querySelector('[data-appbar-action="mobile.settings.climbList.openLabel"]');
+    expect(eye).not.toBeNull();
+    fireEvent.click(eye as HTMLButtonElement);
+    expect(ctrl.push).toHaveBeenCalledWith('/settings/climb-list');
+  });
+
   beforeEach(() => {
     ctrl.board = null;
     ctrl.bluetooth = null;

@@ -48,7 +48,7 @@ export function useSyntheticSprayWallPreview(
   );
 
   return useMemo<BoardPreviewClimb>(() => {
-    if (layoutId == null) return { status: 'unavailable', preview: null };
+    if (layoutId == null) return { status: 'unavailable', preview: null, climb: null };
     // Read for the memo, not used: `getBoardRenderData` keys its own cache on it.
     void sprayToken;
 
@@ -59,7 +59,7 @@ export function useSyntheticSprayWallPreview(
       sizeId,
       setIds: [...SPRAY_SET_IDS],
     });
-    if (!renderData) return { status: 'loading', preview: null };
+    if (!renderData) return { status: 'loading', preview: null, climb: null };
 
     const sampledIds = new Set(
       samplePreviewHolds(
@@ -72,7 +72,7 @@ export function useSyntheticSprayWallPreview(
     const sampledBottomToTop = renderData.holdsData
       .filter((hold) => sampledIds.has(hold.id))
       .sort((lower, upper) => upper.cy - lower.cy || lower.id - upper.id);
-    if (sampledBottomToTop.length === 0) return { status: 'unavailable', preview: null };
+    if (sampledBottomToTop.length === 0) return { status: 'unavailable', preview: null, climb: null };
 
     const roles = previewRolesBottomToTop(sampledBottomToTop.length);
     const roleCodes = STATE_TO_PRIMARY_CODE.spray;
@@ -89,6 +89,7 @@ export function useSyntheticSprayWallPreview(
 
     return {
       status: 'ready',
+      climb: null,
       preview: {
         // The shared write-side encoder, so the string is exactly what a climb
         // set on this wall would store: one absolute `p<id>r<code>` frame.
