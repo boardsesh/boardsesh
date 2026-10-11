@@ -200,6 +200,8 @@ runs:
             --platform ios \
             --flow "$SHARD_FLOW" \
             --backend prod \
+            --theme dark \
+            --workout off \
             --device "$SHARD_DEVICE_NAME" \
             --locales "$SHARD_LOCALE" \
             --shutdown \
@@ -251,12 +253,24 @@ runs:
     # the merge in ios-finalize has no collisions. The caller job distinguishes
     # a failed probe from the full-matrix recovery of that same pair. Short retention — it's an
     # intermediate; the combined tree is re-uploaded by ios-finalize.
+    - name: Separate QA font-size capture folders
+      if: ${{ always() && inputs.upload-captures == 'true' }}
+      shell: bash
+      env:
+        QA_DEVICE_SLUG: ${{ inputs.device-slug }}
+      run: |
+        source=app-stores/onboarding/apple/screenshots/en-US/iphone-16-pro-max
+        destination="app-stores/onboarding/apple/screenshots/en-US/$QA_DEVICE_SLUG"
+        if [ "$source" != "$destination" ] && [ -d "$source" ]; then
+          mv "$source" "$destination"
+        fi
+
     - name: Upload shard screenshots
       if: ${{ always() && inputs.upload-captures == 'true' }}
       uses: actions/upload-artifact@v4
       with:
         name: ios-screenshots-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
-        path: app-stores/apple/screenshots/**
+        path: app-stores/onboarding/apple/screenshots/**
         if-no-files-found: warn
         retention-days: 1
 

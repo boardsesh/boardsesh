@@ -402,7 +402,7 @@ jobs:
           # The probe already captures en-US × iPhone 16 Pro Max and uploads it as
           # a shard artifact, so exclude that pair from the fan-out instead of
           # shooting it twice.
-          devices='[{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max"},{"name":"iPhone 16 Pro","slug":"iphone-16-pro"},{"name":"iPad Pro 13-inch (M5)","slug":"ipad-pro-13-inch-m5"},{"name":"iPad Pro 11-inch (M5)","slug":"ipad-pro-11-inch-m5"}]'
+          devices='[{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max","contentSize":"large"},{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max-large-text","contentSize":"accessibility-extra-large"}]'
           # devices[0] must stay the iPhone 16 Pro Max entry: the probe shard is
           # always en-US × devices[0], and the exclude below is derived from that
           # same element, so a reordered $devices array would otherwise silently
@@ -723,6 +723,7 @@ jobs:
       - name: Capture shard
         uses: ./.github/actions/ios-screenshot-shard
         env:
+          BOARDSESH_CAPTURE_CONTENT_SIZE: ${{ matrix.device.contentSize }}
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
         with:

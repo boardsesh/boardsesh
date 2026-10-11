@@ -1923,6 +1923,10 @@ function captureIosDevice(
 ): number {
   const device = findOrCreateIosDevice(screenshotDevice);
   bootDevice(device);
+  const captureContentSize = process.env.BOARDSESH_CAPTURE_CONTENT_SIZE ?? 'large';
+  const contentSizeResult = runCapture('xcrun', ['simctl', 'ui', device.udid, 'content_size', captureContentSize]);
+  if (contentSizeResult.status !== 0) throw new Error(`Unable to set Dynamic Type to ${captureContentSize}`);
+  console.log(`${LOG} Native Dynamic Type: ${captureContentSize}`);
   applyCleanStatusBar(device.udid);
 
   console.log(`${LOG} Installing ${appPath} on ${device.name} for ${localeTarget.appLocale}...`);

@@ -98,6 +98,8 @@ logcat_pid=$!
 # "device offline" (exit 1). Wait for the device, then retry the display setup
 # until it sticks.
 adb wait-for-device
+adb shell settings put system font_scale "${BOARDSESH_CAPTURE_FONT_SCALE:-1.0}"
+echo "Native font scale: ${BOARDSESH_CAPTURE_FONT_SCALE:-1.0}"
 
 # Belt-and-suspenders: force GPU composition by disabling hardware overlays, so a
 # HW-composited layer can't hide from `adb screencap`. A no-op on the swiftshader
@@ -142,6 +144,8 @@ for attempt in $(seq 1 "$attempts"); do
     --platform android \
     --flow "$flow" \
     --backend prod \
+    --theme dark \
+    --workout off \
     --device "$device" \
     ${retarget[@]+"${retarget[@]}"} \
     --app-path "$apk_path"; then

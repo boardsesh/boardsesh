@@ -1,23 +1,57 @@
-appId: ${APP_ID}
-name: onboarding illustrations android
+appId: com.boardsesh.app
+name: issue 6360 Android session settings
 ---
-# Android version of onboarding.yaml for the standalone screenshot APK. The
-# screenshot-mode params are app code, so the same ://climbs?screenshotOpenBoardSheet=1
-# deep link opens the board-presence hero here too; no "Open in Boardsesh?" dialog
-# to prime on Android.
-- launchApp
-
-# Browse hero (alternate illustration): the climbs list.
-- openLink: com.boardsesh.app://climbs
+- setOrientation: PORTRAIT
+- openLink: com.boardsesh.app://record?screenshot6360=record
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 30000
 - extendedWaitUntil:
     visible:
-      id: 'climb-list'
+      id: 'pre-session-footer'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      id: 'qa-6360-rest-card'
+    visibilityPercentage: 40
+    direction: DOWN
+    timeout: 60000
+- waitForAnimationToEnd:
     timeout: 30000
-- waitForAnimationToEnd
-- takeScreenshot: onboarding-welcome
-
-# Board-history hero (the framing card image): the board-presence "now on the wall" sheet.
-- openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- takeScreenshot: onboarding-board-history
+- takeScreenshot: 01-record-rest-settings
+- swipe:
+    start: '50%,78%'
+    end: '50%,38%'
+    duration: 700
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 02-record-rest-lower-controls
+- scrollUntilVisible:
+    element:
+      id: 'qa-6360-visibility-card'
+    direction: DOWN
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 03-record-live-visibility
+- openLink: com.boardsesh.app://record?screenshot6360=sheet
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: 'rest-timer-hero-clock'
+    timeout: 60000
+- takeScreenshot: 04-rest-timer-sheet
+- scrollUntilVisible:
+    element:
+      text: 'Turn off rest timer'
+    direction: DOWN
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 05-rest-timer-sheet-lower-controls

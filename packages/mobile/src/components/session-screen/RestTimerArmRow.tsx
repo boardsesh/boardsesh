@@ -54,33 +54,36 @@ export function RestTimerArmRow() {
 
   return (
     <Card>
-      {/* No clock above the switch. This card is where you TURN THE TIMER ON;
+      <View style={styles.cardBleed}>
+        {/* No clock above the switch. This card is where you TURN THE TIMER ON;
           the running count belongs to the pill that floats over every tab, and a
           second copy sitting above its own on/off switch just competed with it. */}
-      <ShowcaseAnchorView name="rest-timer">
-        <SwitchRow
-          label={t('mobile.restTimer.armLabel')}
-          description={t('mobile.restTimer.armDescription')}
-          value={armed}
-          onValueChange={handleArm}
-        />
-      </ShowcaseAnchorView>
-      {armed ? (
-        <View style={styles.controls}>
-          {/* `inset={false}`: the length and cadence blocks pull back out
-              through the card's own 16pt padding, then re-apply the gutter
-              themselves, so the rest slider spans the card's content width and
-              the cadence header lines up with the Rest label. */}
-          <RestTimerLengthControl inset={false} />
-          <RestTimerCadenceSection inset={false} />
-          <RestTimerAutoAdvanceRow />
-        </View>
-      ) : null}
+        <ShowcaseAnchorView name="rest-timer">
+          <SwitchRow
+            label={t('mobile.restTimer.armLabel')}
+            description={t('mobile.restTimer.armDescription')}
+            value={armed}
+            onValueChange={handleArm}
+          />
+        </ShowcaseAnchorView>
+        {armed ? (
+          <View style={styles.controls}>
+            <RestTimerLengthControl />
+            <RestTimerCadenceSection />
+            <RestTimerAutoAdvanceRow />
+          </View>
+        ) : null}
+      </View>
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  // All controls own the same gutter; cancel the Card's inset once for the
+  // whole group, rather than bleeding only the length and cadence blocks.
+  cardBleed: {
+    marginHorizontal: -spacing[4],
+  },
   // Only a small top margin: the cadence SectionHeader brings its own top
   // padding and each SwitchRow its own vertical padding, so a gap here would
   // just double those seams.

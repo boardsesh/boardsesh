@@ -283,6 +283,10 @@ jobs:
     # locally first (16-19 min cold, ~7 min on a warm Gradle cache), and the
     # capture script retries the flow once (up to ~17 min per attempt).
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        font_scale: ['1.0', '1.5']
 
     env:
       # Commit the captured set back to main only on an opt-in manual dispatch.
@@ -295,6 +299,7 @@ jobs:
       # context is null there and is never even reached), so COMMIT_RUN is
       # 'false' and the commit step's `if` cannot pass. Pinned by the contract
       # test.
+      BOARDSESH_CAPTURE_FONT_SCALE: ${{ matrix.font_scale }}
       COMMIT_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_to_main }}
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
@@ -535,7 +540,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: raw-android-screenshots
+          name: raw-android-screenshots-${{ matrix.font_scale }}
           path: app-stores/google/raw-screenshots/**
           if-no-files-found: ignore
           retention-days: 7
@@ -544,8 +549,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mobile-screenshots-android
-          path: app-stores/google/screenshots/**
+          name: mobile-screenshots-android-${{ matrix.font_scale }}
+          path: app-stores/onboarding/google/screenshots/**
           if-no-files-found: warn
           retention-days: 14
 
@@ -558,7 +563,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-capture-debug
+          name: android-capture-debug-${{ matrix.font_scale }}
           path: android-capture-debug/**
           if-no-files-found: warn
           retention-days: 14

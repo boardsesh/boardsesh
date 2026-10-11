@@ -788,6 +788,16 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       return;
     }
 
+    // Disposable QA branch: expose the legacy visibility row with a synthetic
+    // rollout flag. This only runs inside local replay; no upstream request.
+    if (operationName === 'PrivacySettings') {
+      const privacyFixture = replayDefaultResponse('PrivacySettings');
+      if (!privacyFixture) throw new Error('Missing synthetic PrivacySettings replay response');
+      emit({ event: 'default', operationName, hash12 });
+      sendResponse(JSON.stringify(privacyFixture.response));
+      return;
+    }
+
     if (manifest.flow === 'app-store-campaign' && isCampaignPushRegistration(query)) {
       emit({ event: 'default', operationName, hash12 });
       sendResponse(

@@ -1,3 +1,8 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { armRestTimer } from '../../../lib/rest-timer-store';
+import { nowMs } from '../../../lib/clock';
+import { setSetting } from '../../../settings';
+import { RestTimerSheet } from '../../queue-control/RestTimerSheet';
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { usePrivacySettings } from '../../../lib/graphql/hooks/use-privacy';
 import { AudiencePicker, SESSION_AUDIENCES } from '../../privacy/AudiencePicker';
@@ -102,6 +107,16 @@ export function PreSessionView({
   onStarted,
   isOpeningClimbs = false,
 }: PreSessionViewProps) {
+  const captureParams = useLocalSearchParams<{ screenshot6360?: string }>();
+  const captureRouter = useRouter();
+  const captureMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? captureParams.screenshot6360 : undefined;
+  const closeCaptureSheet = useCallback(() => captureRouter.setParams({ screenshot6360: 'record' }), [captureRouter]);
+  useEffect(() => {
+    if (!captureMode) return;
+    setSetting('restTimerTargetSeconds', null);
+    setSetting('restTimerMode', 'afterTick');
+    armRestTimer('afterTick', nowMs(), null);
+  }, [captureMode]);
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
@@ -121,7 +136,7 @@ export function PreSessionView({
   // following visit. Only on the tab (showChrome), not the overlay host.
   const [activeTip, setActiveTip] = useState<'workout' | 'crew' | null>(null);
   useEffect(() => {
-    if (!showChrome || !activeBoard) return;
+    if (!showChrome || !activeBoard || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
     let cancelled = false;
     void (async () => {
       if (!(await hasSeenTip(ONBOARDING_TIP_WORKOUT_KEY))) {
@@ -374,13 +389,13 @@ export function PreSessionView({
         {/* Arm the rest timer for the session you're about to start (#5378). The
             arm carries in on its own — RestTimerSessionSync binds it when the
             session id appears. */}
-        <View style={styles.cardInset}>
+        <View style={styles.cardInset} testID="qa-6360-rest-card">
           <RestTimerArmRow />
         </View>
 
         {/* Whether the session you're about to start shows up live for your
             crew and climbers on this board. Sent with Start. */}
-        <View style={styles.cardInset}>
+        <View style={styles.cardInset} testID="qa-6360-visibility-card">
           {privacySettings?.enabled ? (
             <AudiencePicker
               resource
@@ -476,6 +491,8 @@ export function PreSessionView({
       />
 
       {showChrome ? <RecordTopChrome title={t('mobile.session.headerStart')} onHeightChange={setChromeHeight} /> : null}
+
+      <RestTimerSheet visible={captureMode === 'sheet'} onClose={closeCaptureSheet} />
 
       <SessionStartFab
         testID="pre-session-footer"
