@@ -438,11 +438,15 @@ export class NotificationWorker {
       // On a climb, its author is public with the published climb; anyone
       // else acting on it keeps their own account privacy.
       const canSeeActor = commentUuid
-        ? await canReadSocialEntity('comment', commentUuid, recipientId)
+        ? await canReadSocialEntity('comment', commentUuid, recipientId, 'listed')
         : entityType
           ? await canSeeActorOnEntity(entityType, entityId, actorId, recipientId)
           : await canViewUserActivity(recipientId, actorId);
-      if (!canSeeActor || (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId)))) return;
+      // An inbox is a list: nothing about an unlisted climb reaches anyone but
+      // its owner, the same test notificationPrivacyCondition reads with.
+      if (!canSeeActor || (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId, 'listed')))) {
+        return;
+      }
     }
 
     const uuid = crypto.randomUUID();

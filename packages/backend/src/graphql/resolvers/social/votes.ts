@@ -105,7 +105,12 @@ export const socialVoteQueries = {
         and(
           eq(dbSchema.voteCounts.entityType, entityType),
           inArray(dbSchema.voteCounts.entityId, visibleEntityIds),
-          socialEntityPrivacyCondition(sql`${entityType}`, dbSchema.voteCounts.entityId, authenticatedUserId),
+          socialEntityPrivacyCondition(
+            sql`${entityType}`,
+            dbSchema.voteCounts.entityId,
+            authenticatedUserId,
+            'by-reference',
+          ),
         ),
       );
 
@@ -130,7 +135,12 @@ export const socialVoteQueries = {
           and(
             eq(dbSchema.votes.entityType, entityType),
             inArray(dbSchema.votes.entityId, visibleEntityIds),
-            socialEntityPrivacyCondition(sql`${entityType}`, dbSchema.votes.entityId, authenticatedUserId),
+            socialEntityPrivacyCondition(
+              sql`${entityType}`,
+              dbSchema.votes.entityId,
+              authenticatedUserId,
+              'by-reference',
+            ),
             eq(dbSchema.votes.userId, authenticatedUserId),
           ),
         );

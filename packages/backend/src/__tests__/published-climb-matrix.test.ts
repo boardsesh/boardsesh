@@ -6,6 +6,7 @@ import { db } from '../db/client';
 import { climbQueries } from '../graphql/resolvers/climbs/queries';
 import { setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
 import {
+  canReadSocialEntity,
   canSeeEntityActor,
   notificationPrivacyCondition,
   tickPrivacyCondition,
@@ -13,6 +14,9 @@ import {
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import { socialFeedQueries } from '../graphql/resolvers/social/feed';
 import { climbLogsQueries } from '../graphql/resolvers/social/climb-logs';
+import { socialProposalQueries } from '../graphql/resolvers/social/proposals';
+import { batchEnrichProposals } from '../graphql/resolvers/social/proposals/enrichment';
+import { socialCommentQueries } from '../graphql/resolvers/social/comments';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +61,8 @@ const anonymous = { isAuthenticated: false, userId: undefined, connectionId: 'ma
 const boardInput = { boardName: BOARD, layoutId: LAYOUT_ID, sizeId: 1, setIds: '1', angle: ANGLE };
 
 async function removeFixtures(): Promise<void> {
+  await db.execute(sql`DELETE FROM comments WHERE uuid LIKE 'matrix-%'`);
+  await db.execute(sql`DELETE FROM climb_proposals WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM notifications WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM content_privacy WHERE entity_id LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE climb_uuid LIKE 'matrix-%'`);
@@ -391,5 +397,127 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       );
       expect(logs.items.map((item) => item.uuid)).toContain('matrix-unlisted-tick');
     }
+  });
+
+  describe('an unlisted climb in proposals, comment feeds and inboxes', () => {
+    const LISTED_PROPOSAL = 'matrix-proposal-listed';
+    const UNLISTED_PROPOSAL = 'matrix-proposal-unlisted';
+    const UNLISTED_COMMENT = 'matrix-comment-unlisted';
+
+    beforeAll(async () => {
+      // Written by a public account before the climb was unlisted: nothing but
+      // the listed rule keeps them from a stranger.
+      await db.insert(schema.climbProposals).values(
+        [
+          [LISTED_PROPOSAL, PRIVATE_PUBLISHED],
+          [UNLISTED_PROPOSAL, UNLISTED],
+        ].map(([uuid, climbUuid]) => ({
+          uuid,
+          climbUuid,
+          boardType: BOARD,
+          angle: null,
+          proposerId: PUBLIC_SENDER,
+          type: 'hide' as const,
+          proposedValue: 'true',
+          currentValue: 'false',
+          reason: `Reason on ${climbUuid}`,
+        })),
+      );
+      await db.insert(schema.comments).values({
+        uuid: UNLISTED_COMMENT,
+        userId: PUBLIC_SENDER,
+        entityType: 'climb',
+        entityId: UNLISTED,
+        body: 'Beta on the unlisted climb',
+      });
+      // About the unlisted climb, from its author, to an approved follower of
+      // that author: account privacy lets it through, the listed rule does not.
+      await db.insert(schema.notifications).values({
+        uuid: 'matrix-n-unlisted',
+        recipientId: FOLLOWER,
+        actorId: PRIVATE_AUTHOR,
+        type: 'new_climb',
+        entityType: 'climb',
+        entityId: UNLISTED,
+      });
+    });
+
+    const browsed = async (ctx: ConnectionContext) =>
+      (await socialProposalQueries.browseProposals({}, { input: { boardType: BOARD, limit: 50 } }, ctx)).proposals.map(
+        (proposal) => proposal.uuid,
+      );
+
+    it("keeps an unlisted climb's proposals out of the moderation feed, except for its owner", async () => {
+      for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
+        const uuids = await browsed(ctx);
+        expect(uuids).toContain(LISTED_PROPOSAL);
+        expect(uuids).not.toContain(UNLISTED_PROPOSAL);
+      }
+      expect(await browsed(ctxFor(PRIVATE_AUTHOR))).toEqual(
+        expect.arrayContaining([LISTED_PROPOSAL, UNLISTED_PROPOSAL]),
+      );
+    });
+
+    it("lists an unlisted climb's proposals to its owner alone, even by the climb's uuid", async () => {
+      const onClimb = async (ctx: ConnectionContext) =>
+        socialProposalQueries.climbProposals({}, { input: { climbUuid: UNLISTED, boardType: BOARD } }, ctx);
+      for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
+        expect((await onClimb(ctx)).totalCount).toBe(0);
+      }
+      const forOwner = await onClimb(ctxFor(PRIVATE_AUTHOR));
+      expect(forOwner.proposals.map((proposal) => proposal.uuid)).toEqual([UNLISTED_PROPOSAL]);
+    });
+
+    it('names an unlisted climb on a proposal to its owner alone', async () => {
+      const [row] = await db
+        .select()
+        .from(schema.climbProposals)
+        .where(eq(schema.climbProposals.uuid, UNLISTED_PROPOSAL));
+      for (const viewerId of [STRANGER, FOLLOWER, PUBLIC_SENDER, null]) {
+        const [enriched] = await batchEnrichProposals([row], viewerId);
+        expect(enriched.climbName, String(viewerId)).toBeUndefined();
+        expect(enriched.frames, String(viewerId)).toBeUndefined();
+      }
+      const [forOwner] = await batchEnrichProposals([row], PRIVATE_AUTHOR);
+      expect(forOwner.climbName).toBe(`Name of ${UNLISTED}`);
+    });
+
+    it("withholds an unlisted climb's proposal thread and notifications from everyone but the owner", async () => {
+      for (const viewerId of [STRANGER, FOLLOWER, null]) {
+        expect(await canReadSocialEntity('proposal', UNLISTED_PROPOSAL, viewerId), String(viewerId)).toBe(false);
+        expect(await canReadSocialEntity('proposal', LISTED_PROPOSAL, viewerId), String(viewerId)).toBe(true);
+      }
+      expect(await canReadSocialEntity('proposal', UNLISTED_PROPOSAL, PRIVATE_AUTHOR)).toBe(true);
+    });
+
+    it("keeps an unlisted climb's comments out of the global comment feed, and on its own thread", async () => {
+      for (const ctx of [ctxFor(STRANGER), anonymous]) {
+        const feed = await socialCommentQueries.globalCommentFeed({}, { input: { limit: 50 } }, ctx);
+        expect(feed.comments.map((comment) => comment.uuid)).not.toContain(UNLISTED_COMMENT);
+        const thread = await socialCommentQueries.comments(
+          {},
+          { input: { entityType: 'climb', entityId: UNLISTED } },
+          ctx,
+        );
+        expect(thread.comments.map((comment) => comment.uuid)).toEqual([UNLISTED_COMMENT]);
+      }
+      const ownerFeed = await socialCommentQueries.globalCommentFeed(
+        {},
+        { input: { limit: 50 } },
+        ctxFor(PRIVATE_AUTHOR),
+      );
+      expect(ownerFeed.comments.map((comment) => comment.uuid)).toContain(UNLISTED_COMMENT);
+    });
+
+    it("keeps a notification about an unlisted climb out of a follower's inbox", async () => {
+      const [row] = await db
+        .select({ allowed: notificationPrivacyCondition(FOLLOWER) })
+        .from(schema.notifications)
+        .where(eq(schema.notifications.uuid, 'matrix-n-unlisted'));
+      expect(row?.allowed).toBe(false);
+      // The climb itself still opens for them by its link.
+      expect(await canReadSocialEntity('climb', UNLISTED, FOLLOWER)).toBe(true);
+      expect(await canReadSocialEntity('climb', UNLISTED, FOLLOWER, 'listed')).toBe(false);
+    });
   });
 });

@@ -22,11 +22,11 @@ import {
 const queryBuilder = new QueryBuilder();
 
 /**
- * The climb a comment thread, vote, proposal or one climb's own logs point at
- * may be read: it is published, or it is the viewer's own draft, and it is not
- * on a spray wall the viewer may not see. No account privacy, item audience or
- * follow relation applies to a published climb, and an unlisted one still
- * resolves by reference. The spray half is the wall's own rule.
+ * The climb a comment thread, vote or one climb's own logs point at, read by
+ * its id, may be read: it is published, or it is the viewer's own draft, and
+ * it is not on a spray wall the viewer may not see. No account privacy, item
+ * audience or follow relation applies to a published climb, and an unlisted
+ * one still resolves by reference. The spray half is the wall's own rule.
  */
 function readableClimbCondition(
   climb: { userId: SQLWrapper; isDraft: SQLWrapper; boardType: SQLWrapper; layoutId: SQLWrapper },
@@ -39,10 +39,11 @@ function readableClimbCondition(
 }
 
 /**
- * The climb a tick or beta link in a list or feed points at may be shown: it is
- * published and listed, or it is the viewer's own, and it is not on a spray
- * wall the viewer may not see. An unlisted climb stays out of browse surfaces,
- * so its logs do too; only its own page, read by reference, shows them.
+ * The climb a tick, beta link, comment, notification or proposal in a list or
+ * feed points at may be shown: it is published and listed, or it is the
+ * viewer's own, and it is not on a spray wall the viewer may not see. An
+ * unlisted climb stays out of browse surfaces, so everything about it does
+ * too; only its own page, read by reference, shows its logs and thread.
  */
 function listedClimbCondition(
   climb: { userId: SQLWrapper; isDraft: SQLWrapper; isListed: SQLWrapper; boardType: SQLWrapper; layoutId: SQLWrapper },
@@ -58,12 +59,25 @@ function listedClimbCondition(
 }
 
 /**
- * Which climbs a tick may be shown on. `listed` (the default) is for feeds,
- * logbooks, profiles and every other list: an unlisted climb's logs stay out.
- * `by-reference` is for the logs on one climb's own page, which a direct link
- * to an unlisted climb still opens.
+ * Which climbs a tick, comment thread, vote or notification may be shown on.
+ * `listed` (the default) is for feeds, inboxes, logbooks, profiles and every
+ * other list: an unlisted climb and everything about it stay out. `by-reference`
+ * is for one entity read by its id (a climb's own page, its logs, its comment
+ * thread and votes), which a direct link to an unlisted climb still opens.
+ * Proposals are always `listed`: a proposal is not a read of the climb by its
+ * link, so it never discloses an unlisted climb to anyone but its owner.
  */
-export type TickClimbScope = 'listed' | 'by-reference';
+export type ClimbScope = 'listed' | 'by-reference';
+
+function scopedClimbCondition(
+  climb: { userId: SQLWrapper; isDraft: SQLWrapper; isListed: SQLWrapper; boardType: SQLWrapper; layoutId: SQLWrapper },
+  viewerId: string | null | undefined,
+  climbScope: ClimbScope,
+): SQL {
+  return climbScope === 'by-reference'
+    ? readableClimbCondition(climb, viewerId)
+    : listedClimbCondition(climb, viewerId);
+}
 
 /**
  * Logs follow their author and item audience. Session and board privacy hides
@@ -79,7 +93,7 @@ export function tickPrivacyCondition(
     boardType: SQLWrapper;
   } = schema.boardseshTicks,
   allowOwnWithoutClimb = false,
-  climbScope: TickClimbScope = 'listed',
+  climbScope: ClimbScope = 'listed',
 ): SQL {
   const climb = alias(schema.boardClimbs, 'privacy_tick_climb');
   const climbAlias = alias(schema.boardClimbAliases, 'privacy_tick_climb_alias');
@@ -104,14 +118,7 @@ export function tickPrivacyCondition(
         queryBuilder
           .select({ uuid: climb.uuid })
           .from(climb)
-          .where(
-            and(
-              referencedClimb,
-              climbScope === 'by-reference'
-                ? readableClimbCondition(climb, viewerId)
-                : listedClimbCondition(climb, viewerId),
-            ),
-          ),
+          .where(and(referencedClimb, scopedClimbCondition(climb, viewerId, climbScope))),
       ),
     ),
   )!;
@@ -202,6 +209,7 @@ export type SocialEntityReadOptions = {
    * link that widens their own rule, so both modes read them alike.
    */
   discovery?: boolean;
+  climbScope?: ClimbScope;
 };
 
 /**
@@ -211,13 +219,17 @@ export type SocialEntityReadOptions = {
  * their climb); the owner's view of other people's comments on it comes from
  * `commentPrivacyCondition`, which each traversed comment passes through. The
  * spray wall rule and a climb's draft/listing rule still apply to owners.
+ * `climbScope` is `listed` for a feed or an inbox, and `by-reference` for one
+ * entity read by its id; see {@link ClimbScope}.
  */
 export function socialEntityPrivacyCondition(
   entityType: SQLWrapper,
   entityId: SQLWrapper,
   viewerId: string | null | undefined,
-  options: SocialEntityReadOptions = {},
+  options: SocialEntityReadOptions | ClimbScope = {},
 ): SQL {
+  const readOptions = typeof options === 'string' ? {} : options;
+  const climbScope = typeof options === 'string' ? options : (options.climbScope ?? 'listed');
   // Resolve at most two comment references before checking the real entity.
   // Expanding every entity branch recursively produces a huge query plan (and
   // seconds of JIT compilation) even for a feed containing only a few comments.
@@ -240,7 +252,7 @@ export function socialEntityPrivacyCondition(
         })}
     )
     SELECT 1 FROM privacy_entity_chain privacy_entity_target
-    WHERE ${terminalSocialEntityPrivacyCondition(sql`privacy_entity_target.entity_type`, sql`privacy_entity_target.entity_id`, viewerId, options)}
+    WHERE ${terminalSocialEntityPrivacyCondition(sql`privacy_entity_target.entity_type`, sql`privacy_entity_target.entity_id`, viewerId, readOptions, climbScope)}
   )`;
 }
 
@@ -249,6 +261,7 @@ function terminalSocialEntityPrivacyCondition(
   entityId: SQLWrapper,
   viewerId: string | null | undefined,
   { discovery = false }: SocialEntityReadOptions,
+  climbScope: ClimbScope,
 ): SQL {
   const tick = alias(schema.boardseshTicks, 'privacy_entity_tick');
   const climb = alias(schema.boardClimbs, 'privacy_entity_climb');
@@ -259,7 +272,7 @@ function terminalSocialEntityPrivacyCondition(
       queryBuilder
         .select({ id: tick.id })
         .from(tick)
-        .where(and(eq(tick.uuid, entityId), tickPrivacyCondition(viewerId, tick))),
+        .where(and(eq(tick.uuid, entityId), tickPrivacyCondition(viewerId, tick, false, climbScope))),
     )}
     WHEN ${entityType} = 'session' THEN ${discovery ? listedSessionCondition(entityId, viewerId) : resourceAccessCondition('session', entityId, viewerId)}
     WHEN ${entityType} = 'board' THEN ${discovery ? listedBoardCondition(entityId, viewerId) : resourceAccessCondition('board', entityId, viewerId)}
@@ -267,7 +280,7 @@ function terminalSocialEntityPrivacyCondition(
       queryBuilder
         .select({ uuid: climb.uuid })
         .from(climb)
-        .where(and(eq(climb.uuid, entityId), readableClimbCondition(climb, viewerId))),
+        .where(and(eq(climb.uuid, entityId), scopedClimbCondition(climb, viewerId, climbScope))),
     )}
     WHEN ${entityType} = 'proposal' THEN ${exists(
       queryBuilder
@@ -287,7 +300,8 @@ function terminalSocialEntityPrivacyCondition(
                   and(
                     eq(climb.uuid, proposal.climbUuid),
                     eq(climb.boardType, proposal.boardType),
-                    readableClimbCondition(climb, viewerId),
+                    // Always listed, whatever the scope: see ClimbScope.
+                    listedClimbCondition(climb, viewerId),
                   ),
                 ),
             ),
@@ -319,7 +333,7 @@ function terminalSocialEntityPrivacyCondition(
                     and(
                       eq(schema.playlistClimbs.playlistId, schema.playlists.id),
                       eq(climb.uuid, playlistClimbEntityClimbUuid(entityId)),
-                      readableClimbCondition(climb, viewerId),
+                      scopedClimbCondition(climb, viewerId, climbScope),
                     ),
                   ),
               ),
@@ -456,13 +470,20 @@ export function entityActorVisibilityCondition(
   ) ELSE ${contentVisibilityCondition(entityType, entityId, actorId, viewerId)} END)`;
 }
 
+/**
+ * {@link socialEntityPrivacyCondition} for one entity read by its id, so
+ * `by-reference` by default: a direct link to an unlisted climb opens its
+ * thread and votes. A caller deciding whether something lands in a feed or an
+ * inbox passes `listed`.
+ */
 export async function canReadSocialEntity(
   entityType: string,
   entityId: string,
   viewerId: string | null | undefined,
+  climbScope: ClimbScope = 'by-reference',
 ): Promise<boolean> {
   const [result] = await db
-    .select({ allowed: socialEntityPrivacyCondition(sql`${entityType}`, sql`${entityId}`, viewerId) })
+    .select({ allowed: socialEntityPrivacyCondition(sql`${entityType}`, sql`${entityId}`, viewerId, climbScope) })
     .from(sql`(SELECT 1) privacy_check`);
   return result?.allowed === true;
 }

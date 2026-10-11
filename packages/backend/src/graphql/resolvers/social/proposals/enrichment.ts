@@ -3,7 +3,7 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   sprayClimbVisibilityCondition,
-  climbDraftVisibilityCondition,
+  ownedOrPublicReferenceClimbCondition,
   userActivityVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
@@ -75,8 +75,14 @@ export async function enrichProposal(
         and(
           eq(dbSchema.boardClimbs.uuid, proposal.climbUuid),
           eq(dbSchema.boardClimbs.boardType, proposal.boardType),
-          climbDraftVisibilityCondition(
-            { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+          // A proposal is not a read of the climb by its link: it names an
+          // unlisted climb to its owner alone, like proposalClimbVisibilityCondition.
+          ownedOrPublicReferenceClimbCondition(
+            {
+              isDraft: dbSchema.boardClimbs.isDraft,
+              isListed: dbSchema.boardClimbs.isListed,
+              userId: dbSchema.boardClimbs.userId,
+            },
             authenticatedUserId,
           ),
           // `browseProposals` is auth-optional and takes `boardType` from the
@@ -321,8 +327,12 @@ export async function batchEnrichProposals(
     .where(
       and(
         inArray(dbSchema.boardClimbs.uuid, uniqueClimbUuids),
-        climbDraftVisibilityCondition(
-          { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+        ownedOrPublicReferenceClimbCondition(
+          {
+            isDraft: dbSchema.boardClimbs.isDraft,
+            isListed: dbSchema.boardClimbs.isListed,
+            userId: dbSchema.boardClimbs.userId,
+          },
           authenticatedUserId,
         ),
         // Same as the single-proposal path above.
