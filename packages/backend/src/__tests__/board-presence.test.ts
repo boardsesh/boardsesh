@@ -3474,6 +3474,55 @@ describe('board-presence connection holder', () => {
       await expect(boardPresenceQueries.boardConnection(undefined, { boardId }, authCtx())).resolves.toBeNull();
     });
 
+    it("serves an unlisted board's live feed to anyone holding its id, anonymous included", async () => {
+      const slug = `unlisted-${Date.now().toString(36)}-${holderSerialCounter++}`;
+      const [row] = await db
+        .insert(dbSchema.userBoards)
+        .values({
+          uuid: uuidv4(),
+          slug,
+          ownerId: SECOND_USER_ID,
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          name: 'Unlisted Wall',
+          serialNumber: null,
+          isPublic: true,
+          isUnlisted: true,
+        })
+        .returning({ id: dbSchema.userBoards.id, uuid: dbSchema.userBoards.uuid });
+      const boardId = Number(row.id);
+
+      await expect(boardPresenceQueries.boardConnection(undefined, { boardId }, anon())).resolves.toBeNull();
+      await expect(boardPresenceQueries.boardRecentClimbs(undefined, { boardId }, anon())).resolves.toEqual([]);
+      await expect(boardPresenceQueries.boardConnection(undefined, { boardId }, authCtx())).resolves.toBeNull();
+      const resolved = await boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: row.uuid }, authCtx());
+      expect(resolved.boardId).toBe(boardId);
+    });
+
+    it("still refuses an invite-only board's live feed to a signed-in stranger", async () => {
+      const slug = `invite-${Date.now().toString(36)}-${holderSerialCounter++}`;
+      const [row] = await db
+        .insert(dbSchema.userBoards)
+        .values({
+          uuid: uuidv4(),
+          slug,
+          ownerId: SECOND_USER_ID,
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          name: 'Invite Wall',
+          serialNumber: null,
+          isPublic: false,
+        })
+        .returning({ id: dbSchema.userBoards.id });
+      await expect(
+        boardPresenceQueries.boardConnection(undefined, { boardId: Number(row.id) }, authCtx()),
+      ).rejects.toThrow('Board not found');
+    });
+
     it('lets anonymous viewers read a shared system per-config board', async () => {
       const config = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' };
       // A logged-in user creates the shared feed; anon may then read it.

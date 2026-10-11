@@ -3,7 +3,7 @@ import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { and, eq, isNull } from 'drizzle-orm';
 import { userBoards } from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { canAccessResourceWithoutLink } from './privacy';
+import { canAccessResource } from './privacy';
 
 /** A session path carries an existing board identity, never a private-board grant. */
 export async function resolveSessionBoardId(
@@ -28,7 +28,7 @@ export async function resolveSessionBoardId(
       ),
     )
     .limit(1);
-  if (!board || !(await canAccessResourceWithoutLink('board', board.uuid, viewerId))) {
+  if (!board || !(await canAccessResource('board', board.uuid, viewerId))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return board.id;

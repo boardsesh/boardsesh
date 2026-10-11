@@ -97,9 +97,11 @@ let boardSlugCounter = 0;
  */
 async function makeBoardRow({
   isPublic,
+  isUnlisted = false,
   ownerId = TEST_USER_ID,
 }: {
   isPublic: boolean;
+  isUnlisted?: boolean;
   ownerId?: string;
 }): Promise<{ id: number; uuid: string }> {
   const slug = `qp-board-${Date.now().toString(36)}-${boardSlugCounter++}`;
@@ -117,12 +119,13 @@ async function makeBoardRow({
       name: 'Queue Preview Wall',
       serialNumber: null,
       isPublic,
+      isUnlisted,
     })
     .returning({ id: dbSchema.userBoards.id });
   return { id: Number(row.id), uuid: boardUuid };
 }
 
-async function makeBoard(options: { isPublic: boolean; ownerId?: string }): Promise<number> {
+async function makeBoard(options: { isPublic: boolean; isUnlisted?: boolean; ownerId?: string }): Promise<number> {
   const { id } = await makeBoardRow(options);
   return id;
 }
@@ -717,6 +720,23 @@ describe('board-queue-preview privacy gates', () => {
     await publishBoardQueuePreviewForSession(sessionId);
     expect(received).toHaveLength(0);
     unsubscribe();
+  });
+
+  it('unlisted board → the preview streams to anonymous viewers who hold the board id', async () => {
+    const boardId = await makeBoard({ isPublic: true, isUnlisted: true });
+    const sessionId = await makeSession({ boardId, isPublic: true });
+    const queue = [makeQueueItem(1), makeQueueItem(2)];
+    await seedQueueState(sessionId, queue, queue[0]);
+    await bindSessionToBoard(sessionId, boardId);
+
+    const preview = await boardQueuePreviewQueries.boardQueuePreview(undefined, { boardId }, anonCtx());
+    expect(preview?.current?.climbUuid).toBe('climb-1');
+    expect(JSON.stringify(preview)).not.toContain(SECRET_USER_ID);
+
+    const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx());
+    const seed = await iterator.next();
+    expect(seed.done).toBe(false);
+    await iterator.return?.(undefined);
   });
 
   it('returns null when no session is bound to the board at all', async () => {

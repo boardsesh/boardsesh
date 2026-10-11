@@ -2,7 +2,6 @@ import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activit
 import {
   canAccessResource,
   legacyResourceAudience,
-  canAccessResourceWithoutLink,
   canViewActivityIdentity,
   canViewResourceLocation,
   resourceAccessCondition,
@@ -924,7 +923,7 @@ export const socialBoardQueries = {
     // A spray wall's slug is derived from the wall's NAME, so it is a guess and
     // not a capability: no unlisted exemption here, unlike `board(boardUuid)`.
     if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'enumerable'))) return null;
-    if (!(await canAccessResourceWithoutLink('board', canonical.uuid, viewerId))) return null;
+    if (!(await canAccessResource('board', canonical.uuid, viewerId))) return null;
     return enrichBoard(canonical, viewerId);
   },
 

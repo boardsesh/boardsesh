@@ -258,7 +258,7 @@ describe('board(boardUuid) anonymous masking', () => {
 });
 
 // ============================================================================
-// boardBySlug — resource authorization without an unlisted link capability
+// boardBySlug — an unlisted home board's slug is its link
 // ============================================================================
 
 describe('boardBySlug anonymous masking', () => {
@@ -290,9 +290,20 @@ describe('boardBySlug anonymous masking', () => {
     expect(board).toBeNull();
   });
 
-  it('does not treat an unlisted slug as a link capability', async () => {
-    const board = await socialBoardQueries.boardBySlug(null, { slug: unlistedBoard.slug }, anonCtx());
-    expect(board).toBeNull();
+  it('treats an unlisted home board slug as its link, for anonymous and signed-in viewers', async () => {
+    const anonymous = await socialBoardQueries.boardBySlug(null, { slug: unlistedBoard.slug }, anonCtx());
+    expect(anonymous?.name).toBe('Unlisted Wall');
+    const stranger = await socialBoardQueries.boardBySlug(null, { slug: unlistedBoard.slug }, authCtx(STRANGER));
+    expect(stranger?.name).toBe('Unlisted Wall');
+  });
+
+  it('keeps an unlisted board out of search even for someone who holds its link', async () => {
+    const result = (await socialBoardQueries.searchBoards(
+      {},
+      { input: { query: 'Unlisted Wall', limit: 20, offset: 0 } },
+      authCtx(STRANGER),
+    )) as { boards: Array<{ uuid: string }> };
+    expect(result.boards.map((board) => board.uuid)).not.toContain(unlistedBoard.uuid);
   });
 });
 

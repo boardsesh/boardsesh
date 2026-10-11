@@ -1,5 +1,5 @@
 import { resolveSessionBoardId } from '../../../services/session-board-binding';
-import { canAccessResourceWithoutLink } from '../../../services/privacy';
+import { canAccessResource } from '../../../services/privacy';
 import { getPrivacySettings, legacyResourceAudience } from '../../../services/privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
 import { v4 as uuidv4 } from 'uuid';
@@ -285,9 +285,9 @@ export const sessionMutations = {
           .where(inArray(userBoards.id, attachedIds));
         if (
           boards.length !== attachedIds.length ||
-          (
-            await Promise.all(boards.map((board) => canAccessResourceWithoutLink('board', board.uuid, ctx.userId)))
-          ).some((allowed) => !allowed)
+          (await Promise.all(boards.map((board) => canAccessResource('board', board.uuid, ctx.userId)))).some(
+            (allowed) => !allowed,
+          )
         ) {
           throw new Error('One or more board IDs do not exist');
         }

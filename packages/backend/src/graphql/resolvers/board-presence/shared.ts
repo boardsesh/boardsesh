@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { canAccessResource, canAccessResourceWithoutLink, getResourcePrivacy } from '../../../services/privacy';
+import { canAccessResource, getResourcePrivacy } from '../../../services/privacy';
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
@@ -731,7 +731,7 @@ export async function isBoardAnonReadable(boardId: number): Promise<boolean> {
     .limit(1);
   return Boolean(
     board &&
-    (await getResourcePrivacy('board', board.uuid))?.audience === 'public' &&
+    ['public', 'unlisted'].includes((await getResourcePrivacy('board', board.uuid))?.audience ?? '') &&
     (await canAccessResource('board', board.uuid, null)),
   );
 }
@@ -759,7 +759,7 @@ export async function requireAnonReadableBoard(
 ): Promise<boolean> {
   assertValidBoardId(boardId);
   const board = await requireActiveBoardWithVisibilityById(boardId);
-  if (!(await canAccessResourceWithoutLink('board', board.uuid, viewerUserId))) {
+  if (!(await canAccessResource('board', board.uuid, viewerUserId))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return !viewerUserId && isRowAnonReadable(board);
@@ -800,7 +800,7 @@ export async function requireReadablePresenceBoard(
     .where(eq(dbSchema.userBoards.id, boardId))
     .limit(1);
 
-  if (!row || row.deletedAt !== null || !(await canAccessResourceWithoutLink('board', row.uuid, viewerUserId))) {
+  if (!row || row.deletedAt !== null || !(await canAccessResource('board', row.uuid, viewerUserId))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   if (!row) return { anonReadableVerified: !viewerUserId, board: null };
@@ -864,7 +864,7 @@ export async function assertAnonReadableBoard(
   board: BoardVisibility,
   viewerUserId: string | null | undefined,
 ): Promise<void> {
-  if (!(await canAccessResourceWithoutLink('board', board.uuid, viewerUserId)))
+  if (!(await canAccessResource('board', board.uuid, viewerUserId)))
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
 }
 
