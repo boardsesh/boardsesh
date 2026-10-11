@@ -80,6 +80,9 @@ vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createE
 vi.mock('../../DraftChip', () => ({ DraftChip: () => createElement('i', { 'data-chip': 'draft' }) }));
 vi.mock('../../ProjectChip', () => ({ ProjectChip: () => createElement('i', { 'data-chip': 'project' }) }));
 
+// Playlist membership has dedicated coverage; keep this header fixture presentational.
+vi.mock('../PlayDrawerPlaylistChips', () => ({ PlayDrawerPlaylistChips: () => null }));
+
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
 const baseProps = {

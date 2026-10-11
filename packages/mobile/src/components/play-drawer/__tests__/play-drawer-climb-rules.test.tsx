@@ -108,6 +108,9 @@ vi.mock('../../ClimbAttributeIcons', () => ({
       'data-no-match-fallback': isNoMatch === undefined ? 'undefined' : String(isNoMatch),
     }),
 }));
+// The header renders the playlist tags; unmocked they pull the playlists provider
+// and expo-secure-store into a presentational test. They have their own tests.
+vi.mock('../PlayDrawerPlaylistChips', () => ({ PlayDrawerPlaylistChips: () => null }));
 
 // The real chip reads the theme provider, which this suite does not stand up.
 vi.mock('../../DraftChip', () => ({ DraftChip: () => createElement('i', { 'data-chip': 'draft' }) }));

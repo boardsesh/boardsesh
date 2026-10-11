@@ -23,9 +23,21 @@ export function sortPlaylistsByName(playlists: Playlist[]): Playlist[] {
  * dropping a climber's circuits from the add-to-playlist picker.
  */
 export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string, layoutId: number): Playlist[] {
-  return playlists.filter(
-    (playlist) => playlist.boardType === boardName && (playlist.layoutId == null || playlist.layoutId === layoutId),
-  );
+  return playlists.filter((playlist) => matchesBoard(playlist, boardName, layoutId));
+}
+
+/**
+ * Whether the climber has any playlist on this board+layout, by the same rule
+ * `filterPlaylistsByBoard` applies. Short-circuits and allocates nothing — for
+ * callers that only need the yes/no, like the play drawer deciding whether a
+ * playlist tag can appear on this climb at all.
+ */
+export function hasPlaylistForBoard(playlists: Playlist[], boardName: string, layoutId: number): boolean {
+  return playlists.some((playlist) => matchesBoard(playlist, boardName, layoutId));
+}
+
+function matchesBoard(playlist: Playlist, boardName: string, layoutId: number): boolean {
+  return playlist.boardType === boardName && (playlist.layoutId == null || playlist.layoutId === layoutId);
 }
 
 /**

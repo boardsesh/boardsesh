@@ -102,6 +102,9 @@ vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createEleme
 // The real chip reads the theme provider, which this suite does not stand up.
 vi.mock('../../DraftChip', () => ({ DraftChip: () => createElement('i', { 'data-chip': 'draft' }) }));
 vi.mock('../../ProjectChip', () => ({ ProjectChip: () => createElement('i', { 'data-chip': 'project' }) }));
+// The playlist chips have their own test; here they would only drag React Query
+// and the playlists provider into a presentational header test.
+vi.mock('../PlayDrawerPlaylistChips', () => ({ PlayDrawerPlaylistChips: () => null }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
