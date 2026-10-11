@@ -313,8 +313,8 @@ type CommentPrivacyColumns = {
  * - The owner of the commented item (`entityOwnerCondition`) reads every comment
  *   on it, whoever wrote it.
  * - Whoever replied in a thread reads every ancestor of their reply: the
- *   viewer's own comments on the item are walked up to their roots, and any
- *   comment on that path is readable to them.
+ *   viewer's own comments are walked up to their roots once per statement, and
+ *   any comment on those paths is readable to them.
  * - An ancestor row that no longer exists is readable. Deleting an account
  *   cascades its comments, and that must not orphan the replies under them.
  *
@@ -326,25 +326,26 @@ export function commentPrivacyCondition(
   comment: CommentPrivacyColumns = schema.comments,
 ): SQL {
   const ownComment = viewerId ? sql`COALESCE(${comment.userId} = ${viewerId}, false)` : sql`false`;
-  // Every comment the viewer wrote on this item, walked up toward its root with
-  // the same 32-ancestor cap as `privacy_ancestors`: a cycle or an over-deep
-  // chain stops there, and such a chain never reads anyway.
-  const viewerThread = viewerId
-    ? sql`, privacy_viewer_thread AS (
-      SELECT privacy_mine.id, privacy_mine.uuid, privacy_mine.parent_comment_id, 0 AS depth FROM comments privacy_mine
-      WHERE privacy_mine.user_id = ${viewerId}
-        AND privacy_mine.entity_type = (${comment.entityType})::text::social_entity_type
-        AND privacy_mine.entity_id = ${comment.entityId}
-      UNION ALL
-      SELECT privacy_above.id, privacy_above.uuid, privacy_above.parent_comment_id, privacy_below.depth + 1
-      FROM comments privacy_above JOIN privacy_viewer_thread privacy_below ON privacy_above.id = privacy_below.parent_comment_id
-      WHERE privacy_below.depth < 32
+  // Every comment above one the viewer wrote, walked up with the same
+  // 32-ancestor cap as `privacy_ancestors` (so a cycle stops too). It names no
+  // outer column, so PostgreSQL runs it once per statement and probes the
+  // result as a hashed set, instead of walking a thread for every row.
+  const viewerThreadUuids = viewerId
+    ? sql`(
+      WITH RECURSIVE privacy_viewer_thread AS (
+        SELECT privacy_replied_to.id, privacy_replied_to.uuid, privacy_replied_to.parent_comment_id, 1 AS depth
+        FROM comments privacy_mine JOIN comments privacy_replied_to ON privacy_replied_to.id = privacy_mine.parent_comment_id
+        WHERE privacy_mine.user_id = ${viewerId}
+        UNION ALL
+        SELECT privacy_above.id, privacy_above.uuid, privacy_above.parent_comment_id, privacy_below.depth + 1
+        FROM comments privacy_above JOIN privacy_viewer_thread privacy_below ON privacy_above.id = privacy_below.parent_comment_id
+        WHERE privacy_below.depth < 32
+      )
+      SELECT privacy_viewer_thread.uuid FROM privacy_viewer_thread
     )`
-    : sql``;
+    : null;
   const inViewerThread = (uuid: SQLWrapper): SQL =>
-    viewerId
-      ? sql`EXISTS (SELECT 1 FROM privacy_viewer_thread WHERE privacy_viewer_thread.uuid = ${uuid})`
-      : sql`false`;
+    viewerThreadUuids ? sql`${uuid} IN ${viewerThreadUuids}` : sql`false`;
   const readable = (uuid: SQLWrapper, userId: SQLWrapper): SQL =>
     sql`(${contentVisibilityCondition('comment', uuid, userId, viewerId)} OR ${inViewerThread(uuid)})`;
   return sql`(
@@ -354,7 +355,7 @@ export function commentPrivacyCondition(
       SELECT parent.id, parent.uuid, parent.user_id, parent.parent_comment_id, child.depth + 1
       FROM comments parent JOIN privacy_ancestors child ON parent.id = child.parent_comment_id
       WHERE child.depth < 32
-    )${viewerThread}
+    )
     SELECT (
       ${comment.parentCommentId} IS NULL
       OR NOT EXISTS (SELECT 1 FROM comments privacy_gone_parent WHERE privacy_gone_parent.id = ${comment.parentCommentId})
