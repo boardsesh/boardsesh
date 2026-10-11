@@ -31,8 +31,7 @@ const capture = vi.hoisted(() => ({
     (
       _eventName: string,
       _options: {
-        distinctId: string;
-        processPersonProfile?: boolean;
+        systemDistinctId: `system:${string}`;
         properties?: Record<string, string | number>;
       },
     ): boolean => false,
@@ -551,8 +550,7 @@ describe('execute', () => {
       const [eventName, options] = capture.captureBackendEvent.mock.calls[0] ?? [];
       expect(eventName).toBe('Spray Wall Health Weekly');
       expect(options).toMatchObject({
-        distinctId: 'spray-wall-health:2026-09-28',
-        processPersonProfile: false,
+        systemDistinctId: 'system:spray-wall-health:2026-09-28',
       });
       expect(options?.properties).toMatchObject({ weekStart: '2026-09-28', wallsLive: 7, holdsAlive: 460 });
     });

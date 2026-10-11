@@ -451,7 +451,7 @@ them says how the fleet's walls are LIVING — whether owners climb on them,
 whether anyone else gets to, whether holds are coming off. The `spray-wall-health`
 batch family (`docs/background-workers.md`) measures that every Monday 08:45
 UTC from the app tables and emits ONE personless `Spray Wall Health Weekly`
-event per week, with a fixed synthetic actor (`spray-wall-health:<weekStart>`,
+event per week, with a fixed synthetic actor (`system:spray-wall-health:<weekStart>`,
 `$process_person_profile = false`, read it on the backend `$lib = posthog-node`
 population). Count WEEKS, not events; every property is an integer and nothing
 names a wall, a gym or a climber.
@@ -481,13 +481,13 @@ absence, not measurement, and a dashboard reading them as zeros would claim
 "walls nobody climbs" in a world with no walls. Every other week every
 property is present, and a zero there IS a measurement.
 
-A missing week (worker down, family not enabled) is a gap, not a zero:
-`BATCH_FAMILIES_ENABLED` must list `spray-wall-health` (see
-`docs/background-workers.md` → "Schedules and `BATCH_FAMILIES_ENABLED`"). Past
+A missing week (worker down, family disabled) is a gap, not a zero:
+`spray-wall-health` runs by default; `BATCH_FAMILIES_DISABLED` switches it off (see
+`docs/background-workers.md` → "Schedules and `BATCH_FAMILIES_DISABLED`"). Past
 weeks re-emit through the operator with a `weekStart` payload, which dedupes
 under its own key, not the weekly singleton.
 
-Read it as trend lines, not gates: `docs/spray-walls.md` → "Rolling the flag
+Read it as trend lines, not gates: `docs/spray-walls.md` → "Availability and detection quality
 out" keeps the rollout gates on the client funnels and watches this roll-up
 beside them. What the lines say at rollout time decides the next board —
 alongside `Board Demand Reported`, which is the same ledger from the other

@@ -101,7 +101,7 @@ describe('Spray Wall Health Weekly payload', () => {
   });
 
   it('keys the actor by week, so a backfill re-emits without rewriting', () => {
-    expect(sprayWallHealthDistinctId('2026-09-28')).toBe('spray-wall-health:2026-09-28');
+    expect(sprayWallHealthDistinctId('2026-09-28')).toBe('system:spray-wall-health:2026-09-28');
     expect(sprayWallHealthDistinctId('2026-09-21')).not.toBe(sprayWallHealthDistinctId('2026-09-28'));
   });
 });

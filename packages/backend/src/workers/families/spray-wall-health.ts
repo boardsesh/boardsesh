@@ -66,8 +66,7 @@ export const sprayWallHealthFamily: BackgroundJobFamilyModule<z.infer<typeof pay
       return;
     }
     const captured = captureBackendEvent(SPRAY_WALL_HEALTH_EVENT, {
-      distinctId: sprayWallHealthDistinctId(run.weekStart),
-      processPersonProfile: false,
+      systemDistinctId: sprayWallHealthDistinctId(run.weekStart),
       properties: buildSprayWallHealthProperties(run.weekStart, run.metrics),
     });
     // A false here is analytics disabled (dev, no key, non-production env):

@@ -24,8 +24,8 @@ export const SPRAY_WALL_HEALTH_EVENT = 'Spray Wall Health Weekly' as const;
  * should resolve against this event, and PostHog counts it like any other
  * series on the growth dashboard's fixed `$lib = posthog-node` population.
  */
-export function sprayWallHealthDistinctId(weekStart: string): string {
-  return `spray-wall-health:${weekStart}`;
+export function sprayWallHealthDistinctId(weekStart: string): `system:spray-wall-health:${string}` {
+  return `system:spray-wall-health:${weekStart}`;
 }
 
 export function buildSprayWallHealthProperties(
