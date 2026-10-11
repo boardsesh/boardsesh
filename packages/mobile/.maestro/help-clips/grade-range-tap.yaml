@@ -16,9 +16,10 @@ name: help clip - build a grade range from two taps
 # showing a grade SWITCH instead of a range, that window is what it missed.
 #
 # Coordinates, not selectors: the chip row and the grade rail are pressables
-# this RN Fabric build does not expose to Maestro.
-#   33%,15%  the "Grade" chip
-#   23%,23% / 36%,23% / 50%,23%  three adjacent chips on the grade rail.
+# this RN Fabric build does not expose to Maestro. Measured on an iPhone 16 Pro
+# with no Recent chip in the row and the grade row in the chrome under the chips.
+#   36%,16%  the "Grade" chip (it opens the grade row; the row starts hidden)
+#   18%,21% / 34%,21% / 50%,21%  three adjacent chips on the grade row.
 #            WHICH grades those are depends on where the rail is scrolled to
 #            (it opens near the last-used grade), so the clip teaches the
 #            gesture, not a specific pair of grades.
@@ -35,7 +36,7 @@ name: help clip - build a grade range from two taps
 
 # Open the grade rail.
 - tapOn:
-    point: '33%,15%'
+    point: '36%,16%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 800
@@ -43,12 +44,12 @@ name: help clip - build a grade range from two taps
 
 # Two quick taps -> a range, not a switch.
 - tapOn:
-    point: '23%,23%'
+    point: '18%,21%'
 - tapOn:
-    point: '50%,23%'
+    point: '50%,21%'
 
-# Hold on the range: both endpoints filled, the grades between them outlined,
-# and the chip row now reads the range.
+# Hold on the range: both endpoints filled, the grades between them tinted in
+# their own colour, and the chip row now reads the range.
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 2000
@@ -56,10 +57,10 @@ name: help clip - build a grade range from two taps
 
 # Tap inside the range -> it collapses to that single grade.
 - tapOn:
-    point: '36%,23%'
+    point: '34%,21%'
 # Tap the same grade again -> cleared back to "Any".
 - tapOn:
-    point: '36%,23%'
+    point: '34%,21%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 1300
