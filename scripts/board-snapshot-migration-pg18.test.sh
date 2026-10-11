@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP_SQL="$REPOSITORY_ROOT/packages/db/docker/bootstrap-pg18-development-roles.sql"
-MIGRATION_SQL="$REPOSITORY_ROOT/packages/db/drizzle/0250_board_snapshot_replica_fence.sql"
+MIGRATION_SQL="$REPOSITORY_ROOT/packages/db/drizzle/0264_board_snapshot_replica_fence.sql"
 DATABASE_URL="${SNAPSHOT_MIGRATION_PG18_DB_URL:?set SNAPSHOT_MIGRATION_PG18_DB_URL to a loopback PostgreSQL 18 admin database}"
 if [[ "${SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN:-}" != '1' ]]; then
   printf 'set SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN=1 to acknowledge local cluster role creation\n' >&2

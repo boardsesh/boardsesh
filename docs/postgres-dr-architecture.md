@@ -35,7 +35,7 @@ the standby was streaming again within 20 s.
 
 ## Board-snapshot coordination
 
-Migration `0250_board_snapshot_replica_fence` adds the `ops` schema and the
+Migration `0264_board_snapshot_replica_fence` adds the `ops` schema and the
 session-level advisory lock reserved for board-snapshot exports, key `(4340,
 1)`. The primary coordinator takes that lock, sets a cursor cutoff before
 transactions that were already active, and samples the WAL insert position in

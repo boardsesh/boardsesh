@@ -1,3 +1,4 @@
+import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from '@boardsesh/offline-sync';
 import { describe, expect, it } from 'vite-plus/test';
 import { evaluateSnapshotHeartbeat, snapshotHeartbeatDecision } from '../scripts/snapshot-heartbeat-watchdog';
 import { DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS } from '../scripts/snapshot-contract';
@@ -91,7 +92,7 @@ describe('snapshot heartbeat watchdog', () => {
       nowMs: NOW_MS,
       fetchHeartbeat: async (url) => {
         if (url.includes('/manifest.json')) {
-          return { formatVersion: 1, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
+          return { formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
         }
         if (url.includes('/refresh.json')) throw new Error('refresh missing');
         return heartbeat('full');
@@ -113,7 +114,7 @@ describe('snapshot heartbeat watchdog', () => {
       nowMs: NOW_MS,
       fetchHeartbeat: async (url) => {
         if (url.includes('/manifest.json')) {
-          return { formatVersion: 1, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
+          return { formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
         }
         if (url.includes('/refresh.json')) return heartbeat('refresh');
         return heartbeat('full');
@@ -135,7 +136,7 @@ describe('snapshot heartbeat watchdog', () => {
         if (url.includes('/manifest.json')) {
           manifestFetchCount += 1;
           return {
-            formatVersion: 1,
+            formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
             generatedAt: manifestFetchCount === 1 ? MANIFEST_GENERATED_AT : nextManifestGeneratedAt,
             entries: [],
           };
@@ -166,7 +167,7 @@ describe('snapshot heartbeat watchdog', () => {
         if (url.includes('/manifest.json')) {
           manifestFetchCount += 1;
           return {
-            formatVersion: 1,
+            formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
             generatedAt: manifestFetchCount === 1 ? MANIFEST_GENERATED_AT : nextManifestGeneratedAt,
             entries: [],
           };
@@ -200,7 +201,7 @@ describe('snapshot heartbeat watchdog', () => {
       fetchHeartbeat: async (url) => {
         fetchedUrls.push(url);
         if (url.includes('/manifest.json')) {
-          return { formatVersion: 1, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
+          return { formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
         }
         if (url.includes('/refresh.json')) return heartbeat('refresh');
         return heartbeat('full');
@@ -222,7 +223,7 @@ describe('snapshot heartbeat watchdog', () => {
       nowMs: NOW_MS,
       fetchHeartbeat: async (url) => {
         if (url.includes('/manifest.json')) {
-          return { formatVersion: 1, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
+          return { formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION, generatedAt: MANIFEST_GENERATED_AT, entries: [] };
         }
         if (url.includes('/refresh.json')) return heartbeat('refresh');
         return oldFull;

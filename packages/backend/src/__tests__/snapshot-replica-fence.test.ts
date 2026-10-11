@@ -92,7 +92,7 @@ describe('replica snapshot fence', () => {
   it('runs the exact migration version guard and rejects pre-PG18 databases', async () => {
     const pool = createPool();
     const migrationSource = readFileSync(
-      new URL('../../../db/drizzle/0250_board_snapshot_replica_fence.sql', import.meta.url),
+      new URL('../../../db/drizzle/0264_board_snapshot_replica_fence.sql', import.meta.url),
       'utf8',
     );
     const [versionGuard] = migrationSource.split('--> statement-breakpoint');

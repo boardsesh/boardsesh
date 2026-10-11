@@ -1,6 +1,6 @@
 # Snapshot cursor-trigger write benchmark
 
-This pgbench harness compares the four tables touched by migration `0250_board_snapshot_replica_fence.sql` on two disposable, otherwise-identical PostgreSQL 18 databases:
+This pgbench harness compares the four tables touched by migration `0264_board_snapshot_replica_fence.sql` on two disposable, otherwise-identical PostgreSQL 18 databases:
 
 - **baseline:** current schema through migration 0249, with the existing climb/stat update and delete triggers;
 - **candidate:** a clone of that database with only migration 0250 applied.

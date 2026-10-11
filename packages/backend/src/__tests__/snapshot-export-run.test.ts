@@ -447,7 +447,7 @@ describe('runExport — threshold refresh', () => {
     await adminPool.unsafe(`DROP ROLE IF EXISTS ${quotedExporterRole}`);
     await adminPool.unsafe(`CREATE ROLE ${quotedExporterRole} LOGIN PASSWORD '${exporterPassword}'`);
     await adminPool.unsafe(
-      `GRANT SELECT ON board_climbs, board_climb_stats, board_climb_grades, sync_deletions TO ${quotedExporterRole}`,
+      `GRANT SELECT ON board_climbs, board_climb_stats, board_climb_grades, sync_deletions, content_privacy TO ${quotedExporterRole}`,
     );
     const peerUrl = new URL(getWorkerDatabaseUrl());
     peerUrl.username = roleName;
@@ -1219,7 +1219,7 @@ describe('runExport — artifact shape', () => {
     };
 
     await runExportWithOptions(
-      { dryRun: false, gzip: true, keyPrefix: GZIP_PREFIX },
+      { dryRun: false, gzip: true, keyPrefix: GZIP_PREFIX, source: 'primary', fence: false, heartbeat: false },
       { log: { info: record, warn: record, error: record } },
     );
 
@@ -1251,7 +1251,15 @@ describe('runExport — artifact shape', () => {
       };
 
       await runExportWithOptions(
-        { dryRun: false, gzip: true, keyPrefix: GZIP_PREFIX, refreshThreshold: 500 },
+        {
+          dryRun: false,
+          gzip: true,
+          keyPrefix: GZIP_PREFIX,
+          refreshThreshold: 500,
+          source: 'primary',
+          fence: false,
+          heartbeat: false,
+        },
         { log: { info: record, warn: record, error: record } },
       );
 

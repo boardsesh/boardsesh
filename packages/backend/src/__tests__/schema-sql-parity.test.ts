@@ -5,7 +5,7 @@ import { schemaSQL } from './schema-sql';
 const UPDATE_TRIGGER_FUNCTIONS = ['public.set_board_climbs_sync_fields', 'public.set_board_climb_stats_sync_fields'];
 
 const SNAPSHOT_FENCE_MIGRATION = readFileSync(
-  new URL('../../../db/drizzle/0250_board_snapshot_replica_fence.sql', import.meta.url),
+  new URL('../../../db/drizzle/0264_board_snapshot_replica_fence.sql', import.meta.url),
   'utf8',
 );
 

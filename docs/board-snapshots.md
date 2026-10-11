@@ -216,7 +216,7 @@ less likely; neither proves the absent transaction has finished.
    immediately after the manifest PUT cannot roll that PUT back, but it emits no success heartbeat; failed
    layouts retain their previous manifest entries while successful layout updates remain valid.
 
-Migration `0250_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
+Migration `0264_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
 UPDATE triggers stamp `board_climbs.updated_at`, `board_climb_stats.updated_at`, and
 `board_climb_grades.computed_at` from the transaction timestamp converted to UTC; INSERTs into
 `sync_deletions` receive the same UTC transaction-time stamp. Caller-supplied/backdated values are ignored.
@@ -231,10 +231,10 @@ The adversarial integration test holds an old transaction open, attempts to back
 families, lets a newer transaction commit, and proves the fixed cutoff cannot publish a watermark past
 the late row.
 
-Migration `0250` is PostgreSQL-18-only. Its first statement rejects PostgreSQL 16/17 and a missing or
+Migration `0264` is PostgreSQL-18-only. Its first statement rejects PostgreSQL 16/17 and a missing or
 incorrectly provisioned fence-owner role before changing the schema. The PostgreSQL 18 upgrade and image
 work have landed on `main`; the old unpublished-image dependency is no longer pending. Before applying
-`0250` to any target, still verify that target's version and role contract, run the checked-in PG18 migration
+`0264` to any target, still verify that target's version and role contract, run the checked-in PG18 migration
 smoke, and complete the matched pre-migration/candidate write benchmark in the rollout plan below.
 
 The proof also assumes the primary wall clock does not step backward by more than the stability window
@@ -1559,7 +1559,7 @@ session. Treat it as a statement-level assertion: never compose it with `release
 one SQL statement. Only the owning session can release its session advisory lock, and every production call
 site checks it before publishing.
 
-The target admin must create the non-login function owner before migration `0250`; the restricted Drizzle
+The target admin must create the non-login function owner before migration `0264`; the restricted Drizzle
 migrator cannot create roles or grant itself predefined monitoring privileges. Substitute the application
 owner role if it is named differently:
 
@@ -1576,7 +1576,7 @@ GRANT boardsesh_snapshot_fence_owner TO boardsesh_owner
   WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
 ```
 
-Migration `0250` fails closed unless that role is narrow, has exactly the direct `pg_read_all_stats` and
+Migration `0264` fails closed unless that role is narrow, has exactly the direct `pg_read_all_stats` and
 application-owner membership rows (including the PG18 `ADMIN`, `INHERIT`, and `SET` options above), and has
 direct non-grantable `EXECUTE` ACLs on the two control-identity functions. Effective access through another
 role is intentionally insufficient, and any extra direct role edge is drift. The migration grants the owner
@@ -1591,13 +1591,13 @@ idempotent but deliberately requires PostgreSQL 18, a superuser, and the explici
 production must provision and audit the roles through the PG18 cutover runbook, never auto-create them from
 the application or Drizzle migration path.
 
-Creating the roles is not enough on its own. Production reaches `0250` after
+Creating the roles is not enough on its own. Production reaches `0264` after
 `scripts/postgres18-production-role-transition.sh transfer-ownership` has already handed `public`, `drizzle`,
 and everything in them to `boardsesh_owner`, so `SET LOCAL ROLE boardsesh_owner` lands on objects the owner
 may replace. Development and CI have no cutover: both the image build and `dev-db-up.sh` apply the whole
-journal as the bootstrap superuser, which leaves every pre-`0250` object owned by that superuser and would
+journal as the bootstrap superuser, which leaves every pre-`0264` object owned by that superuser and would
 make the role switch fail on `CREATE OR REPLACE FUNCTION`, `CREATE TRIGGER`, and the drizzle ledger writes.
-`0250` therefore opens with a superuser-only block that mirrors the cutover for exactly the objects that one
+`0264` therefore opens with a superuser-only block that mirrors the cutover for exactly the objects that one
 transaction replaces, attaches a trigger to, or records itself in — the two `public` cursor functions, the
 four cursor-stamped tables, both `__drizzle_migrations` ledgers, and the `public`/`drizzle` schemas. The
 production migrator is verified `NOSUPERUSER` before it is handed the deploy secret, so that block never runs
@@ -1608,7 +1608,7 @@ schema-wide sweep fails the test instead of passing it.
 
 The block narrates itself at `NOTICE` level: one line naming `session_user` and each
 `ALTER SCHEMA`/`ALTER TABLE`/`ALTER FUNCTION` it runs, or one line saying it skipped because `session_user` is
-not a superuser. Grep a `0250` deploy log for `migration 0250 superuser preamble` — on the production migrator
+not a superuser. Grep a `0264` deploy log for `migration 0250 superuser preamble` — on the production migrator
 the only line is the skip. If a real PG18 database is ever migrated with a platform superuser credential
 (Railway hands one out by default), those `ALTER` lines are the trace of a half-cutover database: `public`,
 `drizzle`, six tables and two functions moved to `boardsesh_owner` while every other `public` table stayed on
@@ -2071,15 +2071,15 @@ fallback. No homelab replica publisher or heartbeat monitor is represented as ac
 1. Verify that the target is PostgreSQL 18 and pre-provision `boardsesh_snapshot_fence_owner`, its grants,
    and the narrow coordinator/standby roles. Run the PG18 migration smoke and owner/grant audit before
    changing the schema.
-2. Before applying `0250`, compare its write-path cost on matched, disposable PostgreSQL 18 databases. Keep
-   one at the current pre-`0250` schema and clone it for a candidate with only `0250` applied. Verify the
+2. Before applying `0264`, compare its write-path cost on matched, disposable PostgreSQL 18 databases. Keep
+   one at the current pre-`0264` schema and clone it for a candidate with only `0264` applied. Verify the
    affected tables have matching indexes and column defaults, seed synthetic multi-thousand-row fixtures,
    and run the repeatable workloads in `scripts/board-snapshot-write-benchmark/`. Record server
    version/settings, migration hash, row and batch counts, and per-path median, p95, range, and relative
    delta. Review the comparison before applying the migration; there is no fixed latency threshold. Do not
-   use production data or a shared database. `0250` triggers run on their documented write paths regardless
+   use production data or a shared database. `0264` triggers run on their documented write paths regardless
    of exporter flags.
-3. Apply `0250_board_snapshot_replica_fence` through the restricted migrator/application-owner boundary,
+3. Apply `0264_board_snapshot_replica_fence` through the restricted migrator/application-owner boundary,
    then configure the direct primary URL and run the automated owner/grant audit. Keep replica publishing
    and heartbeat emission disabled.
 4. On a disposable or explicitly approved shadow prefix, verify a fenced primary export retains its

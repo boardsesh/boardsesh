@@ -380,7 +380,7 @@ async function exportInShape(
     filePath,
     gradesFilePath,
     builtAt: BUILT_AT,
-    stabilityWindowSeconds: 0,
+    stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     artifactShape,
   });
   return { filePath, gradesFilePath, result };
@@ -654,7 +654,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       filePath,
       gradesFilePath,
       builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
+      stableBefore: INCLUDE_ALL_STABLE_BEFORE,
     });
     expect(readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS).map((row) => row.uuid)).toEqual([
       'imported-catalog',
@@ -1334,7 +1334,7 @@ describe('artifact shapes', () => {
         layoutId: LAYOUT_ID,
         filePath,
         builtAt: BUILT_AT,
-        stabilityWindowSeconds: 0,
+        stableBefore: INCLUDE_ALL_STABLE_BEFORE,
       });
       return filePath;
     }
