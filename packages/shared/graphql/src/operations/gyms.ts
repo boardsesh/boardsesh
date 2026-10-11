@@ -87,6 +87,7 @@ const GYM_FIELDS = `
   canGrantAccess
   canClaim
   isClaimed
+  canClaimByDomain
 `;
 
 export const GET_GYM = gql`
@@ -203,6 +204,7 @@ export const FIND_SIMILAR_GYMS = gql`
       distanceMeters
       ownerType
       isClaimable
+      canClaimByDomain
       providerOrigins
     }
   }
