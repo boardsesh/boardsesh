@@ -119,11 +119,14 @@ describe('cohort playlist grade band', () => {
     const warnings: string[] = [];
     const log = { info: () => {}, warn: (message: string) => warnings.push(message) };
 
-    await db.transaction(async (transaction) => {
+    const lockTimeoutAfter = await db.transaction(async (transaction) => {
       await swapClimbsToHard(transaction, playlistId);
       await refreshCohortPlaylistBand(transaction, playlistId, 'Crowd Favorites', log);
+      const rows = (await transaction.execute(sql`SHOW lock_timeout`)) as unknown as Array<{ lock_timeout: string }>;
+      return rows[0].lock_timeout;
     });
 
+    expect(lockTimeoutAfter).toBe('0');
     expect(await maxDifficultyOf(playlistId)).toBe(24);
     expect(warnings).toEqual([]);
   });

@@ -321,6 +321,9 @@ export async function refreshCohortPlaylistBand(
     await transaction.transaction(async (savepoint) => {
       await savepoint.execute(sql.raw(`SET LOCAL lock_timeout = '${BAND_LOCK_TIMEOUT}'`));
       await refreshPlaylistGradeSummariesFor(savepoint, [playlistId]);
+      // A released savepoint keeps a SET LOCAL until commit; put it back so
+      // nothing after this step inherits the bounded wait.
+      await savepoint.execute(sql`SET LOCAL lock_timeout TO DEFAULT`);
     });
   } catch (error) {
     log.warn(
