@@ -74,7 +74,6 @@ edit(hook, [
             surface: failureTelemetryContext.surface,
             queueMs: Math.round(probeDispatchedAtMs - probeRequestedAtMs),
             nativeMs: Math.round(perfNow() - probeDispatchedAtMs),
-            configLength: 0,
           });
         }
 """),
@@ -169,7 +168,6 @@ edit("src/lib/graphql/hooks/use-infinite-search-climbs.ts", [
         page: pageParam,
         fetchMs: Math.round(perfNow() - probeStartedAtMs),
         climbCount: response.searchClimbs.climbs.length,
-        inputLength: 0,
         sort: `${String(searchInput.sortBy)}:${searchInput.boardName}/${searchInput.layoutId}/${searchInput.sizeId}@${searchInput.angle}`,
       });
       return response;

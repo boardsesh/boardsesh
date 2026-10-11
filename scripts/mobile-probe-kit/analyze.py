@@ -56,7 +56,7 @@ def summarise(events, title):
     for surface in ("thumbnail", "play", "full", "prefetch"):
         renders = [e for e in events if e["name"] == "overlay-render" and e.get("surface") == surface]
         if renders:
-            print(f"  native render [{surface}]: native {describe([e['nativeMs'] for e in renders])} | queue {describe([e['queueMs'] for e in renders])} | config chars p50={pct([e['configLength'] for e in renders], .5)}")
+            print(f"  native render [{surface}]: native {describe([e['nativeMs'] for e in renders])} | queue {describe([e['queueMs'] for e in renders])}")
     shown = [e for e in events if e["name"] == "overlay-shown" and not e.get("play")]
     if shown:
         ungated = [e for e in shown if not e.get("gated")]

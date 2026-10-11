@@ -104,23 +104,24 @@ def record_stream(out_directory, seconds):
     shows what was on screen; it is not a frame-timing measurement.
     """
     os.makedirs(out_directory, exist_ok=True)
-    stream = urllib.request.urlopen(MJPEG_URL, timeout=10)
     started = time.time()
     index, buffered, stamps = 0, b"", []
-    while time.time() - started < seconds:
-        chunk = stream.read(65536)
-        if not chunk:
-            break
-        buffered += chunk
-        while True:
-            start = buffered.find(b"\xff\xd8")
-            end = buffered.find(b"\xff\xd9", start + 2) if start != -1 else -1
-            if start == -1 or end == -1:
+    with urllib.request.urlopen(MJPEG_URL, timeout=10) as stream:
+        while time.time() - started < seconds:
+            chunk = stream.read(65536)
+            if not chunk:
                 break
-            frame, buffered = buffered[start:end + 2], buffered[end + 2:]
-            open(os.path.join(out_directory, f"f{index:05d}.jpg"), "wb").write(frame)
-            stamps.append(round(time.time() - started, 4))
-            index += 1
+            buffered += chunk
+            while True:
+                start = buffered.find(b"\xff\xd8")
+                end = buffered.find(b"\xff\xd9", start + 2) if start != -1 else -1
+                if start == -1 or end == -1:
+                    break
+                frame, buffered = buffered[start:end + 2], buffered[end + 2:]
+                with open(os.path.join(out_directory, f"f{index:05d}.jpg"), "wb") as image:
+                    image.write(frame)
+                stamps.append(round(time.time() - started, 4))
+                index += 1
     json.dump(stamps, open(os.path.join(out_directory, "stamps.json"), "w"))
     return stamps
 
