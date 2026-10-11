@@ -24,7 +24,6 @@ import {
 } from '../catalog-access';
 import {
   runMigrations,
-  markScopeDownloadComplete,
   setCheckpoint,
   getCheckpointKey,
   getCheckpoint,
