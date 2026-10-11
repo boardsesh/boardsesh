@@ -312,7 +312,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
     { direction: 'mirror', status: mirrorStatus, label: tSession('mobile.logbook.mirroredTag') },
   ];
   return (
-    <View style={styles.directionStatuses} accessibilityElementsHidden={hideFromAccessibility} importantForAccessibility={hideFromAccessibility ? 'no-hide-descendants' : 'auto'}>
+    <View style={styles.directionStatuses}>
       {directions.map(({ direction, status, label }) =>
         status ? (
           <View
@@ -618,7 +618,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             thumbnail — see the comment on `AscentStatusGlyph`. Renders null for
             a climb you have no history with, so a compact/default row and every
             signed-out rich row stay byte-for-byte what they were. */}
-        {isRich ? <ClimbProgressLine climbUuid={climb.uuid} angle={angle} /> : null}
+        {isRich ? <ClimbProgressLine climbUuid={climb.uuid} angle={angle} holdsRevisionNumber={climb.holdsRevisionNumber ?? null} /> : null}
         {/* Compact drops the whole subtitle line — and with it `LiveClimbSubtitle`'s
             per-row `useEffectiveClimbStats` subscription, so a compact row costs
             strictly less than a default one rather than just looking smaller. */}

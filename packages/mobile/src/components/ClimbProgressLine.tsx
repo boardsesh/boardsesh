@@ -44,9 +44,11 @@ const GLYPH_SIZE = 13;
 export const ClimbProgressLine = React.memo(function ClimbProgressLine({
   climbUuid,
   angle,
+  holdsRevisionNumber,
 }: {
   climbUuid: string;
   angle: number;
+  holdsRevisionNumber?: number | null;
 }) {
   const { t, i18n } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -55,7 +57,7 @@ export const ClimbProgressLine = React.memo(function ClimbProgressLine({
   // RCTAccessibilityManager.multiplier), and it changes about as often as the
   // user visits Settings, so the subscription costs a mounted row nothing.
   const { fontScale } = useWindowDimensions();
-  const progress = useClimbProgress(climbUuid, angle);
+  const progress = useClimbProgress(climbUuid, angle, holdsRevisionNumber);
 
   const label = useMemo(() => {
     if (!progress) return '';

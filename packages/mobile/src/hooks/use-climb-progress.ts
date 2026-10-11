@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
+import { isTickOnCurrentHolds } from '@boardsesh/logbook';
 import { tickTimeMs } from '@boardsesh/profile-stats';
 import { deriveClimbProgress, type ClimbProgress } from '../lib/climb-progress';
 
@@ -14,8 +15,11 @@ import { deriveClimbProgress, type ClimbProgress } from '../lib/climb-progress';
  * bucket identity; the provider rebuilds buckets when its logbook array changes,
  * so any logbook merge can recompute this climb's progress.
  */
-export function useClimbProgress(climbUuid: string, angle: number): ClimbProgress | null {
+export function useClimbProgress(climbUuid: string, angle: number, holdsRevisionNumber?: number | null): ClimbProgress | null {
   const logbook = useOptionalBoardLogbook();
   const entries = logbook?.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle));
-  return useMemo(() => deriveClimbProgress(entries, tickTimeMs), [entries]);
+  return useMemo(
+    () => deriveClimbProgress(entries?.filter((entry) => isTickOnCurrentHolds(entry.climb_revision, holdsRevisionNumber)), tickTimeMs),
+    [entries, holdsRevisionNumber],
+  );
 }
