@@ -49,7 +49,16 @@ export const socialCommentSubscriptions = {
           event.__typename === 'CommentDeleted' &&
           (!event.authorUserId ||
             event.parentCommentId === undefined ||
-            !(await canReadDeletedComment(event.commentUuid, event.authorUserId, event.parentCommentId, viewerId)))
+            !(await canReadDeletedComment(
+              {
+                commentUuid: event.commentUuid,
+                authorUserId: event.authorUserId,
+                parentCommentId: event.parentCommentId,
+                entityType,
+                entityId,
+              },
+              viewerId,
+            )))
         )
           continue;
         yield { commentUpdates: event };

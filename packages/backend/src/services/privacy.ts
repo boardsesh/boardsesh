@@ -4,6 +4,7 @@ export {
   boardIdentityVisibleCondition,
   userActivityVisibilityCondition,
   contentVisibilityCondition,
+  entityOwnerCondition,
   resourceAccessCondition,
   resourceLocationCondition,
   sessionBoardLocationCondition,

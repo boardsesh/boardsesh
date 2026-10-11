@@ -193,7 +193,7 @@ export const socialCommentQueries = {
         SELECT r."parent_comment_id", COUNT(*) as cnt
         FROM "comments" r
         WHERE r."parent_comment_id" IS NOT NULL AND r."deleted_at" IS NULL
-          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r."uuid"`, userId: sql`r."user_id"`, parentCommentId: sql`r."parent_comment_id"` })}
+          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r."uuid"`, userId: sql`r."user_id"`, parentCommentId: sql`r."parent_comment_id"`, entityType: sql`r."entity_type"`, entityId: sql`r."entity_id"` })}
           AND r."entity_type" = ${entityType} AND r."entity_id" = ${entityId}
         GROUP BY r."parent_comment_id"
       ) reply_cnt ON reply_cnt."parent_comment_id" = c."id"
@@ -206,7 +206,7 @@ export const socialCommentQueries = {
       WHERE c."entity_type" = ${entityType}
         AND c."entity_id" = ${entityId}
         AND ${parentCommentFilter}
-        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"` })}
+        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"`, entityType: sql`c."entity_type"`, entityId: sql`c."entity_id"` })}
       ORDER BY ${orderByClause}
       LIMIT ${limit}
       OFFSET ${offset}
@@ -372,7 +372,7 @@ export const socialCommentQueries = {
         SELECT r."parent_comment_id", COUNT(*) as cnt
         FROM "comments" r
         WHERE r."parent_comment_id" IS NOT NULL AND r."deleted_at" IS NULL
-          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r.uuid`, userId: sql`r.user_id`, parentCommentId: sql`r.parent_comment_id` })}
+          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r.uuid`, userId: sql`r.user_id`, parentCommentId: sql`r.parent_comment_id`, entityType: sql`r.entity_type`, entityId: sql`r.entity_id` })}
         GROUP BY r."parent_comment_id"
       ) reply_cnt ON reply_cnt."parent_comment_id" = c."id"
       LEFT JOIN "vote_counts" vc ON vc."entity_type" = 'comment' AND vc."entity_id" = c."uuid"
@@ -384,7 +384,7 @@ export const socialCommentQueries = {
       ${boardFilterJoin}
       ${sprayProposalJoin}
       WHERE c."deleted_at" IS NULL
-        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"` })}
+        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"`, entityType: sql`c."entity_type"`, entityId: sql`c."entity_id"` })}
         AND ${socialEntityPrivacyCondition(sql`c."entity_type"`, sql`c."entity_id"`, authenticatedUserId, { discovery: true })}
         ${boardFilterWhere}
         ${sprayCommentVisibility}

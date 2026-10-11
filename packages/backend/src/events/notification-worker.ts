@@ -30,7 +30,7 @@ import {
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import crypto from 'crypto';
 import { canViewContent, canViewUserActivity } from '../services/privacy';
-import { canReadSocialEntity } from '../graphql/resolvers/shared/activity-privacy';
+import { canReadSocialEntity, viewerOwnsSocialEntity } from '../graphql/resolvers/shared/activity-privacy';
 
 /**
  * Whether the proposal behind this event is a `hide`.
@@ -398,10 +398,14 @@ export class NotificationWorker {
     if (recipientId === actorId) return;
 
     if (type !== 'new_follower') {
+      // The owner of the item hears about every comment and like on it, private
+      // commenters included; for a comment, `canReadSocialEntity` already admits
+      // the owner, so only the like path needs the explicit ownership check.
       const canSeeActor = commentUuid
         ? await canReadSocialEntity('comment', commentUuid, recipientId)
         : entityType
-          ? await canViewContent(recipientId, entityType, entityId, actorId)
+          ? (await viewerOwnsSocialEntity(entityType, entityId, recipientId)) ||
+            (await canViewContent(recipientId, entityType, entityId, actorId))
           : await canViewUserActivity(recipientId, actorId);
       if (!canSeeActor || (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId)))) return;
     }

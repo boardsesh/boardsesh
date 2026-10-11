@@ -6,6 +6,7 @@ import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
 import {
   contentVisibilityCondition,
+  entityOwnerCondition,
   resourceAccessCondition,
   userActivityVisibilityCondition,
 } from '../../../services/privacy';
@@ -146,7 +147,14 @@ export type SocialEntityReadOptions = {
   discovery?: boolean;
 };
 
-/** A UUID is an address, not permission to read its discussion or notifications. */
+/**
+ * A UUID is an address, not permission to read its discussion or notifications.
+ * Every terminal branch below already admits the item's owner on the account and
+ * audience layer (a climber reads their own tick, host their session, setter
+ * their climb); the owner's view of other people's comments on it comes from
+ * `commentPrivacyCondition`, which each traversed comment passes through. The
+ * spray wall rule and a climb's draft/listing rule still apply to owners.
+ */
 export function socialEntityPrivacyCondition(
   entityType: SQLWrapper,
   entityId: SQLWrapper,
@@ -170,6 +178,8 @@ export function socialEntityPrivacyCondition(
           uuid: sql`privacy_entity_reference.uuid`,
           userId: sql`privacy_entity_reference.user_id`,
           parentCommentId: sql`privacy_entity_reference.parent_comment_id`,
+          entityType: sql`privacy_entity_reference.entity_type`,
+          entityId: sql`privacy_entity_reference.entity_id`,
         })}
     )
     SELECT 1 FROM privacy_entity_chain privacy_entity_target
@@ -286,31 +296,82 @@ function terminalSocialEntityPrivacyCondition(
     ELSE false END`;
 }
 
-/** A public reply never widens a private ancestor's audience. */
+type CommentPrivacyColumns = {
+  uuid: SQLWrapper;
+  userId: SQLWrapper;
+  parentCommentId: SQLWrapper;
+  entityType: SQLWrapper;
+  entityId: SQLWrapper;
+};
+
+/**
+ * A comment is its author's activity, read through its own audience and the
+ * audience of every ancestor above it: a public reply never widens a private
+ * ancestor. Three exemptions sit on top:
+ *
+ * - The owner of the commented item (`entityOwnerCondition`) reads every comment
+ *   on it, whoever wrote it.
+ * - Whoever replied in a thread reads every ancestor of their reply: the
+ *   viewer's own comments on the item are walked up to their roots, and any
+ *   comment on that path is readable to them.
+ * - An ancestor row that no longer exists is readable. Deleting an account
+ *   cascades its comments, and that must not orphan the replies under them.
+ *
+ * Structure still fails closed for everyone: the chain must end at a root or a
+ * missing row within 32 ancestors, so a cycle or an over-deep chain never reads.
+ */
 export function commentPrivacyCondition(
   viewerId: string | null | undefined,
-  comment: { uuid: SQLWrapper; userId: SQLWrapper; parentCommentId: SQLWrapper } = schema.comments,
+  comment: CommentPrivacyColumns = schema.comments,
 ): SQL {
-  return and(
-    contentVisibilityCondition('comment', comment.uuid, comment.userId, viewerId),
-    // Reaching a root proves the chain is complete. An absent parent yields
-    // no unreadable rows, so checking only NOT EXISTS would expose orphans.
-    sql`(
+  const ownComment = viewerId ? sql`COALESCE(${comment.userId} = ${viewerId}, false)` : sql`false`;
+  // Every comment the viewer wrote on this item, walked up to its root. UNION
+  // (not UNION ALL) drops repeated rows, so a cyclic chain stops expanding.
+  const viewerThread = viewerId
+    ? sql`, privacy_viewer_thread AS (
+      SELECT privacy_mine.id, privacy_mine.uuid, privacy_mine.parent_comment_id FROM comments privacy_mine
+      WHERE privacy_mine.user_id = ${viewerId}
+        AND privacy_mine.entity_type = (${comment.entityType})::text::social_entity_type
+        AND privacy_mine.entity_id = ${comment.entityId}
+      UNION
+      SELECT privacy_above.id, privacy_above.uuid, privacy_above.parent_comment_id
+      FROM comments privacy_above JOIN privacy_viewer_thread privacy_below ON privacy_above.id = privacy_below.parent_comment_id
+    )`
+    : sql``;
+  const inViewerThread = (uuid: SQLWrapper): SQL =>
+    viewerId
+      ? sql`EXISTS (SELECT 1 FROM privacy_viewer_thread WHERE privacy_viewer_thread.uuid = ${uuid})`
+      : sql`false`;
+  const readable = (uuid: SQLWrapper, userId: SQLWrapper): SQL =>
+    sql`(${contentVisibilityCondition('comment', uuid, userId, viewerId)} OR ${inViewerThread(uuid)})`;
+  return sql`(
     WITH RECURSIVE privacy_ancestors AS (
       SELECT privacy_parent_seed.id, privacy_parent_seed.uuid, privacy_parent_seed.user_id, privacy_parent_seed.parent_comment_id, 1 AS depth FROM comments privacy_parent_seed WHERE privacy_parent_seed.id = ${comment.parentCommentId}
       UNION ALL
       SELECT parent.id, parent.uuid, parent.user_id, parent.parent_comment_id, child.depth + 1
       FROM comments parent JOIN privacy_ancestors child ON parent.id = child.parent_comment_id
       WHERE child.depth < 32
+    )${viewerThread}
+    SELECT (
+      ${comment.parentCommentId} IS NULL
+      OR NOT EXISTS (SELECT 1 FROM comments privacy_gone_parent WHERE privacy_gone_parent.id = ${comment.parentCommentId})
+      OR EXISTS (
+        SELECT 1 FROM privacy_ancestors privacy_chain_end
+        WHERE privacy_chain_end.parent_comment_id IS NULL
+          OR (privacy_chain_end.depth < 32 AND NOT EXISTS (
+            SELECT 1 FROM comments privacy_gone_ancestor WHERE privacy_gone_ancestor.id = privacy_chain_end.parent_comment_id
+          ))
+      )
+    ) AND (
+      ${entityOwnerCondition(comment.entityType, comment.entityId, viewerId)}
+      OR (
+        ${readable(comment.uuid, comment.userId)}
+        AND (${ownComment} OR NOT EXISTS (
+          SELECT 1 FROM privacy_ancestors ancestor WHERE NOT ${readable(sql`ancestor.uuid`, sql`ancestor.user_id`)}
+        ))
+      )
     )
-    SELECT (${comment.parentCommentId} IS NULL OR EXISTS (
-      SELECT 1 FROM privacy_ancestors WHERE parent_comment_id IS NULL
-    )) AND NOT EXISTS (
-      SELECT 1 FROM privacy_ancestors ancestor WHERE
-        NOT ${contentVisibilityCondition('comment', sql`ancestor.uuid`, sql`ancestor.user_id`, viewerId)}
-    )
-  )`,
-  )!;
+  )`;
 }
 
 export async function canReadSocialEntity(
@@ -324,22 +385,42 @@ export async function canReadSocialEntity(
   return result?.allowed === true;
 }
 
+/** A hard-deleted comment's tombstone, checked as if the row still existed. */
 export async function canReadDeletedComment(
-  commentUuid: string,
-  authorUserId: string,
-  parentCommentId: number | null,
+  deleted: {
+    commentUuid: string;
+    authorUserId: string;
+    parentCommentId: number | null;
+    entityType: string;
+    entityId: string;
+  },
   viewerId: string | null | undefined,
 ): Promise<boolean> {
   const [result] = await db
     .select({
       allowed: commentPrivacyCondition(viewerId, {
-        uuid: sql`${commentUuid}::text`,
-        userId: sql`${authorUserId}::text`,
-        parentCommentId: sql`${parentCommentId}::integer`,
+        uuid: sql`${deleted.commentUuid}::text`,
+        userId: sql`${deleted.authorUserId}::text`,
+        parentCommentId: sql`${deleted.parentCommentId}::bigint`,
+        entityType: sql`${deleted.entityType}::text`,
+        entityId: sql`${deleted.entityId}::text`,
       }),
     })
     .from(sql`(SELECT 1) privacy_deleted_comment`);
   return result?.allowed === true;
+}
+
+/** Whether the viewer owns the item a like or comment is about. */
+export async function viewerOwnsSocialEntity(
+  entityType: string,
+  entityId: string,
+  viewerId: string | null | undefined,
+): Promise<boolean> {
+  if (!viewerId) return false;
+  const [result] = await db
+    .select({ owned: entityOwnerCondition(entityType, sql`${entityId}::text`, viewerId) })
+    .from(sql`(SELECT 1) privacy_owner_check`);
+  return result?.owned === true;
 }
 
 export function notificationPrivacyCondition(
@@ -360,7 +441,11 @@ export function notificationPrivacyCondition(
         isNull(notification.actorId),
         and(
           isNull(notification.commentId),
-          contentVisibilityCondition(notification.entityType, notification.entityId, notification.actorId, viewerId),
+          or(
+            contentVisibilityCondition(notification.entityType, notification.entityId, notification.actorId, viewerId),
+            // A like on your own item names its liker to you, private or not.
+            entityOwnerCondition(notification.entityType, notification.entityId, viewerId),
+          ),
         ),
         exists(
           queryBuilder

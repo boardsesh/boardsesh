@@ -20,6 +20,8 @@ import {
 const owner = 'privacy-matrix-owner';
 const approved = 'privacy-matrix-approved';
 const stranger = 'privacy-matrix-stranger';
+// Never comments, follows or owns anything: the reader every exemption skips.
+const bystander = 'privacy-matrix-bystander';
 const climbUuid = 'privacy-matrix-catalog-climb';
 const sessionId = 'privacy-matrix-session';
 const tickIds = ['privacy-normal', 'privacy-only-me', 'privacy-public', 'privacy-stale-public', 'privacy-session'];
@@ -36,7 +38,7 @@ async function visibleTicks(viewer?: string) {
 beforeAll(async () => {
   await db
     .insert(schema.users)
-    .values([owner, approved, stranger].map((id) => ({ id, email: `${id}@test.com`, name: id })));
+    .values([owner, approved, stranger, bystander].map((id) => ({ id, email: `${id}@test.com`, name: id })));
   await db.insert(schema.userProfiles).values({ userId: owner, isPrivate: true, privacyRevision: 2 });
   await db.insert(schema.userFollows).values({ followerId: approved, followingId: owner });
   await db.insert(schema.userFollowRequests).values({ requesterId: stranger, recipientId: owner });
@@ -108,10 +110,20 @@ beforeEach(async () => {
 });
 
 describe('SQL privacy boundaries against Postgres', () => {
-  it('protects a deleted public reply under a private ancestor', async () => {
+  it('keeps a deleted reply under a private ancestor from strangers, but not from its author', async () => {
     const [reply] = await db.select().from(schema.comments).where(eq(schema.comments.uuid, 'privacy-reply'));
-    expect(await canReadDeletedComment(reply.uuid, stranger, reply.parentCommentId, null)).toBe(false);
-    expect(await canReadDeletedComment(reply.uuid, stranger, reply.parentCommentId, approved)).toBe(true);
+    const tombstone = {
+      commentUuid: reply.uuid,
+      authorUserId: stranger,
+      parentCommentId: reply.parentCommentId,
+      entityType: 'climb',
+      entityId: climbUuid,
+    };
+    expect(await canReadDeletedComment(tombstone, null)).toBe(false);
+    expect(await canReadDeletedComment(tombstone, bystander)).toBe(false);
+    expect(await canReadDeletedComment(tombstone, approved)).toBe(true);
+    // Whoever replied reads the thread they replied in.
+    expect(await canReadDeletedComment(tombstone, stranger)).toBe(true);
   });
   it('keeps every own tick available to its author', async () => {
     expect(await visibleTicks(owner)).toEqual([...tickIds].sort());
@@ -131,12 +143,20 @@ describe('SQL privacy boundaries against Postgres', () => {
     expect(await visibleTicks()).toEqual(['privacy-public', 'privacy-session']);
   });
   it('checks private comments and their ancestors before exposing replies', async () => {
-    const comments = await db
-      .select({ uuid: schema.comments.uuid })
-      .from(schema.comments)
-      .where(commentPrivacyCondition(stranger));
-    expect(comments).toEqual([]);
-    expect(await canReadSocialEntity('comment', 'privacy-parent', stranger)).toBe(false);
+    const readableBy = async (viewerId: string | null) =>
+      (
+        await db
+          .select({ uuid: schema.comments.uuid })
+          .from(schema.comments)
+          .where(commentPrivacyCondition(viewerId))
+          .orderBy(schema.comments.uuid)
+      ).map((row) => row.uuid);
+    expect(await readableBy(null)).toEqual([]);
+    expect(await readableBy(bystander)).toEqual([]);
+    // The reply's author reads the private comment they replied to.
+    expect(await readableBy(stranger)).toEqual(['privacy-parent', 'privacy-reply']);
+    expect(await canReadSocialEntity('comment', 'privacy-parent', bystander)).toBe(false);
+    expect(await canReadSocialEntity('comment', 'privacy-parent', stranger)).toBe(true);
     expect(await canReadSocialEntity('comment', 'privacy-reply', approved)).toBe(true);
     expect(await canReadSocialEntity('climb', climbUuid, undefined)).toBe(true);
   });
@@ -188,8 +208,10 @@ describe('SQL privacy boundaries against Postgres', () => {
     ]);
     expect(await canReadSocialEntity('comment', 'privacy-chain-two', null)).toBe(true);
     expect(await canReadSocialEntity('comment', 'privacy-chain-three', null)).toBe(false);
-    expect(await canReadSocialEntity('comment', 'privacy-chain-private', stranger)).toBe(false);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-private', bystander)).toBe(false);
     expect(await canReadSocialEntity('comment', 'privacy-chain-private', approved)).toBe(true);
+    // A comment on the stranger's own comment is the stranger's to read.
+    expect(await canReadSocialEntity('comment', 'privacy-chain-private', stranger)).toBe(true);
     expect(await canReadSocialEntity('comment', 'privacy-chain-public-outer', stranger)).toBe(false);
     expect(await canReadSocialEntity('comment', 'privacy-chain-public-outer', approved)).toBe(true);
     expect(await canReadSocialEntity('comment', 'privacy-chain-cycle', stranger)).toBe(false);
@@ -245,7 +267,9 @@ describe('SQL privacy boundaries against Postgres', () => {
     for (const [viewerId, allowed] of [
       [owner, true],
       [approved, true],
-      [stranger, false],
+      // The reply's own author is told about it, and reads it.
+      [stranger, true],
+      [bystander, false],
     ] as const) {
       const [result] = await db
         .select({ allowed: notificationPrivacyCondition(viewerId, notification) })
@@ -290,7 +314,8 @@ describe('SQL privacy boundaries against Postgres', () => {
     for (const [viewerId, visibleIndexes] of [
       [owner, [0, 1, 2, 3, 4]],
       [approved, [0, 1, 2, 4]],
-      [stranger, [0, 1]],
+      // The comment_reply is about the stranger's own reply under a private parent.
+      [stranger, [0, 1, 4]],
     ] as const) {
       const context: ConnectionContext = { userId: viewerId, isAuthenticated: true, connectionId: viewerId };
       const expectedIds = visibleIndexes.map((index) => `privacy-enum-${viewerId}-${index}`).sort();
@@ -474,7 +499,7 @@ describe('SQL privacy boundaries against Postgres', () => {
 
 describe('complete comment ancestry', () => {
   it.each([false, true])(
-    'hides surviving replies after an ancestor account disappears (nested: %s)',
+    'keeps surviving replies readable after an ancestor account disappears (nested: %s)',
     async (nested) => {
       const deletedAuthor = `privacy-deleted-ancestor-${nested}`;
       await db.insert(schema.users).values({ id: deletedAuthor, email: `${deletedAuthor}@test.com` });
@@ -517,27 +542,42 @@ describe('complete comment ancestry', () => {
         })
         .returning();
       expect(await canReadSocialEntity('comment', reply.uuid, approved)).toBe(true);
-      expect(await canReadSocialEntity('comment', reply.uuid, stranger)).toBe(false);
+      // The reply's author reads the thread they replied in; nobody else does.
+      expect(await canReadSocialEntity('comment', reply.uuid, stranger)).toBe(true);
+      expect(await canReadSocialEntity('comment', reply.uuid, bystander)).toBe(false);
+      expect(await canReadSocialEntity('comment', reply.uuid, null)).toBe(false);
 
       // User deletion cascades to their comments, while reply parent IDs have no FK.
       await db.delete(schema.users).where(eq(schema.users.id, deletedAuthor));
       expect(await db.select().from(schema.comments).where(eq(schema.comments.id, root.id))).toEqual([]);
       const [survivingReply] = await db.select().from(schema.comments).where(eq(schema.comments.id, reply.id));
       expect(survivingReply.parentCommentId).toBe(replyParentId);
-      for (const viewerId of [null, stranger, approved]) {
-        expect(await canReadSocialEntity('comment', reply.uuid, viewerId)).toBe(false);
-        expect(await canReadDeletedComment(reply.uuid, stranger, replyParentId, viewerId)).toBe(false);
+      // A missing ancestor is readable: the deleted account no longer orphans its subthread.
+      for (const viewerId of [null, bystander, stranger, approved]) {
+        expect(await canReadSocialEntity('comment', reply.uuid, viewerId)).toBe(true);
+        expect(
+          await canReadDeletedComment(
+            {
+              commentUuid: reply.uuid,
+              authorUserId: stranger,
+              parentCommentId: replyParentId,
+              entityType: 'climb',
+              entityId: climbUuid,
+            },
+            viewerId,
+          ),
+        ).toBe(true);
       }
       const feed = await socialCommentQueries.globalCommentFeed(null, { input: { limit: 50 } }, {
         userId: null,
         isAuthenticated: false,
         connectionId: `privacy-orphan-${nested}`,
       } as unknown as ConnectionContext);
-      expect(feed.comments.map((comment) => comment.uuid)).not.toContain(reply.uuid);
+      expect(feed.comments.map((comment) => comment.uuid)).toContain(reply.uuid);
     },
   );
 
-  it('allows complete chains through 32 ancestors and rejects deeper chains and cycles', async () => {
+  it('allows chains ending at a root or a missing row within 32 ancestors and rejects deeper chains and cycles', async () => {
     let parentCommentId: number | null = null;
     const chain = [];
     for (let depth = 0; depth <= 33; depth += 1) {
@@ -559,8 +599,16 @@ describe('complete comment ancestry', () => {
     expect(await canReadSocialEntity('comment', chain[32].uuid, null)).toBe(true);
     expect(await canReadSocialEntity('comment', chain[33].uuid, null)).toBe(false);
 
+    // A missing row ends the chain like a root does: chain[33] now has 16 live ancestors.
+    await db.delete(schema.comments).where(eq(schema.comments.id, chain[16].id));
+    expect(await canReadSocialEntity('comment', chain[17].uuid, null)).toBe(true);
+    expect(await canReadSocialEntity('comment', chain[33].uuid, null)).toBe(true);
+
+    // A cycle reaches neither a root nor a missing row.
     await db.update(schema.comments).set({ parentCommentId: chain[1].id }).where(eq(schema.comments.id, chain[0].id));
     expect(await canReadSocialEntity('comment', chain[0].uuid, null)).toBe(false);
-    expect(await canReadSocialEntity('comment', chain[32].uuid, null)).toBe(false);
+    expect(await canReadSocialEntity('comment', chain[15].uuid, null)).toBe(false);
+    expect(await canReadSocialEntity('comment', chain[15].uuid, stranger)).toBe(false);
+    expect(await canReadSocialEntity('comment', chain[33].uuid, null)).toBe(true);
   });
 });

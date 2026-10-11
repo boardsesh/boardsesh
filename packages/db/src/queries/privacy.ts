@@ -36,6 +36,47 @@ export function contentVisibilityCondition(
   )), false)`;
 }
 
+/**
+ * Whether the viewer owns the item a comment, like or notification is about:
+ * the tick's climber, the session's host, the climb's setter, the playlist's
+ * owner, the proposer, the comment's author, the board's or gym's owner. An
+ * owner sees every comment and like on their own item, whatever the commenter's
+ * account privacy. A deleted board or gym has no owner here, and an unknown
+ * entity type has none at all.
+ *
+ * The entity type is compared as text: social columns are enums, and callers
+ * also pass the non-social types `content_privacy` covers (which own nothing).
+ */
+export function entityOwnerCondition(
+  entityType: string | SQLWrapper,
+  entityIdColumn: SQLWrapper,
+  viewerId: ViewerId,
+): SQL<boolean> {
+  if (!viewerId) return sql<boolean>`false`;
+  return sql<boolean>`COALESCE(CASE (${entityType})::text
+    WHEN 'tick' THEN EXISTS (SELECT 1 FROM boardsesh_ticks owner_tick
+      WHERE owner_tick.uuid = ${entityIdColumn} AND owner_tick.user_id = ${viewerId})
+    WHEN 'session' THEN EXISTS (SELECT 1 FROM board_sessions owner_session
+      WHERE owner_session.id = ${entityIdColumn} AND owner_session.created_by_user_id = ${viewerId})
+    WHEN 'climb' THEN EXISTS (SELECT 1 FROM board_climbs owner_climb
+      WHERE owner_climb.uuid = ${entityIdColumn} AND owner_climb.user_id = ${viewerId})
+    WHEN 'playlist_climb' THEN EXISTS (SELECT 1 FROM playlists owner_playlist
+      JOIN playlist_ownership owner_playlist_role ON owner_playlist_role.playlist_id = owner_playlist.id
+      WHERE owner_playlist.uuid = split_part(${entityIdColumn}, ':', 1)
+        AND owner_playlist_role.user_id = ${viewerId} AND owner_playlist_role.role = 'owner')
+    WHEN 'proposal' THEN EXISTS (SELECT 1 FROM climb_proposals owner_proposal
+      WHERE owner_proposal.uuid = ${entityIdColumn} AND owner_proposal.proposer_id = ${viewerId})
+    WHEN 'comment' THEN EXISTS (SELECT 1 FROM comments owner_comment
+      WHERE owner_comment.uuid = ${entityIdColumn} AND owner_comment.user_id = ${viewerId})
+    WHEN 'board' THEN EXISTS (SELECT 1 FROM user_boards owner_board
+      WHERE owner_board.uuid = ${entityIdColumn} AND owner_board.owner_id = ${viewerId}
+        AND owner_board.deleted_at IS NULL)
+    WHEN 'gym' THEN EXISTS (SELECT 1 FROM gyms owner_gym
+      WHERE owner_gym.uuid = ${entityIdColumn} AND owner_gym.owner_id = ${viewerId}
+        AND owner_gym.deleted_at IS NULL)
+    ELSE false END, false)`;
+}
+
 export function resourceAccessCondition(
   kind: PrivacyResourceKind,
   resourceIdColumn: SQLWrapper,
