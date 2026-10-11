@@ -294,7 +294,7 @@ async function readHoldSets(executor: SqlExecutor, climbIds: readonly number[]):
   for (let start = 0; start < climbIds.length; start += IN_LIST_BATCH) {
     const batch = climbIds.slice(start, start + IN_LIST_BATCH);
     const rows = await executor.getAllAsync<{ climb_id: number; holds: unknown }>(
-      `SELECT climb_id, hex(holds) AS holds FROM board_climb_hold_sets WHERE climb_id IN (${placeholders(batch.length)})`,
+      `SELECT climb_id, CASE WHEN typeof(holds) = 'blob' THEN hex(holds) ELSE NULL END AS holds FROM board_climb_hold_sets WHERE climb_id IN (${placeholders(batch.length)})`,
       batch,
     );
     for (const row of rows) {
@@ -312,7 +312,8 @@ async function readPosting(
   holdId: number,
 ): Promise<Uint8Array | null> {
   const row = await txn.getFirstAsync<{ climb_ids: unknown }>(
-    'SELECT hex(climb_ids) AS climb_ids FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?',
+    `SELECT CASE WHEN typeof(climb_ids) = 'blob' THEN hex(climb_ids) ELSE NULL END AS climb_ids
+     FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ? AND hold_id = ?`,
     [boardType, layoutId, holdId],
   );
   return decodeSqliteBlobHex(row?.climb_ids);
@@ -506,7 +507,7 @@ async function buildHoldIndex(
       await yieldToHost();
       if (!shouldContinue()) return false;
       const rows = await db.getAllAsync<{ climb_id: number; holds: unknown }>(
-        `SELECT hs.climb_id, hex(hs.holds) AS holds
+        `SELECT hs.climb_id, CASE WHEN typeof(hs.holds) = 'blob' THEN hex(hs.holds) ELSE NULL END AS holds
          FROM board_climb_hold_sets hs
          JOIN holds_index_climbs hic ON hic.id = hs.climb_id
          JOIN board_climbs c ON c.uuid = hic.uuid

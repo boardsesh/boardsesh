@@ -21,7 +21,7 @@ import {
 const HOLD_HEATMAP_PAGE_CLIMBS = 1000;
 type HoldSetRow = {
   climb_id: number;
-  holds_hex: string;
+  holds_hex: string | null;
   ascensionist_count?: number | null;
   display_difficulty?: number | null;
 };
@@ -132,7 +132,7 @@ export async function getHoldHeatmapLocalWithCount(
     // filters stop matching during sync. Stats joins are 0/1 rows.
     // Text crosses Expo's bridge without one JNI global reference per BLOB.
     const rows = await db.getAllAsync<HoldSetRow>(
-      `SELECT hs.climb_id, hex(hs.holds) AS holds_hex${statsColumns}
+      `SELECT hs.climb_id, CASE WHEN typeof(hs.holds) = 'blob' THEN hex(hs.holds) ELSE NULL END AS holds_hex${statsColumns}
        FROM board_climb_hold_sets hs
        CROSS JOIN holds_index_climbs hic ON hic.id = hs.climb_id
        CROSS JOIN board_climbs c ON c.uuid = hic.uuid

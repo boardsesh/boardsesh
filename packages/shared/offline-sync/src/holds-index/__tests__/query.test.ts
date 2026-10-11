@@ -302,4 +302,44 @@ describe('findSimilarClimbCandidates', () => {
       }),
     ).toEqual(bruteForce(target.holds, 0.2, target.uuid));
   });
+  it.each(['0000000000', 123, 1.5])(
+    'rejects hold sets stored with a corrupt SQLite storage class: %s',
+    async (holds) => {
+      await db.runAsync(
+        'UPDATE board_climb_hold_sets SET holds = ? WHERE climb_id = (SELECT id FROM holds_index_climbs WHERE uuid = ?)',
+        [holds, climbs[0].uuid],
+      );
+      expect(await getHoldSet(db, climbs[0].uuid)).toBeNull();
+    },
+  );
+
+  it('preserves empty hold sets and byte parity with the packed decoder', async () => {
+    const uuid = climbs[0].uuid;
+    // A multiple of five bytes exercises the existing packed format, including
+    // every possible byte, without introducing a new alignment policy.
+    const bytes = Uint8Array.from({ length: 1280 }, (_, index) => index % 256);
+    const update =
+      'UPDATE board_climb_hold_sets SET holds = ? WHERE climb_id = (SELECT id FROM holds_index_climbs WHERE uuid = ?)';
+    await db.runAsync(update, [bytes, uuid]);
+    expect(await getHoldSet(db, uuid)).toEqual(decodeHoldSet(bytes));
+    await db.runAsync(update, [new Uint8Array(0), uuid]);
+    expect(await getHoldSet(db, uuid)).toEqual([]);
+  });
+
+  it.each(['01000000', 123, 1.5, new Uint8Array(0)])('ignores corrupt or empty posting rows: %s', async (climbIds) => {
+    await db.runAsync('UPDATE board_climb_hold_postings SET climb_ids = ? WHERE board_type = ? AND layout_id = ?', [
+      climbIds,
+      'kilter',
+      1,
+    ]);
+    expect(
+      await findSimilarClimbCandidates(db, {
+        boardType: 'kilter',
+        layoutId: 1,
+        targetHoldIds: climbs[0].holds,
+        threshold: 0.01,
+        limit: 1000,
+      }),
+    ).toEqual([]);
+  });
 });
