@@ -1,7 +1,9 @@
-import type { PgBoss } from 'pg-boss';
+import type { JobResult, JobWithMetadata, PgBoss } from 'pg-boss';
+import { inArray } from 'drizzle-orm';
 import { z } from 'zod';
+import * as dbSchema from '@boardsesh/db/schema';
 import { POSTHOG_PERSON_DELETION_QUEUE } from '@boardsesh/db/job-queue-schema';
-import type { Database } from '../../db/client';
+import { db, type Database } from '../../db/client';
 import { enqueueOn, getJobQueue } from '../job-queue';
 import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from '../job-queue-client';
 import { logger } from '../../utils/logger';
@@ -15,58 +17,98 @@ import { getAnalyticsEnvironment } from './posthog';
  * merges the anonymous person the device used before sign-in into that person.
  * So deleting the person behind the account id removes the account's profile
  * (email, Apple Ads and install-referrer properties) and every distinct id
- * merged into it. PostHog removes the person record shortly after the request;
- * its events and recordings are deleted later, in a background pass of its own.
+ * merged into it. Where PostHog refused that merge (a "split person", see
+ * docs/growth-metrics.md, "Identity-split pitfall"), the pre-sign-in person is
+ * found through the account's `$identify` events and deleted with it.
  *
  * The request runs in a pg-boss job, never inside the transaction that deletes
- * the account or records the withdrawal: the job row commits with that
- * transaction, and the HTTP call happens afterwards, with retries.
+ * the account or records the withdrawal: the job rows commit with that
+ * transaction, and the HTTP calls happen afterwards, with retries.
  */
 
 export type PosthogPersonDeletionReason = 'account_deleted' | 'consent_withdrawn';
+
+/**
+ * `first` runs {@link FIRST_PASS_DELAY_SECONDS} after the commit; `late` runs
+ * {@link LATE_PASS_DELAY_SECONDS} after it, for events that reach PostHog after
+ * the first pass (PostHog deletes only events captured before the request).
+ * A job replayed by hand may leave it out.
+ */
+export type PosthogPersonDeletionPass = 'first' | 'late';
 
 export type PosthogPersonDeletionJob = {
   /** The PostHog distinct id to erase: the account id both clients identify with. */
   distinctId: string;
   reason: PosthogPersonDeletionReason;
+  pass?: PosthogPersonDeletionPass;
 };
+
+/**
+ * Long enough for a device's on-disk event queue to flush on its next
+ * foreground and for ingestion to catch up, short enough that the person is
+ * gone the same hour.
+ */
+export const FIRST_PASS_DELAY_SECONDS = 15 * 60;
+/**
+ * Catches what the first pass could not: another signed-in device that had
+ * not yet re-read the account's denial (or hit a 401 after deletion), and a
+ * phone that stayed offline for days with events queued.
+ */
+export const LATE_PASS_DELAY_SECONDS = 7 * 24 * 60 * 60;
+
+const PASSES: ReadonlyArray<readonly [PosthogPersonDeletionPass, number]> = [
+  ['first', FIRST_PASS_DELAY_SECONDS],
+  ['late', LATE_PASS_DELAY_SECONDS],
+];
 
 const jobSchema = z.object({
   distinctId: z.string().min(1).max(200),
   reason: z.enum(['account_deleted', 'consent_withdrawn']),
+  pass: z.enum(['first', 'late']).optional(),
 });
 
 /** A drizzle transaction on the backend's primary pool. */
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 /**
- * Queue the erasure inside the caller's transaction, so it exists exactly when
- * the deletion or withdrawal commits. Never throws and never aborts the caller:
- * the send runs in a savepoint, so a failure (queue not started, queue missing)
- * rolls back only the job and leaves a warning. Returns whether a job was queued.
+ * Queue both passes of the erasure inside the caller's transaction, so they
+ * exist exactly when the deletion or withdrawal commits. Never throws and never
+ * aborts the caller: the sends run in one savepoint, so a failure (queue not
+ * started, queue missing) rolls back only the jobs. Returns whether they were
+ * queued.
+ *
+ * A missed enqueue is logged at error level WITH the distinct id: once
+ * `deleteAccount` commits, nothing else records whose person to erase. The log
+ * line is what an operator replays from (docs/analytics-consent.md, "Erasure").
  */
 export async function enqueuePosthogPersonDeletion(
   transaction: Transaction,
-  job: PosthogPersonDeletionJob,
+  { distinctId, reason }: Pick<PosthogPersonDeletionJob, 'distinctId' | 'reason'>,
 ): Promise<boolean> {
   const boss = getJobQueue();
   if (!boss) {
-    logger.warn('[PostHogErasure] Job queue not running; PostHog person deletion not queued', {
+    logger.error('[PostHogErasure] Job queue not running; PostHog person deletion not queued, replay it by hand', {
       event: 'posthog_person_deletion_not_queued',
-      reason: job.reason,
+      reason,
+      distinctId,
     });
     return false;
   }
   try {
-    const jobId = await transaction.transaction((savepoint) =>
-      boss.send(POSTHOG_PERSON_DELETION_QUEUE, job, { db: enqueueOn(savepoint) }),
-    );
-    if (!jobId) throw new Error('POSTHOG_PERSON_DELETION_NOT_QUEUED');
+    await transaction.transaction(async (savepoint) => {
+      const queueDb = enqueueOn(savepoint);
+      for (const [pass, startAfter] of PASSES) {
+        const job: PosthogPersonDeletionJob = { distinctId, reason, pass };
+        const jobId = await boss.send(POSTHOG_PERSON_DELETION_QUEUE, job, { db: queueDb, startAfter });
+        if (!jobId) throw new Error('POSTHOG_PERSON_DELETION_NOT_QUEUED');
+      }
+    });
     return true;
   } catch (error) {
-    logger.warn('[PostHogErasure] Could not queue PostHog person deletion', {
+    logger.error('[PostHogErasure] Could not queue PostHog person deletion, replay it by hand', {
       event: 'posthog_person_deletion_not_queued',
-      reason: job.reason,
+      reason,
+      distinctId,
       error,
     });
     return false;
@@ -76,7 +118,17 @@ export async function enqueuePosthogPersonDeletion(
 const DEFAULT_POSTHOG_PROJECT_ID = '412845';
 /** The private API host. Not the ingestion host (`us.i.posthog.com`) the capture client uses. */
 const DEFAULT_POSTHOG_API_HOST = 'https://us.posthog.com';
-const REQUEST_TIMEOUT_MS = 30_000;
+const DELETE_REQUEST_TIMEOUT_MS = 30_000;
+const LOOKUP_REQUEST_TIMEOUT_MS = 45_000;
+/** `bulk_delete` takes at most 1000 distinct ids; one is the account's. */
+const MAX_ANONYMOUS_IDS = 999;
+
+/**
+ * A dedicated key, not `POSTHOG_PERSONAL_API_KEY`: that one is read-scoped and
+ * shared with refresh-recommendations and CI's OTA health check. This one needs
+ * `person:write` and `query:read` on the project, nothing else.
+ */
+export const POSTHOG_ERASURE_API_KEY_ENV = 'POSTHOG_ERASURE_API_KEY';
 
 type PosthogPrivateApiConfig = { apiKey: string; projectId: string; host: string };
 
@@ -86,7 +138,7 @@ function readEnv(name: string): string | null {
 }
 
 function readPrivateApiConfig(): PosthogPrivateApiConfig | null {
-  const apiKey = readEnv('POSTHOG_PERSONAL_API_KEY');
+  const apiKey = readEnv(POSTHOG_ERASURE_API_KEY_ENV);
   if (!apiKey) return null;
   return {
     apiKey,
@@ -103,6 +155,8 @@ const bulkDeleteResponseSchema = z
   })
   .passthrough();
 
+const queryResponseSchema = z.object({ results: z.array(z.array(z.unknown())) }).passthrough();
+
 /** Thrown for an outcome a retry can fix; pg-boss schedules the next attempt. */
 export class PosthogPersonDeletionRetryableError extends Error {
   constructor(
@@ -118,25 +172,177 @@ export type PosthogPersonDeletionOutcome = 'deleted' | 'not_found' | 'skipped_no
 
 export type DeletePosthogPersonOptions = {
   fetchImpl?: typeof fetch;
+  /** Where "is this id another account?" is answered. */
+  database?: Database;
 };
 
+/** A key can be fixed and an outage ends; any other 4xx is our request. */
+function isRetryableStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 408 || status === 429 || status >= 500;
+}
+
+type RequestContext = {
+  config: PosthogPrivateApiConfig;
+  fetchImpl: typeof fetch;
+  reason: PosthogPersonDeletionReason;
+  pass: PosthogPersonDeletionPass | undefined;
+};
+
+/** POST to the private API. A network error or a timeout throws a retryable error. */
+async function postToPosthog(
+  { config, fetchImpl, reason, pass }: RequestContext,
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<Response> {
+  const url = `${config.host}/api/projects/${encodeURIComponent(config.projectId)}/${path}`;
+  try {
+    return await fetchImpl(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    logger.warn('[PostHogErasure] PostHog request failed; will retry', {
+      event: 'posthog_person_deletion_retry',
+      reason,
+      pass,
+      path,
+      error,
+    });
+    throw new PosthogPersonDeletionRetryableError(`PostHog request to ${path} failed`);
+  }
+}
+
+function throwRetryable(context: RequestContext, path: string, status: number): never {
+  const level = status === 401 || status === 403 ? 'error' : 'warn';
+  logger[level]('[PostHogErasure] PostHog refused the request; will retry', {
+    event: 'posthog_person_deletion_retry',
+    reason: context.reason,
+    pass: context.pass,
+    path,
+    status,
+  });
+  throw new PosthogPersonDeletionRetryableError(`PostHog ${path} returned ${status}`, status);
+}
+
 /**
- * One erasure attempt: `POST /api/projects/:id/persons/bulk_delete/` with the
- * account's distinct id, events and recordings included.
+ * The anonymous ids this account signed in from, through PostHog's own record
+ * of it: every `$identify` the account sent names the id it switched away from
+ * as `$anon_distinct_id`. Where PostHog merged that id into the account's
+ * person, deleting it again is a no-op; where it refused (a split person), it
+ * is the only way to reach that person.
+ *
+ * One HogQL query returns each such id with every distinct id that ever
+ * identified from it, so an id another account also signed in from (a shared
+ * phone) can be skipped: deleting it would erase that account's person.
+ */
+export const SPLIT_PERSON_QUERY = `
+  SELECT toString(properties.$anon_distinct_id) AS anon_id, groupUniqArray(distinct_id) AS identified_as
+  FROM events
+  WHERE event = '$identify'
+    AND toString(properties.$anon_distinct_id) IN (
+      SELECT toString(properties.$anon_distinct_id)
+      FROM events
+      WHERE event = '$identify' AND distinct_id = {account_id}
+    )
+  GROUP BY anon_id
+  LIMIT ${MAX_ANONYMOUS_IDS}
+`;
+
+type LookupResult = { anonymousIds: string[]; rejected: boolean };
+
+async function findAnonymousIds(
+  context: RequestContext,
+  distinctId: string,
+  database: Database,
+): Promise<LookupResult> {
+  const path = 'query/';
+  const response = await postToPosthog(
+    context,
+    path,
+    { query: { kind: 'HogQLQuery', query: SPLIT_PERSON_QUERY, values: { account_id: distinctId } } },
+    LOOKUP_REQUEST_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    if (isRetryableStatus(response.status)) throwRetryable(context, path, response.status);
+    // Our query is wrong. The account id is still deleted; the job then fails
+    // so the lookup can be fixed and the job replayed.
+    logger.error('[PostHogErasure] PostHog rejected the anonymous id lookup; deleting the account id alone', {
+      event: 'posthog_person_deletion_lookup_rejected',
+      reason: context.reason,
+      pass: context.pass,
+      status: response.status,
+    });
+    return { anonymousIds: [], rejected: true };
+  }
+
+  const parsed = queryResponseSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) throwRetryable(context, path, response.status);
+
+  const candidates = new Map<string, string[]>();
+  for (const [anonId, identifiedAs] of parsed.data.results) {
+    if (typeof anonId !== 'string' || anonId === '' || anonId === distinctId) continue;
+    const others = Array.isArray(identifiedAs)
+      ? identifiedAs.filter((id): id is string => typeof id === 'string' && id !== distinctId)
+      : [];
+    candidates.set(anonId, others);
+  }
+  if (candidates.size === 0) return { anonymousIds: [], rejected: false };
+
+  // "Another account" is a live `users` row. The account being erased is never
+  // in the set (its id is filtered out above, and on deletion its row is gone).
+  // An id that is not an account (the party UUID a signed-out install
+  // identified as before #6078) belongs to the same install and goes with it.
+  const idsToCheck = [...new Set([...candidates.keys(), ...[...candidates.values()].flat()])];
+  const accountRows = await database
+    .select({ id: dbSchema.users.id })
+    .from(dbSchema.users)
+    .where(inArray(dbSchema.users.id, idsToCheck));
+  const otherAccounts = new Set(accountRows.map((row) => row.id));
+
+  const anonymousIds: string[] = [];
+  let shared = 0;
+  for (const [anonId, others] of candidates) {
+    if (otherAccounts.has(anonId) || others.some((id) => otherAccounts.has(id))) {
+      shared += 1;
+      continue;
+    }
+    anonymousIds.push(anonId);
+  }
+  if (shared > 0) {
+    logger.info('[PostHogErasure] Skipped anonymous ids another account also signed in from', {
+      event: 'posthog_person_deletion_shared_ids_skipped',
+      reason: context.reason,
+      pass: context.pass,
+      shared,
+    });
+  }
+  return { anonymousIds, rejected: false };
+}
+
+/**
+ * One erasure attempt:
+ *
+ * 1. HogQL (`query:read`): the anonymous ids the account signed in from.
+ * 2. `POST /api/projects/:id/persons/bulk_delete/` (`person:write`) with the
+ *    account id and those ids, events and recordings included.
  *
  * - 2xx: done. A non-empty `deletion_errors` throws so the job retries.
- * - 404: nothing to delete. Done.
- * - 401, 403, 408, 429, 5xx, a timeout or a network error: throws. A key can
- *   be fixed and an outage ends, so pg-boss retries with backoff.
+ * - 404 from the delete: nothing to delete. Done.
+ * - 401, 403, 408, 429, 5xx, a timeout or a network error, on either call:
+ *   throws. A key can be fixed and an outage ends, so pg-boss retries.
  * - Any other 4xx: the request itself is wrong and a retry would send it
- *   again. Logged as an error, done.
+ *   again. Logged as an error and returned as `rejected`, which the worker
+ *   turns into a failed job. A rejected lookup still deletes the account id.
  *
  * Only production calls PostHog, the same gate as backend capture: a dev or
  * preview backend must never delete a person in the production project.
  */
 export async function deletePosthogPerson(
   payload: unknown,
-  { fetchImpl = fetch }: DeletePosthogPersonOptions = {},
+  { fetchImpl = fetch, database = db }: DeletePosthogPersonOptions = {},
 ): Promise<PosthogPersonDeletionOutcome> {
   const parsed = jobSchema.safeParse(payload);
   if (!parsed.success) {
@@ -145,7 +351,7 @@ export async function deletePosthogPerson(
     });
     return 'rejected';
   }
-  const { distinctId, reason } = parsed.data;
+  const { distinctId, reason, pass } = parsed.data;
 
   const environment = getAnalyticsEnvironment();
   if (environment !== 'production') {
@@ -153,38 +359,34 @@ export async function deletePosthogPerson(
       event: 'posthog_person_deletion_skipped',
       environment,
       reason,
+      pass,
     });
     return 'skipped_non_production';
   }
 
   const config = readPrivateApiConfig();
   if (!config) {
-    logger.error('[PostHogErasure] POSTHOG_PERSONAL_API_KEY is not set; PostHog person deletion will retry', {
+    logger.error(`[PostHogErasure] ${POSTHOG_ERASURE_API_KEY_ENV} is not set; PostHog person deletion will retry`, {
       event: 'posthog_person_deletion_unconfigured',
       reason,
+      pass,
     });
-    throw new PosthogPersonDeletionRetryableError('POSTHOG_PERSONAL_API_KEY is not set');
+    throw new PosthogPersonDeletionRetryableError(`${POSTHOG_ERASURE_API_KEY_ENV} is not set`);
   }
+  const context: RequestContext = { config, fetchImpl, reason, pass };
 
-  const url = `${config.host}/api/projects/${encodeURIComponent(config.projectId)}/persons/bulk_delete/`;
-  let response: Response;
-  try {
-    response = await fetchImpl(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ distinct_ids: [distinctId], delete_events: true, delete_recordings: true }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    logger.warn('[PostHogErasure] PostHog person deletion request failed; will retry', {
-      event: 'posthog_person_deletion_retry',
-      reason,
-      error,
-    });
-    throw new PosthogPersonDeletionRetryableError('PostHog person deletion request failed');
-  }
+  const lookup = await findAnonymousIds(context, distinctId, database);
+
+  const path = 'persons/bulk_delete/';
+  const response = await postToPosthog(
+    context,
+    path,
+    { distinct_ids: [distinctId, ...lookup.anonymousIds], delete_events: true, delete_recordings: true },
+    DELETE_REQUEST_TIMEOUT_MS,
+  );
 
   const { status } = response;
+  let outcome: PosthogPersonDeletionOutcome;
   if (status >= 200 && status < 300) {
     const body = bulkDeleteResponseSchema.safeParse(await response.json().catch(() => ({})));
     const result = body.success ? body.data : {};
@@ -192,6 +394,7 @@ export async function deletePosthogPerson(
       logger.warn('[PostHogErasure] PostHog reported an incomplete person deletion; will retry', {
         event: 'posthog_person_deletion_retry',
         reason,
+        pass,
         status,
         deletionErrors: result.deletion_errors.length,
       });
@@ -200,43 +403,96 @@ export async function deletePosthogPerson(
     logger.info('[PostHogErasure] PostHog person deletion accepted', {
       event: 'posthog_person_deletion_accepted',
       reason,
+      pass,
       status,
+      anonymousIds: lookup.anonymousIds.length,
       personsFound: result.persons_found,
       personsQueuedForDeletion: result.persons_queued_for_deletion,
     });
-    return 'deleted';
-  }
-  if (status === 404) {
+    outcome = 'deleted';
+  } else if (status === 404) {
     logger.info('[PostHogErasure] PostHog has no person to delete', {
       event: 'posthog_person_deletion_not_found',
       reason,
+      pass,
     });
-    return 'not_found';
-  }
-  if (status === 401 || status === 403 || status === 408 || status === 429 || status >= 500) {
-    const level = status === 401 || status === 403 ? 'error' : 'warn';
-    logger[level]('[PostHogErasure] PostHog person deletion refused; will retry', {
-      event: 'posthog_person_deletion_retry',
+    outcome = 'not_found';
+  } else if (isRetryableStatus(status)) {
+    throwRetryable(context, path, status);
+  } else {
+    logger.error('[PostHogErasure] PostHog rejected the person deletion request; not retrying', {
+      event: 'posthog_person_deletion_rejected',
       reason,
+      pass,
       status,
     });
-    throw new PosthogPersonDeletionRetryableError(`PostHog person deletion returned ${status}`, status);
+    outcome = 'rejected';
   }
-  logger.error('[PostHogErasure] PostHog rejected the person deletion request; not retrying', {
-    event: 'posthog_person_deletion_rejected',
-    reason,
-    status,
-  });
-  return 'rejected';
+  return lookup.rejected ? 'rejected' : outcome;
 }
 
-/** Work the erasure queue on this replica. The migrator creates the queue. */
-export async function startPosthogPersonDeletion(boss: PgBoss): Promise<void> {
-  await boss.work<PosthogPersonDeletionJob>(
+export type StartPosthogPersonDeletionOptions = {
+  /** Test-only: poll faster than the maintenance default. */
+  pollingIntervalSeconds?: number;
+  fetchImpl?: typeof fetch;
+};
+
+type ErasureJobOutput = { outcome: PosthogPersonDeletionOutcome } | { error: string };
+
+/** One job's pg-boss disposition: completed, failed (retried), or failed for good. */
+async function settleErasureJob(
+  job: JobWithMetadata<PosthogPersonDeletionJob>,
+  fetchImpl: typeof fetch | undefined,
+): Promise<JobResult<ErasureJobOutput>> {
+  try {
+    const outcome = await deletePosthogPerson(job.data, { fetchImpl });
+    // `deadletter` with no dead letter queue fails the job at once, skipping
+    // retries a broken request would only repeat. It stays in `pgboss.job`
+    // as `failed` for an operator, not `completed`.
+    return { id: job.id, status: outcome === 'rejected' ? 'deadletter' : 'completed', output: { outcome } };
+  } catch (error) {
+    if (job.retryCount >= job.retryLimit) {
+      logger.error('[PostHogErasure] PostHog person deletion out of retries; replay it by hand', {
+        event: 'posthog_person_deletion_exhausted',
+        reason: job.data.reason,
+        pass: job.data.pass,
+        jobId: job.id,
+      });
+    }
+    return { id: job.id, status: 'failed', output: { error: error instanceof Error ? error.message : String(error) } };
+  }
+}
+
+/**
+ * Work the erasure queue on this replica, but only on a production backend
+ * that holds {@link POSTHOG_ERASURE_API_KEY_ENV}. Anywhere else no worker is
+ * registered and jobs wait in `created` (up to the queue's 14-day
+ * `retentionSeconds`) without spending a retry, so setting the key later still
+ * erases every one of them. A worker without the key would burn the 12 retries
+ * in about 30 hours and lose the job. The migrator creates the queue.
+ *
+ * Returns whether the worker was registered.
+ */
+export async function startPosthogPersonDeletion(
+  boss: PgBoss,
+  { pollingIntervalSeconds = MAINTENANCE_POLLING_INTERVAL_SECONDS, fetchImpl }: StartPosthogPersonDeletionOptions = {},
+): Promise<boolean> {
+  const environment = getAnalyticsEnvironment();
+  const configured = readPrivateApiConfig() !== null;
+  if (environment !== 'production' || !configured) {
+    const level = environment === 'production' ? 'error' : 'info';
+    logger[level]('[PostHogErasure] Not working the PostHog erasure queue on this backend; jobs wait', {
+      event: 'posthog_person_deletion_unconfigured',
+      environment,
+      keySet: configured,
+    });
+    return false;
+  }
+  await boss.work(
     POSTHOG_PERSON_DELETION_QUEUE,
-    { localConcurrency: 1, batchSize: 1, pollingIntervalSeconds: MAINTENANCE_POLLING_INTERVAL_SECONDS },
-    async (jobs) => {
-      for (const job of jobs) await deletePosthogPerson(job.data);
-    },
+    { localConcurrency: 1, batchSize: 1, pollingIntervalSeconds, includeMetadata: true, perJobResults: true },
+    async (jobs: JobWithMetadata<PosthogPersonDeletionJob>[]) =>
+      Promise.all(jobs.map((job) => settleErasureJob(job, fetchImpl))),
   );
+  return true;
 }

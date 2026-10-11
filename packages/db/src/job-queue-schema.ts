@@ -79,18 +79,26 @@ const PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE_OPTIONS = {
 
 /**
  * The backend's PostHog person erasure (docs/analytics-consent.md, "Erasure").
- * One job per deleted account or per withdrawal after a grant, enqueued in the
- * transaction that records it. Lives here because the migrator creates the queue.
+ * Two jobs per deleted account or per withdrawal (15 minutes and 7 days after
+ * it), enqueued in the transaction that records it. Lives here because the
+ * migrator creates the queue.
  */
 export const POSTHOG_PERSON_DELETION_QUEUE = 'posthog-person-deletion';
 
 /**
- * Twelve tries with doubling delays capped at six hours cover a PostHog outage
- * of about a day: 60 s, 2 min, 4 min ... then 6 h, 6 h. A job (the account id
- * and a reason, nothing else) waits up to 14 days for a worker while queued or
- * between retries (`retentionSeconds`, pg-boss's default, stated here), and is
- * kept 7 days after it completes or fails (`deleteAfterSeconds`) so an operator
- * can retry a failed erasure by hand.
+ * Twelve tries with doubling, jittered delays capped at six hours cover a
+ * PostHog outage of about a day: pg-boss waits `retryDelay * 2^n * (1 + rand) / 2`
+ * before retry n, so 60 to 120 s, then 2 to 4 min, ... then 6 h. All twelve
+ * take 26.5 to 32.5 hours.
+ *
+ * A job (the account id, a reason and a pass, nothing else) waits up to 14
+ * days past its start time while queued or between retries (`retentionSeconds`,
+ * stated here). The backend registers no worker until it holds the erasure
+ * key, so 14 days is how long a missing key can go unnoticed before jobs are
+ * lost. A job is kept 7 days after it completes or fails (`deleteAfterSeconds`)
+ * so an operator can retry a failed erasure by hand.
+ *
+ * Pinned by posthog-person-deletion-enqueue.test.ts.
  */
 export const POSTHOG_PERSON_DELETION_QUEUE_OPTIONS = {
   retryLimit: 12,

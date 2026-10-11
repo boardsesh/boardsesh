@@ -129,9 +129,13 @@ function nextDecidedAt(userId: string) {
  * Append one answer, compare-and-set for grants and any conditional recovered
  * write. A per-user advisory lock serializes concurrent device answers.
  *
- * A denial replacing a grant also queues erasure of the account's PostHog
- * person in the same transaction. Repeated or stale conditional denials do not
- * enqueue another erasure.
+ * A denial that replaces a grant or no answer also queues the erasure of the
+ * account's PostHog person (docs/analytics-consent.md, "Erasure"), in this
+ * transaction, so the job exists exactly when the withdrawal does. No answer
+ * counts: before the consent prompt shipped, both clients identified every
+ * signed-in climber with the account id and their email, so an account whose
+ * first answer is No thanks can still have a person. A repeated denial queues
+ * nothing: the first one already did, and nothing was captured since.
 
  */
 export async function setAnalyticsConsentForUser(
@@ -161,7 +165,7 @@ export async function setAnalyticsConsentForUser(
         decidedAt: nextDecidedAt(userId),
       })
       .returning(consentColumns);
-    if (input.analytics === 'denied' && latest?.analytics === 'granted') {
+    if (input.analytics === 'denied' && latest?.analytics !== 'denied') {
       // Fail-soft: a missing job is logged, and the withdrawal still commits.
       await enqueuePosthogPersonDeletion(transaction, { distinctId: userId, reason: 'consent_withdrawn' });
     }

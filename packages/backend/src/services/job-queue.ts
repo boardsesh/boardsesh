@@ -66,7 +66,10 @@ export const DEFAULT_JOB_OPTIONS: SendOptions = {
 
 let boss: PgBoss | null = null;
 
-/** The running queue, or null before `startJobQueue()` / after `stopJobQueue()`. */
+/**
+ * The queue, or null before `startJobQueue()` / after `stopJobQueue()`. Between
+ * `stopJobQueueWorkers()` and `stopJobQueue()` it still takes jobs but works none.
+ */
 export function getJobQueue(): PgBoss | null {
   return boss;
 }
@@ -104,14 +107,30 @@ export async function startJobQueue(): Promise<PgBoss> {
   return instance;
 }
 
-export async function stopJobQueue(): Promise<void> {
+/**
+ * First half of a shutdown: stop this replica's workers, timers and
+ * maintenance, and keep the pool open. `getJobQueue()` still returns the
+ * instance and `send()` still works, so a mutation that is still running
+ * during the drain can enqueue inside its transaction. `stopJobQueue()` closes
+ * the pool once nothing can enqueue any more.
+ */
+export async function stopJobQueueWorkers(): Promise<void> {
   if (!boss) return;
-  const instance = boss;
-  boss = null;
   // Graceful: let an in-flight job finish rather than orphaning it into the
   // supervisor's reclaim window on every deploy. `timeout` bounds that wait so a
   // wedged handler cannot hold the deploy open past Railway's drain window
   // (`drainingSeconds = 15` in railway.toml).
+  await boss.stop({ graceful: true, close: false, timeout: 10_000 });
+  logger.info('[job-queue] workers stopped; still accepting jobs');
+}
+
+/** Stop the queue (workers too, if `stopJobQueueWorkers()` did not) and close its pool. */
+export async function stopJobQueue(): Promise<void> {
+  if (!boss) return;
+  const instance = boss;
+  boss = null;
+  // A no-op stop plus a pool close when the workers already stopped; otherwise
+  // the same graceful, bounded stop as above.
   await instance.stop({ graceful: true, close: true, timeout: 10_000 });
   logger.info('[job-queue] stopped');
 }
