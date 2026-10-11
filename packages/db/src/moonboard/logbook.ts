@@ -2,6 +2,7 @@ import type postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { v5 as uuidv5 } from 'uuid';
 import { boardseshTicks } from '../schema/app/ascents.js';
+import { acquireUserTickMutationLock } from '../queries/ticks/user-tick-mutation-lock.js';
 import { recomputeClimbStatsBulk } from '../queries/climb-stats/index.js';
 import { catalogClimbUuid, terminalCanonicalUuid, HOLDSETUP_TO_LAYOUT } from './moonboard-catalog-helpers.js';
 import { moonBoardGradeToDifficultyId } from './moonboard-helpers.js';
@@ -112,6 +113,9 @@ export async function applyMoonBoardLogbook(
   try {
     await client.begin(async (connection) => {
       const db = drizzle(Object.assign(connection, { options: client.options }) as unknown as postgres.Sql);
+      // Share the current edit/delete/Aurora gate before any candidate reads.
+      // User lock comes first; the provider-specific lock remains secondary.
+      await acquireUserTickMutationLock(db, userId);
       await connection`SELECT pg_advisory_xact_lock(hashtext(${`moonboard-logbook:${userId}`}))`;
       const aliases = await connection<{ alias_uuid: string; canonical_uuid: string }[]>`
         SELECT alias_uuid, canonical_uuid FROM board_climb_aliases WHERE board_type = 'moonboard'`;

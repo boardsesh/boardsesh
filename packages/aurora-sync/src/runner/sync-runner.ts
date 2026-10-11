@@ -3,7 +3,7 @@ import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, ne, and, or, isNotNull, sql } from 'drizzle-orm';
+import { eq, ne, and, or, isNotNull, sql, inArray } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema/auth';
 import {
