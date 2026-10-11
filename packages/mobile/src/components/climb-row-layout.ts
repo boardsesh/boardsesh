@@ -44,6 +44,7 @@ export function climbRowNameLines(fontScale: number, allowNameWrapping = true): 
 
 /** The gap between the lines of the text column. */
 export const CLIMB_ROW_LINE_GAP = 2;
+export const CLIMB_ROW_SET_ANGLE_MARGIN_TOP = -2;
 
 /**
  * The playlist tags line as `ClimbPlaylistChips` draws it. Kept here so the
@@ -260,6 +261,56 @@ export function climbRowLayout({
   } satisfies Omit<ClimbRowLayout, 'estimatedHeight'>;
 
   return { ...structure, estimatedHeight: estimateClimbRowHeight(structure, fontScale, typeScale, allowNameWrapping) };
+}
+
+export type ClimbRowReorderRow = {
+  supportsMirroring: boolean;
+  hasSetAngleMarker?: boolean;
+  unrenderable?: boolean;
+};
+
+/** Every indexed drag row shares the tallest possible row, before personal data loads. */
+export function climbRowReorderHeight({
+  rows,
+  fontScale = 1,
+  ...input
+}: Omit<ClimbRowLayoutInput, 'supportsMirroring' | 'allowNameWrapping'> & {
+  rows: readonly ClimbRowReorderRow[];
+}): number {
+  const lineHeight = (variant: ClimbRowTextVariant) =>
+    (input.typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) * fontScale;
+  let minimumHeight = climbRowLayout({
+    ...input,
+    fontScale,
+    supportsMirroring: false,
+    allowNameWrapping: false,
+  }).estimatedHeight;
+  for (const row of rows) {
+    minimumHeight = Math.max(
+      minimumHeight,
+      climbRowLayout({
+        ...input,
+        fontScale,
+        supportsMirroring: row.supportsMirroring,
+        allowNameWrapping: false,
+      }).estimatedHeight,
+    );
+    if (row.hasSetAngleMarker) {
+      minimumHeight = Math.max(
+        minimumHeight,
+        lineHeight('title3') + lineHeight('caption2') + CLIMB_ROW_SET_ANGLE_MARGIN_TOP + 2 * CLIMB_ROW_VERTICAL_PADDING,
+      );
+    }
+    if (row.unrenderable) {
+      // Unavailable playlist rows retain the warning (up to two lines) and a 44pt remove target.
+      minimumHeight = Math.max(
+        minimumHeight,
+        Math.max(CLIMB_ROW_MIN_HEIGHT, lineHeight('body') + 2 * lineHeight('footnote') + CLIMB_ROW_LINE_GAP) +
+          2 * CLIMB_ROW_VERTICAL_PADDING,
+      );
+    }
+  }
+  return Math.ceil(minimumHeight);
 }
 
 /**

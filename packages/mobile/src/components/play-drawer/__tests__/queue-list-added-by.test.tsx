@@ -50,9 +50,12 @@ const capturedRows = vi.hoisted(() => ({
   props: [] as Record<string, unknown>[],
 }));
 
+const rowGeometry = vi.hoisted(() => ({ fontScale: 1 }));
+
 type ViewProps = { children?: ReactNode; testID?: string; style?: unknown };
 
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ fontScale: rowGeometry.fontScale }),
   View: ({ children }: ViewProps) => createElement('div', null, children),
   Pressable: ({ children }: ViewProps) => createElement('div', null, children),
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
@@ -154,6 +157,7 @@ vi.mock('../../../providers/party-profile-provider', async () => {
 });
 
 import { QueueList } from '../QueueList';
+import { applyClimbRowPreset, resetClimbRowDisplayForTests } from '../../../lib/climb-row-display-preference';
 import { publishWindowInsetBottom, resetWindowInsetForTests } from '../../../lib/window-inset-store';
 
 const board = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
@@ -334,5 +338,33 @@ describe('QueueList bottom inset', () => {
     renderList();
 
     expect(insetProbe.sheetInsets.at(-1)).toBe(34);
+  });
+});
+
+describe('mixed-board compact queue reorder', () => {
+  afterEach(() => {
+    rowGeometry.fontScale = 1;
+    resetClimbRowDisplayForTests();
+  });
+  it.each([1, 1.5])('gives every future row the mirror budget at font scale %s', (fontScale) => {
+    rowGeometry.fontScale = fontScale;
+    applyClimbRowPreset('textOnly');
+    capturedRows.props = [];
+    const tensionItem = {
+      ...makeItem('d'),
+      climb: { uuid: 'tension-climb', name: 'Tension climb', boardType: 'tension', layoutId: 9, angle: 35 },
+    } as ClimbQueueItem;
+    renderList([...queue, tensionItem]);
+    const futureRows = capturedRows.props.filter((row) => row.isDraggable);
+    expect(futureRows).toHaveLength(2);
+    expect(futureRows.map((row) => row.minimumHeight)).toEqual([
+      fontScale === 1 ? 73 : 100,
+      fontScale === 1 ? 73 : 100,
+    ]);
+    expect(
+      capturedRows.props
+        .filter((row) => row.isCurrentClimb || row.isHistoryItem)
+        .every((row) => row.minimumHeight === undefined),
+    ).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ import {
   CLIMB_ROW_VERTICAL_PADDING,
   DEFAULT_CLIMB_ROW_SURFACE,
   climbRowLayout,
+  climbRowReorderHeight,
   climbRowSeparatorInset,
   climbRowSkeletonCount,
   type ClimbRowLayoutInput,
@@ -409,5 +410,75 @@ describe('personal progress geometry', () => {
     const before = layoutOf({ display, fontScale: 1.3 });
     const after = layoutOf({ display, fontScale: 1.5 });
     expect(after.estimatedHeight - before.estimatedHeight).toBeLessThan(16);
+  });
+});
+
+describe('uniform reorder geometry', () => {
+  const namesOnly = { ...CLIMB_ROW_PRESETS.namesOnly, quickActions: true };
+  const noStatuses = { ...DEFAULT_CLIMB_ROW_SURFACE, showAscentStatus: false };
+  it('uses the mirror row budget throughout a mixed-board queue, regardless of row order', () => {
+    const rows = [{ supportsMirroring: false }, { supportsMirroring: true }, { supportsMirroring: false }];
+    const height = climbRowReorderHeight({ display: TEXT_ONLY, surface: DEFAULT_CLIMB_ROW_SURFACE, rows });
+    expect(height).toBe(73);
+    expect(
+      climbRowReorderHeight({ display: TEXT_ONLY, surface: DEFAULT_CLIMB_ROW_SURFACE, rows: [...rows].reverse() }),
+    ).toBe(height);
+    expect(
+      climbRowReorderHeight({
+        display: TEXT_ONLY,
+        surface: DEFAULT_CLIMB_ROW_SURFACE,
+        rows: [{ supportsMirroring: false }],
+      }),
+    ).toBe(58);
+  });
+  it('holds the grade floor for Names only, including ungraded rows at large text', () => {
+    expect(
+      climbRowReorderHeight({
+        display: namesOnly,
+        surface: noStatuses,
+        rows: [{ supportsMirroring: false }],
+        fontScale: 1.5,
+      }),
+    ).toBe(54);
+  });
+  it('includes the set-angle grade caption even when the text column is shorter', () => {
+    expect(
+      climbRowReorderHeight({
+        display: namesOnly,
+        surface: DEFAULT_CLIMB_ROW_SURFACE,
+        rows: [{ supportsMirroring: false, hasSetAngleMarker: true }],
+        fontScale: 1.5,
+      }),
+    ).toBe(71);
+  });
+  it.each([1, 1.5])('reserves both warning lines and the remove target at font scale %s', (fontScale) => {
+    expect(
+      climbRowReorderHeight({
+        display: namesOnly,
+        surface: noStatuses,
+        rows: [{ supportsMirroring: false }, { supportsMirroring: false, unrenderable: true }],
+        fontScale,
+      }),
+    ).toBe(fontScale === 1 ? 76 : 105);
+  });
+  it('uses actual theme typography for mirror labels above the thumbnail floor', () => {
+    const rows = [{ supportsMirroring: false }, { supportsMirroring: true }];
+    expect(
+      climbRowReorderHeight({
+        display: DEFAULT_CLIMB_ROW_DISPLAY,
+        surface: DEFAULT_CLIMB_ROW_SURFACE,
+        rows,
+        fontScale: 1.5,
+      }),
+    ).toBe(120);
+    const materialHeight = climbRowReorderHeight({
+      display: DEFAULT_CLIMB_ROW_DISPLAY,
+      surface: DEFAULT_CLIMB_ROW_SURFACE,
+      rows,
+      fontScale: 1.5,
+      typeScale: materialTextStyles,
+    });
+    expect(materialHeight).toBeGreaterThanOrEqual(112);
+    expect(materialHeight).not.toBe(120);
   });
 });

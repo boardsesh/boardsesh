@@ -48,6 +48,7 @@ type PlaylistEditClimbRowProps = {
   /** This row's index within the editable list (drag coordinate). */
   rowIndex: number;
   drag: PlaylistDragControls;
+  minimumHeight?: number;
   onRemove: (climbUuid: string) => void;
   /** Move this climb to a new index — used by the screen-reader adjustable
    *  actions (the pan gesture commits through `drag`). */
@@ -59,6 +60,7 @@ function PlaylistEditClimbRowComponent({
   board,
   rowIndex,
   drag,
+  minimumHeight,
   onRemove,
   onReorder,
 }: PlaylistEditClimbRowProps) {
@@ -121,7 +123,13 @@ function PlaylistEditClimbRowComponent({
 
   return (
     <Animated.View style={dragAnimatedStyle} onLayout={handleRowLayout}>
-      <View style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}>
+      <View
+        style={[
+          styles.row,
+          { backgroundColor: systemColors.secondaryBackground },
+          minimumHeight === undefined ? null : { minHeight: minimumHeight },
+        ]}
+      >
         {/* Leading: red remove control */}
         <PressableSurface
           onPress={handleRemove}

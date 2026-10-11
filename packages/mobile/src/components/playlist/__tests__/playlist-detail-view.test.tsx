@@ -23,6 +23,7 @@ const ctrl = vi.hoisted(() => ({
   setOptions: vi.fn(),
   navigation: null as unknown as { setOptions: (options: Record<string, unknown>) => void },
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  fontScale: 1,
   addToQueue: vi.fn(),
   openAddToPlaylist: vi.fn(),
   openClimbActions: vi.fn(),
@@ -44,6 +45,7 @@ type CapturedClimbListRowProps = {
 
 type CapturedPlaylistEditClimbRowProps = {
   climb: Climb;
+  minimumHeight?: number;
   board: {
     boardName: string;
     layoutId: number;
@@ -60,6 +62,7 @@ const capturedEditRows = vi.hoisted(() => [] as CapturedPlaylistEditClimbRowProp
 
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ fontScale: ctrl.fontScale }),
   View: ({
     children,
     pointerEvents,
@@ -79,12 +82,14 @@ vi.mock('react-native', () => ({
     if (accessibilityLabel) attrs['aria-label'] = accessibilityLabel;
     // Where a view starts and how wide it is: enough to tell a thumbnail-sized
     // frame, and a separator's inset.
-    const { marginStart, width } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+    const { marginStart, width, minHeight } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
       marginStart?: number;
       width?: number | string;
+      minHeight?: number;
     };
     if (marginStart !== undefined) attrs['data-margin-start'] = marginStart;
     if (width !== undefined) attrs['data-width'] = width;
+    if (minHeight !== undefined) attrs['data-min-height'] = minHeight;
     return createElement('div', attrs, children);
   },
   Pressable: ({
@@ -354,7 +359,11 @@ vi.mock('../PlaylistEditClimbRow', () => ({
 
 // ── Subject ───────────────────────────────────────────────────────────────────
 import { PlaylistDetailView, type PlaylistDetailViewProps } from '../PlaylistDetailView';
-import { resetClimbRowDisplayForTests, setClimbRowField } from '../../../lib/climb-row-display-preference';
+import {
+  resetClimbRowDisplayForTests,
+  setClimbRowField,
+  applyClimbRowPreset,
+} from '../../../lib/climb-row-display-preference';
 import { useButtonSurface } from '../../Button.surface';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -432,6 +441,7 @@ describe('PlaylistDetailView', () => {
     ctrl.openAddToPlaylist.mockClear();
     ctrl.openClimbActions.mockClear();
     ctrl.variant = 'liquidGlass';
+    ctrl.fontScale = 1;
     capturedClimbRows.length = 0;
     capturedEditRows.length = 0;
     resetClimbRowDisplayForTests();
@@ -750,6 +760,19 @@ describe('PlaylistDetailView', () => {
     expect(capturedEditRows).toHaveLength(1);
     expect(ctrl.addToQueue).not.toHaveBeenCalled();
     expect(ctrl.openAddToPlaylist).not.toHaveBeenCalled();
+  });
+
+  it.each([1, 1.5])('gives supported and unavailable edit rows one drag height at font scale %s', (fontScale) => {
+    ctrl.fontScale = fontScale;
+    applyClimbRowPreset('namesOnly');
+    const { container } = render(
+      <PlaylistDetailView
+        {...makeProps({ climbs: [KILTER_CLIMB, UNKNOWN_BOARD_CLIMB, TENSION_CLIMB], editMode: true })}
+      />,
+    );
+    const expectedHeight = fontScale === 1 ? 76 : 105;
+    expect(capturedEditRows.map((row) => row.minimumHeight)).toEqual([expectedHeight, expectedHeight]);
+    expect(container.querySelector(`[data-min-height="${expectedHeight}"]`)).not.toBeNull();
   });
 
   it('shows an indicator for climbs whose render board cannot be resolved', () => {

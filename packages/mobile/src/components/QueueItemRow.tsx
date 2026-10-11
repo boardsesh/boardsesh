@@ -82,6 +82,7 @@ type QueueItemRowProps = {
   queueIndex?: number;
   /** Whether this row may be dragged (future rows, not in edit mode). */
   isDraggable?: boolean;
+  minimumHeight?: number;
   /** Show who queued this climb. True only while a party session is active. */
   showAddedBy?: boolean;
   /** The viewer's own party-profile id; their own adds render no avatar. */
@@ -140,6 +141,7 @@ function QueueItemRowComponent({
   rowIndex,
   queueIndex,
   isDraggable = false,
+  minimumHeight,
   showAddedBy = false,
   viewerUserId = null,
   showcaseAvatarAnchor = false,
@@ -507,6 +509,7 @@ function QueueItemRowComponent({
         onAccessibilityAction={handleRowAccessibilityAction}
         style={[
           styles.row,
+          minimumHeight === undefined ? null : { minHeight: minimumHeight },
           { backgroundColor: systemColors.secondaryBackground },
           isCurrentClimb && !isHistoryItem && { backgroundColor: `${brandColors.primary}14` },
           isHistoryItem && styles.historyRow,

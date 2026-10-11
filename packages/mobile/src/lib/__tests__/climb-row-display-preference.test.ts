@@ -129,6 +129,33 @@ afterEach(async () => {
 });
 
 describe('the first read', () => {
+  it('resets unsaved choices even when no record has ever persisted', async () => {
+    const store = await launch();
+    mmkvSet.mockImplementation(() => {
+      throw new Error('Storage quota exceeded');
+    });
+    await store.ensureClimbRowLegacySynced();
+    store.setClimbRowField('thumbnail', false);
+    store.setClimbRowField('playlistTags', true);
+    store.applyClimbRowPreset('textOnly');
+    expect(store.getClimbRowDisplay().thumbnail).toBe(false);
+    expect(persisted()).toBeNull();
+
+    // An unrelated settings signal must still preserve the unsaved mix.
+    mmkvSet.mockImplementation((key: string, serialised: string) => {
+      mmkv.set(key, serialised);
+    });
+    store.setSetting('theme', 'dark');
+    expect(store.getClimbRowDisplay().thumbnail).toBe(false);
+
+    store.resetAllSettings();
+    await settle();
+    expect(store.getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+    expect(oldKey(LEGACY_TAGS_KEY)).toBe(false);
+    const { result } = renderHook(store.useClimbRowHasLastCustom);
+    expect(result.current).toBe(false);
+    expect((await launch()).getClimbRowDisplay()).toEqual(DEFAULT_CLIMB_ROW_DISPLAY);
+  });
   it('knows the stored row before the first render, with nothing to wait for', async () => {
     seedStored({ thumbnail: false, playlistTags: true });
     const store = await launch();

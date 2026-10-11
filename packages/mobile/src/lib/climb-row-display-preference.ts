@@ -126,15 +126,20 @@ function syncWithPhone(): void {
   const onPhone = readOnPhone();
   if (onPhone === null) {
     if (seenOnPhone === null) return;
-    const reset = withClimbRowDisplayReset(stored);
-    if (!sameStoredClimbRowDisplay(reset, stored)) adopt(reset);
-    write(reset);
-    flushLegacyPending();
+    resetChoices();
     return;
   }
   if (seenOnPhone !== null && sameStoredClimbRowDisplay(onPhone, seenOnPhone)) return;
   seenOnPhone = onPhone;
   if (!sameStoredClimbRowDisplay(onPhone, stored)) adopt(onPhone);
+}
+
+/** Reset also withdraws choices whose first persistent write never succeeded. */
+function resetChoices(): void {
+  const reset = withClimbRowDisplayReset(stored);
+  if (!sameStoredClimbRowDisplay(reset, stored)) adopt(reset);
+  write(reset);
+  flushLegacyPending();
 }
 
 /**
@@ -152,8 +157,9 @@ function mutate(change: (current: StoredClimbRowDisplay) => StoredClimbRowDispla
 // The settings store signals every write without saying which key, so look at
 // this one each time. That is one small parse per settings write, of which there
 // are a handful per session.
-subscribeSettings(() => {
-  if (!writing) syncWithPhone();
+subscribeSettings((change) => {
+  if (change?.kind === 'reset') resetChoices();
+  else if (!writing) syncWithPhone();
 });
 
 type LegacyStorageOutcome<Result> = { completed: true; result: Result } | { completed: false };

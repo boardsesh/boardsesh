@@ -242,6 +242,7 @@ describe('settings', () => {
 
       expect(listener).toHaveBeenCalledTimes(1);
       expect(getSetting('offlineMode')).toBe(true);
+      expect(listener).toHaveBeenCalledWith({ kind: 'setting', key: 'offlineMode' });
     });
 
     it('notifies after a reset-all, which is a change to every key at once', () => {
@@ -253,6 +254,7 @@ describe('settings', () => {
 
       expect(listener).toHaveBeenCalledTimes(1);
       expect(getSetting('offlineMode')).toBe(false);
+      expect(listener).toHaveBeenCalledWith({ kind: 'reset' });
     });
 
     it('stops on unsubscribe', () => {

@@ -34,6 +34,7 @@ type ViewProps = { children?: ReactNode; testID?: string; style?: unknown };
 const feedFixture = vi.hoisted(() => ({ climbs: [] as Climb[] }));
 
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ fontScale: 1 }),
   View: ({ children }: ViewProps) => createElement('div', null, children),
   Pressable: ({
     children,

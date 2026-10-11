@@ -11,6 +11,7 @@ import {
   RefreshControl,
   View,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   Extrapolation,
@@ -65,8 +66,13 @@ import { glassSize } from '../../theme/layout';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { CLIMB_ROW_GUTTER } from '../climb-list-row-styles';
-import { climbRowSeparatorInset } from '../climb-row-layout';
-import { useClimbRowField } from '../../lib/climb-row-display-preference';
+import {
+  climbRowSeparatorInset,
+  climbRowReorderHeight,
+  DEFAULT_CLIMB_ROW_SURFACE,
+  type ClimbRowReorderRow,
+} from '../climb-row-layout';
+import { useClimbRowField, useClimbRowDisplay } from '../../lib/climb-row-display-preference';
 
 /** Bottom scrim that keeps white title/meta legible across the palette (amber
  *  and green included) without per-colour luminance branching. */
@@ -237,7 +243,9 @@ export function PlaylistDetailView({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors, variant } = useTheme();
+  const { systemColors, brandColors, variant, textStyles } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const rowDisplay = useClimbRowDisplay();
   const bottomChrome = useBottomChromeMetrics();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -405,6 +413,30 @@ export function PlaylistDetailView({
     return resolvedRows;
   }, [climbs, renderBoard]);
 
+  const editRowHeight = useMemo(() => {
+    if (!editMode) return undefined;
+    const rowShapes: ClimbRowReorderRow[] = [];
+    for (const climb of climbs) {
+      const resolved = resolvedRowsByClimbUuid.get(climb.uuid);
+      const statsAngle = 'statsAngle' in climb ? climb.statsAngle : null;
+      rowShapes.push({
+        supportsMirroring: false,
+        unrenderable: resolved?.kind === 'unrenderable',
+        hasSetAngleMarker:
+          resolved?.kind === 'renderable' &&
+          typeof statsAngle === 'number' &&
+          statsAngle !== resolved.renderBoard.angle,
+      });
+    }
+    return climbRowReorderHeight({
+      rows: rowShapes,
+      display: rowDisplay,
+      surface: { ...DEFAULT_CLIMB_ROW_SURFACE, showAscentStatus: false },
+      fontScale,
+      typeScale: textStyles,
+    });
+  }, [editMode, climbs, resolvedRowsByClimbUuid, rowDisplay, fontScale, textStyles]);
+
   const progressTargets = useMemo<ClimbProgressTarget[]>(() => {
     const targets: ClimbProgressTarget[] = [];
     for (const [climbUuid, row] of resolvedRowsByClimbUuid) {
@@ -440,7 +472,14 @@ export function PlaylistDetailView({
       if (!resolvedRow) return null;
 
       if (resolvedRow.kind === 'unrenderable') {
-        return <UnrenderablePlaylistClimbRow climb={item} editMode={editMode} onRemove={onRemoveClimb ?? noopRemove} />;
+        return (
+          <UnrenderablePlaylistClimbRow
+            climb={item}
+            editMode={editMode}
+            minimumHeight={editRowHeight}
+            onRemove={onRemoveClimb ?? noopRemove}
+          />
+        );
       }
 
       if (editMode) {
@@ -450,6 +489,7 @@ export function PlaylistDetailView({
             board={resolvedRow.editBoard}
             rowIndex={index}
             drag={dragControls}
+            minimumHeight={editRowHeight}
             onRemove={onRemoveClimb ?? noopRemove}
             onReorder={onReorderClimb ?? noopReorder}
           />
@@ -476,6 +516,7 @@ export function PlaylistDetailView({
     [
       resolvedRowsByClimbUuid,
       editMode,
+      editRowHeight,
       dragControls,
       onRemoveClimb,
       onReorderClimb,
@@ -910,10 +951,12 @@ function UnrenderablePlaylistClimbRow({
   climb,
   editMode,
   onRemove,
+  minimumHeight,
 }: {
   climb: Climb;
   editMode: boolean;
   onRemove: (climbUuid: string) => void;
+  minimumHeight?: number;
 }) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
@@ -932,7 +975,11 @@ function UnrenderablePlaylistClimbRow({
   return (
     <View style={styles.unrenderableOuter}>
       <View
-        style={[styles.unrenderableRow, { backgroundColor: systemColors.background }]}
+        style={[
+          styles.unrenderableRow,
+          { backgroundColor: systemColors.background },
+          minimumHeight === undefined ? null : { minHeight: minimumHeight },
+        ]}
         accessible={!editMode}
         accessibilityRole={editMode ? undefined : 'text'}
         accessibilityLabel={editMode ? undefined : accessibilityLabel}

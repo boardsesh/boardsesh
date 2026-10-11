@@ -23,6 +23,8 @@ The prominent grade still follows Settings → Grades. When the personal or Boar
 
 `climb-row-layout.ts` decides which lines exist, the estimated height, and the separator inset. Thumbnail-off rows do not mount the native thumbnail renderer. Reserve late-loading tags, progress and mirror status lines before those reads settle, including signed-out rows. The two reorder hosts keep one-line names and suppress personal progress; ordinary lists allow names to wrap from font scale 1.3.
 
+Queue and playlist edit lists give every indexed drag row the same minimum height, computed from all their row shapes and current typography. Mixed-board direction lines, unavailable-climb warnings and set-angle grade captions count toward that floor. Direction labels stay on one line in drag hosts, and unresolved climbs reserve the grade's text height. This keeps drop indices and sibling shifts consistent as pictures are hidden or grades arrive.
+
 The preview window reserves the tallest supported row at the current font scale and theme, with a 117 pt minimum, so switches stay in place and large-text tags stay visible. It uses the list's full width and action gutter, including in the browser form. It uses the active board's most-climbed row and stages a favorite, direction statuses, two playlists and a differing personal grade. Without board geometry its picture is a neutral block. A second, unmarked row appears when both fit.
 
 ## Frame counts and personal progress

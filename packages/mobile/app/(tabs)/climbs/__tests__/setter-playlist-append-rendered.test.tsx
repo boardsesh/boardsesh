@@ -61,6 +61,7 @@ const capturedEditRows = vi.hoisted(() => [] as CapturedPlaylistEditClimbRowProp
 
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ fontScale: 1 }),
   RefreshControl: () => null,
   View: ({
     children,

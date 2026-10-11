@@ -29,6 +29,7 @@ import {
   CLIMB_ROW_DIRECTION_STATUS,
   CLIMB_ROW_LINE_GAP,
   CLIMB_ROW_MIN_TEXT_COLUMN_HEIGHT,
+  CLIMB_ROW_SET_ANGLE_MARGIN_TOP,
   climbRowLayout,
   climbRowNameLines,
 } from './climb-row-layout';
@@ -188,6 +189,7 @@ export type ClimbRowAscentStatusLeafProps = {
    * thumbnail, for the reason given at `reserveSetAngleLine`.
    */
   reserveLine: boolean;
+  allowLabelWrapping?: boolean;
 };
 
 export type ClimbRowFavoriteLeafProps = { climbUuid: string };
@@ -392,6 +394,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   supportsMirroring,
   holdsRevisionNumber,
   reserveLine,
+  allowLabelWrapping,
 }: ClimbRowAscentStatusLeafProps) {
   // Unconditional hooks keep capability changes safe. The nonmirrorable board
   // keeps its existing aggregate glyph; each mirrorable direction is independent.
@@ -404,6 +407,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
       ascentStatus={ascentStatus}
       mirrorStatus={mirrorStatus}
       reserveLine={reserveLine}
+      allowLabelWrapping={allowLabelWrapping}
     />
   );
 });
@@ -416,6 +420,7 @@ export type ClimbAscentStatusViewProps = {
   mirrorStatus: AscentStatusValue | null;
   /** See `ClimbRowAscentStatusLeafProps.reserveLine`. Changes nothing on a board that cannot mirror. */
   reserveLine: boolean;
+  allowLabelWrapping?: boolean;
 };
 
 /**
@@ -428,6 +433,7 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
   ascentStatus,
   mirrorStatus,
   reserveLine,
+  allowLabelWrapping = true,
 }: ClimbAscentStatusViewProps) {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
@@ -456,6 +462,7 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
     { direction: 'original', status: ascentStatus, label: tSession('mobile.logbook.originalTag') },
     { direction: 'mirror', status: mirrorStatus, label: tSession('mobile.logbook.mirroredTag') },
   ];
+  const singleLineLabels = reserveLine || !allowLabelWrapping;
   const directionStatuses = directions.map(({ direction, status, label }) =>
     status ? (
       <View
@@ -466,7 +473,7 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
           direction: label,
           status: statusLabels[status],
         })}
-        style={reserveLine ? styles.directionStatusInline : styles.directionStatus}
+        style={singleLineLabels ? styles.directionStatusInline : styles.directionStatus}
       >
         <Icon
           name={ASCENT_STATUS_ICON[status]}
@@ -477,8 +484,8 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
           variant="caption2"
           color={systemColors.secondaryLabel}
           // One line can only hold its height if neither label wraps.
-          numberOfLines={reserveLine ? 1 : undefined}
-          style={reserveLine ? styles.directionLabelInline : undefined}
+          numberOfLines={singleLineLabels ? 1 : undefined}
+          style={singleLineLabels ? styles.directionLabelInline : undefined}
         >
           {label}
         </Text>
@@ -1008,7 +1015,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             <ClimbPlaylistChipsView chips={NO_PLAYLIST_CHIPS} reserveLine />
           ) : null}
         </View>
-        <View style={styles.rightSection} />
+        <View style={styles.rightSection}>
+          {layout.reservesLateLines ? <ClimbRowReservedLine variant="title3" /> : null}
+        </View>
       </>
     );
   }
@@ -1090,6 +1099,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
         supportsMirroring={supportsMirroring}
         holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
         reserveLine={layout.reservesLateLines}
+        allowLabelWrapping={allowNameWrapping}
       />
     );
 
@@ -1279,6 +1289,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     // Pull the marker up under the grade it qualifies: the two lines read as one
     // grade block rather than two unrelated rows.
-    marginTop: -2,
+    marginTop: CLIMB_ROW_SET_ANGLE_MARGIN_TOP,
   },
 });

@@ -254,6 +254,7 @@ import { ClimbListRow } from '../ClimbListRow';
 import {
   CLIMB_ROW_FIELD_IDS,
   DEFAULT_CLIMB_ROW_DISPLAY,
+  CLIMB_ROW_PRESETS,
   type ClimbRowDisplay,
   type ClimbRowFieldId,
 } from '../../lib/climb-row-display';
@@ -873,7 +874,31 @@ describe('a row without a thumbnail', () => {
 
     expect(container.children).toHaveLength(2);
     expect(styleOf(container.children[0]).minHeight).toBe(28);
-    expect(outline(container)).toEqual(['body:mobile.queue.unknownClimb', `footnote:${BLANK}`]);
+    expect(outline(container)).toEqual(['body:mobile.queue.unknownClimb', `footnote:${BLANK}`, `title3:${BLANK}`]);
+  });
+
+  it('reserves a silent grade line before a compact large-text climb resolves', () => {
+    live.fontScale = 1.5;
+    const namesOnly = { ...CLIMB_ROW_PRESETS.namesOnly, quickActions: true };
+    const { container, rerender } = render(
+      <ClimbListItemContent climb={null} {...kilter} display={namesOnly} allowNameWrapping={false} />,
+    );
+    const reservedGrade = container.querySelector('[data-variant="title3"]');
+    expect(reservedGrade?.textContent).toBe(BLANK);
+    expect(reservedGrade?.getAttribute('data-silent')).toBe('true');
+    expect(container.querySelector('[data-variant="body"]')?.getAttribute('data-lines')).toBe('1');
+    rerender(<ClimbListItemContent climb={climb} {...kilter} display={namesOnly} allowNameWrapping={false} />);
+    expect(container.querySelector('[data-variant="title3"]')).not.toBeNull();
+  });
+
+  it('keeps drag-host direction labels on one line even with pictures', () => {
+    loadTheRow();
+    live.fontScale = 1.5;
+    const { container } = render(<ClimbListItemContent climb={climb} {...tension} allowNameWrapping={false} />);
+    for (const label of container.querySelectorAll('[data-variant="caption2"]')) {
+      expect(label.getAttribute('data-lines')).toBe('1');
+    }
+    expect(container.querySelectorAll('[data-variant="caption2"]').length).toBeGreaterThan(0);
   });
 
   it('gives that placeholder the lines its row will have, so the row does not move when the climb lands', () => {

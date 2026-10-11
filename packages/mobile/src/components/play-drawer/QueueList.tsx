@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, type FlatList } from 'react-native';
+import { View, StyleSheet, useWindowDimensions, type FlatList } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
@@ -13,12 +13,14 @@ import {
 import { buildQueueListModel, type QueueFlatRow } from '@boardsesh/play-view';
 import { withSheetBottomInset } from '../sheet-content-inset';
 import { QueueItemRow, type QueueItemRowBoard, POSITION_SLOT_WIDTH, QUEUE_ROW_LEADING_INSET } from '../QueueItemRow';
-import { climbRowSeparatorInset } from '../climb-row-layout';
+import { climbRowSeparatorInset, climbRowReorderHeight, DEFAULT_CLIMB_ROW_SURFACE } from '../climb-row-layout';
+import { boardSupportsMirroring } from '@boardsesh/board-config';
+import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { Text } from '../Text';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
-import { useClimbRowField } from '../../lib/climb-row-display-preference';
+import { useClimbRowDisplay } from '../../lib/climb-row-display-preference';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { usePartyProfile } from '../../providers/party-profile-provider';
 import { hapticSelection } from '../../lib/haptics';
@@ -87,11 +89,13 @@ function QueueListComponent({
   onDraggingChange,
 }: QueueListProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, textStyles } = useTheme();
+  const { fontScale } = useWindowDimensions();
   // A suggestion row's separator starts under its text, like the queue rows'
   // above it: past the thumbnail only while the climber shows one. A boolean
   // that changes when a setting does, so it is safe among `renderRow`'s deps.
-  const hasThumbnail = useClimbRowField('thumbnail');
+  const rowDisplay = useClimbRowDisplay();
+  const hasThumbnail = rowDisplay.thumbnail;
   // QueueList only renders inside QueueSheet (a native sheet), so it clears the
   // WINDOW's bottom inset, never the mount point's (#3776).
   const windowBottomInset = useWindowBottomInset();
@@ -183,6 +187,29 @@ function QueueListComponent({
     () => [...flatRows, ...suggestions.map((climb): SuggestionRow => ({ type: 'suggestion', climb }))],
     [flatRows, suggestions],
   );
+
+  const reorderRowHeight = useMemo(() => {
+    const futureRows = [];
+    for (const row of flatRows) {
+      if (row.type !== 'future-item') continue;
+      const rowBoard = resolveClimbRenderBoard(row.item.climb, board)?.boardConfig ?? board;
+      const statsAngle = row.item.climb && 'statsAngle' in row.item.climb ? row.item.climb.statsAngle : null;
+      futureRows.push({
+        supportsMirroring: boardSupportsMirroring(
+          rowBoard.boardName as import('@boardsesh/shared-schema').BoardName,
+          rowBoard.layoutId,
+        ),
+        hasSetAngleMarker: typeof statsAngle === 'number' && statsAngle !== rowBoard.angle,
+      });
+    }
+    return climbRowReorderHeight({
+      rows: futureRows,
+      display: rowDisplay,
+      surface: DEFAULT_CLIMB_ROW_SURFACE,
+      fontScale,
+      typeScale: textStyles,
+    });
+  }, [flatRows, board, rowDisplay, fontScale, textStyles]);
 
   // The contiguous draggable window: the `future-item` rows (upcoming queue).
   const { firstFutureRowIndex, lastFutureRowIndex, firstFutureQueueIndex } = useMemo(() => {
@@ -354,6 +381,7 @@ function QueueListComponent({
               queueIndex={row.queueIndex}
               showcaseAvatarAnchor={process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && index === firstFutureRowIndex}
               isDraggable={!isEditMode}
+              minimumHeight={reorderRowHeight}
               showAddedBy={showAddedBy}
               viewerUserId={viewerUserId}
             />
@@ -397,6 +425,7 @@ function QueueListComponent({
     [
       board,
       dragControls,
+      reorderRowHeight,
       firstFutureRowIndex,
       isEditMode,
       selectedItems,

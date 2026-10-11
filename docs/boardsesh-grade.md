@@ -80,8 +80,9 @@ always the community grade, never the Boardsesh grade. The rule is
   otherwise the community grade. It is also marked when there is no other grade.
 - The `≈` on an estimated Boardsesh grade is not a difference, for the token or
   for the mark.
-- Under the "V5 / 6C" format the token is one half of the community grade: the
-  V half when the V halves differ, otherwise the Font half.
+- Under the "V5 / 6C" format the token uses only the community grade's V half.
+  Matching V halves suppress it, even when the Font halves differ. Font-only
+  format compares the whole grade label.
 
 With both toggles on, the mark and the token compare against different grades.
 A row then shows your grade and the community's, and the Boardsesh grade is in
