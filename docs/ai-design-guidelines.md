@@ -914,6 +914,11 @@ matching the iOS segmented control's large-text fallback. Keep the selection
 haptic and same-cadence guard when swapping controls so a tap cannot restart a
 running rest window.
 
+The rest timer sheet uses a bounded 90% detent and a scroll body so its final
+turn-off action stays reachable on short screens and at accessibility text sizes.
+Do not combine its scroll body with content-fitting: the native host proposes an
+unbounded height, leaving overflow outside the scroll viewport.
+
 ---
 
 ## Dark mode

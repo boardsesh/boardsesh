@@ -234,8 +234,31 @@ vi.mock('../RestTimerPill', () => ({
 }));
 
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, visible }: { children?: ReactNode; visible: boolean }) =>
-    visible ? createElement('div', { 'data-testid': 'sheet' }, children) : null,
+  ModalSheet: ({
+    children,
+    visible,
+    scrollable,
+    snapPoints,
+    enableDynamicSizing = false,
+  }: {
+    children?: ReactNode;
+    visible: boolean;
+    scrollable?: boolean;
+    snapPoints?: (string | number)[];
+    enableDynamicSizing?: boolean;
+  }) =>
+    visible
+      ? createElement(
+          'div',
+          {
+            'data-testid': 'sheet',
+            'data-scrollable': scrollable,
+            'data-snap-points': snapPoints?.join(','),
+            'data-dynamic-sizing': enableDynamicSizing,
+          },
+          children,
+        )
+      : null,
 }));
 
 vi.mock('../../Text', () => ({
@@ -381,6 +404,17 @@ describe('RestTimerSheet', () => {
   it('shows the live hero clock so the sheet is not a dead settings page', () => {
     const { getByTestId } = renderSheet();
     expect(getByTestId('sheet-hero-clock')).not.toBeNull();
+  });
+
+  it('keeps the final turn-off action inside a bounded scroll body', () => {
+    const { getByTestId } = render(<RestTimerSheet visible onClose={() => {}} />);
+    const sheet = getByTestId('sheet');
+    expect(sheet.getAttribute('data-scrollable')).toBe('true');
+    expect(sheet.getAttribute('data-snap-points')).toBe('90%');
+    expect(sheet.getAttribute('data-dynamic-sizing')).toBe('false');
+    expect(sheet.textContent).toContain('mobile.restTimer.turnOff');
+    // The native screenshot flow verifies scrolling reaches this action;
+    // this mock only protects the bounded-scroll configuration it requires.
   });
 
   it('pauses and resumes the real timer from the transport, with a haptic each way', () => {

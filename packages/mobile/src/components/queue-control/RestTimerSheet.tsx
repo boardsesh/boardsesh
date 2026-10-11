@@ -220,6 +220,8 @@ type RestTimerSheetProps = {
   onClose: () => void;
 };
 
+const REST_TIMER_SNAP_POINTS = ['90%'];
+
 export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
   const { t } = useTranslation('session');
   const { fontScale } = useWindowDimensions();
@@ -255,12 +257,10 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
   }, [onClose]);
 
   return (
-    // Solid ground: this is a form, not chrome — reading a slider and a segmented
-    // control through the board art behind it is unreadable. Sized to its
-    // content, and deliberately WITHOUT `header` / `footer`: `enableDynamicSizing`
-    // with sheet chrome but no `androidContentSized` gives the Android column
-    // `flex: 1` under a `matchContents` host, which resolves to zero (#4720).
-    <ModalSheet visible={visible} enableDynamicSizing onClose={onClose} enablePanDownToClose>
+    // A bounded scroll body keeps the final action reachable at accessibility
+    // sizes and on short screens. Content-fitting proposes an unbounded height
+    // to the native host, so adding a ScrollView alone cannot bound its viewport.
+    <ModalSheet visible={visible} snapPoints={REST_TIMER_SNAP_POINTS} scrollable onClose={onClose} enablePanDownToClose>
       {/* No container `gap`: each block owns its own rhythm (SectionHeader brings
           the section's top padding, each control its own inset), and a blanket
           gap on top of those produced the ladder of unequal seams the old sheet
