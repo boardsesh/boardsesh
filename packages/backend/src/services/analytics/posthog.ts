@@ -56,7 +56,7 @@ export type BackendAnalyticsEvent =
   // that now stands between "configured a wall" and "paid for one". It is the
   // top of the build-plans funnel and the denominator every later step is read
   // against: previews generated → `Checkout Started` (client, at finalise) →
-  // `Build Plans Pack Purchased`. Count DISTINCT USERS for the funnel;
+  // `Build Plans Pack Purchased`. Backend events count operations, not people;
   // `preview_index` above 1 is a generator retry, not a buyer iterating, since
   // changing anything writes a new order row.
   | 'Build Plans Preview Generated'
