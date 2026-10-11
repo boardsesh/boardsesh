@@ -384,15 +384,16 @@ describe('tickQueries — behavior fixes', () => {
       expect((await feedRenderBoard(climbUuid))?.renderBoard?.sizeId).toBe(7);
     });
 
-    it('withholds identifiable activity on a private board from outsiders', async () => {
+    it('shows activity on a private board to outsiders without naming the board', async () => {
       const climbUuid = `${CLIMB_PREFIX}rb-private`;
       await insertClimbWithFit(climbUuid, 'Private Board', [7, 10]);
       const boardId = await insertOwnedBoard({ name: 'Secret Garage', sizeId: 10, isPublic: false });
       await insertTick({ uuid: 'rb-5', climbUuid, climbedAt: '2026-06-21T10:00:00', status: 'send', boardId });
 
-      // The private parent caps the tick, even when the climb is public.
+      // The ascent follows its climber; the private board only loses its name and id.
       const asPublic = await feedRenderBoard(climbUuid);
-      expect(asPublic).toBeUndefined();
+      expect(asPublic).toMatchObject({ uuid: 'rb-5', boardId: null, boardDisplayName: null });
+      expect(JSON.stringify(asPublic)).not.toContain('Secret Garage');
     });
   });
 
@@ -1450,7 +1451,9 @@ describe('tickQueries — behavior fixes', () => {
         input: {},
       })) as { groups: Array<{ climbUuid: string; items: BoardItem[] }> };
       const publicGroup = asPublic.groups.find((group) => group.climbUuid === climbUuid);
-      expect(publicGroup).toBeUndefined();
+      // The ascent stays; the private board's name does not.
+      expect(publicGroup?.items.map((item) => item.uuid)).toEqual(['grp-b1']);
+      expect(publicGroup?.items[0]?.boardDisplayName).toBeNull();
     });
 
     it('enriches group items with hasBetaVideo under ownership semantics', async () => {

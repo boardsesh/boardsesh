@@ -4804,7 +4804,11 @@ describe('activityFeed and a wall that went private after the fan-out', () => {
       items: Array<{ entityType: string }>;
     };
     expect(items.items.map((item) => item.entityType)).toEqual(['session']);
-    await db.execute(sql`UPDATE board_sessions SET is_public = false WHERE id = ${sessionId}`);
+    // A legacy private session is unlisted and stays readable; an invite-only one does not.
+    await db.execute(sql`
+      INSERT INTO resource_privacy (kind, resource_id, owner_id, audience)
+      VALUES ('session', ${sessionId}, ${OWNER}, 'invite_only')
+    `);
     expect(await read(STRANGER)).toEqual([]);
   });
 });

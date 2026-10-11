@@ -284,7 +284,7 @@ describe('installed-client privacy contracts', () => {
     },
   );
 
-  it('allows the legacy switch to narrow a modern public session', async () => {
+  it('lets the legacy switch narrow a modern public session to unlisted', async () => {
     const sessionId = randomUUID();
     await db
       .insert(schema.boardSessions)
@@ -297,7 +297,8 @@ describe('installed-client privacy contracts', () => {
       .select()
       .from(schema.resourcePrivacy)
       .where(and(eq(schema.resourcePrivacy.kind, 'session'), eq(schema.resourcePrivacy.resourceId, sessionId)));
-    expect(policy.audience).toBe('invite_only');
+    // Private on an old client means off the listings; the link still joins.
+    expect(policy.audience).toBe('unlisted');
   });
 
   it('does not replace an Only me account default with old Private boolean semantics', async () => {

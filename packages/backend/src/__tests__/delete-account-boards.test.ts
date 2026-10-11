@@ -89,7 +89,8 @@ describe('ordinary board privacy survives account deletion', () => {
           .innerJoin(schema.sessionBoards, eq(schema.sessionBoards.boardId, schema.userBoards.id))
           .innerJoin(schema.boardSessions, eq(schema.boardSessions.id, schema.sessionBoards.sessionId))
           .where(eq(schema.userBoards.id, board.id));
-        expect(visibility).toEqual({ board: false, session: false });
+        // The board stays hidden; the session follows its own (public) policy.
+        expect(visibility).toEqual({ board: false, session: true });
         throw rollback;
       });
     } catch (error) {

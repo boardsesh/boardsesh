@@ -18,7 +18,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
-import { activityPushTokens, boardSessionParticipants, boardSessions, resourceGrants } from '@boardsesh/db/schema';
+import {
+  activityPushTokens,
+  boardSessionParticipants,
+  boardSessions,
+  resourceGrants,
+  resourcePrivacy,
+} from '@boardsesh/db/schema';
 
 // setup.ts loads privacy.ts through roomManager before these DB mocks exist.
 // Reload that graph so the real policy service uses this file's fixture rows.
@@ -47,6 +53,8 @@ const privacySessionRows = vi.fn(() => [
   { id: 'session-widget-test', createdByUserId: 'session-host', isPublic: true, boardPath: 'kilter/1/1/1/40' },
 ]);
 const resourceGrantRows = vi.fn<() => Array<{ status: 'approved' | 'revoked' }>>(() => []);
+// The session's explicit audience, when it has one. Default: legacy row only.
+const resourcePrivacyRows = vi.fn<() => Array<{ audience: string }>>(() => []);
 // Durable session row used by the guard's ended-session check. Default active.
 const getSessionByIdMock = vi.fn<() => Promise<{ status: string; endedAt: Date | null } | null>>(async () => ({
   status: 'active',
@@ -78,6 +86,7 @@ vi.mock('../db/client', () => {
       if (table === boardSessionParticipants) return participantRows();
       if (table === boardSessions) return privacySessionRows();
       if (table === resourceGrants) return resourceGrantRows();
+      if (table === resourcePrivacy) return resourcePrivacyRows();
       // No resource override or approved-follow relationship in these fixtures.
       return [];
     });
@@ -208,6 +217,7 @@ describe('handleWidgetNavigate', () => {
       { id: SESSION_ID, createdByUserId: 'session-host', isPublic: true, boardPath: 'kilter/1/1/1/40' },
     ]);
     resourceGrantRows.mockReturnValue([]);
+    resourcePrivacyRows.mockReturnValue([]);
     getSessionByIdMock.mockResolvedValue({ status: 'active', endedAt: null });
     getQueueStateMock.mockResolvedValue({
       queue: [
@@ -340,11 +350,14 @@ describe('handleWidgetNavigate', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('refuses a legacy anonymous token for a private session', async () => {
+  it('refuses a legacy anonymous token for an invite-only session', async () => {
     tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: null }]);
     privacySessionRows.mockReturnValue([
       { id: SESSION_ID, createdByUserId: 'session-host', isPublic: false, boardPath: 'kilter/1/1/1/40' },
     ]);
+    // A legacy private session is unlisted and its link still drives it; only an
+    // explicit invite-only audience shuts out a token with no account behind it.
+    resourcePrivacyRows.mockReturnValue([{ audience: 'invite_only' }]);
     const req = makeRequest({
       method: 'POST',
       authHeader: `Bearer ${REGISTERED_TOKEN}`,
