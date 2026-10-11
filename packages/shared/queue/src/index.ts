@@ -46,8 +46,10 @@ export {
   getQueueBoardKey,
   createPlaylistSuggestionSource,
   reanchorPlaylistSuggestionSource,
+  preparePlaylistClimbs,
+  findPlaylistClimbIndex,
 } from './playlist-suggestions';
-export type { QueueBoardKeyTarget } from './playlist-suggestions';
+export type { QueueBoardKeyTarget, PreparedPlaylistClimbs } from './playlist-suggestions';
 
 // Cross-board queue decisions (board-model identity + the add/confirm call).
 // The compatibility classifier is injected so this package stays dependency-free.

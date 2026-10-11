@@ -37,13 +37,14 @@
 //      things amendment B allows (never a timer).
 //   9. The mirror toggle doesn't push a previewed climb's frames to a board that
 //      is lit with the LIVE climb.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render as renderInitial, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { PlaylistSuggestionSource } from '@boardsesh/queue';
 
 type Props = Record<string, unknown>;
+const toggleFavorite = vi.hoisted(() => vi.fn());
 
 const recorded = vi.hoisted(() => ({
   actionBar: [] as Props[],
@@ -164,7 +165,8 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: onPress }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFillObject: {} },
   Platform: { OS: 'web', select: (spec: Record<string, unknown>) => spec.web ?? spec.default },
-  useWindowDimensions: () => ({ width: 390, height: 844 }),
+  PixelRatio: { get: () => 3 },
+  useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
 }));
 // The settings store backs `lightOnSwipe`, which decides whether a preview's
@@ -194,25 +196,28 @@ vi.mock('react-native-reanimated', () => ({
 }));
 vi.mock('expo-router', () => ({ router: { dismiss: vi.fn() } }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'random-uuid' }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
 
 // --- Shared packages ---------------------------------------------------------
 vi.mock('@boardsesh/play-view', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/play-view')>();
   return {
+    ...actual,
     // Real: the #5403 lineage rule (preview vs. committed track) is exactly
     // what the source-less-preview cases in this file exercise.
     resolveNavigationSuggestionSource: actual.resolveNavigationSuggestionSource,
     // The prefetch walk: these suites assert on the displayed board, not on
     // what is warmed ahead, so nothing is ahead.
     findUpcomingQueueItemsWithSuggestions: () => [],
-    computeNavigationStateWithSuggestions: (
-      ...args: Parameters<typeof actual.computeNavigationStateWithSuggestions>
+    computeNavigationTargetsWithSuggestions: (
+      ...args: Parameters<typeof actual.computeNavigationTargetsWithSuggestions>
     ) => {
       recorded.navigationBoardConfigs.push(args[3]);
       return session.useRealNavigation
-        ? actual.computeNavigationStateWithSuggestions(...args)
+        ? actual.computeNavigationTargetsWithSuggestions(...args)
         : {
             nextItem: session.nextItem,
             prevItem: null,
@@ -220,6 +225,9 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => {
             canPrevious: false,
           };
     },
+    countRemainingQueueItemsWithSuggestions: (
+      ...args: Parameters<typeof actual.countRemainingQueueItemsWithSuggestions>
+    ) => (session.useRealNavigation ? actual.countRemainingQueueItemsWithSuggestions(...args) : 0),
     boardSupportsMirroring: () => true,
   };
 });
@@ -254,7 +262,7 @@ vi.mock('../WallStatePill', () => ({
 vi.mock('../WallStateCallout', () => ({
   WallStateCallout: (props: Props) => {
     recorded.wallCallout.push(props);
-    return null;
+    return createElement('div', { 'data-testid': props.presentation === 'notice' ? 'browse-notice' : 'wall-callout' });
   },
 }));
 vi.mock('../BrowseFrameOverlay', () => ({
@@ -282,6 +290,15 @@ vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null
 // that swallowed it would hide whether PlayDrawer passes one at all.
 vi.mock('../PlayDrawerStatusBarScrim', () => ({ PlayDrawerStatusBarScrim: () => null }));
 vi.mock('../PlayDrawerHeader', () => ({
+  useLivePlayDrawerHeaderModel: (props: Props) =>
+    props.climb
+      ? {
+          headerProps: props,
+          reduceMotion: false,
+          layoutFingerprint: JSON.stringify(props.climb),
+        }
+      : null,
+  PreparedPlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
   LivePlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
 }));
 vi.mock('../SwipeableHeader', () => ({
@@ -330,7 +347,7 @@ vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthent
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: undefined }),
-  useToggleFavorite: () => ({ mutate: vi.fn() }),
+  useToggleFavorite: () => ({ mutate: toggleFavorite }),
   useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {
     recorded.favoriteStatus.push(options ?? {});
     return { data: undefined };
@@ -421,6 +438,19 @@ function renderDrawer(viewer: 'member' | 'anonymous', onSignIn?: () => void) {
   return render(drawerElement(viewer, openTargetFor(CLIMB), onSignIn));
 }
 
+const openingFrames = new Map<number, FrameRequestCallback>();
+let nextOpeningFrame = 0;
+function flushOpeningFrame() {
+  const scheduled = [...openingFrames.values()];
+  openingFrames.clear();
+  act(() => scheduled.forEach((callback) => callback(0)));
+}
+function render(...args: Parameters<typeof renderInitial>) {
+  const rendered = renderInitial(...args);
+  flushOpeningFrame();
+  return rendered;
+}
+
 function lastActionBarProps(): Props {
   const props = recorded.actionBar.at(-1);
   if (!props) throw new Error('PlayDrawerActionBar never rendered');
@@ -446,6 +476,13 @@ function lastDisplayedClimbUuid(): string {
 }
 
 beforeEach(() => {
+  openingFrames.clear();
+  nextOpeningFrame = 0;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    openingFrames.set(++nextOpeningFrame, callback);
+    return nextOpeningFrame;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (handle: number) => openingFrames.delete(handle));
   vi.clearAllMocks();
   recorded.actionBar = [];
   recorded.wallPill = [];
@@ -471,6 +508,7 @@ beforeEach(() => {
   resetAllSettings();
   _resetJoinedBrowseNoticeForTests();
 });
+afterEach(() => vi.unstubAllGlobals());
 
 // Joining a crew changes what every browse-shaped gesture means: a swipe, a
 // similar-climb tap and (elsewhere) a climb-list tap stop writing the queue
@@ -809,10 +847,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   // feature instead of the feature.
   it('explains the new rule once, the first time the latch engages', () => {
     CREW();
-    render(drawerElement('member', openTargetFor(CLIMB)));
-
-    const notices = recorded.wallCallout.filter((props) => props.presentation === 'notice');
-    expect(notices).toHaveLength(1);
+    const rendered = render(drawerElement('member', openTargetFor(CLIMB)));
+    expect(rendered.queryAllByTestId('browse-notice')).toHaveLength(1);
   });
 
   it('does not explain it again on the next drawer open in the same session', () => {
@@ -844,9 +880,9 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     setSetting('lightOnSwipe', false);
     wall.uuid = 'wall-climb-a';
     wall.name = 'What Was Up';
-    render(drawerElement('member', openTargetFor(CLIMB))).unmount();
-
-    expect(recorded.wallCallout.filter((props) => props.presentation === 'notice')).toHaveLength(1);
+    const rendered = render(drawerElement('member', openTargetFor(CLIMB)));
+    expect(rendered.queryAllByTestId('browse-notice')).toHaveLength(1);
+    rendered.unmount();
   });
 
   it('tells that climber once, not once per drawer open', () => {

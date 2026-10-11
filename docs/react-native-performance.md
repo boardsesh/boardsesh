@@ -536,6 +536,39 @@ of the report, and wait four seconds for a paint that had happened.
 
 ## Profiling workflow
 
+### Opening a climb from the list
+
+The acceptance gate for a cached full-size climb is **p95 below 50 ms from the
+tap to full-size artwork and usable board gestures**, including after long
+scrolling and repeated openings. Completing the native slide animation is not
+part of that interval. A thumbnail bridge can cover a real render/decode miss,
+but its appearance cannot satisfy the full-artwork gate. Report those misses
+separately instead of mixing them into a warm-cache timing result.
+
+The player mounts its board and gesture core in the opening commit; optional
+details and sheet contents follow separately. Artwork transferred from a row
+must be immutable and fenced by the exact board/frame/render identity, cache
+generation, mirror intent, and privacy/credential epochs. Loading an image is
+not proof that it displayed: readiness needs native `onDisplay` for the matching
+holds and background layers. A replacement prepared behind a bridge is counted
+only after its visible handoff reaches a frame.
+
+Measured geometry is reused through `opening-layout-cache.ts`, a 32-entry LRU.
+Reuse requires the complete layout identity: board and intrinsic dimensions,
+climb, viewport, font scale, pixel ratio, locale, safe-area insets, preferences,
+visible section, presentation/pane inset, header, controls, lost-hold banner and
+playback variants. Only positive, complete measurements enter the cache; a
+screen with no visible section may have zero section-header height. Unknown
+models measure normally. Credential/privacy withdrawal clears the cache and
+invalidates an already captured key synchronously.
+
+Verify the timing on a physical device in a pinned release/probe build. Use
+alternating baseline/candidate batches with at least 30 warm opens per build,
+including 60 downward scrolls, repeated opens and recycled rows after hard
+flicks. Compare native hitches under similar thermal conditions. Unit tests and
+simulator screenshots prove lifecycle/layout behavior; they do not establish
+the 50 ms physical-device result or native frame rate.
+
 For player swipe dismissal on ProMotion iPhones, target the 120 Hz presentation
 budget (8.33 ms) in a release build. Record the OS/build, active display cadence,
 power and accessibility settings, and compare slow releases around 80% openness,

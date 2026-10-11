@@ -552,6 +552,8 @@ export type EffectiveClimbStatsBase = {
  * Exact-key selector over the renderer-neutral live-stats store. Only the
  * component calling this hook re-renders; row thumbnails/gesture shells do not
  * subscribe. The snapshot object is stable until this exact key changes.
+ * Disabled selectors retain no key, so layout repair cannot request a pending
+ * or empty target. Hook order stays unchanged when a target becomes available.
  */
 export function useEffectiveClimbStats(
   boardType: BoardName,
@@ -559,17 +561,23 @@ export function useEffectiveClimbStats(
   climbUuid: string,
   angle: number,
   base: EffectiveClimbStatsBase,
+  options: { enabled?: boolean } = {},
 ): EffectiveClimbStats {
+  const enabled = options.enabled ?? true;
   const adapter = useBoardAdapter();
   const key = useMemo<ClimbStatsKey>(
     () => ({ boardType, layoutId, climbUuid, angle }),
     [boardType, layoutId, climbUuid, angle],
   );
-  const subscribe = useCallback((listener: () => void) => subscribeClimbStats(key, listener), [key]);
+  const subscribe = useCallback(
+    (listener: () => void) => (enabled ? subscribeClimbStats(key, listener) : () => {}),
+    [key, enabled],
+  );
   const getSnapshot = useCallback(() => getClimbStatsSnapshot(key), [key]);
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   useEffect(() => {
+    if (!enabled) return;
     void readCanonicalClimbStats(adapter, key);
     return () => {
       // React releases the external-store subscription in a separate cleanup.
@@ -577,7 +585,7 @@ export function useEffectiveClimbStats(
       // unmounted is removed before an active read frees a scheduler slot.
       void Promise.resolve().then(() => discardReadIfUnretained(key));
     };
-  }, [adapter, key]);
+  }, [adapter, key, enabled]);
 
   const canonical = snapshot.canonical;
   const canonicalCount = canonical?.ascensionistCount ?? 0;

@@ -1364,7 +1364,7 @@ describe('ClimbList keyboard handling', () => {
     fireEvent.click(await findByText('Moonage'));
 
     expect(mocks.dismissKeyboard).toHaveBeenCalledTimes(1);
-    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' }, undefined);
     // Logbook is fetched for every visible row, not just the pressed one — the
     // default fixture now has two climbs (added for the rank-tracking tests).
     await waitFor(() => expect(mocks.getLogbook).toHaveBeenCalledWith(['climb-1', 'climb-2']));
@@ -1383,7 +1383,7 @@ describe('ClimbList shared-session row taps', () => {
 
     // Through the hook — not the bare preview open — because only the hook can
     // seed these results as the drawer's swipe track.
-    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' }, undefined);
     expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
     // The flag that makes that activation view-only. Without it the hook commits.
     expect(mocks.activationOptions?.previewOnly).toBe(true);
@@ -1411,7 +1411,7 @@ describe('ClimbList shared-session row taps', () => {
     fireEvent.click(await findByText('Moonage'));
 
     expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' }, undefined);
     expect(mocks.activationOptions?.previewOnly).toBe(true);
   });
 
@@ -1421,7 +1421,7 @@ describe('ClimbList shared-session row taps', () => {
 
     fireEvent.click(await findByText('Moonage'));
 
-    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' }, undefined);
     expect(mocks.activationOptions?.previewOnly).toBe(false);
   });
 });

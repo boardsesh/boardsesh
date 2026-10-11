@@ -23,7 +23,13 @@ import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
 import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 import { ScreenshotSmokeMarker } from '../ScreenshotSmokeMarker';
 import { countLitHolds } from '../../lib/screenshot-smoke';
-import { clearPlayBoardPrewarm, rememberPlayOverlayWidth } from '../../lib/board-render/play-board-prewarm';
+import {
+  clearPlayBoardPrewarm,
+  getPlayOverlayWidth,
+  rememberPlayOverlayWidth,
+} from '../../lib/board-render/play-board-prewarm';
+
+import type { ReadyBoardArtIdentity, ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -31,6 +37,10 @@ type BoardRenderData = {
 };
 
 type SwipeBoardCarouselProps = {
+  /** Positive geometry from the player's shared layout owner or validated cache. */
+  containerSize?: { width: number; height: number };
+  readyBoardArt?: ReadyBoardArtSnapshot;
+  onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
   boardName: BoardName;
   boardRenderData: BoardRenderData;
   layoutId: number;
@@ -106,7 +116,9 @@ type CarouselBoardSlotProps = {
   translateX: SharedValue<number>;
   /** How far the incoming board travels to reach the middle: the contained board width. */
   slideWidth: number;
-  boardBox: { width: number; height: number };
+  boardBox: ViewStyle;
+  readyBoardArt?: ReadyBoardArtSnapshot;
+  onReadyArtDisplayed?: SwipeBoardCarouselProps['onReadyArtDisplayed'];
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -136,6 +148,8 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
   translateX,
   slideWidth,
   boardBox,
+  readyBoardArt,
+  onReadyArtDisplayed,
   boardName,
   layoutId,
   sizeId,
@@ -168,6 +182,8 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
         {frames ? (
           <BoardImageNative
             accessible={false}
+            readyBoardArt={readyBoardArt}
+            onReadyArtDisplayed={onReadyArtDisplayed}
             frames={frameOverride ?? frames}
             boardName={boardName}
             layoutId={layoutId}
@@ -204,6 +220,9 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
 });
 
 export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
+  containerSize: suppliedContainerSize,
+  readyBoardArt,
+  onReadyArtDisplayed,
   boardName,
   boardRenderData,
   layoutId,
@@ -256,9 +275,18 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // box (contain) so the play drawer's full-screen first view can keep the
   // action bar and a Beta-videos teaser on screen instead of the tall board
   // pushing them below the fold. Starts at 0; populated by onLayout. The zoom
-  // hook mirrors these into shared values, so updating after first layout
-  // doesn't rebuild the gestures.
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  // hook mirrors these into shared values. Artwork already mounts with native
+  // contain-fit; JS geometry enables gestures and refines the overlay width.
+  const [localContainerSize, setLocalContainerSize] = useState({ width: 0, height: 0 });
+  const hasSuppliedContainerSize =
+    !!suppliedContainerSize &&
+    Number.isFinite(suppliedContainerSize.width) &&
+    Number.isFinite(suppliedContainerSize.height) &&
+    suppliedContainerSize.width > 0 &&
+    suppliedContainerSize.height > 0;
+  const suppliedSizeRef = useRef(hasSuppliedContainerSize);
+  suppliedSizeRef.current = hasSuppliedContainerSize;
+  const containerSize = hasSuppliedContainerSize && suppliedContainerSize ? suppliedContainerSize : localContainerSize;
 
   const { boardWidth, boardHeight } = boardRenderData;
   const aspectRatio = boardWidth / boardHeight;
@@ -266,9 +294,17 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // centering. Letterboxes (horizontally on tall boards, vertically on wide
   // ones) so the whole climb stays visible while the box drives the height.
   const boardBox = useMemo(
-    () => computeContainedBoardSize(containerSize.width, containerSize.height, aspectRatio),
+    () =>
+      Number.isFinite(containerSize.width) && Number.isFinite(containerSize.height) && Number.isFinite(aspectRatio)
+        ? computeContainedBoardSize(containerSize.width, containerSize.height, aspectRatio)
+        : null,
     [containerSize, aspectRatio],
   );
+  const imageBox = useMemo<ViewStyle>(
+    () => ({ ...(boardBox ?? { width: '100%', height: '100%' }), aspectRatio: undefined }),
+    [boardBox],
+  );
+  const gesturesEnabled = enabled && boardBox !== null;
   // The carousel works in board-width units: a letterboxed (narrower) board
   // must slide off by its own width and the incoming board must enter
   // edge-adjacent. Using screenWidth instead leaves a gap equal to the letterbox
@@ -276,7 +312,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const boardWidthForSwipe = boardBox?.width ?? screenWidth;
 
   const { pinchGesture, zoomPanGesture, isZoomed, isZoomedSV, resetZoom, animatedZoomStyle } = useZoomPanGesture({
-    enabled,
+    enabled: gesturesEnabled,
     containerWidth: boardBox?.width ?? screenWidth,
     containerHeight: boardBox?.height ?? containerSize.height,
     scrollRef,
@@ -304,7 +340,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     pager,
     boardWidth: boardWidthForSwipe,
     screenWidth,
-    enabled,
+    enabled: gesturesEnabled,
     isZoomedSV,
     scrollRef,
   });
@@ -319,8 +355,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   );
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    // The parent already owns this geometry. Avoid a second measuring commit.
+    if (suppliedSizeRef.current) return;
     const { width, height } = event.nativeEvent.layout;
-    setContainerSize((prev) =>
+    setLocalContainerSize((prev) =>
       Math.abs(prev.width - width) > 1 || Math.abs(prev.height - height) > 1 ? { width, height } : prev,
     );
   }, []);
@@ -354,20 +392,13 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // The lit climb, for the showcase video's callouts (screenshot mode only, like the plain board below).
   const boardSurfaceAnchor = useShowcaseAnchor('board-surface');
 
-  // Keep measuring the flex box, but never mount images at an implicit/full-width
-  // size. Cached photos can paint before onLayout reaches JS, making the later
-  // contain-fit correction look like a zoom during the native opening animation.
-  if (!boardBox) {
-    return (
-      <GestureDetector gesture={composedGesture}>
-        <View style={styles.container} onLayout={handleLayout} testID="play-drawer-board-container" />
-      </GestureDetector>
-    );
-  }
-
-  // Only request display-sized overlays once layout is known. The shared photo
-  // stays full-res; useNativeClimbRender clamps the overlay to native resolution.
-  const overlayRenderWidth = Math.round(boardBox.width * PixelRatio.get());
+  // Native contain-fit draws cached artwork before JS geometry is available.
+  // Match the prewarmed overlay key where possible; only gesture readiness waits
+  // for a positive contained box. Updating the fit preserves the current image.
+  const overlayRenderWidth =
+    measuredOverlayWidth ??
+    getPlayOverlayWidth({ boardName, layoutId, sizeId, setIds }) ??
+    (Number.isFinite(boardWidth) && boardWidth > 0 ? Math.max(1, Math.round(boardWidth)) : 1);
 
   const renderSlot = (page: number, frames: string | null, isCurrent: boolean) => (
     <CarouselBoardSlot
@@ -381,7 +412,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       anchorPage={pager.anchorPage}
       translateX={pager.translateX}
       slideWidth={boardWidthForSwipe}
-      boardBox={boardBox}
+      boardBox={imageBox}
+      readyBoardArt={isCurrent ? readyBoardArt : undefined}
+      onReadyArtDisplayed={isCurrent ? onReadyArtDisplayed : undefined}
       boardName={boardName}
       layoutId={layoutId}
       sizeId={sizeId}
@@ -408,7 +441,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       // a prop, so the wall photo stays mounted across a swipe and only the
       // holds are loaded again.
       key="plain-current"
-      style={[styles.boardWrapper, boardBox]}
+      style={[styles.boardWrapper, imageBox]}
       {...boardSurfaceAnchor}
       {...boardAccessibility}
       // Android groups an accessible board and hides its nested test IDs.
@@ -422,6 +455,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       ) : null}
       <BoardImageNative
         accessible={false}
+        readyBoardArt={readyBoardArt}
+        onReadyArtDisplayed={onReadyArtDisplayed}
         frames={currentFrameOverride ?? currentFrames}
         boardName={boardName}
         layoutId={layoutId}
@@ -433,7 +468,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
         renderWidth={overlayRenderWidth}
         backgroundVariant="full"
         recyclingKey={currentFrames}
-        style={boardBox}
+        style={imageBox}
         overlayTestID="play-drawer-board-overlay"
         // The one board a climber is actually looking at: `surface: 'play'`
         // on render-failure telemetry, and the only surface that watches
@@ -457,7 +492,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             the plain board. */}
         {isScreenshotMode ? null : (
           <View
-            style={[styles.boardStandIn, boardBox]}
+            style={[styles.boardStandIn, imageBox]}
             testID="play-drawer-board-accessibility"
             {...boardAccessibility}
           />
@@ -483,7 +518,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             while the renderer is idle, so those swipes are cache hits. Skipped
             in screenshot mode, where the only render that matters is the one
             board the capture is waiting on. */}
-        {isScreenshotMode ? null : (
+        {isScreenshotMode || !boardMeasured ? null : (
           <UpcomingBoardPrefetch
             frames={prefetchFrames}
             boardName={boardName}
@@ -498,7 +533,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             claim 1-finger touches in the idle state (which would block
             BottomSheetScrollView scroll on the climb image). 2-finger pinches
             fall through to the outer GestureDetector via maxPointers(1). */}
-        {isZoomed && (
+        {isZoomed && boardMeasured && (
           <GestureDetector gesture={zoomPanGesture}>
             <View style={styles.zoomPanOverlay} />
           </GestureDetector>

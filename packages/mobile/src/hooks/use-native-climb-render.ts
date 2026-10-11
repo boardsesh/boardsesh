@@ -105,6 +105,14 @@ import {
   setBoardseshSupportProbe,
   subscribeToBoardseshSupport,
 } from './boardsesh-renderer-support';
+import { getPlayOverlayWidth } from '../lib/board-render/play-board-prewarm';
+import { isBoardArtInMemory } from '../lib/board-render/board-art-memory-index';
+import {
+  captureReadyBoardArt,
+  type ReadyBoardArtIdentity,
+  type ReadyBoardArtSnapshot,
+} from '../lib/board-render/ready-board-art';
+import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../lib/privacy/privacy-cache';
 
 const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
@@ -275,6 +283,13 @@ type NativeClimbRenderParams = {
 };
 
 type NativeClimbRenderResult = {
+  artworkIdentity: ReadyBoardArtIdentity;
+  /** Synchronous cache-only lookup; thumbnail fallback requires its exact displayed attempt. */
+  getReadyBoardArtSnapshot: (
+    climbUuid: string,
+    mirrored: boolean,
+    displayedOverlayLoadKey: string | null,
+  ) => ReadyBoardArtSnapshot | undefined;
   /**
    * file:// URI of the holds-only PNG, or null until the Rust render
    * completes (or forever if the native module is unavailable, e.g.
@@ -1854,6 +1869,14 @@ function isNativeRendererUnavailable(): boolean {
  * and the component shows backgrounds alone.
  */
 export function useNativeClimbRender(params: NativeClimbRenderParams): NativeClimbRenderResult {
+  const privacyGeneration = useSyncExternalStore(
+    subscribeToPrivacyRevocations,
+    getPrivacyRevocationGeneration,
+    getPrivacyRevocationGeneration,
+  );
+  // A privacy-only render does not authorize the old row projection again.
+  // Conservatively retire its handoff source for the rest of this hook's life.
+  const artworkPrivacyGeneration = useRef(privacyGeneration).current;
   const {
     frames,
     boardName,
@@ -3165,7 +3188,117 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       ? fieldColor
       : undefined;
   }, [boardName, layoutId, fieldColor, sprayVersionToken]);
+  const artworkIdentity = useMemo<ReadyBoardArtIdentity>(
+    () => ({
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      frames,
+      renderSignature: effectiveRenderSignature,
+      colorScheme,
+    }),
+    [boardName, layoutId, sizeId, setIds, frames, effectiveRenderSignature, colorScheme],
+  );
+  const getReadyBoardArtSnapshot = useCallback(
+    (climbUuid: string, mirrored: boolean, displayedOverlayLoadKey: string | null) => {
+      // Credential/privacy invalidation is synchronous, before React gets to
+      // replace this recycled row's closure. Never bless its old pixels anew.
+      if (artworkPrivacyGeneration !== getPrivacyRevocationGeneration()) return undefined;
+      const width = getPlayOverlayWidth({ boardName, layoutId, sizeId, setIds });
+      if (width !== undefined) {
+        // This is the renderer's own key builder and resolved signature, not a
+        // guessed filename or an extra mounted full-size render in every row.
+        const fullKey = buildCacheKey(
+          boardName,
+          layoutId,
+          sizeId,
+          setIds,
+          flatFrames,
+          false,
+          width,
+          effectiveRenderSignature,
+          boardArtChunkPending,
+        );
+        const fullEntry = getRenderedOverlay(fullKey);
+        const fullBackgrounds = tryGetBackgroundPathsSync({
+          boardName,
+          layoutId,
+          sizeId,
+          setIds: setIdsArray,
+          variant: 'full',
+          colorScheme,
+        });
+        if (
+          fullEntry &&
+          isBoardArtInMemory(fullEntry.uri, String(fullEntry.generation)) &&
+          fullBackgrounds &&
+          fullBackgrounds.missingCount === 0 &&
+          fullBackgrounds.paths.every((path) => isBoardArtInMemory(path.includes('://') ? path : `file://${path}`))
+        ) {
+          return captureReadyBoardArt({
+            ...artworkIdentity,
+            climbUuid,
+            mirrored,
+            quality: 'full',
+            overlayCacheKey: fullKey,
+            overlayUri: fullEntry.uri,
+            overlayGeneration: fullEntry.generation,
+            overlayLoadKey: `${fullEntry.generation}:0`,
+            backgroundPaths: fullBackgrounds.paths,
+            backgroundBaseColor,
+          });
+        }
+      }
+      const entry = getRenderedOverlay(currentCacheKey);
+      if (
+        !entry ||
+        !overlayUri ||
+        entry.uri !== overlayUri ||
+        overlayLoadKey !== displayedOverlayLoadKey ||
+        !overlayLoadKey?.startsWith(`${entry.generation}:`) ||
+        !isBoardArtInMemory(overlayUri, String(entry.generation)) ||
+        missingBackgroundCount !== 0 ||
+        backgroundPaths.length === 0
+      )
+        return undefined;
+      return captureReadyBoardArt({
+        ...artworkIdentity,
+        climbUuid,
+        mirrored,
+        quality: !filledStyle && variant === 'full' ? 'full' : 'thumbnail',
+        overlayCacheKey: currentCacheKey,
+        overlayUri,
+        overlayGeneration: entry.generation,
+        overlayLoadKey,
+        backgroundPaths,
+        backgroundBaseColor,
+      });
+    },
+    [
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      flatFrames,
+      effectiveRenderSignature,
+      boardArtChunkPending,
+      setIdsArray,
+      colorScheme,
+      artworkIdentity,
+      backgroundBaseColor,
+      currentCacheKey,
+      overlayUri,
+      overlayLoadKey,
+      missingBackgroundCount,
+      backgroundPaths,
+      filledStyle,
+      artworkPrivacyGeneration,
+    ],
+  );
   return {
+    artworkIdentity,
+    getReadyBoardArtSnapshot,
     overlayUri,
     overlayLoadKey,
     overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,

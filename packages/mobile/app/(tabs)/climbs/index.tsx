@@ -1167,7 +1167,7 @@ function ClimbListInner() {
   });
 
   const handleClimbPress = useCallback(
-    (climb: Climb) => {
+    (climb: Climb, readyBoardArt?: import('../../../src/lib/board-render/ready-board-art').ReadyBoardArtSnapshot) => {
       if (isPlaceholderDataRef.current) return;
       // First, before the navigation work below: the play drawer needs ~110ms to
       // mount and measure, and this render fits inside that.
@@ -1182,7 +1182,7 @@ function ClimbListInner() {
         // commit row) instead of committing — same landing as the explicit
         // "Preview" climb action, so the tap doesn't light the board or touch
         // the queue until the climber puts it up.
-        openPlayDrawer(climb, { previewQueueItem: climbToQueueItem(climb) });
+        openPlayDrawer(climb, { readyBoardArt, previewQueueItem: climbToQueueItem(climb) });
         return;
       }
       // In a shared session this still routes through the activation hook, whose
@@ -1190,7 +1190,7 @@ function ClimbListInner() {
       // results list, which the bare preview above can't do. So the crew case gets
       // browsing AND a swipe track, and a tap in a crew never commits regardless
       // of the lighting setting.
-      void activateClimbListClimb.activate(toQueueClimb(climb));
+      void activateClimbListClimb.activate(toQueueClimb(climb), readyBoardArt);
     },
     [
       activateClimbListClimb,

@@ -40,6 +40,11 @@ export function rememberPlayOverlayWidth(scope: PlayBoardScope, renderWidth: num
   overlayWidthByBoard.set(scopeKey(scope), renderWidth);
 }
 
+/** Read only: preparing an opening snapshot must never dispatch a render. */
+export function getPlayOverlayWidth(scope: PlayBoardScope): number | undefined {
+  return overlayWidthByBoard.get(scopeKey(scope));
+}
+
 /**
  * Ask for `frames` to be rendered at play size. A no-op until the play drawer
  * has been opened on this board once this session: without a measured width any

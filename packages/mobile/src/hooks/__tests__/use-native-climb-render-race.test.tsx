@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useLayoutEffect } from 'react';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
+import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { noteBoardArtInMemory } from '../../lib/board-render/board-art-memory-index';
+import { rememberPlayOverlayWidth, _resetPlayBoardPrewarmForTests } from '../../lib/board-render/play-board-prewarm';
 
 // In-flight render race regression (play-drawer "unlit holds"): a slow native
 // render must not clobber nativeRender state after the hook's props have moved
@@ -144,10 +147,60 @@ describe('useNativeClimbRender in-flight race', () => {
     pendingRenders.clear();
     existingOverlayUris.clear();
     _resetWarmupForTests();
+    _resetPlayBoardPrewarmForTests();
     _inflightRendersForTests.clear();
     fakeNativeModule.renderHoldsOverlay.mockClear();
     reportErrorMock.mockClear();
     _setNativeModuleForTests(fakeNativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
+  });
+
+  it('retires row artwork authority across synchronous withdrawal and privacy-only rerenders', () => {
+    const entry = _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES_CACHED), 'file:///overlay-cached.png');
+    noteBoardArtInMemory(entry.uri, String(entry.generation));
+    const { result, rerender } = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_CACHED }));
+    const readBeforeRevocation = result.current.getReadyBoardArtSnapshot;
+    const loadKey = result.current.overlayLoadKey;
+    expect(readBeforeRevocation('climb-1', false, loadKey)?.overlayGeneration).toBe(entry.generation);
+    act(() => invalidatePrivacySnapshots('credential'));
+    expect(readBeforeRevocation('climb-1', false, loadKey)).toBeUndefined();
+    rerender();
+    expect(result.current.getReadyBoardArtSnapshot('climb-1', false, loadKey)).toBeUndefined();
+  });
+
+  it('prefers an exact decoded full-size cache hit over the displayed thumbnail without dispatching another render', () => {
+    const thumbnailWidth = 400;
+    const fullWidth = 900;
+    rememberPlayOverlayWidth(BASE, fullWidth);
+    const thumbnailKey = buildCacheKey(
+      BASE.boardName,
+      BASE.layoutId,
+      BASE.sizeId,
+      BASE.setIds,
+      FRAMES_CACHED,
+      true,
+      thumbnailWidth,
+    );
+    const fullKey = buildCacheKey(
+      BASE.boardName,
+      BASE.layoutId,
+      BASE.sizeId,
+      BASE.setIds,
+      FRAMES_CACHED,
+      false,
+      fullWidth,
+    );
+    const thumbnail = _cacheRenderedOverlayForTests(thumbnailKey, 'file:///thumbnail.png');
+    const full = _cacheRenderedOverlayForTests(fullKey, 'file:///full.png');
+    noteBoardArtInMemory(thumbnail.uri, String(thumbnail.generation));
+    noteBoardArtInMemory(full.uri, String(full.generation));
+    noteBoardArtInMemory('file:///bg.png');
+    const { result } = renderHook(() =>
+      useNativeClimbRender({ ...BASE, frames: FRAMES_CACHED, filledStyle: true, renderWidth: thumbnailWidth }),
+    );
+    const ready = result.current.getReadyBoardArtSnapshot('climb-1', false, result.current.overlayLoadKey);
+    expect(ready?.quality).toBe('full');
+    expect(ready?.overlayCacheKey).toBe(fullKey);
+    expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('discards a slow render resolution after props moved to a cached climb', async () => {

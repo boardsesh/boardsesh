@@ -4,6 +4,7 @@ import {
   type Climb,
   type ClimbQueueItem,
   type PlaylistSuggestionSource,
+  type PreparedPlaylistClimbs,
 } from '@boardsesh/queue';
 import { isAbortError } from './fetch-playlist-suggestion-climbs';
 
@@ -44,6 +45,8 @@ export type UsePlaylistClimbActivationOptions = {
   sourceId: string;
   /** All currently-loaded climbs, used to build the initial suggestion source. */
   allClimbs: Climb[];
+  /** Prepared against the loaded snapshot and target predicate before taps. */
+  preparedClimbs?: PreparedPlaylistClimbs;
   /** Resolve the board a climb activates onto. Return null to fall back to a
    *  plain activation (no suggestion source). */
   resolveTarget: (climb: Climb) => PlaylistActivationBoardTarget | null;
@@ -70,6 +73,7 @@ export function usePlaylistClimbActivation({
   queueApi,
   sourceId,
   allClimbs,
+  preparedClimbs,
   resolveTarget,
   fetchClimbsForBoard,
   onActivated,
@@ -106,6 +110,7 @@ export function usePlaylistClimbActivation({
         climbs: allClimbs,
         boardKey: target.boardKey,
         isClimbable: target.isClimbable,
+        preparedClimbs,
       });
 
       const activeItem = await queueApi.setCurrentClimb(climb, { playlistSuggestionSource: initialSource });
@@ -144,6 +149,15 @@ export function usePlaylistClimbActivation({
         }
       })();
     },
-    [queueApi, sourceId, allClimbs, resolveTarget, fetchClimbsForBoard, onActivated, refreshErrorMessage],
+    [
+      queueApi,
+      sourceId,
+      allClimbs,
+      preparedClimbs,
+      resolveTarget,
+      fetchClimbsForBoard,
+      onActivated,
+      refreshErrorMessage,
+    ],
   );
 }

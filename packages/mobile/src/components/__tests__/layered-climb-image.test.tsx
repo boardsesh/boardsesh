@@ -5,7 +5,10 @@ import { createElement, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; testID?: string };
 const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'web' }));
-const imageEvents = vi.hoisted(() => ({ loadCallbacks: [] as Array<() => void> }));
+const imageEvents = vi.hoisted(() => ({
+  loadCallbacks: [] as Array<() => void>,
+  displayCallbacks: [] as Array<() => void>,
+}));
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -25,6 +28,7 @@ vi.mock('expo-image', () => ({
     recyclingKey,
     cachePolicy,
     onLoad,
+    onDisplay,
     onError,
   }: {
     source: { uri: string };
@@ -33,9 +37,11 @@ vi.mock('expo-image', () => ({
     recyclingKey?: string;
     cachePolicy?: string;
     onLoad?: () => void;
+    onDisplay?: () => void;
     onError?: (event: { error: string }) => void;
   }) => {
-    if (onLoad) imageEvents.loadCallbacks.push(onLoad);
+    if (onLoad && source.uri.endsWith('.png')) imageEvents.loadCallbacks.push(onLoad);
+    if (onDisplay && source.uri.endsWith('.png')) imageEvents.displayCallbacks.push(onDisplay);
     return createElement('img', {
       src: source.uri,
       'data-testid': testID ?? 'expo-image',
@@ -61,6 +67,7 @@ describe('LayeredClimbImage', () => {
     // replay queued native events index into this list, so it must start empty
     // regardless of which tests rendered an Image before them.
     imageEvents.loadCallbacks.length = 0;
+    imageEvents.displayCallbacks.length = 0;
   });
 
   // Per-tap surfaces (the create editor) re-render on every paint, and
@@ -641,6 +648,11 @@ describe('LayeredClimbImage', () => {
     expect(onOverlayLoad).toHaveBeenCalledExactlyOnceWith('1:0');
 
     act(() => imageEvents.loadCallbacks[1]?.());
+
+    expect(container.querySelector('[data-testid="play-drawer-board-overlay"]')).toBeNull();
+    act(() => imageEvents.displayCallbacks[0]?.());
+    expect(container.querySelector('[data-testid="play-drawer-board-overlay"]')).toBeNull();
+    act(() => imageEvents.displayCallbacks[1]?.());
 
     expect(container.querySelector('[data-testid="play-drawer-board-overlay"]')).toBeTruthy();
     expect(onOverlayLoad).toHaveBeenLastCalledWith('2:0');

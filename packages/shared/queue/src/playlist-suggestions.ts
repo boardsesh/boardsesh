@@ -8,6 +8,57 @@
 
 import type { Climb, ClimbQueue, ClimbQueueItem, PlaylistSuggestionSource } from './types';
 
+const acceptEveryClimb = () => true;
+
+/** Prepared once for an immutable loaded-results/board snapshot, before taps. */
+export type PreparedPlaylistClimbs = {
+  readonly inputClimbs: Climb[];
+  readonly isClimbable: (climb: Climb) => boolean;
+  readonly climbs: Climb[];
+  readonly firstIndexByUuid: ReadonlyMap<string, number>;
+};
+
+const sourceIndices = new WeakMap<
+  PlaylistSuggestionSource,
+  {
+    climbs: Climb[];
+    firstIndexByUuid: ReadonlyMap<string, number>;
+  }
+>();
+
+function indexClimbs(climbs: Climb[]): ReadonlyMap<string, number> {
+  const firstIndexByUuid = new Map<string, number>();
+  climbs.forEach((climb, index) => {
+    if (!firstIndexByUuid.has(climb.uuid)) firstIndexByUuid.set(climb.uuid, index);
+  });
+  return firstIndexByUuid;
+}
+
+export function preparePlaylistClimbs(
+  climbs: Climb[],
+  isClimbable: (climb: Climb) => boolean = acceptEveryClimb,
+): PreparedPlaylistClimbs {
+  const seen = new Set<string>();
+  const compatibleClimbs: Climb[] = [];
+  const firstIndexByUuid = new Map<string, number>();
+  for (const climb of climbs) {
+    if (seen.has(climb.uuid)) continue;
+    seen.add(climb.uuid);
+    if (!isClimbable(climb)) continue;
+    firstIndexByUuid.set(climb.uuid, compatibleClimbs.length);
+    compatibleClimbs.push(climb);
+  }
+  return { inputClimbs: climbs, isClimbable, climbs: compatibleClimbs, firstIndexByUuid };
+}
+
+/** Sources created elsewhere keep the original scan behavior. No serialized metadata. */
+export function findPlaylistClimbIndex(source: PlaylistSuggestionSource, climbUuid: string): number {
+  const prepared = sourceIndices.get(source);
+  return prepared?.climbs === source.climbs
+    ? (prepared.firstIndexByUuid.get(climbUuid) ?? -1)
+    : source.climbs.findIndex(({ uuid }) => uuid === climbUuid);
+}
+
 /**
  * Merge a list of playlist climbs with the activated climb, deduplicating
  * by uuid and ensuring the activated climb is always included.
@@ -55,7 +106,7 @@ export function playlistSuggestionSourceMatches(
 export function getPlaylistSuggestedClimbs(source: PlaylistSuggestionSource | null, queue: ClimbQueue): Climb[] {
   if (!source) return [];
 
-  const activatedIndex = source.climbs.findIndex((climb) => climb.uuid === source.activatedClimbUuid);
+  const activatedIndex = findPlaylistClimbIndex(source, source.activatedClimbUuid);
   if (activatedIndex === -1) return [];
   const startIndex = activatedIndex + 1;
   const queuedClimbUuids = new Set(queue.map((item) => item.climb?.uuid).filter((uuid): uuid is string => !!uuid));
@@ -109,8 +160,11 @@ export function reanchorPlaylistSuggestionSource(
 ): PlaylistSuggestionSource | null {
   if (!source || !activatedClimbUuid) return source;
   if (source.activatedClimbUuid === activatedClimbUuid) return source;
-  if (!source.climbs.some((climb) => climb.uuid === activatedClimbUuid)) return source;
-  return { ...source, activatedClimbUuid };
+  if (findPlaylistClimbIndex(source, activatedClimbUuid) < 0) return source;
+  const reanchoredSource = { ...source, activatedClimbUuid };
+  const preparedIndex = sourceIndices.get(source);
+  if (preparedIndex?.climbs === source.climbs) sourceIndices.set(reanchoredSource, preparedIndex);
+  return reanchoredSource;
 }
 
 /**
@@ -163,21 +217,36 @@ export function createPlaylistSuggestionSource({
   activatedClimb,
   climbs,
   boardKey,
-  isClimbable = () => true,
+  isClimbable = acceptEveryClimb,
+  preparedClimbs,
 }: {
   playlistUuid: string;
   activatedClimb: Climb;
   climbs: Climb[];
   boardKey: string;
   isClimbable?: (climb: Climb) => boolean;
+  preparedClimbs?: PreparedPlaylistClimbs;
 }): PlaylistSuggestionSource {
-  const climbableClimbs = mergeUniquePlaylistClimbs(activatedClimb, climbs).filter(
-    (climb) => climb.uuid === activatedClimb.uuid || isClimbable(climb),
-  );
-  return {
+  // A filtered-out or absent activated climb has exceptional inclusion/order
+  // semantics. Keep that uncommon path on the original builder.
+  const canReuse =
+    preparedClimbs?.inputClimbs === climbs &&
+    preparedClimbs.isClimbable === isClimbable &&
+    preparedClimbs.firstIndexByUuid.has(activatedClimb.uuid);
+  const climbableClimbs = canReuse
+    ? preparedClimbs.climbs
+    : mergeUniquePlaylistClimbs(activatedClimb, climbs).filter(
+        (climb) => climb.uuid === activatedClimb.uuid || isClimbable(climb),
+      );
+  const source = {
     playlistUuid,
     activatedClimbUuid: activatedClimb.uuid,
     boardKey,
     climbs: climbableClimbs,
   };
+  sourceIndices.set(source, {
+    climbs: climbableClimbs,
+    firstIndexByUuid: canReuse ? preparedClimbs.firstIndexByUuid : indexClimbs(climbableClimbs),
+  });
+  return source;
 }

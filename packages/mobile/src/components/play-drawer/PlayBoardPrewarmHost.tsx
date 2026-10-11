@@ -29,7 +29,7 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
   setIds,
   renderWidth,
 }: PlayBoardPrewarmTarget) {
-  const { overlayUri, backgroundPaths } = useNativeClimbRender({
+  const { overlayUri, overlayLoadKey, backgroundPaths } = useNativeClimbRender({
     frames,
     boardName,
     layoutId,
@@ -44,8 +44,8 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
   // Decode what the drawer is about to show, so its images come out of memory
   // on the frame they mount.
   useEffect(() => {
-    if (overlayUri) warmBoardArtMemory([overlayUri]);
-  }, [overlayUri]);
+    if (overlayUri) warmBoardArtMemory([overlayUri], overlayLoadKey?.split(':')[0]);
+  }, [overlayUri, overlayLoadKey]);
   useEffect(() => {
     warmBoardArtMemory(backgroundPaths.map(backgroundImageUri));
   }, [backgroundPaths]);

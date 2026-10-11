@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, type MutableRefObject } from 'react';
+import type { ReadyBoardArtSource } from '../lib/board-render/ready-board-art';
 import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -196,6 +197,8 @@ export type ClimbRowAscentStatusLeafProps = {
 export type ClimbRowFavoriteLeafProps = { climbUuid: string };
 
 export type ClimbRowThumbnailLeafProps = {
+  climbUuid?: string;
+  readyBoardArtRef?: MutableRefObject<ReadyBoardArtSource | null>;
   frames: string;
   boardName: BoardName;
   layoutId: number;
@@ -215,6 +218,7 @@ export type ClimbRowLeaves = Readonly<{
 }>;
 
 type ClimbListItemContentProps = {
+  readyBoardArtRef?: MutableRefObject<ReadyBoardArtSource | null>;
   // Nullable/thin-tolerant: the search list always supplies a resolved climb, but
   // a partially-synced peer queue item can reach the queue row with a missing or
   // unresolved climb (`ClimbQueueItem.climb` is typed non-null, yet the wire
@@ -927,6 +931,7 @@ const LIVE_CLIMB_ROW_LEAVES: ClimbRowLeaves = {
  * column starts where the host's row does.
  */
 const ClimbListItemContent = React.memo(function ClimbListItemContent({
+  readyBoardArtRef,
   climb,
   boardName,
   layoutId,
@@ -1110,6 +1115,8 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       {layout.hasThumbnail ? (
         <View style={styles.thumbnailContainer}>
           <Thumbnail
+            climbUuid={climb.uuid}
+            readyBoardArtRef={readyBoardArtRef}
             frames={climb.frames}
             boardName={boardName}
             layoutId={layoutId}

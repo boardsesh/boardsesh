@@ -1,5 +1,5 @@
 import type { Climb, ClimbQueueItem, ClimbQueue, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { getPlaylistSuggestedClimbs, getPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
+import { getPlaylistSuggestedClimbs, getPlaylistPeekQueueItemUuid, findPlaylistClimbIndex } from '@boardsesh/queue';
 import { findNextCompatibleQueueItem, type ActiveBoardForCompatibility } from '@boardsesh/board-config';
 import type { NavigationState } from './types';
 
@@ -12,6 +12,30 @@ import type { NavigationState } from './types';
  * every board-foreign climb is skipped exactly as before (issue #5099).
  */
 export type ReachableClimbPredicate = (climb: Climb) => boolean;
+
+/** Render-time index for an immutable queue snapshot. First occurrences win. */
+export type PreparedQueueNavigation = {
+  readonly queue: ClimbQueue;
+  readonly firstIndexByUuid: ReadonlyMap<string, number>;
+};
+
+export function prepareQueueNavigation(queue: ClimbQueue): PreparedQueueNavigation {
+  const firstIndexByUuid = new Map<string, number>();
+  queue.forEach((item, index) => {
+    if (!firstIndexByUuid.has(item.uuid)) firstIndexByUuid.set(item.uuid, index);
+  });
+  return { queue, firstIndexByUuid };
+}
+
+function findCurrentQueueIndex(
+  queue: ClimbQueue,
+  currentItem: ClimbQueueItem,
+  prepared?: PreparedQueueNavigation,
+): number {
+  return prepared?.queue === queue
+    ? (prepared.firstIndexByUuid.get(currentItem.uuid) ?? -1)
+    : queue.findIndex(({ uuid }) => uuid === currentItem.uuid);
+}
 
 /**
  * Find the next item in the queue relative to the current climb.
@@ -85,7 +109,7 @@ function getNextPlaylistClimb(
   currentClimbUuid: string | undefined,
 ): Climb | null {
   if (!source || !currentClimbUuid) return null;
-  const index = source.climbs.findIndex((climb) => climb.uuid === currentClimbUuid);
+  const index = findPlaylistClimbIndex(source, currentClimbUuid);
   if (index === -1) return null;
   return source.climbs[index + 1] ?? null;
 }
@@ -97,7 +121,7 @@ function getPreviousPlaylistClimb(
   currentClimbUuid: string | undefined,
 ): Climb | null {
   if (!source || !currentClimbUuid) return null;
-  const index = source.climbs.findIndex((climb) => climb.uuid === currentClimbUuid);
+  const index = findPlaylistClimbIndex(source, currentClimbUuid);
   if (index <= 0) return null;
   return source.climbs[index - 1] ?? null;
 }
@@ -227,9 +251,10 @@ export function selectNextQueueItemWithSuggestions(
   source: PlaylistSuggestionSource | null,
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
+  prepared?: PreparedQueueNavigation,
 ): NextQueueItemSelection {
   if (currentClimbQueueItem) {
-    const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
+    const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
     if (currentIndex >= 0) {
       const listSuccessor = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
       if (listSuccessor) {
@@ -268,8 +293,10 @@ export function findNextQueueItemWithSuggestions(
   source: PlaylistSuggestionSource | null,
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
+  prepared?: PreparedQueueNavigation,
 ): ClimbQueueItem | null {
-  return selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig, isReachable).item;
+  return selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig, isReachable, prepared)
+    .item;
 }
 
 /**
@@ -294,10 +321,11 @@ export function findPreviousQueueItemWithSuggestions(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
+  prepared?: PreparedQueueNavigation,
 ): ClimbQueueItem | null {
   if (!currentClimbQueueItem) return null;
 
-  const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
+  const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
   if (currentIndex >= 0) {
     const listPredecessor = getPreviousPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
     if (listPredecessor) {
@@ -370,7 +398,7 @@ export function anchoredSuggestionSource(
 ): PlaylistSuggestionSource | null {
   const climbUuid = item?.climb?.uuid;
   if (!source || !climbUuid) return source;
-  return source.climbs.some(({ uuid }) => uuid === climbUuid) ? source : null;
+  return findPlaylistClimbIndex(source, climbUuid) >= 0 ? source : null;
 }
 
 /**
@@ -400,37 +428,71 @@ export function anchoredSuggestionSource(
  * remains asymmetric is a genuinely far-away board, where "return me where I
  * came from" is still the right answer going back.
  */
-export function computeNavigationStateWithSuggestions(
+/** Immediate next/previous targets without walking the remaining track. */
+export function computeNavigationTargetsWithSuggestions(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
-): NavigationState {
+  prepared?: PreparedQueueNavigation,
+): Omit<NavigationState, 'remainingCount'> {
   const nextItem = selectNextQueueItemWithSuggestions(
     queue,
     currentClimbQueueItem,
     source,
     activeConfig,
     isReachable,
+    prepared,
   ).item;
-  const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
+  const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source, prepared);
+  return { canNext: nextItem !== null, canPrevious: prevItem !== null, nextItem, prevItem };
+}
 
-  const remainingCount = findUpcomingQueueItemsWithSuggestions(
+export function countRemainingQueueItemsWithSuggestions(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
+  prepared?: PreparedQueueNavigation,
+): number {
+  return findUpcomingQueueItemsWithSuggestions(
     queue,
     currentClimbQueueItem,
     source,
     REMAINING_COUNT_CAP,
     activeConfig,
     isReachable,
+    prepared,
   ).length;
+}
 
+export function computeNavigationStateWithSuggestions(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
+  prepared?: PreparedQueueNavigation,
+): NavigationState {
   return {
-    canNext: nextItem !== null,
-    canPrevious: prevItem !== null,
-    nextItem,
-    prevItem,
-    remainingCount,
+    ...computeNavigationTargetsWithSuggestions(
+      queue,
+      currentClimbQueueItem,
+      source,
+      activeConfig,
+      isReachable,
+      prepared,
+    ),
+    remainingCount: countRemainingQueueItemsWithSuggestions(
+      queue,
+      currentClimbQueueItem,
+      source,
+      activeConfig,
+      isReachable,
+      prepared,
+    ),
   };
 }
 
@@ -461,6 +523,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   count: number,
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
+  prepared?: PreparedQueueNavigation,
 ): ClimbQueueItem[] {
   const upcomingItems: ClimbQueueItem[] = [];
   if (count <= 0) return upcomingItems;
@@ -477,7 +540,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   let stepsLeft = count + queue.length;
   while (upcomingItems.length < count && stepsLeft > 0) {
     stepsLeft -= 1;
-    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source, activeConfig, isReachable);
+    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source, activeConfig, isReachable, prepared);
     if (!nextItem) break;
     if (seenItemUuids.has(nextItem.uuid)) break;
     seenItemUuids.add(nextItem.uuid);

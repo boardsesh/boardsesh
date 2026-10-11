@@ -15,6 +15,10 @@ type LayeredClimbImageProps = {
    */
   overlayLoadKey?: string | null;
   onOverlayLoad?: (loadKey: string | null) => void;
+  onOverlayDisplay?: (loadKey: string | null) => void;
+  /** Every current background and overlay has received native onDisplay. */
+  onArtDisplayed?: (loadKey: string | null) => void;
+  displayIdentity?: string;
   onOverlayError?: (event: ImageErrorEventData, loadKey: string | null) => void;
   /**
    * Report whether an overlay `<Image>` is MOUNTED: its load key while one is,
@@ -144,6 +148,9 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   overlayUri,
   overlayLoadKey,
   onOverlayLoad,
+  onOverlayDisplay,
+  onArtDisplayed,
+  displayIdentity,
   onOverlayError,
   onOverlayMounted,
   backgroundPaths,
@@ -166,7 +173,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // painted, not when the <Image> first mounts. expo-image reports "visible" to
   // Maestro the moment it's in the tree (even with a cached source, before the
   // pixels land), so anchoring on the raw <Image> let a screenshot fire on a
-  // blank drawer. Gating on onLoad makes the anchor mean "the lit board is on
+  // blank drawer. Gating on onDisplay makes the anchor mean "the lit board is on
   // screen".
   const [overlayPainted, setOverlayPainted] = useState(false);
   // Native image events can already be queued when React replaces an overlay.
@@ -188,6 +195,60 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   const isBackgrounded = useIsAppBackgrounded();
   const boardArtVisible = useBoardArtVisible();
   const hidden = isBackgrounded || !boardArtVisible;
+  const visibilityEpochRef = useRef({ hidden, epoch: 0 });
+  if (visibilityEpochRef.current.hidden !== hidden)
+    visibilityEpochRef.current = { hidden, epoch: visibilityEpochRef.current.epoch + 1 };
+  const visibilityEpoch = visibilityEpochRef.current.epoch;
+  const displayAttempt = JSON.stringify([
+    overlayUri,
+    overlayLoadKey,
+    recyclingKey,
+    displayIdentity,
+    backgroundPaths,
+    visibilityEpoch,
+  ]);
+  const nativeOverlayIdentity = JSON.stringify([overlayUri, overlayLoadKey, recyclingKey, visibilityEpoch]);
+  const backgroundIdentity = JSON.stringify([backgroundPaths, visibilityEpoch]);
+  const displayedAttemptRef = useRef({
+    identity: displayAttempt,
+    nativeOverlayIdentity,
+    backgroundIdentity,
+    backgrounds: new Set<string>(),
+    overlay: false,
+    reported: false,
+  });
+  if (displayedAttemptRef.current.identity !== displayAttempt) {
+    const previous = displayedAttemptRef.current;
+    displayedAttemptRef.current = {
+      identity: displayAttempt,
+      nativeOverlayIdentity,
+      backgroundIdentity,
+      backgrounds: previous.backgroundIdentity === backgroundIdentity ? previous.backgrounds : new Set<string>(),
+      overlay: previous.nativeOverlayIdentity === nativeOverlayIdentity && previous.overlay,
+      reported: false,
+    };
+  }
+  const reportArtDisplayed = () => {
+    const current = displayedAttemptRef.current;
+    if (
+      hidden ||
+      current.identity !== displayAttempt ||
+      current.reported ||
+      !current.overlay ||
+      missingBackgroundCount > 0 ||
+      backgroundPaths.some((path) => !current.backgrounds.has(path))
+    )
+      return;
+    current.reported = true;
+    onArtDisplayed?.(overlayLoadKey ?? null);
+  };
+  const reportArtDisplayedRef = useRef(reportArtDisplayed);
+  reportArtDisplayedRef.current = reportArtDisplayed;
+  // Retargeting a recycled row can retain exactly the same native images.
+  // Those views do not emit another display event merely for a new UUID.
+  useEffect(() => {
+    reportArtDisplayedRef.current();
+  }, [displayAttempt]);
   // The last overlay that reported onLoad, kept only while retention is opted
   // into. Decorative: it never feeds the load-key accounting or the testID anchor.
   const [retainedOverlay, setRetainedOverlay] = useState<{ uri: string; identity: string } | null>(null);
@@ -289,6 +350,13 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           // backgrounds for the list, native-res for the play view — so
           // there's nothing large to downscale; the CALayer scales to fit.
           allowDownscaling={false}
+          onLoad={() => noteBoardArtInMemory(backgroundImageUri(path))}
+          onDisplay={() => {
+            if (displayedAttemptRef.current.backgroundIdentity !== backgroundIdentity || hidden) return;
+            noteBoardArtInMemory(backgroundImageUri(path));
+            displayedAttemptRef.current.backgrounds.add(path);
+            reportArtDisplayedRef.current();
+          }}
         />
       ))}
       {missingBackgroundCount > 0 &&
@@ -354,20 +422,41 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
             // The holds are on the layer now: let the photo through with them.
             // Guarded like the marker below, so a late event from the previous
             // climb's image cannot reveal a row whose own overlay is still out.
-            if (revealWithOverlay != null && latestAttempt.uri === overlayUri) {
+            if (
+              revealWithOverlay != null &&
+              latestAttempt.uri === overlayUri &&
+              latestAttempt.loadKey === emittingLoadKey
+            ) {
               setRevealed((previous) => (previous?.key === revealIdentity ? previous : { key: revealIdentity }));
             }
-            if (retainPreviousOverlayFor != null && latestAttempt.uri === overlayUri) {
+            if (
+              retainPreviousOverlayFor != null &&
+              latestAttempt.uri === overlayUri &&
+              latestAttempt.loadKey === emittingLoadKey
+            ) {
               setRetainedOverlay((previous) =>
                 previous?.uri === overlayUri && previous.identity === retainPreviousOverlayFor
                   ? previous
                   : { uri: overlayUri, identity: retainPreviousOverlayFor },
               );
             }
-            if (overlayTestID && latestAttempt.uri === overlayUri && latestAttempt.loadKey === emittingLoadKey) {
-              setOverlayPainted(true);
-            }
             onOverlayLoad?.(emittingLoadKey);
+          }}
+          onDisplay={() => {
+            const emittingLoadKey = overlayLoadKey ?? null;
+            const latestAttempt = latestOverlayAttemptRef.current;
+            if (
+              hidden ||
+              displayedAttemptRef.current.identity !== displayAttempt ||
+              latestAttempt.uri !== overlayUri ||
+              latestAttempt.loadKey !== emittingLoadKey
+            )
+              return;
+            noteBoardArtInMemory(overlayUri, emittingLoadKey?.split(':')[0]);
+            displayedAttemptRef.current.overlay = true;
+            if (overlayTestID) setOverlayPainted(true);
+            onOverlayDisplay?.(emittingLoadKey);
+            reportArtDisplayedRef.current();
           }}
           onError={(event) => onOverlayError?.(event, overlayLoadKey ?? null)}
         />

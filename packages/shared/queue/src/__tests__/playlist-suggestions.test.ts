@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   mergeUniquePlaylistClimbs,
+  preparePlaylistClimbs,
+  createPlaylistSuggestionSource,
+  findPlaylistClimbIndex,
   playlistSuggestionSourceMatches,
   pruneSuggestedQueueItemsAfterCurrent,
   reanchorPlaylistSuggestionSource,
@@ -142,5 +145,64 @@ describe('reanchorPlaylistSuggestionSource', () => {
     expect(reanchorPlaylistSuggestionSource(null, 'a')).toBeNull();
     const original = source('a', ['a']);
     expect(reanchorPlaylistSuggestionSource(original, undefined)).toBe(original);
+  });
+});
+
+describe('prepared playlist tracks', () => {
+  it('keeps first-occurrence semantics when a later compatible duplicate follows an incompatible row', () => {
+    const first = makeClimb('duplicate', 'blocked');
+    const climbs = [first, makeClimb('duplicate', 'allowed'), makeClimb('active')];
+    const isClimbable = (candidate: Climb) => candidate.name !== 'blocked';
+    const args = { playlistUuid: 'prepared', boardKey: 'board', climbs, activatedClimb: climbs[2], isClimbable };
+    expect(
+      createPlaylistSuggestionSource({ ...args, preparedClimbs: preparePlaylistClimbs(climbs, isClimbable) }),
+    ).toEqual(createPlaylistSuggestionSource(args));
+    expect(preparePlaylistClimbs(climbs, isClimbable).climbs).toEqual([climbs[2]]);
+  });
+
+  it('reuses the compatible ordered track across ordinary activations without filtering again', () => {
+    const first = makeClimb('a', 'first');
+    const duplicate = makeClimb('a', 'duplicate');
+    const climbs = [first, makeClimb('blocked'), duplicate, makeClimb('b')];
+    const isClimbable = vi.fn((climb: Climb) => climb.uuid !== 'blocked');
+    const preparedClimbs = preparePlaylistClimbs(climbs, isClimbable);
+    expect(isClimbable).toHaveBeenCalledTimes(3);
+    for (const activatedClimb of [first, climbs[3]]) {
+      const source = createPlaylistSuggestionSource({
+        playlistUuid: 'prepared',
+        boardKey: 'board',
+        climbs,
+        activatedClimb,
+        isClimbable,
+        preparedClimbs,
+      });
+      expect(source.climbs).toBe(preparedClimbs.climbs);
+      expect(source.climbs).toEqual([first, climbs[3]]);
+      expect(findPlaylistClimbIndex(source, 'b')).toBe(1);
+      expect(findPlaylistClimbIndex(reanchorPlaylistSuggestionSource(source, 'b')!, 'a')).toBe(0);
+    }
+    expect(isClimbable).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['blocked', 'absent'])('preserves original activated inclusion for %s', (activatedUuid) => {
+    const climbs = [makeClimb('a'), makeClimb('blocked'), makeClimb('b')];
+    const activatedClimb = makeClimb(activatedUuid);
+    const isClimbable = (climb: Climb) => climb.uuid !== 'blocked';
+    const args = { playlistUuid: 'prepared', boardKey: 'board', climbs, activatedClimb, isClimbable };
+    expect(
+      createPlaylistSuggestionSource({ ...args, preparedClimbs: preparePlaylistClimbs(climbs, isClimbable) }),
+    ).toEqual(createPlaylistSuggestionSource(args));
+  });
+
+  it('rejects preparations from another snapshot or board predicate', () => {
+    const climbs = [makeClimb('a'), makeClimb('b')];
+    const args = { playlistUuid: 'prepared', boardKey: 'board', climbs, activatedClimb: climbs[0] };
+    const preparedClimbs = preparePlaylistClimbs(climbs);
+    const source = createPlaylistSuggestionSource({ ...args, preparedClimbs, isClimbable: () => false });
+    expect(source.climbs).toEqual([climbs[0]]);
+    const updatedClimbs = [climbs[0], makeClimb('c')];
+    expect(createPlaylistSuggestionSource({ ...args, climbs: updatedClimbs, preparedClimbs }).climbs).toEqual(
+      updatedClimbs,
+    );
   });
 });

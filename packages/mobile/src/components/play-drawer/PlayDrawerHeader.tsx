@@ -20,6 +20,8 @@ import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveClimbRuleLabels } from './climb-rule-labels';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useMyGrade } from '../../hooks/use-my-grade';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { useBoldText } from '../../hooks/use-bold-text';
 import { renderDifficulty } from '../../lib/boardsesh-grade-display';
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
 import { climbStatsKnown, isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
@@ -272,8 +274,8 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   );
 });
 
-type LivePlayDrawerHeaderProps = {
-  climb: Climb;
+export type LivePlayDrawerHeaderProps = {
+  climb: Climb | null;
   boardName: BoardName;
   layoutId: number;
   angle: number;
@@ -282,8 +284,15 @@ type LivePlayDrawerHeaderProps = {
   onPressSetter?: () => void;
 };
 
-/** The only play-header child subscribed to the exact live-stat key. */
-export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
+type PreparedHeaderProps = Omit<PlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'>;
+export type LivePlayDrawerHeaderModel = Readonly<{
+  headerProps: Readonly<PreparedHeaderProps>;
+  layoutFingerprint: string;
+  reduceMotion: boolean;
+}>;
+
+/** Derive the current visual and its geometry identity from the SAME live reads. */
+export function useLivePlayDrawerHeaderModel({
   climb,
   boardName,
   layoutId,
@@ -291,14 +300,21 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   leading,
   onLongPressName,
   onPressSetter,
-}: LivePlayDrawerHeaderProps) {
+}: LivePlayDrawerHeaderProps): LivePlayDrawerHeaderModel | null {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
-  const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
-    ascensionistCount: climb.ascensionist_count,
-    qualityAverage: climb.quality_average,
-    difficulty: climb.difficulty,
-  });
+  const liveStats = useEffectiveClimbStats(
+    boardName,
+    layoutId,
+    climb?.uuid ?? '',
+    angle,
+    {
+      ascensionistCount: climb?.ascensionist_count,
+      qualityAverage: climb?.quality_average,
+      difficulty: climb?.difficulty,
+    },
+    { enabled: climb !== null },
+  );
   const displayedGrade = resolveGrade(
     {
       ...climb,
@@ -312,35 +328,113 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   // Falls back to the device's own ticks table while the logbook is unresolved,
   // so the drawer shows the climber's grade offline too — the same grade the
   // on-device search placed this climb by.
-  const myGrade = useMyGrade(climb.uuid, angle, { localFallback: true });
+  const myGrade = useMyGrade(climb?.uuid ?? '', angle, { localFallback: climb !== null });
   const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat, boardName) : null;
   const personal = derivePersonalGradeDisplay(mine?.label ?? null, displayedGrade.label);
   const showsMine = personal.source === 'personal' && mine !== null;
 
+  const reduceMotion = useReduceMotion();
+  const boldText = useBoldText();
+  const difficulty = showsMine ? mine.label : displayedGrade.label;
+  const gradeColor = showsMine ? mine.color : displayedGrade.color;
+  const markedAsMine = showsMine && personal.markPrimary;
+  const secondaryGrade = showsMine ? (splitGradeLabel(personal.secondaryLabel)[0] ?? null) : null;
+  const characteristicsFingerprint = JSON.stringify(climb?.characteristics ?? null);
+  const hasLeading = leading != null;
+  const hasLongPressName = onLongPressName !== undefined;
+  const hasSetterAction = onPressSetter !== undefined;
+
+  return useMemo(() => {
+    if (!climb) return null;
+    const headerProps: PreparedHeaderProps = {
+      name: climb.name,
+      difficulty,
+      rawDifficulty: liveStats.difficulty,
+      gradeColor,
+      markedAsMine,
+      secondaryGrade,
+      qualityAverage: liveStats.qualityAverage,
+      ascensionistCount: liveStats.ascensionistCount,
+      setterUsername: climb.setter_username,
+      benchmarkDifficulty: climb.benchmark_difficulty,
+      characteristics: climb.characteristics,
+      isNoMatch: climb.is_no_match,
+      boardName,
+      isHidden: climb.is_hidden === true,
+      isDraft: climb.is_draft === true,
+      statsAngle: climb.statsAngle,
+      angle,
+    };
+    return Object.freeze({
+      headerProps: Object.freeze(headerProps),
+      reduceMotion,
+      // Translation, viewport and safe-area fields live in the outer layout
+      // identity. Every header output and layout-affecting control lives here.
+      layoutFingerprint: JSON.stringify([
+        headerProps,
+        hasLeading,
+        hasLongPressName,
+        hasSetterAction,
+        reduceMotion,
+        boldText,
+      ]),
+    });
+  }, [
+    climb?.name,
+    difficulty,
+    liveStats.difficulty,
+    gradeColor,
+    markedAsMine,
+    secondaryGrade,
+    liveStats.qualityAverage,
+    liveStats.ascensionistCount,
+    climb?.setter_username,
+    climb?.benchmark_difficulty,
+    characteristicsFingerprint,
+    climb?.is_no_match,
+    boardName,
+    climb?.is_hidden,
+    climb?.is_draft,
+    climb?.statsAngle,
+    angle,
+    hasLeading,
+    hasLongPressName,
+    hasSetterAction,
+    reduceMotion,
+    boldText,
+  ]);
+}
+
+/** Pure prepared visual: observes no live stats or personal-grade sources. */
+export const PreparedPlayDrawerHeader = memo(function PreparedPlayDrawerHeader({
+  model,
+  leading,
+  onLongPressName,
+  onPressSetter,
+}: Pick<LivePlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'> & {
+  model: LivePlayDrawerHeaderModel;
+}) {
   return (
     <PlayDrawerHeader
-      name={climb.name}
-      difficulty={showsMine ? mine.label : displayedGrade.label}
-      rawDifficulty={liveStats.difficulty}
-      gradeColor={showsMine ? mine.color : displayedGrade.color}
-      markedAsMine={showsMine && personal.markPrimary}
-      secondaryGrade={showsMine ? (splitGradeLabel(personal.secondaryLabel)[0] ?? null) : null}
-      qualityAverage={liveStats.qualityAverage}
-      ascensionistCount={liveStats.ascensionistCount}
-      setterUsername={climb.setter_username}
+      {...model.headerProps}
       onPressSetter={onPressSetter}
-      benchmarkDifficulty={climb.benchmark_difficulty}
-      characteristics={climb.characteristics}
-      isNoMatch={climb.is_no_match}
-      boardName={boardName}
-      isHidden={climb.is_hidden === true}
-      isDraft={climb.is_draft === true}
       leading={leading}
       onLongPressName={onLongPressName}
-      statsAngle={climb.statsAngle}
-      angle={angle}
     />
   );
+});
+
+/** Existing callers keep one model observer; prepared callers reuse that model. */
+export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader(props: LivePlayDrawerHeaderProps) {
+  const model = useLivePlayDrawerHeaderModel(props);
+  return model ? (
+    <PreparedPlayDrawerHeader
+      model={model}
+      leading={props.leading}
+      onLongPressName={props.onLongPressName}
+      onPressSetter={props.onPressSetter}
+    />
+  ) : null;
 });
 
 const styles = StyleSheet.create({

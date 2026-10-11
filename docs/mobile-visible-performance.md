@@ -40,7 +40,7 @@ Every edit is an exact-text replacement that asserts its anchor occurs once. Whe
 | Event | Recorded when | Fields that matter |
 | --- | --- | --- |
 | `overlay-shown` | A hold overlay image finishes loading into a row or the play board | `cacheType` (`memory` means it was already decoded), `gated` (the row was held back as a placeholder until now), `play` |
-| `overlay-painted` | First paint of the holds for the climb a surface is showing | `waitMs` from the row getting that climb, `indexHit` (the render already existed), `surface` |
+| `overlay-painted` | Legacy name: the first matching holds image **onLoad**, not full-board display | `waitMs` from the row getting that climb, `indexHit` at render-hook mount, `surface` |
 | `overlay-missed` | A row moved on to another climb before its holds ever painted | `shownMs` |
 | `overlay-render` | A native overlay render finished | `queueMs` waiting for the scheduler, `nativeMs` rendering, `surface` |
 | `background-load` | A board photo layer loaded | `cacheType`, `width` |
@@ -74,7 +74,7 @@ Two flags change behaviour, on purpose and only in this build:
 - `--settle-consent` skips the consent prompt and leaves consent undecided, so analytics stay off. It reuses the path screenshot mode takes.
 - `--keep-offline-boards` ignores the privacy stream. The server sends one event per subscribe, which is every launch, and each one drops every offline board's checkpoints (#6306). Without the flag the board re-downloads between runs and no two runs see the same data. Remove the flag when #6306 is fixed.
 
-Events are written to `Documents/perf-probe/` on the phone as JSON chunks and pulled after the run. A Release build drops `console.log`, so the log is not a transport. The folder is emptied at each launch: pull before you relaunch.
+Events are written to `Documents/perf-probe/` on the phone as JSON chunks and pulled after the run. A Release build drops `console.log`, so the log is not a transport. The diagnostic folder is emptied at each launch: pull before you relaunch. This removes only previous probe chunks; it does not clear the user's database or downloaded boards. Opening comparisons do not create the `perf-probe-cold` marker.
 
 `probe/apply_launch_markers.py` adds a `render` event to the components mounted at launch, the saved queue coming back, and which climb each detail read was for. Its first marker is in the root layout, and that is what starts the stall monitor early enough to see a launch.
 
@@ -150,7 +150,27 @@ Everything below runs from the repo root on a Mac with the phone wired and unloc
 
 **Wait for a page.** `search-page.fetchMs` is what the list waited. `offline-request.ms` on lane `local` is the on-device query alone. The difference is the gate, the queue for the database connection, and the JS thread being busy.
 
-**Drawer open.** Milliseconds from `climb-press` to each stage, ending at the play board's `overlay-painted`. A cold open is one whose overlay had never been rendered (`indexHit: false`).
+**Drawer open, legacy runs.** Milliseconds from `climb-press` to the play board's `overlay-painted` measure the JS delivery of holds **onLoad**. They do not prove the background layers were displayed, the board had its final geometry, or gestures were ready. `indexHit` describes the cache at render-hook mount; a render started after the tap can finish before that mount. It cannot classify cache availability at the tap.
+
+### Opening a climb after deep scrolling
+
+Run `python3 scripts/mobile-probe-kit/probe/apply_opening_probes.py <isolated-checkout>` after `apply_probes.py`, on **both** builds. The opening injector supports baseline `8b842c4950` and the `PlayCore` candidate, asserts every anchor, and stages all replacements before writing. Keep the source revision and probe-script hashes with the build. Apply only to isolated checkouts; restore only the paths the injector reports. The ordinary script now accepts both legacy background-load callbacks and current board-art callbacks, preserving their behavior.
+
+| Event | Meaning |
+| --- | --- |
+| `climb-press` | Unique `tapId`, hashed climb/frames, and candidate snapshot quality/key/URI/generation captured before prewarming or navigation. No raw climb names, UUIDs, holds, or paths are logged. |
+| `overlay-index-write`, `overlay-index-drop`, `overlay-index-clear` | An ordered journal of render-cache identity changes. Reconstruct the selected full entry's presence at the tap without scanning the cache during the tap. |
+| `play-opening-target` | Associates the tap with the drawer target's nonce during route render, before child effects run. Correlation only; it does not prove a commit. Opens without a matching climb-list tap remain outside the cohort. |
+| `play-overlay-selected` | The actual full renderer key, URI, generation, and requested width. An index hit here is still a mount-time fact. |
+| `play-full-art-displayed` | Matching full artwork has received all required native background and overlay `onDisplay` events. Candidate publication comes through the current board's `onReadyArtDisplayed` callback and carries the target nonce. Baseline observation adds no reveal or mounting gate. If baseline opacity concealed the artwork, publication also waits one guarded animation frame after the reveal commit, matching the candidate thumbnail bridge's visibility accounting. Already visible cached artwork needs no extra frame. |
+| `play-full-art-displayed-native` | Candidate's matching full renderer key/URI/generation, including the visibility handoff when a thumbnail bridge covered the replacement. Join by `tapId`, frames, nonce, and URI. |
+| `play-gesture-geometry-committed-ui` | A UI worklet ran after the positive contained geometry and enabled gesture props committed. Uses `uiWallMs`; `recognizerConfirmed` is explicitly false. |
+
+For the **cached-at-tap** cohort, reconstruct the journal up to each `climb-press`, then match the full display event's actual key, URI and generation against that state. A later full prewarm render, a thumbnail-only snapshot, or a full entry regenerated after the tap is not a qualifying cached entry. Keep rendered-cache hits separate from decoded-memory hits; legacy `overlay-painted.cacheType` helps describe decoding but does not prove it was decoded at the tap. Missing journal coverage, ambiguous target association, missing full-display events, or failed gestures make an opening incomplete, not a fast sample.
+
+The target is **p95 below 50 ms from tap to both full-size artwork and gesture readiness**. Record the later of full-art display and positive-geometry UI commit, using the tap's wall clock and `uiWallMs` for the latter. This is a readiness proxy: image `onDisplay` reaches JS after native delivery, and a UI worklet does not prove the recognizer accepts a finger. Require real swipe/pinch/dismiss checks and inspect the opening recording; neither native presentation animation completion nor a thumbnail appearance counts as the full-board endpoint. Instrumentation adds overhead and is identical on both builds; these are diagnostic timings, not native CPU/FPS evidence.
+
+Use at least 30 warm opens per build in alternating baseline/candidate batches, including 60 downward scrolls, repeated row opens and hard flicks back through recycled rows. Poll until an actual row is settled and visible before tapping. Keep render/decode misses separate. Record queue length, loaded result count, offline/network lane and thermal conditions before each batch. Reject a run that becomes thermally incomparable; capture native hitches separately after these timings, and do not erase account data, downloads or render caches to manufacture a cold run.
 
 **Stalls.** `js-frame-gap` is the JS thread missing frame callbacks. It is not dropped UI frames: scrolling runs on the UI thread and can stay smooth through a JS stall, while a tap waits for it. Divide total gap time by thumbnails painted when two builds scroll different distances.
 
@@ -168,7 +188,7 @@ Everything below runs from the repo root on a Mac with the phone wired and unloc
 
 ## Rules for a comparison
 
-1. **Same script, same phone, same data path, cold cache on both sides.** A warm overlay cache hides the render queue, which is where the flash comes from.
+1. **Same script, same phone, same data path and cache cohort.** Compare cached-at-tap opens separately from render/decode misses. A warm cache hides render-queue costs; a cold-cache run cannot establish the warm opening target.
 2. **Probes on both sides.** Never compare a probe build with a build that has none.
 3. **At least three launches a side, alternating A, B, A, B**, for anything about launch, and say how many. The phone's own state moves launch time more than most changes do (see the reference numbers). Keep the first launch after an install apart; its file cache is cold.
 4. **Say what you did not measure.** Filter variants, other phones, the other platform, the network path.

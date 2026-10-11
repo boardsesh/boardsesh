@@ -62,6 +62,86 @@ describe('useEffectiveClimbStats', () => {
     resetClimbStatsReadCoordinatorForTests();
   });
 
+  it('does not request stats for a disabled empty target and starts when a real target enables', async () => {
+    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue([]);
+    const { wrapper } = createWrapper({ fetchClimbStatsForClimbs });
+    const { result, rerender } = renderHook(
+      ({ climbUuid, enabled }: { climbUuid: string; enabled: boolean }) =>
+        useEffectiveClimbStats('kilter', 1, climbUuid, 40, { ascensionistCount: 4, difficulty: '6a/V3' }, { enabled }),
+      { wrapper, initialProps: { climbUuid: '', enabled: false } },
+    );
+    expect(result.current.ascensionistCount).toBe(4);
+    expect(getClimbStatsReadCoordinatorStateForTests().queued).toBe(0);
+    expect(isClimbStatsReadRetained('kilter', '')).toBe(false);
+    expect(fetchClimbStatsForClimbs).not.toHaveBeenCalled();
+    rerender({ climbUuid: 'climb-1', enabled: true });
+    await waitFor(() => expect(fetchClimbStatsForClimbs).toHaveBeenCalledExactlyOnceWith('kilter', ['climb-1']));
+  });
+
+  it('excludes disabled selectors from initial, reconnect, error and periodic layout repair', async () => {
+    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue([]);
+    let reconnect = () => {};
+    let subscriptionError = () => {};
+    const scheduledTasks: Array<() => void> = [];
+    const { wrapper } = createWrapper({
+      fetchClimbStatsForClimbs,
+      subscribeClimbStats: (_boardType, _layoutId, handlers) => {
+        reconnect = handlers.connected;
+        subscriptionError = () => handlers.error(new Error('Reconnect'));
+        return vi.fn();
+      },
+      scheduleTask: (callback) => {
+        scheduledTasks.push(callback);
+        return vi.fn();
+      },
+    });
+    renderHook(
+      () => {
+        useClimbStatsLayoutSync('kilter', 1);
+        useEffectiveClimbStats('kilter', 1, '', 40, {}, { enabled: false });
+        useEffectiveClimbStats('kilter', 1, 'disabled-climb', 40, {}, { enabled: false });
+        useEffectiveClimbStats('kilter', 1, 'active-climb', 40, {});
+      },
+      { wrapper },
+    );
+    await waitFor(() => expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(1));
+    expect(isClimbStatsReadRetained('kilter', '')).toBe(false);
+    expect(isClimbStatsReadRetained('kilter', 'disabled-climb')).toBe(false);
+    for (const repair of [reconnect, subscriptionError, scheduledTasks[0]]) {
+      const previousCalls = fetchClimbStatsForClimbs.mock.calls.length;
+      act(() => repair?.());
+      await waitFor(() => expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(previousCalls + 1));
+    }
+    expect(fetchClimbStatsForClimbs.mock.calls).toEqual(Array.from({ length: 4 }, () => ['kilter', ['active-climb']]));
+  });
+
+  it('releases a queued read when an enabled selector becomes disabled while staying mounted', async () => {
+    let resolveActiveBatch = () => {};
+    const fetchClimbStatsForClimbs = vi.fn(
+      () =>
+        new Promise<[]>((resolve) => {
+          resolveActiveBatch = () => resolve([]);
+        }),
+    );
+    const { wrapper } = createWrapper({ fetchClimbStatsForClimbs });
+    const active = renderHook(() => useEffectiveClimbStats('kilter', 1, 'active-climb', 40, {}), { wrapper });
+    await waitFor(() => expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(1));
+    const queued = renderHook(
+      ({ enabled }: { enabled: boolean }) => useEffectiveClimbStats('kilter', 1, 'queued-climb', 40, {}, { enabled }),
+      { wrapper, initialProps: { enabled: true } },
+    );
+    expect(getClimbStatsReadCoordinatorStateForTests()).toMatchObject({ active: 1, queued: 1 });
+    expect(isClimbStatsReadRetained('kilter', 'queued-climb')).toBe(true);
+    queued.rerender({ enabled: false });
+    expect(isClimbStatsReadRetained('kilter', 'queued-climb')).toBe(false);
+    await waitFor(() => expect(getClimbStatsReadCoordinatorStateForTests().queued).toBe(0));
+    await act(async () => resolveActiveBatch());
+    await waitFor(() => expect(getClimbStatsReadCoordinatorStateForTests().active).toBe(0));
+    expect(fetchClimbStatsForClimbs).toHaveBeenCalledExactlyOnceWith('kilter', ['active-climb']);
+    queued.unmount();
+    active.unmount();
+  });
+
   it('re-renders only the exact-key selector child when canonical stats arrive', () => {
     const selectorRender = vi.fn();
     const stableSiblingRender = vi.fn();

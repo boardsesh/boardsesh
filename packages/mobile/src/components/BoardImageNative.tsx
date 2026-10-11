@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
@@ -9,8 +9,15 @@ import { LayeredClimbImage } from './LayeredClimbImage';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
+import {
+  isReadyBoardArtCurrent,
+  type ReadyBoardArtIdentity,
+  type ReadyBoardArtSnapshot,
+} from '../lib/board-render/ready-board-art';
 
 type BoardImageNativeProps = {
+  readyBoardArt?: ReadyBoardArtSnapshot;
+  onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
   accessible?: boolean;
   frames: string;
   boardName: BoardName;
@@ -138,6 +145,8 @@ type BoardImageNativeProps = {
  * not used here, so a single cached PNG serves both orientations.
  */
 const BoardImageNative = React.memo(function BoardImageNative({
+  readyBoardArt,
+  onReadyArtDisplayed,
   accessible = true,
   frames,
   boardName,
@@ -175,6 +184,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     missingBackgroundCount,
     backgroundBaseColor,
     rendererUnavailable,
+    artworkIdentity,
   } = useNativeClimbRender({
     frames,
     boardName,
@@ -194,6 +204,38 @@ const BoardImageNative = React.memo(function BoardImageNative({
   // it is on the layer the frame the board mounts. Rendered alone is not enough:
   // the view would show the bare wall for the frames its own decode takes.
   const overlayPaintsWithBoard = overlayImmediate && isBoardArtInMemory(overlayUri);
+  const openingArt = isReadyBoardArtCurrent(readyBoardArt, { ...artworkIdentity, mirrored: mirrored ?? false })
+    ? readyBoardArt
+    : undefined;
+  const currentArtIdentity = JSON.stringify([artworkIdentity, overlayUri, overlayLoadKey, backgroundPaths]);
+  const [displayedArtIdentity, setDisplayedArtIdentity] = useState<string | null>(null);
+  const openingArtIsCurrent =
+    openingArt?.quality === 'full' &&
+    openingArt.overlayUri === overlayUri &&
+    openingArt.overlayLoadKey === overlayLoadKey;
+  const bridging =
+    openingArt !== undefined &&
+    !openingArtIsCurrent &&
+    !overlayUnavailable &&
+    displayedArtIdentity !== currentArtIdentity;
+  const liveArtRef = useRef({ identity: currentArtIdentity, bridging, onReadyArtDisplayed });
+  liveArtRef.current = { identity: currentArtIdentity, bridging, onReadyArtDisplayed };
+  const pendingVisibleArtRef = useRef<{
+    identity: string;
+    art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null };
+  } | null>(null);
+  useEffect(() => {
+    const pending = pendingVisibleArtRef.current;
+    if (bridging || !pending || pending.identity !== currentArtIdentity) return;
+    // onDisplay beneath an opacity-zero bridge means the replacement is ready,
+    // not yet visible. Report after the visibility commit reaches a frame.
+    const frame = requestAnimationFrame(() => {
+      if (liveArtRef.current.identity !== pending.identity || liveArtRef.current.bridging) return;
+      pendingVisibleArtRef.current = null;
+      liveArtRef.current.onReadyArtDisplayed?.(pending.art);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [bridging, currentArtIdentity]);
 
   const containerStyle: ViewStyle = {
     width: '100%',
@@ -210,39 +252,61 @@ const BoardImageNative = React.memo(function BoardImageNative({
       accessibilityLabel={accessibilitySummary}
       style={containerStyle}
     >
-      <LayeredClimbImage
-        overlayUri={overlayUri}
-        overlayLoadKey={overlayLoadKey}
-        onOverlayLoad={onOverlayLoad}
-        onOverlayError={onOverlayError}
-        onOverlayMounted={onOverlayMounted}
-        backgroundPaths={backgroundPaths}
-        baseColor={backgroundBaseColor}
-        missingBackgroundCount={missingBackgroundCount}
-        mirrored={mirrored}
-        recyclingKey={recyclingKey}
-        // Nothing to wait for when the holds are already rendered and decoded,
-        // when there are none to draw, or when no overlay is coming.
-        revealWithOverlay={frames && !overlayPaintsWithBoard && !overlayUnavailable ? revealWithOverlay : undefined}
-        // An overlay that paints with the board has nothing to fade from.
-        suppressOverlayTransition={suppressOverlayTransition || overlayPaintsWithBoard}
-        overlayTestID={overlayTestID}
-        // A bridge only makes sense while a replacement is on its way. Empty
-        // frames render nothing at all — `useNativeClimbRender` returns before
-        // it draws — so retaining there would leave the holds the climber just
-        // cleared painted on the board with nothing ever coming to replace them.
-        //
-        // `overlayRetainIdentity` folds the spray wall version in, so a reset is a
-        // different board as far as bridging goes.
-        retainPreviousOverlayFor={
-          retainPreviousOverlay && frames ? overlayRetainIdentity(boardName, layoutId, sizeId, setIds) : undefined
-        }
-        underOverlay={underOverlay}
-        // Only once the loader has given up: a null overlay during an ordinary
-        // cold render is "not yet", and showing the fallback there would flash
-        // JS-drawn holds before the real ones on every capable device.
-        emptyOverlayFallback={rendererUnavailable ? emptyOverlayFallback : undefined}
-      />
+      {bridging && (
+        <LayeredClimbImage
+          overlayUri={openingArt.overlayUri}
+          overlayLoadKey={openingArt.overlayLoadKey}
+          backgroundPaths={[...openingArt.backgroundPaths]}
+          baseColor={openingArt.backgroundBaseColor}
+          mirrored={openingArt.mirrored}
+          suppressOverlayTransition
+        />
+      )}
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, opacity: bridging ? 0 : 1 }}>
+        <LayeredClimbImage
+          overlayUri={overlayUri}
+          overlayLoadKey={overlayLoadKey}
+          onOverlayLoad={onOverlayLoad}
+          onOverlayError={onOverlayError}
+          onOverlayMounted={onOverlayMounted}
+          displayIdentity={currentArtIdentity}
+          onArtDisplayed={(loadKey) => {
+            if (!overlayUri || loadKey !== overlayLoadKey) return;
+            const displayedArt = { ...artworkIdentity, overlayUri, overlayLoadKey: loadKey };
+            if (bridging) pendingVisibleArtRef.current = { identity: currentArtIdentity, art: displayedArt };
+            if (openingArt) setDisplayedArtIdentity(currentArtIdentity);
+            if (!bridging) onReadyArtDisplayed?.(displayedArt);
+          }}
+          backgroundPaths={backgroundPaths}
+          baseColor={backgroundBaseColor}
+          missingBackgroundCount={missingBackgroundCount}
+          mirrored={mirrored}
+          recyclingKey={recyclingKey}
+          // Nothing to wait for when the holds are already rendered and decoded,
+          // when there are none to draw, or when no overlay is coming.
+          revealWithOverlay={
+            frames && !bridging && !overlayPaintsWithBoard && !overlayUnavailable ? revealWithOverlay : undefined
+          }
+          // An overlay that paints with the board has nothing to fade from.
+          suppressOverlayTransition={suppressOverlayTransition || overlayPaintsWithBoard || bridging}
+          overlayTestID={overlayTestID}
+          // A bridge only makes sense while a replacement is on its way. Empty
+          // frames render nothing at all — `useNativeClimbRender` returns before
+          // it draws — so retaining there would leave the holds the climber just
+          // cleared painted on the board with nothing ever coming to replace them.
+          //
+          // `overlayRetainIdentity` folds the spray wall version in, so a reset is a
+          // different board as far as bridging goes.
+          retainPreviousOverlayFor={
+            retainPreviousOverlay && frames ? overlayRetainIdentity(boardName, layoutId, sizeId, setIds) : undefined
+          }
+          underOverlay={underOverlay}
+          // Only once the loader has given up: a null overlay during an ordinary
+          // cold render is "not yet", and showing the fallback there would flash
+          // JS-drawn holds before the real ones on every capable device.
+          emptyOverlayFallback={rendererUnavailable ? emptyOverlayFallback : undefined}
+        />
+      </View>
     </View>
   );
 });

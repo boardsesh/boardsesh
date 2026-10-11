@@ -31,15 +31,9 @@ import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until
  * sub-drawers, the share sheet, and this route's own QueueSheet — stacks ABOVE
  * it instead of behind it.
  *
- * Open latency: the native modal present can't start until React commits this
- * route's first frame. PlayDrawer's mount is heavy (board geometry + a stack of
- * hooks), and the old overlay hid that by running its slide on the UI thread
- * (reanimated) while content filled in. To restore the instant-start feel, the
- * first frame paints ONLY the full-screen background (cheap), so the present
- * begins immediately; PlayDrawer + the QueueSheet mount one frame later and fill
- * in mid-slide (the present runs natively, off the JS thread). A deterministic
- * rAF gate (not InteractionManager, which waits out the whole present and is
- * disabled in screenshot mode) keeps this screenshot-safe.
+ * The first commit mounts the current board and its gestures. PlayCore keeps
+ * list walks and below-fold requests behind that first paint; cached artwork
+ * never waits for a background-only frame or a second board-layout mount.
  *
  * The host (DrawerHostProvider) owns the open target + board override and exposes
  * them via usePlayDrawerRoute; this route runs the host's close-reset on unmount.
@@ -67,7 +61,20 @@ function PlayScreen() {
   const { swipeDismiss, animatedStyle, onLayout, close } = usePlaySwipeDismiss();
 
   const queueSheetRef = useRef<QueueSheetHandle>(null);
-  const presentQueue = useCallback(() => queueSheetRef.current?.present(), []);
+  const [mountQueue, setMountQueue] = useState(false);
+  const pendingQueuePresentation = useRef(false);
+  const presentQueue = useCallback(() => {
+    if (queueSheetRef.current) queueSheetRef.current.present();
+    else {
+      pendingQueuePresentation.current = true;
+      setMountQueue(true);
+    }
+  }, []);
+  useEffect(() => {
+    if (!mountQueue || !queueSheetRef.current || !pendingQueuePresentation.current) return;
+    pendingQueuePresentation.current = false;
+    queueSheetRef.current.present();
+  }, [mountQueue]);
   const requestCloseQueue = useCallback(() => queueSheetRef.current?.dismiss(), []);
   const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(queueSheetRef.current);
@@ -82,15 +89,6 @@ function PlayScreen() {
     },
     [openClimbActions, dismissPlayerAndWait],
   );
-
-  // Paint the glass first, mount the heavy player content one frame later so the
-  // native present starts immediately (see the file comment). rAF fires before
-  // the next paint, so PlayDrawer renders into the slide that's already running.
-  const [contentMounted, setContentMounted] = useState(false);
-  useEffect(() => {
-    const handle = requestAnimationFrame(() => setContentMounted(true));
-    return () => cancelAnimationFrame(handle);
-  }, []);
 
   // Drop the board override + open target when the route unmounts (any dismiss:
   // chevron, swipe, back, or programmatic). A ref calls the latest callback
@@ -152,7 +150,7 @@ function PlayScreen() {
           fallbackColor={systemColors.secondaryBackground}
           tintColor={playDrawerMaterialTint[colorScheme]}
         />
-        {contentMounted && activeBoardConfig ? (
+        {activeBoardConfig ? (
           <>
             <PlayDrawer
               swipeDismiss={swipeDismiss}
@@ -169,7 +167,7 @@ function PlayScreen() {
               dismissPlayerAndWait={dismissPlayerAndWait}
               openTarget={playTarget}
             />
-            {queueBoard ? (
+            {mountQueue && queueBoard ? (
               <QueueSheet
                 ref={queueSheetRef}
                 board={queueBoard}

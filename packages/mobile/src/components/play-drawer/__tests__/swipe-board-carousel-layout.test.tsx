@@ -2,9 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import type { LayoutChangeEvent } from 'react-native';
+import type { LayoutChangeEvent, ViewStyle } from 'react-native';
 
-type Box = { width: number; height: number };
 type ViewProps = {
   children?: ReactNode;
   onLayout?: (event: LayoutChangeEvent) => void;
@@ -18,6 +17,9 @@ type ViewProps = {
 const recorded = vi.hoisted(() => ({
   onLayout: undefined as ViewProps['onLayout'],
   prefetch: vi.fn(),
+  swipeOptions: vi.fn(),
+  zoomOptions: vi.fn(),
+  boardProps: vi.fn(),
 }));
 
 vi.mock('react-native', () => {
@@ -63,39 +65,38 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../use-carousel-gesture', () => ({
-  useCarouselGesture: () => ({ gesture: {} }),
+  useCarouselGesture: (options: unknown) => {
+    recorded.swipeOptions(options);
+    return { gesture: {} };
+  },
 }));
 vi.mock('../use-zoom-pan-gesture', () => ({
-  useZoomPanGesture: () => ({
-    pinchGesture: {},
-    zoomPanGesture: {},
-    isZoomed: false,
-    isZoomedSV: { value: false },
-    resetZoom: () => {},
-    // A marker the mocked View surfaces, standing in for the animated zoom transform.
-    animatedZoomStyle: { zoomMarker: 'yes' },
-  }),
+  useZoomPanGesture: (options: unknown) => {
+    recorded.zoomOptions(options);
+    return {
+      pinchGesture: {},
+      zoomPanGesture: {},
+      isZoomed: false,
+      isZoomedSV: { value: false },
+      resetZoom: () => {},
+      // A marker the mocked View surfaces, standing in for the animated zoom transform.
+      animatedZoomStyle: { zoomMarker: 'yes' },
+    };
+  },
 }));
 vi.mock('../../BoardImageNative', () => ({
   // Paint synchronously, like an image whose photo and overlay are already cached.
-  BoardImageNative: ({
-    frames,
-    style,
-    renderWidth,
-    overlayTestID,
-  }: {
-    frames: string;
-    style: Box;
-    renderWidth: number;
-    overlayTestID?: string;
-  }) =>
-    createElement('div', {
+  BoardImageNative: (props: { frames: string; style: ViewStyle; renderWidth: number; overlayTestID?: string }) => {
+    recorded.boardProps(props);
+    const { frames, style, renderWidth, overlayTestID } = props;
+    return createElement('div', {
       'data-testid': `board-${frames}`,
       'data-width': style?.width,
       'data-height': style?.height,
       'data-render-width': renderWidth,
       'data-overlay-testid': overlayTestID,
-    }),
+    });
+  },
 }));
 vi.mock('../UpcomingBoardPrefetch', () => ({
   UpcomingBoardPrefetch: (props: unknown) => {
@@ -107,6 +108,8 @@ vi.mock('../../board-controls/ResetZoomButton', () => ({ ResetZoomButton: () => 
 
 import { SwipeBoardCarousel } from '../SwipeBoardCarousel';
 import type { SwipePager } from '../use-swipe-pager';
+import type { ReadyBoardArtSnapshot } from '../../../lib/board-render/ready-board-art';
+import { _resetPlayBoardPrewarmForTests, rememberPlayOverlayWidth } from '../../../lib/board-render/play-board-prewarm';
 
 /** A pager at rest on page 0, as plain values: these tests never move it. */
 function restingPager(): SwipePager {
@@ -167,7 +170,11 @@ function expectDimensions(element: HTMLElement, width: number, height: number) {
 
 beforeEach(() => {
   recorded.onLayout = undefined;
+  _resetPlayBoardPrewarmForTests();
   recorded.prefetch.mockClear();
+  recorded.swipeOptions.mockClear();
+  recorded.zoomOptions.mockClear();
+  recorded.boardProps.mockClear();
   vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -197,18 +204,28 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
     }
   });
 
-  it('withholds cached images and prefetch until both dimensions are positive', async () => {
+  it('mounts one current image before geometry, then enables gestures without remounting it', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
     const { queryAllByTestId, getByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
     expect(getByTestId('play-drawer-board-container')).toBeTruthy();
-    expect(queryAllByTestId(/^board-/)).toHaveLength(0);
+    expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+    const firstImage = getByTestId('board-current');
+    expect(firstImage.dataset.width).toBe('100%');
+    expect(firstImage.dataset.height).toBe('100%');
+    expect(recorded.swipeOptions).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
+    expect(recorded.zoomOptions).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
     expect(recorded.prefetch).not.toHaveBeenCalled();
 
     measure(350, 0);
-    expect(queryAllByTestId(/^board-/)).toHaveLength(0);
+    expect(getByTestId('board-current')).toBe(firstImage);
     expect(recorded.prefetch).not.toHaveBeenCalled();
 
     measure(350, 500);
+    expect(getByTestId('board-current')).toBe(firstImage);
+    expect(recorded.swipeOptions).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true, boardWidth: 250 }));
+    expect(recorded.zoomOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: true, containerWidth: 250, containerHeight: 500 }),
+    );
     expectDimensions(getByTestId('board-current'), 250, 500);
     // The current board paints first; its neighbour follows a frame later.
     expect(queryAllByTestId('board-next')).toHaveLength(0);
@@ -224,6 +241,43 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
     } else {
       expect(recorded.prefetch).not.toHaveBeenCalled();
     }
+  });
+
+  it('uses supplied positive geometry on the first frame and resizes without remounting', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
+    const props = { ...baseProps, containerSize: { width: 350, height: 500 } };
+    const { getByTestId, rerender } = render(createElement(SwipeBoardCarousel, props));
+    const image = getByTestId('board-current');
+    expectDimensions(image, 250, 500);
+    expect(recorded.swipeOptions).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true, boardWidth: 250 }));
+    measure(100, 100);
+    expectDimensions(image, 250, 500);
+    rerender(createElement(SwipeBoardCarousel, { ...props, containerSize: { width: 200, height: 600 } }));
+    expect(getByTestId('board-current')).toBe(image);
+    expectDimensions(image, 200, 400);
+  });
+
+  it('reuses the warmed render width before measurement and forwards opening art only to current', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
+    rememberPlayOverlayWidth(baseProps, 777);
+    const readyBoardArt = { frames: 'current' } as ReadyBoardArtSnapshot;
+    const onReadyArtDisplayed = vi.fn();
+    const { getByTestId } = render(
+      createElement(SwipeBoardCarousel, { ...baseProps, readyBoardArt, onReadyArtDisplayed }),
+    );
+    expect(getByTestId('board-current').dataset.renderWidth).toBe('777');
+    expect(recorded.boardProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        readyBoardArt,
+        onReadyArtDisplayed,
+        style: { width: '100%', height: '100%', aspectRatio: undefined },
+      }),
+    );
+    measure(350, 500);
+    await nextFrame();
+    const neighbourProps = recorded.boardProps.mock.calls.filter(([props]) => props.frames === 'next').at(-1)?.[0];
+    expect(neighbourProps?.readyBoardArt).toBeUndefined();
+    expect(neighbourProps?.onReadyArtDisplayed).toBeUndefined();
   });
 
   it('resizes a mounted board for rotation or a narrower iPad pane without a placeholder', async () => {

@@ -1,25 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { GestureType } from 'react-native-gesture-handler';
 
-// Controllable requestAnimationFrame: capture every scheduled callback + its id
-// so a test can decide whether the deferred frame runs (open commits) or is
-// cancelled (sheet closed / unmounted before it fires). A rAF — unlike the old
-// InteractionManager gate — can't be starved, so there's no fallback timer.
-const rafTasks: Array<{ id: number; run: FrameRequestCallback }> = [];
-const cancelledIds = new Set<number>();
-let nextRafId = 1;
 const forwardedCarouselProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
-const requestFrame = vi.fn((callback: FrameRequestCallback): number => {
-  const id = nextRafId++;
-  rafTasks.push({ id, run: callback });
-  return id;
-});
-const cancelFrame = vi.fn((id: number) => {
-  cancelledIds.add(id);
-});
+const requestFrame = vi.fn();
 
 type ViewMockProps = { children?: ReactNode; testID?: string; style?: unknown };
 vi.mock('react-native', () => ({
@@ -27,8 +13,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 
-// The carousel is the expensive thing we're deferring — stand it in with a
-// cheap marker that echoes the climb frames so we can assert which climb shows.
+// Echo the carousel props without mounting its native renderer.
 vi.mock('../SwipeBoardCarousel', () => ({
   SwipeBoardCarousel: (props: Record<string, unknown>) => {
     forwardedCarouselProps.current = props;
@@ -44,6 +29,7 @@ vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemC
 
 import { DeferredBoard } from '../DeferredBoard';
 import type { SwipePager } from '../use-swipe-pager';
+import type { ReadyBoardArtSnapshot } from '../../../lib/board-render/ready-board-art';
 
 const baseProps = {
   layoutReady: true,
@@ -65,173 +51,76 @@ const baseProps = {
   centerPage: 0,
 };
 
-function flushFrame() {
-  act(() => {
-    for (const task of rafTasks.splice(0)) {
-      if (!cancelledIds.has(task.id)) task.run(performance.now());
-    }
-  });
-}
-
 describe('DeferredBoard', () => {
   beforeEach(() => {
-    rafTasks.length = 0;
-    cancelledIds.clear();
-    nextRafId = 1;
     requestFrame.mockClear();
-    cancelFrame.mockClear();
     forwardedCarouselProps.current = null;
     vi.stubGlobal('requestAnimationFrame', requestFrame);
-    vi.stubGlobal('cancelAnimationFrame', cancelFrame);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('mounts the current board immediately before layout readiness, without scheduling a frame', () => {
+    const { getByTestId, queryByTestId } = render(
+      createElement(DeferredBoard, {
+        ...baseProps,
+        open: true,
+        layoutReady: false,
+      }),
+    );
+    expect(getByTestId('swipe-board').dataset.frames).toBe('p1145r15');
+    expect(queryByTestId('deferred-board-placeholder')).toBeNull();
+    expect(requestFrame).not.toHaveBeenCalled();
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
-
-  it('shows a board-sized placeholder before the deferred frame fires', () => {
-    const { container } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-
-    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
-    expect(requestFrame).toHaveBeenCalledTimes(1);
-  });
-
-  it('mounts the carousel after the frame fires', () => {
-    const { container } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-
-    flushFrame();
-
-    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeNull();
-    const board = container.querySelector('[data-testid="swipe-board"]');
-    expect(board?.getAttribute('data-frames')).toBe('p1145r15');
-  });
-
-  it('forwards the dismiss ref through the deferred mount', () => {
+  it('forwards geometry, artwork, readiness callback and dismiss ref unchanged', () => {
     const dismissRef = { current: undefined as GestureType | undefined };
-    render(createElement(DeferredBoard, { ...baseProps, open: true, dismissRef }));
-
-    flushFrame();
-
-    expect(forwardedCarouselProps.current?.dismissRef).toBe(dismissRef);
+    const containerSize = { width: 300, height: 500 };
+    const readyBoardArt = { quality: 'full' } as ReadyBoardArtSnapshot;
+    const onReadyArtDisplayed = vi.fn();
+    render(
+      createElement(DeferredBoard, {
+        ...baseProps,
+        open: true,
+        dismissRef,
+        containerSize,
+        readyBoardArt,
+        onReadyArtDisplayed,
+      }),
+    );
+    expect(forwardedCarouselProps.current).toMatchObject({
+      dismissRef,
+      containerSize,
+      readyBoardArt,
+      onReadyArtDisplayed,
+    });
   });
 
-  it('waits for delayed layout, then defers one frame after the measured commit', () => {
-    const { container, rerender } = render(
+  it('keeps the current board mounted across layout readiness, geometry and climb changes', () => {
+    const { getByTestId, rerender } = render(
       createElement(DeferredBoard, { ...baseProps, open: true, layoutReady: false }),
     );
-    flushFrame();
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
-    expect(requestFrame).not.toHaveBeenCalled();
-
-    rerender(createElement(DeferredBoard, { ...baseProps, open: true }));
-    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
-
-    flushFrame();
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeTruthy();
-  });
-
-  it('does not mount when layout arrives after the drawer closes', () => {
-    const { container, rerender } = render(
-      createElement(DeferredBoard, { ...baseProps, open: true, layoutReady: false }),
-    );
-    rerender(createElement(DeferredBoard, { ...baseProps, open: false }));
-    flushFrame();
-
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
-    expect(requestFrame).not.toHaveBeenCalled();
-  });
-
-  it('keeps the carousel mounted when board geometry changes after opening', () => {
-    const { container, rerender } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-    flushFrame();
-    const carousel = container.querySelector('[data-testid="swipe-board"]');
-
+    const carousel = getByTestId('swipe-board');
     rerender(
       createElement(DeferredBoard, {
         ...baseProps,
         open: true,
+        currentFrames: 'p9r12',
         boardRenderData: { boardWidth: 1200, boardHeight: 1200 },
+        containerSize: { width: 300, height: 500 },
       }),
     );
-
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBe(carousel);
-    expect(requestFrame).toHaveBeenCalledTimes(1);
-  });
-
-  it('still requires measured layout in screenshot mode', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    const { container, rerender } = render(
-      createElement(DeferredBoard, { ...baseProps, open: true, layoutReady: false }),
-    );
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
-
-    rerender(createElement(DeferredBoard, { ...baseProps, open: true }));
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeTruthy();
+    expect(getByTestId('swipe-board')).toBe(carousel);
+    expect(carousel.dataset.frames).toBe('p9r12');
     expect(requestFrame).not.toHaveBeenCalled();
   });
 
-  it('does NOT re-defer when the climb changes while open (no swipe flash)', () => {
-    const { container, rerender } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-    flushFrame();
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeTruthy();
-
-    // Swipe to a different climb: same open transition, new frames. The gate is
-    // keyed on `open`, not on the climb, so the board stays mounted.
-    rerender(createElement(DeferredBoard, { ...baseProps, open: true, currentFrames: 'p9r12' }));
-
-    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeNull();
-    expect(container.querySelector('[data-testid="swipe-board"]')?.getAttribute('data-frames')).toBe('p9r12');
-    // No second schedule — the open transition didn't recur.
-    expect(requestFrame).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancels the pending frame and drops the board when the sheet closes before it fires', () => {
-    const { container, rerender } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-    expect(requestFrame).toHaveBeenCalledTimes(1);
-
+  it('withholds a closed board and opens the newly selected climb immediately', () => {
+    const { queryByTestId, getByTestId, rerender } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
     rerender(createElement(DeferredBoard, { ...baseProps, open: false }));
-
-    // The pending frame is cancelled (no setState-after-the-fact leaking a board).
-    expect(cancelFrame).toHaveBeenCalledTimes(1);
-    // Closed → reset to "not ready": only the cheap placeholder remains.
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
-    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeTruthy();
-  });
-
-  it('drops a mounted board back to the placeholder when the sheet closes', () => {
-    const { container, rerender } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-    flushFrame();
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeTruthy();
-
-    rerender(createElement(DeferredBoard, { ...baseProps, open: false }));
-
-    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
-    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeTruthy();
-  });
-
-  it('re-shows the placeholder on the next open and schedules a fresh frame', () => {
-    const { container, rerender } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-    flushFrame();
-    rerender(createElement(DeferredBoard, { ...baseProps, open: false }));
-
-    // Re-open a different climb: placeholder again, then the new climb's board.
+    expect(queryByTestId('swipe-board')).toBeNull();
+    expect(getByTestId('deferred-board-placeholder')).toBeTruthy();
     rerender(createElement(DeferredBoard, { ...baseProps, open: true, currentFrames: 'p77r15' }));
-    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeTruthy();
-    expect(requestFrame).toHaveBeenCalledTimes(2);
-
-    flushFrame();
-    expect(container.querySelector('[data-testid="swipe-board"]')?.getAttribute('data-frames')).toBe('p77r15');
-  });
-
-  it('cancels the pending frame on unmount (no setState-after-unmount)', () => {
-    const { unmount } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
-    expect(requestFrame).toHaveBeenCalledTimes(1);
-
-    unmount();
-
-    expect(cancelFrame).toHaveBeenCalledTimes(1);
+    expect(getByTestId('swipe-board').dataset.frames).toBe('p77r15');
+    expect(requestFrame).not.toHaveBeenCalled();
   });
 });

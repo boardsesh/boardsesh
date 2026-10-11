@@ -41,6 +41,11 @@ import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
 import { useSwipeArm } from './use-swipe-arm';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
+import {
+  isReadyBoardArtCurrent,
+  type ReadyBoardArtSnapshot,
+  type ReadyBoardArtSource,
+} from '../lib/board-render/ready-board-art';
 
 // (44pt target - 20pt glyph) / 2 = 12pt of empty target past the glyph's edge.
 const MORE_BUTTON_GUTTER_PULL = -Math.min(CLIMB_ROW_GUTTER, (44 - 20) / 2);
@@ -230,7 +235,7 @@ type ClimbListRowProps = {
   sizeId: number;
   setIds: string;
   angle: number;
-  onPress?: (climb: Climb) => void;
+  onPress?: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => void;
   onAddToQueue?: (climb: Climb) => void;
   onOpenPlaylist?: (climb: Climb, anchor?: WindowAnchorPoint) => void;
   onOpenActions?: (climb: Climb) => void;
@@ -343,6 +348,9 @@ const ClimbListRow = React.memo(function ClimbListRow({
   const contentViewRef = useRef<View | null>(null);
   const climbRef = useRef(climb);
   climbRef.current = climb;
+  const readyBoardArtRef = useRef<ReadyBoardArtSource | null>(null);
+  const readyScopeRef = useRef({ boardName, layoutId, sizeId, setIds });
+  readyScopeRef.current = { boardName, layoutId, sizeId, setIds };
   const unsupportedRef = useRef(unsupported);
   unsupportedRef.current = unsupported;
   // One place that opens the reaction menu, whether it was reached by long press
@@ -360,7 +368,18 @@ const ClimbListRow = React.memo(function ClimbListRow({
     const press = onPressRef.current;
     if (!press) return;
     hapticLight();
-    press(climbRef.current);
+    const currentClimb = climbRef.current;
+    const readyBoardArt = readyBoardArtRef.current?.read();
+    if (
+      isReadyBoardArtCurrent(readyBoardArt, {
+        ...readyScopeRef.current,
+        frames: currentClimb.frames,
+        climbUuid: currentClimb.uuid,
+        mirrored: currentClimb.mirrored ?? false,
+      })
+    )
+      press(currentClimb, readyBoardArt);
+    else press(currentClimb);
   }, []);
 
   const handleLongPress = useCallback(() => {
@@ -562,6 +581,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
     renderContent({ climb, boardName, layoutId, sizeId, setIds, angle })
   ) : (
     <ClimbListItemContent
+      readyBoardArtRef={readyBoardArtRef}
       climb={climb}
       boardName={boardName}
       layoutId={layoutId}

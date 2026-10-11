@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { getPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
+import { getPlaylistPeekQueueItemUuid, createPlaylistSuggestionSource, preparePlaylistClimbs } from '@boardsesh/queue';
 import {
   findNextQueueItem,
+  prepareQueueNavigation,
+  computeNavigationTargetsWithSuggestions,
+  countRemainingQueueItemsWithSuggestions,
   findPreviousQueueItem,
   computeNavigationState,
   findNextQueueItemWithSuggestions,
@@ -973,5 +976,89 @@ describe('computeNavigationStateWithSuggestions reachable walls', () => {
 
     expect(withPredicate.remainingCount).toBe(1);
     expect(without.remainingCount).toBe(0);
+  });
+});
+
+describe('prepared navigation', () => {
+  it('preserves reachable-wall queue fallback and skipped items', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('far-wall', 'kilter', 1),
+      queueItemOnBoard('near-wall', 'kilter', 1),
+      queueItemOnBoard('compatible', 'tension', 8),
+    ];
+    const isReachable = (candidate: Climb) => candidate.uuid === 'near-wall';
+    const prepared = prepareQueueNavigation(queue);
+    expect(selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, isReachable, prepared)).toEqual(
+      selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, isReachable),
+    );
+    expect(computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, isReachable, prepared)).toEqual(
+      computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, isReachable),
+    );
+  });
+
+  it('resolves immediate targets without rescanning the loaded source or queue', () => {
+    const climbs = [makeClimb('a'), makeClimb('b'), makeClimb('c')];
+    const source = createPlaylistSuggestionSource({
+      playlistUuid: 'prepared',
+      boardKey: 'board',
+      activatedClimb: climbs[1],
+      climbs,
+      preparedClimbs: preparePlaylistClimbs(climbs),
+    });
+    const queue = climbs.map(itemFor);
+    const prepared = prepareQueueNavigation(queue);
+    const queueScan = vi.spyOn(queue, 'findIndex');
+    const sourceScan = vi.spyOn(source.climbs, 'findIndex');
+    expect(computeNavigationTargetsWithSuggestions(queue, queue[1], source, undefined, undefined, prepared)).toEqual({
+      nextItem: queue[2],
+      prevItem: queue[0],
+      canNext: true,
+      canPrevious: true,
+    });
+    expect(anchoredSuggestionSource(source, queue[1])).toBe(source);
+    expect(queueScan).not.toHaveBeenCalled();
+    expect(sourceScan).not.toHaveBeenCalled();
+  });
+
+  it('matches legacy navigation for boundaries, adjacent dedupe, orphans and duplicate queue UUIDs', () => {
+    const climbs = [makeClimb('a'), makeClimb('b'), makeClimb('c')];
+    const queues = [
+      [],
+      climbs.map(itemFor),
+      [itemFor(climbs[1]), itemFor(climbs[0])],
+      [itemFor(climbs[0]), itemFor(climbs[0]), itemFor(climbs[2])],
+    ];
+    const sources = [null, makeSource(climbs[0], climbs), makeSource(climbs[0], [climbs[0], climbs[0], climbs[2]])];
+    for (const queue of queues) {
+      const prepared = prepareQueueNavigation(queue);
+      for (const current of [null, ...queue, itemFor(makeClimb('orphan'))]) {
+        for (const source of sources) {
+          const legacy = computeNavigationStateWithSuggestions(queue, current, source);
+          expect(computeNavigationStateWithSuggestions(queue, current, source, undefined, undefined, prepared)).toEqual(
+            legacy,
+          );
+          expect({
+            ...computeNavigationTargetsWithSuggestions(queue, current, source, undefined, undefined, prepared),
+            remainingCount: countRemainingQueueItemsWithSuggestions(
+              queue,
+              current,
+              source,
+              undefined,
+              undefined,
+              prepared,
+            ),
+          }).toEqual(legacy);
+        }
+      }
+    }
+  });
+
+  it('falls back to the correct snapshot when handed a stale queue index', () => {
+    const queue = [makeItem('a'), makeItem('b')];
+    const reversed = [...queue].reverse();
+    expect(findPreviousQueueItemWithSuggestions(reversed, queue[0], null, prepareQueueNavigation(queue))).toBe(
+      queue[1],
+    );
   });
 });

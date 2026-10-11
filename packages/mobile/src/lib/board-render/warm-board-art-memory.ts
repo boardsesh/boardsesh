@@ -16,6 +16,8 @@
  */
 import { Platform } from 'react-native';
 import { Image } from 'expo-image';
+import { noteBoardArtInMemory } from './board-art-memory-index';
+export { noteBoardArtInMemory, isBoardArtInMemory, forgetBoardArtInMemory } from './board-art-memory-index';
 
 /**
  * iOS only. expo-image's Android prefetch loads every URL as a `GlideUrl`,
@@ -41,37 +43,12 @@ function canWarmBoardArtMemory(): boolean {
  * of 1,505 thumbnails believed in memory that were not; 160 leaves that room.
  * A stale yes costs a few frames of bare board; a stale no costs a placeholder.
  */
-const IN_MEMORY_URIS_MAX = 160;
-
-// Insertion order is recency: a re-noted URI moves to the end.
-const inMemoryUris = new Set<string>();
-
 function isLocalFileUri(uri: string): boolean {
   return uri.startsWith('file://');
 }
 
-/** A view finished loading this file, or a warm-up decoded it. */
-export function noteBoardArtInMemory(uri: string): void {
-  inMemoryUris.delete(uri);
-  inMemoryUris.add(uri);
-  if (inMemoryUris.size > IN_MEMORY_URIS_MAX) {
-    const oldest = inMemoryUris.values().next().value;
-    if (oldest !== undefined) inMemoryUris.delete(oldest);
-  }
-}
-
-/** Whether a view mounting this file now would paint it on its first frame. */
-export function isBoardArtInMemory(uri: string | null | undefined): boolean {
-  return uri != null && inMemoryUris.has(uri);
-}
-
-/** The image memory cache was swept (app backgrounded, memory warning, iPad tab switch). */
-export function forgetBoardArtInMemory(): void {
-  inMemoryUris.clear();
-}
-
 /** Best effort: a miss only means the view decodes the file itself. */
-export function warmBoardArtMemory(uris: readonly string[]): void {
+export function warmBoardArtMemory(uris: readonly string[], generation?: string): void {
   if (!canWarmBoardArtMemory()) return;
   const localUris = uris.filter(isLocalFileUri);
   if (localUris.length === 0) return;
@@ -80,7 +57,7 @@ export function warmBoardArtMemory(uris: readonly string[]): void {
       // One answer for the batch: true only when every file decoded, false as
       // soon as one failed. On false nothing is recorded, which errs towards a
       // placeholder for files that did make it.
-      if (decoded) for (const uri of localUris) noteBoardArtInMemory(uri);
+      if (decoded) for (const uri of localUris) noteBoardArtInMemory(uri, generation);
     })
     .catch(() => {});
 }

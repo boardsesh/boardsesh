@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, type MutableRefObject } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
@@ -7,6 +7,7 @@ import { useTheme } from '../providers/theme-provider';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
+import type { ReadyBoardArtSource } from '../lib/board-render/ready-board-art';
 
 /**
  * Portrait dimensions of the list thumbnail cell. Exported so ClimbListRow
@@ -77,6 +78,8 @@ export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailP
 });
 
 type ClimbListThumbnailProps = {
+  climbUuid?: string;
+  readyBoardArtRef?: MutableRefObject<ReadyBoardArtSource | null>;
   frames: string;
   boardName: BoardName;
   layoutId: number;
@@ -103,6 +106,8 @@ type ClimbListThumbnailProps = {
  * pattern.
  */
 const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
+  climbUuid,
+  readyBoardArtRef,
   frames,
   boardName,
   layoutId,
@@ -124,6 +129,8 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     backgroundPaths,
     missingBackgroundCount,
     backgroundBaseColor,
+    artworkIdentity,
+    getReadyBoardArtSnapshot,
   } = useNativeClimbRender({
     frames,
     boardName,
@@ -139,12 +146,38 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   // mount before the warm-up's decode has finished, and the view then shows the
   // bare board for the frames its own decode takes.
   const overlayPaintsWithBoard = overlayImmediate && isBoardArtInMemory(overlayUri);
+  const displayIdentity = JSON.stringify([
+    climbUuid,
+    artworkIdentity,
+    mirrored,
+    overlayUri,
+    overlayLoadKey,
+    backgroundPaths,
+  ]);
+  const displayedRef = useRef<{ identity: string; loadKey: string | null }>({
+    identity: displayIdentity,
+    loadKey: null,
+  });
+  if (displayedRef.current.identity !== displayIdentity)
+    displayedRef.current = { identity: displayIdentity, loadKey: null };
+  if (readyBoardArtRef) {
+    readyBoardArtRef.current = {
+      read: () => {
+        if (!climbUuid || displayedRef.current.identity !== displayIdentity) return undefined;
+        return getReadyBoardArtSnapshot(climbUuid, mirrored ?? false, displayedRef.current.loadKey);
+      },
+    };
+  }
 
   return (
     <View style={[styles.container, size ? { width: cellWidth, height: cellHeight } : null]}>
       <LayeredClimbImage
         overlayUri={overlayUri}
         overlayLoadKey={overlayLoadKey}
+        displayIdentity={displayIdentity}
+        onArtDisplayed={(loadKey) => {
+          if (displayedRef.current.identity === displayIdentity) displayedRef.current.loadKey = loadKey;
+        }}
         onOverlayLoad={onOverlayLoad}
         onOverlayError={onOverlayError}
         backgroundPaths={backgroundPaths}

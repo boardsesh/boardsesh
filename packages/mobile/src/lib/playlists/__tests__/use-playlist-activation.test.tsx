@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import type { ReadyBoardArtSnapshot } from '../../board-render/ready-board-art';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
@@ -199,6 +200,52 @@ function chooseValues(callIndex = 0): string[] {
 }
 
 describe('usePlaylistActivation (mobile wrapper)', () => {
+  it('carries row art into a preview only for the authorized climb projection', async () => {
+    const authorized = makeClimb('art-climb', { frames: 'p123r12' });
+    const readyBoardArt: ReadyBoardArtSnapshot = {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 2,
+      setIds: '3',
+      frames: authorized.frames,
+      climbUuid: authorized.uuid,
+      mirrored: false,
+      renderSignature: 'stroke',
+      colorScheme: 'dark',
+      quality: 'full',
+      overlayCacheKey: 'full-key',
+      overlayUri: 'file:///overlay.png',
+      overlayGeneration: 1,
+      overlayLoadKey: 'generation:full-key',
+      backgroundPaths: ['board.png'],
+      privacyGeneration: 0,
+      credentialGeneration: 0,
+      sprayGeneration: '',
+      sprayVersion: '',
+    };
+    const { result } = renderActivation(vi.fn(), { allClimbs: [authorized], previewOnly: true });
+    await act(() => result.current.activate({ ...authorized }, readyBoardArt));
+    expect(mocks.openPlayDrawer.mock.calls[0][1].readyBoardArt).toBe(readyBoardArt);
+    expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
+    await act(() => result.current.activate({ ...authorized, frames: 'stale' }, { ...readyBoardArt, frames: 'stale' }));
+    expect(mocks.openPlayDrawer.mock.calls[1][0].frames).toBe(authorized.frames);
+    expect(mocks.openPlayDrawer.mock.calls[1][1]).not.toHaveProperty('readyBoardArt');
+  });
+
+  it('prepares one authorized compatible track before taps and reuses it across rerenders', async () => {
+    const first = makeClimb('a');
+    const duplicate = { ...first, name: 'stale duplicate' };
+    const climbs = [first, duplicate, makeClimb('b'), makeClimb('wrong-board', { boardType: 'tension', layoutId: 1 })];
+    const { result, rerender } = renderActivation(vi.fn(), { allClimbs: climbs });
+    const prepared = captured().preparedClimbs;
+    expect(prepared?.climbs).toEqual([first, climbs[2]]);
+    await result.current.activate({ ...first, name: 'retained stale details' });
+    expect(mocks.activate).toHaveBeenLastCalledWith(first);
+    rerender();
+    expect(captured().preparedClimbs).toBe(prepared);
+    expect(captured().resolveTarget(first)?.isClimbable).toBe(prepared?.isClimbable);
+  });
+
   it('builds a queueApi that creates the queue item, dispatches it, and returns it', async () => {
     renderActivation();
     const climb = makeClimb('a');

@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactNode, type Ref } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LayoutChangeEvent } from 'react-native';
 import type { SwipeDismissAnimation } from '../../src/components/play-drawer/use-drawer-dismiss-gesture';
+import type { QueueSheetHandle } from '../../src/components/play-drawer/QueueSheet';
 
 const router = vi.hoisted(() => ({ dismiss: vi.fn() }));
 const navigation = vi.hoisted(() => ({ setOptions: vi.fn(), isFocused: vi.fn(() => true) }));
 const onClosed = vi.hoisted(() => vi.fn());
 const player = vi.hoisted(() => ({ swipeDismiss: null as SwipeDismissAnimation | null }));
 const surface = vi.hoisted(() => ({ onLayout: null as ((event: LayoutChangeEvent) => void) | null }));
+const queueSheet = vi.hoisted(() => ({ mounted: 0, present: vi.fn(), dismiss: vi.fn(), dismissAndWait: vi.fn() }));
 const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 };
 
 // The play route now asks which boards stand at this gym, to decide whether a
@@ -64,12 +66,40 @@ vi.mock('../../src/components/ScreenBackground', () => ({
   ScreenBackground: () => createElement('div', { 'data-testid': 'background' }),
 }));
 vi.mock('../../src/components/play-drawer', () => ({
-  PlayDrawer: ({ swipeDismiss, onClose }: { swipeDismiss: SwipeDismissAnimation; onClose: () => void }) => {
+  PlayDrawer: ({
+    swipeDismiss,
+    onClose,
+    onOpenQueue,
+  }: {
+    swipeDismiss: SwipeDismissAnimation;
+    onClose: () => void;
+    onOpenQueue: () => void;
+  }) => {
     player.swipeDismiss = swipeDismiss;
-    return createElement('button', { onClick: onClose }, 'Close player');
+    return createElement(
+      'div',
+      null,
+      createElement('button', { onClick: onClose }, 'Close player'),
+      createElement('button', { onClick: onOpenQueue }, 'Open queue'),
+    );
   },
 }));
-vi.mock('../../src/components/play-drawer/QueueSheet', () => ({ QueueSheet: () => null }));
+vi.mock('../../src/components/play-drawer/QueueSheet', async () => {
+  const { useImperativeHandle, useEffect } = await import('react');
+  return {
+    QueueSheet: ({ ref }: { ref: Ref<QueueSheetHandle> }) => {
+      useImperativeHandle(ref, () => ({
+        present: queueSheet.present,
+        dismiss: queueSheet.dismiss,
+        dismissAndWait: queueSheet.dismissAndWait,
+      }));
+      useEffect(() => {
+        queueSheet.mounted += 1;
+      }, []);
+      return createElement('div', { 'data-testid': 'queue-sheet' });
+    },
+  };
+});
 vi.mock('../../src/components/ble/DevicePickerSheetHost', () => ({ DevicePickerSheetHost: () => null }));
 vi.mock('../../src/components/play-drawer/use-queue-sheet-handlers', () => ({ useQueueSheetHandlers: () => ({}) }));
 vi.mock('../../src/providers/drawer-host-provider', () => ({
@@ -101,13 +131,13 @@ function flushFrame() {
 
 function renderPlayer() {
   const rendered = render(createElement(PlayScreen));
-  flushFrame(); // Existing cheap-first-frame content gate.
   const animation = player.swipeDismiss;
   if (!animation) throw new Error('player did not receive the route animation');
   return { ...rendered, animation };
 }
 
 beforeEach(() => {
+  queueSheet.mounted = 0;
   vi.clearAllMocks();
   navigation.isFocused.mockReturnValue(true);
   frames.clear();
@@ -125,6 +155,19 @@ afterEach(() => {
 });
 
 describe('player swipe dismissal', () => {
+  it('mounts the player core in the first commit and creates its queue host on the first queue press', () => {
+    render(createElement(PlayScreen));
+    expect(screen.getByRole('button', { name: 'Close player' })).toBeTruthy();
+    expect(player.swipeDismiss).not.toBeNull();
+    expect(frames.size).toBe(0);
+    expect(queueSheet.mounted).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
+    expect(queueSheet.mounted).toBe(1);
+    expect(queueSheet.present).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
+    expect(queueSheet.mounted).toBe(1);
+    expect(queueSheet.present).toHaveBeenCalledTimes(2);
+  });
   it('keeps the background and player inside the same translated surface', () => {
     const { animation } = renderPlayer();
     const movingSurface = screen.getByTestId('moving-surface');

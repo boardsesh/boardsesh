@@ -136,6 +136,25 @@ edit(hook, [
 ])
 
 layered_text = open(M + "src/components/LayeredClimbImage.tsx").read()
+background_load_anchor = "          onLoad={() => noteBoardArtInMemory(backgroundImageUri(path))}"
+if background_load_anchor in layered_text:
+    background_load_pair = (
+        background_load_anchor,
+        """          onLoad={(event: ImageLoadEventData) => {
+            noteBoardArtInMemory(backgroundImageUri(path));
+            if (PERF_PROBE_ENABLED) reportBackgroundLoad(event);
+          }}""",
+    )
+else:
+    background_load_pair = (
+        """          allowDownscaling={false}
+        />
+      ))}""",
+        """          allowDownscaling={false}
+          onLoad={PERF_PROBE_ENABLED ? reportBackgroundLoad : undefined}
+        />
+      ))}""",
+    )
 GATED = "awaitingOverlay" if "const awaitingOverlay" in layered_text else "false"
 edit("src/components/LayeredClimbImage.tsx", [
 ("import type { ImageErrorEventData } from 'expo-image';\n",
@@ -147,12 +166,7 @@ edit("src/components/LayeredClimbImage.tsx", [
 }
 
 export function backgroundImageUri(path: string): string {"""),
-("""          allowDownscaling={false}
-        />
-      ))}""", """          allowDownscaling={false}
-          onLoad={PERF_PROBE_ENABLED ? reportBackgroundLoad : undefined}
-        />
-      ))}"""),
+background_load_pair,
 ("          onLoad={() => {",
  "          onLoad={(event: ImageLoadEventData) => {\n            perfProbe('overlay-shown', { gated: GATED_EXPR, cacheType: event.cacheType, play: overlayTestID != null });"),
 ("            onOverlayLoad?.(emittingLoadKey);", "            onOverlayLoad?.(emittingLoadKey, event.cacheType);"),
@@ -196,11 +210,8 @@ text = text.replace(skeleton_import, skeleton_import + "import { perfProbe } fro
 open(M + "app/(tabs)/climbs/index.tsx", "w").write(text)
 
 edit("app/play.tsx", [
-("""  useEffect(() => {
-    const handle = requestAnimationFrame(() => setContentMounted(true));""",
- """  useEffect(() => {
-    perfProbe('play-route-mounted');
-    const handle = requestAnimationFrame(() => setContentMounted(true));"""),
+("function PlayScreen() {", """function PlayScreen() {
+  useEffect(() => { perfProbe('play-route-mounted'); }, []);"""),
 ])
 text = open(M + "app/play.tsx").read()
 first_import = text.index("import ")
