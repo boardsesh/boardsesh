@@ -3,10 +3,64 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { sanitizeActiveBoard } from '../active-board-snapshot';
 import { reportHandledError } from '../error-reporting';
 
-// These projections can contain copied names, avatars, notes or prior grants.
-// Cancel first, clear the snapshot, then refetch: invalidate alone leaves old
-// protected content visible while a request is in flight.
-const VIEWER_LOCAL_QUERY_ROOTS = new Set(['profile', 'localPendingTicks', 'localTicks', 'wsAuthToken', 'authToken']);
+// Projections of other people's content can carry copied names, avatars,
+// notes or prior grants. Cancel first, clear the snapshot, then refetch:
+// invalidate alone leaves old protected content visible while a request is in
+// flight. Every query root defaults to that treatment; the two sets below are
+// the deliberate exceptions, so a new root is withdrawn until someone shows it
+// cannot carry another account's privacy-gated data.
+
+// Left alone: the viewer's own data, device-local state, dev tooling and
+// static reference data. Nothing in them is gated by someone else's privacy.
+const PRIVACY_NEUTRAL_QUERY_ROOTS = new Set([
+  // The viewer's own identity, credentials and unsynced work.
+  'profile',
+  'localPendingTicks',
+  'localTicks',
+  'wsAuthToken',
+  'authToken',
+  // Board-type reference data: grade scales, angles and the popular-config rail
+  // (aggregate counts; spray walls are excluded from it on the server).
+  'grades',
+  'angles',
+  'popularBoardConfigs',
+  // Offline download bookkeeping read from this device. The catalogue
+  // withdrawal itself runs through the registered revalidation.
+  'snapshotManifest',
+  'downloadedScopeKeys',
+  'bootstrapMetadataByScope',
+  'offlineStorage',
+  'offlineReclaimableBytes',
+  'deadLetters',
+  // Developer and QA tooling.
+  'dev',
+  'dev-bundlers',
+  'saved-metro-targets',
+  'qaBranches',
+  'qaPreviews',
+]);
+
+// Refetched but not blanked: climb search lists. A private account's
+// followers-only climbs are filtered per viewer, so a revocation must reach
+// them, but clearing them would empty the main climb list on every launch for
+// a change that rarely touches it. A spray wall's search stays fully withdrawn:
+// the whole wall's catalogue sits behind its privacy.
+const CATALOGUE_SEARCH_QUERY_ROOTS = new Set(['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount']);
+
+type PrivacyQueryTreatment = 'keep' | 'refetch' | 'withdraw';
+
+function isSprayWallSearch(queryKey: readonly unknown[]): boolean {
+  const input = queryKey[1];
+  return typeof input === 'object' && input !== null && 'boardName' in input && input.boardName === 'spray';
+}
+
+/** How a privacy event treats a cached query, decided by its key. */
+export function privacyQueryTreatment(queryKey: readonly unknown[]): PrivacyQueryTreatment {
+  const root = String(queryKey[0]);
+  if (PRIVACY_NEUTRAL_QUERY_ROOTS.has(root)) return 'keep';
+  if (CATALOGUE_SEARCH_QUERY_ROOTS.has(root) && !isSprayWallSearch(queryKey)) return 'refetch';
+  return 'withdraw';
+}
 
 let privacyRevocationGeneration = 0;
 let privacyCredentialGeneration = 0;
@@ -61,7 +115,10 @@ export async function invalidatePrivacyQueries(
   });
   invalidatePrivacySnapshots();
   const filters = {
-    predicate: (query: { queryKey: readonly unknown[] }) => !VIEWER_LOCAL_QUERY_ROOTS.has(String(query.queryKey[0])),
+    predicate: (query: { queryKey: readonly unknown[] }) => privacyQueryTreatment(query.queryKey) !== 'keep',
+  };
+  const withdrawFilters = {
+    predicate: (query: { queryKey: readonly unknown[] }) => privacyQueryTreatment(query.queryKey) === 'withdraw',
   };
   // Keep the selected wall usable while catalogue withdrawal is in flight or
   // offline. Its reference and local hardware settings are independent of the
@@ -76,7 +133,7 @@ export async function invalidatePrivacyQueries(
   // Cancellation can restore a request's previous cache state. Sanitize that
   // state too before preserving it through the asynchronous catalogue purge.
   withdrawActiveBoard();
-  for (const query of queryClient.getQueryCache().findAll(filters)) {
+  for (const query of queryClient.getQueryCache().findAll(withdrawFilters)) {
     if (query.queryKey.length === 1 && query.queryKey[0] === 'activeBoard') continue;
     // resetQueries may restore initialData, which can itself hold withdrawn
     // content. Clear explicitly before any fresh authorization response.

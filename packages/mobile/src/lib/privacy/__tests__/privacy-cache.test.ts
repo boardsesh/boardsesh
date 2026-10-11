@@ -80,7 +80,7 @@ describe('privacy revocation', () => {
   it('refetches an observed cleared query even when local repair rejects', async () => {
     const queryClient = new QueryClient();
     const observer = new QueryObserver(queryClient, {
-      queryKey: ['searchClimbs'],
+      queryKey: ['publicProfile', 'private-user'],
       initialData: { name: 'Withdrawn' },
       staleTime: Infinity,
       queryFn: async () => ({ name: 'Server authorized' }),
@@ -122,6 +122,87 @@ describe('privacy revocation', () => {
     unsubscribe();
     queryClient.clear();
   });
+  it('withdraws every privacy-sensitive root, including roots it has never heard of', async () => {
+    const queryClient = new QueryClient();
+    const sensitiveKeys = [
+      ['publicProfile', 'private-user'],
+      ['userTicks', 'private-user'],
+      ['logbook', 'viewer', 'kilter'],
+      ['activityFeed', 'viewer'],
+      ['crewFeed', 'viewer'],
+      ['sessionDetail', 'session'],
+      ['comments', 'tick', 'tick-1'],
+      ['notifications', 'viewer'],
+      ['board', 'wall-uuid'],
+      ['myBoards', undefined],
+      ['playlist', 'playlist-uuid'],
+      ['betaLinks', 'kilter', 'climb'],
+      ['climb', { boardName: 'kilter', climbUuid: 'climb' }],
+      ['searchClimbs', { boardName: 'spray', layoutId: 9001 }],
+      ['infiniteSearchClimbs', { boardName: 'spray', layoutId: 9001 }],
+      ['someFutureQuery', 'id'],
+    ];
+    for (const key of sensitiveKeys) queryClient.setQueryData(key, { copied: 'identity' });
+    await invalidatePrivacyQueries(queryClient);
+    for (const key of sensitiveKeys) expect(queryClient.getQueryData(key), JSON.stringify(key)).toBeUndefined();
+    queryClient.clear();
+  });
+
+  it('leaves device-local state and static reference data alone', async () => {
+    const queryClient = new QueryClient();
+    const neutralKeys = [
+      ['profile', 'viewer'],
+      ['grades', 'kilter'],
+      ['angles', 'kilter', 1],
+      ['popularBoardConfigs', undefined],
+      ['snapshotManifest'],
+      ['downloadedScopeKeys'],
+      ['bootstrapMetadataByScope', 3],
+      ['offlineStorage', true],
+      ['offlineReclaimableBytes'],
+      ['deadLetters', 'count', true],
+    ];
+    for (const key of neutralKeys) queryClient.setQueryData(key, { kept: true });
+    await invalidatePrivacyQueries(queryClient);
+    for (const key of neutralKeys) {
+      const state = queryClient.getQueryState(key);
+      expect(state?.data, JSON.stringify(key)).toEqual({ kept: true });
+      expect(state?.isInvalidated, JSON.stringify(key)).toBe(false);
+    }
+    queryClient.clear();
+  });
+
+  it('refetches catalogue climb lists without blanking them', async () => {
+    const queryClient = new QueryClient();
+    const kilterSearch = ['infiniteSearchClimbs', { boardName: 'kilter', layoutId: 1 }];
+    const kilterCount = ['searchClimbsCount', { boardName: 'kilter', layoutId: 1 }];
+    queryClient.setQueryData(kilterSearch, { climbs: ['first page'] });
+    queryClient.setQueryData(kilterCount, 120);
+    let resolveRefetch!: (page: { climbs: string[] }) => void;
+    const observer = new QueryObserver(queryClient, {
+      queryKey: kilterSearch,
+      staleTime: Infinity,
+      queryFn: () =>
+        new Promise<{ climbs: string[] }>((resolve) => {
+          resolveRefetch = resolve;
+        }),
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      const invalidation = invalidatePrivacyQueries(queryClient);
+      await vi.waitFor(() => expect(observer.getCurrentResult().isFetching).toBe(true));
+      // The list stays on screen while the authorized answer is in flight.
+      expect(observer.getCurrentResult().data).toEqual({ climbs: ['first page'] });
+      resolveRefetch({ climbs: ['authorized page'] });
+      await invalidation;
+      expect(observer.getCurrentResult().data).toEqual({ climbs: ['authorized page'] });
+      expect(queryClient.getQueryState(kilterCount)).toMatchObject({ data: 120, isInvalidated: true });
+    } finally {
+      unsubscribe();
+      queryClient.clear();
+    }
+  });
+
   it('ignores a stale response from before the revocation', async () => {
     const queryClient = new QueryClient();
     let resolveOld!: (response: { displayName: string }) => void;
