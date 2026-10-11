@@ -17,6 +17,7 @@
   "dependencies": {
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/graphql": "workspace:*",
+    "@boardsesh/play-view": "workspace:*",
     "dayjs": "^1.11.21"
   },
   "devDependencies": {

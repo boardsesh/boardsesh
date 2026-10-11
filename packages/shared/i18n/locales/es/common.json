@@ -916,6 +916,10 @@
       "googlePlay": "Disponible en Google Play",
       "appStore": "Descárgala en el App Store",
       "dismiss": "Ahora no"
+    },
+    "gradeToken": {
+      "a11yYours": "tu grado {{grade}}",
+      "a11yCommunity": "grado de la comunidad {{grade}}"
     }
   },
   "lightControl": {

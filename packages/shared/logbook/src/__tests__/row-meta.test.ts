@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { displayedAttemptCount, logbookAttemptsKind, logbookNoteIsVisible, normalizeLogbookQuality } from '../row-meta';
-import { consensusDeltaDirection } from '../grade-display';
 
 describe('logbookAttemptsKind', () => {
   it('maps statuses to the climber-voiced kinds', () => {
@@ -44,18 +43,5 @@ describe('logbookNoteIsVisible', () => {
     expect(logbookNoteIsVisible('')).toBe(false);
     expect(logbookNoteIsVisible('   \n')).toBe(false);
     expect(logbookNoteIsVisible('heel hook the arete')).toBe(true);
-  });
-});
-
-describe('consensusDeltaDirection', () => {
-  it('is null when grades are missing or agree', () => {
-    expect(consensusDeltaDirection(null, 10)).toBeNull();
-    expect(consensusDeltaDirection(10, null)).toBeNull();
-    expect(consensusDeltaDirection(10, 10)).toBeNull();
-  });
-
-  it('points up when you graded harder than the crowd, down when softer', () => {
-    expect(consensusDeltaDirection(12, 10)).toBe('up');
-    expect(consensusDeltaDirection(8, 10)).toBe('down');
   });
 });

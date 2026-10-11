@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   pickLatestGradedTick,
-  derivePersonalGradeDisplay,
   clampToBoulderScale,
   BOULDER_SCALE_MIN_ID,
   BOULDER_SCALE_MAX_ID,
@@ -85,72 +84,6 @@ describe('pickLatestGradedTick', () => {
     ];
     expect(pickLatestGradedTick(entries)).not.toBeNull();
     expect(pickLatestGradedTick([...entries].reverse())?.uuid).toBe(pickLatestGradedTick(entries)?.uuid);
-  });
-});
-
-describe('derivePersonalGradeDisplay', () => {
-  it('falls through to the crowd when the climber never graded it', () => {
-    expect(derivePersonalGradeDisplay(null, 'V4')).toEqual({
-      source: 'crowd',
-      markPrimary: false,
-      secondaryLabel: null,
-    });
-  });
-
-  it('treats an unfetched logbook exactly like an ungraded climb', () => {
-    // Callers pass null for both "no grade" and "not known yet" — guessing
-    // "no ticks" from an empty bucket is what caused #3940.
-    expect(derivePersonalGradeDisplay(undefined, 'V4').source).toBe('crowd');
-  });
-
-  it('reports nothing to show when neither grade exists', () => {
-    expect(derivePersonalGradeDisplay(null, null)).toEqual({
-      source: 'none',
-      markPrimary: false,
-      secondaryLabel: null,
-    });
-  });
-
-  it('shows your grade with no marker and no second line when you agree', () => {
-    // State B: the row stays byte-identical to one with no personal grade.
-    // ~85% of graded ticks agree, so this is the common graded case.
-    expect(derivePersonalGradeDisplay('V4', 'V4')).toEqual({
-      source: 'personal',
-      markPrimary: false,
-      secondaryLabel: null,
-    });
-  });
-
-  it('treats different difficulty ids that render alike as agreement', () => {
-    // Aurora 4a/4b/4c all render "V0". A climber who logged 4c on a climb
-    // listed as 4a has not disagreed with anything a reader can see, so
-    // showing them "V0 over V0" would be nonsense.
-    expect(derivePersonalGradeDisplay('V0', 'V0').markPrimary).toBe(false);
-  });
-
-  it('marks your grade and demotes the crowd when you disagree', () => {
-    expect(derivePersonalGradeDisplay('V10', 'V0')).toEqual({
-      source: 'personal',
-      markPrimary: true,
-      secondaryLabel: 'V0',
-    });
-  });
-
-  it('marks your grade with no second line when there is no crowd number', () => {
-    // A draft, or an angle with no stats row. Still marked: the play drawer
-    // is a screen people hand to their partner.
-    expect(derivePersonalGradeDisplay('V7', null)).toEqual({
-      source: 'personal',
-      markPrimary: true,
-      secondaryLabel: null,
-    });
-  });
-
-  it('respects the climber grade-format preference by comparing labels', () => {
-    // Same climb under the Font preference: agreement and disagreement must
-    // read the same way they do under V-grades, with no id maths here.
-    expect(derivePersonalGradeDisplay('7A', '7A').markPrimary).toBe(false);
-    expect(derivePersonalGradeDisplay('7A', '6B').secondaryLabel).toBe('6B');
   });
 });
 
