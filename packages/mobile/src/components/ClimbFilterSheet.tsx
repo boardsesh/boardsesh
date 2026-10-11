@@ -1519,7 +1519,7 @@ const createStyles = (textStyles: TypographyScale) =>
       opacity: 0.55,
     },
     // Cancels the body's gutter so the grade strip scrolls out to the sheet's
-    // edges; the rail's own insets put its first chip and Range toggle back on it.
+    // edges; the rail's own insets put its first and last chip back on it.
     inlineGradeRail: {
       marginTop: spacing[2],
       marginHorizontal: -spacing[4],

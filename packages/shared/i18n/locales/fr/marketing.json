@@ -579,11 +579,11 @@
       },
       "start": {
         "title": "Cotation et inclinaison d'abord",
-        "p1": "Touche une cotation dans la rangée sous les pastilles pour n'afficher qu'elle, et touche-la à nouveau pour effacer. Pour une plage, touche Plage puis une deuxième cotation, ou appuie longuement sur la deuxième cotation.",
+        "p1": "Touche Cotation pour ouvrir la rangée des cotations. Touche une cotation pour n'afficher qu'elle, une deuxième dans les trois secondes pour une plage, et la cotation sélectionnée à nouveau pour effacer. Tu peux aussi appuyer longuement sur une deuxième cotation pour créer une plage.",
         "p2": "Chaque cotation et chaque compte de croix se lit à l'angle de la board. Touche la pastille des degrés pour le changer.",
         "p3": "Connecté, les étiquettes Progression filtrent sur ton historique. Non enchaînées cache tes croix, Projets garde les blocs essayés mais pas enchaînés, Non essayées garde les blocs jamais notés.",
         "clipAlt": "Construire une plage de cotation",
-        "clipCaption": "Touche Plage puis une deuxième cotation pour construire une plage. Retouche une cotation pour l'effacer."
+        "clipCaption": "Deux touches rapides forment une plage. Retouche la même cotation pour tout effacer."
       },
       "holds": {
         "title": "Filtrer par prise",

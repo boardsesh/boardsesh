@@ -96,9 +96,9 @@ export type AppSettings = {
   /** Light the connected board when tapping a climb to select it from a climbs list. */
   lightOnClimbTap: boolean;
   /**
-   * The climbs list shows its grade row under the filter chips. On by default:
-   * grade is the filter most searches use. The Grade chip hides and shows the
-   * row, and the choice is kept across launches.
+   * The climbs list shows its grade row under the filter chips. Off until the
+   * climber opens the row with the Grade chip; it then stays open, across
+   * launches too, until the chip hides it again.
    */
   gradeRowShown: boolean;
   keepScreenAwake: boolean;

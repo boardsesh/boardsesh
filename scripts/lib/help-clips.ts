@@ -111,7 +111,7 @@ export const HELP_CLIPS = [
   {
     name: 'grade-range-tap',
     source: 'grade-range-tap',
-    description: 'Tap a grade, tap Range, then tap a second grade on the grade row to set a range.',
+    description: 'Tap two grades in quick succession on the grade row to set a range.',
   },
   {
     name: 'preview-browsing',

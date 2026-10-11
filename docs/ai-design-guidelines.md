@@ -430,31 +430,28 @@ keeps `systemColors.fill`. Do not apply a violet background to every content car
 ### Inline facet rows
 
 A filter control that lives in place is a plain row. The reference is the grade picker,
-`GradeRangeRail` (`src/components/grade/GradeRail.tsx`). On Climbs it is a row of the chrome under
-the filter chips, shown by default: the grade filter is in 74% of iOS searches (30 days, October
-2026). The Grade facet in the Logbook opens the same row, and the two filter sheets and the iPad
-popover show it too.
+`GradeRangeRail` (`src/components/grade/GradeRail.tsx`). On Climbs the Grade chip opens it as a row
+of the chrome under the filter chips. The Grade facet in the Logbook opens the same row, and the two
+filter sheets and the iPad popover show it too.
 
 **No frame, no grab handle.** The row belongs to the surface that holds it; it is not a sheet. [HIG
 Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) keeps the grabber for
 resizable sheets, and a glass capsule under a row of glass chips is glass on glass (see "Glass
-material" above).
+material" above). The row is the strip of chips and nothing else: no pinned control beside it.
 
-**Shown until the climber hides it.** On Climbs the Grade chip hides and shows the row, and the
-choice is a persisted setting (`gradeRowShown`, default shown). Nothing else hides it: not search
-focus, not opening Filters, not leaving the screen. On iOS the chip's chevron points up while the
-row is shown. Back on the screen, the row centres on the current selection again (`recenterKey`);
-it never scrolls itself while a finger is on it. The regular-width iPad popover is the exception:
-it stays transient.
+**Hidden until tapped, then it stays.** On Climbs the row is hidden by default and the Grade chip
+opens it, pushing the list down. Open is a persisted setting (`gradeRowShown`): the row stays across
+opening a climb, search focus, Filters and app launches, until the chip hides it. Nothing else
+closes it. On iOS the chip's chevron points up while the row is shown. Back on the screen, the row
+centres on the current selection again (`recenterKey`); it never scrolls itself while a finger is
+on it. The regular-width iPad popover is the exception: it stays transient.
 
 **Insets come from the container.** With no frame, the row lines up with what is above it: the
-first chip rests under the first chip of the chip row (or under the section's label in a sheet), and
-the pinned trailing control rests on the trailing gutter. Both are props (`contentInsetLeft` /
-`contentInsetRight`, 16pt by default). On Climbs, in both filter sheets and in the popover the strip
-scrolls out to the container's edge. Under a chip row that is itself inset (the Material chrome, the
-Logbook toolbar) it clips on that row's line. A 1pt `systemColors.separator` hairline marks where
-the strip stops in front of the pinned control. No gradient fade: the background differs per call
-site.
+first chip rests under the first chip of the chip row (or under the section's label in a sheet).
+Both insets are props (`contentInsetLeft` / `contentInsetRight`, 16pt by default). On Climbs, in
+both filter sheets and in the popover the strip scrolls out to the container's edge. Under a chip
+row that is itself inset (the Material chrome, the Logbook toolbar) it clips on that row's line. No
+gradient fade: the background differs per call site.
 
 **One chip per label.** Grades that read the same in the climber's format are one chip, a "stop"
 (`buildGradeRailStops`). Under V grades 4a, 4b and 4c are all "V0", so the row has one "V0" that
@@ -462,28 +459,37 @@ filters all three; under Font nothing merges. Anything that names the selection 
 not ids: a pick of that "V0" is two different ids and still reads "V0", never "V0–V0". Logging
 keeps one chip per grade (`GradeSingleSelectRail`), because a tick needs the exact one.
 
-**Grade colour on the selection only.** A resting chip is a `systemColors.fill` capsule with a 10pt
-dot in the grade's colour. A selected stop, or either end of a range, is the solid grade colour
-with `readableTextColor` text. Both the dot and the solid chip carry a 1pt ring in the label colour
-at 45%, so a pale grade does not fade into a pale fill and a dark one does not fade into a dark
-background. "Any" is a neutral chip, never a brand fill.
+**The label is the whole chip.** No dot and no checkmark in front of it; labels are centred. A
+resting chip is a `systemColors.fill` capsule with a transparent border. A selected stop, or either
+end of a range, is the solid grade colour with `readableTextColor` text and a 1pt ring in the label
+colour at 45%, which keeps a dark grade visible on a dark background. A chip inside a range is a
+wash of its own grade colour (18%) with a ring of that colour (75%). "Any" is neutral; with no
+filter set it takes the ring and nothing else, never a brand fill.
 
-**State is never colour alone.** Every chip in the selection carries a checkmark where its dot was:
-the solid ends, the neutral chips between them, and "Any" while no filter is set. The mark sits in
-one slot of a set size, so a chip does not resize and its label does not move when its state
-changes. Every state keeps the same 1pt border for the same reason. The chip's height is one
-constant, `GRADE_CHIP_HEIGHT`, shared by the chip, the row and the Range button.
+**State is never hue alone.** Resting, in range and selected differ in fill strength and in border,
+so they hold up without colour vision, and each chip's accessibility label and `selected` state say
+the same thing. Every state keeps one 1pt border, so a chip does not resize and its label does not
+move when its state changes. The chip's height is one constant, `GRADE_CHIP_HEIGHT`, shared by the
+chip and the row.
 
-**A range is made on purpose, never by timing.** A tap picks one stop; a tap on the selected stop
-clears. A range takes one of two deliberate gestures. Range is a button with its word on it and a
-leading mark slot: tap it and the next tap on a stop is the far end, then it turns itself off (one
-shot). Armed, it is a brand capsule with a checkmark in the slot, announced as a toggle button; its
-width is the same in both states. Or touch and hold the far end for 400 ms. With a range already
-set, either gesture moves the nearer end to that stop (the upper end on a tie). The rules are
-`computeGradeTap` and `extendGradeRange` in `@boardsesh/climb-filters`. Nothing depends on how fast
-a second tap follows. [HIG
-Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility) asks to
-minimise time-boxed interface elements.
+**Two quick taps make a range; touch and hold makes one without the clock.** A tap picks one stop
+and a tap on the selected stop clears. A tap on a second stop within 3 s of that pick
+(`RANGE_EXTEND_WINDOW_MS`) makes the range covering both; after 3 s it switches to that stop. With a
+range set, a tap on an end moves it one stop inward and any other tap picks that stop alone
+(`computeGradeTap` in `@boardsesh/climb-filters`). Touch and hold for 400 ms does not depend on
+timing: it makes the range with the selected stop, or moves the nearer end of a range to the held
+stop (`extendGradeRange`). The screen-reader hint names the hold, since VoiceOver cannot count on
+the gap between two taps.
+
+The timed rule is the owner's call, kept against [HIG
+Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)'s advice
+to minimise time-boxed interface elements, with the hold as the route that needs no timing. The
+window stays at 3 s for a measured reason. On iOS over 30 days (October 2026), 2,417 ranges were
+made by the quick second tap and 28% of them were replaced by a single grade within 5 s. The share
+undone is highest for the fastest pairs (41% under 0.5 s, 30% at 0.5 to 1 s) and lowest for the slow
+ones (21 to 23% between 1.5 and 3 s). A shorter window would cut the deliberate ranges and keep the
+accidental ones. `Grade Filter Changed` carries `withinRangeWindow` so the misfire rate can be read
+from the real tap gap from now on.
 
 ### Top-bar buttons
 

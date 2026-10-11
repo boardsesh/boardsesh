@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  RANGE_EXTEND_WINDOW_MS,
   isAnyGrade,
   clearGradeBound,
   isSameGradeBound,
@@ -34,6 +35,12 @@ const v2ToV5: GradeBound = { minGradeId: 15, maxGradeId: 18 };
 const insideV0: GradeBound = { minGradeId: 11, maxGradeId: 11 };
 const fromV4Up: GradeBound = { minGradeId: 17, maxGradeId: undefined };
 const upToV4: GradeBound = { minGradeId: undefined, maxGradeId: 17 };
+
+describe('RANGE_EXTEND_WINDOW_MS', () => {
+  it('is the three seconds the help page tells climbers', () => {
+    expect(RANGE_EXTEND_WINDOW_MS).toBe(3000);
+  });
+});
 
 describe('grade-bound predicates', () => {
   it('isAnyGrade is true only when both bounds are undefined', () => {
@@ -129,50 +136,141 @@ describe('grade stops', () => {
   });
 });
 
-describe('computeGradeTap (a plain tap)', () => {
-  it('picks the tapped stop from Any', () => {
-    expect(computeGradeTap(any, V3)).toEqual({ minGradeId: 16, maxGradeId: 16 });
+// `withinExtendWindow` only matters with one stop selected and a different one
+// tapped. Every other case is checked with the window both open and shut.
+describe('computeGradeTap', () => {
+  describe.each([
+    ['inside the extend window', true],
+    ['after the extend window', false],
+  ])('%s', (_when, withinExtendWindow) => {
+    const tap = (current: GradeBound, tapped: GradeStop) => computeGradeTap(current, tapped, stops, withinExtendWindow);
+
+    it('picks the tapped stop from Any', () => {
+      expect(tap(any, V3)).toEqual({ minGradeId: 16, maxGradeId: 16 });
+    });
+
+    it('takes a grouped stop from its lowest id to its highest', () => {
+      expect(tap(any, V0)).toEqual({ minGradeId: 10, maxGradeId: 12 });
+    });
+
+    it('clears to Any when the selected stop is tapped again', () => {
+      expect(tap(onlyV3, V3)).toEqual(any);
+      expect(tap(onlyV0, V0)).toEqual(any);
+    });
+
+    it('clears when the selection sits inside the tapped group', () => {
+      expect(tap(insideV0, V0)).toEqual(any);
+    });
+
+    it('replaces an open-ended bound with the tapped stop, also on its set end', () => {
+      expect(tap(fromV4Up, V6)).toEqual({ minGradeId: 19, maxGradeId: 19 });
+      expect(tap(fromV4Up, V4)).toEqual({ minGradeId: 17, maxGradeId: 17 });
+      expect(tap(upToV4, V4)).toEqual({ minGradeId: 17, maxGradeId: 17 });
+    });
+
+    describe('with a range set', () => {
+      it('moves the lower end one stop inward when it is tapped', () => {
+        expect(tap(v2ToV5, V2)).toEqual({ minGradeId: 16, maxGradeId: 18 });
+      });
+
+      it('moves the upper end one stop inward when it is tapped', () => {
+        expect(tap(v2ToV5, V5)).toEqual({ minGradeId: 15, maxGradeId: 17 });
+      });
+
+      it('steps over a whole grouped stop, not one grade id', () => {
+        const v0ToV3: GradeBound = { minGradeId: 10, maxGradeId: 16 };
+        expect(tap(v0ToV3, V0)).toEqual({ minGradeId: 13, maxGradeId: 16 });
+        const v1ToV3: GradeBound = { minGradeId: 13, maxGradeId: 16 };
+        expect(tap(v1ToV3, V1)).toEqual({ minGradeId: 15, maxGradeId: 16 });
+      });
+
+      it('settles on the other end when the two ends are neighbours', () => {
+        const v2ToV3: GradeBound = { minGradeId: 15, maxGradeId: 16 };
+        expect(tap(v2ToV3, V2)).toEqual({ minGradeId: 16, maxGradeId: 16 });
+        expect(tap(v2ToV3, V3)).toEqual({ minGradeId: 15, maxGradeId: 15 });
+        const v0ToV1: GradeBound = { minGradeId: 10, maxGradeId: 14 };
+        expect(tap(v0ToV1, V0)).toEqual({ minGradeId: 13, maxGradeId: 14 });
+        expect(tap(v0ToV1, V1)).toEqual({ minGradeId: 10, maxGradeId: 12 });
+      });
+
+      it('collapses to an interior stop that is tapped', () => {
+        expect(tap(v2ToV5, V3)).toEqual({ minGradeId: 16, maxGradeId: 16 });
+        expect(tap(v2ToV5, V4)).toEqual({ minGradeId: 17, maxGradeId: 17 });
+      });
+
+      it('collapses to a stop outside the range that is tapped', () => {
+        expect(tap(v2ToV5, V0)).toEqual({ minGradeId: 10, maxGradeId: 12 });
+        expect(tap(v2ToV5, V6)).toEqual({ minGradeId: 19, maxGradeId: 19 });
+      });
+
+      it('trims from the whole stop when an end sits inside a group, and widens the end it keeps', () => {
+        const fromInsideV0: GradeBound = { minGradeId: 11, maxGradeId: 16 };
+        expect(tap(fromInsideV0, V0)).toEqual({ minGradeId: 13, maxGradeId: 16 });
+        expect(tap(fromInsideV0, V3)).toEqual({ minGradeId: 10, maxGradeId: 15 });
+      });
+
+      it('settles on the other end when the row has no stop further in', () => {
+        // The upper end is an id with no chip, above the last stop.
+        const v6ToUnknown: GradeBound = { minGradeId: 19, maxGradeId: 25 };
+        expect(tap(v6ToUnknown, V6)).toEqual({ minGradeId: 25, maxGradeId: 25 });
+      });
+
+      it('settles on the other end when the next stop in would pass it', () => {
+        // A scale with a hole: no chip for 17, and the range ends on it.
+        const rowWithHole: GradeStop[] = [V2, V3, V5];
+        const v3To17: GradeBound = { minGradeId: 16, maxGradeId: 17 };
+        expect(computeGradeTap(v3To17, V3, rowWithHole, withinExtendWindow)).toEqual({
+          minGradeId: 17,
+          maxGradeId: 17,
+        });
+        const from17ToV5: GradeBound = { minGradeId: 17, maxGradeId: 18 };
+        expect(computeGradeTap(from17ToV5, V5, rowWithHole, withinExtendWindow)).toEqual({
+          minGradeId: 17,
+          maxGradeId: 17,
+        });
+      });
+    });
   });
 
-  it('takes a grouped stop from its lowest id to its highest', () => {
-    expect(computeGradeTap(any, V0)).toEqual({ minGradeId: 10, maxGradeId: 12 });
-  });
+  describe('with one stop selected and a different stop tapped', () => {
+    it('makes the range covering both inside the window (tapping higher)', () => {
+      expect(computeGradeTap(onlyV3, V5, stops, true)).toEqual({ minGradeId: 16, maxGradeId: 18 });
+    });
 
-  it('switches to the tapped stop from another stop, never a range', () => {
-    expect(computeGradeTap(onlyV3, V5)).toEqual({ minGradeId: 18, maxGradeId: 18 });
-    expect(computeGradeTap(onlyV3, V0)).toEqual({ minGradeId: 10, maxGradeId: 12 });
-  });
+    it('makes the range in ascending order inside the window (tapping lower)', () => {
+      expect(computeGradeTap(onlyV3, V2, stops, true)).toEqual({ minGradeId: 15, maxGradeId: 16 });
+    });
 
-  it('clears to Any when the selected stop is tapped again', () => {
-    expect(computeGradeTap(onlyV3, V3)).toEqual(any);
-    expect(computeGradeTap(onlyV0, V0)).toEqual(any);
-  });
+    it('covers the whole of a grouped stop at either end of the range', () => {
+      expect(computeGradeTap(onlyV3, V0, stops, true)).toEqual({ minGradeId: 10, maxGradeId: 16 });
+      expect(computeGradeTap(onlyV0, V3, stops, true)).toEqual({ minGradeId: 10, maxGradeId: 16 });
+    });
 
-  it('clears when the selection sits inside the tapped group', () => {
-    expect(computeGradeTap(insideV0, V0)).toEqual(any);
-  });
+    it('widens a selection saved inside a group to the group edge inside the window', () => {
+      expect(computeGradeTap(insideV0, V3, stops, true)).toEqual({ minGradeId: 10, maxGradeId: 16 });
+    });
 
-  it('replaces a range with the tapped stop, wherever the tap lands', () => {
-    expect(computeGradeTap(v2ToV5, V2)).toEqual({ minGradeId: 15, maxGradeId: 15 }); // lower end
-    expect(computeGradeTap(v2ToV5, V5)).toEqual({ minGradeId: 18, maxGradeId: 18 }); // upper end
-    expect(computeGradeTap(v2ToV5, V3)).toEqual({ minGradeId: 16, maxGradeId: 16 }); // inside
-    expect(computeGradeTap(v2ToV5, V6)).toEqual({ minGradeId: 19, maxGradeId: 19 }); // outside
-  });
+    it('switches to the tapped stop after the window', () => {
+      expect(computeGradeTap(onlyV3, V5, stops, false)).toEqual({ minGradeId: 18, maxGradeId: 18 });
+      expect(computeGradeTap(onlyV3, V0, stops, false)).toEqual({ minGradeId: 10, maxGradeId: 12 });
+      expect(computeGradeTap(insideV0, V3, stops, false)).toEqual({ minGradeId: 16, maxGradeId: 16 });
+    });
 
-  it('replaces an open-ended bound with the tapped stop, also on its set end', () => {
-    expect(computeGradeTap(fromV4Up, V6)).toEqual({ minGradeId: 19, maxGradeId: 19 });
-    expect(computeGradeTap(fromV4Up, V4)).toEqual({ minGradeId: 17, maxGradeId: 17 });
-    expect(computeGradeTap(upToV4, V4)).toEqual({ minGradeId: 17, maxGradeId: 17 });
+    it('treats a selection with no stop of its own as the one selected stop', () => {
+      const unknownGrade: GradeBound = { minGradeId: 25, maxGradeId: 25 };
+      expect(computeGradeTap(unknownGrade, V5, stops, true)).toEqual({ minGradeId: 18, maxGradeId: 25 });
+      expect(computeGradeTap(unknownGrade, V5, stops, false)).toEqual({ minGradeId: 18, maxGradeId: 18 });
+    });
   });
 });
 
-describe('extendGradeRange (an armed tap, or a touch and hold)', () => {
-  it('makes the tapped stop the first end from Any', () => {
+describe('extendGradeRange (a touch and hold)', () => {
+  it('makes the held stop the first end from Any', () => {
     expect(extendGradeRange(any, V3, stops)).toEqual({ minGradeId: 16, maxGradeId: 16 });
     expect(extendGradeRange(any, V0, stops)).toEqual({ minGradeId: 10, maxGradeId: 12 });
   });
 
-  it('clears when the stop that is the whole selection is tapped again', () => {
+  it('clears when the stop that is the whole selection is held', () => {
     expect(extendGradeRange(onlyV3, V3, stops)).toEqual(any);
     expect(extendGradeRange(onlyV0, V0, stops)).toEqual(any);
     expect(extendGradeRange(insideV0, V0, stops)).toEqual(any);

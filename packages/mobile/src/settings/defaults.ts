@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   moonboardLightAdjacentHolds: false,
   lightOnSwipe: true,
   lightOnClimbTap: true,
-  gradeRowShown: true,
+  gradeRowShown: false,
   keepScreenAwake: true,
   restTimerTargetSeconds: null,
   restTimerAutoAdvance: false,

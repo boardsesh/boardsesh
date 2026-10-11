@@ -464,16 +464,20 @@ export const SHARED_EVENTS = {
   // Mobile-only: the climber changed the grade filter on the climbs list's
   // grade row. Not fired from the filter sheets, which edit a draft until
   // Apply. Props: fromMin, fromMax, toMin, toMax (difficulty ids; 0 = unset, the
-  // sentinel Climb Search Performed uses), gesture ('tap' | 'hold' |
-  // 'range_button' | 'clear': a plain tap on a grade, a touch and hold, a tap
-  // made with Range armed, the Any chip) and msSincePrevious (ms since the
-  // previous change on this screen in this app session; left out on the first
-  // one). No free text, no identifiers.
+  // sentinel Climb Search Performed uses), gesture ('tap' | 'hold' | 'clear': a
+  // tap on a grade, a touch and hold, the Any chip) and msSincePrevious (ms
+  // since the previous change on this screen in this app session; left out on
+  // the first one).
+  // `withinRangeWindow` (boolean) is set only on a tap made while one OTHER
+  // grade was selected, the one case the 3 s range window decides: true = the
+  // tap landed inside the window and built a range, false = it landed after
+  // and switched grade. A true followed within seconds by a tap back to a
+  // single grade is a misfire; msSincePrevious on that tap is the real gap.
+  // No free text, no identifiers.
   GradeFilterChanged: 'Grade Filter Changed',
-  // Mobile-only: the Grade chip hid or showed the climbs list's grade row.
-  // Props: shown (boolean, the state after the tap). The row is shown by default
-  // and the choice is kept across launches, so `shown: false` is a deliberate
-  // "I do not want this row".
+  // Mobile-only: the Grade chip showed or hid the climbs list's grade row.
+  // Props: shown (boolean, the state after the tap). The row is hidden until
+  // the chip opens it, and the choice is kept across launches.
   GradeRowToggled: 'Grade Row Toggled',
   SearchHoldFilterChanged: 'Search Hold Filter Changed',
   SearchHoldFilterCleared: 'Search Hold Filter Cleared',

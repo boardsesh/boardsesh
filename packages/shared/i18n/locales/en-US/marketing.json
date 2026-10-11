@@ -579,11 +579,11 @@
       },
       "start": {
         "title": "Grade and angle first",
-        "p1": "Tap a grade in the row under the chips to show only that grade, and tap it again to clear. For a range, tap Range and then a second grade, or touch and hold the second grade.",
+        "p1": "Tap Grade to open the grade row. Tap a grade to show only that grade, a second grade within three seconds for a range, and the selected grade again to clear. You can also touch and hold a second grade to make a range.",
         "p2": "Every grade and send count is read at the board's angle. Tap the degrees chip to change it.",
         "p3": "Signed in, the Progress chips filter by your history. Unsent hides your sends, Projects keeps climbs tried but not sent, Not tried keeps climbs never logged.",
         "clipAlt": "Building a grade range",
-        "clipCaption": "Tap Range and then a second grade to build a range. Tap a grade again to clear it."
+        "clipCaption": "Two quick taps build a range. Tap the same grade again to clear it."
       },
       "holds": {
         "title": "Filter by hold",

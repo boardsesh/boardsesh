@@ -4,6 +4,7 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import type { Grade } from '@boardsesh/shared-schema';
 import {
+  RANGE_EXTEND_WINDOW_MS,
   clearGradeBound,
   computeGradeTap,
   extendGradeRange,
@@ -17,7 +18,6 @@ import {
 } from '@boardsesh/climb-filters';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { Text } from '../Text';
-import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { distinctGradeChipLabels } from './grade-chip-labels';
@@ -25,7 +25,7 @@ import { gradeRailCenter } from '../../lib/grade-seed';
 import { buildGradeRailStops, type GradeRailStop } from '../../lib/grade-stops';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
-import { GRADE_CHIP_HEIGHT, GradeChip, GradeChipLabel, GradeChipMark, type GradeChipColorway } from './GradeChip';
+import { GRADE_CHIP_HEIGHT, GradeChip, type GradeChipColorway } from './GradeChip';
 import { railRestOffset, railSnapOffsets } from './grade-rail-offset';
 
 // How many frames to re-assert the centring scroll. One scrollTo can be dropped
@@ -40,14 +40,19 @@ function sortedGrades(grades: readonly Grade[]): Grade[] {
   return [...grades].sort((firstGrade, secondGrade) => firstGrade.difficultyId - secondGrade.difficultyId);
 }
 
-/**
- * How the climber changed the bound: a plain tap on a stop, a touch and hold, a
- * tap made with Range armed, or the Any chip.
- */
-export type GradeRailGesture = 'tap' | 'hold' | 'range_button' | 'clear';
+/** How the climber changed the bound: a tap on a stop, a touch and hold, or the Any chip. */
+export type GradeRailGesture = 'tap' | 'hold' | 'clear';
 
 /** Rides along with every change the rail reports, for the caller's analytics. */
-export type GradeRailChange = { gesture: GradeRailGesture };
+export type GradeRailChange = {
+  gesture: GradeRailGesture;
+  /**
+   * Set only on a tap made while one other stop was selected, the one case the
+   * extend window decides: true when the tap landed inside it and made a range,
+   * false when it landed after it and switched to the tapped stop.
+   */
+  withinRangeWindow?: boolean;
+};
 
 type GradeRangeRailProps = {
   grades: readonly Grade[];
@@ -78,7 +83,7 @@ type GradeRangeRailProps = {
    *  The rail has no frame of its own, so this is its container's gutter: the
    *  strip scrolls out to the rail's edge and the first chip rests on the gutter. */
   contentInsetLeft?: number;
-  /** Space between the Range button and the rail's right edge. */
+  /** Right padding inside the strip, after the last chip. */
   contentInsetRight?: number;
   /** The board the grades belong to, so labels follow its scale (MoonBoard's 6A is V2). */
   boardName?: string | null;
@@ -86,17 +91,17 @@ type GradeRangeRailProps = {
 };
 
 /**
- * The grade filter as one plain row: a strip of grade stops that scrolls, a
- * hairline, and a Range button pinned at the end. It draws no frame and no
- * handle, since it is a row of whatever holds it (the chrome under the filter
- * chips, a filter sheet, a popover), not a sheet of its own.
+ * The grade filter as one plain row: a strip of grade stops that scrolls. It
+ * draws no frame and no handle, since it is a row of whatever holds it (the
+ * chrome under the filter chips, a filter sheet, a popover), not a sheet of its
+ * own.
  *
  * A stop is one chip. Grades that read the same in the climber's format share
  * one (`buildGradeRailStops`), so "V0" is a single chip under V grades.
  *
- * A tap picks one stop. A range is made on purpose: tap Range and then the far
- * end, or touch and hold the far end. Range is one shot: it arms the next tap
- * and then turns itself off. The rules are `computeGradeTap` and
+ * A tap picks one stop, and a tap on a second stop within
+ * RANGE_EXTEND_WINDOW_MS of that pick makes a range. A touch and hold on the
+ * far end makes one without the clock. The rules are `computeGradeTap` and
  * `extendGradeRange`.
  */
 export function GradeRangeRail({
@@ -114,7 +119,7 @@ export function GradeRangeRail({
   style,
 }: GradeRangeRailProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { gradeFormat } = useGradeFormat();
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   // Keyed by each stop's lowest grade id.
@@ -133,8 +138,12 @@ export function GradeRangeRail({
   // the rail does not scroll itself, whatever asks.
   const touchingRef = useRef(false);
   const draggingRef = useRef(false);
-  // Range armed: the next tap on a stop makes or moves a range. Never stored.
-  const [armed, setArmed] = useState(false);
+  // When a tap on this rail last left exactly one stop selected. A tap on
+  // another stop inside RANGE_EXTEND_WINDOW_MS of it makes a range. Undefined
+  // when the selection did not come from such a tap (it was there at mount, it
+  // came from outside, it is a range, a hold made it): then the next tap
+  // switches stop, however soon it lands.
+  const lastSinglePickAtRef = useRef<number | undefined>(undefined);
 
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
   const stops = useMemo(
@@ -239,38 +248,44 @@ export function GradeRangeRail({
     didCenterRef.current = true;
   }, []);
 
-  // Report a change the climber made. An armed tap or a hold on a stop that
-  // already ends the range changes nothing, so it reports nothing.
+  // Report a change the climber made. A hold on a stop that already ends the
+  // range changes nothing, so it reports nothing.
   const commit = useCallback(
-    (next: GradeBound, gesture: GradeRailGesture) => {
-      if (!isSameGradeBound(next, bound)) onChange(next, { gesture });
+    (next: GradeBound, change: GradeRailChange) => {
+      if (!isSameGradeBound(next, bound)) onChange(next, change);
     },
     [bound, onChange],
   );
+
+  const anySelected = isAnyGrade(bound);
+  const selectedStop = findSelectedGradeStop(bound, stops);
 
   const handleTapStop = useCallback(
     (stop: GradeRailStop) => {
       hapticSelection();
       markInteracted();
-      if (!armed) {
-        commit(computeGradeTap(bound, stop), 'tap');
-        return;
-      }
-      // Range is one shot: the tap that makes or moves a range spends it. With
-      // nothing selected the tap is only the first end, so it stays armed for
-      // the second.
-      setArmed(isAnyGrade(bound));
-      commit(extendGradeRange(bound, stop, stops), 'range_button');
+      const tappedAt = Date.now();
+      const lastSinglePickAt = lastSinglePickAtRef.current;
+      const withinExtendWindow = lastSinglePickAt !== undefined && tappedAt - lastSinglePickAt < RANGE_EXTEND_WINDOW_MS;
+      const next = computeGradeTap(bound, stop, stops, withinExtendWindow);
+      // Any tap that leaves one stop selected is a fresh pick and opens the
+      // window; a tap that made a range or cleared closes it.
+      lastSinglePickAtRef.current = findSelectedGradeStop(next, stops) ? tappedAt : undefined;
+      // The window only decides a tap on a different stop than the one selected.
+      const decidedByWindow = selectedStop !== undefined && stop !== selectedStop;
+      commit(next, { gesture: 'tap', ...(decidedByWindow && { withinRangeWindow: withinExtendWindow }) });
     },
-    [armed, bound, stops, commit, markInteracted],
+    [bound, stops, selectedStop, commit, markInteracted],
   );
 
-  // Touch and hold: the same result as an armed tap, with Range left as it is.
+  // Touch and hold makes or moves a range without the clock. It also closes the
+  // window, so the tap after a hold is a plain pick.
   const handleHoldStop = useCallback(
     (stop: GradeRailStop) => {
       hapticSelection();
       markInteracted();
-      commit(extendGradeRange(bound, stop, stops), 'hold');
+      lastSinglePickAtRef.current = undefined;
+      commit(extendGradeRange(bound, stop, stops), { gesture: 'hold' });
     },
     [bound, stops, commit, markInteracted],
   );
@@ -278,20 +293,14 @@ export function GradeRangeRail({
   const handleClear = useCallback(() => {
     hapticSelection();
     markInteracted();
-    commit(clearGradeBound(), 'clear');
+    lastSinglePickAtRef.current = undefined;
+    commit(clearGradeBound(), { gesture: 'clear' });
   }, [commit, markInteracted]);
 
-  // Arming changes no filter, and neither does disarming.
-  const handleToggleRange = useCallback(() => {
-    hapticSelection();
-    setArmed((wasArmed) => !wasArmed);
-  }, []);
-
-  const anySelected = isAnyGrade(bound);
-  // With one stop selected, every other stop can be the far end of a range:
-  // through the next tap when Range is armed, through a touch and hold when not.
-  const selectedStop = findSelectedGradeStop(bound, stops);
-  const farEndHint = armed ? t('mobile.gradeRail.rangeHint') : t('mobile.gradeRail.rangeHoldHint');
+  // A screen reader cannot count on the timing of a second tap, so the hint
+  // names the gesture that does not need it. With one stop selected, every other
+  // stop can be the far end of a range.
+  const farEndHint = t('mobile.gradeRail.rangeHoldHint');
 
   return (
     <View style={style}>
@@ -302,102 +311,73 @@ export function GradeRangeRail({
           </Text>
         </View>
       ) : null}
-      <View style={styles.rangeRow}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          nestedScrollEnabled={Platform.OS === 'android'}
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          style={styles.railScroll}
-          contentContainerStyle={[styles.railContent, { paddingStart: contentInsetLeft }]}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={(event) => {
-            touchingRef.current = event.nativeEvent.touches.length > 0;
-          }}
-          onTouchCancel={() => {
-            touchingRef.current = false;
-          }}
-          onScrollBeginDrag={handleScrollBeginDrag}
-          onScrollEndDrag={() => {
-            // The finger is up. Clearing both here means a touch whose end was
-            // never delivered cannot block re-centring for good.
-            draggingRef.current = false;
-            touchingRef.current = false;
-          }}
-          onContentSizeChange={startCentering}
-          onLayout={(event) => {
-            setRailWidth(event.nativeEvent.layout.width);
-            startCentering();
-          }}
-        >
-          {/* Any is not a grade, so it passes no grade colour and gets no dot.
-              While no filter is set it takes the in-range look: a checkmark on
-              the neutral fill. */}
-          <GradeChip
-            label={t('mobile.search.gradeClear')}
-            tone={anySelected ? 'range' : 'neutral'}
-            onPress={handleClear}
-            accessibilityLabel={
-              anySelected ? t('mobile.gradeRail.anyGradeAria') : t('mobile.gradeRail.clearFilterAria')
-            }
-            accessibilityState={{ selected: anySelected }}
-          />
-          {stops.map((stop) => {
-            const end = isGradeStopEnd(bound, stop);
-            const insideRange = isGradeStopInRange(bound, stop);
-            const tone = end ? 'selected' : insideRange ? 'range' : 'neutral';
-            return (
-              <GradeChip
-                key={stop.minGradeId}
-                label={stop.label}
-                tone={tone}
-                gradeColor={stop.gradeColor}
-                onPress={() => handleTapStop(stop)}
-                onLongPress={() => handleHoldStop(stop)}
-                delayLongPress={HOLD_TO_EXTEND_MS}
-                accessibilityLabel={
-                  end
-                    ? t('mobile.gradeRail.selectedFilterAria', { grade: stop.label })
-                    : insideRange
-                      ? t('mobile.gradeRail.rangeFilterAria', { grade: stop.label })
-                      : t('mobile.gradeRail.setFilterAria', { grade: stop.label })
-                }
-                accessibilityHint={selectedStop && stop !== selectedStop ? farEndHint : undefined}
-                accessibilityState={{ selected: end }}
-                onLayout={({ nativeEvent }) => {
-                  chipLayoutsRef.current[stop.minGradeId] = nativeEvent.layout;
-                  startCentering();
-                }}
-              />
-            );
-          })}
-        </ScrollView>
-        {/* The hairline is where the strip stops: chips scroll under this edge,
-            and the Range button past it stays put. */}
-        <View style={[styles.rangeDivider, { backgroundColor: systemColors.separator }]} />
-        {/* The word, with the chips' own mark slot in front of it: empty while
-            off, a checkmark while armed. The slot is always there, so arming
-            fills the capsule without changing its width. */}
-        <PressableSurface
-          onPress={handleToggleRange}
-          feedback="scale"
-          scaleTo={0.94}
-          accessibilityRole="togglebutton"
-          accessibilityLabel={t('mobile.gradeRail.rangeToggle')}
-          accessibilityHint={t('mobile.gradeRail.rangeToggleHint')}
-          accessibilityState={{ checked: armed }}
-          style={[
-            styles.rangeButton,
-            { backgroundColor: armed ? brandColors.primaryFill : 'transparent', marginEnd: contentInsetRight },
-          ]}
-        >
-          <GradeChipMark checked={armed} checkColor={brandColors.onPrimary} />
-          <GradeChipLabel color={armed ? brandColors.onPrimary : systemColors.label}>
-            {t('mobile.gradeRail.rangeToggle')}
-          </GradeChipLabel>
-        </PressableSurface>
-      </View>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        nestedScrollEnabled={Platform.OS === 'android'}
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        style={styles.railScroll}
+        contentContainerStyle={[styles.railContent, { paddingStart: contentInsetLeft, paddingEnd: contentInsetRight }]}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={(event) => {
+          touchingRef.current = event.nativeEvent.touches.length > 0;
+        }}
+        onTouchCancel={() => {
+          touchingRef.current = false;
+        }}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={() => {
+          // The finger is up. Clearing both here means a touch whose end was
+          // never delivered cannot block re-centring for good.
+          draggingRef.current = false;
+          touchingRef.current = false;
+        }}
+        onContentSizeChange={startCentering}
+        onLayout={(event) => {
+          setRailWidth(event.nativeEvent.layout.width);
+          startCentering();
+        }}
+      >
+        {/* Any is not a grade, so it passes no grade colour: selected (no filter
+            set) it keeps the neutral fill and takes only the ring. */}
+        <GradeChip
+          label={t('mobile.search.gradeClear')}
+          tone={anySelected ? 'selected' : 'neutral'}
+          onPress={handleClear}
+          accessibilityLabel={anySelected ? t('mobile.gradeRail.anyGradeAria') : t('mobile.gradeRail.clearFilterAria')}
+          accessibilityState={{ selected: anySelected }}
+        />
+        {stops.map((stop) => {
+          const end = isGradeStopEnd(bound, stop);
+          const insideRange = isGradeStopInRange(bound, stop);
+          const tone = end ? 'selected' : insideRange ? 'range' : 'neutral';
+          return (
+            <GradeChip
+              key={stop.minGradeId}
+              label={stop.label}
+              tone={tone}
+              gradeColor={stop.gradeColor}
+              onPress={() => handleTapStop(stop)}
+              onLongPress={() => handleHoldStop(stop)}
+              delayLongPress={HOLD_TO_EXTEND_MS}
+              accessibilityLabel={
+                end
+                  ? t('mobile.gradeRail.selectedFilterAria', { grade: stop.label })
+                  : insideRange
+                    ? t('mobile.gradeRail.rangeFilterAria', { grade: stop.label })
+                    : t('mobile.gradeRail.setFilterAria', { grade: stop.label })
+              }
+              accessibilityHint={selectedStop && stop !== selectedStop ? farEndHint : undefined}
+              accessibilityState={{ selected: end }}
+              onLayout={({ nativeEvent }) => {
+                chipLayoutsRef.current[stop.minGradeId] = nativeEvent.layout;
+                startCentering();
+              }}
+            />
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
@@ -602,12 +582,8 @@ const styles = StyleSheet.create({
   title: {
     fontWeight: '600',
   },
-  rangeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   railScroll: {
-    flex: 1,
+    flexGrow: 0,
   },
   railContent: {
     flexDirection: 'row',
@@ -615,23 +591,9 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     // The chip plus the vertical padding below, which gives its hit slop room.
     minHeight: GRADE_CHIP_HEIGHT + spacing[1] * 2,
-    // The leading padding is NOT set here: it comes from contentInsetLeft. The
-    // trailing padding is the last chip's clearance from the hairline.
-    paddingEnd: spacing[3],
+    // Horizontal padding is NOT set here: it comes from contentInsetLeft /
+    // contentInsetRight.
     paddingVertical: spacing[1],
-  },
-  rangeDivider: {
-    width: 1,
-    height: spacing[6],
-    marginHorizontal: spacing[2],
-  },
-  rangeButton: {
-    height: GRADE_CHIP_HEIGHT,
-    borderRadius: GRADE_CHIP_HEIGHT / 2,
-    paddingHorizontal: spacing[3],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
   },
   singleSelectContent: {
     flexDirection: 'row',

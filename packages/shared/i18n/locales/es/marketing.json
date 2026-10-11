@@ -579,11 +579,11 @@
       },
       "start": {
         "title": "Primero grado y ángulo",
-        "p1": "Toca un grado en la fila que hay bajo las etiquetas para ver solo ese, y tócalo otra vez para limpiarlo. Para un rango, toca Rango y luego un segundo grado, o mantén pulsado el segundo grado.",
+        "p1": "Toca Grado para abrir la fila de grados. Toca un grado para ver solo ese, un segundo grado antes de tres segundos para un rango, y otra vez el grado elegido para limpiarlo. También puedes mantener pulsado un segundo grado para crear un rango.",
         "p2": "Cada grado y cada recuento de encadenes se lee al ángulo del plafón. Toca la etiqueta de grados para cambiarlo.",
         "p3": "Con la sesión iniciada, las etiquetas de Progreso filtran por tu historial. Sin encadenar esconde tus encadenes, Proyectos deja los bloques probados y no encadenados, y Sin intentar deja los que nunca has registrado.",
         "clipAlt": "Montar un rango de grados",
-        "clipCaption": "Toca Rango y luego un segundo grado para montar un rango. Vuelve a tocar un grado para limpiarlo."
+        "clipCaption": "Dos toques rápidos forman un rango. Vuelve a tocar el mismo grado para limpiarlo."
       },
       "holds": {
         "title": "Filtrar por presa",

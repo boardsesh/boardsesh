@@ -13,7 +13,7 @@
 // One <Host> wraps a horizontal SwiftUI ScrollView + HStack of chips:
 //   Filters · N → opens the long-tail sheet (Button, no menu)
 //   Recent ▾    → native Menu of saved filters + Clear (hidden when none)
-//   Grade ⌃     → hides and shows the GradeRangeRail row (Button, no menu; the
+//   Grade ⌄     → shows and hides the GradeRangeRail row (Button, no menu; the
 //                 chevron points up while the row is shown)            [PRIMARY #1]
 //   Your progress ▾ → native Menu + Picker (single-select, auth-gated) [PRIMARY #2]
 //   Collection ▾→ native Menu + Picker (Any / Benchmarks / My drafts)  [PRIMARY #3]
@@ -153,8 +153,8 @@ function FilterChipRowComponent({
 
   // The Grade chip, built once for both of its placements below (the popover
   // trigger on regular-width iPad, the plain chip everywhere else). The trailing
-  // chevron says whether the grade row is shown: up while it is, down once the
-  // chip has hidden it. It needs an explicit size, since @expo/ui gives an Image
+  // chevron says whether the grade row is shown: up while it is, down while it
+  // is hidden. It needs an explicit size, since @expo/ui gives an Image
   // without one a 24pt font (AppMenu sizes its caret the same way). No colour: it
   // takes the button's own, so it stays legible on the tinted active chip.
   // VoiceOver skips the glyph and reads the hint instead.
@@ -222,8 +222,8 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
-          {/* Grade → hides and shows the range rail, a row under the chips that is
-              there by default (a popover on regular-width iPad). A button, not a
+          {/* Grade → shows and hides the range rail, a row under the chips that
+              stays once opened (a popover on regular-width iPad). A button, not a
               menu. [PRIMARY #1] */}
           {pinnedChips.includes('grade') ? (
             gradePopoverContent ? (

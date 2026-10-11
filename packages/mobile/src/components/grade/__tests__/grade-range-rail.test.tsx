@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode, type Ref } from 'react';
 import type { Grade } from '@boardsesh/shared-schema';
@@ -71,12 +71,14 @@ vi.mock('react-native-gesture-handler', async () => {
         laidOutRef.current = true;
         onLayout?.({ nativeEvent: { layout: { x: 0, y: 0, width: RAIL_WIDTH, height: 52 } } });
       }, [onLayout]);
+      const contentStyle = flattenStyle(contentContainerStyle);
       return createElement(
         'div',
         {
           'data-scroll': 'true',
           'data-nested-scroll': nestedScrollEnabled ? 'true' : 'false',
-          'data-padding-start': String(flattenStyle(contentContainerStyle).paddingStart),
+          'data-padding-start': String(contentStyle.paddingStart),
+          'data-padding-end': String(contentStyle.paddingEnd),
         },
         children,
       );
@@ -139,53 +141,6 @@ vi.mock('../GradeChip', async () => {
         label,
       );
     },
-    GradeChipMark: ({ checked, dotColor, checkColor }: { checked: boolean; dotColor?: string; checkColor: string }) =>
-      createElement('span', {
-        'data-mark': checked ? 'check' : dotColor ? 'dot' : 'empty',
-        'data-mark-color': checked ? checkColor : '',
-      }),
-    GradeChipLabel: ({ color, children }: { color?: string; children: string }) =>
-      createElement('span', { 'data-chip-label': 'true', 'data-label-color': color ?? '' }, children),
-  };
-});
-
-// The rail's only pressable of its own is the Range button.
-vi.mock('../../PressableSurface', async () => {
-  const { flattenStyle } = await import('../../../../test/flatten-style');
-  return {
-    PressableSurface: ({
-      children,
-      onPress,
-      accessibilityRole,
-      accessibilityLabel,
-      accessibilityHint,
-      accessibilityState,
-      style,
-    }: {
-      children?: ReactNode;
-      onPress?: () => void;
-      accessibilityRole?: string;
-      accessibilityLabel?: string;
-      accessibilityHint?: string;
-      accessibilityState?: { checked?: boolean };
-      style?: unknown;
-    }) => {
-      const flatStyle = flattenStyle(style);
-      return createElement(
-        'button',
-        {
-          onClick: onPress,
-          'data-pressable': accessibilityLabel ?? '',
-          'data-role': accessibilityRole ?? '',
-          'data-hint': accessibilityHint ?? '',
-          'data-checked': String(accessibilityState?.checked),
-          'data-background': String(flatStyle.backgroundColor),
-          'data-margin-end': String(flatStyle.marginEnd),
-          'data-height': String(flatStyle.height),
-        },
-        children,
-      );
-    },
   };
 });
 
@@ -194,15 +149,7 @@ vi.mock('../../Text', () => ({
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({
-    brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED', onPrimary: '#FFFFFF' },
-    systemColors: {
-      fill: '#eee',
-      label: '#111',
-      secondaryLabel: '#666',
-      separator: '#ccc',
-    },
-  }),
+  useTheme: () => ({ systemColors: { secondaryLabel: '#666' } }),
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -254,10 +201,14 @@ const RANGE_GRADES: Grade[] = [
 const ANY: GradeBound = { minGradeId: undefined, maxGradeId: undefined };
 const ONLY_V0: GradeBound = { minGradeId: 10, maxGradeId: 12 };
 const ONLY_V2: GradeBound = { minGradeId: 15, maxGradeId: 15 };
+const ONLY_V3: GradeBound = { minGradeId: 16, maxGradeId: 16 };
+const ONLY_V4: GradeBound = { minGradeId: 17, maxGradeId: 17 };
 const V2_TO_V5: GradeBound = { minGradeId: 15, maxGradeId: 18 };
 const ANY_LABEL = 'mobile.search.gradeClear';
-const RANGE_HINT = 'mobile.gradeRail.rangeHint';
 const HOLD_HINT = 'mobile.gradeRail.rangeHoldHint';
+// Mirrors RANGE_EXTEND_WINDOW_MS. Restated so a change to the window fails here.
+const WINDOW_MS = 3000;
+const SESSION_START = new Date('2026-10-11T12:00:00Z').getTime();
 
 function renderRail(bound: GradeBound, props: { recenterKey?: number } = {}) {
   const onChange = vi.fn();
@@ -269,10 +220,9 @@ function renderRail(bound: GradeBound, props: { recenterKey?: number } = {}) {
   return { ...view, onChange, show };
 }
 
-function rangeButton(container: HTMLElement): HTMLElement {
-  const button = container.querySelector<HTMLElement>('[data-pressable="mobile.gradeRail.rangeToggle"]');
-  if (!button) throw new Error('Range button not rendered');
-  return button;
+/** Let `ms` pass on the clock the rail reads. */
+function wait(ms: number) {
+  vi.setSystemTime(Date.now() + ms);
 }
 
 /** Each chip's label mapped to one of the attributes the GradeChip mock exposes. */
@@ -306,12 +256,19 @@ beforeEach(() => {
   strip.handlers = {};
   strip.chipX = {};
   strip.gradeFormat = 'v-grade';
+  // Only the clock is faked: the rail reads Date.now() for the range window.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(SESSION_START);
   // Frames run at once, so a centring pass finishes inside the call that starts it.
   vi.stubGlobal('requestAnimationFrame', (frame: FrameRequestCallback) => {
     frame(0);
     return 1;
   });
   vi.stubGlobal('cancelAnimationFrame', () => {});
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('GradeRangeRail', () => {
@@ -354,7 +311,7 @@ describe('GradeRangeRail', () => {
       });
     });
 
-    it('paints a range that starts inside a group from that whole stop', () => {
+    it('paints the ends of a range selected and every stop between them in range', () => {
       const { container } = renderRail({ minGradeId: 11, maxGradeId: 16 });
       expect(chipTones(container)).toMatchObject({
         V0: 'selected',
@@ -370,7 +327,7 @@ describe('GradeRangeRail', () => {
       expect(new Set(Object.values(chipTones(container)))).toEqual(new Set(['neutral']));
     });
 
-    it('names each stop by its label for the screen reader', () => {
+    it('names each stop by its label for the screen reader, and marks the ends selected', () => {
       const { container } = renderRail({ minGradeId: 10, maxGradeId: 15 });
       expect(chipAttribute(container, 'data-label')).toMatchObject({
         V0: 'mobile.gradeRail.selectedFilterAria:V0',
@@ -378,20 +335,15 @@ describe('GradeRangeRail', () => {
         V2: 'mobile.gradeRail.selectedFilterAria:V2',
         V3: 'mobile.gradeRail.setFilterAria:V3',
       });
+      expect(chipAttribute(container, 'data-selected')).toMatchObject({ V0: 'true', V1: 'false', V2: 'true' });
     });
   });
 
-  describe('a plain tap', () => {
-    it('picks the tapped stop', () => {
+  describe('a tap', () => {
+    it('picks the tapped stop from nothing selected', () => {
       const { getByText, onChange } = renderRail(ANY);
       fireEvent.click(getByText('V3'));
-      expect(onChange.mock.calls).toEqual([[{ minGradeId: 16, maxGradeId: 16 }, { gesture: 'tap' }]]);
-    });
-
-    it('switches to the tapped stop instead of building a range', () => {
-      const { getByText, onChange } = renderRail(ONLY_V2);
-      fireEvent.click(getByText('V4'));
-      expect(onChange.mock.calls).toEqual([[{ minGradeId: 17, maxGradeId: 17 }, { gesture: 'tap' }]]);
+      expect(onChange.mock.calls).toEqual([[ONLY_V3, { gesture: 'tap' }]]);
     });
 
     it('clears the filter when the selected stop is tapped again', () => {
@@ -400,18 +352,165 @@ describe('GradeRangeRail', () => {
       expect(onChange.mock.calls).toEqual([[ANY, { gesture: 'tap' }]]);
     });
 
-    it('replaces a range with the tapped stop', () => {
-      const { getByText, onChange } = renderRail(V2_TO_V5);
+    it('collapses a range to an interior or outside stop', () => {
+      const { getByText, onChange, show } = renderRail(V2_TO_V5);
       fireEvent.click(getByText('V3'));
-      expect(onChange.mock.calls).toEqual([[{ minGradeId: 16, maxGradeId: 16 }, { gesture: 'tap' }]]);
+      expect(onChange).toHaveBeenLastCalledWith(ONLY_V3, { gesture: 'tap' });
+
+      show(V2_TO_V5);
+      fireEvent.click(getByText('V0'));
+      expect(onChange).toHaveBeenLastCalledWith(ONLY_V0, { gesture: 'tap' });
     });
 
-    it('never builds a range however quickly the second tap follows', () => {
+    it('moves an end of a range one stop inward when that end is tapped', () => {
+      const { getByText, onChange, show } = renderRail(V2_TO_V5);
+      fireEvent.click(getByText('V2'));
+      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 16, maxGradeId: 18 }, { gesture: 'tap' });
+
+      show(V2_TO_V5);
+      fireEvent.click(getByText('V5'));
+      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 15, maxGradeId: 17 }, { gesture: 'tap' });
+    });
+
+    it('settles on the other end when the trimmed ends meet', () => {
+      const { getByText, onChange } = renderRail({ minGradeId: 15, maxGradeId: 16 });
+      fireEvent.click(getByText('V2'));
+      expect(onChange.mock.calls).toEqual([[ONLY_V3, { gesture: 'tap' }]]);
+    });
+  });
+
+  describe('the range window', () => {
+    it('makes a range from two taps inside three seconds', () => {
       const { getByText, onChange, show } = renderRail(ANY);
-      fireEvent.click(getByText('V1'));
-      show({ minGradeId: 13, maxGradeId: 14 });
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V2);
+
+      wait(WINDOW_MS - 1);
       fireEvent.click(getByText('V4'));
-      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 17, maxGradeId: 17 }, { gesture: 'tap' });
+      expect(onChange).toHaveBeenLastCalledWith(
+        { minGradeId: 15, maxGradeId: 17 },
+        { gesture: 'tap', withinRangeWindow: true },
+      );
+    });
+
+    it('makes the range in ascending order when the second tap is the easier stop', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.click(getByText('V4'));
+      show(ONLY_V4);
+
+      wait(500);
+      fireEvent.click(getByText('V0'));
+      expect(onChange).toHaveBeenLastCalledWith(
+        { minGradeId: 10, maxGradeId: 17 },
+        { gesture: 'tap', withinRangeWindow: true },
+      );
+    });
+
+    it('switches stop once the three seconds are up', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V2);
+
+      wait(WINDOW_MS);
+      fireEvent.click(getByText('V4'));
+      expect(onChange).toHaveBeenLastCalledWith(ONLY_V4, { gesture: 'tap', withinRangeWindow: false });
+    });
+
+    it('does not treat a selection that was already there as the first tap', () => {
+      const { getByText, onChange } = renderRail(ONLY_V2);
+      fireEvent.click(getByText('V4'));
+      expect(onChange.mock.calls).toEqual([[ONLY_V4, { gesture: 'tap', withinRangeWindow: false }]]);
+    });
+
+    it('does not treat a selection that came from outside the rail as the first tap', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      // A recent filter, a token, a restore: the bound changes with no tap here.
+      show(ONLY_V2);
+      fireEvent.click(getByText('V4'));
+      expect(onChange.mock.calls).toEqual([[ONLY_V4, { gesture: 'tap', withinRangeWindow: false }]]);
+    });
+
+    it('opens afresh on every tap that leaves one stop selected', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V2);
+      // Too late for V2: this tap switches, and is itself a fresh pick.
+      wait(WINDOW_MS + 2000);
+      fireEvent.click(getByText('V3'));
+      show(ONLY_V3);
+
+      wait(1000);
+      fireEvent.click(getByText('V5'));
+      expect(onChange).toHaveBeenLastCalledWith(
+        { minGradeId: 16, maxGradeId: 18 },
+        { gesture: 'tap', withinRangeWindow: true },
+      );
+    });
+
+    it('opens on the tap that collapses a range to one stop', () => {
+      const { getByText, onChange, show } = renderRail(V2_TO_V5);
+      fireEvent.click(getByText('V3'));
+      show(ONLY_V3);
+
+      wait(1000);
+      fireEvent.click(getByText('V5'));
+      expect(onChange).toHaveBeenLastCalledWith(
+        { minGradeId: 16, maxGradeId: 18 },
+        { gesture: 'tap', withinRangeWindow: true },
+      );
+    });
+
+    it('closes when the Any chip clears, so a selection from outside is not extended', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V2);
+      fireEvent.click(getByText(ANY_LABEL));
+      show(ONLY_V3);
+
+      wait(500);
+      fireEvent.click(getByText('V5'));
+      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 18, maxGradeId: 18 }, expect.anything());
+    });
+
+    it('closes when a re-tap clears the pick', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V2);
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V3);
+
+      wait(500);
+      fireEvent.click(getByText('V5'));
+      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 18, maxGradeId: 18 }, expect.anything());
+    });
+
+    it('is not opened by a touch and hold: the tap after a hold is a plain pick', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.contextMenu(getByText('V2'));
+      show(ONLY_V2);
+
+      wait(500);
+      fireEvent.click(getByText('V4'));
+      expect(onChange).toHaveBeenLastCalledWith(ONLY_V4, { gesture: 'tap', withinRangeWindow: false });
+    });
+
+    // The flag measures the window's misfires, so it must only ride on the one
+    // tap the window decides.
+    it('reports withinRangeWindow only for a tap on another stop while one is selected', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      const lastChange = () => onChange.mock.calls.at(-1)?.[1];
+
+      fireEvent.click(getByText('V2')); // first pick
+      expect(lastChange()).toEqual({ gesture: 'tap' });
+      show(ONLY_V2);
+      fireEvent.click(getByText('V2')); // clear by re-tap
+      expect(lastChange()).toEqual({ gesture: 'tap' });
+      show(V2_TO_V5);
+      fireEvent.click(getByText('V2')); // trim an end
+      expect(lastChange()).toEqual({ gesture: 'tap' });
+      show(V2_TO_V5);
+      fireEvent.click(getByText('V3')); // inside a range
+      expect(lastChange()).toEqual({ gesture: 'tap' });
     });
   });
 
@@ -428,10 +527,10 @@ describe('GradeRangeRail', () => {
       expect(onChange).not.toHaveBeenCalled();
     });
 
-    it('takes the checkmark tone while no filter is set, and never a colour', () => {
+    it('is selected while no filter is set, and never carries a colour', () => {
       const { container, getByText, show } = renderRail(ANY);
       const anyChip = getByText(ANY_LABEL);
-      expect(anyChip.getAttribute('data-tone')).toBe('range');
+      expect(anyChip.getAttribute('data-tone')).toBe('selected');
       expect(anyChip.getAttribute('data-grade-color')).toBe('');
       expect(anyChip.getAttribute('data-selected')).toBe('true');
 
@@ -439,7 +538,7 @@ describe('GradeRangeRail', () => {
       expect(anyChip.getAttribute('data-tone')).toBe('neutral');
       expect(anyChip.getAttribute('data-grade-color')).toBe('');
       expect(anyChip.getAttribute('data-selected')).toBe('false');
-      // Every real stop does carry its colour, for the dot.
+      // Every real stop does carry its colour.
       for (const chip of container.querySelectorAll('[data-chip]')) {
         if (chip !== anyChip) expect(chip.getAttribute('data-grade-color')).not.toBe('');
       }
@@ -448,136 +547,6 @@ describe('GradeRangeRail', () => {
     it('is not a stop: it has no touch and hold', () => {
       const { getByText } = renderRail(ONLY_V2);
       expect(getByText(ANY_LABEL).getAttribute('data-holdable')).toBe('false');
-    });
-  });
-
-  describe('the Range button', () => {
-    it('is a toggle button that announces off, with its label and hint', () => {
-      const { container } = renderRail(ANY);
-      const button = rangeButton(container);
-      expect(button.getAttribute('data-role')).toBe('togglebutton');
-      expect(button.getAttribute('data-checked')).toBe('false');
-      expect(button.getAttribute('data-hint')).toBe('mobile.gradeRail.rangeToggleHint');
-    });
-
-    it('shows the word with an empty mark slot and no fill while off', () => {
-      const { container } = renderRail(ANY);
-      const button = rangeButton(container);
-      expect(button.querySelector('[data-chip-label]')?.textContent).toBe('mobile.gradeRail.rangeToggle');
-      expect(button.querySelector('[data-chip-label]')?.getAttribute('data-label-color')).toBe('#111');
-      expect(button.querySelector('[data-mark]')?.getAttribute('data-mark')).toBe('empty');
-      expect(button.getAttribute('data-background')).toBe('transparent');
-    });
-
-    it('fills with the brand colour and checks its mark once armed, without losing the slot', () => {
-      const { container } = renderRail(ANY);
-      fireEvent.click(rangeButton(container));
-      const button = rangeButton(container);
-      expect(button.getAttribute('data-checked')).toBe('true');
-      expect(button.getAttribute('data-background')).toBe('#7C3AED');
-      expect(button.querySelector('[data-chip-label]')?.getAttribute('data-label-color')).toBe('#FFFFFF');
-      expect(button.querySelector('[data-mark]')?.getAttribute('data-mark')).toBe('check');
-      expect(button.querySelector('[data-mark]')?.getAttribute('data-mark-color')).toBe('#FFFFFF');
-    });
-
-    it('is as tall as a chip', () => {
-      const { container } = renderRail(ANY);
-      expect(rangeButton(container).getAttribute('data-height')).toBe('44');
-    });
-
-    it('changes no filter when it arms, and none when it disarms', () => {
-      const { container, onChange } = renderRail(V2_TO_V5);
-      fireEvent.click(rangeButton(container));
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('true');
-      fireEvent.click(rangeButton(container));
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
-      expect(onChange).not.toHaveBeenCalled();
-    });
-
-    it('starts off even when the rail mounts on a range', () => {
-      const { container } = renderRail(V2_TO_V5);
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
-    });
-
-    it('stays armed after the first end from nothing selected, then makes the range and disarms', () => {
-      const { container, getByText, onChange, show } = renderRail(ANY);
-      fireEvent.click(rangeButton(container));
-
-      fireEvent.click(getByText('V4'));
-      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 17, maxGradeId: 17 }, { gesture: 'range_button' });
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('true');
-      show({ minGradeId: 17, maxGradeId: 17 });
-
-      // The second end can sit below the first: the range comes out ascending.
-      fireEvent.click(getByText('V1'));
-      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 13, maxGradeId: 17 }, { gesture: 'range_button' });
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
-    });
-
-    it('makes the range covering the selected stop and the tapped one, then disarms', () => {
-      const { container, getByText, onChange } = renderRail(ONLY_V2);
-      fireEvent.click(rangeButton(container));
-      fireEvent.click(getByText('V0'));
-      expect(onChange.mock.calls).toEqual([[{ minGradeId: 10, maxGradeId: 15 }, { gesture: 'range_button' }]]);
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
-    });
-
-    it('is one shot: the tap after the range is a plain tap again', () => {
-      const { container, getByText, onChange, show } = renderRail(ONLY_V2);
-      fireEvent.click(rangeButton(container));
-      fireEvent.click(getByText('V4'));
-      show({ minGradeId: 15, maxGradeId: 17 });
-
-      fireEvent.click(getByText('V5'));
-      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 18, maxGradeId: 18 }, { gesture: 'tap' });
-    });
-
-    it('clears and disarms when the selected stop itself is tapped', () => {
-      const { container, getByText, onChange } = renderRail(ONLY_V2);
-      fireEvent.click(rangeButton(container));
-      fireEvent.click(getByText('V2'));
-      expect(onChange.mock.calls).toEqual([[ANY, { gesture: 'range_button' }]]);
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
-    });
-
-    describe('with a range set', () => {
-      it('moves the nearer end to the tapped stop, then disarms', () => {
-        const { container, getByText, onChange } = renderRail(V2_TO_V5);
-        fireEvent.click(rangeButton(container));
-        // V3 is one stop from V2 and two from V5: the lower end moves.
-        fireEvent.click(getByText('V3'));
-        expect(onChange.mock.calls).toEqual([[{ minGradeId: 16, maxGradeId: 18 }, { gesture: 'range_button' }]]);
-        expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
-      });
-
-      it('moves the upper end when the stop is nearer to it', () => {
-        const { container, getByText, onChange } = renderRail(V2_TO_V5);
-        fireEvent.click(rangeButton(container));
-        fireEvent.click(getByText('V4'));
-        expect(onChange.mock.calls).toEqual([[{ minGradeId: 15, maxGradeId: 17 }, { gesture: 'range_button' }]]);
-      });
-
-      it('moves the upper end when the stop is equally far from both', () => {
-        const { container, getByText, onChange } = renderRail({ minGradeId: 15, maxGradeId: 17 });
-        fireEvent.click(rangeButton(container));
-        fireEvent.click(getByText('V3'));
-        expect(onChange.mock.calls).toEqual([[{ minGradeId: 15, maxGradeId: 16 }, { gesture: 'range_button' }]]);
-      });
-
-      it('extends the range to a stop outside it', () => {
-        const { container, getByText, onChange } = renderRail(V2_TO_V5);
-        fireEvent.click(rangeButton(container));
-        fireEvent.click(getByText('V0'));
-        expect(onChange.mock.calls).toEqual([[{ minGradeId: 10, maxGradeId: 18 }, { gesture: 'range_button' }]]);
-      });
-
-      it('reports nothing for a tap on an end, and still disarms', () => {
-        const { container, getByText, onChange } = renderRail(V2_TO_V5);
-        fireEvent.click(rangeButton(container));
-        fireEvent.click(getByText('V5'));
-        expect(onChange).not.toHaveBeenCalled();
-        expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
-      });
     });
   });
 
@@ -592,31 +561,33 @@ describe('GradeRangeRail', () => {
       }
     });
 
-    it('makes the range with the selected stop, and leaves Range off', () => {
-      const { container, getByText, onChange } = renderRail(ONLY_V2);
+    it('makes the range with the selected stop, whenever that stop was picked', () => {
+      const { getByText, onChange } = renderRail(ONLY_V2);
+      wait(60_000);
       fireEvent.contextMenu(getByText('V4'));
       expect(onChange.mock.calls).toEqual([[{ minGradeId: 15, maxGradeId: 17 }, { gesture: 'hold' }]]);
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('false');
     });
 
-    it('leaves Range armed when it was armed', () => {
-      const { container, getByText, onChange } = renderRail(ONLY_V2);
-      fireEvent.click(rangeButton(container));
-      fireEvent.contextMenu(getByText('V4'));
-      expect(onChange.mock.calls).toEqual([[{ minGradeId: 15, maxGradeId: 17 }, { gesture: 'hold' }]]);
-      expect(rangeButton(container).getAttribute('data-checked')).toBe('true');
-    });
-
-    it('picks the stop as a first end when nothing is selected', () => {
+    it('picks the stop alone when nothing is selected', () => {
       const { getByText, onChange } = renderRail(ANY);
       fireEvent.contextMenu(getByText('V0'));
-      expect(onChange.mock.calls).toEqual([[{ minGradeId: 10, maxGradeId: 12 }, { gesture: 'hold' }]]);
+      expect(onChange.mock.calls).toEqual([[ONLY_V0, { gesture: 'hold' }]]);
     });
 
-    it('moves the nearer end of a range', () => {
-      const { getByText, onChange } = renderRail(V2_TO_V5);
+    it('moves the nearer end of a range to the held stop', () => {
+      const { getByText, onChange, show } = renderRail(V2_TO_V5);
       fireEvent.contextMenu(getByText('V1'));
-      expect(onChange.mock.calls).toEqual([[{ minGradeId: 13, maxGradeId: 18 }, { gesture: 'hold' }]]);
+      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 13, maxGradeId: 18 }, { gesture: 'hold' });
+
+      show(V2_TO_V5);
+      fireEvent.contextMenu(getByText('V4'));
+      expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 15, maxGradeId: 17 }, { gesture: 'hold' });
+    });
+
+    it('reports nothing for a hold on a stop that already ends the range', () => {
+      const { getByText, onChange } = renderRail(V2_TO_V5);
+      fireEvent.contextMenu(getByText('V5'));
+      expect(onChange).not.toHaveBeenCalled();
     });
 
     it('fires one selection haptic when it triggers', () => {
@@ -626,6 +597,8 @@ describe('GradeRangeRail', () => {
     });
   });
 
+  // A screen reader cannot count on the gap between two taps, so the hint names
+  // the hold and only the hold.
   describe('far-end hint', () => {
     const NO_HINTS = { [ANY_LABEL]: '', V0: '', V1: '', V2: '', V3: '', V4: '', V5: '' };
 
@@ -642,18 +615,11 @@ describe('GradeRangeRail', () => {
       });
     });
 
-    it('says the next tap makes the range once Range is armed', () => {
-      const { container } = renderRail(ONLY_V2);
-      fireEvent.click(rangeButton(container));
-      expect(chipHints(container)).toEqual({
-        [ANY_LABEL]: '',
-        V0: RANGE_HINT,
-        V1: RANGE_HINT,
-        V2: '',
-        V3: RANGE_HINT,
-        V4: RANGE_HINT,
-        V5: RANGE_HINT,
-      });
+    it('says the same inside the range window', () => {
+      const { container, getByText, show } = renderRail(ANY);
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V2);
+      expect(chipHints(container)).toMatchObject({ V2: '', V3: HOLD_HINT });
     });
 
     it('treats a grouped stop as the one selected stop', () => {
@@ -661,10 +627,8 @@ describe('GradeRangeRail', () => {
       expect(chipHints(container)).toMatchObject({ V0: '', V1: HOLD_HINT });
     });
 
-    it('is absent with nothing selected, armed or not', () => {
+    it('is absent with nothing selected', () => {
       const { container } = renderRail(ANY);
-      expect(chipHints(container)).toEqual(NO_HINTS);
-      fireEvent.click(rangeButton(container));
       expect(chipHints(container)).toEqual(NO_HINTS);
     });
 
@@ -680,7 +644,7 @@ describe('GradeRangeRail', () => {
     });
 
     it('centres on the selected stop when it mounts', () => {
-      renderRail({ minGradeId: 17, maxGradeId: 17 });
+      renderRail(ONLY_V4);
       expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(360));
     });
 
@@ -690,26 +654,26 @@ describe('GradeRangeRail', () => {
     });
 
     it('stops following the selection once the climber has tapped the rail', () => {
-      const { getByText, show } = renderRail({ minGradeId: 17, maxGradeId: 17 });
+      const { getByText, show } = renderRail(ONLY_V4);
       fireEvent.click(getByText('V3'));
       strip.scrollTo.mockClear();
 
-      show({ minGradeId: 10, maxGradeId: 12 });
+      show(ONLY_V0);
       expect(strip.scrollTo).not.toHaveBeenCalled();
     });
 
     it('centres again on a new recenterKey, even after a tap', () => {
-      const { getByText, show } = renderRail({ minGradeId: 17, maxGradeId: 17 }, { recenterKey: 0 });
+      const { getByText, show } = renderRail(ONLY_V4, { recenterKey: 0 });
       fireEvent.click(getByText('V3'));
-      show({ minGradeId: 10, maxGradeId: 12 }, { recenterKey: 0 });
+      show(ONLY_V0, { recenterKey: 0 });
       strip.scrollTo.mockClear();
 
-      show({ minGradeId: 10, maxGradeId: 12 }, { recenterKey: 1 });
+      show(ONLY_V0, { recenterKey: 1 });
       expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(80));
     });
 
     it('centres again on a new recenterKey after a drag', () => {
-      const { show } = renderRail({ minGradeId: 17, maxGradeId: 17 }, { recenterKey: 0 });
+      const { show } = renderRail(ONLY_V4, { recenterKey: 0 });
       act(() => {
         strip.handlers.onTouchStart?.();
         strip.handlers.onScrollBeginDrag?.();
@@ -718,48 +682,48 @@ describe('GradeRangeRail', () => {
       });
       strip.scrollTo.mockClear();
 
-      show({ minGradeId: 17, maxGradeId: 17 }, { recenterKey: 1 });
+      show(ONLY_V4, { recenterKey: 1 });
       expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(360));
     });
 
     it('does not scroll for the same recenterKey', () => {
-      const { getByText, show } = renderRail({ minGradeId: 17, maxGradeId: 17 }, { recenterKey: 5 });
+      const { getByText, show } = renderRail(ONLY_V4, { recenterKey: 5 });
       fireEvent.click(getByText('V3'));
       strip.scrollTo.mockClear();
 
-      show({ minGradeId: 16, maxGradeId: 16 }, { recenterKey: 5 });
+      show(ONLY_V3, { recenterKey: 5 });
       expect(strip.scrollTo).not.toHaveBeenCalled();
     });
 
     it('never scrolls while a finger rests on the rail', () => {
-      const { show } = renderRail({ minGradeId: 17, maxGradeId: 17 }, { recenterKey: 0 });
+      const { show } = renderRail(ONLY_V4, { recenterKey: 0 });
       strip.scrollTo.mockClear();
 
       act(() => strip.handlers.onTouchStart?.());
-      show({ minGradeId: 10, maxGradeId: 12 }, { recenterKey: 1 });
+      show(ONLY_V0, { recenterKey: 1 });
       expect(strip.scrollTo).not.toHaveBeenCalled();
 
       // The finger lifts. That request was dropped; the next one is honoured.
       act(() => strip.handlers.onTouchEnd?.({ nativeEvent: { touches: [] } }));
       expect(strip.scrollTo).not.toHaveBeenCalled();
-      show({ minGradeId: 10, maxGradeId: 12 }, { recenterKey: 2 });
+      show(ONLY_V0, { recenterKey: 2 });
       expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(80));
     });
 
     it('still counts a finger as down while another one lifts', () => {
-      const { show } = renderRail({ minGradeId: 17, maxGradeId: 17 }, { recenterKey: 0 });
+      const { show } = renderRail(ONLY_V4, { recenterKey: 0 });
       act(() => {
         strip.handlers.onTouchStart?.();
         strip.handlers.onTouchEnd?.({ nativeEvent: { touches: [{}] } });
       });
       strip.scrollTo.mockClear();
 
-      show({ minGradeId: 10, maxGradeId: 12 }, { recenterKey: 1 });
+      show(ONLY_V0, { recenterKey: 1 });
       expect(strip.scrollTo).not.toHaveBeenCalled();
     });
 
     it('never scrolls while the rail is being dragged', () => {
-      const { show } = renderRail({ minGradeId: 17, maxGradeId: 17 }, { recenterKey: 0 });
+      const { show } = renderRail(ONLY_V4, { recenterKey: 0 });
       act(() => {
         strip.handlers.onTouchStart?.();
         strip.handlers.onScrollBeginDrag?.();
@@ -768,31 +732,27 @@ describe('GradeRangeRail', () => {
       });
       strip.scrollTo.mockClear();
 
-      show({ minGradeId: 10, maxGradeId: 12 }, { recenterKey: 1 });
+      show(ONLY_V0, { recenterKey: 1 });
       expect(strip.scrollTo).not.toHaveBeenCalled();
     });
   });
 
-  it('has no handle and no close control: the Range button is its only button besides the chips', () => {
-    const { container } = renderRail(ANY);
-    const pressables = [...container.querySelectorAll('[data-pressable]')];
-    expect(pressables.map((pressable) => pressable.getAttribute('data-pressable'))).toEqual([
-      'mobile.gradeRail.rangeToggle',
-    ]);
+  it('is the strip of chips and nothing else: no Range control, no handle, no close button', () => {
+    const { container } = renderRail(ONLY_V2);
+    const buttons = [...container.querySelectorAll('button')];
+    expect(buttons).toHaveLength(7);
+    expect(buttons.every((button) => button.hasAttribute('data-chip'))).toBe(true);
+    expect(container.textContent).not.toContain('mobile.gradeRail.rangeToggle');
     expect(container.querySelector('[data-label="mobile.gradeRail.closeAria"]')).toBeNull();
+    // Every chip sits inside the scrolling strip: nothing is pinned beside it.
+    expect(container.querySelector('[data-scroll="true"]')?.querySelectorAll('[data-chip]')).toHaveLength(7);
   });
 
-  it('keeps the Range button outside the scrolling strip', () => {
-    const { container } = renderRail(ANY);
-    const scrollStrip = container.querySelector('[data-scroll="true"]');
-    expect(scrollStrip?.querySelectorAll('[data-chip]')).toHaveLength(7);
-    expect(scrollStrip?.contains(rangeButton(container))).toBe(false);
-  });
-
-  it('rests the first chip and the Range button on a 16pt gutter unless the container sets its own', () => {
+  it('insets the strip by a 16pt gutter at both ends unless the container sets its own', () => {
     const { container, rerender } = renderRail(ANY);
-    expect(container.querySelector('[data-scroll="true"]')?.getAttribute('data-padding-start')).toBe('16');
-    expect(rangeButton(container).getAttribute('data-margin-end')).toBe('16');
+    const scrollStrip = () => container.querySelector('[data-scroll="true"]');
+    expect(scrollStrip()?.getAttribute('data-padding-start')).toBe('16');
+    expect(scrollStrip()?.getAttribute('data-padding-end')).toBe('16');
 
     rerender(
       <GradeRangeRail
@@ -800,19 +760,18 @@ describe('GradeRangeRail', () => {
         bound={ANY}
         onChange={vi.fn()}
         contentInsetLeft={0}
-        contentInsetRight={0}
+        contentInsetRight={24}
       />,
     );
-    expect(container.querySelector('[data-scroll="true"]')?.getAttribute('data-padding-start')).toBe('0');
-    expect(rangeButton(container).getAttribute('data-margin-end')).toBe('0');
+    expect(scrollStrip()?.getAttribute('data-padding-start')).toBe('0');
+    expect(scrollStrip()?.getAttribute('data-padding-end')).toBe('24');
   });
 
-  it('fires a selection haptic for a stop tap, a clear and a Range tap', () => {
-    const { container, getByText } = renderRail(ONLY_V2);
+  it('fires a selection haptic for a stop tap and for a clear', () => {
+    const { getByText } = renderRail(ONLY_V2);
     fireEvent.click(getByText('V4'));
     fireEvent.click(getByText(ANY_LABEL));
-    fireEvent.click(rangeButton(container));
-    expect(haptics.selection).toHaveBeenCalledTimes(3);
+    expect(haptics.selection).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the inline filter rail visible while grades are pending on Android', () => {

@@ -325,12 +325,8 @@ vi.mock('../../SearchHeader', () => ({
 }));
 
 vi.mock('../../grade', () => ({
-  GradeRangeRail: ({ recenterKey, contentInsetRight }: { recenterKey?: number; contentInsetRight?: number }) =>
-    createElement('div', {
-      'data-grade-rail': 'true',
-      'data-recenter-key': String(recenterKey),
-      'data-inset-right': String(contentInsetRight),
-    }),
+  GradeRangeRail: ({ recenterKey }: { recenterKey?: number }) =>
+    createElement('div', { 'data-grade-rail': 'true', 'data-recenter-key': String(recenterKey) }),
 }));
 
 type AngleSelectorMockProps = {
@@ -779,8 +775,9 @@ describe('ClimbTopChrome', () => {
     expect(onOpenGrade).toHaveBeenCalledTimes(1);
   });
 
-  // The grade rail stays on screen until the climber hides it. Losing focus and
-  // focusing search close the transient iPad popover and nothing else.
+  // Once opened, the grade rail stays on screen until the climber hides it.
+  // Losing focus and focusing search close the transient iPad popover and
+  // nothing else.
   describe('grade rail persistence', () => {
     it.each(['liquidGlass', 'material'] as const)(
       'dismisses the popover, not the rail, when the screen loses focus (%s)',
@@ -820,7 +817,7 @@ describe('ClimbTopChrome', () => {
       },
     );
 
-    it('hands the Material rail its re-centre key, with no right inset inside the stack gutter', () => {
+    it('hands the Material rail its re-centre key', () => {
       ctrl.variant = 'material';
       ctrl.board = typedBoard;
       const railProps = {
@@ -831,7 +828,6 @@ describe('ClimbTopChrome', () => {
       const { container, rerender } = render(<ClimbTopChrome {...makeProps({ ...railProps, gradeRecenterKey: 3 })} />);
       const rail = () => container.querySelector('[data-grade-rail="true"]');
       expect(rail()?.getAttribute('data-recenter-key')).toBe('3');
-      expect(rail()?.getAttribute('data-inset-right')).toBe('0');
 
       rerender(<ClimbTopChrome {...makeProps({ ...railProps, gradeRecenterKey: 4 })} />);
       expect(rail()?.getAttribute('data-recenter-key')).toBe('4');

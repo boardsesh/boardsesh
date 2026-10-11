@@ -168,7 +168,7 @@ function ClimbTopChromeComponent({
     // When the persistent chip row is the default filtering surface, the Material
     // top-chrome filter affordances (grade control, filter button, condensed summary)
     // are suppressed — the chips own filtering. The app-bar search field, the angle
-    // chip, and the in-chrome grade rail (there unless the chip row's Grade chip hid it) stay.
+    // chip, and the in-chrome grade rail (opened and hidden by the chip row's Grade chip) stay.
     const showTopChromeFilters = !showPersistentChips;
     const hasGradeFilter = gradeChip?.active === true;
     const nonGradeFilterCount = Math.max(0, activeFilterCount - (hasGradeFilter ? 1 : 0));
@@ -304,10 +304,9 @@ function ClimbTopChromeComponent({
             ) : null}
 
             {/* The rail stays inside the stack's gutter like the chip row above it,
-                which pads its own chips a further 16pt, so both strips clip on the
-                same line. The rail's default left inset rests the first grade chip
-                under that row's first chip; the Range toggle needs no right inset,
-                the gutter already is one. */}
+                which pads its own chips a further 16pt. The rail's default insets
+                do the same, so the first grade chip rests under that row's first
+                chip and both strips clip on the same line. */}
             {gradeRailVisible && gradeBound && onGradeChange ? (
               <GradeRangeRail
                 grades={grades}
@@ -316,7 +315,6 @@ function ClimbTopChromeComponent({
                 boardName={boardName}
                 onChange={onGradeChange}
                 recenterKey={gradeRecenterKey}
-                contentInsetRight={0}
                 style={styles.materialGradeRail}
               />
             ) : null}

@@ -403,8 +403,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   // Cancels the section card's content padding so the grade strip scrolls out to
-  // the card's edges; the rail's own insets put its title, first chip and Range
-  // toggle back on that padding.
+  // the card's edges; the rail's own insets put its title and its first and last
+  // chip back on that padding.
   inlineGradeRail: {
     marginTop: spacing[1],
     marginHorizontal: -spacing[4],

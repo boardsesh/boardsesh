@@ -238,7 +238,7 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 function ClimbListInner() {
   const { isPad, widthClass } = useDeviceLayout();
   // A regular-width iPad places the grade picker in a transient popover on the
-  // Grade chip; everywhere else it is a row of the chrome that stays on screen.
+  // Grade chip; everywhere else it is a row of the chrome that stays once opened.
   // An open popover stays a popover until it is dismissed, even if the window
   // narrows under it.
   const isRegularWidthPad = isPad && widthClass === 'regular';
@@ -273,8 +273,8 @@ function ClimbListInner() {
   const { t: tCommon } = useTranslation('common');
   const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
   const [lightOnClimbTap] = useSetting('lightOnClimbTap');
-  // The grade row is on screen unless the climber hid it with the Grade chip, a
-  // choice kept across launches.
+  // The grade row is hidden until the Grade chip opens it. Then it stays, across
+  // opening a climb, search, Filters and app launches, until the chip hides it.
   const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
   // As a row of the chrome (Liquid Glass) or inside it (Material), never beside
   // the popover.
@@ -1467,6 +1467,9 @@ function ClimbListInner() {
         toMin: next.minGradeId ?? 0,
         toMax: next.maxGradeId ?? 0,
         gesture: change.gesture,
+        // Only on a tap with one other grade selected: did it land inside the
+        // range window (a range) or after it (a switch)?
+        ...(change.withinRangeWindow !== undefined && { withinRangeWindow: change.withinRangeWindow }),
         // Left out on the first change of the session.
         ...(previousChangeAt !== null && { msSincePrevious: changedAt - previousChangeAt }),
       });
@@ -1474,9 +1477,9 @@ function ClimbListInner() {
     },
     [gradeBound, setGrade],
   );
-  // The grade row stays on screen, so it outlives a visit to a climb. On the
-  // way back it centres on the current selection again, wherever the climber
-  // left it scrolled.
+  // Once open, the grade row stays on screen, so it outlives a visit to a climb.
+  // On the way back it centres on the current selection again, wherever the
+  // climber left it scrolled.
   const gradeRecenterKey = useRefocusCount();
   // Removable active-filter tokens for the scope row beneath the search field.
   // Each token's `clear` patches just its field back to the default.
@@ -1789,9 +1792,9 @@ function ClimbListInner() {
         />
         {/* On Liquid Glass the grade row is a row of the chrome itself, so the
             native header can never cover it and the list insets by the taller
-            chrome. It is there unless the Grade chip hid it. (Material renders
-            its own rail inside ClimbTopChrome; regular-width iPad uses the chip's
-            popover.) */}
+            chrome. The Grade chip opens it and it stays until the chip hides it.
+            (Material renders its own rail inside ClimbTopChrome; regular-width
+            iPad uses the chip's popover.) */}
         {gradeRowVisible && !filterInTopChrome ? (
           <View style={styles.chipGradeRail}>
             <GradeRangeRail
@@ -2428,8 +2431,8 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   // The grade rail the Grade chip discloses, in flow under the chip row. No side
-  // padding: the rail runs edge to edge and insets its own first chip and Range
-  // toggle to the 16pt gutter the chip row above rests on.
+  // padding: the rail runs edge to edge and insets its own first and last chip to
+  // the 16pt gutter the chip row above rests on.
   chipGradeRail: {
     paddingBottom: spacing[2],
   },
