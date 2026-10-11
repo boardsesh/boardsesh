@@ -315,7 +315,10 @@ async function exchangeTransferToken(
  * Never throws: every outcome maps to an OAuthSignInResult (success / cancelled /
  * failure) so the caller treats it exactly like the native path.
  */
-async function signInWithProviderWeb(operation: DiagnosticOperation, provider: AuthProvider): Promise<OAuthSignInResult> {
+async function signInWithProviderWeb(
+  operation: DiagnosticOperation,
+  provider: AuthProvider,
+): Promise<OAuthSignInResult> {
   const attemptId = generateNonce();
   const nativeCallbackUrl = `${WEB_BASE_URL}/api/auth/native/callback?next=${encodeURIComponent('/')}&provider=${provider}&attemptId=${attemptId}`;
   const startUrl = `${WEB_BASE_URL}/auth/native-start?provider=${provider}&callbackUrl=${encodeURIComponent(nativeCallbackUrl)}`;

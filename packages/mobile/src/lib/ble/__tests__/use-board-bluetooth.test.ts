@@ -267,6 +267,44 @@ describe('useBoardBluetooth', () => {
     expect(snapshot.active).toEqual([]);
   });
 
+  it('does not send or reconnect after disconnect while diagnostics are pending', async () => {
+    let releaseDiagnostics: ((diagnostics: null) => void) | undefined;
+    let diagnosticsStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      diagnosticsStarted = resolve;
+    });
+    const diagnostics = new Promise<null>((resolve) => {
+      releaseDiagnostics = resolve;
+    });
+    const fakeAdapter = makeFakeAdapter({
+      getConnectionDiagnostics: vi.fn(() => {
+        diagnosticsStarted?.();
+        return diagnostics;
+      }),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    let pending: Promise<boolean> | undefined;
+    await act(async () => {
+      pending = result.current.connect('p100r12');
+      await started;
+    });
+    await act(async () => {
+      await result.current.disconnect();
+    });
+    let connected: boolean | undefined;
+    await act(async () => {
+      releaseDiagnostics?.(null);
+      connected = await pending;
+    });
+    expect(connected).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(fakeAdapter.write).not.toHaveBeenCalled();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
+  });
+
   it('finishes the diagnostic operation when the picker is cancelled', async () => {
     initializeMobileDiagnostics({ launchId: 'cancel-test-launch' });
     const fakeAdapter = makeFakeAdapter({

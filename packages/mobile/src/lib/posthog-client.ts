@@ -320,7 +320,7 @@ export async function initializePosthogClient(): Promise<void> {
   // analytics consent is current, never in the independent Sentry launch sink.
   setDiagnosticIdentityReader(() => ({
     posthogDistinctId: isProductAnalyticsGranted() ? (client?.getDistinctId() ?? null) : null,
-    posthogSessionId: isProductAnalyticsGranted() ? (client?.getSessionId() || null) : null,
+    posthogSessionId: isProductAnalyticsGranted() ? client?.getSessionId() || null : null,
   }));
   await client.ready();
   await applyPosthogConsent();

@@ -180,6 +180,12 @@ chunk/progress callback. Background thumbnail work does not create JS render
 operations. Recorder sink/identity failures cannot change app behavior or error
 severity, and do not create duplicate captured exceptions.
 
+Native diagnostics decorates the existing privacy initializer: one SDK start,
+with the same release guard and redaction callbacks. JavaScript leaves native
+initialization disabled so it cannot replace those callbacks. The diagnostic
+identity reader supplies PostHog IDs only for explicit feedback while analytics
+consent is granted; persistent launch context and Sentry snapshots exclude them.
+
 Every JS runtime gets a `launchId`. Every new native process gets a
 `nativeStartupId` before React starts; OTA reloads retain that process ID. The
 previous runtime ID is stored privately. `previousLaunchCrashed` is populated

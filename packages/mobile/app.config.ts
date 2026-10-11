@@ -835,7 +835,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // The auth token is supplied via the SENTRY_AUTH_TOKEN env var in CI
       // (never committed); url defaults to https://sentry.io/ (US region).
       // Source mods run in reverse: diagnostics decorates our privacy initializer.
-      './plugins/with-sentry-native-diagnostics',
+      ...(process.env.EXPO_PUBLIC_SENTRY_DSN?.trim() ? ['./plugins/with-sentry-native-diagnostics'] : []),
       ['@sentry/react-native/expo', { organization: 'boardsesh', project: 'boardsesh' }],
       // Configure public native callbacks in our generated app startup code.
       // JS leaves native initialization alone so it cannot replace them.

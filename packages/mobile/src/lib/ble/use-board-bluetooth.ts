@@ -1804,6 +1804,13 @@ export function useBoardBluetooth({
         // this connect-time write instead of having to be inferred from a
         // millisecond gap against Bluetooth Connection Success.
         const connectionDiagnostics = (await adapter.getConnectionDiagnostics?.().catch(() => null)) ?? null;
+        // The diagnostic read yields to disconnect/config-switch teardown too.
+        // Never write or restore tags for a connection that ended during that await.
+        if (adapterRef.current !== adapter) {
+          connectInitialSendRef.current = null;
+          connectDiagnostic.finish('cancelled');
+          return false;
+        }
         setBleDiagnosticsTags(connectionDiagnostics);
         connectDiagnostic.step('transport-ready', {
           mtu: connectionDiagnostics?.negotiatedMtu,

@@ -1716,9 +1716,6 @@ describe('promotion as a rollout', () => {
     ).rejects.toThrow('whole number from 1 to 99');
   });
 });
-  });
-});
-
 
 describe('archived OTA publication', () => {
   it('uses the target branch route and uploads the exact archived bytes', async () => {

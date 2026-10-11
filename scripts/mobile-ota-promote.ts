@@ -32,18 +32,8 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  existsSync,
-  lstatSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { cpSync, mkdirSync, mkdtempSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -73,7 +63,7 @@ export { validateExport };
 import { uploadMobileSourceMaps, assertSourceMapExportHashes } from './mobile-upload-sourcemaps';
 import { SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS } from './lib/mobile-publish-retry';
 
-export type OtaPlatform = 'ios' | 'android';
+export type { OtaPlatform } from './lib/ota-publish-protocol.ts';
 
 export interface StageReceipt {
   commitHash: string;
@@ -503,8 +493,6 @@ export function readRolloutReceipt(path: string, branch: string, receipt: StageR
     record.baselineUpdateIds[platform] = baselineUpdateId;
   }
   return record;
-}
-
 }
 
 /** Retries network publication using retained bytes; never runs another export. */

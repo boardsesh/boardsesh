@@ -139,8 +139,6 @@ if (isSentryEnabled) {
     // can't fill, and the reason Sentry is back. attachStacktrace gives
     // captureMessage calls a stack too.
     enableNativeCrashHandling: true,
-    // A native capability, rather than OTA config, preserves older binary initialization.
-    autoInitializeNativeSdk: nativeMobileDiagnostics?.nativeInitVersion !== 1,
     enableNdk: true,
     enableNdkScopeSync: true,
     enableTombstone: true,
