@@ -12,7 +12,7 @@ import { hasNonNegativeCounts, runBackendCronMutation } from './backend-cron-mut
  *   `Active Users Snapshot` event. Overlap-safe: the counts are reads, and the
  *   event carries a uuid derived from the day, so a second send for the same
  *   day collapses into the first in PostHog.
- * - `purge-user-activity` deletes rows older than 13 months. Overlap-safe: a
+ * - `purge-user-activity` deletes rows older than 60 days. Overlap-safe: a
  *   second run finds nothing older than the cutoff.
  *
  * Both are backend mutations for the reason the spray-wall purge is: the

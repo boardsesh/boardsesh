@@ -23,7 +23,7 @@ import { purgeExpiredUserActivity, retentionCutoffDay, snapshotActiveUsers } fro
 import { activeUsersMutations } from '../graphql/resolvers/users/active-users';
 
 /**
- * The daily first-party active-user snapshot and the 13-month retention sweep
+ * The daily first-party active-user snapshot and the 60-day retention sweep
  * (#2644), against the worker database.
  */
 
@@ -142,29 +142,34 @@ describe('snapshotActiveUsers', () => {
 
 describe('retentionCutoffDay', () => {
   it.each([
-    ['2026-10-08T05:00:00.000Z', '2025-09-08'],
-    ['2026-01-15T05:00:00.000Z', '2024-12-15'],
-    // March 31 minus 13 months has no Feb 31: clamp to the last day.
-    ['2027-03-31T05:00:00.000Z', '2026-02-28'],
-  ])('keeps 13 months back from %s', (now, expectedCutoff) => {
+    ['2026-10-08T05:00:00.000Z', '2026-08-09'],
+    // Across a year boundary.
+    ['2026-01-15T05:00:00.000Z', '2025-11-16'],
+    // Across a short February.
+    ['2027-03-31T05:00:00.000Z', '2027-01-30'],
+    // Late in the UTC day still counts that day.
+    ['2026-10-08T23:59:59.000Z', '2026-08-09'],
+  ])('keeps 60 days back from %s', (now, expectedCutoff) => {
     expect(retentionCutoffDay(new Date(now))).toBe(expectedCutoff);
   });
 });
 
 describe('purgeExpiredUserActivity', () => {
-  it('deletes rows older than 13 months and keeps the cutoff day itself', async () => {
+  it('deletes rows older than 60 days and keeps the cutoff day itself', async () => {
     const userId = await createUser();
     await seedActivity([
-      { userId, day: '2025-09-07', platform: 'web' },
-      { userId, day: '2025-09-08', platform: 'web' },
+      { userId, day: '2026-08-08', platform: 'web' },
+      { userId, day: '2026-08-09', platform: 'web' },
+      // The oldest day the trailing 30-day MAU reads on 2026-10-08.
+      { userId, day: '2026-09-08', platform: 'android' },
       { userId, day: '2026-10-07', platform: 'ios' },
     ]);
 
     const result = await purgeExpiredUserActivity({ now: new Date('2026-10-08T07:00:00.000Z') });
 
-    expect(result).toMatchObject({ rowsDeleted: 1, cutoffDay: '2025-09-08' });
+    expect(result).toMatchObject({ rowsDeleted: 1, cutoffDay: '2026-08-09' });
     const remainingDays = (await db.select().from(dbSchema.userActivityDays)).map((row) => row.day).sort();
-    expect(remainingDays).toEqual(['2025-09-08', '2026-10-07']);
+    expect(remainingDays).toEqual(['2026-08-09', '2026-09-08', '2026-10-07']);
   });
 
   it('is idempotent: a second run deletes nothing', async () => {

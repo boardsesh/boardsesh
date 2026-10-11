@@ -4325,7 +4325,7 @@ export type Mutation = {
    * behind, because other people's ticks point at them.
    */
   purgeDeletedSprayWallPhotos: SprayWallPhotoPurgeResult;
-  /** HTTP cron credentials only. Deletes user_activity_days rows older than 13 months. */
+  /** HTTP cron credentials only. Deletes user_activity_days rows older than 60 days. */
   purgeExpiredUserActivity: UserActivityPurgeResult;
   /**
    * Move a gym's ownership to another account (global admin only) — a sold gym,

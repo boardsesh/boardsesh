@@ -16,8 +16,13 @@ import { logger } from '../utils/logger';
 
 export const ACTIVE_USERS_PLATFORMS: readonly ActiveUsersPlatform[] = ['web', 'ios', 'android', 'unknown'];
 
-/** Rows older than this many calendar months are deleted by the retention job. */
-export const USER_ACTIVITY_RETENTION_MONTHS = 13;
+/**
+ * Rows older than this many UTC days are deleted by the retention job. The
+ * longest thing computed from the table is the trailing 30-day MAU, so 60 days
+ * keeps every window the snapshot reads plus 30 days of slack, enough to re-run
+ * a snapshot that failed up to a month late. Nothing computes yearly actives.
+ */
+export const USER_ACTIVITY_RETENTION_DAYS = 60;
 
 /** The trailing windows, in UTC days ending on (and including) the snapshot day. */
 const WEEKLY_WINDOW_DAYS = 7;
@@ -33,18 +38,9 @@ function shiftUtcDay(day: string, deltaDays: number): string {
   return utcDayOf(shifted);
 }
 
-/**
- * Same day of the month, `USER_ACTIVITY_RETENTION_MONTHS` months back, clamped
- * to the end of a shorter month (2027-03-31 -> 2026-02-28).
- */
+/** The oldest UTC day kept: `USER_ACTIVITY_RETENTION_DAYS` days before `now`'s day. */
 export function retentionCutoffDay(now: Date): string {
-  const targetYear = now.getUTCFullYear();
-  const targetMonth = now.getUTCMonth() - USER_ACTIVITY_RETENTION_MONTHS;
-  // Date.UTC normalises a negative month into an earlier year; day 0 of the
-  // next month is the last day of the target month.
-  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-  const dayOfMonth = Math.min(now.getUTCDate(), lastDayOfTargetMonth);
-  return utcDayOf(new Date(Date.UTC(targetYear, targetMonth, dayOfMonth)));
+  return shiftUtcDay(utcDayOf(now), -USER_ACTIVITY_RETENTION_DAYS);
 }
 
 type WindowCounts = { overall: number; byPlatform: Map<string, number> };
@@ -165,8 +161,7 @@ export type PurgeExpiredUserActivityOptions = {
 };
 
 /**
- * Delete activity rows older than {@link USER_ACTIVITY_RETENTION_MONTHS}
- * months. Idempotent: a second run finds nothing older than the cutoff. One
+ * Delete activity rows older than {@link USER_ACTIVITY_RETENTION_DAYS} days. Idempotent: a second run finds nothing older than the cutoff. One
  * statement, because at steady state it deletes a single day's rows (one per
  * climber active that day), through the `day` index.
  */

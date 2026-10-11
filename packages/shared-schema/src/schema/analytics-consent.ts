@@ -90,7 +90,7 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
     setAnalyticsConsent(input: SetAnalyticsConsentInput!): AnalyticsConsent!
     "HTTP cron credentials only. Counts yesterday's DAU and the trailing WAU and MAU, and sends one aggregate PostHog event."
     snapshotActiveUsers: ActiveUsersSnapshotResult!
-    "HTTP cron credentials only. Deletes user_activity_days rows older than 13 months."
+    "HTTP cron credentials only. Deletes user_activity_days rows older than 60 days."
     purgeExpiredUserActivity: UserActivityPurgeResult!
   }
 `;

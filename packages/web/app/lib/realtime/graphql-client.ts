@@ -3,6 +3,7 @@ import {
   type BaseClientOptions,
   type ExtendedClient,
 } from '@boardsesh/graphql-client';
+import { CLIENT_PLATFORM_CONNECTION_PARAM } from '@boardsesh/shared-schema';
 import { webClientIdentityConnectionParams } from '@/app/lib/client-identity';
 import { connectionManager } from './websocket-connection-manager';
 
@@ -71,9 +72,12 @@ export function createGraphQLClient(
     // Always a provider (rather than the shared client's static `authToken`)
     // so the handshake also carries the client identity. Browsers cannot set
     // headers on the upgrade, so connectionParams is the only channel.
+    // `clientPlatform` puts a signed-in socket's day in `user_activity_days`
+    // under `web`, as HTTP requests already are (docs/analytics-consent.md).
     connectionParams: async () => ({
       ...(authToken ? { authToken } : {}),
       ...webClientIdentityConnectionParams(),
+      [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
     }),
     webSocketImpl: SafeWebSocket,
     onClientCreated: (client) => {

@@ -105,14 +105,19 @@ describe('buildHealthQuery / buildLatestUpdateQuery', () => {
   it('inlines a sanitized update id and the adoption column when given an id', () => {
     const query = buildHealthQuery({ hours: 6, updateId: 'abc-123' });
     expect(query).toContain("properties.updateId = 'abc-123'");
-    expect(query).toContain('target_update_launches');
+    expect(query).toContain('target_update_installs');
+    // Per install: an install is one distinct_id (anonymous-install-id.ts).
+    expect(query).toContain('uniqExact(distinct_id) AS installs');
+    expect(query).toContain(
+      "uniqExactIf(distinct_id, toString(properties.isEmergencyLaunch) = 'true') AS emergency_installs",
+    );
     expect(query).toContain("event = 'OTA Update Status'");
     expect(query).toContain("properties.channel = 'production'");
     expect(query).toContain('INTERVAL 6 HOUR');
   });
 
   it('emits a constant 0 adoption column when no id is given', () => {
-    expect(buildHealthQuery({ hours: 24, updateId: null })).toContain('0 AS target_update_launches');
+    expect(buildHealthQuery({ hours: 24, updateId: null })).toContain('0 AS target_update_installs');
   });
 
   it('refuses to build a query for a malicious update id', () => {
@@ -129,12 +134,44 @@ describe('buildHealthQuery / buildLatestUpdateQuery', () => {
 });
 
 describe('evaluateOtaHealth', () => {
-  const metrics = (launches: number, emergencyLaunches: number): HealthMetrics => ({
-    launches,
-    emergencyLaunches,
-
-    targetUpdateLaunches: null,
+  const metrics = (installs: number, emergencyInstalls: number): HealthMetrics => ({
+    installs,
+    emergencyInstalls,
+    launches: installs * 3,
+    emergencyLaunches: emergencyInstalls * 5,
+    targetUpdateInstalls: null,
     updateId: null,
+  });
+
+  it('rates installs, not launches: one install crash-looping is one emergency', () => {
+    const verdict = evaluateOtaHealth(
+      {
+        installs: 100,
+        emergencyInstalls: 1,
+        launches: 140,
+        emergencyLaunches: 40,
+        targetUpdateInstalls: null,
+        updateId: null,
+      },
+      { minSamples: 30, threshold: 0.1 },
+    );
+    expect(verdict.emergencyRate).toBeCloseTo(0.01);
+    expect(verdict.unhealthy).toBe(false);
+  });
+
+  it('needs enough installs, however many launches they made', () => {
+    const verdict = evaluateOtaHealth(
+      {
+        installs: 10,
+        emergencyInstalls: 8,
+        launches: 400,
+        emergencyLaunches: 300,
+        targetUpdateInstalls: null,
+        updateId: null,
+      },
+      { minSamples: 30, threshold: 0.1 },
+    );
+    expect(verdict).toMatchObject({ sufficientSample: false, unhealthy: false });
   });
 
   it('flags unhealthy only when rate beats threshold AND sample is sufficient', () => {
@@ -171,25 +208,28 @@ describe('summarizeVerdict', () => {
 
   it('renders an unhealthy verdict with the adoption line', () => {
     const metrics: HealthMetrics = {
-      launches: 100,
-      emergencyLaunches: 20,
-
-      targetUpdateLaunches: 60,
+      installs: 100,
+      emergencyInstalls: 20,
+      launches: 150,
+      emergencyLaunches: 35,
+      targetUpdateInstalls: 60,
       updateId: 'abc-123',
     };
     const verdict = evaluateOtaHealth(metrics, { minSamples: args.minSamples, threshold: args.threshold });
     const lines = summarizeVerdict(metrics, verdict, args);
     expect(lines[0]).toContain('UNHEALTHY');
     expect(lines.join('\n')).toContain('abc-123');
-    expect(lines.join('\n')).toContain('60 launch(es)');
+    expect(lines.join('\n')).toContain('60 install(s)');
+    expect(lines.join('\n')).toContain('installs: 100 (150 launches)');
   });
 
   it('marks a low-sample result inconclusive and omits the adoption line without an id', () => {
     const metrics: HealthMetrics = {
-      launches: 4,
-      emergencyLaunches: 2,
-
-      targetUpdateLaunches: null,
+      installs: 4,
+      emergencyInstalls: 2,
+      launches: 9,
+      emergencyLaunches: 6,
+      targetUpdateInstalls: null,
       updateId: null,
     };
     const verdict = evaluateOtaHealth(metrics, { minSamples: args.minSamples, threshold: args.threshold });
@@ -235,10 +275,10 @@ describe('runHealthCheck (networked path)', () => {
 
   it('exits 1 and writes an UNHEALTHY summary when the emergency rate clears the gate', async () => {
     vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
-    // [launches, emergency_launches, target_update_launches]
+    // [installs, emergency_installs, launches, emergency_launches, target_update_installs]
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[100, 20, 60]] }) })),
+      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[100, 20, 180, 45, 60]] }) })),
     );
     const out = outPath();
 
@@ -250,7 +290,7 @@ describe('runHealthCheck (networked path)', () => {
     vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[500, 5, 300]] }) })),
+      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[500, 5, 900, 12, 300]] }) })),
     );
     await expect(runHealthCheck(baseArgs())).resolves.toBe(0);
   });

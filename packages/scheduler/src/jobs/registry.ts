@@ -194,7 +194,7 @@ export const JOBS: readonly JobDefinition[] = [
     run: snapshotActiveUsers,
   },
 
-  // Retention for `user_activity_days`: rows older than 13 months go. Daily,
+  // Retention for `user_activity_days`: rows older than 60 days go. Daily,
   // so the table never holds more than a day past the window.
   //
   // Overlap-safe, which JobDefinition requires: a second run finds nothing

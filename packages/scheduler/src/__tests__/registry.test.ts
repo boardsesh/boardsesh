@@ -119,7 +119,7 @@ describe('job registry', () => {
 
   it('snapshots active users just after midnight UTC and purges old activity at 07:30 UTC', () => {
     // Pinned as data. The snapshot counts "yesterday", so it must run after UTC
-    // midnight. The purge is what makes the 13-month retention true: dropped
+    // midnight. The purge is what makes the 60-day retention true: dropped
     // from the registry, the table would grow past it (docs/analytics-consent.md).
     expect(findJob('snapshot-active-users')).toMatchObject({
       schedule: '20 0 * * *',

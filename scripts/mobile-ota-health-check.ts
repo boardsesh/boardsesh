@@ -6,22 +6,30 @@
  * Production OTAs publish to our self-hosted expo-open-ota server (NOT EAS), so
  * `eas update:insights` can't see them. Instead we read the app's own launch
  * telemetry: `OtaUpdateTracker` (packages/mobile/src/components/analytics/
- * OtaUpdateTracker.tsx) fires an `OTA Update Status` event to PostHog once per
- * launch with `{ isEmbeddedLaunch, isEmergencyLaunch, emergencyLaunchReason,
- * updateId, channel, runtimeVersion, ... }`.
+ * OtaUpdateTracker.tsx) fires an anonymous `OTA Update Status` event to PostHog
+ * once per launch with `{ isEmbeddedLaunch, isEmergencyLaunch, updateId,
+ * channel, runtimeVersion, ... }`. Its distinct id is one random id per install
+ * (`ota-install:<uuid>`, packages/mobile/src/lib/anonymous-install-id.ts), so
+ * the gate counts installs, not launches: one phone crash-looping on a bad
+ * bundle is one install, not twenty launches. JS older than that change sends
+ * `ota-launch:<uuid>`, a new id per launch, and each such launch counts as an
+ * install of its own (the old launch-based count). An emergency launch runs the
+ * EMBEDDED bundle, so emergencies on a store binary built before the change
+ * keep that per-launch id until the binary is replaced.
  *
  * An `isEmergencyLaunch === true` launch is expo-updates' automatic safety net:
  * the downloaded JS failed to boot, so the binary fell back to its EMBEDDED
- * bundle. A spike in the emergency-launch RATE across the production fleet after
- * a publish is the tell-tale of a broken OTA. (Note: an emergency launch runs the
+ * bundle. A spike in the share of production installs that hit an emergency
+ * launch after a publish is the tell-tale of a broken OTA. (Note: an emergency launch runs the
  * embedded bundle, so its `updateId` is the embedded one — you CANNOT attribute
  * the failure to the bad update's id. That's why the gate measures the
  * fleet-wide production emergency rate over a window, not a per-updateId rate.
  * The target update's adoption is reported separately, for context only.)
  *
- * Exit code is non-zero ONLY when the emergency-launch rate exceeds the threshold
- * AND the sample size is sufficient — so low-volume noise (the minutes right after
- * a publish, before installs relaunch) never trips it. Every other outcome
+ * Exit code is non-zero ONLY when the emergency rate (installs with at least one
+ * emergency launch / installs that reported) exceeds the threshold AND enough
+ * installs reported — so low-volume noise (the minutes right after a publish,
+ * before installs relaunch) never trips it. Every other outcome
  * (healthy / insufficient sample / missing key / API error) exits 0, so the CI
  * step stays non-blocking.
  *
@@ -52,7 +60,7 @@ const PRODUCTION_CHANNEL = 'production';
 
 const DEFAULT_HOURS = 24;
 const DEFAULT_MIN_SAMPLES = 30;
-const DEFAULT_THRESHOLD = 0.1; // 10% of production launches falling back to embedded
+const DEFAULT_THRESHOLD = 0.1; // 10% of production installs falling back to embedded
 
 export interface HealthCheckArgs {
   updateId: string | null;
@@ -64,10 +72,15 @@ export interface HealthCheckArgs {
 }
 
 export interface HealthMetrics {
+  /** Distinct installs that reported a launch in the window (the denominator). */
+  installs: number;
+  /** Distinct installs with at least one emergency launch in the window. */
+  emergencyInstalls: number;
+  /** Raw launch counts, for context. */
   launches: number;
   emergencyLaunches: number;
-  /** Launches running the target update id (isEmbeddedLaunch false). null when no id resolved. */
-  targetUpdateLaunches: number | null;
+  /** Installs running the target update id (isEmbeddedLaunch false). null when no id resolved. */
+  targetUpdateInstalls: number | null;
   updateId: string | null;
 }
 
@@ -169,21 +182,23 @@ export function buildLatestUpdateQuery(hours: number): string {
 }
 
 /**
- * Fleet health over the window: total production launches, how many fell back to
- * the embedded bundle (emergency), and — when a target id is known — how many
- * launches are successfully running it.
+ * Fleet health over the window, per install (distinct `distinct_id`): installs
+ * that reported, installs with an emergency launch, and — when a target id is
+ * known — installs running it. Raw launch counts ride along for context.
  */
 export function buildHealthQuery(options: { hours: number; updateId: string | null }): string {
   const { hours, updateId } = options;
-  const targetLaunches =
+  const targetInstalls =
     updateId !== null
-      ? `countIf(properties.updateId = '${sanitizeUpdateId(updateId)}' AND toString(properties.isEmbeddedLaunch) = 'false')`
+      ? `uniqExactIf(distinct_id, properties.updateId = '${sanitizeUpdateId(updateId)}' AND toString(properties.isEmbeddedLaunch) = 'false')`
       : '0';
   return `
     SELECT
+      uniqExact(distinct_id) AS installs,
+      uniqExactIf(distinct_id, toString(properties.isEmergencyLaunch) = 'true') AS emergency_installs,
       count() AS launches,
       countIf(toString(properties.isEmergencyLaunch) = 'true') AS emergency_launches,
-      ${targetLaunches} AS target_update_launches
+      ${targetInstalls} AS target_update_installs
     FROM events
     WHERE event = '${OTA_UPDATE_STATUS_EVENT}'
       AND properties.channel = '${PRODUCTION_CHANNEL}'
@@ -191,13 +206,13 @@ export function buildHealthQuery(options: { hours: number; updateId: string | nu
   `;
 }
 
-/** The gate: unhealthy iff the emergency-launch rate beats the threshold AND there's enough data. */
+/** The gate: unhealthy iff the per-install emergency rate beats the threshold AND enough installs reported. */
 export function evaluateOtaHealth(
   metrics: HealthMetrics,
   options: { minSamples: number; threshold: number },
 ): HealthVerdict {
-  const emergencyRate = metrics.launches > 0 ? metrics.emergencyLaunches / metrics.launches : 0;
-  const sufficientSample = metrics.launches >= options.minSamples;
+  const emergencyRate = metrics.installs > 0 ? metrics.emergencyInstalls / metrics.installs : 0;
+  const sufficientSample = metrics.installs >= options.minSamples;
   const unhealthy = sufficientSample && emergencyRate > options.threshold;
   return { emergencyRate, sufficientSample, unhealthy, exitCode: unhealthy ? 1 : 0 };
 }
@@ -210,16 +225,16 @@ export function summarizeVerdict(metrics: HealthMetrics, verdict: HealthVerdict,
     ? '🚨 UNHEALTHY'
     : verdict.sufficientSample
       ? '✅ healthy'
-      : '➖ inconclusive (too few launches)';
+      : '➖ inconclusive (too few installs)';
   const lines = [
     `OTA health: ${status}`,
     `• window: last ${args.hours}h • channel: ${PRODUCTION_CHANNEL}`,
-    `• launches: ${metrics.launches}`,
-    `• emergency launches: ${metrics.emergencyLaunches} → rate ${formatPercent(verdict.emergencyRate)} (threshold ${formatPercent(args.threshold)}, min ${args.minSamples})`,
+    `• installs: ${metrics.installs} (${metrics.launches} launches)`,
+    `• installs with an emergency launch: ${metrics.emergencyInstalls} → rate ${formatPercent(verdict.emergencyRate)} (threshold ${formatPercent(args.threshold)}, min ${args.minSamples} installs; ${metrics.emergencyLaunches} emergency launches)`,
   ];
   if (metrics.updateId) {
-    const adoption = metrics.targetUpdateLaunches ?? 0;
-    lines.push(`• latest update ${metrics.updateId}: ${adoption} launch(es) running it`);
+    const adoption = metrics.targetUpdateInstalls ?? 0;
+    lines.push(`• latest update ${metrics.updateId}: ${adoption} install(s) running it`);
   }
   return lines;
 }
@@ -273,9 +288,11 @@ export async function runHealthCheck(args: HealthCheckArgs): Promise<number> {
     const rows = await queryPostHog(host, projectId, apiKey, buildHealthQuery({ hours: args.hours, updateId }));
     const row = rows[0] ?? [];
     const metrics: HealthMetrics = {
-      launches: toCount(row[0]),
-      emergencyLaunches: toCount(row[1]),
-      targetUpdateLaunches: updateId ? toCount(row[2]) : null,
+      installs: toCount(row[0]),
+      emergencyInstalls: toCount(row[1]),
+      launches: toCount(row[2]),
+      emergencyLaunches: toCount(row[3]),
+      targetUpdateInstalls: updateId ? toCount(row[4]) : null,
       updateId,
     };
 
@@ -294,7 +311,7 @@ export async function runHealthCheck(args: HealthCheckArgs): Promise<number> {
 
     if (verdict.unhealthy) {
       console.error(
-        `[ota-health] FAILED — emergency-launch rate ${formatPercent(verdict.emergencyRate)} over ${metrics.launches} launches exceeds the ${formatPercent(args.threshold)} threshold.`,
+        `[ota-health] FAILED — ${formatPercent(verdict.emergencyRate)} of ${metrics.installs} installs hit an emergency launch, over the ${formatPercent(args.threshold)} threshold.`,
       );
     }
     return verdict.exitCode;

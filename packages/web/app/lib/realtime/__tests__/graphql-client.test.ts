@@ -43,6 +43,7 @@ describe('web realtime createGraphQLClient connectionParams', () => {
     await expect(lastConnectionParams()).resolves.toEqual({
       authToken: 'session-token',
       clientIdentity: BROWSER_IDENTITY,
+      clientPlatform: 'web',
     });
     // The static token is folded into the provider, never passed alongside it.
     expect(shared.capturedOptions.at(-1)).not.toHaveProperty('authToken');
@@ -51,13 +52,13 @@ describe('web realtime createGraphQLClient connectionParams', () => {
   it('sends only the client identity when anonymous', async () => {
     createGraphQLClient({ url: 'wss://backend.test/graphql', authToken: null });
 
-    await expect(lastConnectionParams()).resolves.toEqual({ clientIdentity: BROWSER_IDENTITY });
+    await expect(lastConnectionParams()).resolves.toEqual({ clientIdentity: BROWSER_IDENTITY, clientPlatform: 'web' });
   });
 
   it('sends the client identity through the deprecated url signature too', async () => {
     createGraphQLClient('wss://backend.test/graphql');
 
-    await expect(lastConnectionParams()).resolves.toEqual({ clientIdentity: BROWSER_IDENTITY });
+    await expect(lastConnectionParams()).resolves.toEqual({ clientIdentity: BROWSER_IDENTITY, clientPlatform: 'web' });
   });
 });
 

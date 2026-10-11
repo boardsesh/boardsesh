@@ -9,20 +9,21 @@ import {
 } from './ota-telemetry';
 import { anonymousOtaStatusProperties, anonymousOtaLaunchProperties } from './anonymous-ota-health-properties';
 import { isDevBuild } from './is-dev-build';
+import { getAnonymousInstallId } from './anonymous-install-id';
 
-let launchId: string | null = null;
-
-/** A memory-only launch report through the proxy that strips IP and HTTP User-Agent. */
+/**
+ * An anonymous launch report through the proxy that strips IP and HTTP
+ * User-Agent. The distinct id is the install's random id
+ * (anonymous-install-id.ts), so adoption and emergency rates count installs,
+ * not launches. No person profile, no GeoIP, no account id.
+ */
 async function reportAnonymousHealth(
   event: typeof OTA_UPDATE_STATUS_EVENT | typeof OTA_LAUNCH_UPDATE_EVENT,
   properties: ReturnType<typeof anonymousOtaStatusProperties> | ReturnType<typeof anonymousOtaLaunchProperties>,
 ): Promise<void> {
   const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
   if (isDevBuild() || !apiKey || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
-  launchId ??=
-    typeof globalThis.crypto?.randomUUID === 'function'
-      ? globalThis.crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const installId = await getAnonymousInstallId();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
@@ -36,7 +37,7 @@ async function reportAnonymousHealth(
         batch: [
           {
             event,
-            distinct_id: `ota-launch:${launchId}`,
+            distinct_id: `ota-install:${installId}`,
             properties: {
               ...properties,
               $process_person_profile: false,
