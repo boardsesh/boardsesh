@@ -228,9 +228,9 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 {subtitleParts.length > 0 ? ' · ' : ''}
                 {setterUsername}
               </Text>
-          </View>
             ) : null}
           </Text>
+          </View>
           {/* One caption line, same grey as the subtitle: this is context for a
               climb you can still open by link or queue, not an error. */}
           {isHidden ? (

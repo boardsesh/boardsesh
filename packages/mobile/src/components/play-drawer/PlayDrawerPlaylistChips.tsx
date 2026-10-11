@@ -5,7 +5,7 @@ import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memb
 import { useClimbPlaylistMembershipQuery } from '../../hooks/use-climb-playlist-membership-query';
 import { usePlaylistsContextOptional } from '../../providers/playlists-provider';
 import { hasPlaylistForBoard } from '../../lib/sort-filter-playlists';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 
 /**
  * How many playlists get named here before the rest collapse into "+N". One, not
@@ -57,6 +57,7 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   layoutId,
   fetchMembership,
 }: PlayDrawerPlaylistChipsProps) {
+  const { systemColors } = useTheme();
   const { t } = useTranslation('climbs');
   const playlistsContext = usePlaylistsContextOptional();
   const playlists = playlistsContext?.playlists;
@@ -108,7 +109,7 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
       align="inline"
       maxVisible={HEADER_MAX_VISIBLE_CHIPS}
       // The exact grey the stats text beside it uses — one line, one colour.
-      inlineLabelColor={iosSystemColors.systemGray}
+      inlineLabelColor={systemColors.secondaryLabel}
       describeForAccessibility={describeForAccessibility}
     />
   );
