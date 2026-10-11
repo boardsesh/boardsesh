@@ -40,12 +40,10 @@ function sortedGrades(grades: readonly Grade[]): Grade[] {
   return [...grades].sort((firstGrade, secondGrade) => firstGrade.difficultyId - secondGrade.difficultyId);
 }
 
-/** How the climber changed the bound: a tap on a stop, a touch and hold, or the Any chip. */
-export type GradeRailGesture = 'tap' | 'hold' | 'clear';
-
 /** Rides along with every change the rail reports, for the caller's analytics. */
 export type GradeRailChange = {
-  gesture: GradeRailGesture;
+  /** How the climber changed the bound: a tap on a stop, a touch and hold, or the Any chip. */
+  gesture: 'tap' | 'hold' | 'clear';
   /**
    * Set only on a tap made while one other stop was selected, the one case the
    * extend window decides: true when the tap landed inside it and made a range,
@@ -75,7 +73,8 @@ type GradeRangeRailProps = {
    * A value whose change centres the rail on the current selection again, even
    * after the climber has scrolled or tapped it. A rail that stays on screen
    * needs it: the climbs list bumps it when the screen regains focus. A change
-   * that lands while a finger is on the rail is dropped.
+   * that lands while a finger is on the rail is dropped. (A `bound` that changes
+   * from outside the rail re-centres it the same way, with no key needed.)
    */
   recenterKey?: number;
   showTitle?: boolean;
@@ -132,18 +131,23 @@ export function GradeRangeRail({
   // Set once the climber taps/drags the rail. After that we do not re-centre, so
   // the row can't yank out from under their finger; before that we re-centre as
   // the focus settles (e.g. lastUsedGrade resolving from storage after mount).
-  // Only a new `recenterKey` clears it.
+  // A new `recenterKey` clears it, and so does a selection made somewhere else.
   const userInteractedRef = useRef(false);
   // A finger resting on the strip, and a drag under way. While either is true
   // the rail does not scroll itself, whatever asks.
   const touchingRef = useRef(false);
   const draggingRef = useRef(false);
-  // When a tap on this rail last left exactly one stop selected. A tap on
-  // another stop inside RANGE_EXTEND_WINDOW_MS of it makes a range. Undefined
-  // when the selection did not come from such a tap (it was there at mount, it
-  // came from outside, it is a range, a hold made it): then the next tap
-  // switches stop, however soon it lands.
+  // When a tap on this rail last left one stop selected. A tap on another stop
+  // inside RANGE_EXTEND_WINDOW_MS of it makes a range. Undefined whenever the
+  // selection on screen is not that tap's: it was there at mount, it is a range,
+  // a hold or the Any chip made it, or the bound has since changed from outside
+  // the rail (see the effect on `bound` below). Then the next tap switches stop,
+  // however soon it lands.
   const lastSinglePickAtRef = useRef<number | undefined>(undefined);
+  // The bound this rail last reported through onChange, until the parent hands
+  // it back as `bound`. A `bound` that changes to anything else was set
+  // somewhere else: Filters, a recent filter, a token, a restore.
+  const reportedBoundRef = useRef<GradeBound | null>(null);
 
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
   const stops = useMemo(
@@ -208,21 +212,40 @@ export function GradeRangeRail({
     startCentering();
   }, [startCentering, clearCenterRaf]);
 
-  // A new `recenterKey` lifts the interaction latch and centres on the current
-  // selection again. Not on mount (the effect above has that), and not while a
-  // finger is on the rail: that request is dropped, the row stays where the
-  // climber is holding it.
-  const seenRecenterKeyRef = useRef(recenterKey);
-  useEffect(() => {
-    if (seenRecenterKeyRef.current === recenterKey) return;
-    seenRecenterKeyRef.current = recenterKey;
+  // Lift the interaction latch and centre on the current selection again. Not
+  // while a finger is on the rail: that request is dropped, the row stays where
+  // the climber is holding it.
+  const recenter = useCallback(() => {
     if (touchingRef.current || draggingRef.current) return;
     userInteractedRef.current = false;
     clearCenterRaf();
     didCenterRef.current = false;
     centeringRef.current = false;
     startCentering();
-  }, [recenterKey, startCentering, clearCenterRaf]);
+  }, [startCentering, clearCenterRaf]);
+
+  // A new `recenterKey` asks for that. Not on mount: the effect above has it.
+  const seenRecenterKeyRef = useRef(recenterKey);
+  useEffect(() => {
+    if (seenRecenterKeyRef.current === recenterKey) return;
+    seenRecenterKeyRef.current = recenterKey;
+    recenter();
+  }, [recenterKey, recenter]);
+
+  // So does a selection made somewhere else: without it, a far grade applied
+  // from Filters or a recent filter stays off screen once the climber has
+  // touched the rail. It is not this rail's pick either, so it closes the range
+  // window: the next tap on another stop switches, it does not extend.
+  const seenBoundRef = useRef(bound);
+  useEffect(() => {
+    if (isSameGradeBound(seenBoundRef.current, bound)) return;
+    seenBoundRef.current = bound;
+    const reportedBound = reportedBoundRef.current;
+    reportedBoundRef.current = null;
+    if (reportedBound && isSameGradeBound(reportedBound, bound)) return;
+    lastSinglePickAtRef.current = undefined;
+    recenter();
+  }, [bound, recenter]);
 
   // Cancel any in-flight re-assert loop on unmount.
   useEffect(() => clearCenterRaf, [clearCenterRaf]);
@@ -252,7 +275,9 @@ export function GradeRangeRail({
   // range changes nothing, so it reports nothing.
   const commit = useCallback(
     (next: GradeBound, change: GradeRailChange) => {
-      if (!isSameGradeBound(next, bound)) onChange(next, change);
+      if (isSameGradeBound(next, bound)) return;
+      reportedBoundRef.current = next;
+      onChange(next, change);
     },
     [bound, onChange],
   );

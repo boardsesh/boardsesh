@@ -442,9 +442,16 @@ material" above). The row is the strip of chips and nothing else: no pinned cont
 **Hidden until tapped, then it stays.** On Climbs the row is hidden by default and the Grade chip
 opens it, pushing the list down. Open is a persisted setting (`gradeRowShown`): the row stays across
 opening a climb, search focus, Filters and app launches, until the chip hides it. Nothing else
-closes it. On iOS the chip's chevron points up while the row is shown. Back on the screen, the row
-centres on the current selection again (`recenterKey`); it never scrolls itself while a finger is
-on it. The regular-width iPad popover is the exception: it stays transient.
+closes it. On iOS the chip's chevron points up while the row is shown. The row is drawn only while
+the Grade chip is pinned: the chip is its one way out, so unpinning the chip takes the row with it,
+and pinning it again brings the row back as it was left. The regular-width iPad popover is the
+exception to all of this: it stays transient.
+
+**It follows the selection, never the finger.** The row centres on the selection when it opens.
+Once the climber has scrolled or tapped it, it stays put for their own picks, so a tapped chip does
+not slide away. It centres again when the selection changes somewhere else (Filters, a recent
+filter, a token) and when the screen comes back into focus (`recenterKey`). It never scrolls itself
+while a finger is on it.
 
 **Insets come from the container.** With no frame, the row lines up with what is above it: the
 first chip rests under the first chip of the chip row (or under the section's label in a sheet).
@@ -458,6 +465,13 @@ gradient fade: the background differs per call site.
 filters all three; under Font nothing merges. Anything that names the selection compares labels,
 not ids: a pick of that "V0" is two different ids and still reads "V0", never "V0–V0". Logging
 keeps one chip per grade (`GradeSingleSelectRail`), because a tick needs the exact one.
+
+**A label never claims more than the filter.** A saved bound can cover only part of a stop: 4a
+alone, set under Font grades or before chips were grouped, sits inside "V0". Nothing rewrites it on
+load. Its chip may draw as selected, but every label names that end precisely, "V0 / 4A"
+(`gradeBoundLabels`); the plain "V0" is for a bound that covers the stop edge to edge. A tap or a
+hold on a partly covered stop first completes it. Only a stop the bound covers exactly clears on a
+tap, and an end the gesture does not touch keeps its exact grade.
 
 **The label is the whole chip.** No dot and no checkmark in front of it; labels are centred. A
 resting chip is a `systemColors.fill` capsule with a transparent border. A selected stop, or either
@@ -479,7 +493,8 @@ range set, a tap on an end moves it one stop inward and any other tap picks that
 (`computeGradeTap` in `@boardsesh/climb-filters`). Touch and hold for 400 ms does not depend on
 timing: it makes the range with the selected stop, or moves the nearer end of a range to the held
 stop (`extendGradeRange`). The screen-reader hint names the hold, since VoiceOver cannot count on
-the gap between two taps.
+the gap between two taps. The 3 s run from the climber's own tap on the row: a selection that
+arrives from somewhere else closes the window, so the next tap switches grade.
 
 The timed rule is the owner's call, kept against [HIG
 Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)'s advice

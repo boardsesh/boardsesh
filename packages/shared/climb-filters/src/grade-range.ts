@@ -11,6 +11,13 @@
  * nothing here asks "is min equal to max?". A selection is one stop when both
  * its ends fall inside the same stop, whatever the two ids are.
  *
+ * A bound does not have to sit on stop edges. One saved under Font grades, or
+ * before chips were grouped, can cover only PART of a stop ("4a" alone, where
+ * the V chip is all of V0). Nothing here rewrites such a bound by itself. A
+ * gesture puts the end it touches on a stop edge and leaves the other end's id
+ * exactly as it was, and a tap or hold on a partly covered stop first completes
+ * that stop instead of clearing or trimming it.
+ *
  * Two gestures change the bound. A tap (`computeGradeTap`) picks one stop, and
  * a second tap on another stop soon after the first makes a range. A touch and
  * hold (`extendGradeRange`) makes or moves a range whenever it happens.
@@ -69,9 +76,17 @@ export function isGradeStopEnd(bound: GradeBound, stop: GradeStop): boolean {
   return stopCovers(stop, bound.minGradeId) || stopCovers(stop, bound.maxGradeId);
 }
 
-/** Whether the stop is the whole selection: both ends are set and both fall inside it. */
+/**
+ * Whether the whole selection sits inside the stop: both ends are set and both
+ * fall in it. The selection may cover only part of the stop.
+ */
 export function isGradeStopAlone(bound: GradeBound, stop: GradeStop): boolean {
   return stopCovers(stop, bound.minGradeId) && stopCovers(stop, bound.maxGradeId);
+}
+
+/** Whether the bound is this stop edge to edge: no more, and no less. */
+export function isExactGradeStop(bound: GradeBound, stop: GradeStop): boolean {
+  return bound.minGradeId === stop.minGradeId && bound.maxGradeId === stop.maxGradeId;
 }
 
 /** Whether the stop sits between the two ends of a range, and is neither end. */
@@ -80,7 +95,10 @@ export function isGradeStopInRange(bound: GradeBound, stop: GradeStop): boolean 
   return stop.minGradeId > bound.minGradeId && stop.maxGradeId < bound.maxGradeId;
 }
 
-/** The one stop the bound selects, or undefined for Any, a range or an open-ended bound. */
+/**
+ * The one stop the whole selection sits in (it may cover only part of it), or
+ * undefined for Any, a range across stops or an open-ended bound.
+ */
 export function findSelectedGradeStop<Stop extends GradeStop>(
   bound: GradeBound,
   stops: readonly Stop[],
@@ -92,30 +110,53 @@ function selectStop(stop: GradeStop): GradeBound {
   return { minGradeId: stop.minGradeId, maxGradeId: stop.maxGradeId };
 }
 
-function coverStops(first: GradeStop, second: GradeStop): GradeBound {
+/** The bound from the lowest point of two spans to the highest. */
+function coverAll(first: GradeStop, second: GradeStop): GradeBound {
   return {
     minGradeId: Math.min(first.minGradeId, second.minGradeId),
     maxGradeId: Math.max(first.maxGradeId, second.maxGradeId),
   };
 }
 
+/** A grade id as a one-grade span, for `coverAll`: the end a gesture leaves alone. */
+function gradeSpan(gradeId: number): GradeStop {
+  return { minGradeId: gradeId, maxGradeId: gradeId };
+}
+
 /**
- * A range with one end tapped: that end moves one stop inward. When the next
- * stop inward is the other end, or there is none, the range settles on the
- * other end alone.
+ * A range whose lower end stop was tapped: the lower end moves to the next stop
+ * up, and the upper end stays where it is. When that next stop is the upper
+ * end's own, or there is none short of it, what is left is the upper end alone.
  */
-function trimRangeEnd(
-  trimmedStop: GradeStop,
-  survivingStop: GradeStop,
-  inward: 1 | -1,
+function trimLowerEnd(
+  lowerStop: GradeStop,
+  upperStop: GradeStop,
+  upperGradeId: number,
   stops: readonly GradeStop[],
 ): GradeBound {
-  const trimmedIndex = stops.findIndex((stop) => isSameStop(stop, trimmedStop));
-  const inwardStop = trimmedIndex === -1 ? undefined : stops[trimmedIndex + inward];
-  if (!inwardStop) return selectStop(survivingStop);
-  const passesSurvivingEnd =
-    inward === 1 ? inwardStop.minGradeId > survivingStop.maxGradeId : inwardStop.maxGradeId < survivingStop.minGradeId;
-  return passesSurvivingEnd ? selectStop(survivingStop) : coverStops(inwardStop, survivingStop);
+  const lowerIndex = stops.findIndex((stop) => isSameStop(stop, lowerStop));
+  const inwardStop = lowerIndex === -1 ? undefined : stops[lowerIndex + 1];
+  const minGradeId =
+    inwardStop && inwardStop.minGradeId <= upperGradeId
+      ? inwardStop.minGradeId
+      : Math.min(upperStop.minGradeId, upperGradeId);
+  return { minGradeId, maxGradeId: upperGradeId };
+}
+
+/** The mirror of `trimLowerEnd`: the upper end moves to the next stop down, the lower end stays. */
+function trimUpperEnd(
+  lowerStop: GradeStop,
+  upperStop: GradeStop,
+  lowerGradeId: number,
+  stops: readonly GradeStop[],
+): GradeBound {
+  const upperIndex = stops.findIndex((stop) => isSameStop(stop, upperStop));
+  const inwardStop = upperIndex <= 0 ? undefined : stops[upperIndex - 1];
+  const maxGradeId =
+    inwardStop && inwardStop.maxGradeId >= lowerGradeId
+      ? inwardStop.maxGradeId
+      : Math.max(lowerStop.maxGradeId, lowerGradeId);
+  return { minGradeId: lowerGradeId, maxGradeId };
 }
 
 /**
@@ -124,17 +165,19 @@ function trimRangeEnd(
  * landed inside RANGE_EXTEND_WINDOW_MS of the tap that picked the one selected
  * stop.
  *   1. From Any, or an open-ended bound -> that stop alone.
- *   2. The stop that already is the whole selection -> Any (clear).
- *   3. One stop selected, a different stop tapped: within the window -> the
+ *   2. The stop the bound covers exactly -> Any (clear).
+ *   3. The whole selection sits inside the tapped stop without covering it ->
+ *      that stop, whole. The chip reads as selected, so the tap completes it
+ *      rather than clearing a filter that never was all of it.
+ *   4. One stop selected, a different stop tapped: within the window -> the
  *      range covering both; after it -> that stop alone.
- *   4. A range set, one of its end stops tapped -> that end moves one stop
- *      inward, settling on the other end when they meet.
- *   5. A range set, any other stop tapped (inside or outside) -> that stop
+ *   5. A range set, one of its end stops tapped -> that end moves one stop
+ *      inward, settling on the other end when they meet. An end stop the range
+ *      only partly covers is completed first, as in 3.
+ *   6. A range set, any other stop tapped (inside or outside) -> that stop
  *      alone.
  *
- * An end kept from `current` widens to the stop it falls in, so a bound saved
- * inside a group ("4b" under V grades, where the chip is all of V0) comes out
- * on stop edges.
+ * An end the tap does not touch keeps its exact id, on a stop edge or not.
  */
 export function computeGradeTap(
   current: GradeBound,
@@ -144,15 +187,26 @@ export function computeGradeTap(
 ): GradeBound {
   const { minGradeId, maxGradeId } = current;
   if (minGradeId === undefined || maxGradeId === undefined) return selectStop(tapped);
-  if (isGradeStopAlone(current, tapped)) return clearGradeBound();
+  if (isExactGradeStop(current, tapped)) return clearGradeBound();
+  if (isGradeStopAlone(current, tapped)) return selectStop(tapped);
 
   const lowerStop = stopOf(stops, minGradeId);
   const upperStop = stopOf(stops, maxGradeId);
   if (isSameStop(lowerStop, upperStop)) {
-    return withinExtendWindow ? coverStops(lowerStop, tapped) : selectStop(tapped);
+    return withinExtendWindow ? coverAll({ minGradeId, maxGradeId }, tapped) : selectStop(tapped);
   }
-  if (isSameStop(tapped, lowerStop)) return trimRangeEnd(lowerStop, upperStop, 1, stops);
-  if (isSameStop(tapped, upperStop)) return trimRangeEnd(upperStop, lowerStop, -1, stops);
+  if (isSameStop(tapped, lowerStop)) {
+    const coversLowerStop = minGradeId === lowerStop.minGradeId;
+    return coversLowerStop
+      ? trimLowerEnd(lowerStop, upperStop, maxGradeId, stops)
+      : { minGradeId: lowerStop.minGradeId, maxGradeId };
+  }
+  if (isSameStop(tapped, upperStop)) {
+    const coversUpperStop = maxGradeId === upperStop.maxGradeId;
+    return coversUpperStop
+      ? trimUpperEnd(lowerStop, upperStop, minGradeId, stops)
+      : { minGradeId, maxGradeId: upperStop.maxGradeId };
+  }
   return selectStop(tapped);
 }
 
@@ -160,25 +214,31 @@ export function computeGradeTap(
  * A touch and hold on a stop: the way to a range that does not depend on how
  * fast a second tap follows.
  *   - from Any -> that stop alone: it is the first end
- *   - on the stop that already is the whole selection -> Any, like a tap
+ *   - on the stop the bound covers exactly -> Any, like a tap
+ *   - on a stop the whole selection sits inside without covering it -> that
+ *     stop, whole, like a tap
  *   - from one stop (or an open-ended bound) -> the range covering it and the
  *     held stop
  *   - with a range set -> the held stop replaces the nearer end, counted in
- *     stops. Equally far from both, the upper end moves. Holding an end leaves
- *     the range as it is.
+ *     stops. Equally far from both, the upper end moves. Holding an end the
+ *     range covers leaves the range as it is; holding one it only partly covers
+ *     completes that stop.
  *
  * `stops` is the picker's whole row, easiest first. As in `computeGradeTap`, an
- * end kept from `current` widens to the stop it falls in.
+ * end the hold does not touch keeps its exact id.
  */
 export function extendGradeRange(current: GradeBound, held: GradeStop, stops: readonly GradeStop[]): GradeBound {
   const lowerGradeId = current.minGradeId ?? current.maxGradeId;
   const upperGradeId = current.maxGradeId ?? current.minGradeId;
   if (lowerGradeId === undefined || upperGradeId === undefined) return selectStop(held);
-  if (isGradeStopAlone(current, held)) return clearGradeBound();
+  if (isExactGradeStop(current, held)) return clearGradeBound();
 
   const lowerStop = stopOf(stops, lowerGradeId);
   const upperStop = stopOf(stops, upperGradeId);
-  if (isSameStop(lowerStop, upperStop)) return coverStops(lowerStop, held);
+  // One stop holds the selection (all of it or part), or the bound is open-ended.
+  if (isSameStop(lowerStop, upperStop)) {
+    return coverAll({ minGradeId: lowerGradeId, maxGradeId: upperGradeId }, held);
+  }
 
   // Position in the row. An id with no chip takes the position of the next
   // stop up, so every id has a position and no case is special.
@@ -189,5 +249,8 @@ export function extendGradeRange(current: GradeBound, held: GradeStop, stops: re
   const heldPosition = positionOf(held.minGradeId);
   const stopsFromLower = Math.abs(heldPosition - positionOf(lowerGradeId));
   const stopsFromUpper = Math.abs(heldPosition - positionOf(upperGradeId));
-  return stopsFromLower < stopsFromUpper ? coverStops(held, upperStop) : coverStops(lowerStop, held);
+  // The held stop takes the place of the nearer end, whole; the other end stays.
+  return stopsFromLower < stopsFromUpper
+    ? coverAll(held, gradeSpan(upperGradeId))
+    : coverAll(gradeSpan(lowerGradeId), held);
 }

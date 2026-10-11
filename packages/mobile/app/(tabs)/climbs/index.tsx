@@ -276,9 +276,6 @@ function ClimbListInner() {
   // The grade row is hidden until the Grade chip opens it. Then it stays, across
   // opening a climb, search, Filters and app launches, until the chip hides it.
   const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
-  // As a row of the chrome (Liquid Glass) or inside it (Material), never beside
-  // the popover.
-  const gradeRowVisible = gradeRowShown && !gradeUsesPopover;
   // Whether anyone else is in this session. Read off a dedicated selector context
   // so this screen (which hosts a virtualized FlashList) doesn't re-render on the
   // ≤1/2s session-stats push — the boolean flips only across the solo ↔ crew
@@ -317,6 +314,12 @@ function ClimbListInner() {
   // row (defaults reproduce today's set). Drives both the chip row and the token
   // "receipt" dedup below.
   const { pinned: pinnedChips, loaded: pinnedChipsLoaded } = usePinnedChips();
+  // The grade row, as a row of the chrome (Liquid Glass) or inside it
+  // (Material). Never beside the popover, and only while the Grade chip is
+  // pinned: the chip is the row's one way to hide it, so a row left open when
+  // the chip is unpinned could never be closed. The stored choice is untouched,
+  // so pinning the chip again brings the row back as it was left.
+  const gradeRowVisible = gradeRowShown && !gradeUsesPopover && pinnedChips.includes('grade');
   const { lastUsedGrade, rememberGrade } = useLastUsedGrade();
   const { getLogbook } = useBoardActions();
   const searchHeaderRef = useRef<SearchHeaderHandle>(null);

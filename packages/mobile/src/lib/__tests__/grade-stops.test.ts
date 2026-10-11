@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
-import { buildGradeRailStops, gradeRailStopLabel } from '../grade-stops';
+import { buildGradeRailStops, gradeBoundLabels } from '../grade-stops';
 
 const SCALE = [
   { difficultyId: 10, name: '4a/V0' },
@@ -13,11 +13,33 @@ const SCALE = [
 
 describe('buildGradeRailStops', () => {
   it('makes one stop of the grades that read the same under V grades', () => {
-    expect(buildGradeRailStops(SCALE, 'v-grade')).toEqual([
+    expect(
+      buildGradeRailStops(SCALE, 'v-grade').map(({ minGradeId, maxGradeId, label, gradeColor }) => ({
+        minGradeId,
+        maxGradeId,
+        label,
+        gradeColor,
+      })),
+    ).toEqual([
       { minGradeId: 10, maxGradeId: 12, label: 'V0', gradeColor: getGradeColor('V0') },
       { minGradeId: 13, maxGradeId: 14, label: 'V1', gradeColor: getGradeColor('V1') },
       { minGradeId: 15, maxGradeId: 15, label: 'V2', gradeColor: getGradeColor('V2') },
     ]);
+  });
+
+  it('keeps a label for each grade of a group that names that grade alone', () => {
+    const [v0, v1, v2] = buildGradeRailStops(SCALE, 'v-grade');
+    expect(v0.gradeLabels).toEqual([
+      { difficultyId: 10, label: 'V0 / 4A' },
+      { difficultyId: 11, label: 'V0 / 4B' },
+      { difficultyId: 12, label: 'V0 / 4C' },
+    ]);
+    expect(v1.gradeLabels).toEqual([
+      { difficultyId: 13, label: 'V1 / 5A' },
+      { difficultyId: 14, label: 'V1 / 5B' },
+    ]);
+    // A one-grade stop needs no second name.
+    expect(v2.gradeLabels).toEqual([{ difficultyId: 15, label: 'V2' }]);
   });
 
   it('names a grouped stop with the plain label, not the "V0 / 4A" fallback', () => {
@@ -65,17 +87,60 @@ describe('buildGradeRailStops', () => {
   });
 });
 
-describe('gradeRailStopLabel', () => {
+describe('gradeBoundLabels', () => {
   const stops = buildGradeRailStops(SCALE, 'v-grade');
+  const labels = (minGradeId: number | undefined, maxGradeId: number | undefined) =>
+    gradeBoundLabels(stops, { minGradeId, maxGradeId });
 
-  it('names any grade of a group by the group', () => {
-    expect(gradeRailStopLabel(stops, 10)).toBe('V0');
-    expect(gradeRailStopLabel(stops, 11)).toBe('V0');
-    expect(gradeRailStopLabel(stops, 12)).toBe('V0');
-    expect(gradeRailStopLabel(stops, 15)).toBe('V2');
+  it('names a bound that is one whole stop by the stop', () => {
+    expect(labels(10, 12)).toEqual({ min: 'V0', max: 'V0' });
+    expect(labels(13, 14)).toEqual({ min: 'V1', max: 'V1' });
+    expect(labels(15, 15)).toEqual({ min: 'V2', max: 'V2' });
   });
 
-  it('has no name for a grade the rail has no chip for', () => {
-    expect(gradeRailStopLabel(stops, 99)).toBeUndefined();
+  it('names a range across whole stops by its two stops', () => {
+    expect(labels(10, 15)).toEqual({ min: 'V0', max: 'V2' });
+    expect(labels(10, 14)).toEqual({ min: 'V0', max: 'V1' });
+    expect(labels(13, 15)).toEqual({ min: 'V1', max: 'V2' });
+  });
+
+  // 4a alone is not "V0": the query still sends 4a only.
+  it('names one grade inside a group precisely, never by the whole stop', () => {
+    expect(labels(10, 10)).toEqual({ min: 'V0 / 4A', max: 'V0 / 4A' });
+    expect(labels(11, 11)).toEqual({ min: 'V0 / 4B', max: 'V0 / 4B' });
+    expect(labels(12, 12)).toEqual({ min: 'V0 / 4C', max: 'V0 / 4C' });
+  });
+
+  it('names both ends precisely when the bound covers only part of one group', () => {
+    expect(labels(10, 11)).toEqual({ min: 'V0 / 4A', max: 'V0 / 4B' });
+    expect(labels(11, 12)).toEqual({ min: 'V0 / 4B', max: 'V0 / 4C' });
+  });
+
+  it('names only the end that sits inside its group precisely, in a range across stops', () => {
+    // The lower end starts above V0's lower edge.
+    expect(labels(11, 15)).toEqual({ min: 'V0 / 4B', max: 'V2' });
+    // The upper end stops below V1's upper edge.
+    expect(labels(10, 13)).toEqual({ min: 'V0', max: 'V1 / 5A' });
+    expect(labels(12, 13)).toEqual({ min: 'V0 / 4C', max: 'V1 / 5A' });
+  });
+
+  it('names an open-ended bound by the same rule for its one end', () => {
+    expect(labels(10, undefined)).toEqual({ min: 'V0', max: undefined });
+    expect(labels(11, undefined)).toEqual({ min: 'V0 / 4B', max: undefined });
+    expect(labels(undefined, 12)).toEqual({ min: undefined, max: 'V0' });
+    expect(labels(undefined, 11)).toEqual({ min: undefined, max: 'V0 / 4B' });
+  });
+
+  it('has no name for an end the rail has no chip for, or for Any', () => {
+    expect(labels(99, 99)).toEqual({ min: undefined, max: undefined });
+    expect(labels(10, 99)).toEqual({ min: 'V0', max: undefined });
+    expect(labels(undefined, undefined)).toEqual({ min: undefined, max: undefined });
+    expect(gradeBoundLabels(stops, { minGradeId: null, maxGradeId: null })).toEqual({ min: undefined, max: undefined });
+  });
+
+  it('never needs the precise names under Font grades, where no stop is a group', () => {
+    const fontStops = buildGradeRailStops(SCALE, 'font');
+    expect(gradeBoundLabels(fontStops, { minGradeId: 10, maxGradeId: 10 })).toEqual({ min: '4A', max: '4A' });
+    expect(gradeBoundLabels(fontStops, { minGradeId: 11, maxGradeId: 13 })).toEqual({ min: '4B', max: '5A' });
   });
 });

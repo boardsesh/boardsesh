@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Grade } from '@boardsesh/shared-schema';
 import { getFilterSummary, buildClimbFilterSummary } from '../filter-summary';
+import { buildGradeRailStops } from '../grade-stops';
 import { DEFAULT_FILTERS, type ClimbFilters } from '../climb-filter-types';
 
 const mockGrades: Grade[] = [
@@ -68,10 +69,7 @@ describe('getFilterSummary', () => {
       { difficultyId: 12, name: '4c/V0' },
       { difficultyId: 15, name: '5c/V2' },
     ];
-    const stops = [
-      { minGradeId: 10, maxGradeId: 12, label: 'V0' },
-      { minGradeId: 15, maxGradeId: 15, label: 'V2' },
-    ];
+    const stops = buildGradeRailStops(sharedScale, 'v-grade');
     const summaryOf = (minGrade: number, maxGrade: number) =>
       getFilterSummary({ ...DEFAULT_FILTERS, minGrade, maxGrade }, '', sharedScale, mockT, stops);
 
@@ -79,8 +77,14 @@ describe('getFilterSummary', () => {
       expect(summaryOf(10, 12)).toBe('V0');
     });
 
-    it('reads a range by its stop labels', () => {
-      expect(summaryOf(11, 15)).toBe('V0–V2');
+    it('reads a range across whole stops by its stop labels', () => {
+      expect(summaryOf(10, 15)).toBe('V0–V2');
+    });
+
+    it('names a bound that covers only part of a group precisely', () => {
+      expect(summaryOf(10, 10)).toBe('V0 / 4A');
+      expect(summaryOf(11, 12)).toBe('V0 / 4B–V0 / 4C');
+      expect(summaryOf(11, 15)).toBe('V0 / 4B–V2');
     });
 
     it('keeps the raw scale names without the stops', () => {

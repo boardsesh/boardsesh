@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
 import { getActiveFilterTokens, type FilterToken } from '../filter-tokens';
+import { buildGradeRailStops } from '../grade-stops';
 import { DEFAULT_FILTERS, type ClimbFilters } from '../climb-filter-types';
 
 const mockGrades: Grade[] = [
@@ -84,11 +85,8 @@ describe('getActiveFilterTokens', () => {
       { difficultyId: 13, name: '5a/V1' },
       { difficultyId: 15, name: '5c/V2' },
     ];
-    const V_GRADE_STOPS = [
-      { minGradeId: 10, maxGradeId: 12, label: 'V0' },
-      { minGradeId: 13, maxGradeId: 13, label: 'V1' },
-      { minGradeId: 15, maxGradeId: 15, label: 'V2' },
-    ];
+    // V0 covers 10 to 12; V1 and V2 are one grade each.
+    const V_GRADE_STOPS = buildGradeRailStops(FONT_SCALE, 'v-grade');
     const gradeLabel = (minGrade: number | undefined, maxGrade: number | undefined) =>
       getActiveFilterTokens({
         filters: { ...DEFAULT_FILTERS, minGrade, maxGrade },
@@ -107,19 +105,29 @@ describe('getActiveFilterTokens', () => {
       expect(gradeLabel(10, 12)).toBe('V0');
     });
 
-    it('reads a bound saved inside a group as that group', () => {
-      expect(gradeLabel(11, 11)).toBe('V0');
-      expect(gradeLabel(10, 11)).toBe('V0');
+    // Saved under Font grades, or before chips were grouped: the query sends
+    // 4b only, so the token must not claim all of V0.
+    it('names a bound that covers only part of a group precisely, not by the stop', () => {
+      expect(gradeLabel(10, 10)).toBe('V0 / 4A');
+      expect(gradeLabel(11, 11)).toBe('V0 / 4B');
+      expect(gradeLabel(10, 11)).toBe('V0 / 4A–V0 / 4B');
     });
 
-    it('reads a range between two stops with each stop label once', () => {
+    it('reads a range between whole stops with each stop label once', () => {
       expect(gradeLabel(10, 15)).toBe('V0–V2');
-      expect(gradeLabel(11, 13)).toBe('V0–V1');
+      expect(gradeLabel(10, 13)).toBe('V0–V1');
     });
 
-    it('names an open-ended bound by the stop its set end falls in', () => {
-      expect(gradeLabel(12, undefined)).toBe('V0+');
-      expect(gradeLabel(undefined, 11)).toBe('≤V0');
+    it('names only the end that sits inside its group precisely', () => {
+      expect(gradeLabel(11, 13)).toBe('V0 / 4B–V1');
+      expect(gradeLabel(11, 15)).toBe('V0 / 4B–V2');
+    });
+
+    it('names an open-ended bound by its stop when it starts on the stop edge, precisely when not', () => {
+      expect(gradeLabel(10, undefined)).toBe('V0+');
+      expect(gradeLabel(undefined, 12)).toBe('≤V0');
+      expect(gradeLabel(12, undefined)).toBe('V0 / 4C+');
+      expect(gradeLabel(undefined, 11)).toBe('≤V0 / 4B');
     });
 
     it('falls back to the formatter for a grade the rail has no chip for', () => {

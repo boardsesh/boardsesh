@@ -9,7 +9,10 @@ name: help clip - build a grade range from two taps
 # RANGE_EXTEND_WINDOW_MS (3000ms, packages/shared/climb-filters/src/grade-range.ts).
 # The clip then taps a grade inside the range to collapse it to a single grade,
 # and taps that same grade again to clear the filter back to "Any", so the
-# climb list ends unfiltered.
+# climb list ends unfiltered. Last, it taps the Grade chip again to hide the
+# row. That tap is not decoration: whether the row is open is a setting that
+# persists (`gradeRowShown`), so a take that left it open would make the next
+# take's first tap HIDE the row and land its grade taps on the climb list.
 #
 # Two quick taps really are quick here: Maestro spends about a second and a half
 # per tap, comfortably inside the 3s window. If this clip ever comes back
@@ -18,7 +21,8 @@ name: help clip - build a grade range from two taps
 # Coordinates, not selectors: the chip row and the grade rail are pressables
 # this RN Fabric build does not expose to Maestro. Measured on an iPhone 16 Pro
 # with no Recent chip in the row and the grade row in the chrome under the chips.
-#   36%,16%  the "Grade" chip (it opens the grade row; the row starts hidden)
+#   36%,16%  the "Grade" chip (the first tap opens the grade row, which starts
+#            hidden; the last tap hides it again)
 #   18%,21% / 34%,21% / 50%,21%  three adjacent chips on the grade row.
 #            WHICH grades those are depends on where the rail is scrolled to
 #            (it opens near the last-used grade), so the clip teaches the
@@ -64,4 +68,12 @@ name: help clip - build a grade range from two taps
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 1300
+    optional: true
+
+# Hide the grade row again, so the session ends as it started (see the header).
+- tapOn:
+    point: '36%,16%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 600
     optional: true

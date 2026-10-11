@@ -21,10 +21,9 @@ import {
   DEFAULT_CLIMB_FILTER_STATE,
   type ClimbFilterState,
   type ClimbBoardFilterState,
-  type GradeStop,
 } from '@boardsesh/climb-filters';
 import { buildFilterLabels, buildSortLabel, formatSettersLabel } from './filter-labels';
-import { gradeRailStopLabel } from './grade-stops';
+import { gradeBoundLabels, type NamedGradeStop } from './grade-stops';
 import type { GradeBound } from '../providers/climb-search-provider';
 
 export type FilterToken = {
@@ -44,10 +43,11 @@ type GetActiveFilterTokensArgs = {
    *  matching how the list rows render grades — keeps the chip from showing the
    *  dual "7a+/V7" string. Falls back to the dual name when it returns null. */
   formatGradeByDifficultyId: (difficultyId: number | null | undefined) => string | null;
-  /** The range rail's stops (`buildGradeRailStops`), so the token names a grade
-   *  exactly as the chip the climber picked it from does (#5960): any grade of a
-   *  grouped stop reads as the stop, "V0" for 4a, 4b and 4c alike. */
-  gradeStops?: ReadonlyArray<GradeStop & { label: string }>;
+  /** The range rail's stops (`buildGradeRailStops`), so the token names a pick
+   *  exactly as the chip the climber made it from does (#5960): a grouped stop
+   *  reads as the stop ("V0" for 4a to 4c), and a bound that covers only part of
+   *  one names its grade precisely ("V0 / 4A"). See `gradeBoundLabels`. */
+  gradeStops?: readonly NamedGradeStop[];
   patchFilters: (patch: Partial<ClimbFilterState>) => void;
   patchBoardFilters: (patch: Partial<ClimbBoardFilterState>) => void;
   setGrade: (grade: GradeBound) => void;
@@ -81,21 +81,25 @@ export function getActiveFilterTokens({
   // Grade — only when grades data has loaded, so the label is a real grade name
   // rather than the "#42" id fallback.
   if (grades != null && (filters.minGrade != null || filters.maxGrade != null)) {
-    // Prefer the rail's own label, then the user's single-scale grade name; fall
-    // back to the dual name.
-    const gradeName = (difficultyId: number) =>
-      (gradeStops ? gradeRailStopLabel(gradeStops, difficultyId) : undefined) ??
-      formatGradeByDifficultyId(difficultyId) ??
-      getGradeName(difficultyId, grades);
+    // Prefer the rail's own name for each end, then the user's single-scale
+    // grade name; fall back to the dual name.
+    const railLabels = gradeStops
+      ? gradeBoundLabels(gradeStops, { minGradeId: filters.minGrade, maxGradeId: filters.maxGrade })
+      : undefined;
+    const gradeName = (difficultyId: number, railLabel: string | undefined) =>
+      railLabel ?? formatGradeByDifficultyId(difficultyId) ?? getGradeName(difficultyId, grades);
     let label: string;
     if (filters.minGrade != null && filters.maxGrade != null) {
       // `gradeRange` reads two ends with one label as the bare grade name, which
       // covers a single grade and a grouped stop whose ids differ.
-      label = labels.gradeRange(gradeName(filters.minGrade), gradeName(filters.maxGrade));
+      label = labels.gradeRange(
+        gradeName(filters.minGrade, railLabels?.min),
+        gradeName(filters.maxGrade, railLabels?.max),
+      );
     } else if (filters.minGrade != null) {
-      label = labels.gradeMin(gradeName(filters.minGrade));
+      label = labels.gradeMin(gradeName(filters.minGrade, railLabels?.min));
     } else {
-      label = labels.gradeMax(gradeName(filters.maxGrade as number));
+      label = labels.gradeMax(gradeName(filters.maxGrade as number, railLabels?.max));
     }
     tokens.push({ key: 'grade', label, clear: () => setGrade({ minGradeId: undefined, maxGradeId: undefined }) });
   }

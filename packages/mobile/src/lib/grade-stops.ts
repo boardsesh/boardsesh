@@ -2,8 +2,19 @@ import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { findGradeStop, type GradeStop } from '@boardsesh/climb-filters';
 
+/**
+ * What a stop needs to name a grade bound: its own label, and for each grade it
+ * covers the label that names that grade alone. A one-grade stop has one entry,
+ * labelled as the stop. In a group every grade carries both formats
+ * ("V0 / 4A"), since the stop's label is the same for all of them.
+ */
+export type NamedGradeStop = GradeStop & {
+  label: string;
+  gradeLabels: ReadonlyArray<{ difficultyId: number; label: string }>;
+};
+
 /** One chip of the grade range rail: the grades it covers and how it is drawn. */
-export type GradeRailStop = GradeStop & { label: string; gradeColor: string };
+export type GradeRailStop = NamedGradeStop & { gradeColor: string };
 
 /**
  * The range rail's chips, easiest first.
@@ -25,29 +36,70 @@ export function buildGradeRailStops(
   const ascendingGrades = [...grades].sort(
     (firstGrade, secondGrade) => firstGrade.difficultyId - secondGrade.difficultyId,
   );
-  const stops: GradeRailStop[] = [];
+  const groups: Array<{ label: string; grades: Array<{ difficultyId: number; name: string }> }> = [];
   for (const grade of ascendingGrades) {
     const label = formatGrade(grade.name, gradeFormat, boardName) ?? grade.name;
-    const previousStop = stops.at(-1);
-    if (previousStop?.label === label) {
-      previousStop.maxGradeId = grade.difficultyId;
-      continue;
-    }
-    stops.push({
-      minGradeId: grade.difficultyId,
-      maxGradeId: grade.difficultyId,
-      label,
-      // A group shares one V grade, and the colour ramp follows the V grade.
-      gradeColor: getGradeColor(grade.name) ?? DEFAULT_GRADE_COLOR,
-    });
+    const previousGroup = groups.at(-1);
+    if (previousGroup?.label === label) previousGroup.grades.push(grade);
+    else groups.push({ label, grades: [grade] });
   }
-  return stops;
+  return groups.map(({ label, grades: groupGrades }) => {
+    const [easiestGrade] = groupGrades;
+    return {
+      minGradeId: easiestGrade.difficultyId,
+      maxGradeId: groupGrades[groupGrades.length - 1].difficultyId,
+      label,
+      gradeLabels: groupGrades.map((grade) => ({
+        difficultyId: grade.difficultyId,
+        label: groupGrades.length === 1 ? label : (formatGrade(grade.name, 'both', boardName) ?? grade.name),
+      })),
+      // A group shares one V grade, and the colour ramp follows the V grade.
+      gradeColor: getGradeColor(easiestGrade.name) ?? DEFAULT_GRADE_COLOR,
+    };
+  });
 }
 
-/** How the rail names a grade: the label of the stop it falls in, if it has one. */
-export function gradeRailStopLabel(
-  stops: ReadonlyArray<GradeStop & { label: string }>,
-  difficultyId: number,
-): string | undefined {
-  return findGradeStop(stops, difficultyId)?.label;
+/**
+ * How to name the two ends of a grade bound, the way the rail's chips do.
+ *
+ * An end takes its stop's plain label only when the bound covers that stop out
+ * to its edge: "V0" for 4a to 4c, "V0–V2" for 4a to 5c. A bound can also sit
+ * inside a group without covering it (saved under Font grades, or before chips
+ * were grouped): 4a alone is NOT "V0", the query still sends 4a only. That end
+ * is named precisely instead, "V0 / 4A", so the label never claims more than
+ * the filter does.
+ *
+ * Each end is undefined when it is unset or has no chip on this row.
+ */
+export function gradeBoundLabels(
+  stops: readonly NamedGradeStop[],
+  bound: { minGradeId?: number | null; maxGradeId?: number | null },
+): { min: string | undefined; max: string | undefined } {
+  const { minGradeId, maxGradeId } = bound;
+  const lowerStop = minGradeId == null ? undefined : findGradeStop(stops, minGradeId);
+  const upperStop = maxGradeId == null ? undefined : findGradeStop(stops, maxGradeId);
+  const preciseLabel = (stop: NamedGradeStop, gradeId: number | null | undefined) =>
+    stop.gradeLabels.find((grade) => grade.difficultyId === gradeId)?.label ?? stop.label;
+
+  // Both ends in one stop: its plain label only when the bound is all of it.
+  if (lowerStop && lowerStop === upperStop) {
+    const coversStop = minGradeId === lowerStop.minGradeId && maxGradeId === lowerStop.maxGradeId;
+    return coversStop
+      ? { min: lowerStop.label, max: lowerStop.label }
+      : { min: preciseLabel(lowerStop, minGradeId), max: preciseLabel(lowerStop, maxGradeId) };
+  }
+  // Otherwise each end on its own: a lower end covers its stop when it starts
+  // on the stop's lower edge, an upper end when it stops on the upper edge.
+  return {
+    min: lowerStop
+      ? minGradeId === lowerStop.minGradeId
+        ? lowerStop.label
+        : preciseLabel(lowerStop, minGradeId)
+      : undefined,
+    max: upperStop
+      ? maxGradeId === upperStop.maxGradeId
+        ? upperStop.label
+        : preciseLabel(upperStop, maxGradeId)
+      : undefined,
+  };
 }

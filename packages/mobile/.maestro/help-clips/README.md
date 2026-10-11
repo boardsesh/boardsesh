@@ -105,6 +105,13 @@ inside the same take (the playlist is unticked, the delete is cancelled, the
 filters are cleared). Check at the end anyway, and empty the session queue from
 the queue sheet's Clear.
 
+One setting matters between takes: whether the climbs list's grade row is open
+(`gradeRowShown`) persists across launches. `grade-range-tap` opens the row with
+its first tap and hides it with its last, so a finished take leaves it hidden.
+A take that stopped part-way leaves it OPEN, and the next take's first tap would
+then hide the row and land the grade taps on the climb list. Check the row is
+hidden before recording that clip, and tap Grade to hide it if not.
+
 Three things change only on the throwaway simulator and go away with it: the
 session queue picks up climbs from the swipe clip, `lightOnSwipe` and
 `browseNoticeSeen` get written by the `://climbs?screenshotOpenPreview=1` deep

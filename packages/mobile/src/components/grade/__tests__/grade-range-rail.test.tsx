@@ -311,6 +311,23 @@ describe('GradeRangeRail', () => {
       });
     });
 
+    it('completes a partly covered stop on a tap, where a covered one would clear', () => {
+      const { getByText, onChange } = renderRail({ minGradeId: 11, maxGradeId: 11 });
+      fireEvent.click(getByText('V0'));
+      expect(onChange.mock.calls).toEqual([[ONLY_V0, { gesture: 'tap' }]]);
+    });
+
+    it('completes a partly covered stop on a hold too', () => {
+      const { getByText, onChange } = renderRail({ minGradeId: 10, maxGradeId: 10 });
+      fireEvent.contextMenu(getByText('V0'));
+      expect(onChange.mock.calls).toEqual([[ONLY_V0, { gesture: 'hold' }]]);
+    });
+
+    it('still offers the hold on every other stop while one stop is partly covered', () => {
+      const { container } = renderRail({ minGradeId: 11, maxGradeId: 11 });
+      expect(chipHints(container)).toMatchObject({ V0: '', V1: HOLD_HINT, V5: HOLD_HINT });
+    });
+
     it('paints the ends of a range selected and every stop between them in range', () => {
       const { container } = renderRail({ minGradeId: 11, maxGradeId: 16 });
       expect(chipTones(container)).toMatchObject({
@@ -420,6 +437,38 @@ describe('GradeRangeRail', () => {
       const { getByText, onChange } = renderRail(ONLY_V2);
       fireEvent.click(getByText('V4'));
       expect(onChange.mock.calls).toEqual([[ONLY_V4, { gesture: 'tap', withinRangeWindow: false }]]);
+    });
+
+    // Tap V2, then within the window the bound becomes V4 from somewhere else
+    // (Filters, a recent filter). V4 is not this rail's pick, so the next tap
+    // must switch from it, not stretch a range off it.
+    it('closes when the bound changes from outside after a real first tap', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.click(getByText('V2'));
+      show(ONLY_V2);
+      show(ONLY_V4);
+
+      wait(500);
+      fireEvent.click(getByText('V5'));
+      expect(onChange).toHaveBeenLastCalledWith(
+        { minGradeId: 18, maxGradeId: 18 },
+        { gesture: 'tap', withinRangeWindow: false },
+      );
+    });
+
+    it('stays open when the parent hands the tapped bound back', () => {
+      const { getByText, onChange, show } = renderRail(ANY);
+      fireEvent.click(getByText('V2'));
+      // The same bound, in a new object and across a second render.
+      show({ minGradeId: 15, maxGradeId: 15 });
+      show({ minGradeId: 15, maxGradeId: 15 });
+
+      wait(500);
+      fireEvent.click(getByText('V4'));
+      expect(onChange).toHaveBeenLastCalledWith(
+        { minGradeId: 15, maxGradeId: 17 },
+        { gesture: 'tap', withinRangeWindow: true },
+      );
     });
 
     it('does not treat a selection that came from outside the rail as the first tap', () => {
@@ -653,23 +702,69 @@ describe('GradeRangeRail', () => {
       expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(150));
     });
 
-    it('stops following the selection once the climber has tapped the rail', () => {
+    it('does not move for the climber\u2019s own pick: the chip they tapped stays under their finger', () => {
       const { getByText, show } = renderRail(ONLY_V4);
-      fireEvent.click(getByText('V3'));
+      fireEvent.click(getByText('V0'));
       strip.scrollTo.mockClear();
 
       show(ONLY_V0);
       expect(strip.scrollTo).not.toHaveBeenCalled();
     });
 
+    // Filters, a recent filter, a token: the selection moved without this rail.
+    // A row latched where the climber last touched it would leave the selected
+    // chip off screen.
+    it('follows a selection made somewhere else, even after a tap', () => {
+      const { getByText, show } = renderRail(ONLY_V4);
+      fireEvent.click(getByText('V3'));
+      show(ONLY_V3);
+      strip.scrollTo.mockClear();
+
+      show(ONLY_V0);
+      expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(80));
+    });
+
+    it('follows a selection made somewhere else after a drag', () => {
+      const { show } = renderRail(ONLY_V4);
+      act(() => {
+        strip.handlers.onTouchStart?.();
+        strip.handlers.onScrollBeginDrag?.();
+        strip.handlers.onTouchCancel?.();
+        strip.handlers.onScrollEndDrag?.();
+      });
+      strip.scrollTo.mockClear();
+
+      show({ minGradeId: 15, maxGradeId: 18 });
+      expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(220));
+    });
+
+    it('does not follow a selection made somewhere else while a finger is on the rail', () => {
+      const { show } = renderRail(ONLY_V4);
+      strip.scrollTo.mockClear();
+
+      act(() => strip.handlers.onTouchStart?.());
+      show(ONLY_V0);
+      expect(strip.scrollTo).not.toHaveBeenCalled();
+    });
+
+    it('goes back to following its own latch after an outside change: the next own pick does not move it', () => {
+      const { getByText, show } = renderRail(ONLY_V4);
+      show(ONLY_V0);
+      fireEvent.click(getByText('V5'));
+      strip.scrollTo.mockClear();
+
+      show({ minGradeId: 18, maxGradeId: 18 });
+      expect(strip.scrollTo).not.toHaveBeenCalled();
+    });
+
     it('centres again on a new recenterKey, even after a tap', () => {
       const { getByText, show } = renderRail(ONLY_V4, { recenterKey: 0 });
       fireEvent.click(getByText('V3'));
-      show(ONLY_V0, { recenterKey: 0 });
+      show(ONLY_V3, { recenterKey: 0 });
       strip.scrollTo.mockClear();
 
-      show(ONLY_V0, { recenterKey: 1 });
-      expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(80));
+      show(ONLY_V3, { recenterKey: 1 });
+      expect(strip.scrollTo).toHaveBeenLastCalledWith(centredOn(290));
     });
 
     it('centres again on a new recenterKey after a drag', () => {
@@ -848,9 +943,9 @@ describe('GradeSingleSelectRail', () => {
   });
 
   // In the default `grade` colorway the chip draws these tones as: selected =
-  // solid grade colour with a checkmark, consensus = tinted with the grade dot,
-  // neutral = the dot alone (pinned in grade-chip-colorway.test.tsx). The rail's
-  // side of that is the tone and the grade colour it hands each chip.
+  // solid grade colour with a ring, consensus = a faint tint of it, neutral = the
+  // plain fill (pinned in grade-chip-colorway.test.tsx). The rail's side of that
+  // is the tone and the grade colour it hands each chip.
   it('hands each chip its tone and grade colour in the grade colorway', () => {
     const { container } = render(
       <GradeSingleSelectRail grades={grades} selectedDifficultyId={12} consensusDifficultyId={14} onSelect={vi.fn()} />,

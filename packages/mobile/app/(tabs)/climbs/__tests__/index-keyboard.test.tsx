@@ -14,7 +14,7 @@ vi.mock('../../../../src/components/PressableSurface', async () => {
 });
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, useImperativeHandle, type ReactNode, type Ref } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { NativeStackNavigationOptions } from 'expo-router';
 
@@ -660,6 +660,8 @@ vi.mock('../../../../src/theme/layout', () => ({ glassSize: { standard: 48 } }))
 vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }));
 
 import ClimbList from '../index';
+import { setPinnedChips } from '../../../../src/lib/pinned-chips-store';
+import { DEFAULT_PINNED_CHIPS } from '../../../../src/lib/pinnable-chips';
 
 beforeEach(() => {
   mocks.previewedClimbUuid.mockReturnValue(null);
@@ -1481,6 +1483,60 @@ describe('ClimbList grade row', () => {
     mocks.refocusCount = 1;
     rerender(<ClimbList />);
     expect(getByTestId('grade-range-rail').getAttribute('data-recenter-key')).toBe('1');
+  });
+
+  // The Grade chip is the row's one way to hide it. Unpinned in Filters with
+  // the row open, the chip is gone: a row that stayed would be there on every
+  // launch with nothing to close it.
+  describe('with the Grade chip unpinned', () => {
+    const unpinGrade = () => setPinnedChips(DEFAULT_PINNED_CHIPS.filter((kind) => kind !== 'grade'));
+
+    beforeEach(() => {
+      mocks.renderFilterChrome = true;
+      mocks.gradeRow.shown = true;
+    });
+    afterEach(async () => {
+      await act(async () => {
+        await setPinnedChips(DEFAULT_PINNED_CHIPS);
+      });
+    });
+
+    it('goes when the chip is unpinned, and comes back as it was left when the chip is pinned again', async () => {
+      const { getByTestId, queryByTestId } = render(<ClimbList />);
+      expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
+
+      await act(async () => {
+        await unpinGrade();
+      });
+      expect(queryByTestId('grade-range-rail')).toBeNull();
+      // The stored choice is not rewritten: it is what brings the row back.
+      expect(mocks.gradeRow.set).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await setPinnedChips(DEFAULT_PINNED_CHIPS);
+      });
+      expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
+    });
+
+    it('is not there on a launch with the chip already unpinned', async () => {
+      await act(async () => {
+        await unpinGrade();
+      });
+      const { queryByTestId } = render(<ClimbList />);
+
+      expect(queryByTestId('grade-range-rail')).toBeNull();
+    });
+
+    it('takes the Material chrome rail with it too', async () => {
+      mocks.filtersInTopChrome = true;
+      render(<ClimbList />);
+      expect(mocks.chromeGradeRailVisible).toBe(true);
+
+      await act(async () => {
+        await unpinGrade();
+      });
+      expect(mocks.chromeGradeRailVisible).toBe(false);
+    });
   });
 
   describe('on Material, where the top chrome draws its own rail', () => {

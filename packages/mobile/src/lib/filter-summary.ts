@@ -1,9 +1,9 @@
 import type { TFunction } from 'i18next';
 import type { Grade } from '@boardsesh/shared-schema';
-import { getBaseFilterParts, formatFilterSummary, type GradeStop } from '@boardsesh/climb-filters';
+import { getBaseFilterParts, formatFilterSummary } from '@boardsesh/climb-filters';
 import { DEFAULT_FILTERS, type ClimbFilters } from './climb-filter-types';
 import { buildFilterLabels, buildSortLabel, formatSettersLabel } from './filter-labels';
-import { gradeRailStopLabel } from './grade-stops';
+import { gradeBoundLabels, type NamedGradeStop } from './grade-stops';
 
 export function getFilterSummary(
   filters: ClimbFilters,
@@ -11,16 +11,29 @@ export function getFilterSummary(
   grades: Grade[] | undefined,
   t: TFunction<'climbs'>,
   /**
-   * The range rail's stops (`buildGradeRailStops`). Given, a grade is named as
-   * the rail's chip names it, so a pick of a grouped stop reads "V0" and not
-   * "4a/V0–4c/V0". Without them a grade keeps its raw scale name.
+   * The range rail's stops (`buildGradeRailStops`). Given, the grade bound is
+   * named as the rail's chips name it (`gradeBoundLabels`): a pick of a grouped
+   * stop reads "V0" and not "4a/V0–4c/V0", and a bound that covers only part of
+   * a group names its grade precisely. Without them a grade keeps its raw scale
+   * name.
    */
-  gradeStops?: ReadonlyArray<GradeStop & { label: string }>,
+  gradeStops?: readonly NamedGradeStop[],
 ): string {
   const baseLabels = buildFilterLabels(t);
-  const namedGrades =
+  // `getBaseFilterParts` names a bound end by looking its grade up by id, so
+  // the two ends' grades are renamed here. With both ends on one id the two rail
+  // labels are the same by construction.
+  const railLabels =
     grades && gradeStops
-      ? grades.map((grade) => ({ ...grade, name: gradeRailStopLabel(gradeStops, grade.difficultyId) ?? grade.name }))
+      ? gradeBoundLabels(gradeStops, { minGradeId: filters.minGrade, maxGradeId: filters.maxGrade })
+      : undefined;
+  const namedGrades =
+    grades && railLabels
+      ? grades.map((grade) => {
+          if (grade.difficultyId === filters.minGrade && railLabels.min) return { ...grade, name: railLabels.min };
+          if (grade.difficultyId === filters.maxGrade && railLabels.max) return { ...grade, name: railLabels.max };
+          return grade;
+        })
       : grades;
   const labels = {
     ...baseLabels,
