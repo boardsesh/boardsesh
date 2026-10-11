@@ -16,6 +16,7 @@ import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
 import { requireAdminOrLeader, getUserVoteWeight } from '../roles';
 import { insertComment, publishCommentAddedLive } from '../comments';
 import { enrichProposal } from './enrichment';
+import { proposalClimbVisibilityCondition } from './privacy';
 import { applyProposalEffect, publishVoteGradedClimbStats, revertProposalEffect } from './effects';
 import { setterOverrideCommunityStatus, freezeClimb } from './setter-overrides';
 import {
@@ -120,10 +121,19 @@ export const socialProposalMutations = {
     const { proposalUuid, value } = validated;
     const userId = ctx.userId!;
 
+    // A uuid is not access: the voter must be able to read the climb, the same
+    // rule the proposal listings apply. A draft, a climb whose setter's privacy
+    // hides it, or a spray wall the voter cannot see reads as not found, so the
+    // returned proposal (reason included) never reaches them.
     const [proposal] = await db
       .select()
       .from(dbSchema.climbProposals)
-      .where(eq(dbSchema.climbProposals.uuid, proposalUuid))
+      .where(
+        and(
+          eq(dbSchema.climbProposals.uuid, proposalUuid),
+          proposalClimbVisibilityCondition(dbSchema.climbProposals, userId),
+        ),
+      )
       .limit(1);
 
     if (!proposal) {
