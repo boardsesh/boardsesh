@@ -306,9 +306,9 @@ it. Network-served lists cost nothing extra: their rows already show live values
 through the in-memory store, and membership catches up on the next natural
 refetch.
 
-A flush that lands during a momentary background, or before migrations publish
-the database handle, keeps its batch and re-arms the ceiling rather than
-dropping it — nothing else would re-arm until a new event arrived. Contention is
+A flush that lands while backgrounded keeps its batch without scheduling a
+timer; the foreground callback re-arms the ceiling. If migrations have not yet
+published the database handle, the bounded retry ceiling remains armed. Contention is
 handled the same way on the write side: a lock lost to a VACUUM or a snapshot
 import puts the events back and stops the drain instead of re-paying the lock
 wait per event.

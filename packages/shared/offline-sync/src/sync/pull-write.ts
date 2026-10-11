@@ -43,13 +43,12 @@ export function buildMultiRowInsertSql(
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
   const insert = `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
-  if (!preserveNewerRows) return insert;
   const guardTail = buildRevisionGuardTail({ tableName, conflictReference: tableName, columns });
   if (guardTail) return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
   // This table's stream writer deliberately stamps updated_at at the epoch;
   // cursor ordering cannot guard its sync_seq revision if its explicit guard
   // cannot be built (for example, a legacy statement omits that column).
-  if (tableName === 'board_climb_stats') return insert;
+  if (!preserveNewerRows || tableName === 'board_climb_stats') return insert;
 
   // Refresh pages can race a newer ordinary pull for any cursor-bearing table.
   // The stats table has its own second-writer revision guard above; other tables

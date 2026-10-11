@@ -311,7 +311,9 @@ describe('the revision guard against a real SQLite row', () => {
       'updated_at',
       'sync_seq',
     ];
-    const sql = buildMultiRowInsertSql('board_climb_stats', columns, rows.length, true);
+    // Ordinary Aurora pulls omit preserveNewerRows; stats still need the
+    // live-writer revision fence independently of refresh timestamp guards.
+    const sql = buildMultiRowInsertSql('board_climb_stats', columns, rows.length);
     await database.runAsync(
       sql,
       rows.flatMap((row) => columns.map((column) => row[column] ?? null)),
@@ -347,7 +349,7 @@ describe('the revision guard against a real SQLite row', () => {
     database.close();
   });
 
-  it('cannot walk a newer local row backwards', async () => {
+  it('an ordinary page cannot walk a newer live row backwards', async () => {
     await applyPage(database, [statsRow({ ascensionist_count: 41, sync_seq: 900 })]);
 
     const row = await database.getFirstAsync<{ ascensionist_count: number; sync_seq: number }>(
