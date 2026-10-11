@@ -1,6 +1,7 @@
 import { buildSessionStatsUpdatedEvent } from './live-session-stats';
 import { canAccessResource } from '../../../services/privacy';
 import {
+  projectSessionBoardPath,
   redactSessionUsers,
   sessionParticipantId,
   sessionEventParticipantId,
@@ -77,7 +78,7 @@ export const sessionSubscriptions = {
             // a null would raise a non-null-field violation that nulls the entire
             // sessionUpdates payload and silently drops the seed. Clients treat ''
             // as "keep current" (applySessionRuntimeEvent's `|| prev.boardPath`).
-            boardPath: session?.boardPath ?? '',
+            boardPath: await projectSessionBoardPath(session?.boardPath ?? '', ctx.userId),
           } as SessionEvent,
         };
 
@@ -93,7 +94,10 @@ export const sessionSubscriptions = {
               sessionUpdates: {
                 __typename: 'SessionRosterSnapshot' as const,
                 users: roster,
-                boardPath: (await roomManager.getSessionById(sessionId))?.boardPath ?? '',
+                boardPath: await projectSessionBoardPath(
+                  (await roomManager.getSessionById(sessionId))?.boardPath ?? '',
+                  ctx.userId,
+                ),
               },
             };
             continue;
@@ -120,6 +124,10 @@ export const sessionSubscriptions = {
             yield { sessionUpdates: { ...event, userId: protocolId(event.userId) } };
           } else if (event.__typename === 'LeaderChanged') {
             yield { sessionUpdates: { ...event, leaderId: protocolId(event.leaderId) } };
+          } else if (event.__typename === 'SessionBoardPathChanged') {
+            yield {
+              sessionUpdates: { ...event, boardPath: await projectSessionBoardPath(event.boardPath, ctx.userId) },
+            };
           } else if (event.__typename === 'SessionStatsUpdated') {
             const visibleStats = await buildSessionStatsUpdatedEvent(sessionId, ctx);
             if (visibleStats) yield { sessionUpdates: visibleStats };

@@ -528,7 +528,9 @@ export const tickQueries = {
         climbedAt: tick.climbedAt,
         createdAt: tick.createdAt,
         updatedAt: tick.updatedAt,
-        sessionId: tick.sessionId,
+        // A session id is its invite link, and a tick is not an invitation:
+        // only the tick's own climber gets it back from a public logbook.
+        sessionId: viewerUserId !== null && tick.userId === viewerUserId ? tick.sessionId : null,
         auroraType: tick.auroraType,
         auroraId: tick.auroraId,
         auroraSyncedAt: tick.auroraSyncedAt,

@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
+import { parseNamedBoardPath } from '@boardsesh/board-config';
 import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type {
   BoardConnectionHolder,
@@ -12,7 +13,7 @@ import type {
 } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { boardClimbs, boardSessions, userBoards } from '@boardsesh/db/schema';
-import { canViewActivityIdentity, canViewContent, visibleActivityUserIds } from './privacy';
+import { canViewActivityIdentity, canViewContent, visibleActivityUserIds, visibleBoardIdentityIds } from './privacy';
 
 /** Session protocol IDs must never double as profile IDs. */
 export function sessionParticipantId(sessionId: string, userId: string): string {
@@ -68,7 +69,7 @@ type BoardIdentityField = (typeof BOARD_IDENTITY_FIELDS)[number];
 
 /**
  * Blank the board's identity on an item the viewer may see but whose board
- * they may not (`canViewBoardIdentity` / `boardIdentityVisibleCondition`).
+ * they may not (`visibleBoardIdentityUuids` / `boardIdentityVisibleCondition`).
  * Keeps the row: only the fields above become null, and only those present.
  */
 export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField, unknown>>>(
@@ -79,6 +80,34 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
   const redacted: Record<string, unknown> = { ...item };
   for (const field of BOARD_IDENTITY_FIELDS) if (field in redacted) redacted[field] = null;
   return redacted as T;
+}
+
+/**
+ * A session's board path as this viewer may see it. A named path
+ * (`/b/<slug>[/<angle>]`) names its board, and readable sessions can sit on
+ * boards the viewer cannot see. Such a viewer gets the board's geometry instead
+ * (`/<type>/<layout>/<size>/<sets>/<angle>`): it still draws the board and logs
+ * the climbs, so the invite link joins, without the board's slug. Any other path,
+ * or a slug that no longer resolves, is returned unchanged.
+ */
+export async function projectSessionBoardPath(boardPath: string, viewerId: string | null | undefined): Promise<string> {
+  const named = parseNamedBoardPath(boardPath);
+  if (!named) return boardPath;
+  const [board] = await db
+    .select({
+      id: userBoards.id,
+      boardType: userBoards.boardType,
+      layoutId: userBoards.layoutId,
+      sizeId: userBoards.sizeId,
+      setIds: userBoards.setIds,
+      angle: userBoards.angle,
+    })
+    .from(userBoards)
+    .where(and(eq(userBoards.slug, named.slug), isNull(userBoards.deletedAt)))
+    .limit(1);
+  if (!board) return boardPath;
+  if ((await visibleBoardIdentityIds([board.id], viewerId)).has(Number(board.id))) return boardPath;
+  return `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
 }
 
 export async function canReadClimbContent(climbUuid: string, viewerId: string | null | undefined): Promise<boolean> {

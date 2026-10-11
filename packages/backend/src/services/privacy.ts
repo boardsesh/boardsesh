@@ -1,4 +1,4 @@
-import { resourceAccessCondition, userActivityVisibilityCondition } from '@boardsesh/db/queries';
+import { boardIdentityVisibleCondition, userActivityVisibilityCondition } from '@boardsesh/db/queries';
 export {
   approvedFollowerCondition,
   boardIdentityVisibleCondition,
@@ -8,7 +8,7 @@ export {
   resourceLocationCondition,
   sessionBoardLocationCondition,
 } from '@boardsesh/db/queries';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as schema from '@boardsesh/db/schema';
 import {
@@ -32,13 +32,16 @@ export function requirePrivacyControls(): void {
  * Old full-form booleans may narrow, but cannot replace a newer restricted audience.
  * A legacy private session asks for `unlisted` (off the listings, the link still
  * joins), the same reading `resourceAccessCondition` gives an `is_public = false` row.
+ * For a session, Unlisted is that switch's own off position, so turning "Show this
+ * session live" back on widens it to Public again; a board's switch cannot.
  */
 export function legacyResourceAudience(
   current: PrivacyResourceAudience | undefined,
   requested: PrivacyResourceAudience,
+  kind: PrivacyResourceKind = 'board',
 ): PrivacyResourceAudience {
   if (!current || current === 'public' || requested === 'only_me') return requested;
-  if (current === 'unlisted' && requested !== 'public') return requested;
+  if (current === 'unlisted' && (requested !== 'public' || kind === 'session')) return requested;
   if (current === 'followers' && requested === 'invite_only') return requested;
   return current;
 }
@@ -269,7 +272,7 @@ export async function canViewResourceLocation(boardUuid: string, viewerId: Viewe
  * Whether a climber's identity may accompany their activity. Decided by the
  * author's account privacy and, given an item, that item's own audience. The
  * session or board the activity happened in never decides it: those hide the
- * board's name and place on the item (`canViewBoardIdentity`), not the climber.
+ * board's name and place on the item (`visibleBoardIdentityUuids`), not the climber.
  */
 export async function canViewActivityIdentity(
   subjectUserId: string,
@@ -282,14 +285,12 @@ export async function canViewActivityIdentity(
     : canViewUserActivity(viewerId, subjectUserId);
 }
 /**
- * Whether an item may name the board it happened on: name, place, gym and
- * distance. A log is not a link, so an unlisted board is named only to people
- * who already hold it. The item itself stays visible either way.
+ * Which of these boards an item may name for this viewer: name, place, gym and
+ * distance. Built on `boardIdentityVisibleCondition`, so the batch and the SQL
+ * forms cannot drift. A log is not a link: an unlisted board is named only to
+ * people who already hold it (owner, approved grant, follower inheritance). A
+ * deleted board is never named. The items themselves stay visible either way.
  */
-export async function canViewBoardIdentity(boardUuid: string | null | undefined, viewerId: ViewerId): Promise<boolean> {
-  return !!boardUuid && (await visibleBoardIdentityUuids([boardUuid], viewerId)).has(boardUuid);
-}
-/** `canViewBoardIdentity` for a page of items: one query for every board they name. */
 export async function visibleBoardIdentityUuids(
   boardUuids: readonly (string | null | undefined)[],
   viewerId: ViewerId,
@@ -300,13 +301,24 @@ export async function visibleBoardIdentityUuids(
     .select({ uuid: schema.userBoards.uuid })
     .from(schema.userBoards)
     .where(
-      and(
-        inArray(schema.userBoards.uuid, candidates),
-        isNull(schema.userBoards.deletedAt),
-        resourceAccessCondition('board', schema.userBoards.uuid, viewerId, { allowUnlistedLink: false }),
-      ),
+      and(inArray(schema.userBoards.uuid, candidates), boardIdentityVisibleCondition(schema.userBoards.id, viewerId)),
     );
   return new Set(rows.map((row) => row.uuid));
+}
+/** `visibleBoardIdentityUuids` keyed by `user_boards.id`, for items that store the numeric id. */
+export async function visibleBoardIdentityIds(
+  boardIds: readonly (number | null | undefined)[],
+  viewerId: ViewerId,
+): Promise<Set<number>> {
+  const candidates = [...new Set(boardIds.filter((boardId): boardId is number => boardId != null))];
+  if (candidates.length === 0) return new Set();
+  const rows = await db
+    .select({ id: schema.userBoards.id })
+    .from(schema.userBoards)
+    .where(
+      and(inArray(schema.userBoards.id, candidates), boardIdentityVisibleCondition(schema.userBoards.id, viewerId)),
+    );
+  return new Set(rows.map((row) => Number(row.id)));
 }
 
 export type PrivacyExecutor = Pick<typeof db, 'select' | 'insert'>;

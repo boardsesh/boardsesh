@@ -68,7 +68,10 @@ export function tickPrivacyCondition(
   )!;
 }
 
-/** Beta can identify its author, tick, wall and climb even without a userId field. */
+/**
+ * Beta follows its author, its tick and its climb. The board it was filmed on
+ * never hides it; readers blank `boardId` instead (`visibleBoardIdentityIds`).
+ */
 export function betaPrivacyCondition(
   viewerId: string | null | undefined,
   beta: {
@@ -77,11 +80,9 @@ export function betaPrivacyCondition(
     link: SQLWrapper;
     createdByUserId: SQLWrapper;
     tickUuid: SQLWrapper;
-    boardId: SQLWrapper;
   } = schema.boardBetaLinks,
 ): SQL {
   const tick = alias(schema.boardseshTicks, 'privacy_beta_tick');
-  const board = alias(schema.userBoards, 'privacy_beta_board');
   const climb = alias(schema.boardClimbs, 'privacy_beta_climb');
   return and(
     contentVisibilityCondition(
@@ -97,15 +98,6 @@ export function betaPrivacyCondition(
           .select({ id: tick.id })
           .from(tick)
           .where(and(eq(tick.uuid, beta.tickUuid), tickPrivacyCondition(viewerId, tick))),
-      ),
-    ),
-    or(
-      isNull(beta.boardId),
-      exists(
-        queryBuilder
-          .select({ id: board.id })
-          .from(board)
-          .where(and(eq(board.id, beta.boardId), resourceAccessCondition('board', board.uuid, viewerId))),
       ),
     ),
     exists(

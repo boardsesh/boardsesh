@@ -1,6 +1,6 @@
 import { alias } from 'drizzle-orm/pg-core';
 import { betaPrivacyCondition } from '../shared/activity-privacy';
-import { canViewUserActivity } from '../../../services/privacy';
+import { canViewUserActivity, visibleBoardIdentityIds } from '../../../services/privacy';
 import { GraphQLError } from 'graphql';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -281,6 +281,26 @@ function makeLimiter(concurrency: number): <T>(task: () => Promise<T>) => Promis
       next();
     }
   };
+}
+
+/**
+ * A beta link follows its author; the board it was filmed on is named only to
+ * people who may see that board, and to the beta's author. One query per page.
+ */
+async function withVisibleBetaBoards<T extends { boardId: number | null }>(
+  items: readonly T[],
+  viewerId: string | null | undefined,
+  authorOf: (item: T) => string | null = () => null,
+): Promise<T[]> {
+  const visible = await visibleBoardIdentityIds(
+    items.map((item) => item.boardId),
+    viewerId,
+  );
+  return items.map((item) =>
+    item.boardId == null || visible.has(item.boardId) || (!!viewerId && authorOf(item) === viewerId)
+      ? item
+      : { ...item, boardId: null },
+  );
 }
 
 async function enrichRowSafe(row: Row): Promise<BetaLinkResult | null> {
@@ -574,7 +594,8 @@ export const betaLinkQueries = {
       );
 
     const limit = makeLimiter(ENRICH_CONCURRENCY);
-    const enriched = await Promise.all(rows.map((row) => limit(() => enrichRowSafe(row))));
+    const visibleRows = await withVisibleBetaBoards(rows, ctx?.userId, (row) => row.createdByUserId);
+    const enriched = await Promise.all(visibleRows.map((row) => limit(() => enrichRowSafe(row))));
 
     return enriched.filter((r): r is BetaLinkResult => r !== null);
   },
@@ -727,7 +748,11 @@ export const betaLinkQueries = {
       });
       if (filtered.length >= cappedLimit) break;
     }
-    return filtered;
+    const betaLinks = await withVisibleBetaBoards(
+      filtered.map((item) => item.betaLink),
+      ctx?.userId,
+    );
+    return filtered.map((item, index) => ({ ...item, betaLink: betaLinks[index] }));
   },
 
   // Powers the profile-page "Their beta" slider. Returns videos this user
@@ -810,13 +835,17 @@ export const betaLinkQueries = {
       .offset(safeOffset)
       .limit(cappedLimit);
 
-    return rows
-      .filter((r) => !isKayaClimbUrl(r.betaLink.link))
-      .map((r) => ({
-        betaLink: passthroughResult(r.betaLink),
-        climbName: r.climbName,
-        boardType: r.betaLink.boardType,
-        layoutId: r.layoutId ?? null,
-      }));
+    const listed = rows.filter((r) => !isKayaClimbUrl(r.betaLink.link));
+    const betaLinks = await withVisibleBetaBoards(
+      listed.map((r) => r.betaLink),
+      ctx?.userId,
+      (betaLink) => betaLink.createdByUserId,
+    );
+    return listed.map((r, index) => ({
+      betaLink: passthroughResult(betaLinks[index]),
+      climbName: r.climbName,
+      boardType: r.betaLink.boardType,
+      layoutId: r.layoutId ?? null,
+    }));
   },
 };

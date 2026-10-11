@@ -1,9 +1,9 @@
 import {
   canAccessResource,
-  canViewActivityIdentity,
   canViewResourceLocation,
   resourceAccess,
   resourceAccessCondition,
+  visibleActivityUserIds,
 } from './privacy';
 import { and, desc, eq, exists, gt, inArray, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import type {
@@ -882,15 +882,16 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
   const page = listed.sort(compareListed).slice(0, limit);
   if (page.length === 0) return [];
 
-  const [profiles, tickStats, boardRows] = await Promise.all([
-    loadProfiles(
-      page.flatMap(({ candidate, roster }) => [
-        ...signedInUserIds(roster),
-        ...(candidate.createdByUserId ? [candidate.createdByUserId] : []),
-      ]),
-    ),
+  const pageUserIds = page.flatMap(({ candidate, roster }) => [
+    ...signedInUserIds(roster),
+    ...(candidate.createdByUserId ? [candidate.createdByUserId] : []),
+  ]);
+  // Every climber on the page is named by their own account, in one lookup.
+  const [profiles, tickStats, boardRows, visibleUserIds] = await Promise.all([
+    loadProfiles(pageUserIds),
     loadTickStats(page.map(({ candidate }) => candidate.id)),
     loadBoardRows(page.flatMap(({ boardId }) => (boardId ? [boardId] : []))),
+    visibleActivityUserIds(pageUserIds, viewerId),
   ]);
 
   return Promise.all(
@@ -920,13 +921,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
       });
       const followedSet = new Set(followedParticipantIds);
       const visibleMembers = new Set(
-        (
-          await Promise.all(
-            members.map(async (member) =>
-              (await canViewActivityIdentity(member.userId, viewerId)) ? member.userId : null,
-            ),
-          )
-        ).filter((userId): userId is string => userId !== null),
+        members.map((member) => member.userId).filter((userId) => visibleUserIds.has(userId)),
       );
       const participants = [
         ...members.filter((member) => followedSet.has(member.userId)),
@@ -937,9 +932,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
         .map((member) => toUser(member.userId, member));
 
       const creatorId =
-        candidate.createdByUserId && (await canViewActivityIdentity(candidate.createdByUserId, viewerId))
-          ? candidate.createdByUserId
-          : null;
+        candidate.createdByUserId && visibleUserIds.has(candidate.createdByUserId) ? candidate.createdByUserId : null;
       const [board, currentClimb] = await Promise.all([
         toVisibleBoard(boardRow, viewerId, heldBoardIds),
         // Public sessions only, and only when the board type is known and is

@@ -1,4 +1,4 @@
-import { redactSessionUsers, redactQueueItem } from '../../../services/board-session-privacy';
+import { projectSessionBoardPath, redactSessionUsers, redactQueueItem } from '../../../services/board-session-privacy';
 import { canViewActivityIdentity } from '../../../services/privacy';
 import type { ConnectionContext, ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
@@ -97,7 +97,10 @@ export async function buildSessionPayload(
     // Treats `sessionData.name === ''` the same as `name === null` —
     // consistent with the `goal` / `color` fields a few lines below.
     name: inputs.name !== undefined ? inputs.name : sessionData?.name || null,
-    boardPath: inputs.boardPath !== undefined ? inputs.boardPath : sessionData?.boardPath || '',
+    boardPath: await projectSessionBoardPath(
+      inputs.boardPath !== undefined ? inputs.boardPath : sessionData?.boardPath || '',
+      ctx.userId,
+    ),
     users: await redactSessionUsers(users, ctx.userId, sessionId),
     queueState: queueState
       ? {
