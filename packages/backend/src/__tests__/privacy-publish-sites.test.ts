@@ -8,6 +8,9 @@ import { pubsub } from '../pubsub';
 import { logger } from '../utils/logger';
 import { privacyMutations } from '../graphql/resolvers/privacy';
 import { socialFollowMutations } from '../graphql/resolvers/social/follows';
+import { setterFollowMutations } from '../graphql/resolvers/social/setter-follows';
+import { socialCommentMutations } from '../graphql/resolvers/social/comments';
+import { userMutations } from '../graphql/resolvers/users/mutations';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
 import { sessionEditMutations } from '../graphql/resolvers/social/session-mutations';
 import { playlistMutations } from '../graphql/resolvers/playlists/mutations';
@@ -39,7 +42,11 @@ const follower = 'privacy-publish-follower';
 const member = 'privacy-publish-member';
 const settingsUser = 'privacy-publish-settings';
 const climber = 'privacy-publish-climber';
-const users = [owner, privateOwner, follower, member, settingsUser, climber];
+const setter = 'privacy-publish-setter';
+const leaver = 'privacy-publish-leaver';
+const users = [owner, privateOwner, follower, member, settingsUser, climber, setter, leaver];
+const climbUuid = 'privacy-publish-climb';
+const setterName = 'privacy-publish-setter-name';
 
 const HOUR = 60 * 60 * 1000;
 const BASE = Date.UTC(2026, 4, 12, 9, 0, 0);
@@ -84,7 +91,7 @@ async function insertTick(climbedAtMs: number): Promise<string> {
     uuid,
     userId: climber,
     boardType: 'kilter',
-    climbUuid: 'privacy-publish-climb',
+    climbUuid,
     angle: 40,
     status: 'send',
     attemptCount: 1,
@@ -106,6 +113,22 @@ beforeAll(async () => {
   vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '1');
   await db.insert(schema.users).values(users.map((id) => ({ id, email: `${id}@test.com` })));
   await db.insert(schema.userProfiles).values({ userId: privateOwner, isPrivate: true });
+  await db.insert(schema.boardClimbs).values({
+    uuid: climbUuid,
+    boardType: 'kilter',
+    layoutId: 1,
+    name: 'Publish test climb',
+    setterUsername: setterName,
+    frames: 'p1r1',
+    framesCount: 1,
+    isDraft: false,
+    isListed: true,
+    edgeLeft: 0,
+    edgeRight: 100,
+    edgeBottom: 0,
+    edgeTop: 150,
+  });
+  await db.insert(schema.userBoardMappings).values({ userId: setter, boardType: 'kilter', boardUsername: setterName });
 });
 beforeEach(() => resetAllRateLimits());
 afterEach(() => {
@@ -166,12 +189,31 @@ describe('privacyChanged publish sites', () => {
     ).toEqual([]);
   });
 
-  it('publishes account settings only when the account switch or session default changes', async () => {
-    const update = (input: Record<string, unknown>) =>
-      publishesDuring(() => privacyMutations.updatePrivacySettings(null, { input }, context(settingsUser)));
+  it('publishes account settings only when the account switch flips', async () => {
+    // The settings and onboarding screens always send all three fields. A
+    // pre-privacy account has no stored session default, so the first save
+    // changes it from NULL; that alone must not publish.
+    const save = (isPrivate: boolean, defaultSessionAudience: string) =>
+      publishesDuring(() =>
+        privacyMutations.updatePrivacySettings(
+          null,
+          { input: { isPrivate, defaultSessionAudience, privacyOnboardingVersion: 1 } },
+          context(settingsUser),
+        ),
+      );
+    expect(await save(false, 'public')).toEqual([]);
+    expect(
+      await publishesDuring(() =>
+        privacyMutations.updatePrivacySettings(
+          null,
+          { input: { defaultSessionAudience: 'only_me' } },
+          context(settingsUser),
+        ),
+      ),
+    ).toEqual([]);
     const info = vi.spyOn(logger, 'info');
     try {
-      expect(await update({ isPrivate: true })).toEqual(['updatePrivacySettings']);
+      expect(await save(true, 'followers')).toEqual(['updatePrivacySettings']);
       expect(info).toHaveBeenCalledWith(
         '[Privacy] privacyChanged published',
         expect.objectContaining({ source: 'updatePrivacySettings', count: expect.any(Number) }),
@@ -179,10 +221,8 @@ describe('privacyChanged publish sites', () => {
     } finally {
       info.mockRestore();
     }
-    expect(await update({ isPrivate: true })).toEqual([]);
-    expect(await update({ privacyOnboardingVersion: 1 })).toEqual([]);
-    expect(await update({ defaultSessionAudience: 'only_me' })).toEqual(['updatePrivacySettings']);
-    expect(await update({ isPrivate: false })).toEqual(['updatePrivacySettings']);
+    expect(await save(true, 'followers')).toEqual([]);
+    expect(await save(false, 'public')).toEqual(['updatePrivacySettings']);
   });
 
   it('publishes a board edit only when its audience or location changes', async () => {
@@ -320,5 +360,107 @@ describe('privacyChanged publish sites', () => {
         ),
       ),
     ).toEqual(['setContentAudience']);
+  });
+
+  it('stays silent when a saved tick merges inferred sessions', async () => {
+    process.env.INFERRED_SESSIONS_ENABLED = 'true';
+    const day = BASE + 5 * 24 * HOUR;
+    await insertTick(day);
+    await insertTick(day + 10 * HOUR);
+    const before = (await climberSessionIds()).length;
+    expect(
+      await publishesDuring(() =>
+        tickMutations.saveTick(
+          null,
+          {
+            input: {
+              boardType: 'kilter',
+              climbUuid,
+              angle: 40,
+              isMirror: false,
+              status: 'send',
+              attemptCount: 1,
+              isBenchmark: false,
+              comment: '',
+              climbedAt: new Date(day + 5 * HOUR).toISOString(),
+            },
+          },
+          context(climber),
+        ),
+      ),
+    ).toEqual([]);
+    expect(await climberSessionIds()).toHaveLength(before - 1);
+  });
+
+  it('stays silent when a setter with a linked account is followed or unfollowed', async () => {
+    const input = { input: { setterUsername: setterName } };
+    expect(await publishesDuring(() => setterFollowMutations.followSetter(null, input, context(follower)))).toEqual([]);
+    const linkedFollow = () =>
+      db
+        .select()
+        .from(schema.userFollows)
+        .where(and(eq(schema.userFollows.followerId, follower), eq(schema.userFollows.followingId, setter)));
+    expect(await linkedFollow()).toHaveLength(1);
+    expect(await publishesDuring(() => setterFollowMutations.unfollowSetter(null, input, context(follower)))).toEqual(
+      [],
+    );
+    expect(await linkedFollow()).toHaveLength(0);
+  });
+
+  it('publishes a policy-backed board edit only when its audience changes', async () => {
+    const board = await insertBoard(true);
+    await db.insert(schema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: board.uuid,
+      ownerId: owner,
+      audience: 'public',
+      locationAudience: 'public',
+    });
+    const edit = (input: Record<string, unknown>) =>
+      publishesDuring(() =>
+        socialBoardMutations.updateBoard(null, { input: { boardUuid: board.uuid, ...input } }, context(owner)),
+      );
+    expect(await edit({ name: 'Policy wall', isPublic: true, isUnlisted: false, hideLocation: false })).toEqual([]);
+    expect(await edit({ isUnlisted: true })).toEqual(['updateBoard']);
+  });
+
+  it('publishes a policy-backed session edit only when its visibility flips', async () => {
+    const sessionId = randomUUID();
+    await db
+      .insert(schema.boardSessions)
+      .values({ id: sessionId, createdByUserId: owner, boardPath: 'kilter/1/1/1/40', isPublic: true });
+    await db
+      .insert(schema.resourcePrivacy)
+      .values({ kind: 'session', resourceId: sessionId, ownerId: owner, audience: 'public' });
+    const hide = () =>
+      publishesDuring(() =>
+        sessionEditMutations.updateSession(null, { input: { sessionId, isPublic: false } }, context(owner)),
+      );
+    expect(await hide()).toEqual(['updateSession']);
+    expect(await hide()).toEqual([]);
+  });
+
+  it('publishes a comment edit only with an explicit audience', async () => {
+    const commentUuid = randomUUID();
+    await db
+      .insert(schema.comments)
+      .values({ uuid: commentUuid, userId: owner, entityType: 'tick', entityId: 'privacy-publish-tick', body: 'Nice' });
+    const edit = (input: Record<string, unknown>) =>
+      publishesDuring(() =>
+        socialCommentMutations.updateComment(null, { input: { commentUuid, ...input } }, context(owner)),
+      );
+    expect(await edit({ body: 'Nice send' })).toEqual([]);
+    const { privacyRevision } = await getPrivacySettings(owner);
+    expect(await edit({ body: 'Nice send!', privacy: { audience: 'followers', privacyRevision } })).toEqual([
+      'updateComment',
+    ]);
+  });
+
+  it('publishes once when an account is deleted', async () => {
+    expect(
+      await publishesDuring(() =>
+        userMutations.deleteAccount(null, { input: { removeSetterName: false } }, context(leaver)),
+      ),
+    ).toEqual(['deleteAccount']);
   });
 });

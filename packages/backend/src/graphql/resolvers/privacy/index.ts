@@ -378,9 +378,11 @@ export const privacyMutations = {
   updatePrivacySettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const userId = await privacyActor(ctx);
     const settings = validateInput(updateSettingsSchema, input, 'input');
-    // Only the account switch and the session default change who can read
-    // anything. The onboarding save and a repeated value publish nothing.
-    const audienceChanged = await db.transaction(async (transaction) => {
+    // Only the account switch changes who can read existing content. The
+    // session default applies to sessions created later, and every settings
+    // and onboarding save resends it (NULL on pre-privacy accounts), so it
+    // must not publish.
+    const accountSwitched = await db.transaction(async (transaction) => {
       await transaction
         .select({ id: schema.users.id })
         .from(schema.users)
@@ -409,14 +411,10 @@ export const privacyMutations = {
           updatedAt: new Date(),
         })
         .where(eq(schema.userProfiles.userId, userId));
-      return (
-        (settings.isPrivate !== undefined && settings.isPrivate !== current.isPrivate) ||
-        (settings.defaultSessionAudience !== undefined &&
-          settings.defaultSessionAudience !== current.defaultSessionAudience)
-      );
+      return settings.isPrivate !== undefined && settings.isPrivate !== current.isPrivate;
     });
     await invalidateBetaCache();
-    if (audienceChanged) pubsub.publishPrivacyChanged('updatePrivacySettings');
+    if (accountSwitched) pubsub.publishPrivacyChanged('updatePrivacySettings');
     return getPrivacySettings(userId);
   },
   requestFollow: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
