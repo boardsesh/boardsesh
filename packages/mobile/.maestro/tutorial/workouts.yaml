@@ -1,0 +1,83 @@
+appId: com.boardsesh.app.dev
+name: Tutorial - a workout advances after real rest
+---
+- openLink: com.boardsesh.app://record
+- waitForAnimationToEnd
+- runFlow: ../showcase/android/session-private.yaml
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
+- tapOn: Pyramid
+- extendedWaitUntil:
+    notVisible: 'Building your workout…'
+    timeout: 20000
+- assertNotVisible: "No climbs found for this grade. Try another."
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/generated')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Rest timer.*'
+        checked: false
+    commands:
+      - tapOn: 'Rest timer.*'
+- repeat:
+    times: 22
+    commands:
+      - runFlow:
+          when:
+            notVisible: 'Rest length, 0:30'
+          commands:
+            - tapOn:
+                id: rest-length-pill
+- assertVisible: 'Rest length, 0:30'
+- tapOn: After each climb
+- runFlow:
+    when:
+      visible:
+        text: 'Move to the next climb.*'
+        checked: false
+    commands:
+      - tapOn: 'Move to the next climb.*'
+- assertVisible:
+    text: 'Move to the next climb.*'
+    checked: true
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/rest-configured')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- tapOn: Start
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: '.*Connect.*[Bb]oard.*'
+    commands:
+      - tapOn: '.*Connect.*[Bb]oard.*'
+- extendedWaitUntil:
+    visible: 'On the wall.*'
+    timeout: 15000
+- tapOn: Log ascent
+- tapOn: Attempt
+- tapOn: Save
+- extendedWaitUntil:
+    visible: Tick saved
+    timeout: 15000
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/logged')}
+# Wait for the normal 30-second timer; the edit cuts this wait, not the app.
+- repeat:
+    while:
+      true: ${http.get(TUTORIAL_SIGNAL_URL + '/signal/timer-advanced').body != 'go'}
+    commands:
+      - extendedWaitUntil:
+          visible: tutorial-pause
+          timeout: 500
+          optional: true
+- assertNotVisible: "Queue's empty"
+- assertVisible: 'On the wall.*'
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/advanced')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true

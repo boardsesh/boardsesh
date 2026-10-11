@@ -1,0 +1,69 @@
+appId: com.boardsesh.app.dev
+name: Tutorial - choose holds, regions and similar climbs
+---
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
+- tapOn: 'Filters.*'
+- scrollUntilVisible:
+    element: Hold types
+    direction: DOWN
+- tapOn: Hold types
+- tapOn: 'Any.*'
+# A central hold on the seeded Kilter layout; assert a filter was painted.
+- tapOn:
+    point: '50%,45%'
+- assertVisible: Clear all
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/holds')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- tapOn: Clear all
+- back
+- tapOn: Board region
+- tapOn: Add a region
+- assertVisible: Clear region
+- swipe:
+    start: '50%,48%'
+    end: '50%,37%'
+    duration: 800
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/region')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- tapOn: Clear region
+- back
+- back
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0&screenshotOpenFirst=1
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: Similar Climbs
+    direction: DOWN
+- tapOn: Similar Climbs
+- extendedWaitUntil:
+    notVisible: 'Preparing similar climbs…'
+    timeout: 20000
+- assertNotVisible: 'No similar climbs found'
+- waitForAnimationToEnd
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/similar')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+- waitForAnimationToEnd
+- tapOn: 'Filters.*'
+- scrollUntilVisible:
+    element: Hold types
+    direction: DOWN
+- tapOn: Hold types
+- tapOn: Heatmap
+- extendedWaitUntil:
+    visible:
+      id: hold-filter-heatmap-legend
+    timeout: 15000
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/heatmap')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true

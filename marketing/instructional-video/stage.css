@@ -1,0 +1,157 @@
+@font-face {
+  font-family: Inter Tight;
+  src: url('../showcase-video/fonts/InterTight-latin-var.woff2');
+  font-weight: 100 900;
+  font-display: block;
+}
+@font-face {
+  font-family: Instrument Serif;
+  src: url('../showcase-video/fonts/InstrumentSerif-Italic-latin.woff2');
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: Geist Mono;
+  src: url('../showcase-video/fonts/GeistMono-latin-var.woff2');
+  font-weight: 100 900;
+  font-display: block;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  overflow: hidden;
+}
+#stage {
+  width: 1080px;
+  height: 1920px;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  font-family:
+    Inter Tight,
+    sans-serif;
+}
+.glow {
+  position: absolute;
+  width: 1200px;
+  height: 1200px;
+  left: -300px;
+  top: 250px;
+  background: radial-gradient(ellipse, var(--glow), transparent 66%);
+  opacity: 0.35;
+}
+#brand {
+  position: absolute;
+  left: 80px;
+  top: 280px;
+  font-weight: 800;
+  font-size: 31px;
+  letter-spacing: -1px;
+}
+#brand span {
+  font-family:
+    Geist Mono,
+    monospace;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+#title {
+  position: absolute;
+  left: 80px;
+  top: 330px;
+  width: 920px;
+  font-size: 66px;
+  font-weight: 800;
+  line-height: 1.03;
+  letter-spacing: -2px;
+  margin: 0;
+}
+#phone {
+  position: absolute;
+  left: 145px;
+  top: 490px;
+  width: 790px;
+  height: 550px;
+  overflow: hidden;
+  border-radius: 28px;
+  background: var(--phone);
+  border: 2px solid var(--accent);
+  box-shadow: 0 30px 70px #0007;
+}
+#screen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  max-width: none;
+}
+#ring {
+  position: absolute;
+  border: 5px solid var(--accent);
+  border-radius: 16px;
+  box-shadow: 0 0 25px var(--glow);
+  pointer-events: none;
+}
+#label {
+  position: absolute;
+  top: 1060px;
+  left: 80px;
+  width: 920px;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--accent);
+}
+#caption {
+  position: absolute;
+  top: 1115px;
+  left: 80px;
+  width: 920px;
+  font-size: 32px;
+  font-weight: 550;
+  line-height: 1.2;
+  margin: 0;
+}
+#bookend {
+  position: absolute;
+  left: 80px;
+  top: 530px;
+  width: 920px;
+}
+#bookend em {
+  font-family:
+    Instrument Serif,
+    serif;
+  font-size: 110px;
+  line-height: 0.95;
+  display: block;
+}
+#bookend p {
+  font-size: 34px;
+  line-height: 1.3;
+  max-width: 800px;
+}
+#draft {
+  position: absolute;
+  top: 1750px;
+  left: 80px;
+  font-family:
+    Geist Mono,
+    monospace;
+  font-size: 24px;
+  color: var(--accent);
+}
+#progress {
+  position: absolute;
+  left: 80px;
+  top: 1240px;
+  height: 5px;
+  background: var(--accent);
+  transform-origin: 0 0;
+  width: 920px;
+}

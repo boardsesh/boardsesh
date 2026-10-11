@@ -1,0 +1,36 @@
+# Tutorial-only infrastructure; project identity and host ports come from demo.ts.
+services:
+  postgres:
+    image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:fa657078da26276b47ccb6f78f7227b6f6d84a1379bca9313cc1c5d9ece26139
+    shm_size: '256mb'
+    command: postgres -c listen_addresses='*' -c max_connections=100 -c log_min_messages=warning
+    ports:
+      - '127.0.0.1:${TUTORIAL_POSTGRES_PORT}:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: main
+    volumes:
+      - tutorial_db_pg18:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d main']
+      interval: 5s
+      timeout: 5s
+      retries: 60
+  redis:
+    image: redis:7.4.5-alpine
+    ports:
+      - '127.0.0.1:${TUTORIAL_REDIS_PORT}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  s3:
+    image: motoserver/moto:5.1.22
+    environment:
+      MOTO_PORT: '5000'
+    ports:
+      - '127.0.0.1:${TUTORIAL_S3_PORT}:5000'
+volumes:
+  tutorial_db_pg18:

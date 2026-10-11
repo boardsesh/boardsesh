@@ -116,7 +116,7 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
   sendLiveActivityUpdate(sessionId, contentState);
 }
 
-export async function startServer(): Promise<ServerResources> {
+export async function startServer(options: { host?: string } = {}): Promise<ServerResources> {
   // Surface database connect retries. `warn`, not `error`: SentryWinstonTransport
   // is constructed with `level: 'error'` (utils/sentry-transport.ts:80), so a
   // warn stays log-only and cannot double-report alongside the
@@ -778,7 +778,7 @@ export async function startServer(): Promise<ServerResources> {
   // Start HTTP server (WebSocket server is attached to it)
   const httpScheme = tlsEnabled ? 'https' : 'http';
   const wsScheme = tlsEnabled ? 'wss' : 'ws';
-  httpServer.listen(PORT, () => {
+  httpServer.listen({ port: PORT, host: options.host }, () => {
     logger.info(`Boardsesh Backend is running on port ${PORT}${tlsEnabled ? ' (TLS)' : ''}`);
     logger.info(`  GraphQL HTTP: ${httpScheme}://0.0.0.0:${PORT}/graphql`);
     logger.info(`  GraphQL WS: ${wsScheme}://0.0.0.0:${PORT}/graphql`);

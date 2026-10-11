@@ -1,0 +1,66 @@
+appId: com.boardsesh.app.dev
+name: Tutorial - your grades and combined progress
+---
+- openLink: com.boardsesh.app://settings
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: Use my grades
+    direction: DOWN
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
+- runFlow:
+    when:
+      visible:
+        text: 'Use my grades.*'
+        checked: false
+    commands:
+      - tapOn: 'Use my grades.*'
+- assertVisible:
+    text: 'Use my grades.*'
+    checked: true
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/personal-grades')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+- waitForAnimationToEnd
+- tapOn: 'Filters.*'
+- assertVisible: Grade range
+- tapOn:
+    text: '.*V4.*'
+- tapOn: Apply filters
+- waitForAnimationToEnd
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/grade-filter')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- openLink: com.boardsesh.app://profile
+- waitForAnimationToEnd
+- swipe:
+    start: '50%,78%'
+    end: '50%,40%'
+    duration: 1800
+- assertVisible: Your progress
+- tapOn:
+    id: profile-progress-filter
+- tapOn: All boards
+- tapOn: All
+- back
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/multiboard')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- tapOn:
+    id: profile-progress-filter
+- tapOn: Kilter
+- back
+- scrollUntilVisible:
+    element: 'Calendar'
+    direction: DOWN
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/calendar')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true

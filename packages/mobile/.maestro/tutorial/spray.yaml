@@ -1,0 +1,55 @@
+appId: com.boardsesh.app.dev
+name: Tutorial - real photo spray wall
+---
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
+- assertVisible: '.*Board:.*'
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/photo')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- swipe:
+    start: '85%,42%'
+    end: '18%,42%'
+    duration: 400
+- waitForAnimationToEnd
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/highlight')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- openLink: com.boardsesh.app://settings/board-look
+- waitForAnimationToEnd
+- tapOn: Aura Outline
+- assertVisible: '.*Aura Outline.*'
+- scrollUntilVisible:
+    element: Use my look on spray walls
+    direction: DOWN
+- runFlow:
+    when:
+      visible:
+        text: 'Use my look on spray walls.*'
+        checked: false
+    commands:
+      - tapOn: 'Use my look on spray walls.*'
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=3&screenshotOpenFirst=1
+- waitForAnimationToEnd
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/look')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- openLink: com.boardsesh.app://boards
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: Open details for Tutorial Spray Wall
+    direction: DOWN
+- tapOn: Open details for Tutorial Spray Wall
+- tapOn: Share link
+- assertVisible: Share this wall
+- assertVisible: QR code for Tutorial Spray Wall
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/share')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true

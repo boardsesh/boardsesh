@@ -1,0 +1,43 @@
+appId: com.boardsesh.app.dev
+name: Tutorial setup - require a completed local hold index
+---
+# A real downloaded-board heatmap is the readiness gate. No fixed sleep or
+# simulated success can turn an unavailable similarity index into footage.
+- tapOn: 'Filters.*'
+- scrollUntilVisible:
+    element: 'Hold types'
+    direction: DOWN
+- tapOn: 'Hold types'
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      notVisible:
+        id: hold-filter-heatmap-legend
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: hold-heatmap-download-line
+          commands:
+            - tapOn: Heatmap
+- runFlow:
+    when:
+      visible:
+        id: hold-heatmap-download-line
+    commands:
+      - tapOn: Download
+      - tapOn:
+          text: 'Download.*'
+      - extendedWaitUntil:
+          visible:
+            id: hold-filter-heatmap-legend
+          timeout: 120000
+- assertVisible:
+    id: hold-filter-heatmap-legend
+- assertNotVisible:
+    id: hold-heatmap-download-line
+- tapOn: Heatmap
+- back
+- back
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+- waitForAnimationToEnd

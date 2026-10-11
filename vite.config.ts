@@ -603,6 +603,14 @@ export default defineConfig({
         command: 'tsx scripts/showcase-video-record.ts',
         cache: false,
       },
+      'video:tutorial': {
+        command: 'tsx scripts/instructional-video.ts',
+        cache: false,
+      },
+      'video:tutorial:publish': {
+        command: 'tsx scripts/instructional-video-publish.ts',
+        cache: false,
+      },
       'video:render': {
         command: 'tsx packages/web/scripts/render-showcase-video.ts',
         cache: false,

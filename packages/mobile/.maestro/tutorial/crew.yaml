@@ -1,0 +1,58 @@
+appId: com.boardsesh.app.dev
+name: Tutorial - your crew builds the queue
+---
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
+- assertVisible: 'Invite to this session'
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/invite')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- swipe:
+    start: '50%,52%'
+    end: '50%,95%'
+    duration: 400
+- tapOn:
+    point: '40%,86%'
+- waitForAnimationToEnd
+- tapOn:
+    point: '90%,89%'
+- swipe:
+    start: '50%,51%'
+    end: '50%,8%'
+    duration: 600
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/set/crew-add')}
+- repeat:
+    while:
+      true: ${http.get(TUTORIAL_SIGNAL_URL + '/signal/crew-added').body != 'go'}
+    commands:
+      - extendedWaitUntil:
+          visible: tutorial-pause
+          timeout: 500
+          optional: true
+- assertVisible: '.*Added by Sam.*'
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/contribution')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- longPressOn: '.*Added by Sam.*'
+- assertVisible: 'Preview'
+- tapOn: 'Preview'
+- waitForAnimationToEnd
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/preview')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- back
+- longPressOn: '.*Added by Sam.*'
+- assertVisible: 'Play next'
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/play-next')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+
+- tapOn: 'Play next'
+- waitForAnimationToEnd

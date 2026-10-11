@@ -1,0 +1,17 @@
+appId: com.boardsesh.app.dev
+name: Tutorial setup - private crew session
+---
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0&screenshotOpenFirst=1
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: '.*Connect.*[Bb]oard.*'
+    commands:
+      - tapOn: '.*Connect.*[Bb]oard.*'
+- extendedWaitUntil:
+    visible: 'On the wall.*'
+    timeout: 15000
+- openLink: com.boardsesh.app://record
+- waitForAnimationToEnd
+- runFlow: ../showcase/android/session-private.yaml
+- runFlow: ../showcase/android/crew-start.yaml
