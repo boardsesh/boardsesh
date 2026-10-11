@@ -1,0 +1,69 @@
+-- pgbench custom workload. Pass --define=scenario=1..7 and batch_rows=1000.
+-- Each pgbench transaction commits the writes for the selected scenario.
+\if :scenario = 1
+INSERT INTO public.board_climbs (uuid, board_type, layout_id, created_at, name)
+SELECT 'snapshot-trigger-bench-climb-insert-' || txid_current()::text || '-' || lpad(series::text, 5, '0'),
+       'kilter', 1, '2026-10-03T00:00:00Z', 'snapshot benchmark insert'
+FROM generate_series(1, :batch_rows) AS series;
+\elif :scenario = 2
+INSERT INTO public.board_climbs (uuid, board_type, layout_id, created_at, name)
+SELECT 'snapshot-trigger-bench-upsert-climb-' || lpad(((batch.start_index + series)::integer)::text, 8, '0'),
+       'kilter', 1, '2026-10-03T00:00:00Z', 'snapshot benchmark update'
+FROM generate_series(1, :batch_rows) AS series
+CROSS JOIN LATERAL (SELECT (txid_current() % 16)::integer * :batch_rows AS start_index) AS batch
+ON CONFLICT (uuid) DO UPDATE SET name = EXCLUDED.name;
+\elif :scenario = 3
+INSERT INTO public.board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count)
+SELECT 'kilter', 'snapshot-trigger-bench-stats-insert-' || txid_current()::text || '-' || lpad(series::text, 5, '0'),
+       40, 5.0, 1
+FROM generate_series(1, :batch_rows) AS series;
+\elif :scenario = 4
+INSERT INTO public.board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count)
+SELECT 'kilter', 'snapshot-trigger-bench-upsert-climb-' || lpad(((batch.start_index + series)::integer)::text, 8, '0'),
+       40, 5.5, 2
+FROM generate_series(1, :batch_rows) AS series
+CROSS JOIN LATERAL (SELECT (txid_current() % 16)::integer * :batch_rows AS start_index) AS batch
+ON CONFLICT (board_type, climb_uuid, angle)
+DO UPDATE SET display_difficulty = EXCLUDED.display_difficulty,
+              ascensionist_count = EXCLUDED.ascensionist_count;
+\elif :scenario = 5
+INSERT INTO public.board_climb_grades
+  (board_type, climb_uuid, angle, local_grade, confidence, model_version, coeff_version)
+SELECT 'kilter', 'snapshot-trigger-bench-grade-insert-' || txid_current()::text || '-' || lpad(series::text, 5, '0'),
+       40, 5.0, 'confirmed', 'snapshot-bench', 'snapshot-bench'
+FROM generate_series(1, :batch_rows) AS series;
+\elif :scenario = 6
+INSERT INTO public.board_climb_grades
+  (board_type, climb_uuid, angle, local_grade, confidence, model_version, coeff_version)
+SELECT 'kilter', 'snapshot-trigger-bench-upsert-grade-' || lpad(((batch.start_index + series)::integer)::text, 8, '0'),
+       40, 5.5, 'confirmed', 'snapshot-bench', 'snapshot-bench'
+FROM generate_series(1, :batch_rows) AS series
+CROSS JOIN LATERAL (SELECT (txid_current() % 16)::integer * :batch_rows AS start_index) AS batch
+ON CONFLICT (board_type, climb_uuid, angle)
+DO UPDATE SET local_grade = EXCLUDED.local_grade;
+\elif :scenario = 7
+WITH victim AS MATERIALIZED (
+  SELECT stats.climb_uuid
+  FROM public.board_climb_stats AS stats
+  WHERE stats.board_type = 'kilter'
+    AND stats.climb_uuid >= 'snapshot-trigger-bench-delete-climb-00000001'
+    AND stats.climb_uuid < 'snapshot-trigger-bench-delete-climb-00032001'
+  ORDER BY stats.climb_uuid
+  LIMIT :batch_rows
+)
+DELETE FROM public.board_climb_stats AS stats
+USING victim
+WHERE stats.board_type = 'kilter'
+  AND stats.climb_uuid = victim.climb_uuid;
+WITH victim AS MATERIALIZED (
+  SELECT climb.uuid
+  FROM public.board_climbs AS climb
+  WHERE climb.uuid >= 'snapshot-trigger-bench-delete-climb-00000001'
+    AND climb.uuid < 'snapshot-trigger-bench-delete-climb-00032001'
+  ORDER BY climb.uuid
+  LIMIT :batch_rows
+)
+DELETE FROM public.board_climbs AS climb
+USING victim
+WHERE climb.uuid = victim.uuid;
+\endif

@@ -43,6 +43,7 @@ import {
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
+import { seedWithRestoredSyncCursors } from './helpers/sync-cursor-restore';
 import { exportLayoutSnapshot, type SnapshotArtifactShape } from '../scripts/export-board-snapshots';
 
 const BUILT_AT = '2026-06-01T00:00:00.000Z';
@@ -82,7 +83,7 @@ async function seedClimbGroup(group: {
   startsAt: string;
 }): Promise<void> {
   const sizes = group.compatibleSizeIds === null ? null : `{${group.compatibleSizeIds.join(',')}}`;
-  await db.execute(sql`
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climbs
       (uuid, board_type, layout_id, name, frames, is_draft, is_listed, compatible_size_ids, updated_at)
     SELECT md5(${group.uuidPrefix} || climb_number), ${group.boardType}, ${group.layoutId},
@@ -90,7 +91,7 @@ async function seedClimbGroup(group: {
            ${group.startsAt}::timestamp + climb_number * interval '1 second'
     FROM generate_series(1, ${group.climbCount}) AS climb_number
   `);
-  await db.execute(sql`
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climb_stats
       (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, quality_average, updated_at)
     SELECT ${group.boardType}, md5(${group.uuidPrefix} || climb_number), stat_angle, 18 + (climb_number % 9),
@@ -99,7 +100,7 @@ async function seedClimbGroup(group: {
     FROM generate_series(1, ${group.climbCount}) AS climb_number
     CROSS JOIN (VALUES (40), (45)) AS angles(stat_angle)
   `);
-  await db.execute(sql`
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climb_grades
       (board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high, confidence,
        ascensionist_count, model_version, coeff_version, computed_at)
@@ -194,7 +195,8 @@ async function exportLayout(
     filePath,
     gradesFilePath,
     builtAt: BUILT_AT,
-    stabilityWindowSeconds: 0,
+    stableBefore: '2099-01-01T00:00:00.000Z',
+    deletionObserverConnectionAvailable: true,
     artifactShape,
   });
   if (!result.grades || result.deletionsReplayFrom === null) {

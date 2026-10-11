@@ -17,10 +17,11 @@ import { DRIZZLE_DIR, JOURNAL_PATH, parseJournal } from '../lib/drizzle-migratio
  * zero rows loaded, and only ran at all with `--disable-triggers` — which needs
  * a superuser.
  *
- * The check is textual on purpose. The CI job that runs it (`db-migrations`)
- * has a stock `postgres:17` service with no PostGIS and never executes the
- * migration SQL, so it cannot ask a catalog. The catalog-level counterparts run
- * elsewhere: `scripts/dev-db-image-smoke.sh` asserts `pg_proc.proconfig`
+ * The check is textual on purpose. The `db-migrations` job runs it against its
+ * primary stock `postgres:17` service, which has no PostGIS and cannot apply the
+ * full migration chain. A separate stock `postgres:18` service runs only the
+ * snapshot-fence migration smoke; this guard still cannot ask a catalog. The
+ * catalog-level counterparts run elsewhere: `scripts/dev-db-image-smoke.sh` asserts `pg_proc.proconfig`
  * against the fully-migrated dev-db image in the `test-dev-db` job (the only
  * other guard that runs in CI), and
  * `packages/db/src/__tests__/location-trigger.integration.test.ts` does the

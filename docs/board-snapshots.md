@@ -39,8 +39,55 @@ The permanent worker now uses R2 and the Production variable is `r2`, blocking
 further rehearsals. Backend snapshot scheduling was restored after normal
 producer acceptance; see the [live acceptance record](r2-migration-2026-10.md).
 
-**Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
-(default `board-snapshots/v1`):
+GitHub Actions remains manual-only. Its complete, non-pruning R2 rehearsal requires
+`SNAPSHOT_PUBLISHER_STORAGE_TARGET=tigris`; the current `r2` producer setting blocks it.
+It has no scheduled publisher, catalogue job, heartbeat watchdog, or automatic primary fallback.
+The environment-variable check is not a lock shared with the batch worker. Reopening the rehearsal
+requires a separate operator handoff that prevents concurrent publishing.
+
+The replica fence and heartbeat/watchdog code below is prepared for an explicit future operator rollout;
+the current workflow does not invoke it. Do not treat that code as deployed standby publishing or as an
+active fallback path. Keep one publisher per prefix, and use the separate attempt lease and database fence
+for their distinct purposes.
+
+#### Prepared heartbeat/watchdog protocol (inactive)
+
+The exporter accepts `--heartbeat` only for a complete gzip export after it has acquired the database
+fence. The optional watchdog validates those health records against the public manifest before deciding
+whether a primary fallback is needed. Neither is scheduled by the current GitHub workflow or batch family.
+The contract below applies only if a separately reviewed operator integration invokes them.
+
+The exporter checks the session immediately before and after the manifest PUT. A connection loss in that
+cross-system interval cannot be made transactional, so S3 and PostgreSQL may briefly disagree. Each
+heartbeat names the manifest's exact `generatedAt`; the watchdog reads the live manifest both before and
+after the mutable heartbeat objects with different cache busters and requires its generation and parsed
+content to remain identical. It requires the **refresh** heartbeat to match that stable manifest. A full
+run writes `full.json` first and a matching `refresh.json` last, so refresh anchors the completed pair's
+manifest and PostgreSQL lineage. The full heartbeat remains an independent 30-hour clock because a later
+threshold refresh advances the manifest, but is accepted only when its system identifier and timeline match
+that current refresh anchor. The exporter and watchdog reject a heartbeat whose cutoff was already more
+than ten minutes old at completion.
+
+When invoked, the watchdog treats a lost-lock overwrite as stale and can repair from the primary. A Railway
+fallback emits a normal `source=primary` heartbeat so the next check does not repeat successful work. Any
+future homelab/watchdog pair must use the same digest-pinned backend image. The daily identity pass does not
+emit a heartbeat; only the final complete live-gzip pass does. A healthy threshold no-op still publishes
+`refresh.json`, because `manifest.generatedAt` intentionally does not change on a no-op. Image-pull or
+heartbeat-check failures must fail closed rather than authorize a fallback whose freshness decision was
+never made.
+
+Heartbeat objects are public-readable health signals, not a cryptographic trust boundary. Anonymous readers
+must not be able to update them: the S3 writer credential remains part of the trusted publisher boundary. The digest,
+manifest-generation, PostgreSQL-lineage, cutoff-age, and clock checks detect stale or misconfigured publishers,
+but a principal that can write the bucket could replace the live manifest, artifacts, and matching heartbeats
+together. Protect and separately scope the bucket write credential accordingly. If the threat model expands to
+include a compromised object-store control plane, add detached signatures whose private key is isolated from
+the S3 credential; signing with a key available to the same compromised publisher would add no boundary.
+Before any operator activation, prove anonymous PUT and DELETE requests receive 403, scope the writer to the snapshot bucket and
+`board-snapshots/` prefix, and keep the public base on the exact HTTPS virtual-host URL documented below.
+
+**Per-layout dual-publish.** A full per-layout nightly runs the exporter **twice**, targeting two
+prefixes via `--key-prefix` (default `board-snapshots/v1`):
 
 - `board-snapshots/v1-gzip` — `--gzip`, ~2.6× smaller (`kilter:1` 271 MB → 103 MB as of 2026-07-27).
   **This is what the fleet reads**: every mobile workflow's `EXPO_PUBLIC_SNAPSHOT_BASE_URL` points here.
@@ -52,9 +99,11 @@ Each prefix is a self-contained, single-encoding manifest: the merge and prune l
 to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix.
 The migration retains both passes and prefixes. Removing either requires separate
 explicit approval.
+They are not an atomic cross-prefix pair: each pass proves its own database fence.
+The independent hardware catalogue never replaces either per-layout prefix.
 
-**Live threshold refresh.** The 15-minute schedule targets only `board-snapshots/v1-gzip`, the prefix the
-fleet reads, with `--refresh-threshold 500`. For every discovered layout it reads the published manifest
+**Live threshold refresh.** The batch worker's 15-minute live scan targets only
+`board-snapshots/v1-gzip`, the prefix the fleet reads, with `--refresh-threshold 500`. For every discovered layout it reads the published manifest
 watermark and runs a bounded cursor probe for `board_climbs`, `board_climb_stats`, and
 `board_climb_grades`:
 
@@ -100,57 +149,101 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    [artifact shape](#artifact-shape) the same statements are rewritten on the way in: the data tables
    become `WITHOUT ROWID` and the device's three secondary indexes are left out.
 2. Inside one Postgres `REPEATABLE READ` transaction, streams both tables through the **same row shaping**
-   the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`), so an artifact row is byte-identical
+   the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`). The isolated postgres.js pools register
+   explicit text parsers for PostgreSQL date/time OIDs rather than depending on Drizzle constructor side effects,
+   so they preserve microseconds and timestamp-without-time-zone wall clocks. An artifact row remains byte-identical
    to what an incremental `syncClimbs`/`syncClimbStats` pull would have written. `snapshot-export-golden.test.ts`
    pins that equivalence by running both paths against the same seeded rows and diffing them.
-3. Excludes rows younger than `SYNC_STABILITY_WINDOW_SECONDS` (default 30s, same env var the resolvers
-   read) — a row still inside its write-transaction's commit window is left for the incremental pull rather
-   than risking a watermark that covers it before it's actually visible.
-4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — **while
-   streaming those rows**, so it covers exactly what the artifact holds and costs no extra query. The
-   stream SELECT adds the cursor as integer microseconds for ordering (never a string compare of rendered
-   timestamps) and the winning row's raw value goes through the same `toIso` as the row itself. It is
-   written into `snapshot_meta` alongside
+3. Excludes rows at or after one run-wide `stableBefore` cutoff. In an unfenced primary dry-run it is the primary clock minus `SYNC_STABILITY_WINDOW_SECONDS` (default 30 seconds). Fenced runs take it from the primary coordinator; every threshold probe, row stream, and watermark query uses that exact cutoff with a strict `<` predicate. Layout discovery deliberately ignores the cutoff so an all-young or just-rewritten live layout cannot be mistaken for a deletion and dropped from a full manifest merge.
+4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — while streaming those rows in the same `REPEATABLE READ` transaction, so the watermark covers exactly the artifact and costs no extra query. The stream SELECT orders the cursor as integer microseconds (never a string comparison of rendered timestamps), and the winning row's raw value goes through the same `toIso` as the row itself. The watermark is written into `snapshot_meta` alongside
    `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`. The transaction also
    captures a conservative tombstone boundary into a metadata-only `sync_deletions` row: the oldest of
-   run `builtAt`, export-transaction start minus `SYNC_STABILITY_WINDOW_SECONDS`, and the oldest active
-   transaction start it can see. A second primary-pool connection samples `pg_stat_activity` while the
-   export transaction is open but before its first artifact SELECT fixes the `REPEATABLE READ` snapshot.
-   That ordering covers a delete transaction that began before the snapshot but committed after it.
-   Which transactions count depends on what the export's login can see. PostgreSQL shows a session's
-   state and `xact_start` only to its own role and to members of `pg_read_all_stats` (superusers
-   included). With it, every role's client sessions count. Without it, only the export login's own
-   sessions count and any visible other-role client fails closed; other roles' sessions are invisible in
-   that mode, so it is only as safe as the premise that every writer uses the export's login. Each run
-   logs which mode it got as `readsAllStats` on its `[export-snapshots] starting run` line; that line is
-   how to tell what the workflow's login gets. The batch family always needs `readsAllStats: true` and
-   refuses to run without `pg_read_all_stats`. A boundary more than an hour before `builtAt` logs a
-   warning (usually some session's forgotten open transaction): still safe, but every client then
-   replays that much more tombstone history.
-   The row is omitted (clients use the legacy scoped-watermark fallback) if the pool has fewer than two
-   connections, the activity probe fails, a prepared transaction exists in the database, activity
-   tracking/visibility is incomplete, or any timestamp is invalid. Every per-layout
-   build/upload log carries `deletionsReplayFrom` and `deletionsReplayFallbackReason`: success is a
-   timestamp plus a null reason; fallback is a null timestamp plus one stable, low-cardinality reason.
-5. In the default artifact shape, vacuums the finished file (and the grades file) so its rows are packed
-   and in primary-key order. See [Artifact shape](#artifact-shape).
-6. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
+   run `builtAt` and the authoritative `stableBefore`. A fenced cutoff already precedes every transaction
+   open during the primary scan, so fenced-primary and physical-replica readers need no local activity
+   probe. On the unfenced compatibility path, the boundary also includes the export-transaction start and
+   oldest active transaction visible under the export role's visibility policy. A second primary-pool connection samples `pg_stat_activity`
+   while the export transaction is open but before its first artifact SELECT fixes the `REPEATABLE READ`
+   snapshot. That ordering covers a delete transaction that began before the snapshot but committed after
+   it. Which transactions count depends on what the export login can see: PostgreSQL exposes session state
+   and `xact_start` only to its own role and members of `pg_read_all_stats` (superusers included). With that
+   role, every writer's client sessions count. Without it, only the export login's own sessions count;
+   visible other-role clients fail closed and invisible roles remain outside the proof. Each run logs its
+   `readsAllStats` mode on the `[export-snapshots] starting run` line. The batch family requires
+   `readsAllStats: true` and refuses to run without `pg_read_all_stats`. A boundary more than an hour before
+   `builtAt` logs a warning: it remains safe, but clients replay more tombstone history. The metadata row
+   is omitted, leaving clients on the legacy scoped-watermark fallback, if the unfenced pool has fewer than
+   two connections, the activity probe fails, a prepared transaction exists, activity tracking or
+   visibility is incomplete, or a timestamp is invalid. Every per-layout build/upload log carries
+   `deletionsReplayFrom` and `deletionsReplayFallbackReason`.
+5. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
    default, or `gzip` (with `Content-Encoding: gzip`) under `--gzip`. The manifest's `contentEncoding`
    field records which, so the client stays agnostic.
 7. After every artifact for the run has landed, writes `<keyPrefix>/manifest.json` **last**, so a
    reader only ever sees a fully-consistent old-or-new manifest, never a manifest pointing at an artifact
    that hasn't finished uploading.
 
-#### Why the primary, never a replica
+#### Why a replica URL swap is unsafe, and the fence that makes replica mode safe
 
 The sync cursor `(updated_at, sync_seq)` is **write-time** ordered, but an async replica's snapshot is
-**commit-order** consistent. A row that commits late (or replicates late) can carry a lower cursor than
-rows already visible on the replica — so a replica read can produce a watermark that covers a row the
-artifact never actually contains. Every client that bootstraps from that artifact resumes strictly past
-the watermark and **loses that row forever** (the strict `>` delta pull never revisits it). The stability
-window only absorbs primary write→commit delay; replica lag stacks on top of it. The export always reads
-the primary pool (`createPool()` from `@boardsesh/db/client`) for this reason — see the long comment at
-`runExport`'s pool call site in `export-board-snapshots.ts`.
+**commit-order** consistent. A row that commits late can carry a lower cursor than a later-started row
+already visible on the replica. Publishing the visible maximum would make every bootstrapped client skip
+the late row forever. A larger fixed lag window or `pg_last_xact_replay_timestamp()` only makes that race
+less likely; neither proves the absent transaction has finished.
+
+`--source=replica` therefore fails closed unless this protocol succeeds:
+
+1. A dedicated, direct (never transaction-pooled) primary session takes advisory lock `(4340, 1)` through
+   `ops.acquire_board_snapshot_fence()` and keeps that session alive through manifest publication. This
+   runbook reserves the pair for the board-snapshot protocol: `4340` records issue #4340 and `1` is this
+   protocol's lock discriminator. Do not reuse the pair for another advisory-lock owner.
+2. The function sees every other same-database backend with an open transaction and sets `stableBefore` to
+   the lesser of primary clock minus the 30-second stability window and the oldest `xact_start` minus one
+   microsecond. It refuses prepared transactions, any remaining logical subscription, and logical apply
+   workers which are still shutting down.
+3. In a later primary statement it records `pg_current_wal_insert_lsn()`. A transaction which committed
+   before the activity scan is before that WAL position; a transaction still active during the scan has a
+   cursor at or after `stableBefore` and is excluded.
+4. Before comparing LSNs, both ends must report the same PostgreSQL system identifier and timeline, the
+   standby WAL receiver must be streaming on that timeline, the standby must be in recovery, and replay
+   must not be paused. Lag must be at most 30 seconds and `pg_last_wal_replay_lsn()` must reach the target
+   within 10 minutes. The cutoff may not already be more than 10 minutes old.
+5. All artifact reads use `cursor_at < stableBefore`. Before every artifact and the final manifest upload,
+   the exporter rechecks both the primary session lock and standby replay barrier on the same reserved
+   backend that streams the rows, and rechecks that the cutoff is still at most ten minutes old. Remote
+   primary/coordinator connections require certificate and hostname verification; plaintext is allowed only
+   for a literal loopback URL. Docker service names and private DNS names still require verified TLS. A pre-manifest
+   failure leaves the old manifest untouched. A failure
+   immediately after the manifest PUT cannot roll that PUT back, but it emits no success heartbeat; failed
+   layouts retain their previous manifest entries while successful layout updates remain valid.
+
+Migration `0264_board_snapshot_replica_fence` makes the cursor contract a database invariant. INSERT and
+UPDATE triggers stamp `board_climbs.updated_at`, `board_climb_stats.updated_at`, and
+`board_climb_grades.computed_at` from the transaction timestamp converted to UTC; INSERTs into
+`sync_deletions` receive the same UTC transaction-time stamp. Caller-supplied/backdated values are ignored.
+The only INSERT bypass (`boardsesh.snapshot_cursor_restore=on`) checks that `session_user` is a real superuser and
+exists for controlled historical restores/tests. UPDATE triggers deliberately continue to restamp cursors while
+the setting is on, matching climbs, stats, and grades and preventing a long-lived restore session from backdating
+ordinary updates. The fence itself rejects every remaining logical
+subscription/apply worker. Arbitrary superuser trigger bypass remains outside the proof, so normal writer
+roles must not receive `SET` on `session_replication_role` or trigger-alter privileges. Replica export stays
+disabled until the final PG18 physical standby has been seeded after the upgrade subscription is removed.
+The adversarial integration test holds an old transaction open, attempts to backdate all four cursor
+families, lets a newer transaction commit, and proves the fixed cutoff cannot publish a watermark past
+the late row.
+
+Migration `0264` is PostgreSQL-18-only. Its first statement rejects PostgreSQL 16/17 and a missing or
+incorrectly provisioned fence-owner role before changing the schema. The PostgreSQL 18 upgrade and image
+work have landed on `main`; the old unpublished-image dependency is no longer pending. Before applying
+`0264` to any target, still verify that target's version and role contract, run the checked-in PG18 migration
+smoke, and complete the matched pre-migration/candidate write benchmark in the rollout plan below.
+
+The proof also assumes the primary wall clock does not step backward by more than the stability window
+between the activity scan and a later transaction start. PostgreSQL transaction timestamps follow the host
+wall clock; an extreme backward step could otherwise give a new writer a cursor below `stableBefore`.
+Production activation therefore requires Railway/host time synchronization and clock-offset alerting. The
+exporter catches a clock that is still behind (negative cutoff age) and the prepared watchdog checks an
+expired cutoff when explicitly invoked, but neither can detect a transient backward-and-forward step after the scan; that remains a documented
+operational residual until the sync protocol moves to a commit-ordered cursor.
 
 #### Merge semantics
 
@@ -188,7 +281,7 @@ implements the job side of #5622.
 | Schedule key | Cron (UTC) | Payload | What runs |
 | --- | --- | --- | --- |
 | `nightly` | `15 7 * * *` | `{ "mode": "nightly" }` | identity `v1`, then gzip `v1-gzip`, then `v1-catalog` |
-| `live-scan` | `7,22,37,52 * * * *` | `{ "mode": "live-scan" }` | gzip `v1-gzip` with `--refresh-threshold 500` |
+| `live-scan` | `7,22,37,52 0-6,8-23 * * *` | `{ "mode": "live-scan" }` | gzip `v1-gzip` with `--refresh-threshold 500` |
 
 The payload also takes `board`, `layout` (needs `board`), `refreshThreshold` and, on the nightly only,
 `gzipOnly`. They narrow a run the way the retired workflow's dispatch inputs did: a threshold skips the
@@ -300,7 +393,7 @@ with the writers, so it would see none of their transactions, and the live gzip 
 layout. `pg_read_all_stats` also lets the login read other sessions' query text; the observer reads
 only `state` and `xact_start`, and nothing it reads is logged.
 
-**Previous owner cutover (completed September 30; historical steps).** Two exporters on one prefix each merge an
+**Cutover** (last in #5800's order, after neighbors). Two exporters on one prefix each merge an
 older manifest and the later write drops the other's entries, so unlike recommendations the owners
 never overlap:
 
@@ -324,8 +417,8 @@ never overlap:
    redeploy, so the live prefix goes no longer than one deploy without a scan.
 5. The cutover PR deletes the workflow's `schedule:`, updates
    `scripts/__tests__/batch-families-cron.test.ts` and `scripts/__tests__/snapshot-export-workflow.test.ts`,
-   and limits `workflow_dispatch` to a complete `storage_target == r2` rehearsal, so a manual Tigris dispatch
-   cannot become a second publisher. Keep Actions disabled except during an explicitly gated rehearsal.
+   and limits `workflow_dispatch` to `storage_target == r2`, so a manual Tigris dispatch can never
+   become a second publisher. Re-enable the workflow after it merges; only the R2 rehearsal remains.
 6. Wait for three nights of `succeeded` nightly rows and compare each night's manifest with the one
    before (entry count, per-layout row counts).
 
@@ -1395,8 +1488,10 @@ in-memory map loses exactly that one. `unknown` is an explicit, expected value.
 
 ### Manual export
 
-For a complete isolated R2 rehearsal only: trigger `.github/workflows/export-board-snapshots.yml` via
-`workflow_dispatch` after its producer-target gate is configured. Ordinary exports run on the worker.
+The manual CI rehearsal `.github/workflows/export-board-snapshots.yml` remains blocked by
+`SNAPSHOT_PUBLISHER_STORAGE_TARGET=r2` while the batch worker owns the live R2 prefixes.
+Use the batch worker operator below for a live refresh. Reopening the non-pruning CI rehearsal
+requires a separate operator handoff.
 
 From the batch worker host, which owns the schedule (worker environment plus
 `WORKER_OPERATOR_ENABLED=true`):
@@ -1416,7 +1511,8 @@ From a local shell, from `packages/backend/`:
 DATABASE_URL=<primary connection string> \
 AWS_S3_BUCKET_NAME=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_ENDPOINT_URL=... AWS_DEFAULT_REGION=... \
 node --import tsx src/scripts/export-board-snapshots.ts \
-  [--dry-run] [--gzip] [--key-prefix <prefix>] [--refresh-threshold <rows>] \
+  [--dry-run] [--source primary|replica] [--fence] [--heartbeat] \
+  [--gzip] [--key-prefix <prefix>] [--refresh-threshold <rows>] \
   [--board <boardType>] [--layout <layoutId>]
 ```
 
@@ -1427,19 +1523,138 @@ node --import tsx src/scripts/export-board-snapshots.ts \
   Pair it with `--key-prefix board-snapshots/v1-gzip` so gzip artifacts land beside — never overwrite — the
   identity `v1` rollback prefix.
 - `--key-prefix <prefix>` (default `board-snapshots/v1`) targets a self-contained prefix: its own manifest,
-  merge, and prune, isolated from every other prefix. Validated against a safe key charset. The nightly
-  workflow uses it to publish `v1` (identity) and `v1-gzip` (gzip) in one run.
+  merge, and prune, isolated from every other prefix. Validated against a safe key charset. The batch
+  worker nightly publishes `v1` (identity) and `v1-gzip` (gzip); the manual Actions rehearsal publishes
+  all three R2 prefixes with `--no-prune`.
 - `--refresh-threshold <rows>` reads that prefix's current manifest and rebuilds only layouts with at
-  least that many stable rows after any artifact-table watermark. The production schedule uses `500`
+  least that many stable rows after any artifact-table watermark. The batch worker's live scan uses `500`
   with `--gzip --key-prefix board-snapshots/v1-gzip`; the identity rollback remains a nightly full export.
   A scan with no stale layout makes zero S3 writes. Missing manifests recover by rebuilding every
   discovered pair; invalid manifests abort before upload because a partial run cannot merge safely.
 - `--board`/`--layout` filter to a subset. A filter matching **zero** `(boardType, layoutId)` pairs is
   treated as an operator error and throws loudly (e.g. `--board=kilterr` typo) rather than silently leaving
   that board's artifacts stale.
-- `DATABASE_URL` must point at the **primary**, never a read replica (see the rationale above) — this is
-  read-only-sufficient (the export only `SELECT`s) but the write-time/commit-order mismatch on a replica is
-  a correctness bug, not a permissions one.
+- `--fence` makes a primary export acquire the same direct-session fence as replica mode. Use it when
+  explicitly running the fenced primary/replica protocol. The current batch family uses its queue attempt
+  lease, and the manual R2 rehearsal does not pass `--fence`; do not treat those mechanisms as equivalent.
+- `--source=replica` reads bulk rows from `SNAPSHOT_REPLICA_DATABASE_URL` only after acquiring the fence
+  through `DATABASE_DIRECT_URL` and reaching its replay barrier. `DATABASE_URL` remains the ordinary
+  primary read pool for `--source=primary`.
+- `--heartbeat` implies `--fence` and is accepted only for an unfiltered, gzip export to
+  `board-snapshots/v1-gzip`. It writes no-store `board-snapshots/ops/{refresh,full}.json` only after a
+  successful run (including a healthy threshold no-op). It requires an exact
+  `SNAPSHOT_EXPORTER_IMAGE_DIGEST=sha256:...`. `--source=replica --heartbeat` is a prepared operator
+  path; no current scheduled workflow consumes these heartbeats. Any future watchdog integration must
+  validate image, manifest-generation, cutoff, and PostgreSQL-lineage checks before acting. Shadow or
+  filtered runs must not emit production health.
+
+### Primary coordinator role
+
+`DATABASE_DIRECT_URL` must be a direct PostgreSQL endpoint. PgBouncer transaction mode can move two
+statements to different server sessions and therefore cannot hold this advisory lock. A pooler URL fails
+safe at the first lock assertion, but it is still a configuration error.
+
+The exporter calls `ops.board_snapshot_fence_held()` as a standalone statement on that same reserved
+session. Treat it as a statement-level assertion: never compose it with `release_board_snapshot_fence()` in
+one SQL statement. Only the owning session can release its session advisory lock, and every production call
+site checks it before publishing.
+
+The target admin must create the non-login function owner before migration `0264`; the restricted Drizzle
+migrator cannot create roles or grant itself predefined monitoring privileges. Substitute the application
+owner role if it is named differently:
+
+```sql
+CREATE ROLE boardsesh_snapshot_fence_owner
+  NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS;
+GRANT pg_read_all_stats TO boardsesh_snapshot_fence_owner
+  WITH ADMIN FALSE, INHERIT TRUE, SET FALSE;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system()
+  TO boardsesh_snapshot_fence_owner;
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_checkpoint()
+  TO boardsesh_snapshot_fence_owner;
+GRANT boardsesh_snapshot_fence_owner TO boardsesh_owner
+  WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+```
+
+Migration `0264` fails closed unless that role is narrow, has exactly the direct `pg_read_all_stats` and
+application-owner membership rows (including the PG18 `ADMIN`, `INHERIT`, and `SET` options above), and has
+direct non-grantable `EXECUTE` ACLs on the two control-identity functions. Effective access through another
+role is intentionally insufficient, and any extra direct role edge is drift. The migration grants the owner
+direct non-grantable `USAGE, CREATE` on `ops` (PostgreSQL requires `CREATE` for
+`ALTER FUNCTION ... OWNER`) and transfers only the two `SECURITY DEFINER` functions,
+`board_snapshot_cluster_identity()` and `acquire_board_snapshot_fence(integer)`, to it.
+
+The PG18 development image and `scripts/dev-db-up.sh` run
+`packages/db/docker/bootstrap-pg18-development-roles.sql` before pending migrations. That bootstrap is
+idempotent but deliberately requires PostgreSQL 18, a superuser, and the explicit
+`boardsesh_dev_role_bootstrap=true` psql variable. It is only a disposable development/test convenience;
+production must provision and audit the roles through the PG18 cutover runbook, never auto-create them from
+the application or Drizzle migration path.
+
+Creating the roles is not enough on its own. Production reaches `0264` after
+`scripts/postgres18-production-role-transition.sh transfer-ownership` has already handed `public`, `drizzle`,
+and everything in them to `boardsesh_owner`, so `SET LOCAL ROLE boardsesh_owner` lands on objects the owner
+may replace. Development and CI have no cutover: both the image build and `dev-db-up.sh` apply the whole
+journal as the bootstrap superuser, which leaves every pre-`0264` object owned by that superuser and would
+make the role switch fail on `CREATE OR REPLACE FUNCTION`, `CREATE TRIGGER`, and the drizzle ledger writes.
+`0264` therefore opens with a superuser-only block that mirrors the cutover for exactly the objects that one
+transaction replaces, attaches a trigger to, or records itself in — the two `public` cursor functions, the
+four cursor-stamped tables, both `__drizzle_migrations` ledgers, and the `public`/`drizzle` schemas. The
+production migrator is verified `NOSUPERUSER` before it is handed the deploy secret, so that block never runs
+there and the runbook stays the only thing that moves the rest.
+`scripts/board-snapshot-migration-pg18.test.sh` covers both apply paths; its development scenario also seeds
+`snapshot_smoke_bystander_*` objects the block must leave alone, so a preamble that ever grows into a
+schema-wide sweep fails the test instead of passing it.
+
+The block narrates itself at `NOTICE` level: one line naming `session_user` and each
+`ALTER SCHEMA`/`ALTER TABLE`/`ALTER FUNCTION` it runs, or one line saying it skipped because `session_user` is
+not a superuser. Grep a `0264` deploy log for `migration 0250 superuser preamble` — on the production migrator
+the only line is the skip. If a real PG18 database is ever migrated with a platform superuser credential
+(Railway hands one out by default), those `ALTER` lines are the trace of a half-cutover database: `public`,
+`drizzle`, six tables and two functions moved to `boardsesh_owner` while every other `public` table stayed on
+the superuser. Finish it with `scripts/postgres18-production-role-transition.sh transfer-ownership`.
+
+The migration revokes every `ops` function from `PUBLIC`. Create the separate narrow coordinator login
+outside the schema migration (password from 1Password). It must have no direct role memberships in either
+direction; grant only:
+
+```sql
+SELECT format(
+  'GRANT CONNECT ON DATABASE %I TO boardsesh_snapshot_coordinator',
+  current_database()
+) \gexec
+GRANT USAGE ON SCHEMA ops TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.acquire_board_snapshot_fence(integer)
+  TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.board_snapshot_fence_held()
+  TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.release_board_snapshot_fence()
+  TO boardsesh_snapshot_coordinator;
+GRANT EXECUTE ON FUNCTION ops.board_snapshot_cluster_identity()
+  TO boardsesh_snapshot_coordinator;
+```
+
+The `SECURITY DEFINER` fence owner must have effective `USAGE` of `pg_read_all_stats`; membership granted
+with inheritance disabled is rejected because it leaves other sessions' transaction timestamps masked.
+The function deliberately checks `current_user`, which is the owner while a
+`SECURITY DEFINER` body runs: that is the identity PostgreSQL uses to read `pg_stat_activity`. Checking
+`session_user` instead would test the narrow caller and force it to receive the broad stats role. Caller
+authorization remains the separately revoked-and-granted `EXECUTE` privilege. Every fenced export runs an
+owner/grant audit before taking the lock: the fence owner owns exactly the two intended functions while the
+coordinator owns no `ops` functions, narrow owner attributes, exact direct
+membership options, exactly the owner's two control plus two owned-function direct non-grantable ACLs,
+direct non-grantable owner schema ACLs, and exactly one direct non-grantable
+coordinator schema `USAGE` plus the four listed function `EXECUTE` ACLs. Inherited grants, grant options,
+additional effective `ops` function access (including implicit owner access), any coordinator membership edge, caller stats/owner
+membership/schema creation, and any `PUBLIC` execution all fail closed. It therefore also catches ownership
+or ACL drift after a logical restore. The coordinator
+needs no table DML. Also grant `USAGE` on `ops` and `EXECUTE` on
+`ops.board_snapshot_cluster_identity()` to the read-only role embedded in `DATABASE_URL`; each fenced
+primary export proves that the read pool is writable and belongs to the coordinator's exact system and
+timeline before reading or publishing. The local standby URL uses a separate read-only role with `SELECT` on the three
+snapshot tables, `USAGE` on `ops`, `EXECUTE` on `ops.board_snapshot_cluster_identity()`, and
+`pg_read_all_stats` so WAL-receiver state is visible. Grant those capabilities on the primary before the
+physical base backup so role metadata reaches the standby.
 
 ### Rolling back the artifact shape
 
@@ -1490,6 +1705,8 @@ device's own tables.
 
 Unset the variable and redeploy to go forward again; the next scan rebuilds every entry in shape 2 the
 same way. That is also how shape 2 first reaches a prefix whose entries predate it.
+
+Two follow-up test-coverage items are tracked in [#6016](https://github.com/boardsesh/boardsesh/issues/6016): parity across the migration, development bootstrap, exporter audit, and backend fixture copies of the fence-role contract; and running the golden byte-parity test through the isolated snapshot pool's PostgreSQL type parser as well as the Drizzle pool. These are maintenance gaps; the current owner/grant audit and row-parity coverage remain in place.
 
 ### Verify deletion replay metadata after a live full refresh
 
@@ -1584,7 +1801,7 @@ serve the verified keys before using multi-board download speed as release evide
 That compatibility fallback can also miss a tombstone from a transaction that began before its scoped
 watermark; only a verified live gzip replay boundary carries the stronger long-transaction guarantee.
 
-### Required Production secrets
+### Required secrets and prepared replica settings
 
 The manual R2 rehearsal uses GitHub `Production` secrets `DATABASE_URL`,
 `SNAPSHOTS_R2_AWS_ENDPOINT_URL`, `SNAPSHOTS_R2_AWS_ACCESS_KEY_ID`, and
@@ -1593,9 +1810,16 @@ Legacy Tigris `AWS_*` credentials belong to the homelab producer's rollback conf
 Actions no longer consumes them. `SYNC_STABILITY_WINDOW_SECONDS` remains an optional variable
 passthrough and must match the backend's configured stability window.
 
-The Production environment restricts deployments to `main` and `release/next`, so `workflow_dispatch`
-runs of the export must be dispatched from `main` — a feature-branch dispatch fails immediately with a
-branch-policy rejection and zero log output.
+The workflow does not receive `DATABASE_DIRECT_URL`, `SNAPSHOT_REPLICA_DATABASE_URL`, or a webhook
+credential. Those belong only to a separately reviewed operator integration of the prepared fence and
+watchdog code. That integration would provision the direct primary URL and read-only replica URL through
+the homelab secret boundary, verify TLS for remote endpoints, and use `SNAPSHOT_EXPORTER_IMAGE_DIGEST` only
+when heartbeat publication is explicitly enabled. Do not add the replica URL or its credentials to GitHub.
+There is no current `SNAPSHOT_HOMELAB_EXPORT_ENABLED` or `SNAPSHOT_PRIMARY_FENCE_ENABLED` workflow gate.
+
+The replica protocol's configurable bounds are `SNAPSHOT_REPLICA_MAX_LAG_SECONDS` (30),
+`SNAPSHOT_REPLICA_WAIT_SECONDS` (600), and `SNAPSHOT_MAX_CUTOFF_AGE_SECONDS` (600). Loosening them
+requires another delayed-commit shadow test and a reviewed operator change.
 
 **Public URL base (Tigris quirk)**: the manifest's per-artifact `url` fields must be fetchable
 unauthenticated. Tigris serves public objects **only** on the bucket's virtual-host domain
@@ -1796,7 +2020,7 @@ lets the image be built entirely from public, production-derived, nightly-verifi
 | -------- | ------------------------------------------------------------------------------------------- |
 | Script   | `packages/backend/src/scripts/export-board-catalog.ts`                                      |
 | Prefix   | `board-snapshots/v1-catalog` — one gzip artifact + its own `manifest.json`                  |
-| Cadence  | The 07:15 UTC nightly only. Never the 15-minute scan; never a `--board`/`--layout` dispatch |
+| Cadence  | The batch worker's 07:15 UTC nightly (same run as the two per-layout prefixes); never the 15-minute scan |
 | Size     | ~12 MB gzipped (~63 MB on disk), dominated by `board_climb_aliases`                         |
 | Consumer | `packages/db/scripts/load-board-snapshots.ts`, run by `Dockerfile.dev-db`                   |
 
@@ -1837,6 +2061,47 @@ Same 14-day prune grace as the other prefixes, and the manifest is written last,
 sees a key that is not on S3 yet.
 
 ## Rollout plan
+
+### Homelab replica exporter
+
+The source prepares a fenced replica path, but the current scheduled owner remains the batch worker on the
+primary. The manual Actions workflow is only an R2 rehearsal; it is not the watchdog or an automatic
+fallback. No homelab replica publisher or heartbeat monitor is represented as active by this runbook.
+
+1. Verify that the target is PostgreSQL 18 and pre-provision `boardsesh_snapshot_fence_owner`, its grants,
+   and the narrow coordinator/standby roles. Run the PG18 migration smoke and owner/grant audit before
+   changing the schema.
+2. Before applying `0264`, compare its write-path cost on matched, disposable PostgreSQL 18 databases. Keep
+   one at the current pre-`0264` schema and clone it for a candidate with only `0264` applied. Verify the
+   affected tables have matching indexes and column defaults, seed synthetic multi-thousand-row fixtures,
+   and run the repeatable workloads in `scripts/board-snapshot-write-benchmark/`. Record server
+   version/settings, migration hash, row and batch counts, and per-path median, p95, range, and relative
+   delta. Review the comparison before applying the migration; there is no fixed latency threshold. Do not
+   use production data or a shared database. `0264` triggers run on their documented write paths regardless
+   of exporter flags.
+3. Apply `0264_board_snapshot_replica_fence` through the restricted migrator/application-owner boundary,
+   then configure the direct primary URL and run the automated owner/grant audit. Keep replica publishing
+   and heartbeat emission disabled.
+4. On a disposable or explicitly approved shadow prefix, verify a fenced primary export retains its
+   advisory lock through publication and that a competing exporter fails with SQLSTATE `55P03` without
+   changing the manifest.
+5. After logical apply is removed, seed a final PostgreSQL 18 physical standby. Confirm streaming/replay
+   health, then compare replica exports with primary output under a shadow key prefix for seven days
+   **without `--heartbeat`**. Compare row sets and watermarks at the same fixed cutoff and exercise the
+   held-old-transaction case. CI has no physical streaming standby, so this operator comparison remains
+   separate from automated test results.
+6. Keep any digest-pinned timer disabled while exercising full, threshold no-op, lag-too-high,
+   replay-paused, lost-primary-session, and S3-failure paths. Check that failed runs emit no success
+   heartbeat and that the existing manifest is preserved on pre-PUT failure.
+7. A future source change must provide and review the actual homelab scheduling, health monitoring, and
+   fallback integration before operators enable replica publishing. Do not use an Actions schedule or
+   `SNAPSHOT_HOMELAB_EXPORT_ENABLED` flag as a substitute: neither exists in the current workflow.
+
+Record shadow-run cutoffs, replay position, row counts, watermarks, and outcomes in the operator change.
+The activation gate is seven clean shadow days plus a separately reviewed monitoring/fallback path, not
+merely a successful `pg_is_in_recovery()` check.
+
+### Mobile snapshot bootstrap
 
 1. **Build configuration**: confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the R2 gzip directory URL
    in every native build. With the env var missing, the app intentionally uses the paged crawl (see Mobile
