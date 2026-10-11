@@ -10,21 +10,12 @@ export type InferredPrivacy = {
   grants: Map<string, GrantStatus>;
 };
 
-/** Item audiences cannot encode resource grants or per-viewer revocations. */
-export function movedContentNeedsRestriction(
-  source: InferredPrivacy | undefined,
-  destination: InferredPrivacy | undefined,
-): boolean {
-  if (!source || source.audience !== 'public') return true;
-  // Public resources can still deny specific viewers. Preserve that denial
-  // unless the new parent already enforces it; never revoke unrelated access
-  // to an explicit destination just because it absorbed someone's old ticks.
-  return [...source.grants].some(
-    ([userId, status]) => status === 'revoked' && destination?.grants.get(userId) !== 'revoked',
-  );
-}
-
-/** Intersection is conservative: a follower exception never becomes a durable grant. */
+/**
+ * Merging the author's own sessions keeps the narrower audience: a follower
+ * exception never becomes a durable grant, and an unlisted half keeps the
+ * merged session off the listings. This governs only the session (its name,
+ * notes and roster); the ticks inside follow their author either way.
+ */
 export function intersectInferredPrivacy(policies: readonly InferredPrivacy[]): InferredPrivacy {
   if (policies.length === 1) return policies[0];
   const acceptsFollowers = (policy: InferredPrivacy) =>
@@ -34,9 +25,11 @@ export function intersectInferredPrivacy(policies: readonly InferredPrivacy[]): 
     ? 'only_me'
     : policies.every((policy) => policy.audience === 'public')
       ? 'public'
-      : policies.every(acceptsFollowers)
-        ? 'followers'
-        : 'invite_only';
+      : policies.every((policy) => policy.audience === 'public' || policy.audience === 'unlisted')
+        ? 'unlisted'
+        : policies.every(acceptsFollowers)
+          ? 'followers'
+          : 'invite_only';
   const candidates = new Set(policies.flatMap((policy) => [...policy.grants.keys()]));
   const grants = new Map<string, GrantStatus>();
   for (const userId of candidates) {
@@ -100,7 +93,8 @@ export async function loadInferredPrivacy(
         [
           session.id,
           {
-            audience: session.isPublic ? ('public' as const) : ('invite_only' as const),
+            // Same legacy reading as resourceAccessCondition: private = unlisted.
+            audience: session.isPublic ? ('public' as const) : ('unlisted' as const),
             inheritFollowers: false,
             grants: new Map<string, GrantStatus>(),
           },

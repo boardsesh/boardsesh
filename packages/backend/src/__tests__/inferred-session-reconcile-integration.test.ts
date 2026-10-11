@@ -224,6 +224,19 @@ describe('reconcileInferredSessions (real DB)', () => {
     expect(privacy.audience).toBe('followers');
   });
 
+  it('gives a private account without a session default a public inferred session', async () => {
+    // The account's privacy already limits who reads it; the session adds nothing.
+    await db.insert(dbSchema.userProfiles).values({ userId: USER_ID, isPrivate: true });
+    await insertTick(BASE);
+    await reconcileAt(BASE);
+    const [session] = await sessionsForUser();
+    const [privacy] = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, session.id)));
+    expect(privacy.audience).toBe('public');
+  });
+
   it('preserves restricted source privacy when a bridge merges sessions', async () => {
     await insertTick(BASE);
     await insertTick(BASE + 10 * HOUR);
@@ -409,7 +422,7 @@ describe('reconcileInferredSessions (real DB)', () => {
   });
 
   it.each([false, true])(
-    'retains a source revocation when explicit absorption already denies that viewer: %s',
+    'moves a tick into an explicit session without rewriting its audience (destination revoked: %s)',
     async (destinationRevoked) => {
       const revokedUserId = 'user-123';
       await db.update(dbSchema.userBoards).set({ isPublic: true }).where(eq(dbSchema.userBoards.id, boardId));
@@ -426,7 +439,9 @@ describe('reconcileInferredSessions (real DB)', () => {
         .select()
         .from(dbSchema.boardseshTicks)
         .where(eq(dbSchema.boardseshTicks.id, BigInt(movedTickId)));
-      expect(await canReadSocialEntity('tick', movedTick.uuid, revokedUserId)).toBe(false);
+      // A session revocation withholds the session, never its author's public tick.
+      expect(await canReadSocialEntity('tick', movedTick.uuid, revokedUserId)).toBe(true);
+      expect(await canReadSocialEntity('session', source.id, revokedUserId)).toBe(false);
 
       const explicitId = uuidv4();
       await db.insert(dbSchema.boardSessions).values({
@@ -448,22 +463,57 @@ describe('reconcileInferredSessions (real DB)', () => {
       await reconcileAt(BASE);
 
       expect((await ticksForUser()).every((tick) => tick.sessionId === explicitId)).toBe(true);
-      expect(await canReadSocialEntity('tick', movedTick.uuid, revokedUserId)).toBe(false);
-      expect(await canReadSocialEntity('tick', movedTick.uuid, USER_ID)).toBe(true);
       const policies = await db
         .select()
         .from(dbSchema.contentPrivacy)
-        .where(
-          and(eq(dbSchema.contentPrivacy.entityType, 'tick'), eq(dbSchema.contentPrivacy.entityId, movedTick.uuid)),
-        );
-      expect(policies.map((policy) => policy.audience)).toEqual(destinationRevoked ? [] : ['only_me']);
+        .where(and(eq(dbSchema.contentPrivacy.entityType, 'tick'), eq(dbSchema.contentPrivacy.ownerId, USER_ID)));
+      expect(policies).toEqual([]);
+      expect(await canReadSocialEntity('tick', movedTick.uuid, revokedUserId)).toBe(true);
+      expect(await canReadSocialEntity('tick', movedTick.uuid, USER_ID)).toBe(true);
       const [existingTick] = await db
         .select()
         .from(dbSchema.boardseshTicks)
         .where(eq(dbSchema.boardseshTicks.id, BigInt(existingTickId)));
-      expect(await canReadSocialEntity('tick', existingTick.uuid, revokedUserId)).toBe(!destinationRevoked);
+      expect(await canReadSocialEntity('tick', existingTick.uuid, revokedUserId)).toBe(true);
+      expect(await canReadSocialEntity('session', explicitId, revokedUserId)).toBe(!destinationRevoked);
     },
   );
+
+  it('writes no tick audience when a bridge merges a Followers and a Public inferred session', async () => {
+    await insertTick(BASE);
+    await insertTick(BASE + 10 * HOUR);
+    await reconcileAt(BASE);
+    await reconcileAt(BASE + 10 * HOUR);
+    const [morning, evening] = await sessionsForUser();
+    const setAudience = (sessionId: string, audience: 'followers' | 'public') =>
+      db
+        .update(dbSchema.resourcePrivacy)
+        .set({ audience })
+        .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, sessionId)));
+    await setAudience(morning.id, 'followers');
+    await setAudience(evening.id, 'public');
+
+    await insertTick(BASE + 5 * HOUR);
+    await reconcileAt(BASE + 5 * HOUR);
+
+    const sessions = await sessionsForUser();
+    expect(sessions).toHaveLength(1);
+    expect(new Set((await ticksForUser()).map((tick) => tick.sessionId))).toEqual(new Set([sessions[0].id]));
+    expect(
+      await db
+        .select()
+        .from(dbSchema.contentPrivacy)
+        .where(and(eq(dbSchema.contentPrivacy.entityType, 'tick'), eq(dbSchema.contentPrivacy.ownerId, USER_ID))),
+    ).toEqual([]);
+    // The merged session keeps the narrower audience for its name and roster only.
+    const [privacy] = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(
+        and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, sessions[0].id)),
+      );
+    expect(privacy.audience).toBe('followers');
+  });
 
   it('keeps a moved comment restricted by the merged public session revocation', async () => {
     const revokedUserId = 'user-123';
