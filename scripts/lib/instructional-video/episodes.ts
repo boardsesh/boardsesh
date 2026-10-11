@@ -248,7 +248,13 @@ const takes: readonly TutorialTake[] = chapters.map((chapter) => ({
   route: chapter.id === 'progress' ? 'profile' : 'boards',
   flow: `packages/mobile/.maestro/tutorial/${chapter.id}.yaml`,
   requiredMarks: chapter.beats.map((beat) => beat.fromMark),
-  requiredAnchors: [...new Set(chapter.beats.flatMap((beat) => (beat.anchor ? [beat.anchor] : [])))],
+  // Capture requirements stay stable when an edit replaces an anchor with a measured crop.
+  requiredAnchors:
+    chapter.id === 'crew'
+      ? ['invite-qr', 'queue-row-avatar', 'play-next']
+      : chapter.id === 'spray'
+        ? ['board-surface']
+        : [],
   minSeconds: 28,
   ...(chapter.id === 'crew' ? { session: 'crew' as const } : {}),
   ...(chapter.id === 'workouts' ? { session: 'workout' as const } : {}),
