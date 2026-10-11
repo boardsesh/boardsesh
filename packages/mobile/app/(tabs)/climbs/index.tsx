@@ -345,9 +345,11 @@ function ClimbListInner() {
   const [showFilters, setShowFilters] = useState(false);
   const [showGrade, setShowGrade] = useState(false);
   const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
-  // Measured height of the floating glass chrome (incl. the top safe-area inset).
-  // The list pads its top by this so the first row rests below the chrome and the
-  // rest scroll under it.
+  // Measured height of the chrome the list has to clear: the whole floating glass
+  // chrome (incl. the top safe-area inset), or only the controls block under the
+  // bar when UIKit owns the header (the list's automatic inset covers the bar).
+  // The list pads its top by this, so it is not a screen offset: never position
+  // an overlay with it.
   const [searchBarHeight, setSearchBarHeight] = useState(() => insets.top + 60);
 
   const blurSearchInputs = useCallback(() => {

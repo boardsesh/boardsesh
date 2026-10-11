@@ -96,6 +96,9 @@ const mocks = vi.hoisted(() => ({
   // Render the chrome's filter rows (chips, grade rail, tokens) and hand the test
   // the Grade chip's open/close callbacks.
   renderFilterChrome: false,
+  // Material renders its own grade rail inside the top chrome.
+  filtersInTopChrome: false,
+  deviceLayout: { isPad: false, isTablet: false, widthClass: 'compact' },
   openGrade: undefined as (() => void) | undefined,
   closeGrade: undefined as (() => void) | undefined,
   stackOptions: [] as NativeStackNavigationOptions[],
@@ -140,7 +143,7 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('../../../../src/hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ isPad: false, isTablet: false, widthClass: 'compact' }),
+  useDeviceLayout: () => mocks.deviceLayout,
 }));
 
 vi.mock('@shopify/flash-list', () => ({
@@ -364,6 +367,12 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
     },
   };
 });
+// Renders only the grade popover content, which regular-width iPad hands to the
+// chip in place of the inline rail.
+vi.mock('../../../../src/components/search/FilterChipRow', () => ({
+  FilterChipRow: ({ gradePopoverContent }: { gradePopoverContent?: ReactNode }) =>
+    gradePopoverContent ? createElement('div', { 'data-testid': 'grade-popover' }, gradePopoverContent) : null,
+}));
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
 vi.mock('../../../../src/components/search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));
 vi.mock('../../../../src/lib/haptics', () => ({
@@ -397,7 +406,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
     },
     variant: 'liquidGlass',
     brandColors: { primary: '#6D28D9' },
-    features: { filtersInTopChrome: false, summaryExcludesGradeFilter: false },
+    features: { filtersInTopChrome: mocks.filtersInTopChrome, summaryExcludesGradeFilter: false },
   }),
   useAppColorScheme: () => 'light',
 }));
@@ -603,6 +612,8 @@ beforeEach(() => {
   mocks.nativeSearch = false;
   mocks.renderNativeChrome = false;
   mocks.renderFilterChrome = false;
+  mocks.filtersInTopChrome = false;
+  mocks.deviceLayout = { isPad: false, isTablet: false, widthClass: 'compact' };
   mocks.openGrade = undefined;
   mocks.closeGrade = undefined;
   mocks.stackOptions.length = 0;
@@ -1295,6 +1306,27 @@ describe('ClimbList grade rail placement', () => {
     expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
 
     act(() => mocks.closeGrade?.());
+    expect(queryByTestId('grade-range-rail')).toBeNull();
+  });
+
+  it('hands the rail to the chip popover on a regular-width iPad instead of adding a row', () => {
+    mocks.renderFilterChrome = true;
+    mocks.deviceLayout = { isPad: true, isTablet: true, widthClass: 'regular' };
+    const { getAllByTestId, getByTestId } = render(<ClimbList />);
+
+    expect(mocks.openGrade).toBeDefined();
+    act(() => mocks.openGrade?.());
+    expect(getAllByTestId('grade-range-rail')).toHaveLength(1);
+    expect(getByTestId('grade-popover').contains(getByTestId('grade-range-rail'))).toBe(true);
+  });
+
+  it('adds no row on Material, where the top chrome renders its own rail', () => {
+    mocks.renderFilterChrome = true;
+    mocks.filtersInTopChrome = true;
+    const { queryByTestId } = render(<ClimbList />);
+
+    expect(mocks.openGrade).toBeDefined();
+    act(() => mocks.openGrade?.());
     expect(queryByTestId('grade-range-rail')).toBeNull();
   });
 });
