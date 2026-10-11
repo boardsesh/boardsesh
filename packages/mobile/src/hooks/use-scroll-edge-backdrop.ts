@@ -10,14 +10,14 @@ export const SCROLL_EDGE_SLACK = 2;
 type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
 
 /**
- * Spread onto the list. None of them sets React state. The last three take no
+ * Spread onto the list. None of them sets React state. The last two take no
  * argument because they read none: a handler with fewer parameters is still
  * assignable to React Native's `(event) => void` props.
  */
 export type ScrollEdgeListProps = {
   onScroll: (event: ScrollEvent) => void;
   onScrollBeginDrag: (event: ScrollEvent) => void;
-  onScrollEndDrag: () => void;
+  onScrollEndDrag: (event: ScrollEvent) => void;
   onMomentumScrollBegin: () => void;
   onMomentumScrollEnd: () => void;
 };
@@ -122,8 +122,13 @@ export function createScrollEdgeBackdrop(): ScrollEdgeBackdrop {
       coasting = false;
       settle();
     },
-    onScrollEndDrag: () => {
+    onScrollEndDrag: (event) => {
       dragging = false;
+      // The lift arrives before momentum begins. UIKit's projected target
+      // distinguishes a fling from a nonzero velocity stopped at a bound,
+      // where no momentum-end event follows. Older event variants omit it.
+      const { contentOffset, targetContentOffset, velocity } = event.nativeEvent;
+      coasting = targetContentOffset ? targetContentOffset.y !== contentOffset.y : (velocity?.y ?? 0) !== 0;
       settle();
     },
     onMomentumScrollBegin: () => {

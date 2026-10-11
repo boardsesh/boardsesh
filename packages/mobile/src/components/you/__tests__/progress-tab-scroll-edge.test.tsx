@@ -5,13 +5,14 @@
 // its rows are under the control. The tab swaps its list for a spinner while
 // loading and for an offline placard: the store must not outlive the list.
 import { act, render } from '@testing-library/react';
-import { createElement, type ComponentProps, type ReactNode } from 'react';
+import { createContext, createElement, type ComponentProps, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Every prop the mounted list was given.
 const list = vi.hoisted(() => ({ props: undefined as Record<string, unknown> | undefined }));
 
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => true }));
+vi.mock('expo-router/react-navigation', () => ({ HeaderHeightContext: createContext<number | undefined>(100) }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   RefreshControl: () => null,

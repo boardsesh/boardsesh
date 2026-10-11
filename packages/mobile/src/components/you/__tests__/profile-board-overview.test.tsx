@@ -9,17 +9,20 @@ import {
   type Ref,
 } from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HeaderHeightContext } from 'expo-router/react-navigation';
 import { buildStatisticsSummary } from '@boardsesh/profile-stats';
 import { reportScreenshotSmokeContent } from '../../../lib/screenshot-smoke';
 
 vi.mock('../../../lib/screenshot-smoke', () => ({ reportScreenshotSmokeContent: vi.fn() }));
 
 const scrollToOffset = vi.hoisted(() => vi.fn());
+const platform = vi.hoisted(() => ({ OS: 'android', select: (options: { android?: unknown }) => options.android }));
 const ThemeVariantContext = createContext<'liquidGlass' | 'material'>('liquidGlass');
 
+vi.mock('expo-router/react-navigation', () => ({ HeaderHeightContext: createContext<number | undefined>(undefined) }));
 vi.mock('react-native', () => ({
-  Platform: { OS: 'android', select: (options: { android?: unknown }) => options.android },
+  Platform: platform,
   View: ({
     children,
     testID,
@@ -39,17 +42,25 @@ vi.mock('@shopify/flash-list', () => ({
     renderItem,
     keyExtractor,
     testID,
+    scrollToOverflowEnabled,
+    contentInsetAdjustmentBehavior,
   }: {
     ref?: Ref<{ scrollToOffset: typeof scrollToOffset }>;
     data: unknown[];
     renderItem: (row: { item: unknown }) => ReactNode;
     keyExtractor: (item: unknown) => string;
     testID?: string;
+    scrollToOverflowEnabled?: boolean;
+    contentInsetAdjustmentBehavior?: string;
   }) => {
     useImperativeHandle(ref, () => ({ scrollToOffset }), []);
     return createElement(
       'div',
-      { 'data-testid': testID },
+      {
+        'data-testid': testID,
+        'data-scroll-to-overflow': String(scrollToOverflowEnabled),
+        'data-inset-adjustment': contentInsetAdjustmentBehavior,
+      },
       items.map((item) => createElement('div', { key: keyExtractor(item) }, renderItem({ item }))),
     );
   },
@@ -181,12 +192,74 @@ function makeData(overrides: Partial<YouData> = {}): YouData {
     ...overrides,
   } as unknown as YouData;
 }
+beforeEach(() => {
+  platform.OS = 'android';
+});
 afterEach(() => {
   cleanup();
   scrollToOffset.mockClear();
 });
 
 describe('all-board profile overview', () => {
+  it.each([120, 64])('returns to the inset list top under a %i-point native header', (headerHeight) => {
+    platform.OS = 'ios';
+    const { getByTestId, queryByText } = render(
+      <HeaderHeightContext.Provider value={headerHeight}>
+        <ProgressTab data={makeData()} topInset={100} />
+      </HeaderHeightContext.Provider>,
+    );
+    expect(getByTestId('progress-tab-loaded').getAttribute('data-scroll-to-overflow')).toBe('true');
+    expect(getByTestId('progress-tab-loaded').getAttribute('data-inset-adjustment')).toBe('automatic');
+    fireEvent.click(getByTestId('profile-board-expand'));
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    fireEvent.click(getByTestId('profile-board-expand'));
+    expect(scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: -headerHeight, animated: false });
+    expect(queryByText('Tension 2 Mirror')).toBeNull();
+  });
+
+  it('uses the current native header height when it changes while boards are expanded', () => {
+    platform.OS = 'ios';
+    const profileData = makeData();
+    const renderProgress = (headerHeight: number) => (
+      <HeaderHeightContext.Provider value={headerHeight}>
+        <ProgressTab data={profileData} topInset={100} />
+      </HeaderHeightContext.Provider>
+    );
+    const { getByTestId, rerender } = render(renderProgress(120));
+    fireEvent.click(getByTestId('profile-board-expand'));
+    rerender(renderProgress(64));
+    fireEvent.click(getByTestId('profile-board-expand'));
+    expect(scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: -64, animated: false });
+  });
+
+  it('can collapse with a native header outside a header-height provider', () => {
+    platform.OS = 'ios';
+    const { getByTestId } = render(<ProgressTab data={makeData()} topInset={0} />);
+    fireEvent.click(getByTestId('profile-board-expand'));
+    fireEvent.click(getByTestId('profile-board-expand'));
+    expect(scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: -0, animated: false });
+  });
+
+  it.each([
+    { os: 'android', variant: 'liquidGlass' },
+    { os: 'ios', variant: 'material' },
+    { os: 'web', variant: 'material' },
+  ] as const)('returns to offset zero without a native header on $os/$variant', ({ os, variant }) => {
+    platform.OS = os;
+    const { getByTestId } = render(
+      <HeaderHeightContext.Provider value={120}>
+        <ThemeVariantContext.Provider value={variant}>
+          <ProgressTab data={makeData()} topInset={100} />
+        </ThemeVariantContext.Provider>
+      </HeaderHeightContext.Provider>,
+    );
+    expect(getByTestId('progress-tab-loaded').getAttribute('data-scroll-to-overflow')).toBe('false');
+    expect(getByTestId('progress-tab-loaded').getAttribute('data-inset-adjustment')).toBe('never');
+    fireEvent.click(getByTestId('profile-board-expand'));
+    fireEvent.click(getByTestId('profile-board-expand'));
+    expect(scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: 0, animated: false });
+  });
+
   it.each(['liquidGlass', 'material'] as const)(
     'preserves authoritative totals through expansion and collapse in %s',
     (variant) => {

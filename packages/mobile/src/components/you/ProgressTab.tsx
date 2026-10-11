@@ -1,4 +1,5 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { useListTopOffset } from '../../hooks/use-list-top-offset';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, RefreshControl, StyleSheet } from 'react-native';
@@ -77,6 +78,7 @@ export const ProgressTab = memo(function ProgressTab({
   scrollEdge,
 }: ProgressTabProps) {
   const nativeRootHeader = useNativeRootHeader();
+  const listTopOffset = useListTopOffset();
   const { t, i18n } = useTranslation('profile');
   const { t: tYou } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
@@ -107,9 +109,9 @@ export const ProgressTab = memo(function ProgressTab({
   const toggleBoards = useCallback(() => {
     // Removing expanded rows while retaining their old scroll offset lands the
     // reader deep inside the charts. Return to the overview before collapsing.
-    if (boardsExpanded) listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    if (boardsExpanded) listRef.current?.scrollToOffset({ offset: listTopOffset, animated: false });
     setBoardsExpanded(!boardsExpanded);
-  }, [boardsExpanded]);
+  }, [boardsExpanded, listTopOffset]);
 
   const gradeDistLegend = useMemo<ChartLegendItem[] | undefined>(
     () =>
@@ -411,6 +413,7 @@ export const ProgressTab = memo(function ProgressTab({
         maintainVisibleContentPosition={{ disabled: true }}
         {...scrollEdge?.listProps}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+        scrollToOverflowEnabled={nativeRootHeader}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
         scrollIndicatorInsets={{ top: topInset }}
         refreshControl={

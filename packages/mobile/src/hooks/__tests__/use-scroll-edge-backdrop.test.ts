@@ -12,8 +12,18 @@ import {
   useScrolledUnder,
 } from '../use-scroll-edge-backdrop';
 
-function scrollEvent(offsetY: number): NativeSyntheticEvent<NativeScrollEvent> {
-  return { nativeEvent: { contentOffset: { x: 0, y: offsetY } } } as NativeSyntheticEvent<NativeScrollEvent>;
+function scrollEvent(
+  offsetY: number,
+  velocityY?: number,
+  targetOffsetY?: number,
+): NativeSyntheticEvent<NativeScrollEvent> {
+  return {
+    nativeEvent: {
+      contentOffset: { x: 0, y: offsetY },
+      ...(velocityY === undefined ? {} : { velocity: { x: 0, y: velocityY } }),
+      ...(targetOffsetY === undefined ? {} : { targetContentOffset: { x: 0, y: targetOffsetY } }),
+    },
+  } as NativeSyntheticEvent<NativeScrollEvent>;
 }
 
 // A phone under a UIKit header: the bar is 106 pt compact and 158 pt with its
@@ -27,11 +37,19 @@ function edgeAt(topOffset: number) {
   edge.setTopOffset(topOffset);
   const changes = vi.fn();
   edge.subscribe(changes);
+  let latestOffset = topOffset;
   const scrollTo = (...offsets: number[]) => {
-    for (const offset of offsets) edge.listProps.onScroll(scrollEvent(offset));
+    for (const offset of offsets) {
+      latestOffset = offset;
+      edge.listProps.onScroll(scrollEvent(offset));
+    }
   };
-  const beginDrag = (offset: number) => edge.listProps.onScrollBeginDrag(scrollEvent(offset));
-  const endDrag = () => edge.listProps.onScrollEndDrag();
+  const beginDrag = (offset: number) => {
+    latestOffset = offset;
+    edge.listProps.onScrollBeginDrag(scrollEvent(offset));
+  };
+  const endDrag = (velocityY?: number, targetOffsetY?: number) =>
+    edge.listProps.onScrollEndDrag(scrollEvent(latestOffset, velocityY, targetOffsetY));
   /** Finger down at `from`, dragged through `through`, lifted with no fling. */
   const drag = (from: number, ...through: number[]) => {
     beginDrag(from);
@@ -189,6 +207,67 @@ describe('createScrollEdgeBackdrop', () => {
       expect(list.scrolledUnder()).toBe(false);
     });
 
+    it.each([1.4, -1.4])('keeps the blur on through the momentum handoff at velocity %s', (velocityY) => {
+      const list = edgeAt(EXPANDED_TOP);
+      list.beginDrag(EXPANDED_TOP);
+      list.scrollTo(-120);
+      list.edge.setTopOffset(COMPACT_TOP);
+      expect(list.scrolledUnder()).toBe(true);
+      const changesBeforeLift = list.changes.mock.calls.length;
+
+      list.endDrag(velocityY);
+      expect(list.scrolledUnder()).toBe(true);
+      list.edge.listProps.onMomentumScrollBegin();
+      expect(list.scrolledUnder()).toBe(true);
+      expect(list.changes).toHaveBeenCalledTimes(changesBeforeLift);
+
+      list.scrollTo(COMPACT_TOP);
+      list.edge.listProps.onMomentumScrollEnd();
+      expect(list.scrolledUnder()).toBe(false);
+      expect(list.changes).toHaveBeenCalledTimes(changesBeforeLift + 1);
+    });
+
+    it.each([0, undefined])('settles immediately when the lift has no momentum (%s)', (velocityY) => {
+      const list = edgeAt(EXPANDED_TOP);
+      list.beginDrag(EXPANDED_TOP);
+      list.scrollTo(COMPACT_TOP);
+      list.edge.setTopOffset(COMPACT_TOP);
+      expect(list.scrolledUnder()).toBe(true);
+
+      list.endDrag(velocityY);
+      expect(list.scrolledUnder()).toBe(false);
+    });
+
+    it('settles a nonzero lift velocity whose projected target has no travel', () => {
+      const list = edgeAt(EXPANDED_TOP);
+      list.beginDrag(EXPANDED_TOP);
+      list.scrollTo(COMPACT_TOP);
+      list.edge.setTopOffset(COMPACT_TOP);
+      expect(list.scrolledUnder()).toBe(true);
+
+      list.endDrag(0.01, COMPACT_TOP);
+      expect(list.scrolledUnder()).toBe(false);
+      // No momentum event follows this lift; later geometry still settles.
+      list.edge.setTopOffset(COMPACT_TOP - 1);
+      expect(list.scrolledUnder()).toBe(false);
+    });
+
+    it('uses projected travel to keep the blur through a fling without velocity', () => {
+      const list = edgeAt(EXPANDED_TOP);
+      list.beginDrag(EXPANDED_TOP);
+      list.scrollTo(-120);
+      list.edge.setTopOffset(COMPACT_TOP);
+      const changesBeforeLift = list.changes.mock.calls.length;
+
+      list.endDrag(undefined, 100);
+      expect(list.scrolledUnder()).toBe(true);
+      list.edge.listProps.onMomentumScrollBegin();
+      expect(list.changes).toHaveBeenCalledTimes(changesBeforeLift);
+      list.scrollTo(COMPACT_TOP);
+      list.edge.listProps.onMomentumScrollEnd();
+      expect(list.scrolledUnder()).toBe(false);
+    });
+
     it('stays on through the fling that follows the drag, and settles when it stops', () => {
       const list = edgeAt(EXPANDED_TOP);
       list.drag(EXPANDED_TOP, -140, -120);
@@ -234,6 +313,19 @@ describe('createScrollEdgeBackdrop', () => {
       expect(list.scrolledUnder()).toBe(false);
 
       list.edge.setTopOffset(EXPANDED_TOP);
+      expect(list.scrolledUnder()).toBe(false);
+      expect(list.changes).not.toHaveBeenCalled();
+    });
+
+    it('keeps a zero-velocity pull bounce clear when its target travels back to rest', () => {
+      const list = edgeAt(EXPANDED_TOP);
+      list.beginDrag(EXPANDED_TOP);
+      list.scrollTo(-218);
+      list.edge.setTopOffset(-218);
+      list.endDrag(0, EXPANDED_TOP);
+      list.edge.listProps.onMomentumScrollBegin();
+      list.scrollTo(-190, EXPANDED_TOP);
+      list.edge.listProps.onMomentumScrollEnd();
       expect(list.scrolledUnder()).toBe(false);
       expect(list.changes).not.toHaveBeenCalled();
     });
