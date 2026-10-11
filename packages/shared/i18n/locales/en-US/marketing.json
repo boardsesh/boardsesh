@@ -127,9 +127,7 @@
         "workouts": "Give your session a plan.",
         "island": "Control the wall from the island.",
         "log": "Remember every send.",
-        "outro": "Less phone. More wall.",
-        "hook": "Your board. Lit from your phone.",
-        "light": "Swipe, and the wall follows."
+        "outro": "Less phone. More wall."
       },
       "unsupported": "Your browser can't play this video.",
       "pause": "Pause demo",
@@ -233,14 +231,14 @@
       "cta": "Support with Stripe",
       "processing": "Opening Stripe…",
       "error": "Stripe could not be opened. Try again.",
+      "thanks": "Thanks for supporting Boardsesh. Your public credit will appear after Stripe confirms the payment.",
+      "cancelled": "Checkout was cancelled. Nothing was charged.",
+      "unavailable": "Card support is temporarily unavailable. GitHub Sponsors still works below.",
       "authError": "We couldn’t confirm your sign-in status. Try again to continue.",
       "pendingCheckout": "A monthly checkout is pending. Finish Checkout in its existing Stripe tab, or wait for it to expire.",
       "activeSubscription": "You already have monthly support. Choose Manage billing in Stripe to change or cancel it.",
       "operationPending": "Another billing update is in progress. Try again in a few minutes.",
-      "operationStale": "This billing request expired. Try again to check your latest billing status.",
-      "thanks": "Thanks for supporting Boardsesh. Your public credit will appear after Stripe confirms the payment.",
-      "cancelled": "Checkout was cancelled. Nothing was charged.",
-      "unavailable": "Card support is temporarily unavailable. GitHub Sponsors still works below."
+      "operationStale": "This billing request expired. Try again to check your latest billing status."
     },
     "manage": {
       "title": "Your Stripe support",
@@ -265,11 +263,7 @@
       "body": "Back Boardsesh every month. Easiest if you already have a GitHub account.",
       "cta": "Sponsor on GitHub"
     },
-    "oneTime": {
-      "title": "One-time donation",
-      "body": "Pay by card, Apple Pay, or Google Pay in your browser. No account needed.",
-      "cta": "Give once"
-    },
+    "oneTime": {},
     "otherWays": {
       "title": "Other ways to help",
       "body": "Money is the slowest of these. Any of the four moves the app along.",
@@ -305,29 +299,7 @@
     },
     "aboutLink": "Read more about the project →",
     "docsLink": "See how it is built in the developer docs →",
-    "footer": "Free for everyone, funded by whoever can chip in.",
-    "stripe": {
-      "title": "Support with Stripe",
-      "body": "Choose your amount and pay by card, Apple Pay, or Google Pay. No GitHub account needed.",
-      "amount": "Amount (USD)",
-      "amountError": "Choose an amount from $1 to $500.",
-      "monthly": "Monthly",
-      "oneTime": "One time",
-      "publicCredit": "Credit me on the About page",
-      "publicCreditSignIn": "Sign in to receive public credit",
-      "publicCreditHint": "Optional. We show your Boardsesh name and avatar, never your amount.",
-      "cta": "Support with Stripe",
-      "processing": "Opening Stripe…",
-      "error": "Stripe could not be opened. Try again.",
-      "thanks": "Thanks for supporting Boardsesh. Your public credit will appear after Stripe confirms the payment.",
-      "cancelled": "Checkout was cancelled. Nothing was charged.",
-      "unavailable": "Card support is temporarily unavailable. GitHub Sponsors still works below."
-    },
-    "manage": {
-      "title": "Your Stripe support",
-      "publicCredit": "Show me on the About page",
-      "billing": "Manage billing in Stripe"
-    }
+    "footer": "Free for everyone, funded by whoever can chip in."
   },
   "legal": {
     "intro": {
@@ -1115,9 +1087,6 @@
       "hostingBody": "We use Railway for application and database hosting, and Cloudflare for content delivery, browser-app hosting and media storage. These providers process requests needed to deliver Boardsesh. See ",
       "sentryBody": "We use Sentry for error monitoring under legitimate interest to keep Boardsesh working. Default personal-information collection is disabled; error reports are limited and sensitive fields are removed. This service remains on when analytics is declined. See ",
       "expoBody": "We use Expo Observe for performance timings, device/build information and error diagnostics on our own server, under legitimate interest to keep Boardsesh working. Diagnostics remain on when analytics is declined. SDK installation and session identifiers support update health; we assign no Boardsesh account identity to Observe. See ",
-      "vercelLabel": "Vercel.",
-      "vercelBody": "We use Vercel for hosting and analytics. Vercel processes requests to serve the app and collects anonymous usage metrics. See ",
-      "vercelLink": "Vercel's privacy policy",
       "stripeLabel": "Stripe.",
       "stripeBody": "Stripe processes support payments and manages billing. Boardsesh stores only Stripe identifiers needed to link an optional public credit and manage a subscription; we do not store card details, billing addresses, or support amounts. See ",
       "stripeLink": "Stripe's privacy policy"

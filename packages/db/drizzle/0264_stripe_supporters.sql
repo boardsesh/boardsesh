@@ -5,7 +5,8 @@ CREATE TABLE "stripe_support_claims" (
 	"checkout_expires_at" timestamp,
 	"cadence" text NOT NULL,
 	"show_publicly" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "stripe_support_claims_cadence_check" CHECK ("stripe_support_claims"."cadence" IN ('monthly', 'one_time'))
 );
 --> statement-breakpoint
 CREATE TABLE "stripe_support_operations" (
@@ -33,7 +34,7 @@ CREATE TABLE "stripe_supporters" (
 ALTER TABLE "stripe_support_claims" ADD CONSTRAINT "stripe_support_claims_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stripe_support_operations" ADD CONSTRAINT "stripe_support_operations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stripe_supporters" ADD CONSTRAINT "stripe_supporters_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "stripe_support_claims_checkout_unique" ON "stripe_support_claims" USING btree ("checkout_session_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "stripe_support_claims_checkout_unique" ON "stripe_support_claims" USING btree ("checkout_session_id") WHERE "stripe_support_claims"."checkout_session_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "stripe_support_claims_user_idx" ON "stripe_support_claims" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "stripe_support_claims_monthly_unique" ON "stripe_support_claims" USING btree ("user_id") WHERE "stripe_support_claims"."cadence" = 'monthly';--> statement-breakpoint
 CREATE INDEX "stripe_supporters_customer_idx" ON "stripe_supporters" USING btree ("stripe_customer_id");--> statement-breakpoint

@@ -323,17 +323,9 @@ describe('deleteAccount mutation', () => {
   it('locks and checks the favorites archive before deleting the user', async () => {
     await userMutations.deleteAccount({}, { input: { removeSetterName: true } }, makeAuthCtx());
 
-    // The three raw statements are transaction isolation, relation lock, and
-    // the fresh optional-archive check, in that order.
-    expect(txCalls.map((call) => call.method)).toEqual([
-      'execute',
-      'execute',
-      'execute',
-      'select',
-      'delete',
-      'update',
-      'delete',
-    ]);
+    // Isolation is set at billing transaction creation; the raw statements
+    // lock the relation and check the optional archive before user deletion.
+    expect(txCalls.map((call) => call.method)).toEqual(['execute', 'execute', 'select', 'delete', 'update', 'delete']);
   });
 
   it('cleans up board_climb_stats/history/beta_links for a draft climb before deleting the drafts', async () => {
@@ -344,7 +336,6 @@ describe('deleteAccount mutation', () => {
     // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user.
     // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
     expect(txCalls.map((call) => call.method)).toEqual([
-      'execute',
       'execute',
       'execute',
       'select',

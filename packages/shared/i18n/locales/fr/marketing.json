@@ -127,9 +127,7 @@
         "workouts": "Donne un plan à ta séance.",
         "island": "Pilote le mur depuis la Dynamic Island.",
         "log": "Garde la trace de chaque croix.",
-        "outro": "Moins de téléphone. Plus de mur.",
-        "hook": "Ta board. Allumée depuis ton téléphone.",
-        "light": "Balaie, et le mur suit."
+        "outro": "Moins de téléphone. Plus de mur."
       },
       "unsupported": "Ton navigateur ne peut pas lire cette vidéo.",
       "pause": "Mettre la démo en pause",
@@ -233,14 +231,14 @@
       "cta": "Soutenir avec Stripe",
       "processing": "Ouverture de Stripe…",
       "error": "Impossible d’ouvrir Stripe. Réessayez.",
+      "thanks": "Merci de soutenir Boardsesh. Votre remerciement apparaîtra après confirmation du paiement par Stripe.",
+      "cancelled": "Le paiement a été annulé. Aucun débit n’a été effectué.",
+      "unavailable": "Le paiement par carte est temporairement indisponible. GitHub Sponsors reste disponible ci-dessous.",
       "authError": "Impossible de confirmer si vous êtes connecté. Réessayez pour continuer.",
       "pendingCheckout": "Un paiement mensuel est en attente. Terminez-le dans votre onglet Stripe déjà ouvert ou attendez son expiration.",
       "activeSubscription": "Vous avez déjà un soutien mensuel. Choisissez Gérer la facturation dans Stripe pour le modifier ou l’annuler.",
       "operationPending": "Une autre mise à jour de facturation est en cours. Réessayez dans quelques minutes.",
-      "operationStale": "Cette demande de facturation a expiré. Réessayez pour vérifier votre situation actuelle.",
-      "thanks": "Merci de soutenir Boardsesh. Votre remerciement apparaîtra après confirmation du paiement par Stripe.",
-      "cancelled": "Le paiement a été annulé. Aucun débit n’a été effectué.",
-      "unavailable": "Le paiement par carte est temporairement indisponible. GitHub Sponsors reste disponible ci-dessous."
+      "operationStale": "Cette demande de facturation a expiré. Réessayez pour vérifier votre situation actuelle."
     },
     "manage": {
       "title": "Votre soutien Stripe",
@@ -265,11 +263,7 @@
       "body": "Soutenez Boardsesh chaque mois. Le plus simple si vous avez déjà un compte GitHub.",
       "cta": "Devenir sponsor sur GitHub"
     },
-    "oneTime": {
-      "title": "Don unique",
-      "body": "Payez par carte, Apple Pay ou Google Pay depuis le navigateur. Aucun compte à créer.",
-      "cta": "Faire un don"
-    },
+    "oneTime": {},
     "otherWays": {
       "title": "Autres façons d'aider",
       "body": "L'argent est la plus lente des quatre. N'importe laquelle fait avancer l'app.",
@@ -305,29 +299,7 @@
     },
     "aboutLink": "En savoir plus sur le projet →",
     "docsLink": "Voyez comment c'est construit dans la doc développeur →",
-    "footer": "Gratuit pour tous, financé par ceux qui le peuvent.",
-    "stripe": {
-      "title": "Soutenir avec Stripe",
-      "body": "Choisissez le montant et payez par carte, Apple Pay ou Google Pay. Aucun compte GitHub nécessaire.",
-      "amount": "Montant (USD)",
-      "amountError": "Choisissez un montant entre 1 et 500 dollars.",
-      "monthly": "Mensuel",
-      "oneTime": "Une fois",
-      "publicCredit": "Me remercier sur la page À propos",
-      "publicCreditSignIn": "Connectez-vous pour être remercié publiquement",
-      "publicCreditHint": "Facultatif. Nous affichons votre nom et avatar Boardsesh, jamais le montant.",
-      "cta": "Soutenir avec Stripe",
-      "processing": "Ouverture de Stripe…",
-      "error": "Impossible d’ouvrir Stripe. Réessayez.",
-      "thanks": "Merci de soutenir Boardsesh. Votre remerciement apparaîtra après confirmation du paiement par Stripe.",
-      "cancelled": "Le paiement a été annulé. Aucun débit n’a été effectué.",
-      "unavailable": "Le paiement par carte est temporairement indisponible. GitHub Sponsors reste disponible ci-dessous."
-    },
-    "manage": {
-      "title": "Votre soutien Stripe",
-      "publicCredit": "M’afficher sur la page À propos",
-      "billing": "Gérer la facturation dans Stripe"
-    }
+    "footer": "Gratuit pour tous, financé par ceux qui le peuvent."
   },
   "legal": {
     "intro": {
@@ -1115,9 +1087,6 @@
       "hostingBody": "Railway héberge l’application et la base de données. Cloudflare distribue le contenu, héberge l’app du navigateur et stocke les médias. Ces prestataires traitent les requêtes nécessaires au fonctionnement de Boardsesh. Voir ",
       "sentryBody": "Nous utilisons Sentry pour surveiller les erreurs au titre de l’intérêt légitime afin de maintenir Boardsesh en état de marche. La collecte par défaut d’informations personnelles est désactivée ; les rapports d’erreur sont limités et les champs sensibles supprimés. Ce service reste actif si tu refuses les statistiques. Voir ",
       "expoBody": "Nous utilisons Expo Observe pour les temps de performance, les informations sur l’appareil et la version de l’app et les diagnostics d’erreurs sur notre propre serveur, au titre de l’intérêt légitime pour maintenir Boardsesh en état de marche. Les diagnostics restent activés si tu refuses les statistiques. Les identifiants d’installation et de session du SDK servent au suivi des mises à jour ; nous n’associons aucune identité de compte Boardsesh à Observe. Voir ",
-      "vercelLabel": "Vercel.",
-      "vercelBody": "Nous utilisons Vercel pour l'hébergement et l'analytique. Vercel traite les requêtes pour servir l'app et collecte des métriques d'utilisation anonymes. Voir ",
-      "vercelLink": "la politique de confidentialité de Vercel",
       "stripeLabel": "Stripe.",
       "stripeBody": "Stripe traite les soutiens et gère la facturation. Boardsesh ne conserve que les identifiants Stripe nécessaires pour lier un remerciement public facultatif et gérer un abonnement ; nous ne conservons ni carte, ni adresse de facturation, ni montant. Voir ",
       "stripeLink": "la politique de confidentialité de Stripe"

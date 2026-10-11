@@ -127,9 +127,7 @@
         "workouts": "Dale un plan a tu sesión.",
         "island": "Controla el plafón desde la Dynamic Island.",
         "log": "Recuerda cada encadene.",
-        "outro": "Menos móvil. Más plafón.",
-        "hook": "Tu plafón. Encendido desde el móvil.",
-        "light": "Desliza y el plafón te sigue."
+        "outro": "Menos móvil. Más plafón."
       },
       "unsupported": "Tu navegador no puede reproducir este vídeo.",
       "pause": "Pausar demo",
@@ -227,20 +225,20 @@
       "amountError": "Elige un importe entre 1 y 500 dólares.",
       "monthly": "Mensual",
       "oneTime": "Una vez",
-      "publicCredit": "Inclúyeme en la página Acerca de",
+      "publicCredit": "Incluidme en la página Acerca de",
       "publicCreditSignIn": "Inicia sesión para aparecer en los agradecimientos",
       "publicCreditHint": "Opcional. Mostramos tu nombre y avatar de Boardsesh, nunca el importe.",
       "cta": "Apoyar con Stripe",
       "processing": "Abriendo Stripe…",
       "error": "No se pudo abrir Stripe. Inténtalo de nuevo.",
+      "thanks": "Gracias por apoyar Boardsesh. Tu reconocimiento aparecerá cuando Stripe confirme el pago.",
+      "cancelled": "El pago se canceló. No se realizó ningún cargo.",
+      "unavailable": "El pago con tarjeta no está disponible temporalmente. Puedes usar GitHub Sponsors abajo.",
       "authError": "No hemos podido confirmar si has iniciado sesión. Vuelve a intentarlo para continuar.",
       "pendingCheckout": "Hay un pago mensual pendiente. Complétalo en la pestaña de Stripe que ya tienes abierta o espera a que caduque.",
       "activeSubscription": "Ya tienes una aportación mensual. Selecciona Gestionar pagos en Stripe para cambiarla o cancelarla.",
       "operationPending": "Hay otra actualización de pagos en curso. Vuelve a intentarlo en unos minutos.",
-      "operationStale": "Esta solicitud de pago ha caducado. Vuelve a intentarlo para comprobar el estado actual de tus pagos.",
-      "thanks": "Gracias por apoyar Boardsesh. Tu reconocimiento aparecerá cuando Stripe confirme el pago.",
-      "cancelled": "El pago se canceló. No se realizó ningún cargo.",
-      "unavailable": "El pago con tarjeta no está disponible temporalmente. Puedes usar GitHub Sponsors abajo."
+      "operationStale": "Esta solicitud de pago ha caducado. Vuelve a intentarlo para comprobar el estado actual de tus pagos."
     },
     "manage": {
       "title": "Tu apoyo con Stripe",
@@ -265,11 +263,7 @@
       "body": "Apoya Boardsesh cada mes. Lo más fácil si ya tienes cuenta de GitHub.",
       "cta": "Patrocina en GitHub"
     },
-    "oneTime": {
-      "title": "Donación única",
-      "body": "Paga con tarjeta, Apple Pay o Google Pay desde el navegador. Sin crear ninguna cuenta.",
-      "cta": "Dona una vez"
-    },
+    "oneTime": {},
     "otherWays": {
       "title": "Otras formas de ayudar",
       "body": "El dinero es la más lenta de todas. Cualquiera de las cuatro hace avanzar la app.",
@@ -305,29 +299,7 @@
     },
     "aboutLink": "Conoce más sobre el proyecto →",
     "docsLink": "Mira cómo está construido en la documentación →",
-    "footer": "Gratis para todos, financiado por quien puede echar una mano.",
-    "stripe": {
-      "title": "Apoya con Stripe",
-      "body": "Elige el importe y paga con tarjeta, Apple Pay o Google Pay. No necesitas una cuenta de GitHub.",
-      "amount": "Importe (USD)",
-      "amountError": "Elige un importe entre 1 y 500 dólares.",
-      "monthly": "Mensual",
-      "oneTime": "Una vez",
-      "publicCredit": "Incluidme en la página Acerca de",
-      "publicCreditSignIn": "Inicia sesión para aparecer en los agradecimientos",
-      "publicCreditHint": "Opcional. Mostramos tu nombre y avatar de Boardsesh, nunca el importe.",
-      "cta": "Apoyar con Stripe",
-      "processing": "Abriendo Stripe…",
-      "error": "No se pudo abrir Stripe. Inténtalo de nuevo.",
-      "thanks": "Gracias por apoyar Boardsesh. Tu reconocimiento aparecerá cuando Stripe confirme el pago.",
-      "cancelled": "El pago se canceló. No se realizó ningún cargo.",
-      "unavailable": "El pago con tarjeta no está disponible temporalmente. Puedes usar GitHub Sponsors abajo."
-    },
-    "manage": {
-      "title": "Tu apoyo con Stripe",
-      "publicCredit": "Mostrarme en la página Acerca de",
-      "billing": "Gestionar pagos en Stripe"
-    }
+    "footer": "Gratis para todos, financiado por quien puede echar una mano."
   },
   "legal": {
     "intro": {
@@ -1115,9 +1087,6 @@
       "hostingBody": "Usamos Railway para alojar la aplicación y la base de datos, y Cloudflare para distribuir contenido, alojar la app del navegador y almacenar archivos multimedia. Estos proveedores procesan las solicitudes necesarias para ofrecer Boardsesh. Consulta ",
       "sentryBody": "Usamos Sentry para supervisar errores por interés legítimo y mantener Boardsesh funcionando. La recopilación predeterminada de información personal está desactivada; limitamos los informes de errores y eliminamos los campos sensibles. El servicio sigue activo si rechazas la analítica. Consulta ",
       "expoBody": "Usamos Expo Observe para medir tiempos de rendimiento, información del dispositivo y la versión de la app y diagnósticos de errores en nuestro propio servidor, por interés legítimo para mantener Boardsesh funcionando. Los diagnósticos siguen activos si rechazas la analítica. Los identificadores de instalación y sesión del SDK sirven para comprobar el estado de las actualizaciones; no asignamos ninguna identidad de cuenta de Boardsesh a Observe. Consulta ",
-      "vercelLabel": "Vercel.",
-      "vercelBody": "Usamos Vercel para alojamiento y analítica. Vercel procesa solicitudes para servir la app y recoge métricas de uso anónimas. Consulta ",
-      "vercelLink": "la política de privacidad de Vercel",
       "stripeLabel": "Stripe.",
       "stripeBody": "Stripe procesa las aportaciones y gestiona los pagos. Boardsesh solo guarda los identificadores de Stripe necesarios para vincular el reconocimiento público opcional y gestionar una suscripción; no guardamos datos de tarjeta, direcciones de facturación ni importes. Consulta ",
       "stripeLink": "la política de privacidad de Stripe"

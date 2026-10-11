@@ -65,6 +65,9 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetPlaylistsForClimb',
   'GetPlaylistsForClimbs',
   'GetPopularBoardConfigs',
+  // Acknowledgements is opened only from its More tile; no Maestro capture
+  // flow visits that route or mounts its public-supporter list.
+  'GetPublicSupporters',
   'GetSessionHealthExport',
   'GetSprayWallArchive',
   'GetSprayWallArt',

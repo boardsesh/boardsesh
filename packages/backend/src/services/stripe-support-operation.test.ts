@@ -112,6 +112,10 @@ describe('persistent support operation coordination', () => {
     expect(result).toBe('finished');
     expect(phases).toEqual([1, 0, 1]);
     expect(lockAccount).toHaveBeenCalledTimes(2);
+    expect(mockDb.transaction.mock.calls).toHaveLength(2);
+    for (const transactionCall of mockDb.transaction.mock.calls) {
+      expect(transactionCall[1]).toEqual({ isolationLevel: 'read committed' });
+    }
     expect(store.operation?.state).toBe('idle');
   });
 

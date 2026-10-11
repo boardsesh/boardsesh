@@ -25,10 +25,7 @@ const notificationDeviceSchema = readFileSync(
   .filter((statement) => !statement.trim().startsWith('ALTER TYPE'))
   .join('\n');
 // Notification types are text in this fixture; use the generated table/FK DDL.
-const supportSchema =
-  readFileSync(new URL('../../../db/drizzle/0251_stripe_supporters.sql', import.meta.url), 'utf8') +
-  '\n' +
-  readFileSync(new URL('../../../db/drizzle/0252_gigantic_roland_deschain.sql', import.meta.url), 'utf8');
+const supportSchema = readFileSync(new URL('../../../db/drizzle/0264_stripe_supporters.sql', import.meta.url), 'utf8');
 const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
   'utf8',
