@@ -1124,17 +1124,31 @@ export const queriesTypeDefs = /* GraphQL */ `
     Pull board climbs for a board type, changed since the cursor (reference data).
     Optional layoutId/sizeId narrow the pull to a single layout/size (all sets) so a
     downloaded board stays a fixed, cacheable superset. sizeId is ignored for moonboard.
+
+    Optional audience splits the pull into two streams, each with its own cursor:
+    REFERENCE and PROTECTED (see SyncAudience). Omit it for both in one stream,
+    which is what clients older than the split send: every published, listed
+    climb, plus the caller's own drafts and unlisted climbs.
     """
-    syncClimbs(boardType: String!, layoutId: Int, sizeId: Int, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+    syncClimbs(
+      boardType: String!
+      layoutId: Int
+      sizeId: Int
+      audience: SyncAudience
+      cursor: SyncCursorInput
+      limit: Int! = 500
+    ): SyncResult!
 
     """
     Pull board climb stats for a board type, changed since the cursor (reference data).
     Optional layoutId/sizeId scope stats to the climbs of that layout/size via board_climbs.
+    Optional audience returns the stats of that half of the climbs (see syncClimbs).
     """
     syncClimbStats(
       boardType: String!
       layoutId: Int
       sizeId: Int
+      audience: SyncAudience
       cursor: SyncCursorInput
       limit: Int! = 500
     ): SyncResult!
@@ -1142,11 +1156,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     Pull Boardsesh grades for a board type, changed since the cursor (reference data).
     Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
+    Optional audience returns the grades of that half of the climbs (see syncClimbs).
     """
     syncClimbGrades(
       boardType: String!
       layoutId: Int
       sizeId: Int
+      audience: SyncAudience
       cursor: SyncCursorInput
       limit: Int! = 500
     ): SyncResult!

@@ -315,14 +315,175 @@ export function resourceLocationCondition(boardUuid: SQLWrapper, viewerId: Viewe
       )))`;
 }
 
-/** Applies the authored climb policy to its stats, grades and other reference rows. */
+/**
+ * Board types with no reference set at all.
+ *
+ * A snapshot artifact goes to a PUBLIC bucket under guessable keys
+ * (`<prefix>/<board>/<layout>/*.db`) and carries every reference climb of that
+ * `(board_type, layout_id)` partition. A spray wall's partition is one
+ * climber's private wall — an explicitly private-by-default surface whose photo
+ * is behind a 15-minute presigned URL — so publishing its climbs would hand out
+ * exactly the data the private bucket exists to withhold.
+ *
+ * This is an exclusion by board TYPE rather than a per-wall visibility check on
+ * purpose: `is_public` on a wall governs who may view it in the app, and a
+ * nightly dump of every public wall's climbs to an unauthenticated bucket is not
+ * something a climber opted into by sharing a link. The row predicate below
+ * cannot express it either: a published, listed spray climb passes it.
+ *
+ * One set for the three readers that must agree: the per-layout snapshot export,
+ * the catalogue export, and the `REFERENCE` sync stream.
+ */
+export const REFERENCE_EXCLUDED_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+
+const SAFE_SQL_ALIAS = /^[a-z_][a-z0-9_]*$/;
+const FIRST_ASCENT_CLIMB_ALIAS = 'fa_reference_climb';
+
+/**
+ * The predicates below are raw text, so the alias is the one piece a caller
+ * supplies. Every caller passes a literal; this keeps a future caller from
+ * interpolating anything that is not a plain identifier.
+ */
+function safeSqlAlias(alias: string): string {
+  if (!SAFE_SQL_ALIAS.test(alias) || alias === FIRST_ASCENT_CLIMB_ALIAS) {
+    throw new Error(`Refusing to build a climb audience predicate with the alias: ${alias}`);
+  }
+  return alias;
+}
+
+/**
+ * True for a reference climb: published and listed. Parenthesized, so it can be
+ * negated or ANDed as it is.
+ *
+ * This is the publication rule. A climb that is published and listed is public
+ * to everyone, signed in or not, whoever set it: no account privacy setting,
+ * item audience or deleted-account record applies to it. A draft or an unlisted
+ * climb is not public at all. It goes to its owner alone (the Boardsesh
+ * `user_id` on the row), and one with no owner goes to no one.
+ *
+ * So this is the whole test, with no owner and no viewer in it. The snapshot
+ * artifact, the catalogue export and the `REFERENCE` sync stream carry exactly
+ * these climbs, plus their stats and grades.
+ *
+ * `alias` names the `board_climbs` row: a table alias, or `board_climbs` itself
+ * for an unaliased FROM. Combine with {@link REFERENCE_EXCLUDED_BOARD_TYPES},
+ * which this row predicate does not cover.
+ *
+ * Both tests are two-valued on purpose. `is_draft` is nullable and NULL is not a
+ * draft; `is_listed` is nullable in the schema and only TRUE is listed. Written
+ * `IS NOT TRUE` / `IS TRUE` the predicate is never NULL, so `NOT` of it is its
+ * exact complement and every row is on one side or the other.
+ *
+ * It is also the membership test of `trg_board_climbs_reference_membership`,
+ * the trigger that tells devices a climb left the set. Change one and change
+ * the other.
+ *
+ * Raw text on purpose. The snapshot exports build `sqlClient.unsafe` strings and
+ * the sync resolvers build drizzle `sql`, and text is the only form both can
+ * share. One definition is the point: the artifact a phone imports and the
+ * `REFERENCE` stream that resumes from its watermark must select the same rows,
+ * or a row inside the watermark that only one of them carries is lost for good.
+ */
+export function publicReferenceClimbSql(alias: string): string {
+  const climb = safeSqlAlias(alias);
+  return `(${climb}.is_draft IS NOT TRUE AND ${climb}.is_listed IS TRUE)`;
+}
+
+/**
+ * True for a climb on a board type that has a reference set at all. For a query
+ * that spans board types; a reader that already holds one board type checks
+ * {@link REFERENCE_EXCLUDED_BOARD_TYPES} directly.
+ */
+export function referenceBoardTypeSql(alias: string): string {
+  const climb = safeSqlAlias(alias);
+  const excluded = [...REFERENCE_EXCLUDED_BOARD_TYPES].map((boardType) => {
+    if (!SAFE_SQL_ALIAS.test(boardType)) {
+      throw new Error(`Refusing to inline the board type as a SQL literal: ${boardType}`);
+    }
+    return `'${boardType}'`;
+  });
+  // `NOT IN ()` is a syntax error, and an empty set excludes nothing.
+  if (excluded.length === 0) return 'TRUE';
+  return `${climb}.board_type NOT IN (${excluded.join(', ')})`;
+}
+
+/**
+ * One first-ascent column of a stats row, as every board sync stream and the
+ * snapshot artifact ship it: the stored value for a manufacturer climb, NULL for
+ * a climb that has, or once had, a Boardsesh author.
+ *
+ * The stored credit of a manufacturer climb is upstream catalogue data. On a
+ * Boardsesh climb the name comes from a Boardsesh tick, and a tick stays under
+ * its author's privacy settings even though the climb is public: who may read
+ * the name depends on the viewer (see {@link privateSafeFirstAscentName}). An
+ * artifact has no viewer and is never recalled, and a device keeps a synced row
+ * across privacy changes, so neither may carry it. One viewer-independent rule
+ * for every stream is also what makes an artifact and a `REFERENCE` pull the
+ * same column for column.
+ *
+ * `statsAlias` names the `board_climb_stats` row. Returns a select-list item
+ * aliased to the column's own name. Raw text for the same reason as
+ * {@link publicReferenceClimbSql}.
+ *
+ * A scalar subquery on purpose, and not `CASE WHEN EXISTS (…)`. `uuid` is the
+ * primary key of `board_climbs`, so the subquery yields the stats row's own
+ * value for the one matching climb and NULL when none matches, and it runs as
+ * one primary-key probe per stats row. Postgres may instead turn an `EXISTS` in
+ * a select list into a hash of every qualifying climb, built by reading the
+ * whole table once per statement: on a sync page that is a full scan of
+ * `board_climbs` to serve 500 rows.
+ */
+export function referenceFirstAscentSql(statsAlias: string, column: 'fa_username' | 'fa_at'): string {
+  const stats = safeSqlAlias(statsAlias);
+  const climb = FIRST_ASCENT_CLIMB_ALIAS;
+  return `(SELECT ${stats}.${column} FROM board_climbs ${climb} WHERE ${climb}.uuid = ${stats}.climb_uuid AND ${climb}.board_type = ${stats}.board_type AND ${climb}.user_id IS NULL AND NOT ${climb}.is_boardsesh_authored) AS ${column}`;
+}
+
+/**
+ * The draft rule for the reads outside the board sync: an unpublished climb is
+ * returned to its owner and to nobody else, whatever the owner's account or
+ * item audience says. The owner is the Boardsesh `user_id` on the climb, so a
+ * draft that has none is returned to no one. The board sync and the snapshot
+ * exports apply the same rule through {@link publicReferenceClimbSql}.
+ *
+ * It narrows {@link contentVisibilityCondition} and never replaces it: that
+ * condition has no draft term, and on its own it shows a public account's draft
+ * to every viewer and an ownerless draft to everyone. AND the two.
+ *
+ * Both comparisons are NULL-safe. `is_draft` is nullable and NULL is not a
+ * draft; `user_id = viewer` is NULL for an ownerless row or an anonymous
+ * viewer, and the COALESCE keeps that a plain false so the condition can sit
+ * under a NOT.
+ */
+export function climbDraftVisibilityCondition(
+  climb: { isDraft: SQLWrapper; userId: SQLWrapper },
+  viewerId: ViewerId,
+): SQL {
+  return sql`(${climb.isDraft} IS NOT TRUE OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
+}
+
+/**
+ * Whether this viewer may be handed the climb at all: the account and item
+ * audience ({@link contentVisibilityCondition}) and the draft rule
+ * ({@link climbDraftVisibilityCondition}) together. Use it wherever a query
+ * returns a climb, or anything derived from one, without its own
+ * `is_draft = false` filter.
+ */
+export function climbVisibilityCondition(
+  climb: { uuid: SQLWrapper; userId: SQLWrapper; isDraft: SQLWrapper },
+  viewerId: ViewerId,
+): SQL {
+  return sql`(${contentVisibilityCondition('climb', climb.uuid, climb.userId, viewerId)} AND ${climbDraftVisibilityCondition(climb, viewerId)})`;
+}
+
+/** Applies the climb's visibility, the draft rule included, to its stats, grades and other reference rows. */
 export function climbReferenceVisibilityCondition(
   reference: { boardType: SQLWrapper; climbUuid: SQLWrapper },
   viewerId: ViewerId,
 ): SQL {
   return sql`EXISTS (SELECT 1 FROM board_climbs privacy_reference_climb
     WHERE privacy_reference_climb.board_type = ${reference.boardType} AND privacy_reference_climb.uuid = ${reference.climbUuid}
-    AND ${contentVisibilityCondition('climb', sql`privacy_reference_climb.uuid`, sql`privacy_reference_climb.user_id`, viewerId)})`;
+    AND ${climbVisibilityCondition({ uuid: sql`privacy_reference_climb.uuid`, userId: sql`privacy_reference_climb.user_id`, isDraft: sql`privacy_reference_climb.is_draft` }, viewerId)})`;
 }
 
 /** Public numeric aggregates retain private ticks; first-ascent names are a separate projection. */

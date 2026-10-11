@@ -57,8 +57,13 @@ export type SnapshotTableStats = {
  * checkpoints past rows it never imported.
  */
 export type SnapshotGradesArtifact = {
-  /** Authored climbs and mutable personal attribution are excluded. */
-  privacyVersion?: 1;
+  /**
+   * Which publication rule the artifact was built under. 2: published, listed
+   * climbs whoever set them; no draft, no unlisted climb. 1 was the rule before
+   * it (climbs with no Boardsesh owner, drafts and unlisted ones included) and
+   * is no longer written.
+   */
+  privacyVersion?: 1 | 2;
   // S3 object key, e.g. `board-snapshots/v1-gzip/kilter/1/<iso>-grades.db`.
   key: string;
   url: string;
@@ -77,8 +82,13 @@ export type SnapshotGradesArtifact = {
 };
 
 export type SnapshotManifestEntry = {
-  /** Authored climbs and mutable personal attribution are excluded. */
-  privacyVersion?: 1;
+  /**
+   * Which publication rule the artifact was built under. 2: published, listed
+   * climbs whoever set them; no draft, no unlisted climb. 1 was the rule before
+   * it (climbs with no Boardsesh owner, drafts and unlisted ones included) and
+   * is no longer written.
+   */
+  privacyVersion?: 1 | 2;
   /**
    * How this entry's SQLite files are laid out on disk, the layout artifact and
    * its grades sibling alike. Absent is shape 1: rowid tables in arrival order,

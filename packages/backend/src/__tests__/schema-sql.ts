@@ -87,6 +87,14 @@ const boardShareLinksSchema = readFileSync(
   new URL('../../../db/drizzle/0267_board_share_links.sql', import.meta.url),
   'utf8',
 );
+// The trigger that tells devices a climb changed side of the publication rule,
+// from the migration itself so every test runs against the function production
+// has. It writes `sync_deletions`, `board_climb_stats` and `board_climb_grades`,
+// so it installs after all three exist.
+const referenceMembershipSchema = readFileSync(
+  new URL('../../../db/drizzle/0264_climb_reference_membership.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
@@ -1623,6 +1631,9 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   -- the daily prune's DELETE WHERE deleted_at < cutoff.
   CREATE INDEX IF NOT EXISTS "sync_deletions_deleted_at_idx" ON "sync_deletions" ("deleted_at");
   CREATE INDEX IF NOT EXISTS "board_climbs_sync_cursor_idx" ON "board_climbs" ("board_type", "updated_at", "sync_seq");
+  -- Mirrors migration 0247. The PROTECTED sync stream finds a caller's own
+  -- climbs through it, and the plan tests explain against it.
+  CREATE INDEX IF NOT EXISTS "board_climbs_user_export_idx" ON "board_climbs" ("user_id", "board_type") WHERE "user_id" IS NOT NULL;
   CREATE INDEX IF NOT EXISTS "board_climb_stats_sync_cursor_idx" ON "board_climb_stats" ("board_type", "updated_at", "sync_seq");
   CREATE INDEX IF NOT EXISTS "board_climb_grades_sync_cursor_idx" ON "board_climb_grades" ("board_type", "computed_at", "sync_seq");
 
@@ -2166,4 +2177,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${privacySchema}
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
+  ${referenceMembershipSchema}
 `;

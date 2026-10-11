@@ -90,34 +90,103 @@ describe('board catalogue export', () => {
     await resetCatalogTables();
   });
 
-  it('excludes account-deletion tombstones and retained app climbs from public catalogue artifacts', async () => {
-    await seedMinimalCatalog();
-    await db.execute(sql`INSERT INTO board_climbs (uuid, board_type, layout_id, is_boardsesh_authored)
-      VALUES ('deleted-public-app-climb', 'kilter', 1, true)`);
-    await db.execute(sql`INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
-      VALUES ('kilter', 'deleted-app-alias', 'deleted-public-app-climb', 'backfill')`);
-    await db.execute(sql`INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username)
-      VALUES ('kilter', 'climb-1', 'https://example.test/deleted-private-beta', 'Private name')`);
-    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, audience)
-      VALUES ('beta', 'kilter:climb-1:https://example.test/deleted-private-beta', 'only_me')`);
-    const workDir = mkdtempSync(join(tmpdir(), 'catalog-privacy-'));
+  /** What the artifact built from the current rows carries of the two climb-linked tables. */
+  async function exportedClimbLinks(): Promise<{ links: unknown[]; aliases: unknown[] }> {
+    const workDir = mkdtempSync(join(tmpdir(), 'catalog-climb-links-'));
     const filePath = join(workDir, 'catalog.db');
     try {
       await buildCatalogArtifact({ sqlClient: createPool(), filePath, builtAt: BUILT_AT });
       const artifact = new DatabaseSync(filePath, { readOnly: true });
       try {
-        expect(artifact.prepare('SELECT link FROM board_beta_links').all()).toEqual([
-          { link: 'https://instagram.test/p/abc' },
-        ]);
-        expect(artifact.prepare('SELECT alias_uuid FROM board_climb_aliases').all()).toEqual([
-          { alias_uuid: 'climb-1' },
-        ]);
+        return {
+          links: artifact
+            .prepare('SELECT link FROM board_beta_links ORDER BY link')
+            .all()
+            .map((row) => row.link),
+          aliases: artifact
+            .prepare('SELECT alias_uuid FROM board_climb_aliases ORDER BY alias_uuid')
+            .all()
+            .map((row) => row.alias_uuid),
+        };
       } finally {
         artifact.close();
       }
     } finally {
       rmSync(workDir, { recursive: true, force: true });
     }
+  }
+
+  // The catalogue artifact holds no climbs, but two of its tables hang off one:
+  // an alias names its canonical climb, and a beta link names the climb it
+  // shows. Both follow the climb's publication, whoever set it.
+  it('carries the aliases and beta links of every published, listed climb, whoever set it', async () => {
+    await seedMinimalCatalog();
+    await db.execute(
+      sql`INSERT INTO users (id, email) VALUES ('catalog-author', 'catalog-author@example.test') ON CONFLICT DO NOTHING`,
+    );
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, is_draft, is_listed, user_id, is_boardsesh_authored)
+      VALUES ('owned-climb', 'kilter', 1, false, true, 'catalog-author', false),
+             ('deleted-account-climb', 'kilter', 1, false, true, NULL, true)
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES ('kilter', 'owned-alias', 'owned-climb', 'backfill'),
+             ('kilter', 'deleted-account-alias', 'deleted-account-climb', 'backfill')
+    `);
+    await db.execute(sql`
+      INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username)
+      VALUES ('kilter', 'owned-climb', 'https://example.test/owned-beta', 'someone')
+    `);
+
+    expect(await exportedClimbLinks()).toEqual({
+      links: ['https://example.test/owned-beta', 'https://instagram.test/p/abc'],
+      aliases: ['climb-1', 'deleted-account-alias', 'owned-alias'],
+    });
+  });
+
+  // A beta link has an audience of its own, separate from its climb's
+  // publication, and a narrowed one keeps the link out of the public file.
+  it('excludes a beta link whose own audience is narrowed, on a published climb', async () => {
+    await seedMinimalCatalog();
+    await db.execute(sql`INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username)
+      VALUES ('kilter', 'climb-1', 'https://example.test/private-beta', 'Private name')`);
+    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, audience)
+      VALUES ('beta', 'kilter:climb-1:https://example.test/private-beta', 'only_me')`);
+
+    expect((await exportedClimbLinks()).links).toEqual(['https://instagram.test/p/abc']);
+  });
+
+  // A draft and an unlisted climb go to their owner alone, so neither table
+  // may name one in a public file.
+  it.each([
+    { what: 'a draft', isDraft: true, isListed: true },
+    { what: 'an unlisted climb', isDraft: false, isListed: false },
+  ])('excludes the aliases and beta links of $what', async ({ isDraft, isListed }) => {
+    await seedMinimalCatalog();
+    await db.execute(
+      sql`INSERT INTO users (id, email) VALUES ('catalog-author', 'catalog-author@example.test') ON CONFLICT DO NOTHING`,
+    );
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed, user_id)
+      VALUES ('withheld-ownerless', 'kilter', 1, 'Withheld', 'p1r12', ${isDraft}, ${isListed}, NULL),
+             ('withheld-owned', 'kilter', 1, 'Withheld', 'p1r12', ${isDraft}, ${isListed}, 'catalog-author')
+    `);
+    await db.execute(sql`
+      INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES ('kilter', 'withheld-ownerless-alias', 'withheld-ownerless', 'backfill'),
+             ('kilter', 'withheld-owned-alias', 'withheld-owned', 'backfill')
+    `);
+    await db.execute(sql`
+      INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username)
+      VALUES ('kilter', 'withheld-ownerless', 'https://example.test/withheld-ownerless-beta', 'someone'),
+             ('kilter', 'withheld-owned', 'https://example.test/withheld-owned-beta', 'someone')
+    `);
+
+    expect(await exportedClimbLinks()).toEqual({
+      links: ['https://instagram.test/p/abc'],
+      aliases: ['climb-1'],
+    });
   });
 
   it('parses its flags and rejects an unsafe key prefix', () => {
