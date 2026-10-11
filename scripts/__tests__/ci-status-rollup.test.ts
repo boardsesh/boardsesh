@@ -26,17 +26,6 @@ import { jobBlocks } from './helpers/workflow-yaml';
 const workflowSource = readFileSync('.github/workflows/ci.yml', 'utf8');
 const jobs = jobBlocks(workflowSource);
 
-/**
- * Jobs that legitimately stay out of `ci-status`. Every entry needs a reason a
- * reviewer would accept for "this may fail while the required check is green".
- */
-const ROLLUP_EXEMPT: Record<string, string> = {
-  // Posts the test-results comment with report-fail-on-error: false, and skips
-  // outright when every test job was skipped. A reporting hiccup (a missing
-  // artifact, a flaky comment API) must never be the reason a PR cannot merge.
-  'test-report': 'reporter, not a gate',
-};
-
 /** The `needs:` block-sequence entries of a job. */
 function jobNeeds(jobName: string): string[] {
   const block = jobs.get(jobName);
@@ -58,23 +47,34 @@ describe('ci-status is a complete roll-up', () => {
   const rollupNeeds = jobNeeds('ci-status');
 
   it('depends on every gating job in the workflow', () => {
-    const missing = [...jobs.keys()].filter(
-      (jobName) => jobName !== 'ci-status' && !(jobName in ROLLUP_EXEMPT) && !rollupNeeds.includes(jobName),
-    );
+    const missing = [...jobs.keys()].filter((jobName) => jobName !== 'ci-status' && !rollupNeeds.includes(jobName));
 
     expect(
       missing,
       'These jobs can fail while `ci-status` stays green, and `ci-status` is the required check — ' +
-        'add them to its `needs:`, or add them to ROLLUP_EXEMPT with the reason their failure is allowed to merge.',
+        'add them to its `needs:` so failures cannot disappear from the required result.',
     ).toEqual([]);
   });
 
-  it('keeps large-files in the roll-up', () => {
-    // Regression pin for #4758. `large-files` is deliberately ungated (a
-    // binary-only PR is the shape it exists to catch) and was the one real gate
-    // outside the roll-up, so an oversized file failed CI without failing the
-    // context a merge gate reads.
-    expect(rollupNeeds).toContain('large-files');
+  it('keeps the ungated large-files step in the required guards job', () => {
+    // Main consolidated the standalone gate into guards. A binary-only PR must
+    // still run it, and a failed check must still fail the required roll-up.
+    expect(rollupNeeds).toContain('guards');
+    const guards = jobs.get('guards') ?? [];
+    expect(guards).toContain('    if: ${{ !cancelled() }}');
+    const stepId = guards.findIndex((line) => line.trim() === 'id: large-files');
+    expect(stepId).toBeGreaterThan(-1);
+    let stepStart = stepId - 1;
+    while (stepStart >= 0 && !/^ {6}- /.test(guards[stepStart])) stepStart -= 1;
+    expect(stepStart).toBeGreaterThan(-1);
+    const nextStep = guards.findIndex((line, index) => index > stepStart && /^ {6}- /.test(line));
+    const largeFilesStep = guards.slice(stepStart, nextStep < 0 ? undefined : nextStep).join('\n');
+    expect(largeFilesStep).toContain('node scripts/check-large-files.mjs');
+    expect(largeFilesStep.split('\n').filter((line) => /^ {8}if:/.test(line))).toEqual([
+      "        if: ${{ !cancelled() && steps.install.outcome == 'success' }}",
+    ]);
+    expect(largeFilesStep).not.toContain('needs.changes');
+    expect(largeFilesStep).not.toContain('continue-on-error: true');
   });
 
   it('names only jobs that exist', () => {
