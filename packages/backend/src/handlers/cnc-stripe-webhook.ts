@@ -336,9 +336,6 @@ async function announcePurchase(order: CncOrder, amountExcludingTaxCents: number
   }
 
   captureBackendEvent('Build Plans Pack Purchased', {
-    // The account is nullable (the licence outlives it), so the licence id is
-    // the fallback identity — a purchase with no distinct id would be dropped.
-    distinctId: order.userId ?? order.licenceId,
     properties: {
       tier,
       board_name: order.boardName,

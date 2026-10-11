@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { CncOrder } from '@boardsesh/db/schema';
 import { applyCorsHeaders } from './cors';
-import { pipeObjectStream, sendJson } from './http-utils';
+import { pipeStreamToResponse, sendJson } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { getFromS3, getS3ObjectMetadata, isS3Configured } from '../storage/s3';
@@ -124,9 +124,6 @@ function requestedKind(url: URL): CncDeliverable {
 function captureDownload(order: CncOrder, via: Requester['via']): void {
   const setIds = parseSetIds(order.setIds) ?? [];
   captureBackendEvent('Build Plans Pack Downloaded', {
-    // The account can be null (the licence outlives it), so the licence id is
-    // the fallback identity rather than dropping the event.
-    distinctId: order.userId ?? order.licenceId,
     properties: {
       tier: order.tier,
       board_name: order.boardName,
@@ -262,10 +259,9 @@ export async function handleCncPackDownload(req: IncomingMessage, res: ServerRes
     'X-Content-Type-Options': 'nosniff',
     ...(object.contentLength != null ? { 'Content-Length': String(object.contentLength) } : {}),
   });
-  pipeObjectStream(object.stream, res, {
+  await pipeStreamToResponse(object.stream, res, {
     route: 'cnc-download',
-    orderId: order.id,
-    licenceId: order.licenceId,
+    source: objectKey,
   });
 
   // Only the paid pack is counted. `download_count` and its analytics event are
@@ -381,9 +377,8 @@ export async function handleCncPackPreviewImage(req: IncomingMessage, res: Serve
     'X-Content-Type-Options': 'nosniff',
     ...(object.contentLength != null ? { 'Content-Length': String(object.contentLength) } : {}),
   });
-  pipeObjectStream(object.stream, res, {
+  await pipeStreamToResponse(object.stream, res, {
     route: 'cnc-preview-image',
-    orderId: order.id,
-    licenceId: order.licenceId,
+    source: objectKey,
   });
 }

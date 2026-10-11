@@ -551,13 +551,9 @@ describe('preview jobs', () => {
       },
     });
 
-    expect(captureBackendEventMock).toHaveBeenCalledWith(
-      'Build Plans Preview Generated',
-      expect.objectContaining({
-        distinctId: 'user-123',
-        properties: expect.objectContaining({ board_name: 'kilter', preview_index: 1, image_count: 2 }),
-      }),
-    );
+    expect(captureBackendEventMock).toHaveBeenCalledWith('Build Plans Preview Generated', {
+      properties: expect.objectContaining({ board_name: 'kilter', preview_index: 1, image_count: 2 }),
+    });
   });
 
   it('refuses a preview key outside the prefix this job dictated', async () => {

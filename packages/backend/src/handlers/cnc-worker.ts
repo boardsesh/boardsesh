@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { CncOrder } from '@boardsesh/db/schema';
-import { pipeObjectStream, readJsonBody, sendJson } from './http-utils';
+import { pipeStreamToResponse, readJsonBody, sendJson } from './http-utils';
 import { logger } from '../utils/logger';
 import { getBucketName, getFromS3, getS3ObjectMetadata, isS3Configured } from '../storage/s3';
 import {
@@ -494,7 +494,6 @@ async function completePreview(
   sendJson(res, 200, { ok: true, status: ready.status });
 
   captureBackendEvent('Build Plans Preview Generated', {
-    distinctId: ready.userId ?? ready.licenceId,
     properties: {
       ...boardProperties(ready),
       // Which preview of this configuration this is. A row that has produced
@@ -781,7 +780,7 @@ async function handleAsset(res: ServerResponse, url: URL, assetId: string): Prom
     'X-Content-Type-Options': 'nosniff',
     ...(object.contentLength != null ? { 'Content-Length': String(object.contentLength) } : {}),
   });
-  pipeObjectStream(object.stream, res, { route: 'cnc-worker-asset', orderId: orderIdParam, assetKey });
+  await pipeStreamToResponse(object.stream, res, { route: 'cnc-worker-asset', source: assetKey });
 }
 
 /** `/api/cnc/worker/jobs/<orderId>/<action>` */

@@ -1,10 +1,23 @@
 CREATE TYPE "public"."cnc_licence_tier" AS ENUM('personal', 'commercial_single');--> statement-breakpoint
-CREATE TYPE "public"."cnc_order_status" AS ENUM('pending_payment', 'queued', 'generating', 'ready', 'failed', 'cancelled', 'refunded');--> statement-breakpoint
+CREATE TYPE "public"."cnc_order_status" AS ENUM('pending_payment', 'queued', 'generating', 'ready', 'failed', 'cancelled', 'refunded', 'preview_queued', 'preview_generating', 'preview_ready', 'preview_failed');--> statement-breakpoint
+CREATE TABLE "cnc_art_assets" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"key" text NOT NULL,
+	"mime" text NOT NULL,
+	"size_bytes" integer NOT NULL,
+	"width_px" integer,
+	"height_px" integer,
+	"sha256" text NOT NULL,
+	"order_id" bigint,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "cnc_orders" (
 	"id" bigserial PRIMARY KEY NOT NULL,
 	"licence_id" text NOT NULL,
 	"user_id" text,
-	"tier" "cnc_licence_tier" NOT NULL,
+	"tier" "cnc_licence_tier",
 	"status" "cnc_order_status" NOT NULL,
 	"board_name" text NOT NULL,
 	"layout_id" integer NOT NULL,
@@ -13,6 +26,7 @@ CREATE TABLE "cnc_orders" (
 	"options" jsonb NOT NULL,
 	"artwork" jsonb,
 	"catalog_version" text NOT NULL,
+	"config_hash" text,
 	"licensee_name" text,
 	"licensee_email" text,
 	"customer_site_name" text,
@@ -36,6 +50,11 @@ CREATE TABLE "cnc_orders" (
 	"zip_size_bytes" bigint,
 	"zip_sha256" text,
 	"fingerprint_manifest" jsonb,
+	"preview_zip_key" text,
+	"preview_zip_size_bytes" bigint,
+	"preview_generated_at" timestamp,
+	"preview_keys" jsonb,
+	"previews_generated" integer DEFAULT 0 NOT NULL,
 	"download_count" integer DEFAULT 0 NOT NULL,
 	"last_downloaded_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
@@ -50,10 +69,16 @@ CREATE TABLE "cnc_stripe_events" (
 	"processed_at" timestamp
 );
 --> statement-breakpoint
+ALTER TABLE "cnc_art_assets" ADD CONSTRAINT "cnc_art_assets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cnc_art_assets" ADD CONSTRAINT "cnc_art_assets_order_id_cnc_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."cnc_orders"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "cnc_orders" ADD CONSTRAINT "cnc_orders_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "cnc_stripe_events" ADD CONSTRAINT "cnc_stripe_events_order_id_cnc_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."cnc_orders"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "cnc_art_assets_key_unique" ON "cnc_art_assets" USING btree ("key");--> statement-breakpoint
+CREATE INDEX "cnc_art_assets_user_created_idx" ON "cnc_art_assets" USING btree ("user_id","created_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "cnc_art_assets_order_idx" ON "cnc_art_assets" USING btree ("order_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "cnc_orders_licence_id_unique" ON "cnc_orders" USING btree ("licence_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "cnc_orders_stripe_checkout_session_unique" ON "cnc_orders" USING btree ("stripe_checkout_session_id");--> statement-breakpoint
 CREATE INDEX "cnc_orders_stripe_payment_intent_idx" ON "cnc_orders" USING btree ("stripe_payment_intent_id");--> statement-breakpoint
 CREATE INDEX "cnc_orders_user_created_idx" ON "cnc_orders" USING btree ("user_id","created_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "cnc_orders_user_config_hash_idx" ON "cnc_orders" USING btree ("user_id","config_hash");--> statement-breakpoint
 CREATE INDEX "cnc_orders_status_queued_idx" ON "cnc_orders" USING btree ("status","queued_at");

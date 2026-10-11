@@ -55,6 +55,7 @@ const DEFAULT_OPTIONS: CncOrderOptions = {
 /** A writable stand-in for ServerResponse that keeps whatever was piped into it. */
 class TestResponse extends Writable {
   statusCode = 0;
+  headersSent = false;
   headers: Record<string, string | string[]> = {};
   /**
    * The error the handler destroyed the response with, if it did.
@@ -79,6 +80,7 @@ class TestResponse extends Writable {
 
   writeHead(statusCode: number, headers: Record<string, string | string[]> = {}): void {
     this.statusCode = statusCode;
+    this.headersSent = true;
     this.headers = { ...this.headers, ...headers };
   }
 
@@ -281,10 +283,9 @@ describe('GET /api/cnc/packs/:licenceId/download', () => {
     const counted = await readOrder(order.id);
     expect(counted.downloadCount).toBe(1);
     expect(counted.lastDownloadedAt).not.toBeNull();
-    expect(captureBackendEventMock).toHaveBeenCalledWith(
-      'Build Plans Pack Downloaded',
-      expect.objectContaining({ distinctId: 'user-123' }),
-    );
+    expect(captureBackendEventMock).toHaveBeenCalledWith('Build Plans Pack Downloaded', {
+      properties: expect.objectContaining({ board_name: 'kilter', download_index: 1, auth: 'bearer' }),
+    });
   });
 
   it('404s somebody else’s licence exactly as it 404s one that does not exist', async () => {
