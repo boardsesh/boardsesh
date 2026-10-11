@@ -926,14 +926,12 @@ function refreshLayoutClimbCount(
       'SELECT COUNT(*) AS total FROM board_climbs WHERE board_type = ? AND layout_id = ? AND is_listed = 1',
       [boardType, layoutId],
     )
-    .then(
-      (row) => {
-        count.total = row?.total ?? 0;
-        count.readAtMs = Date.now();
-      },
-      () => undefined,
-    )
-    .then(() => {
+    .then((row) => {
+      count.total = row?.total ?? 0;
+      count.readAtMs = Date.now();
+    })
+    .catch(() => undefined)
+    .finally(() => {
       count.reading = false;
     });
 }
