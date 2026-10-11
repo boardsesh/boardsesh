@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { PgBoss } from 'pg-boss';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runRefreshClimbGrades, runRefreshClimbNeighbors, type JobDatabase } from '@boardsesh/db/jobs';
@@ -255,6 +255,19 @@ describe('batch worker grants', () => {
       // delete fires the sync_deletions trigger.
       await refreshRecommendationsFamily.execute(context('refresh-recommendations'), {});
       await refreshRecommendationsFamily.execute(context('refresh-recommendations'), {});
+      // Each rewritten cohort playlist's grade band is recomputed with its
+      // climbs. The job only warns when that fails, so a missing grant on
+      // playlist_grade_summaries shows up here as a missing band.
+      const cohortPlaylists = await ownerDatabase
+        .select({ id: dbSchema.playlists.id, summary: dbSchema.playlistGradeSummaries.playlistId })
+        .from(dbSchema.playlists)
+        .leftJoin(
+          dbSchema.playlistGradeSummaries,
+          eq(dbSchema.playlistGradeSummaries.playlistId, dbSchema.playlists.id),
+        )
+        .where(isNotNull(dbSchema.playlists.generatedRecommendation));
+      expect(cohortPlaylists).not.toHaveLength(0);
+      expect(cohortPlaylists.filter((playlist) => playlist.summary === null)).toEqual([]);
       await refreshHoldFeaturesFamily.execute(
         context('refresh-hold-features'),
         refreshHoldFeaturesFamily.payload.parse({}),
