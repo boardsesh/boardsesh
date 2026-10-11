@@ -21,6 +21,7 @@ const fetchNextPage = vi.hoisted(() => vi.fn());
 const refetch = vi.hoisted(() => vi.fn());
 const markGroupMutate = vi.hoisted(() => vi.fn());
 const markAllMutate = vi.hoisted(() => vi.fn());
+const answerFollowRequest = vi.hoisted(() => vi.fn());
 const openPlayDrawer = vi.hoisted(() => vi.fn());
 const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
 
@@ -109,6 +110,7 @@ vi.mock('../../../lib/graphql/hooks/use-notifications', () => ({
   // it, `renderItem` — which is exactly what the perf test measures.
   useMarkGroupAsRead: () => ({ mutate: markGroupMutate }),
   useMarkAllAsRead: () => ({ mutate: markAllMutate }),
+  useAnswerFollowRequest: () => answerFollowRequest,
 }));
 
 vi.mock('../../../hooks/use-offline-query-state', () => ({ useOfflineQueryState: () => state.offline }));
@@ -169,10 +171,23 @@ vi.mock('../NotificationRow', () => ({
   NotificationRow: ({
     notification,
     onPress,
+    onAnswerFollowRequest,
   }: {
     notification: GroupedNotification;
     onPress: (notification: GroupedNotification) => void;
-  }) => createElement('button', { 'data-row': notification.uuid, onClick: () => onPress(notification) }),
+    onAnswerFollowRequest?: (input: { notification: GroupedNotification; answer: 'approve' | 'decline' }) => void;
+  }) =>
+    createElement(
+      'div',
+      null,
+      createElement('button', { 'data-row': notification.uuid, onClick: () => onPress(notification) }),
+      onAnswerFollowRequest
+        ? createElement('button', {
+            'data-approve': notification.uuid,
+            onClick: () => onAnswerFollowRequest({ notification, answer: 'approve' }),
+          })
+        : null,
+    ),
 }));
 
 import NotificationsScreen from '../NotificationsScreen';
@@ -657,6 +672,46 @@ describe('NotificationsScreen follower rows', () => {
       pathname: '/users/connections',
       params: { mode: 'newFollowers', entityId: 'me-123' },
     });
+  });
+});
+
+describe('NotificationsScreen follow request rows', () => {
+  const request = () =>
+    makeNotification({
+      uuid: 'request-1',
+      type: 'follow_request',
+      entityId: 'requester-1',
+      actors: [{ id: 'requester-1', displayName: 'Jo', avatarUrl: null }],
+    });
+
+  it("opens the requester's profile", () => {
+    state.query = makeQuery({ data: { pages: [{ groups: [request()], hasMore: false, unreadCount: 1 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="request-1"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'requester-1' } });
+  });
+
+  it('hands the row the answer handler, which approves through the hook', () => {
+    const notification = request();
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 1 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-approve="request-1"]')!);
+
+    expect(answerFollowRequest).toHaveBeenCalledWith({ notification, answer: 'approve' });
+  });
+
+  it('pools follow request rows apart from plain and board-art rows', () => {
+    const plainRow = makeNotification({ uuid: 'plain' });
+    const requestRow = request();
+    state.query = makeQuery({ data: { pages: [{ groups: [requestRow, plainRow], hasMore: false, unreadCount: 1 }] } });
+
+    render(<NotificationsScreen />);
+
+    expect(list.getItemType!(requestRow)).toBe('followRequest');
+    expect(list.getItemType!(requestRow)).not.toBe(list.getItemType!(plainRow));
   });
 });
 

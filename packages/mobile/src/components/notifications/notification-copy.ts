@@ -108,6 +108,8 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
   switch (notification.type) {
     case 'new_follower':
       return { textI18nKey: 'items.newFollower', params: { actor } };
+    case 'follow_request':
+      return { textI18nKey: 'items.followRequest', params: { actor } };
     case 'comment_reply':
       return commentBody
         ? { textI18nKey: 'items.commentReplyWithBody', params: { actor, body: commentBody } }
@@ -173,6 +175,7 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
 export function notificationIconName(type: NotificationType): IconName {
   switch (type) {
     case 'new_follower':
+    case 'follow_request':
       return 'person.badge.plus';
     case 'comment_reply':
     case 'comment_on_tick':

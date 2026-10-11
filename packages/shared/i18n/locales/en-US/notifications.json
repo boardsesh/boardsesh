@@ -11,6 +11,7 @@
   },
   "items": {
     "newFollower": "{{actor}} started following you",
+    "followRequest": "{{actor}} wants to follow you",
     "commentReplyWithBody": "{{actor}} replied: \"{{body}}\"",
     "commentReply": "{{actor}} replied to your comment",
     "commentOnTickWithBody": "{{actor}} commented: \"{{body}}\"",
@@ -39,6 +40,13 @@
     "default": "You have a new notification",
     "sprayWallReady": "{{wall}} is ready to review.",
     "sprayWallReadyGeneric": "Your wall photo is ready to review."
+  },
+  "followRequest": {
+    "approve": "Approve",
+    "decline": "Decline",
+    "approveLabel": "Approve {{actor}}",
+    "declineLabel": "Decline {{actor}}",
+    "failed": "Couldn't answer this request. Try again when connected."
   },
   "errors": {
     "load": "Couldn't load your notifications"

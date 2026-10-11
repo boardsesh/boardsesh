@@ -16,6 +16,7 @@ import { notificationClimbRender } from './notification-climb-render';
 import { NotificationRow } from './NotificationRow';
 import { useNotificationNavigation, type OpenCommentThread } from './use-notification-navigation';
 import {
+  useAnswerFollowRequest,
   useGroupedNotifications,
   useMarkAllAsRead,
   useUnreadNotificationCount,
@@ -32,13 +33,14 @@ const EMPTY_GROUPS: GroupedNotification[] = [];
 const keyExtractor = (group: GroupedNotification) => group.uuid;
 
 /**
- * Two row shapes now share this list: a 44x56 board thumbnail and a 40pt
- * avatar. FlashList recycles a cell's subtree across items, so without this it
+ * Three row shapes share this list: a 44x56 board thumbnail, a 40pt avatar,
+ * and a follow request with its Approve / Decline buttons. FlashList recycles a cell's subtree across items, so without this it
  * would hand a thumbnail cell to an avatar row and remount the whole leading
  * slot mid-scroll. Separate types keep a recycling pool per shape — the same
  * thing GymListPanel and LogbookTab do. Hoisted so the prop identity is stable.
  */
-const getItemType = (group: GroupedNotification) => (notificationClimbRender(group) ? 'climb' : 'plain');
+const getItemType = (group: GroupedNotification) =>
+  group.type === 'follow_request' ? 'followRequest' : notificationClimbRender(group) ? 'climb' : 'plain';
 
 /** The thread a tapped comment/vote row opens; null while the sheet is closed. */
 type CommentThread = { entityType: SocialEntityType; entityId: string };
@@ -77,6 +79,8 @@ export default function NotificationsScreen() {
   } = useGroupedNotifications();
   const unreadCount = useUnreadNotificationCount();
   const { mutate: markAllAsRead } = useMarkAllAsRead();
+  // Stable (React Query's mutateAsync), so it can ride into every memoized row.
+  const answerFollowRequest = useAnswerFollowRequest();
 
   // The comment thread lives here rather than in the navigation hook so that
   // hook keeps returning ONE stable callback: `openCommentThread` is empty-dep
@@ -128,8 +132,10 @@ export default function NotificationsScreen() {
   }, [navigation, unreadCount, groups.length, handleMarkAllAsRead, t]);
 
   const renderItem = useCallback(
-    ({ item }: { item: GroupedNotification }) => <NotificationRow notification={item} onPress={handlePress} />,
-    [handlePress],
+    ({ item }: { item: GroupedNotification }) => (
+      <NotificationRow notification={item} onPress={handlePress} onAnswerFollowRequest={answerFollowRequest} />
+    ),
+    [handlePress, answerFollowRequest],
   );
 
   return (

@@ -27,6 +27,7 @@ export const notificationsTypeDefs = /* GraphQL */ `
     gym_claim_approved
     proposal_on_your_climb
     spray_wall_detection_completed
+    follow_request
   }
 
   """

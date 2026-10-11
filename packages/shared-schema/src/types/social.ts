@@ -112,6 +112,7 @@ export type SocialEventType =
   | 'comment.reply'
   | 'vote.cast'
   | 'follow.created'
+  | 'follow.requested'
   | 'climb.created'
   | 'ascent.logged'
   | 'proposal.created'

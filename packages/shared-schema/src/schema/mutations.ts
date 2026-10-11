@@ -430,7 +430,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
     # ============================================
 
     """
-    Follow a user. Idempotent (no error if already following).
+    Follow a user. Idempotent (no error if already following). Returns true when
+    the caller now follows the user, false when the account is private and only
+    a follow request was left for its owner to approve.
     """
     followUser(input: FollowInput!): Boolean!
 

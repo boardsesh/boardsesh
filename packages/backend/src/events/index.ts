@@ -55,6 +55,11 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         notificationType = 'new_follower';
         break;
       }
+      case 'follow.requested': {
+        recipientId = event.metadata.recipientUserId;
+        notificationType = 'follow_request';
+        break;
+      }
       case 'comment.created': {
         if (event.entityType === 'tick') {
           const [tick] = await db

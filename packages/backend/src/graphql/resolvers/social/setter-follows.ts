@@ -1026,6 +1026,9 @@ export const setterFollowMutations = {
         .where(eq(dbSchema.userBoardMappings.boardUsername, setterUsername))
         .limit(1);
 
+      // A private linked account only gets a follow request (and its inbox
+      // notification). The setter follow itself is made either way: a setter's
+      // published climbs are public, so the result stays true.
       if (linkedUsers.length > 0 && linkedUsers[0].userId !== myUserId) {
         await requestPrivacyFollow(myUserId, linkedUsers[0].userId);
       }

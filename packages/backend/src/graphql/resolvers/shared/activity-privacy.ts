@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, exists, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { alias, QueryBuilder } from 'drizzle-orm/pg-core';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -488,9 +488,24 @@ export function notificationPrivacyCondition(
   } = schema.notifications,
 ): SQL {
   const comment = alias(schema.comments, 'privacy_notification_comment');
+  const followRequest = alias(schema.userFollowRequests, 'privacy_notification_follow_request');
   return or(
     eq(notification.type, 'new_follower'),
+    // A follow request names its requester to the account they asked to follow,
+    // whatever the requester's own activity privacy. It shows only while the
+    // request is still pending: once it is approved, declined or cancelled there
+    // is nothing left to act on.
     and(
+      eq(notification.type, 'follow_request'),
+      exists(
+        queryBuilder
+          .select({ requesterId: followRequest.requesterId })
+          .from(followRequest)
+          .where(and(eq(followRequest.requesterId, notification.actorId), eq(followRequest.recipientId, viewerId))),
+      ),
+    ),
+    and(
+      ne(notification.type, 'follow_request'),
       or(
         isNull(notification.actorId),
         and(

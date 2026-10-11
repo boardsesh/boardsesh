@@ -4263,7 +4263,11 @@ export type Mutation = {
   followPlaylist: Scalars['Boolean']['output'];
   /** Follow a setter by username. Idempotent. */
   followSetter: Scalars['Boolean']['output'];
-  /** Follow a user. Idempotent (no error if already following). */
+  /**
+   * Follow a user. Idempotent (no error if already following). Returns true when
+   * the caller now follows the user, false when the account is private and only
+   * a follow request was left for its owner to approve.
+   */
   followUser: Scalars['Boolean']['output'];
   /** Freeze or unfreeze a climb from receiving proposals (admin/leader only). */
   freezeClimb: Scalars['Boolean']['output'];
@@ -5829,6 +5833,7 @@ export type NotificationType =
   | 'comment_on_climb'
   | 'comment_on_tick'
   | 'comment_reply'
+  | 'follow_request'
   | 'gym_claim_approved'
   | 'new_climb'
   | 'new_climb_global'

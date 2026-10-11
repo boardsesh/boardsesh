@@ -11,6 +11,7 @@
   },
   "items": {
     "newFollower": "{{actor}} folgt dir jetzt",
+    "followRequest": "{{actor}} möchte dir folgen",
     "commentReplyWithBody": "{{actor}} hat geantwortet: „{{body}}“",
     "commentReply": "{{actor}} hat auf deinen Kommentar geantwortet",
     "commentOnTickWithBody": "{{actor}} hat kommentiert: „{{body}}“",
@@ -39,6 +40,13 @@
     "default": "Du hast eine neue Benachrichtigung",
     "sprayWallReady": "{{wall}} ist bereit zur Prüfung.",
     "sprayWallReadyGeneric": "Das Foto deines Boards ist bereit zur Prüfung."
+  },
+  "followRequest": {
+    "approve": "Bestätigen",
+    "decline": "Ablehnen",
+    "approveLabel": "{{actor}} bestätigen",
+    "declineLabel": "{{actor}} ablehnen",
+    "failed": "Die Anfrage konnte nicht beantwortet werden. Versuche es mit Verbindung erneut."
   },
   "errors": {
     "load": "Deine Benachrichtigungen konnten nicht geladen werden"

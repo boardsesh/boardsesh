@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
 
@@ -66,6 +66,11 @@ vi.mock('../../ClimbListThumbnail', () => ({
     thumbnail.props = props;
     return createElement('div', { 'data-thumbnail': props.frames });
   },
+}));
+
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { 'data-button': title, onClick: onPress }, title),
 }));
 
 vi.mock('../../PressableSurface', () => ({
@@ -260,5 +265,52 @@ describe('NotificationRow leading slot', () => {
 
     rerender(<NotificationRow notification={notification} onPress={onPress} />);
     expect(renderCounter.count).toBe(1);
+  });
+});
+
+describe('NotificationRow follow request', () => {
+  beforeEach(() => {
+    renderCounter.count = 0;
+    vi.clearAllMocks();
+  });
+
+  const request = makeNotification({
+    uuid: 'request-1',
+    type: 'follow_request',
+    entityId: 'requester-1',
+    actors: [{ id: 'requester-1', displayName: 'Jo', avatarUrl: null }],
+  });
+
+  it('offers Approve and Decline and sends the chosen answer', async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const { container, getByText } = render(
+      <NotificationRow notification={request} onPress={onPress} onAnswerFollowRequest={onAnswer} />,
+    );
+
+    expect(getByText('items.followRequest')).not.toBeNull();
+    fireEvent.click(container.querySelector('[data-button="followRequest.approve"]')!);
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith({ notification: request, answer: 'approve' }));
+
+    fireEvent.click(container.querySelector('[data-button="followRequest.decline"]')!);
+    expect(container.querySelector('[data-button="followRequest.decline"]')).not.toBeNull();
+  });
+
+  it('says so when the answer fails, and keeps the buttons', async () => {
+    const onAnswer = vi.fn().mockRejectedValue(new Error('offline'));
+    const { container, findByText } = render(
+      <NotificationRow notification={request} onPress={onPress} onAnswerFollowRequest={onAnswer} />,
+    );
+
+    fireEvent.click(container.querySelector('[data-button="followRequest.decline"]')!);
+
+    expect(await findByText('followRequest.failed')).not.toBeNull();
+    expect(container.querySelector('[data-button="followRequest.approve"]')).not.toBeNull();
+  });
+
+  it('falls back to the plain row when the screen passes no answer handler', () => {
+    const { container, getByText } = render(<NotificationRow notification={request} onPress={onPress} />);
+
+    expect(getByText('items.followRequest')).not.toBeNull();
+    expect(container.querySelector('[data-button="followRequest.approve"]')).toBeNull();
   });
 });

@@ -314,6 +314,19 @@ export function resolveFollowRecipient(metadata: Record<string, string>): Recipi
 }
 
 /**
+ * Resolve the recipient of a follow request: the private account's owner.
+ */
+export function resolveFollowRequestRecipient(metadata: Record<string, string>): RecipientInfo | null {
+  const recipientUserId = metadata.recipientUserId;
+  if (!recipientUserId) return null;
+
+  return {
+    recipientId: recipientUserId,
+    notificationType: 'follow_request',
+  };
+}
+
+/**
  * Resolve recipients when a user creates a climb: all followers of the setter.
  */
 export async function resolveClimbCreatedFollowerRecipients(setterId: string): Promise<RecipientInfo[]> {

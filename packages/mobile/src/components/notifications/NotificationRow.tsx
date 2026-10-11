@@ -12,6 +12,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { actorSummary, notificationCopy, notificationIconName } from './notification-copy';
+import { FollowRequestNotificationRow, type AnswerFollowRequest } from './FollowRequestNotificationRow';
 
 const AVATAR_SIZE = 40;
 const GROUP_AVATAR_SIZE = 28;
@@ -22,6 +23,12 @@ type NotificationRowProps = {
   notification: GroupedNotification;
   /** Stable handler from the screen — marks read, then navigates. */
   onPress: (notification: GroupedNotification) => void;
+  /**
+   * Stable handler from the screen that approves or declines a follow request.
+   * Only a `follow_request` row reads it; without one that row falls back to
+   * the plain layout, which still opens the requester's profile.
+   */
+  onAnswerFollowRequest?: AnswerFollowRequest;
 };
 
 /**
@@ -39,7 +46,22 @@ type NotificationRowProps = {
  * undefined` so `PressableAvatar` degrades to a plain avatar rather than
  * nesting a competing pressable inside the row's own.
  */
-export const NotificationRow = memo(function NotificationRow({ notification, onPress }: NotificationRowProps) {
+export const NotificationRow = memo(function NotificationRow({
+  notification,
+  onPress,
+  onAnswerFollowRequest,
+}: NotificationRowProps) {
+  // A follow request carries its own Approve / Decline buttons, so it cannot be
+  // one tap target like the rest: it gets its own layout.
+  if (notification.type === 'follow_request' && onAnswerFollowRequest) {
+    return (
+      <FollowRequestNotificationRow notification={notification} onPress={onPress} onAnswer={onAnswerFollowRequest} />
+    );
+  }
+  return <ActivityNotificationRow notification={notification} onPress={onPress} />;
+});
+
+function ActivityNotificationRow({ notification, onPress }: Omit<NotificationRowProps, 'onAnswerFollowRequest'>) {
   const { t } = useTranslation('notifications');
   const { systemColors, brandColors } = useTheme();
 
@@ -127,7 +149,7 @@ export const NotificationRow = memo(function NotificationRow({ notification, onP
       )}
     </PressableSurface>
   );
-});
+}
 
 const styles = StyleSheet.create({
   row: {

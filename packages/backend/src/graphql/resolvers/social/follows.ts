@@ -205,7 +205,10 @@ export const socialFollowQueries = {
 
 export const socialFollowMutations = {
   /**
-   * Follow a user (idempotent)
+   * Follow a user (idempotent). True when the caller now follows them; false
+   * when the account is private and the call only left a follow request, so an
+   * installed client that reads the result never shows the requester as
+   * following.
    */
   followUser: async (
     _: unknown,
@@ -219,9 +222,7 @@ export const socialFollowMutations = {
     const myUserId = ctx.userId!;
     const targetUserId = validatedInput.userId;
 
-    await requestPrivacyFollow(myUserId, targetUserId);
-
-    return true;
+    return (await requestPrivacyFollow(myUserId, targetUserId)) === 'following';
   },
 
   /**

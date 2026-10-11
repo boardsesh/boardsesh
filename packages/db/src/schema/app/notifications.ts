@@ -19,6 +19,7 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'gym_claim_approved',
   'proposal_on_your_climb',
   'spray_wall_detection_completed',
+  'follow_request',
 ]);
 
 export const notifications = pgTable(
@@ -71,4 +72,5 @@ export type NotificationType =
   | 'new_climbs_synced'
   | 'gym_claim_approved'
   | 'proposal_on_your_climb'
-  | 'spray_wall_detection_completed';
+  | 'spray_wall_detection_completed'
+  | 'follow_request';

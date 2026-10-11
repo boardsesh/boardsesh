@@ -110,11 +110,47 @@ export async function getPrivacyRelationship(viewerId: string | null | undefined
   ]);
   return { userId, isPrivate: settings.isPrivate, isFollowing, requestPending: requests.length > 0 && !isFollowing };
 }
+async function publishFollowRequest(requesterId: string, recipientId: string): Promise<void> {
+  // entityId is the requester, so each request is its own inbox row with its
+  // own Approve and Decline, rather than one group for every requester.
+  await publishSocialEvent({
+    type: 'follow.requested',
+    actorId: requesterId,
+    entityType: 'user',
+    entityId: requesterId,
+    timestamp: Date.now(),
+    metadata: { recipientUserId: recipientId },
+  }).catch((error: unknown) => logger.error('[Privacy] follow request event failed', { error }));
+}
+/** The recipient has answered: their inbox row has nothing left to act on. */
+async function clearFollowRequestNotifications(
+  executor: Pick<typeof db, 'delete'>,
+  requesterId: string,
+  recipientId: string,
+): Promise<void> {
+  await executor
+    .delete(schema.notifications)
+    .where(
+      and(
+        eq(schema.notifications.type, 'follow_request'),
+        eq(schema.notifications.recipientId, recipientId),
+        eq(schema.notifications.actorId, requesterId),
+      ),
+    );
+}
+/**
+ * What a follow attempt did. `following`: the follow exists (made now or
+ * earlier). `requested`: the account is private, so only a request exists and
+ * the requester must not be shown as following.
+ */
+export type PrivacyFollowOutcome = 'following' | 'requested';
 /** Used by legacy followUser too: an old client cannot skip private approval. */
-export async function requestPrivacyFollow(followerId: string, followingId: string): Promise<void> {
+export async function requestPrivacyFollow(followerId: string, followingId: string): Promise<PrivacyFollowOutcome> {
   if (followerId === followingId)
     throw new GraphQLError('Cannot follow yourself', { extensions: { code: 'BAD_USER_INPUT' } });
   let createdFollow = false;
+  let createdRequest = false;
+  let outcome: PrivacyFollowOutcome = 'following';
   await db.transaction(async (transaction) => {
     const [subject] = await transaction
       .select({ id: schema.users.id })
@@ -134,10 +170,13 @@ export async function requestPrivacyFollow(followerId: string, followingId: stri
       .limit(1);
     if (existing) return;
     if (profile?.isPrivate) {
-      await transaction
+      outcome = 'requested';
+      const inserted = await transaction
         .insert(schema.userFollowRequests)
         .values({ requesterId: followerId, recipientId: followingId })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ requesterId: schema.userFollowRequests.requesterId });
+      createdRequest = inserted.length > 0;
     } else {
       const inserted = await transaction
         .insert(schema.userFollows)
@@ -159,6 +198,8 @@ export async function requestPrivacyFollow(followerId: string, followingId: stri
   // public account only widens what the follower's own client can read. That
   // client refreshes its own caches after the mutation.
   if (createdFollow) await publishFollow(followerId, followingId);
+  if (createdRequest) await publishFollowRequest(followerId, followingId);
+  return outcome;
 }
 /** Returns whether a follow existed and was removed, so callers can skip no-ops. */
 export async function removePrivacyFollow(followerId: string, followingId: string): Promise<boolean> {
@@ -524,6 +565,7 @@ export const privacyMutations = {
           ),
         )
         .returning();
+      await clearFollowRequestNotifications(transaction, userId, recipientId);
       if (!requests.length) return;
       const inserted = await transaction
         .insert(schema.userFollows)
@@ -554,6 +596,7 @@ export const privacyMutations = {
             eq(schema.userFollowRequests.recipientId, recipientId),
           ),
         );
+      await clearFollowRequestNotifications(transaction, userId, recipientId);
     });
     return true;
   },

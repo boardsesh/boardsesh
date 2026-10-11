@@ -11,6 +11,7 @@
   },
   "items": {
     "newFollower": "{{actor}} empezó a seguirte",
+    "followRequest": "{{actor}} quiere seguirte",
     "commentReplyWithBody": "{{actor}} respondió: \"{{body}}\"",
     "commentReply": "{{actor}} respondió a tu comentario",
     "commentOnTickWithBody": "{{actor}} comentó: \"{{body}}\"",
@@ -39,6 +40,13 @@
     "default": "Tienes una nueva notificación",
     "sprayWallReady": "{{wall}} está listo para revisar.",
     "sprayWallReadyGeneric": "La foto de tu plafón está lista para revisar."
+  },
+  "followRequest": {
+    "approve": "Aprobar",
+    "decline": "Rechazar",
+    "approveLabel": "Aprobar a {{actor}}",
+    "declineLabel": "Rechazar a {{actor}}",
+    "failed": "No se pudo responder a la solicitud. Inténtalo cuando tengas conexión."
   },
   "errors": {
     "load": "No se pudieron cargar tus notificaciones"

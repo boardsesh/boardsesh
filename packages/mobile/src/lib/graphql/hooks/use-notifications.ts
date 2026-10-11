@@ -19,6 +19,7 @@ import type {
   NotificationType,
   SocialEntityType,
 } from '@boardsesh/shared-schema';
+import { APPROVE_FOLLOW_REQUEST, DECLINE_FOLLOW_REQUEST } from '@boardsesh/graphql/operations/privacy';
 import { getHttpClient } from '../client';
 // The stored-token read, NOT `useAuth`: this module is re-exported from the
 // hooks barrel, and `auth-provider` drags react-native's Flow source into the
@@ -235,4 +236,59 @@ export function useMarkAllAsRead() {
       queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 0);
     },
   });
+}
+
+export type FollowRequestAnswer = 'approve' | 'decline';
+
+/**
+ * Approve or decline the follow request behind a `follow_request` row. The
+ * server deletes the row when the request is answered, so on success it leaves
+ * the loaded pages straight away rather than waiting for the refetch the
+ * privacy change triggers. The requester is the group's entity (one row per
+ * requester); the first actor is the same person and covers a row without one.
+ *
+ * Returns `mutateAsync`, which React Query keeps stable, so the screen can hand
+ * it to every memoized row without re-rendering them.
+ */
+export function useAnswerFollowRequest() {
+  const queryClient = useQueryClient();
+
+  const { mutateAsync } = useMutation({
+    networkMode: 'always',
+    mutationFn: async ({
+      notification,
+      answer,
+    }: {
+      notification: GroupedNotification;
+      answer: FollowRequestAnswer;
+    }) => {
+      const requesterId = notification.entityId ?? notification.actors[0]?.id;
+      if (!requesterId) throw new Error('A follow request row has no requester.');
+      await getHttpClient().request(answer === 'approve' ? APPROVE_FOLLOW_REQUEST : DECLINE_FOLLOW_REQUEST, {
+        userId: requesterId,
+      });
+    },
+    onSuccess: (_result, { notification }) => {
+      queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
+        previous
+          ? {
+              ...previous,
+              pages: previous.pages.map((page) => ({
+                ...page,
+                groups: page.groups.filter((group) => group.uuid !== notification.uuid),
+              })),
+            }
+          : previous,
+      );
+      if (!notification.isRead) {
+        queryClient.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
+          Math.max(0, (previousCount ?? 0) - 1),
+        );
+      }
+      // The requests list in privacy settings shows the same request.
+      void queryClient.invalidateQueries({ queryKey: ['privacyFollowRequests'] });
+    },
+  });
+
+  return mutateAsync;
 }

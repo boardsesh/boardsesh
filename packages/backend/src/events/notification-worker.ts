@@ -10,6 +10,7 @@ import {
   resolveCommentRecipients,
   resolveVoteRecipients,
   resolveFollowRecipient,
+  resolveFollowRequestRecipient,
   resolveProposalVoteRecipients,
   resolveProposalApprovalRecipients,
   resolveProposalRejectionRecipients,
@@ -78,6 +79,9 @@ export class NotificationWorker {
           break;
         case 'follow.created':
           await this.handleFollowCreated(event);
+          break;
+        case 'follow.requested':
+          await this.handleFollowRequested(event);
           break;
         case 'ascent.logged':
           await this.handleAscentLogged(event);
@@ -169,6 +173,34 @@ export class NotificationWorker {
     if (!recipient) return;
 
     // Deduplicate follows within 24 hours
+    const isDuplicate = await this.isDuplicate(
+      event.actorId,
+      recipient.recipientId,
+      recipient.notificationType,
+      event.entityId,
+      1440,
+    );
+    if (isDuplicate) return;
+
+    await this.createAndPublishNotification(
+      recipient.recipientId,
+      event.actorId,
+      recipient.notificationType,
+      null,
+      event.entityId,
+    );
+  }
+
+  /**
+   * A follow request to a private account. One row per requester (entityId is
+   * the requester), deduplicated for a day so a request/cancel loop cannot
+   * flood the inbox. The row stays visible only while the request is pending:
+   * see notificationPrivacyCondition.
+   */
+  private async handleFollowRequested(event: SocialEvent): Promise<void> {
+    const recipient = resolveFollowRequestRecipient(event.metadata);
+    if (!recipient) return;
+
     const isDuplicate = await this.isDuplicate(
       event.actorId,
       recipient.recipientId,
@@ -397,7 +429,10 @@ export class NotificationWorker {
     // Guard: don't notify yourself
     if (recipientId === actorId) return;
 
-    if (type !== 'new_follower') {
+    // A follower or a requester is telling the recipient about themselves, so
+    // the recipient seeing their name is the point, whatever the actor's own
+    // activity privacy says.
+    if (type !== 'new_follower' && type !== 'follow_request') {
       // The owner of the item hears about every comment and like on it, private
       // commenters included: `canReadSocialEntity` admits the owner of a
       // commented item, and `canSeeActorOnEntity` the owner of a liked one.

@@ -37,6 +37,8 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  * - `new_follower` opens the follower's profile when there is one of them, and
  *   the follow-back list when there are more. A group only carries its first
  *   three actors, so the list screen re-fetches all of them by group key.
+ * - `follow_request` opens the requester's profile. Its group key is the
+ *   requester, so the row always names exactly one person.
  * - `comment_*` and `vote_*` open the thread the row is about, via the
  *   `threadEntityType`/`threadEntityId` pair the resolver fills for exactly
  *   these types.
@@ -115,6 +117,12 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
         } else {
           router.push('/boards');
         }
+        return;
+      }
+
+      if (notification.type === 'follow_request') {
+        const requesterId = notification.actors[0]?.id ?? notification.entityId;
+        if (requesterId) router.push({ pathname: '/users/[userId]', params: { userId: requesterId } });
         return;
       }
 

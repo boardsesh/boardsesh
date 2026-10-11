@@ -7,6 +7,8 @@ import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { schema as executableSchema } from '../graphql/index';
 import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
+import { socialFollowMutations } from '../graphql/resolvers/social/follows';
+import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 import { canAccessResource, canViewUserActivity, getPrivacySettings, setContentPrivacy } from '../services/privacy';
 
 const owner = 'privacy-flow-owner';
@@ -45,6 +47,24 @@ beforeAll(async () => {
 });
 afterAll(() => vi.unstubAllEnvs());
 
+async function followRequestNotifications(recipientId: string, requesterId: string) {
+  return db
+    .select()
+    .from(schema.notifications)
+    .where(
+      and(
+        eq(schema.notifications.recipientId, recipientId),
+        eq(schema.notifications.actorId, requesterId),
+        eq(schema.notifications.type, 'follow_request'),
+      ),
+    );
+}
+
+async function inboxTypes(userId: string) {
+  const inbox = await socialNotificationQueries.groupedNotifications(null, {}, context(userId));
+  return inbox.groups.map((group) => ({ type: group.type, entityId: group.entityId, actors: group.actors }));
+}
+
 describe('privacy controls against Postgres', () => {
   it('requires the target account to approve a follow and supports immediate removal', async () => {
     const pending = await privacyMutations.requestFollow(null, { userId: owner }, context(requester));
@@ -64,6 +84,75 @@ describe('privacy controls against Postgres', () => {
     expect(await canViewUserActivity(requester, owner)).toBe(true);
     await privacyMutations.removeFollower(null, { userId: requester }, context(owner));
     expect(await canViewUserActivity(requester, owner)).toBe(false);
+  });
+
+  it('tells a private account about a follow request, and never shows the requester as following', async () => {
+    const recipient = 'privacy-flow-request-recipient';
+    const asker = 'privacy-flow-request-asker';
+    await db.insert(schema.users).values([
+      { id: recipient, email: `${recipient}@test.com` },
+      { id: asker, email: `${asker}@test.com`, name: 'Asker' },
+    ]);
+    await db.insert(schema.userProfiles).values({ userId: recipient, isPrivate: true });
+
+    // The legacy mutation an installed client calls: only a request exists.
+    expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(asker))).toBe(false);
+    expect(await canViewUserActivity(asker, recipient)).toBe(false);
+    const [notification] = await followRequestNotifications(recipient, asker);
+    expect(notification).toMatchObject({ type: 'follow_request', entityId: asker, entityType: null, readAt: null });
+    expect(await inboxTypes(recipient)).toEqual([
+      { type: 'follow_request', entityId: asker, actors: [expect.objectContaining({ id: asker })] },
+    ]);
+    expect(await socialNotificationQueries.unreadNotificationCount(null, null, context(recipient))).toBe(1);
+
+    // Asking again while the request is pending adds no second row.
+    expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(asker))).toBe(false);
+    expect(await followRequestNotifications(recipient, asker)).toHaveLength(1);
+
+    // A cancelled request leaves nothing to answer, so the row drops out of the inbox.
+    await privacyMutations.cancelFollowRequest(null, { userId: recipient }, context(asker));
+    expect(await inboxTypes(recipient)).toEqual([]);
+    expect(await socialNotificationQueries.unreadNotificationCount(null, null, context(recipient))).toBe(0);
+
+    // Asked again and approved: the request row is gone and a follow exists.
+    await privacyMutations.requestFollow(null, { userId: recipient }, context(asker));
+    expect((await inboxTypes(recipient)).map((group) => group.type)).toEqual(['follow_request']);
+    await privacyMutations.approveFollowRequest(null, { userId: asker }, context(recipient));
+    expect(await followRequestNotifications(recipient, asker)).toEqual([]);
+    expect(await canViewUserActivity(asker, recipient)).toBe(true);
+    expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(asker))).toBe(true);
+  });
+
+  it('removes the follow request row when the request is declined', async () => {
+    const recipient = 'privacy-flow-decline-recipient';
+    const asker = 'privacy-flow-decline-asker';
+    await db.insert(schema.users).values([
+      { id: recipient, email: `${recipient}@test.com` },
+      { id: asker, email: `${asker}@test.com` },
+    ]);
+    await db.insert(schema.userProfiles).values({ userId: recipient, isPrivate: true });
+
+    await privacyMutations.requestFollow(null, { userId: recipient }, context(asker));
+    expect(await followRequestNotifications(recipient, asker)).toHaveLength(1);
+    await privacyMutations.declineFollowRequest(null, { userId: asker }, context(recipient));
+    expect(await followRequestNotifications(recipient, asker)).toEqual([]);
+    expect(await inboxTypes(recipient)).toEqual([]);
+    expect(await canViewUserActivity(asker, recipient)).toBe(false);
+  });
+
+  it('follows a public account straight away', async () => {
+    const recipient = 'privacy-flow-public-recipient';
+    const follower = 'privacy-flow-public-follower';
+    await db.insert(schema.users).values([
+      { id: recipient, email: `${recipient}@test.com` },
+      { id: follower, email: `${follower}@test.com` },
+    ]);
+
+    expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(follower))).toBe(
+      true,
+    );
+    expect(await followRequestNotifications(recipient, follower)).toEqual([]);
+    expect((await inboxTypes(recipient)).map((group) => group.type)).toEqual(['new_follower']);
   });
 
   it('ignores the retired setup flag and rejects a public write with an old account revision atomically', async () => {

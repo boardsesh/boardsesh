@@ -49,6 +49,7 @@ describe('notificationCopy', () => {
   // exact ones web's getNotificationText returns for the same input.
   const bareCases: Array<[NotificationType, string]> = [
     ['new_follower', 'items.newFollower'],
+    ['follow_request', 'items.followRequest'],
     ['comment_reply', 'items.commentReply'],
     ['comment_on_tick', 'items.commentOnTick'],
     ['comment_on_climb', 'items.commentOnClimb'],
