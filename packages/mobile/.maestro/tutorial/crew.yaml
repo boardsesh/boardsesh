@@ -39,10 +39,14 @@ name: Tutorial - your crew builds the queue
 - assertVisible: 'Preview'
 - tapOn: 'Preview'
 - waitForAnimationToEnd
-# Preview changes the player behind the queue. Dismiss the queue before teaching
-# the full preview, then reopen it explicitly for the next action.
-- back
-- assertNotVisible: Up next
+# Preview changes the player behind the queue. Its actual header button closes
+# the queue reliably; Android Back can leave this nested native sheet open.
+- tapOn:
+    text: Close
+    rightOf: Edit queue
+- extendedWaitUntil:
+    notVisible: Up next
+    timeout: 20000
 - assertVisible: '.*Board:.*'
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/preview')}
 - extendedWaitUntil:
@@ -73,4 +77,9 @@ name: Tutorial - your crew builds the queue
 
 - tapOn: 'Play next'
 - waitForAnimationToEnd
-- back
+- tapOn:
+    text: Close
+    rightOf: Edit queue
+- extendedWaitUntil:
+    notVisible: Up next
+    timeout: 20000
