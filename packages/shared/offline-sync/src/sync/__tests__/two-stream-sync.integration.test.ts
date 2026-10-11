@@ -242,6 +242,37 @@ describe('pulling a board as a reference and a protected stream', () => {
     expect(runAsync.mock.calls.filter(([sql]) => String(sql).includes('$.protected'))).toHaveLength(0);
   });
 
+  it('delivers a change to a stats or grade row whose climb did not change', async () => {
+    // An ascent is logged, a grade is recomputed: the row moves and its climb
+    // does not. Each table's cursor is its own.
+    let climbs: ServerClimb[] = [catalogueClimb(10)];
+    const server = backend(() => climbs);
+    await sync(server.fetch);
+    expect(await getCheckpoint(db, STATS_KEY)).toEqual(cursorAt(10));
+
+    climbs = [
+      {
+        ...catalogueClimb(10),
+        stats: { faUsername: 'Manufacturer Setter', cursor: cursorAt(60) },
+        grade: { cursor: cursorAt(61) },
+      },
+    ];
+    server.requests.length = 0;
+    await sync(server.fetch);
+
+    expect(server.requestsFor('syncClimbStats', 'REFERENCE').map((request) => request.cursor)).toEqual([cursorAt(10)]);
+    expect(await db.getAllAsync('SELECT climb_uuid, sync_seq FROM board_climb_stats')).toEqual([
+      { climb_uuid: 'catalogue-10', sync_seq: 60 },
+    ]);
+    expect(await db.getAllAsync('SELECT climb_uuid, sync_seq FROM board_climb_grades')).toEqual([
+      { climb_uuid: 'catalogue-10', sync_seq: 61 },
+    ]);
+    // The climbs stream had nothing new, and its cursor did not move.
+    expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(cursorAt(10));
+    expect(await getCheckpoint(db, STATS_KEY)).toEqual(cursorAt(60));
+    expect(await getCheckpoint(db, GRADES_KEY)).toEqual(cursorAt(61));
+  });
+
   it('asks for every protected stream on every cycle: they are a handful of rows and cheap to ask for', async () => {
     const server = backend([catalogueClimb(10), ownDraft]);
     await sync(server.fetch);

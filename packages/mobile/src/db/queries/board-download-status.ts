@@ -13,14 +13,14 @@ import {
  * Whether a scope's rows may be read from the device: its download finished
  * and, for a board with no public catalogue, its protected rows are back.
  *
- * A privacy event deletes other climbers' protected rows and leaves the
- * `scope-complete:` marker alone, then the next pull fetches the ones this
- * viewer may still see (issue #6306). In between:
+ * A privacy event can take a spray wall away, so it deletes the wall rows the
+ * viewer does not own, leaves the `scope-complete:` marker alone, and the next
+ * pull fetches the ones this viewer may still see (issue #6306). In between:
  *
- *  - a catalogue board (Kilter, Tension, MoonBoard) still holds its whole
- *    reference catalogue and the climber's own climbs, so it keeps serving.
- *    What it lacks is other climbers' Boardsesh climbs, a small part of the
- *    board;
+ *  - a catalogue board (Kilter, Tension, MoonBoard) is not touched by a privacy
+ *    event at all. Its protected stream is the climber's own drafts and
+ *    unlisted climbs, replayed after an import or a change of account, and the
+ *    board keeps serving its whole public catalogue meanwhile;
  *  - a spray wall holds nothing BUT protected rows. Until they are back it has
  *    no wall row and none of anybody else's climbs, and a wall minus all that
  *    is not the wall, so it reads as not downloaded.
@@ -89,15 +89,17 @@ export async function isBoardTypeDownloadedLocally(db: OfflineDatabase, boardTyp
 }
 
 /**
- * Whether every downloaded scope of a board TYPE holds all the protected rows
- * the server currently lets this viewer see. False from a privacy event until
- * the replay that follows it has finished.
+ * Whether every downloaded scope of a board TYPE holds all its protected rows:
+ * the climber's own drafts and unlisted climbs on a catalogue board, every row
+ * on a spray wall. False while a protected stream is replayed, which an
+ * import or a change of account starts on any board and a privacy event starts
+ * on a wall.
  *
  * `offlineAwareRequest` asks this before a local-first read WHILE ONLINE. A
  * catalogue board stays readable through that window (see
  * `isScopeReadableLocally`), which is right with no signal and wrong with one:
- * the server has the complete answer, so a list missing other climbers' climbs
- * is not the one to show. The window is a few small requests long.
+ * the server has the complete answer, so a list missing the climber's own
+ * drafts is not the one to show. The window is a few small requests long.
  *
  * By board type because that is all some reads carry (the grade ones have no
  * layout). A scope that is still downloading is skipped: it is not served

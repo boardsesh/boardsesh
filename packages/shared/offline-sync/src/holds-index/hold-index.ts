@@ -535,10 +535,9 @@ export async function readClimbsBeforeWrite(
  *
  * The watermark assumes rows arrive in `sync_seq` order. One stream of one
  * scope delivers them that way; several do not (issue #6306):
- *  - a climb the viewer has only just been allowed to see arrives through the
- *    protected stream with the `sync_seq` it has had all along;
  *  - a climb of one stream can arrive after a row of the other with a higher
- *    sequence has already been indexed;
+ *    sequence has already been counted: the climber's own draft is never
+ *    indexed, but it raises the scope's `MAX(sync_seq)` like any other row;
  *  - a saved-climb mirror, or a sibling size's pull, can have raised a
  *    watermark past a climb this pull has not delivered yet.
  *

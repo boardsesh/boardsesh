@@ -718,10 +718,9 @@ export type SyncOptions = {
    */
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
   /**
-   * Wall clock for the bootstrap retry ladder, the progress throttle and the
-   * rationing of protected stats and grades pulls. Injected so those schedules
-   * are testable without fake timers fighting the SQLite double. Defaults to
-   * `Date.now`.
+   * Wall clock for the bootstrap retry ladder and the progress throttle.
+   * Injected so those schedules are testable without fake timers fighting the
+   * SQLite double. Defaults to `Date.now`.
    */
   now?: () => number;
   /** Jitter source for the retry ladder. Defaults to `Math.random`. */
