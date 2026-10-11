@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type StatusEntry = { status: 'flash' | 'send' | 'attempt'; is_ascent: boolean; tries: number; is_mirror: boolean };
 
 const live = vi.hoisted(() => ({
+  gradeFormat: 'v-grade' as import('@boardsesh/play-view').GradeDisplayFormat,
   statsCalls: 0,
   gradeCalls: 0,
   myGradeCalls: 0,
@@ -76,14 +77,17 @@ vi.mock('@boardsesh/board-react', () => ({
   },
 }));
 
-vi.mock('../../../../hooks/use-display-grade', () => ({
-  useBoardseshGradesActive: () => false,
-  // One call per mounted leaf that works a grade out.
-  useDisplayGrade: () => {
-    live.gradeCalls += 1;
-    return { boardseshActive: false, resolveGrade: () => ({ label: 'V4', color: '#44AA44', isBoardsesh: false }) };
-  },
-}));
+vi.mock('../../../../hooks/use-display-grade', async () => {
+  const { resolveDisplayGrade } = await import('../../../../lib/boardsesh-grade-display');
+  return {
+    useBoardseshGradesActive: () => false,
+    useDisplayGrade: () => ({
+      boardseshActive: false,
+      resolveGrade: (climb: { difficulty: string }, boardName: string) =>
+        resolveDisplayGrade(climb, { gradeFormat: live.gradeFormat, useBoardseshGrades: false, boardName }),
+    }),
+  };
+});
 vi.mock('../../../../hooks/use-personal-grades', () => ({ usePersonalGradesActive: () => live.personalGrades }));
 vi.mock('../../../../hooks/use-my-grade', () => ({
   // The row's way to the climber's own grade, and so to the logbook: one call per
@@ -94,7 +98,7 @@ vi.mock('../../../../hooks/use-my-grade', () => ({
     return live.personalGrades ? live.myGrade : { status: 'none' };
   },
 }));
-vi.mock('../../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v-grade' }) }));
+vi.mock('../../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: live.gradeFormat }) }));
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({
     textStyles: { body: { lineHeight: 22 } },
@@ -160,9 +164,14 @@ vi.mock('../../../../hooks/use-board-preview-climb', () => ({
 }));
 vi.mock('../ClimbRowPresetChips', () => ({ ClimbRowPresetChips: () => null }));
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../../../lib/climb-row-display';
+import { stagedGrades } from '../climb-row-preview-leaves';
+import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { ClimbRowSettingsPreview } from '../ClimbRowSettingsPreview';
 
 describe('Climb list preview without an active board', () => {
+  beforeEach(() => {
+    live.gradeFormat = 'v-grade';
+  });
   it('draws the fixture, staged marks and neutral picture as a resolved row', () => {
     const { container, getByText, queryByText, getByTestId } = render(
       <ClimbRowSettingsPreview
@@ -176,10 +185,25 @@ describe('Climb list preview without an active board', () => {
     expect(getByText('mobile.settings.climbList.sampleName')).toBeTruthy();
     expect(queryByText('mobile.climbRow.unknownClimb')).toBeNull();
     expect(getByTestId('climb-preview-neutral-picture')).toBeTruthy();
+    expect(getByText('V5')).toBeTruthy();
+    expect(container.textContent).toContain('V4');
     expect(container.querySelector('[data-icon="flash"]')).toBeTruthy();
     expect(container.querySelector('[data-icon="favorite.fill"]')).toBeTruthy();
     expect(live.statsCalls).toBe(0);
     expect(live.myGradeCalls).toBe(0);
     expect(live.thumbnailProps).toHaveLength(0);
   });
+  it.each(['v-grade', 'font', 'both'] as const)(
+    'chooses differing displayed grades for %s, including the hardest climb',
+    (gradeFormat) => {
+      for (const boardName of ['kilter', 'moonboard']) {
+        const grades = getBoulderGradesForBoard(boardName);
+        for (const difficulty of ['6b/V4', grades[grades.length - 1].difficulty_name]) {
+          const staged = stagedGrades(difficulty, boardName, gradeFormat);
+          expect(staged.communityGradeToken).not.toBeNull();
+          expect(staged.personal).not.toBe(staged.crowd);
+        }
+      }
+    },
+  );
 });

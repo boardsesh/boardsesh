@@ -859,23 +859,23 @@ describe('ClimbListItemContent community grade token', () => {
       expect(detailLine(container)?.textContent).toBe('sends · 4.5★');
     });
 
-    it('shows the Font half when only that half differs, instead of repeating the column’s V half', () => {
+    it('suppresses the token when only the Font half differs', () => {
       // Yours 4c against the community's 4a: both are V0.
       resolveGrade.mockReturnValue({ label: 'V0 / 4A', color: '#111111', isBoardsesh: false });
       myGradeOverride.current = { status: 'set', difficultyId: 12, climbedAt: null };
       const { container } = renderRow();
 
       expect(gradeNode(container)?.textContent).toBe('V0 / 4C');
-      expect(detailLine(container)?.textContent).toBe('4A · sends · 4.5★');
-      expect(detailLine(container)?.getAttribute('aria-label')).toBe('Community grade 4A · sends · 4.5★');
+      expect(detailLine(container)?.textContent).toBe('sends · 4.5★');
+      expect(detailLine(container)?.getAttribute('aria-label')).toBeNull();
     });
 
-    it('shows the Font half beside a Boardsesh grade on the same V grade', () => {
+    it('suppresses the token beside a Boardsesh grade on the same V grade', () => {
       // Boardsesh 6b+ against the community's 6b: both are V4.
       resolveGrade.mockReturnValue({ label: '≈V4 / 6B+', color: '#abcdef', isBoardsesh: true, isEstimated: true });
       const { container } = renderRow();
 
-      expect(detailLine(container)?.textContent).toBe('6B · sends · 4.5★');
+      expect(detailLine(container)?.textContent).toBe('sends · 4.5★');
     });
   });
 

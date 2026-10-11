@@ -216,8 +216,7 @@ describe('deriveClimbRowGrade', () => {
     });
   });
 
-  // "V5 / 6C": two grades in one label. The token is one of the community's two,
-  // the first that reads differently from the same half of the column.
+  // "V5 / 6C": only a differing V half becomes the community token.
   describe('under the both-systems format', () => {
     it('shows the V half when the V halves differ', () => {
       // The column already reads "V10 / 7C+". Both halves again would take twice
@@ -234,26 +233,26 @@ describe('deriveClimbRowGrade', () => {
       );
     });
 
-    it('shows the Font half when only that half differs, instead of repeating the column', () => {
+    it('suppresses the token when the V halves match, even with different Font grades', () => {
       // Yours 4c against the community's 4a: "V0" beside "V0 / 4C" would say nothing.
       expect(deriveClimbRowGrade({ personalLabel: 'V0 / 4C', communityLabel: 'V0 / 4A' })).toEqual({
         source: 'personal',
         label: 'V0 / 4C',
         markedAsMine: true,
-        communityGradeToken: '4A',
+        communityGradeToken: null,
         setAngleMarkerPlace: 'detailLine',
       });
       // A Boardsesh 5b against the community's 5a, estimated or not.
-      expect(deriveClimbRowGrade({ boardseshLabel: 'V1 / 5B', communityLabel: 'V1 / 5A' }).communityGradeToken).toBe(
-        '5A',
-      );
-      expect(deriveClimbRowGrade({ boardseshLabel: '≈V1 / 5B', communityLabel: 'V1 / 5A' }).communityGradeToken).toBe(
-        '5A',
-      );
+      expect(
+        deriveClimbRowGrade({ boardseshLabel: 'V1 / 5B', communityLabel: 'V1 / 5A' }).communityGradeToken,
+      ).toBeNull();
+      expect(
+        deriveClimbRowGrade({ boardseshLabel: '≈V1 / 5B', communityLabel: 'V1 / 5A' }).communityGradeToken,
+      ).toBeNull();
       // MoonBoard's scale, where 5c and 6a are both V2.
-      expect(deriveClimbRowGrade({ personalLabel: 'V2 / 6A', communityLabel: 'V2 / 5C' }).communityGradeToken).toBe(
-        '5C',
-      );
+      expect(
+        deriveClimbRowGrade({ personalLabel: 'V2 / 6A', communityLabel: 'V2 / 5C' }).communityGradeToken,
+      ).toBeNull();
     });
 
     it('shows no token when neither half differs', () => {

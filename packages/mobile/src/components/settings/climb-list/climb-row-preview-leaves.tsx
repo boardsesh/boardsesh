@@ -4,7 +4,8 @@ import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from '../../Cli
 import { borderRadius } from '../../../theme/tokens';
 import { useTranslation } from 'react-i18next';
 import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
-import { formatGrade } from '@boardsesh/play-view';
+import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
+import { deriveClimbRowGrade } from '../../../lib/climb-row-grade';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
 import {
@@ -21,23 +22,46 @@ import {
 import { ClimbPlaylistChipsView, type ClimbRowPlaylistChipsLeafProps } from '../../ClimbPlaylistChips';
 import { useTheme } from '../../../providers/theme-provider';
 
-function stagedGrades(difficulty: string, boardName: string) {
+export function stagedGrades(difficulty: string, boardName: string, gradeFormat: GradeDisplayFormat) {
   const grades = getBoulderGradesForBoard(boardName);
   const crowdIndex = grades.findIndex((grade) => grade.difficulty_name.toLowerCase() === difficulty.toLowerCase());
   const index = crowdIndex >= 0 ? crowdIndex : Math.min(8, grades.length - 2);
-  // Keep a differing personal grade even for the hardest example in the catalogue.
-  const personalIndex = index < grades.length - 1 ? index + 1 : index - 1;
-  return { crowd: grades[index].difficulty_name, personal: grades[personalIndex].difficulty_name };
+  const crowd = grades[index].difficulty_name;
+  const communityLabel = formatGrade(crowd, gradeFormat, boardName);
+  // Several mapping entries read as one V grade. Find the next displayed grade,
+  // then search downwards when the crowd is already at the top of the scale.
+  const candidates = [...grades.slice(index + 1), ...grades.slice(0, index).reverse()];
+  const personal =
+    candidates.find((grade) => {
+      // Show the next V band, including when a Font-plus entry would add only
+      // a plus suffix to the same V number in the column.
+      if (gradeFormat !== 'font' && grade.v_grade === grades[index].v_grade) return false;
+      return (
+        deriveClimbRowGrade({
+          personalLabel: formatGrade(grade.difficulty_name, gradeFormat, boardName),
+          communityLabel,
+        }).communityGradeToken !== null
+      );
+    })?.difficulty_name ?? crowd;
+  return {
+    crowd,
+    personal,
+    ...deriveClimbRowGrade({
+      personalLabel: formatGrade(personal, gradeFormat, boardName),
+      communityLabel,
+    }),
+  };
 }
 const PreviewGrade = memo(function PreviewGrade({ climb, boardName }: ClimbRowGradeLeafProps) {
   const { resolveGrade } = useDisplayGrade();
-  const { personal } = stagedGrades(climb.difficulty, boardName);
+  const { gradeFormat } = useGradeFormat();
+  const { personal, markedAsMine } = stagedGrades(climb.difficulty, boardName, gradeFormat);
   const grade = resolveGrade({ difficulty: personal }, boardName);
   return (
     <ClimbGradeView
       label={grade.label}
       color={grade.color}
-      markedAsMine
+      markedAsMine={markedAsMine}
       isProject={false}
       setAtAngle={null}
       reserveSetAngleLine={false}
@@ -46,13 +70,12 @@ const PreviewGrade = memo(function PreviewGrade({ climb, boardName }: ClimbRowGr
 });
 const PreviewSubtitle = memo(function PreviewSubtitle(props: ClimbRowSubtitleLeafProps) {
   const { gradeFormat } = useGradeFormat();
-  const { crowd } = stagedGrades(props.difficulty, props.boardName);
-  const crowdLabel = formatGrade(crowd, gradeFormat === 'both' ? 'v-grade' : gradeFormat, props.boardName);
+  const { communityGradeToken } = stagedGrades(props.difficulty, props.boardName, gradeFormat);
   return (
     <ClimbSubtitleView
       {...props}
       qualityAverage={props.qualityAverage}
-      communityGrade={props.showCommunityGrade ? crowdLabel : null}
+      communityGrade={props.showCommunityGrade ? communityGradeToken : null}
     />
   );
 });
@@ -101,7 +124,8 @@ const PreviewThumbnail = memo(function PreviewThumbnail(props: ClimbRowThumbnail
 });
 const PlainGrade = memo(function PlainGrade({ climb, boardName }: ClimbRowGradeLeafProps) {
   const { resolveGrade } = useDisplayGrade();
-  const { crowd } = stagedGrades(climb.difficulty, boardName);
+  const { gradeFormat } = useGradeFormat();
+  const { crowd } = stagedGrades(climb.difficulty, boardName, gradeFormat);
   const grade = resolveGrade({ difficulty: crowd }, boardName);
   return (
     <ClimbGradeView

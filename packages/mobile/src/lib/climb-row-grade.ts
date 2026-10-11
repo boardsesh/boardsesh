@@ -73,16 +73,14 @@ function withoutEstimatePrefix(label: string): string {
  * The community's grade as the detail line shows it beside the column's grade,
  * or null when it would say nothing the column does not.
  *
- * A label is one grade, or two under the "V5 / 6C" format. The token is the
- * community's first half that reads differently from the column's same half:
- * the V half when those differ, which keeps the token on the scale the column
- * leads with, and otherwise the Font half ("V0 / 4C" beside a community "V0 /
- * 4A" shows "4A", because "V0" would repeat the column). No half differs: no
- * token.
+ * A label is one grade, or two under the "V5 / 6C" format. The token uses
+ * only the first (V) half under that format. A matching V half suppresses the
+ * token even when the Font halves differ; single-format labels compare whole.
  */
 function communityTokenBeside(columnLabel: string, communityLabel: string): string | null {
-  const columnHalves = splitGradeLabel(withoutEstimatePrefix(columnLabel));
-  return splitGradeLabel(communityLabel).find((half, index) => half !== columnHalves[index]) ?? null;
+  const columnHalf = splitGradeLabel(withoutEstimatePrefix(columnLabel))[0];
+  const communityHalf = splitGradeLabel(communityLabel)[0];
+  return communityHalf !== columnHalf ? (communityHalf ?? null) : null;
 }
 
 /**
