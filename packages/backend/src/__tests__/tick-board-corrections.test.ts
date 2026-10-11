@@ -228,21 +228,28 @@ describe('tick board corrections', () => {
     }
     expect((await readTick(uuid)).boardId).toBeNull();
   });
-  it('uses corrected attribution when an older ascent event arrives later', async () => {
-    const uuid = await save(homewall, { boardUuid: homewall.uuid });
-    await db.insert(schema.userFollows).values({ followerId: otherUser, followingId: userId }).onConflictDoNothing();
-    await tickMutations.updateTick(undefined, { uuid, input: { boardUuid: null } }, ctx);
-    await fanoutFeedItems({
-      type: 'ascent.logged',
-      actorId: userId,
-      entityType: 'tick',
-      entityId: uuid,
-      timestamp: Date.now(),
-      metadata: { boardUuid: homewall.uuid, boardType: 'kilter', climbUuid },
-    });
-    const [feed] = await db.select().from(schema.feedItems).where(eq(schema.feedItems.entityId, uuid));
-    expect(feed.boardUuid).toBeNull();
-  });
+  it.each(['move', 'clear'] as const)(
+    'uses corrected %s attribution when an older ascent event arrives later',
+    async (correction) => {
+      const uuid = await save(homewall, { boardUuid: homewall.uuid });
+      await db.update(schema.boardseshTicks).set({ boardId: original.id }).where(eq(schema.boardseshTicks.uuid, uuid));
+      await db.insert(schema.userFollows).values({ followerId: otherUser, followingId: userId }).onConflictDoNothing();
+      const correctedBoardUuid = correction === 'move' ? homewall.uuid : null;
+      await tickMutations.updateTick(undefined, { uuid, input: { boardUuid: correctedBoardUuid } }, ctx);
+      await fanoutFeedItems({
+        type: 'ascent.logged',
+        actorId: userId,
+        entityType: 'tick',
+        entityId: uuid,
+        timestamp: Date.now(),
+        metadata: { boardUuid: original.uuid, boardType: 'kilter', climbUuid },
+      });
+      const [feed] = await db.select().from(schema.feedItems).where(eq(schema.feedItems.entityId, uuid));
+      expect(feed.boardUuid).toBe(correctedBoardUuid);
+      // Feed metadata excludes board attribution, so a stale event cannot retain it there.
+      expect(feed.metadata).not.toHaveProperty('boardUuid');
+    },
+  );
   it('filters choices before pagination and restricts the query to the tick owner', async () => {
     const uuid = await save();
     const options = await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid, limit: 1 }, ctx);
