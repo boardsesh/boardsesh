@@ -2866,13 +2866,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   const playSurfaceRef = useRef(playSurface);
   playSurfaceRef.current = playSurface;
   // The overlay image that is mounted now, and whether expo-image has answered
-  // for it. An `onLoad` can reach JS before the view layer's mount effect has
-  // run, and must still count, so the last key that answered is kept until the
-  // next report from the view layer has looked at it.
+  // for it. The view layer reports a mount from a layout effect, inside the
+  // commit that mounts the image, so nothing that image fires can reach JS
+  // ahead of the report. An answer for anything else is from an image that is
+  // gone, and says nothing about the one that is here.
   const mountedOverlayRef = useRef<{ loadKey: string; answered: boolean } | null>(null);
-  const lastAnsweredLoadKeyRef = useRef<string | null>(null);
   const noteOverlayAnswered = useCallback((emittingLoadKey: string | null) => {
-    lastAnsweredLoadKeyRef.current = emittingLoadKey;
     if (mountedOverlayRef.current?.loadKey === emittingLoadKey) mountedOverlayRef.current.answered = true;
   }, []);
   const armPaintWatchdog = useCallback((loadKey: string) => {
@@ -2898,18 +2897,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         paintWatchdogRef.current = null;
       }
       if (mountedLoadKey === null) {
-        // Nothing is mounted: whatever mounts next, even the same file again,
-        // has to answer for itself.
         mountedOverlayRef.current = null;
-        lastAnsweredLoadKeyRef.current = null;
         return;
       }
-      const answered = lastAnsweredLoadKeyRef.current === mountedLoadKey;
-      // Spent: an answer speaks for the image that gave it, not for a later
-      // one that happens to show the same file.
-      lastAnsweredLoadKeyRef.current = null;
-      mountedOverlayRef.current = { loadKey: mountedLoadKey, answered };
-      if (!playSurfaceRef.current || answered) return;
+      // Whatever mounts, even the same file again, has to answer for itself.
+      mountedOverlayRef.current = { loadKey: mountedLoadKey, answered: false };
+      if (!playSurfaceRef.current) return;
       armPaintWatchdog(mountedLoadKey);
     },
     [armPaintWatchdog],

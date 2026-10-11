@@ -151,7 +151,7 @@ export function useZoomedHoldTapGesture({
     }
 
     // handleTap/handleLongPress are intentionally not deps — captured once and
-    // read render-scoped values through callbacksRef (see use-carousel-gesture).
+    // read render-scoped values through callbacksRef.
     return Gesture.Race(zoomPanGesture, longPress, tap);
   }, [
     hasTap,

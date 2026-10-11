@@ -842,29 +842,48 @@ describe('the overlay paint watchdog', () => {
       expect(paintTimeouts()).toHaveLength(0);
     });
 
-    it('counts an answer that reached JS before the view layer reported the mount', async () => {
+    // The view layer reports a mount inside the commit that makes it, so the
+    // image cannot have answered yet. An answer that is already there came
+    // from an image that is gone.
+    it('does not take an answer that came before the mount was reported', async () => {
       vi.useFakeTimers();
       const { result } = renderPlayBoard();
-      // A decoded image can answer in the frame it mounts, ahead of the mount effect.
       act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
       act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10_000);
+        await vi.advanceTimersByTimeAsync(4100);
       });
 
-      expect(paintTimeouts()).toHaveLength(0);
+      expect(paintTimeouts()).toHaveLength(1);
     });
 
-    // A neighbour is mounted before its overlay is rendered. The view layer
-    // reports no image, then the render lands and a decoded image answers
-    // ahead of the report of its mount.
-    it('counts an early answer for an image that mounted after the first paint', async () => {
+    // Backgrounded with an `onLoad` still queued; it lands after the image is
+    // gone. The image mounted on the way back never paints.
+    it('is not fooled by a late answer from the image that went away', async () => {
+      vi.useFakeTimers();
+      const { result } = renderPlayBoard();
+      const loadKey = result.current.overlayLoadKey;
+      act(() => result.current.onOverlayMounted(loadKey));
+      act(() => result.current.onOverlayMounted(null));
+      act(() => result.current.onOverlayLoad(loadKey));
+
+      act(() => result.current.onOverlayMounted(loadKey));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4100);
+      });
+
+      expect(paintTimeouts()).toHaveLength(1);
+    });
+
+    // A neighbour is mounted before its overlay is rendered. The render lands,
+    // the image mounts and answers, and only then is the board swiped onto.
+    it('is not watched when its image mounted late and has answered since', async () => {
       vi.useFakeTimers();
       const { result, rerender } = renderNeighbour();
       act(() => result.current.onOverlayMounted(null));
-      act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
       act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+      act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
 
       rerender({ playSurface: true });
       await act(async () => {

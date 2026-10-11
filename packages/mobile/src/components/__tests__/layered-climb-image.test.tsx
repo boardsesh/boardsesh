@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useLayoutEffect, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; testID?: string };
 const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'web' }));
@@ -556,6 +556,29 @@ describe('LayeredClimbImage', () => {
   });
 
   describe('onOverlayMounted', () => {
+    it('reports the image inside the commit that mounts it, before anything the image fires can be heard', () => {
+      const onOverlayMounted = vi.fn();
+      const reportsSeenInTheCommit: number[] = [];
+      // A parent's layout effect runs after its children's and before every
+      // passive effect, so it sees exactly what the commit itself reported.
+      function Surface() {
+        useLayoutEffect(() => {
+          reportsSeenInTheCommit.push(onOverlayMounted.mock.calls.length);
+        });
+        return createElement(LayeredClimbImage, {
+          overlayUri: 'file:///overlay.png',
+          overlayLoadKey: '1:0',
+          backgroundPaths: [],
+          onOverlayMounted,
+        });
+      }
+
+      render(createElement(Surface));
+
+      expect(reportsSeenInTheCommit).toEqual([1]);
+      expect(onOverlayMounted).toHaveBeenCalledExactlyOnceWith('1:0');
+    });
+
     it('reports one image replacing another as the new one, with no "nothing is mounted" in between', () => {
       const onOverlayMounted = vi.fn();
       const { rerender } = render(

@@ -105,7 +105,7 @@ export function useDrawerDismissGesture({
   const startedRevision = useSharedValue<number | null>(null);
 
   // Captured ONCE by the gesture memo — must only close over the ref so a later
-  // render's onDismiss is still reached (mirrors use-carousel-gesture).
+  // render's onDismiss is still reached.
   const onDismissRef = useRef<(revision?: number) => void>(onDismiss);
   onDismissRef.current = swipeDismiss?.onComplete ?? onDismiss;
   const commitDismiss = (revision?: number) => {
