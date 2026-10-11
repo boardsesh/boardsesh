@@ -1017,5 +1017,23 @@
     "removed": "Registro eliminado",
     "undo": "Deshacer",
     "cancelled": "Eliminación cancelada. Tu registro se ha conservado."
+  },
+  "feedbackAttachments": {
+    "addAria": "Añadir imágenes o grabaciones",
+    "removeAria": "Quitar {{name}}",
+    "attachedCount_one": "{{count}} archivo adjunto",
+    "attachedCount_other": "{{count}} archivos adjuntos",
+    "fileSize": "{{size}} MiB",
+    "publicWarning": "Las imágenes y grabaciones que adjuntes se publicarán en GitHub. Comprueba que no contengan información privada antes de enviar el informe.",
+    "limits": "Hasta 4 archivos. Cada grabación puede ocupar hasta 95 MiB.",
+    "unsupported": "Elige una imagen o una grabación MP4, MOV o WebM.",
+    "tooLarge": "Esa grabación supera los 95 MiB. Recórtala y vuelve a compartirla.",
+    "tooMany": "Puedes adjuntar 4 archivos. Se han conservado los primeros 4.",
+    "pickFailed": "No se pudo leer ese archivo. Elige otro.",
+    "uploadFailed": "No se pudieron subir tus archivos. Tu informe sigue aquí; vuelve a intentarlo.",
+    "saveFailed": "No se pudo guardar el borrador. Mantén este informe abierto y vuelve a intentarlo.",
+    "cleanupFailed": "Tu informe se ha enviado. Pulsa Enviar de nuevo para terminar de borrar este borrador.",
+    "missingDraft": "Este informe compartido ya no está disponible. Vuelve a compartir tus archivos.",
+    "receiveFailed": "No se pudieron adjuntar los archivos compartidos. Vuelve a compartirlos para intentarlo de nuevo."
   }
 }

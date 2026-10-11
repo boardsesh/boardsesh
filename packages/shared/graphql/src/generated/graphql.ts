@@ -270,6 +270,7 @@ export type AppFeedbackReport = {
   id: Scalars['ID']['output'];
   platform: Scalars['String']['output'];
   rating?: Maybe<Scalars['Int']['output']>;
+  recordingUrls: Array<Scalars['String']['output']>;
   reporter?: Maybe<AppFeedbackReporter>;
   resolvedAt?: Maybe<Scalars['String']['output']>;
   resolvedBy?: Maybe<Scalars['String']['output']>;
@@ -313,7 +314,7 @@ export type AppFeedbackStatusCounts = {
 };
 
 /**
- * Type filter for the admin feedback list. `bugs` = shake-bug/drawer-bug
+ * Type filter for the admin feedback list. `bugs` = shake-bug/drawer-bug/share-bug
  * sources, `ratings` = prompt/drawer-feedback sources, `all` = everything.
  */
 export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
@@ -10182,6 +10183,11 @@ export type SubmitAppFeedbackInput = {
   /** 1–5 star rating. Null for bug reports. */
   rating?: InputMaybe<Scalars['Int']['input']>;
   /**
+   * Keys from POST /api/feedback-recordings. Bug reports allow four combined
+   * screenshots and recordings; excess recording keys are clipped.
+   */
+  recordingKeys?: InputMaybe<Array<Scalars['String']['input']>>;
+  /**
    * Object keys returned by `POST /api/feedback-screenshots`, at most
    * FEEDBACK_SCREENSHOT_MAX_COUNT of them. Bug reports only — they become
    * `<img>` tags in the GitHub issue, so a key that isn't one we minted is
@@ -10192,7 +10198,7 @@ export type SubmitAppFeedbackInput = {
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**
    * Where the feedback originated: 'prompt' | 'drawer-feedback' (rating flows)
-   * or 'shake-bug' | 'drawer-bug' (bug reports).
+   * or 'shake-bug' | 'drawer-bug' | 'share-bug' (bug reports).
    */
   source: Scalars['String']['input'];
 };
@@ -12442,6 +12448,7 @@ export type AdminAppFeedbackQuery = {
       githubIssueNumber?: number | null;
       githubIssueUrl?: string | null;
       screenshotUrls: Array<string>;
+      recordingUrls: Array<string>;
       reporter?: {
         __typename?: 'AppFeedbackReporter';
         userId?: string | null;
@@ -12492,6 +12499,8 @@ export type UpdateAppFeedbackStatusMutation = {
     resolvedBy?: string | null;
     githubIssueNumber?: number | null;
     githubIssueUrl?: string | null;
+    screenshotUrls: Array<string>;
+    recordingUrls: Array<string>;
     reporter?: {
       __typename?: 'AppFeedbackReporter';
       userId?: string | null;
@@ -18571,6 +18580,7 @@ export const AdminAppFeedbackDocument = {
                         },
                       },
                       { kind: 'Field', name: { kind: 'Name', value: 'screenshotUrls' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'recordingUrls' } },
                     ],
                   },
                 },
@@ -18645,6 +18655,8 @@ export const UpdateAppFeedbackStatusDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'githubIssueNumber' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'githubIssueUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'screenshotUrls' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'recordingUrls' } },
                 {
                   kind: 'Field',
                   name: { kind: 'Name', value: 'reporter' },

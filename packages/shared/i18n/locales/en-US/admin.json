@@ -85,7 +85,9 @@
       "userAgent": "User agent",
       "screenshots": "Screenshots",
       "screenshotAlt": "Screenshot {{index}}",
-      "resolvedBy": "Resolved by"
+      "resolvedBy": "Resolved by",
+      "recordings": "Recordings",
+      "recordingLink": "Recording {{index}}"
     },
     "empty": "No feedback matches these filters.",
     "error": "Couldn't load feedback.",

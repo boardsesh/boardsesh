@@ -10,6 +10,7 @@ import { SubmitAppFeedbackInputSchema, UpdateAppFeedbackStatusInputSchema } from
 import { BUG_SOURCES, createFeedbackGithubIssue } from '../../../services/github-feedback';
 import { resolveGithubRepo } from '../../../lib/github-client';
 import { reportGithubMirrorDrop } from '../../../services/github-mirror-report';
+import { recordingPublicUrls } from '../../../services/feedback-recording-urls';
 import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { loadFeedbackReport } from './queries';
 import { logger } from '../../../utils/logger';
@@ -36,6 +37,7 @@ export const feedbackMutations = {
     // so a key attached to one would render nowhere and just sit on the row.
     const isBugReport = BUG_SOURCES.has(validated.source);
     const screenshotKeys = isBugReport && validated.screenshotKeys?.length ? validated.screenshotKeys : null;
+    const recordingKeys = isBugReport && validated.recordingKeys?.length ? validated.recordingKeys : null;
     const userId = ctx.userId ?? null;
 
     const rows = await db
@@ -55,6 +57,7 @@ export const feedbackMutations = {
         contactConsent,
         context,
         screenshotKeys,
+        recordingKeys,
       })
       .returning();
     const row = rows[0];
@@ -86,6 +89,7 @@ export const feedbackMutations = {
             context,
             contactConsent,
             screenshotUrls: screenshotPublicUrls(screenshotKeys),
+            recordingUrls: recordingPublicUrls(recordingKeys),
           });
 
           // `outcome?.` — same reason as the QA mirror: the issue-link write-back

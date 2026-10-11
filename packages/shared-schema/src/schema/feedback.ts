@@ -41,7 +41,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
 
     """
     Where the feedback originated: 'prompt' | 'drawer-feedback' (rating flows)
-    or 'shake-bug' | 'drawer-bug' (bug reports).
+    or 'shake-bug' | 'drawer-bug' | 'share-bug' (bug reports).
     """
     source: String!
 
@@ -75,6 +75,11 @@ export const feedbackTypeDefs = /* GraphQL */ `
     dropped rather than rendered.
     """
     screenshotKeys: [String!]
+    """
+    Keys from POST /api/feedback-recordings. Bug reports allow four combined
+    screenshots and recordings; excess recording keys are clipped.
+    """
+    recordingKeys: [String!]
   }
 
   """
@@ -89,7 +94,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
   }
 
   """
-  Type filter for the admin feedback list. \`bugs\` = shake-bug/drawer-bug
+  Type filter for the admin feedback list. \`bugs\` = shake-bug/drawer-bug/share-bug
   sources, \`ratings\` = prompt/drawer-feedback sources, \`all\` = everything.
   """
   enum AppFeedbackTypeFilter {
@@ -149,6 +154,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
     bucket has no public base URL configured (the keys are still on the row).
     """
     screenshotUrls: [String!]!
+    recordingUrls: [String!]!
   }
 
   """

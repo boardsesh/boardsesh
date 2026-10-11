@@ -28,6 +28,7 @@ export type { StorageBucket };
 // touched, which is what lets a process that never uploads an avatar run with
 // no MEDIA_* variables set at all.
 const clients = new Map<StorageBucket, S3Client>();
+const streamClients = new Map<StorageBucket, S3Client>();
 const configs = new Map<StorageBucket, BucketConfig>();
 
 /**
@@ -39,6 +40,7 @@ const configs = new Map<StorageBucket, BucketConfig>();
  */
 export function resetStorageClients(): void {
   clients.clear();
+  streamClients.clear();
   configs.clear();
 }
 
@@ -70,8 +72,9 @@ function getConfig(bucket: StorageBucket): BucketConfig {
   return config;
 }
 
-function getS3Client(bucket: StorageBucket): S3Client {
-  const cached = clients.get(bucket);
+function getS3Client(bucket: StorageBucket, streaming = false): S3Client {
+  const clientCache = streaming ? streamClients : clients;
+  const cached = clientCache.get(bucket);
   if (cached) return cached;
 
   const config = getConfig(bucket);
@@ -83,9 +86,11 @@ function getS3Client(bucket: StorageBucket): S3Client {
       secretAccessKey: config.secretAccessKey,
     },
     forcePathStyle: config.forcePathStyle,
+    // R2 rejects aws-chunked checksum trailers; preserve Content-Length on disk streams.
+    ...(streaming && { requestChecksumCalculation: 'WHEN_REQUIRED' as const }),
   });
 
-  clients.set(bucket, client);
+  clientCache.set(bucket, client);
   return client;
 }
 
@@ -216,6 +221,29 @@ export async function uploadToS3(
 
   await client.send(new PutObjectCommand(input), { abortSignal: options.abortSignal });
 
+  return { key };
+}
+
+/** Upload a bounded file stream without buffering recording bytes in memory. */
+export async function uploadStreamToS3(
+  bucket: StorageBucket,
+  body: Readable,
+  contentLength: number,
+  key: string,
+  contentType: string,
+  abortSignal?: AbortSignal,
+): Promise<{ key: string }> {
+  const config = getConfig(bucket);
+  const input: PutObjectCommandInput = {
+    Bucket: config.bucketName,
+    Key: key,
+    Body: body,
+    ContentLength: contentLength,
+    ContentType: contentType,
+    CacheControl: 'public, max-age=31536000, immutable',
+  };
+  if (config.defaultAcl !== null) input.ACL = config.defaultAcl;
+  await getS3Client(bucket, true).send(new PutObjectCommand(input), { abortSignal });
   return { key };
 }
 

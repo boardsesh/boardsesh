@@ -119,6 +119,48 @@ export interface PatchRule {
  */
 export const RULES: readonly PatchRule[] = [
   {
+    package: 'expo-share-intent',
+    file: 'plugin/build/ios/ShareExtensionViewController.swift',
+    sentinels: [
+      'await collectMediaAttachments(mediaAttachments)',
+      'boardsesh-share-',
+      'application/x-boardsesh-share-overflow',
+      'fileSize > 95 * 1024 * 1024',
+    ],
+    orderedSentinels: [
+      'private func collectMediaAttachments',
+      'for (index, attachment) in attachments.enumerated()',
+      'let item = try await attachment.loadItem',
+      'let copied = await Task.detached',
+      '}.value',
+      'sharedMedia = collectedMedia',
+      'redirectToHostApp(type: .media)',
+    ],
+    forbiddenSubstrings: ['await handleImages(', 'await handleVideos('],
+    patchedKey: 'expo-share-intent@8.0.1',
+  },
+  {
+    package: 'expo-share-intent',
+    file: 'android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt',
+    sentinels: [
+      'mediaShareMutex.withLock',
+      'backgroundCoroutineScope.launch',
+      'copyContentUriForShare(uri)',
+      'uris.take(4)',
+      'application/x-boardsesh-share-overflow',
+      'boardsesh-share-${UUID.randomUUID()}',
+      '95L * 1024L * 1024L',
+      'nameColumn >= 0',
+      'sizeColumn >= 0',
+    ],
+    forbiddenSubstrings: [
+      'arrayOf(getFileInfo(uri),',
+      'resolver.query(uri, null, null, null, null)!!',
+      'getAbsolutePath(',
+    ],
+    patchedKey: 'expo-share-intent@8.0.1',
+  },
+  {
     package: 'expo-modules-core',
     file: 'ios/Core/AppContext.swift',
     sentinels: [

@@ -89,6 +89,10 @@ export class Directory {
     return nameOf(this.path);
   }
 
+  get uri(): string {
+    return this.path;
+  }
+
   get exists(): boolean {
     return Object.prototype.hasOwnProperty.call(seed.tree, this.path);
   }
@@ -150,6 +154,14 @@ export class File {
 
   get modificationTime(): number | null {
     return this.lastModified;
+  }
+
+  copy(destination: File | Directory): void {
+    if (!this.record) throw new Error('Source file is missing');
+    const target = destination instanceof Directory ? new File(destination, this.name) : destination;
+    const parent = parentPathOf(target.path);
+    seed.tree[parent] ??= {};
+    seed.tree[parent][target.name] = { ...this.record };
   }
 
   delete(): void {

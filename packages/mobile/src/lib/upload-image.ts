@@ -1,6 +1,12 @@
 import { File } from 'expo-file-system';
 import type { UploadImage } from './upload-image.types';
 
+export async function getUploadFileSize(uri: string): Promise<number> {
+  const localFile = new File(uri);
+  if (!localFile.exists) throw new Error('Selected file is unavailable');
+  return localFile.size;
+}
+
 /** Append a replayable file for both RN fetch (release) and Expo fetch (development). */
 export async function appendUploadImage(formData: FormData, fieldName: string, image: UploadImage): Promise<void> {
   const localFile = new File(image.uri);

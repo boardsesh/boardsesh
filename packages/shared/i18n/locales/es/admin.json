@@ -198,7 +198,9 @@
       "userAgent": "Agente de usuario",
       "screenshots": "Capturas de pantalla",
       "screenshotAlt": "Captura de pantalla {{index}}",
-      "resolvedBy": "Resuelto por"
+      "resolvedBy": "Resuelto por",
+      "recordings": "Grabaciones",
+      "recordingLink": "Grabación {{index}}"
     },
     "empty": "Ningún comentario coincide con estos filtros.",
     "error": "No se pudieron cargar los comentarios.",

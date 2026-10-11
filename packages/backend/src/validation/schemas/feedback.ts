@@ -1,8 +1,13 @@
-import { FEEDBACK_SCREENSHOT_KEY_PATTERN, FEEDBACK_SCREENSHOT_MAX_COUNT } from '@boardsesh/shared-schema';
+import {
+  FEEDBACK_SCREENSHOT_KEY_PATTERN,
+  FEEDBACK_SCREENSHOT_MAX_COUNT,
+  FEEDBACK_RECORDING_KEY_PATTERN,
+  FEEDBACK_ATTACHMENT_MAX_COUNT,
+} from '@boardsesh/shared-schema';
 import { z } from 'zod';
 
 const RATING_SOURCES = ['prompt', 'drawer-feedback'] as const;
-const BUG_SOURCES = ['shake-bug', 'drawer-bug'] as const;
+const BUG_SOURCES = ['shake-bug', 'drawer-bug', 'share-bug'] as const;
 
 const COMMENT_MAX = 2000;
 // An abuse bound, not a domain bound. Real boards carry a handful of sets; the
@@ -83,7 +88,16 @@ export const SubmitAppFeedbackInputSchema = z
           keys.length > FEEDBACK_SCREENSHOT_MAX_COUNT ? keys.slice(0, FEEDBACK_SCREENSHOT_MAX_COUNT) : keys,
         ),
     ),
+    recordingKeys: bestEffort(z.array(z.string().regex(FEEDBACK_RECORDING_KEY_PATTERN))),
   })
+  .transform((report) => ({
+    ...report,
+    recordingKeys:
+      report.recordingKeys?.slice(
+        0,
+        Math.max(0, FEEDBACK_ATTACHMENT_MAX_COUNT - (report.screenshotKeys?.length ?? 0)),
+      ) ?? null,
+  }))
   .refine((data) => !(RATING_SOURCES as readonly string[]).includes(data.source) || (data.rating ?? null) !== null, {
     message: 'rating is required for rating-source feedback',
     path: ['rating'],

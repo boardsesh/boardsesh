@@ -1,0 +1,588 @@
+diff --git a/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt b/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
+index ff5b1001e7bb3443482727cec48c22579465c73b..c0996cbf2c4d4110201a8c5b4f1c8273e421e710 100644
+--- a/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
++++ b/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
+@@ -10,28 +10,25 @@ package expo.modules.shareintent
+ import android.annotation.SuppressLint
+ import android.app.Activity
+ import android.content.ContentResolver
+-import android.content.ContentUris
+ import android.content.Context
+ import android.content.Intent
+-import android.database.Cursor
+ import android.graphics.BitmapFactory
+ import android.media.MediaMetadataRetriever;
+ import android.net.Uri
+ import android.os.Build
+-import android.os.Environment
+ import android.os.Parcelable
+ import android.os.Bundle
+-import android.provider.DocumentsContract
+ import android.provider.OpenableColumns
+-import android.provider.MediaStore
+-import android.util.Log
+ import android.webkit.MimeTypeMap
+ import expo.modules.kotlin.exception.Exceptions
+ import expo.modules.kotlin.modules.Module
+ import expo.modules.kotlin.modules.ModuleDefinition
+ import java.io.File
+ import java.io.FileOutputStream
+-import java.util.Date
++import java.util.UUID
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
+ 
+ 
+ class ExpoShareIntentModule : Module() {
+@@ -43,6 +40,7 @@ class ExpoShareIntentModule : Module() {
+ 
+     companion object {
+         private var instance: ExpoShareIntentModule? = null
++        private val mediaShareMutex = Mutex()
+ 
+         private fun notifyShareIntent(value: Any) {
+             notifyState("pending")
+@@ -63,16 +61,29 @@ class ExpoShareIntentModule : Module() {
+                 notifyError("Cannot get resolver (getFileInfo)")
+                 return mapOf(
+                     "contentUri" to uri.toString(),
+-                    "filePath" to instance?.getAbsolutePath(uri),
++                    "filePath" to null,
+                 )
+             }
+-            val queryResult: Cursor = resolver.query(uri, null, null, null, null)!!
+-            queryResult.moveToFirst()
+-            val fileName = queryResult.getString(queryResult.getColumnIndex(OpenableColumns.DISPLAY_NAME))
+-            val fileSize = queryResult.getString(queryResult.getColumnIndex(OpenableColumns.SIZE))
+-            queryResult.close()
+-
+-            val mimeType = resolver.getType(uri)!!
++            var fileName: String? = null
++            var fileSize: String? = null
++            resolver.query(uri, null, null, null, null)?.use { cursor ->
++                if (cursor.moveToFirst()) {
++                    val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
++                    val sizeColumn = cursor.getColumnIndex(OpenableColumns.SIZE)
++                    if (nameColumn >= 0 && !cursor.isNull(nameColumn)) fileName = cursor.getString(nameColumn)
++                    if (sizeColumn >= 0 && !cursor.isNull(sizeColumn)) fileSize = cursor.getString(sizeColumn)
++                }
++            }
++            val mimeType = resolver.getType(uri) ?: "application/octet-stream"
++            // Oversized recordings and unrelated documents need no cache copy.
++            if ((!mimeType.startsWith("image/") && !mimeType.startsWith("video/")) ||
++                (mimeType.startsWith("video/") && (fileSize?.toLongOrNull() ?: 0L) > 95L * 1024L * 1024L)) {
++                return mapOf("contentUri" to uri.toString(), "fileName" to fileName,
++                    "fileSize" to fileSize, "mimeType" to mimeType)
++            }
++            val cachedPath = instance?.copyContentUriForShare(uri)
++            if (fileSize == null && cachedPath != null) fileSize = File(cachedPath).length().toString()
++            if (fileName == null) fileName = uri.lastPathSegment ?: "shared-media"
+ 
+             var mediaWidth: String? = null;
+             var mediaHeight: String? = null;
+@@ -81,27 +92,33 @@ class ExpoShareIntentModule : Module() {
+                 val options = BitmapFactory.Options().apply {
+                     inJustDecodeBounds = true
+                 }
+-                BitmapFactory.decodeStream(resolver.openInputStream(uri), null, options)
++                resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                 mediaHeight = options.outHeight.toString()
+                 mediaWidth = options.outWidth.toString()
+             }
+-            if (mimeType.startsWith("video/")) {
++            if (mimeType.startsWith("video/") && cachedPath != null) {
+                 val retriever = MediaMetadataRetriever()
+-                retriever.setDataSource(instance?.getAbsolutePath(uri))
+-                mediaWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt().toString() ?: null
+-                mediaHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt().toString() ?: null
+-                // Check orientation and flip size if required
+-                val metaRotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0;
+-                if (metaRotation == 90 || metaRotation == 270) {
+-                    mediaWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt().toString() ?: null
+-                    mediaHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt().toString() ?: null
++                try {
++                    retriever.setDataSource(cachedPath)
++                    mediaWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
++                    mediaHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
++                    val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
++                    if (rotation == 90 || rotation == 270) {
++                        val originalWidth = mediaWidth
++                        mediaWidth = mediaHeight
++                        mediaHeight = originalWidth
++                    }
++                    mediaDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
++                } catch (_: Exception) {
++                    // Metadata is optional; the app/backend validate the actual file.
++                } finally {
++                    retriever.release()
+                 }
+-                mediaDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toInt().toString() ?: null
+             }
+ 
+             return mapOf(
+                     "contentUri" to uri.toString(),
+-                    "filePath" to instance?.getAbsolutePath(uri),
++                    "filePath" to cachedPath,
+                     "fileName" to fileName,
+                     "fileSize" to fileSize,
+                     "mimeType" to mimeType,
+@@ -111,6 +128,25 @@ class ExpoShareIntentModule : Module() {
+             )
+         }
+ 
++        private fun notifyMediaShare(uris: List<Uri>) {
++            val module = instance ?: return
++            module.appContext.backgroundCoroutineScope.launch {
++                mediaShareMutex.withLock {
++                    if (instance !== module) return@withLock
++                    try {
++                        val files = uris.take(4).map { getFileInfo(it) }.toMutableList()
++                        if (uris.size > 4) {
++                            files.add(mapOf("contentUri" to uris[4].toString(), "fileName" to "overflow",
++                                "fileSize" to "0", "mimeType" to "application/x-boardsesh-share-overflow"))
++                        }
++                        if (instance === module) notifyShareIntent(mapOf("files" to files, "type" to "file"))
++                    } catch (exception: Exception) {
++                        if (instance === module) notifyError("Cannot read shared media: ${exception.message}")
++                    }
++                }
++            }
++        }
++
+         fun handleShareIntent(intent: Intent) {
+             val activity = instance?.currentActivity
+             if (activity != null && !activity.isTaskRoot) {
+@@ -142,14 +178,14 @@ class ExpoShareIntentModule : Module() {
+                 if (intent.action == Intent.ACTION_SEND) {
+                     val uri = intent.parcelable<Uri>(Intent.EXTRA_STREAM);
+                     if (uri != null) {
+-                        notifyShareIntent(mapOf( "files" to arrayOf(getFileInfo(uri), "type" to "file")))
++                        notifyMediaShare(listOf(uri))
+                     } else {
+                         notifyError("empty uri for file sharing: " + intent.action)
+                     }
+                 } else if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+                     val uris = intent.parcelableArrayList<Uri>(Intent.EXTRA_STREAM)
+                     if (uris != null) {
+-                        notifyShareIntent(mapOf( "files" to uris.map { getFileInfo(it) }, "type" to "file"))
++                        notifyMediaShare(uris)
+                     } else {
+                         notifyError("empty uris array for file sharing: " + intent.action)
+                     }
+@@ -209,169 +245,19 @@ class ExpoShareIntentModule : Module() {
+         }
+     }
+ 
+-    /**
+-     * Get a file path from a Uri. This will get the the path for Storage Access
+-     * Framework Documents, as well as the _data field for the MediaStore and
+-     * other file-based ContentProviders.
+-     *
+-     * @param uri The Uri to query.
+-     * @author paulburke
+-     */
+-    fun getAbsolutePath(uri: Uri): String? {
+-        try {
+-            // DocumentProvider
+-            if (DocumentsContract.isDocumentUri(context, uri)) {
+-                // ExternalStorageProvider
+-                if (isExternalStorageDocument(uri)) {
+-                    val docId = DocumentsContract.getDocumentId(uri)
+-                    val split = docId.split(":".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+-                    val type = split[0]
+-
+-                    return if ("primary".equals(type, ignoreCase = true)) {
+-                        Environment.getExternalStorageDirectory().toString() + "/" + split[1]
+-                    } else {
+-                        getDataColumn(uri, null, null)
+-                    }
+-                } else if (isDownloadsDocument(uri)) {
+-                    return try {
+-                        val id = DocumentsContract.getDocumentId(uri)
+-                        val contentUri = ContentUris.withAppendedId(
+-                                Uri.parse("content://downloads/public_downloads"), java.lang.Long.valueOf(id))
+-
+-                        getDataColumn(contentUri, null, null)
+-                    } catch (exception: Exception) {
+-                        getDataColumn(uri, null, null)
+-                    }
+-                } else if (isMediaDocument(uri)) {
+-                    val docId = DocumentsContract.getDocumentId(uri)
+-                    val split = docId.split(":".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+-                    val type = split[0]
+-
+-                    var contentUri: Uri? = null
+-                    when (type) {
+-                        "image" -> contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+-                        "video" -> contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+-                        "audio" -> contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+-                    }
+-
+-                    if (contentUri == null) return null
+-
+-                    val selection = "_id=?"
+-                    val selectionArgs = arrayOf(split[1])
+-                    return getDataColumn(contentUri, selection, selectionArgs)
+-                }// MediaProvider
+-                // DownloadsProvider
+-            } else if ("content".equals(uri.scheme, ignoreCase = true)) {
+-                return getDataColumn(uri, null, null)
+-            }
+-
+-            return uri.path
+-        } catch (e: Exception) {
+-            e.printStackTrace()
+-            notifyError("cannot retreive absoluteFilePath for $uri: ${e.message}")
+-            return null
+-        }
+-    }
+-
+-    /**
+-     * Get the value of the data column for this Uri. This is useful for
+-     * MediaStore Uris, and other file-based ContentProviders.
+-     *
+-     * @param uri The Uri to query.
+-     * @param selection (Optional) Filter used in the query.
+-     * @param selectionArgs (Optional) Selection arguments used in the query.
+-     * @return The value of the _data column, which is typically a file path.
+-     */
+-    private fun getDataColumn(uri: Uri, selection: String?,
+-                              selectionArgs: Array<String>?): String? {
+-        val resolver: ContentResolver? = instance?.currentActivity?.contentResolver
+-        ?: instance?.context?.contentResolver
+-        if (resolver == null) {
+-            notifyError("Cannot get resolver (getDataColumn)")
+-            return null
+-        }
+-        if (uri.authority != null) {
+-            var cursor: Cursor? = null
+-            val column = "_display_name"
+-            val projection = arrayOf(column)
+-            var targetFile: File? = null
+-            try {
+-                cursor = resolver.query(uri, projection, selection, selectionArgs, null)
+-                if (cursor != null && cursor.moveToFirst()) {
+-                    val columnIndex = cursor.getColumnIndexOrThrow(column)
+-                    val fileName = cursor.getString(columnIndex)
+-                    Log.i("FileDirectory", "File name: $fileName")
+-                    val safeName = fileName?.let { File(it).name }.orEmpty()
+-                    if (safeName.isNotEmpty()) {
+-                        val candidate = File(context.cacheDir, safeName)
+-                        val cacheRoot = context.cacheDir.canonicalPath + File.separator
+-                        if (candidate.canonicalPath.startsWith(cacheRoot)) {
+-                            targetFile = candidate
+-                        }
+-                    }                }
+-            } finally {
+-                cursor?.close()
+-            }
+-
+-            if (targetFile == null) {
+-                val mimeType = resolver.getType(uri)
+-                val prefix = with(mimeType ?: "") {
+-                    when {
+-                        startsWith("image") -> "IMG"
+-                        startsWith("video") -> "VID"
+-                        else -> "FILE"
+-                    }
+-                }
+-                val type = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+-                targetFile = File(context.cacheDir, "${prefix}_${Date().time}.$type")
+-            }
+-
+-            resolver.openInputStream(uri)?.use { input ->
+-                FileOutputStream(targetFile).use { fileOut ->
+-                    input.copyTo(fileOut)
+-                }
+-            }
+-            return targetFile.path
+-        }
+-
+-        var cursor: Cursor? = null
+-        val column = "_data"
+-        val projection = arrayOf(column)
+-
++    private fun copyContentUriForShare(uri: Uri): String? {
++        val resolver = currentActivity?.contentResolver ?: context.contentResolver
++        val mimeType = resolver.getType(uri)
++        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
++        val targetFile = File(context.cacheDir, "boardsesh-share-${UUID.randomUUID()}.$extension")
++        val input = resolver.openInputStream(uri) ?: return null
+         try {
+-            cursor = resolver.query(uri, projection, selection, selectionArgs, null)
+-            if (cursor != null && cursor.moveToFirst()) {
+-                val columnIndex = cursor.getColumnIndexOrThrow(column)
+-                return cursor.getString(columnIndex)
+-            }
+-        } finally {
+-            cursor?.close()
++            input.use { source -> FileOutputStream(targetFile).use { target -> source.copyTo(target) } }
++        } catch (exception: Exception) {
++            targetFile.delete()
++            throw exception
+         }
+-        return null
++        return targetFile.path
+     }
+ 
+-
+-    /**
+-     * @param uri The Uri to check.
+-     * @return Whether the Uri authority is ExternalStorageProvider.
+-     */
+-    private fun isExternalStorageDocument(uri: Uri): Boolean {
+-        return "com.android.externalstorage.documents" == uri.authority
+-    }
+-
+-    /**
+-     * @param uri The Uri to check.
+-     * @return Whether the Uri authority is DownloadsProvider.
+-     */
+-    private fun isDownloadsDocument(uri: Uri): Boolean {
+-        return "com.android.providers.downloads.documents" == uri.authority
+-    }
+-
+-    /**
+-     * @param uri The Uri to check.
+-     * @return Whether the Uri authority is MediaProvider.
+-     */
+-    private fun isMediaDocument(uri: Uri): Boolean {
+-        return "com.android.providers.media.documents" == uri.authority
+-    }
+ }
+diff --git a/plugin/build/ios/ShareExtensionViewController.swift b/plugin/build/ios/ShareExtensionViewController.swift
+index f1f4b726dfe3a7bd9e341e74c6d09b22becddf2f..a0d1b6bfe7a5919a8cc954d5adb1bb44103795c9 100644
+--- a/plugin/build/ios/ShareExtensionViewController.swift
++++ b/plugin/build/ios/ShareExtensionViewController.swift
+@@ -52,12 +52,15 @@ class ShareViewController: UIViewController {
+         dismissWithError(message: "No content found")
+         return
+       }
++      let mediaAttachments = attachments.filter {
++        $0.hasItemConformingToTypeIdentifier(imageContentType) || $0.hasItemConformingToTypeIdentifier(videoContentType)
++      }
++      if !mediaAttachments.isEmpty {
++        await collectMediaAttachments(mediaAttachments)
++        return
++      }
+       for (index, attachment) in (attachments).enumerated() {
+-        if attachment.hasItemConformingToTypeIdentifier(imageContentType) {
+-          await handleImages(content: content, attachment: attachment, index: index)
+-        } else if attachment.hasItemConformingToTypeIdentifier(videoContentType) {
+-          await handleVideos(content: content, attachment: attachment, index: index)
+-        } else if attachment.hasItemConformingToTypeIdentifier(vcardContentType) {
++        if attachment.hasItemConformingToTypeIdentifier(vcardContentType) {
+           await handleVCard(content: content, attachment: attachment, index: index) 
+         } else if attachment.hasItemConformingToTypeIdentifier(fileURLType) {
+           await handleFiles(content: content, attachment: attachment, index: index)
+@@ -237,93 +240,77 @@ class ShareViewController: UIViewController {
+   }
+ 
+ 
+-  private func handleImages(content: NSExtensionItem, attachment: NSItemProvider, index: Int) async {
+-    Task.detached {
++  // Wait for every provider before publishing media in selection order.
++  private func collectMediaAttachments(_ attachments: [NSItemProvider]) async {
++    var collectedMedia: [SharedMediaFile] = []
++    for (index, attachment) in attachments.enumerated() {
++      if index >= 4 {
++        if let first = collectedMedia.first {
++          collectedMedia.append(SharedMediaFile(path: first.path, thumbnail: nil,
++            fileName: "overflow", fileSize: 0, width: nil, height: nil, duration: nil,
++            mimeType: "application/x-boardsesh-share-overflow", type: .file))
++        }
++        break
++      }
+       do {
+-        let item = try await attachment.loadItem(forTypeIdentifier: self.imageContentType)
+-        
+-        Task { @MainActor in
+-          var url: URL? = nil
+-          
+-          if let dataURL = item as? URL {
+-            url = dataURL
+-          } else if let imageData = item as? UIImage {
+-            url = self.saveScreenshot(imageData)
+-            if url == nil {
+-              NSLog("[ERROR] handleImages: saveScreenshot returned nil")
+-            }
+-          } else if let data = item as? Data {
+-            if let image = UIImage(data: data) {
+-              url = self.saveScreenshot(image)
+-            } else {
+-              NSLog("[ERROR] handleImages: Failed to create UIImage from Data")
+-            }
+-          } else {
+-            NSLog("[ERROR] handleImages: Item is unexpected type: \(type(of: item))")
+-          }
+-
+-          guard let safeURL = url else {
+-            NSLog("[ERROR] handleImages: Failed to get URL for image item")
+-            self.dismissWithError(message: "Failed to process image")
+-            return
++        let isVideo = attachment.hasItemConformingToTypeIdentifier(videoContentType)
++        let identifier = isVideo ? videoContentType : imageContentType
++        let item = try await attachment.loadItem(forTypeIdentifier: identifier)
++        var sourceURL = item as? URL
++        if !isVideo, sourceURL == nil {
++          if let image = item as? UIImage {
++            sourceURL = saveScreenshot(image)
++          } else if let bytes = item as? Data, let image = UIImage(data: bytes) {
++            sourceURL = saveScreenshot(image)
+           }
+-
+-          var pixelWidth: Int? = nil
+-          var pixelHeight: Int? = nil
+-          if let imageSource = CGImageSourceCreateWithURL(safeURL as CFURL, nil) {
+-            if let imageProperties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil)
+-              as Dictionary?
+-            {
+-              pixelWidth = imageProperties[kCGImagePropertyPixelWidth] as? Int
+-              pixelHeight = imageProperties[kCGImagePropertyPixelHeight] as? Int
+-              // Check orientation and flip size if required
+-              if let orientationNumber = imageProperties[kCGImagePropertyOrientation] as! CFNumber?
+-              {
+-                var orientation: Int = 0
+-                CFNumberGetValue(orientationNumber, .intType, &orientation)
+-                if orientation > 4 {
+-                  let temp: Int? = pixelWidth
+-                  pixelWidth = pixelHeight
+-                  pixelHeight = temp
+-                }
+-              }
+-            }
+-          }
+-
+-          // Always copy
+-          let fileName = self.getFileName(from: safeURL, type: .image)
+-          let fileExtension = self.getExtension(from: safeURL, type: .image)
+-          let fileSize = self.getFileSize(from: safeURL)
+-          let mimeType = safeURL.mimeType(ext: fileExtension)
+-          let newName = "\(UUID().uuidString).\(fileExtension)"
+-          let newPath = FileManager.default
+-            .containerURL(
+-              forSecurityApplicationGroupIdentifier: self.hostAppGroupIdentifier)!
+-            .appendingPathComponent(newName)
+-          
+-          let copied = Self.copyFile(at: safeURL, to: newPath)
+-          
+-          if copied {
+-            self.sharedMedia.append(
+-              SharedMediaFile(
+-                path: newPath.absoluteString, thumbnail: nil, fileName: fileName,
+-                fileSize: fileSize, width: pixelWidth, height: pixelHeight, duration: nil,
+-                mimeType: mimeType, type: .image))
+-          }
+-
+-          // If this is the last item, save imagesData in userDefaults and redirect to host app
+-          if index == (content.attachments?.count)! - 1 {
+-            let userDefaults = UserDefaults(suiteName: self.hostAppGroupIdentifier)
+-            userDefaults?.set(self.toData(data: self.sharedMedia), forKey: self.sharedKey)
+-            userDefaults?.synchronize()
+-            self.redirectToHostApp(type: .media)
++        }
++        guard let sourceURL,
++          let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: hostAppGroupIdentifier)
++        else {
++          dismissWithError(message: "Cannot load media content")
++          return
++        }
++        let mediaType: SharedMediaType = isVideo ? .video : .image
++        let fileName = getFileName(from: sourceURL, type: mediaType)
++        let fileExtension = getExtension(from: sourceURL, type: mediaType)
++        let fileSize = getFileSize(from: sourceURL)
++        if isVideo, let fileSize, fileSize > 95 * 1024 * 1024 {
++          // A metadata-only descriptor lets the app explain the cap without copying.
++          collectedMedia.append(SharedMediaFile(path: sourceURL.absoluteString, thumbnail: nil,
++            fileName: fileName, fileSize: fileSize,
++            width: nil, height: nil, duration: nil,
++            mimeType: sourceURL.mimeType(ext: fileExtension), type: mediaType))
++          continue
++        }
++        let destinationURL = containerURL.appendingPathComponent("boardsesh-share-\(UUID().uuidString).\(fileExtension)")
++        let copied = await Task.detached(priority: .userInitiated) {
++          let copied = Self.copyFile(at: sourceURL, to: destinationURL)
++          if copied, sourceURL.deletingLastPathComponent() == containerURL,
++            sourceURL.lastPathComponent.hasPrefix("screenshot_") {
++            try? FileManager.default.removeItem(at: sourceURL)
+           }
++          return copied
++        }.value
++        guard copied else {
++          dismissWithError(message: "Cannot copy media content")
++          return
+         }
++        // Optional metadata/thumbnail generation cannot block recording receipt.
++        collectedMedia.append(SharedMediaFile(
++          path: destinationURL.absoluteString, thumbnail: nil,
++          fileName: fileName,
++          fileSize: getFileSize(from: destinationURL), width: nil, height: nil,
++          duration: nil, mimeType: destinationURL.mimeType(ext: fileExtension), type: mediaType))
+       } catch {
+-        NSLog("[ERROR] handleImages: Exception loading image item: \(error)")
+-        await self.dismissWithError(message: "Cannot load image content: \(error.localizedDescription)")
++        dismissWithError(message: "Cannot load media content: \(error.localizedDescription)")
++        return
+       }
+     }
++    sharedMedia = collectedMedia
++    let userDefaults = UserDefaults(suiteName: hostAppGroupIdentifier)
++    userDefaults?.set(toData(data: collectedMedia), forKey: sharedKey)
++    userDefaults?.synchronize()
++    redirectToHostApp(type: .media)
+   }
+ 
+   private func documentDirectoryPath() -> URL? {
+@@ -368,51 +355,6 @@ class ShareViewController: UIViewController {
+     }
+   }
+ 
+-  private func handleVideos(content: NSExtensionItem, attachment: NSItemProvider, index: Int) async
+-  {
+-    Task.detached {
+-      if let url = try? await attachment.loadItem(forTypeIdentifier: self.videoContentType) as? URL
+-      {
+-        Task { @MainActor in
+-
+-          // Always copy
+-          let fileName = self.getFileName(from: url, type: .video)
+-          let fileExtension = self.getExtension(from: url, type: .video)
+-          let fileSize = self.getFileSize(from: url)
+-          let mimeType = url.mimeType(ext: fileExtension)
+-          let newName = "\(UUID().uuidString).\(fileExtension)"
+-          let newPath = FileManager.default
+-            .containerURL(
+-              forSecurityApplicationGroupIdentifier: self.hostAppGroupIdentifier)!
+-            .appendingPathComponent(newName)
+-          let copied = Self.copyFile(at: url, to: newPath)
+-          if copied {
+-            guard
+-              let sharedFile = self.getSharedMediaFile(
+-                forVideo: newPath, fileName: fileName, fileSize: fileSize, mimeType: mimeType)
+-            else {
+-              return
+-            }
+-            self.sharedMedia.append(sharedFile)
+-          }
+-
+-          // If this is the last item, save imagesData in userDefaults and redirect to host app
+-          if index == (content.attachments?.count)! - 1 {
+-            let userDefaults = UserDefaults(suiteName: self.hostAppGroupIdentifier)
+-            userDefaults?.set(self.toData(data: self.sharedMedia), forKey: self.sharedKey)
+-            userDefaults?.synchronize()
+-            self.redirectToHostApp(type: .media)
+-          }
+-
+-        }
+-      } else {
+-        NSLog("[ERROR] Cannot load video content !\(String(describing: content))")
+-        await self.dismissWithError(
+-          message: "Cannot load video content \(String(describing: content))")
+-      }
+-    }
+-  }
+-
+   private func handlePdf(content: NSExtensionItem, attachment: NSItemProvider, index: Int) async {
+     Task.detached {
+       if let url = try? await attachment.loadItem(forTypeIdentifier: self.pdfContentType) as? URL {

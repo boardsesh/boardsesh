@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { AppFeedbackReport, ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import { feedbackQueries } from '../queries';
 import { feedbackMutations } from '../mutations';
+import { resetStorageClients } from '../../../../storage/s3';
 
 /**
  * Real-DB coverage for the admin feedback dashboard: the adminAppFeedback list
@@ -85,6 +86,11 @@ beforeEach(async () => {
   await insertRole(ADMIN, 'admin', null);
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+  resetStorageClients();
+});
+
 describe('adminAppFeedback auth gate', () => {
   it('rejects an unauthenticated caller', async () => {
     await expect(feedbackQueries.adminAppFeedback(null, { input: {} }, anonCtx())).rejects.toThrow(
@@ -124,6 +130,33 @@ describe('adminAppFeedback listing', () => {
     expect(newer.reporter).toBeNull(); // anonymous row
     expect(older.reporter?.email).toBe('fb-reporter@test.com');
     expect(older.reporter?.userId).toBe(REPORTER);
+  });
+
+  it('lists share-bug reports with recordings and retains attachments after status changes', async () => {
+    vi.stubEnv('MEDIA_S3_BUCKET_NAME', 'boardsesh-user-media');
+    vi.stubEnv('MEDIA_AWS_ENDPOINT_URL', 'https://acct123.r2.cloudflarestorage.com');
+    vi.stubEnv('MEDIA_AWS_REGION', 'auto');
+    vi.stubEnv('MEDIA_AWS_ACCESS_KEY_ID', 'media-key');
+    vi.stubEnv('MEDIA_AWS_SECRET_ACCESS_KEY', 'media-secret');
+    vi.stubEnv('MEDIA_PUBLIC_BASE_URL', 'https://media.boardsesh.com');
+    resetStorageClients();
+    const id = await insertFeedback({ source: 'share-bug', comment: 'shared recording report' });
+    const screenshotKey = 'feedback-screenshots/11111111-2222-4333-8444-555555555555.jpg';
+    const recordingKey = 'feedback-recordings/11111111-2222-4333-8444-555555555555.mov';
+    await db.execute(
+      sql`UPDATE app_feedback SET screenshot_keys = ${JSON.stringify([screenshotKey])}::jsonb, recording_keys = ${JSON.stringify([recordingKey])}::jsonb WHERE id = ${id}`,
+    );
+    const result = await feedbackQueries.adminAppFeedback(null, { input: { type: 'bugs' } }, authCtx(ADMIN));
+    expect(result.totalCount).toBe(1);
+    const updated = await feedbackMutations.updateAppFeedbackStatus(
+      null,
+      { input: { id: String(id), status: 'in_progress' } },
+      authCtx(ADMIN),
+    );
+    expect(updated.screenshotUrls).toEqual([`https://media.boardsesh.com/${screenshotKey}`]);
+    expect(updated.recordingUrls).toEqual([`https://media.boardsesh.com/${recordingKey}`]);
+    expect(updated.screenshotUrls).toEqual(result.reports[0].screenshotUrls);
+    expect(updated.recordingUrls).toEqual(result.reports[0].recordingUrls);
   });
 
   it('filters by type (bugs vs ratings)', async () => {

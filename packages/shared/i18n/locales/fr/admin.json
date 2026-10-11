@@ -85,7 +85,9 @@
       "userAgent": "Agent utilisateur",
       "screenshots": "Captures d'écran",
       "screenshotAlt": "Capture d'écran {{index}}",
-      "resolvedBy": "Résolu par"
+      "resolvedBy": "Résolu par",
+      "recordings": "Enregistrements",
+      "recordingLink": "Enregistrement {{index}}"
     },
     "empty": "Aucun retour ne correspond à ces filtres.",
     "error": "Impossible de charger les retours.",

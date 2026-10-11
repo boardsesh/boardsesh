@@ -1421,7 +1421,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "resolved_by" text REFERENCES "users"("id") ON DELETE SET NULL,
     "github_issue_number" integer,
     "github_issue_url" text,
-    "screenshot_keys" jsonb
+    "screenshot_keys" jsonb,
+    "recording_keys" jsonb
   );
   CREATE INDEX IF NOT EXISTS "app_feedback_created_at_idx" ON "app_feedback" ("created_at");
   CREATE INDEX IF NOT EXISTS "app_feedback_user_idx" ON "app_feedback" ("user_id");

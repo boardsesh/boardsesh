@@ -701,8 +701,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // Makes Boardsesh a share target so a beta video link shared from
       // Instagram/TikTok (the OS share sheet) opens the app. iOS gets a no-UI
       // Share Extension that redirects into the host app; Android gets an
-      // ACTION_SEND text intent filter. Restricted to links/text only (no
-      // image/movie/file activation rules) so it never appears for raw media.
+      // ACTION_SEND filters. Links open the beta picker; images and recordings
+      // open a bug report with the shared media attached.
       // iosAppGroupIdentifier reuses the existing group.com.boardsesh.app (also
       // the plugin default of group.<bundleId>) shared with the widget target;
       // ./plugins/with-share-intent-app-group-dedup collapses the duplicate the
@@ -728,10 +728,14 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           iosActivationRules: {
             NSExtensionActivationSupportsWebURLWithMaxCount: 1,
             NSExtensionActivationSupportsText: true,
+            NSExtensionActivationSupportsImageWithMaxCount: 4,
+            NSExtensionActivationSupportsMovieWithMaxCount: 4,
           },
-          iosShareExtensionName: 'Boardsesh Beta',
+          iosShareExtensionName: 'Boardsesh Share',
           iosAppGroupIdentifier: 'group.com.boardsesh.app',
-          androidIntentFilters: ['text/*'],
+          androidIntentFilters: ['text/*', 'image/*', 'video/*'],
+          // Mixed selections use */*; the receiver validates every file.
+          androidMultiIntentFilters: ['image/*', 'video/*', '*/*'],
         },
       ],
       // Signs the Android `release` build type with our keystore when the

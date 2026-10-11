@@ -1017,5 +1017,23 @@
     "removed": "Entrée supprimée",
     "undo": "Annuler",
     "cancelled": "Suppression annulée. Ton entrée a été conservée."
+  },
+  "feedbackAttachments": {
+    "addAria": "Ajouter des images ou des enregistrements",
+    "removeAria": "Retirer {{name}}",
+    "attachedCount_one": "{{count}} fichier joint",
+    "attachedCount_other": "{{count}} fichiers joints",
+    "fileSize": "{{size}} MiB",
+    "publicWarning": "Les images et enregistrements joints seront publiés sur GitHub. Vérifie qu’ils ne contiennent aucune information privée avant d’envoyer le signalement.",
+    "limits": "Jusqu’à 4 fichiers. Chaque enregistrement peut peser jusqu’à 95 MiB.",
+    "unsupported": "Choisis une image ou un enregistrement MP4, MOV ou WebM.",
+    "tooLarge": "Cet enregistrement dépasse 95 MiB. Raccourcis-le, puis partage-le à nouveau.",
+    "tooMany": "Tu peux joindre 4 fichiers. Les 4 premiers ont été conservés.",
+    "pickFailed": "Impossible de lire ce fichier. Choisis-en un autre.",
+    "uploadFailed": "Impossible d’importer tes fichiers. Ton signalement est toujours ici ; réessaie.",
+    "saveFailed": "Impossible d’enregistrer ton brouillon. Garde ce signalement ouvert et réessaie.",
+    "cleanupFailed": "Ton signalement a été envoyé. Appuie à nouveau sur Envoyer pour effacer ce brouillon.",
+    "missingDraft": "Ce signalement partagé n’est plus disponible. Partage à nouveau tes fichiers.",
+    "receiveFailed": "Impossible de joindre les fichiers partagés. Partage-les à nouveau pour réessayer."
   }
 }

@@ -52,7 +52,7 @@ const COLUMN_COUNT = 8;
 const STATUS_ORDER: AppFeedbackStatus[] = ['new', 'in_progress', 'resolved', 'wont_fix'];
 const TYPE_ORDER: AppFeedbackTypeFilter[] = ['bugs', 'ratings', 'all'];
 const EMPTY_COUNTS: AppFeedbackStatusCounts = { new: 0, inProgress: 0, resolved: 0, wontFix: 0 };
-const BUG_SOURCES = new Set(['shake-bug', 'drawer-bug']);
+const BUG_SOURCES = new Set(['shake-bug', 'drawer-bug', 'share-bug']);
 
 type StatusFilter = AppFeedbackStatus | 'all';
 type Translate = ReturnType<typeof useTranslation>['t'];
@@ -532,6 +532,31 @@ export default function FeedbackPanel() {
                                   </MuiLink>
                                 ))}
                               </Box>
+                            </Box>
+                          )}
+                          {report.recordingUrls.length > 0 && (
+                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                              <Typography
+                                variant="caption"
+                                sx={{ fontWeight: 600, color: 'var(--neutral-500)', minWidth: 90 }}
+                              >
+                                {t('feedback.detail.recordings')}
+                              </Typography>
+                              {report.recordingUrls.map((url, index) => (
+                                <Stack key={url} spacing={1}>
+                                  <Box
+                                    component="video"
+                                    src={url}
+                                    controls
+                                    preload="metadata"
+                                    aria-label={t('feedback.detail.recordingLink', { index: index + 1 })}
+                                    sx={{ width: 240, maxWidth: '100%', borderRadius: 'var(--border-radius-sm)' }}
+                                  />
+                                  <MuiLink href={url} target="_blank" rel="noopener noreferrer" download>
+                                    {t('feedback.detail.recordingLink', { index: index + 1 })}
+                                  </MuiLink>
+                                </Stack>
+                              ))}
                             </Box>
                           )}
                           {report.resolvedBy && (

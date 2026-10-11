@@ -9,6 +9,7 @@ export * from './beta-video-url';
 export * from './caption-climb-match';
 export * from './image-sizes';
 export * from './feedback-screenshots';
+export * from './feedback-recordings';
 export * from './aurora-import';
 export * from './moonboard-import';
 export * from './instagram-caption-parse';
