@@ -13,7 +13,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'crew',
         fromMark: 'invite',
         label: 'Scan to join',
-        anchor: 'invite-qr',
+        focus: { x: 0.18, y: 0.65, width: 0.64, height: 0.29 },
         overview: true,
       },
       {
@@ -24,7 +24,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'crew',
         fromMark: 'contribution',
         label: 'See who queued it',
-        anchor: 'queue-row-avatar',
+        focus: { x: 0.03, y: 0.75, width: 0.94, height: 0.13 },
         overview: true,
       },
       {
