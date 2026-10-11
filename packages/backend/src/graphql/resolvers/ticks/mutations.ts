@@ -1001,13 +1001,17 @@ export const tickMutations = {
       // window around each deleted tick is redrawn. Deduped by timestamp because a
       // logical ascent's rows share one climbed_at and would otherwise reconcile the
       // same window repeatedly.
+      let narrowedAccess = false;
       for (const climbedAt of new Set(affectedTicks.map((tick) => tick.climbedAt))) {
-        await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+        if (reconciled?.narrowedAccess) narrowedAccess = true;
       }
 
-      return { affectedTicks, detachedBetaLinks: detachedBetaLinks.length > 0 };
+      return { affectedTicks, detachedBetaLinks: detachedBetaLinks.length > 0, narrowedAccess };
     });
 
+    // Regrouping publishes only when it took access away from someone.
+    if (mutationResult.narrowedAccess) pubsub.publishPrivacyChanged('deleteTick');
     const { affectedTicks: deletedTicks, detachedBetaLinks } = mutationResult;
 
     const targetTick = deletedTicks.find((tick) => tick.uuid === uuid)!;
@@ -1380,6 +1384,8 @@ export const tickMutations = {
     // Insert into database. When the client supplied a uuid that already exists
     // (offline replay), the insert is a no-op and `createdTick` is undefined —
     // we detect that, return the original row, and skip every side effect below.
+    // Assigned, not accumulated, so a retried transaction cannot keep a stale answer.
+    let narrowedAccess = false;
     const [tick] = await db.transaction(
       async (tx) => {
         // A spray climb can be hard-deleted by its setter while nobody has
@@ -1501,12 +1507,17 @@ export const tickMutations = {
         // transaction so the tick and its assignment commit together. Inert unless
         // INFERRED_SESSIONS_ENABLED is set. A tick that already carries an explicit
         // session still goes through, because the run around it may need redrawing.
-        await reconcileInferredSessions(tx, userId, parseClimbedAt(createdTick.climbedAt));
+        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(createdTick.climbedAt));
+        narrowedAccess = reconciled?.narrowedAccess === true;
 
         return [createdTick];
       },
       { isolationLevel: 'read committed' },
     );
+
+    // A back-dated save can merge sessions; it publishes only when that took
+    // access away from someone, never for a merge of equal audiences.
+    if (narrowedAccess) pubsub.publishPrivacyChanged('saveTick');
 
     // Settle the catalog observation started before the board/session lookups.
     // By now it has overlapped every round-trip above, so this is a no-op wait
@@ -1814,11 +1825,13 @@ export const tickMutations = {
         // An edit can move climbed_at, which moves the tick between runs — so both the
         // window it left and the one it joined need redrawing. Reconciling the old
         // timestamp first leaves the tick's new home authoritative.
+        let narrowedAccess = false;
         for (const climbedAt of new Set([
           ...existingTicks.map((tick) => tick.climbedAt),
           ...updatedTicks.map((tick) => tick.climbedAt),
         ])) {
-          await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+          const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+          if (reconciled?.narrowedAccess) narrowedAccess = true;
         }
 
         const [attributedBoard] =
@@ -1841,14 +1854,15 @@ export const tickMutations = {
           updatedTarget,
           movedBetaLinks,
           boardDisplayName: attributedBoard?.name ?? null,
+          narrowedAccess,
         };
       }),
     );
 
-    // Only an explicit audience choice publishes. Session regrouping (merges,
-    // splits, back-dated imports) is frequent and does not need every
-    // connected app to reload.
-    if (validatedInput.privacy) pubsub.publishPrivacyChanged('updateTick');
+    // An explicit audience choice publishes. Session regrouping (merges,
+    // splits, back-dated imports) is frequent, so it publishes only when it
+    // took access away from someone, never for a merge of equal audiences.
+    if (validatedInput.privacy || mutationResult.narrowedAccess) pubsub.publishPrivacyChanged('updateTick');
 
     // Both the key the tick left and the key it joined, so an angle edit doesn't
     // strand a stale bucket. Inline first for the same reason as saveTick: the

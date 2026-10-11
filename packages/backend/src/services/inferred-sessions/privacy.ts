@@ -47,6 +47,28 @@ export function intersectInferredPrivacy(policies: readonly InferredPrivacy[]): 
   return { audience, inheritFollowers: false, grants };
 }
 
+/**
+ * Whether someone who could read content under `previous` may be refused under
+ * `next`. Policies here belong to one account's sessions, so follower reach is
+ * comparable. Used to publish privacyChanged only when regrouping withdraws access.
+ */
+export function narrowsInferredPrivacy(previous: InferredPrivacy, next: InferredPrivacy): boolean {
+  if (previous.audience === 'only_me') return false;
+  if (next.audience === 'only_me') return true;
+  if (previous.audience === 'public') {
+    if (next.audience !== 'public') return true;
+  } else {
+    const reachesFollowers = (policy: InferredPrivacy) =>
+      policy.audience === 'public' || policy.audience === 'followers' || policy.inheritFollowers;
+    if (reachesFollowers(previous) && !reachesFollowers(next)) return true;
+    for (const [userId, status] of previous.grants)
+      if (status === 'approved' && next.audience !== 'public' && next.grants.get(userId) !== 'approved') return true;
+  }
+  for (const [userId, status] of next.grants)
+    if (status === 'revoked' && previous.grants.get(userId) !== 'revoked') return true;
+  return false;
+}
+
 export async function loadInferredPrivacy(
   tx: ReconciliationTransaction,
   sessionIds: string[],

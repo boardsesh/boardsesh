@@ -253,19 +253,25 @@ describe('privacyChanged publish sites', () => {
     expect(await edit({ isPublic: false })).toEqual(['updateSession']);
   });
 
-  it('stays silent when a party moves its session to another wall', async () => {
+  it('publishes a wall switch only when the new wall restricts who can read the session', async () => {
     const first = await insertBoard(true);
     const second = await insertBoard(true);
+    const home = await insertBoard(false);
     const sessionId = randomUUID();
     await ensureSessionRecordExists(sessionId, `/b/${first.slug}/40`, owner);
-    expect(
-      await publishesDuring(() => updateSessionBoardPathIfChanged(sessionId, `/b/${second.slug}/40`, owner)),
-    ).toEqual([]);
+    const switchTo = (board: { slug: string }) =>
+      publishesDuring(() => updateSessionBoardPathIfChanged(sessionId, `/b/${board.slug}/40`, owner));
+    // Everyone can read a public wall, so moving there takes nothing away.
+    expect(await switchTo(second)).toEqual([]);
     const [session] = await db
       .select({ boardId: schema.boardSessions.boardId })
       .from(schema.boardSessions)
       .where(eq(schema.boardSessions.id, sessionId));
     expect(session.boardId).toBe(second.id);
+    // A private wall becomes a cap: viewers who cannot read it lose the session.
+    expect(await switchTo(home)).toEqual(['switchSessionWall']);
+    // Back onto a wall the session already references: no new cap.
+    expect(await switchTo(first)).toEqual([]);
   });
 
   it('publishes a playlist edit only when its visibility flips', async () => {
@@ -326,7 +332,8 @@ describe('privacyChanged publish sites', () => {
     expect(await climberSessionIds()).toHaveLength(3);
 
     // Moving the late climb into the gap welds the morning and evening runs
-    // together and empties the late session: a merge, which used to publish.
+    // together and empties the late session. Both are public, so the merge
+    // takes access from nobody.
     expect(
       await publishesDuring(() =>
         tickMutations.updateTick(
@@ -389,6 +396,48 @@ describe('privacyChanged publish sites', () => {
         ),
       ),
     ).toEqual([]);
+    expect(await climberSessionIds()).toHaveLength(before - 1);
+  });
+
+  it('publishes a saved tick that merges a restricted session into a wider one', async () => {
+    process.env.INFERRED_SESSIONS_ENABLED = 'true';
+    const day = BASE + 10 * 24 * HOUR;
+    const morningTick = await insertTick(day);
+    await insertTick(day + 10 * HOUR);
+    const [morning] = await db
+      .select({ sessionId: schema.boardseshTicks.sessionId })
+      .from(schema.boardseshTicks)
+      .where(eq(schema.boardseshTicks.uuid, morningTick));
+    await db
+      .update(schema.resourcePrivacy)
+      .set({ audience: 'only_me' })
+      .where(
+        and(eq(schema.resourcePrivacy.kind, 'session'), eq(schema.resourcePrivacy.resourceId, morning.sessionId!)),
+      );
+    const before = (await climberSessionIds()).length;
+    // The merged session takes the intersection, so the evening session's
+    // public readers lose it.
+    expect(
+      await publishesDuring(() =>
+        tickMutations.saveTick(
+          null,
+          {
+            input: {
+              boardType: 'kilter',
+              climbUuid,
+              angle: 40,
+              isMirror: false,
+              status: 'send',
+              attemptCount: 1,
+              isBenchmark: false,
+              comment: '',
+              climbedAt: new Date(day + 5 * HOUR).toISOString(),
+            },
+          },
+          context(climber),
+        ),
+      ),
+    ).toEqual(['saveTick']);
     expect(await climberSessionIds()).toHaveLength(before - 1);
   });
 

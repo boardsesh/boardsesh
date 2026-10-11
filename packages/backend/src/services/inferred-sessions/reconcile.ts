@@ -1,6 +1,7 @@
 import {
   intersectInferredPrivacy,
   loadInferredPrivacy,
+  narrowsInferredPrivacy,
   movedContentNeedsRestriction,
   writeInferredPrivacy,
   type InferredPrivacy,
@@ -39,12 +40,16 @@ export type PlannedReconciliation = {
   originalAssignments: Map<number, string | null>;
 };
 
-/** Move a merged-away session's social rows onto the survivor, then drop the session. */
+/**
+ * Move a merged-away session's social rows onto the survivor, then drop the
+ * session. Returns whether any comment was restricted to its author.
+ */
 async function applyMerge(
   tx: ReconciliationTransaction,
   merge: SessionMerge,
   sourcePrivacy: InferredPrivacy | undefined,
-): Promise<void> {
+): Promise<boolean> {
+  let restrictedComments = false;
   if (!sourcePrivacy || sourcePrivacy.audience !== 'public') {
     // A private parent can be absorbed into an explicit public session. Preserve
     // each comment author's protection even when the new parent has a wider audience.
@@ -61,6 +66,7 @@ async function applyMerge(
           target: [dbSchema.contentPrivacy.entityType, dbSchema.contentPrivacy.entityId],
           set: { audience: 'only_me', publicConsentRevision: null, updatedAt: new Date() },
         });
+    restrictedComments = comments.length > 0;
   }
   // Re-point BEFORE deleting. v1 deleted emptied sessions outright, orphaning their
   // votes and comments — `entity_id` is untyped text with no foreign key, so nothing
@@ -76,6 +82,7 @@ async function applyMerge(
     .where(and(eq(dbSchema.voteCounts.entityType, 'session'), eq(dbSchema.voteCounts.entityId, merge.loserId)));
 
   await tx.delete(dbSchema.boardSessions).where(eq(dbSchema.boardSessions.id, merge.loserId));
+  return restrictedComments;
 }
 
 /**
@@ -171,12 +178,17 @@ export async function reconcileInferredSessions(
   userId: string,
   touchedAt: Date,
   options: { preserveExistingSessions?: boolean; rejectTruncatedWindow?: boolean } = {},
-): Promise<ReconcileResult | null> {
+): Promise<(ReconcileResult & { narrowedAccess: boolean }) | null> {
   const planned = await planReconciliation(tx, userId, touchedAt, {
     rejectTruncatedWindow: options.rejectTruncatedWindow,
   });
   if (!planned) return null;
   const { result } = planned;
+  // True when regrouping takes access away from someone: a merged policy is
+  // narrower than one of its sources, moved content is restricted, or a moved
+  // tick lands under a narrower explicit session. A plain merge of equal
+  // audiences, a split and a brand-new session leave it false.
+  let narrowedAccess = false;
 
   // Backfills must leave existing sessions and their social history for a separate,
   // reviewed repair. The normal reconciler below can delete emptied social rows.
@@ -204,7 +216,7 @@ export async function reconcileInferredSessions(
   };
 
   for (const merge of result.merges) {
-    await applyMerge(tx, merge, sourcePrivacy.get(merge.loserId));
+    if (await applyMerge(tx, merge, sourcePrivacy.get(merge.loserId))) narrowedAccess = true;
   }
 
   for (const runResult of result.runs) {
@@ -254,7 +266,14 @@ export async function reconcileInferredSessions(
 
     if (!planned.explicitSessionIds.has(sessionId)) {
       await writeInferredPrivacy(tx, sessionId, userId, privacy);
+      if (policies.some((policy) => narrowsInferredPrivacy(policy, privacy))) narrowedAccess = true;
     } else {
+      const destination = sourcePrivacy.get(sessionId);
+      for (const tickId of runResult.tickIds) {
+        const previous = planned.originalAssignments.get(tickId);
+        const previousPolicy = previous && previous !== sessionId ? sourcePrivacy.get(previous) : undefined;
+        if (previousPolicy && destination && narrowsInferredPrivacy(previousPolicy, destination)) narrowedAccess = true;
+      }
       // Absorption into a different explicit container must not widen a tick.
       // A session invite set cannot be encoded as an account item audience;
       // keep those moved ticks owner-only until their author republishes them.
@@ -267,6 +286,7 @@ export async function reconcileInferredSessions(
         );
       });
       if (restrictedTickIds.length) {
+        narrowedAccess = true;
         const ticks = await tx
           .select({ uuid: dbSchema.boardseshTicks.uuid })
           .from(dbSchema.boardseshTicks)
@@ -329,7 +349,7 @@ export async function reconcileInferredSessions(
       .delete(dbSchema.boardSessions)
       .where(and(inArray(dbSchema.boardSessions.id, emptiedSessionIds), eq(dbSchema.boardSessions.origin, 'inferred')));
   }
-  return { ...result, emptiedSessionIds };
+  return { ...result, emptiedSessionIds, narrowedAccess };
 }
 
 /** Convenience for callers holding a `climbed_at` string rather than a Date. */

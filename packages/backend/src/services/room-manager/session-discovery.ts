@@ -3,13 +3,15 @@ import { resolveSessionBoardId } from '../session-board-binding';
 import { notifyResourcePrivacyChanged } from '../board-session-privacy';
 import {
   canViewActivityIdentity,
+  getResourcePrivacy,
   requireResourceAccess,
   resourceAccessCondition,
   sessionBoardLocationCondition,
 } from '../privacy';
 import { db } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
-import { sessionBoards } from '@boardsesh/db/schema/app';
+import { resourceGrants, sessionBoards, userBoards } from '@boardsesh/db/schema/app';
+import { pubsub } from '../../pubsub';
 import { eq, and, gt, gte, lt, lte, ne, sql, getTableColumns } from 'drizzle-orm';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
 import type { DiscoverableSession, LiveSession, RoomManagerDeps } from './types';
@@ -68,6 +70,19 @@ export async function updateSessionBoardPathIfChanged(
     await requireResourceAccess('session', sessionId, viewerId);
     const previousPathBoardId = await resolveSessionBoardId(existing.boardPath ?? '', viewerId);
     if (existing.boardPath === boardPath && existing.boardId === boardId) return null;
+    const priorParents = await tx
+      .select({ boardId: sessionBoards.boardId })
+      .from(sessionBoards)
+      .where(eq(sessionBoards.sessionId, sessionId));
+    // A session is readable only through every wall it references, so a wall it
+    // did not reference before is a new cap on who can read it.
+    const addedParentId =
+      boardId !== null &&
+      boardId !== existing.boardId &&
+      boardId !== previousPathBoardId &&
+      !priorParents.some((parent) => parent.boardId === boardId)
+        ? boardId
+        : null;
     // Prior wall activity stays capped when the party moves to another wall.
     const parents = [
       ...new Set([existing.boardId, previousPathBoardId, boardId].filter((id): id is number => id !== null)),
@@ -81,15 +96,45 @@ export async function updateSessionBoardPathIfChanged(
     return {
       previous: existing.boardPath,
       parentChanged: existing.boardId !== boardId || previousPathBoardId !== boardId,
+      addedParentId,
     };
   });
   if (!transition) return null;
-  // The new wall joins the session's caps above. Live session streams recheck
-  // access on their next event and the kiosk previews re-derive here; a wall
-  // switch is not a settings change, so it does not make every connected app
-  // reload through the global privacyChanged stream.
   if (transition.parentChanged) await notifyResourcePrivacyChanged('session', sessionId);
+  // Moving onto a wall someone cannot read takes the session away from them, so
+  // other apps must drop their copies. Moving onto a wall everyone can read, or
+  // back onto one the session already references, changes nobody's access.
+  if (transition.addedParentId !== null && (await wallRestrictsReaders(transition.addedParentId)))
+    pubsub.publishPrivacyChanged('switchSessionWall');
   return transition.previous;
+}
+
+/**
+ * Whether some viewer cannot read this wall without a link. Session access
+ * treats unlisted walls as restricted too (`sessionBoardAccessCondition`), and
+ * a public wall can still deny individual viewers through a revoked grant.
+ */
+async function wallRestrictsReaders(boardId: number): Promise<boolean> {
+  const [board] = await db
+    .select({ uuid: userBoards.uuid })
+    .from(userBoards)
+    .where(eq(userBoards.id, boardId))
+    .limit(1);
+  if (!board) return true;
+  const privacy = await getResourcePrivacy('board', board.uuid);
+  if (privacy?.audience !== 'public') return true;
+  const [revoked] = await db
+    .select({ userId: resourceGrants.userId })
+    .from(resourceGrants)
+    .where(
+      and(
+        eq(resourceGrants.kind, 'board'),
+        eq(resourceGrants.resourceId, board.uuid),
+        eq(resourceGrants.status, 'revoked'),
+      ),
+    )
+    .limit(1);
+  return !!revoked;
 }
 
 /**

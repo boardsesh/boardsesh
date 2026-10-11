@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   intersectInferredPrivacy,
   movedContentNeedsRestriction,
+  narrowsInferredPrivacy,
   type InferredPrivacy,
 } from '../services/inferred-sessions/privacy';
 
@@ -60,5 +61,34 @@ describe('inferred session privacy intersections', () => {
     ]);
     expect(merged.audience).toBe('followers');
     expect(merged.grants.size).toBe(0);
+  });
+});
+
+describe('narrowsInferredPrivacy', () => {
+  it('reports no narrowing for equal policies or a merge of equal audiences', () => {
+    const shared = policy('followers', [['friend', 'approved']]);
+    expect(narrowsInferredPrivacy(shared, policy('followers', [['friend', 'approved']]))).toBe(false);
+    expect(
+      narrowsInferredPrivacy(policy('public'), intersectInferredPrivacy([policy('public'), policy('public')])),
+    ).toBe(false);
+    expect(narrowsInferredPrivacy(policy('only_me'), policy('only_me'))).toBe(false);
+  });
+  it('reports narrowing when a merge intersects a wider policy down', () => {
+    const merged = intersectInferredPrivacy([policy('public'), policy('only_me')]);
+    expect(narrowsInferredPrivacy(policy('public'), merged)).toBe(true);
+    expect(narrowsInferredPrivacy(policy('public'), policy('followers'))).toBe(true);
+    expect(narrowsInferredPrivacy(policy('followers'), policy('invite_only'))).toBe(true);
+    expect(narrowsInferredPrivacy(policy('invite_only', [], true), policy('invite_only'))).toBe(true);
+  });
+  it('reports narrowing when an approved viewer loses a grant or a viewer is newly revoked', () => {
+    expect(narrowsInferredPrivacy(policy('invite_only', [['friend', 'approved']]), policy('invite_only'))).toBe(true);
+    expect(narrowsInferredPrivacy(policy('public'), policy('public', [['removed', 'revoked']]))).toBe(true);
+    expect(
+      narrowsInferredPrivacy(policy('public', [['removed', 'revoked']]), policy('public', [['removed', 'revoked']])),
+    ).toBe(false);
+  });
+  it('reports no narrowing when the next policy is wider', () => {
+    expect(narrowsInferredPrivacy(policy('followers'), policy('public'))).toBe(false);
+    expect(narrowsInferredPrivacy(policy('only_me'), policy('public'))).toBe(false);
   });
 });
