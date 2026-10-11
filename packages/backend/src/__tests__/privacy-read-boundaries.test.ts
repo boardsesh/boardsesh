@@ -277,6 +277,8 @@ describe('SQL privacy boundaries against Postgres', () => {
         .where(eq(notification.uuid, 'privacy-enum-reply-notification'));
       expect(result.allowed).toBe(allowed);
     }
+    // The stranger can read it now; the inbox test below starts from empty inboxes.
+    await db.delete(schema.notifications).where(eq(schema.notifications.uuid, 'privacy-enum-reply-notification'));
   });
   it('counts only readable unread notifications and applies the same policy to both inboxes', async () => {
     const [reply] = await db.select().from(schema.comments).where(eq(schema.comments.uuid, 'privacy-reply'));
