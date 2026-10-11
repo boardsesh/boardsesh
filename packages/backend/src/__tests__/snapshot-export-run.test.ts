@@ -49,7 +49,7 @@ function manifestEntryFixture(boardType: string, layoutId: number, key: string):
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
     schemaVersion: LATEST_SCHEMA_VERSION,
-    privacyVersion: 1,
+    privacyVersion: 2,
     // The shape the export writes by default. A threshold scan rebuilds an entry
     // in any other shape, so a fixture without it would never be a no-op.
     artifactShape: 2,
@@ -136,7 +136,7 @@ function withGradesArtifact(
       contentEncoding: 'gzip',
       builtAt: entry.builtAt,
       schemaVersion,
-      privacyVersion: 1,
+      privacyVersion: 2,
       tables: {
         board_climb_grades: {
           watermarkUpdatedAt: '2026-05-01T00:00:00Z',
@@ -354,6 +354,30 @@ describe('runExport — threshold refresh', () => {
     expect(refreshedEntry.key).not.toBe(previousEntry.key);
     expect(refreshedEntry.grades?.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
   });
+
+  // The marker names the publication rule an artifact was built under. An
+  // entry built under an older rule carries rows the current rule withholds
+  // (drafts, unlisted climbs) and lacks rows it publishes, and no row count
+  // says so: it is rebuilt whatever the delta, and stamped with the rule.
+  it.each([1, undefined] as const)(
+    'rebuilds an entry stamped privacyVersion %s with no delta at all, and stamps 2',
+    async (previousPrivacyVersion) => {
+      await seedClimb('kilter', 1, 'k1-a');
+      await seedGrade('kilter', 'k1-a', 40);
+      const previousEntry: SnapshotManifestEntry = {
+        ...manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`),
+        privacyVersion: previousPrivacyVersion,
+      };
+      serveExistingManifest(manifestFixture([previousEntry]));
+
+      await runExport(thresholdArgs);
+
+      const refreshedEntry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+      expect(refreshedEntry.key).not.toBe(previousEntry.key);
+      expect(refreshedEntry.privacyVersion).toBe(2);
+      expect(refreshedEntry.grades?.privacyVersion).toBe(2);
+    },
+  );
 
   it('rebuilds every discovered layout when the live manifest is missing', async () => {
     await seedClimb('kilter', 1, 'k1-a');
@@ -792,7 +816,7 @@ describe('runExport — board_climb_grades artifacts', () => {
         contentEncoding: 'gzip',
         builtAt: '2026-06-01T00:00:00.000Z',
         schemaVersion: LATEST_SCHEMA_VERSION,
-        privacyVersion: 1,
+        privacyVersion: 2,
         tables: {
           board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '9', rowCount: 4 },
         },
