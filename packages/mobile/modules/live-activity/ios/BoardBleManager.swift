@@ -1,6 +1,18 @@
 import CoreBluetooth
 import Foundation
 import os.log
+#if canImport(Sentry)
+import Sentry
+#endif
+
+private func recordNativeBleBreadcrumb(_ phase: String, operationId: String) {
+    #if canImport(Sentry)
+    let breadcrumb = Breadcrumb(level: .info, category: "mobile.ble.native")
+    breadcrumb.message = phase
+    breadcrumb.data = ["threadId": pthread_mach_thread_np(pthread_self()), "operationId": operationId]
+    SentrySDK.addBreadcrumb(breadcrumb)
+    #endif
+}
 
 struct BoardBleScanResult {
     let deviceId: String
@@ -214,6 +226,18 @@ private final class BoardBleDisplayWriteOutcome: @unchecked Sendable {
 }
 
 final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+    // Accessed only on the serialized BLE queue. Independent connect and write IDs.
+    private var nativeConnectOperationIds: [UInt64: String] = [:]
+    #if DEBUG || BOARDSESH_TESTS
+    private var nativeDiagnosticObserver: ((String, String) -> Void)?
+    #endif
+
+    private func nativeBleBreadcrumb(_ phase: String, operationId: String) {
+        #if DEBUG || BOARDSESH_TESTS
+        nativeDiagnosticObserver?(phase, operationId)
+        #endif
+        recordNativeBleBreadcrumb(phase, operationId: operationId)
+    }
     // Strict-concurrency audit: the manager is bleQueue-confined by design — all state
     // mutation happens on that serial queue — so this global is safe without claiming
     // (and over-claiming) Sendable for the whole class.
@@ -233,6 +257,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private struct WriteRequest {
+        let diagnosticOperationId: String
         let chunks: [Data]
         // Static preferred write type and chunk size are snapshotted at enqueue
         // so a configureBoard landing mid-request cannot re-chunk a frame. The
@@ -853,8 +878,17 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         deviceId: String,
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
-        completion: @escaping (Result<Void, Error>) -> Void
+        completion originalCompletion: @escaping (Result<Void, Error>) -> Void
     ) {
+        let diagnosticOperationId = UUID().uuidString
+        nativeBleBreadcrumb("connect-request", operationId: diagnosticOperationId)
+        let completion: (Result<Void, Error>) -> Void = { [weak self] result in
+            switch result {
+            case .success: self?.nativeBleBreadcrumb("connect-completed", operationId: diagnosticOperationId)
+            case .failure: self?.nativeBleBreadcrumb("connect-failed", operationId: diagnosticOperationId)
+            }
+            originalCompletion(result)
+        }
         // Supersede any in-flight reconnect-by-last-known scan: this is a no-op
         // when called from the reconnect path itself (which already nils the scan
         // state first), but settles a stranded scan immediately when an unrelated
@@ -956,6 +990,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // completePendingConnect also cancels that stale timeout timer.
         completePendingConnect(.failure(BoardBleError.superseded))
         connectionGeneration += 1
+        nativeConnectOperationIds[connectionGeneration] = diagnosticOperationId
+        if nativeConnectOperationIds.count > 8, let oldest = nativeConnectOperationIds.keys.min() {
+            nativeConnectOperationIds.removeValue(forKey: oldest)
+        }
         let generation = connectionGeneration
         intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
         pendingConnectCompletion = completion
@@ -1161,13 +1199,19 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func writeOnBleQueue(data: Data, origin: BoardBleWriteOrigin = .native, completion: ((Error?, BoardBleWriteTelemetry?) -> Void)? = nil) {
+        let diagnosticOperationId = UUID().uuidString
+        nativeBleBreadcrumb("write-request", operationId: diagnosticOperationId)
+        let diagnosticCompletion: (Error?, BoardBleWriteTelemetry?) -> Void = { [weak self] error, telemetry in
+            self?.nativeBleBreadcrumb(error == nil ? "write-completed" : "write-failed", operationId: diagnosticOperationId)
+            completion?(error, telemetry)
+        }
         guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic else {
             // During a write-stall recovery the link is briefly down between the
             // cancel and the reconnect. Surface the self-healing `writeTimedOut`
             // (a warning JS rides out with `isConnected` kept) rather than
             // `notConnected`, which the JS classifier treats as a hard drop and
             // would tear the connection down mid-recovery (#3181).
-            completion?(writeStallRecovery != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected, nil)
+            diagnosticCompletion(writeStallRecovery != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected, nil)
             return
         }
 
@@ -1195,6 +1239,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         writeQueue.append(
             WriteRequest(
+                diagnosticOperationId: diagnosticOperationId,
                 chunks: chunks,
                 writeType: writeType,
                 writeTypeSource: writeTypeSource,
@@ -1205,7 +1250,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 origin: origin,
                 connectionGeneration: connectionGeneration,
                 writeGeneration: writeGeneration,
-                completion: completion ?? { _, _ in }
+                completion: diagnosticCompletion
             )
         )
         processWriteQueue()
@@ -1661,6 +1706,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             performCancelPeripheralConnection(peripheral)
             return
         }
+        if let operationId = nativeConnectOperationIds[connectionGeneration] {
+            nativeBleBreadcrumb("connected", operationId: operationId)
+        }
         // The live attempt reached didConnect. A displaced cancellation's late
         // terminal callback would have been delivered before this (CoreBluetooth
         // delivers a peripheral's callbacks in order), so the tombstone is done —
@@ -2058,6 +2106,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard connectedPeripheral?.identifier == peripheral.identifier,
               peripheralGenerations[peripheral.identifier] == connectionGeneration
         else { return }
+        if let operationId = nativeConnectOperationIds[connectionGeneration] {
+            nativeBleBreadcrumb(error == nil ? "services-discovered" : "services-failed", operationId: operationId)
+        }
         if let error {
             failConnectionSetup(peripheral, error: error)
             return
@@ -2512,6 +2563,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             payload.subdata(in: offset..<min(offset + BoardBleEncoding.classicChunkSize, payload.count))
         }
         writeQueue[requestIndex] = WriteRequest(
+            diagnosticOperationId: request.diagnosticOperationId,
             chunks: fallbackChunks,
             writeType: request.writeType,
             writeTypeSource: request.writeTypeSource,
@@ -2705,6 +2757,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 return
             }
 
+            if chunkIndex == 0 { nativeBleBreadcrumb("first-write-without-response", operationId: request.diagnosticOperationId) }
             peripheral.writeValue(request.chunks[chunkIndex], for: characteristic, type: .withoutResponse)
             _ = timerScheduler.scheduleOneShot(after: chunkDelay, label: "chunkDelay") { [weak self] in
                 self?.writeChunk(
@@ -2796,6 +2849,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             self.logger.error("BLE write stalled: peripheral never acked write-with-response; attempting recovery")
             self.handleWriteStall()
         }
+        if chunkIndex == 0 { nativeBleBreadcrumb("first-write-with-response", operationId: request.diagnosticOperationId) }
         peripheral.writeValue(request.chunks[chunkIndex], for: characteristic, type: .withResponse)
     }
 
@@ -3188,6 +3242,10 @@ extension BoardBleManager {
                 currentIndex: currentIndex,
                 drainTimeout: drainTimeout
             )
+        }
+
+        func observeNativeDiagnostics(_ observer: @escaping (String, String) -> Void) {
+            manager.runOnBleQueueSync { manager.nativeDiagnosticObserver = observer }
         }
 
         /// Directly seed the connection the write path guards on. No CoreBluetooth

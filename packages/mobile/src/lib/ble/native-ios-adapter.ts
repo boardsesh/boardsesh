@@ -1,3 +1,5 @@
+import type { BleConnectionDiagnostics } from '../sentry';
+import type { DiagnosticAttributes } from '../mobile-diagnostics';
 import {
   AURORA_ADVERTISED_SERVICE_UUID,
   UART_SERVICE_UUID,
@@ -119,6 +121,31 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     }
   }
 
+  private diagnosticPhase(phase: string, attributes?: DiagnosticAttributes): void {
+    try {
+      this.options.onDiagnosticPhase?.(phase, attributes);
+    } catch {
+      /* Transport cannot fail diagnostics. */
+    }
+  }
+
+  async getConnectionDiagnostics(): Promise<BleConnectionDiagnostics | null> {
+    if (!this.connectedDeviceId || typeof boardBleNative?.getConnectedDevice !== 'function') return null;
+    const device = await boardBleNative.getConnectedDevice().catch(() => null);
+    // Do not retain native peripheral identifiers in generic diagnostic snapshots.
+    return device
+      ? {
+          characteristicProperties: device.characteristicProperties,
+          supportsWriteWithoutResponse: device.supportsWriteWithoutResponse,
+          chosenWriteType: device.chosenWriteType,
+          maxWriteWithResponse: device.maxWriteWithResponse,
+          maxWriteWithoutResponse: device.maxWriteWithoutResponse,
+          connectOrigin: device.connectOrigin,
+          implicitRelightSuppressed: device.implicitRelightSuppressed,
+        }
+      : null;
+  }
+
   async isAvailable(): Promise<boolean> {
     const native = this.requireNative();
     const result = await native.isAvailable();
@@ -170,6 +197,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
 
     // The picker opens at the tap for every connect: in `searching` with a saved
     // board, straight into the list without one.
+    this.diagnosticPhase('picker-present');
     this.devicePicker(
       (onUpdate, onScanStopped, listeners) => {
         updateListener = onUpdate;
@@ -241,6 +269,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
               // advertise Nordic UART, the original RedBearLab box its own
               // service. Filter on both when an unfiltered scan isn't available.
               [UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID];
+      this.diagnosticPhase('scan-start');
       await native.startScan(scanServiceUuids);
 
       // Grace window: if the saved board hasn't matched by now, stop auto-selecting
@@ -262,6 +291,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       }, SCAN_TIMEOUT_MS);
 
       selectedDeviceId = await selectionPromise;
+      this.diagnosticPhase('picker-selected', { devicesFound: devices.size });
     } finally {
       // A late advert after a cancel or a pick must not auto-select.
       autoSelecting = false;
@@ -290,7 +320,9 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     // re-attribute a previous failure to this connect.
     this.lastConnectDiagnostics = null;
     try {
+      this.diagnosticPhase('native-connect');
       await native.connect(selectedDeviceId);
+      this.diagnosticPhase('transport-ready');
     } catch (error) {
       // A rejected connect can't carry structured data (Expo), so on failure
       // fetch the services the board actually exposed from the module stash for

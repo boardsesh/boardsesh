@@ -3,6 +3,7 @@ import { useSegments } from 'expo-router';
 import { trackScreen } from '../../lib/analytics';
 import { normalizeScreenPath } from '../../lib/analytics-screen-path';
 import { useAnalyticsConsent } from '../../lib/consent-hooks';
+import { beginDiagnosticOperation } from '../../lib/mobile-diagnostics';
 
 // Reports every Expo Router navigation using the route pattern (e.g.
 // /climbs/[climbUuid]) rather than the concrete path, so PostHog sees one screen
@@ -15,9 +16,15 @@ export function AnalyticsScreenTracker(): null {
   const segments = useSegments();
   const granted = useAnalyticsConsent();
   const lastPath = useRef<string | null>(null);
+  const lastDiagnosticPath = useRef<string | null>(null);
 
   useEffect(() => {
     const path = normalizeScreenPath(segments);
+    if (path !== lastDiagnosticPath.current) {
+      lastDiagnosticPath.current = path;
+      const navigation = beginDiagnosticOperation('navigation', 'route', { attributes: { route: path } });
+      navigation.finish('success');
+    }
     if (granted && path !== lastPath.current) {
       lastPath.current = path;
       trackScreen(path);

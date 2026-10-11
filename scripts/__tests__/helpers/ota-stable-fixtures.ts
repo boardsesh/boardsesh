@@ -15,8 +15,12 @@ export const candidateFixture = (): StableCandidate => ({
     message: 'Release',
     baselineProductionUpdateIds: baselineIds,
     platforms: {
-      ios: { runtimeVersion: 'b'.repeat(40), bundleSha256: 'c'.repeat(64) },
-      android: { runtimeVersion: 'd'.repeat(40), bundleSha256: 'e'.repeat(64) },
+      ios: { runtimeVersion: 'b'.repeat(40), bundleSha256: 'c'.repeat(64), fileHashes: { 'ios.hbc': 'c'.repeat(64) } },
+      android: {
+        runtimeVersion: 'd'.repeat(40),
+        bundleSha256: 'e'.repeat(64),
+        fileHashes: { 'android.hbc': 'e'.repeat(64) },
+      },
     },
   },
 });

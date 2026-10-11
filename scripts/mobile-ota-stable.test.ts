@@ -9,6 +9,7 @@ import { initialStableState } from './lib/ota-stable';
 import { tickStable, prepareStable, abortStable, parseStableArgs, saveState, readState } from './mobile-ota-stable';
 import type { XpremAdminClient } from './lib/xprem-admin.mts';
 import { activeFixture, candidateFixture } from './__tests__/helpers/ota-stable-fixtures';
+import { hashSourceMapExport } from './mobile-upload-sourcemaps';
 import { desiredOtaState } from '../infra/ota/config';
 
 const mocks = vi.hoisted(() => ({ baseline: vi.fn(), promote: vi.fn(), validate: vi.fn(), unchanged: vi.fn() }));
@@ -162,6 +163,7 @@ describe('stable controller execution', () => {
           }),
         );
         writeFileSync(join(root, platform, 'expoConfig.json'), JSON.stringify(expoConfig));
+        candidate.receipt.platforms[platform].fileHashes = hashSourceMapExport(join(root, platform));
       }
       options.state.candidate = candidate;
       options.now = new Date('2026-10-08T22:00:00Z');

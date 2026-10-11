@@ -97,6 +97,17 @@
       "updateFailed": "Couldn't update status",
       "emailCopied": "Email copied",
       "copyFailed": "Couldn't copy"
+    },
+    "diagnostics": {
+      "title": "Private diagnostics",
+      "context": "Telemetry context",
+      "copy": "Copy diagnostics",
+      "copied": "Diagnostics copied",
+      "sentryQuery": "Sentry launch query",
+      "previousSentryQuery": "Previous Sentry launch query",
+      "posthogQuery": "PostHog identity filter",
+      "observeQuery": "Observe device filter",
+      "openSentry": "Find this launch in Sentry"
     }
   },
   "retention": {

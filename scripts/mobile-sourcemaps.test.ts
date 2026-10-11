@@ -21,6 +21,8 @@ import { parse } from 'yaml';
 import { buildEasUpdateArgs, buildSelfHostedEoasArgs } from './mobile-publish';
 import {
   createSentryUploadEnvironment,
+  hashSourceMapExport,
+  assertSourceMapExportHashes,
   parseUploadArgs,
   resolveInstalledSentryUploader,
   uploadMobileSourceMaps,
@@ -57,7 +59,7 @@ function createMobileFixture(platform: MobilePlatform = 'ios', bundleExtension: 
   const sourceMapPath = `${bundlePath}.map`;
   mkdirSync(dirname(bundlePath), { recursive: true });
   writeFileSync(join(mobileDir, 'package.json'), '{"name":"fixture"}\n');
-  writeFileSync(bundlePath, 'hermes bytecode');
+  writeFileSync(bundlePath, `bytecode ${VALID_DEBUG_ID}`);
   writeFileSync(
     sourceMapPath,
     JSON.stringify({ version: 3, sources: ['../../src/example.ts'], mappings: '', debugId: VALID_DEBUG_ID }),
@@ -115,6 +117,31 @@ afterEach(() => {
 });
 
 describe('OTA source-map artifact validation', () => {
+  it('rejects altered maps with identical IDs, altered assets and extra or missing files', () => {
+    const fixture = createMobileFixture();
+    const assetPath = join(fixture.outputDir, 'asset.png');
+    writeFileSync(assetPath, 'original asset');
+    const hashes = hashSourceMapExport(fixture.outputDir);
+    expect(() => assertSourceMapExportHashes(fixture.outputDir, hashes)).not.toThrow();
+    writeFileSync(assetPath, 'altered asset');
+    expect(() => assertSourceMapExportHashes(fixture.outputDir, hashes)).toThrow('files differ');
+    writeFileSync(assetPath, 'original asset');
+    const originalMap = readFileSync(fixture.sourceMapPath);
+    writeFileSync(
+      fixture.sourceMapPath,
+      JSON.stringify({ version: 3, sources: ['wrong.ts'], mappings: '', debugId: VALID_DEBUG_ID }),
+    );
+    expect(() => assertSourceMapExportHashes(fixture.outputDir, hashes)).toThrow('files differ');
+    writeFileSync(fixture.sourceMapPath, originalMap);
+    const extraPath = join(fixture.outputDir, 'extra.js');
+    writeFileSync(extraPath, 'extra executable');
+    expect(() => assertSourceMapExportHashes(fixture.outputDir, hashes)).toThrow('files differ');
+    rmSync(extraPath);
+    rmSync(assetPath);
+    expect(() => assertSourceMapExportHashes(fixture.outputDir, hashes)).toThrow('files differ');
+    expect(() => assertSourceMapExportHashes(fixture.outputDir, {})).toThrow('complete export hash manifest');
+  });
+
   it.each(['hbc', 'js'] as const)('accepts a complete requested-platform %s bundle with a Debug ID', (extension) => {
     const fixture = createMobileFixture('ios', extension);
     expect(validateSourceMapOutput(fixture.mobileDir, fixture.outputDir, 'ios')).toEqual([
@@ -171,7 +198,7 @@ describe('OTA source-map artifact validation', () => {
   it('rejects metadata whose primary bundle is not executable', () => {
     const fixture = createMobileFixture('ios');
     const otherBundlePath = join(dirname(fixture.bundlePath), 'other.hbc');
-    writeFileSync(otherBundlePath, 'other bytecode');
+    writeFileSync(otherBundlePath, `bytecode ${VALID_DEBUG_ID}`);
     writeFileSync(
       `${otherBundlePath}.map`,
       JSON.stringify({ version: 3, sources: [], mappings: '', debugId: VALID_DEBUG_ID }),
@@ -200,7 +227,7 @@ describe('OTA source-map artifact validation', () => {
     const relativeDomBundlePath = 'www.bundle/1234567890abcdef.js';
     const domBundlePath = join(fixture.outputDir, relativeDomBundlePath);
     mkdirSync(dirname(domBundlePath), { recursive: true });
-    writeFileSync(domBundlePath, 'dom component bundle');
+    writeFileSync(domBundlePath, `bytecode ${VALID_DEBUG_ID}`);
     writeFileSync(
       `${domBundlePath}.map`,
       JSON.stringify({ version: 3, sources: [], mappings: '', debugId: VALID_DEBUG_ID }),
@@ -228,7 +255,7 @@ describe('OTA source-map artifact validation', () => {
     const relativeDomBundlePath = 'www.bundle/11111111111111111111111111111111.js';
     const relativeDomMapPath = 'www.bundle/22222222222222222222222222222222.map';
     mkdirSync(join(fixture.outputDir, 'www.bundle'), { recursive: true });
-    writeFileSync(join(fixture.outputDir, relativeDomBundlePath), 'dom component bundle');
+    writeFileSync(join(fixture.outputDir, relativeDomBundlePath), `bytecode ${VALID_DEBUG_ID}`);
     writeFileSync(
       join(fixture.outputDir, relativeDomMapPath),
       JSON.stringify({ version: 3, sources: [], mappings: '', debugId: VALID_DEBUG_ID }),
@@ -275,7 +302,7 @@ describe('OTA source-map artifact validation', () => {
     const relativeEmptyMapBundlePath = 'www.bundle/empty-map.js';
     const emptyMapBundlePath = join(emptyMapFixture.outputDir, relativeEmptyMapBundlePath);
     mkdirSync(dirname(emptyMapBundlePath), { recursive: true });
-    writeFileSync(emptyMapBundlePath, 'dom component bundle');
+    writeFileSync(emptyMapBundlePath, `bytecode ${VALID_DEBUG_ID}`);
     writeFileSync(`${emptyMapBundlePath}.map`, '');
     rewriteMetadata(emptyMapFixture, {
       ios: {
@@ -312,7 +339,7 @@ describe('OTA source-map artifact validation', () => {
     const relativeDomBundlePath = 'www.bundle/invalid.js';
     const domBundlePath = join(fixture.outputDir, relativeDomBundlePath);
     mkdirSync(dirname(domBundlePath), { recursive: true });
-    writeFileSync(domBundlePath, 'dom component bundle');
+    writeFileSync(domBundlePath, `bytecode ${VALID_DEBUG_ID}`);
     writeFileSync(`${domBundlePath}.map`, JSON.stringify({ version: 3, debugId: 'invalid' }));
     rewriteMetadata(fixture, {
       ios: {
@@ -417,7 +444,7 @@ describe('OTA source-map artifact validation', () => {
 });
 
 describe('official Sentry uploader invocation', () => {
-  it.each(['7.11.0', '8.24.0'])('accepts the audited Sentry React Native uploader %s', (version) => {
+  it.each(['7.11.0', '8.24.0', '8.28.0'])('accepts the audited Sentry React Native uploader %s', (version) => {
     const fixture = createMobileFixture();
     const uploaderPath = installFixtureSentryUploader(fixture, version);
     if (version === '8.24.0') {
@@ -440,7 +467,7 @@ describe('official Sentry uploader invocation', () => {
     const fixture = createMobileFixture();
     installFixtureSentryUploader(fixture, version);
     expect(() => resolveInstalledSentryUploader(fixture.mobileDir)).toThrow(
-      `Unsupported @sentry/react-native version ${version}; audited versions: 7.11.0, 8.24.0.`,
+      `Unsupported @sentry/react-native version ${version}; audited versions: 7.11.0, 8.24.0, 8.28.0.`,
     );
   });
 
@@ -471,14 +498,14 @@ describe('official Sentry uploader invocation', () => {
   });
 
   it.each(['ios', 'android'] as const)(
-    'runs the installed official uploader for every %s pair and propagates CLI failures',
+    'runs the validated CLI for every %s pair and propagates CLI failures',
     (platform) => {
       const fixture = createMobileFixture(platform);
       const originalSourceMap = readFileSync(fixture.sourceMapPath, 'utf8');
       const relativeJsBundlePath = 'www.bundle/component.js';
       const jsBundlePath = join(fixture.outputDir, relativeJsBundlePath);
       mkdirSync(dirname(jsBundlePath), { recursive: true });
-      writeFileSync(jsBundlePath, 'component bundle');
+      writeFileSync(jsBundlePath, `component bundle\n//# debugId=${VALID_DEBUG_ID}`);
       writeFileSync(`${jsBundlePath}.map`, originalSourceMap);
       rewriteMetadata(fixture, {
         [platform]: {
@@ -503,15 +530,15 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
       let cliExitCode = 0;
       const dependencies: UploadSourceMapsDependencies = {
         resolveUploader: () => uploaderPath,
+        resolveCli: () => fakeCliPath,
         spawnUploader: (executable, args, options) => {
-          // Inject the fake only at the test subprocess boundary. Production
-          // still strips SENTRY_CLI_EXECUTABLE and never receives real credentials.
+          // Only the injected test CLI writes these offline invocation receipts.
+          // Production retains its installed binary resolver and fixed environment.
           return spawnSync(executable, args, {
             ...options,
             stdio: 'pipe',
             env: {
               ...options.env,
-              SENTRY_CLI_EXECUTABLE: fakeCliPath,
               SENTRY_TEST_INVOCATIONS_PATH: invocationLogPath,
               SENTRY_TEST_EXIT_CODE: String(cliExitCode),
             },
@@ -547,7 +574,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
         );
       expect(invocations).toHaveLength(2);
       for (const invocation of invocations) {
-        expect(invocation.args.slice(0, 2)).toEqual(['sourcemaps', 'upload']);
+        expect(invocation.args.slice(0, 4)).toEqual(['sourcemaps', 'upload', '--wait', '--strict']);
         expect(invocation.sourceMaps).toEqual([expect.objectContaining({ debug_id: VALID_DEBUG_ID })]);
         expect(invocation).toMatchObject({ org: 'boardsesh', project: 'boardsesh', url: 'https://sentry.io/' });
         expect(invocation.release).toBeUndefined();
@@ -560,7 +587,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
       }
       cliExitCode = 17;
       expect(() => uploadMobileSourceMaps(options, dependencies)).toThrow(
-        /Official Sentry uploader failed with exit code (1|17)/,
+        /Sentry CLI uploader failed with exit code 17/,
       );
       expect(readFileSync(fixture.sourceMapPath, 'utf8')).toBe(originalSourceMap);
       expect(readFileSync(`${jsBundlePath}.map`, 'utf8')).toBe(originalSourceMap);
@@ -626,6 +653,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
           environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
         },
         {
+          resolveCli: () => '/fake/sentry-cli',
           resolveUploader: () => {
             resolverCalled = true;
             return join(fixture.mobileDir, 'fake-uploader.js');
@@ -655,15 +683,16 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
           environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
         },
         {
+          resolveCli: () => '/fake/sentry-cli',
           resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
           spawnUploader: (_executable, args, options) => {
             temporaryWorkingDirectory = options.cwd;
-            stagingDirectory = args[1];
+            stagingDirectory = join(dirname(options.cwd), 'artifacts');
             return { status: null, error: new Error('spawn EACCES') };
           },
         },
       ),
-    ).toThrow('Could not start the official Sentry uploader: spawn EACCES');
+    ).toThrow('Could not start the Sentry CLI uploader: spawn EACCES');
     expect(existsSync(temporaryWorkingDirectory ?? '')).toBe(false);
     expect(existsSync(stagingDirectory ?? '')).toBe(false);
   });
@@ -682,15 +711,16 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
           environment: processEnv({ SENTRY_AUTH_TOKEN: 'secret-token' }),
         },
         {
+          resolveCli: () => '/fake/sentry-cli',
           resolveUploader: () => join(fixture.mobileDir, 'fake-uploader.js'),
           spawnUploader: (_executable, args, options) => {
             temporaryWorkingDirectory = options.cwd;
-            stagingDirectory = args[1];
+            stagingDirectory = join(dirname(options.cwd), 'artifacts');
             return { status: 17 };
           },
         },
       ),
-    ).toThrow('Official Sentry uploader failed with exit code 17');
+    ).toThrow('Sentry CLI uploader failed with exit code 17');
     expect(existsSync(temporaryWorkingDirectory ?? '')).toBe(false);
     expect(existsSync(stagingDirectory ?? '')).toBe(false);
   });
@@ -703,7 +733,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
     const publicWorkerPath = join(fixture.outputDir, 'wasm', 'board-render.worker.js');
     mkdirSync(dirname(domBundlePath), { recursive: true });
     mkdirSync(dirname(publicWorkerPath), { recursive: true });
-    writeFileSync(domBundlePath, 'dom component bundle');
+    writeFileSync(domBundlePath, `bytecode ${VALID_DEBUG_ID}`);
     writeFileSync(
       `${domBundlePath}.map`,
       JSON.stringify({ version: 3, sources: [], mappings: '', debugId: VALID_DEBUG_ID }),
@@ -739,6 +769,7 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
         }),
       },
       {
+        resolveCli: () => '/fake/sentry-cli',
         resolveUploader: () => fakeUploaderPath,
         spawnUploader: (executable, args, options) => {
           invocationCount += 1;
@@ -748,9 +779,9 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
             cwd: options.cwd,
             environment: options.env,
             cwdEntries: readdirSync(options.cwd),
-            stagedFiles: listRelativeFiles(args[1]).sort(),
+            stagedFiles: listRelativeFiles(join(dirname(options.cwd), 'artifacts')).sort(),
           };
-          writeFileSync(join(args[1], `${fixture.relativeBundlePath}.map`), 'mutated staged map');
+          writeFileSync(args.at(-1) ?? '', 'mutated staged map');
           return { status: 0 };
         },
       },
@@ -759,11 +790,11 @@ process.exit(Number(process.env.SENTRY_TEST_EXIT_CODE));
     // The official uploader accepts one staging directory. One invocation must
     // therefore contain every pair validation accepted, rather than silently
     // dropping a pair or launching a partially independent upload.
-    expect(invocationCount).toBe(1);
+    expect(invocationCount).toBe(2);
     expect(validatedArtifacts).toHaveLength(2);
     expect(invocation).toBeDefined();
-    expect(invocation?.executable).toBe('node');
-    expect(invocation?.args[0]).toBe(fakeUploaderPath);
+    expect(invocation?.executable).toBe('/fake/sentry-cli');
+    expect(invocation?.args.slice(0, 4)).toEqual(['sourcemaps', 'upload', '--wait', '--strict']);
     expect(invocation?.args[1]).not.toBe(fixture.outputDir);
     expect(invocation?.cwdEntries).toEqual([]);
     expect(invocation?.stagedFiles).toEqual(
@@ -922,7 +953,7 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
       expect(step).toMatch(/^\s+SENTRY_AUTH_TOKEN:\s*\$\{\{ secrets\.SENTRY_AUTH_TOKEN \}\}$/m);
       expect(step).toContain('vp run mobile:upload-sourcemaps');
     }
-    expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(2);
+    expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(4);
     for (const gateStepName of [
       'Warn that published OTA source maps are missing',
       'Require every published OTA source-map upload',
@@ -1007,18 +1038,18 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(uploadStep).toContain('continue-on-error: true');
     expect(uploadStep).toContain('timeout-minutes: 10');
     expect(uploadStep).toContain('run: node --import tsx scripts/mobile-upload-sourcemaps.ts');
-    expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(1);
+    expect((workflow.match(/^\s+SENTRY_AUTH_TOKEN:/gm) ?? []).length).toBe(2);
     const backportGate = workflowStep(workflow, 'Require the published backport source-map upload');
     expect(backportGate).toContain('!inputs.dry_run');
     expect(backportGate).toContain("steps.publish.outcome == 'success'");
     expect(backportGate).toContain("steps.upload_sourcemaps.outcome != 'success'");
   });
 
-  it('never uploads source maps or exposes a Sentry token in PR previews', () => {
+  it('requires source maps before authorized PR preview publication', () => {
     const previewWorkflow = readRepositoryFile('.github/workflows/mobile-ota-preview.yml');
     expect(previewWorkflow).toContain('vp run mobile:publish');
     expect(previewWorkflow).not.toContain('mobile:upload-sourcemaps');
     expect(previewWorkflow).not.toContain('mobile-upload-sourcemaps.ts');
-    expect(previewWorkflow).not.toMatch(/^\s+SENTRY_AUTH_TOKEN:/gm);
+    expect(previewWorkflow).toMatch(/^\s+SENTRY_AUTH_TOKEN:/gm);
   });
 });

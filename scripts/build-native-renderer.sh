@@ -75,7 +75,7 @@ if [ "$BUILD_IOS" = true ]; then
 echo "==> Building iOS static libraries..."
 for target in "${IOS_TARGETS[@]}"; do
   echo "  Building $target..."
-  cargo build --manifest-path "$FFI_DIR/Cargo.toml" --release --target "$target"
+  CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_STRIP=none cargo build --manifest-path "$FFI_DIR/Cargo.toml" --release --target "$target"
 done
 
 # -- Create xcframework --
@@ -170,13 +170,17 @@ else
     # aligned ("not 16 KB aligned" → UnsatisfiedLinkError). The NDK linker still
     # defaults to 4 KB for these targets, so force it; 16 KB-aligned libs also
     # load fine on 4 KB devices, so this is unconditionally safe.
-    RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384" \
-      cargo build --manifest-path "$FFI_DIR/Cargo.toml" --release --target "$target"
+    RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,--build-id=sha1" \
+      CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_STRIP=none cargo build --manifest-path "$FFI_DIR/Cargo.toml" --release --target "$target"
 
     # Copy .so to jniLibs
     JNILIBS_DIR="$MODULE_DIR/android/src/main/jniLibs/$abi"
     mkdir -p "$JNILIBS_DIR"
-    cp "$RELEASE_DIR/$target/release/libboard_renderer_ffi.so" "$JNILIBS_DIR/"
+    SYMBOLS_DIR="$MODULE_DIR/android/symbols/$abi"
+    mkdir -p "$SYMBOLS_DIR"
+    cp "$RELEASE_DIR/$target/release/libboard_renderer_ffi.so" "$SYMBOLS_DIR/"
+    cp "$SYMBOLS_DIR/libboard_renderer_ffi.so" "$JNILIBS_DIR/"
+    "$TOOLCHAIN/bin/llvm-strip" --strip-debug "$JNILIBS_DIR/libboard_renderer_ffi.so"
     echo "  Copied to $JNILIBS_DIR/"
   done
 fi

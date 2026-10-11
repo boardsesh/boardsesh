@@ -4,6 +4,8 @@ import { PressableSurface } from '../src/components/PressableSurface';
 // worklet-serialization global-error-capture install, which must wrap Sentry's
 // handler, not the other way round.
 import { wrapWithSentry } from '../src/lib/sentry';
+// Stamp the runtime launch before application operations begin.
+import '../src/lib/mobile-diagnostics-bootstrap';
 // Import second: calls Observe.configure() at module scope. It MUST have run
 // before the first screen mounts — expo-observe's router integration reads
 // isInitialized() when a screen mounts and throws if it changes afterwards — so

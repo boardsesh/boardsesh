@@ -177,10 +177,16 @@ export const feedbackMutations = {
 function normalizeContext(input: FeedbackContextInput | null | undefined): FeedbackContext | null {
   if (!input) return null;
   const out: FeedbackContext = {};
-  for (const [k, v] of Object.entries(input) as Array<[keyof FeedbackContext, unknown]>) {
-    if (typeof v === 'string' && v.length > 0) {
-      out[k] = v;
-    }
+  // Keep this scalar allowlist in sync with FeedbackContextInputSchema in
+  // validation/schemas/feedback.ts when adding fields; diagnostics stay separate.
+  const scalarKeys = ['climbUuid', 'climbName', 'difficulty', 'sessionId', 'sessionName', 'url', 'userAgent'] as const;
+  for (const contextKey of scalarKeys) {
+    const contextValue = input[contextKey];
+    if (typeof contextValue === 'string' && contextValue.length > 0) out[contextKey] = contextValue;
+  }
+  if (input.diagnostics) {
+    const diagnostics = Object.fromEntries(Object.entries(input.diagnostics).filter(([, entry]) => entry != null));
+    if (Object.keys(diagnostics).length > 0) out.diagnostics = diagnostics;
   }
   return Object.keys(out).length > 0 ? out : null;
 }
