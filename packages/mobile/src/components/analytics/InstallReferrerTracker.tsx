@@ -7,6 +7,8 @@ import { useAnalyticsConsent } from '../../lib/consent-hooks';
 // equivalent in this PR (see install-referrer.ts). Fire-and-forget after
 // mount so this never blocks the splash/auth gate — matches OtaUpdateTracker's
 // shape. Renders nothing; mounted once near the app root beside it.
+// Re-runs when the consent answer changes: nothing is read from Play before
+// Allow, so the first effective Allow is what triggers the read.
 export function InstallReferrerTracker(): null {
   const granted = useAnalyticsConsent();
   useEffect(() => {

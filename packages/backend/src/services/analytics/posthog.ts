@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import { PostHog } from 'posthog-node';
 import { logger } from '../../utils/logger';
@@ -209,6 +209,21 @@ function getPosthogClient(): PostHog | null {
 // SENTRY_ENVIRONMENT=preview (#3808), which wins over the runtime inference.
 export function getAnalyticsEnvironment(): string {
   return readOptionalEnv('POSTHOG_ENVIRONMENT') ?? resolveSentryEnvironment();
+}
+
+/**
+ * A keyed SHA-256 (HMAC) of a party-session id, so the operational events of
+ * one session can be joined in PostHog without sending the id itself. The key
+ * is `POSTHOG_SESSION_HASH_SALT`; unset, this returns undefined and the
+ * property is omitted. An unkeyed hash is not enough: a session id travels in
+ * join links, and anyone holding one could recompute the hash and find the
+ * session's events. Rotating the salt breaks joins across the rotation.
+ */
+export function hashSessionIdForAnalytics(sessionId: string | null | undefined): string | undefined {
+  if (!sessionId) return undefined;
+  const salt = readOptionalEnv('POSTHOG_SESSION_HASH_SALT');
+  if (!salt) return undefined;
+  return createHmac('sha256', salt).update(sessionId).digest('hex');
 }
 
 export function captureBackendEvent(
