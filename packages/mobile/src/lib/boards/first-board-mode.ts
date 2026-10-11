@@ -22,11 +22,40 @@ export const FIRST_BOARD_PICKER_HREF = {
 /** The picker's `source` when Climbs' "Pick your board" empty state opened it. */
 export const NO_BOARD_PICKER_SOURCE = 'no_board';
 
-/** Where Climbs' "Find my board" goes. */
-export const NO_BOARD_PICKER_HREF = {
-  pathname: '/boards',
-  params: { source: NO_BOARD_PICKER_SOURCE },
-} as const;
+/**
+ * What the climber tapped on Climbs' no-board state to open the picker: "Find
+ * my board" (`cta`, on the placard or docked under the preview), the big lit
+ * board at the top of the preview (`preview_hero`), or a climb in the list
+ * below it (`preview_row`). Carried as the `trigger` route param and reported
+ * on `Board Picker Opened`, so a climb tap that ends in a closed picker can be
+ * told from a deliberate "Find my board".
+ */
+export type NoBoardPickerTrigger = 'cta' | 'preview_row' | 'preview_hero';
+
+const NO_BOARD_PICKER_TRIGGERS: readonly string[] = [
+  'cta',
+  'preview_row',
+  'preview_hero',
+] satisfies readonly NoBoardPickerTrigger[];
+
+/** Where Climbs' no-board state sends the climber, tagged with what they tapped. */
+export function noBoardPickerHref(trigger: NoBoardPickerTrigger) {
+  return {
+    pathname: '/boards',
+    params: { source: NO_BOARD_PICKER_SOURCE, trigger },
+  } as const;
+}
+
+/**
+ * The picker's `trigger` param as a known value, or null. Null is every opening
+ * that is not Climbs' no-board entry, a link from a build that predates the
+ * param, and any value this build does not know.
+ */
+export function noBoardPickerTrigger(params: { source?: string; trigger?: string }): NoBoardPickerTrigger | null {
+  if (!isNoBoardEntry(params)) return null;
+  const { trigger } = params;
+  return trigger !== undefined && NO_BOARD_PICKER_TRIGGERS.includes(trigger) ? (trigger as NoBoardPickerTrigger) : null;
+}
 
 /**
  * The builder route's `preset` param when "My own board" opened it: open with a

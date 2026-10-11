@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { FIRST_BOARD_PICKER_HREF, NO_BOARD_PICKER_HREF, isFirstBoardMode, isNoBoardEntry } from '../first-board-mode';
+import {
+  FIRST_BOARD_PICKER_HREF,
+  NO_BOARD_PICKER_SOURCE,
+  isFirstBoardMode,
+  isNoBoardEntry,
+  noBoardPickerHref,
+  noBoardPickerTrigger,
+} from '../first-board-mode';
 import { firstBoardGymState } from '../first-board-gym-state';
 
 describe('isFirstBoardMode', () => {
@@ -23,13 +30,13 @@ describe('isFirstBoardMode', () => {
 
 describe('isNoBoardEntry', () => {
   it("is on for the href Climbs' Find my board pushes", () => {
-    expect(isNoBoardEntry(NO_BOARD_PICKER_HREF.params)).toBe(true);
+    expect(isNoBoardEntry(noBoardPickerHref('cta').params)).toBe(true);
   });
 
   // The no-board entry is an ordinary pick, never onboarding: it must not turn
   // on first-board mode, which closes out first-run on the bind.
   it('is not first-board mode', () => {
-    expect(isFirstBoardMode(NO_BOARD_PICKER_HREF.params)).toBe(false);
+    expect(isFirstBoardMode(noBoardPickerHref('cta').params)).toBe(false);
     expect(isNoBoardEntry(FIRST_BOARD_PICKER_HREF.params)).toBe(false);
     expect(isNoBoardEntry({})).toBe(false);
   });
@@ -87,5 +94,41 @@ describe('firstBoardGymState', () => {
   it('reads a denial and a failed fix the same way', () => {
     expect(firstBoardGymState({ ...tapped, locationStatus: 'denied' })).toBe('location_off');
     expect(firstBoardGymState({ ...tapped, locationStatus: 'unavailable' })).toBe('location_off');
+  });
+});
+
+// What on Climbs' no-board state opened the picker, so a tap on a previewed
+// climb can be told from a deliberate "Find my board".
+describe('noBoardPickerHref', () => {
+  it('is the no-board entry, tagged with what opened it', () => {
+    expect(noBoardPickerHref('preview_row')).toEqual({
+      pathname: '/boards',
+      params: { source: 'no_board', trigger: 'preview_row' },
+    });
+    expect(isNoBoardEntry(noBoardPickerHref('cta').params)).toBe(true);
+    expect(isFirstBoardMode(noBoardPickerHref('cta').params)).toBe(false);
+  });
+
+  it('round-trips through the route params', () => {
+    expect(noBoardPickerTrigger(noBoardPickerHref('cta').params)).toBe('cta');
+    expect(noBoardPickerTrigger(noBoardPickerHref('preview_row').params)).toBe('preview_row');
+    expect(noBoardPickerTrigger(noBoardPickerHref('preview_hero').params)).toBe('preview_hero');
+  });
+});
+
+describe('noBoardPickerTrigger', () => {
+  // A link from a build that predates the param carries none.
+  it('is null for the untagged no-board entry', () => {
+    expect(noBoardPickerTrigger({ source: NO_BOARD_PICKER_SOURCE })).toBeNull();
+  });
+
+  it('is null for a value this build does not know', () => {
+    expect(noBoardPickerTrigger({ source: 'no_board', trigger: 'banner' })).toBeNull();
+  });
+
+  // A stray param on another picker link must not file that opening under the preview.
+  it('is null outside the no-board entry', () => {
+    expect(noBoardPickerTrigger({ source: 'onboarding', trigger: 'preview_row' })).toBeNull();
+    expect(noBoardPickerTrigger({ trigger: 'cta' })).toBeNull();
   });
 });
