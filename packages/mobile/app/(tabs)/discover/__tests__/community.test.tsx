@@ -47,6 +47,7 @@ const viewer = vi.hoisted(() => ({
   profileLoading: false,
   profileFetching: false,
   boardLoading: false,
+  boardType: 'kilter',
   // Pending like a real in-flight refetch, so the pull spinner has something to wait on.
   refetchProfile: vi.fn(() => new Promise<void>(() => {})),
 }));
@@ -151,7 +152,7 @@ vi.mock('../../../../src/lib/graphql/hooks', () => ({
 }));
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({
-    data: viewer.boardLoading ? undefined : { boardType: 'kilter', layoutId: 8 },
+    data: viewer.boardLoading ? undefined : { boardType: viewer.boardType, layoutId: 8 },
     isLoading: viewer.boardLoading,
   }),
 }));
@@ -245,6 +246,7 @@ beforeEach(() => {
   viewer.isAuthenticated = true;
   viewer.profileId = 'me';
   viewer.boardLoading = false;
+  viewer.boardType = 'kilter';
   viewer.profileLoading = false;
   viewer.profileFetching = false;
   viewer.refetchProfile.mockClear();
@@ -288,6 +290,28 @@ describe('CommunityPlaylistsScreen filters', () => {
     fireEvent.click(getByLabelText('library.community.sizeLabel:big'));
     expect(lastInput()).toMatchObject({ minClimbs: 31, maxClimbs: 150 });
     expect(getByText('library.community.sizeBand.range:{"min":31,"max":150}', { exact: false })).toBeTruthy();
+  });
+
+  it('drops a grade band picked on another board, and brings it back with that board', () => {
+    const { getByLabelText, rerender } = render(<CommunityPlaylistsScreen />);
+    fireEvent.click(
+      getByLabelText(`library.community.gradeA11y:${JSON.stringify({ band: 'library.community.gradeAny' })}`),
+    );
+    fireEvent.click(getByLabelText('rail-pick-v3-v5'));
+    expect(lastInput()).toMatchObject({ minGrade: 16, maxGrade: 20 });
+
+    viewer.boardType = 'moonboard';
+    rerender(<CommunityPlaylistsScreen />);
+    expect(lastInput().boardType).toBe('moonboard');
+    expect(lastInput()).not.toHaveProperty('minGrade');
+    expect(lastInput()).not.toHaveProperty('maxGrade');
+    expect(
+      getByLabelText(`library.community.gradeA11y:${JSON.stringify({ band: 'library.community.gradeAny' })}`),
+    ).toBeTruthy();
+
+    viewer.boardType = 'kilter';
+    rerender(<CommunityPlaylistsScreen />);
+    expect(lastInput()).toMatchObject({ minGrade: 16, maxGrade: 20 });
   });
 
   it('asks the server for followed creators when Following is picked', () => {

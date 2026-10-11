@@ -73,7 +73,7 @@ export default function CommunityPlaylistsScreen() {
 
   const viewerId = isAuthenticated ? (profile?.id ?? null) : null;
 
-  const [filters, setFilters] = useState<CommunityPlaylistFilters>(DEFAULT_COMMUNITY_PLAYLIST_FILTERS);
+  const [pickedFilters, setFilters] = useState<CommunityPlaylistFilters>(DEFAULT_COMMUNITY_PLAYLIST_FILTERS);
   // The field echoes every keystroke; `filters.search` follows after a pause so
   // typing a word costs one request, not one per letter.
   const [searchInput, setSearchInput] = useState('');
@@ -102,14 +102,25 @@ export default function CommunityPlaylistsScreen() {
   // climber adjusts it; every change applies at once, like the other controls.
   const [gradeRailOpen, setGradeRailOpen] = useState(false);
   const toggleGradeRail = useCallback(() => setGradeRailOpen((open) => !open), []);
+  // Grade ids are read on the board they were picked on (MoonBoard's 16 is V2,
+  // everyone else's V3), so a band only applies while that board is active.
+  const [gradeBoardType, setGradeBoardType] = useState<string | null>(null);
   const setGradeBound = useCallback(
-    (bound: GradeBound) =>
+    (bound: GradeBound) => {
+      setGradeBoardType(boardType);
       setFilters((previous) => ({
         ...previous,
         minGrade: bound.minGradeId ?? null,
         maxGrade: bound.maxGradeId ?? null,
-      })),
-    [],
+      }));
+    },
+    [boardType],
+  );
+  // After a board switch the old band neither shows nor filters; picking a new
+  // one on this board replaces it.
+  const filters = useMemo<CommunityPlaylistFilters>(
+    () => (gradeBoardType === boardType ? pickedFilters : { ...pickedFilters, minGrade: null, maxGrade: null }),
+    [pickedFilters, gradeBoardType, boardType],
   );
   const clearFilters = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
