@@ -723,6 +723,7 @@ jobs:
       - name: Capture shard
         uses: ./.github/actions/ios-screenshot-shard
         env:
+          SCREENSHOT_DEBUG_DIR: capture-debug
           BOARDSESH_CAPTURE_CONTENT_SIZE: ${{ matrix.device.contentSize }}
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
