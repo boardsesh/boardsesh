@@ -326,7 +326,7 @@ export function CreateClimbScreen({
   }
 
   return (
-    <View ref={editorRootRef} collapsable={false} style={styles.container}>
+    <View ref={editorRootRef} testID="create-climb-editor" collapsable={false} style={styles.container}>
       <CreateDrawer
         board={board}
         controller={controller}

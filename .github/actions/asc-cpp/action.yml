@@ -1,0 +1,66 @@
+name: App Store custom product pages
+description: Validate and run the existing Fastlane CPP lane with an ephemeral API key.
+inputs:
+  target:
+    required: true
+    description: 'CPP target or all.'
+  action:
+    required: true
+    description: 'plan, upload, or submit.'
+  keyword-ids:
+    default: ''
+    description: 'Verified locale -> keyword -> Apple resource ID JSON.'
+  key-id:
+    required: true
+    description: 'App Store Connect API key ID.'
+  issuer-id:
+    required: true
+    description: 'App Store Connect API issuer ID.'
+  key-base64:
+    required: true
+    description: 'Base64-encoded App Store Connect private key.'
+runs:
+  using: composite
+  steps:
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.4'
+        bundler-cache: true
+        working-directory: fastlane
+    - name: Test CPP reconciliation and publication gates
+      shell: bash
+      run: vp exec ruby fastlane/tests/custom_product_pages_test.rb
+    - name: Run CPP lane
+      shell: bash
+      working-directory: fastlane
+      env:
+        CPP_TARGET: ${{ inputs.target }}
+        CPP_ACTION: ${{ inputs.action }}
+        APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.key-id }}
+        APP_STORE_CONNECT_ISSUER_ID: ${{ inputs.issuer-id }}
+        CPP_PRIVATE_KEY_BASE64: ${{ inputs.key-base64 }}
+        ASC_CPP_KEYWORD_IDS_JSON: ${{ inputs.keyword-ids }}
+        FASTLANE_SKIP_UPDATE_CHECK: '1'
+        FASTLANE_DISABLE_ANIMATION: '1'
+      run: |
+        set -euo pipefail
+        case "$CPP_TARGET" in all|kilter|tension|moonboard|spray) ;; *) echo '::error::Invalid CPP target'; exit 1 ;; esac
+        case "$CPP_ACTION" in plan|upload|submit) ;; *) echo '::error::Invalid CPP action'; exit 1 ;; esac
+        if [ -z "$ASC_CPP_KEYWORD_IDS_JSON" ]; then export ASC_CPP_KEYWORD_IDS_JSON='{}'; fi
+        if [ "$CPP_ACTION" = plan ]; then export ASC_CPP_PLAN_OUTPUT="$RUNNER_TEMP/cpp-plan.json"; fi
+        [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && [ -n "$CPP_PRIVATE_KEY_BASE64" ] || { echo '::error::App Store Connect credentials are not configured'; exit 1; }
+        ASC_KEY_PATH=$(mktemp "$RUNNER_TEMP/boardsesh-cpp-key.XXXXXX.p8")
+        export ASC_KEY_PATH
+        trap 'rm -f "$ASC_KEY_PATH"' EXIT
+        chmod 600 "$ASC_KEY_PATH"
+        printf '%s' "$CPP_PRIVATE_KEY_BASE64" | base64 --decode > "$ASC_KEY_PATH"
+        grep -q 'BEGIN PRIVATE KEY' "$ASC_KEY_PATH" || { echo '::error::Invalid App Store Connect private key'; exit 1; }
+        bundle exec fastlane ios cpp "target:$CPP_TARGET" "action:$CPP_ACTION"
+    - name: Retain read-only CPP discovery report
+      if: ${{ inputs.action == 'plan' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-plan
+        path: ${{ runner.temp }}/cpp-plan.json
+        if-no-files-found: error
+        retention-days: 7

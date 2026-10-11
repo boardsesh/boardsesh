@@ -356,6 +356,25 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     throw new Error('replay mode makes no outbound requests — drop --upstream');
   }
 
+  const recordingScenario =
+    isRecording && process.env.BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO
+      ? (JSON.parse(process.env.BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO) as unknown)
+      : undefined;
+  if (recordingScenario !== undefined) {
+    const scenarioValidation = validateScreenshotFixtureManifest({
+      ...emptyManifest({
+        recordedAt: new Date().toISOString(),
+        frozenNow,
+        upstream: upstreamUrl ?? '',
+        accountEmail: '',
+        accountUserId: '',
+        flow: options.flow ?? DEFAULT_SCREENSHOT_FLOW,
+      }),
+      capture: recordingScenario,
+    });
+    if (!scenarioValidation.ok) throw new Error(`Invalid recording capture scenario: ${scenarioValidation.reason}`);
+  }
+
   const emit = (line: ScreenshotBackendLogLine): void => log(formatScreenshotBackendLine(line));
 
   if (isRecording && options.fresh) {
@@ -387,6 +406,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     manifest.frozenNow = frozenNow;
     manifest.upstream = upstreamUrl ?? '';
     manifest.flow = options.flow ?? manifest.flow;
+    if (recordingScenario !== undefined) {
+      manifest.capture = recordingScenario as ScreenshotFixtureManifest['capture'];
+    }
   }
 
   // (operationName, variablesHash) -> entry. The variables pick the fixture; the

@@ -95,5 +95,57 @@
     "headline": "Le bloc suivant,\ndepuis Dynamic Island.",
     "description": "Change de bloc sans ouvrir l’appli.",
     "emphasis": "Dynamic Island."
+  },
+  "cppBoards": {
+    "headline": "Une app pour tes boards",
+    "description": "Découvre des blocs et rassemble tes séances."
+  },
+  "cppOtherBoards": {
+    "headline": "Et tes autres boards aussi",
+    "description": "Change de board sans changer d’app."
+  },
+  "cppSearch": {
+    "headline": "Trouve ton prochain projet",
+    "description": "Filtre les blocs par cotation, inclinaison et plus."
+  },
+  "cppLogbook": {
+    "headline": "Garde chaque croix en mémoire",
+    "description": "Tes séances, tes croix et tes essais dans un seul carnet."
+  },
+  "cppLed": {
+    "headline": "Allume ton bloc",
+    "description": "Connecte ta board et allume les prises."
+  },
+  "cppSetting": {
+    "headline": "Ouvre des blocs sur ton mur",
+    "description": "Choisis les prises sur la photo de ton mur."
+  },
+  "cppQueue": {
+    "headline": "Ton crew. Une file.",
+    "description": "Ajoutez des blocs ensemble et choisissez le suivant."
+  },
+  "cppWorkout": {
+    "headline": "Prépare ta séance",
+    "description": "Crée un entraînement adapté à ta board et à ton niveau."
+  },
+  "cppStatus": {
+    "headline": "Vois ce qui est au mur",
+    "description": "Vois le bloc allumé pendant que tu cherches le suivant."
+  },
+  "cppPlaylist": {
+    "headline": "Rassemble tes projets",
+    "description": "Garde des blocs dans des playlists pour ta prochaine séance."
+  },
+  "cppIsland": {
+    "headline": "Le bloc suivant, depuis Dynamic Island",
+    "description": "Change de bloc sans ouvrir l’app."
+  },
+  "cppHolds": {
+    "headline": "Un mur à ton image",
+    "description": "Modifie les prises sur la photo de ton mur."
+  },
+  "cppKiosk": {
+    "headline": "Pose-le près de la board",
+    "description": "Le bloc allumé, lisible depuis le tapis."
   }
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
@@ -12,6 +12,8 @@ type CapturedOptions = { sourceId: string; replaceQueueOnActivate?: boolean; pre
 
 const smartMocks = vi.hoisted(() => ({
   activationOptions: null as CapturedOptions | null,
+  queryOptions: null as Record<string, unknown> | null,
+  activeBoard: { uuid: 'spray-liz', boardType: 'spray', sizeId: 17, angle: 40 },
   activate: vi.fn<(climb: Climb) => Promise<void>>(),
   appendToQueue: vi.fn(),
   allClimbs: [{ uuid: 'c-1', name: 'Boulder' }] as unknown as Climb[],
@@ -21,11 +23,14 @@ vi.mock('expo-router', () => ({ useLocalSearchParams: () => ({ type: 'liked' }) 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('@boardsesh/playlists-react', () => ({
-  useSmartPlaylist: () => ({
-    query: { isLoading: false, isFetchingNextPage: false, hasNextPage: false, fetchNextPage: vi.fn() },
-    allClimbs: smartMocks.allClimbs,
-    meta: { climbCount: 1, userName: 'Tester' },
-  }),
+  useSmartPlaylist: (options: Record<string, unknown>) => {
+    smartMocks.queryOptions = options;
+    return {
+      query: { isLoading: false, isFetchingNextPage: false, hasNextPage: false, fetchNextPage: vi.fn() },
+      allClimbs: smartMocks.allClimbs,
+      meta: { climbCount: 1, userName: 'Tester' },
+    };
+  },
 }));
 
 vi.mock('@boardsesh/graphql/operations/playlists', () => ({ GET_SMART_PLAYLIST: 'GET_SMART_PLAYLIST' }));
@@ -85,6 +90,9 @@ vi.mock('../../../../../src/lib/smart-playlists', () => ({
   }),
 }));
 vi.mock('../../../../../src/lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'u-1' } }) }));
+vi.mock('../../../../../src/lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: smartMocks.activeBoard, isPending: false }),
+}));
 vi.mock('../../../../../src/lib/graphql/use-auth-token', () => ({ useAuthToken: () => ({ isLoading: false }) }));
 vi.mock('../../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { tertiaryLabel: 'theme-tertiary-label' } }),
@@ -97,6 +105,10 @@ vi.mock('../../../../../src/providers/queue-provider', () => ({
 }));
 
 import SmartPlaylistDetail from '../[type]';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('SmartPlaylistDetail queue replacement wiring', () => {
   it('activates with replaceQueueOnActivate', () => {
@@ -138,5 +150,21 @@ describe('SmartPlaylistDetail queue replacement wiring', () => {
 
     expect(smartMocks.activationOptions?.previewOnly).toBe(false);
     expect(smartMocks.activationOptions?.replaceQueueOnActivate).toBe(true);
+  });
+  it('scopes CPP smart-playlist requests to the active wall and keeps ordinary requests unchanged', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
+    const { rerender } = render(<SmartPlaylistDetail />);
+    expect(smartMocks.queryOptions).toMatchObject({
+      boardName: 'spray',
+      boardUuid: 'spray-liz',
+      sizeId: 17,
+      angle: 40,
+      pageSize: 10,
+    });
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+    rerender(<SmartPlaylistDetail />);
+    expect(smartMocks.queryOptions).not.toHaveProperty('boardName');
+    expect(smartMocks.queryOptions).not.toHaveProperty('boardUuid');
   });
 });

@@ -1,0 +1,872 @@
+{
+  "version": 1,
+  "locales": {
+    "en-US": ["en-US"],
+    "es": ["es-ES", "es-MX"],
+    "fr": ["fr-FR"],
+    "de": ["de-DE"]
+  },
+  "devices": {
+    "iphone-16-pro-max": "APP_IPHONE_67",
+    "iphone-16-pro": "APP_IPHONE_61",
+    "ipad-pro-13-inch-m5": "APP_IPAD_PRO_3GEN_129",
+    "ipad-pro-11-inch-m5": "APP_IPAD_PRO_3GEN_11"
+  },
+  "sourcePhotos": {
+    "liz": {
+      "path": "app-stores/apple/cpp-source-photos/lizfinal.JPG",
+      "originalFilename": "lizfinal.JPG",
+      "sha256": "c3df2d84fc668f81adcabcc1aadaf97be0a720a1dca8d07b1f0c4321b594d427",
+      "bytes": 258523,
+      "provenance": "Real wall photo supplied by the user in /mnt/aiwork/spraywalls/canuse."
+    },
+    "cherry": {
+      "path": "app-stores/apple/cpp-source-photos/cherry4.JPG",
+      "originalFilename": "cherry4.JPG",
+      "sha256": "d1d11a9f8600b12f12ad8fbc8ce2baf525404eb65d20c387be738f30f15d340b",
+      "bytes": 245117,
+      "provenance": "Real wall photo supplied by the user in /mnt/aiwork/spraywalls/canuse."
+    },
+    "bowlo": {
+      "path": "app-stores/apple/cpp-source-photos/bowlo.jpg",
+      "originalFilename": "bowlo.jpg",
+      "sha256": "d1b2b399a918f8f6af5baec371da899747048cf50dd201db1977fe0795ddb126",
+      "bytes": 346862,
+      "provenance": "Real wall photo supplied by the user in /mnt/aiwork/spraywalls/canuse."
+    }
+  },
+  "targets": {
+    "kilter": {
+      "referenceName": "Boardsesh Kilter",
+      "screenshotsRoot": "app-stores/apple/cpp/kilter/screenshots",
+      "primaryBoard": {
+        "id": "kilter-original-12x12",
+        "family": "kilter",
+        "selector": "Kilter Original 12x12",
+        "boardType": "kilter",
+        "layoutId": 1,
+        "sizeId": 10,
+        "setIds": [1, 20],
+        "angle": 40
+      },
+      "heroBoards": [
+        {
+          "id": "kilter-original-12x12",
+          "family": "kilter",
+          "selector": "Kilter Original 12x12",
+          "boardType": "kilter",
+          "layoutId": 1,
+          "sizeId": 10,
+          "setIds": [1, 20],
+          "angle": 40
+        },
+        {
+          "id": "kilter-homewall-7x10",
+          "family": "kilter",
+          "selector": "Kilter Homewall 7x10",
+          "boardType": "kilter",
+          "layoutId": 8,
+          "sizeId": 17,
+          "setIds": [26, 27],
+          "angle": 40
+        },
+        {
+          "id": "kilter-homewall-10x10",
+          "family": "kilter",
+          "selector": "Kilter Homewall 10x10",
+          "boardType": "kilter",
+          "layoutId": 8,
+          "sizeId": 21,
+          "setIds": [26, 27],
+          "angle": 40
+        }
+      ],
+      "otherBoards": [
+        {
+          "id": "tension-2-mirror",
+          "family": "tension",
+          "selector": "Tension Board 2 Mirror",
+          "boardType": "tension",
+          "layoutId": 10,
+          "sizeId": 6,
+          "setIds": [12, 13],
+          "angle": 40
+        },
+        {
+          "id": "moonboard-2024",
+          "family": "moonboard",
+          "selector": "MoonBoard 2024",
+          "boardType": "moonboard",
+          "layoutId": 3,
+          "sizeId": 1,
+          "setIds": [5, 6, 7, 8, 9, 10],
+          "angle": 40
+        },
+        {
+          "id": "woods-12x12",
+          "family": "woods",
+          "selector": "Woods 12x12",
+          "boardType": "woods",
+          "layoutId": 1,
+          "sizeId": 2,
+          "setIds": [1],
+          "angle": 40
+        }
+      ],
+      "recipes": {
+        "phone": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-led.png",
+            "caption": "cppLed",
+            "layout": "store-wall",
+            "sources": ["04-led.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-status.png",
+            "caption": "cppStatus",
+            "layout": "store-wall",
+            "sources": ["07-status.png"]
+          },
+          {
+            "output": "08-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
+          }
+        ],
+        "ipad": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-led.png",
+            "caption": "cppLed",
+            "layout": "store-wall",
+            "sources": ["04-led.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-status.png",
+            "caption": "cppStatus",
+            "layout": "store-wall",
+            "sources": ["07-status.png"]
+          },
+          {
+            "output": "08-kiosk.png",
+            "caption": "cppKiosk",
+            "layout": "screen",
+            "sources": ["08-kiosk.png"]
+          }
+        ]
+      },
+      "localizations": {
+        "en-US": {
+          "promotionalText": "Works with Kilter. Find climbs, filter your next project, light the holds, and keep your sends with your other boards in one logbook.",
+          "keywords": ["Kilter", "kilterboard"]
+        },
+        "es": {
+          "promotionalText": "Compatible con Kilter. Busca bloques, filtra tu próximo proyecto, ilumina las presas y guarda tus encadenes junto a tus demás plafones en un logbook.",
+          "keywords": ["Kilter", "kilterboard"]
+        },
+        "fr": {
+          "promotionalText": "Compatible avec Kilter. Trouve des blocs, filtre tes projets, allume les prises et garde tes croix avec tes autres boards dans un seul carnet.",
+          "keywords": ["Kilter", "kilterboard"]
+        },
+        "de": {
+          "promotionalText": "Kompatibel mit Kilter. Finde Boulder, filtere deine Projekte, beleuchte die Griffe und sammle Begehungen von allen Boards in einem Routenbuch.",
+          "keywords": ["Kilter", "kilterboard"]
+        }
+      },
+      "fixtureReference": "app-stores/apple/cpp-fixtures/kilter.json"
+    },
+    "tension": {
+      "referenceName": "Boardsesh Tension",
+      "screenshotsRoot": "app-stores/apple/cpp/tension/screenshots",
+      "primaryBoard": {
+        "id": "tension-2-mirror",
+        "family": "tension",
+        "selector": "Tension Board 2 Mirror",
+        "boardType": "tension",
+        "layoutId": 10,
+        "sizeId": 6,
+        "setIds": [12, 13],
+        "angle": 40
+      },
+      "heroBoards": [
+        {
+          "id": "tension-original",
+          "family": "tension",
+          "selector": "Tension Original",
+          "boardType": "tension",
+          "layoutId": 9,
+          "sizeId": 1,
+          "setIds": [8, 9, 10, 11],
+          "angle": 40
+        },
+        {
+          "id": "tension-2-mirror",
+          "family": "tension",
+          "selector": "Tension Board 2 Mirror",
+          "boardType": "tension",
+          "layoutId": 10,
+          "sizeId": 6,
+          "setIds": [12, 13],
+          "angle": 40
+        },
+        {
+          "id": "tension-2-spray",
+          "family": "tension",
+          "selector": "Tension Board 2 Spray",
+          "boardType": "tension",
+          "layoutId": 11,
+          "sizeId": 6,
+          "setIds": [12, 13],
+          "angle": 40
+        }
+      ],
+      "otherBoards": [
+        {
+          "id": "kilter-original-12x12",
+          "family": "kilter",
+          "selector": "Kilter Original 12x12",
+          "boardType": "kilter",
+          "layoutId": 1,
+          "sizeId": 10,
+          "setIds": [1, 20],
+          "angle": 40
+        },
+        {
+          "id": "moonboard-2024",
+          "family": "moonboard",
+          "selector": "MoonBoard 2024",
+          "boardType": "moonboard",
+          "layoutId": 3,
+          "sizeId": 1,
+          "setIds": [5, 6, 7, 8, 9, 10],
+          "angle": 40
+        },
+        {
+          "id": "woods-12x12",
+          "family": "woods",
+          "selector": "Woods 12x12",
+          "boardType": "woods",
+          "layoutId": 1,
+          "sizeId": 2,
+          "setIds": [1],
+          "angle": 40
+        }
+      ],
+      "recipes": {
+        "phone": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-led.png",
+            "caption": "cppLed",
+            "layout": "store-wall",
+            "sources": ["04-led.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-status.png",
+            "caption": "cppStatus",
+            "layout": "store-wall",
+            "sources": ["07-status.png"]
+          },
+          {
+            "output": "08-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
+          }
+        ],
+        "ipad": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-led.png",
+            "caption": "cppLed",
+            "layout": "store-wall",
+            "sources": ["04-led.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-status.png",
+            "caption": "cppStatus",
+            "layout": "store-wall",
+            "sources": ["07-status.png"]
+          },
+          {
+            "output": "08-kiosk.png",
+            "caption": "cppKiosk",
+            "layout": "screen",
+            "sources": ["08-kiosk.png"]
+          }
+        ]
+      },
+      "localizations": {
+        "en-US": {
+          "promotionalText": "Works with Tension. Find climbs, filter your next project, light the holds, and keep your sends with your other boards in one logbook.",
+          "keywords": ["Tension"]
+        },
+        "es": {
+          "promotionalText": "Compatible con Tension. Busca bloques, filtra tu próximo proyecto, ilumina las presas y guarda tus encadenes junto a tus demás plafones en un logbook.",
+          "keywords": ["Tension"]
+        },
+        "fr": {
+          "promotionalText": "Compatible avec Tension. Trouve des blocs, filtre tes projets, allume les prises et garde tes croix avec tes autres boards dans un seul carnet.",
+          "keywords": ["Tension"]
+        },
+        "de": {
+          "promotionalText": "Kompatibel mit Tension. Finde Boulder, filtere deine Projekte, beleuchte die Griffe und sammle Begehungen von allen Boards in einem Routenbuch.",
+          "keywords": ["Tension"]
+        }
+      },
+      "fixtureReference": "app-stores/apple/cpp-fixtures/tension.json"
+    },
+    "moonboard": {
+      "referenceName": "Boardsesh MoonBoard",
+      "screenshotsRoot": "app-stores/apple/cpp/moonboard/screenshots",
+      "primaryBoard": {
+        "id": "moonboard-2024",
+        "family": "moonboard",
+        "selector": "MoonBoard 2024",
+        "boardType": "moonboard",
+        "layoutId": 3,
+        "sizeId": 1,
+        "setIds": [5, 6, 7, 8, 9, 10],
+        "angle": 40
+      },
+      "heroBoards": [
+        {
+          "id": "moonboard-2016",
+          "family": "moonboard",
+          "selector": "MoonBoard 2016",
+          "boardType": "moonboard",
+          "layoutId": 2,
+          "sizeId": 1,
+          "setIds": [2, 3, 4],
+          "angle": 40
+        },
+        {
+          "id": "moonboard-2019",
+          "family": "moonboard",
+          "selector": "MoonBoard Masters 2019",
+          "boardType": "moonboard",
+          "layoutId": 5,
+          "sizeId": 1,
+          "setIds": [17, 18, 19, 20, 21, 22, 23],
+          "angle": 40
+        },
+        {
+          "id": "moonboard-2024",
+          "family": "moonboard",
+          "selector": "MoonBoard 2024",
+          "boardType": "moonboard",
+          "layoutId": 3,
+          "sizeId": 1,
+          "setIds": [5, 6, 7, 8, 9, 10],
+          "angle": 40
+        }
+      ],
+      "otherBoards": [
+        {
+          "id": "kilter-original-12x12",
+          "family": "kilter",
+          "selector": "Kilter Original 12x12",
+          "boardType": "kilter",
+          "layoutId": 1,
+          "sizeId": 10,
+          "setIds": [1, 20],
+          "angle": 40
+        },
+        {
+          "id": "tension-2-mirror",
+          "family": "tension",
+          "selector": "Tension Board 2 Mirror",
+          "boardType": "tension",
+          "layoutId": 10,
+          "sizeId": 6,
+          "setIds": [12, 13],
+          "angle": 40
+        },
+        {
+          "id": "woods-12x12",
+          "family": "woods",
+          "selector": "Woods 12x12",
+          "boardType": "woods",
+          "layoutId": 1,
+          "sizeId": 2,
+          "setIds": [1],
+          "angle": 40
+        }
+      ],
+      "recipes": {
+        "phone": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-led.png",
+            "caption": "cppLed",
+            "layout": "store-wall",
+            "sources": ["04-led.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-status.png",
+            "caption": "cppStatus",
+            "layout": "store-wall",
+            "sources": ["07-status.png"]
+          },
+          {
+            "output": "08-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
+          }
+        ],
+        "ipad": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-led.png",
+            "caption": "cppLed",
+            "layout": "store-wall",
+            "sources": ["04-led.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-status.png",
+            "caption": "cppStatus",
+            "layout": "store-wall",
+            "sources": ["07-status.png"]
+          },
+          {
+            "output": "08-kiosk.png",
+            "caption": "cppKiosk",
+            "layout": "screen",
+            "sources": ["08-kiosk.png"]
+          }
+        ]
+      },
+      "localizations": {
+        "en-US": {
+          "promotionalText": "Works with MoonBoard. Find climbs, filter your next project, light the holds, and keep your sends with your other boards in one logbook.",
+          "keywords": ["MoonBoard", "moon"]
+        },
+        "es": {
+          "promotionalText": "Compatible con MoonBoard. Busca bloques, filtra tu próximo proyecto, ilumina las presas y guarda tus encadenes junto a tus demás plafones en un logbook.",
+          "keywords": ["MoonBoard"]
+        },
+        "fr": {
+          "promotionalText": "Compatible avec MoonBoard. Trouve des blocs, filtre tes projets, allume les prises et garde tes croix avec tes autres boards dans un seul carnet.",
+          "keywords": ["MoonBoard", "moon"]
+        },
+        "de": {
+          "promotionalText": "Kompatibel mit MoonBoard. Finde Boulder, filtere deine Projekte, beleuchte die Griffe und sammle Begehungen von allen Boards in einem Routenbuch.",
+          "keywords": ["MoonBoard"]
+        }
+      },
+      "fixtureReference": "app-stores/apple/cpp-fixtures/moonboard.json"
+    },
+    "spray": {
+      "referenceName": "Boardsesh Spray Wall",
+      "screenshotsRoot": "app-stores/apple/cpp/spray/screenshots",
+      "primaryBoard": {
+        "id": "spray-liz",
+        "family": "spray",
+        "selector": "Liz",
+        "boardType": "spray",
+        "photo": "app-stores/apple/cpp-source-photos/lizfinal.JPG"
+      },
+      "heroBoards": [
+        {
+          "id": "spray-liz",
+          "family": "spray",
+          "selector": "Liz",
+          "boardType": "spray",
+          "photo": "app-stores/apple/cpp-source-photos/lizfinal.JPG"
+        },
+        {
+          "id": "spray-cherry",
+          "family": "spray",
+          "selector": "Cherry",
+          "boardType": "spray",
+          "photo": "app-stores/apple/cpp-source-photos/cherry4.JPG"
+        },
+        {
+          "id": "spray-bowlo",
+          "family": "spray",
+          "selector": "Bowlo",
+          "boardType": "spray",
+          "photo": "app-stores/apple/cpp-source-photos/bowlo.jpg"
+        }
+      ],
+      "otherBoards": [
+        {
+          "id": "kilter-original-12x12",
+          "family": "kilter",
+          "selector": "Kilter Original 12x12",
+          "boardType": "kilter",
+          "layoutId": 1,
+          "sizeId": 10,
+          "setIds": [1, 20],
+          "angle": 40
+        },
+        {
+          "id": "tension-2-mirror",
+          "family": "tension",
+          "selector": "Tension Board 2 Mirror",
+          "boardType": "tension",
+          "layoutId": 10,
+          "sizeId": 6,
+          "setIds": [12, 13],
+          "angle": 40
+        },
+        {
+          "id": "moonboard-2024",
+          "family": "moonboard",
+          "selector": "MoonBoard 2024",
+          "boardType": "moonboard",
+          "layoutId": 3,
+          "sizeId": 1,
+          "setIds": [5, 6, 7, 8, 9, 10],
+          "angle": 40
+        }
+      ],
+      "recipes": {
+        "phone": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-setting.png",
+            "caption": "cppSetting",
+            "layout": "store-spray",
+            "sources": ["04-setting.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-playlist.png",
+            "caption": "cppPlaylist",
+            "layout": "screen",
+            "sources": ["07-playlist.png"]
+          },
+          {
+            "output": "08-holds.png",
+            "caption": "cppHolds",
+            "layout": "screen",
+            "sources": ["08-holds.png"]
+          }
+        ],
+        "ipad": [
+          {
+            "output": "00-target-boards.png",
+            "caption": "cppBoards",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "02-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-setting.png",
+            "caption": "cppSetting",
+            "layout": "store-spray",
+            "sources": ["04-setting.png"]
+          },
+          {
+            "output": "05-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "06-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "07-playlist.png",
+            "caption": "cppPlaylist",
+            "layout": "screen",
+            "sources": ["07-playlist.png"]
+          },
+          {
+            "output": "08-holds.png",
+            "caption": "cppHolds",
+            "layout": "screen",
+            "sources": ["08-holds.png"]
+          }
+        ]
+      },
+      "localizations": {
+        "en-US": {
+          "promotionalText": "Set climbs on your wall photo, save your projects, share a queue with your crew, and keep your sends with your other boards in one logbook.",
+          "keywords": ["spray", "wall"]
+        },
+        "es": {
+          "promotionalText": "Monta bloques sobre la foto de tu muro, guarda tus proyectos, comparte la cola con tu grupo y reúne tus encadenes en un solo logbook.",
+          "keywords": ["spray", "wall"]
+        },
+        "fr": {
+          "promotionalText": "Ouvre des blocs sur la photo de ton mur, garde tes projets, partage une file avec ton crew et rassemble tes croix dans un seul carnet.",
+          "keywords": ["spray", "wall"]
+        },
+        "de": {
+          "promotionalText": "Schraub Boulder auf deinem Wandfoto, speichere Projekte, teile eine Warteschlange mit deiner Crew und sammle Begehungen in einem Routenbuch.",
+          "keywords": ["Spraywall", "Spraywand"]
+        }
+      },
+      "fixtureReference": "app-stores/apple/cpp-fixtures/spray.json"
+    }
+  }
+}

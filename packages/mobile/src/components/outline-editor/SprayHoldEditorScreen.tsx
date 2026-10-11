@@ -3196,7 +3196,7 @@ export function SprayHoldEditorScreen({
       onPencilGesture={handlePencilGesture}
     >
       {boardRender.width > 0 ? (
-        <View style={[styles.boardSlot, { height: boardViewport.height }]}>
+        <View testID="spray-hold-editor-board" style={[styles.boardSlot, { height: boardViewport.height }]}>
           <InteractiveFilterBoard
             backgroundPhotoUrl={wall.photoUrl}
             fullResolutionPhoto={fullResolutionPhoto}

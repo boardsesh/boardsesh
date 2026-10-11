@@ -203,6 +203,14 @@
     "lib/screenshot-fixture-assets.ts",
     "__tests__/screenshot-fixture-assets.test.ts",
     "lib/screenshot-campaign-session.ts",
-    "__tests__/screenshot-campaign-session.test.ts"
+    "__tests__/screenshot-campaign-session.test.ts",
+    "bootstrap-cpp-scenario.ts",
+    "__tests__/bootstrap-cpp-scenario.test.ts",
+    "assert-cpp-screenshots.ts",
+    "__tests__/assert-cpp-screenshots.test.ts",
+    "__tests__/prepare-ios-campaign-fixtures.test.ts",
+    "__tests__/cpp-workflow.test.ts",
+    "__tests__/screenshot-cpp.test.ts",
+    "native-runtime.d.ts"
   ]
 }

@@ -6,6 +6,7 @@ import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '@boardsesh/logboo
 
 const state = vi.hoisted(() => ({
   native: true,
+  feedInputs: [] as Array<Record<string, unknown>>,
   offline: false,
   pending: false,
   error: false,
@@ -93,13 +94,16 @@ vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: vi.fn() }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ renderBoardToPlaylistConfig: vi.fn() }));
 vi.mock('../../../lib/graphql/hooks', () => {
-  const feed = () => ({
-    data: undefined,
-    isPending: state.pending,
-    isError: state.error,
-    refetch: vi.fn(),
-    fetchNextPage: vi.fn(),
-  });
+  const feed = (_userId: string | undefined, input: Record<string, unknown>) => {
+    state.feedInputs.push(input);
+    return {
+      data: undefined,
+      isPending: state.pending,
+      isError: state.error,
+      refetch: vi.fn(),
+      fetchNextPage: vi.fn(),
+    };
+  };
   return { useGrades: () => ({}), useUserAscentsFeed: feed, useUserGroupedAscentsFeed: feed };
 });
 vi.mock('../use-logbook-search', () => ({
@@ -139,6 +143,7 @@ function renderHeader(controls: ReactNode, onHeightChange: (height: number) => v
 }
 
 beforeEach(() => {
+  state.feedInputs = [];
   state.native = true;
   state.offline = false;
   state.pending = false;
@@ -146,7 +151,10 @@ beforeEach(() => {
   state.listProps = undefined;
   state.measure = undefined;
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllEnvs();
+});
 
 describe('Logbook composed profile header', () => {
   it('keeps native results mounted invisibly until measurement and counts supplementary height once', () => {
@@ -209,4 +217,15 @@ describe('Logbook composed profile header', () => {
       expect(getByTestId('composed-header')).toBeTruthy();
     },
   );
+  it('scopes CPP logbook queries on the server and leaves ordinary logbooks unrestricted', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
+    const { rerender } = render(<LogbookTab userId="me" screenshotBoardType="moonboard" />);
+    expect(state.feedInputs.at(-1)).toMatchObject({ boardType: 'moonboard' });
+    rerender(<LogbookTab userId="me" screenshotBoardType="spray" />);
+    expect(state.feedInputs.at(-1)).toMatchObject({ boardType: 'spray' });
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+    rerender(<LogbookTab userId="me" screenshotBoardType="kilter" />);
+    expect(state.feedInputs.at(-1)).not.toHaveProperty('boardType');
+  });
 });

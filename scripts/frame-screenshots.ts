@@ -37,6 +37,8 @@ import {
   type ScreenshotLayout,
 } from './lib/screenshot-presentation';
 
+import { readCppPage, resolveCppRecipes, isCppTarget, CPP_MANIFEST_PATH, type CppTarget } from './lib/screenshot-cpp';
+
 type MaterialSurface = Record<keyof (typeof materialSurfaces)['dark'], string>;
 
 /**
@@ -641,6 +643,7 @@ export interface FrameDirectoryOptions {
   locale: CaptionLocale;
   input: string;
   output: string;
+  cpp?: CppTarget;
 }
 
 export async function frameDirectory(options: FrameDirectoryOptions): Promise<string[]> {
@@ -653,7 +656,10 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   const names = readdirSync(input)
     .filter((name) => name.toLowerCase().endsWith('.png'))
     .sort();
-  const recipes = resolveScreenshotRecipes(options.platform, options.device, names);
+  if (options.cpp && options.platform !== 'ios') throw new Error('CPP framing requires iOS');
+  const recipes = options.cpp
+    ? resolveCppRecipes(readCppPage(options.cpp), options.device, names)
+    : resolveScreenshotRecipes(options.platform, options.device, names);
   const outputNames = recipes.map((recipe) => recipe.output);
   const captures = names.map((name) => ({ name, buffer: readFileSync(join(input, name)) }));
   const offenders =
@@ -665,10 +671,32 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   }
   if (offenders.length) throw new Error(offenders.map(({ file, reason }) => `${file}: ${reason}`).join('\n'));
   const catalog = readCaptionCatalog(options.locale);
+  const cppCapture = options.cpp
+    ? (JSON.parse(readFileSync(join(input, 'cpp-capture.json'), 'utf8')) as {
+        target?: string;
+        fixtureSha256?: string;
+        verified?: boolean;
+      })
+    : undefined;
+  if (options.cpp && cppCapture?.target !== options.cpp)
+    throw new Error('CPP raw captures lack target and fixture provenance');
   const capturesByName = new Map(captures.map((capture) => [capture.name, capture.buffer]));
   mkdirSync(dirname(output), { recursive: true });
   const staging = mkdtempSync(join(dirname(output), '.framing-'));
-  const manifest: PresentationManifest = { version: PRESENTATION_VERSION, locale: options.locale, files: {} };
+  const manifest: PresentationManifest = {
+    version: PRESENTATION_VERSION,
+    locale: options.locale,
+    files: {},
+    ...(options.cpp
+      ? {
+          cpp: {
+            target: options.cpp,
+            manifestSha256: sha256Screenshot(readFileSync(CPP_MANIFEST_PATH)),
+            fixtureSha256: cppCapture?.fixtureSha256,
+          },
+        }
+      : {}),
+  };
   try {
     const thumbnails: Array<{ data: Buffer; info: sharp.OutputInfo }> = [];
     for (const recipe of recipes) {
@@ -748,6 +776,7 @@ export function parseFrameArguments(argv: readonly string[]): {
   output: string;
   device?: string;
   locale?: CaptionLocale;
+  cpp?: CppTarget;
 } {
   const args = argv.filter((argument) => argument !== '--');
   const flags = new Map<string, string>();
@@ -755,7 +784,7 @@ export function parseFrameArguments(argv: readonly string[]): {
     const flag = args[index];
     const argument = args[index + 1];
     if (
-      !['--platform', '--input', '--output', '--device', '--locale'].includes(flag) ||
+      !['--platform', '--input', '--output', '--device', '--locale', '--cpp'].includes(flag) ||
       !argument ||
       argument.startsWith('--') ||
       flags.has(flag)
@@ -772,6 +801,9 @@ export function parseFrameArguments(argv: readonly string[]): {
       'Usage: screenshot:frame --platform ios|android --input <raw tree> --output <store tree> [--device <slug> --locale en-US|es|fr|de]',
     );
   }
+  const cpp = flags.get('--cpp');
+  if (cpp && (!isCppTarget(cpp) || platform !== 'ios'))
+    throw new Error('--cpp requires an iOS target: kilter|tension|moonboard|spray');
   const locale = flags.get('--locale');
   if (locale && !CAPTION_LOCALES.some((supportedLocale) => supportedLocale === locale))
     throw new Error(`Unsupported caption locale: ${locale}`);
@@ -783,6 +815,7 @@ export function parseFrameArguments(argv: readonly string[]): {
     output: resolve(output),
     device: flags.get('--device'),
     locale: locale as CaptionLocale | undefined,
+    ...(cpp ? { cpp: cpp as CppTarget } : {}),
   };
 }
 
@@ -801,6 +834,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             throw new Error(`Unrecognized raw screenshot directory: ${directory}`);
           groups.push({
             platform: options.platform,
+            cpp: options.cpp,
             device: basename(directory),
             locale,
             input: directory,

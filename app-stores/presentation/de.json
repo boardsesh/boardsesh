@@ -95,5 +95,57 @@
     "headline": "Boulder wechseln.\nMit Dynamic Island.",
     "description": "Wechsle den Boulder, ohne die App zu öffnen.",
     "emphasis": "Dynamic Island."
+  },
+  "cppBoards": {
+    "headline": "Eine App für deine Boards",
+    "description": "Entdecke Boulder und sammle deine Sessions."
+  },
+  "cppOtherBoards": {
+    "headline": "Und deine anderen Boards auch",
+    "description": "Wechsle das Board, ohne die App zu wechseln."
+  },
+  "cppSearch": {
+    "headline": "Finde dein nächstes Projekt",
+    "description": "Filtere Boulder nach Grad, Winkel und mehr."
+  },
+  "cppLogbook": {
+    "headline": "Erinnere dich an jede Begehung",
+    "description": "Deine Sessions, Begehungen und Versuche in einem Routenbuch."
+  },
+  "cppLed": {
+    "headline": "Beleuchte deinen Boulder",
+    "description": "Verbinde dein Board und beleuchte die Griffe."
+  },
+  "cppSetting": {
+    "headline": "Schraub Boulder an deiner Wand",
+    "description": "Wähle Griffe auf deinem Wandfoto."
+  },
+  "cppQueue": {
+    "headline": "Deine Crew. Eine Warteschlange.",
+    "description": "Fügt gemeinsam Boulder hinzu und wählt den nächsten."
+  },
+  "cppWorkout": {
+    "headline": "Gib deiner Session einen Plan",
+    "description": "Erstelle ein Training für dein Board und dein Niveau."
+  },
+  "cppStatus": {
+    "headline": "Sieh, was gerade leuchtet",
+    "description": "Sieh den beleuchteten Boulder, während du den nächsten suchst."
+  },
+  "cppPlaylist": {
+    "headline": "Sammle deine Projekte",
+    "description": "Speichere Boulder in Playlists für deine nächste Session."
+  },
+  "cppIsland": {
+    "headline": "Boulder wechseln. Mit Dynamic Island.",
+    "description": "Wechsle den Boulder, ohne die App zu öffnen."
+  },
+  "cppHolds": {
+    "headline": "Deine Wand nach deinem Geschmack",
+    "description": "Bearbeite die Griffe auf deinem Wandfoto."
+  },
+  "cppKiosk": {
+    "headline": "Stell es neben das Board",
+    "description": "Der beleuchtete Boulder, lesbar von der Matte."
   }
 }

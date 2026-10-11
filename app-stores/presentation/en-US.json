@@ -95,5 +95,57 @@
     "headline": "Next climb.\nFrom Dynamic Island.",
     "description": "Change the climb without opening the app.",
     "emphasis": "Dynamic Island."
+  },
+  "cppBoards": {
+    "headline": "One app for your boards",
+    "description": "Discover climbs and keep your sessions together."
+  },
+  "cppOtherBoards": {
+    "headline": "But your other boards too",
+    "description": "Switch boards without switching apps."
+  },
+  "cppSearch": {
+    "headline": "Find your next project",
+    "description": "Filter climbs by grade, angle, and more."
+  },
+  "cppLogbook": {
+    "headline": "Remember every send",
+    "description": "Keep your sessions, sends, and attempts in one logbook."
+  },
+  "cppLed": {
+    "headline": "Light up your climb",
+    "description": "Connect to your board and light the holds."
+  },
+  "cppSetting": {
+    "headline": "Set climbs on your wall",
+    "description": "Choose holds on your real wall photo."
+  },
+  "cppQueue": {
+    "headline": "Your crew. One queue.",
+    "description": "Add climbs together and pick what’s next."
+  },
+  "cppWorkout": {
+    "headline": "Give your session a plan",
+    "description": "Build a workout around your board and climbing level."
+  },
+  "cppStatus": {
+    "headline": "See what’s on the wall",
+    "description": "Know which climb is lit while you browse the next one."
+  },
+  "cppPlaylist": {
+    "headline": "Keep your projects together",
+    "description": "Save climbs to playlists for your next session."
+  },
+  "cppIsland": {
+    "headline": "Next climb. From Dynamic Island.",
+    "description": "Change the climb without opening the app."
+  },
+  "cppHolds": {
+    "headline": "Make your wall yours",
+    "description": "Edit the holds on your wall photo."
+  },
+  "cppKiosk": {
+    "headline": "Leave it by the board",
+    "description": "The lit climb, big enough to read from the mat."
   }
 }

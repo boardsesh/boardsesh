@@ -198,6 +198,24 @@ on:
         description: 'After a green FULL capture, publish the set as the `screenshots-baseline` prerelease that the probe gate compares against. Automatic runs after a native deploy do this themselves; set it on a dispatch (gate=full, or gate=probe when no baseline exists yet) to refresh the baseline by hand.'
         type: boolean
         default: false
+      cpp_target:
+        description: 'Custom product page to capture. none keeps the default listing pipeline.'
+        type: choice
+        default: none
+        options: [none, all, kilter, tension, moonboard, spray]
+      cpp_action:
+        description: 'CPP action. plan inspects Apple keyword IDs without captures or store writes.'
+        type: choice
+        default: capture
+        options: [plan, capture, upload, submit]
+      cpp_keyword_ids:
+        description: 'Verified Apple keyword ID mapping JSON: locale -> keyword -> ID.'
+        type: string
+        default: ''
+      cpp_scenario:
+        description: 'Record only, one CPP: optional existing capture scenario; empty bootstraps real private demo data.'
+        type: string
+        default: ''
 
 # Automatic runs share ONE group and never cancel each other: a capture in
 # flight always finishes (its shards hold macOS runners and its upload may
@@ -223,7 +241,7 @@ concurrency:
   # so `inputs.upload`/`inputs.publish_baseline` are compared explicitly
   # (never read bare) to stay null-tolerant on `workflow_run`, where `inputs`
   # is null and both comparisons read false.
-  group: ${{ (github.event_name == 'workflow_run' || inputs.upload == true || inputs.publish_baseline == true) && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
+  group: ${{ (github.event_name == 'workflow_run' || inputs.upload == true || inputs.publish_baseline == true || ((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit' || inputs.fixtures == 'record'))) && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
   cancel-in-progress: false
 
 permissions:
@@ -267,7 +285,52 @@ jobs:
       gate: ${{ steps.compute.outputs.gate }}
       source_sha: ${{ steps.compute.outputs.source_sha }}
       shipped: ${{ steps.shipped.outputs.shipped }}
+      cpp_matrix: ${{ steps.cpp.outputs.matrix }}
     steps:
+      - name: Validate CPP selection and compute matrix
+        id: cpp
+        env:
+          CPP_TARGET: ${{ inputs.cpp_target || 'none' }}
+          CPP_ACTION: ${{ inputs.cpp_action || 'capture' }}
+          FIXTURES_MODE: ${{ inputs.fixtures || 'replay' }}
+          LOCALES: ${{ inputs.locales || '' }}
+          UPLOAD_DEFAULT: ${{ inputs.upload || 'false' }}
+          PUBLISH_BASELINE: ${{ inputs.publish_baseline || 'false' }}
+          FIXTURE_SNAPSHOT: ${{ inputs.fixture_snapshot || '' }}
+          CPP_SCENARIO: ${{ inputs.cpp_scenario || '' }}
+        run: |
+          set -euo pipefail
+          case "$CPP_TARGET" in
+            none) echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; exit 0 ;;
+            all) targets='["kilter","tension","moonboard","spray"]' ;;
+            kilter|tension|moonboard|spray) targets=$(jq -cn --arg target "$CPP_TARGET" '[$target]') ;;
+            *) echo '::error::Invalid CPP target'; exit 1 ;;
+          esac
+          case "$CPP_ACTION" in plan|capture|upload|submit) ;; *) echo '::error::Invalid CPP action'; exit 1 ;; esac
+          if [ "$UPLOAD_DEFAULT" = true ] || [ "$PUBLISH_BASELINE" = true ]; then
+            echo '::error::CPP runs use cpp_action; default listing upload/baseline flags must be false.'
+            exit 1
+          fi
+          if [ "$CPP_ACTION" != capture ] && [ "$CPP_ACTION" != plan ] && { [ "$FIXTURES_MODE" != replay ] || [ -n "$LOCALES" ]; }; then
+            echo '::error::CPP upload/submit requires replay and the full locale/device matrix.'
+            exit 1
+          fi
+          if [ "$CPP_TARGET" = all ] && { [ -n "$FIXTURE_SNAPSHOT" ] || [ "$FIXTURES_MODE" != replay ]; }; then
+            echo '::error::A candidate snapshot or recording is scoped to one CPP.'
+            exit 1
+          fi
+          if [ -n "$CPP_SCENARIO" ] && [ "$FIXTURES_MODE" != record ]; then
+            echo '::error::cpp_scenario is only valid for record mode.'
+            exit 1
+          fi
+          locales='["en-US","es","fr","de"]'
+          if [ -n "$LOCALES" ]; then
+            locales=$(printf '%s' "$LOCALES" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";""))')
+            printf '%s' "$locales" | jq -e 'length > 0 and (length == (unique | length)) and all(.[]; . == "en-US" or . == "es" or . == "fr" or . == "de")' >/dev/null
+          fi
+          devices='[{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max"},{"name":"iPhone 16 Pro","slug":"iphone-16-pro"},{"name":"iPad Pro 13-inch (M5)","slug":"ipad-pro-13-inch-m5"},{"name":"iPad Pro 11-inch (M5)","slug":"ipad-pro-11-inch-m5"}]'
+          matrix=$(jq -cn --argjson targets "$targets" --argjson locales "$locales" --argjson devices "$devices" '{include:[$targets[] as $target | $locales[] as $locale | $devices[] as $device | {target:$target,locale:$locale,device:$device}]}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       # Replay needs no credentials. Live captures use the dedicated test account.
       - name: Require credentials for live recording
         if: ${{ (inputs.fixtures || 'replay') != 'replay' }}
@@ -457,7 +520,7 @@ jobs:
     needs: setup
     # Nothing shipped, nothing to photograph — and this is the expensive one to
     # skip: a cache miss here is a ~30-min native build.
-    if: needs.setup.outputs.shipped == 'true'
+    if: needs.setup.outputs.shipped == 'true' && !((inputs.cpp_target || 'none') != 'none' && inputs.cpp_action == 'plan')
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -529,7 +592,7 @@ jobs:
     # `shipped` is redundant here (a skipped ios-build already skips this job)
     # but stated anyway: this `if` has no status function, so the day someone
     # adds one the gate must not quietly disappear with the implicit needs check.
-    if: needs.setup.outputs.gate == 'probe' && needs.setup.outputs.shipped == 'true'
+    if: needs.setup.outputs.gate == 'probe' && needs.setup.outputs.shipped == 'true' && (inputs.cpp_target == null || inputs.cpp_target == 'none')
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -665,6 +728,7 @@ jobs:
     # probe shard never captures pixels for.
     if: >-
       !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.shipped == 'true' &&
+      (inputs.cpp_target == null || inputs.cpp_target == 'none') &&
       needs.ios-build.result == 'success' &&
       (needs.probe.result == 'skipped' || needs.probe.result == 'failure' ||
        (needs.probe.result == 'success' &&
@@ -746,7 +810,7 @@ jobs:
     # binary shipped: `!cancelled()` switches off the implicit needs check, so
     # without the `shipped` clause this job would run on an empty artifact set
     # and red the dimension gate after every JS-only push.
-    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.shipped == 'true' }}
+    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.shipped == 'true' && (inputs.cpp_target == null || inputs.cpp_target == 'none') }}
     # Gate the App Store Connect secrets behind the Production environment — its
     # branch policy (main and release/next) fences them off from anyone who can push
     # another branch and workflow_dispatch it. The APP_STORE_CONNECT_* secrets are
@@ -950,10 +1014,6 @@ jobs:
         if: always()
         run: rm -f "$HOME/.private_keys/AuthKey_"*.p8 2>/dev/null || true
 
-      # Refresh what the next probe compares against. Only from a complete,
-      # dimension-gated set, and only from a run that owns the baseline: the
-      # automatic trigger, or a dispatch that explicitly asked for it. A dispatch
-      # that retargeted the render mode or the boards should NOT silently redefine
       # "unchanged" for everyone else, which is why publish_baseline is opt-in.
       - name: Publish screenshot baseline
         if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (github.event_name == 'workflow_run' || inputs.publish_baseline == true) }}
@@ -997,3 +1057,191 @@ jobs:
           path: app-stores/apple/screenshots/**
           if-no-files-found: warn
           retention-days: 14
+
+  cpp-plan:
+    needs: setup
+    environment: Production
+    if: ${{ needs.setup.result == 'success' && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action == 'plan' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_sha }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - uses: ./.github/actions/asc-cpp
+        with:
+          target: ${{ inputs.cpp_target || 'none' }}
+          action: plan
+          keyword-ids: ${{ inputs.cpp_keyword_ids || vars.ASC_CPP_KEYWORD_IDS_JSON || '' }}
+          key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key-base64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+
+  cpp-bootstrap:
+    needs: setup
+    if: ${{ needs.setup.result == 'success' && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action == 'capture' && inputs.fixtures == 'record' && (inputs.cpp_scenario || '') == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      scenario: ${{ steps.seed.outputs.scenario }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_sha }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Restore account-bound bootstrap checkpoint
+        uses: actions/cache/restore@v4
+        with:
+          path: .boardsesh/cpp-seed-state.json
+          key: cpp-seed-${{ inputs.cpp_target || 'none' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cpp-seed-${{ inputs.cpp_target || 'none' }}-
+      - name: Prepare genuine private demo boards and session
+        id: seed
+        env:
+          CPP_TARGET: ${{ inputs.cpp_target || 'none' }}
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          args=(--target "$CPP_TARGET" --apply --seed-demo-content --out "$RUNNER_TEMP/cpp-scenario.json")
+          if [ "$CPP_TARGET" = spray ]; then
+            # This known photo was visually approved; the live owner and exact
+            # stored-byte hash are rechecked before reusing the published wall.
+            args+=(--bindings app-stores/apple/cpp-seed-bindings.json --accepted-source-hashes app-stores/apple/cpp-seed-photo-hashes.json --accept-source-bindings)
+          fi
+          vp exec node --import tsx scripts/bootstrap-cpp-scenario.ts "${args[@]}"
+          scenario=$(jq -ce . "$RUNNER_TEMP/cpp-scenario.json")
+          echo "scenario=$scenario" >> "$GITHUB_OUTPUT"
+      - name: Save resumable bootstrap checkpoint
+        if: ${{ always() && hashFiles('.boardsesh/cpp-seed-state.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .boardsesh/cpp-seed-state.json
+          key: cpp-seed-${{ inputs.cpp_target || 'none' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Upload bootstrap evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-bootstrap-${{ inputs.cpp_target || 'none' }}
+          path: |
+            .boardsesh/cpp-seed-state.json
+            ${{ runner.temp }}/cpp-scenario.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+
+  cpp-capture:
+    needs: [setup, ios-build, cpp-bootstrap]
+    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' && (needs.cpp-bootstrap.result == 'success' || needs.cpp-bootstrap.result == 'skipped') && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action != 'plan' }}
+    runs-on: macos-26
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.setup.outputs.cpp_matrix) }}
+    env:
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      EXPO_PUBLIC_USE_RN_FETCH: '1'
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_sha }}
+      - name: Capture target-specific native scenes
+        uses: ./.github/actions/ios-screenshot-shard
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
+        with:
+          locale: ${{ matrix.locale }}
+          device-name: ${{ matrix.device.name }}
+          device-slug: ${{ matrix.device.slug }}
+          app-cache-key: ${{ needs.ios-build.outputs.cache-key }}
+          cpp-target: ${{ matrix.target }}
+          cpp-scenario: ${{ inputs.cpp_scenario || needs.cpp-bootstrap.outputs.scenario || '' }}
+          flow: app-store
+          fixtures: ${{ inputs.fixtures || 'replay' }}
+          fixture-snapshot: ${{ inputs.fixture_snapshot || '' }}
+          frozen-now: ${{ inputs.frozen_now || '' }}
+          render-mode: ${{ inputs.render_mode || '' }}
+
+  cpp-finalize:
+    needs: [setup, cpp-capture]
+    if: ${{ needs.cpp-capture.result == 'success' && (inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: Production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_sha }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.cpp_target == 'all' || inputs.cpp_target == 'kilter' }}
+        with:
+          pattern: ios-cpp-kilter-*
+          path: app-stores/apple/cpp/kilter
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.cpp_target == 'all' || inputs.cpp_target == 'tension' }}
+        with:
+          pattern: ios-cpp-tension-*
+          path: app-stores/apple/cpp/tension
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.cpp_target == 'all' || inputs.cpp_target == 'moonboard' }}
+        with:
+          pattern: ios-cpp-moonboard-*
+          path: app-stores/apple/cpp/moonboard
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.cpp_target == 'all' || inputs.cpp_target == 'spray' }}
+        with:
+          pattern: ios-cpp-spray-*
+          path: app-stores/apple/cpp/spray
+          merge-multiple: true
+      - name: Verify candidate fixture pin used by capture
+        if: ${{ inputs.fixture_snapshot != '' }}
+        env:
+          CPP_TARGET: ${{ inputs.cpp_target || 'none' }}
+          FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot || '' }}
+        run: |
+          set -euo pipefail
+          vp run mobile:screenshot-fixtures-fetch -- --reference "app-stores/apple/cpp-fixtures/$CPP_TARGET.json" --reference-url "$FIXTURE_SNAPSHOT_URL"
+      - name: Validate every CPP export before requesting Apple credentials
+        env:
+          CPP_TARGET: ${{ inputs.cpp_target || 'none' }}
+        run: vp exec tsx scripts/assert-cpp-screenshots.ts --target "$CPP_TARGET"
+      - uses: ./.github/actions/asc-cpp
+        with:
+          target: ${{ inputs.cpp_target || 'none' }}
+          action: ${{ inputs.cpp_action || 'capture' }}
+          keyword-ids: ${{ inputs.cpp_keyword_ids || vars.ASC_CPP_KEYWORD_IDS_JSON || '' }}
+          key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key-base64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+
+      # Refresh what the next probe compares against. Only from a complete,
+      # dimension-gated set, and only from a run that owns the baseline: the
+      # automatic trigger, or a dispatch that explicitly asked for it. A dispatch
+      # that retargeted the render mode or the boards should NOT silently redefine

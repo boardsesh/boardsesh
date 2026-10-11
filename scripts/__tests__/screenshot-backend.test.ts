@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import type { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import sharp from 'sharp';
 import { prepareIosCampaignFixtures } from '../prepare-ios-campaign-fixtures';
@@ -241,6 +241,60 @@ describe('screenshot backend', () => {
     await stop();
     await stopUpstream(upstream);
     rmSync(fixturesDir, { recursive: true, force: true });
+  });
+
+  it('persists the record capture scenario and keeps it when replay has a different environment', async () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000004',
+      boards: ['Liz', 'Cherry', 'Bowlo', 'Kilter', 'Tension', 'MoonBoard'],
+      cpp: {
+        target: 'spray',
+        boardReadyText: { 'spray-liz': 'Actual Liz climb' },
+        scenes: { queue: { boardId: ACCOUNT_USER_ID, readyText: 'Actual queued climb' } },
+      },
+    };
+    try {
+      vi.stubEnv('BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO', JSON.stringify(capture));
+      await start({ mode: 'record', fresh: true });
+      await postGraphql({ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } });
+      await stop();
+      expect(readScreenshotFixtureManifest(fixturesDir)?.capture).toEqual(capture);
+      const persisted = readFileSync(join(fixturesDir, 'manifest.json'));
+      vi.stubEnv('BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO', '{invalid replay environment');
+      await start({ mode: 'replay' });
+      expect(
+        await (
+          await postGraphql({ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } })
+        ).json(),
+      ).toEqual(SYNC_TICKS_RESPONSE);
+      await stop();
+      expect(readScreenshotFixtureManifest(fixturesDir)?.capture).toEqual(capture);
+      expect(readFileSync(join(fixturesDir, 'manifest.json'))).toEqual(persisted);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('rejects an invalid record scenario before fresh mode removes a previous recording', async () => {
+    try {
+      vi.stubEnv('BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO', '');
+      await start({ mode: 'record', fresh: true });
+      await postGraphql({ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } });
+      await stop();
+      const originals = new Map(
+        listFixtureFiles(fixturesDir).map((file) => [file, readFileSync(join(fixturesDir, file))]),
+      );
+      expect(originals.size).toBeGreaterThan(1);
+      vi.stubEnv(
+        'BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO',
+        JSON.stringify({ sharedSessionId: 'invalid', boards: ['Liz', 'Bowlo'] }),
+      );
+      await expect(start({ mode: 'record', fresh: true })).rejects.toThrow('capture.sharedSessionId must be a UUID');
+      expect(listFixtureFiles(fixturesDir).sort()).toEqual([...originals.keys()].sort());
+      for (const [file, bytes] of originals) expect(readFileSync(join(fixturesDir, file))).toEqual(bytes);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('projects recorded native identity, refuses APNs locally, and reports corrupted session fixtures as misses', async () => {

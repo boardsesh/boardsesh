@@ -287,6 +287,8 @@ function ClimbListInner() {
   const {
     screenshotOpenFirst,
     screenshotBoardIndex,
+    screenshotCppScene,
+    screenshotOpenFilters,
     screenshotOpenBoardSheet,
     screenshotOpenPreview,
     screenshotOpenWallPreview,
@@ -294,6 +296,8 @@ function ClimbListInner() {
   } = useLocalSearchParams<{
     screenshotOpenFirst?: string;
     screenshotBoardIndex?: string;
+    screenshotCppScene?: string;
+    screenshotOpenFilters?: string;
     screenshotOpenBoardSheet?: string;
     screenshotOpenPreview?: string;
     screenshotOpenWallPreview?: string;
@@ -1285,12 +1289,23 @@ function ClimbListInner() {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotOpenFirst) return;
     // When a specific board is requested, wait until it's the active board.
     if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
-    if (!activeBoard || screenshotOpenedForBoardRef.current === activeBoard.uuid) return;
+    const captureIdentity = `${activeBoard?.uuid}:${screenshotCppScene ?? ''}`;
+    if (!activeBoard || screenshotOpenedForBoardRef.current === captureIdentity) return;
     const firstClimb = visibleClimbs[0];
-    if (!searchReady || !firstClimb || !screenshotClimbMatchesBoard(firstClimb, activeBoard)) return;
-    screenshotOpenedForBoardRef.current = activeBoard.uuid;
+    if (!searchReady || isPlaceholderData || !firstClimb || !screenshotClimbMatchesBoard(firstClimb, activeBoard))
+      return;
+    screenshotOpenedForBoardRef.current = captureIdentity;
     handleClimbPress(firstClimb);
-  }, [screenshotOpenFirst, searchReady, visibleClimbs, handleClimbPress, screenshotTargetBoard, activeBoard]);
+  }, [
+    screenshotOpenFirst,
+    screenshotCppScene,
+    searchReady,
+    isPlaceholderData,
+    visibleClimbs,
+    handleClimbPress,
+    screenshotTargetBoard,
+    activeBoard,
+  ]);
 
   // Screenshot mode, iPad master-detail only: the plain `/climbs` list shot must
   // also LIGHT the detail pane — with nothing selected it reads as a dead black
@@ -1365,10 +1380,23 @@ function ClimbListInner() {
   // Dead-strips in normal builds.
   const screenshotPreviewOpenedRef = useRef(false);
   useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && screenshotCppScene)
+      screenshotPreviewOpenedRef.current = false;
+  }, [screenshotCppScene]);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotCppScene) return;
+    if (
+      screenshotOpenFilters &&
+      (!searchReady || (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid))
+    )
+      return;
+    setShowFilters(Boolean(screenshotOpenFilters));
+  }, [screenshotCppScene, screenshotOpenFilters, searchReady, screenshotTargetBoard, activeBoard]);
+  useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
     if (!screenshotOpenPreview && !screenshotOpenWallPreview) return;
     if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
-    if (!activeBoard || !searchReady || screenshotPreviewOpenedRef.current) return;
+    if (!activeBoard || !searchReady || isPlaceholderData || screenshotPreviewOpenedRef.current) return;
     const firstClimb = visibleClimbs[0];
     if (!firstClimb) return;
     screenshotPreviewOpenedRef.current = true;
@@ -1395,6 +1423,7 @@ function ClimbListInner() {
     screenshotTargetBoard,
     activeBoard,
     searchReady,
+    isPlaceholderData,
     visibleClimbs,
     openPlayDrawer,
   ]);

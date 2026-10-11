@@ -73,6 +73,8 @@ const EMPTY_GRADES: Grade[] = [];
 
 type LogbookTabProps = {
   userId: string | undefined;
+  /** CPP captures scope the genuine server feed to the advertised board family. */
+  screenshotBoardType?: string;
   /** Measured chrome height — the fixed toolbar insets its top by this so it
    *  rests below the floating chrome and results scroll beneath the toolbar. */
   topInset?: number;
@@ -96,7 +98,13 @@ type LogbookGroupUnit = AscentFeedItem & {
   groupItems?: AscentFeedItem[];
 };
 
-export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, renderHeader }: LogbookTabProps) {
+export function LogbookTab({
+  userId,
+  topInset = 0,
+  viewerIsOwner = true,
+  renderHeader,
+  screenshotBoardType,
+}: LogbookTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const [headerHeight, setHeaderHeight] = useState(0);
   const hasComposedHeader = renderHeader != null;
@@ -213,15 +221,19 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, renderH
   // between unrelated re-renders. When the flag is off the toolbar is hidden, so
   // ignore any persisted filter/sort/name and feed defaults — otherwise prefs
   // saved during a prior flag-on session would silently narrow the list.
-  const feedInput = useMemo(
-    () =>
-      toAscentFeedInput(
-        logbookFiltersEnabled
-          ? { filters, sort, name }
-          : { filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT, name: '' },
-      ),
-    [logbookFiltersEnabled, filters, sort, name],
-  );
+  const feedInput = useMemo(() => {
+    const searchState = logbookFiltersEnabled
+      ? { filters, sort, name }
+      : { filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT, name: '' };
+    const cppBoardTypes =
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+      process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
+      screenshotBoardType &&
+      ['kilter', 'tension', 'moonboard', 'spray'].includes(screenshotBoardType)
+        ? [screenshotBoardType]
+        : undefined;
+    return toAscentFeedInput({ ...searchState, boardTypes: cppBoardTypes });
+  }, [logbookFiltersEnabled, filters, sort, name, screenshotBoardType]);
 
   // Gate on `hydrated` so the feed fetches once with the restored prefs rather
   // than once with defaults then again after persistence loads. (With the flag

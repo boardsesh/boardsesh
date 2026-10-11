@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { router, usePathname, useGlobalSearchParams, type Href } from 'expo-router';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '@boardsesh/climb-filters';
 import {
   buildScreenshotWallSeed,
@@ -59,6 +60,76 @@ export function ScreenshotBoardAutoActivator(): null {
   // keeps the roster warm in the React Query cache for the re-activation path.
   const screenshotBoards = useScreenshotBoards(isAuthenticated);
   const setActiveBoard = useSetActiveBoard();
+
+  const cppSequence = useRef(-1);
+  const pathname = usePathname();
+  const routeParams = useGlobalSearchParams();
+  const [cppPending, setCppPending] = useState<{ sequence: number; route: string } | null>(null);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !cppPending || !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL)
+      return;
+    const destination = new URL(cppPending.route, 'http://localhost');
+    if (
+      pathname !== destination.pathname ||
+      [...destination.searchParams.entries()].some(([key, expected]) => routeParams[key] !== expected)
+    )
+      return;
+    void fetch(`${process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL}/ack?sequence=${cppPending.sequence}`);
+  }, [cppPending, pathname, routeParams]);
+
+  // CPP commands carry navigation only. The real roster, search queries and native
+  // screens supply all content; polling is sequential and each command runs once.
+  useEffect(() => {
+    if (
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' ||
+      !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL ||
+      !isAuthenticated ||
+      !screenshotBoards.length
+    )
+      return;
+    const endpoint = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+    const configuration = JSON.parse(process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS ?? '{}') as Record<
+      string,
+      { selector: string; route: string }
+    >;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const response = await fetch(`${endpoint}/command`);
+        const command = (await response.json()) as { sequence?: number; scene?: string };
+        if (
+          stopped ||
+          typeof command.sequence !== 'number' ||
+          typeof command.scene !== 'string' ||
+          command.sequence <= cppSequence.current
+        )
+          return;
+        cppSequence.current = command.sequence;
+        const scene = configuration[command.scene];
+        if (!scene) return;
+        const matches = screenshotBoards.filter((board) => board.name === scene.selector);
+        if (matches.length !== 1) throw new Error(`CPP selector is ambiguous or missing: ${scene.selector}`);
+        await setActiveBoard(matches[0]);
+        if (stopped) return;
+        console.log(`[screenshot] CPP command ${command.sequence} ${command.scene}: ${matches[0].uuid}`);
+        setCppPending({ sequence: command.sequence, route: scene.route });
+        router.replace(scene.route as Href);
+      } catch (error) {
+        console.log(`[screenshot] WARN CPP navigation: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        if (!stopped)
+          timer = setTimeout(() => {
+            void poll();
+          }, 500);
+      }
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [isAuthenticated, screenshotBoards, setActiveBoard]);
 
   // Logged once at boot so a screenshot run's Metro-teed output says whether
   // relative timestamps are pinned (EXPO_PUBLIC_SCREENSHOT_NOW parsed) or

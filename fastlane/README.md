@@ -3,8 +3,8 @@
 Store-automation lanes for the React Native app (`packages/mobile`). Both
 platforms have a screenshot upload lane, a listing-text (metadata) upload lane,
 and a build-number resolver; Android also has a listing-image lane (Play
-high-res icon / feature graphic). Nothing here uploads a binary, submits for
-review, or does a staged rollout.
+high-res icon / feature graphic). The dedicated iOS CPP lane can submit custom
+product pages for review. The listing lanes do not submit for review or upload binaries.
 
 ```bash
 # screenshots (PNGs from app-stores/apple/screenshots/<locale>/<device>/ and app-stores/google/screenshots/<device>/)
@@ -140,6 +140,58 @@ the store query fails or the credential is missing — set `BUILD_NUMBER_FALLBAC
 / `VERSION_CODE_FALLBACK` in the environment. `ios-testflight-rn.yml` and
 `android-apk-rn.yml` call these and pass the fallback; the `*_offset`
 workflow_dispatch inputs still feed it.
+
+## Custom product pages — `ios cpp`
+
+The CPP manifest is `app-stores/apple/custom-product-pages.json`. Capture and
+frame all locales and devices first:
+
+```bash
+vp run mobile:screenshots -- --cpp all --platform ios --fixtures replay --theme dark --devices common --locales all
+cd fastlane
+bundle exec fastlane ios cpp target:all action:plan
+bundle exec fastlane ios cpp target:all action:upload
+bundle exec fastlane ios cpp target:all action:submit
+```
+
+`target` accepts `kilter`, `tension`, `moonboard`, `spray`, or `all`; omitted
+arguments mean `target:all action:plan`. Plan reads App Store Connect without
+writing, even before native captures or fixture pins exist. It reports unresolved
+local inputs and the approved keyword text, eligible opaque IDs, and existing
+page assignments as structured `CPP_PLAN_JSON` log entries. Set
+`ASC_CPP_PLAN_OUTPUT` to also write this report to a local JSON artifact.
+Upload reconciles separate CPP drafts and uploads screenshots and
+localized promotional copy. Submit also creates or resumes a CPP-only review
+submission, checks its exact membership, enables page links, and submits it.
+Default-listing metadata and `deliver` screenshot lanes are unchanged.
+
+Preflight requires all nine images for every selected locale/device, compatible
+pixel dimensions, and target-specific capture provenance. It checks the latest
+approved iOS app version's keyword field and keyword-resource eligibility, plus
+assignments on existing pages. Missing keywords must be added to a future app
+version and approved before using them for a CPP. Keyword assignment does not
+guarantee search placement. See [Apple's keyword rules](https://developer.apple.com/help/app-store-connect/create-custom-product-pages/configure-multiple-product-page-versions/).
+
+Apple's `appKeywords` API resources expose only opaque IDs. Supply a verified
+mapping using `ASC_CPP_KEYWORD_IDS_JSON`, keyed by App Store locale and the exact
+keyword in the CPP manifest, for example `{ "en-US": { "Kilter": "<Apple resource ID>" } }`.
+The plan logs eligible IDs where mappings are missing; it never infers IDs from
+keyword spelling or list order. Upload and submit fail before any writes when
+a mapping is missing, ineligible, or assigned to a different page. These IDs
+are account resource identifiers, not authentication credentials.
+
+Identical uploads and review submissions are skipped. Interrupted uploads
+resume matching reservations. Approved pages receive a fresh version when
+content changes; under-review changes fail. The lane never deletes a page,
+localization, keyword assignment, or screenshot. Conflicting existing draft
+assets (including assets inherited by Apple into a new version) require the
+owner to resolve the draft in App Store Connect before retrying. Requests have
+bounded retries and processing waits; ambiguous POST failures require a rerun
+so existing resources can be reconciled first. Workflow summaries show page
+URLs and review states. [Apple's submission process](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-a-custom-product-page/)
+
+Mocked automation tests run with `vp exec ruby fastlane/tests/custom_product_pages_test.rb`.
+Ruby and Bundler are supplied by the existing macOS/CI Fastlane toolchain.
 
 ## Auth
 

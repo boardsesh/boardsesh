@@ -45,6 +45,12 @@ inputs:
   app-cache-key:
     description: 'actions/cache key of the prebuilt simulator .app (from the ios-build job).'
     required: true
+  cpp-target:
+    description: 'Optional custom product page target: kilter, tension, moonboard, or spray.'
+    default: ''
+  cpp-scenario:
+    description: 'Record-only actual account CPP capture scenario JSON.'
+    default: ''
   # The three inputs below exist for the mobile E2E gate's navigation smoke
   # (mobile-e2e-gate.yml), which runs this same shard with `flow: smoke`. Their
   # defaults are what the capture workflow has always done, so it passes none.
@@ -89,6 +95,8 @@ runs:
         FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture-snapshot }}
         FIXTURES_MODE: ${{ inputs.fixtures }}
         CAPTURE_FLOW: ${{ inputs.flow }}
+        CPP_TARGET: ${{ inputs.cpp-target }}
+        CPP_SCENARIO: ${{ inputs.cpp-scenario }}
       run: |
         set -euo pipefail
         if [ "$FIXTURES_MODE" != "replay" ]; then
@@ -98,6 +106,12 @@ runs:
         reference=app-stores/screenshot-fixtures.json
         if [ "$CAPTURE_FLOW" = "app-store" ] || [ "$CAPTURE_FLOW" = "app-store-campaign" ]; then
           reference=app-stores/apple/campaign-fixtures.json
+        fi
+        if [ -n "$CPP_TARGET" ]; then
+          case "$CPP_TARGET" in
+            kilter|tension|moonboard|spray) reference="app-stores/apple/cpp-fixtures/$CPP_TARGET.json" ;;
+            *) echo "::error::Invalid CPP target"; exit 1 ;;
+          esac
         fi
         vp run mobile:screenshot-fixtures-fetch -- --reference "$reference" --reference-url "$FIXTURE_SNAPSHOT_URL"
 
@@ -165,12 +179,22 @@ runs:
         FIXTURES_INPUT: ${{ inputs.fixtures }}
         FROZEN_NOW_INPUT: ${{ inputs.frozen-now }}
         ATTEMPTS_INPUT: ${{ inputs.attempts }}
+        CPP_TARGET: ${{ inputs.cpp-target }}
+        CPP_SCENARIO: ${{ inputs.cpp-scenario }}
       run: |
         set -euo pipefail
         # Empty inputs mean "whatever the app pins" — Aura, and the store walls
         # from screenshot-mode.ts — so these flags only appear when a run
         # deliberately retargets. An array, because a board list has spaces in it.
         retarget=()
+        if [ -n "$CPP_TARGET" ]; then
+          retarget+=(--cpp "$CPP_TARGET" --theme dark)
+        fi
+        if [ -n "${CPP_SCENARIO:-}" ]; then
+          scenario_file="$RUNNER_TEMP/cpp-scenario.json"
+          printf '%s' "$CPP_SCENARIO" | jq -e . > "$scenario_file"
+          retarget+=(--cpp-scenario "$scenario_file")
+        fi
         if [ -n "$RENDER_MODE_INPUT" ]; then
           retarget+=(--render-mode "$RENDER_MODE_INPUT")
         fi
@@ -240,7 +264,7 @@ runs:
       with:
         # Per-shard name: upload-artifact@v4 rejects two uploads with the same
         # name in one run.
-        name: capture-debug-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
+        name: capture-debug-${{ github.job }}-${{ inputs.cpp-target != '' && format('{0}-', inputs.cpp-target) || '' }}${{ inputs.locale }}-${{ inputs.device-slug }}
         path: capture-debug/**
         if-no-files-found: warn
         retention-days: 14
@@ -252,7 +276,7 @@ runs:
     # a failed probe from the full-matrix recovery of that same pair. Short retention — it's an
     # intermediate; the combined tree is re-uploaded by ios-finalize.
     - name: Upload shard screenshots
-      if: ${{ always() && inputs.upload-captures == 'true' }}
+      if: ${{ always() && inputs.upload-captures == 'true' && inputs.cpp-target == '' }}
       uses: actions/upload-artifact@v4
       with:
         name: ios-screenshots-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
@@ -261,7 +285,7 @@ runs:
         retention-days: 1
 
     - name: Upload native captures for review
-      if: ${{ always() && inputs.upload-captures == 'true' }}
+      if: ${{ always() && inputs.upload-captures == 'true' && inputs.cpp-target == '' }}
       uses: actions/upload-artifact@v4
       with:
         name: raw-ios-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
@@ -269,11 +293,20 @@ runs:
         if-no-files-found: ignore
         retention-days: 7
 
+    - name: Upload CPP screenshots and native sources
+      if: ${{ always() && inputs.upload-captures == 'true' && inputs.cpp-target != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-cpp-${{ inputs.cpp-target }}-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
+        path: app-stores/apple/cpp/${{ inputs.cpp-target }}/**
+        if-no-files-found: error
+        retention-days: 14
+
     - name: Upload recorded fixtures
       if: ${{ always() && inputs.upload-captures == 'true' && inputs.fixtures == 'record' }}
       uses: actions/upload-artifact@v4
       with:
-        name: screenshot-fixtures-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
+        name: screenshot-fixtures-${{ github.job }}-${{ inputs.cpp-target != '' && format('{0}-', inputs.cpp-target) || '' }}${{ inputs.locale }}-${{ inputs.device-slug }}
         path: packages/mobile/screenshot-fixtures/**
         if-no-files-found: warn
         retention-days: 7

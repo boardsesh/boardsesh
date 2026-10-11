@@ -1210,6 +1210,7 @@ export type ScreenshotCaptureScenario = {
   profileSessionId?: string;
   /** Ordered selectors: the original board captures first, then optional extra boards. */
   boards: string[];
+  cpp?: import('./screenshot-cpp').CppCaptureCoverage;
 };
 
 export type ScreenshotFixtureManifest = {

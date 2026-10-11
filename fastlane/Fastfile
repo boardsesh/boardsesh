@@ -219,6 +219,39 @@ rescue => error
 end
 
 platform :ios do
+  desc "Plan, upload, or submit board-specific custom product pages (separate from the default listing)"
+  lane :cpp do |options|
+    require File.join(REPO_ROOT, "fastlane", "lib", "custom_product_pages")
+    require "spaceship"
+    action = (options[:action] || "plan").to_s
+    target = (options[:target] || "all").to_s
+    UI.user_error!("CPP action must be plan, upload, or submit") unless %w[plan upload submit].include?(action)
+    manifest_bytes = File.read(File.join(REPO_ROOT, "app-stores", "apple", "custom-product-pages.json"))
+    manifest = JSON.parse(manifest_bytes)
+    asc_api_key
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") unless app
+    keyword_ids = JSON.parse(ENV.fetch("ASC_CPP_KEYWORD_IDS_JSON", "{}"))
+    client = BoardseshCPP::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
+    results = BoardseshCPP::Runner.new(
+      client: client, repo_root: REPO_ROOT, manifest: manifest, manifest_sha256: Digest::SHA256.hexdigest(manifest_bytes), app_id: app.id,
+      keyword_ids: keyword_ids, log: ->(message) { UI.message(message) }
+    ).run(target: target, action: action)
+    results.each do |result|
+      line = "CPP #{result.fetch('target')}: #{result.fetch('action')} | #{result['state'] || 'new page'} | #{result['url'] || 'URL available after creation'}"
+      UI.message(line)
+      emit_step_summary(line)
+      if action == "plan"
+        UI.message("CPP_PLAN_JSON #{JSON.generate(result)}")
+        result.fetch("diagnostics").each { |diagnostic| emit_step_summary("- #{result.fetch('target')}: #{diagnostic}") }
+      end
+    end
+    plan_output = ENV["ASC_CPP_PLAN_OUTPUT"]
+    File.write(plan_output, JSON.pretty_generate(results) + "\n") if action == "plan" && plan_output && !plan_output.empty?
+  rescue BoardseshCPP::Error, JSON::ParserError, KeyError => error
+    UI.user_error!(error.message)
+  end
+
   desc "Upload App Store screenshots to App Store Connect (no binary, no metadata, no review)"
   lane :screenshots do
     manifest = screenshot_manifest

@@ -1,0 +1,8 @@
+appId: com.boardsesh.app
+name: verified board-specific custom product page
+---
+# The orchestrator expands CPP_COMMANDS using the target's verified fixture
+# coverage. Each command navigates inside the native app through its screenshot
+# bridge; this also works on iPad without simulator scheme-confirm dialogs.
+- setOrientation: ${MAESTRO_DEVICE_ORIENTATION}
+CPP_COMMANDS

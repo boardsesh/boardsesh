@@ -139,6 +139,7 @@ packages/mobile/.app-cache/
 # Apple App Store screenshots are captured fresh by the Maestro pipeline
 # (vp run mobile:screenshots) and uploaded on demand — not committed.
 /app-stores/apple/screenshots/
+/app-stores/apple/cpp/
 # Non-store capture flows get their own root (see outputRootForFlow in
 # scripts/mobile-screenshots.ts) so they can never overwrite the committed
 # store shard. Their raw PNGs are review artifacts, published to the dev

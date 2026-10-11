@@ -18,6 +18,9 @@ export type UseSmartPlaylistOptions = {
   boardUuid?: string | null;
   /** Optional board name forwarded as the `boardName` query input. */
   boardName?: string;
+  /** Optional board geometry forwarded to the existing smart-playlist input. */
+  sizeId?: number;
+  angle?: number;
   /** Page size per page. Defaults to 20. */
   pageSize?: number;
   /** True while the token is still resolving — disables the query until ready. */
@@ -49,6 +52,8 @@ export function useSmartPlaylist({
   userId,
   boardUuid,
   boardName,
+  sizeId,
+  angle,
   pageSize = 20,
   tokenLoading = false,
   initialData,
@@ -60,7 +65,13 @@ export function useSmartPlaylist({
   const executeGraphQL = executeGraphQLOverride ?? adapter.executeGraphQL;
 
   const query = useInfiniteQuery({
-    queryKey: ['smartPlaylist', smartPlaylistType, userId, boardUuid ?? 'all'],
+    queryKey: [
+      'smartPlaylist',
+      smartPlaylistType,
+      userId,
+      boardUuid ?? 'all',
+      ...(sizeId !== undefined || angle !== undefined ? [sizeId ?? null, angle ?? null] : []),
+    ],
     queryFn: async ({ pageParam }) => {
       const input: GetSmartPlaylistInput = {
         type: smartPlaylistType,
@@ -68,6 +79,8 @@ export function useSmartPlaylist({
         page: pageParam,
         pageSize,
         ...(boardName !== undefined && { boardName }),
+        ...(sizeId !== undefined && { sizeId }),
+        ...(angle !== undefined && { angle }),
         // Recommendations resolve the target from this specific owned board;
         // logbook playlists ignore it.
         ...(boardUuid ? { boardUuid } : {}),

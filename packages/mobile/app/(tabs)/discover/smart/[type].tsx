@@ -24,6 +24,7 @@ import { usePlaylistRenderBoard } from '../../../../src/lib/playlists/use-playli
 import { toQueueClimbs } from '../../../../src/lib/climb-types';
 import { smartPlaylistByType } from '../../../../src/lib/smart-playlists';
 import { useProfile } from '../../../../src/lib/graphql/hooks';
+import { useActiveBoard } from '../../../../src/lib/graphql/use-active-board';
 import { useAuthToken } from '../../../../src/lib/graphql/use-auth-token';
 import { useIsSharedSession } from '../../../../src/providers/queue-provider';
 import { useTheme } from '../../../../src/providers/theme-provider';
@@ -38,6 +39,8 @@ export default function SmartPlaylistDetail() {
   const { systemColors } = useTheme();
   const { data: profile } = useProfile();
   const { isLoading: tokenLoading } = useAuthToken();
+  const { data: activeBoard, isPending: activeBoardPending } = useActiveBoard();
+  const cppCapture = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
   // "Is anyone else here" — one boolean off a dedicated selector context, so the
   // session-stats push doesn't re-render this screen's list.
   const isSharedSession = useIsSharedSession();
@@ -49,7 +52,16 @@ export default function SmartPlaylistDetail() {
   const { query, allClimbs, meta } = useSmartPlaylist({
     smartPlaylistType: smartType,
     userId,
-    tokenLoading: tokenLoading || !userId,
+    tokenLoading: tokenLoading || !userId || (cppCapture && (activeBoardPending || !activeBoard)),
+    ...(cppCapture && activeBoard
+      ? {
+          boardName: activeBoard.boardType,
+          boardUuid: activeBoard.uuid,
+          sizeId: activeBoard.sizeId,
+          angle: activeBoard.angle,
+          pageSize: 10,
+        }
+      : {}),
   });
 
   // Suggestion-refresh fetcher pages the smart playlist scoped to the active

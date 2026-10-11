@@ -35,8 +35,9 @@ export default function YouScreen() {
   const youData = useYouProfileData(userId);
 
   const filterSheetRef = useRef<BottomSheet | null>(null);
-  const { screenshotTab, screenshotBetaShelf } = useLocalSearchParams<{
+  const { screenshotTab, screenshotBetaShelf, screenshotBoardType } = useLocalSearchParams<{
     screenshotTab?: string;
+    screenshotBoardType?: string;
     screenshotBetaShelf?: string;
   }>();
   const [activeTab, setActiveTab] = useState<ProfileTabKey>(() =>
@@ -106,7 +107,7 @@ export default function YouScreen() {
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
       {activeTab === 'logbook' ? (
-        <LogbookTab userId={userId} renderHeader={renderLogbookHeader} />
+        <LogbookTab userId={userId} renderHeader={renderLogbookHeader} screenshotBoardType={screenshotBoardType} />
       ) : (
         <ReadableColumn style={styles.page}>
           {activeTab === 'progress' ? (

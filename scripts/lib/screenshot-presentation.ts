@@ -31,6 +31,19 @@ export const CAPTION_IDS = [
   'storeSpray',
   'storeMoreBoards',
   'storeIsland',
+  'cppBoards',
+  'cppOtherBoards',
+  'cppSearch',
+  'cppLogbook',
+  'cppLed',
+  'cppSetting',
+  'cppQueue',
+  'cppWorkout',
+  'cppStatus',
+  'cppPlaylist',
+  'cppIsland',
+  'cppHolds',
+  'cppKiosk',
 ] as const;
 export type CaptionId = (typeof CAPTION_IDS)[number];
 export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
@@ -320,6 +333,7 @@ export interface PresentationManifest {
   version: typeof PRESENTATION_VERSION;
   locale: CaptionLocale;
   files: Record<string, PresentedScreenshot>;
+  cpp?: { target: string; manifestSha256: string; fixtureSha256?: string };
 }
 
 export function sha256Screenshot(bytes: Buffer): string {
