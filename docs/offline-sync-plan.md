@@ -547,33 +547,38 @@ marker removes the climb. See
 [Leaving the reference set](board-snapshots.md#leaving-the-reference-set).
 
 The client pulls each board table as its reference stream and then its protected
-stream, and a scope is complete only when every stream has reached its tail. What
-that buys (#6306):
+stream, and a scope is complete only when every stream has reached its tail. The
+rule it is built on: a published and listed climb is public to everyone, whoever
+set it, and a draft or an unlisted climb is sent to its owner alone. So the
+reference stream is every published and listed climb, and a catalogue board's
+protected stream is the climber's own drafts and unlisted climbs. What that buys
+(#6306):
 
-- **A privacy change replays only the protected streams.** The revalidation deletes
-  other climbers' rows and resets the protected cursors in one transaction. The
-  reference rows, their cursors, the `scope-complete:` marker and the artifacts
-  stay, so a downloaded board stays downloaded. Before the split the same event
-  reset every cursor and purged every enabled scope, and a privacy event arrives
-  on every launch and reconnect: Kilter's main layout started its roughly 2,200
-  pages over each time.
-- **A download in progress survives the event.** The engine's global and per-scope
-  purge epochs are no longer bumped by it. A narrower fence takes their place:
-  `beginProtectedWithdrawal()` moves an epoch that only protected page writes and
-  the two saved-climb mirrors check, inside their own transactions, and
-  `SyncOptions.isProtectedSyncAllowed` keeps protected pulls from starting until
-  the deletion has committed. Reference pages, artifact transfers and imports run
-  through it untouched.
-- **Protected stats and grades are rationed** to one pull per scope per
-  `PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS` (15 minutes) unless the protected
-  state was reset or the protected climbs stream delivered a row that cycle. An
-  ordinary cycle makes no protected stats or grades request.
+- **A privacy change touches no catalogue board.** No row is deleted, no cursor is
+  reset, and no transfer is stopped. Before the split the same event reset every
+  cursor and purged every enabled scope, and a privacy event arrives on every
+  launch and reconnect: Kilter's main layout started its roughly 2,200 pages over
+  each time.
+- **Spray walls are the exception**, because who may see a wall does depend on
+  privacy. The revalidation deletes the wall rows the viewer does not own and
+  resets the walls' protected cursors in one transaction. A narrow fence keeps a
+  wall page fetched before the event from landing after it:
+  `beginProtectedWithdrawal()` moves an epoch that only a wall's page writes and
+  the saved-climb mirrors check, inside their own transactions, and
+  `SyncOptions.isProtectedSyncAllowed` keeps wall pulls from starting until the
+  deletion has committed.
+- **A change of account resets the protected cursors**, since they are one
+  climber's own rows. A sign-out does it, and so does the once-per-account
+  preparation on mobile, which covers a sign-out an earlier bundle performed.
+- **A climb that leaves the catalogue is removed by a deletion marker**, with its
+  stats, grades and holds-index entries. Its owner gets it back through the
+  protected stream.
 - **A backend without `audience`** (a rollback) gets no board-table pull at all:
   the cycle skips them, reports once per launch through
   `SyncOptions.onAudienceUnsupported`, and carries on with the user tables.
 
-The cursor layout, the import's real watermark, the marker rule and the
-mixed-version table are in
+The cursor layout, the import's real watermark, the artifact rule, the marker rule
+and the mixed-version table are in
 [The client half](board-snapshots.md#the-client-half-two-cursors-per-table-6306).
 
 Each resolver queries Postgres using the composite cursor:
