@@ -39,12 +39,11 @@ The permanent worker now uses R2 and the Production variable is `r2`, blocking
 further rehearsals. Backend snapshot scheduling was restored after normal
 producer acceptance; see the [live acceptance record](r2-migration-2026-10.md).
 
-GitHub Actions is manual-only. Its `workflow_dispatch` runs a complete, non-pruning R2 rehearsal from
-`main` while the active batch producer still targets Tigris. The workflow requires
-`SNAPSHOT_PUBLISHER_STORAGE_TARGET=tigris`, exports all three prefixes, and verifies the resulting public
-artifacts. It has no scheduled publisher, catalogue job, heartbeat watchdog, or automatic primary fallback.
-This environment-variable check is not a lock shared with the batch worker. Before changing the active
-producer to R2, disable the workflow and drain any queued or running rehearsal.
+GitHub Actions remains manual-only. Its complete, non-pruning R2 rehearsal requires
+`SNAPSHOT_PUBLISHER_STORAGE_TARGET=tigris`; the current `r2` producer setting blocks it.
+It has no scheduled publisher, catalogue job, heartbeat watchdog, or automatic primary fallback.
+The environment-variable check is not a lock shared with the batch worker. Reopening the rehearsal
+requires a separate operator handoff that prevents concurrent publishing.
 
 The replica fence and heartbeat/watchdog code below is prepared for an explicit future operator rollout;
 the current workflow does not invoke it. Do not treat that code as deployed standby publishing or as an
@@ -1489,9 +1488,10 @@ in-memory map loses exactly that one. `unknown` is an explicit, expected value.
 
 ### Manual export
 
-From CI, dispatch `.github/workflows/export-board-snapshots.yml` from `main` with
-`storage_target=r2`. This is a complete, non-pruning rehearsal against R2 while the batch worker still
-publishes the live prefixes to Tigris; it is not a routine primary export or fallback.
+The manual CI rehearsal `.github/workflows/export-board-snapshots.yml` remains blocked by
+`SNAPSHOT_PUBLISHER_STORAGE_TARGET=r2` while the batch worker owns the live R2 prefixes.
+Use the batch worker operator below for a live refresh. Reopening the non-pruning CI rehearsal
+requires a separate operator handoff.
 
 From the batch worker host, which owns the schedule (worker environment plus
 `WORKER_OPERATOR_ENABLED=true`):
