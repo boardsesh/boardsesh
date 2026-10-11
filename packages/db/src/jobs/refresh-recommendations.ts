@@ -33,6 +33,7 @@ import {
 } from '../queries/recommendations';
 import { rowsOf } from '../queries/util/rows';
 import { snapshotClimbStatsHistoryIfDue } from '../queries/climb-stats';
+import { refreshPlaylistGradeSummariesFor } from '../queries/playlists/grade-summaries';
 import { ensureSystemUser } from './system-user';
 import { defaultTransact, type JobDatabase, type JobLogger, type JobRunOptions, type JobTransact } from './types';
 
@@ -354,6 +355,11 @@ async function upsertCohortPlaylist(
         position: index,
       })),
     );
+
+    // Recompute the grade band in the same transaction as the climb swap, so a
+    // rewritten "Best of" playlist never shows yesterday's band or misses a
+    // grade filter until the daily grade-summary job runs.
+    await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
   });
 
   return { name, count: refs.length, skipped: false };
