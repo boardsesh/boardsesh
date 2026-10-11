@@ -82,7 +82,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'workouts',
         fromMark: 'logged',
         label: 'Rest countdown → next climb',
-        focus: { x: 0.02, y: 0.07, width: 0.96, height: 0.77 },
+        focus: { x: 0.24, y: 0.065, width: 0.74, height: 0.11 },
       },
       {
         id: 'workouts-advance',

@@ -60,6 +60,9 @@ const APP = 'com.boardsesh.app.dev';
 const AVD = 'Boardsesh_Tutorial';
 const PORT = 5584;
 const MAESTRO_FLOW_TIMEOUT_MS = 600_000;
+// Cold privacy-authorized replay covers ~383k climbs, 367k stats and 351k grades.
+// Give only download preparation a longer bounded budget; recorded UI stays 10m.
+const DOWNLOAD_SETUP_TIMEOUT_MS = 2_100_000;
 const sleep = (milliseconds: number) => new Promise<void>((done) => setTimeout(done, milliseconds));
 const sha = (content: string | Buffer) => createHash('sha256').update(content).digest('hex');
 
@@ -458,7 +461,11 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       child.stderr?.on('data', (chunk: Buffer) => {
         output += chunk.toString();
       });
-      const timer = setTimeout(() => void stopTutorialCaptureProcess(child), MAESTRO_FLOW_TIMEOUT_MS);
+      const timeoutMs =
+        path === 'packages/mobile/.maestro/tutorial/download-ready.yaml'
+          ? DOWNLOAD_SETUP_TIMEOUT_MS
+          : MAESTRO_FLOW_TIMEOUT_MS;
+      const timer = setTimeout(() => void stopTutorialCaptureProcess(child), timeoutMs);
       try {
         await new Promise<void>((done, reject) => {
           child.once('error', reject);

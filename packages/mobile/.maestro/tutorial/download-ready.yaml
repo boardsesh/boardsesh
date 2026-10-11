@@ -44,10 +44,16 @@ name: Tutorial setup - require a completed local hold index
           childOf:
             id: modal-surface
       - assertNotVisible: 'Download Tutorial Kilter\?'
-      - extendedWaitUntil:
-          visible:
-            id: hold-filter-heatmap-legend
-          timeout: 300000
+# A legend container also exists during loading. Wait for its actual nonzero
+# query result, including when a retained download was already enabled.
+- extendedWaitUntil:
+    visible:
+      text: '(Few climbs, Many climbs|Every hold used equally|Easier, Harder), [1-9][0-9,]* climbs?'
+      childOf:
+        id: hold-filter-heatmap-legend
+    # Privacy-safe snapshots still require real authorized paged replay.
+    # Measured cold replay left stats and grades incomplete after five minutes.
+    timeout: 1800000
 - runFlow: heatmap-ready.yaml
 - assertNotVisible:
     id: hold-heatmap-download-line
