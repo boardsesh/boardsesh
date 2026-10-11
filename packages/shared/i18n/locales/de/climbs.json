@@ -621,7 +621,8 @@
         "noKickboard": "Ohne KB"
       },
       "setAngleMarker": "bei {{angle}}° geschraubt",
-      "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad"
+      "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad",
+      "communityGradeAria": "Community-Grad {{grade}}"
     },
     "climbRules": {
       "matchingAllowed": "Matchen erlaubt",

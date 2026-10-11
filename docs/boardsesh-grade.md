@@ -60,8 +60,14 @@ not the number a climber sees first.
 shows you for it — in the list, in the play drawer header, and in the Grades
 section. If you have not, you get the crowd's number as before (the Boardsesh
 grade where the toggle is on and one is trusted, otherwise the Aurora grade).
-Where your grade and the crowd's differ, the crowd's stays on screen underneath,
-demoted and marked; where they agree, nothing is added at all.
+Where your grade and the crowd's differ, the crowd's stays on screen, demoted;
+where they agree, nothing is added at all. The play drawer header puts it under
+your grade, marked. A climb list row keeps one grade in its grade column and
+puts the community grade at the front of the line under the name
+("V4 · 1.2k sends · 4.5★ · setterx"), unless the climber has switched that off.
+The row shows the same token beside a Boardsesh grade that reads differently
+from the community's; the rule is `deriveClimbRowGrade` in
+`packages/mobile/src/lib/climb-row-grade.ts`.
 
 Your grade is the difficulty of your LATEST graded tick for
 `(user, board_type, climb_uuid, angle)`, ordered `(climbed_at DESC, uuid DESC)`.

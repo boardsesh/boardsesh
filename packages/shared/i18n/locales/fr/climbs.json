@@ -621,7 +621,8 @@
         "noKickboard": "Sans KB"
       },
       "setAngleMarker": "ouvert à {{angle}}°",
-      "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés"
+      "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés",
+      "communityGradeAria": "Cotation de la communauté {{grade}}"
     },
     "climbRules": {
       "matchingAllowed": "Deux mains par prise autorisées",

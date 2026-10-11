@@ -621,7 +621,8 @@
         "noKickboard": "No KB"
       },
       "setAngleMarker": "set at {{angle}}°",
-      "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees"
+      "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees",
+      "communityGradeAria": "Community grade {{grade}}"
     },
     "climbRules": {
       "matchingAllowed": "Matching allowed",

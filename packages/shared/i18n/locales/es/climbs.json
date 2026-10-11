@@ -621,7 +621,8 @@
         "noKickboard": "Sin KB"
       },
       "setAngleMarker": "montado en {{angle}}°",
-      "setAngleMarkerAria": "La dificultad y las repeticiones son de {{angle}} grados"
+      "setAngleMarkerAria": "La dificultad y las repeticiones son de {{angle}} grados",
+      "communityGradeAria": "Grado de la comunidad {{grade}}"
     },
     "climbRules": {
       "matchingAllowed": "Se puede igualar",

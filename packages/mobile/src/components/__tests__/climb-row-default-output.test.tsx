@@ -6,12 +6,18 @@ import { createElement, type ReactNode } from 'react';
 // The guard for the configurable-row work: a climber who has touched nothing
 // must get exactly the row they had. Every assertion spells out what is expected
 // (no snapshot), so a change to the default row has to be made here on purpose.
+//
+// One such change has been made: the grade column holds one grade. Where it is
+// not the community's (the climber's own, or a Boardsesh grade) and the two read
+// differently, the community's grade leads the detail line instead of standing
+// under the climber's own. "the community grade switch" below pins it.
 
 type StatusEntry = { status: 'flash' | 'send' | 'attempt'; is_ascent: boolean; tries: number; is_mirror: boolean };
 
 const live = vi.hoisted(() => ({
   statsCalls: 0,
   gradeCalls: 0,
+  myGradeCalls: 0,
   myGrade: { status: 'unknown' } as { status: 'unknown' } | { status: 'set'; difficultyId: number; climbedAt: null },
   logbook: null as { logbookByClimbAngle: Map<string, StatusEntry[]> } | null,
   thumbnailProps: [] as Record<string, unknown>[],
@@ -82,7 +88,14 @@ vi.mock('../../hooks/use-display-grade', () => ({
     return { boardseshActive: false, resolveGrade: () => ({ label: 'V4', color: '#44AA44', isBoardsesh: false }) };
   },
 }));
-vi.mock('../../hooks/use-my-grade', () => ({ useMyGrade: () => live.myGrade }));
+vi.mock('../../hooks/use-my-grade', () => ({
+  // The row's way to the climber's own grade, and so to the logbook: one call per
+  // mounted leaf that subscribes.
+  useMyGrade: () => {
+    live.myGradeCalls += 1;
+    return live.myGrade;
+  },
+}));
 vi.mock('../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v-grade' }) }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93', fill: '#E5E5EA' } }),
@@ -185,6 +198,7 @@ beforeEach(() => {
   favoritesStore.reset();
   live.statsCalls = 0;
   live.gradeCalls = 0;
+  live.myGradeCalls = 0;
   live.myGrade = { status: 'unknown' };
   live.logbook = null;
   live.thumbnailProps = [];
@@ -260,7 +274,7 @@ describe('the default climb row', () => {
     });
   });
 
-  it('draws a loaded Climbs-list row as before: detail parts, heart, sent mark, your grade over the crowd’s', () => {
+  it('draws a loaded Climbs-list row: detail parts, heart, sent mark, your grade, the community’s in the detail line', () => {
     favoritesStore.setIsFavorited('c1', true);
     live.logbook = { logbookByClimbAngle: new Map([['c1:40', [sent]]]) };
     live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
@@ -275,34 +289,55 @@ describe('the default climb row', () => {
       />,
     );
 
+    // The one deliberate change to the default row: the community's V4 leads the
+    // detail line instead of standing under your V10 with a two-heads glyph.
     expect(outline(container)).toEqual([
       'thumbnail',
       'body:Boulder Problem',
-      'footnote:12 sends · 4.5★ · setterx',
+      'footnote:V4 · 12 sends · 4.5★ · setterx',
       'caption1:40° · 3 tries',
       'icon:favorite.fill',
       'icon:tick.outline',
       'icon:person',
       'title3:V10',
-      'icon:people',
-      'caption2:V4',
       'caption2:mobile.climbRow.setAngleMarker',
     ]);
     // Glyph sizes and the labels a screen reader composes the row from.
     expect(container.querySelector('[data-icon="favorite.fill"]')?.getAttribute('data-size')).toBe('16');
     expect(container.querySelector('[data-icon="tick.outline"]')?.getAttribute('data-size')).toBe('16');
     expect(container.querySelector('[data-icon="person"]')?.getAttribute('data-size')).toBe('13');
-    expect(container.querySelector('[data-icon="people"]')?.getAttribute('data-size')).toBe('11');
     expect(
       [...container.querySelectorAll('[aria-label]')].map((node) => [
         node.getAttribute('data-role') ?? 'text',
         node.getAttribute('aria-label'),
       ]),
     ).toEqual([
+      ['text', 'mobile.climbRow.communityGradeAria · 12 sends · 4.5★ · setterx'],
       ['image', 'mobile.climbRow.favorited'],
       ['image', 'mobile.climbRow.ascentStatus.send'],
       ['text', 'mobile.climbRow.setAngleMarkerAria'],
     ]);
+  });
+
+  it('keeps the grade column of a marked grade as it was: the mark, the grade, the set-angle line', () => {
+    live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
+
+    const { container } = render(<ClimbListItemContent climb={{ ...climb, statsAngle: 45 }} {...board} />);
+    const grade = container.querySelector('[data-variant="title3"]');
+    const setAngleMarker = container.querySelector('[data-variant="caption2"]');
+
+    // A marked grade gives up its 40pt floor to the glyph, as before.
+    expect(styleOf(grade)).toMatchObject({ fontWeight: '700', minWidth: 0, textAlign: 'right' });
+    expect(styleOf(grade?.parentElement)).toEqual({ flexDirection: 'row', alignItems: 'center', gap: 3 });
+    expect(styleOf(grade?.parentElement?.parentElement)).toEqual({ alignItems: 'flex-end', gap: 1 });
+    expect(styleOf(setAngleMarker)).toEqual({
+      fontWeight: '600',
+      fontVariant: ['tabular-nums'],
+      marginTop: -2,
+      color: '#8E8E93',
+    });
+    // Two children and no more: nothing stacks between the grade and the marker.
+    expect(grade?.parentElement?.parentElement?.children).toHaveLength(2);
   });
 
   it('leaves playlist tags off, even on the surface that can show them', () => {
@@ -355,7 +390,7 @@ describe('the default climb row', () => {
   });
 });
 
-describe('playlist tags, the one switch the row honours so far', () => {
+describe('playlist tags, a switch the row honours', () => {
   it('mounts the tag strip under the detail line once the climber turns tags on', () => {
     const { container, queryByTestId } = render(<ClimbListItemContent climb={climb} {...board} showPlaylistChips />);
     expect(queryByTestId('playlist-chips')).toBeNull();
@@ -405,14 +440,19 @@ describe('playlist tags, the one switch the row honours so far', () => {
     expect(stagedOn.queryByTestId('playlist-chips')).not.toBeNull();
   });
 
-  // Holds for this commit only. Each later part that teaches the row a switch
-  // takes its field out of this list and asserts what that switch hides instead.
+  // Holds until the row honours them. Each later part that teaches the row a
+  // switch takes its field out of this list and asserts what that switch hides
+  // instead. The row is a loaded one, so a switch that started hiding something
+  // would show here.
   it('does not change the row for a switch it does not honour yet', () => {
+    favoritesStore.setIsFavorited('c1', true);
+    live.logbook = { logbookByClimbAngle: new Map([['c1:40', [sent]]]) };
+    live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
     const before = render(<ClimbListItemContent climb={climb} {...board} showFavorite showPlaylistChips />);
     const untouched = before.container.innerHTML;
 
     act(() => {
-      for (const fieldId of ['thumbnail', 'communityGrade', 'sends', 'rating', 'setter', 'sentMark'] as const) {
+      for (const fieldId of ['thumbnail', 'sends', 'rating', 'setter', 'sentMark'] as const) {
         setClimbRowField(fieldId, false);
       }
     });
@@ -421,22 +461,97 @@ describe('playlist tags, the one switch the row honours so far', () => {
   });
 });
 
+describe('the community grade switch', () => {
+  const rowWithMyGrade = () => {
+    live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
+    return render(<ClimbListItemContent climb={climb} {...board} />);
+  };
+
+  it('is on by default: the community’s grade leads the detail line when yours is in the column', () => {
+    const { container } = rowWithMyGrade();
+
+    expect(outline(container)).toEqual([
+      'thumbnail',
+      'body:Boulder Problem',
+      'footnote:V4 · 12 sends · 4.5★ · setterx',
+      'icon:person',
+      'title3:V10',
+    ]);
+    // The token is part of the one detail line, in that line's style.
+    const detail = container.querySelector('[data-variant="footnote"]');
+    expect(styleOf(detail)).toEqual({ opacity: 0.6 });
+    expect(detail?.getAttribute('data-lines')).toBe('1');
+  });
+
+  it('hides exactly the token when the climber turns it off', () => {
+    const { container } = rowWithMyGrade();
+
+    act(() => setClimbRowField('communityGrade', false));
+
+    expect(outline(container)).toEqual([
+      'thumbnail',
+      'body:Boulder Problem',
+      'footnote:12 sends · 4.5★ · setterx',
+      'icon:person',
+      'title3:V10',
+    ]);
+    expect(container.querySelector('[data-variant="footnote"]')?.hasAttribute('aria-label')).toBe(false);
+  });
+
+  it('changes nothing on a row whose column already shows the community grade', () => {
+    const before = render(<ClimbListItemContent climb={climb} {...board} />);
+    const untouched = before.container.innerHTML;
+    expect(outline(before.container)).toContain('footnote:12 sends · 4.5★ · setterx');
+
+    act(() => setClimbRowField('communityGrade', false));
+
+    expect(before.container.innerHTML).toBe(untouched);
+  });
+
+  it('uses a passed display as given, over the stored one', () => {
+    live.myGrade = { status: 'set', difficultyId: 27, climbedAt: null };
+    const staged = render(
+      <ClimbListItemContent
+        climb={climb}
+        {...board}
+        display={{ ...DEFAULT_CLIMB_ROW_DISPLAY, communityGrade: false }}
+      />,
+    );
+
+    expect(outline(staged.container)).toContain('footnote:12 sends · 4.5★ · setterx');
+  });
+
+  // What the token costs a row: one more reader of the logbook while it is on,
+  // and never another reader of the stats store.
+  it.each([
+    { switched: 'on', communityGrade: true, logbookReaders: 2 },
+    { switched: 'off', communityGrade: false, logbookReaders: 1 },
+  ])(
+    'switched $switched, the row has two stats readers and $logbookReaders logbook readers for the grade',
+    ({ communityGrade, logbookReaders }) => {
+      render(
+        <ClimbListItemContent climb={climb} {...board} display={{ ...DEFAULT_CLIMB_ROW_DISPLAY, communityGrade }} />,
+      );
+
+      expect(live.statsCalls).toBe(2);
+      expect(live.myGradeCalls).toBe(logbookReaders);
+    },
+  );
+});
+
 describe('staged leaves, for the settings preview', () => {
   const sampleLeaves: ClimbRowLeaves = {
-    Subtitle: () => (
-      <ClimbSubtitleView isDraft={false} ascensionistCount={1200} qualityAverage="4.2" setterUsername="sample" />
-    ),
-    Grade: () => (
-      <ClimbGradeView
-        label="V5"
-        color="#123456"
-        markedAsMine
-        gradeIsConsensus={false}
-        secondaryLabel="V4"
-        isProject={false}
-        setAtAngle={null}
+    // A staged leaf gets the switch from the row, so the preview follows it.
+    Subtitle: ({ showCommunityGrade }) => (
+      <ClimbSubtitleView
+        isDraft={false}
+        ascensionistCount={1200}
+        qualityAverage="4.2"
+        setterUsername="sample"
+        communityGrade={showCommunityGrade ? 'V4' : null}
       />
     ),
+    Grade: () => <ClimbGradeView label="V5" color="#123456" markedAsMine isProject={false} setAtAngle={null} />,
     AscentStatus: () => <ClimbAscentStatusView supportsMirroring={false} ascentStatus="flash" mirrorStatus={null} />,
     Favorite: () => <ClimbFavoriteView />,
     PlaylistChips: () => <div data-testid="sample-chips" />,
@@ -457,17 +572,32 @@ describe('staged leaves, for the settings preview', () => {
     expect(outline(container)).toEqual([
       'thumbnail',
       'body:Boulder Problem',
-      'footnote:1.2k sends · 4.2★ · sample',
+      'footnote:V4 · 1.2k sends · 4.2★ · sample',
       '#sample-chips',
       'icon:favorite.fill',
       'icon:flash',
       'icon:person',
       'title3:V5',
-      'icon:people',
-      'caption2:V4',
     ]);
+    expect(container.querySelector('[data-variant="footnote"]')?.getAttribute('aria-label')).toBe(
+      'mobile.climbRow.communityGradeAria · 1.2k sends · 4.2★ · sample',
+    );
     expect(live.statsCalls).toBe(0);
     expect(live.gradeCalls).toBe(0);
+    expect(live.myGradeCalls).toBe(0);
+  });
+
+  it('hands a staged detail line the community grade switch', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={climb}
+        {...board}
+        display={{ ...DEFAULT_CLIMB_ROW_DISPLAY, communityGrade: false }}
+        leaves={sampleLeaves}
+      />,
+    );
+
+    expect(outline(container)).toContain('footnote:1.2k sends · 4.2★ · sample');
   });
 
   it('draws the same glyphs and text from a view as the live leaf does', () => {
@@ -478,18 +608,16 @@ describe('staged leaves, for the settings preview', () => {
     const matchingLeaves: ClimbRowLeaves = {
       ...sampleLeaves,
       Subtitle: () => (
-        <ClimbSubtitleView isDraft={false} ascensionistCount={12} qualityAverage="4.5" setterUsername="setterx" />
+        <ClimbSubtitleView
+          isDraft={false}
+          ascensionistCount={12}
+          qualityAverage="4.5"
+          setterUsername="setterx"
+          communityGrade={null}
+        />
       ),
       Grade: () => (
-        <ClimbGradeView
-          label="V4"
-          color="#44AA44"
-          markedAsMine={false}
-          gradeIsConsensus={false}
-          secondaryLabel={null}
-          isProject={false}
-          setAtAngle={null}
-        />
+        <ClimbGradeView label="V4" color="#44AA44" markedAsMine={false} isProject={false} setAtAngle={null} />
       ),
     };
     const stagedRow = render(<ClimbListItemContent climb={climb} {...board} showFavorite leaves={matchingLeaves} />);
