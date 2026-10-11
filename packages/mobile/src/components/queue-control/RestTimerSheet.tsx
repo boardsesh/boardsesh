@@ -21,7 +21,9 @@ import { Button } from '../Button';
 import { SwitchRow } from '../SwitchRow';
 import { SectionHeader } from '../SectionHeader';
 import { SegmentedControl } from '../SegmentedControl';
+import { makeSelectHandler } from '../SegmentedControl.logic';
 import type { SegmentOption } from '../SegmentedControl.types';
+import { ScrollableTabs } from '../navigation/ScrollableTabs';
 import { TickDestructiveRow } from '../tick/TickDestructiveRow';
 import { TICK_ACTION_MAX_FONT_SCALE, TICK_GUTTER, tickActionHeight } from '../tick/tick-sheet-metrics';
 import { useTheme } from '../../providers/theme-provider';
@@ -155,6 +157,7 @@ export function RestTimerAutoAdvanceRow() {
 export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = {}) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
+  const { fontScale } = useWindowDimensions();
   const [mode, setMode] = useSetting('restTimerMode');
   const [targetSeconds] = useSetting('restTimerTargetSeconds');
   // Only whether it is armed: the full state emits on every tick, pause and
@@ -188,15 +191,20 @@ export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = 
     },
     [armed, mode, sessionId, setMode],
   );
+  // Match the iOS segmented control's large-text fallback. Paper's fixed-width
+  // Android segments ellipsize the cadence labels when the text grows.
+  const usesScrollingTabs = fontScale > 1.3;
+  const CadenceControl = usesScrollingTabs ? ScrollableTabs : SegmentedControl;
+  const handleScrollingSelect = useMemo(() => makeSelectHandler(handleSelect), [handleSelect]);
 
   return (
     <View style={inset ? null : styles.cardBleed}>
       <SectionHeader title={t('mobile.restTimer.modeLabel')} />
       <View style={styles.cadenceContent}>
-        <SegmentedControl
+        <CadenceControl
           options={options}
           selectedKey={mode}
-          onSelect={handleSelect}
+          onSelect={usesScrollingTabs ? handleScrollingSelect : handleSelect}
           accessibilityLabel={t('mobile.restTimer.modeAria')}
         />
         <Text variant="footnote" color={systemColors.secondaryLabel}>
