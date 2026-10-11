@@ -81,6 +81,23 @@ export const BOOTSTRAP_PAGED_FALLBACK_PREFIX = 'bootstrap-paged-fallback:';
 /** The retry row this module owns: one JSON `BootstrapRetryState` per scope. */
 export const BOOTSTRAP_RETRY_PREFIX = 'bootstrap-retry:';
 
+// --- `bootstrap-done:` marker values ---------------------------------------------
+//
+// The marker itself is written and read in snapshot-bootstrap.ts. The values live
+// here, beside the eligibility rule that has to tell them apart.
+
+/**
+ * What an import writes to `bootstrap-done:` since the two-stream sync (issue
+ * #6306): a fresh import, and a heal over a partly crawled catalogue. The `2`
+ * says the import stamped the artifact's REAL watermark as the reference
+ * cursor, which is the only kind of import this bundle can trust to have left a
+ * scope it can resume.
+ */
+export const BOOTSTRAP_DONE_VALUE = '2';
+export const BOOTSTRAP_DONE_HEAL_VALUE = 'heal2';
+/** What an earlier bundle wrote for a heal. Read for `bootstrapHealed` only; a plain import wrote `'1'`. */
+export const LEGACY_BOOTSTRAP_DONE_HEAL_VALUE = 'heal';
+
 // --- Budgets and ladders ------------------------------------------------------
 
 /**
@@ -494,6 +511,46 @@ export type BootstrapEligibility =
     };
 
 /**
+ * Whether a scope's `bootstrap-done:` marker still stands for something: the
+ * artifact it records is on the device and the pull can carry on from it.
+ *
+ * A COMPLETE scope's marker always stands. It only says how the download got
+ * there (`method: 'snapshot'`), and the scope serves the whole catalogue either
+ * way.
+ *
+ * An INCOMPLETE scope's marker stands only when both of these hold:
+ *
+ *  - this bundle wrote it (`BOOTSTRAP_DONE_VALUE` / `BOOTSTRAP_DONE_HEAL_VALUE`).
+ *    An earlier bundle stamped the reference cursor at the epoch after an import
+ *    of a privacy-filtered artifact, so the scope it left behind crawls the
+ *    whole board again whatever the marker says; and
+ *  - a climbs or stats reference cursor exists. Without one the pull would start
+ *    from the epoch too. An earlier bundle's privacy revalidation deleted every
+ *    board checkpoint and kept this marker, which left a board that could
+ *    neither import again nor, before #6316, crawl (issue #6306).
+ *
+ * A marker that does not stand is cleared by `runBootstrapPhase`, and the scope
+ * is judged as if it had none, so it imports the artifact again. That is one
+ * artifact download, once: this bundle's revalidation no longer touches
+ * reference cursors, so it cannot put a scope back in that state.
+ *
+ * `evaluateBootstrapEligibility` applies it, which is how `estimateScopeDownload`
+ * comes to quote a size for exactly the scopes the engine will import.
+ */
+export function isBootstrapDoneHonoured(input: {
+  bootstrapDoneMarker: string | null;
+  hasBoardCheckpoint: boolean;
+  isScopeComplete: boolean;
+}): boolean {
+  const { bootstrapDoneMarker, hasBoardCheckpoint, isScopeComplete } = input;
+  if (bootstrapDoneMarker === null) return false;
+  if (isScopeComplete) return true;
+  const writtenByThisBundle =
+    bootstrapDoneMarker === BOOTSTRAP_DONE_VALUE || bootstrapDoneMarker === BOOTSTRAP_DONE_HEAL_VALUE;
+  return writtenByThisBundle && hasBoardCheckpoint;
+}
+
+/**
  * The single authority on "would the snapshot bootstrap run for this scope right
  * now". Called by `runBootstrapPhase` AND by `estimateScopeDownload`, so the size
  * the UI quotes can never disagree with what the engine would do — the two used
@@ -511,12 +568,13 @@ export function evaluateBootstrapEligibility(input: {
   retryState: BootstrapRetryState;
   hasBoardCheckpoint: boolean;
   isScopeComplete: boolean;
-  isBootstrapDone: boolean;
+  /** The raw `bootstrap-done:` value, or null when the scope has no marker. */
+  bootstrapDoneMarker: string | null;
   now: number;
 }): BootstrapEligibility {
-  const { retryState, hasBoardCheckpoint, isScopeComplete, isBootstrapDone, now } = input;
+  const { retryState, hasBoardCheckpoint, isScopeComplete, now } = input;
   if (isScopeComplete) return { eligible: false, reason: 'scope-complete', canRearm: false };
-  if (isBootstrapDone) return { eligible: false, reason: 'bootstrap-done', canRearm: false };
+  if (isBootstrapDoneHonoured(input)) return { eligible: false, reason: 'bootstrap-done', canRearm: false };
   if (isTerminal(retryState)) {
     return { eligible: false, reason: 'terminal', canRearm: canRearmOnNewArtifact(retryState) };
   }

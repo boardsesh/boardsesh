@@ -425,7 +425,10 @@ describe('getBootstrapMetadataByScope', () => {
   it('reads requested attempt and completion markers in one batch with O(1) scope lookups', async () => {
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:1:5', '1']);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-done:kilter:1:5', '1']);
-    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['checkpoint:board_climbs:kilter:1:5', '{}']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      'checkpoint:board_climbs:kilter:1:5',
+      JSON.stringify(CLIMBS_WATERMARK),
+    ]);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['scope-complete:kilter:1:5', '1']);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:tension:2:10', '2']);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
@@ -451,7 +454,7 @@ describe('getBootstrapMetadataByScope', () => {
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:9:20', '1']);
     await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
       'checkpoint:board_climb_stats:kilter:9:20',
-      '{}',
+      JSON.stringify(STATS_WATERMARK),
     ]);
     // Grades retries are a separate importer-only budget. They must not create
     // a whole-layout BootstrapScopeMetadata row for an otherwise untouched
@@ -534,26 +537,164 @@ describe('getBootstrapMetadataByScope', () => {
 // ---------------------------------------------------------------------------
 
 describe('bootstrapScopeFromSnapshot', () => {
-  it('replays authenticated rows omitted by privacy-safe public artifacts from epoch', async () => {
-    const filePath = join(workDir, 'privacy-artifact.db');
-    buildArtifact({
-      filePath,
-      climbs: [{ uuid: 'public-catalog', compatibleSizeIds: [5] }],
-      stats: [{ climbUuid: 'public-catalog', angle: 40 }],
-      climbsWatermark: CLIMBS_WATERMARK,
-      statsWatermark: STATS_WATERMARK,
+  // Issue #6306. An artifact holds the reference rows only, and this import used
+  // to stamp its cursors at the epoch to pick up the authored rows it left out,
+  // which made the phone crawl the whole board again behind every import.
+  describe('a privacy-filtered artifact', () => {
+    const SCOPE_KEY = 'kilter:1:5';
+    const BEFORE_WATERMARK = '2026-04-01T00:00:00Z';
+
+    async function seedLocalClimb(uuid: string, userId: string | null, syncSeq: number | null = 5) {
+      await db.runAsync(
+        `INSERT INTO board_climbs
+          (uuid, board_type, layout_id, name, is_draft, is_listed, compatible_size_ids, updated_at, sync_seq, user_id)
+         VALUES (?, 'kilter', 1, ?, 0, 1, '[5]', ?, ?, ?)`,
+        [uuid, uuid, BEFORE_WATERMARK, syncSeq, userId],
+      );
+      await db.runAsync(
+        `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, updated_at, sync_seq)
+         VALUES ('kilter', ?, 40, ?, ?)`,
+        [uuid, BEFORE_WATERMARK, syncSeq],
+      );
+    }
+    const localClimbs = async () =>
+      (await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid')).map((row) => row.uuid);
+    const localStats = async () =>
+      (
+        await db.getAllAsync<{ climb_uuid: string }>('SELECT climb_uuid FROM board_climb_stats ORDER BY climb_uuid')
+      ).map((row) => row.climb_uuid);
+
+    function buildReferenceArtifact(
+      name: string,
+      climbs: ClimbInput[] = [{ uuid: 'catalogue', compatibleSizeIds: [5] }],
+    ) {
+      const filePath = join(workDir, name);
+      buildArtifact({
+        filePath,
+        climbs,
+        stats: climbs.map((climb) => ({ climbUuid: climb.uuid, angle: 40 })),
+        climbsWatermark: CLIMBS_WATERMARK,
+        statsWatermark: STATS_WATERMARK,
+      });
+      return filePath;
+    }
+
+    it('stamps the reference cursors at the artifact watermark, not at the epoch', async () => {
+      const filePath = buildReferenceArtifact('reference.db');
+
+      await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: SCOPE_KEY, filePath });
+
+      expect(await getCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toEqual(CLIMBS_WATERMARK);
+      expect(await getCheckpoint(db, `checkpoint:board_climb_stats:${SCOPE_KEY}`)).toEqual(STATS_WATERMARK);
     });
-    await bootstrapScopeFromSnapshot({
-      db,
-      scope: SCOPE_KILTER_5,
-      scopeKey: 'kilter:1:5',
-      filePath,
-      replayFromEpoch: true,
+
+    // The watermark is real now, so "at or below it and not in the artifact" is
+    // true of every authored climb the device holds. Each of these would be
+    // deleted by an unguarded reconcile.
+    it('keeps every owned climb and its stats through the reconcile: the viewer’s own, drafts, and other climbers’', async () => {
+      await seedLocalClimb('viewer-own', 'viewer');
+      // A draft the climber has not synced yet: no server version at all.
+      await seedLocalClimb('viewer-unsynced-draft', 'viewer', null);
+      await seedLocalClimb('another-climber', 'somebody-else');
+      const filePath = buildReferenceArtifact('reference.db');
+
+      await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: SCOPE_KEY, filePath });
+
+      expect(await localClimbs()).toEqual(['another-climber', 'catalogue', 'viewer-own', 'viewer-unsynced-draft']);
+      expect(await localStats()).toEqual(['another-climber', 'catalogue', 'viewer-own', 'viewer-unsynced-draft']);
     });
-    const epoch = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
-    expect(await countRows('board_climbs')).toBe(1);
-    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(epoch);
-    expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(epoch);
+
+    it('still removes an unowned row the artifact no longer carries', async () => {
+      // Deleted on the server since this device last saw it, or (unknowably, from
+      // here) a climb whose author deleted their account.
+      await seedLocalClimb('gone-from-catalogue', null);
+      const filePath = buildReferenceArtifact('reference.db');
+
+      await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: SCOPE_KEY, filePath });
+
+      expect(await localClimbs()).toEqual(['catalogue']);
+      expect(await localStats()).toEqual(['catalogue']);
+    });
+
+    it('resets the scope’s protected cursors with the checkpoints, so the pull replays what the reconcile may have taken', async () => {
+      const protectedCursor = { updatedAt: BEFORE_WATERMARK, syncSeq: '5', complete: true, revision: 1 };
+      for (const tableName of ['board_climbs', 'board_climb_stats', 'board_climb_grades']) {
+        await setProtectedCheckpoint(db, `checkpoint:${tableName}:${SCOPE_KEY}`, protectedCursor);
+        // A sibling size of the same layout keeps its own.
+        await setProtectedCheckpoint(db, `checkpoint:${tableName}:kilter:1:7`, protectedCursor);
+      }
+      const filePath = buildReferenceArtifact('reference.db');
+
+      await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: SCOPE_KEY, filePath });
+
+      expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(false);
+      for (const tableName of ['board_climbs', 'board_climb_stats', 'board_climb_grades']) {
+        expect(await getProtectedCheckpoint(db, `checkpoint:${tableName}:${SCOPE_KEY}`)).toBeNull();
+      }
+      expect(await isScopeProtectedComplete(db, 'kilter:1:7')).toBe(true);
+    });
+
+    it('leaves protected cursors alone when the import fails before its checkpoint transaction', async () => {
+      const protectedCursor = { updatedAt: BEFORE_WATERMARK, syncSeq: '5', complete: true, revision: 1 };
+      await setProtectedCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`, protectedCursor);
+      const filePath = join(workDir, 'truncated.db');
+      buildArtifact({
+        filePath,
+        climbs: [{ uuid: 'catalogue', compatibleSizeIds: [5] }],
+        stats: [],
+        climbsWatermark: CLIMBS_WATERMARK,
+        statsWatermark: STATS_WATERMARK,
+        climbsRowCountOverride: 2,
+      });
+
+      await expect(
+        bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: SCOPE_KEY, filePath }),
+      ).rejects.toThrow(/row_count/);
+
+      expect(await getProtectedCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toEqual(protectedCursor);
+    });
+
+    // Defence in depth for "a reference row is public for every viewer". The
+    // exporter never writes an owned climb; if a file ever held one, importing it
+    // would put another climber's climb on the device with no server check.
+    it('does not import an owned climb, or its stats, from an artifact that carries one', async () => {
+      const filePath = buildReferenceArtifact('with-owned.db', [
+        { uuid: 'catalogue', compatibleSizeIds: [5] },
+        { uuid: 'somebody-elses', compatibleSizeIds: [5], userId: 'somebody-else' },
+      ]);
+
+      const imported = await bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: SCOPE_KEY, filePath });
+
+      expect(await localClimbs()).toEqual(['catalogue']);
+      expect(await localStats()).toEqual(['catalogue']);
+      expect(imported.climbsImported).toBe(1);
+      expect(imported.statsImported).toBe(1);
+    });
+
+    // The gate the release sequence rests on (docs/privacy.md): a file from
+    // before the privacy split holds authored climbs, and it must be refused
+    // before a single row is written, including one retained on disk.
+    it('refuses a format-1 artifact before writing a row or a checkpoint', async () => {
+      await seedLocalClimb('already-here', null);
+      const filePath = join(workDir, 'format-1.db');
+      buildArtifact({
+        filePath,
+        climbs: [{ uuid: 'pre-privacy-authored', compatibleSizeIds: [5], userId: 'somebody-else' }],
+        stats: [{ climbUuid: 'pre-privacy-authored', angle: 40 }],
+        climbsWatermark: CLIMBS_WATERMARK,
+        statsWatermark: STATS_WATERMARK,
+        formatVersion: 1,
+      });
+
+      await expect(
+        bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: SCOPE_KEY, filePath }),
+      ).rejects.toThrow(/format_version 1 != 2/);
+
+      expect(await localClimbs()).toEqual(['already-here']);
+      expect(await localStats()).toEqual(['already-here']);
+      expect(await getCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toBeNull();
+      expect(await getCheckpoint(db, `checkpoint:board_climb_stats:${SCOPE_KEY}`)).toBeNull();
+    });
   });
 
   it('imports the size-matched climbs + their stats and stamps both checkpoints at the watermarks', async () => {
@@ -2620,9 +2761,11 @@ describe('pullSync onScopeDownloadComplete', () => {
       }),
     ).rejects.toThrow('network dropped mid-delta');
     expect(onScopeDownloadComplete).not.toHaveBeenCalled();
-    // The bootstrap itself committed before the delta died.
+    // The bootstrap itself committed before the delta died, with this bundle's
+    // marker value: the next cycle honours it because the reference cursors the
+    // import stamped are still there.
     expect(await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-done:kilter:1:5'])).toEqual({
-      value: '1',
+      value: '2',
     });
 
     const run2 = makeGraphqlFetch();
@@ -2636,6 +2779,8 @@ describe('pullSync onScopeDownloadComplete', () => {
     const info = onScopeDownloadComplete.mock.calls[0][0] as { scopeKey: string; method: string };
     expect(info.scopeKey).toBe('kilter:1:5');
     expect(info.method).toBe('snapshot');
+    // The second cycle resumed from the import: one artifact, no second download.
+    expect(source.downloadArtifact).toHaveBeenCalledTimes(1);
   });
 
   it('reports method "paged" when no snapshotSource is configured (pure paged crawl)', async () => {

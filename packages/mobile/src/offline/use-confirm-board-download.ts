@@ -21,7 +21,7 @@ import {
   estimateScopeDownload,
   getCheckpoint,
   getCheckpointKey,
-  isBootstrapDone,
+  getBootstrapDoneMarker,
   isScopeDownloadComplete,
   readBootstrapRetryState,
   restoreBootstrapRetryBudget,
@@ -98,11 +98,13 @@ export function useConfirmBoardDownload() {
       // whether a board checkpoint exists (a snapshot failure over a partial crawl
       // is budgeted differently from one over an empty scope).
       const now = Date.now();
-      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
+      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapDoneMarker] = await Promise.all([
         getCheckpoint(db, getCheckpointKey('board_climbs', key)),
         getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
         isScopeDownloadComplete(db, key),
-        isBootstrapDone(db, key),
+        // The raw marker, not a yes/no: the estimate applies the engine's own
+        // rule for whether an earlier import still counts (issue #6306).
+        getBootstrapDoneMarker(db, key),
       ]);
       const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
       const { state: retryState } = await readBootstrapRetryState(
@@ -118,7 +120,7 @@ export function useConfirmBoardDownload() {
         retryState,
         hasBoardCheckpoint,
         isScopeComplete: scopeComplete,
-        isBootstrapDone: bootstrapAlreadyDone,
+        bootstrapDoneMarker,
         now,
       });
       const confirmed = await confirm({
