@@ -449,7 +449,7 @@ describe('uniform reorder geometry', () => {
         rows: [{ supportsMirroring: false, hasSetAngleMarker: true }],
         fontScale: 1.5,
       }),
-    ).toBe(71);
+    ).toBe(72);
   });
   it.each([1, 1.5])('reserves both warning lines and the remove target at font scale %s', (fontScale) => {
     expect(

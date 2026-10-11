@@ -30,6 +30,7 @@ import {
   CLIMB_ROW_LINE_GAP,
   CLIMB_ROW_MIN_TEXT_COLUMN_HEIGHT,
   CLIMB_ROW_SET_ANGLE_MARGIN_TOP,
+  CLIMB_ROW_GRADE_LINE_GAP,
   climbRowLayout,
   climbRowNameLines,
 } from './climb-row-layout';
@@ -1277,7 +1278,7 @@ const styles = StyleSheet.create({
   },
   gradeColumn: {
     alignItems: 'flex-end',
-    gap: 1,
+    gap: CLIMB_ROW_GRADE_LINE_GAP,
   },
   iconGradeRow: {
     flexDirection: 'row',

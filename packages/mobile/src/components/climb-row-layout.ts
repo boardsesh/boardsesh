@@ -45,6 +45,7 @@ export function climbRowNameLines(fontScale: number, allowNameWrapping = true): 
 /** The gap between the lines of the text column. */
 export const CLIMB_ROW_LINE_GAP = 2;
 export const CLIMB_ROW_SET_ANGLE_MARGIN_TOP = -2;
+export const CLIMB_ROW_GRADE_LINE_GAP = 1;
 
 /**
  * The playlist tags line as `ClimbPlaylistChips` draws it. Kept here so the
@@ -298,7 +299,11 @@ export function climbRowReorderHeight({
     if (row.hasSetAngleMarker) {
       minimumHeight = Math.max(
         minimumHeight,
-        lineHeight('title3') + lineHeight('caption2') + CLIMB_ROW_SET_ANGLE_MARGIN_TOP + 2 * CLIMB_ROW_VERTICAL_PADDING,
+        lineHeight('title3') +
+          lineHeight('caption2') +
+          CLIMB_ROW_SET_ANGLE_MARGIN_TOP +
+          CLIMB_ROW_GRADE_LINE_GAP +
+          2 * CLIMB_ROW_VERTICAL_PADDING,
       );
     }
     if (row.unrenderable) {
