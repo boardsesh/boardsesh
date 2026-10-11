@@ -24,7 +24,6 @@ vi.mock('@boardsesh/board-react', () => ({
   // The rich tier's `ClimbProgressLine` reads the logbook index; this file is
   // about layout, so it renders outside a provider (and therefore renders null).
   logbookClimbAngleKey: (climbUuid: string, angle: number) => `${climbUuid}:${angle}`,
-  useOptionalBoardLogbook: () => null,
 }));
 
 // View keeps its style on the DOM node so the thumbnail cell's width/height are
