@@ -3,20 +3,17 @@ import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
 
 // Use vi.hoisted() so mock variables are available when vi.mock factories run
-const { mockEval, mockIsRedisConnected, mockCheckRateLimit } = vi.hoisted(() => ({
+const { mockEval, mockIsRedisConnected, mockCheckRateLimit, mockGetClients } = vi.hoisted(() => ({
   mockEval: vi.fn(),
   mockIsRedisConnected: vi.fn(),
   mockCheckRateLimit: vi.fn(),
+  mockGetClients: vi.fn(),
 }));
 
 vi.mock('../redis/client', () => ({
   redisClientManager: {
     isRedisConnected: mockIsRedisConnected,
-    getClients: () => ({
-      publisher: {
-        eval: mockEval,
-      },
-    }),
+    getClients: mockGetClients,
   },
 }));
 
@@ -34,6 +31,11 @@ vi.mock('../utils/rate-limiter', async (importOriginal) => {
 describe('checkRateLimitRedis', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockGetClients.mockReturnValue({
+      publisher: {
+        eval: mockEval,
+      },
+    });
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2024-01-15T10:00:00.000Z'));
   });
@@ -161,6 +163,15 @@ describe('checkRateLimitRedis', () => {
 
       await checkRateLimitRedis('user-1', 'vote', 30, 60_000);
 
+      expect(mockCheckRateLimit).toHaveBeenCalledWith('user-1:vote', 30, 60_000);
+    });
+
+    it('fails soft if the manager disconnects between its availability check and client lookup', async () => {
+      mockGetClients.mockImplementationOnce(() => {
+        throw new Error('Redis disconnected');
+      });
+
+      await expect(checkRateLimitRedis('user-1', 'vote', 30, 60_000)).resolves.toBeUndefined();
       expect(mockCheckRateLimit).toHaveBeenCalledWith('user-1:vote', 30, 60_000);
     });
 
