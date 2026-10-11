@@ -212,9 +212,11 @@ export async function selectClimbOwnerAssignments(
  * Assign one batch, in one statement. Returns how many rows it wrote.
  *
  * The row is re-checked where it is written: still without an owner, still not
- * public, and the account still exists. So a row that gained an owner, was
- * published or lost its account since the page was read is skipped, and running
- * the same batch twice writes nothing the second time.
+ * public, the account still exists, and it is still the one account that links
+ * the climb's setter. So a row that gained an owner, was published, lost its
+ * account, or whose setter was linked by a second account since the page was
+ * read is skipped, and running the same batch twice writes nothing the second
+ * time.
  *
  * Each written row fires `trg_board_climbs_set_sync_fields`, which moves its
  * `updated_at` and `sync_seq`. That is wanted: it is how the row reaches its
@@ -227,11 +229,23 @@ export async function applyClimbOwnerAssignments(db: BackfillDb, assignments: Cl
     assignments.map((assignment) => sql`WHEN ${assignment.uuid} THEN ${assignment.userId}`),
     sql` `,
   );
+  const assignedOwner = sql`CASE ${boardClimbs.uuid} ${ownerByUuid} END`;
   const accountIds = [...new Set(assignments.map((assignment) => assignment.userId))];
   const existingAccounts = db.select({ id: users.id }).from(users).where(inArray(users.id, accountIds));
+  // The match the page was read with, made again on the row being written. The
+  // climb's columns are named with their table: inside the subquery a bare
+  // `board_type` would be the link's own.
+  const owners = setterOwners(db);
+  const stillTheOnlyLinkedAccount = sql`EXISTS (
+    SELECT 1 FROM ${owners}
+    WHERE ${owners.boardType} = ${sql.raw('board_climbs.board_type')}
+      AND ${owners.boardUserId} = ${sql.raw('board_climbs.setter_id')}
+      AND ${owners.accountCount} = 1
+      AND ${owners.userId} = ${assignedOwner}
+  )`;
   const written = await db
     .update(boardClimbs)
-    .set({ userId: sql`CASE ${boardClimbs.uuid} ${ownerByUuid} END` })
+    .set({ userId: assignedOwner })
     .where(
       and(
         inArray(
@@ -239,7 +253,8 @@ export async function applyClimbOwnerAssignments(db: BackfillDb, assignments: Cl
           assignments.map((assignment) => assignment.uuid),
         ),
         ownerlessInScope({}),
-        inArray(sql`CASE ${boardClimbs.uuid} ${ownerByUuid} END`, existingAccounts),
+        inArray(assignedOwner, existingAccounts),
+        stillTheOnlyLinkedAccount,
       ),
     )
     .returning({ uuid: boardClimbs.uuid });
