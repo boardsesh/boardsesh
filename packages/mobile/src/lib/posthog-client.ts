@@ -11,7 +11,12 @@ import {
 import { createConsentPosthogStorage } from './consent-posthog-storage';
 import { posthogStorageBackend } from './posthog-storage-backend';
 import { BACKEND_URL } from './env';
-import { ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED, isAnalyticsGranted } from '@boardsesh/consent';
+import {
+  ANALYTICS_CONSENT_HEADER,
+  ANALYTICS_CONSENT_HEADER_GRANTED,
+  isAnalyticsCaptureUrl,
+  isAnalyticsGranted,
+} from '@boardsesh/consent';
 import { notifyAnalyticsIdentityChanged } from './analytics-identity-events';
 import { applySessionReplayConsent } from './session-replay-consent';
 import { applyNativeReplayPrivacy } from './replay-privacy';
@@ -178,7 +183,9 @@ export class ConsentPostHog extends PostHog {
       if (!isProductAnalyticsGranted() || epoch !== getConsentSnapshot().authEpoch) controller.abort();
       return await super.fetch(url, {
         ...options,
-        headers: { ...options.headers, [ANALYTICS_CONSENT_HEADER]: ANALYTICS_CONSENT_HEADER_GRANTED },
+        headers: isAnalyticsCaptureUrl(url, host)
+          ? { ...options.headers, [ANALYTICS_CONSENT_HEADER]: ANALYTICS_CONSENT_HEADER_GRANTED }
+          : options.headers,
         credentials: 'omit',
         signal: controller.signal,
       });

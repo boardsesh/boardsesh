@@ -18,6 +18,7 @@ type FakeReqOptions = {
   userAgent?: string;
   country?: string;
   analyticsConsent?: string;
+  cfConnectingIp?: string;
 };
 
 function createFakeReq(options: FakeReqOptions): ProxyReq {
@@ -30,6 +31,7 @@ function createFakeReq(options: FakeReqOptions): ProxyReq {
   if (options.userAgent) headers['user-agent'] = options.userAgent;
   if (options.country) headers['cf-ipcountry'] = options.country;
   if (options.analyticsConsent) headers['x-boardsesh-analytics-consent'] = options.analyticsConsent;
+  if (options.cfConnectingIp) headers['cf-connecting-ip'] = options.cfConnectingIp;
 
   const req = {
     method: options.method,
@@ -262,8 +264,16 @@ describe('PostHog Proxy Handler', () => {
     expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBeUndefined();
   });
 
-  it.each(['/batch/', '/i/v0/e/', '/s/'])(
-    'forwards the first X-Forwarded-For hop on consented capture to %s, and still no User-Agent',
+  // Behind Cloudflare and our private ingress: Cloudflare appends to whatever
+  // X-Forwarded-For the caller sent, and the ingress appends the edge it saw.
+  const viaEdge = {
+    remoteAddress: '10.0.0.8',
+    forwardedFor: '6.6.6.6, 203.0.113.7, 104.16.0.5',
+    cfConnectingIp: '203.0.113.7',
+  };
+
+  it.each(['/batch/', '/batch', '/e/', '/i/v0/e/', '/s/'])(
+    'forwards the edge-reported visitor IP on consented capture to %s, never a caller-chosen hop or the User-Agent',
     async (endpoint) => {
       fetchMock.mockResolvedValue(new Response('1', { status: 200 }));
       const req = createFakeReq({
@@ -271,10 +281,9 @@ describe('PostHog Proxy Handler', () => {
         origin: 'https://boardsesh.com',
         body: '{"event":"Tick Logged"}',
         contentType: 'application/json',
-        forwardedFor: '203.0.113.7, 104.16.0.5',
-        remoteAddress: '10.0.0.8',
         userAgent: 'Mozilla/5.0 (iPhone)',
         analyticsConsent: 'granted',
+        ...viaEdge,
       });
       const res = createFakeRes();
 
@@ -287,19 +296,32 @@ describe('PostHog Proxy Handler', () => {
   );
 
   it.each([
-    { forwardedFor: undefined, remoteAddress: '198.51.100.4', expected: '198.51.100.4' },
-    { forwardedFor: 'not-an-ip, 104.16.0.5', remoteAddress: '198.51.100.4', expected: '198.51.100.4' },
-    { forwardedFor: ' 2001:db8::7 ', remoteAddress: '10.0.0.8', expected: '2001:db8::7' },
-    { forwardedFor: 'unknown', remoteAddress: 'garbage', expected: undefined },
+    ['a Cloudflare socket peer reporting IPv6', '2606:4700::6810:85e5', undefined, '2001:db8::7', '2001:db8::7'],
+    [
+      'a Cloudflare socket peer reporting an IPv4-mapped address',
+      '173.245.48.5',
+      undefined,
+      '::ffff:203.0.113.9',
+      '203.0.113.9',
+    ],
+    ['a public non-Cloudflare peer with a forged edge header', '198.51.100.4', undefined, '203.0.113.7', undefined],
+    ['a private peer whose last hop is not Cloudflare', '10.0.0.8', '203.0.113.7', '203.0.113.7', undefined],
+    ['a private peer with no X-Forwarded-For', '10.0.0.8', undefined, '203.0.113.7', undefined],
+    ['a trusted edge with no visitor header', '10.0.0.8', '203.0.113.7, 104.16.0.5', undefined, undefined],
+    ['a trusted edge reporting a private address', '10.0.0.8', '104.16.0.5', '192.168.1.20', undefined],
+    ['a trusted edge reporting carrier-grade NAT', '10.0.0.8', '104.16.0.5', '100.64.3.4', undefined],
+    ['a trusted edge reporting loopback', '173.245.48.5', undefined, '127.0.0.1', undefined],
+    ['a trusted edge reporting junk', '173.245.48.5', undefined, 'unknown', undefined],
   ])(
-    'falls back to a valid socket peer for consented capture: $forwardedFor / $remoteAddress',
-    async ({ forwardedFor, remoteAddress, expected }) => {
+    'consented capture from %s forwards %s/%s/%s as %s',
+    async (_label, remoteAddress, forwardedFor, cfConnectingIp, expected) => {
       fetchMock.mockResolvedValue(new Response('1', { status: 200 }));
       const req = createFakeReq({
         method: 'POST',
         body: '{}',
-        forwardedFor,
         remoteAddress,
+        forwardedFor,
+        cfConnectingIp,
         analyticsConsent: 'granted',
       });
       const res = createFakeRes();
@@ -309,16 +331,11 @@ describe('PostHog Proxy Handler', () => {
     },
   );
 
-  it.each(['denied', 'GRANTED', 'granted, granted', ''])(
+  it.each(['denied', 'GRANTED', 'granted, granted'])(
     'strips the IP when the consent header is %j rather than exactly granted',
     async (analyticsConsent) => {
       fetchMock.mockResolvedValue(new Response('1', { status: 200 }));
-      const req = createFakeReq({
-        method: 'POST',
-        body: '{}',
-        forwardedFor: '203.0.113.7',
-        analyticsConsent,
-      });
+      const req = createFakeReq({ method: 'POST', body: '{}', analyticsConsent, ...viaEdge });
       const res = createFakeRes();
       await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/batch/'));
       const init = fetchMock.mock.calls[0][1] as RequestInit;
@@ -326,14 +343,22 @@ describe('PostHog Proxy Handler', () => {
     },
   );
 
+  it('strips the IP from consented-looking capture with no consent header (OTA health, kiosk)', async () => {
+    fetchMock.mockResolvedValue(new Response('1', { status: 200 }));
+    const req = createFakeReq({ method: 'POST', body: '{}', ...viaEdge });
+    const res = createFakeRes();
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/batch/'));
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+  });
+
   it.each(['/flags/', '/decide/'])('ignores the consent header on %s: flags never carry the IP', async (endpoint) => {
     fetchMock.mockResolvedValue(new Response('{"featureFlags":{}}', { status: 200 }));
     const req = createFakeReq({
       method: 'POST',
       body: '{"token":"project","distinct_id":"account"}',
-      forwardedFor: '203.0.113.7',
-      remoteAddress: '198.51.100.4',
       analyticsConsent: 'granted',
+      ...viaEdge,
     });
     const res = createFakeRes();
     await handlePosthogProxy(req, res.asProxyRes, buildUrl(`/api/posthog${endpoint}`));
@@ -341,9 +366,21 @@ describe('PostHog Proxy Handler', () => {
     expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
   });
 
+  it.each(['/flags//', '/api/surveys/', '/i/v1/logs', '/batch/extra', '/capture/'])(
+    'ignores the consent header on non-capture path %s',
+    async (endpoint) => {
+      fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+      const req = createFakeReq({ method: 'POST', body: '{}', analyticsConsent: 'granted', ...viaEdge });
+      const res = createFakeRes();
+      await handlePosthogProxy(req, res.asProxyRes, buildUrl(`/api/posthog${endpoint}`));
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBeUndefined();
+    },
+  );
+
   it('ignores the consent header on the public config request', async () => {
     fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
-    const req = createFakeReq({ method: 'GET', forwardedFor: '203.0.113.7', analyticsConsent: 'granted' });
+    const req = createFakeReq({ method: 'GET', analyticsConsent: 'granted', ...viaEdge });
     const res = createFakeRes();
     await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/array/phc_publicProject/config'));
     const init = fetchMock.mock.calls[0][1] as RequestInit;

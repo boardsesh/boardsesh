@@ -280,13 +280,24 @@ existing device opt state and web super properties. HTTP GraphQL requests send
 x-boardsesh-platform: web so signed-in first-party activity remains counted.
 
 The backend PostHog proxy never forwards the HTTP User-Agent. It forwards the
-visitor IP (`X-Forwarded-For`: the first incoming hop, else the socket peer)
-only on capture whose request carries `x-boardsesh-analytics-consent: granted`
-(`ANALYTICS_CONSENT_HEADER` in `@boardsesh/consent`). Web and app add that
-header only to capture sent with a current Allow; www adds it only when it
-talks to our proxy, not to a direct-to-PostHog override. Everything else is
-stripped: flags, the public config request, the anonymous OTA health event,
-kiosk telemetry and any older client. The default is strip, so a missing or
+visitor IP as `X-Forwarded-For` only when all of these hold:
+
+- the path is a capture path (`/batch`, `/e`, `/i/v0/e`, `/s`);
+- the request carries `x-boardsesh-analytics-consent: granted`
+  (`ANALYTICS_CONSENT_HEADER` in `@boardsesh/consent`);
+- it came through a trusted Cloudflare edge, and the address is the public
+  `CF-Connecting-IP` that edge reports (`resolveEdgeVisitorIp` in
+  `packages/backend/src/utils/flag-country.ts`, the same trust boundary as the
+  flag country in [Cloudflare](./cloudflare.md)).
+
+Earlier `X-Forwarded-For` entries are caller-controlled and are never used, nor
+is the socket peer (our own ingress), a private or carrier-grade NAT address,
+or a request that did not come through Cloudflare. Web and app add the header
+only to capture sent with a current Allow (not to flags or the SDK config
+request); www adds it only when it talks to exactly our proxy, not to a
+direct-to-PostHog override. Everything else is stripped: flags, the public
+config request, surveys, logs, the anonymous OTA health event, kiosk telemetry
+and any older client. The default is strip, so a missing or
 mistyped header can only lose a consented event's location, never locate an
 anonymous one. Without the forwarded IP, PostHog geolocated consented events
 and overwrote person `$geoip_*` properties with the backend's own location.

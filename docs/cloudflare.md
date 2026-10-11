@@ -119,7 +119,8 @@ The backend PostHog proxy reads only the `CF-IPCountry` country header supplied
 by [Cloudflare IP Geolocation](https://developers.cloudflare.com/network/ip-geolocation/).
 Keep the zone's IP Geolocation setting on; absent country fails closed as `XX`.
 Flag requests forward no visitor IP, city, coordinates, or HTTP User-Agent to
-PostHog. Only consented capture forwards the visitor IP, for GeoIP; see
+PostHog. Only consented capture forwards the visitor IP, for GeoIP, and only
+the `CF-Connecting-IP` that a trusted edge (below) reports; see
 [analytics consent](./analytics-consent.md#website-and-browser-app).
 
 The backend accepts that header only when the socket peer is in Cloudflare's

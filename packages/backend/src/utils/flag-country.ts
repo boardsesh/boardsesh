@@ -40,6 +40,15 @@ privatePeers.addSubnet('127.0.0.0', 8);
 privatePeers.addSubnet('fc00::', 7, 'ipv6');
 privatePeers.addAddress('::1', 'ipv6');
 
+// Addresses PostHog cannot place, beyond the private ranges above: link-local,
+// carrier-grade NAT and the unspecified addresses.
+const nonPublicPeers = new BlockList();
+nonPublicPeers.addSubnet('169.254.0.0', 16);
+nonPublicPeers.addSubnet('100.64.0.0', 10);
+nonPublicPeers.addSubnet('0.0.0.0', 8);
+nonPublicPeers.addSubnet('fe80::', 10, 'ipv6');
+nonPublicPeers.addAddress('::', 'ipv6');
+
 function normalizeAddress(address: string | undefined): string | undefined {
   const normalized = address
     ?.trim()
@@ -53,19 +62,44 @@ function includesAddress(peers: BlockList, address: string | undefined): boolean
 }
 
 /**
- * Accept country only from Cloudflare itself or our private ingress whose last
- * XFF hop is the peer it observed (the same append contract as client-ip.ts).
- * Direct-origin visitors and client-authored earlier XFF entries cannot claim
- * an edge country. Deployments without an appending private ingress fail closed.
- * This coarse flag input never carries the visitor's IP upstream.
+ * True when this request reached us from a Cloudflare edge: the socket peer is
+ * Cloudflare itself, or it is our private ingress and the last XFF hop (the
+ * peer that ingress observed, the same append contract as client-ip.ts) is
+ * Cloudflare. Only then are Cloudflare's own headers (`cf-ipcountry`,
+ * `cf-connecting-ip`) trustworthy. Direct-origin visitors and client-authored
+ * earlier XFF entries cannot pass. Deployments without an appending private
+ * ingress fail closed.
  */
-export function resolveFlagCountry(req: IncomingMessage): string {
+export function isTrustedCloudflareEdge(req: IncomingMessage): boolean {
   const socketPeer = normalizeAddress(req.socket.remoteAddress);
   const forwardedFor = req.headers['x-forwarded-for'];
   const ingressPeer = typeof forwardedFor === 'string' ? normalizeAddress(forwardedFor.split(',').at(-1)) : undefined;
-  const trustedEdge =
+  return (
     includesAddress(cloudflarePeers, socketPeer) ||
-    (includesAddress(privatePeers, socketPeer) && includesAddress(cloudflarePeers, ingressPeer));
+    (includesAddress(privatePeers, socketPeer) && includesAddress(cloudflarePeers, ingressPeer))
+  );
+}
+
+/**
+ * The visitor address Cloudflare reports (`cf-connecting-ip`), only from a
+ * trusted edge and only when it is a public address PostHog can geolocate.
+ * Null otherwise: a caller-chosen XFF hop, a private or loopback address, or
+ * a request that did not come through Cloudflare.
+ */
+export function resolveEdgeVisitorIp(req: IncomingMessage): string | null {
+  if (!isTrustedCloudflareEdge(req)) return null;
+  const connecting = req.headers['cf-connecting-ip'];
+  const address = normalizeAddress(typeof connecting === 'string' ? connecting : undefined);
+  if (!address || includesAddress(privatePeers, address) || includesAddress(nonPublicPeers, address)) return null;
+  return address;
+}
+
+/**
+ * Accept country only from a trusted Cloudflare edge ({@link isTrustedCloudflareEdge}).
+ * This coarse flag input never carries the visitor's IP upstream.
+ */
+export function resolveFlagCountry(req: IncomingMessage): string {
+  const trustedEdge = isTrustedCloudflareEdge(req);
   const country = req.headers['cf-ipcountry'];
   return trustedEdge &&
     typeof country === 'string' &&

@@ -3,7 +3,12 @@ import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from './analytics-paths';
 import { getWebConsentRecord, hasAnalyticsConsent, subscribeWebConsent } from './consent';
-import { ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED, isAnalyticsGranted } from '@boardsesh/consent';
+import {
+  ANALYTICS_CONSENT_HEADER,
+  ANALYTICS_CONSENT_HEADER_GRANTED,
+  isAnalyticsCaptureUrl,
+  isAnalyticsGranted,
+} from '@boardsesh/consent';
 
 import { getBackendHttpUrl } from './backend-url';
 import { getSessionInboundCampaign, type InboundCampaign } from './inbound-campaign';
@@ -75,7 +80,7 @@ export function isBackendPosthogProxy(host: string, backendUrl: string | null): 
   }
 }
 
-function installConsentTransport(client: PostHog, viaBackendProxy: boolean): void {
+function installConsentTransport(client: PostHog, backendProxyHost: string | null): void {
   const sdkFetch = client.fetch.bind(client);
   const requests = new Set<AbortController>();
   activeRequests.set(client, requests);
@@ -90,11 +95,11 @@ function installConsentTransport(client: PostHog, viaBackendProxy: boolean): voi
     if (options.signal?.aborted) controller.abort();
     requests.add(controller);
     // Consented capture tells our proxy it may forward the visitor IP for GeoIP.
-    // Flags never carry it. A direct-to-PostHog override never sends it: only our
-    // proxy reads it, and a header PostHog's CORS policy does not allow would
-    // fail the preflight.
+    // Only capture paths carry it: never flags or the SDK config request. A
+    // direct-to-PostHog override never sends it: only our proxy reads it, and a
+    // header PostHog's CORS policy does not allow would fail the preflight.
     const headers =
-      viaBackendProxy && !flagsRequest
+      backendProxyHost !== null && isAnalyticsCaptureUrl(url, backendProxyHost)
         ? { ...options.headers, [ANALYTICS_CONSENT_HEADER]: ANALYTICS_CONSENT_HEADER_GRANTED }
         : options.headers;
     try {
@@ -229,7 +234,7 @@ function getPosthog(): PostHog | null {
   });
 
   posthogPersisted = hasAnalyticsConsent();
-  installConsentTransport(posthogClient, isBackendPosthogProxy(host, backendUrl));
+  installConsentTransport(posthogClient, isBackendPosthogProxy(host, backendUrl) ? host : null);
   if (posthogPersisted) void posthogClient.optIn().catch(() => {});
   else void posthogClient.optOut().catch(() => {});
   registerWebSuperProperties(posthogClient);

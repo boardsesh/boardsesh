@@ -193,7 +193,7 @@ describe('web analytics consent lifecycle', () => {
       {},
     ],
   ])(
-    'consent header for %s: only our exact proxy hears consented capture, never flags',
+    'consent header for %s: only our exact proxy hears consented capture, never flags or config',
     async (_label, override, host, consentHeader) => {
       vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', override);
       harness.granted = true;
@@ -202,14 +202,21 @@ describe('web analytics consent lifecycle', () => {
       expect(harness.constructors).toHaveBeenLastCalledWith(expect.objectContaining({ host }));
       const client = harness.clients[0];
       const headers = { 'Content-Type': 'application/json' };
-      await client.fetch(`${host}/batch/`, { method: 'POST', headers });
-      await client.fetch(`${host}/flags/?v=2`, { method: 'POST', headers });
+      const base = host.replace(/\/$/, '');
+      await client.fetch(`${base}/batch/`, { method: 'POST', headers });
+      await client.fetch(`${base}/flags/?v=2`, { method: 'POST', headers });
+      await client.fetch(`${base}/array/phc_test/config`, { method: 'GET', headers });
       expect(harness.network).toHaveBeenNthCalledWith(
         1,
-        `${host}/batch/`,
+        `${base}/batch/`,
         expect.objectContaining({ headers: { ...headers, ...consentHeader } }),
       );
-      expect(harness.network).toHaveBeenNthCalledWith(2, `${host}/flags/?v=2`, expect.objectContaining({ headers }));
+      expect(harness.network).toHaveBeenNthCalledWith(2, `${base}/flags/?v=2`, expect.objectContaining({ headers }));
+      expect(harness.network).toHaveBeenNthCalledWith(
+        3,
+        `${base}/array/phc_test/config`,
+        expect.objectContaining({ headers }),
+      );
     },
   );
   it('recognises the backend proxy by exact origin and path only', async () => {

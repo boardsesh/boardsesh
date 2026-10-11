@@ -1,10 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { isIP } from 'node:net';
 import { gunzipSync } from 'node:zlib';
-import { ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED } from '@boardsesh/consent';
+import { ANALYTICS_CAPTURE_PATH, ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED } from '@boardsesh/consent';
 import { applyCorsHeaders } from './cors';
 import { logger } from '../utils/logger';
-import { resolveFlagCountry } from '../utils/flag-country';
+import { resolveEdgeVisitorIp, resolveFlagCountry } from '../utils/flag-country';
 
 const POSTHOG_UPSTREAM = 'https://us.i.posthog.com';
 const MAX_BODY_BYTES = 64 * 1024;
@@ -30,19 +29,6 @@ function readBody(req: IncomingMessage, limitBytes: number): Promise<Buffer | { 
 }
 
 /**
- * The visitor's IP for PostHog GeoIP: the first X-Forwarded-For hop (the client
- * as the first proxy saw it), else the socket peer. Null when neither is an IP.
- */
-function visitorIp(req: IncomingMessage): string | null {
-  const forwarded = req.headers['x-forwarded-for'];
-  const chain = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
-  const firstHop = chain?.split(',')[0]?.trim();
-  if (firstHop && isIP(firstHop)) return firstHop;
-  const socketPeer = req.socket.remoteAddress?.trim();
-  return socketPeer && isIP(socketPeer) ? socketPeer : null;
-}
-
-/**
  * Reverse proxy for PostHog ingestion.
  *
  * Forwards POST /api/posthog/<rest> → https://us.i.posthog.com/<rest>, preserving
@@ -51,12 +37,14 @@ function visitorIp(req: IncomingMessage): string | null {
  * binary, not text). GET is allowed only for the SDK's public project config
  * endpoint, so flag/replay configuration uses the same privacy boundary.
  *
- * Forwards the visitor IP (X-Forwarded-For) only on capture from a client that
- * says it holds a current Allow (`x-boardsesh-analytics-consent: granted`), so
- * PostHog geolocates consented events to the visitor rather than to our egress.
- * Everything else is stripped: feature flags and the public config always, and
- * capture without the header (the anonymous OTA health event, kiosk telemetry,
- * an older client). A missing header can only lose location, never add it.
+ * Forwards the visitor IP (X-Forwarded-For) only on capture paths
+ * (`ANALYTICS_CAPTURE_PATH` from `@boardsesh/consent`) from a client that says it holds a current Allow
+ * (`x-boardsesh-analytics-consent: granted`), and only the `cf-connecting-ip` a
+ * trusted Cloudflare edge reports, so PostHog geolocates consented events to the
+ * visitor rather than to our egress. Everything else is stripped: every other
+ * path, capture without the header (the anonymous OTA health event, kiosk
+ * telemetry, an older client), and requests that did not come through a
+ * Cloudflare edge. A missing header can only lose location, never add it.
  * Never forwards the HTTP User-Agent: consented analytics registers
  * `$raw_user_agent` in its event payload instead (#5653).
  */
@@ -92,16 +80,17 @@ export async function handlePosthogProxy(req: IncomingMessage, res: ServerRespon
   if (typeof contentEncoding === 'string' && contentEncoding.length > 0) {
     headers['Content-Encoding'] = contentEncoding;
   }
-  const isFlagsRequest = /^\/(flags|decide)\/?$/.test(rest);
   if (
-    !isPublicConfigRequest &&
-    !isFlagsRequest &&
+    req.method === 'POST' &&
+    ANALYTICS_CAPTURE_PATH.test(rest) &&
     req.headers[ANALYTICS_CONSENT_HEADER] === ANALYTICS_CONSENT_HEADER_GRANTED
   ) {
-    const clientIp = visitorIp(req);
-    if (clientIp) headers['X-Forwarded-For'] = clientIp;
+    // Only the address Cloudflare vouches for. Earlier X-Forwarded-For entries
+    // are caller-controlled, and the socket peer is our own ingress.
+    const visitorIp = resolveEdgeVisitorIp(req);
+    if (visitorIp) headers['X-Forwarded-For'] = visitorIp;
   }
-  if (isFlagsRequest && body) {
+  if (/^\/(flags|decide)\/?$/.test(rest) && body) {
     // Flag evaluation is functional without consent. Supply only a coarse
     // edge-verified country, and prohibit upstream inference from our host IP
     // or an account's stale location. Capture/replay bodies remain byte-exact.

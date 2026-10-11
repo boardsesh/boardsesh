@@ -15,7 +15,12 @@ export {
   type ConsentSource,
   type DeviceConsentRecord,
 } from './consent-record';
-export { ANALYTICS_CONSENT_HEADER, ANALYTICS_CONSENT_HEADER_GRANTED } from './consent-header';
+export {
+  ANALYTICS_CAPTURE_PATH,
+  ANALYTICS_CONSENT_HEADER,
+  ANALYTICS_CONSENT_HEADER_GRANTED,
+  isAnalyticsCaptureUrl,
+} from './consent-header';
 export {
   CONSENT_COOKIE_MAX_AGE_SECONDS,
   CONSENT_COOKIE_NAME,
