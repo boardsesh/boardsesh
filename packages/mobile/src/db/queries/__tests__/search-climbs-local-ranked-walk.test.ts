@@ -96,20 +96,36 @@ type SearchRun = Awaited<ReturnType<typeof searchClimbsLocal>> & {
   captured: CapturedQuery[];
 };
 
-async function search(db: TestSqliteDb, input: ClimbSearchInput): Promise<SearchRun> {
-  // A fresh recorder is a fresh connection as far as the search is concerned,
-  // so no test inherits another's cached layout size.
-  const recorder = new RecordingDatabase(db);
+/** One search on a connection that may already have run others; `captured` is this search's statements only. */
+async function searchOn(recorder: RecordingDatabase, input: ClimbSearchInput): Promise<SearchRun> {
+  const before = recorder.captured.length;
   const result = await searchClimbsLocal(recorder, input);
+  const captured = recorder.captured.slice(before);
   return {
     ...result,
     uuids: result.climbs.map((climb) => climb.uuid),
-    readers: {
-      walk: recorder.captured.filter(isWalkRead).length,
-      full: recorder.captured.filter(isFullRead).length,
-    },
-    captured: recorder.captured,
+    readers: { walk: captured.filter(isWalkRead).length, full: captured.filter(isFullRead).length },
+    captured,
   };
+}
+
+/** A search on a fresh connection: the layout has not been counted, so only the depth sizes the budget. */
+function search(db: TestSqliteDb, input: ClimbSearchInput): Promise<SearchRun> {
+  return searchOn(new RecordingDatabase(db), input);
+}
+
+/** Lets the layout count a search left behind land. The search itself never waits for it. */
+const countLands = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
+/** A connection that has already searched this layout once, so its size is known. */
+async function connectionThatKnowsTheLayout(db: TestSqliteDb, input: ClimbSearchInput): Promise<RecordingDatabase> {
+  const recorder = new RecordingDatabase(db);
+  await searchClimbsLocal(recorder, input);
+  await countLands();
+  return recorder;
 }
 
 async function readEveryPage(db: TestSqliteDb, overrides: Partial<ClimbSearchInput> = {}) {
@@ -637,30 +653,55 @@ describe('searchClimbsLocal: the ranked walk is bounded and index-served', () =>
   });
 
   it('widens the budget with the depth of the page, up to an eighth of the layout', async () => {
-    const shallow = await search(db, makeInput({ page: 3 }));
+    const connection = await connectionThatKnowsTheLayout(db, makeInput());
+
+    const shallow = await searchOn(connection, makeInput({ page: 3 }));
     expect(shallow.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 12_000]);
     expect(shallow.uuids[0]).toBe(rankUuid(60));
 
     // Page 24 wants rows 480..500: 501 rows, 25 stats rows each.
-    const deeper = await search(db, makeInput({ page: 24 }));
+    const deeper = await searchOn(connection, makeInput({ page: 24 }));
     expect(deeper.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 12_525]);
     expect(deeper.readers).toEqual({ walk: 1, full: 0 });
     expect(deeper.uuids[0]).toBe(rankUuid(480));
 
     // Page 40 would get 20,525 by depth; an eighth of 120,000 climbs is 15,000.
-    const capped = await search(db, makeInput({ page: 40 }));
+    const capped = await searchOn(connection, makeInput({ page: 40 }));
     expect(capped.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 15_000]);
     expect(capped.readers).toEqual({ walk: 1, full: 0 });
     expect(capped.uuids[0]).toBe(rankUuid(800));
   });
 
   it('does not start a walk that could not fill the page inside its budget', async () => {
+    const connection = await connectionThatKnowsTheLayout(db, makeInput());
+
     // Row 15,000 and the twenty after it: more rows than the 15,000 ranks allowed.
-    const result = await search(db, makeInput({ page: 750 }));
+    const result = await searchOn(connection, makeInput({ page: 750 }));
 
     expect(result.captured.filter((query) => query.sql.includes('idx_stats_ascents'))).toEqual([]);
     expect(result.readers).toEqual({ walk: 0, full: 1 });
     expect(result.uuids).toEqual(ranks(15_000, PAGE_SIZE));
+  });
+
+  it('never makes a page wait for the layout count', async () => {
+    const recorder = new RecordingDatabase(db);
+
+    // The first search on a layout sizes its budget by depth alone, and asks
+    // for the count only after its own page has been read.
+    const first = await searchOn(recorder, makeInput({ page: 40 }));
+    expect(first.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 20_525]);
+    expect(first.uuids[0]).toBe(rankUuid(800));
+    const sent = first.captured.map((query) =>
+      isEdgeProbe(query) ? 'edge' : isWalkRead(query) ? 'walk' : isLayoutCount(query) ? 'count' : 'other',
+    );
+    expect(sent.filter((kind) => kind !== 'other')).toEqual(['edge', 'walk', 'count']);
+
+    // Once it has landed, the same page is held to an eighth of the layout.
+    await countLands();
+    const second = await searchOn(recorder, makeInput({ page: 40 }));
+    expect(second.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 15_000]);
+    expect(second.captured.filter(isLayoutCount)).toEqual([]);
+    expect(second.uuids).toEqual(first.uuids);
   });
 
   it('remembers a walk that came up short, and does not repeat it deeper in the same search', async () => {
@@ -705,7 +746,10 @@ describe('searchClimbsLocal: the ranked walk is bounded and index-served', () =>
     const recorder = new RecordingDatabase(db);
     await searchClimbsLocal(recorder, makeInput());
     await searchClimbsLocal(recorder, makeInput({ page: 1 }));
+    await countLands();
     await searchClimbsLocal(recorder, makeInput({ page: 2, minGrade: 25, maxGrade: 25 }));
+    await searchClimbsLocal(recorder, makeInput({ page: 750 }));
+    await countLands();
 
     const layoutCounts = recorder.captured.filter(isLayoutCount);
     expect(layoutCounts).toHaveLength(1);
@@ -713,7 +757,8 @@ describe('searchClimbsLocal: the ranked walk is bounded and index-served', () =>
   });
 
   it('is served by the index: no sort, climbs by primary key, the probe and the count from an index alone', async () => {
-    const result = await search(db, makeInput({ page: 2, hideCompleted: true }));
+    const recorder = new RecordingDatabase(db);
+    const result = await searchOn(recorder, makeInput({ page: 2, hideCompleted: true }));
     expect(result.readers).toEqual({ walk: 1, full: 0 });
 
     const explain = async (query: CapturedQuery | undefined): Promise<string[]> => {
@@ -733,7 +778,8 @@ describe('searchClimbsLocal: the ranked walk is bounded and index-served', () =>
     expect(probePlan).toHaveLength(1);
     expect(probePlan[0]).toMatch(/^SEARCH board_climb_stats USING COVERING INDEX idx_stats_ascents /);
 
-    expect(await explain(result.captured.find(isLayoutCount))).toEqual([
+    await countLands();
+    expect(await explain(recorder.captured.find(isLayoutCount))).toEqual([
       'SEARCH board_climbs USING COVERING INDEX idx_climbs_search (board_type=? AND layout_id=? AND is_listed=?)',
     ]);
   });
@@ -759,14 +805,25 @@ describe('searchClimbsLocal: a small layout gets a small budget', () => {
       SELECT 'kilter', uuid, 40, 16, 20000 - CAST(substr(uuid, 3) AS INTEGER), '2026-01-01T00:00:00Z' FROM board_climbs;
     `);
 
-    const result = await search(db, makeInput());
-
-    // An eighth of 400 is 50 ranks, all of them the other layout's: nothing
-    // found, at the cost of 50 rows and not 5,000.
-    expect(result.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 50]);
-    expect(result.readers).toEqual({ walk: 1, full: 1 });
-    expect(result.uuids).toEqual(
-      Array.from({ length: PAGE_SIZE }, (_unused, index) => `c-${String(5000 + index).padStart(5, '0')}`),
+    const expected = Array.from(
+      { length: PAGE_SIZE },
+      (_unused, index) => `c-${String(5000 + index).padStart(5, '0')}`,
     );
+
+    // Before the layout is counted, the walk reads its 5,000 ranks of the other
+    // layout and then this one's: slower than the full query here, and right.
+    const recorder = new RecordingDatabase(db);
+    const first = await searchOn(recorder, makeInput());
+    expect(first.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 12_000]);
+    expect(first.readers).toEqual({ walk: 1, full: 0 });
+    expect(first.uuids).toEqual(expected);
+
+    // Counted: an eighth of 400 is 50 ranks, all of them the other layout's.
+    // Nothing found, at the cost of 50 rows, and the full query answers.
+    await countLands();
+    const second = await searchOn(recorder, makeInput({ hideAttempted: true }));
+    expect(second.captured.find(isEdgeProbe)?.binds).toEqual(['kilter', 40, 50]);
+    expect(second.readers).toEqual({ walk: 1, full: 1 });
+    expect(second.uuids).toEqual(expected);
   });
 });

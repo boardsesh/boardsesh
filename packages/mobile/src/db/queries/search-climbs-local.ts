@@ -875,35 +875,67 @@ const RANKED_WALK_BUDGET_PER_WANTED_ROW = 25;
  * shares. Kilter Homewall (28,977 listed climbs) next to Kilter Original
  * (298,088) on one phone: its full query is 92 ms on a laptop, and an uncapped
  * walk past its 9,156 sent climbs at 40 degrees was 200 ms on top of that.
+ *
+ * It applies once the layout has been counted (`refreshLayoutClimbCount`).
  */
 const RANKED_WALK_LAYOUT_SHARE = 8;
 
 /** How long a layout's listed-climb count is reused. It only sizes the budget. */
 const LAYOUT_CLIMB_COUNT_TTL_MS = 5 * 60_000;
 
-type LayoutClimbCount = { total: number; readAtMs: number };
+/** `total` is null until the first count lands. */
+type LayoutClimbCount = { total: number | null; readAtMs: number; reading: boolean };
 
 // Per connection, so two databases never share a count.
 const layoutClimbCounts = new WeakMap<OfflineDatabase, Map<string, LayoutClimbCount>>();
 
-/** The layout's listed climbs, counted off `idx_climbs_search` and kept for five minutes. */
-async function countListedClimbsInLayout(db: OfflineDatabase, boardType: string, layoutId: number): Promise<number> {
+function layoutClimbCountFor(db: OfflineDatabase, boardType: string, layoutId: number): LayoutClimbCount {
   let counts = layoutClimbCounts.get(db);
   if (!counts) {
     counts = new Map();
     layoutClimbCounts.set(db, counts);
   }
   const key = `${boardType}:${layoutId}`;
-  const known = counts.get(key);
-  const nowMs = Date.now();
-  if (known && nowMs - known.readAtMs < LAYOUT_CLIMB_COUNT_TTL_MS) return known.total;
-  const row = await db.getFirstAsync<{ total: number }>(
-    'SELECT COUNT(*) AS total FROM board_climbs WHERE board_type = ? AND layout_id = ? AND is_listed = 1',
-    [boardType, layoutId],
-  );
-  const total = row?.total ?? 0;
-  counts.set(key, { total, readAtMs: nowMs });
-  return total;
+  let count = counts.get(key);
+  if (!count) {
+    count = { total: null, readAtMs: 0, reading: false };
+    counts.set(key, count);
+  }
+  return count;
+}
+
+/**
+ * Counts the layout's listed climbs off `idx_climbs_search` when the count is
+ * missing or five minutes old, WITHOUT being waited for. The count is 116 ms on
+ * an iPhone 13 Pro the first time after launch (286,255 climbs), which is the
+ * page it would otherwise sit in front of. So a search uses whatever count is
+ * already known, the first one on a layout walks with no layout cap, and the
+ * number arrives for the searches after it. A count that fails changes nothing.
+ */
+function refreshLayoutClimbCount(
+  db: OfflineDatabase,
+  count: LayoutClimbCount,
+  boardType: string,
+  layoutId: number,
+): void {
+  if (count.reading) return;
+  if (count.total !== null && Date.now() - count.readAtMs < LAYOUT_CLIMB_COUNT_TTL_MS) return;
+  count.reading = true;
+  void db
+    .getFirstAsync<{ total: number }>(
+      'SELECT COUNT(*) AS total FROM board_climbs WHERE board_type = ? AND layout_id = ? AND is_listed = 1',
+      [boardType, layoutId],
+    )
+    .then(
+      (row) => {
+        count.total = row?.total ?? 0;
+        count.readAtMs = Date.now();
+      },
+      () => undefined,
+    )
+    .then(() => {
+      count.reading = false;
+    });
 }
 
 /**
@@ -988,13 +1020,17 @@ type RankedWalkQuery = {
 async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): Promise<LocalClimbRow[] | null> {
   const { boardType, layoutId, angle, pageSize, offset } = walk;
   const wantedRows = offset + pageSize + 1;
-  const layoutClimbs = await countListedClimbsInLayout(db, boardType, layoutId);
-  const budget = Math.min(
-    Math.floor(layoutClimbs / RANKED_WALK_LAYOUT_SHARE),
-    Math.max(RANKED_WALK_MIN_BUDGET, wantedRows * RANKED_WALK_BUDGET_PER_WANTED_ROW),
-  );
+  const layoutClimbs = layoutClimbCountFor(db, boardType, layoutId);
+  const budgetByDepth = Math.max(RANKED_WALK_MIN_BUDGET, wantedRows * RANKED_WALK_BUDGET_PER_WANTED_ROW);
+  const budget =
+    layoutClimbs.total === null
+      ? budgetByDepth
+      : Math.min(Math.floor(layoutClimbs.total / RANKED_WALK_LAYOUT_SHARE), budgetByDepth);
   // Fewer ranks than rows wanted cannot fill the page: go straight to the full query.
-  if (budget < wantedRows) return null;
+  if (budget < wantedRows) {
+    refreshLayoutClimbCount(db, layoutClimbs, boardType, layoutId);
+    return null;
+  }
 
   // The stats row at rank `budget`, read from the index alone. The walk stops
   // before it. No row means the whole angle is inside the budget.
@@ -1030,6 +1066,9 @@ async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): P
     ORDER BY s.ascensionist_count DESC, s.climb_uuid DESC
     LIMIT ? OFFSET ?
   `;
+  // In the order the `?`s appear in the text above: the column list, the grades
+  // join (board, angle), the stats range (board, angle), the edge, the shared
+  // WHERE, then LIMIT and OFFSET.
   const binds: Bind[] = [
     ...walk.selectBinds,
     boardType,
@@ -1042,6 +1081,8 @@ async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): P
     offset,
   ];
   const rows = await db.getAllAsync<LocalClimbRow>(query, binds);
+  // Asked for after the page has been read, so the count never sits in front of it.
+  refreshLayoutClimbCount(db, layoutClimbs, boardType, layoutId);
   return rows.length > pageSize ? rows : null;
 }
 
