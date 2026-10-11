@@ -2012,7 +2012,7 @@ columns follow the rule below for every caller.
 | Published climb edited, or hidden by moderation | Yes | The ordinary delta of `REFERENCE` |
 | Draft published, or unlisted climb listed (here or upstream) | Yes | It enters `REFERENCE`, whose delta delivers it to everyone. Its stats and grades rows are moved to the climb's new cursor position, so they follow. The next artifact carries it |
 | Published climb becomes a draft or is unlisted (upstream, or a catalogue pass) | Yes | A `board_climbs` deletion marker for every device. Its owner's `PROTECTED` stream then delivers the row again, with its stats and grades. With no owner, nobody is sent it |
-| Draft or unlisted climb given an owner (the draft import, or the owner backfill) | Yes | It enters `PROTECTED` for its owner, past their cursor. Nobody else is sent it |
+| Draft or unlisted climb given an owner (the draft import, or the owner backfill) | Yes | It enters `PROTECTED` for its owner; its stats and grades move past their cursors too. Nobody else is sent it |
 | Published climb whose account is deleted | Yes | It stays in `REFERENCE`; the delta delivers the row with no owner |
 | Draft or unlisted climb whose account is deleted | Draft: deleted. Unlisted: yes | The draft is hard-deleted with the account. The unlisted climb has no owner left, so no stream carries it |
 | Climb hard-deleted | Tombstone | `syncDeletions`, whichever stream held it |
@@ -2022,7 +2022,7 @@ nothing about who gets it.
 
 #### Leaving the reference set
 
-`trg_board_climbs_reference_membership` (migration 0264) fires when an update moves a
+`trg_board_climbs_reference_membership` (migration 0264) fires when an update changes a protected owner or moves a
 climb across the line, in either direction, whichever writer made it.
 
 - **Leaving** writes one `sync_deletions` row for `board_climbs` with no user, so
@@ -2049,7 +2049,7 @@ climb across the line, in either direction, whichever writer made it.
   delete the owner's re-delivered grade. A device drops a climb's stats, grades and
   holds-index entries when it applies the climb's marker.
 
-Gaining an owner writes no marker. `climb-reference-membership.test.ts` runs the real
+An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a back-dated marker goes only to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
 client engine against the real resolvers: other devices drop the climb, its owner
 keeps it on a device that had it and on a fresh install, a replay of the deletion
 stream does not remove it, and publishing it again delivers it to everyone.

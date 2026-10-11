@@ -187,7 +187,23 @@ describeWithDatabase('a climb changing side of the publication rule (real DB)', 
       await db.execute(sql`UPDATE board_climbs SET user_id = ${OWNER_ID} WHERE uuid IN (${CLIMB}, ${CONTROL_CLIMB})`);
       expect(await markersOf(CLIMB)).toEqual([]);
       expect(await markersOf(CONTROL_CLIMB)).toEqual([]);
+      for (const uuid of [CLIMB, CONTROL_CLIMB]) {
+        const climb = await climbCursor(uuid);
+        expect((await statsCursors(uuid)).map((row) => row.at)).toEqual([climb.at, climb.at]);
+        expect((await gradeCursors(uuid)).map((row) => row.at)).toEqual([climb.at]);
+      }
     });
+
+    it.each([OTHER_ID, null])(
+      'withdraws a protected climb from its former owner when ownership changes to %s',
+      async (nextOwner) => {
+        await seedClimb(CLIMB, { ...DRAFT, ownerId: OWNER_ID });
+        await db.execute(sql`UPDATE board_climbs SET user_id = ${nextOwner} WHERE uuid = ${CLIMB}`);
+        const markers = await markersOf(CLIMB);
+        expect(markers.map((marker) => marker.user_id)).toEqual([OWNER_ID]);
+        expect(await secondsBetween(markers[0].deleted_at, (await climbCursor(CLIMB)).at)).toBe(1);
+      },
+    );
 
     it('honours the bulk-import switch: no marker inside a transaction that suppresses them', async () => {
       await seedClimb(CLIMB, PUBLISHED);
@@ -404,6 +420,67 @@ describeWithDatabase('a climb changing side of the publication rule (real DB)', 
         });
       },
     );
+
+    it.each([DRAFT, UNLISTED])('delivers backfilled dependents past an existing device cursor: %j', async (state) => {
+      await seedClimb(CLIMB, state);
+      await seedClimb(CONTROL_CLIMB, { ...DRAFT, ownerId: OWNER_ID });
+      await db.execute(
+        sql`UPDATE board_climb_stats SET updated_at = '2026-06-01'::timestamp WHERE climb_uuid = ${CONTROL_CLIMB}`,
+      );
+      await db.execute(
+        sql`UPDATE board_climb_grades SET computed_at = '2026-06-01'::timestamp WHERE climb_uuid = ${CONTROL_CLIMB}`,
+      );
+      const ownerDevice = await installFor(OWNER_ID);
+      await pull(ownerDevice);
+      expect((await held(ownerDevice, CLIMB)).climb).toBeNull();
+      const protectedArgs = {
+        boardType: BOARD_TYPE,
+        layoutId: LAYOUT_ID,
+        sizeId: SIZE_ID,
+        audience: 'PROTECTED' as const,
+        limit: 100,
+      };
+      const statsBefore = await syncQueries.syncClimbStats(undefined, protectedArgs, contextFor(OWNER_ID));
+      const gradesBefore = await syncQueries.syncClimbGrades(undefined, protectedArgs, contextFor(OWNER_ID));
+      expect(statsBefore.documents).toHaveLength(2);
+      expect(gradesBefore.documents).toHaveLength(1);
+      await db.execute(sql`UPDATE board_climbs SET user_id = ${OWNER_ID} WHERE uuid = ${CLIMB}`);
+      const statsDelta = await syncQueries.syncClimbStats(
+        undefined,
+        { ...protectedArgs, cursor: statsBefore.cursor },
+        contextFor(OWNER_ID),
+      );
+      const gradesDelta = await syncQueries.syncClimbGrades(
+        undefined,
+        { ...protectedArgs, cursor: gradesBefore.cursor },
+        contextFor(OWNER_ID),
+      );
+      expect(statsDelta.documents).toHaveLength(2);
+      expect(statsDelta.documents).toEqual([
+        expect.objectContaining({ climb_uuid: CLIMB }),
+        expect.objectContaining({ climb_uuid: CLIMB }),
+      ]);
+      expect(gradesDelta.documents).toEqual([expect.objectContaining({ climb_uuid: CLIMB })]);
+      await pull(ownerDevice);
+      expect(await held(ownerDevice, CLIMB)).toMatchObject({ climb: { user_id: OWNER_ID }, ...everything });
+      expect(await markersOf(CLIMB)).toEqual([]);
+    });
+
+    it('withdraws a transferred protected row and delivers its dependents to the new owner', async () => {
+      await seedClimb(CLIMB, { ...DRAFT, ownerId: OWNER_ID });
+      const oldDevice = await installFor(OWNER_ID);
+      const newDevice = await installFor(OTHER_ID);
+      await pull(oldDevice);
+      await pull(newDevice);
+      await db.execute(sql`UPDATE board_climbs SET user_id = ${OTHER_ID} WHERE uuid = ${CLIMB}`);
+      await pull(oldDevice);
+      expect((await held(oldDevice, CLIMB)).climb).toBeNull();
+      await pull(newDevice);
+      expect(await held(newDevice, CLIMB)).toMatchObject({ climb: { user_id: OTHER_ID }, ...everything });
+      await forgetDeletionCursor(newDevice);
+      await pull(newDevice);
+      expect(await held(newDevice, CLIMB)).toMatchObject({ climb: { user_id: OTHER_ID }, ...everything });
+    });
 
     it('when the climb is published again: every device gets it back, with its stats and grades', async () => {
       await seedClimb(CLIMB, { ...PUBLISHED, ownerId: OWNER_ID });

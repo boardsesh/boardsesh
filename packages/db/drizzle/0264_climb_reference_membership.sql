@@ -7,7 +7,8 @@
 -- publicReferenceClimbSql in packages/db/src/queries/privacy.ts. Change one and
 -- change the other.
 --
--- When an UPDATE moves a climb across that line, the row itself is bumped by
+-- When an UPDATE moves a climb across that line or changes a protected owner,
+-- the row itself is bumped by
 -- trg_board_climbs_set_sync_fields, and the stream that now holds it delivers
 -- it. Two things that bump cannot do are done here.
 --
@@ -29,7 +30,8 @@
 --    have pulled a version once it was that old), so none is missed while
 --    SYNC_STABILITY_WINDOW_SECONDS stays above one second. It defaults to 30.
 --
--- 2. EITHER direction. The climb's stats and grades rows change stream with it
+-- 2. EITHER direction, or a protected owner change. The climb's stats and grades
+--    rows change stream or viewer with it
 --    and did not change themselves, so they sit behind every device's cursor
 --    for the stream they are now in: behind the owner's cursor when the climb
 --    leaves (and the owner's device drops them with the climb when it applies
@@ -55,12 +57,21 @@
 -- the search_path is pinned below.
 CREATE OR REPLACE FUNCTION sync_board_climb_reference_membership() RETURNS TRIGGER AS $$
 DECLARE
-  left_reference boolean := (OLD.is_draft IS NOT TRUE AND OLD.is_listed IS TRUE);
+  was_reference boolean := (OLD.is_draft IS NOT TRUE AND OLD.is_listed IS TRUE);
+  is_reference boolean := (NEW.is_draft IS NOT TRUE AND NEW.is_listed IS TRUE);
   marker_at timestamp := NEW.updated_at - interval '1 second';
 BEGIN
-  IF left_reference AND current_setting('boardsesh.suppress_sync_tombstones', true) IS DISTINCT FROM 'on' THEN
-    INSERT INTO public.sync_deletions (table_name, record_id, user_id, deleted_at)
-    VALUES ('board_climbs', NEW.uuid, NULL, marker_at);
+  IF current_setting('boardsesh.suppress_sync_tombstones', true) IS DISTINCT FROM 'on' THEN
+    IF was_reference AND NOT is_reference THEN
+      INSERT INTO public.sync_deletions (table_name, record_id, user_id, deleted_at)
+      VALUES ('board_climbs', NEW.uuid, NULL, marker_at);
+    ELSIF NOT was_reference AND NOT is_reference
+          AND OLD.user_id IS NOT NULL AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+      -- A protected row stops belonging to its former owner. Their cursor will
+      -- not deliver the replacement, so withdraw that account's cached copy.
+      INSERT INTO public.sync_deletions (table_name, record_id, user_id, deleted_at)
+      VALUES ('board_climbs', NEW.uuid, OLD.user_id, marker_at);
+    END IF;
   END IF;
 
   -- trg_board_climb_stats_set_sync_fields fires only when a shipped column
@@ -86,10 +97,14 @@ DROP TRIGGER IF EXISTS trg_board_climbs_reference_membership ON "board_climbs";
 --> statement-breakpoint
 -- AFTER, so NEW.updated_at is the value trg_board_climbs_set_sync_fields wrote.
 -- The WHEN clause is the membership test on both sides: an edit that leaves a
--- climb on the side it was on calls nothing.
+-- climb on the side it was on calls nothing unless its protected owner changes.
+-- Owner backfills and draft imports must deliver old stats and grades past the
+-- new owner's existing cursor, just like a change of reference membership.
 CREATE TRIGGER trg_board_climbs_reference_membership AFTER UPDATE ON "board_climbs"
   FOR EACH ROW
   WHEN ((OLD.is_draft IS NOT TRUE AND OLD.is_listed IS TRUE)
         IS DISTINCT FROM
-        (NEW.is_draft IS NOT TRUE AND NEW.is_listed IS TRUE))
+        (NEW.is_draft IS NOT TRUE AND NEW.is_listed IS TRUE)
+        OR ((NEW.is_draft IS TRUE OR NEW.is_listed IS NOT TRUE)
+            AND OLD.user_id IS DISTINCT FROM NEW.user_id))
   EXECUTE FUNCTION sync_board_climb_reference_membership();
