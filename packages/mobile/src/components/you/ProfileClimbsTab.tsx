@@ -1,6 +1,7 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { useCallback, useMemo } from 'react';
-import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -20,9 +21,9 @@ import { useTheme } from '../../providers/theme-provider';
 type ProfileClimbsTabProps = {
   userId: string | undefined;
   topInset?: number;
-  /** The list's scroll events, for chrome that reacts to rows passing under it
-   *  (the Profile tab's floating header). Must not set state per event. */
-  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** The Profile tab's `useScrollEdgeBackdrop().list`: tells the floating header
+   *  when this tab's list is scrolled under it. Undefined under an opaque header. */
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 const keyExtractor = (climb: Climb) => climb.uuid;
@@ -32,7 +33,7 @@ const keyExtractor = (climb: Climb) => climb.uuid;
  * resolves its own board art from (boardType, layoutId) — the userClimbs payload
  * carries no size/sets — and opens the climb read-only in the play drawer.
  */
-export function ProfileClimbsTab({ userId, topInset = 0, onScroll }: ProfileClimbsTabProps) {
+export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileClimbsTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors } = useTheme();
@@ -124,11 +125,13 @@ export function ProfileClimbsTab({ userId, topInset = 0, onScroll }: ProfileClim
 
   return (
     <View style={styles.flex}>
+      {/* The loading branch above unmounts the list. */}
+      <ScrollEdgeListReset edge={scrollEdge} />
       <FlashList
         data={climbs}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        onScroll={onScroll}
+        {...scrollEdge?.listProps}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
         scrollIndicatorInsets={{ top: topInset }}

@@ -16,6 +16,7 @@ import { Appbar, Chip } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { GradeBound } from '@boardsesh/climb-filters';
 import { useTheme } from '../../providers/theme-provider';
+import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
@@ -95,9 +96,11 @@ type ClimbTopChromeProps = {
    *  the in-chrome grade rail stay. Always false on Liquid Glass (its own path renders
    *  `filterChrome`). */
   showPersistentChips?: boolean;
-  /** Liquid Glass under the UIKit header: whether the list is scrolled under the
-   *  filter rows (`useScrollEdgeBackdrop`). The blur behind them shows only then. */
-  scrolledUnder?: boolean;
+  /** Liquid Glass under the UIKit header: the screen's
+   *  `useScrollEdgeBackdrop().backdrop`. The blur behind the filter rows shows only
+   *  while the list is scrolled under them. A stable store, so a row crossing under
+   *  the chips does not re-render this memoized chrome. */
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 function ClimbTopChromeComponent({
@@ -131,7 +134,7 @@ function ClimbTopChromeComponent({
   onGradeChange,
   filterChrome,
   showPersistentChips = false,
-  scrolledUnder,
+  scrollEdge,
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, variant } = useTheme();
@@ -353,7 +356,7 @@ function ClimbTopChromeComponent({
       boardBadge={showBoardBadge}
       anchorBoardButton={anchorBoardButton}
       onHeightChange={onHeightChange}
-      scrolledUnder={scrolledUnder}
+      scrollEdge={scrollEdge}
       hideLight
     >
       {usesCustomSearch ? (

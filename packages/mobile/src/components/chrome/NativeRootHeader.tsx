@@ -7,6 +7,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { useScrolledUnder, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { timing } from '../../theme/animations';
 import { glassSize } from '../../theme/layout';
 import { ProgressiveBlur } from '../ProgressiveBlur';
@@ -20,7 +21,10 @@ import { NativeHeaderActionContext, NativeHeaderOwnBackgroundContext } from './n
 export const CONTROLS_BACKDROP = {
   /** Stacked thin-material layers: each one frosts the list behind more heavily. */
   layers: 1,
-  /** Points over which the blur fades out along the block's bottom edge. */
+  /**
+   * Points over which the blur fades out. The fade sits below the block's bottom
+   * edge, over the rows just under the controls: see `ControlsBackdrop`.
+   */
   fadeLength: 24,
   /**
    * Scene-background wash over the blur, 0 to 1: how far the list behind fades
@@ -44,7 +48,7 @@ export function NativeRootHeader({
   centerContent,
   children,
   opaqueControls = false,
-  scrolledUnder,
+  scrollEdge,
   onHeightChange,
 }: {
   title?: string;
@@ -64,13 +68,17 @@ export function NativeRootHeader({
    */
   opaqueControls?: boolean;
   /**
-   * Whether the list is scrolled under `children` (`useScrollEdgeBackdrop`). The
-   * blur behind floating controls shows only then; at rest there is nothing but
-   * the page behind them. Leave it out and the blur is always on: a screen that
-   * forgets the wiring gets a frost at rest, which is plain to see and harmless,
-   * where the other default would put bare controls over rows mid-scroll.
+   * The screen's `useScrollEdgeBackdrop().backdrop`: whether its list is scrolled
+   * under `children`. The blur behind floating controls shows only then; at rest
+   * there is nothing but the page behind them. Leave it out and the blur is
+   * always on: a screen that forgets the wiring gets a frost at rest, which is
+   * plain to see and harmless, where the other default would put bare controls
+   * over rows mid-scroll.
+   *
+   * A store, not a boolean, so a row crossing under the controls re-renders the
+   * blur alone and not this header or the screen above it.
    */
-  scrolledUnder?: boolean;
+  scrollEdge?: ScrollEdgeBackdrop;
   /** Reports the height of `children` alone: the list pads its top by it. */
   onHeightChange: (height: number) => void;
 }) {
@@ -148,7 +156,7 @@ export function NativeRootHeader({
         <HeaderControls
           headerHeight={headerHeight}
           opaque={opaqueControls}
-          backdropVisible={scrolledUnder ?? true}
+          scrollEdge={scrollEdge}
           onLayout={measureControls}
         >
           {children}
@@ -162,11 +170,11 @@ export function NativeRootHeader({
  * The controls pinned under the bar: filter chips, a segmented control.
  *
  * On iOS 26 glass they float. The list scrolls behind them and one blur, from the
- * top of the screen to the bottom of this block, keeps them readable: HIG Layout
- * asks for a scroll edge effect under controls, not a painted colour. Like the
- * system's, it is there only while rows are behind the controls. The blur is a
- * material, never a glass panel, because the controls on it are glass already
- * (HIG Materials: no glass on glass).
+ * top of the screen to just below this block (see `ControlsBackdrop`), keeps
+ * them readable: HIG Layout asks for a scroll edge effect under controls, not a
+ * painted colour. Like the system's, it is there only while rows are behind the
+ * controls. The blur is a material, never a glass panel, because the controls on
+ * it are glass already (HIG Materials: no glass on glass).
  *
  * Everywhere else the block paints the scene background, as it always has: before
  * iOS 26, with Reduce Transparency or Increase Contrast on, and when the caller
@@ -178,13 +186,13 @@ export function NativeRootHeader({
 function HeaderControls({
   headerHeight,
   opaque,
-  backdropVisible,
+  scrollEdge,
   onLayout,
   children,
 }: {
   headerHeight: number;
   opaque: boolean;
-  backdropVisible: boolean;
+  scrollEdge: ScrollEdgeBackdrop | undefined;
   onLayout: (event: LayoutChangeEvent) => void;
   children: ReactNode;
 }) {
@@ -199,7 +207,7 @@ function HeaderControls({
       pointerEvents="auto"
       style={[styles.controls, { top: headerHeight }, floating ? null : { backgroundColor: systemColors.background }]}
     >
-      {floating ? <ControlsBackdrop headerHeight={headerHeight} visible={backdropVisible} /> : null}
+      {floating ? <ControlsBackdrop headerHeight={headerHeight} scrollEdge={scrollEdge} /> : null}
       {children}
     </View>
   );
@@ -215,8 +223,25 @@ function HeaderControls({
  * the rows just below, so a translucent control (the segmented control) never
  * has sharp text showing through its lower half. It stays mounted while hidden:
  * a view at zero opacity is not drawn, and the fade in has nothing to build.
+ *
+ * It is the one subscriber to `scrollEdge`. It tells the store that a blur is
+ * listening (only then does the screen give its list scroll listeners) and where
+ * the block was drawn: the list rests at minus the bar's height, and a row is
+ * under the block once the list is past that.
  */
-function ControlsBackdrop({ headerHeight, visible }: { headerHeight: number; visible: boolean }) {
+function ControlsBackdrop({
+  headerHeight,
+  scrollEdge,
+}: {
+  headerHeight: number;
+  scrollEdge: ScrollEdgeBackdrop | undefined;
+}) {
+  const visible = useScrolledUnder(scrollEdge);
+  useLayoutEffect(() => scrollEdge?.attachBackdrop(), [scrollEdge]);
+  // A layout effect: the store hears the new top in the commit that moves the block.
+  useLayoutEffect(() => {
+    scrollEdge?.setTopOffset(-headerHeight);
+  }, [scrollEdge, headerHeight]);
   const reduceMotion = useReduceMotion();
   const opacity = useSharedValue(visible ? 1 : 0);
   useEffect(() => {

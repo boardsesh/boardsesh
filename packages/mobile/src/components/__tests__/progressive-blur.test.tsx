@@ -190,16 +190,18 @@ describe('ProgressiveBlur', () => {
       expect(gradients(ramp.container)).toHaveLength(1);
     });
 
-    it('holds the opaque scene background over the plateau where there is no live blur', () => {
+    // The one caller mounts this on iOS 26 glass only, and paints a band where
+    // there is no live blur. So the fallback has no plateau to draw.
+    it('keeps the single scene-background fade where there is no live blur', () => {
       surfaceMock.mode = 'solid';
       themeMock.colorScheme = 'light';
-      const { container } = render(<ProgressiveBlur fadeLength={24} />);
+      const { container } = render(<ProgressiveBlur fadeLength={24} washOpacity={0.5} scrim={false} />);
 
       expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
-      const [fade] = gradients(container);
-      expect(fade.plateau).toMatchObject({ flex: 1, backgroundColor: '#FFFFFF' });
-      expect(fade.colors).toEqual(['#FFFFFF', 'rgba(255,255,255,0)']);
-      expect(fade.height).toBe('24');
+      const fades = gradients(container);
+      expect(fades).toHaveLength(1);
+      expect(fades[0].colors).toEqual(['#FFFFFF', '#FFFFFF', 'transparent']);
+      expect(fades[0].height).toBe('');
     });
   });
 });

@@ -5,33 +5,31 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
     centerContent,
     children,
     opaqueControls,
-    scrolledUnder,
+    scrollEdge,
   }: {
     centerContent?: ReactNode;
     children?: ReactNode;
     opaqueControls?: boolean;
-    scrolledUnder?: boolean;
-  }) =>
-    createElement(
+    scrollEdge?: unknown;
+  }) => {
+    controls.nativeScrollEdge = scrollEdge;
+    return createElement(
       'div',
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
-      createElement(
-        'div',
-        {
-          'data-native-controls': 'true',
-          'data-opaque': String(opaqueControls),
-          'data-scrolled-under': String(scrolledUnder),
-        },
-        children,
-      ),
-    ),
+      createElement('div', { 'data-native-controls': 'true', 'data-opaque': String(opaqueControls) }, children),
+    );
+  },
 }));
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-const controls = vi.hoisted(() => ({ nativeHeader: false }));
+const controls = vi.hoisted(() => ({
+  nativeHeader: false,
+  // The scroll-edge store the native header was handed.
+  nativeScrollEdge: undefined as unknown,
+}));
 
 type ViewMockProps = {
   children?: ReactNode;
@@ -94,6 +92,7 @@ vi.mock('../../Text', () => ({
 }));
 
 import { CollapsingLargeTitleHeader } from '../CollapsingLargeTitleHeader';
+import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 function makeProps(over: Partial<Parameters<typeof CollapsingLargeTitleHeader>[0]> = {}) {
   return {
@@ -105,6 +104,7 @@ function makeProps(over: Partial<Parameters<typeof CollapsingLargeTitleHeader>[0
 describe('CollapsingLargeTitleHeader', () => {
   beforeEach(() => {
     controls.nativeHeader = false;
+    controls.nativeScrollEdge = undefined;
   });
 
   it('passes the interactive center to the native bar separately from supplementary controls', () => {
@@ -134,20 +134,24 @@ describe('CollapsingLargeTitleHeader', () => {
     expect(container.querySelector('[data-native-controls]')?.getAttribute('data-opaque')).toBe(received);
   });
 
-  // Left out, the native header keeps its blur always on; see NativeRootHeader.
-  it.each([
-    [true, 'true'],
-    [false, 'false'],
-    [undefined, 'undefined'],
-  ] as const)('tells the native header whether the list is scrolled under (%s)', (scrolledUnder, received) => {
+  // The store the screen's list writes to. Left out, the native header keeps its
+  // blur always on; see NativeRootHeader.
+  it("hands the native header the screen's scroll-edge store, untouched", () => {
     controls.nativeHeader = true;
-    const { container } = render(
-      <CollapsingLargeTitleHeader {...makeProps({ scrolledUnder })}>
+    const scrollEdge = createScrollEdgeBackdrop();
+    const { rerender } = render(
+      <CollapsingLargeTitleHeader {...makeProps({ scrollEdge })}>
         <span>Profile segments</span>
       </CollapsingLargeTitleHeader>,
     );
+    expect(controls.nativeScrollEdge).toBe(scrollEdge);
 
-    expect(container.querySelector('[data-native-controls]')?.getAttribute('data-scrolled-under')).toBe(received);
+    rerender(
+      <CollapsingLargeTitleHeader {...makeProps()}>
+        <span>Profile segments</span>
+      </CollapsingLargeTitleHeader>,
+    );
+    expect(controls.nativeScrollEdge).toBeUndefined();
   });
 
   it('renders the leftActions / rightActions / children slots when provided', () => {

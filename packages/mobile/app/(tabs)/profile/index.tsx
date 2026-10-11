@@ -76,12 +76,12 @@ export default function YouScreen() {
     setActiveTab(key);
   }, []);
 
-  // Whether the visible sub-tab's list is under the segmented control: the blur
-  // behind it shows only then. Keyed on the sub-tab because each one mounts its
-  // own list, at rest. Only the UIKit header floats controls over these lists, so
-  // the other chromes keep them free of a scroll listener.
-  const { onScroll: handleListScroll, scrolledUnder } = useScrollEdgeBackdrop(activeTab);
-  const onListScroll = nativeRootHeader ? handleListScroll : undefined;
+  // Whether the visible sub-tab's list is under the floating segmented control:
+  // the blur behind it shows only then. A store the lists write and the blur
+  // reads, so neither a scroll nor the bar changing height re-renders this screen
+  // and the sub-tab under it. `list` is undefined until a blur is mounted, which
+  // keeps the lists under every opaque header free of scroll listeners.
+  const scrollEdge = useScrollEdgeBackdrop();
 
   const openFilters = useCallback(() => {
     filterSheetRef.current?.snapToIndex(0);
@@ -115,17 +115,17 @@ export default function YouScreen() {
               topInset={chromeHeight}
               userId={userId}
               onOpenFilters={openFilters}
-              onScroll={onListScroll}
+              scrollEdge={scrollEdge.list}
             />
           ) : null}
           {activeTab === 'sessions' ? (
-            <SessionsTab userId={userId} topInset={chromeHeight} onScroll={onListScroll} />
+            <SessionsTab userId={userId} topInset={chromeHeight} scrollEdge={scrollEdge.list} />
           ) : null}
           {activeTab === 'climbs' ? (
-            <ProfileClimbsTab userId={userId} topInset={chromeHeight} onScroll={onListScroll} />
+            <ProfileClimbsTab userId={userId} topInset={chromeHeight} scrollEdge={scrollEdge.list} />
           ) : null}
           {activeTab === 'social' ? (
-            <SocialTab userId={userId} topInset={chromeHeight} onScroll={onListScroll} />
+            <SocialTab userId={userId} topInset={chromeHeight} scrollEdge={scrollEdge.list} />
           ) : null}
         </ReadableColumn>
       )}
@@ -135,7 +135,7 @@ export default function YouScreen() {
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
           onHeightChange={setChromeHeight}
-          scrolledUnder={scrolledUnder}
+          scrollEdge={scrollEdge.backdrop}
         />
       ) : null}
 

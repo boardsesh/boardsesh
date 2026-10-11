@@ -435,34 +435,60 @@ the grade row and the removable filter tokens; Profile has its segmented control
 draws that block (`HeaderControls`), and the list pads its top by the block's measured height.
 
 **On iOS 26 the block floats.** It paints no background. The list scrolls behind the controls, and
-one blur runs from the top of the screen to the bottom of the block and fades out along its lower
-edge. [HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout): "Instead
-of applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to
+one blur runs from the top of the screen to one fade length (24pt) below the block: full strength
+behind every control, fading out over the rows just under them. With the fade inside the block, a
+translucent control (the segmented control) had sharp list text showing through its lower half.
+[HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout): "Instead of
+applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to
 visually elevate controls above content." [HIG
 Materials](https://developer.apple.com/design/human-interface-guidelines/materials) says what that
 effect does: it blurs the content behind and reduces its opacity. Ours is `ProgressiveBlur` with a
-`fadeLength`: a thin material held at full strength behind the controls. It is a material and never
-a `GlassSurface`, because the chips on it are glass already (see "Glass material").
+`fadeLength`: a thin material, with a wash of the scene background over it. It is a material and
+never a `GlassSurface`, because the chips on it are glass already (see "Glass material").
 
 **The blur is there only while rows are under the controls.** At rest the page behind them is the
 page: a material over an empty black page reads as a grey panel, which is the painted band again.
-The screen owns the list, so the screen says when: `useScrollEdgeBackdrop()` returns an `onScroll`
-for the list and a `scrolledUnder` boolean for the chrome (`ClimbTopChrome`, `ProfileTopChrome`,
-down to `NativeRootHeader`). It is true once the list is past its resting top
-(`useListTopOffset`, under the bar at its shortest, plus 2pt of slack). The rubber-band overscroll
-and a pull-to-refresh are more negative than that top, so they count as at rest. It sets state only
-when the answer flips, never per scroll event. A screen that swaps lists under one chrome (Profile's
-sub-tabs) passes a key per list, and a new list starts at rest. The blur fades over `timing.fast`
-and switches without a fade under Reduce Motion.
+Three parties meet in one small store (`src/hooks/use-scroll-edge-backdrop.ts`), and only the blur
+re-renders:
 
-**Wire every list under a floating block.** Leave `scrolledUnder` out and the blur stays on all the
+- The **screen** holds it: `const scrollEdge = useScrollEdgeBackdrop()`. It hands `scrollEdge.list`
+  to the list and `scrollEdge.backdrop` to its top chrome (`ClimbTopChrome`, `ProfileTopChrome`,
+  down to `NativeRootHeader`). The screen re-renders for neither a scroll nor a change in the bar's
+  height. A screen that read the header height itself would re-render every row under it on each
+  frame of a collapsing title.
+- The **list** spreads `scrollEdge.listProps` (five scroll listeners, none of which sets state) and
+  mounts `<ScrollEdgeListReset edge={scrollEdge} />` beside itself, in the branch that renders the
+  list. A list that mounts is at rest, and one that unmounts for a loading or offline branch, or
+  for another sub-tab, takes what it had scrolled under the controls with it.
+- The **blur** (`ControlsBackdrop`) subscribes with `useScrolledUnder`, tells the store where the
+  block was drawn (the list rests at minus the bar's height) and that a blur is listening.
+  `scrollEdge.list` is undefined until then, so a list under an opaque header carries no scroll
+  listeners.
+
+**The rule is geometry.** Rows are under the controls once the list's offset is more than 2pt past
+the top the block was drawn at. The rubber-band overscroll and a pull-to-refresh are more negative
+than that top, so they count as at rest. Each reading of the bar's height replaces the last, so
+nothing is remembered that can go stale (react-native-screens reports 0 while the bar is hidden).
+Two things bend the rule, both because JS hears the bar's height late, a frame or two on Profile
+and 100 ms after it stops on Climbs:
+
+- A bar that grows during a gesture never moves the top down. A held pull stretches the bar, and
+  JS can still hold that height after the list has snapped back.
+- A bar that shrinks during a gesture that began at rest is ignored until the list stops. Under a
+  collapsing large title the block trails the title, and rows that have left rest are under it. So
+  the blur is on as soon as such a drag leaves rest, and the settled height decides once it ends.
+
+The blur fades over `timing.fast` and switches without a fade under Reduce Motion.
+
+**Wire every list under a floating block.** Leave `scrollEdge` out and the blur stays on all the
 time. That is the safe default: a forgotten wire shows as a frost at rest, which anyone can see,
 where the other default would put bare controls over rows mid-scroll.
 
 **The look is a few numbers**, `CONTROLS_BACKDROP` in `NativeRootHeader.tsx`: `layers` (how heavily
-the list behind is frosted), `fadeLength` (points of fade along the bottom edge), `washOpacity`
-(a scene-background wash that fades the list behind further; 0 today, because one thin material
-over rows already dims them) and `fadeDuration`. Tune them there, on a device.
+the list behind is frosted), `fadeLength` (points of fade below the block), `washOpacity` (a
+scene-background wash that fades the list behind toward the page colour; 0.5, because thin material
+alone still frosted grey over a black page, and at half strength rows still show passing under the
+controls) and `fadeDuration`. Tune them there, on a device.
 
 **Everywhere else the block keeps its painted band**, in `systemColors.background`:
 `useFloatingHeaderControls` lets it float only when the surface mode is `glass` and Increase
@@ -472,9 +498,10 @@ never reach this component and keep their own chrome.
 
 **What a control needs to sit on the blur.** Its own surface. Glass chips, the native segmented
 control and the grade row's `systemColors.fill` capsules have one. The filter tokens carry an
-opaque `systemColors.secondaryBackground` fill for this reason. Bare text does not survive a row
-scrolling behind it, which is why Profile's Logbook header (a text heading above its search and
-sort rows) opts out.
+opaque `systemColors.secondaryBackground` fill for this reason. The fill is on every path: on the
+Material band it is the band's own colour and does not show, and on the iOS band it shows as a
+quiet grey pill. Bare text does not survive a row scrolling behind it, which is why Profile's
+Logbook header (a text heading above its search and sort rows) opts out.
 
 **It always swallows touches.** The block is `pointerEvents="auto"` whether it floats or not: a row
 the blur has smeared must not take a tap through the gap between two chips.

@@ -26,6 +26,8 @@ const social = vi.hoisted(() => ({
   searchRefetch: vi.fn(),
   refresh: null as (() => void) | null,
   searchError: false,
+  // Every prop the mounted list was given.
+  listProps: undefined as Record<string, unknown> | undefined,
 }));
 
 const follower = {
@@ -142,14 +144,7 @@ vi.mock('react-native', () => ({
 vi.mock('@shopify/flash-list', () => ({
   FlashList: forwardRef(
     (
-      {
-        data,
-        renderItem,
-        refreshControl,
-        ListHeaderComponent,
-        ListEmptyComponent,
-        ListFooterComponent,
-      }: {
+      props: {
         data?: unknown[];
         renderItem: (input: { item: unknown; index: number }) => ReactNode;
         refreshControl?: ReactNode;
@@ -159,10 +154,12 @@ vi.mock('@shopify/flash-list', () => ({
       },
       ref,
     ) => {
+      const { data, renderItem, refreshControl, ListHeaderComponent, ListEmptyComponent, ListFooterComponent } = props;
+      social.listProps = props;
       useImperativeHandle(ref, () => ({ scrollToTop: vi.fn() }));
       return createElement(
         'div',
-        null,
+        { 'data-list': 'true' },
         ListHeaderComponent,
         refreshControl,
         data?.length
@@ -298,6 +295,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 }));
 
 import { SocialTab } from '../SocialTab';
+import { createScrollEdgeBackdrop, type ScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 describe('SocialTab', () => {
   beforeEach(() => {
@@ -310,6 +308,7 @@ describe('SocialTab', () => {
     social.searchRefetch.mockReset();
     social.refresh = null;
     social.searchError = false;
+    social.listProps = undefined;
   });
 
   afterEach(() => {
@@ -428,5 +427,49 @@ describe('SocialTab', () => {
     fireEvent.click(getByText('Try again'));
     expect(social.publicProfileRefetch).toHaveBeenCalledOnce();
     expect(social.searchRefetch).toHaveBeenCalledOnce();
+  });
+
+  // On iOS 26 the Profile tab's segmented control floats over this list. The list
+  // tells the header, through a store, when its rows are under the control.
+  describe('under the floating profile header', () => {
+    const SCROLL_LISTENERS = [
+      'onScroll',
+      'onScrollBeginDrag',
+      'onScrollEndDrag',
+      'onMomentumScrollBegin',
+      'onMomentumScrollEnd',
+    ] as const;
+    const scrollListTo = (scrollEdge: ScrollEdgeBackdrop, offsetY: number) =>
+      scrollEdge.listProps.onScroll({ nativeEvent: { contentOffset: { x: 0, y: offsetY } } } as Parameters<
+        ScrollEdgeBackdrop['listProps']['onScroll']
+      >[0]);
+
+    it("gives its list every one of the store's scroll listeners", () => {
+      const scrollEdge = createScrollEdgeBackdrop();
+      render(<SocialTab userId="me" scrollEdge={scrollEdge} />);
+
+      for (const listener of SCROLL_LISTENERS)
+        expect(social.listProps?.[listener]).toBe(scrollEdge.listProps[listener]);
+    });
+
+    // Under an opaque header the screen passes no store.
+    it('gives its list no scroll listeners without a store', () => {
+      render(<SocialTab userId="me" />);
+
+      for (const listener of SCROLL_LISTENERS) expect(social.listProps?.[listener]).toBeUndefined();
+    });
+
+    it('puts the store at rest when the list goes away', () => {
+      const scrollEdge = createScrollEdgeBackdrop();
+      const { container, rerender } = render(<SocialTab userId="me" scrollEdge={scrollEdge} />);
+      act(() => scrollListTo(scrollEdge, 400));
+      expect(scrollEdge.isScrolledUnder()).toBe(true);
+
+      // Signed out: a spinner takes the list's place.
+      rerender(<SocialTab userId={undefined} scrollEdge={scrollEdge} />);
+
+      expect(container.querySelector('[data-list]')).toBeNull();
+      expect(scrollEdge.isScrolledUnder()).toBe(false);
+    });
   });
 });

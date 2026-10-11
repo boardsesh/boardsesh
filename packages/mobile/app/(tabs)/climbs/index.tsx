@@ -1,6 +1,6 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
-import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
+import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
@@ -810,10 +810,12 @@ function ClimbListInner() {
   const listTopOffset = useListTopOffset();
   const listTopOffsetRef = useRef(listTopOffset);
   listTopOffsetRef.current = listTopOffset;
-  // Whether rows are under the filter chips pinned below the UIKit header: the
-  // blur behind the chips shows only then. Re-renders this screen when that
-  // flips, never per scroll event.
-  const { onScroll: handleListScroll, scrolledUnder: listScrolledUnderChrome } = useScrollEdgeBackdrop();
+  // Whether rows are under the filter chips floating below the UIKit header: the
+  // blur behind the chips shows only then. A store the list writes and the blur
+  // reads, so a scroll never re-renders this screen. `list` is undefined until a
+  // blur is mounted, which keeps the list under every opaque header (Material,
+  // Android, iOS before 26, Reduce Transparency) free of scroll listeners.
+  const scrollEdge = useScrollEdgeBackdrop();
   useEffect(() => {
     if (!hasSeenSearchKeyRef.current) {
       hasSeenSearchKeyRef.current = true;
@@ -2167,6 +2169,8 @@ function ClimbListInner() {
         // iOS honours.
         style={listClipStyle}
       >
+        {/* The no-board branches above unmount the list; it comes back at rest. */}
+        <ScrollEdgeListReset edge={scrollEdge.list} />
         <FlashList
           ref={climbListRef}
           testID="climb-list"
@@ -2187,9 +2191,7 @@ function ClimbListInner() {
           // offset. React Native clamps a programmatic scroll at 0 unless told the
           // list may be scrolled past its content bounds.
           scrollToOverflowEnabled={nativeRootHeader}
-          // Only the UIKit header floats controls over this list; the other
-          // chromes keep the list free of a scroll listener.
-          onScroll={nativeRootHeader ? handleListScroll : undefined}
+          {...scrollEdge.list?.listProps}
           contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
           scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
           keyboardShouldPersistTaps="handled"
@@ -2355,7 +2357,7 @@ function ClimbListInner() {
         onGradeChange={handleGradeRailChange}
         filterChrome={filterChrome}
         showPersistentChips={filterInTopChrome}
-        scrolledUnder={listScrolledUnderChrome}
+        scrollEdge={scrollEdge.backdrop}
       />
 
       {showFilters ? (

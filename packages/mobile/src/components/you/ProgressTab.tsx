@@ -1,6 +1,7 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { View, RefreshControl, StyleSheet } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
@@ -39,9 +40,9 @@ type ProgressTabProps = {
   userId?: string;
   onOpenFilters?: () => void;
   isOwnProfile?: boolean;
-  /** The list's scroll events, for chrome that reacts to rows passing under it
-   *  (the Profile tab's floating header). Must not set state per event. */
-  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** The Profile tab's `useScrollEdgeBackdrop().list`: tells the floating header
+   *  when this tab's list is scrolled under it. Undefined under an opaque header. */
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 type ProgressItem =
@@ -73,7 +74,7 @@ export const ProgressTab = memo(function ProgressTab({
   userId,
   onOpenFilters,
   isOwnProfile = true,
-  onScroll,
+  scrollEdge,
 }: ProgressTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t, i18n } = useTranslation('profile');
@@ -397,6 +398,9 @@ export const ProgressTab = memo(function ProgressTab({
       {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
         <ScreenshotSmokeMarker route="/profile" count={data.statisticsSummary.totalAscents} />
       ) : null}
+      {/* The offline and loading branches above unmount the list, and with it
+          anything it had scrolled under the header. */}
+      <ScrollEdgeListReset edge={scrollEdge} />
       <FlashList
         ref={listRef}
         testID="progress-tab-loaded"
@@ -405,7 +409,7 @@ export const ProgressTab = memo(function ProgressTab({
         keyExtractor={keyForProgressItem}
         getItemType={typeForProgressItem}
         maintainVisibleContentPosition={{ disabled: true }}
-        onScroll={onScroll}
+        {...scrollEdge?.listProps}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
         scrollIndicatorInsets={{ top: topInset }}

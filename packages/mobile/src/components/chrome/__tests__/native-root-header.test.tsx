@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import type { NativeStackNavigationOptions } from 'expo-router';
 
 const controls = vi.hoisted(() => ({
@@ -163,6 +164,7 @@ vi.mock('../../Avatar', () => ({
 }));
 
 import { CONTROLS_BACKDROP, NativeRootHeader } from '../NativeRootHeader';
+import { createScrollEdgeBackdrop, type ScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 import { timing } from '../../../theme/animations';
 import { GlassActionToolbar, GlassToolbarAction } from '../GlassActionToolbar';
 import { UserAvatarToolbarAction } from '../../user-drawer/UserAvatarToolbarAction';
@@ -290,7 +292,7 @@ describe('NativeRootHeader', () => {
   });
 
   describe('supplementary controls under the bar', () => {
-    type ControlsProps = { opaqueControls?: boolean; scrolledUnder?: boolean };
+    type ControlsProps = { opaqueControls?: boolean; scrollEdge?: ScrollEdgeBackdrop };
     const header = (props: ControlsProps, onHeightChange: (height: number) => void) => (
       <NativeRootHeader onHeightChange={onHeightChange} {...props}>
         <span>Filter chips</span>
@@ -306,10 +308,17 @@ describe('NativeRootHeader', () => {
       const update = (next: ControlsProps) => view.rerender(header(next, onHeightChange));
       return { ...view, onHeightChange, block, backdrop, backdropFrame, update };
     };
+    // The screen's list, reporting to the store the header was handed.
+    const scrollListTo = (scrollEdge: ScrollEdgeBackdrop, offsetY: number) =>
+      act(() =>
+        scrollEdge.listProps.onScroll({
+          nativeEvent: { contentOffset: { x: 0, y: offsetY } },
+        } as NativeSyntheticEvent<NativeScrollEvent>),
+      );
 
     it('floats them over the list on iOS 26 glass: no painted band, a blur behind', () => {
       controls.canFloat = true;
-      const { block, backdrop, backdropFrame, getByText } = renderControls({ scrolledUnder: true });
+      const { block, backdrop, backdropFrame, getByText } = renderControls();
 
       expect(readStyle(block())).not.toHaveProperty('backgroundColor');
       expect(getByText('Filter chips')).toBeTruthy();
@@ -341,28 +350,31 @@ describe('NativeRootHeader', () => {
       });
 
       it('is hidden while the list is at rest', () => {
-        const { backdropFrame } = renderControls({ scrolledUnder: false });
+        const { backdropFrame } = renderControls({ scrollEdge: createScrollEdgeBackdrop() });
 
         expect(readStyle(backdropFrame()).opacity).toBe(0);
         expect(controls.backdropOpacity?.value).toBe(0);
       });
 
       it('is shown from the first frame over a list already scrolled under', () => {
-        const { backdropFrame } = renderControls({ scrolledUnder: true });
+        const scrollEdge = createScrollEdgeBackdrop();
+        scrollListTo(scrollEdge, 400);
+        const { backdropFrame } = renderControls({ scrollEdge });
 
         expect(readStyle(backdropFrame()).opacity).toBe(1);
         expect(controls.backdropOpacity?.value).toBe(1);
       });
 
       it('fades in as rows pass under the controls and out as they leave', () => {
-        const { update } = renderControls({ scrolledUnder: false });
+        const scrollEdge = createScrollEdgeBackdrop();
+        renderControls({ scrollEdge });
         controls.backdropFades.length = 0;
 
-        update({ scrolledUnder: true });
+        scrollListTo(scrollEdge, 60);
         expect(controls.backdropFades).toEqual([{ to: 1, duration: CONTROLS_BACKDROP.fadeDuration }]);
         expect(controls.backdropOpacity?.value).toBe(1);
 
-        update({ scrolledUnder: false });
+        scrollListTo(scrollEdge, -148);
         expect(controls.backdropFades.at(-1)).toEqual({ to: 0, duration: CONTROLS_BACKDROP.fadeDuration });
         expect(controls.backdropOpacity?.value).toBe(0);
       });
@@ -373,9 +385,10 @@ describe('NativeRootHeader', () => {
 
       it('switches without a fade under Reduce Motion', () => {
         controls.reduceMotion = true;
-        const { update } = renderControls({ scrolledUnder: false });
+        const scrollEdge = createScrollEdgeBackdrop();
+        renderControls({ scrollEdge });
 
-        update({ scrolledUnder: true });
+        scrollListTo(scrollEdge, 60);
 
         expect(controls.backdropFades).toEqual([]);
         expect(controls.backdropOpacity?.value).toBe(1);
@@ -391,20 +404,96 @@ describe('NativeRootHeader', () => {
       });
 
       it('keeps the block itself in place, hidden blur or not', () => {
-        const { block, backdrop } = renderControls({ scrolledUnder: false });
+        const { block, backdrop } = renderControls({ scrollEdge: createScrollEdgeBackdrop() });
 
         expect(backdrop()).not.toBeNull();
         expect(readStyle(block())).not.toHaveProperty('backgroundColor');
         expect(readStyle(block())).not.toHaveProperty('opacity');
       });
+
+      // The list rests at minus the bar's height: that is where the block's
+      // bottom edge meets the first row.
+      it('tells the store where it drew the block, so rows are judged against it', () => {
+        const scrollEdge = createScrollEdgeBackdrop();
+        renderControls({ scrollEdge });
+
+        scrollListTo(scrollEdge, -148);
+        expect(scrollEdge.isScrolledUnder()).toBe(false);
+        scrollListTo(scrollEdge, -120);
+        expect(scrollEdge.isScrolledUnder()).toBe(true);
+      });
+
+      it('tells the store again when the bar changes height and the block moves', () => {
+        const scrollEdge = createScrollEdgeBackdrop();
+        const { update } = renderControls({ scrollEdge });
+        scrollListTo(scrollEdge, -100);
+        expect(scrollEdge.isScrolledUnder()).toBe(true);
+
+        // The large title collapses: the block now sits right above that row.
+        controls.headerHeight = 100;
+        update({ scrollEdge });
+        expect(scrollEdge.isScrolledUnder()).toBe(false);
+        expect(controls.backdropOpacity?.value).toBe(0);
+      });
+
+      // The header holds the bar's options and the screen holds the list. A row
+      // crossing under the controls must re-render neither.
+      it('re-renders the blur alone when rows cross under the controls', () => {
+        const scrollEdge = createScrollEdgeBackdrop();
+        renderControls({ scrollEdge });
+        const headerRenders = controls.options.length;
+
+        scrollListTo(scrollEdge, 300);
+        scrollListTo(scrollEdge, -148);
+        scrollListTo(scrollEdge, 300);
+
+        expect(controls.backdropOpacity?.value).toBe(1);
+        expect(controls.options).toHaveLength(headerRenders);
+      });
+    });
+
+    // The screen gives its list scroll listeners only while a blur is listening.
+    describe('says whether a blur is listening', () => {
+      it('is listening while the controls float', () => {
+        controls.canFloat = true;
+        const scrollEdge = createScrollEdgeBackdrop();
+        const { unmount } = renderControls({ scrollEdge });
+        expect(scrollEdge.hasBackdrop()).toBe(true);
+
+        unmount();
+        expect(scrollEdge.hasBackdrop()).toBe(false);
+      });
+
+      // Before iOS 26, Reduce Transparency, Increase Contrast.
+      it('is not listening on the painted band', () => {
+        const scrollEdge = createScrollEdgeBackdrop();
+        renderControls({ scrollEdge });
+        expect(scrollEdge.hasBackdrop()).toBe(false);
+      });
+
+      it('is not listening for a caller that opts out of floating', () => {
+        controls.canFloat = true;
+        const scrollEdge = createScrollEdgeBackdrop();
+        renderControls({ scrollEdge, opaqueControls: true });
+        expect(scrollEdge.hasBackdrop()).toBe(false);
+      });
+
+      it('is not listening on a screen with no controls', () => {
+        controls.canFloat = true;
+        const scrollEdge = createScrollEdgeBackdrop();
+        render(<NativeRootHeader scrollEdge={scrollEdge} onHeightChange={vi.fn()} />);
+        expect(scrollEdge.hasBackdrop()).toBe(false);
+      });
     });
 
     // Material, Android, the web, iOS before 26, Reduce Transparency and Increase
     // Contrast all arrive here as "cannot float".
-    it.each([true, false, undefined])(
-      'keeps the painted band wherever the controls cannot float (scrolled under: %s)',
-      (scrolledUnder) => {
-        const { block, backdrop, backdropFrame } = renderControls({ scrolledUnder });
+    it.each(['wired to a list', 'not wired'])(
+      'keeps the painted band wherever the controls cannot float (%s)',
+      (wiring) => {
+        const scrollEdge = wiring === 'wired to a list' ? createScrollEdgeBackdrop() : undefined;
+        if (scrollEdge) scrollListTo(scrollEdge, 400);
+        const { block, backdrop, backdropFrame } = renderControls({ scrollEdge });
 
         expect(readStyle(block()).backgroundColor).toBe('theme-background');
         expect(backdrop()).toBeNull();
@@ -412,11 +501,13 @@ describe('NativeRootHeader', () => {
       },
     );
 
-    it.each([true, false, undefined])(
-      'keeps the painted band for a caller that opts out, even on iOS 26 glass (scrolled under: %s)',
-      (scrolledUnder) => {
+    it.each(['wired to a list', 'not wired'])(
+      'keeps the painted band for a caller that opts out, even on iOS 26 glass (%s)',
+      (wiring) => {
         controls.canFloat = true;
-        const { block, backdrop, backdropFrame } = renderControls({ opaqueControls: true, scrolledUnder });
+        const scrollEdge = wiring === 'wired to a list' ? createScrollEdgeBackdrop() : undefined;
+        if (scrollEdge) scrollListTo(scrollEdge, 400);
+        const { block, backdrop, backdropFrame } = renderControls({ opaqueControls: true, scrollEdge });
 
         expect(readStyle(block()).backgroundColor).toBe('theme-background');
         expect(backdrop()).toBeNull();
@@ -426,7 +517,7 @@ describe('NativeRootHeader', () => {
 
     it.each([true, false])('swallows touches in its bounds (floating: %s)', (canFloat) => {
       controls.canFloat = canFloat;
-      const { block } = renderControls({ scrolledUnder: false });
+      const { block } = renderControls({ scrollEdge: createScrollEdgeBackdrop() });
       // Never box-none: a row smeared by the blur must not take a tap through the
       // gaps between the chips.
       expect(block()?.getAttribute('data-pointer-events')).toBe('auto');
@@ -435,7 +526,7 @@ describe('NativeRootHeader', () => {
     it('reports the same height floating as on the band: the blur is not measured', () => {
       const measured = [true, false].map((canFloat) => {
         controls.canFloat = canFloat;
-        const { block, onHeightChange, unmount } = renderControls({ scrolledUnder: true });
+        const { block, onHeightChange, unmount } = renderControls();
         expect(readStyle(block()).top).toBe(148);
         fireEvent.click(block()!);
         const reported = onHeightChange.mock.calls.at(-1);
@@ -447,9 +538,9 @@ describe('NativeRootHeader', () => {
 
     it('moves the blur with the block as the large title collapses', () => {
       controls.canFloat = true;
-      const { block, backdropFrame, update } = renderControls({ scrolledUnder: true });
+      const { block, backdropFrame, update } = renderControls();
       controls.headerHeight = 100;
-      update({ scrolledUnder: true });
+      update({});
 
       expect(readStyle(block()).top).toBe(100);
       // Still starts at the top of the screen.
@@ -458,7 +549,7 @@ describe('NativeRootHeader', () => {
 
     it('draws no blur on a screen with no controls', () => {
       controls.canFloat = true;
-      const { container } = render(<NativeRootHeader scrolledUnder onHeightChange={vi.fn()} />);
+      const { container } = render(<NativeRootHeader onHeightChange={vi.fn()} />);
       expect(container.querySelector('[data-backdrop]')).toBeNull();
     });
   });

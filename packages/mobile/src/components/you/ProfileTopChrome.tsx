@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
+import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { createVariantComponent } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { SegmentedControl } from '../SegmentedControl';
@@ -30,9 +31,10 @@ export type ProfileTopChromeProps = {
    * Material's header is always opaque.
    */
   opaqueControls?: boolean;
-  /** Liquid Glass only: whether the sub-tab's list is scrolled under the header
-   *  (`useScrollEdgeBackdrop`). The blur behind a floating header shows only then. */
-  scrolledUnder?: boolean;
+  /** Liquid Glass only: the screen's `useScrollEdgeBackdrop().backdrop`. The blur
+   *  behind a floating header shows only while the sub-tab's list is scrolled
+   *  under it. */
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 export const ProfileTopChrome = createVariantComponent('ProfileTopChrome', {
@@ -113,7 +115,7 @@ function ProfileTopChromeGlass({
   onHeightChange,
   children,
   opaqueControls,
-  scrolledUnder,
+  scrollEdge,
 }: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
 
@@ -132,7 +134,7 @@ function ProfileTopChromeGlass({
       onHeightChange={onHeightChange}
       leftActions={leftActions}
       opaqueControls={opaqueControls}
-      scrolledUnder={scrolledUnder}
+      scrollEdge={scrollEdge}
     >
       {/* The native iOS segmented control brings its own track/background, so it
           renders directly — wrapping it in the old GlassSurface track doubled the

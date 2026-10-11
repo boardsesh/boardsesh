@@ -24,8 +24,8 @@ const ctrl = vi.hoisted(() => ({
   glassMeasure: undefined as ((height: number) => void) | undefined,
   // What the glass header was told about floating its controls over the list.
   glassOpaqueControls: undefined as boolean | undefined,
-  // What it was told about the sub-tab's list being scrolled under it.
-  glassScrolledUnder: undefined as boolean | undefined,
+  // The scroll-edge store it was handed for the sub-tab's list.
+  glassScrollEdge: undefined as unknown,
 }));
 // Captures the props the SegmentedControl receives so the test can assert its
 // option set / selected key / which variant branch rendered it.
@@ -160,18 +160,18 @@ vi.mock('../../chrome', () => ({
     children,
     onHeightChange,
     opaqueControls,
-    scrolledUnder,
+    scrollEdge,
   }: {
     leftActions?: ReactNode;
     rightActions?: ReactNode;
     children?: ReactNode;
     onHeightChange: (height: number) => void;
     opaqueControls?: boolean;
-    scrolledUnder?: boolean;
+    scrollEdge?: unknown;
   }) => {
     ctrl.glassMeasure = onHeightChange;
     ctrl.glassOpaqueControls = opaqueControls;
-    ctrl.glassScrolledUnder = scrolledUnder;
+    ctrl.glassScrollEdge = scrollEdge;
     return createElement(
       'div',
       { 'data-header': 'true' },
@@ -194,6 +194,7 @@ vi.mock('../../chrome', () => ({
 }));
 
 import { ProfileTopChrome } from '../ProfileTopChrome';
+import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 function makeProps(over: Partial<ProfileTopChromeProps> = {}) {
   return {
@@ -216,7 +217,7 @@ describe('ProfileTopChrome', () => {
     ctrl.materialMeasure = undefined;
     ctrl.glassMeasure = undefined;
     ctrl.glassOpaqueControls = undefined;
-    ctrl.glassScrolledUnder = undefined;
+    ctrl.glassScrollEdge = undefined;
     segments.entries = [];
     materialTabs.entries = [];
   });
@@ -267,9 +268,10 @@ describe('ProfileTopChrome', () => {
       expect(ctrl.glassOpaqueControls).toBe(true);
     });
 
-    it.each([true, false])('tells the header whether the list is scrolled under it (%s)', (scrolledUnder) => {
-      render(<ProfileTopChrome {...makeProps({ scrolledUnder })} />);
-      expect(ctrl.glassScrolledUnder).toBe(scrolledUnder);
+    it("hands the header the screen's scroll-edge store for the sub-tab's list", () => {
+      const scrollEdge = createScrollEdgeBackdrop();
+      render(<ProfileTopChrome {...makeProps({ scrollEdge })} />);
+      expect(ctrl.glassScrollEdge).toBe(scrollEdge);
     });
 
     it('does not render the Material app bar or primary tabs', () => {

@@ -48,6 +48,9 @@ type ProgressiveBlurProps = {
    * edge, then fade out over that length. For a backdrop behind pinned controls:
    * the default ramp is strongest at the very top and nearly clear where the
    * lowest control row sits. Omit for the default ramp across the whole height.
+   *
+   * Live blur only. The one caller mounts it on iOS 26 glass and paints an opaque
+   * band everywhere else, so the no-blur fallback below keeps its single fade.
    */
   fadeLength?: number;
   /**
@@ -114,22 +117,14 @@ export function ProgressiveBlur({
 
   // Android / Reduce Transparency: no live blur — fade the opaque scene background.
   if (mode !== 'glass' && mode !== 'blur') {
-    const solidBackground = isDark ? SOLID_BG_DARK : SOLID_BG_LIGHT;
     return (
       <View pointerEvents="none" style={style}>
-        {fadeLength == null ? (
-          <LinearGradient
-            colors={[solidBackground, solidBackground, 'transparent']}
-            locations={SOLID_FADE_LOCATIONS}
-            pointerEvents="none"
-            style={StyleSheet.absoluteFill}
-          />
-        ) : (
-          <PlateauFade
-            colors={[solidBackground, `rgba(${isDark ? WASH_RGB_DARK : WASH_RGB_LIGHT},0)`]}
-            fadeLength={fadeLength}
-          />
-        )}
+        <LinearGradient
+          colors={[isDark ? SOLID_BG_DARK : SOLID_BG_LIGHT, isDark ? SOLID_BG_DARK : SOLID_BG_LIGHT, 'transparent']}
+          locations={SOLID_FADE_LOCATIONS}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+        />
       </View>
     );
   }

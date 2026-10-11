@@ -5,18 +5,20 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: ({
     centerContent,
     children,
-    scrolledUnder,
+    scrollEdge,
   }: {
     centerContent?: ReactNode;
     children?: ReactNode;
-    scrolledUnder?: boolean;
-  }) =>
-    createElement(
+    scrollEdge?: unknown;
+  }) => {
+    ctrl.nativeScrollEdge = scrollEdge;
+    return createElement(
       'div',
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
-      createElement('div', { 'data-native-controls': 'true', 'data-scrolled-under': String(scrolledUnder) }, children),
-    ),
+      createElement('div', { 'data-native-controls': 'true' }, children),
+    );
+  },
 }));
 vi.mock('../../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
@@ -50,6 +52,8 @@ const ctrl = vi.hoisted(() => ({
   setActiveBoard: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
+  // The scroll-edge store the native header was handed.
+  nativeScrollEdge: undefined as unknown,
 }));
 const haptics = vi.hoisted(() => ({ light: vi.fn() }));
 
@@ -178,6 +182,7 @@ vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
 vi.mock('../../Badge', () => ({ Badge: () => createElement('span', { 'data-badge-dot': 'true' }) }));
 
 import { CollapsingTopChrome } from '../CollapsingTopChrome';
+import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 function makeProps(over: Partial<Parameters<typeof CollapsingTopChrome>[0]> = {}) {
   return {
@@ -216,6 +221,7 @@ describe('CollapsingTopChrome', () => {
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
     ctrl.nativeHeader = false;
+    ctrl.nativeScrollEdge = undefined;
     haptics.light.mockClear();
   });
 
@@ -244,19 +250,22 @@ describe('CollapsingTopChrome', () => {
     expect(onOpenClimb).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    [true, 'true'],
-    [false, 'false'],
-    [undefined, 'undefined'],
-  ] as const)('tells the native header whether the list is scrolled under (%s)', (scrolledUnder, received) => {
+  it("hands the native header the screen's scroll-edge store, untouched", () => {
     ctrl.nativeHeader = true;
-    const { container } = render(
-      <CollapsingTopChrome {...makeProps({ scrolledUnder })}>
+    const scrollEdge = createScrollEdgeBackdrop();
+    const { rerender } = render(
+      <CollapsingTopChrome {...makeProps({ scrollEdge })}>
         <span>Filter chips</span>
       </CollapsingTopChrome>,
     );
+    expect(ctrl.nativeScrollEdge).toBe(scrollEdge);
 
-    expect(container.querySelector('[data-native-controls]')?.getAttribute('data-scrolled-under')).toBe(received);
+    rerender(
+      <CollapsingTopChrome {...makeProps()}>
+        <span>Filter chips</span>
+      </CollapsingTopChrome>,
+    );
+    expect(ctrl.nativeScrollEdge).toBeUndefined();
   });
 
   it('renders the board glyph for the active board, labelled with the board', () => {

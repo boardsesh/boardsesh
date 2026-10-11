@@ -1,8 +1,9 @@
 import { ReadableColumn } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
@@ -37,14 +38,16 @@ type SocialMode = 'followers' | 'following' | 'search';
 
 type SocialTabProps = {
   userId: string | undefined;
-  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** The Profile tab's `useScrollEdgeBackdrop().list`: tells the floating header
+   *  when this tab's list is scrolled under it. Undefined under an opaque header. */
+  scrollEdge?: ScrollEdgeBackdrop;
   topInset?: number;
   registerScrollToTop?: (scrollToTop: (() => void) | null) => void;
 };
 
 const EMPTY_PEOPLE: SocialPerson[] = [];
 
-export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop }: SocialTabProps) {
+export function SocialTab({ userId, scrollEdge, topInset = 0, registerScrollToTop }: SocialTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
@@ -198,12 +201,14 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
 
   return (
     <ReadableColumn style={styles.flex}>
+      {/* The signed-out branch above unmounts the list. */}
+      <ScrollEdgeListReset edge={scrollEdge} />
       <FlashList
         ref={listRef}
         data={showInitialSpinner || showSearchHint || showError || showOffline ? EMPTY_PEOPLE : people}
         renderItem={renderItem}
         keyExtractor={(person) => person.id}
-        onScroll={onScroll}
+        {...scrollEdge?.listProps}
         scrollEventThrottle={16}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         onEndReached={handleEndReached}

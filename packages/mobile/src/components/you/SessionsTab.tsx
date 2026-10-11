@@ -1,6 +1,7 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { View, RefreshControl, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -38,9 +39,9 @@ type SessionsTabProps = {
   /** Measured chrome height — the list insets its top by this so the first row
    *  rests below the floating chrome and the rest scroll under it. */
   topInset?: number;
-  /** The list's scroll events, for chrome that reacts to rows passing under it
-   *  (the Profile tab's floating header). Must not set state per event. */
-  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** The Profile tab's `useScrollEdgeBackdrop().list`: tells the floating header
+   *  when this tab's list is scrolled under it. Undefined under an opaque header. */
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 // String-literal `t(...)` per call so the catalog keys stay statically greppable.
@@ -93,7 +94,7 @@ function SessionCardSkeleton() {
   );
 }
 
-export function SessionsTab({ userId, topInset = 0, onScroll }: SessionsTabProps) {
+export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
@@ -249,13 +250,15 @@ export function SessionsTab({ userId, topInset = 0, onScroll }: SessionsTabProps
 
   return (
     <View style={styles.flex}>
+      {/* The loading, offline and signed-out branches above unmount the list. */}
+      <ScrollEdgeListReset edge={scrollEdge} />
       <FlashList
         data={rows}
         extraData={summaryMap}
         renderItem={renderItem}
         getItemType={(row) => row.type}
         keyExtractor={(row) => (row.type === 'header' ? `header-${row.bucket}` : row.item.sessionId)}
-        onScroll={onScroll}
+        {...scrollEdge?.listProps}
         contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}

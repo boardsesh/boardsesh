@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const captured = vi.hoisted(() => ({
   bucketNows: [] as number[],
   onRefresh: null as (() => void) | null,
+  // Every prop the mounted list was given, and whether a list is mounted at all.
+  listProps: undefined as Record<string, unknown> | undefined,
 }));
 
 const feed = vi.hoisted(() => ({
@@ -66,7 +68,10 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('@shopify/flash-list', () => ({
-  FlashList: ({ refreshControl }: { refreshControl?: ReactNode }) => createElement('div', null, refreshControl),
+  FlashList: (props: { refreshControl?: ReactNode }) => {
+    captured.listProps = props;
+    return createElement('div', { 'data-list': 'true' }, props.refreshControl);
+  },
 }));
 
 // SessionsTab now opens climbs through the play drawer, so it imports the drawer
@@ -125,10 +130,13 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 
 import { SessionsTab } from '../SessionsTab';
+import { createScrollEdgeBackdrop, type ScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 beforeEach(() => {
   captured.bucketNows = [];
   captured.onRefresh = null;
+  captured.listProps = undefined;
+  feed.isPending = false;
   vi.useFakeTimers();
 });
 
@@ -156,5 +164,51 @@ describe('SessionsTab clock (A5-you-profile-005)', () => {
     const refreshedNow = captured.bucketNows.at(-1);
     expect(refreshedNow).toBe(Date.parse('2026-06-05T00:10:00.000Z'));
     expect(refreshedNow).not.toBe(mountNow);
+  });
+});
+
+// On iOS 26 the Profile tab's segmented control floats over this list. The list
+// tells the header, through a store, when its rows are under the control.
+describe('SessionsTab list under the floating profile header', () => {
+  const SCROLL_LISTENERS = [
+    'onScroll',
+    'onScrollBeginDrag',
+    'onScrollEndDrag',
+    'onMomentumScrollBegin',
+    'onMomentumScrollEnd',
+  ] as const;
+  const scrollListTo = (scrollEdge: ScrollEdgeBackdrop, offsetY: number) =>
+    scrollEdge.listProps.onScroll({ nativeEvent: { contentOffset: { x: 0, y: offsetY } } } as Parameters<
+      ScrollEdgeBackdrop['listProps']['onScroll']
+    >[0]);
+
+  it("gives its list every one of the store's scroll listeners", () => {
+    const scrollEdge = createScrollEdgeBackdrop();
+    render(createElement(SessionsTab, { userId: 'user-1', scrollEdge }));
+
+    for (const listener of SCROLL_LISTENERS)
+      expect(captured.listProps?.[listener]).toBe(scrollEdge.listProps[listener]);
+  });
+
+  // Under an opaque header the screen passes no store.
+  it('gives its list no scroll listeners without a store', () => {
+    render(createElement(SessionsTab, { userId: 'user-1' }));
+
+    for (const listener of SCROLL_LISTENERS) expect(captured.listProps?.[listener]).toBeUndefined();
+  });
+
+  // The loading skeleton replaces the list. What the list had scrolled under the
+  // header must go with it, or the blur stays on over the skeleton.
+  it('puts the store at rest when its loading branch takes the list away', () => {
+    const scrollEdge = createScrollEdgeBackdrop();
+    const { container, rerender } = render(createElement(SessionsTab, { userId: 'user-1', scrollEdge }));
+    act(() => scrollListTo(scrollEdge, 400));
+    expect(scrollEdge.isScrolledUnder()).toBe(true);
+
+    feed.isPending = true;
+    rerender(createElement(SessionsTab, { userId: 'user-1', scrollEdge }));
+
+    expect(container.querySelector('[data-list]')).toBeNull();
+    expect(scrollEdge.isScrolledUnder()).toBe(false);
   });
 });
