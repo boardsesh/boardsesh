@@ -76,13 +76,13 @@ const chapters: readonly TutorialChapter[] = [
       },
       {
         id: 'workouts-log',
-        title: 'Rest starts after your go',
-        narration: 'Log your go and the rest timer starts. Leave the phone alone between climbs.',
+        title: 'Rest between climbs',
+        narration: 'After you log a go, rest runs automatically. Keep the app open to move on when it ends.',
         seconds: 7,
         takeId: 'workouts',
         fromMark: 'logged',
-        label: 'Log a go → rest starts',
-        focus: { x: 0.2, y: 0.435, width: 0.6, height: 0.1 },
+        label: 'Rest countdown → next climb',
+        focus: { x: 0.02, y: 0.07, width: 0.96, height: 0.77 },
       },
       {
         id: 'workouts-advance',
