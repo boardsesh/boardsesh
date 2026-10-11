@@ -72,21 +72,40 @@ const STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsed
  * grades page to be driven from those climbs. Above it the page falls back to
  * walking the reference table in cursor order (see `runScopedBoardRefSyncPage`).
  *
- * Driven from the climbs, every page visits every candidate once, the empty
- * tail check included, so a page costs in proportion to the candidates. The
- * walk's worst case is a replay from epoch, which reads the board's whole
- * reference table once however many pages that takes — and a phone replays
- * this stream from epoch after every privacy event.
+ * ## What each shape costs
  *
- * Measured, 2026-10-11:
+ * Driven from the climbs, a page visits every candidate once, so it costs in
+ * proportion to the candidates whatever the cursor is.
+ *
+ * The walk costs in proportion to the reference rows it passes. From epoch that
+ * is the board's whole table, read once however many pages the replay takes,
+ * and a phone replays this stream from epoch after every privacy event.
+ *
+ * Neither shape is cheap in the steady state, because this stream's cursor does
+ * not follow the table. An empty page echoes the cursor it was given (see
+ * `runSyncPage`), so the cursor of a sparse stream stays at the last protected
+ * row delivered, however far the rest of the board has moved on since:
+ *
+ *  - the driven page costs the same at the tail as it does from epoch;
+ *  - the walk passes every reference row changed since that cursor, on every
+ *    pull, and that distance only grows until another protected row changes.
+ *
+ * The server does not limit this. The client is expected to bound how often it
+ * pulls the protected stats and grades streams.
+ *
+ * ## Measured, 2026-10-11
+ *
  *  - Production (read-only standby): Kilter 1, the largest layout, has 3,366
  *    candidates among 387,101 climbs, with 252 protected stats rows and 154
  *    grades rows. Kilter 8 has 581 candidates and every other layout under 100.
  *    Returning those 252 stats rows by walking the cursor index read 1,936,267
  *    buffers from cache plus 11,398 from disk, in 3.8 s.
- *  - A local fixture of the same size (Postgres 15, warm): the driven page read
- *    30,575 buffers in about 20 ms, 9 per candidate, the same from epoch and at
- *    the tail. The driven shape has not been timed on production.
+ *  - A local fixture of Kilter 1's size (Postgres 15, warm): the driven page
+ *    read 30,575 buffers in about 20 ms, 9 per candidate, from epoch and at the
+ *    tail alike. A 400-candidate fixture read 3,212 from epoch, near the tail
+ *    and at the tail. The driven shape has not been timed on production.
+ *
+ * ## Why 10,000
  *
  * At 9 buffers a candidate the driven page stays under the walk's 1.9 million
  * until a replay needs several pages, each visiting every candidate. That
@@ -94,17 +113,22 @@ const STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsed
  * today's one row for every thirteen climbs. 10,000 is the lower of the two and
  * three times the largest layout today.
  *
- * `SYNC_PROTECTED_JOIN_MAX_CLIMBS` overrides it without a deploy; 0 always
- * takes the walk.
+ * `SYNC_PROTECTED_JOIN_MAX_CLIMBS` replaces the default. It comes from the
+ * process environment, so a new value takes a restart. Setting it to 0 is not
+ * an off switch: it sends every layout down the slower walk.
  */
 const DEFAULT_PROTECTED_JOIN_MAX_CLIMBS = 10_000;
 
-/** Read per call, so an operator change needs no restart and a test can pin either shape. */
+/**
+ * Read on each call rather than once at import, so a test can pin either shape.
+ * A safe integer, because the value is bound into a `LIMIT`: `1e20` is an
+ * integer to `Number.isInteger` and an error to Postgres.
+ */
 function protectedJoinMaxClimbs(): number {
   const configured = process.env.SYNC_PROTECTED_JOIN_MAX_CLIMBS;
   if (configured === undefined || configured.trim() === '') return DEFAULT_PROTECTED_JOIN_MAX_CLIMBS;
   const parsed = Number(configured);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_PROTECTED_JOIN_MAX_CLIMBS;
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_PROTECTED_JOIN_MAX_CLIMBS;
 }
 
 /**
@@ -275,9 +299,12 @@ function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: nu
  *  - `union`: every climb the viewer may see, in one stream. What a request
  *    with no `audience` gets, and so what every client older than the split
  *    pulls. Its rows and documents must not change.
- *  - `reference`: the public catalogue. The same rows for every viewer, and
- *    exactly the rows a snapshot artifact carries, so a phone that imported an
- *    artifact resumes this stream from the artifact's watermark.
+ *  - `reference`: climbs with no Boardsesh owner, no author flag and no privacy
+ *    policy row. The same rows for every viewer, and exactly the rows a
+ *    snapshot artifact carries, so a phone that imported an artifact resumes
+ *    this stream from the artifact's watermark. Defined by ownership, not by
+ *    visibility: an unowned draft, unlisted or moderation-hidden climb is in
+ *    it, as it is in the artifact and in `union` today.
  *  - `protected`: the climbs with a Boardsesh author that the viewer may see.
  *    Small, and the only stream a privacy event makes a phone replay.
  *
@@ -309,9 +336,11 @@ function climbStreamFor(audience: SyncAudience | null, boardType: string): Climb
  *
  * `reference` carries no viewer: the snapshot exports run the same text with no
  * caller at all. `protected` repeats the partial index's predicate so the
- * planner can use `board_climbs_protected_sync_idx`; its `NOT (reference)` is
- * implied by the other two conjuncts and is there so the two streams are
- * disjoint by construction rather than by that argument staying true.
+ * planner can use `board_climbs_protected_sync_idx`. Its `NOT reference` is
+ * implied by that candidate conjunct alone (a climb with an owner or an author
+ * flag fails the reference predicate's first two terms) and is there so the two
+ * streams are disjoint by construction rather than by that argument staying
+ * true.
  */
 function climbAccessConditions(access: ClimbAccess, alias: 'board_climbs' | 'bc'): SQL[] {
   if (access.stream === 'reference') return [sql.raw(publicReferenceClimbSql(alias))];
@@ -322,11 +351,7 @@ function climbAccessConditions(access: ClimbAccess, alias: 'board_climbs' | 'bc'
     access.viewerUserId,
   );
   if (access.stream === 'union') return [visibility];
-  return [
-    sql.raw(protectedClimbCandidateSql(alias)),
-    sql`NOT (${sql.raw(publicReferenceClimbSql(alias))})`,
-    visibility,
-  ];
+  return [sql.raw(protectedClimbCandidateSql(alias)), sql`NOT ${sql.raw(publicReferenceClimbSql(alias))}`, visibility];
 }
 
 /**

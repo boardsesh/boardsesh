@@ -11,19 +11,24 @@ import {
   AUDIENCE_LAYOUT_ID,
   AUDIENCE_OTHER_SIZE_ID,
   AUDIENCE_OWNER,
+  AUDIENCE_PENDING_FOLLOWER,
   AUDIENCE_PUBLIC_AUTHOR,
   AUDIENCE_SIZE_ID,
   AUDIENCE_SPRAY_LAYOUT_ID,
+  AUDIENCE_STATE_LAYOUT_ID,
   AUDIENCE_STRANGER,
   AUDIENCE_VIEWERS,
   FIRST_ASCENT_CLIMB_UUID,
+  STATE_CLIMBS,
   audienceContext,
+  documentKey,
   expectStreamsPartitionUnion,
   keysOf,
   pullAllDocuments,
   pullAudiencePage,
   pullAudienceStreams,
   seedSyncAudienceFixture,
+  type SyncDocument,
 } from './helpers/sync-audience-fixture';
 
 /**
@@ -213,11 +218,35 @@ describe('audience split — REFERENCE and PROTECTED partition the single-stream
   const WALL = { boardType: 'spray', layoutId: AUDIENCE_SPRAY_LAYOUT_ID, sizeId: AUDIENCE_SPRAY_LAYOUT_ID };
 
   const REFERENCE_CLIMBS = ['ref-a', 'ref-b', 'ref-size-7'];
+  // What a climber with no accepted follow may see: the public account's
+  // climb, the deleted account's retained one, and the private account's
+  // explicit Public choice made at its current privacy revision.
+  const OPEN_TO_EVERYONE = ['deleted-public', 'own-public', 'own-public-consent'];
   const PROTECTED_CLIMBS = {
-    [AUDIENCE_OWNER]: ['deleted-public', 'own-only-me', 'own-private', 'own-private-size-7', 'own-public'],
-    [AUDIENCE_FOLLOWER]: ['deleted-public', 'own-private', 'own-private-size-7', 'own-public'],
-    [AUDIENCE_STRANGER]: ['deleted-public', 'own-public'],
+    [AUDIENCE_OWNER]: [
+      'deleted-public',
+      'own-only-me',
+      'own-private',
+      'own-private-size-7',
+      'own-public',
+      'own-public-consent',
+      'own-stale-consent',
+    ],
+    // An accepted follower sees everything but Only me, the stale Public choice
+    // included: it falls back to the account rule.
+    [AUDIENCE_FOLLOWER]: [
+      'deleted-public',
+      'own-private',
+      'own-private-size-7',
+      'own-public',
+      'own-public-consent',
+      'own-stale-consent',
+    ],
+    // A request that was never approved grants nothing.
+    [AUDIENCE_PENDING_FOLLOWER]: OPEN_TO_EVERYONE,
+    [AUDIENCE_STRANGER]: OPEN_TO_EVERYONE,
   };
+  const ALL_RESOLVERS = ['syncClimbs', 'syncClimbStats', 'syncClimbGrades'] as const;
   // Nobody may see these, so they are in neither stream and not in the union:
   // a deleted account's restricted climb, and a policy row on an unowned climb.
   const WITHHELD_CLIMBS = ['deleted-private', 'orphan-policy'];
@@ -290,13 +319,15 @@ describe('audience split — REFERENCE and PROTECTED partition the single-stream
 
   it('serves the same REFERENCE rows to every viewer', async () => {
     for (const resolver of ['syncClimbs', 'syncClimbStats'] as const) {
-      const [asOwner, asFollower, asStranger] = await Promise.all(
+      const [asOwner, ...asEveryoneElse] = await Promise.all(
         AUDIENCE_VIEWERS.map((viewerId) =>
           pullAllDocuments({ resolver, scope: LAYOUT, viewerId, audience: 'REFERENCE' }),
         ),
       );
-      expect(asFollower).toEqual(asOwner);
-      expect(asStranger).toEqual(asOwner);
+      expect(asEveryoneElse).toHaveLength(AUDIENCE_VIEWERS.length - 1);
+      for (const asAnotherViewer of asEveryoneElse) {
+        expect(asAnotherViewer).toEqual(asOwner);
+      }
     }
   });
 
@@ -449,6 +480,157 @@ describe('audience split — REFERENCE and PROTECTED partition the single-stream
     });
     expect(keysOf('syncClimbs', reference)).toContain('ref-a');
   });
+
+  // PINS CURRENT BEHAVIOUR. This is not a privacy guarantee, and it is not a
+  // statement that these rows should be delivered. No sync stream filters on
+  // `is_draft`, `is_listed` or `is_hidden` today: the pull is a full row mirror,
+  // and the snapshot artifact carries the same unowned rows. The split must not
+  // change that by accident in either direction, so each state is pinned in all
+  // three modes. Whether an unowned draft belongs in the reference set is a
+  // separate decision; when it is made, this test changes with it.
+  describe('draft, unlisted and moderation-hidden climbs (current behaviour, not a privacy guarantee)', () => {
+    const STATE_LAYOUT = { boardType: AUDIENCE_BOARD_TYPE, layoutId: AUDIENCE_STATE_LAYOUT_ID };
+    const everyStateClimb = [...STATE_CLIMBS.owned, ...STATE_CLIMBS.unowned].sort();
+
+    it.each(AUDIENCE_VIEWERS)(
+      'delivers every one of them to %s, unowned in REFERENCE and owned in PROTECTED',
+      async (viewerId) => {
+        const streams = await pullAudienceStreams({ resolver: 'syncClimbs', scope: STATE_LAYOUT, viewerId });
+        expectStreamsPartitionUnion('syncClimbs', streams);
+        expect(keysOf('syncClimbs', streams.union)).toEqual(everyStateClimb);
+        expect(keysOf('syncClimbs', streams.reference)).toEqual(STATE_CLIMBS.unowned);
+        expect(keysOf('syncClimbs', streams.protectedStream)).toEqual(STATE_CLIMBS.owned);
+
+        // The flags travel with the row in every mode; nothing is rewritten.
+        const flagsOf = (documents: SyncDocument[], uuid: string) => {
+          const document = documents.find((candidate) => candidate.uuid === uuid);
+          return { is_draft: document?.is_draft, is_listed: document?.is_listed, is_hidden: document?.is_hidden };
+        };
+        for (const [ownership, stream] of [
+          ['unowned', streams.reference],
+          ['owned', streams.protectedStream],
+        ] as const) {
+          expect(flagsOf(stream, `state-${ownership}-draft`)).toEqual({
+            is_draft: true,
+            is_listed: true,
+            is_hidden: false,
+          });
+          expect(flagsOf(stream, `state-${ownership}-unlisted`)).toEqual({
+            is_draft: false,
+            is_listed: false,
+            is_hidden: false,
+          });
+          expect(flagsOf(stream, `state-${ownership}-hidden`)).toEqual({
+            is_draft: false,
+            is_listed: true,
+            is_hidden: true,
+          });
+        }
+      },
+    );
+
+    it.each(['syncClimbStats', 'syncClimbGrades'] as const)(
+      '%s: their rows follow the climb into the same stream',
+      async (resolver) => {
+        const streams = await pullAudienceStreams({ resolver, scope: STATE_LAYOUT, viewerId: AUDIENCE_STRANGER });
+        expectStreamsPartitionUnion(resolver, streams);
+        expect(keysOf(resolver, streams.reference)).toEqual(STATE_CLIMBS.unowned.map((uuid) => `${uuid}@40`));
+        expect(keysOf(resolver, streams.protectedStream)).toEqual(STATE_CLIMBS.owned.map((uuid) => `${uuid}@40`));
+      },
+    );
+  });
+
+  // The two PROTECTED page shapes are chosen per request, so one pull can cross
+  // from one to the other: a layout passing the candidate limit mid-replay, or
+  // the limit changing between deploys. Each page's cursor has to resume
+  // correctly on the other shape.
+  it.each(['syncClimbStats', 'syncClimbGrades'] as const)(
+    '%s: a pull that alternates driven and walked pages delivers every row once',
+    async (resolver) => {
+      const allDriven = await pullAllDocuments({
+        resolver,
+        scope: LAYOUT,
+        viewerId: AUDIENCE_OWNER,
+        audience: 'PROTECTED',
+        pageSize: 2,
+      });
+
+      const alternating: SyncDocument[] = [];
+      let cursor: SyncCursorInput | null = null;
+      let pageNumber = 0;
+      let hasMore = true;
+      while (hasMore) {
+        // Even pages are driven from the climbs, odd pages walk the cursor index.
+        vi.stubEnv('SYNC_PROTECTED_JOIN_MAX_CLIMBS', pageNumber % 2 === 0 ? '10000' : '0');
+        const page: SyncResult = await pullAudiencePage({
+          resolver,
+          scope: LAYOUT,
+          viewerId: AUDIENCE_OWNER,
+          audience: 'PROTECTED',
+          cursor,
+          limit: 2,
+        });
+        alternating.push(...(page.documents as SyncDocument[]));
+        cursor = page.cursor;
+        hasMore = page.hasMore;
+        pageNumber += 1;
+        expect(pageNumber).toBeLessThan(50);
+      }
+
+      // More than two pages, so both shapes ran more than once.
+      expect(pageNumber).toBeGreaterThan(3);
+      expect(alternating).toEqual(allDriven);
+    },
+  );
+
+  // Access is checked on every page, not once per pull. A follower removed
+  // between two pages gets nothing more from the private account, and the rows
+  // already delivered are the phone's to purge when `privacyChanged` arrives.
+  it.each(ALL_RESOLVERS)(
+    '%s: a follower removed between two pages stops receiving the private rows',
+    async (resolver) => {
+      vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '1');
+      const asFollower = { resolver, scope: LAYOUT, viewerId: AUDIENCE_FOLLOWER, audience: 'PROTECTED' } as const;
+      const asStranger = { ...asFollower, viewerId: AUDIENCE_STRANGER };
+      const followerKeys = keysOf(resolver, await pullAllDocuments(asFollower));
+      const strangerKeys = keysOf(resolver, await pullAllDocuments(asStranger));
+      // The fixture has to make the removal matter.
+      expect(followerKeys.length).toBeGreaterThan(strangerKeys.length);
+
+      const firstPage = await pullAudiencePage({ ...asFollower, limit: 2 });
+      expect(firstPage.hasMore).toBe(true);
+
+      await privacyMutations.removeFollower(null, { userId: AUDIENCE_FOLLOWER }, audienceContext(AUDIENCE_OWNER));
+
+      // From the same cursor, the removed follower now gets exactly what a
+      // stranger at that cursor gets.
+      const restForFormerFollower: SyncDocument[] = [];
+      const restForStranger: SyncDocument[] = [];
+      for (const [viewer, rest] of [
+        [asFollower, restForFormerFollower],
+        [asStranger, restForStranger],
+      ] as const) {
+        let cursor: SyncCursorInput = firstPage.cursor;
+        let hasMore = true;
+        while (hasMore) {
+          const page: SyncResult = await pullAudiencePage({ ...viewer, cursor, limit: 2 });
+          rest.push(...(page.documents as SyncDocument[]));
+          cursor = page.cursor;
+          hasMore = page.hasMore;
+          expect(rest.length).toBeLessThan(50);
+        }
+      }
+      expect(restForFormerFollower).toEqual(restForStranger);
+      for (const document of restForFormerFollower) {
+        expect(strangerKeys).toContain(documentKey(resolver, document));
+      }
+
+      // And a replay from epoch, which is what the phone does next, is a stranger's.
+      expect(keysOf(resolver, await pullAllDocuments(asFollower))).toEqual(strangerKeys);
+      const streams = await pullAudienceStreams({ resolver, scope: LAYOUT, viewerId: AUDIENCE_FOLLOWER });
+      expectStreamsPartitionUnion(resolver, streams);
+    },
+  );
 
   it('rejects an audience the schema does not define', async () => {
     await expect(

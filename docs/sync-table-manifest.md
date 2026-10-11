@@ -288,8 +288,9 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Scope: `board_type = $boardType` [`AND layout_id = $layoutId` `AND compatible_size_ids @> ARRAY[$sizeId]` when given;
   `sizeId` ignored for moonboard], limited to the climbs the caller may see. Seq: **`sync_seq`**. Hook: no.
 - `audience` (`enum SyncAudience { REFERENCE PROTECTED }`, optional) picks one of two disjoint streams that together
-  equal the scope above. `REFERENCE` is the public catalogue: no owner, no author flag, no policy row; the same for
-  every viewer and empty for spray. `PROTECTED` is the climbs with a Boardsesh author that the caller may see; on a
+  equal the scope above. `REFERENCE` is the climbs with no Boardsesh owner, no author flag and no policy row (by
+  ownership, not visibility: unowned drafts, unlisted and hidden climbs included); the same for every viewer and
+  empty for spray. `PROTECTED` is the climbs with a Boardsesh author that the caller may see; on a
   spray wall it is every climb the caller may see. Each stream has its own cursor. Omitted, the pull is the single
   stream every client older than the split sends, and its response is unchanged. The same argument applies to
   `syncClimbStats` and `syncClimbGrades`, where it selects the rows of that stream's climbs. A `PROTECTED` stats row

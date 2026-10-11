@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
+import { publicReferenceClimbSql } from '@boardsesh/db/queries';
 import type { ConnectionContext, SyncResult } from '@boardsesh/shared-schema';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 
@@ -204,7 +205,10 @@ describe.each([
       ),
     );
     expect(pageStatement).toContain(CANDIDATE_PREDICATE);
-    expect(pageStatement).toContain('NOT (bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND NOT EXISTS');
+    // The whole reference predicate is negated: it arrives parenthesized, so
+    // there is exactly one pair around it and none added here.
+    expect(pageStatement).toContain(`NOT ${publicReferenceClimbSql('bc')}`);
+    expect(pageStatement).not.toContain('NOT ((');
     expect(pageStatement).toContain('privacy_owner');
     expect(pageStatement).not.toContain(`EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = ${table}.climb_uuid`);
   });
@@ -223,7 +227,10 @@ describe.each([
     expect(pageStatement).toContain(`FROM ${table}`);
     expect(pageStatement).toContain(`EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = ${table}.climb_uuid`);
     expect(pageStatement).toContain(CANDIDATE_PREDICATE);
-    expect(pageStatement).toContain('NOT (bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND NOT EXISTS');
+    // The whole reference predicate is negated: it arrives parenthesized, so
+    // there is exactly one pair around it and none added here.
+    expect(pageStatement).toContain(`NOT ${publicReferenceClimbSql('bc')}`);
+    expect(pageStatement).not.toContain('NOT ((');
     expect(pageStatement).toContain('privacy_owner');
     expect(pageStatement).not.toContain('LATERAL');
   });
@@ -248,7 +255,8 @@ describe.each([
     expect(renderStatement(transactionDatabase.execute.mock.calls[1][0])).not.toContain('LATERAL');
   });
 
-  it.each(['not-a-number', '-1', '2.5', ''])('falls back to the default limit for %j', async (configured) => {
+  // `1e20` is an integer to `Number.isInteger` and overflows the `LIMIT` it is bound into.
+  it.each(['not-a-number', '-1', '2.5', '', '1e20'])('falls back to the default limit for %j', async (configured) => {
     vi.stubEnv('SYNC_PROTECTED_JOIN_MAX_CLIMBS', configured);
 
     await syncQueries[resolver](undefined, protectedArgs, connectionContext());

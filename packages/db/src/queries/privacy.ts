@@ -142,7 +142,7 @@ export function resourceLocationCondition(boardUuid: SQLWrapper, viewerId: Viewe
 }
 
 /**
- * Board types with no public reference set at all.
+ * Board types with no reference set at all.
  *
  * A snapshot artifact goes to a PUBLIC bucket under guessable keys
  * (`<prefix>/<board>/<layout>/*.db`) and carries every reference climb of that
@@ -179,9 +179,14 @@ function safeClimbAlias(alias: string): string {
 }
 
 /**
- * True for a climb that belongs to the public reference catalogue: no Boardsesh
- * owner, not Boardsesh-authored (an authored climb outlives its deleted account
- * with `user_id` cleared), and no privacy policy row.
+ * True for a reference climb: no Boardsesh owner, not Boardsesh-authored (an
+ * authored climb outlives its deleted account with `user_id` cleared), and no
+ * privacy policy row. Parenthesized, so it can be negated or ANDed as it is.
+ *
+ * The test is ownership, not visibility. An unowned climb that is a draft,
+ * unlisted or hidden by moderation passes, exactly as it is carried by the
+ * snapshot artifact and by the single-stream pull today. "Public" in the name
+ * says where these rows are published, not that every one of them is listed.
  *
  * `alias` names the `board_climbs` row: a table alias, or `board_climbs` itself
  * for an unaliased FROM. Combine with {@link REFERENCE_EXCLUDED_BOARD_TYPES},
@@ -195,7 +200,7 @@ function safeClimbAlias(alias: string): string {
  */
 export function publicReferenceClimbSql(alias: string): string {
   const climb = safeClimbAlias(alias);
-  return `${climb}.user_id IS NULL AND NOT ${climb}.is_boardsesh_authored AND NOT EXISTS (SELECT 1 FROM content_privacy ${REFERENCE_PRIVACY_ALIAS} WHERE ${REFERENCE_PRIVACY_ALIAS}.entity_type = 'climb' AND ${REFERENCE_PRIVACY_ALIAS}.entity_id = ${climb}.uuid)`;
+  return `(${climb}.user_id IS NULL AND NOT ${climb}.is_boardsesh_authored AND NOT EXISTS (SELECT 1 FROM content_privacy ${REFERENCE_PRIVACY_ALIAS} WHERE ${REFERENCE_PRIVACY_ALIAS}.entity_type = 'climb' AND ${REFERENCE_PRIVACY_ALIAS}.entity_id = ${climb}.uuid))`;
 }
 
 /**
@@ -207,8 +212,8 @@ export function publicReferenceClimbSql(alias: string): string {
  * Boardsesh account that set the climb, and is NULL on every imported
  * manufacturer climb. `is_boardsesh_authored` is what account deletion leaves
  * behind once it clears `user_id`. Either one keeps a climb out of the
- * reference catalogue, so this is the exact complement of the owner and author
- * terms of {@link publicReferenceClimbSql}.
+ * reference set, so this is the exact complement of the owner and author terms
+ * of {@link publicReferenceClimbSql}.
  *
  * The text is the predicate of `board_climbs_protected_sync_idx`, character for
  * character apart from the alias. Postgres only uses a partial index when the

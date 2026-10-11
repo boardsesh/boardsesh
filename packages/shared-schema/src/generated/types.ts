@@ -10281,9 +10281,11 @@ export type SyncAudience =
    */
   | 'PROTECTED'
   /**
-   * The public catalogue: climbs with no Boardsesh author and no privacy policy,
-   * plus their stats and grades. The same rows for every viewer, and the same
-   * rows the offline snapshot artifact carries. Always empty for spray walls.
+   * Climbs with no Boardsesh owner, not Boardsesh-authored, and with no privacy
+   * policy row, plus their stats and grades. The same rows for every viewer, and
+   * the same rows the offline snapshot artifact carries. Selected by ownership,
+   * not by visibility: an unowned draft, unlisted or hidden climb is included,
+   * as it is when no audience is given. Always empty for spray walls.
    */
   | 'REFERENCE';
 

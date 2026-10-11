@@ -1735,9 +1735,15 @@ with its own cursor:
 
 | Audience | Rows | Depends on the viewer |
 | --- | --- | --- |
-| `REFERENCE` | Climbs with no owner, no author flag and no policy row, plus their stats and grades. Exactly the rows an artifact carries. | No |
+| `REFERENCE` | Climbs with no Boardsesh owner, not Boardsesh-authored, and with no privacy policy row, plus their stats and grades. Exactly the rows an artifact carries. | No |
 | `PROTECTED` | Climbs that have, or once had, a Boardsesh author and that the caller may see, plus their stats and grades. | Yes |
 | omitted | Both, in one stream. What every client older than the split sends, and unchanged for them. | Yes |
+
+`REFERENCE` is selected by ownership, not by visibility. An unowned climb that is a
+draft, unlisted, or hidden by moderation is in it, exactly as it is in the snapshot
+artifact and in the pull with no audience today. The set is the same for every
+viewer; that is not a claim that every row in it is listed. The split does not change
+which rows these are.
 
 The partition rule: the two streams are disjoint, and together they are exactly the
 rows the same request returns with no audience. A climb the caller may see that is
@@ -1777,18 +1783,29 @@ Details that differ by stream:
   index to return 252 rows. A scope with more than 10,000 candidates
   (`SYNC_PROTECTED_JOIN_MAX_CLIMBS`) falls back to the cursor-order walk the other
   streams use. Both shapes return the same pages, and both run under the serial-plan
-  guard.
+  guard. Setting the variable to 0 is not an off switch: it sends every layout down
+  the slower walk.
+- **Steady-state cost.** Neither shape is cheap between privacy events, because this
+  stream's cursor does not follow the table. An empty page echoes the cursor it was
+  given, so a sparse stream's cursor stays at the last protected row delivered,
+  however far the rest of the board has moved on. The driven page therefore costs the
+  same at the tail as from epoch: about 30,000 buffers and 20 ms for Kilter 1 on a
+  local fixture of its size, 3,212 buffers on a 400-candidate fixture. The walk passes
+  every stats or grades row changed since that cursor, on every pull. The server does
+  not limit this; the client is expected to bound how often it pulls the protected
+  stats and grades streams.
 
 What moves a row between streams, and whether a phone hears about it:
 
 | Change | Row bumped | How it reaches a phone |
 | --- | --- | --- |
 | Account made private or public, follow approved or removed, climb audience changed | No | `privacyChanged`, then a `PROTECTED` replay from epoch |
-| Account deleted | Yes: setting the author flag and clearing the owner each bump it | The retained public climb stays in `PROTECTED` and arrives again past the old cursor |
+| Account deleted, climb that was public | Yes: setting the author flag and clearing the owner each bump it | The retained climb stays in `PROTECTED` and arrives again past the old cursor |
+| Account deleted, climb that was restricted | Yes, the same two bumps | Nothing delivers it. Its ownerless policy row lets nobody see it, so it leaves `PROTECTED` for every viewer and no stream carries the bump. A phone drops its copy only on `privacyChanged` |
 | Climb hidden, unlisted, published or edited | Yes | The ordinary delta of the stream that holds it |
 | Climb hard-deleted | Tombstone | `syncDeletions`, whichever stream held it |
 
-Nothing can move a catalogue climb out of `REFERENCE` without a bump: a policy row
+Nothing can move a reference climb out of `REFERENCE` without a bump: a policy row
 needs an owner, and `setContentAudience` refuses a climb that has none.
 
 The client half (two cursors per table, and a privacy event that resets only the

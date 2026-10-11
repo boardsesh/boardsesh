@@ -511,9 +511,12 @@ arguments: `layoutId` and `sizeId` (see **Per-board selective sync** below),
 
 `audience` splits a board's pull into two streams with separate cursors (#6306):
 
-- `REFERENCE`: the public catalogue. Climbs with no owner, no author flag and no
-  policy row, plus their stats and grades. The same rows for every viewer, and
-  exactly the rows a snapshot artifact carries. Always empty for spray walls.
+- `REFERENCE`: climbs with no Boardsesh owner, not Boardsesh-authored, and with
+  no privacy policy row, plus their stats and grades. The same rows for every
+  viewer, and exactly the rows a snapshot artifact carries. Selected by
+  ownership, not visibility: unowned drafts, unlisted and moderation-hidden
+  climbs are included, as they are with no audience. Always empty for spray
+  walls.
 - `PROTECTED`: climbs with a Boardsesh author that the caller may see, plus their
   stats and grades. On a spray wall, every climb the caller may see there.
 - omitted: both in one stream, which is what every client older than the split

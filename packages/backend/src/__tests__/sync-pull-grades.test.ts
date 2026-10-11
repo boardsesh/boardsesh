@@ -9,6 +9,7 @@ import {
   AUDIENCE_LAYOUT_ID,
   AUDIENCE_OTHER_SIZE_ID,
   AUDIENCE_OWNER,
+  AUDIENCE_PENDING_FOLLOWER,
   AUDIENCE_SIZE_ID,
   AUDIENCE_SPRAY_LAYOUT_ID,
   AUDIENCE_STRANGER,
@@ -232,6 +233,9 @@ describe('syncClimbGrades — audience split', () => {
 
   // `ref-a` and `own-private` are graded at two angles, the rest at one.
   const REFERENCE_GRADES = ['ref-a@40', 'ref-a@45', 'ref-b@40', 'ref-size-7@40'];
+  // Without an accepted follow: the public account's climb, the deleted
+  // account's retained one, and the private account's current Public choice.
+  const OPEN_TO_EVERYONE = ['deleted-public@40', 'own-public-consent@40', 'own-public@40'];
   const PROTECTED_GRADES = {
     [AUDIENCE_OWNER]: [
       'deleted-public@40',
@@ -239,16 +243,21 @@ describe('syncClimbGrades — audience split', () => {
       'own-private-size-7@40',
       'own-private@40',
       'own-private@45',
+      'own-public-consent@40',
       'own-public@40',
+      'own-stale-consent@40',
     ],
     [AUDIENCE_FOLLOWER]: [
       'deleted-public@40',
       'own-private-size-7@40',
       'own-private@40',
       'own-private@45',
+      'own-public-consent@40',
       'own-public@40',
+      'own-stale-consent@40',
     ],
-    [AUDIENCE_STRANGER]: ['deleted-public@40', 'own-public@40'],
+    [AUDIENCE_PENDING_FOLLOWER]: OPEN_TO_EVERYONE,
+    [AUDIENCE_STRANGER]: OPEN_TO_EVERYONE,
   };
 
   beforeEach(async () => {
@@ -302,13 +311,15 @@ describe('syncClimbGrades — audience split', () => {
   });
 
   it('serves the same REFERENCE grades to every viewer', async () => {
-    const [asOwner, asFollower, asStranger] = await Promise.all(
+    const [asOwner, ...asEveryoneElse] = await Promise.all(
       AUDIENCE_VIEWERS.map((viewerId) =>
         pullAllDocuments({ resolver: RESOLVER, scope: LAYOUT, viewerId, audience: 'REFERENCE' }),
       ),
     );
-    expect(asFollower).toEqual(asOwner);
-    expect(asStranger).toEqual(asOwner);
+    expect(asEveryoneElse).toHaveLength(AUDIENCE_VIEWERS.length - 1);
+    for (const asAnotherViewer of asEveryoneElse) {
+      expect(asAnotherViewer).toEqual(asOwner);
+    }
   });
 
   it('returns the same PROTECTED pages whether driven from the climbs or walked in cursor order', async () => {
