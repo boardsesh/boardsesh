@@ -2,6 +2,7 @@ import { GraphQLError } from 'graphql';
 import { canAccessResource, canAccessResourceWithoutLink, getResourcePrivacy } from '../../../services/privacy';
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type { BoardConnectionHolder, ResolvedBoard } from '@boardsesh/shared-schema';
@@ -93,8 +94,7 @@ export function candidateToActiveBoard(candidate: SerialCandidateBoard): ActiveP
 type BoardPresenceReadDb = Pick<typeof db, 'select'>;
 type BoardPresenceWriteDb = Pick<typeof db, 'insert'>;
 type BoardPresenceSerialTransactionDb = BoardPresenceReadDb & BoardSerialWriteCommandDb;
-type Database = typeof db;
-type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+type BoardPresenceClaimDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 type ChosenBoardLookup = {
   board: ActivePresenceBoard;
@@ -293,7 +293,7 @@ export function canClaimSerialForBoard(board: Pick<SelectedConnectBoard, 'ownerI
 export async function claimSerialForBoard(
   board: SelectedConnectBoard,
   serial: string,
-  commandDb: Database | Transaction = db,
+  commandDb: BoardPresenceClaimDb = db,
 ): Promise<SelectedConnectBoard> {
   try {
     const updated = await commandDb.transaction(async (claimTx) => {
