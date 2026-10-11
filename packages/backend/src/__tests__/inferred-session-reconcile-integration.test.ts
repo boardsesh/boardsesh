@@ -258,6 +258,35 @@ describe('reconcileInferredSessions (real DB)', () => {
     expect(await ticksForUser()).toHaveLength(3);
   });
 
+  it('reads a legacy private source as unlisted when a bridge merges it with a public one', async () => {
+    await insertTick(BASE);
+    await insertTick(BASE + 10 * HOUR);
+    await reconcileAt(BASE);
+    await reconcileAt(BASE + 10 * HOUR);
+    const [morning] = await sessionsForUser();
+    // A session written before resource policies existed: only the legacy switch.
+    await db
+      .delete(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, morning.id)));
+    await db.update(dbSchema.boardSessions).set({ isPublic: false }).where(eq(dbSchema.boardSessions.id, morning.id));
+
+    await insertTick(BASE + 5 * HOUR);
+    await reconcileAt(BASE + 5 * HOUR);
+
+    const [merged] = await sessionsForUser();
+    const [privacy] = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, merged.id)));
+    expect(privacy.audience).toBe('unlisted');
+    const [row] = await db
+      .select({ isPublic: dbSchema.boardSessions.isPublic })
+      .from(dbSchema.boardSessions)
+      .where(eq(dbSchema.boardSessions.id, merged.id));
+    expect(row.isPublic).toBe(false);
+    expect(await ticksForUser()).toHaveLength(3);
+  });
+
   it('copies the source audience when editing a tick splits its session', async () => {
     await insertTick(BASE);
     const moved = await insertTick(BASE + 30 * MINUTE);

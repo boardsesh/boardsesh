@@ -1,4 +1,4 @@
-import { userActivityVisibilityCondition } from '@boardsesh/db/queries';
+import { resourceAccessCondition, userActivityVisibilityCondition } from '@boardsesh/db/queries';
 export {
   approvedFollowerCondition,
   boardIdentityVisibleCondition,
@@ -8,7 +8,7 @@ export {
   resourceLocationCondition,
   sessionBoardLocationCondition,
 } from '@boardsesh/db/queries';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as schema from '@boardsesh/db/schema';
 import {
@@ -202,14 +202,30 @@ async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId
     inheritFollowers: resource.inheritFollowers,
   };
 }
+/**
+ * Both readings of one resource from a single policy load: `withLink` is what
+ * an invite link or UUID opens, `withoutLink` is discovery (listings, numeric
+ * IDs, slugs), where an unlisted resource needs the viewer to hold it already.
+ */
+export async function resourceAccess(
+  kind: PrivacyResourceKind,
+  resourceId: string,
+  viewerId: ViewerId,
+): Promise<{ withLink: boolean; withoutLink: boolean }> {
+  const resource = await getResourcePrivacy(kind, resourceId);
+  if (!resource) return { withLink: false, withoutLink: false };
+  const viewer = await resourceViewer(resource, viewerId);
+  return {
+    withLink: canReadResource(resource.audience, viewer),
+    withoutLink: canReadResource(resource.audience === 'unlisted' ? 'invite_only' : resource.audience, viewer),
+  };
+}
 export async function canAccessResource(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
 ): Promise<boolean> {
-  const resource = await getResourcePrivacy(kind, resourceId);
-  if (!resource) return false;
-  return canReadResource(resource.audience, await resourceViewer(resource, viewerId));
+  return (await resourceAccess(kind, resourceId, viewerId)).withLink;
 }
 /** Numeric IDs, slugs and discovery are not unlisted-link capabilities. */
 export async function canAccessResourceWithoutLink(
@@ -217,12 +233,7 @@ export async function canAccessResourceWithoutLink(
   resourceId: string,
   viewerId: ViewerId,
 ): Promise<boolean> {
-  const resource = await getResourcePrivacy(kind, resourceId);
-  if (!resource) return false;
-  return canReadResource(
-    resource.audience === 'unlisted' ? 'invite_only' : resource.audience,
-    await resourceViewer(resource, viewerId),
-  );
+  return (await resourceAccess(kind, resourceId, viewerId)).withoutLink;
 }
 export async function requireResourceAccess(
   kind: PrivacyResourceKind,
@@ -263,7 +274,26 @@ export async function canViewActivityIdentity(
  * who already hold it. The item itself stays visible either way.
  */
 export async function canViewBoardIdentity(boardUuid: string | null | undefined, viewerId: ViewerId): Promise<boolean> {
-  return !!boardUuid && canAccessResourceWithoutLink('board', boardUuid, viewerId);
+  return !!boardUuid && (await visibleBoardIdentityUuids([boardUuid], viewerId)).has(boardUuid);
+}
+/** `canViewBoardIdentity` for a page of items: one query for every board they name. */
+export async function visibleBoardIdentityUuids(
+  boardUuids: readonly (string | null | undefined)[],
+  viewerId: ViewerId,
+): Promise<Set<string>> {
+  const candidates = [...new Set(boardUuids.filter((boardUuid): boardUuid is string => !!boardUuid))];
+  if (candidates.length === 0) return new Set();
+  const rows = await db
+    .select({ uuid: schema.userBoards.uuid })
+    .from(schema.userBoards)
+    .where(
+      and(
+        inArray(schema.userBoards.uuid, candidates),
+        isNull(schema.userBoards.deletedAt),
+        resourceAccessCondition('board', schema.userBoards.uuid, viewerId, { allowUnlistedLink: false }),
+      ),
+    );
+  return new Set(rows.map((row) => row.uuid));
 }
 
 export type PrivacyExecutor = Pick<typeof db, 'select' | 'insert'>;

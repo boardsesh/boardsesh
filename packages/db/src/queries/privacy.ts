@@ -40,7 +40,15 @@ export function resourceAccessCondition(
   kind: PrivacyResourceKind,
   resourceIdColumn: SQLWrapper,
   viewerId: ViewerId,
-  options: { allowUnlistedLink?: boolean } = {},
+  options: {
+    allowUnlistedLink?: boolean;
+    /**
+     * With `allowUnlistedLink: false`, still treat an unlisted resource as open
+     * where this holds (a listing's "the viewer is already in it"), in the same
+     * single lookup rather than a second access check.
+     */
+    unlistedWhen?: SQL;
+  } = {},
 ): SQL {
   const source =
     kind === 'board'
@@ -51,7 +59,10 @@ export function resourceAccessCondition(
       CASE WHEN privacy_session.is_public THEN 'public' ELSE 'unlisted' END AS audience FROM board_sessions privacy_session`;
   const audienceIsPublic =
     options.allowUnlistedLink === false
-      ? sql`COALESCE(privacy_override.audience, privacy_resource.audience) = 'public'`
+      ? options.unlistedWhen
+        ? sql`(COALESCE(privacy_override.audience, privacy_resource.audience) = 'public'
+          OR (COALESCE(privacy_override.audience, privacy_resource.audience) = 'unlisted' AND ${options.unlistedWhen}))`
+        : sql`COALESCE(privacy_override.audience, privacy_resource.audience) = 'public'`
       : sql`COALESCE(privacy_override.audience, privacy_resource.audience) IN ('public', 'unlisted')`;
   const resourceCondition = sql`EXISTS (SELECT 1 FROM (${source}) privacy_resource
     LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = ${kind} AND privacy_override.resource_id = privacy_resource.id

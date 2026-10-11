@@ -11,7 +11,7 @@ import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
-import { canAccessResource, canViewBoardIdentity, contentVisibilityCondition } from '../../../services/privacy';
+import { canAccessResource, contentVisibilityCondition, visibleBoardIdentityUuids } from '../../../services/privacy';
 import { redactBoardIdentity } from '../../../services/board-session-privacy';
 import {
   socialEntityPrivacyCondition,
@@ -254,13 +254,9 @@ export const activityFeedQueries = {
     const commentCountMap = await getCommentCountMap(resultRows, myUserId);
     // Each row follows its author; the wall it names is shown only to people
     // who may see that wall.
-    const boardUuids = [...new Set(resultRows.flatMap((row) => (row.boardUuid ? [row.boardUuid] : [])))];
-    const visibleBoardUuids = new Set(
-      (
-        await Promise.all(
-          boardUuids.map(async (boardUuid) => ((await canViewBoardIdentity(boardUuid, myUserId)) ? boardUuid : null)),
-        )
-      ).filter((boardUuid): boardUuid is string => boardUuid !== null),
+    const visibleBoardUuids = await visibleBoardIdentityUuids(
+      resultRows.map((row) => row.boardUuid),
+      myUserId,
     );
     const items = resultRows.map((row) =>
       mapFeedItemToGraphQL(

@@ -1,8 +1,8 @@
 import {
   canAccessResource,
-  canAccessResourceWithoutLink,
   canViewActivityIdentity,
   canViewResourceLocation,
+  resourceAccess,
   resourceAccessCondition,
 } from './privacy';
 import { and, desc, eq, exists, gt, inArray, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
@@ -551,15 +551,12 @@ function recentParticipantRowExists(userCondition: SQL, now: Date): SQL {
  * confirms the latter afterwards.
  */
 function visibilityPrefilter(viewerId: string | null, now: Date): SQL {
-  const listed = resourceAccessCondition('session', boardSessions.id, viewerId, { allowUnlistedLink: false });
-  if (!viewerId) return listed;
-  return anyOf(
-    listed,
-    allOf(
-      resourceAccessCondition('session', boardSessions.id, viewerId),
-      recentParticipantRowExists(eq(dbSchema.boardSessionParticipants.userId, viewerId), now),
-    ),
-  );
+  return resourceAccessCondition('session', boardSessions.id, viewerId, {
+    allowUnlistedLink: false,
+    unlistedWhen: viewerId
+      ? recentParticipantRowExists(eq(dbSchema.boardSessionParticipants.userId, viewerId), now)
+      : undefined,
+  });
 }
 
 /**
@@ -829,17 +826,16 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
       : live;
   if (shortlist.length === 0) return [];
 
-  // `listed` is discovery access (no unlisted link); `linked` is what the
-  // invite link opens. A session the viewer may only reach by link is listed
-  // only once the live roster shows them in it.
+  // `withoutLink` is discovery access; `withLink` is what the invite link
+  // opens. A session the viewer may only reach by link is listed only once the
+  // live roster shows them in it. One policy load per candidate.
   const sessionAccess = await Promise.all(
-    shortlist.map(async (candidate) => {
-      const listed = await canAccessResourceWithoutLink('session', candidate.id, viewerId);
-      return { listed, linked: listed || (await canAccessResource('session', candidate.id, viewerId)) };
-    }),
+    shortlist.map((candidate) => resourceAccess('session', candidate.id, viewerId)),
   );
   const rosters = await Promise.all(
-    shortlist.map((candidate, index) => (sessionAccess[index].linked ? loadRoster(candidate.id) : Promise.resolve([]))),
+    shortlist.map((candidate, index) =>
+      sessionAccess[index].withLink ? loadRoster(candidate.id) : Promise.resolve([]),
+    ),
   );
   const withRosters = shortlist.flatMap((candidate, index) => {
     const roster = rosters[index];
@@ -847,7 +843,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
       viewerId !== null &&
       (candidate.createdByUserId === viewerId || roster.some((member) => member.userId === viewerId));
     // Visibility: an unlisted or restricted session is pruned for everyone not in it.
-    if (!sessionAccess[index].listed && !(sessionAccess[index].linked && viewerIsMember)) return [];
+    if (!sessionAccess[index].withoutLink && !(sessionAccess[index].withLink && viewerIsMember)) return [];
     return [{ candidate, roster, viewerIsMember }];
   });
   if (withRosters.length === 0) return [];
