@@ -173,36 +173,54 @@ describe('ConsentProvider shared-cookie response races', () => {
   });
 
   it.each(['read', 'write'] as const)(
-    'keeps an external withdrawal when a delayed account %s returns a grant',
+    'keeps an external withdrawal when a delayed account %s returns a grant, without writing it to the account',
     async (operation) => {
       let resolveServer!: (response: unknown) => void;
       const delayedServer = new Promise<unknown>((resolve) => {
         resolveServer = resolve;
       });
       let delayed = false;
+      // The account as the backend holds it: reads return it, writes replace it.
+      let accountAnswer: ConsentRecord | null = operation === 'read' ? grantedRecord : null;
       transport.request.mockImplementation((query: string, variables?: { input: { analytics: string } }) => {
         const reading = query === GET_MY_ANALYTICS_CONSENT;
+        if (!reading) accountAnswer = variables?.input.analytics === 'denied' ? deniedRecord : grantedRecord;
         if (!delayed && reading === (operation === 'read')) {
           delayed = true;
           return delayedServer;
         }
-        if (reading) return Promise.resolve({ myAnalyticsConsent: operation === 'write' ? null : grantedRecord });
-        return Promise.resolve({
-          setAnalyticsConsent: variables?.input.analytics === 'denied' ? deniedRecord : grantedRecord,
-        });
+        return Promise.resolve(
+          reading ? { myAnalyticsConsent: accountAnswer } : { setAnalyticsConsent: accountAnswer },
+        );
       });
       const { ConsentProvider, useConsent } = await import('../consent-provider');
       function ConsentProbe() {
-        const { snapshot } = useConsent();
-        return <div data-testid="choice">{snapshot.record?.analytics}</div>;
+        const { snapshot, decide } = useConsent();
+        return (
+          <>
+            <div data-testid="choice">{String(snapshot.record?.analytics)}</div>
+            <button
+              onClick={() => {
+                void decide('granted');
+              }}
+            >
+              Allow
+            </button>
+          </>
+        );
       }
       const view = render(
         <ConsentProvider>
           <ConsentProbe />
         </ConsentProvider>,
       );
+      if (operation === 'write') {
+        // The signed-out cookie grant does not answer for this account: it asks again.
+        await waitFor(() => expect(view.getByTestId('choice').textContent).toBe('undefined'));
+        fireEvent.click(view.getByRole('button', { name: 'Allow' }));
+      }
       await waitFor(() => expect(delayed).toBe(true));
-      // Another origin writes the shared cookie while this tab remains in the background.
+      // A signed-out tab on the other origin writes the shared cookie while this request is in flight.
       cookies = `boardsesh-consent=${serializeConsentCookieValue(deniedRecord)}`;
       writtenCookies = [];
       await act(async () => {
@@ -213,14 +231,40 @@ describe('ConsentProvider shared-cookie response races', () => {
       });
       await waitFor(() => expect(view.getByTestId('choice').textContent).toBe('denied'));
       await waitFor(() =>
-        expect(transport.request).toHaveBeenCalledWith(
-          expect.anything(),
-          expect.objectContaining({ input: expect.objectContaining({ analytics: 'denied' }) }),
-          'account-1-token',
-        ),
+        expect(transport.request).toHaveBeenLastCalledWith(GET_MY_ANALYTICS_CONSENT, undefined, 'account-1-token'),
+      );
+      expect(transport.request).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ input: expect.objectContaining({ analytics: 'denied' }) }),
+        'account-1-token',
       );
       expect(writtenCookies.every((cookie) => !cookie.includes('.granted.'))).toBe(true);
       expect(cookies).toContain('.denied.');
     },
   );
+
+  it('asks again after sign-in when the cookie grant was given signed out and the account has no answer', async () => {
+    transport.request.mockResolvedValue({ myAnalyticsConsent: null });
+    const { ConsentProvider, useConsent } = await import('../consent-provider');
+    const consent = await import('@/app/lib/consent');
+    function ConsentProbe() {
+      const { granted, snapshot } = useConsent();
+      return (
+        <div data-testid="choice">
+          {String(snapshot.record?.analytics)}:{String(granted)}:{String(snapshot.accountResolved)}
+        </div>
+      );
+    }
+    const view = render(
+      <ConsentProvider>
+        <ConsentProbe />
+      </ConsentProvider>,
+    );
+    await waitFor(() => expect(view.getByTestId('choice').textContent).toBe('undefined:false:true'));
+    expect(transport.request).toHaveBeenCalledExactlyOnceWith(GET_MY_ANALYTICS_CONSENT, undefined, 'account-1-token');
+    expect(consent.hasAnalyticsConsent()).toBe(false);
+    // The cookie is cleared, so the banner is visible again.
+    expect(cookies).toBe('boardsesh-consent=');
+    expect(document.documentElement.dataset.consent).toBeUndefined();
+  });
 });

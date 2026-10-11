@@ -4,8 +4,10 @@ import {
   CONSENT_VERSION,
   isAnalyticsConsentChoice,
   isAnalyticsGranted,
+  isConsentRecordOwnedBy,
   isConsentSource,
   isCurrentConsentRecord,
+  isSameConsentRecord,
   needsPrompt,
   resolveConsent,
   type ConsentRecord,
@@ -132,5 +134,29 @@ describe('type guards', () => {
     expect(isConsentSource('android')).toBe(true);
     expect(isConsentSource('unknown')).toBe(false);
     expect(isConsentSource(1)).toBe(false);
+  });
+});
+
+describe('device answer ownership', () => {
+  it('belongs only to the account that was signed in when it was given', () => {
+    expect(isConsentRecordOwnedBy({ ...localGrant, ownerAccountId: 'account-a' }, 'account-a')).toBe(true);
+    expect(isConsentRecordOwnedBy({ ...localGrant, ownerAccountId: 'account-a' }, 'account-b')).toBe(false);
+    expect(isConsentRecordOwnedBy({ ...localGrant, ownerAccountId: null }, 'account-a')).toBe(false);
+    expect(isConsentRecordOwnedBy(localGrant, 'account-a')).toBe(false);
+    expect(isConsentRecordOwnedBy({ ...localGrant, ownerAccountId: 'account-a' }, null)).toBe(false);
+    expect(isConsentRecordOwnedBy(null, 'account-a')).toBe(false);
+  });
+
+  it('compares records field by field, owner included, ignoring key order and wire fields', () => {
+    const reordered = { source: 'ios', decidedAt: localGrant.decidedAt, version: 1, analytics: 'granted' } as const;
+    expect(isSameConsentRecord(localGrant, reordered)).toBe(true);
+    expect(isSameConsentRecord(localGrant, { ...localGrant, __typename: 'AnalyticsConsent' } as ConsentRecord)).toBe(
+      true,
+    );
+    expect(isSameConsentRecord(localGrant, { ...localGrant, ownerAccountId: null })).toBe(true);
+    expect(isSameConsentRecord(localGrant, { ...localGrant, ownerAccountId: 'account-a' })).toBe(false);
+    expect(isSameConsentRecord(localGrant, localDenial)).toBe(false);
+    expect(isSameConsentRecord(null, null)).toBe(true);
+    expect(isSameConsentRecord(localGrant, null)).toBe(false);
   });
 });

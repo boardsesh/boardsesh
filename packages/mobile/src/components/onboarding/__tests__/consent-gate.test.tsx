@@ -166,6 +166,72 @@ describe('ConsentGate', () => {
     expect(isProductAnalyticsGranted()).toBe(false);
   });
 
+  it.each([
+    ['signed out', null],
+    ['under another account', 'account-b'],
+  ])('waits for the account read before trusting an answer given %s, then asks again', async (_description, owner) => {
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'account-a';
+    coordinator.snapshot = { accountResolved: false, syncing: true };
+    let finishRead!: () => void;
+    const accountRead = new Promise<void>((resolve) => {
+      finishRead = resolve;
+    });
+    coordinator.sync.mockReturnValue(accountRead);
+    updateConsentState({ record: { ...granted, ownerAccountId: owner } });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(getConsentSnapshot().settled).toBe(false);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(isProductAnalyticsGranted()).toBe(false);
+
+    // The account has no answer of its own: the coordinator clears the device answer.
+    await act(async () => {
+      updateConsentState({ record: null, accountResolved: true });
+      finishRead();
+    });
+    expect(router.push).toHaveBeenCalledWith('/privacy-consent');
+    expect(getConsentSnapshot().settled).toBe(false);
+    expect(isProductAnalyticsGranted()).toBe(false);
+  });
+
+  it('settles at once on an answer this account gave, before the account read returns', async () => {
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'account-a';
+    coordinator.snapshot = { accountResolved: false, syncing: true };
+    coordinator.sync.mockImplementation(() => new Promise<void>(() => {}));
+    updateConsentState({ record: { ...granted, ownerAccountId: 'account-a' } });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(getConsentSnapshot().settled).toBe(true);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(isProductAnalyticsGranted()).toBe(false);
+  });
+
+  it('settles on a signed-out answer after five seconds offline without asking or tracking', async () => {
+    vi.useFakeTimers();
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'account-a';
+    coordinator.snapshot = { accountResolved: false, syncing: true };
+    coordinator.sync.mockImplementation(() => new Promise<void>(() => {}));
+    updateConsentState({ record: granted });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4999);
+    });
+    expect(getConsentSnapshot().settled).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getConsentSnapshot().settled).toBe(true);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(isProductAnalyticsGranted()).toBe(false);
+  });
+
   it.each(['granted', 'denied'] as const)(
     'settles a known %s answer without reopening the prompt',
     async (analytics) => {

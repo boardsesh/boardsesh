@@ -1,14 +1,23 @@
-import { CONSENT_VERSION, isAnalyticsConsentChoice, isConsentSource, type ConsentRecord } from '@boardsesh/consent';
+import {
+  CONSENT_VERSION,
+  isAnalyticsConsentChoice,
+  isConsentSource,
+  type DeviceConsentRecord,
+} from '@boardsesh/consent';
 import { getPreference, setPreference, removePreference } from './preference-store';
 import type { PendingConsentDecision } from '@boardsesh/consent';
 import { getConsentSnapshot } from './consent-state';
 
 const CONSENT_KEY = 'analyticsConsent';
-export function readLatestExternalConsent(): ConsentRecord | null {
+export function readLatestExternalConsent(): DeviceConsentRecord | null {
   return getConsentSnapshot().record;
 }
 
-export async function readLocalConsent(): Promise<ConsentRecord | null> {
+/**
+ * The stored device answer. An answer saved before answers carried an account,
+ * or given signed out, reads back with no owner and is never written to an account.
+ */
+export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
   const candidate = await getPreference<unknown>(CONSENT_KEY);
   if (!candidate || typeof candidate !== 'object') return null;
   const record = candidate as Record<string, unknown>;
@@ -16,16 +25,22 @@ export async function readLocalConsent(): Promise<ConsentRecord | null> {
   if (typeof record.version !== 'number' || !Number.isInteger(record.version) || record.version < CONSENT_VERSION)
     return null;
   if (typeof record.decidedAt !== 'string' || !Number.isFinite(Date.parse(record.decidedAt))) return null;
-  return record as ConsentRecord;
+  return {
+    analytics: record.analytics,
+    version: record.version,
+    decidedAt: record.decidedAt,
+    source: record.source,
+    ownerAccountId: typeof record.ownerAccountId === 'string' ? record.ownerAccountId : null,
+  };
 }
 
 let localWrites: Promise<void> = Promise.resolve();
-export function persistLocalConsent(record: ConsentRecord | null): Promise<void> {
+export function persistLocalConsent(record: DeviceConsentRecord | null): Promise<void> {
   localWrites = localWrites.catch(() => {}).then(() => writeLocalConsent(record));
   return localWrites;
 }
 
-async function writeLocalConsent(record: ConsentRecord | null): Promise<void> {
+async function writeLocalConsent(record: DeviceConsentRecord | null): Promise<void> {
   if (record) await setPreference(CONSENT_KEY, record);
   else await removePreference(CONSENT_KEY);
 }

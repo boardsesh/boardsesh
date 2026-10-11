@@ -1,12 +1,15 @@
 import {
   CONSENT_VERSION,
   isAnalyticsConsentChoice,
+  isConsentRecordOwnedBy,
   isConsentSource,
   isCurrentConsentRecord,
+  isSameConsentRecord,
   resolveConsent,
   type AnalyticsConsentChoice,
   type ConsentRecord,
   type ConsentSource,
+  type DeviceConsentRecord,
 } from './consent-record';
 
 export type ConsentSyncInput = {
@@ -44,21 +47,94 @@ export function parsePendingConsentDecision(candidate: unknown): PendingConsentD
   };
 }
 export type ConsentSyncSnapshot = {
-  record: ConsentRecord | null;
+  record: DeviceConsentRecord | null;
   ready: true;
   syncing: boolean;
   accountResolved: boolean;
   pending: boolean;
 };
 export type ConsentSyncOptions = {
-  initialRecord: ConsentRecord | null;
+  initialRecord: DeviceConsentRecord | null;
   readAccountConsent: (accountId: string) => Promise<ConsentRecord | null>;
   writeAccountConsent: (accountId: string, input: ConsentSyncInput) => Promise<ConsentRecord>;
-  persistLocalConsent: (record: ConsentRecord | null) => void | Promise<void>;
+  persistLocalConsent: (record: DeviceConsentRecord | null) => void | Promise<void>;
   loadPendingDecision?: (accountId: string) => Promise<PendingConsentDecision | null>;
   persistPendingDecision?: (accountId: string, pending: PendingConsentDecision | null) => Promise<void>;
   onError?: (error: unknown) => void;
 };
+
+/** The account's answer as this device's copy, bound to that account. Drops wire-only fields such as `__typename`. */
+function accountCopy(record: ConsentRecord, accountId: string): DeviceConsentRecord {
+  return {
+    analytics: record.analytics,
+    version: record.version,
+    decidedAt: record.decidedAt,
+    source: record.source,
+    ownerAccountId: accountId,
+  };
+}
+
+/**
+ * True when a device answer is strictly newer than the account's: a later
+ * consent version, or the same version decided later. An account answer under
+ * an older version counts as no answer.
+ */
+function isNewerThanAccount(local: ConsentRecord, server: ConsentRecord | null): boolean {
+  if (!isCurrentConsentRecord(server)) return true;
+  if (local.version !== server.version) return local.version > server.version;
+  return Date.parse(local.decidedAt) > Date.parse(server.decidedAt);
+}
+
+export type AccountConsentMerge = {
+  /** What this device holds afterwards. Null means ask again. */
+  record: DeviceConsentRecord | null;
+  /** The device answer to write to the account, or null to write nothing. */
+  push: DeviceConsentRecord | null;
+};
+
+/**
+ * Merge a stored device answer with the account answer just read.
+ *
+ * A device answer given while signed in to this account follows
+ * {@link resolveConsent}, and is written back only when it is strictly newer
+ * than the account's (its pending write was lost). A stored answer never
+ * overwrites a newer account answer, and never resurrects a grant over an
+ * account denial: only an explicit decision, with its compare-and-set token,
+ * can do that.
+ *
+ * A device answer given signed out or under another account is not this
+ * account's answer and is never written. Its denial still stops tracking on
+ * this device (merge rule 3). When the account has no current answer, the
+ * device holds none either: the prompt comes back and nothing is tracked until
+ * the climber answers for this account.
+ */
+export function mergeAccountConsent(
+  local: DeviceConsentRecord | null,
+  server: ConsentRecord | null,
+  accountId: string,
+): AccountConsentMerge {
+  const currentLocal = isCurrentConsentRecord(local) ? local : null;
+  const currentServer = isCurrentConsentRecord(server) ? server : null;
+  if (currentLocal !== null && isConsentRecordOwnedBy(currentLocal, accountId)) {
+    const resolved = resolveConsent(currentLocal, currentServer);
+    // Account denial wins (merge rule 2).
+    if (resolved !== currentLocal && resolved !== null) return { record: accountCopy(resolved, accountId), push: null };
+    // Same answer: hold the account's copy, so later comparisons use server stamps.
+    if (
+      currentServer !== null &&
+      currentServer.analytics === currentLocal.analytics &&
+      currentLocal.version <= currentServer.version
+    ) {
+      return { record: accountCopy(currentServer, accountId), push: null };
+    }
+    return { record: currentLocal, push: isNewerThanAccount(currentLocal, server) ? currentLocal : null };
+  }
+  if (currentServer === null) return { record: null, push: null };
+  if (currentServer.analytics === 'granted' && currentLocal?.analytics === 'denied') {
+    return { record: currentLocal, push: null };
+  }
+  return { record: accountCopy(currentServer, accountId), push: null };
+}
 
 /** Device decisions are immediate; account writes are serialized and bound to an account epoch. */
 export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
@@ -115,9 +191,19 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
             (local.version > stored.record.version ||
               !Number.isFinite(Date.parse(local.decidedAt)) ||
               Math.floor(Date.parse(local.decidedAt) / 1000) >= Math.floor(Date.parse(stored.record.decidedAt) / 1000));
-          pending = localDenialWins ? { record: local, basedOnDecidedAt: null } : stored;
-          publish({ record: pending.record, pending: true });
-          persistRecord(pending.record);
+          if (localDenialWins && !isConsentRecordOwnedBy(local, identity)) {
+            // A newer denial given signed out or under another account (or
+            // read from the shared cookie) supersedes this account's older
+            // grant on this device. It is not this account's answer, so it is
+            // kept here and never written; the superseded grant is dropped.
+            await persistPending(identity, null);
+            if (!isCurrent()) return;
+          } else {
+            pending = localDenialWins ? { record: local, basedOnDecidedAt: null } : stored;
+            const record = accountCopy(pending.record, identity);
+            publish({ record, pending: true });
+            persistRecord(record);
+          }
         }
         pendingLoaded = true;
       }
@@ -155,8 +241,9 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
           // Do not clear a newer decision that was made while the request was in flight.
           pending = null;
           explicitPendingGrant = null;
-          publish({ record: result, pending: false, accountResolved: true });
-          persistRecord(result);
+          const record = accountCopy(result, identity);
+          publish({ record, pending: false, accountResolved: true });
+          persistRecord(record);
           await persistPending(identity, null);
           if (pending) continue;
           return;
@@ -165,15 +252,12 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         if (!isCurrent()) return;
         serverRecord = result;
         if (readRevision !== revision || pending) continue;
-        const resolved = resolveConsent(snapshot.record, result);
-        publish({ record: resolved, accountResolved: true });
-        persistRecord(resolved);
-        // Fill an empty account, or propagate a device denial. Do not append on every launch.
-        if (
-          isCurrentConsentRecord(resolved) &&
-          (result === null || resolved.analytics !== result.analytics || resolved.version > result.version)
-        ) {
-          pending = { record: resolved, basedOnDecidedAt: result?.decidedAt ?? null };
+        const merged = mergeAccountConsent(snapshot.record, result, identity);
+        publish({ record: merged.record, accountResolved: true });
+        persistRecord(merged.record);
+        // Write only this account's own newer answer. Reads that agree append nothing.
+        if (merged.push) {
+          pending = { record: merged.push, basedOnDecidedAt: result?.decidedAt ?? null };
           publish({ pending: true });
           continue;
         }
@@ -221,11 +305,13 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
     sync,
     async decide(analytics: AnalyticsConsentChoice, source: ConsentSource): Promise<void> {
       revision += 1;
-      const record: ConsentRecord = {
+      // A decision made signed out stays on this device; one made signed in belongs to that account.
+      const record: DeviceConsentRecord = {
         analytics,
         source,
         version: CONSENT_VERSION,
         decidedAt: new Date().toISOString(),
+        ownerAccountId: accountId,
       };
       pending = accountId ? { record, basedOnDecidedAt: serverRecord?.decidedAt ?? null } : null;
       explicitPendingGrant = analytics === 'granted' ? pending : null;
@@ -242,13 +328,19 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
       }
       await sync();
     },
-    replaceLocalRecord(record: ConsentRecord | null) {
+    replaceLocalRecord(record: DeviceConsentRecord | null) {
       // A denial from the shared browser cookie beats an older in-flight grant too.
       if (pending) {
         if (!isCurrentConsentRecord(record) || record.analytics !== 'denied' || pending.record.analytics === 'denied')
           return;
         revision += 1;
-        pending = accountId ? { record, basedOnDecidedAt: serverRecord?.decidedAt ?? null } : null;
+        // Only an answer given under this account is written to it. A denial
+        // from the shared cookie or another sign-in stops tracking here and
+        // drops the superseded grant without touching the account.
+        pending =
+          accountId && isConsentRecordOwnedBy(record, accountId)
+            ? { record, basedOnDecidedAt: serverRecord?.decidedAt ?? null }
+            : null;
         explicitPendingGrant = null;
         publish({ record, pending: pending !== null });
         if (accountId) {
@@ -257,7 +349,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         }
         return;
       }
-      if (JSON.stringify(snapshot.record) === JSON.stringify(record)) return;
+      if (isSameConsentRecord(snapshot.record, record)) return;
       revision += 1;
       // The device cookie is shared across accounts and carries no account id.
       // Only a fresh account read can authorize an external grant for this user.

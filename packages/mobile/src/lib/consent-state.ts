@@ -1,7 +1,8 @@
-import { isAnalyticsGranted, needsPrompt, type ConsentRecord } from '@boardsesh/consent';
+import { isAnalyticsGranted, needsPrompt, type ConsentRecord, type DeviceConsentRecord } from '@boardsesh/consent';
 
 export type MobileConsentSnapshot = {
-  record: ConsentRecord | null;
+  /** The device answer; `ownerAccountId` says which account it was given under (none when signed out). */
+  record: DeviceConsentRecord | null;
   loaded: boolean;
   settled: boolean;
   killed: boolean;

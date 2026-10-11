@@ -3,7 +3,7 @@ import {
   CONSENT_COOKIE_NAME,
   parseConsentCookieValue,
   serializeConsentCookieValue,
-  type ConsentRecord,
+  type DeviceConsentRecord,
   type PendingConsentDecision,
 } from '@boardsesh/consent';
 import { getPreference, setPreference, removePreference } from './preference-store';
@@ -11,7 +11,12 @@ import { getConsentSnapshot, setBrowserConsentReader, updateConsentState } from 
 
 let observedCookie: string | undefined;
 
-export function readConsentCookie(): ConsentRecord | null {
+/**
+ * The shared cookie never names an account, so a record read from it has no
+ * owner and is never written to one. The in-memory record keeps the owner the
+ * coordinator gave it while the cookie is unchanged.
+ */
+export function readConsentCookie(): DeviceConsentRecord | null {
   if (typeof document === 'undefined') return null;
   const prefix = `${CONSENT_COOKIE_NAME}=`;
   const raw = document.cookie
@@ -37,11 +42,11 @@ export function readConsentCookie(): ConsentRecord | null {
 setBrowserConsentReader(readConsentCookie);
 export const readLatestExternalConsent = readConsentCookie;
 
-export async function readLocalConsent(): Promise<ConsentRecord | null> {
+export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
   return readConsentCookie();
 }
 
-export async function persistLocalConsent(record: ConsentRecord | null): Promise<void> {
+export async function persistLocalConsent(record: DeviceConsentRecord | null): Promise<void> {
   if (typeof document === 'undefined') return;
   const sharedDomain = ['boardsesh.com', 'www.boardsesh.com', 'app.boardsesh.com'].includes(location.hostname);
   document.cookie = `${CONSENT_COOKIE_NAME}=${record ? serializeConsentCookieValue(record) : ''}; Path=/; Max-Age=${record ? CONSENT_COOKIE_MAX_AGE_SECONDS : 0}; SameSite=Lax${sharedDomain ? '; Domain=.boardsesh.com' : ''}${location.protocol === 'https:' ? '; Secure' : ''}`;

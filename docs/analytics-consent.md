@@ -45,6 +45,27 @@ Because rule 2 lets the account override a newer device grant, a client must
 push a new decision with `setAnalyticsConsent` before it next resolves against
 the server.
 
+## Whose answer is it
+
+The device copy remembers the account that was signed in when the answer was
+given (`ownerAccountId` on `DeviceConsentRecord`; the app stores it beside the
+answer). An answer given signed out has no owner, and neither has one saved
+before this field existed. The web cookie never names an account, so every
+cookie answer is ownerless.
+
+`mergeAccountConsent` applies the merge rule only to an answer this device gave
+under the signed-in account. For anything else:
+
+| Device answer (signed out, other account, cookie) | Account answer | Device holds | Written to the account |
+| --- | --- | --- | --- |
+| any | none | nothing: ask again, no tracking until answered | nothing |
+| any | denied | the account's denial | nothing |
+| Allow | Allow | the account's Allow | nothing |
+| No thanks | Allow | its own No thanks (rule 3) | nothing |
+
+So on a shared phone or browser, one person's signed-out Allow never becomes
+another person's recorded consent: the second person is asked after signing in.
+
 ## The account copy
 
 `user_analytics_consent_events` (migration 0262) is append-only. The newest row
@@ -171,6 +192,29 @@ immediately, then is persisted as a pending write under that account before the
 network request. Offline withdrawals survive restart. Pending decisions are
 pushed before old account answers are merged, so changing No thanks to Allow
 is not immediately undone by the old account denial.
+
+Only two things are ever written to an account:
+
+1. A decision the climber makes on this device while signed in to it (`decide`),
+   including its durable retries.
+2. A stored answer this device gave under the same account that is strictly
+   newer than the account's (a later consent version, or the same version
+   decided later): a decision whose pending write was lost. A stored grant
+   never overwrites an account denial this way; that needs a fresh decision
+   and its compare-and-set token.
+
+A stored answer is never pushed over a newer account answer. Say No thanks on
+phone A, later Allow on phone B: when A comes back, the account stays Allow and
+no event is appended; A keeps its own No thanks (rule 3). A shared-cookie
+withdrawal that arrives while a grant is in flight stops tracking on this
+device and drops the grant, but is not written by this tab: the origin that
+took it writes it if it was signed in.
+
+The app's consent gate waits for the account read (at most 5 s, as for a
+first answer) before it trusts an answer that is not this account's. When the
+account has none, the prompt opens; when the read never returns, the gate
+settles on the device answer and tracking stays off until the account resolves.
+The website clears the cookie, which shows the banner again.
 
 The coordinator retains the precise last-server `decidedAt` for compare-and-set.
 The browser cookie rounds to whole seconds and is never used as a server token.

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { useRouter, useSegments, type Href } from 'expo-router';
-import { needsPrompt } from '@boardsesh/consent';
+import { isConsentRecordOwnedBy, needsPrompt } from '@boardsesh/consent';
 import { useAuth } from '../../providers/auth-provider';
 import { usePartyProfile } from '../../providers/party-profile-provider';
 import { useLaunchReady } from '../../providers/launch-ready-context';
@@ -28,6 +28,14 @@ export function ConsentGate(): null {
   const routeRef = useRef<readonly string[]>(segments);
   const serverWaitStartedAtRef = useRef<number | null>(null);
   routeRef.current = segments;
+  // An answer this device gave signed out, or under another account, does not
+  // answer for this account. Wait for the account read (capped below) to say
+  // whether the account has its own answer or the climber is asked again.
+  const awaitingAccountAnswer =
+    isAuthenticated &&
+    authenticatedUserId !== null &&
+    !consent.accountResolved &&
+    !isConsentRecordOwnedBy(consent.record, authenticatedUserId);
 
   useLayoutEffect(() => {
     updateConsentState({ killed, flagsResolved });
@@ -82,7 +90,7 @@ export function ConsentGate(): null {
       if (routeRef.current[0] === 'privacy-consent') router.dismiss();
       return;
     }
-    if (settled || !needsPrompt(consent.record)) {
+    if (settled || (!needsPrompt(consent.record) && !awaitingAccountAnswer)) {
       if (!settled) updateConsentState({ settled: true });
       if (!needsPrompt(consent.record) && routeRef.current[0] === 'privacy-consent') router.dismiss();
       return;
@@ -90,7 +98,13 @@ export function ConsentGate(): null {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ask = () => {
-      if (cancelled || !needsPrompt(getConsentSnapshot().record)) return;
+      if (cancelled) return;
+      if (!needsPrompt(getConsentSnapshot().record)) {
+        // The cap passed with a device answer still in place (offline): settle on
+        // it. Tracking stays off until this account's answer resolves.
+        updateConsentState({ settled: true });
+        return;
+      }
       if (routeRef.current[0] !== 'privacy-consent') router.push('/privacy-consent');
     };
     if (isAuthenticated) {
@@ -107,6 +121,7 @@ export function ConsentGate(): null {
     launchReady,
     consent.loaded,
     consent.record,
+    awaitingAccountAnswer,
     settled,
     killed,
     flagsResolved,

@@ -1,13 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   createConsentSyncCoordinator,
+  mergeAccountConsent,
   parsePendingConsentDecision,
   type ConsentSyncInput,
   type PendingConsentDecision,
 } from '../consent-sync';
-import type { ConsentRecord } from '../consent-record';
+import { needsPrompt, type ConsentRecord, type DeviceConsentRecord } from '../consent-record';
 const grant: ConsentRecord = { analytics: 'granted', version: 1, source: 'web', decidedAt: '2026-10-08T10:00:00.123Z' };
 const denial: ConsentRecord = { ...grant, analytics: 'denied' };
+/** A device answer given while signed in to `account-a`. */
+function ownedByA(record: ConsentRecord): DeviceConsentRecord {
+  return { ...record, ownerAccountId: 'account-a' };
+}
 function deferred<Result>() {
   let resolve!: (result: Result) => void;
   const promise = new Promise<Result>((complete) => {
@@ -15,7 +20,7 @@ function deferred<Result>() {
   });
   return { promise, resolve };
 }
-function setup(record: ConsentRecord | null = null) {
+function setup(record: DeviceConsentRecord | null = null) {
   const readAccountConsent = vi.fn(async (_accountId: string): Promise<ConsentRecord | null> => null);
   const writeAccountConsent = vi.fn(async (_accountId: string, _input: unknown): Promise<ConsentRecord> => grant);
   const persistLocalConsent = vi.fn();
@@ -117,13 +122,29 @@ describe('account consent synchronization', () => {
     expect(coordinator.getSnapshot().record?.analytics).toBe('denied');
     expect(writeAccountConsent).toHaveBeenLastCalledWith('account-a', expect.objectContaining({ analytics: 'denied' }));
   });
-  it('lets a shared-cookie withdrawal beat an older in-flight grant', async () => {
+  it('lets a shared-cookie withdrawal beat an older in-flight grant without writing it to the account', async () => {
+    const { coordinator, readAccountConsent, writeAccountConsent, persistPendingDecision } = setup();
+    readAccountConsent.mockResolvedValue(grant);
+    const first = deferred<ConsentRecord>();
+    writeAccountConsent.mockReturnValueOnce(first.promise);
+    const operation = coordinator.decide('granted', 'web');
+    await vi.waitFor(() => expect(writeAccountConsent).toHaveBeenCalledTimes(1));
+    // The cookie carries no account: it may come from a signed-out tab on the other origin.
+    coordinator.replaceLocalRecord(denial);
+    expect(coordinator.getSnapshot().record?.analytics).toBe('denied');
+    first.resolve(grant);
+    await operation;
+    expect(coordinator.getSnapshot()).toMatchObject({ record: denial, pending: false });
+    expect(writeAccountConsent).toHaveBeenCalledOnce();
+    expect(persistPendingDecision).toHaveBeenLastCalledWith('account-a', null);
+  });
+  it("writes this account's own withdrawal over an older in-flight grant", async () => {
     const { coordinator, writeAccountConsent } = setup();
     const first = deferred<ConsentRecord>();
     writeAccountConsent.mockReturnValueOnce(first.promise).mockResolvedValueOnce(denial);
     const operation = coordinator.decide('granted', 'web');
     await vi.waitFor(() => expect(writeAccountConsent).toHaveBeenCalledTimes(1));
-    coordinator.replaceLocalRecord(denial);
+    coordinator.replaceLocalRecord(ownedByA(denial));
     expect(coordinator.getSnapshot().record?.analytics).toBe('denied');
     first.resolve(grant);
     await operation;
@@ -147,10 +168,10 @@ describe('account consent synchronization', () => {
     expect(coordinator.getSnapshot().record?.analytics).toBe('granted');
   });
   it.each([
-    ['newer withdrawal', { ...denial, decidedAt: '2026-10-08T10:00:01.000Z' }],
-    ['same-second cookie withdrawal', { ...denial, decidedAt: '2026-10-08T10:00:00.000Z' }],
-    ['newer consent version', { ...denial, version: 2, decidedAt: '2026-10-08T09:00:00.000Z' }],
-  ])('preserves a %s against a restored pending grant', async (_description, localDenial) => {
+    ['newer withdrawal', ownedByA({ ...denial, decidedAt: '2026-10-08T10:00:01.000Z' })],
+    ['same-second cookie withdrawal', ownedByA({ ...denial, decidedAt: '2026-10-08T10:00:00.000Z' })],
+    ['newer consent version', ownedByA({ ...denial, version: 2, decidedAt: '2026-10-08T09:00:00.000Z' })],
+  ])("preserves this account's %s against a restored pending grant", async (_description, localDenial) => {
     const writeAccountConsent = vi.fn(async () => localDenial);
     const persistLocalConsent = vi.fn();
     const persistPendingDecision = vi.fn(async () => {});
@@ -173,6 +194,33 @@ describe('account consent synchronization', () => {
     });
     expect(coordinator.getSnapshot()).toMatchObject({ record: localDenial, pending: false, accountResolved: true });
   });
+  it.each([
+    ['signed out', null],
+    ['under another account', 'account-b'],
+    ['before device answers carried an account', undefined],
+  ])(
+    'keeps a newer denial given %s against a restored pending grant without writing either',
+    async (_description, ownerAccountId) => {
+      const localDenial: DeviceConsentRecord = { ...denial, decidedAt: '2026-10-08T10:00:01.000Z', ownerAccountId };
+      const writeAccountConsent = vi.fn(async () => grant);
+      const persistLocalConsent = vi.fn();
+      const persistPendingDecision = vi.fn(async () => {});
+      const coordinator = createConsentSyncCoordinator({
+        initialRecord: localDenial,
+        readAccountConsent: vi.fn(async () => grant),
+        writeAccountConsent,
+        persistLocalConsent,
+        persistPendingDecision,
+        loadPendingDecision: async () => ({ record: grant, basedOnDecidedAt: grant.decidedAt }),
+      });
+      coordinator.setAccount('account-a');
+      await coordinator.sync();
+      expect(writeAccountConsent).not.toHaveBeenCalled();
+      expect(persistPendingDecision).toHaveBeenCalledExactlyOnceWith('account-a', null);
+      expect(persistLocalConsent.mock.calls.every(([record]) => record?.analytics === 'denied')).toBe(true);
+      expect(coordinator.getSnapshot()).toMatchObject({ record: localDenial, pending: false, accountResolved: true });
+    },
+  );
   it('restores a pending grant from a later second than the local denial', async () => {
     const earlierDenial = { ...denial, decidedAt: '2026-10-08T09:59:59.999Z' };
     const writeAccountConsent = vi.fn(async () => grant);
@@ -192,7 +240,7 @@ describe('account consent synchronization', () => {
     expect(coordinator.getSnapshot().record?.analytics).toBe('granted');
   });
   it('retains the replacement denial when its account write fails', async () => {
-    const localDenial = { ...denial, decidedAt: '2026-10-08T11:00:00.000Z' };
+    const localDenial = ownedByA({ ...denial, decidedAt: '2026-10-08T11:00:00.000Z' });
     const persistPendingDecision = vi.fn(async () => {});
     const coordinator = createConsentSyncCoordinator({
       initialRecord: localDenial,
@@ -273,13 +321,13 @@ describe('account consent synchronization', () => {
       'account-a',
       expect.objectContaining({ analytics: 'granted', basedOnDecidedAt: grant.decidedAt }),
     );
-    expect(coordinator.getSnapshot().record).toEqual(externalDenial);
+    expect(coordinator.getSnapshot().record).toEqual(ownedByA(externalDenial));
   });
   it('drops a rebased grant withdrawn while its durable write is pending', async () => {
     const withdrawal = deferred<ConsentRecord>();
     const rebasedStorageWrite = deferred<void>();
     const completedDenial = { ...denial, decidedAt: '2026-10-08T11:00:00.456Z' };
-    const externalDenial = { ...denial, decidedAt: '2026-10-08T11:00:01.000Z' };
+    const externalDenial = ownedByA({ ...denial, decidedAt: '2026-10-08T11:00:01.000Z' });
     const writeAccountConsent = vi.fn(async (_accountId: string, _input: ConsentSyncInput) => grant);
     writeAccountConsent.mockReturnValueOnce(withdrawal.promise).mockResolvedValueOnce(externalDenial);
     const persistPendingDecision = vi.fn(async (_accountId: string, decision: PendingConsentDecision | null) => {
@@ -317,7 +365,7 @@ describe('account consent synchronization', () => {
   });
   it('does not restore an older grant after a withdrawal during the pending-decision read', async () => {
     const pendingRead = deferred<PendingConsentDecision | null>();
-    const localDenial = { ...denial, decidedAt: '2026-10-08T11:00:00.000Z' };
+    const localDenial = ownedByA({ ...denial, decidedAt: '2026-10-08T11:00:00.000Z' });
     const writeAccountConsent = vi.fn(async () => localDenial);
     const coordinator = createConsentSyncCoordinator({
       initialRecord: grant,
@@ -354,6 +402,152 @@ describe('account consent synchronization', () => {
     currentGrant.resolve(grant);
     await allowing;
     expect(coordinator.getSnapshot()).toMatchObject({ record: grant, accountResolved: true });
+  });
+  it('two devices: an older stored denial never re-denies a newer account grant', async () => {
+    // Phone A said No (its write landed, so it holds the server copy). Later the
+    // climber said Allow on phone B. Phone A now comes to the foreground.
+    const phoneADenial = ownedByA({ ...denial, decidedAt: '2026-10-08T09:00:00.000Z' });
+    const phoneBGrant = { ...grant, source: 'ios' as const, decidedAt: '2026-10-08T12:00:00.000Z' };
+    const { coordinator, readAccountConsent, writeAccountConsent, persistPendingDecision } = setup(phoneADenial);
+    readAccountConsent.mockResolvedValue(phoneBGrant);
+    await coordinator.sync();
+    await coordinator.sync();
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+    expect(persistPendingDecision).not.toHaveBeenCalled();
+    // This device keeps its own No (merge rule 3); the account keeps the newer Allow.
+    expect(coordinator.getSnapshot()).toMatchObject({ record: phoneADenial, pending: false, accountResolved: true });
+  });
+  it('two devices: a pre-upgrade stored denial never re-denies a newer account grant', async () => {
+    const legacyDenial = { ...denial, decidedAt: '2026-10-08T09:00:00.000Z' };
+    const { coordinator, readAccountConsent, writeAccountConsent } = setup(legacyDenial);
+    readAccountConsent.mockResolvedValue({ ...grant, decidedAt: '2026-10-08T12:00:00.000Z' });
+    await coordinator.sync();
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+    expect(coordinator.getSnapshot().record?.analytics).toBe('denied');
+  });
+  it('shared device: a signed-out Allow is never written to an unanswered account and asks again', async () => {
+    const readAccountConsent = vi.fn(async (_accountId: string): Promise<ConsentRecord | null> => null);
+    const writeAccountConsent = vi.fn(async (_accountId: string, _input: ConsentSyncInput) => grant);
+    const persistLocalConsent = vi.fn();
+    const coordinator = createConsentSyncCoordinator({
+      initialRecord: null,
+      readAccountConsent,
+      writeAccountConsent,
+      persistLocalConsent,
+    });
+    await coordinator.decide('granted', 'ios');
+    expect(coordinator.getSnapshot().record).toMatchObject({ analytics: 'granted', ownerAccountId: null });
+    coordinator.setAccount('account-b');
+    expect(coordinator.getSnapshot().accountResolved).toBe(false);
+    await coordinator.sync();
+    expect(readAccountConsent).toHaveBeenCalledWith('account-b');
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+    expect(coordinator.getSnapshot()).toMatchObject({ record: null, pending: false, accountResolved: true });
+    expect(needsPrompt(coordinator.getSnapshot().record)).toBe(true);
+    expect(persistLocalConsent).toHaveBeenLastCalledWith(null);
+  });
+  it('shared device: an answer given under another account does not answer for this one', async () => {
+    const { coordinator, readAccountConsent, writeAccountConsent } = setup({ ...grant, ownerAccountId: 'account-b' });
+    readAccountConsent.mockResolvedValue(null);
+    await coordinator.sync();
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+    expect(coordinator.getSnapshot().record).toBeNull();
+  });
+  it('binds an explicit signed-in decision to the account and writes it', async () => {
+    const { coordinator, writeAccountConsent, persistLocalConsent } = setup();
+    writeAccountConsent.mockResolvedValue({ ...grant, __typename: 'AnalyticsConsent' } as ConsentRecord);
+    await coordinator.decide('granted', 'android');
+    expect(writeAccountConsent).toHaveBeenCalledWith(
+      'account-a',
+      expect.objectContaining({ analytics: 'granted', source: 'android', basedOnDecidedAt: null }),
+    );
+    expect(coordinator.getSnapshot().record).toEqual(ownedByA(grant));
+    expect(persistLocalConsent).toHaveBeenLastCalledWith(ownedByA(grant));
+  });
+  it('a later signed-in answer from a lost pending write is written back with the account stamp', async () => {
+    const lostDenial = ownedByA({ ...denial, source: 'ios', decidedAt: '2026-10-08T13:00:00.000Z' });
+    const { coordinator, readAccountConsent, writeAccountConsent } = setup(lostDenial);
+    readAccountConsent.mockResolvedValue(grant);
+    writeAccountConsent.mockResolvedValue({ ...denial, decidedAt: '2026-10-08T13:00:01.000Z' });
+    await coordinator.sync();
+    expect(writeAccountConsent).toHaveBeenCalledExactlyOnceWith('account-a', {
+      analytics: 'denied',
+      version: 1,
+      source: 'ios',
+      basedOnDecidedAt: grant.decidedAt,
+    });
+  });
+  it("fills an unanswered account with this account's own stored answer", async () => {
+    const { coordinator, readAccountConsent, writeAccountConsent } = setup(ownedByA(grant));
+    readAccountConsent.mockResolvedValue(null);
+    await coordinator.sync();
+    expect(writeAccountConsent).toHaveBeenCalledExactlyOnceWith(
+      'account-a',
+      expect.objectContaining({ analytics: 'granted', basedOnDecidedAt: null }),
+    );
+  });
+  it('adopts the account copy, bound to the account, when a signed-out grant matches it', async () => {
+    const { coordinator, readAccountConsent, writeAccountConsent } = setup(grant);
+    const accountGrant = { ...grant, source: 'ios' as const, decidedAt: '2026-10-07T08:00:00.000Z' };
+    readAccountConsent.mockResolvedValue(accountGrant);
+    await coordinator.sync();
+    expect(writeAccountConsent).not.toHaveBeenCalled();
+    expect(coordinator.getSnapshot().record).toEqual(ownedByA(accountGrant));
+  });
+  it('rechecks the account when the device answer matches except for its owner', async () => {
+    const { coordinator, readAccountConsent } = setup();
+    readAccountConsent.mockResolvedValue(grant);
+    await coordinator.sync();
+    expect(coordinator.getSnapshot().record).toEqual(ownedByA(grant));
+    coordinator.replaceLocalRecord(ownedByA(grant));
+    expect(readAccountConsent).toHaveBeenCalledOnce();
+    coordinator.replaceLocalRecord(grant);
+    expect(coordinator.getSnapshot().accountResolved).toBe(false);
+    await coordinator.sync();
+    expect(coordinator.getSnapshot()).toMatchObject({ record: ownedByA(grant), accountResolved: true });
+  });
+  describe('mergeAccountConsent', () => {
+    const later = (record: ConsentRecord, decidedAt: string) => ({ ...record, decidedAt });
+    it.each([
+      ['no device answer, no account answer', null, null, null, null],
+      ['signed-out grant, no account answer', grant, null, null, null],
+      ['signed-out denial, no account answer', denial, null, null, null],
+      ['signed-out grant, account grant', grant, grant, ownedByA(grant), null],
+      ['signed-out grant, account denial', grant, denial, ownedByA(denial), null],
+      ['signed-out denial, account grant', denial, grant, denial, null],
+      ['signed-out denial, account denial', denial, denial, ownedByA(denial), null],
+      [
+        'older own denial, newer account grant',
+        ownedByA(denial),
+        later(grant, '2026-10-09T00:00:00.000Z'),
+        ownedByA(denial),
+        null,
+      ],
+      [
+        'newer own denial, older account grant',
+        ownedByA(later(denial, '2026-10-09T00:00:00.000Z')),
+        grant,
+        ownedByA(later(denial, '2026-10-09T00:00:00.000Z')),
+        ownedByA(later(denial, '2026-10-09T00:00:00.000Z')),
+      ],
+      [
+        'newer own grant, older account denial',
+        ownedByA(later(grant, '2026-10-09T00:00:00.000Z')),
+        denial,
+        ownedByA(denial),
+        null,
+      ],
+      ['own grant, no account answer', ownedByA(grant), null, ownedByA(grant), ownedByA(grant)],
+      [
+        'own grant, account answer under an old version',
+        ownedByA(grant),
+        { ...denial, version: 0 },
+        ownedByA(grant),
+        ownedByA(grant),
+      ],
+    ] as const)('%s', (_description, local, server, record, push) => {
+      expect(mergeAccountConsent(local, server, 'account-a')).toEqual({ record, push });
+    });
   });
   it('rejects malformed persisted pending decisions', () => {
     expect(
