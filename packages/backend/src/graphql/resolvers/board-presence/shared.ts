@@ -93,6 +93,8 @@ export function candidateToActiveBoard(candidate: SerialCandidateBoard): ActiveP
 type BoardPresenceReadDb = Pick<typeof db, 'select'>;
 type BoardPresenceWriteDb = Pick<typeof db, 'insert'>;
 type BoardPresenceSerialTransactionDb = BoardPresenceReadDb & BoardSerialWriteCommandDb;
+type Database = typeof db;
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 type ChosenBoardLookup = {
   board: ActivePresenceBoard;
@@ -285,20 +287,29 @@ export function canClaimSerialForBoard(board: Pick<SelectedConnectBoard, 'ownerI
  * index: if the caller already has this serial on another of their boards the
  * claim is simply skipped and the board is returned unchanged, because binding
  * to the selected board still has to succeed.
+ * The claim uses a savepoint when passed a transaction, so a duplicate serial
+ * cannot abort the caller's remaining work.
  */
-export async function claimSerialForBoard(board: SelectedConnectBoard, serial: string): Promise<SelectedConnectBoard> {
+export async function claimSerialForBoard(
+  board: SelectedConnectBoard,
+  serial: string,
+  commandDb: Database | Transaction = db,
+): Promise<SelectedConnectBoard> {
   try {
-    const [updated] = await db
-      .update(dbSchema.userBoards)
-      .set({ serialNumber: serial, updatedAt: new Date() })
-      .where(
-        and(
-          eq(dbSchema.userBoards.id, board.id),
-          isNull(dbSchema.userBoards.serialNumber),
-          isNull(dbSchema.userBoards.deletedAt),
-        ),
-      )
-      .returning({ serialNumber: dbSchema.userBoards.serialNumber });
+    const updated = await commandDb.transaction(async (claimTx) => {
+      const [claimed] = await claimTx
+        .update(dbSchema.userBoards)
+        .set({ serialNumber: serial, updatedAt: new Date() })
+        .where(
+          and(
+            eq(dbSchema.userBoards.id, board.id),
+            isNull(dbSchema.userBoards.serialNumber),
+            isNull(dbSchema.userBoards.deletedAt),
+          ),
+        )
+        .returning({ serialNumber: dbSchema.userBoards.serialNumber });
+      return claimed;
+    });
     if (updated) {
       return { ...board, serialNumber: updated.serialNumber };
     }
@@ -316,7 +327,7 @@ export async function claimSerialForBoard(board: SelectedConnectBoard, serial: s
   // (the owner deleted the board mid-connect) reports no serial and binds this
   // one connect to the just-deleted board; the next connect skips it, because
   // findChosenBoardForSerial only joins rows with `deleted_at IS NULL`.
-  const [current] = await db
+  const [current] = await commandDb
     .select({ serialNumber: dbSchema.userBoards.serialNumber })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.id, board.id), isNull(dbSchema.userBoards.deletedAt)))

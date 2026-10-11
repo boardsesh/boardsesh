@@ -354,6 +354,9 @@ export async function mergeClonePair(pair: ClonePair, tx: Transaction): Promise<
     .set({ boardId: pair.targetId })
     .where(eq(dbSchema.boardseshTicks.boardId, pair.cloneId))
     .returning({ id: dbSchema.boardseshTicks.id });
+  // Each session row has one nullable board_id FK, with no unique key involving
+  // board_id, so distinct session IDs survive this repoint without deduplication.
+  // Multi-board membership lives in session_boards and is deduplicated below.
   const boardSessions = await tx
     .update(dbSchema.boardSessions)
     .set({ boardId: pair.targetId })
@@ -483,13 +486,12 @@ function writeReport(path: string, pairs: ClonePair[]): void {
 }
 
 export async function runMerge(argv: string[]): Promise<void> {
-  // Refuse before discovery queries, writes, report output or Redis connection.
+  // Reject --apply before any database writes; report-only discovery stays available.
   if (argv.includes('--apply')) {
     throw new Error(
       'Board identity repair is report-only: --apply is disabled pending current-schema privacy, locking, tombstone and reference review',
     );
   }
-  const apply = false;
   const doBackfill = argv.includes('--backfill-serials');
   const doMerge = argv.includes('--merge');
   const reportIndex = argv.indexOf('--report');
@@ -500,72 +502,42 @@ export async function runMerge(argv: string[]): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const mode = apply ? 'APPLY' : 'DRY RUN';
-
   if (doBackfill) {
     const backfills = await findSerialBackfills();
-    logger.info(`[merge-clone-boards] ${mode}: ${backfills.length} gym boards can adopt a recoverable serial`);
+    logger.info(`[merge-clone-boards] DRY RUN: ${backfills.length} gym boards can adopt a recoverable serial`);
     for (const backfill of backfills) {
       logger.info(
         `[merge-clone-boards]   board ${backfill.boardId} "${backfill.boardName}" ← ${backfill.serialNumber}`,
       );
-      if (!apply) continue;
-      await db
-        .update(dbSchema.userBoards)
-        .set({ serialNumber: backfill.serialNumber, updatedAt: new Date() })
-        .where(and(eq(dbSchema.userBoards.id, backfill.boardId), isNull(dbSchema.userBoards.serialNumber)));
     }
   }
 
   if (!doMerge) return;
 
   const pairs = await findClonePairs();
-  logger.info(`[merge-clone-boards] ${mode}: ${pairs.length} clone boards to merge`);
+  logger.info(`[merge-clone-boards] DRY RUN: ${pairs.length} clone boards to merge`);
   if (reportPath) {
     writeReport(reportPath, pairs);
     logger.info(`[merge-clone-boards] wrote report to ${reportPath}`);
   }
   if (pairs.length === 0) return;
 
-  if (!apply) {
-    for (const pair of pairs) {
-      const counts = rowsOf<{ events: string; ticks: string }>(
-        await db.execute(sql`
-          SELECT
-            (SELECT count(*) FROM board_climb_events WHERE board_id = ${pair.cloneId})::text AS events,
-            (SELECT count(*) FROM boardsesh_ticks    WHERE board_id = ${pair.cloneId})::text AS ticks
-        `),
-      )[0];
-      logger.info(
-        `[merge-clone-boards]   ${pair.cloneId} "${pair.cloneName}" → ${pair.targetId} "${pair.targetName}" ` +
-          `(serial ${pair.serialNumber}, ${counts?.events ?? '?'} events, ${counts?.ticks ?? '?'} ticks)`,
-      );
-    }
+  for (const pair of pairs) {
+    const counts = rowsOf<{ events: string; ticks: string }>(
+      await db.execute(sql`
+        SELECT
+          (SELECT count(*) FROM board_climb_events WHERE board_id = ${pair.cloneId})::text AS events,
+          (SELECT count(*) FROM boardsesh_ticks    WHERE board_id = ${pair.cloneId})::text AS ticks
+      `),
+    )[0];
     logger.info(
-      '[merge-clone-boards] report complete — --apply remains disabled pending current-schema privacy and locking review',
+      `[merge-clone-boards]   ${pair.cloneId} "${pair.cloneName}" → ${pair.targetId} "${pair.targetName}" ` +
+        `(serial ${pair.serialNumber}, ${counts?.events ?? '?'} events, ${counts?.ticks ?? '?'} ticks)`,
     );
-    return;
   }
-
-  const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) {
-    // Applying without clearing the seq counters would silently drop new sends
-    // on every merged board (see resetBoardCaches) — refuse rather than corrupt.
-    logger.error('[merge-clone-boards] REDIS_URL is required for --apply: the seq counters must be reset');
-    process.exitCode = 1;
-    return;
-  }
-  const redis = new Redis(redisUrl);
-
-  try {
-    // Prove Redis is reachable BEFORE the first transaction commits. A bad
-    // REDIS_URL discovered halfway through would leave already-merged boards
-    // dropping sends with no way to reset them from here.
-    await redis.ping();
-    await mergeAllPairs(pairs, redis);
-  } finally {
-    await redis.quit();
-  }
+  logger.info(
+    '[merge-clone-boards] report complete — --apply remains disabled pending current-schema privacy and locking review',
+  );
 }
 
 /**

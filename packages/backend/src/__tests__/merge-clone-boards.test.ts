@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
+import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import Redis from 'ioredis';
+import { logger } from '../utils/logger';
 import {
   findClonePairs,
   findSerialBackfills,
@@ -128,6 +133,70 @@ describe('merge-clone-boards isolated legacy algorithms (not production safety)'
       }
     },
   );
+
+  it('writes a discovery report without changing boards or connecting to Redis', async () => {
+    const serial = `MERGEREPORT-${Date.now()}`;
+    const backfillSerial = `MERGEREPORTBACKFILL-${Date.now()}`;
+    const gymId = await insertGym('Report Only Gym');
+    const gymBoard = await insertBoard({ ownerId: SYSTEM_OWNER_ID, serial: null, gymId, name: 'Gym - Kilter' });
+    const clone = await insertBoard({ ownerId: CLONE_OWNER_ID, serial, gymId: null, name: 'Clone Wall' });
+    const backfillBoard = await insertBoard({
+      ownerId: SYSTEM_OWNER_ID,
+      serial: null,
+      gymId,
+      name: 'Recoverable Wall',
+    });
+    await linkSerial(OTHER_USER_ID, serial, gymBoard.uuid);
+    await linkSerial(OTHER_USER_ID, backfillSerial, backfillBoard.uuid);
+    await insertEvent(clone.id, 1, '2026-07-01T00:00:00Z', 'reported-event');
+    const boardIds = [gymBoard.id, clone.id, backfillBoard.id];
+    const boardsBefore = await db
+      .select()
+      .from(dbSchema.userBoards)
+      .where(inArray(dbSchema.userBoards.id, boardIds))
+      .orderBy(dbSchema.userBoards.id);
+    const reportDirectory = await mkdtemp(join(tmpdir(), 'boardsesh-merge-report-'));
+    const reportPath = join(reportDirectory, 'pairs.csv');
+    const reportLog = vi.spyOn(logger, 'info');
+    const insert = vi.spyOn(db, 'insert');
+    const update = vi.spyOn(db, 'update');
+    const remove = vi.spyOn(db, 'delete');
+    const transaction = vi.spyOn(db, 'transaction');
+    const redisConnect = vi.spyOn(Redis.prototype, 'connect');
+    const redisPing = vi.spyOn(Redis.prototype, 'ping');
+    const redisDelete = vi.spyOn(Redis.prototype, 'del');
+    const redisQuit = vi.spyOn(Redis.prototype, 'quit');
+    try {
+      await runMerge(['--backfill-serials', '--merge', '--report', reportPath]);
+
+      const report = await readFile(reportPath, 'utf8');
+      expect(report).toContain('clone_id,clone_uuid,clone_name,clone_owner_id,serial_number,target_id');
+      expect(report).toContain(`${clone.id},${clone.uuid},Clone Wall,${CLONE_OWNER_ID},${serial},${gymBoard.id}`);
+      expect(reportLog).toHaveBeenCalledWith(
+        `[merge-clone-boards]   board ${backfillBoard.id} "Recoverable Wall" ← ${backfillSerial}`,
+      );
+      expect(insert).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+      expect(redisConnect).not.toHaveBeenCalled();
+      expect(redisPing).not.toHaveBeenCalled();
+      expect(redisDelete).not.toHaveBeenCalled();
+      expect(redisQuit).not.toHaveBeenCalled();
+      expect(
+        await db
+          .select()
+          .from(dbSchema.userBoards)
+          .where(inArray(dbSchema.userBoards.id, boardIds))
+          .orderBy(dbSchema.userBoards.id),
+      ).toEqual(boardsBefore);
+      expect(await eventsOnBoard(clone.id)).toEqual([{ seq: 1, name: 'reported-event' }]);
+      expect(await eventsOnBoard(gymBoard.id)).toEqual([]);
+    } finally {
+      vi.restoreAllMocks();
+      await rm(reportDirectory, { recursive: true, force: true });
+    }
+  });
 
   describe('findClonePairs', () => {
     it('pairs a private duplicate with the gym listing a climber linked the serial to', async () => {
@@ -355,7 +424,7 @@ describe('merge-clone-boards isolated legacy algorithms (not production safety)'
       ]);
     });
 
-    it('drops the duplicate session_boards row instead of colliding on the unique key', async () => {
+    it('preserves session rows while deduplicating multi-board membership', async () => {
       const serial = `MERGESESSION-${Date.now()}`;
       const { pair, gymBoard, clone } = await seedPair(serial);
       // A party session that touched BOTH boards — which is the normal shape
@@ -363,11 +432,10 @@ describe('merge-clone-boards isolated legacy algorithms (not production safety)'
       // mid-climb. Repointing blind would violate session_boards_session_board_idx.
       const bothSession = `merge-session-both-${Math.random().toString(36).slice(2)}`;
       const cloneOnlySession = `merge-session-clone-${Math.random().toString(36).slice(2)}`;
-      for (const sessionId of [bothSession, cloneOnlySession]) {
-        await db.execute(sql`
-          INSERT INTO board_sessions (id, board_path) VALUES (${sessionId}, '/kilter/1/10/1,20/40')
-        `);
-      }
+      await db.insert(dbSchema.boardSessions).values([
+        { id: bothSession, boardPath: '/kilter/1/10/1,20/40', boardId: gymBoard.id },
+        { id: cloneOnlySession, boardPath: '/kilter/1/10/1,20/40', boardId: clone.id },
+      ]);
       await db.execute(sql`
         INSERT INTO session_boards (session_id, board_id) VALUES
           (${bothSession}, ${gymBoard.id}), (${bothSession}, ${clone.id}),
@@ -377,6 +445,19 @@ describe('merge-clone-boards isolated legacy algorithms (not production safety)'
       const counts = await db.transaction((tx) => mergeClonePair(pair, tx));
       expect(counts.sessionBoardsDropped).toBe(1);
       expect(counts.sessionBoards).toBe(1);
+      expect(counts.boardSessions).toBe(1);
+      expect(
+        await db
+          .select({ id: dbSchema.boardSessions.id, boardId: dbSchema.boardSessions.boardId })
+          .from(dbSchema.boardSessions)
+          .where(inArray(dbSchema.boardSessions.id, [bothSession, cloneOnlySession]))
+          .orderBy(dbSchema.boardSessions.id),
+      ).toEqual(
+        [
+          { id: bothSession, boardId: gymBoard.id },
+          { id: cloneOnlySession, boardId: gymBoard.id },
+        ].sort((first, second) => first.id.localeCompare(second.id)),
+      );
 
       const linked = await db.execute(sql`
         SELECT session_id FROM session_boards WHERE board_id = ${gymBoard.id} ORDER BY session_id

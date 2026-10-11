@@ -408,6 +408,8 @@ async function resolveSelectedBoardForSerial(
   advertisedBoardType?: string | null,
 ): Promise<ActivePresenceBoard | undefined> {
   if (advertisedBoardType && advertisedBoardType !== config.boardType) return undefined;
+  // Invalid selections must not hold up other connects on the board-row lock.
+  if (!(await findSelectedBoardForConnect(userId, selectedBoardUuid, config))) return undefined;
   return db.transaction(async (tx) => {
     await tx.execute(sql`
       SELECT id FROM user_boards
@@ -415,11 +417,10 @@ async function resolveSelectedBoardForSerial(
        FOR UPDATE
     `);
     await lockBoardSerialWrite(tx, serial);
-    const [selected, gymListingCarriesSerial] = await Promise.all([
-      findSelectedBoardForConnect(userId, selectedBoardUuid, config, tx),
-      hasSyncedGymBoardForSerial(serial, config, tx, advertisedBoardType),
-    ]);
+    // Recheck after waiting for the locks: the board or its access may have changed.
+    const selected = await findSelectedBoardForConnect(userId, selectedBoardUuid, config, tx);
     if (!selected) return undefined;
+    const gymListingCarriesSerial = await hasSyncedGymBoardForSerial(serial, config, tx, advertisedBoardType);
     if (gymListingCarriesSerial && !(selected.serialNumber === serial && isSyncedGymListing(selected)))
       return undefined;
     let board = selected;

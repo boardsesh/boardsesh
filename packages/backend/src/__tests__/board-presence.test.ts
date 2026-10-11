@@ -1629,6 +1629,130 @@ describe('board-presence resolvers', () => {
         }
       });
 
+      it.each(['mismatched', 'private'] as const)(
+        'skips a locked %s selection without waiting for its row',
+        async (invalidSelection) => {
+          const serial = `SELINVALIDLOCK-${Date.now()}`;
+          const selected = await insertRealUuidBoard({
+            ownerId: SECOND_USER_ID,
+            serial: null,
+            layoutId: invalidSelection === 'mismatched' ? 2 : 1,
+            sizeId: 10,
+            setIds: '1,8',
+            name: 'Invalid Picked Wall',
+            isPublic: invalidSelection !== 'private',
+          });
+          const fallback = await insertRealUuidBoard({
+            ownerId: TEST_USER_ID,
+            serial,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,8',
+            name: 'Connected Wall',
+          });
+          const writerReady = createBarrier();
+          const releaseWriter = createBarrier();
+          const writer = db.transaction(async (transaction) => {
+            await transaction.execute(sql`SELECT id FROM user_boards WHERE id = ${selected.id} FOR UPDATE`);
+            writerReady.release();
+            await releaseWriter.promise;
+          });
+          handleLater(writer);
+          let connect: ReturnType<typeof boardPresenceMutations.resolveBoardCandidatesForSerial> | undefined;
+          try {
+            await writerReady.promise;
+            let resolved: Awaited<ReturnType<typeof boardPresenceMutations.resolveBoardCandidatesForSerial>>;
+            connect = boardPresenceMutations
+              .resolveBoardCandidatesForSerial(
+                undefined,
+                {
+                  serial,
+                  boardType: 'kilter',
+                  layoutId: 1,
+                  sizeId: 10,
+                  setIds: '1,8',
+                  selectedBoardUuid: selected.uuid,
+                },
+                authCtx(),
+              )
+              .then((resolution) => {
+                resolved = resolution;
+                return resolution;
+              });
+            handleLater(connect);
+            // The selected row stays locked until finally; only fallback may be locked.
+            await vi.waitFor(() => expect(resolved?.board?.boardId).toBe(fallback.id), { timeout: 2_000 });
+            expect(await linkedBoardUuid(serial)).toBe(fallback.uuid);
+            expect(await serialOf(selected.id)).toBeNull();
+          } finally {
+            releaseWriter.release();
+            await Promise.allSettled([writer, connect]);
+          }
+        },
+      );
+
+      it.each(['config', 'privacy'] as const)(
+        'rechecks selected-board %s after waiting for its row lock',
+        async (changedSelection) => {
+          const serial = `SELCHANGEDLOCK-${Date.now()}`;
+          const selected = await insertRealUuidBoard({
+            ownerId: SECOND_USER_ID,
+            serial: null,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,8',
+            name: 'Initially Valid Wall',
+          });
+          const fallback = await insertRealUuidBoard({
+            ownerId: TEST_USER_ID,
+            serial,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,8',
+            name: 'Connected Wall',
+          });
+          const writerReady = createValueBarrier<number>();
+          const releaseWriter = createBarrier();
+          const writer = db.transaction(async (transaction) => {
+            await transaction.execute(sql`SELECT id FROM user_boards WHERE id = ${selected.id} FOR UPDATE`);
+            const [session] = await transaction.execute(sql`SELECT pg_backend_pid() AS pid`);
+            writerReady.release(Number((session as { pid: number }).pid));
+            await releaseWriter.promise;
+            await transaction
+              .update(dbSchema.userBoards)
+              .set(changedSelection === 'config' ? { setIds: '1,2' } : { isPublic: false })
+              .where(eq(dbSchema.userBoards.id, selected.id));
+          });
+          handleLater(writer);
+          let connect: ReturnType<typeof boardPresenceMutations.resolveBoardCandidatesForSerial> | undefined;
+          try {
+            const writerPid = await writerReady.promise;
+            connect = boardPresenceMutations.resolveBoardCandidatesForSerial(
+              undefined,
+              {
+                serial,
+                boardType: 'kilter',
+                layoutId: 1,
+                sizeId: 10,
+                setIds: '1,8',
+                selectedBoardUuid: selected.uuid,
+              },
+              authCtx(),
+            );
+            handleLater(connect);
+            await waitForSessionBlockedBy(writerPid);
+            releaseWriter.release();
+            await writer;
+            expect((await connect).board?.boardId).toBe(fallback.id);
+            expect(await linkedBoardUuid(serial)).toBe(fallback.uuid);
+            expect(await serialOf(selected.id)).toBeNull();
+          } finally {
+            releaseWriter.release();
+            await Promise.allSettled([writer, connect]);
+          }
+        },
+      );
+
       it('legacy resolveBoardForSerial honours the selection too', async () => {
         const serial = `SELLEGACY-${Date.now()}`;
         await insertRealUuidBoard({
@@ -1724,6 +1848,87 @@ describe('board-presence resolvers', () => {
           const claimed = await claimSerialForBoard(await boardFor(board.id, board.uuid), serial);
           expect(claimed.serialNumber).toBe(serial);
           expect(await serialOf(board.id)).toBe(serial);
+        });
+
+        it('rolls back a serial claim with its caller transaction', async () => {
+          const serial = `RACEROLLBACK-${Date.now()}`;
+          const board = await insertRealUuidBoard({
+            ownerId: SYSTEM_OWNER_ID,
+            serial: null,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,8',
+            name: 'Transactional Wall',
+          });
+          const selected = await boardFor(board.id, board.uuid);
+          const rollbackError = new Error('rollback serial claim');
+          await expect(
+            db.transaction(async (transaction) => {
+              expect((await claimSerialForBoard(selected, serial, transaction)).serialNumber).toBe(serial);
+              throw rollbackError;
+            }),
+          ).rejects.toBe(rollbackError);
+          expect(await serialOf(board.id)).toBeNull();
+        });
+
+        it('rereads a losing claim through the caller transaction', async () => {
+          const committedSerial = `RACECOMMITTED-${Date.now()}`;
+          const transactionSerial = `RACEUNCOMMITTED-${Date.now()}`;
+          const attemptedSerial = `RACEATTEMPTED-${Date.now()}`;
+          const board = await insertRealUuidBoard({
+            ownerId: SYSTEM_OWNER_ID,
+            serial: committedSerial,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,8',
+            name: 'Already Claimed Wall',
+          });
+          const selected = await boardFor(board.id, board.uuid);
+          await db.transaction(async (transaction) => {
+            await transaction
+              .update(dbSchema.userBoards)
+              .set({ serialNumber: transactionSerial })
+              .where(eq(dbSchema.userBoards.id, board.id));
+            const claimed = await claimSerialForBoard(selected, attemptedSerial, transaction);
+            expect(claimed.serialNumber).toBe(transactionSerial);
+          });
+          expect(await serialOf(board.id)).toBe(transactionSerial);
+        });
+
+        it('keeps its caller transaction usable after a duplicate serial claim', async () => {
+          const serial = `RACETXDUPE-${Date.now()}`;
+          await insertRealUuidBoard({
+            ownerId: TEST_USER_ID,
+            serial,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,9',
+            name: 'Already Bound',
+          });
+          const board = await insertRealUuidBoard({
+            ownerId: TEST_USER_ID,
+            serial: null,
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '2,10',
+            name: 'Second Wall',
+          });
+          const selected = await boardFor(board.id, board.uuid);
+          await db.transaction(async (transaction) => {
+            const claimed = await claimSerialForBoard(selected, serial, transaction);
+            expect(claimed.serialNumber).toBeNull();
+            const [updated] = await transaction
+              .update(dbSchema.userBoards)
+              .set({ name: 'Still Connected' })
+              .where(eq(dbSchema.userBoards.id, board.id))
+              .returning({ name: dbSchema.userBoards.name });
+            expect(updated.name).toBe('Still Connected');
+          });
+          const [current] = await db
+            .select({ name: dbSchema.userBoards.name, serialNumber: dbSchema.userBoards.serialNumber })
+            .from(dbSchema.userBoards)
+            .where(eq(dbSchema.userBoards.id, board.id));
+          expect(current).toEqual({ name: 'Still Connected', serialNumber: null });
         });
 
         it('keeps the board bound when the owner already has that serial elsewhere', async () => {
