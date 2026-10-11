@@ -665,7 +665,7 @@ describe('TabLayout', () => {
     cfg.boardPresenceEnabled = true;
     cfg.boardPresenceBoardId = 1;
     cfg.activeBoard = { uuid: 'board-1' };
-    cfg.segments = ['(tabs)', 'profile', 'outline-canvas'];
+    cfg.segments = ['(tabs)', 'profile', 'settings', 'outline-canvas'];
 
     const { container } = render(<TabLayout />);
 

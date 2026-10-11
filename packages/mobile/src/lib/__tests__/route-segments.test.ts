@@ -11,7 +11,7 @@ import {
 } from '../route-segments';
 
 describe('isOutlineEditorRoute', () => {
-  it.each(['profile', 'home', 'wall', 'climbs', 'discover', 'boards'])(
+  it.each(['profile', 'home', 'wall', 'climbs', 'discover', 'record'])(
     'suppresses panes for the %s Settings canvas',
     (tab) => {
       expect(isOutlineEditorRoute(['(tabs)', tab, 'settings', 'outline-canvas'])).toBe(true);
