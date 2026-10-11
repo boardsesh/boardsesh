@@ -13,12 +13,14 @@ import { clearSprayWallPrivateCaches } from '../../lib/spray/spray-privacy-clean
 import {
   PrivacyRevalidationDeferredError,
   requirePrivacyRevalidation,
+  needsCatalogOutboxRepair,
   revalidatePrivateCatalog,
 } from '../../offline/privacy-revalidation';
 import { canReadPrivateCatalog, subscribeCatalogCredentialMismatch } from '../../offline/catalog-access';
 import { getDatabaseHandle, subscribeDatabaseHandle } from '../../db/connection';
 import { clearStoredSprayPhotos } from '../../lib/spray/spray-photo-store';
 import { reportHandledError } from '../../lib/error-reporting';
+import { subscribeMutationDelivery } from '../../offline/offline-sync-adapter';
 
 /** A reconnect gets an immediate signal, covering revocations missed offline. */
 export function PrivacySyncBridge() {
@@ -111,6 +113,19 @@ export function PrivacySyncBridge() {
       clearRetry();
       void repair(true);
     });
+    // A preserved queued write closes local reads without failing authorization.
+    // Once it is delivered, retry the cleanup. Coalesce a drain's acknowledgments
+    // and keep the existing foreground/connection and single-flight gates.
+    const stopMutationDelivery = subscribeMutationDelivery((event) => {
+      if (event.status !== 'acknowledged' || !currentViewer() || !needsCatalogOutboxRepair(viewerId)) return;
+      dirty = true;
+      if (timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (needsCatalogOutboxRepair(viewerId)) void repair();
+        else dirty = false;
+      }, 1_000);
+    });
     const stopOnline = onlineManager.subscribe((online) => {
       if (online) resume();
     });
@@ -143,6 +158,7 @@ export function PrivacySyncBridge() {
       stopDatabase();
       stopCredentialMismatch();
       stopOnline();
+      stopMutationDelivery();
       foreground.remove();
       unregister();
       unsubscribe();

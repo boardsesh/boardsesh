@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   state: 'active',
   credential: 0,
   mismatch: false,
+  outboxRepairRequired: false,
+  mutationListener: undefined as ((event: { status: string }) => void) | undefined,
   mismatchListener: undefined as (() => void) | undefined,
   handler: undefined as (() => Promise<void>) | undefined,
   databaseListener: undefined as (() => void) | undefined,
@@ -68,6 +70,15 @@ vi.mock('../../../offline/privacy-revalidation', () => ({
   PrivacyRevalidationDeferredError: class extends Error {},
   revalidatePrivateCatalog: mocks.revalidate,
   requirePrivacyRevalidation: mocks.require,
+  needsCatalogOutboxRepair: () => mocks.outboxRepairRequired,
+}));
+vi.mock('../../../offline/offline-sync-adapter', () => ({
+  subscribeMutationDelivery: (listener: (event: { status: string }) => void) => {
+    mocks.mutationListener = listener;
+    return () => {
+      mocks.mutationListener = undefined;
+    };
+  },
 }));
 vi.mock('../../../db/connection', () => ({
   getDatabaseHandle: () => mocks.database,
@@ -110,6 +121,7 @@ beforeEach(() => {
   mocks.state = 'active';
   mocks.credential = 0;
   mocks.mismatch = false;
+  mocks.outboxRepairRequired = false;
   mocks.revalidate.mockReset().mockResolvedValue();
 });
 afterEach(() => {
@@ -118,6 +130,39 @@ afterEach(() => {
 });
 
 describe('privacy revocation subscription', () => {
+  it('coalesces delivered writes into one repair of a preserved foreign row', async () => {
+    render(<PrivacySyncBridge />);
+    await act(async () => revoke());
+    mocks.outboxRepairRequired = true;
+    await act(async () => {
+      mocks.mutationListener?.({ status: 'acknowledged' });
+      mocks.mutationListener?.({ status: 'acknowledged' });
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(mocks.revalidate).toHaveBeenCalledTimes(2);
+    mocks.outboxRepairRequired = false;
+    await act(async () => {
+      mocks.mutationListener?.({ status: 'acknowledged' });
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(mocks.revalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for foreground before repairing a delivered preserved write', async () => {
+    render(<PrivacySyncBridge />);
+    await act(async () => revoke());
+    mocks.outboxRepairRequired = true;
+    mocks.state = 'background';
+    await act(async () => {
+      mocks.mutationListener?.({ status: 'acknowledged' });
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    mocks.state = 'active';
+    await act(async () => mocks.foreground?.('active'));
+    expect(mocks.revalidate).toHaveBeenCalledTimes(2);
+  });
+
   it('repairs a refresh mismatch already observed before privacy capability was available', async () => {
     mocks.mismatch = true;
     mocks.privacy = undefined;

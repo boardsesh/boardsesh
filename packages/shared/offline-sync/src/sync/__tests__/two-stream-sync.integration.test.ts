@@ -349,68 +349,46 @@ describe('pulling a board as a reference and a protected stream', () => {
     });
   });
 
+  // The server sends a first-ascent credit on a reference stats row (the stored
+  // upstream credit of a climb that never had a Boardsesh author), and a
+  // snapshot artifact carries the same. The device stores neither column: no
+  // reader selects them.
   describe('first-ascent credit', () => {
     const localFirstAscents = () =>
       db.getAllAsync<{ climb_uuid: string; fa_username: string | null; fa_at: string | null }>(
         'SELECT climb_uuid, fa_username, fa_at FROM board_climb_stats ORDER BY climb_uuid',
       );
-    const MANUFACTURER_CREDIT = { fa_username: 'Manufacturer Setter', fa_at: '2020-01-01T00:00:00Z' };
 
-    it('writes a reference stats row as it is given: the stored credit, or none', async () => {
-      // The server sends the upstream credit for a climb with no owner, and none
-      // where the name would come from Boardsesh ticks.
-      await sync(backend([catalogueClimb(10), friendClimb]).fetch);
+    it('is not stored, from a reference page or a protected one, and is not reported as drift', async () => {
+      // This backend ships a name on the protected page too.
+      const server = backend([catalogueClimb(10), friendClimb, ownDraft], { leakProtectedFirstAscent: true });
+      const onSchemaDrift = vi.fn();
+
+      await sync(server.fetch, { onSchemaDrift });
+      await sync(server.fetch, { onSchemaDrift });
 
       expect(await localFirstAscents()).toEqual([
-        { climb_uuid: 'catalogue-10', ...MANUFACTURER_CREDIT },
+        { climb_uuid: 'catalogue-10', fa_username: null, fa_at: null },
         { climb_uuid: 'friend-climb', fa_username: null, fa_at: null },
-      ]);
-    });
-
-    it('writes a credit a reference page does carry, on an owned climb too', async () => {
-      const server = backend([friendClimb]);
-      const fetch = (async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
-        const response = await server.fetch<Record<string, { documents: Record<string, unknown>[] }>>(query, variables);
-        if (query.includes('syncClimbStats(') && variables?.audience === 'REFERENCE') {
-          for (const document of response.syncClimbStats.documents) Object.assign(document, MANUFACTURER_CREDIT);
-        }
-        return response as T;
-      }) as typeof server.fetch;
-
-      await sync(fetch);
-
-      expect(await localFirstAscents()).toEqual([{ climb_uuid: 'friend-climb', ...MANUFACTURER_CREDIT }]);
-    });
-
-    it('keeps both columns on the reference rows and stores neither on the protected ones, in the same cycle', async () => {
-      // The backend ships a name on the protected page too, so only the stream a
-      // row came through decides what is stored.
-      const server = backend([catalogueClimb(10), ownDraft], { leakProtectedFirstAscent: true });
-
-      await sync(server.fetch);
-      // A second cycle resumes both streams; neither may disturb the other's rows.
-      await sync(server.fetch);
-
-      expect(await localFirstAscents()).toEqual([
-        { climb_uuid: 'catalogue-10', ...MANUFACTURER_CREDIT },
         { climb_uuid: 'viewer-draft', fa_username: null, fa_at: null },
       ]);
+      // The rest of the row is: the credit is the only thing left out.
+      expect(await db.getAllAsync('SELECT DISTINCT display_difficulty FROM board_climb_stats')).toEqual([
+        { display_difficulty: 20 },
+      ]);
+      expect(onSchemaDrift).not.toHaveBeenCalled();
     });
 
-    it('clears a name an earlier bundle stored when the protected replay rewrites the row', async () => {
-      // The single stream of an earlier bundle delivered this row with a name the
-      // server had filled in for this viewer. Same row version as the server's.
+    it('goes from a row an earlier bundle stored it on, when the reference stream delivers that row again', async () => {
+      await sync(backend([catalogueClimb(10)]).fetch);
       await db.runAsync(
-        `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username, fa_at, updated_at, sync_seq)
-         VALUES ('kilter', 'viewer-draft', 40, 'A Private Climber', '2020-01-01T00:00:00Z', ?, ?)`,
-        [ownDraft.cursor.updatedAt, Number(ownDraft.cursor.syncSeq)],
+        "UPDATE board_climb_stats SET fa_username = 'Stored by an earlier bundle', fa_at = '2020-01-01T00:00:00Z'",
       );
+      const changed: ServerClimb = { ...catalogueClimb(10), stats: { cursor: cursorAt(60) } };
 
-      await sync(backend([ownDraft]).fetch);
+      await sync(backend([changed]).fetch);
 
-      expect(
-        await db.getAllAsync('SELECT climb_uuid, fa_username, fa_at, display_difficulty FROM board_climb_stats'),
-      ).toEqual([{ climb_uuid: 'viewer-draft', fa_username: null, fa_at: null, display_difficulty: 20 }]);
+      expect(await localFirstAscents()).toEqual([{ climb_uuid: 'catalogue-10', fa_username: null, fa_at: null }]);
     });
   });
 });

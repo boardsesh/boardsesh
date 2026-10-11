@@ -47,6 +47,7 @@ import {
   DEVICE_ONLY_STATEMENTS,
   DEVICE_ONLY_TABLES,
   LATEST_SCHEMA_VERSION,
+  STATS_FIRST_ASCENT_COLUMNS,
   TABLE_CONFIGS,
   toSqliteValue,
   multiRowChunkSize,
@@ -1228,7 +1229,10 @@ export async function exportLayoutSnapshot(params: {
       });
 
       const climbColumns = TABLE_CONFIGS.board_climbs.localColumns;
-      const statsColumns = TABLE_CONFIGS.board_climb_stats.localColumns;
+      // The device's own columns, plus the first-ascent pair it no longer
+      // stores. An artifact is also the public dataset, which keeps the credit
+      // (`selectExpressionFor`); the app's import skips the two columns.
+      const statsColumns = [...TABLE_CONFIGS.board_climb_stats.localColumns, ...STATS_FIRST_ASCENT_COLUMNS];
 
       const climbsResult = await streamTableIntoSqlite(
         tx,

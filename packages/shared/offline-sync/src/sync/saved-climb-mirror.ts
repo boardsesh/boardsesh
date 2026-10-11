@@ -4,8 +4,8 @@ import { offlineBoardKey } from '../offline-board-key';
 import { isScopeDownloadComplete } from './checkpoints';
 import { getLocalUserId } from './local-user-owner';
 import { runPullWrite } from './pull-write';
-import { withoutFirstAscentCredit, writePullDocuments } from './document-writer';
-import { TABLE_CONFIGS } from './table-config';
+import { writePullDocuments } from './document-writer';
+import { TABLE_CONFIGS, unstoredColumnsOf } from './table-config';
 
 class StaleMirrorError extends Error {}
 function documentRow(document: unknown): Record<string, unknown> {
@@ -24,9 +24,7 @@ export async function mirrorSavedClimb(
   canWrite: () => boolean,
 ): Promise<boolean> {
   const climb = documentRow(result.climb);
-  // A mirrored climb is a protected write, so its stats carry no first-ascent
-  // name, exactly as a protected sync page's do.
-  const stats = result.stats.map(documentRow).map(withoutFirstAscentCredit);
+  const stats = result.stats.map(documentRow);
   if (
     climb.uuid !== climbUuid ||
     climb.board_type !== scope.boardType ||
@@ -64,7 +62,7 @@ export async function mirrorSavedClimb(
           tableName,
           documents,
           config.localColumns,
-          config.transientColumns ?? [],
+          unstoredColumnsOf(config),
           true,
         );
         // A credential transition during a native bridge await must roll back

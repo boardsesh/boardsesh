@@ -7,6 +7,7 @@ import {
   boardSyncStreamsFor,
   hasReferenceStream,
   isPrivacyScopedBoardType,
+  unstoredColumnsOf,
   refreshColumnsFor,
   refreshRevisionFor,
   type BoardSyncStream,
@@ -111,7 +112,7 @@ import {
 } from './deletions-coverage';
 import { classifySqliteLockError } from '../db/lock-errors';
 import { runPullWrite } from './pull-write';
-import { withoutFirstAscentCredit, writePullDocuments } from './document-writer';
+import { writePullDocuments } from './document-writer';
 export { toSqliteValue } from './document-writer';
 import {
   ensureHoldIndex,
@@ -871,11 +872,11 @@ async function upsertDocuments(
   documents: Record<string, unknown>[],
   allowedColumns: readonly string[],
   /**
-   * Fields the resolver emits on purpose and this table does not store — see
-   * `TableSyncConfig.transientColumns`. Skipped like any other unknown column,
-   * but WITHOUT a drift report: they are the contract, not a drift from it.
+   * Fields the resolver emits on purpose and this table does not write — see
+   * `unstoredColumnsOf`. Skipped like any other unknown column, but WITHOUT a
+   * drift report: they are the contract, not a drift from it.
    */
-  transientColumns: readonly string[],
+  unstoredColumns: readonly string[],
   onSchemaDrift?: SchemaDriftReporter,
   page?: {
     canWrite: () => boolean;
@@ -904,7 +905,7 @@ async function upsertDocuments(
       tableName,
       documents,
       allowedColumns,
-      transientColumns,
+      unstoredColumns,
       page?.preserveNewerRows ?? false,
       onSchemaDrift,
     );
@@ -1191,10 +1192,7 @@ async function syncTable(
       // column cannot be stamped at the revision that promises it.
       if (isProtectedStream && missingRefreshColumns.length > 0) protectedCoversRevision = false;
 
-      const documents =
-        isProtectedStream && tableName === 'board_climb_stats'
-          ? result.documents.map(withoutFirstAscentCredit)
-          : result.documents;
+      const documents = result.documents;
       // Every protected climb or stats row is one a local mirror can have moved
       // ahead of the page: the climber's own saved climb, written from the
       // mutation's response. On a spray wall that is every climb, which is the
@@ -1216,7 +1214,7 @@ async function syncTable(
         tableName,
         documents,
         config.localColumns,
-        config.transientColumns ?? [],
+        unstoredColumnsOf(config),
         onSchemaDrift,
         {
           canWrite,

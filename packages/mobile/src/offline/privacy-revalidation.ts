@@ -65,6 +65,12 @@ export function requirePrivacyRevalidation(): void {
   revalidationFailed = true;
 }
 let revalidationFailed = false;
+let catalogOutboxRepairViewer: string | null = null;
+
+/** A queued write still protects a foreign row that must go before local reads reopen. */
+export function needsCatalogOutboxRepair(viewerId: string): boolean {
+  return catalogOutboxRepairViewer === viewerId;
+}
 const backgroundWriteRetry = {
   maxAttempts: OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
   retryDelayMs: OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
@@ -227,10 +233,12 @@ function parsePreparedFlag(raw: string | undefined): PreparedFlag | null {
  *     account left behind. The usual protections hold: a row with no server
  *     sequence stays, a row a queued write refers to stays, the climber's own
  *     rows stay.
- *  3. Blank the first-ascent names an earlier bundle stored where the name
- *     came from Boardsesh ticks: on climbs with an owner, on wall climbs, and
- *     on stats rows whose climb is gone. The manufacturer credit on a climb
- *     with no owner is the public one and is kept.
+ *  3. Blank every first-ascent name and date an earlier bundle stored. The
+ *     device no longer stores the pair at all (`STATS_FIRST_ASCENT_COLUMNS`):
+ *     no reader selects it, and where it came from a Boardsesh tick it named
+ *     a climber whose privacy can change. Nothing writes the columns from here
+ *     on, so one pass is all there is to do. It goes away with the migration
+ *     that drops the two columns.
  *
  * Batched in short transactions: step 2 is tens of thousands of rows on a
  * board downloaded by an earlier bundle. Returns how many foreign rows step 2
@@ -265,9 +273,10 @@ async function prepareCatalogueForViewer(
 
   if (stored?.viewerId !== viewerId) await inWriteTransaction(resetProtectedSyncState);
 
-  // Only its owner is sent a draft or an unlisted climb. `rowid` keyset, so the
-  // table is walked once however many batches that takes.
-  const notThisClimbers = `(is_draft = 1 OR is_listed = 0) AND (user_id IS NULL OR user_id <> ?)`;
+  // Only its owner is sent a draft or an unlisted climb. NULL reads as the
+  // server reads it: not a draft, and not listed. `rowid` keyset, so the table
+  // is walked once however many batches that takes.
+  const notThisClimbers = `(COALESCE(is_draft, 0) = 1 OR COALESCE(is_listed, 0) = 0) AND (user_id IS NULL OR user_id <> ?)`;
   let afterRowid = 0;
   for (;;) {
     const batch = await db.getAllAsync<RemovableClimb & { rowid: number }>(
@@ -296,11 +305,7 @@ async function prepareCatalogueForViewer(
     await inWriteTransaction(async (transaction) => {
       await transaction.runAsync(
         `UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL
-         WHERE rowid > ? AND rowid <= ?
-           AND (fa_username IS NOT NULL OR fa_at IS NOT NULL)
-           AND (board_type = 'spray' OR NOT EXISTS (
-             SELECT 1 FROM board_climbs climb
-             WHERE climb.uuid = board_climb_stats.climb_uuid AND climb.user_id IS NULL))`,
+         WHERE rowid > ? AND rowid <= ? AND (fa_username IS NOT NULL OR fa_at IS NOT NULL)`,
         [fromRowid, fromRowid + SCRUB_BATCH_ROWIDS],
       );
     });
@@ -339,6 +344,7 @@ export function revalidatePrivateCatalog(
       throw new Error('Catalogue revalidation was superseded');
     }
   };
+  let preservedForeignRows = false;
   const task = (async () => {
     if (previous) await previous.catch(() => {});
     assertCurrent();
@@ -388,6 +394,7 @@ export function revalidatePrivateCatalog(
           await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
           assertCurrent();
           const preservedCount = keptForeignRows + (await withdrawWallRows(transaction, viewerId));
+          preservedForeignRows = preservedCount > 0;
           if (preservedCount > 0) {
             await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY]);
           } else {
@@ -409,6 +416,7 @@ export function revalidatePrivateCatalog(
   const completion = task
     .then(() => {
       assertCurrent();
+      catalogOutboxRepairViewer = preservedForeignRows ? viewerId : null;
       revalidationFailed = false;
       finishCatalogInvalidation();
     })

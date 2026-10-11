@@ -381,6 +381,10 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
 - Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`.
 - Columns: `board_type`, `climb_uuid`, `angle`, `display_difficulty`, `benchmark_difficulty`, `ascensionist_count`,
   `difficulty_average`, `quality_average`, `fa_username`, `fa_at`, `updated_at`, `sync_seq`.
+- Sent, and NOT stored on the device: `fa_username` and `fa_at`. No offline reader selects them. They are
+  `retiredColumns` in `table-config.ts`: the device table still has both, a page and an artifact import leave them
+  NULL without reporting drift, and the app blanks once what an earlier bundle stored. The artifact keeps them (it
+  is the public dataset too). The two columns leave the device schema in a later migration.
 - Server-only (NOT pulled to devices): the provenance columns `upstream_synced_at` and `tick_graded_at` (#4798),
   the upstream/Boardsesh count and quality-blend splits. Devices read the materialized results
   (`ascensionist_count`, `quality_average`, `display_difficulty`); provenance only ever decides which server-side

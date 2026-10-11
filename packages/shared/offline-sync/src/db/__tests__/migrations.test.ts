@@ -83,7 +83,11 @@ describe('runMigrations', () => {
       }
       await runMigrations(database);
       for (const [tableName, config] of Object.entries(TABLE_CONFIGS)) {
-        expect(new Set(await tableColumns(database, tableName)), tableName).toEqual(new Set(config.localColumns));
+        // A retired column is one the sync stopped writing and the schema has
+        // not dropped yet.
+        expect(new Set(await tableColumns(database, tableName)), tableName).toEqual(
+          new Set([...config.localColumns, ...(config.retiredColumns ?? [])]),
+        );
         expect(await primaryKeyColumns(database, tableName), tableName).toEqual(config.primaryKeyColumns);
       }
       if (version > 0)
@@ -470,6 +474,11 @@ describe('runMigrations', () => {
       }
       for (const column of config.transientColumns ?? []) {
         expect(columns, `${tableName}.${column} must NOT be stored`).not.toContain(column);
+      }
+      // Retired, not dropped: an older bundle on the same phone still writes it.
+      for (const column of config.retiredColumns ?? []) {
+        expect(columns, `${tableName}.${column} is retired, and still in the table`).toContain(column);
+        expect(config.localColumns, `${tableName}.${column} must not be written`).not.toContain(column);
       }
     }
   });

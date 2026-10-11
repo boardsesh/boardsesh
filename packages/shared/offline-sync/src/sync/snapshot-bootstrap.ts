@@ -31,7 +31,7 @@ import { purgeNamespaceKey, type OfflineBoardScope } from '../offline-board-key'
 import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
 import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
-import { TABLE_CONFIGS } from './table-config';
+import { TABLE_CONFIGS, unstoredColumnsOf } from './table-config';
 import { reportExtraColumn, SnapshotSchemaCompatibilityError } from './schema-compatibility';
 import { markSchemaRefreshComplete } from './schema-refresh';
 import { LOCAL_USER_ID_KEY } from './local-user-owner';
@@ -824,6 +824,9 @@ async function tableColumns(db: SqlExecutor, tableName: string, schema: string):
 /**
  * Import the client's configured columns. Extra source columns are compatible;
  * missing expected columns would leave permanent holes behind the stamped cursor.
+ * A column the config has retired (`retiredColumns`: the first-ascent pair of a
+ * stats row) is in every artifact on purpose, so it is skipped without being
+ * reported as drift.
  */
 async function sharedColumns(
   db: SqlExecutor,
@@ -847,8 +850,9 @@ async function sharedColumns(
     }
   }
   const expectedSet = new Set(expectedColumns);
+  const notStored = new Set(unstoredColumnsOf(TABLE_CONFIGS[tableName]));
   for (const column of snapshotColumns) {
-    if (!expectedSet.has(column)) {
+    if (!expectedSet.has(column) && !notStored.has(column)) {
       reportExtraColumn(onSchemaDrift, { origin: 'snapshot', tableName, column, artifactSchemaVersion });
     }
   }

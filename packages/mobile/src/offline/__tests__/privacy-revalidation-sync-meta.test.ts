@@ -500,6 +500,24 @@ describe('preparing the catalogue for an account, once', () => {
     expect(await canReadPrivateCatalog(database)).toBe(true);
   });
 
+  // The server's test is `is_draft IS NOT TRUE AND is_listed IS TRUE`. No row
+  // in production has a NULL in either column (0 of 917,002 on 2026-10-11), and
+  // if one ever does the device reads it the same way.
+  it('reads a missing flag as the server does: not a draft, and not listed', async () => {
+    await database.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
+         ('no-listed-flag', 'kilter', 1, 'somebody-else', 0, NULL, 5),
+         ('no-draft-flag', 'kilter', 1, 'somebody-else', NULL, 1, 6),
+         ('mine-with-no-flags', 'kilter', 1, ?, NULL, NULL, 7)`,
+      [VIEWER],
+    );
+
+    await revalidatePrivateCatalog(database, VIEWER);
+
+    expect(await allClimbs()).toEqual(['mine-with-no-flags', 'my-draft', 'my-unlisted', 'no-draft-flag', 'published']);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
   it('keeps a row with no server sequence and a row a queued write refers to, and keeps the catalogue closed while they stay', async () => {
     await insertClimb('their-unsynced-draft', { owner: 'somebody-else', draft: true, syncSeq: null });
     await insertClimb('queued-draft', { owner: 'somebody-else', draft: true });
@@ -633,32 +651,38 @@ describe('preparing the catalogue for an account, once', () => {
     expect(deletingTransactions).toBe(3);
   });
 
+  // The device no longer stores a first-ascent name or date: no reader selects
+  // them. What an earlier bundle stored is blanked once, on every row.
   describe('first-ascent names an earlier bundle stored', () => {
     const names = async () =>
       Object.fromEntries(
         (
-          await database.getAllAsync<{ climb_uuid: string; fa_username: string | null }>(
-            'SELECT climb_uuid, fa_username FROM board_climb_stats',
+          await database.getAllAsync<{ climb_uuid: string; fa_username: string | null; fa_at: string | null }>(
+            'SELECT climb_uuid, fa_username, fa_at FROM board_climb_stats',
           )
-        ).map((row) => [row.climb_uuid, row.fa_username]),
+        ).map((row) => [row.climb_uuid, [row.fa_username, row.fa_at]]),
       );
 
-    it('are blanked where they came from Boardsesh ticks, and kept where they are the manufacturer’s credit', async () => {
+    it('are blanked, with their dates, whatever climb they are on', async () => {
       await insertClimb('manufacturer', { owner: null });
       await insertClimb('wall-climb', { boardType: 'spray', owner: VIEWER });
       await database.runAsync(
         "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username) VALUES ('kilter', 'no-climb-row', 40, 'A Name')",
       );
+      await database.runAsync(
+        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_at) VALUES ('kilter', 'date-only', 40, '2020-01-01')",
+      );
 
       await revalidatePrivateCatalog(database, VIEWER);
 
       expect(await names()).toEqual({
-        manufacturer: 'A Name',
-        published: null,
-        'my-draft': null,
-        'my-unlisted': null,
-        'wall-climb': null,
-        'no-climb-row': null,
+        manufacturer: [null, null],
+        published: [null, null],
+        'my-draft': [null, null],
+        'my-unlisted': [null, null],
+        'wall-climb': [null, null],
+        'no-climb-row': [null, null],
+        'date-only': [null, null],
       });
     });
 
@@ -670,7 +694,7 @@ describe('preparing the catalogue for an account, once', () => {
 
       await revalidatePrivateCatalog(database, VIEWER);
 
-      expect((await names()).published).toBe('Delivered Later');
+      expect((await names()).published).toEqual(['Delivered Later', null]);
     });
   });
 });

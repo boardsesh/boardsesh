@@ -29,6 +29,18 @@ export type TableSyncConfig = {
    */
   transientColumns?: readonly string[];
   /**
+   * Columns the device table still HAS and the sync no longer writes. The
+   * server still sends them and an artifact still carries them, so like a
+   * transient field they are skipped without a drift report; unlike one they
+   * exist in the table, where a row written from here on leaves them NULL.
+   *
+   * A column is retired here first and dropped from the schema by a later
+   * migration, because an older bundle on the same phone has to keep working
+   * against whatever schema this one leaves. Today: the first-ascent pair of
+   * `board_climb_stats` (`STATS_FIRST_ASCENT_COLUMNS`).
+   */
+  retiredColumns?: readonly string[];
+  /**
    * Columns to read out of a row BEFORE a tombstone deletes it, handed to the
    * `onRowsDeleted` sink afterwards.
    *
@@ -77,8 +89,31 @@ export type TableSyncConfig = {
 
 type TableSyncDefinition = Omit<TableSyncConfig, 'invalidateKeys'>;
 
+/**
+ * Every field of a table's sync document that is known and not written: its
+ * transient fields and its retired columns. What a page writer and an artifact
+ * import skip without reporting drift.
+ */
+export function unstoredColumnsOf(config: Pick<TableSyncConfig, 'transientColumns' | 'retiredColumns'>): string[] {
+  return [...(config.transientColumns ?? []), ...(config.retiredColumns ?? [])];
+}
+
 /** The cursor column all but one sync table uses. */
 const UPDATED_AT_CURSOR = 'updated_at';
+
+/**
+ * The first-ascent credit of a stats row. The server and the snapshot artifact
+ * carry it (the stored upstream credit of a climb that never had a Boardsesh
+ * author, NULL otherwise), and the device does NOT store it: no offline reader
+ * selects either column, and a name kept on a phone is one more thing to take
+ * back when a climber's privacy changes (issue #6306).
+ *
+ * The columns stay in the device schema, unused. Dropping them is a schema
+ * change an older bundle on the same phone would have to survive, so it is a
+ * later step; until then a page or an import leaves them NULL, and the
+ * platform blanks once what an earlier bundle stored.
+ */
+export const STATS_FIRST_ASCENT_COLUMNS = ['fa_username', 'fa_at'] as const;
 
 const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   boardsesh_ticks: {
@@ -281,11 +316,10 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'ascensionist_count',
       'difficulty_average',
       'quality_average',
-      'fa_username',
-      'fa_at',
       'updated_at',
       'sync_seq',
     ],
+    retiredColumns: STATS_FIRST_ASCENT_COLUMNS,
   },
   board_climb_grades: {
     queryName: 'syncClimbGrades',

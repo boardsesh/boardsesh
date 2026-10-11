@@ -11,34 +11,14 @@ export function toSqliteValue(value: unknown): SqlValue {
   return value as SqlValue;
 }
 
-/**
- * A `board_climb_stats` document as a protected write may store it: with no
- * first-ascent credit (issue #6306).
- *
- * The server sends the stored upstream credit for a climb with no Boardsesh
- * owner, and none where the name would come from Boardsesh ticks: that name is
- * whoever first sent the climb, and whether a viewer may see it depends on
- * that climber's privacy. Every row of a protected page is of the second kind
- * (the climber's own drafts and unlisted climbs, or a wall's climbs), so the
- * server ships NULL for both fields there, and no reader on the device selects
- * either. Blanking them here as well means a row written this way can never
- * hold a name, whatever the response carried. Both keys are always set, so an
- * update of an existing row clears a name an earlier bundle stored there.
- *
- * A REFERENCE page is written exactly as it arrives: the server has already
- * decided, the same way for every viewer and for the snapshot artifact.
- */
-export function withoutFirstAscentCredit(document: Record<string, unknown>): Record<string, unknown> {
-  return { ...document, fa_username: null, fa_at: null };
-}
-
 /** Shared transaction-level writer for pull pages and canonical saved-climb mirrors. */
 export async function writePullDocuments(
   transaction: SqlExecutor,
   tableName: string,
   documents: readonly Record<string, unknown>[],
   allowedColumns: readonly string[],
-  transientColumns: readonly string[],
+  /** Known fields that are not written (`unstoredColumnsOf`): skipped without a drift report. */
+  unstoredColumns: readonly string[],
   preserveNewerRows: boolean,
   onSchemaDrift?: SchemaDriftReporter,
 ): Promise<void> {
@@ -50,10 +30,10 @@ export async function writePullDocuments(
   // Drift still surfaces in telemetry (once per table+column per app launch),
   // so a resolver emitting a misnamed column stays observable.
   const allowedColumnSet = new Set(allowedColumns);
-  const transientColumnSet = new Set(transientColumns);
+  const unstoredColumnSet = new Set(unstoredColumns);
   for (const document of documents) {
     const unknownColumns = Object.keys(document).filter(
-      (column) => !allowedColumnSet.has(column) && !transientColumnSet.has(column),
+      (column) => !allowedColumnSet.has(column) && !unstoredColumnSet.has(column),
     );
     for (const unknownColumn of unknownColumns) {
       reportExtraColumn(onSchemaDrift, { origin: 'pull', tableName, column: unknownColumn });

@@ -2252,9 +2252,10 @@ and unlisted climbs. Local reads and the sync of the climber's own tables carry 
 
 **Once per account** the platform prepares the catalogue for the signed-in climber:
 it forgets the protected cursors (the previous account's), deletes the drafts and
-unlisted climbs that are not theirs, and blanks the first-ascent names an earlier
-bundle stored on climbs with an owner, on wall climbs and on stats rows whose climb
-is gone. A board downloaded by an earlier bundle holds every climber's drafts and
+unlisted climbs that are not theirs, and blanks every first-ascent name and date an
+earlier bundle stored. The device no longer stores that pair: a page and an import
+leave `fa_username` and `fa_at` NULL, though an artifact still carries them. A board
+downloaded by an earlier bundle holds every climber's drafts and
 unlisted climbs (92,881 unlisted on Kilter on 2026-10-11), so the first run deletes
 them in batches of 2,000. See `prepareCatalogueForViewer` in
 `packages/mobile/src/offline/privacy-revalidation.ts`.

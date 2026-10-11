@@ -284,7 +284,8 @@ describe('sync layer — real-DDL integration', () => {
       // selects board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
       // ascensionist_count, difficulty_average, quality_average, fa_username, fa_at,
       // updated_at, sync_seq. display_difficulty/difficulty_average/quality_average are
-      // REAL; fa_username null exercises the null path on a per-board table.
+      // REAL. The first-ascent pair is sent and deliberately not stored
+      // (`STATS_FIRST_ASCENT_COLUMNS`).
       const statsDocument = {
         board_type: 'kilter',
         climb_uuid: 'climb-stat-1',
@@ -294,7 +295,7 @@ describe('sync layer — real-DDL integration', () => {
         ascensionist_count: 1234,
         difficulty_average: 21.3,
         quality_average: 4.6,
-        fa_username: null,
+        fa_username: 'Upstream Setter',
         fa_at: '2023-01-01T00:00:00Z',
         updated_at: '2024-05-27T00:00:00Z',
         sync_seq: 9001,
@@ -322,7 +323,7 @@ describe('sync layer — real-DDL integration', () => {
         difficulty_average: 21.3,
         quality_average: 4.6,
         fa_username: null,
-        fa_at: '2023-01-01T00:00:00Z',
+        fa_at: null,
         updated_at: '2024-05-27T00:00:00Z',
         sync_seq: 9001,
       });

@@ -277,7 +277,8 @@ function bytesEqual(left: Uint8Array | null, right: Uint8Array | null): boolean 
 
 /** The climb's hold-set blob, or null when it must not be indexed (or lights nothing). */
 function deriveHoldSet(boardType: string, climb: ClimbChunkRow, parseHoldRows: HoldRowParser): Uint8Array | null {
-  const indexable = climb.is_listed === 1 && climb.is_draft === 0 && (climb.is_hidden ?? 0) === 0;
+  // NULL reads as the server reads it: not listed, and not a draft.
+  const indexable = climb.is_listed === 1 && (climb.is_draft ?? 0) === 0 && (climb.is_hidden ?? 0) === 0;
   if (!indexable) return null;
   const holds = parseHoldRows(boardType, climb.frames ?? '');
   if (holds.length === 0) return null;
@@ -580,7 +581,7 @@ export async function invalidateHoldIndexBehindWrittenClimbs(
       const missed = await txn.getFirstAsync<{ uuid: string }>(
         `SELECT c.uuid FROM board_climbs c
          WHERE c.uuid IN (${placeholders(batch.length)}) AND ${inScope.sql}
-           AND ((c.is_listed = 1 AND c.is_draft = 0 AND COALESCE(c.is_hidden, 0) = 0)
+           AND ((c.is_listed = 1 AND COALESCE(c.is_draft, 0) = 0 AND COALESCE(c.is_hidden, 0) = 0)
              OR EXISTS (
                SELECT 1 FROM holds_index_climbs hic
                JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id

@@ -240,6 +240,40 @@ describe('a privacy event and the sync engine', () => {
     expect(await canReadPrivateCatalog(database)).toBe(true);
   });
 
+  // A wall's rows ARE withdrawn by an event and pulled again. That is a replay
+  // of a board that is already downloaded, not a download: the wall keeps its
+  // completion marker, so nothing is announced twice.
+  it('reports one completed download per board across three events, a spray wall included', async () => {
+    const server = createSyncServer({
+      'syncClimbs@kilter:1': [climbDocument('community-climb', 'kilter', 1, 1)],
+      'syncClimbStats@kilter:1': [statsDocument('community-climb', 'kilter')],
+      'syncClimbGrades@kilter:1': [gradeDocument('community-climb', 'kilter')],
+      'syncClimbs@spray:7': [climbDocument('spray-climb', 'spray', 7, 7)],
+      'syncClimbStats@spray:7': [statsDocument('spray-climb', 'spray')],
+    });
+    const options = syncOptions([KILTER_SCOPE, SPRAY_SCOPE]);
+    await pullSync(database, queryClient, server.fetch, options);
+    const completedScopes = (): string[] =>
+      completedDownloadEvents()
+        .map(([, properties]) => String(properties.scopeKey))
+        .sort((left, right) => left.localeCompare(right));
+    expect(completedScopes()).toEqual([KILTER_SCOPE, SPRAY_SCOPE]);
+
+    for (let event = 1; event <= 3; event += 1) {
+      await revalidatePrivateCatalog(database, 'viewer');
+      // The wall's rows went with the event, and the pull brings them back.
+      expect(await database.getAllAsync("SELECT uuid FROM board_climbs WHERE board_type = 'spray'")).toEqual([]);
+      await pullSync(database, queryClient, server.fetch, options);
+      expect(await database.getAllAsync("SELECT uuid FROM board_climbs WHERE board_type = 'spray'")).toEqual([
+        { uuid: 'spray-climb' },
+      ]);
+    }
+
+    expect(completedScopes()).toEqual([KILTER_SCOPE, SPRAY_SCOPE]);
+    expect(await isScopeDownloadComplete(database, SPRAY_SCOPE)).toBe(true);
+    expect(await isScopeDownloadComplete(database, KILTER_SCOPE)).toBe(true);
+  });
+
   it('lets a catalogue page already on the wire land after the event', async () => {
     const server = createSyncServer({
       'syncClimbs@kilter:1': [climbDocument('community-climb', 'kilter', 1, 1)],

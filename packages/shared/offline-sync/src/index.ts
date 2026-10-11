@@ -275,6 +275,7 @@ export {
   boardSyncStreamsFor,
   hasReferenceStream,
   isPrivacyScopedBoardType,
+  STATS_FIRST_ASCENT_COLUMNS,
 } from './sync/table-config';
 export type { BoardSyncStream, TableSyncConfig } from './sync/table-config';
 export {

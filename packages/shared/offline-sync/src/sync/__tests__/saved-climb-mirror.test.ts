@@ -83,13 +83,9 @@ describe('canonical saved-climb mirror on real SQLite', () => {
     }
   });
 
-  // `syncClimbDocuments` returns the stored first-ascent name. A mirrored climb
-  // is a protected write, and those keep no name on the device (issue #6306).
-  it('stores no first-ascent name, and clears one an earlier write left on the row', async () => {
-    await db.runAsync(
-      `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username, fa_at, updated_at, sync_seq)
-       VALUES ('spray', 'new-climb', 40, 'Stored earlier', '2025-01-01T00:00:00Z', '2026-01-01T00:00:00.000Z', 1)`,
-    );
+  // `syncClimbDocuments` returns the stored first-ascent name. The device keeps
+  // no first-ascent name at all (issue #6306), from a mirror or from a page.
+  it('stores no first-ascent name', async () => {
     const named = {
       ...fresh,
       stats: [{ ...fresh.stats[0], fa_username: 'First Ascensionist', fa_at: '2026-01-01T00:00:00Z' }],

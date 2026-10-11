@@ -204,6 +204,26 @@ describe('downloading a board from a snapshot', () => {
     expect(completions[0].phases.protectedRows).toBe(3);
   });
 
+  // The file carries the stored upstream credit; it is the public dataset too.
+  // The device stores neither column, and the two are not drift.
+  it('does not store the first-ascent credit the artifact carries, and does not report it as drift', async () => {
+    const onSchemaDrift = vi.fn();
+    const snapshot = artifactSource();
+
+    await sync(backend().fetch, { snapshotSource: snapshot.source, onSchemaDrift });
+
+    const artifact = createTestDatabase(layoutPath);
+    expect(
+      await artifact.getAllAsync('SELECT DISTINCT fa_username FROM board_climb_stats WHERE fa_username IS NOT NULL'),
+    ).toEqual([{ fa_username: 'Manufacturer Setter' }]);
+    artifact.close();
+    expect(await db.getAllAsync('SELECT DISTINCT fa_username, fa_at FROM board_climb_stats')).toEqual([
+      { fa_username: null, fa_at: null },
+    ]);
+    expect(await localStats()).toEqual(ALL_CLIMB_UUIDS);
+    expect(onSchemaDrift).not.toHaveBeenCalled();
+  });
+
   it('settles: the cycles that follow import nothing and start no stream over', async () => {
     const server = backend();
     const snapshot = artifactSource();
@@ -958,15 +978,11 @@ describe('arriving from, and returning to, a bundle from before the split', () =
 
     describe('when the earlier bundle only pulled a delta', () => {
       // Its `setCheckpoint` replaced each row it advanced, which dropped the
-      // protected cursor and the rule stamp that were in it. The draft's stats
-      // row it wrote on the way carried a first-ascent name.
+      // protected cursor and the rule stamp that were in it.
       const pulledByEarlierBundle = cursorAt(95);
       beforeEach(async () => {
         for (const key of [CLIMBS_KEY, STATS_KEY, GRADES_KEY])
           await olderBundleSetCheckpoint(db, key, pulledByEarlierBundle);
-        await db.runAsync(
-          "UPDATE board_climb_stats SET fa_username = 'A Private Climber' WHERE climb_uuid = 'viewer-draft'",
-        );
       });
 
       it('costs one protected replay, at once and on any link', async () => {
@@ -982,9 +998,6 @@ describe('arriving from, and returning to, a bundle from before the split', () =
         }
         expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
         expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(true);
-        expect(
-          await db.getAllAsync("SELECT fa_username FROM board_climb_stats WHERE climb_uuid = 'viewer-draft'"),
-        ).toEqual([{ fa_username: null }]);
         expect(completions).toHaveLength(1);
       });
 

@@ -41,6 +41,7 @@ import { createTestDatabase, markScopeDownloaded, type TestSqliteDb } from '@boa
 import {
   needsPrivacyRevalidation,
   revalidatePrivateCatalog,
+  needsCatalogOutboxRepair,
   waitForPrivacyRevalidation,
   subscribePrivacyRevalidation,
   PrivacyRevalidationDeferredError,
@@ -239,12 +240,12 @@ describe('downloaded catalogue privacy', () => {
       { uuid: 'published-by-another' },
     ]);
     expect(await database.getAllAsync('SELECT uuid FROM boardsesh_ticks')).toEqual([{ uuid: 'own-tick' }]);
-    // A first-ascent name an earlier bundle copied from Boardsesh ticks goes,
-    // once; the manufacturer's credit on a climb with no owner stays.
+    // The device stores no first-ascent name: what an earlier bundle stored
+    // goes, once.
     expect(
       await database.getAllAsync('SELECT climb_uuid, fa_username FROM board_climb_stats ORDER BY climb_uuid'),
     ).toEqual([
-      { climb_uuid: 'manufacturer', fa_username: 'Copied identity' },
+      { climb_uuid: 'manufacturer', fa_username: null },
       { climb_uuid: 'own-climb', fa_username: null },
       { climb_uuid: 'published-by-another', fa_username: null },
     ]);
@@ -309,6 +310,27 @@ describe('downloaded catalogue privacy', () => {
       { idempotency_key: 'draft-reference' },
     ]);
     expect(await canReadPrivateCatalog(database)).toBe(false);
+  });
+
+  it('opens the catalogue after the last queued reference to a foreign draft is delivered', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, sync_seq) VALUES ('queued-draft', 'kilter', 'other', 1, 42)",
+    );
+    await database.runAsync(
+      "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'queued-draft-reference')",
+      [JSON.stringify({ climbUuid: 'queued-draft' })],
+    );
+    await revalidatePrivateCatalog(database, 'viewer');
+    expect(needsCatalogOutboxRepair('viewer')).toBe(true);
+    expect(needsCatalogOutboxRepair('another-viewer')).toBe(false);
+    expect(await canReadPrivateCatalog(database)).toBe(false);
+    await database.runAsync("DELETE FROM pending_mutations WHERE idempotency_key = 'queued-draft-reference'");
+    await revalidatePrivateCatalog(database, 'viewer');
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+    expect(needsCatalogOutboxRepair('viewer')).toBe(false);
   });
 
   it('preserves another account drafts and queued climb references without granting catalogue access', async () => {

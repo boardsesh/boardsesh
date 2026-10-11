@@ -38,7 +38,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schema';
 import type { QueryInvalidator } from '@boardsesh/offline-sync';
-import { pullSync, runMigrations, TABLE_CONFIGS } from '@boardsesh/offline-sync';
+import { pullSync, runMigrations, STATS_FIRST_ASCENT_COLUMNS, TABLE_CONFIGS } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 // createPool is the SAME accessor runExport uses (primary-only: replica
 // commit-order snapshots can omit lower-cursor rows, so the export never reads
@@ -65,8 +65,20 @@ const SCOPE_KEY = `${BOARD_TYPE}:${LAYOUT_ID}:${SIZE_ID}`;
 const BUILT_AT = '2026-06-01T00:00:00.000Z';
 
 const CLIMB_COLUMNS = TABLE_CONFIGS.board_climbs.localColumns;
+// What the device stores of a stats row. A resolver document and an artifact
+// row also carry the first-ascent pair, which the device does not store: the
+// two are compared on that pair directly, wire against file.
 const STATS_COLUMNS = TABLE_CONFIGS.board_climb_stats.localColumns;
+const SERVED_STATS_COLUMNS = [...STATS_COLUMNS, ...STATS_FIRST_ASCENT_COLUMNS];
 const GRADES_COLUMNS = TABLE_CONFIGS.board_climb_grades.localColumns;
+
+type FirstAscent = [climbAtAngle: string, faUsername: unknown, faAt: unknown];
+const firstAscentsOf = (statsRows: readonly Record<string, unknown>[]): FirstAscent[] =>
+  statsRows
+    .map((row): FirstAscent => [`${String(row.climb_uuid)}@${String(row.angle)}`, row.fa_username, row.fa_at])
+    .sort(([left], [right]) => left.localeCompare(right));
+/** Every stats document the resolver has served since the last `pullInto` began. */
+let servedStatsDocuments: Record<string, unknown>[] = [];
 
 function ctx(): ConnectionContext {
   return {
@@ -104,7 +116,8 @@ async function graphqlFetch<T>(query: string, variables?: Record<string, unknown
   // 'syncClimbs' (capital S after 'syncClimb'), so ordering is unambiguous.
   if (query.includes('syncClimbStats')) {
     const result = await syncQueries.syncClimbStats(undefined, resolverArgs, ctx());
-    for (const document of result.documents) assertDocumentColumns(document, STATS_COLUMNS);
+    for (const document of result.documents) assertDocumentColumns(document, SERVED_STATS_COLUMNS);
+    servedStatsDocuments.push(...(result.documents as Record<string, unknown>[]));
     return { syncClimbStats: result } as T;
   }
   if (query.includes('syncClimbGrades')) {
@@ -690,7 +703,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       sortedUuids,
     );
     expect(
-      readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS).map((row) => [
+      readArtifactRows(filePath, 'board_climb_stats', SERVED_STATS_COLUMNS).map((row) => [
         row.climb_uuid,
         row.fa_username,
         row.fa_at,
@@ -941,8 +954,17 @@ describe('board-snapshot export ↔ REFERENCE stream', () => {
   async function pullInto(fetchPage: typeof graphqlFetch) {
     const clientDb = createTestDatabase();
     await runMigrations(clientDb);
+    servedStatsDocuments = [];
     await pullSync(clientDb, noopQueryClient(), fetchPage, { enabledBoards: [SCOPE_KEY] });
+    // The device keeps no first-ascent name or date, whatever it was sent.
+    expect(
+      await clientDb.getAllAsync(
+        `SELECT climb_uuid FROM board_climb_stats WHERE ${STATS_FIRST_ASCENT_COLUMNS.map((column) => `${column} IS NOT NULL`).join(' OR ')}`,
+      ),
+    ).toEqual([]);
     return {
+      /** The first-ascent pair as the resolver served it, per stats row. */
+      servedFirstAscents: firstAscentsOf(servedStatsDocuments),
       climbs: await clientDb.getAllAsync<Record<string, unknown>>(
         `SELECT ${CLIMB_COLUMNS.join(', ')} FROM board_climbs ORDER BY uuid`,
       ),
@@ -981,6 +1003,8 @@ describe('board-snapshot export ↔ REFERENCE stream', () => {
     return {
       climbs: readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS),
       stats: readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS),
+      /** The first-ascent pair as the file carries it, per stats row. */
+      firstAscents: firstAscentsOf(readArtifactRows(filePath, 'board_climb_stats', SERVED_STATS_COLUMNS)),
       grades: readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS),
     };
   }
@@ -1034,9 +1058,9 @@ describe('board-snapshot export ↔ REFERENCE stream', () => {
       expect(artifact.grades.map((row) => row.climb_uuid)).toEqual(sortedUuids);
       // The whole first-ascent rule, on both paths at once: the stored credit
       // of a climb that never had a Boardsesh author, and NULL for the rest.
-      expect(
-        reference.stats.map((row) => [`${String(row.climb_uuid)}@${String(row.angle)}`, row.fa_username, row.fa_at]),
-      ).toEqual([
+      // The device stores neither column, so the two paths are compared where
+      // the pair exists: in the resolver's documents and in the file.
+      const firstAscentRule: FirstAscent[] = [
         ['authored-by-other@40', null, null],
         ['authored-by-viewer@40', null, null],
         ['deleted-account@40', null, null],
@@ -1044,7 +1068,9 @@ describe('board-snapshot export ↔ REFERENCE stream', () => {
         ['imported-a@45', null, null],
         ['imported-b@40', 'Stored FA imported-b', '2023-01-01T00:00:00Z'],
         ['narrowed-audience@40', 'Stored FA narrowed-audience', '2023-01-01T00:00:00Z'],
-      ]);
+      ];
+      expect(reference.servedFirstAscents).toEqual(firstAscentRule);
+      expect(artifact.firstAscents).toEqual(firstAscentRule);
 
       // Nothing here is the viewer's alone, so the single-stream pull holds
       // the same rows with the same values.
@@ -1052,6 +1078,7 @@ describe('board-snapshot export ↔ REFERENCE stream', () => {
       expect(singleStream.climbs).toEqual(artifact.climbs);
       expect(singleStream.stats).toEqual(artifact.stats);
       expect(singleStream.grades).toEqual(artifact.grades);
+      expect(singleStream.servedFirstAscents).toEqual(firstAscentRule);
     },
   );
 
