@@ -8,7 +8,7 @@ import { getPreference, setPreference } from './preference-store';
 // Its own key rather than a field on the board-render settings, because applying
 // a preset replaces that whole bundle and would silently reset this choice.
 //
-// Structure mirrors `climb-quick-actions-button-preference.ts`: a module store
+// Structure mirrors `boardsesh-grades-preference.ts`: a module store
 // read through `useSyncExternalStore` with a stable snapshot, and a one-time
 // load shared by every mounted reader. The render hook reads it on every row, so
 // the read is O(1) and the load is kicked once, not once per row.

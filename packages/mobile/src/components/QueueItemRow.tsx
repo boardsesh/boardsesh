@@ -20,7 +20,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
-import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
+import { climbRowSeparatorInset } from './climb-row-layout';
 import { BoardDriverAvatar } from './board-presence/BoardDriverAvatar';
 import { resolveQueueRowAttribution } from '../lib/queue-attribution';
 import { resolveClimbRenderBoard } from '../lib/boards/climb-render-board';
@@ -43,8 +43,11 @@ const LOG_ASCENT_ACTION_NAME = 'logAscent';
 // suggestion rows reserve the same gutter and align their thumbnails + separator
 // with the queue rows from a single source of truth.
 export const POSITION_SLOT_WIDTH = 28;
+// Where the thumbnail starts: the row's 12pt padding, the slot above and the gap
+// after it. Exported for the same reason as the slot width.
+export const QUEUE_ROW_LEADING_INSET = spacing[3] + POSITION_SLOT_WIDTH + spacing[3];
 // Inset the separator to start under the climb name (after position + thumbnail).
-export const SEPARATOR_INSET = spacing[3] + POSITION_SLOT_WIDTH + spacing[3] + THUMBNAIL_WIDTH + spacing[3];
+const SEPARATOR_INSET = climbRowSeparatorInset(true, QUEUE_ROW_LEADING_INSET);
 
 export type QueueItemRowBoard = {
   boardName: BoardName;

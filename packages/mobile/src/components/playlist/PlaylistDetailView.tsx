@@ -64,6 +64,7 @@ import { glassSize } from '../../theme/layout';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { CLIMB_ROW_GUTTER } from '../climb-list-row-styles';
+import { climbRowSeparatorInset } from '../climb-row-layout';
 
 /** Bottom scrim that keeps white title/meta legible across the palette (amber
  *  and green included) without per-colour luminance branching. */
@@ -1198,6 +1199,6 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     unrenderableSeparator: {
       height: StyleSheet.hairlineWidth,
-      marginStart: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
+      marginStart: climbRowSeparatorInset(true),
     },
   });

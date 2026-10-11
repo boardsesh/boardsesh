@@ -127,7 +127,7 @@ vi.mock('../../ClimbListItemContent', () => ({ ClimbListItemContent: () => creat
 // constants QueueList imports from the same module for its styles.
 vi.mock('../../QueueItemRow', () => ({
   POSITION_SLOT_WIDTH: 28,
-  SEPARATOR_INSET: 200,
+  QUEUE_ROW_LEADING_INSET: 52,
   QueueItemRow: (props: Record<string, unknown>) => {
     capturedRows.props.push(props);
     return createElement('div');

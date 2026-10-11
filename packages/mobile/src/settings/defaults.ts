@@ -37,4 +37,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   otaPinSwitchInFlight: null,
   otaLeaveOwed: false,
   otaLeaveBlockedUpdateId: null,
+  climbRowDisplayV1: null,
 };

@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { ClimbListItemContent } from '../../ClimbListItemContent';
-import { THUMBNAIL_WIDTH } from '../../ClimbListThumbnail';
+import { climbRowSeparatorInset } from '../../climb-row-layout';
 import { Icon } from '../../Icon';
 import { PressableSurface } from '../../PressableSurface';
 import { Text } from '../../Text';
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     // Inset to start under the climb name (after the thumbnail), matching the
-    // queue list's row separators.
-    marginStart: spacing[3] + THUMBNAIL_WIDTH + spacing[3],
+    // queue list's row separators. The row pads 12pt, not the 16pt gutter.
+    marginStart: climbRowSeparatorInset(true, spacing[3]),
   },
 });

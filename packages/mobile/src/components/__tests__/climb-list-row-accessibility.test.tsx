@@ -175,6 +175,7 @@ vi.mock('../climb-list-row-colors', () => ({
 }));
 
 import { ClimbListRow } from '../ClimbListRow';
+import { resetClimbRowDisplayForTests, setClimbRowField } from '../../lib/climb-row-display-preference';
 
 const climb = { uuid: 'climb-1', name: 'Crimp Master' } as Climb;
 
@@ -242,6 +243,7 @@ describe('ClimbListRow screen-reader activation', () => {
     panels.enabled = false;
     panels.language = '';
     vi.clearAllMocks();
+    resetClimbRowDisplayForTests();
   });
 
   it('opens the climb from a screen-reader tap and from the activate action', () => {
@@ -340,6 +342,29 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(onOpenActions).toHaveBeenCalledTimes(1);
     expect(onOpenActions).toHaveBeenCalledWith(climb);
     expect(haptics.medium).toHaveBeenCalledTimes(1);
+  });
+
+  // The same guarantee for the other way the button goes away: the climbs list
+  // always asks for it, and the row drops it when the climber's setting is off.
+  it('hides the ⋮ button when the climber turned it off, and still publishes the menu action', () => {
+    const onOpenActions = vi.fn();
+    render(
+      <ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={onOpenActions} showMoreButton />,
+    );
+    expect(a11y.moreButton).not.toBeNull();
+
+    a11y.moreButton = null;
+    act(() => setClimbRowField('quickActions', false));
+    // The row re-rendered itself: same props, and no new `renderItem` needed.
+    expect(a11y.moreButton).toBeNull();
+    expect(a11y.row?.accessibilityActions).toEqual([{ name: 'moreActions', label: 'mobile.climbRow.moreActions' }]);
+
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'moreActions' } });
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    expect(onOpenActions).toHaveBeenCalledWith(climb);
+
+    act(() => setClimbRowField('quickActions', true));
+    expect(a11y.moreButton).not.toBeNull();
   });
 
   // A row that cannot open the menu must not advertise it.

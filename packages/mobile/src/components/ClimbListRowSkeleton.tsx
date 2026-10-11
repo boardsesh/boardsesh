@@ -3,6 +3,7 @@ import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './ClimbListThumbnail';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
 import { CLIMB_ROW_GUTTER } from './climb-list-row-styles';
+import { climbRowSeparatorInset } from './climb-row-layout';
 
 export function ClimbListRowSkeleton() {
   const { systemColors } = useTheme();
@@ -63,6 +64,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginStart: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
+    marginStart: climbRowSeparatorInset(true),
   },
 });

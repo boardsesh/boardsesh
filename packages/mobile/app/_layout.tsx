@@ -84,6 +84,7 @@ import { iosDarkColors } from '../src/theme/ios-colors';
 import { spacing } from '../src/theme/tokens';
 import { glassStackScreenOptions } from '../src/theme/navigation';
 import { ensurePlayDrawerSectionsLoaded } from '../src/lib/play-drawer-sections-preference';
+import { ensureClimbRowLegacyMigrated } from '../src/lib/climb-row-display-preference';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
@@ -594,6 +595,7 @@ function RootLayout() {
 
   useEffect(() => {
     void ensurePlayDrawerSectionsLoaded();
+    void ensureClimbRowLegacyMigrated();
     void initializeUserDataExportDownloads().catch(reportError);
   }, []);
 

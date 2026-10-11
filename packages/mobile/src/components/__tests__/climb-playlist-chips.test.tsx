@@ -6,7 +6,6 @@ import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 
 // Controls the hooks the chips read, set per-test before render.
 const ctrl = vi.hoisted(() => ({
-  enabled: true,
   variant: 'liquidGlass' as 'material' | 'liquidGlass',
   membership: new Set<string>(),
   playlistsById: undefined as Map<string, Playlist> | undefined,
@@ -48,11 +47,7 @@ vi.mock('../../hooks/use-climb-playlist-memberships', () => ({
   useClimbPlaylistMemberships: () => ctrl.membership,
 }));
 
-vi.mock('../../lib/show-playlist-tags-preference', () => ({
-  useShowPlaylistTagsPreference: () => ({ enabled: ctrl.enabled, loaded: true, setEnabled: vi.fn() }),
-}));
-
-import { ClimbPlaylistChips } from '../ClimbPlaylistChips';
+import { ClimbPlaylistChips, ClimbPlaylistChipsView } from '../ClimbPlaylistChips';
 
 function playlist(uuid: string, name: string, color?: string): Playlist {
   return {
@@ -79,17 +74,9 @@ function setMemberships(entries: Array<[string, string]>, colors: Record<string,
 
 describe('ClimbPlaylistChips', () => {
   beforeEach(() => {
-    ctrl.enabled = true;
     ctrl.variant = 'liquidGlass';
     ctrl.membership = new Set();
     ctrl.playlistsById = new Map();
-  });
-
-  it('renders nothing when the setting is off', () => {
-    ctrl.enabled = false;
-    setMemberships([['p1', 'Project@30']]);
-    const { container } = render(<ClimbPlaylistChips climbUuid="c1" />);
-    expect(container.textContent).toBe('');
   });
 
   it('renders nothing when the climb is in no playlists', () => {
@@ -136,5 +123,42 @@ describe('ClimbPlaylistChips', () => {
     setMemberships([['p1', 'Project@30']]);
     const { container } = render(<ClimbPlaylistChips climbUuid="c1" />);
     expect(container.textContent).toContain('Project@30');
+  });
+});
+
+// The "Show playlist tags" setting is not read here any more: the row decides
+// whether to mount the strip at all (climb-row-default-output.test.tsx).
+//
+// The view is what the Climb list settings preview draws from staged data, so it
+// has to work with no membership store and no playlists provider behind it.
+describe('ClimbPlaylistChipsView', () => {
+  const chip = (key: string, name: string, emoji: string | null = null) => ({ key, name, dotColor: '#FF0000', emoji });
+
+  beforeEach(() => {
+    ctrl.variant = 'liquidGlass';
+    ctrl.membership = new Set();
+    ctrl.playlistsById = undefined;
+  });
+
+  it('draws the chips it is handed', () => {
+    const { container } = render(<ClimbPlaylistChipsView chips={[chip('p1', 'Project@30'), chip('p2', 'Next@25')]} />);
+    expect(container.textContent).toBe('Project@30Next@25');
+  });
+
+  it('shows a playlist’s emoji in place of its colour dot', () => {
+    const { container } = render(<ClimbPlaylistChipsView chips={[chip('p1', 'Project@30', '🔥')]} />);
+    expect(container.textContent).toBe('🔥Project@30');
+  });
+
+  it('collapses everything past the second chip into "+N"', () => {
+    const { container } = render(
+      <ClimbPlaylistChipsView chips={[chip('p1', 'One'), chip('p2', 'Two'), chip('p3', 'Three')]} />,
+    );
+    expect(container.textContent).toBe('OneTwo+1');
+  });
+
+  it('draws nothing, not an empty strip, for a climb in no playlists', () => {
+    const { container } = render(<ClimbPlaylistChipsView chips={[]} />);
+    expect(container.innerHTML).toBe('');
   });
 });

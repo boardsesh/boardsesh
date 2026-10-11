@@ -1,6 +1,10 @@
 import { StyleSheet } from 'react-native';
-import { THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
+import { CLIMB_ROW_GUTTER, climbRowSeparatorInset } from './climb-row-layout';
 import { spacing } from '../theme/tokens';
+
+// The gutter is defined with the rest of the row's geometry; re-exported here
+// because the hosts that pad a row to it already import the row styles.
+export { CLIMB_ROW_GUTTER };
 
 /**
  * Row layout shared by the climbs-list row (`ClimbListRow`) and the static climb
@@ -9,13 +13,6 @@ import { spacing } from '../theme/tokens';
  * Colours (row background, separator) are applied inline by each consumer from
  * scheme-aware `systemColors` — only the layout lives here.
  */
-/**
- * The row's leading and trailing margin: 16pt, the HIG layout margin on iPhone
- * (HIG Layout) and the M3 list item's 16dp horizontal padding (M3 Lists). The
- * thumbnail lines up with section headers and every other list in the app.
- */
-export const CLIMB_ROW_GUTTER = spacing[4];
-
 export const climbListRowStyles = StyleSheet.create({
   contentRow: {
     flexDirection: 'row',
@@ -27,6 +24,6 @@ export const climbListRowStyles = StyleSheet.create({
   // Separator inset to start at the text column (after the thumbnail).
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
+    marginLeft: climbRowSeparatorInset(true),
   },
 });

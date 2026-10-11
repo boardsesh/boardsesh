@@ -19,9 +19,11 @@ import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { DraftChip, climbChipStyles } from './DraftChip';
 import { ProjectChip } from './ProjectChip';
-import { ClimbPlaylistChips } from './ClimbPlaylistChips';
+import { ClimbPlaylistChips, type ClimbRowPlaylistChipsLeafProps } from './ClimbPlaylistChips';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
+import { useClimbRowDisplay } from '../lib/climb-row-display-preference';
+import type { ClimbRowDisplay } from '../lib/climb-row-display';
 import type { IconName } from './icon-map';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
 
@@ -91,6 +93,52 @@ export type ClimbListItemClimb = {
   boardseshConfidence?: string | null;
 };
 
+// The row's leaves. Each is two components: a VIEW that draws from plain props,
+// and a live wrapper that owns the store subscriptions and renders the view.
+// The row mounts the wrappers; the Climb list settings preview cannot (the stats
+// hook throws outside its provider and would start network reads), so it builds
+// its own leaves from the exported views and staged data and passes them in.
+//
+// These are the props the row hands each leaf: what identifies the climb, never
+// what the leaf will draw.
+export type ClimbRowSubtitleLeafProps = {
+  boardName: BoardName;
+  layoutId: number;
+  climbUuid: string;
+  angle: number;
+  isDraft: boolean;
+  ascensionistCount: number;
+  qualityAverage: string;
+  setterUsername: string;
+};
+
+export type ClimbRowGradeLeafProps = {
+  climb: ClimbListItemClimb;
+  boardName: BoardName;
+  layoutId: number;
+  angle: number;
+  gradeIsConsensus: boolean;
+  consensusGrade?: string | null;
+};
+
+export type ClimbRowAscentStatusLeafProps = {
+  climbUuid: string;
+  angle: number;
+  supportsMirroring: boolean;
+  /** `Climb.holdsRevisionNumber`, a primitive so the memo boundary holds. */
+  holdsRevisionNumber: number | null;
+};
+
+export type ClimbRowFavoriteLeafProps = { climbUuid: string };
+
+export type ClimbRowLeaves = Readonly<{
+  Subtitle: React.ComponentType<ClimbRowSubtitleLeafProps>;
+  Grade: React.ComponentType<ClimbRowGradeLeafProps>;
+  AscentStatus: React.ComponentType<ClimbRowAscentStatusLeafProps>;
+  Favorite: React.ComponentType<ClimbRowFavoriteLeafProps>;
+  PlaylistChips: React.ComponentType<ClimbRowPlaylistChipsLeafProps>;
+}>;
+
 type ClimbListItemContentProps = {
   // Nullable/thin-tolerant: the search list always supplies a resolved climb, but
   // a partially-synced peer queue item can reach the queue row with a missing or
@@ -145,6 +193,18 @@ type ClimbListItemContentProps = {
    * scroll past and nothing on the rest.
    */
   showFavorite?: boolean;
+  /**
+   * What the row shows. Omitted (every list does this), the row reads the
+   * climber's Climb list settings itself, so no host has to thread them through.
+   * Provided, it is used as given: the settings preview passes the row it is
+   * staging.
+   */
+  display?: ClimbRowDisplay;
+  /**
+   * The leaf components to mount. Omitted, the live ones. Must be a stable
+   * object: a new one remounts every leaf.
+   */
+  leaves?: ClimbRowLeaves;
 };
 
 /**
@@ -163,12 +223,15 @@ type ClimbListItemContentProps = {
  * Renders nothing when the climb isn't favourited, which is the common case, so
  * it costs an unfavourited row nothing but the subscription.
  */
-const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: { climbUuid: string }) {
+const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: ClimbRowFavoriteLeafProps) {
+  return useIsClimbFavorited(climbUuid) ? <ClimbFavoriteView /> : null;
+});
+
+/** The heart `FavoriteGlyph` draws on a favourited climb. Props-free: it is either there or not. */
+export const ClimbFavoriteView = React.memo(function ClimbFavoriteView() {
   const { t } = useTranslation('climbs');
   const theme = useTheme();
-  const isFavorited = useIsClimbFavorited(climbUuid);
 
-  if (!isFavorited) return null;
   return (
     <View accessibilityRole="image" accessibilityLabel={t('mobile.climbRow.favorited')}>
       <Icon name="favorite.fill" size={16} color={theme.systemColors.secondaryLabel} />
@@ -258,20 +321,41 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   angle,
   supportsMirroring,
   holdsRevisionNumber,
-}: {
-  climbUuid: string;
-  angle: number;
-  supportsMirroring: boolean;
-  /** `Climb.holdsRevisionNumber`, a primitive so the memo boundary holds. */
-  holdsRevisionNumber: number | null;
-}) {
-  const { t } = useTranslation('climbs');
-  const { t: tSession } = useTranslation('session');
-  const { systemColors } = useTheme();
+}: ClimbRowAscentStatusLeafProps) {
   // Unconditional hooks keep capability changes safe. The nonmirrorable board
   // keeps its existing aggregate glyph; each mirrorable direction is independent.
   const ascentStatus = useAscentStatus(climbUuid, angle, supportsMirroring ? false : undefined, holdsRevisionNumber);
   const mirrorStatus = useAscentStatus(climbUuid, angle, true, holdsRevisionNumber);
+
+  return (
+    <ClimbAscentStatusView
+      supportsMirroring={supportsMirroring}
+      ascentStatus={ascentStatus}
+      mirrorStatus={mirrorStatus}
+    />
+  );
+});
+
+export type ClimbAscentStatusViewProps = {
+  supportsMirroring: boolean;
+  /** The whole climb's status on a board that cannot mirror; the original direction's on one that can. */
+  ascentStatus: AscentStatusValue | null;
+  /** The mirrored direction's status. Drawn only on a board that mirrors. */
+  mirrorStatus: AscentStatusValue | null;
+};
+
+/**
+ * What `AscentStatusGlyph` draws: one glyph beside the grade, or a labelled
+ * line per direction on a board that mirrors. Nothing when there is no status.
+ */
+export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
+  supportsMirroring,
+  ascentStatus,
+  mirrorStatus,
+}: ClimbAscentStatusViewProps) {
+  const { t } = useTranslation('climbs');
+  const { t: tSession } = useTranslation('session');
+  const { systemColors } = useTheme();
   const statusLabels = useMemo(
     () => ({
       flash: t('mobile.climbRow.ascentStatus.flash'),
@@ -329,28 +413,43 @@ const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle({
   ascensionistCount,
   qualityAverage,
   setterUsername,
-}: {
-  boardName: BoardName;
-  layoutId: number;
-  climbUuid: string;
-  angle: number;
-  isDraft: boolean;
-  ascensionistCount: number;
-  qualityAverage: string;
-  setterUsername: string;
-}) {
-  const { t } = useTranslation('climbs');
+}: ClimbRowSubtitleLeafProps) {
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climbUuid, angle, {
     ascensionistCount,
     qualityAverage,
   });
+
+  return (
+    <ClimbSubtitleView
+      isDraft={isDraft}
+      ascensionistCount={liveStats.ascensionistCount}
+      qualityAverage={liveStats.qualityAverage}
+      setterUsername={setterUsername}
+    />
+  );
+});
+
+export type ClimbSubtitleViewProps = {
+  isDraft: boolean;
+  ascensionistCount: number;
+  qualityAverage: string | null;
+  setterUsername: string;
+};
+
+/** The line under the name that `LiveClimbSubtitle` draws: sends · quality★ · setter. */
+export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
+  isDraft,
+  ascensionistCount,
+  qualityAverage,
+  setterUsername,
+}: ClimbSubtitleViewProps) {
+  const { t } = useTranslation('climbs');
   const parts: string[] = [];
   // A draft says so with the chip beside its name (DraftChip), not in this line.
-  if (!isDraft && liveStats.ascensionistCount > 0) {
-    parts.push(formatSends(liveStats.ascensionistCount, t));
+  if (!isDraft && ascensionistCount > 0) {
+    parts.push(formatSends(ascensionistCount, t));
   }
-  const liveQuality = liveStats.qualityAverage;
-  if (liveQuality != null && parseFloat(liveQuality) > 0) parts.push(`${formatQuality(liveQuality)}★`);
+  if (qualityAverage != null && parseFloat(qualityAverage) > 0) parts.push(`${formatQuality(qualityAverage)}★`);
   if (setterUsername) parts.push(setterUsername);
   const subtitle = parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
 
@@ -368,18 +467,9 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   angle,
   gradeIsConsensus,
   consensusGrade,
-}: {
-  climb: ClimbListItemClimb;
-  boardName: BoardName;
-  layoutId: number;
-  angle: number;
-  gradeIsConsensus: boolean;
-  consensusGrade?: string | null;
-}) {
+}: ClimbRowGradeLeafProps) {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
-  const { systemColors } = useTheme();
-  const { t } = useTranslation('climbs');
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
     ascensionistCount: climb.ascensionist_count,
     qualityAverage: climb.quality_average,
@@ -429,6 +519,57 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   });
 
   return (
+    <ClimbGradeView
+      label={primaryLabel}
+      color={primaryColor}
+      markedAsMine={markedAsMine}
+      gradeIsConsensus={gradeIsConsensus}
+      secondaryLabel={secondary}
+      isProject={isProject}
+      // The grade and the send count came from a different angle than the one on
+      // the wall. `statsAngle` rides the search payload, while `liveStats` overlays
+      // the store keyed on the BROWSED angle. Those only disagree after the climber
+      // logs the first ever tick at the browsed angle on a climb whose numbers came
+      // from another one: a canonical row appears at the browsed angle and the
+      // count switches to it while this marker still names the old angle, until
+      // the next search refetch resolves tier 1 and drops it. Narrow,
+      // self-correcting, and not worth widening the shared hook's return to
+      // pre-empt.
+      setAtAngle={climb.statsAngle != null && climb.statsAngle !== angle ? climb.statsAngle : null}
+    />
+  );
+});
+
+export type ClimbGradeViewProps = {
+  /** The grade shown big, already resolved: yours, else Boardsesh's, else the crowd's. */
+  label: string;
+  color: string;
+  /** One head beside the grade: it is the climber's own. */
+  markedAsMine: boolean;
+  /** Two heads beside the grade: it is the crowd's, shown where a tick has none of its own. */
+  gradeIsConsensus: boolean;
+  /** The crowd's grade under the climber's own, when the two read differently. */
+  secondaryLabel: string | null;
+  /** Nobody has graded it: the slot says Project instead of standing empty. */
+  isProject: boolean;
+  /** The other angle the grade was read from, or null when it is the angle on the wall. */
+  setAtAngle: number | null;
+};
+
+/** The grade column `LiveClimbGrade` draws. */
+export const ClimbGradeView = React.memo(function ClimbGradeView({
+  label,
+  color,
+  markedAsMine,
+  gradeIsConsensus,
+  secondaryLabel,
+  isProject,
+  setAtAngle,
+}: ClimbGradeViewProps) {
+  const { systemColors } = useTheme();
+  const { t } = useTranslation('climbs');
+
+  return (
     <View style={styles.gradeColumn}>
       <View style={styles.iconGradeRow}>
         {markedAsMine ? <Icon name="person" size={13} color={systemColors.secondaryLabel} /> : null}
@@ -443,17 +584,13 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
             // width is only needed on an unmarked row. Without this a marked row
             // would cost the climb name the full glyph width on top of a gutter
             // it no longer needs.
-            style={[
-              styles.gradeText,
-              markedAsMine || gradeIsConsensus ? styles.gradeTextMarked : null,
-              { color: primaryColor },
-            ]}
+            style={[styles.gradeText, markedAsMine || gradeIsConsensus ? styles.gradeTextMarked : null, { color }]}
           >
-            {primaryLabel}
+            {label}
           </Text>
         )}
       </View>
-      {secondary ? (
+      {secondaryLabel ? (
         <View style={styles.iconGradeRow}>
           <Icon name="people" size={11} color={systemColors.secondaryLabel} />
           <Text
@@ -461,34 +598,34 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
             numberOfLines={1}
             style={[styles.consensusText, { color: systemColors.secondaryLabel }]}
           >
-            {secondary}
+            {secondaryLabel}
           </Text>
         </View>
       ) : null}
-      {/* The grade and the send count above came from a different angle than the one
-          on the wall — say so next to the number they qualify, not in the subtitle.
-          Deliberately uncoloured: in this row colour carries grade and nothing else.
-
-          `statsAngle` rides the search payload, while `liveStats` overlays the store
-          keyed on the BROWSED angle. Those only disagree after the climber logs the
-          first ever tick at the browsed angle on a climb whose numbers came from
-          another one: a canonical row appears at the browsed angle and the count
-          switches to it while this marker still names the old angle, until the next
-          search refetch resolves tier 1 and drops it. Narrow, self-correcting, and
-          not worth widening the shared hook's return to pre-empt. */}
-      {climb.statsAngle != null && climb.statsAngle !== angle ? (
+      {/* Say where the numbers came from next to the grade they qualify, not in the
+          subtitle. Deliberately uncoloured: in this row colour carries grade and
+          nothing else. */}
+      {setAtAngle !== null ? (
         <Text
           variant="caption2"
           numberOfLines={1}
-          accessibilityLabel={t('mobile.climbRow.setAngleMarkerAria', { angle: climb.statsAngle })}
+          accessibilityLabel={t('mobile.climbRow.setAngleMarkerAria', { angle: setAtAngle })}
           style={[styles.consensusText, { color: systemColors.secondaryLabel }]}
         >
-          {t('mobile.climbRow.setAngleMarker', { angle: climb.statsAngle })}
+          {t('mobile.climbRow.setAngleMarker', { angle: setAtAngle })}
         </Text>
       ) : null}
     </View>
   );
 });
+
+const LIVE_CLIMB_ROW_LEAVES: ClimbRowLeaves = {
+  Subtitle: LiveClimbSubtitle,
+  Grade: LiveClimbGrade,
+  AscentStatus: AscentStatusGlyph,
+  Favorite: FavoriteGlyph,
+  PlaylistChips: ClimbPlaylistChips,
+};
 
 /**
  * The shared visual of a climb list item: portrait thumbnail (with ascent
@@ -512,9 +649,18 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   gradeIsConsensus = false,
   showPlaylistChips = false,
   showFavorite = false,
+  display,
+  leaves = LIVE_CLIMB_ROW_LEAVES,
 }: ClimbListItemContentProps) {
   const { t: tSession } = useTranslation('session');
+  // The row's one subscription to the Climb list settings. Its snapshot keeps its
+  // identity until a switch changes, so this never re-renders a row on its own.
+  const storedDisplay = useClimbRowDisplay();
+  const rowDisplay = display ?? storedDisplay;
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
+  // An optional piece of the row is drawn when the surface can show it (the
+  // `show*` prop) AND the climber has it switched on. One line per piece.
+  const showsPlaylistTags = showPlaylistChips && rowDisplay.playlistTags;
 
   const subtitleDetailText = useMemo(() => {
     const parts = subtitleDetailParts?.filter((part) => part.length > 0) ?? [];
@@ -582,7 +728,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
         </View>
         {hasLostHolds ? <View style={styles.attributesRow}>{nameAttributes}</View> : null}
         {primarySubtitleOverride === undefined ? (
-          <LiveClimbSubtitle
+          <leaves.Subtitle
             boardName={boardName}
             layoutId={layoutId}
             climbUuid={climb.uuid}
@@ -603,28 +749,28 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           </Text>
         ) : null}
         {showAscentStatus && supportsMirroring ? (
-          <AscentStatusGlyph
+          <leaves.AscentStatus
             climbUuid={climb.uuid}
             angle={angle}
             supportsMirroring={supportsMirroring}
             holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
           />
         ) : null}
-        {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
+        {showsPlaylistTags ? <leaves.PlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
 
       {/* Right: favourite heart + ascent-status glyph + colorized grade */}
       <View style={styles.rightSection}>
-        {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
+        {showFavorite ? <leaves.Favorite climbUuid={climb.uuid} /> : null}
         {showAscentStatus && !supportsMirroring ? (
-          <AscentStatusGlyph
+          <leaves.AscentStatus
             climbUuid={climb.uuid}
             angle={angle}
             supportsMirroring={supportsMirroring}
             holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
           />
         ) : null}
-        <LiveClimbGrade
+        <leaves.Grade
           climb={climb}
           boardName={boardName}
           layoutId={layoutId}

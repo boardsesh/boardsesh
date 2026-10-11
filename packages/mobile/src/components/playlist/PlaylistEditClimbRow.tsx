@@ -14,7 +14,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
 import { Icon } from '../Icon';
 import { ClimbListItemContent } from '../ClimbListItemContent';
-import { THUMBNAIL_WIDTH } from '../ClimbListThumbnail';
+import { climbRowSeparatorInset } from '../climb-row-layout';
 import { spacing } from '../../theme/tokens';
 import { springs } from '../../theme/animations';
 import { useTheme } from '../../providers/theme-provider';
@@ -26,7 +26,7 @@ import type { PlaylistDragControls } from './use-playlist-drag';
 // under the climb name (after the remove slot + thumbnail) so it lines up with
 // the name column, matching the queue row idiom.
 const CONTROL_SLOT_WIDTH = 36;
-const SEPARATOR_INSET = spacing[3] + CONTROL_SLOT_WIDTH + spacing[3] + THUMBNAIL_WIDTH + spacing[3];
+const SEPARATOR_INSET = climbRowSeparatorInset(true, spacing[3] + CONTROL_SLOT_WIDTH + spacing[3]);
 
 // VoiceOver / TalkBack adjustable actions on the drag handle: swipe up/down (iOS)
 // or the increment/decrement gestures (Android) move the climb one slot, so

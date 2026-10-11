@@ -33,6 +33,7 @@ import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
+import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
@@ -253,10 +254,12 @@ type ClimbListRowProps = {
    */
   showFavorite?: boolean;
   /**
-   * Show a trailing ⋮ button that opens the reaction menu on tap — a visible,
-   * discoverable entry point beside the long-press. The climbs list passes the
-   * "Show quick-actions button" user setting (on by default), other surfaces keep
-   * long-press only. No-op without `onOpenActions`.
+   * Let this surface show a trailing ⋮ button that opens the reaction menu on tap
+   * — a visible, discoverable entry point beside the long-press. Only the climbs
+   * list opts in; other surfaces keep long-press only. The button also needs the
+   * climber's "Show quick-actions button" setting (on by default), which the row
+   * reads itself so a toggle never rebuilds the list's `renderItem`. No-op
+   * without `onOpenActions`.
    */
   showMoreButton?: boolean;
   /**
@@ -293,6 +296,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
+  const quickActionsEnabled = useClimbRowField('quickActions');
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
   // + accent stay visible in dark (lifted #A78BFA) as well as light.
   const highlight = useMemo(() => selectedRowColors(brand.primary), [brand.primary]);
@@ -502,7 +506,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
 
   // The ⋯ button's own tap. It blocks the row gestures so a tap on the button opens the
   // menu without pressing the row; a tap anywhere else never starts this gesture, so the
-  // row behaves normally. Only mounted when `showMoreButton` is set.
+  // row behaves normally. Only mounted while the ⋮ button is.
   const moreButtonGesture = useMemo(
     () =>
       Gesture.Tap()
@@ -609,7 +613,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
 
             {rowContent}
 
-            {showMoreButton && onOpenActions ? (
+            {showMoreButton && quickActionsEnabled && onOpenActions ? (
               <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
                 <View
                   testID="climb-row-more-button"

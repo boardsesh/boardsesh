@@ -12,7 +12,8 @@ import {
 } from '@boardsesh/queue';
 import { buildQueueListModel, type QueueFlatRow } from '@boardsesh/play-view';
 import { withSheetBottomInset } from '../sheet-content-inset';
-import { QueueItemRow, type QueueItemRowBoard, POSITION_SLOT_WIDTH, SEPARATOR_INSET } from '../QueueItemRow';
+import { QueueItemRow, type QueueItemRowBoard, POSITION_SLOT_WIDTH, QUEUE_ROW_LEADING_INSET } from '../QueueItemRow';
+import { climbRowSeparatorInset } from '../climb-row-layout';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { Text } from '../Text';
 import { spacing } from '../../theme/tokens';
@@ -465,6 +466,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginStart: SEPARATOR_INSET,
+    marginStart: climbRowSeparatorInset(true, QUEUE_ROW_LEADING_INSET),
   },
 });

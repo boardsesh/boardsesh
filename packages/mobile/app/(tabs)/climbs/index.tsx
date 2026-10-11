@@ -136,7 +136,6 @@ import {
   markTipSeen,
 } from '../../../src/lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
-import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { usePersonalGradesActive } from '../../../src/hooks/use-personal-grades';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
@@ -295,9 +294,6 @@ function ClimbListInner() {
   }, [openBoardSheet]);
   const { systemColors, variant, brandColors, features } = useTheme();
   const colorScheme = useAppColorScheme();
-  // The ⋮ quick-actions button is a user setting that defaults on (More → Display
-  // lets climbers turn it off).
-  const { enabled: quickActionsButtonEnabled } = useClimbQuickActionsButton();
   const { addToQueue } = useQueueActions();
   const {
     filters,
@@ -2003,7 +1999,9 @@ function ClimbListInner() {
         onAddToQueue={handleAddToQueue}
         showPlaylistChips
         showFavorite
-        showMoreButton={quickActionsButtonEnabled}
+        // The row applies the climber's quick-actions setting itself, so a toggle
+        // re-renders the rows and leaves this callback alone.
+        showMoreButton
       />
     ),
     [
@@ -2016,7 +2014,6 @@ function ClimbListInner() {
       handleOpenClimbActions,
       handleOpenAddToPlaylist,
       handleAddToQueue,
-      quickActionsButtonEnabled,
     ],
   );
 

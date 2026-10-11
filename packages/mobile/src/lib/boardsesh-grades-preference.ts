@@ -9,7 +9,7 @@ import { getPreference, setPreference } from './preference-store';
 // hooks/use-display-grade.ts (flag off is a hard kill switch even over a
 // stale persisted preference).
 //
-// Structure mirrors `show-playlist-tags-preference.ts`: a module-level store
+// Structure mirrors `session-recording-preference.ts`: a module-level store
 // read via `useSyncExternalStore` with a referentially-stable cached snapshot
 // (rebuilt only inside `notify()`), plus a promise-singleton one-time load so
 // any number of mounted consumers trigger the AsyncStorage read exactly once.

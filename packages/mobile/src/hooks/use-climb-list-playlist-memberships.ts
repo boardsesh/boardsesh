@@ -7,7 +7,7 @@ import {
 import { playlistMembershipStore } from '@boardsesh/climb-actions';
 import { getHttpClient } from '../lib/graphql/client';
 import { useAuth } from '../providers/auth-provider';
-import { useShowPlaylistTagsPreference } from '../lib/show-playlist-tags-preference';
+import { useClimbRowField } from '../lib/climb-row-display-preference';
 
 // The backend caps `climbUuids` per request; chunk longer visible sets.
 const CHUNK_SIZE = 500;
@@ -38,7 +38,7 @@ export function useClimbListPlaylistMemberships({
   layoutId,
   climbUuids,
 }: UseClimbListPlaylistMembershipsArgs): void {
-  const { enabled } = useShowPlaylistTagsPreference();
+  const enabled = useClimbRowField('playlistTags');
   const { isAuthenticated } = useAuth();
 
   const fetchedRef = useRef<Set<string>>(new Set());

@@ -61,12 +61,11 @@ import { useGradeFormat } from '../../src/hooks/use-grade-format';
 import { useSessionRecordingPreference } from '../../src/lib/session-recording-preference';
 import { setSessionRecordingEnabled, track } from '../../src/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { useShowPlaylistTagsPreference } from '../../src/lib/show-playlist-tags-preference';
 import { useBoardseshGradesPreference } from '../../src/lib/boardsesh-grades-preference';
 import { usePersonalGradesPreference } from '../../src/lib/personal-grades-preference';
 import { usePersonalGradesActive } from '../../src/hooks/use-personal-grades';
 import { usePlayDrawerSectionControls } from '../../src/components/settings/use-play-drawer-section-controls';
-import { useClimbQuickActionsButton } from '../../src/lib/climb-quick-actions-button-preference';
+import { setClimbRowField, useClimbRowField } from '../../src/lib/climb-row-display-preference';
 import { useToast } from '../../src/providers/toast-provider';
 import {
   useFeatureFlag,
@@ -115,7 +114,7 @@ export default function MoreScreen() {
   const bottomChromeDiagnosticsEligible = useBottomChromeDiagnosticsEligible();
   const [bottomChromeDiagnostics, setBottomChromeDiagnostics] = useSetting('bottomChromeDiagnostics');
   const [qaPromptOnLaunch, setQaPromptOnLaunch] = useSetting('qaPromptOnLaunch');
-  const { enabled: showPlaylistTags, setEnabled: setShowPlaylistTags } = useShowPlaylistTagsPreference();
+  const showPlaylistTags = useClimbRowField('playlistTags');
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
   // Personal grades are user config; the `personal-grades` flag only supplies
   // the default. The row therefore shows the RESOLVED value (setting, else
@@ -124,7 +123,7 @@ export default function MoreScreen() {
   // whatever the flag happens to say later.
   const { setEnabled: setPersonalGrades } = usePersonalGradesPreference();
   const personalGradesActive = usePersonalGradesActive();
-  const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
+  const showQuickActionsButton = useClimbRowField('quickActions');
   const { settingsSection: climbDrawerSettingsSection } = usePlayDrawerSectionControls();
   const boardseshGradeFlagEnabled = useBoardseshGradeEnabled();
   // Kill switch for the whole community-moderation surface. Off hides the way in.
@@ -614,7 +613,7 @@ export default function MoreScreen() {
         value: showPlaylistTags,
         onValueChange: (next) => {
           hapticSelection();
-          setShowPlaylistTags(next);
+          setClimbRowField('playlistTags', next);
         },
       },
       {
@@ -626,7 +625,7 @@ export default function MoreScreen() {
         onValueChange: (next) => {
           hapticSelection();
           track(SHARED_EVENTS.ClimbQuickActionsSettingChanged, { enabled: next });
-          setShowQuickActionsButton(next);
+          setClimbRowField('quickActions', next);
         },
       },
       {
