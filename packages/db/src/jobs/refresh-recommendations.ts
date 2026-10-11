@@ -280,6 +280,21 @@ function cohortPlaylistName(variantLabel: string, cohort: Cohort): string {
   return `${variantLabel} · ${base} ${sizeName} @ ${cohort.angle}°`;
 }
 
+/**
+ * A bounded description of a failed band recompute: error class and SQLSTATE.
+ * Drizzle puts the whole statement and its parameters in `message`, which a
+ * job log must never carry (`JobLogger`), so only the cause's code is kept.
+ */
+function describeBandFailure(error: unknown): string {
+  const name = error instanceof Error ? error.name : 'unknown error';
+  const cause: unknown = error instanceof Error && error.cause !== undefined ? error.cause : error;
+  const code =
+    typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string'
+      ? cause.code
+      : 'none';
+  return `${name}, SQLSTATE ${code}`;
+}
+
 async function upsertCohortPlaylist(
   db: JobDatabase,
   transact: JobTransact,
@@ -366,9 +381,8 @@ async function upsertCohortPlaylist(
       await refreshPlaylistGradeSummariesFor(transaction, [playlistId]);
     } catch (error) {
       log.warn(
-        `[recs]   grade band for ${name} not refreshed, the daily grade-summary job will: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `[recs]   grade band for ${name} not refreshed (${describeBandFailure(error)}); the daily grade-summary job will repair it`,
+        { title: 'grade band skipped' },
       );
     }
   });

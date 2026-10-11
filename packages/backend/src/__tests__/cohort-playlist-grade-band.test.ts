@@ -3,7 +3,8 @@
  * recomputes its grade band in one transaction (packages/db/src/jobs/
  * refresh-recommendations.ts). These pin the transaction shape that call
  * relies on: a recompute nested in a caller's transaction sees the swapped
- * climbs, commits with them, and rolls back with them. The job path itself,
+ * climbs, commits with them, rolls back with them, and fails alone in its
+ * savepoint when the caller catches the failure. The job path itself,
  * under the batch worker's login, is covered in job-queue-roles.test.ts.
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
@@ -77,6 +78,29 @@ describe('cohort playlist grade band', () => {
       }),
     ).rejects.toThrow('swap failed');
 
+    expect(await maxDifficultyOf(playlistId)).toBe(16);
+  });
+
+  it('keeps the swap and the old band when the recompute fails and the caller catches it', async () => {
+    const playlistId = await seedPlaylist();
+
+    await db.transaction(async (transaction) => {
+      await transaction.delete(dbSchema.playlistClimbs).where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
+      await transaction.insert(dbSchema.playlistClimbs).values({ playlistId, climbUuid: climb('hard'), angle: 40 });
+      await expect(
+        refreshPlaylistGradeSummariesFor(transaction, [playlistId], {
+          onComputed: async () => {
+            throw new Error('recompute failed');
+          },
+        }),
+      ).rejects.toThrow('recompute failed');
+    });
+
+    const climbs = await db
+      .select({ climbUuid: dbSchema.playlistClimbs.climbUuid })
+      .from(dbSchema.playlistClimbs)
+      .where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
+    expect(climbs).toEqual([{ climbUuid: climb('hard') }]);
     expect(await maxDifficultyOf(playlistId)).toBe(16);
   });
 });
