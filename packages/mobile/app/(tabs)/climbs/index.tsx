@@ -291,7 +291,7 @@ function ClimbListInner() {
   // The ⋮ quick-actions button is a user setting that defaults on (More → Display
   // lets climbers turn it off).
   const { enabled: quickActionsButtonEnabled } = useClimbQuickActionsButton();
-  // Row density is a user setting too (More → Climb list), and ONLY this list reads
+  // Row density is a user setting too (Avatar → Settings → Climb list), and ONLY this list reads
   // it — the other four surfaces that render a ClimbListRow keep the default shape.
   // A primitive, so it drops straight into renderClimbItem's deps below.
   const { density: rowDensity } = useClimbListDensity();

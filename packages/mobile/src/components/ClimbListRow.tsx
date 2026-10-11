@@ -32,7 +32,7 @@ import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
-import type { ClimbListDensity } from "./climb-list-thumbnail-metrics";
+import type { ClimbListDensity } from './climb-list-thumbnail-metrics';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';

@@ -68,8 +68,8 @@ import { usePersonalGradesActive } from '../../src/hooks/use-personal-grades';
 import { usePlayDrawerSectionControls } from '../../src/components/settings/use-play-drawer-section-controls';
 import { useClimbQuickActionsButton } from '../../src/lib/climb-quick-actions-button-preference';
 import { useToast } from '../../src/providers/toast-provider';
-import { useClimbListDensity } from "../../src/lib/climb-list-density-preference";
-import type { ClimbListDensity } from "../../src/components/climb-list-thumbnail-metrics";
+import { useClimbListDensity } from '../../src/lib/climb-list-density-preference';
+import type { ClimbListDensity } from '../../src/components/climb-list-thumbnail-metrics';
 import {
   useFeatureFlag,
   useOfflineDownloadsEnabled,

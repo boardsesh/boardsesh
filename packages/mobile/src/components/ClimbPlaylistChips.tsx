@@ -44,7 +44,7 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({
   /**
    * Show the tags even with the "Show playlist tags" setting off. Set only by the
    * climbs list's `rich` density tier, where the tag line is what the tier IS —
-   * picking it in More → Climb list is the opt-in, so re-checking the (default-off)
+   * picking it in Avatar → Settings → Climb list is the opt-in, so re-checking the (default-off)
    * toggle would leave the tier doing nothing for most climbers. Every other caller
    * leaves this alone and the toggle stays in charge.
    */

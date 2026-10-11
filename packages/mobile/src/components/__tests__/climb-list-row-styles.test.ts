@@ -23,7 +23,7 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
 }));
-vi.mock('../climb-list-thumbnail-metrics', () => ({ THUMBNAIL_WIDTH: 48 }));
+import { THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
 
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from '../climb-list-row-styles';
 
@@ -36,6 +36,6 @@ describe('climb list row margins', () => {
   });
 
   it('starts the separator at the text column, after the gutter, thumbnail and gap', () => {
-    expect(climbListRowStyles.separator.marginLeft).toBe(16 + 48 + 12);
+    expect(climbListRowStyles.separator.marginLeft).toBe(16 + THUMBNAIL_WIDTH + 12);
   });
 });

@@ -9,6 +9,7 @@ import { createElement, type ComponentProps, type ReactNode } from 'react';
 // which lines exist, nothing else.
 
 vi.mock('@boardsesh/board-react', () => ({
+  useOptionalBoardLogbook: () => null,
   useEffectiveClimbStats: (
     _boardName: string,
     _layoutId: number,
@@ -42,6 +43,11 @@ vi.mock('../../hooks/use-display-grade', () => ({
     boardseshActive: false,
     resolveGrade: () => ({ label: 'V4', color: '#111111', isBoardsesh: false }),
   }),
+}));
+
+vi.mock('../../hooks/use-my-grade', () => ({ useMyGrade: () => ({ status: 'unknown' }) }));
+vi.mock('../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({ gradeFormat: 'v', formatGrade: () => 'V4' }),
 }));
 
 vi.mock('../../hooks/use-ascent-status', () => ({ useAscentStatus: () => null }));
@@ -204,7 +210,7 @@ describe('climb list loading density', () => {
       gap: number;
     };
     expect(JSON.parse(separator?.getAttribute('data-style') ?? '{}')).toMatchObject({
-      marginLeft: width + contentStyle.paddingHorizontal + contentStyle.gap,
+      marginStart: width + contentStyle.paddingHorizontal + contentStyle.gap,
     });
     expect(centerColumn?.children.length).toBe(textLines);
   });
