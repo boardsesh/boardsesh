@@ -3,11 +3,11 @@ name: Tutorial gate - nonempty local hold heatmap
 ---
 - assertVisible:
     id: hold-filter-heatmap-legend
+# Android exposes the accessible summary beside the panel in its native tree.
+# Its real nonzero count proves loaded data without relying on that parent link.
 - extendedWaitUntil:
     visible:
       text: '(Few climbs, Many climbs|Every hold used equally|Easier, Harder), [1-9][0-9,]* climbs?'
-      childOf:
-        id: hold-filter-heatmap-legend
     timeout: 120000
 - assertNotVisible: "Heatmap didn't load. Try again in a minute."
 - assertNotVisible: "Heatmap isn't available right now."

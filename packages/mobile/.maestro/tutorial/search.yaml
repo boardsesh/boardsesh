@@ -81,7 +81,7 @@ name: Tutorial - choose holds, regions and similar climbs
     direction: DOWN
     timeout: 90000
 - tapOn: Hold types
-- tapOn: Heatmap
+- tapOn: 'Heatmap.*'
 - extendedWaitUntil:
     visible:
       id: hold-filter-heatmap-legend

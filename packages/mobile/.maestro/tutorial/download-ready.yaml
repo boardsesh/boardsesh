@@ -25,7 +25,7 @@ name: Tutorial setup - require a completed local hold index
             notVisible:
               id: hold-heatmap-download-line
           commands:
-            - tapOn: Heatmap
+            - tapOn: 'Heatmap.*'
 - runFlow:
     when:
       visible:
@@ -49,15 +49,13 @@ name: Tutorial setup - require a completed local hold index
 - extendedWaitUntil:
     visible:
       text: '(Few climbs, Many climbs|Every hold used equally|Easier, Harder), [1-9][0-9,]* climbs?'
-      childOf:
-        id: hold-filter-heatmap-legend
     # Privacy-safe snapshots still require real authorized paged replay.
     # Measured cold replay left stats and grades incomplete after five minutes.
     timeout: 1800000
 - runFlow: heatmap-ready.yaml
 - assertNotVisible:
     id: hold-heatmap-download-line
-- tapOn: Heatmap
+- tapOn: 'Heatmap.*'
 - back
 - back
 - openLink: com.boardsesh.app://climbs
