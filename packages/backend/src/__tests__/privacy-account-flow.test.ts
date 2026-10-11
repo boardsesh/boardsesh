@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, sql } from 'drizzle-orm';
 import type * as GraphQLModule from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as schema from '@boardsesh/db/schema';
@@ -114,11 +114,26 @@ describe('privacy controls against Postgres', () => {
     expect(await inboxTypes(recipient)).toEqual([]);
     expect(await socialNotificationQueries.unreadNotificationCount(null, null, context(recipient))).toBe(0);
 
-    // Asked again and approved: the request row is gone and a follow exists.
+    // Asked again inside the window: the same row shows again, not a second one.
     await privacyMutations.requestFollow(null, { userId: recipient }, context(asker));
     expect((await inboxTypes(recipient)).map((group) => group.type)).toEqual(['follow_request']);
+    expect(await followRequestNotifications(recipient, asker)).toHaveLength(1);
+
+    // Cancelled, then asked again days later: still one row, one unread.
+    await privacyMutations.cancelFollowRequest(null, { userId: recipient }, context(asker));
+    await db.execute(sql`
+      UPDATE notifications SET created_at = now() - interval '2 days'
+       WHERE type = 'follow_request' AND actor_id = ${asker}
+    `);
+    await privacyMutations.requestFollow(null, { userId: recipient }, context(asker));
+    expect(await followRequestNotifications(recipient, asker)).toHaveLength(1);
+    expect(await socialNotificationQueries.unreadNotificationCount(null, null, context(recipient))).toBe(1);
+
+    // Approved: the request row is gone, a follow exists, and the owner gets no
+    // "started following you" echo of their own tap.
     await privacyMutations.approveFollowRequest(null, { userId: asker }, context(recipient));
     expect(await followRequestNotifications(recipient, asker)).toEqual([]);
+    expect(await inboxTypes(recipient)).toEqual([]);
     expect(await canViewUserActivity(asker, recipient)).toBe(true);
     expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(asker))).toBe(true);
   });
@@ -138,6 +153,35 @@ describe('privacy controls against Postgres', () => {
     expect(await followRequestNotifications(recipient, asker)).toEqual([]);
     expect(await inboxTypes(recipient)).toEqual([]);
     expect(await canViewUserActivity(asker, recipient)).toBe(false);
+  });
+
+  it('lets the owner answer a pending request while the privacy controls are switched off', async () => {
+    const recipient = 'privacy-flow-rollback-recipient';
+    const asker = 'privacy-flow-rollback-asker';
+    const decliner = 'privacy-flow-rollback-decliner';
+    await db.insert(schema.users).values([recipient, asker, decliner].map((id) => ({ id, email: `${id}@test.com` })));
+    await db.insert(schema.userProfiles).values({ userId: recipient, isPrivate: true });
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '0');
+    try {
+      // An installed client's followUser still leaves requests during a rollback.
+      expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(asker))).toBe(
+        false,
+      );
+      expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(decliner))).toBe(
+        false,
+      );
+      await privacyMutations.approveFollowRequest(null, { userId: asker }, context(recipient));
+      await privacyMutations.declineFollowRequest(null, { userId: decliner }, context(recipient));
+      expect(await canViewUserActivity(asker, recipient)).toBe(true);
+      expect(await canViewUserActivity(decliner, recipient)).toBe(false);
+      expect(await inboxTypes(recipient)).toEqual([]);
+      // Everything else stays behind the switch.
+      await expect(
+        privacyMutations.requestFollow(null, { userId: recipient }, context(decliner)),
+      ).rejects.toMatchObject({ extensions: { code: 'PRIVACY_UNAVAILABLE' } });
+    } finally {
+      vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '1');
+    }
   });
 
   it('follows a public account straight away', async () => {

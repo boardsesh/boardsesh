@@ -21,6 +21,7 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
 import { logger } from '../utils/logger';
+import { deleteFollowRequestNotifications, FOLLOW_REQUEST_DEDUP_MINUTES } from './follow-request-notifications';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 import {
   fanoutCommentFeedItems,
@@ -169,6 +170,8 @@ export class NotificationWorker {
   }
 
   private async handleFollowCreated(event: SocialEvent): Promise<void> {
+    // The owner approved this follow themselves; they need no notification of it.
+    if (event.metadata.fromFollowRequestApproval === 'true') return;
     const recipient = resolveFollowRecipient(event.metadata);
     if (!recipient) return;
 
@@ -193,9 +196,11 @@ export class NotificationWorker {
 
   /**
    * A follow request to a private account. One row per requester (entityId is
-   * the requester), deduplicated for a day so a request/cancel loop cannot
-   * flood the inbox. The row stays visible only while the request is pending:
-   * see notificationPrivacyCondition.
+   * the requester) and at most one per pair: inside the dedup window a new
+   * request re-shows the existing row, after it the old row is replaced, so a
+   * cancel and a later re-request never leave two rows (or two unread). The row
+   * stays visible only while the request is pending: see
+   * notificationPrivacyCondition.
    */
   private async handleFollowRequested(event: SocialEvent): Promise<void> {
     const recipient = resolveFollowRequestRecipient(event.metadata);
@@ -206,10 +211,11 @@ export class NotificationWorker {
       recipient.recipientId,
       recipient.notificationType,
       event.entityId,
-      1440,
+      FOLLOW_REQUEST_DEDUP_MINUTES,
     );
     if (isDuplicate) return;
 
+    await deleteFollowRequestNotifications(event.actorId, recipient.recipientId);
     await this.createAndPublishNotification(
       recipient.recipientId,
       event.actorId,

@@ -18,6 +18,7 @@ import {
 import { isHideProposalEvent } from './notification-worker';
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
+import { deleteFollowRequestNotifications, FOLLOW_REQUEST_DEDUP_MINUTES } from './follow-request-notifications';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
 /** The values `notifications.entity_type` actually accepts, for the guard below. */
@@ -51,6 +52,8 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
 
     switch (event.type) {
       case 'follow.created': {
+        // The owner approved this follow themselves; they need no notification of it.
+        if (event.metadata.fromFollowRequestApproval === 'true') return;
         recipientId = event.metadata.followedUserId;
         notificationType = 'new_follower';
         break;
@@ -279,7 +282,10 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
 
     if (!recipientId || !notificationType || recipientId === event.actorId) return;
 
-    // Deduplicate: check if a similar notification already exists recently
+    // Deduplicate: check if a similar notification already exists recently. A
+    // follow request uses the worker's day-long window, so local-only mode
+    // behaves like production.
+    const dedupMinutes = notificationType === 'follow_request' ? FOLLOW_REQUEST_DEDUP_MINUTES : 60;
     const [existing] = await db
       .select({ id: dbSchema.notifications.id })
       .from(dbSchema.notifications)
@@ -289,11 +295,13 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
           eq(dbSchema.notifications.recipientId, recipientId),
           eq(dbSchema.notifications.type, notificationType),
           eq(dbSchema.notifications.entityId, event.entityId),
-          sql`${dbSchema.notifications.createdAt} > NOW() - INTERVAL '1 hour'`,
+          sql`${dbSchema.notifications.createdAt} > NOW() - make_interval(mins => ${dedupMinutes})`,
         ),
       )
       .limit(1);
     if (existing) return;
+    // One follow request row per pair: replace an older one rather than add one.
+    if (notificationType === 'follow_request') await deleteFollowRequestNotifications(event.actorId, recipientId);
 
     // `follow.created` carries entityType 'user', which is NOT a member of the
     // social_entity_type enum — passing it through threw on insert and the catch
