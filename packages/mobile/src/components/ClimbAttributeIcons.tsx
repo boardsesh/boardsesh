@@ -12,7 +12,6 @@ import {
   isNoMatch,
 } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
-import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
 
 type ClimbAttributeIconsProps = {
