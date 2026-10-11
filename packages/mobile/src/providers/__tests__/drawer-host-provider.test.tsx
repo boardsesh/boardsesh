@@ -241,8 +241,19 @@ vi.mock('../../components/board-discovery/BoardShareSheet', () => ({
   },
 }));
 
+const nativeNavigation = vi.hoisted(() => ({
+  ready: false,
+  routeNames: ['(tabs)', 'play'],
+  dispatch: vi.fn(),
+}));
+const nativeNavigationRef = {
+  isReady: () => nativeNavigation.ready,
+  getRootState: () => ({ key: 'root-stack', routeNames: nativeNavigation.routeNames }),
+  dispatch: nativeNavigation.dispatch,
+};
 vi.mock('expo-router', () => ({
   router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn() },
+  useNavigationContainerRef: () => nativeNavigationRef,
   useSegments: () => ['(tabs)', 'climbs'],
 }));
 
@@ -468,6 +479,9 @@ describe('drawer copied content withdrawal', () => {
 });
 
 beforeEach(() => {
+  nativeNavigation.ready = false;
+  nativeNavigation.routeNames = ['(tabs)', 'play'];
+  nativeNavigation.dispatch.mockClear();
   activeBoard.stored = { ...activeBoard.defaultStored };
   boardShareSheet.props = null;
   boardSheet.dismissAndWait.mockReset().mockResolvedValue({ status: 'dismissed' });
@@ -1844,6 +1858,47 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     });
     expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.climb.uuid).toBe('pane-renonce-1');
     expect(routerNavigate).not.toHaveBeenCalled();
+  });
+
+  it('dispatches the known native player route during the open batch', async () => {
+    layoutCfg.widthClass = 'compact';
+    nativeNavigation.ready = true;
+    const hosts: Array<HostValue> = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    const climb = makeQueueItem('queue-native', 'native-open').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(climb);
+      expect(nativeNavigation.dispatch).toHaveBeenCalledWith({
+        type: 'NAVIGATE',
+        target: 'root-stack',
+        payload: { name: 'play' },
+      });
+      expect(routerNavigate).not.toHaveBeenCalled();
+    });
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+    expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('native-open');
+    const firstNonce = routes.at(-1)?.playTarget?.nonce;
+    act(() => hosts.at(-1)?.openPlayDrawer(climb));
+    expect(routes.at(-1)?.playTarget?.nonce).not.toBe(firstNonce);
+    expect(nativeNavigation.dispatch).toHaveBeenCalledTimes(2);
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('uses the router if the mounted navigator does not own the player', async () => {
+    layoutCfg.widthClass = 'compact';
+    nativeNavigation.ready = true;
+    nativeNavigation.routeNames = ['(tabs)'];
+    const hosts: Array<HostValue> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-fallback').climb as unknown as Climb));
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
   });
 
   it('navigates to /play and leaves the pane open target null on compact width', async () => {

@@ -15,7 +15,8 @@ import type { TickClimbIdentity } from '@boardsesh/board-config';
 
 import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { router, useSegments } from 'expo-router';
+import { router, useNavigationContainerRef, useSegments } from 'expo-router';
+import { Platform } from 'react-native';
 import { tabsActiveSegment } from '../lib/route-segments';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
@@ -350,6 +351,7 @@ export function usePlayDrawerRoute(): PlayDrawerRouteValue {
 }
 
 export function DrawerHostProvider({ children }: { children: ReactNode }) {
+  const navigationRef = useNavigationContainerRef();
   const composerCredentialScope = usePrivacyCredentialScope();
   // The climb to show in the player route, with a per-open nonce so a re-tap
   // while `/play` is already up still re-applies (navigate is a no-op then). The
@@ -600,9 +602,21 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // navigate is a no-op, but the new nonce re-applies the target in place.
       playTargetNonceRef.current += 1;
       setPlayTarget({ climb, options: openOptions, nonce: playTargetNonceRef.current });
-      if (navigate) router.navigate('/play');
+      if (navigate) {
+        // This is a known root-stack route. Dispatch it in the tap's batch:
+        // Expo's imperative URL queue otherwise waits for a provider commit
+        // before its passive effect dispatches the navigation action.
+        if (Platform.OS !== 'web' && navigationRef.isReady()) {
+          const rootState = navigationRef.getRootState();
+          if (rootState.routeNames.some((routeName) => routeName === 'play')) {
+            navigationRef.dispatch({ type: 'NAVIGATE', target: rootState.key, payload: { name: 'play' } });
+            return;
+          }
+        }
+        router.navigate('/play');
+      }
     },
-    [setPaneTarget, setPlayTarget],
+    [navigationRef, setPaneTarget, setPlayTarget],
   );
 
   // Drop the pane's selected climb when the pane goes away (a resize into compact,

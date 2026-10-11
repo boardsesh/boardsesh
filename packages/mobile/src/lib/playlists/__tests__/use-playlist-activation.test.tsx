@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   activeBoard: { boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '3', angle: 40 } as ActiveBoard,
   activeClimbUuid: null as string | null,
   suggestionSource: null as SuggestionSource,
+  activeClimbSubscription: vi.fn(),
+  sourceSubscription: vi.fn(),
   queueState: { queue: [], currentClimbQueueItem: null } as QueueState,
   activate: vi.fn<(climb: Climb) => Promise<void>>(),
   fetchSuggestion: vi.fn(),
@@ -69,11 +71,23 @@ vi.mock('../../../providers/queue-provider', () => ({
     setPlaylistSuggestionSource: mocks.setPlaylistSuggestionSource,
     refreshPlaylistSuggestionSource: mocks.refreshPlaylistSuggestionSource,
     setQueue: mocks.setQueue,
-    getQueueSnapshot: () => mocks.queueState,
+    getQueueSnapshot: () => ({
+      ...mocks.queueState,
+      currentClimbQueueItem:
+        mocks.queueState.currentClimbQueueItem ??
+        (mocks.activeClimbUuid ? makeQueueItem('active-item', mocks.activeClimbUuid) : null),
+      playlistSuggestionSource: mocks.suggestionSource,
+    }),
     appendQueueItems: mocks.appendQueueItems,
   }),
-  useActiveClimbUuid: () => mocks.activeClimbUuid,
-  usePlaylistSuggestionSource: () => mocks.suggestionSource,
+  useActiveClimbUuid: () => {
+    mocks.activeClimbSubscription();
+    return mocks.activeClimbUuid;
+  },
+  usePlaylistSuggestionSource: () => {
+    mocks.sourceSubscription();
+    return mocks.suggestionSource;
+  },
 }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: mocks.openPlayDrawer }),
@@ -384,6 +398,45 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     // duplicate it in the queue / pointlessly rebuild the same source).
     expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
     expect(mocks.activate).not.toHaveBeenCalled();
+  });
+
+  it('reads current climb and source at tap time without a render or queue subscriptions', async () => {
+    const { result } = renderActivation();
+    const originalActivate = result.current.activate;
+    const climb = makeClimb('a');
+    mocks.activeClimbUuid = climb.uuid;
+    mocks.suggestionSource = {
+      playlistUuid: 'playlist:pl-1',
+      activatedClimbUuid: climb.uuid,
+      boardKey: 'kilter:1:2:3',
+    };
+    await originalActivate(climb);
+    expect(mocks.activate).not.toHaveBeenCalled();
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+
+    mocks.suggestionSource = { ...mocks.suggestionSource, playlistUuid: 'different-list' };
+    await originalActivate(climb);
+    expect(mocks.activate).toHaveBeenCalledExactlyOnceWith(climb);
+    expect(result.current.activate).toBe(originalActivate);
+    expect(mocks.activeClimbSubscription).not.toHaveBeenCalled();
+    expect(mocks.sourceSubscription).not.toHaveBeenCalled();
+  });
+
+  it('checks the live active climb again at commit without rerendering', async () => {
+    renderActivation();
+    const queueApi = captured().queueApi!;
+    const climb = makeClimb('a');
+    const source = { playlistUuid: 'pl-1', activatedClimbUuid: 'a', boardKey: 'kilter:1:2:3', climbs: [] };
+    mocks.activeClimbUuid = climb.uuid;
+    await queueApi.setCurrentClimb(climb, { playlistSuggestionSource: source });
+    expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
+    expect(mocks.setPlaylistSuggestionSource).toHaveBeenCalledExactlyOnceWith(source);
+
+    mocks.activeClimbUuid = 'another-climb';
+    await queueApi.setCurrentClimb(climb, { playlistSuggestionSource: source });
+    expect(mocks.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ climb }), {
+      playlistSuggestionSource: source,
+    });
   });
 
   it('re-tapping the active climb from a DIFFERENT list re-activates to follow it', async () => {

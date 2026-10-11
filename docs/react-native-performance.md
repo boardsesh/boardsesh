@@ -553,6 +553,14 @@ not proof that it displayed: readiness needs native `onDisplay` for the matching
 holds and background layers. A replacement prepared behind a bridge is counted
 only after its visible handoff reaches a frame.
 
+On native, the drawer host dispatches the known root-stack `play` route in the
+tap's React batch. The public Expo navigation ref avoids the imperative URL
+queue's extra provider commit; browser and unready/unknown navigators keep the
+URL fallback. Activation reads current queue and masked suggestion-source state
+through the stable snapshot action, so changing the active climb does not
+subscribe the entire climb list to another render. Queue commits remain
+synchronous and keep the same privacy and wall-control checks.
+
 Measured geometry is reused through `opening-layout-cache.ts`, a 32-entry LRU.
 Reuse requires the complete layout identity: board and intrinsic dimensions,
 climb, viewport, font scale, pixel ratio, locale, safe-area insets, preferences,

@@ -172,6 +172,18 @@ The target is **p95 below 50 ms from tap to both full-size artwork and gesture r
 
 Use at least 30 warm opens per build in alternating baseline/candidate batches, including 60 downward scrolls, repeated row opens and hard flicks back through recycled rows. Poll until an actual row is settled and visible before tapping. Keep render/decode misses separate. Record queue length, loaded result count, offline/network lane and thermal conditions before each batch. Reject a run that becomes thermally incomparable; capture native hitches separately after these timings, and do not erase account data, downloads or render caches to manufacture a cold run.
 
+Run `vp exec python3 scripts/mobile-probe-kit/analyze_opening.py <run-directory>`
+to inspect the evidence. Add `--gestures-verified` only after physical
+swipe/pinch/dismiss checks succeed. Capture the launch timestamp before
+relaunching, then pull only that launch's probe chunks, starting at
+`chunk-00000.json`, into `probe/`. The analyzer compares chunk contents and
+ordering with `probe-events.json` and requires coverage through `run-end`.
+Include `build-manifest.json` with commit, Release mode, device ID, probe variant,
+and native thermal state before/after. Completed `scroll20`, `scroll40`,
+`scroll60`, and hard up/down recycled-row marks must precede their cached opens.
+Pilot timings remain available when these requirements are incomplete; they
+cannot pass the full gate.
+
 **Stalls.** `js-frame-gap` is the JS thread missing frame callbacks. It is not dropped UI frames: scrolling runs on the UI thread and can stay smooth through a JS stall, while a tap waits for it. Divide total gap time by thumbnails painted when two builds scroll different distances.
 
 **A board on screen before its holds, in a swipe.** The incoming board became visible when the swipe began. If no mounted board held that climb with its holds painted at that moment, the climber saw something else slide in first: another climb's holds, or a bare wall. `analyze_swipe.py` counts those swipes and how long each lasted, and how many were still missing their holds at finger-up and when the swipe settled. The paint is stamped when the JS thread hears of it, so the duration is an upper bound.

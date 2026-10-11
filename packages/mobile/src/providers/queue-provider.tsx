@@ -1670,10 +1670,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [applyQueueSnapshot, captureQueueMutationOrigin, privacyRevocationGeneration],
   );
 
-  // Stable live read of the queue + current climb (see QueueContextValue). Reads
-  // stateRef so callers get the latest without subscribing to state re-renders.
+  // Stable live read of the queue + current climb and masked playlist source.
+  // Action-only consumers get the latest without subscribing to state renders.
   const getQueueSnapshot = useCallback(
-    () => ({ queue: stateRef.current.queue, currentClimbQueueItem: stateRef.current.currentClimbQueueItem }),
+    () => ({
+      queue: stateRef.current.queue,
+      currentClimbQueueItem: stateRef.current.currentClimbQueueItem,
+      playlistSuggestionSource: playlistSuggestionSourceRef.current,
+    }),
     [],
   );
 

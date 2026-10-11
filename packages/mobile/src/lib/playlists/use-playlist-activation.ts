@@ -44,7 +44,7 @@ import {
 } from '@boardsesh/queue';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { canAddClimbToBoard } from '@boardsesh/board-config';
-import { useActiveClimbUuid, usePlaylistSuggestionSource, useQueueActions } from '../../providers/queue-provider';
+import { useQueueActions } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useQueueSnackbar } from '../../providers/queue-snackbar-provider';
 import { useChoose } from '../../providers/dialog-provider';
@@ -296,18 +296,6 @@ export function usePlaylistActivation({
   // two fetches (and two appends).
   const isAppendingRef = useRef(false);
 
-  // Mirror the active climb uuid + the live suggestion source into refs so the
-  // returned callback can decide how to handle a re-tap of the already-active
-  // climb without taking a dependency on either (keeps the callback identity
-  // stable). The source tells us whether the drawer's next/previous already
-  // follow THIS list or some other one.
-  const activeClimbUuid = useActiveClimbUuid();
-  const activeClimbUuidRef = useRef(activeClimbUuid);
-  activeClimbUuidRef.current = activeClimbUuid;
-  const playlistSuggestionSource = usePlaylistSuggestionSource();
-  const playlistSuggestionSourceRef = useRef(playlistSuggestionSource);
-  playlistSuggestionSourceRef.current = playlistSuggestionSource;
-
   // Mirrored, not a dependency: `previewOnly` tracks whether anyone else is in
   // the session, and threading it through the callback's deps would churn the
   // identity of every climb row's onPress the moment a crew forms — for a value
@@ -345,7 +333,7 @@ export function usePlaylistActivation({
         // source at the tapped list so the drawer's next/previous follow it; the
         // shared hook's async refresh then upgrades that source in place. Return a
         // non-null item so the hook treats activation as succeeded.
-        if (activeClimbUuidRef.current === climb.uuid) {
+        if (getQueueSnapshot().currentClimbQueueItem?.climb.uuid === climb.uuid) {
           setPlaylistSuggestionSource(options?.playlistSuggestionSource ?? null);
           // Browse-origin: built here only as a fallback (no pinned item survived
           // to this dispatch), so flag it suggested like every other list tap —
@@ -371,7 +359,13 @@ export function usePlaylistActivation({
         refreshPlaylistSuggestionSource(source);
       },
     }),
-    [setCurrentClimb, setPlaylistSuggestionSource, refreshPlaylistSuggestionSource, privacyGeneration],
+    [
+      getQueueSnapshot,
+      setCurrentClimb,
+      setPlaylistSuggestionSource,
+      refreshPlaylistSuggestionSource,
+      privacyGeneration,
+    ],
   );
 
   // Built once per active board, not per climb: `canAddClimbToBoard` caches its
@@ -514,7 +508,6 @@ export function usePlaylistActivation({
       appendAbortRef.current?.abort();
       pendingQueueItemRef.current = null;
       loadedClimbsRef.current = [];
-      playlistSuggestionSourceRef.current = null;
     });
     return () => {
       unsubscribe();
@@ -972,8 +965,10 @@ export function usePlaylistActivation({
         }
       }
 
-      const isAlreadyActive = activeClimbUuidRef.current === climb.uuid;
-      const source = playlistSuggestionSourceRef.current;
+      // The list does not subscribe to current-climb or source changes. Read
+      // both live at the tap; the commit adapter reads again before dispatch.
+      const { currentClimbQueueItem, playlistSuggestionSource: source } = getQueueSnapshot();
+      const isAlreadyActive = currentClimbQueueItem?.climb.uuid === climb.uuid;
       const suggestionsAlreadyFollowThisList =
         source?.playlistUuid === sourceId && source?.activatedClimbUuid === climb.uuid;
 

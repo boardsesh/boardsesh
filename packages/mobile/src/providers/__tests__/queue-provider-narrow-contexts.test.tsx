@@ -4,6 +4,7 @@ import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { createPlaylistSuggestionSource, getQueueBoardKey } from '@boardsesh/queue';
 
 // Focused harness for the queue-data narrow context (useQueueData). It asserts
 // the referential contract the play drawer + always-mounted queue sheets rely
@@ -46,6 +47,7 @@ const activeBoard = vi.hoisted(() => ({
     canEdit: false,
   } satisfies UserBoard,
   getStoredActiveBoard: vi.fn(),
+  setActiveBoard: vi.fn(async () => {}),
 }));
 
 const queueMutations = vi.hoisted(() => ({
@@ -99,9 +101,12 @@ const errorReporter = vi.hoisted(() => ({
 
 const toast = vi.hoisted(() => ({
   showToast: vi.fn(),
+  showQueueAddedSnackbar: vi.fn(),
 }));
+const crossBoardAdd = vi.hoisted(() => ({ request: vi.fn(async () => ({ outcome: 'add' as const })) }));
+const translation = vi.hoisted(() => ({ translate: (key: string) => key }));
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translation.translate }) }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
@@ -128,7 +133,7 @@ vi.mock('../../lib/active-board-store', () => ({ getStoredActiveBoard: activeBoa
 vi.mock('../../lib/graphql/use-active-board', () => ({
   getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: activeBoard.stored }),
-  useSetActiveBoard: () => vi.fn(async () => {}),
+  useSetActiveBoard: () => activeBoard.setActiveBoard,
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
 vi.mock('../../lib/analytics', () => ({ track: vi.fn(), registerRenderSuperProperties: vi.fn() }));
@@ -137,12 +142,14 @@ vi.mock('../../lib/error-reporting', () => ({
   reportHandledError: errorReporter.reportHandledError,
 }));
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: toast.showToast }) }));
-vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }) }));
+vi.mock('../queue-snackbar-provider', () => ({
+  useQueueSnackbar: () => ({ showQueueAddedSnackbar: toast.showQueueAddedSnackbar }),
+}));
 // The cross-board add gate calls useChoose()/useQueryClient()/expo-router, none of
 // which this harness mounts. Pass every add straight through — the gate's own
 // behaviour is covered by queue-provider-cross-board-add.test.tsx.
 vi.mock('../queue/use-cross-board-add-gate', () => ({
-  useCrossBoardAddGate: () => async () => ({ outcome: 'add' }),
+  useCrossBoardAddGate: () => crossBoardAdd.request,
 }));
 vi.mock('../party-profile-provider', () => ({
   usePartyProfile: () => ({ username: undefined, avatarUrl: undefined }),
@@ -161,7 +168,7 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
   useReachableBoardKeys: () => new Set<string>(),
 }));
 
-import { QueueProvider, useQueue, useQueueData } from '../queue-provider';
+import { QueueProvider, useQueue, useQueueActions, useQueueData } from '../queue-provider';
 
 type QueueData = ReturnType<typeof useQueueData>;
 
@@ -302,5 +309,57 @@ describe('QueueProvider narrow contexts — useQueueData', () => {
       expect(commits.at(-1)?.currentClimbQueueItem?.uuid).toBe('current-item');
     });
     expect(commits.at(-1)).not.toBe(before);
+  });
+
+  it('keeps action consumers mounted without rerendering while their snapshot reads current climb and masked source', async () => {
+    const commits: QueueData[] = [];
+    const handle = { current: null as Handle | null };
+    const actionOnlyRender = vi.fn();
+    const actions = { current: null as ReturnType<typeof useQueueActions> | null };
+    function ActionOnlyConsumer() {
+      actions.current = useQueueActions();
+      actionOnlyRender();
+      return null;
+    }
+    render(
+      createElement(QueueProvider, null, createElement(Probe, { commits, handle }), createElement(ActionOnlyConsumer)),
+    );
+    await waitFor(() => expect(actions.current).not.toBeNull());
+    const readSnapshot = actions.current!.getQueueSnapshot;
+    const beforeRenders = actionOnlyRender.mock.calls.length;
+    const first = makeQueueItem('first');
+    const second = makeQueueItem('second');
+    first.climb.frames = '';
+    second.climb.frames = '';
+    const source = createPlaylistSuggestionSource({
+      playlistUuid: 'playlist:current',
+      activatedClimb: first.climb,
+      climbs: [first.climb, second.climb],
+      boardKey: getQueueBoardKey({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: '1,2' }),
+    });
+    act(() => {
+      handle.current?.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: [first, second], currentClimbQueueItem: first },
+      });
+      actions.current?.setPlaylistSuggestionSource(source);
+    });
+    await waitFor(() => expect(readSnapshot().playlistSuggestionSource?.playlistUuid).toBe('playlist:current'));
+    expect(readSnapshot()).toMatchObject({ queue: [first, second], currentClimbQueueItem: first });
+    expect(actions.current!.getQueueSnapshot).toBe(readSnapshot);
+    expect(actionOnlyRender).toHaveBeenCalledTimes(beforeRenders);
+
+    const offList = makeQueueItem('off-list');
+    act(() => handle.current?.dispatch({ type: 'SET_CURRENT_CLIMB_QUEUE_ITEM', payload: offList }));
+    expect(readSnapshot().currentClimbQueueItem).toBe(offList);
+    expect(readSnapshot().playlistSuggestionSource).toBeNull();
+    expect(actionOnlyRender).toHaveBeenCalledTimes(beforeRenders);
+
+    act(() => {
+      handle.current?.dispatch({ type: 'SET_CURRENT_CLIMB_QUEUE_ITEM', payload: first });
+      actions.current?.setPlaylistSuggestionSource({ ...source, boardKey: 'another-board' });
+    });
+    expect(readSnapshot().playlistSuggestionSource).toBeNull();
+    expect(actionOnlyRender).toHaveBeenCalledTimes(beforeRenders);
   });
 });

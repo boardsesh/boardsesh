@@ -92,13 +92,18 @@ type QueueContextValue = {
   /** Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party sync). */
   setQueue: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => void;
   /**
-   * Read the live queue + current climb without subscribing to state. Stable
+   * Read the live queue, current climb and usable playlist source without
+   * subscribing to state. Stable
    * identity (backed by the internal stateRef), so action-only consumers — e.g.
    * playlist activation deciding whether replacing the queue would clear future
    * items — can read the latest queue at tap time without re-rendering on every
    * queue change.
    */
-  getQueueSnapshot: () => { queue: ClimbQueueItem[]; currentClimbQueueItem: ClimbQueueItem | null };
+  getQueueSnapshot: () => {
+    queue: ClimbQueueItem[];
+    currentClimbQueueItem: ClimbQueueItem | null;
+    playlistSuggestionSource: PlaylistSuggestionSource | null;
+  };
   /**
    * Append a batch behind the live queue, leaving the current climb where it is.
    *
