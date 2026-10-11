@@ -1,5 +1,8 @@
-import { climbReferenceVisibilityCondition, privateSafeFirstAscentName } from '@boardsesh/db/queries';
-import { contentVisibilityCondition, canViewContent } from '../../../services/privacy';
+import {
+  climbDraftVisibilityCondition,
+  climbReferenceReadableCondition,
+  privateSafeFirstAscentName,
+} from '@boardsesh/db/queries';
 import { createHash } from 'crypto';
 import { storedWoodsSizeId } from './woods-authoring';
 import { eq, and, gt, asc, inArray, sql } from 'drizzle-orm';
@@ -13,6 +16,7 @@ import {
   type SimilarClimb,
   type SimilarClimbsInput,
   SUPPORTED_BOARDS,
+  USER_SPECIFIC_SEARCH_PARAMS,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
 import { getGradeLabel, getHoldHeatmapData, getMaterializedSimilarClimbs, getSetterStats } from '@boardsesh/db/queries';
@@ -27,7 +31,8 @@ import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapability } from './spray-read-access';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
-import { findSimilarClimbs, parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
+import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
+import { findSimilarClimbsCached } from './similar-climbs-cache';
 import { hasCatalogQueryAccess, requireCatalogQueryAccess } from '../social/roles';
 import {
   BoardNameSchema,
@@ -39,7 +44,7 @@ import {
   SimilarClimbsInputSchema,
 } from '../../../validation/schemas';
 import type { ClimbSearchContext } from '../shared/types';
-import { db } from '../../../db/client';
+import { db, dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { redisClientManager } from '../../../redis/client';
@@ -155,17 +160,19 @@ export const climbQueries = {
       angle: parsedInput.angle,
     };
     const searchParams: ClimbSearchParams = mapSearchInputToParams(parsedInput);
-
-    const userId = ctx.userId;
+    const hasUserSpecificFilters = USER_SPECIFIC_SEARCH_PARAMS.some(
+      (param) => !!searchParams[param as keyof typeof searchParams],
+    );
+    const userId = hasUserSpecificFilters ? ctx.userId : undefined;
 
     // A spray wall's entry would be keyed by layout, not viewer; never cache it.
-    const cacheKey = null;
+    const cacheKey = isSpray ? null : holdHeatmapCacheKey(parsedInput, userId);
     if (cacheKey) {
       const cached = await getCachedHoldHeatmap(cacheKey);
       if (cached) return cached;
     }
 
-    const stats: HoldStat[] = await getHoldHeatmapData(db, params, searchParams, userId);
+    const stats: HoldStat[] = await getHoldHeatmapData(dbRead, params, searchParams, userId);
     if (cacheKey) cacheHoldHeatmap(cacheKey, stats);
     return stats;
   },
@@ -222,7 +229,7 @@ export const climbQueries = {
         await requireCatalogQueryAccess(ctx, boardType);
         return [];
       }
-      return getMaterializedSimilarClimbs(db, {
+      return getMaterializedSimilarClimbs(dbRead, {
         viewerUserId: ctx.userId,
         boardType,
         layoutId: validated.layoutId,
@@ -268,7 +275,12 @@ export const climbQueries = {
           and(
             eq(dbSchema.boardClimbs.boardType, boardType),
             eq(dbSchema.boardClimbs.uuid, validated.climbUuid),
-            contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, ctx.userId),
+            // A draft target is readable by its owner alone: its neighbours and
+            // hold counts describe the draft. A published one is public.
+            climbDraftVisibilityCondition(
+              { userId: dbSchema.boardClimbs.userId, isDraft: dbSchema.boardClimbs.isDraft },
+              ctx.userId,
+            ),
           ),
         )
         .limit(1);
@@ -336,8 +348,7 @@ export const climbQueries = {
     // Redis-cached and single-flighted (#4968). The statement is a catalogue-wide
     // aggregate — see `similar-climbs-cache.ts` for the measured cost and for why
     // the cache had to move off the web instance's `unstable_cache`.
-    return findSimilarClimbs({
-      viewerUserId: ctx.userId,
+    return findSimilarClimbsCached({
       boardType,
       layoutId: validated.layoutId,
       holds,
@@ -451,17 +462,22 @@ export const climbQueries = {
     // anonymous search would keep serving a page that doesn't contain the climb
     // the setter just published — the same staleness MoonBoard's creation/import
     // flows cause.
-
+    const hasUserSpecificFilters = USER_SPECIFIC_SEARCH_PARAMS.some(
+      (param) => !!searchParams[param as keyof typeof searchParams],
+    );
     // Spray joins MoonBoard and Woods as uncacheable, for a different reason: the
     // cache key is the board config, NOT the viewer, so one owner's page of their
     // own private wall would be served to the next caller who asked for that
     // layout. A per-viewer key would work and is not worth it for a wall with a
     // handful of climbers.
-    const isCacheableBoard = false;
+    const isCacheableBoard =
+      parsedInput.boardName !== 'moonboard' && parsedInput.boardName !== 'woods' && parsedInput.boardName !== 'spray';
 
     // Only resolve userId when user-specific filters are active — otherwise the query
-    // results are identical to anonymous and can be served from Redis cache.
-    const userId = ctx.isAuthenticated ? ctx.userId : undefined;
+    // results are identical to anonymous and can be served from Redis cache. A
+    // published, listed climb is public to everyone, so an anonymous page is the
+    // same page for every viewer.
+    const userId = ctx.isAuthenticated && hasUserSpecificFilters ? ctx.userId : undefined;
 
     // Return context for field resolvers - queries are executed lazily per field
     // Personal progress filters now use boardsesh_ticks table with NextAuth user ID
@@ -469,7 +485,7 @@ export const climbQueries = {
       params,
       searchParams,
       userId,
-      _isCacheable: isCacheableBoard,
+      _isCacheable: !hasUserSpecificFilters && isCacheableBoard,
     };
   },
 
@@ -517,11 +533,11 @@ export const climbQueries = {
     // the list applies (#5642); every other board ignores it. Nothing caches this
     // resolver, so the flag needs no cache-key entry.
     const rows = await getSetterStats(
-      db,
+      dbRead,
       params,
       validated.search,
       validated.onlyFollowedAuthors ? ctx.userId! : undefined,
-      { crossAngleStats: validated.crossAngleStats, viewerUserId: ctx.userId },
+      { crossAngleStats: validated.crossAngleStats },
     );
 
     return rows.map((row) => ({
@@ -584,11 +600,12 @@ export const climbQueries = {
       climb_uuid: climbUuid,
     });
 
-    if (
-      climb?.userId &&
-      !(await canViewContent(ctx.isAuthenticated ? ctx.userId : null, 'climb', climbUuid, climb.userId))
-    )
-      return null;
+    const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
+    // A draft is returned to its owner alone, and a draft with no owner to no
+    // one. `!climb.userId` first, so an anonymous viewer never "equals" a
+    // missing owner. Anything published is returned to everyone, whatever its
+    // setter's account privacy; an unlisted climb resolves by its link.
+    if (climb?.is_draft && (!climb.userId || climb.userId !== viewerUserId)) return null;
     return climb;
   },
 
@@ -645,7 +662,7 @@ export const climbQueries = {
           // wall that has since gone private. This resolver is unauthenticated,
           // so the viewer is whatever the socket carries and usually null. A
           // no-op on the other eight board types.
-          climbReferenceVisibilityCondition(
+          climbReferenceReadableCondition(
             { boardType: dbSchema.boardClimbStats.boardType, climbUuid: dbSchema.boardClimbStats.climbUuid },
             ctx?.userId,
           ),
@@ -722,7 +739,7 @@ export const climbQueries = {
           // private. The epic rule is that a private wall shows a non-principal
           // nothing, so the reference predicate rides here too (empty result, no
           // error). A no-op on the other eight board types.
-          climbReferenceVisibilityCondition(
+          climbReferenceReadableCondition(
             { boardType: dbSchema.boardClimbStats.boardType, climbUuid: dbSchema.boardClimbStats.climbUuid },
             ctx?.userId,
           ),
@@ -793,7 +810,7 @@ export const climbQueries = {
           // Same rule as `climbStatsForAngles`: the row carries the setter grade
           // and `fa_username`, so a retained uuid must not outlive the wall's
           // visibility.
-          climbReferenceVisibilityCondition(
+          climbReferenceReadableCondition(
             { boardType: dbSchema.boardClimbStats.boardType, climbUuid: dbSchema.boardClimbStats.climbUuid },
             ctx?.userId,
           ),
@@ -830,7 +847,9 @@ export const climbQueries = {
       throw new Error(`Invalid board name: ${boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
     }
 
-    const [row] = await db
+    // The replica serves a published climb's grade to everyone. A spray wall's
+    // visibility can be withdrawn, so its rows are read where a revocation lands.
+    const [row] = await (isSprayBoardType(boardName) ? db : dbRead)
       .select({
         localGrade: dbSchema.boardClimbGrades.localGrade,
         universalGrade: dbSchema.boardClimbGrades.universalGrade,
@@ -861,7 +880,7 @@ export const climbQueries = {
           // gap ahead of the day spray joins that list, not a live leak. Both
           // readers are unauthenticated, and the row is a grade band with an
           // ascent count, which is exactly what the wall's privacy covers.
-          climbReferenceVisibilityCondition(
+          climbReferenceReadableCondition(
             { boardType: dbSchema.boardClimbGrades.boardType, climbUuid: dbSchema.boardClimbGrades.climbUuid },
             ctx?.userId,
           ),
@@ -893,7 +912,8 @@ export const climbQueries = {
     validateInput(BoardNameSchema, boardName, 'boardName');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
-    const rows = await db
+    // Same reader split as `boardseshGrade`.
+    const rows = await (isSprayBoardType(boardName) ? db : dbRead)
       .select({
         angle: dbSchema.boardClimbGrades.angle,
         localGrade: dbSchema.boardClimbGrades.localGrade,
@@ -924,7 +944,7 @@ export const climbQueries = {
           // gap ahead of the day spray joins that list, not a live leak. Both
           // readers are unauthenticated, and the row is a grade band with an
           // ascent count, which is exactly what the wall's privacy covers.
-          climbReferenceVisibilityCondition(
+          climbReferenceReadableCondition(
             { boardType: dbSchema.boardClimbGrades.boardType, climbUuid: dbSchema.boardClimbGrades.climbUuid },
             ctx?.userId,
           ),

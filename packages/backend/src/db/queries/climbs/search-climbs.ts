@@ -1,4 +1,4 @@
-import { db } from '../../client';
+import { dbRead } from '../../client';
 import {
   searchClimbs as sharedSearchClimbs,
   type BoardRouteParams,
@@ -16,7 +16,7 @@ export const searchClimbs = async (
   userId?: string,
 ): Promise<ClimbSearchResult> => {
   try {
-    const result = await sharedSearchClimbs(db, params, searchParams, userId);
+    const result = await sharedSearchClimbs(dbRead, params, searchParams, userId);
 
     // Map ClimbRow to Climb (add fields expected by the GraphQL schema)
     const climbs: Climb[] = result.climbs.map((row) => ({

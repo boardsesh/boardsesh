@@ -1,4 +1,3 @@
-import { contentVisibilityCondition } from '../privacy';
 import { type SQL, desc, eq, gt, isNotNull, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { QueryBuilder, alias } from 'drizzle-orm/pg-core';
 import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
@@ -581,7 +580,6 @@ export const createClimbFilters = (
 
   // Base conditions for filtering climbs
   const baseConditions: SQL[] = [
-    contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, userId),
     eq(boardClimbs.boardType, params.board_name),
     eq(boardClimbs.layoutId, params.layout_id),
     ...(isListedCondition ? [isListedCondition] : []),

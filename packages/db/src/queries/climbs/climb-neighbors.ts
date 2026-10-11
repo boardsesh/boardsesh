@@ -1,4 +1,4 @@
-import { climbReferenceVisibilityCondition, contentVisibilityCondition } from '../privacy';
+import { climbReferenceReadableCondition } from '../privacy';
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { boardClimbNeighbors, boardClimbs, boardClimbStats, boardDifficultyGrades } from '../../schema/index';
 import { rowsOf } from '../util/rows';
@@ -287,8 +287,7 @@ export async function getMaterializedSimilarClimbs(
       AND ${boardClimbs.isListed} IS NOT FALSE
       AND ${boardClimbs.isHidden} = FALSE
       ${sizeId !== undefined ? sql`AND COALESCE(${boardClimbs.compatibleSizeIds}, '{}'::int[]) @> ARRAY[${sizeId}]::int[]` : sql``}
-      AND ${contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, viewerUserId)}
-      AND ${climbReferenceVisibilityCondition({ boardType: sql`${boardType}`, climbUuid: sql`${climbUuid}` }, viewerUserId)}
+      AND ${climbReferenceReadableCondition({ boardType: sql`${boardType}`, climbUuid: sql`${climbUuid}` }, viewerUserId)}
       AND ${similarity} >= ${safeThreshold}
     ORDER BY similarity DESC, COALESCE(${boardClimbStats.ascensionistCount}, 0) DESC, ${boardClimbs.uuid} ASC
     LIMIT ${safeLimit}
