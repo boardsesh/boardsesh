@@ -12,6 +12,11 @@ import { resolveClimbNoMatch } from '../../shared/helpers';
 /**
  * Enrich a single proposal with proposer info, vote counts, climb data, and stats.
  * Independent queries are parallelised with Promise.all to minimise round-trip latency.
+ *
+ * A proposal is moderation content on a published climb, so its reason, votes
+ * and comment count read for everyone the climb reads for. The proposer's and
+ * resolver's identities follow their account privacy: a private account the
+ * viewer cannot see comes back with no id, name or avatar.
  */
 export async function enrichProposal(
   proposal: typeof dbSchema.climbProposals.$inferSelect,
@@ -194,7 +199,9 @@ export async function enrichProposal(
     proposedValue: proposal.proposedValue,
     currentValue: proposal.currentValue,
     status: proposal.status,
-    reason: proposer ? proposal.reason : null,
+    // Moderation reasoning on a published climb is public; only a private
+    // proposer's id, name and avatar are withheld above.
+    reason: proposal.reason,
     resolvedAt: proposal.resolvedAt?.toISOString() || undefined,
     resolvedBy: proposerRows.some((profile) => profile.id === proposal.resolvedBy) ? proposal.resolvedBy : null,
     createdAt: proposal.createdAt.toISOString(),
@@ -481,7 +488,7 @@ export async function batchEnrichProposals(
       proposedValue: proposal.proposedValue,
       currentValue: proposal.currentValue,
       status: proposal.status,
-      reason: proposer ? proposal.reason : null,
+      reason: proposal.reason,
       resolvedAt: proposal.resolvedAt?.toISOString() || undefined,
       resolvedBy: proposal.resolvedBy && proposerMap.has(proposal.resolvedBy) ? proposal.resolvedBy : null,
       createdAt: proposal.createdAt.toISOString(),

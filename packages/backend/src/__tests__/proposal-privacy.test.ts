@@ -74,24 +74,28 @@ beforeEach(() => {
 });
 
 describe('proposal privacy projection', () => {
-  it.each(['single', 'batch'])('%s hides private identities and prose while retaining weighted votes', async (mode) => {
-    const result =
-      mode === 'single' ? await enrichProposal(proposal, null) : (await batchEnrichProposals([proposal], null))[0];
-    expect(result).toMatchObject({
-      proposerId: null,
-      reason: null,
-      resolvedBy: null,
-      weightedUpvotes: 3,
-      weightedDownvotes: 0,
-      upvoterCount: 1,
-      climbName: 'Public climb',
-    });
-    expect(result.proposerDisplayName).toBeUndefined();
-    expect(result.proposerAvatarUrl).toBeUndefined();
-    const queryText = predicates.map(sqlText).join('\n');
-    expect(queryText).toContain('is_private');
-    expect(queryText).toContain('public_consent_revision');
-  });
+  it.each(['single', 'batch'])(
+    '%s hides private identities while keeping the reason and weighted votes',
+    async (mode) => {
+      const result =
+        mode === 'single' ? await enrichProposal(proposal, null) : (await batchEnrichProposals([proposal], null))[0];
+      expect(result).toMatchObject({
+        proposerId: null,
+        // Moderation reasoning on a published climb reads for everyone.
+        reason: proposal.reason,
+        resolvedBy: null,
+        weightedUpvotes: 3,
+        weightedDownvotes: 0,
+        upvoterCount: 1,
+        climbName: 'Public climb',
+      });
+      expect(result.proposerDisplayName).toBeUndefined();
+      expect(result.proposerAvatarUrl).toBeUndefined();
+      const queryText = predicates.map(sqlText).join('\n');
+      expect(queryText).toContain('is_private');
+      expect(queryText).toContain('public_consent_revision');
+    },
+  );
 
   it('preserves the authorized proposer without exposing a private resolver', async () => {
     visibleProfiles.push({

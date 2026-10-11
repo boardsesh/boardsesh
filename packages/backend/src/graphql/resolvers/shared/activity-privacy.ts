@@ -4,12 +4,7 @@ import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
-import {
-  contentVisibilityCondition,
-  entityOwnerCondition,
-  resourceAccessCondition,
-  userActivityVisibilityCondition,
-} from '../../../services/privacy';
+import { contentVisibilityCondition, entityOwnerCondition, resourceAccessCondition } from '../../../services/privacy';
 
 // Predicate construction must not depend on a database connection or its mocks.
 const queryBuilder = new QueryBuilder();
@@ -228,7 +223,9 @@ function terminalSocialEntityPrivacyCondition(
         .where(
           and(
             eq(proposal.uuid, entityId),
-            userActivityVisibilityCondition(proposal.proposerId, viewerId),
+            // A proposal is moderation on a published climb: its reason, votes
+            // and discussion read for everyone who can read the climb. Only a
+            // private proposer's identity is withheld, by the enrichment.
             exists(
               queryBuilder
                 .select({ uuid: climb.uuid })
