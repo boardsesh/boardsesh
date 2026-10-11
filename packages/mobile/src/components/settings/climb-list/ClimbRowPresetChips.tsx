@@ -31,7 +31,8 @@ export const ClimbRowPresetChips = memo(function ClimbRowPresetChips({
           <Pressable
             key={preset}
             accessibilityRole="radio"
-            accessibilityState={{ selected: activePreset === preset }}
+            aria-checked={activePreset === preset}
+            accessibilityState={{ checked: activePreset === preset, selected: activePreset === preset }}
             onPress={() => onSelect(preset)}
             style={[
               styles.chip,
