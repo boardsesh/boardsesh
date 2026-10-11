@@ -907,9 +907,36 @@ describe('board-snapshot export ↔ live pull parity', () => {
 describe('board-snapshot export ↔ REFERENCE stream', () => {
   const OTHER_AUTHOR_ID = 'snapshot-export-other-author';
 
-  // The real resolvers again, asked for the REFERENCE stream only.
-  const referenceGraphqlFetch: typeof graphqlFetch = (query, variables) =>
-    graphqlFetch(query, { ...variables, audience: 'REFERENCE' });
+  const BOARD_STREAM_FIELD = /\b(syncClimbs|syncClimbStats|syncClimbGrades)\(/;
+
+  // The real resolvers again, answering only the REFERENCE half of what the
+  // client engine asks for. The engine pulls each board table twice, once per
+  // stream, and names the stream in `audience` (#6306). This passes its
+  // REFERENCE requests through and answers its PROTECTED ones with an empty
+  // page, which is what a phone with no draft or unlisted climb of its own is
+  // sent. What lands in the client database is then exactly a REFERENCE pull.
+  //
+  // It used to stamp `audience: 'REFERENCE'` onto every request, which was right
+  // while the engine made one request per table and named no stream. Now that
+  // would also turn the engine's PROTECTED request into a second REFERENCE one.
+  // The engine stores a protected stats page without first-ascent credit, so
+  // the reference rows came back with those two columns blanked.
+  async function referenceGraphqlFetch<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+    const boardStreamField = BOARD_STREAM_FIELD.exec(query)?.[1];
+    if (!boardStreamField || variables?.audience === 'REFERENCE') return graphqlFetch<T>(query, variables);
+    // A board pull that names no stream is the single-stream pull, the
+    // caller's own drafts and all. Passing it through would make this test
+    // compare the artifact against something that is not the REFERENCE stream.
+    if (variables?.audience !== 'PROTECTED') {
+      throw new Error(`${boardStreamField} was requested without an audience`);
+    }
+    const emptyPage: EmptyPage = {
+      documents: [],
+      cursor: { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' },
+      hasMore: false,
+    };
+    return { [boardStreamField]: emptyPage } as ResolverResponse as T;
+  }
 
   async function pullInto(fetchPage: typeof graphqlFetch) {
     const clientDb = createTestDatabase();
