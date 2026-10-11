@@ -27,9 +27,6 @@ import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction'
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
-import { scopedRouter } from '../../lib/routing/scoped-navigation';
-import { Icon } from '../Icon';
-import { GlassToolbarAction } from '../chrome/GlassActionToolbar';
 import { FilterButton } from './FilterButton';
 import { GradeFilterControl } from './GradeFilterControl';
 
@@ -140,8 +137,6 @@ function ClimbTopChromeComponent({
   scrollEdge,
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
-  const { t: tCommon } = useTranslation('common');
-  const openClimbListSettings = useCallback(() => scopedRouter.push('/settings/climb-list'), []);
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
   const usesCustomSearch = searchMode === 'custom';
@@ -230,12 +225,6 @@ function ClimbTopChromeComponent({
               accessibilityLabel={t('mobile.create.fab.ariaLabel')}
             />
           ) : null}
-          <Appbar.Action
-            icon={iconMap.visibility.android}
-            color={systemColors.label as string}
-            onPress={openClimbListSettings}
-            accessibilityLabel={tCommon('mobile.settings.climbList.openLabel')}
-          />
           {/* Angle is a quick-row chip below (it re-grades the whole list — a list
               param, not an app-bar action). No toolbar lightbulb on the climbs tab
               either — board-LED control lives on the queue bar / current-climb pill
@@ -368,14 +357,6 @@ function ClimbTopChromeComponent({
       anchorBoardButton={anchorBoardButton}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}
-      trailingAction={
-        <GlassToolbarAction
-          onPress={openClimbListSettings}
-          accessibilityLabel={tCommon('mobile.settings.climbList.openLabel')}
-        >
-          <Icon name="visibility" size={22} color={systemColors.label} />
-        </GlassToolbarAction>
-      }
       hideLight
     >
       {usesCustomSearch ? (

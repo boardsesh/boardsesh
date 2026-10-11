@@ -2,9 +2,17 @@
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => nativeChrome.enabled }));
 vi.mock('../../chrome/NativeRootHeader', () => ({
-  NativeRootHeader: ({ scrollEdge }: { scrollEdge?: unknown }) => {
+  NativeRootHeader: ({
+    scrollEdge,
+    children,
+    rightActions,
+  }: {
+    scrollEdge?: unknown;
+    children?: ReactNode;
+    rightActions?: ReactNode;
+  }) => {
     nativeChrome.scrollEdge = scrollEdge;
-    return null;
+    return createElement('div', { 'data-native-header': true }, rightActions, children);
   },
 }));
 vi.mock('../../../hooks/use-device-layout', () => ({
@@ -55,18 +63,20 @@ type ViewMockProps = {
   children?: ReactNode;
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
   pointerEvents?: string;
+  testID?: string;
 };
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   Keyboard: { dismiss: vi.fn() },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'data-scrim': 'true' }, children),
-  View: ({ children, onLayout, pointerEvents }: ViewMockProps) =>
+  View: ({ children, onLayout, pointerEvents, testID }: ViewMockProps) =>
     createElement(
       'div',
       {
         'data-has-layout': onLayout ? 'true' : 'false',
         'data-pointer': pointerEvents ?? '',
+        'data-testid': testID,
         onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 88 } } }) : undefined,
       },
       children,
@@ -387,6 +397,7 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
     createElement('div', { 'data-wall-capsule': climb.climbUuid }),
 }));
 
+import { ClimbListFilterRow } from '../ClimbListFilterRow';
 import { ClimbTopChrome } from '../ClimbTopChrome';
 import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
@@ -439,14 +450,35 @@ const namedBoard: BoardLabelFields = {
 };
 
 describe('ClimbTopChrome', () => {
-  it.each(['liquidGlass', 'material'] as const)('opens Climb list settings from the eye on %s', (variant) => {
+  it.each([
+    ['liquidGlass', false],
+    ['liquidGlass', true],
+    ['material', false],
+  ] as const)('opens settings beside the chips on %s (native header: %s)', (variant, nativeHeader) => {
     ctrl.variant = variant;
-    const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    const eye =
-      container.querySelector('[data-pressable="mobile.settings.climbList.openLabel"]') ??
-      container.querySelector('[data-appbar-action="mobile.settings.climbList.openLabel"]');
+    ctrl.board = typedBoard;
+    ctrl.wallClimb = { climbUuid: 'wall-climb', name: 'A current climb' };
+    nativeChrome.enabled = nativeHeader;
+    const { container } = render(
+      <ClimbTopChrome
+        {...makeProps({
+          showPersistentChips: true,
+          searchMode: nativeHeader ? 'native' : 'custom',
+          filterChrome: (
+            <ClimbListFilterRow>
+              <div data-testid="scrolling-chips" />
+            </ClimbListFilterRow>
+          ),
+        })}
+      />,
+    );
+    const eye = container.querySelector('[data-label="mobile.settings.climbList.openLabel"]') as HTMLButtonElement;
     expect(eye).not.toBeNull();
-    fireEvent.click(eye as HTMLButtonElement);
+    expect(eye.closest('[data-testid="climb-list-filter-row"]')).not.toBeNull();
+    expect(eye.closest('[data-testid="climb-list-filter-chips"]')).toBeNull();
+    expect(eye.closest('[data-appbar-header]')).toBeNull();
+    expect(container.querySelector('[data-pressable="mobile.settings.climbList.openLabel"]')).toBeNull();
+    fireEvent.click(eye);
     expect(ctrl.push).toHaveBeenCalledWith('/settings/climb-list');
   });
 
