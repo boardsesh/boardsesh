@@ -4,6 +4,7 @@ import {
   isConsentRecordOwnedBy,
   isConsentSource,
   isCurrentConsentRecord,
+  isRegionDefaultConsent,
   isSameConsentRecord,
   resolveConsent,
   type AnalyticsConsentChoice,

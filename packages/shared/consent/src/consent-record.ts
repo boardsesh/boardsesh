@@ -22,12 +22,26 @@ export type AnalyticsConsentChoice = (typeof ANALYTICS_CONSENT_CHOICES)[number];
 export const CONSENT_SOURCES = ['web', 'ios', 'android'] as const;
 export type ConsentSource = (typeof CONSENT_SOURCES)[number];
 
+/**
+ * Why a device holds its answer. `explicit` (or no `basis` at all, which is
+ * every record written before this field existed and every account answer) is
+ * a choice the climber made. `region_default` is the "on" a device outside the
+ * prompt regions starts with when it has no answer: it is never written to an
+ * account, never counts as an Art. 7 consent, and an account denial still
+ * overrides it. Adding the field needed no CONSENT_VERSION bump: records
+ * without it read as explicit, exactly as before.
+ */
+export const CONSENT_BASES = ['explicit', 'region_default'] as const;
+export type ConsentBasis = (typeof CONSENT_BASES)[number];
+
 export type ConsentRecord = {
   analytics: AnalyticsConsentChoice;
   version: number;
   /** ISO 8601. The server stamps its own clock on the account copy. */
   decidedAt: string;
   source: ConsentSource;
+  /** Absent means explicit. Device-only: the account copy never carries it. */
+  basis?: ConsentBasis;
 };
 
 /**
@@ -83,6 +97,31 @@ export function isConsentSource(candidate: unknown): candidate is ConsentSource 
   return candidate === 'web' || candidate === 'ios' || candidate === 'android';
 }
 
+export function isConsentBasis(candidate: unknown): candidate is ConsentBasis {
+  return candidate === 'explicit' || candidate === 'region_default';
+}
+
+/** True for the device-local default a device outside the prompt regions starts with. */
+export function isRegionDefaultConsent(record: ConsentRecord | null): boolean {
+  return record !== null && record.basis === 'region_default';
+}
+
+/**
+ * The answer a device with no answer of its own takes when its region does not
+ * need the prompt (`consentPromptRequired` is false): analytics on, marked as a
+ * region default so it stays on this device. A later choice in Settings
+ * replaces it with an explicit record.
+ */
+export function createRegionDefaultConsent(source: ConsentSource, now: Date = new Date()): ConsentRecord {
+  return {
+    analytics: 'granted',
+    version: CONSENT_VERSION,
+    decidedAt: now.toISOString(),
+    source,
+    basis: 'region_default',
+  };
+}
+
 /**
  * True when the record was written under the current {@link CONSENT_VERSION}
  * (or a newer one, which an older bundle must not re-ask over).
@@ -98,7 +137,8 @@ export function isCurrentConsentRecord(record: ConsentRecord | null): record is 
  * 2. An account `denied` always wins. Saying no anywhere you are signed in stops
  *    tracking everywhere you are signed in.
  * 3. An account `granted` only fills a gap: it applies to a device that has no
- *    answer of its own. A device that said no keeps saying no.
+ *    answer of its own, or only a region default. A device that said no keeps
+ *    saying no.
  * 4. Otherwise the device's own answer stands (including no answer, `null`).
  *
  * Because rule 2 lets the account override a newer device grant, a client must
@@ -111,7 +151,8 @@ export function resolveConsent(local: ConsentRecord | null, server: ConsentRecor
   const currentServer = isCurrentConsentRecord(server) ? server : null;
 
   if (currentServer?.analytics === 'denied') return currentServer;
-  if (currentServer?.analytics === 'granted' && currentLocal === null) return currentServer;
+  if (currentServer?.analytics === 'granted' && (currentLocal === null || isRegionDefaultConsent(currentLocal)))
+    return currentServer;
   return currentLocal;
 }
 
@@ -120,7 +161,10 @@ export function needsPrompt(record: ConsentRecord | null): boolean {
   return !isCurrentConsentRecord(record);
 }
 
-/** True only for a current, explicit "Allow". No answer means no tracking. */
+/**
+ * True only for a current "Allow", or the region default outside the prompt
+ * regions. No answer means no tracking.
+ */
 export function isAnalyticsGranted(record: ConsentRecord | null): boolean {
   return isCurrentConsentRecord(record) && record.analytics === 'granted';
 }
