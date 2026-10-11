@@ -285,4 +285,26 @@ describeWithDatabase('climb owner backfill (real DB)', () => {
       'backfill-unlinked': null,
     });
   });
+
+  it('skips a climb whose setter is linked by a second account by the time it is written', async () => {
+    const assignments = await selectClimbOwnerAssignments(db, { afterUuid: null, limit: 100, kinds: ['drafts'] });
+    const planned = assignments.filter((assignment) => assignment.uuid.startsWith('backfill-'));
+    expect(planned.map((assignment) => assignment.uuid)).toEqual([
+      'backfill-sole-a',
+      'backfill-sole-b',
+      'backfill-unlinked',
+    ]);
+
+    // Between the read and the write a second account links the same
+    // manufacturer account: the match is no longer the only one.
+    await linkCredential(SHARED_ACCOUNT_B, BOARD, SOLE_SETTER);
+
+    expect(await applyClimbOwnerAssignments(db, planned)).toBe(1);
+    expect(ownersOf(await storedClimbs())).toMatchObject({
+      'backfill-sole-a': null,
+      'backfill-sole-b': null,
+      // Its setter still has one linked account.
+      'backfill-unlinked': UNLINKED_ACCOUNT,
+    });
+  });
 });
