@@ -338,7 +338,7 @@ describe('followedLiveSessions — social arm', () => {
     expect(JSON.stringify(session)).not.toContain(STRANGER);
   });
 
-  it('reauthorizes the current climb for anonymous visitors, followers and its owner', async () => {
+  it("shows a private account's published current climb to everyone, and an unlisted one to its owner", async () => {
     const board = await makeBoard();
     const sessionId = await makeSession({ createdBy: FRIEND, boardId: board.id });
     await goLive(sessionId, FRIEND);
@@ -357,18 +357,17 @@ describe('followedLiveSessions — social arm', () => {
       liveSessionQueries.boardLiveSessions(undefined, { boardId: board.id }, ctx);
 
     expect((await sessionsFor(anonCtx()))[0].currentClimb?.name).toBe('Private project name');
+    // A published climb is public whoever set it: the setter going private
+    // changes nothing about it.
     await db.update(dbSchema.userProfiles).set({ isPrivate: true }).where(eq(dbSchema.userProfiles.userId, FRIEND));
-    expect((await sessionsFor(anonCtx()))[0].currentClimb).toBeNull();
-    expect((await sessionsFor(authCtx(VIEWER)))[0].currentClimb).toBeNull();
-    expect((await sessionsFor(authCtx(FRIEND)))[0].currentClimb?.name).toBe('Private project name');
-    await follow(VIEWER, FRIEND);
+    expect((await sessionsFor(anonCtx()))[0].currentClimb?.name).toBe('Private project name');
     expect((await sessionsFor(authCtx(VIEWER)))[0].currentClimb?.name).toBe('Private project name');
-    await db.insert(dbSchema.contentPrivacy).values({
-      entityType: 'climb',
-      entityId: current.climb.uuid,
-      ownerId: FRIEND,
-      audience: 'only_me',
-    });
+    // Unlisting it takes it off a public projection for everyone but its owner.
+    await db
+      .update(dbSchema.boardClimbs)
+      .set({ isListed: false })
+      .where(eq(dbSchema.boardClimbs.uuid, current.climb.uuid));
+    expect((await sessionsFor(anonCtx()))[0].currentClimb).toBeNull();
     expect((await sessionsFor(authCtx(VIEWER)))[0].currentClimb).toBeNull();
     expect((await sessionsFor(authCtx(FRIEND)))[0].currentClimb?.name).toBe('Private project name');
   });

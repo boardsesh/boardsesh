@@ -32,10 +32,8 @@ describe('toSaveClimbInput', () => {
     });
   });
 
-  it('keeps privacy consent in the create request so publication is atomic', () => {
-    expect(
-      toSaveClimbInput('kilter', { ...options, privacy: { audience: 'followers', privacyRevision: 3 } }).privacy,
-    ).toEqual({ audience: 'followers', privacyRevision: 3 });
+  it('sends no audience: a published climb is public to everyone', () => {
+    expect(Object.keys(toSaveClimbInput('kilter', options))).not.toContain('privacy');
   });
 
   it('carries the board size a Woods climb was painted on', () => {

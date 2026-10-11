@@ -115,7 +115,7 @@ describe('climbQueries.similarClimbs — non-admin callers read the materialised
     );
 
     expect(result).toBe(materialised);
-    expect(getMaterializedSimilarClimbsMock).toHaveBeenCalledWith(mockDb, {
+    expect(getMaterializedSimilarClimbsMock).toHaveBeenCalledWith(mockDbRead, {
       viewerUserId: undefined,
       boardType: 'kilter',
       layoutId: 1,
@@ -136,22 +136,25 @@ describe('climbQueries.similarClimbs — non-admin callers read the materialised
       makeCtx(),
     );
     expect(getMaterializedSimilarClimbsMock).toHaveBeenCalledWith(
-      mockDb,
+      mockDbRead,
       expect.objectContaining({ threshold: 0.5, limit: 25, statsAngle: undefined }),
     );
   });
 
-  it('passes the authenticated viewer to the primary materialised lookup', async () => {
+  it('passes the viewer for the target draft rule, on the replica', async () => {
+    // A published climb is public whoever set it, so the materialised read has
+    // no audience to check and stays on the replica; the viewer only decides
+    // whether a draft target is their own.
     await climbQueries.similarClimbs(
       {},
       { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'target' } },
       makeCtx({ isAuthenticated: true, userId: 'approved-viewer' }),
     );
     expect(getMaterializedSimilarClimbsMock).toHaveBeenCalledWith(
-      mockDb,
+      mockDbRead,
       expect.objectContaining({ viewerUserId: 'approved-viewer' }),
     );
-    expect(mockDbRead.execute).not.toHaveBeenCalled();
+    expect(mockDb.select).not.toHaveBeenCalled();
   });
 
   it('passes a Woods size through and drops it on other boards', async () => {
@@ -217,7 +220,7 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('never reads the materialised index', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
+    // The target's draft rule runs before the holds or legacy frames lookup.
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 1, holdState: 'STARTING' }]));
     await climbQueries.similarClimbs(
@@ -229,12 +232,12 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
     expect(getMaterializedSimilarClimbsMock).not.toHaveBeenCalled();
   });
 
-  it('does not inspect holds or expose matches for a target the admin cannot read', async () => {
+  it('does not inspect holds or expose matches for a draft target the admin does not own', async () => {
     mockDb.select.mockReturnValueOnce(mockSelectChain([]));
     await expect(
       climbQueries.similarClimbs(
         {},
-        { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'private-target' } },
+        { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'someone-elses-draft' } },
         makeCtx({ isAuthenticated: true, userId: 'admin-without-approval' }),
       ),
     ).resolves.toEqual([]);
@@ -244,7 +247,7 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('looks up Woods physical size from the target climb', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
+    // The target's draft rule runs before the holds or legacy frames lookup.
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 0, holdState: 'STARTING' }]));
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'p0r4', compatibleSizeIds: [2] }]));
@@ -280,7 +283,7 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('accepts angle -5 and forwards it to the similarity helper as statsAngle: -5', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
+    // The target's draft rule runs before the holds or legacy frames lookup.
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     // Aurora boards support negative tilt (e.g. grasshopper at -5°). angle is
     // only an optional stats-join key, so a negative value must pass
@@ -310,7 +313,7 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('climbUuid path reads the target climbs holds and passes them through with excludeUuid set to the target', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
+    // The target's draft rule runs before the holds or legacy frames lookup.
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     mockDb.select.mockReturnValueOnce(
       mockSelectChain([
@@ -387,7 +390,7 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('short-circuits to an empty array when the target has no holds, without calling the helper', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
+    // The target's draft rule runs before the holds or legacy frames lookup.
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     // After authorization: board_climb_holds lookup → no rows.
     // Then legacy frames-fallback on board_climbs → no row.
@@ -405,7 +408,7 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('falls back to parsing board_climbs.frames when board_climb_holds is empty (legacy MoonBoard climbs)', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
+    // The target's draft rule runs before the holds or legacy frames lookup.
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     findSimilarClimbsMock.mockResolvedValue([]);
     // After authorization: board_climb_holds → no rows (legacy state).

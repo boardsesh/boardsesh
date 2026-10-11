@@ -182,7 +182,7 @@ describe('findExactDuplicateMatch', () => {
     });
   });
 
-  it('still blocks a duplicate without disclosing a private matching climb', async () => {
+  it('still blocks a duplicate without disclosing a match on a spray wall the viewer cannot see', async () => {
     mockDb.execute.mockResolvedValueOnce([
       {
         uuid: 'private-uuid',

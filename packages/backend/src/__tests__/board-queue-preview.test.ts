@@ -533,27 +533,20 @@ describe('board-queue-preview privacy gates', () => {
     expect(JSON.stringify(preview)).not.toContain(SECRET_USER_ID);
   });
 
-  it('redacts authored climbs in both current and upcoming live producer items', async () => {
+  it('redacts drafts in both current and upcoming live producer items, and shows published climbs', async () => {
     const boardId = await makeBoard({ isPublic: true });
     const sessionId = await makeSession({ boardId, isPublic: true });
-    const queue = [makeQueueItem(91001), makeQueueItem(91002)];
+    const queue = [makeQueueItem(91001), makeQueueItem(91002), makeQueueItem(91004)];
     await db.insert(dbSchema.boardClimbs).values(
-      queue.map((item) => ({
+      queue.map((item, index) => ({
         uuid: item.climb.uuid,
         boardType: 'kilter',
         layoutId: 1,
         userId: TEST_USER_ID,
         name: item.climb.name,
-        isDraft: false,
-        isListed: true,
-      })),
-    );
-    await db.insert(dbSchema.contentPrivacy).values(
-      queue.map((item) => ({
-        entityType: 'climb' as const,
-        entityId: item.climb.uuid,
-        ownerId: TEST_USER_ID,
-        audience: 'only_me' as const,
+        // The last one is published: public whoever set it.
+        isDraft: index < 2,
+        isListed: index === 2,
       })),
     );
     await seedQueueState(sessionId, queue, queue[0]);
@@ -577,12 +570,13 @@ describe('board-queue-preview privacy gates', () => {
         setter: null,
         grade: null,
       });
+      expect(received[0].upNext[1]).toMatchObject({ climbUuid: queue[2].climb.uuid, name: queue[2].climb.name });
     } finally {
       unsubscribe();
     }
   });
 
-  it('withdraws copied metadata from events buffered before a climb became private', async () => {
+  it('withdraws copied metadata from events buffered before a climb was unlisted', async () => {
     const boardId = await makeBoard({ isPublic: true });
     const sessionId = await makeSession({ boardId, isPublic: true });
     const current = makeQueueItem(91003);
@@ -607,12 +601,10 @@ describe('board-queue-preview privacy gates', () => {
         boardId.toString(),
         buildBoardQueuePreview(boardId, makeQueueState([current], current)),
       );
-      await db.insert(dbSchema.contentPrivacy).values({
-        entityType: 'climb',
-        entityId: current.climb.uuid,
-        ownerId: TEST_USER_ID,
-        audience: 'only_me',
-      });
+      await db
+        .update(dbSchema.boardClimbs)
+        .set({ isListed: false })
+        .where(eq(dbSchema.boardClimbs.uuid, current.climb.uuid));
       const withdrawn = await iterator.next();
       expect(withdrawn.value?.boardQueuePreview.current?.name).toBeNull();
       expect(JSON.stringify(withdrawn.value)).not.toContain(current.climb.frames);

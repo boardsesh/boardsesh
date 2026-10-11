@@ -13,14 +13,14 @@ const approved = 'social-enum-approved';
 const stranger = 'social-enum-stranger';
 const publicClimb = 'social-enum-public-climb';
 const privateClimb = 'social-enum-private-climb';
-const onlyMeClimb = 'social-enum-only-me-climb';
+const draftClimb = 'social-enum-draft-climb';
 const publicSession = 'social-enum-public-session';
 const privateSession = 'social-enum-private-session';
 const recipients = [owner, approved, stranger];
 const climbs = [
   { uuid: publicClimb, userId: publicOwner },
   { uuid: privateClimb, userId: owner },
-  { uuid: onlyMeClimb, userId: owner },
+  { uuid: draftClimb, userId: owner },
 ];
 
 function context(userId: string | null): ConnectionContext {
@@ -40,17 +40,12 @@ beforeAll(async () => {
       boardType: 'kilter',
       layoutId: 1,
       name: climb.uuid,
-      isListed: true,
-      isDraft: false,
+      // A published climb is public whoever set it; the draft is its owner's alone.
+      isListed: climb.uuid !== draftClimb,
+      isDraft: climb.uuid === draftClimb,
       frames: 'p1r1',
     })),
   );
-  await db.insert(schema.contentPrivacy).values({
-    entityType: 'climb',
-    entityId: onlyMeClimb,
-    ownerId: owner,
-    audience: 'only_me',
-  });
   await db.insert(schema.notifications).values(
     recipients.flatMap((recipientId) => [
       ...climbs.map((climb) => ({
@@ -143,17 +138,17 @@ describe('social privacy queries with production PostgreSQL enum types', () => {
   });
 
   it.each([
-    { viewer: owner, visible: [publicClimb, privateClimb, onlyMeClimb] },
+    { viewer: owner, visible: [publicClimb, privateClimb, draftClimb] },
     { viewer: approved, visible: [publicClimb, privateClimb] },
-    { viewer: stranger, visible: [publicClimb] },
+    { viewer: stranger, visible: [publicClimb, privateClimb] },
   ])('counts unread notifications within $viewer privacy access', async ({ viewer, visible }) => {
     expect(await socialNotificationQueries.unreadNotificationCount(null, {}, context(viewer))).toBe(visible.length);
   });
 
   it.each([
-    { viewer: owner, visible: [publicClimb, privateClimb, onlyMeClimb] },
+    { viewer: owner, visible: [publicClimb, privateClimb, draftClimb] },
     { viewer: approved, visible: [publicClimb, privateClimb] },
-    { viewer: stranger, visible: [publicClimb] },
+    { viewer: stranger, visible: [publicClimb, privateClimb] },
   ])('filters materialized feed rows within $viewer privacy access', async ({ viewer, visible }) => {
     const feed = await activityFeedQueries.activityFeed(null, {}, context(viewer));
     expect(feed.items.map((item) => item.entityId).sort()).toEqual([...visible].sort());

@@ -5,7 +5,6 @@ import {
   boardSessions,
   boardSessionParticipants,
   boardClimbs,
-  contentPrivacy,
   resourcePrivacy,
   resourceGrants,
   userProfiles,
@@ -207,15 +206,19 @@ describe('APNs Live Activity service', () => {
         layoutId: 1,
         name: 'Private project',
         userId: 'apns-private-owner',
+        isListed: false,
+        isDraft: true,
+      },
+      {
+        // Published by a private account: public whoever set it.
+        uuid: 'apns-private-published',
+        boardType: 'kilter',
+        layoutId: 1,
+        name: 'Published project',
+        userId: 'apns-private-owner',
         isListed: true,
       },
     ]);
-    await db.insert(contentPrivacy).values({
-      entityType: 'climb',
-      entityId: 'apns-private-climb',
-      ownerId: 'apns-private-owner',
-      audience: 'only_me',
-    });
   });
 
   beforeEach(() => {
@@ -376,7 +379,7 @@ describe('APNs Live Activity service', () => {
       expect(JSON.stringify(aps)).not.toContain(sampleContentState.climbName);
     });
 
-    it('hides private climbs and holder names from other recipients while retaining owner access', async () => {
+    it('hides a draft and holder names from other recipients while retaining owner access', async () => {
       const sessionId = 'apns-private-projections';
       setApnsEnv();
       apns.initializeApns();
@@ -409,6 +412,33 @@ describe('APNs Live Activity service', () => {
         });
       }
     });
+
+    it("shows a private account's published climb to every recipient, but not the private holder", async () => {
+      const sessionId = 'apns-private-published-projection';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      await insertTokenForUser(sessionId, 'published-peer-token', 'apns-private-viewer');
+      await insertTokenForUser(sessionId, 'published-legacy-token', null);
+      apns.setSessionHolderResolver(async () => ({
+        holderUserId: 'apns-private-owner',
+        holderDisplayName: 'Private holder',
+      }));
+      apns.sendLiveActivityUpdate(sessionId, {
+        ...sampleContentState,
+        climbUuid: 'apns-private-published',
+        climbName: 'Published project',
+      });
+      await waitForSettle();
+      for (const token of ['published-peer-token', 'published-legacy-token']) {
+        expect(contentStateForToken(mockSend.mock.calls, token)).toMatchObject({
+          climbName: 'Published project',
+          climbUuid: 'apns-private-published',
+          holderDisplayName: '',
+        });
+      }
+    });
+
     it('is a no-op when APNs is not configured', async () => {
       apns.sendLiveActivityUpdate('session-noconfig', sampleContentState);
       await waitForSettle();

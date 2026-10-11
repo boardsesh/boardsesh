@@ -392,7 +392,7 @@ describe('SQL privacy boundaries against Postgres', () => {
       expect(rows.map((row) => row.entityId).sort()).toEqual([...expectedIds].sort());
     }
   });
-  it('keeps a public tick and beta inside an authored climb audience', async () => {
+  it("shows a public tick and beta on a private account's published climb", async () => {
     const authoredClimb = 'privacy-authored-parent';
     await db.insert(schema.boardClimbs).values({
       uuid: authoredClimb,
@@ -428,15 +428,17 @@ describe('SQL privacy boundaries against Postgres', () => {
       .select({ link: schema.boardBetaLinks.link })
       .from(schema.boardBetaLinks)
       .where(and(eq(schema.boardBetaLinks.climbUuid, authoredClimb), betaPrivacyCondition(stranger)));
-    expect(ticks).toEqual([]);
-    expect(beta).toEqual([]);
+    // The climb is published, so it is public whoever set it: a tick is never
+    // hidden because of its climb's author.
+    expect(ticks).toEqual([{ uuid: 'privacy-public-on-private-climb' }]);
+    expect(beta).toEqual([{ link: 'https://www.instagram.com/p/private-parent/' }]);
     const [aggregate] = await db
       .select({ count: count() })
       .from(schema.boardseshTicks)
       .where(eq(schema.boardseshTicks.climbUuid, authoredClimb));
     expect(aggregate.count).toBe(1);
   });
-  it('does not expose private linked climbs through playlist discussions or draft proposals', async () => {
+  it("opens a private account's published climb in playlist discussions, but never a draft's proposals", async () => {
     const [playlist] = await db
       .insert(schema.playlists)
       .values({ uuid: 'privacy-discussion-playlist', boardType: 'kilter', name: 'Public playlist', isPublic: true })
@@ -446,7 +448,7 @@ describe('SQL privacy boundaries against Postgres', () => {
     expect(await canReadSocialEntity('playlist_climb', 'privacy-discussion-playlist:_all', stranger)).toBe(true);
     expect(
       await canReadSocialEntity('playlist_climb', 'privacy-discussion-playlist:privacy-authored-parent', stranger),
-    ).toBe(false);
+    ).toBe(true);
     await db.insert(schema.boardClimbs).values({
       uuid: 'privacy-proposal-draft',
       boardType: 'kilter',
@@ -478,19 +480,18 @@ describe('SQL privacy boundaries against Postgres', () => {
       uuid: string;
       layoutId: number | null;
     }>;
-    expect(ownTicks).toContainEqual(
-      expect.objectContaining({ uuid: 'privacy-public-on-private-climb', layoutId: null }),
-    );
+    // The climb is published, so losing the follow hides nothing about it.
+    expect(ownTicks).toContainEqual(expect.objectContaining({ uuid: 'privacy-public-on-private-climb', layoutId: 1 }));
     const ownCounts = await tickQueries.userTickCountsByBoard(null, { userId: approved }, viewer);
     expect(ownCounts).toContainEqual(expect.objectContaining({ boardType: 'kilter', count: 1 }));
     const ownStats = await tickQueries.userProfileStats(null, { userId: approved }, viewer);
     expect(ownStats.totalDistinctClimbs).toBe(1);
-    expect(ownStats.layoutStats).toContainEqual(expect.objectContaining({ boardType: 'kilter', layoutId: null }));
+    expect(ownStats.layoutStats).toContainEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1 }));
     const enriched = await db
       .select({ uuid: schema.boardseshTicks.uuid })
       .from(schema.boardseshTicks)
       .where(and(eq(schema.boardseshTicks.uuid, 'privacy-public-on-private-climb'), tickPrivacyCondition(approved)));
-    expect(enriched).toEqual([]);
+    expect(enriched).toEqual([{ uuid: 'privacy-public-on-private-climb' }]);
     const [aggregate] = await db
       .select({ count: count() })
       .from(schema.boardseshTicks)

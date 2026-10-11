@@ -1,8 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { randomUUID } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
-import { contentVisibilityCondition, privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import {
+  climbDraftVisibilityCondition,
+  privateSafeFirstAscentName,
+  publicReferenceClimbCondition,
+} from '@boardsesh/db/queries';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { userMutations } from '../graphql/resolvers/users/mutations';
@@ -21,6 +25,24 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.execute(sql`ALTER TABLE board_beta_links DROP CONSTRAINT IF EXISTS privacy_delete_test_beta_creator_fk`);
 });
+
+/** The climbs among these that any list may show: published and listed, no viewer. */
+async function publicClimbs(uuids: string[]): Promise<string[]> {
+  const rows = await db
+    .select({ uuid: schema.boardClimbs.uuid })
+    .from(schema.boardClimbs)
+    .where(and(inArray(schema.boardClimbs.uuid, uuids), publicReferenceClimbCondition(schema.boardClimbs)));
+  return rows.map((row) => row.uuid);
+}
+
+/** The climbs among these that this viewer may read by uuid. */
+async function readableByReference(uuids: string[], viewerId: string | null): Promise<string[]> {
+  const rows = await db
+    .select({ uuid: schema.boardClimbs.uuid })
+    .from(schema.boardClimbs)
+    .where(and(inArray(schema.boardClimbs.uuid, uuids), climbDraftVisibilityCondition(schema.boardClimbs, viewerId)));
+  return rows.map((row) => row.uuid);
+}
 
 async function seedAccount(isPrivate: boolean) {
   const userId = randomUUID();
@@ -76,39 +98,51 @@ describe('account deletion preserves privacy', () => {
             inserted += 1;
             if (inserted === uuids.length) release();
             await bothInserted;
-            await setContentPrivacy(transaction, userId, 'climb', uuid, 'public', 0);
+            // A comment policy: climbs have no audience. The climb insert above
+            // is what holds the creator foreign-key lock.
+            await setContentPrivacy(transaction, userId, 'comment', uuid, 'public', 0);
           }),
         ),
       );
-      for (const uuid of uuids) expect(await canViewContent(null, 'climb', uuid, userId)).toBe(true);
+      for (const uuid of uuids) expect(await canViewContent(null, 'comment', uuid, userId)).toBe(true);
     } finally {
       vi.unstubAllEnvs();
     }
   });
-  it('retains private climb restrictions and numeric aggregates after author FKs become NULL', async () => {
+  it("leaves a deleted private account's published climbs public, its drafts and unlisted climbs to no one", async () => {
     const { userId, climbUuid } = await seedAccount(true);
+    const draftUuid = randomUUID();
+    const unlistedUuid = randomUUID();
+    await db.insert(schema.boardClimbs).values([
+      { uuid: draftUuid, userId, boardType: 'kilter', layoutId: 1, isDraft: true, isListed: false },
+      { uuid: unlistedUuid, userId, boardType: 'kilter', layoutId: 1, isDraft: false, isListed: false },
+    ]);
     await db.insert(schema.boardClimbStats).values({ boardType: 'kilter', climbUuid, angle: 40, ascensionistCount: 7 });
     const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
     try {
       await userMutations.deleteAccount(null, { input: { removeSetterName: false } }, context(userId));
-      const [climb] = await db.select().from(schema.boardClimbs).where(eq(schema.boardClimbs.uuid, climbUuid));
-      expect(climb.userId).toBeNull();
-      const [policy] = await db
-        .select()
-        .from(schema.contentPrivacy)
-        .where(and(eq(schema.contentPrivacy.entityType, 'climb'), eq(schema.contentPrivacy.entityId, climbUuid)));
-      expect(policy).toMatchObject({ ownerId: null, audience: 'only_me' });
-      const visible = await db
-        .select({ uuid: schema.boardClimbs.uuid })
+      const rows = await db
+        .select({
+          uuid: schema.boardClimbs.uuid,
+          userId: schema.boardClimbs.userId,
+          marked: schema.boardClimbs.isBoardseshAuthored,
+        })
         .from(schema.boardClimbs)
-        .where(
-          and(
-            eq(schema.boardClimbs.uuid, climbUuid),
-            contentVisibilityCondition('climb', schema.boardClimbs.uuid, schema.boardClimbs.userId, null),
-          ),
-        );
-      expect(visible).toEqual([]);
-      expect(await canViewContent(null, 'climb', climbUuid, null)).toBe(false);
+        .where(inArray(schema.boardClimbs.uuid, [climbUuid, draftUuid, unlistedUuid]));
+      // The author reference is cleared; the marker stays for first-ascent names alone.
+      expect(rows.every((row) => row.userId === null && row.marked === true)).toBe(true);
+      // No climb policy is written: a published climb has no audience.
+      expect(
+        await db
+          .select()
+          .from(schema.contentPrivacy)
+          .where(inArray(schema.contentPrivacy.entityId, [climbUuid, draftUuid, unlistedUuid])),
+      ).toEqual([]);
+      expect(await publicClimbs([climbUuid, draftUuid, unlistedUuid])).toEqual([climbUuid]);
+      // By reference: the published climbs resolve, the draft goes to no one.
+      expect((await readableByReference([climbUuid, draftUuid, unlistedUuid], null)).sort()).toEqual(
+        [climbUuid, unlistedUuid].sort(),
+      );
       const [stats] = await db
         .select()
         .from(schema.boardClimbStats)
@@ -141,7 +175,7 @@ describe('account deletion preserves privacy', () => {
     expect(visible).toEqual([{ link: vendorLink }]);
     const [climb] = await db.select().from(schema.boardClimbs).where(eq(schema.boardClimbs.uuid, climbUuid));
     expect(climb).toMatchObject({ userId: null, isBoardseshAuthored: true });
-    expect(await canViewContent(null, 'climb', climbUuid, null)).toBe(true);
+    expect(await publicClimbs([climbUuid])).toEqual([climbUuid]);
     await db.insert(schema.boardClimbStats).values({
       boardType: 'kilter',
       climbUuid,
@@ -191,32 +225,6 @@ describe('account deletion preserves privacy', () => {
       .from(schema.resourcePrivacy)
       .where(eq(schema.resourcePrivacy.resourceId, sessionId));
     expect(policy).toMatchObject({ ownerId: null, audience: 'only_me' });
-  });
-
-  it('retains current explicit Public climbs but preserves stale-public and followers restrictions', async () => {
-    const { userId, climbUuid } = await seedAccount(true);
-    const staleUuid = randomUUID();
-    const followersUuid = randomUUID();
-    await db.insert(schema.boardClimbs).values(
-      [staleUuid, followersUuid].map((uuid) => ({
-        uuid,
-        userId,
-        boardType: 'kilter',
-        layoutId: 1,
-        isDraft: false,
-        isListed: true,
-      })),
-    );
-    await db.update(schema.userProfiles).set({ privacyRevision: 1 }).where(eq(schema.userProfiles.userId, userId));
-    await db.insert(schema.contentPrivacy).values([
-      { entityType: 'climb', entityId: climbUuid, ownerId: userId, audience: 'public', publicConsentRevision: 1 },
-      { entityType: 'climb', entityId: staleUuid, ownerId: userId, audience: 'public', publicConsentRevision: 0 },
-      { entityType: 'climb', entityId: followersUuid, ownerId: userId, audience: 'followers' },
-    ]);
-    await userMutations.deleteAccount(null, { input: { removeSetterName: false } }, context(userId));
-    expect(await canViewContent(null, 'climb', climbUuid, null)).toBe(true);
-    expect(await canViewContent(null, 'climb', staleUuid, null)).toBe(false);
-    expect(await canViewContent(null, 'climb', followersUuid, null)).toBe(false);
   });
 
   it('rolls withdrawal back if the enclosing account deletion fails', async () => {

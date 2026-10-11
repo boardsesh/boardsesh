@@ -95,7 +95,7 @@ describe('moonboard duplicate helpers', () => {
   });
 
   it.each(['exact', 'legacy'] as const)(
-    'conceals private %s matches while retaining the duplicate gate',
+    'conceals %s matches on a spray wall the viewer cannot see while retaining the duplicate gate',
     async (kind) => {
       const holds = { start: ['A1'], hand: ['B2'], finish: ['C3'] };
       const row = {
