@@ -187,10 +187,10 @@ describe('ClaimGymSheet — which form opens comes from canClaimByDomain, not th
     renderSheet({ website: 'https://bonsist.bg', canClaimByDomain: false });
 
     expect(screen.queryByText('mobile.gymClaim.domain.emailLabel')).toBeNull();
-    expect(screen.queryByText('mobile.gymClaim.domain.submit')).toBeNull();
+    expect(screen.queryByLabelText('mobile.gymClaim.domain.submit')).toBeNull();
     // …and no offer to switch to a path that would be refused.
     expect(screen.queryByText('mobile.gymClaim.switchToDomain')).toBeNull();
-    expect(screen.getByText('mobile.gymClaim.admin.submit')).toBeTruthy();
+    expect(screen.getByLabelText('mobile.gymClaim.admin.submit')).toBeTruthy();
   });
 
   it('sends an admin-review claim with no claimEmail from that state', async () => {
@@ -208,6 +208,6 @@ describe('ClaimGymSheet — which form opens comes from canClaimByDomain, not th
   it('opens the email form on the same website once it is owner-vouched', () => {
     renderSheet({ website: 'https://bonsist.bg', canClaimByDomain: true });
 
-    expect(screen.getByText('mobile.gymClaim.domain.submit')).toBeTruthy();
+    expect(screen.getByLabelText('mobile.gymClaim.domain.submit')).toBeTruthy();
   });
 });
