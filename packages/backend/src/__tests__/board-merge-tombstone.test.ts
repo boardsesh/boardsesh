@@ -1058,6 +1058,70 @@ describe('createBoard cross-owner duplicate-serial backstop', () => {
     expect(target.serial_number === serial && Number(target.layout_id) === 42).toBe(false);
   });
 
+  it('checks the persisted config after an unchanged full-tuple edit waits behind a reconfiguration', async () => {
+    const existingOwner = `${OWNER_A}-unchanged-edit-existing`;
+    const targetOwner = `${OWNER_B}-unchanged-edit-target`;
+    const serial = `UNCHANGED-${SERIAL_SUFFIX}`;
+    const targetUuid = uuidv4();
+    await Promise.all([insertUser(existingOwner), insertUser(targetOwner)]);
+    await insertBoard({
+      uuid: uuidv4(),
+      slug: `${PREFIX}-unchanged-edit-existing`,
+      ownerId: existingOwner,
+      serialNumber: serial,
+      layoutId: 42,
+      sizeId: 12,
+      setIds: '1,2',
+    });
+    await insertBoard({
+      uuid: targetUuid,
+      slug: `${PREFIX}-unchanged-edit-target`,
+      ownerId: targetOwner,
+      serialNumber: null,
+      layoutId: 41,
+      sizeId: 12,
+      setIds: '1,2',
+    });
+    const configReady = createValueBarrier<number>();
+    const releaseConfig = createBarrier();
+    let configPromise: Promise<void> | undefined;
+    let editPromise: ReturnType<typeof socialBoardMutations.updateBoard> | undefined;
+    try {
+      configPromise = db.transaction(async (transaction) => {
+        const [session] = rowsFromResult<{ pid: number }>(
+          await transaction.execute(sql`SELECT pg_backend_pid() AS pid`),
+        );
+        await transaction.execute(sql`UPDATE user_boards SET layout_id = 42 WHERE uuid = ${targetUuid}`);
+        configReady.release(Number(session.pid));
+        await releaseConfig.promise;
+      });
+      handleLater(configPromise);
+      const configPid = await configReady.promise;
+      // The first unlocked read still sees 41, so the submitted tuple is a
+      // metadata-only echo. The write must validate the actual locked tuple 42.
+      editPromise = socialBoardMutations.updateBoard(
+        null,
+        {
+          input: { boardUuid: targetUuid, layoutId: 41, sizeId: 12, setIds: '2,1', serialNumber: serial },
+        },
+        authCtx(targetOwner),
+      );
+      handleLater(editPromise);
+      await waitForRowWaitBlockedBy(configPid);
+      releaseConfig.release();
+      await configPromise;
+      await expect(editPromise).rejects.toMatchObject({ extensions: { code: 'BOARD_SERIAL_EXISTS' } });
+      const [target] = rowsFromResult<{ serial_number: string | null; layout_id: number; set_ids: string }>(
+        await db.execute(sql`SELECT serial_number, layout_id, set_ids FROM user_boards WHERE uuid = ${targetUuid}`),
+      );
+      expect(target).toMatchObject({ serial_number: null, set_ids: '1,2' });
+      expect(Number(target.layout_id)).toBe(42);
+    } finally {
+      releaseConfig.release();
+      await Promise.allSettled([configPromise, editPromise]);
+    }
+  });
+
   it('uses one row-then-serial lock order for update and first-connect binding', async () => {
     const owner = `${OWNER_C}-bind-edit-race`;
     const serial = `BIND-${SERIAL_SUFFIX}`;
