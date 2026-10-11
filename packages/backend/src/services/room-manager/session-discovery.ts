@@ -1,7 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { resolveSessionBoardId } from '../session-board-binding';
 import { notifyResourcePrivacyChanged } from '../board-session-privacy';
-import { pubsub } from '../../pubsub';
 import {
   canViewActivityIdentity,
   requireResourceAccess,
@@ -11,7 +10,7 @@ import {
 import { db } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
 import { sessionBoards } from '@boardsesh/db/schema/app';
-import { eq, and, gt, gte, lt, lte, ne, isNull, sql, getTableColumns } from 'drizzle-orm';
+import { eq, and, gt, gte, lt, lte, ne, sql, getTableColumns } from 'drizzle-orm';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
 import type { DiscoverableSession, LiveSession, RoomManagerDeps } from './types';
 import { logger } from '../../utils/logger';
@@ -85,10 +84,11 @@ export async function updateSessionBoardPathIfChanged(
     };
   });
   if (!transition) return null;
-  if (transition.parentChanged) {
-    await pubsub.publishPrivacyChanged();
-    await notifyResourcePrivacyChanged('session', sessionId);
-  }
+  // The new wall joins the session's caps above. Live session streams recheck
+  // access on their next event and the kiosk previews re-derive here; a wall
+  // switch is not a settings change, so it does not make every connected app
+  // reload through the global privacyChanged stream.
+  if (transition.parentChanged) await notifyResourcePrivacyChanged('session', sessionId);
   return transition.previous;
 }
 

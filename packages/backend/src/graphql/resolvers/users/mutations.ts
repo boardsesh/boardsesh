@@ -338,7 +338,7 @@ export const userMutations = {
       }),
     );
 
-    pubsub.publishPrivacyChanged();
+    pubsub.publishPrivacyChanged('deleteAccount');
     // Only committed tombstones may erase bytes. Failed erasure remains durable
     // work in photos_purged_at and the scheduler retries it without retention.
     if (deletedWallIds.length > 0) {

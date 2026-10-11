@@ -944,7 +944,6 @@ export const tickMutations = {
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
-    let inferredPrivacyChanged = false;
     const mutationResult = await db.transaction(async (tx) => {
       await acquireUserTickMutationLock(tx, userId);
       const affectedTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'delete');
@@ -1003,14 +1002,12 @@ export const tickMutations = {
       // logical ascent's rows share one climbed_at and would otherwise reconcile the
       // same window repeatedly.
       for (const climbedAt of new Set(affectedTicks.map((tick) => tick.climbedAt))) {
-        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
-        inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
+        await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
       }
 
       return { affectedTicks, detachedBetaLinks: detachedBetaLinks.length > 0 };
     });
 
-    if (inferredPrivacyChanged) pubsub.publishPrivacyChanged();
     const { affectedTicks: deletedTicks, detachedBetaLinks } = mutationResult;
 
     const targetTick = deletedTicks.find((tick) => tick.uuid === uuid)!;
@@ -1383,7 +1380,6 @@ export const tickMutations = {
     // Insert into database. When the client supplied a uuid that already exists
     // (offline replay), the insert is a no-op and `createdTick` is undefined —
     // we detect that, return the original row, and skip every side effect below.
-    let inferredPrivacyChanged = false;
     const [tick] = await db.transaction(
       async (tx) => {
         // A spray climb can be hard-deleted by its setter while nobody has
@@ -1505,15 +1501,12 @@ export const tickMutations = {
         // transaction so the tick and its assignment commit together. Inert unless
         // INFERRED_SESSIONS_ENABLED is set. A tick that already carries an explicit
         // session still goes through, because the run around it may need redrawing.
-        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(createdTick.climbedAt));
-        inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
+        await reconcileInferredSessions(tx, userId, parseClimbedAt(createdTick.climbedAt));
 
         return [createdTick];
       },
       { isolationLevel: 'read committed' },
     );
-
-    if (inferredPrivacyChanged) pubsub.publishPrivacyChanged();
 
     // Settle the catalog observation started before the board/session lookups.
     // By now it has overlapped every round-trip above, so this is a no-op wait
@@ -1710,7 +1703,6 @@ export const tickMutations = {
     const changedFields = Object.keys(validatedInput);
     logger.info(`[updateTick] user=${userId} tick=${uuid} fields=[${changedFields.join(',')}]`);
 
-    let inferredPrivacyChanged = false;
     const mutationResult = await retryTickMutationOnChangedSurface(() =>
       db.transaction(async (tx) => {
         await acquireUserTickMutationLock(tx, userId);
@@ -1826,8 +1818,7 @@ export const tickMutations = {
           ...existingTicks.map((tick) => tick.climbedAt),
           ...updatedTicks.map((tick) => tick.climbedAt),
         ])) {
-          const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
-          inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
+          await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
         }
 
         const [attributedBoard] =
@@ -1854,7 +1845,10 @@ export const tickMutations = {
       }),
     );
 
-    if (validatedInput.privacy || inferredPrivacyChanged) pubsub.publishPrivacyChanged();
+    // Only an explicit audience choice publishes. Session regrouping (merges,
+    // splits, back-dated imports) is frequent and does not need every
+    // connected app to reload.
+    if (validatedInput.privacy) pubsub.publishPrivacyChanged('updateTick');
 
     // Both the key the tick left and the key it joined, so an angle edit doesn't
     // strand a stale bucket. Inline first for the same reason as saveTick: the

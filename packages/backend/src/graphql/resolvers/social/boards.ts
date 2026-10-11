@@ -2365,6 +2365,9 @@ export const socialBoardMutations = {
     }
 
     let updated: typeof dbSchema.userBoards.$inferSelect;
+    // Only an audience/location change publishes privacyChanged; a rename,
+    // description or config edit does not make every connected app reload.
+    let boardPrivacyChanged = false;
     try {
       const updatedRows = await db.transaction(async (tx) => {
         // Serialize partial edits to the same board before deriving the final
@@ -2483,6 +2486,7 @@ export const socialBoardMutations = {
             Object.keys(privacyUpdates).length > 0;
           if (changesPrivacy && lockedBoard.ownerId !== userId)
             throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
+          boardPrivacyChanged = changesPrivacy;
           if (Object.keys(privacyUpdates).length > 0) {
             await tx
               .update(dbSchema.resourcePrivacy)
@@ -2529,8 +2533,8 @@ export const socialBoardMutations = {
       }
     }
 
+    if (boardPrivacyChanged) pubsub.publishPrivacyChanged('updateBoard');
     // Update PostGIS location column (guarded — see syncLocationGeography)
-    pubsub.publishPrivacyChanged();
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
       await syncLocationGeography({
         table: 'user_boards',

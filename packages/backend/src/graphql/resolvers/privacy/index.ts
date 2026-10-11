@@ -140,20 +140,24 @@ export async function requestPrivacyFollow(followerId: string, followingId: stri
         );
     }
   });
+  // No privacyChanged here: a request grants nothing, and a direct follow of a
+  // public account only widens what the follower's own client can read. That
+  // client refreshes its own caches after the mutation.
   if (createdFollow) await publishFollow(followerId, followingId);
-  pubsub.publishPrivacyChanged();
 }
-export async function removePrivacyFollow(followerId: string, followingId: string): Promise<void> {
-  await db.transaction(async (transaction) => {
+/** Returns whether a follow existed and was removed, so callers can skip no-ops. */
+export async function removePrivacyFollow(followerId: string, followingId: string): Promise<boolean> {
+  return db.transaction(async (transaction) => {
     // Same recipient lock as approval and account visibility, so a racing approval cannot recreate access.
     await transaction
       .select({ id: schema.users.id })
       .from(schema.users)
       .where(eq(schema.users.id, followingId))
       .for('update');
-    await transaction
+    const removed = await transaction
       .delete(schema.userFollows)
-      .where(and(eq(schema.userFollows.followerId, followerId), eq(schema.userFollows.followingId, followingId)));
+      .where(and(eq(schema.userFollows.followerId, followerId), eq(schema.userFollows.followingId, followingId)))
+      .returning({ id: schema.userFollows.id });
     await transaction
       .delete(schema.userFollowRequests)
       .where(
@@ -162,8 +166,8 @@ export async function removePrivacyFollow(followerId: string, followingId: strin
           eq(schema.userFollowRequests.recipientId, followingId),
         ),
       );
+    return removed.length > 0;
   });
-  pubsub.publishPrivacyChanged();
 }
 async function contentOwner(
   entityType: PrivacyContentType,
@@ -269,6 +273,11 @@ async function notifyResourceChanged(kind: PrivacyResourceKind, resourceId: stri
   const { notifyResourcePrivacyChanged } = await import('../../../services/board-session-privacy');
   await notifyResourcePrivacyChanged(kind, resourceId);
 }
+/** Newly public beta must not wait behind an older empty anonymous cache. Runs before the publish. */
+async function invalidateBetaCache(): Promise<void> {
+  const { invalidateRecentBetaLinksCache } = await import('../beta-videos/queries');
+  await invalidateRecentBetaLinksCache();
+}
 export const privacyQueries = {
   privacySettings: async (_: unknown, __: unknown, ctx: ConnectionContext) => getPrivacySettings(actor(ctx)),
   privacyRelationship: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) =>
@@ -347,7 +356,9 @@ export const privacyMutations = {
   updatePrivacySettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const userId = await privacyActor(ctx);
     const settings = validateInput(updateSettingsSchema, input, 'input');
-    await db.transaction(async (transaction) => {
+    // Only the account switch and the session default change who can read
+    // anything. The onboarding save and a repeated value publish nothing.
+    const audienceChanged = await db.transaction(async (transaction) => {
       await transaction
         .select({ id: schema.users.id })
         .from(schema.users)
@@ -376,7 +387,14 @@ export const privacyMutations = {
           updatedAt: new Date(),
         })
         .where(eq(schema.userProfiles.userId, userId));
+      return (
+        (settings.isPrivate !== undefined && settings.isPrivate !== current.isPrivate) ||
+        (settings.defaultSessionAudience !== undefined &&
+          settings.defaultSessionAudience !== current.defaultSessionAudience)
+      );
     });
+    await invalidateBetaCache();
+    if (audienceChanged) pubsub.publishPrivacyChanged('updatePrivacySettings');
     return getPrivacySettings(userId);
   },
   requestFollow: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
@@ -429,7 +447,10 @@ export const privacyMutations = {
         .returning();
       accepted = inserted.length > 0;
     });
-    if (accepted) await publishFollow(userId, recipientId);
+    if (accepted) {
+      await publishFollow(userId, recipientId);
+      pubsub.publishPrivacyChanged('approveFollowRequest');
+    }
     return true;
   },
   declineFollowRequest: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
@@ -452,7 +473,9 @@ export const privacyMutations = {
     return true;
   },
   removeFollower: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
-    await removePrivacyFollow(userId, await privacyActor(ctx));
+    // Followers-only items and resources exist on public accounts too, so any
+    // real removal withdraws access, whatever the account's switch says.
+    if (await removePrivacyFollow(userId, await privacyActor(ctx))) pubsub.publishPrivacyChanged('removeFollower');
     return true;
   },
   setContentAudience: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -478,6 +501,8 @@ export const privacyMutations = {
           .where(eq(schema.playlists.uuid, publication.entityId));
       }
     });
+    await invalidateBetaCache();
+    pubsub.publishPrivacyChanged('setContentAudience');
     return true;
   },
   updateResourcePrivacy: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -504,6 +529,8 @@ export const privacyMutations = {
           ctx,
         );
         await notifyResourceChanged(update.kind, update.resourceId);
+        await invalidateBetaCache();
+        pubsub.publishPrivacyChanged('updateResourcePrivacy');
         return getResourcePrivacy(update.kind, update.resourceId);
       }
     }
@@ -572,6 +599,8 @@ export const privacyMutations = {
           .where(eq(schema.userBoards.uuid, update.resourceId));
     });
     await notifyResourceChanged(update.kind, update.resourceId);
+    await invalidateBetaCache();
+    pubsub.publishPrivacyChanged('updateResourcePrivacy');
     return getResourcePrivacy(update.kind, update.resourceId);
   },
   requestResourceAccess: async (
@@ -595,9 +624,9 @@ export const privacyMutations = {
   ) => {
     const ownerId = await privacyActor(ctx);
     await requireResourceOwner(input.kind, input.resourceId, ownerId);
-    await db.transaction(async (transaction) => {
+    const approved = await db.transaction(async (transaction) => {
       await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
-      await transaction
+      const updated = await transaction
         .update(schema.resourceGrants)
         .set({ status: 'approved', invitedBy: ownerId, updatedAt: new Date() })
         .where(
@@ -607,9 +636,12 @@ export const privacyMutations = {
             eq(schema.resourceGrants.userId, input.userId),
             eq(schema.resourceGrants.status, 'pending'),
           ),
-        );
+        )
+        .returning({ userId: schema.resourceGrants.userId });
+      return updated.length > 0;
     });
     await notifyResourceChanged(input.kind, input.resourceId);
+    if (approved) pubsub.publishPrivacyChanged('approveResourceAccess');
     return true;
   },
   revokeResourceAccess: async (
@@ -632,6 +664,7 @@ export const privacyMutations = {
         });
     });
     await notifyResourceChanged(input.kind, input.resourceId);
+    pubsub.publishPrivacyChanged('revokeResourceAccess');
     return true;
   },
   inviteResourceMember: async (
@@ -658,6 +691,7 @@ export const privacyMutations = {
         });
     });
     await notifyResourceChanged(input.kind, input.resourceId);
+    pubsub.publishPrivacyChanged('inviteResourceMember');
     return true;
   },
 };
@@ -668,21 +702,6 @@ export const privacyProfileFields = {
     profile.canViewActivity ?? canViewUserActivity(ctx.isAuthenticated ? ctx.userId : null, profile.id),
 };
 
-export const notifyingPrivacyMutations = Object.fromEntries(
-  Object.entries(privacyMutations).map(([name, resolver]) => [
-    name,
-    async (...args: Parameters<typeof resolver>) => {
-      const result = await (resolver as (...parameters: Parameters<typeof resolver>) => Promise<unknown>)(...args);
-      if (name === 'updatePrivacySettings' || name === 'setContentAudience' || name === 'updateResourcePrivacy') {
-        // Newly public beta must not wait behind an older empty anonymous cache.
-        const { invalidateRecentBetaLinksCache } = await import('../beta-videos/queries');
-        await invalidateRecentBetaLinksCache();
-      }
-      pubsub.publishPrivacyChanged();
-      return result;
-    },
-  ]),
-);
 export const privacySubscriptions = {
   privacyChanged: {
     subscribe: withSubscriptionCleanup(async function* (lifetime, _: unknown, __: unknown, ctx: ConnectionContext) {
@@ -691,6 +710,10 @@ export const privacySubscriptions = {
         createAsyncIterator<boolean>((push) => pubsub.subscribePrivacy(() => push(true)), 'privacyChanged'),
       );
       // Reconnection is an invalidation too: Redis pub/sub has no replay window.
+      // Keep this first event even though it costs every client a refresh on
+      // connect: every shipped app bundle stamps its offline catalogue viewer
+      // marker from it. Dropping it needs a client release that no longer waits
+      // for it first.
       yield { privacyChanged: true };
       for await (const changed of iterator) yield { privacyChanged: changed };
     }),

@@ -269,6 +269,8 @@ export const playlistMutations = {
     if (validatedInput.icon !== undefined) updateData.icon = validatedInput.icon || null;
 
     if (validatedInput.privacy) updateData.isPublic = validatedInput.privacy.audience === 'public';
+    // Edit screens resend isPublic with every rename; only a real flip publishes.
+    let isPublicChanged = false;
     const [updated] = await db.transaction(async (tx) => {
       const [currentOwner] = await tx
         .select({ userId: dbSchema.playlistOwnership.userId, isPublic: dbSchema.playlists.isPublic })
@@ -283,6 +285,7 @@ export const playlistMutations = {
         )
         .for('update');
       if (!currentOwner) throw new Error('Playlist not found or access denied');
+      isPublicChanged = updateData.isPublic !== undefined && updateData.isPublic !== currentOwner.isPublic;
       if (!validatedInput.privacy && validatedInput.isPublic === false && currentOwner.isPublic) {
         // An old client's Public -> Private switch withdraws explicit public
         // consent too. Keep restrictive policies and legacy collaborator access;
@@ -310,7 +313,7 @@ export const playlistMutations = {
       return tx.update(dbSchema.playlists).set(updateData).where(eq(dbSchema.playlists.id, playlistId)).returning();
     });
 
-    if (validatedInput.privacy || validatedInput.isPublic !== undefined) pubsub.publishPrivacyChanged();
+    if (validatedInput.privacy || isPublicChanged) pubsub.publishPrivacyChanged('updatePlaylist');
 
     // Get climb count and follow stats
     const climbCount = await db

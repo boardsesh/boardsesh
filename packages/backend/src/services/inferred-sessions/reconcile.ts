@@ -171,13 +171,12 @@ export async function reconcileInferredSessions(
   userId: string,
   touchedAt: Date,
   options: { preserveExistingSessions?: boolean; rejectTruncatedWindow?: boolean } = {},
-): Promise<(ReconcileResult & { privacyChanged: boolean }) | null> {
+): Promise<ReconcileResult | null> {
   const planned = await planReconciliation(tx, userId, touchedAt, {
     rejectTruncatedWindow: options.rejectTruncatedWindow,
   });
   if (!planned) return null;
   const { result } = planned;
-  let privacyChanged = result.merges.length > 0 || result.emptiedSessionIds.length > 0;
 
   // Backfills must leave existing sessions and their social history for a separate,
   // reviewed repair. The normal reconciler below can delete emptied social rows.
@@ -283,14 +282,6 @@ export async function reconcileInferredSessions(
       }
     }
 
-    if (
-      runResult.tickIds.some((tickId) => {
-        const original = planned.originalAssignments.get(tickId);
-        return original != null && original !== sessionId;
-      })
-    )
-      privacyChanged = true;
-
     await tx
       .update(dbSchema.boardseshTicks)
       .set({ sessionId })
@@ -338,7 +329,7 @@ export async function reconcileInferredSessions(
       .delete(dbSchema.boardSessions)
       .where(and(inArray(dbSchema.boardSessions.id, emptiedSessionIds), eq(dbSchema.boardSessions.origin, 'inferred')));
   }
-  return { ...result, emptiedSessionIds, privacyChanged };
+  return { ...result, emptiedSessionIds };
 }
 
 /** Convenience for callers holding a `climbed_at` string rather than a Date. */
