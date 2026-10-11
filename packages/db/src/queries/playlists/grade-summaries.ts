@@ -150,7 +150,9 @@ async function writeSummaries(
   if (onlyRowsOlderThanCompute) {
     // Same clock and type as the `updated_at` default, read before the compute.
     const [clock] = await db.select({ now: sql<string>`localtimestamp::text` }).from(sql`(SELECT 1) AS clock`);
-    computeStartedAt = clock?.now ?? null;
+    // Never fall back to an unguarded write: that is the race this guards.
+    if (!clock?.now) throw new Error('playlist grade summaries: could not read the database clock');
+    computeStartedAt = clock.now;
   }
   const notWrittenSinceCompute =
     computeStartedAt === null ? undefined : sql`${playlistGradeSummaries.updatedAt} < ${computeStartedAt}::timestamp`;
@@ -242,6 +244,38 @@ async function nextChunkEnd(
   return row?.id ?? null;
 }
 
+/** Postgres foreign_key_violation. */
+const FOREIGN_KEY_VIOLATION = '23503';
+
+function isForeignKeyViolation(error: unknown): boolean {
+  for (let current: unknown = error; current && typeof current === 'object';) {
+    const record = current as { code?: unknown; cause?: unknown };
+    if (record.code === FOREIGN_KEY_VIOLATION) return true;
+    current = record.cause;
+  }
+  return false;
+}
+
+/**
+ * One chunk of the daily pass, redone once if a playlist was deleted between
+ * the compute and the upsert: the cascade has already removed its summary, so
+ * the insert finds no row to update and fails the foreign key, failing the
+ * whole statement. The redo computes without the deleted playlist.
+ */
+async function writeChunkRetryingDeletedPlaylist(
+  db: PlaylistGradeSummaryDb,
+  playlistScope: SQL,
+  summaryScope: SQL,
+  options: { onlyRowsOlderThanCompute: boolean },
+): Promise<PlaylistGradeSummaryWriteResult> {
+  try {
+    return await writeSummaries(db, playlistScope, summaryScope, options);
+  } catch (error) {
+    if (!isForeignKeyViolation(error)) throw error;
+    return writeSummaries(db, playlistScope, summaryScope, options);
+  }
+}
+
 /**
  * Walk every playlist in id order and bring its summary up to date. The body
  * of the daily job and of the first backfill after the table ships.
@@ -275,7 +309,7 @@ export async function refreshAllPlaylistGradeSummaries(
     const end = await nextChunkEnd(db, after, chunkPlaylists);
     // (after, end]: the chunk's playlists, and the same range on the summary
     // table so a summary whose playlist lost its last graded climb is deleted.
-    const chunk = await writeSummaries(
+    const chunk = await writeChunkRetryingDeletedPlaylist(
       db,
       and(after === null ? undefined : gt(playlists.id, after), end === null ? undefined : lte(playlists.id, end)) ??
         sql`true`,

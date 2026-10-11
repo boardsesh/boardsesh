@@ -309,13 +309,13 @@ describe('playlist grade summaries', () => {
       expect(await summaryOf(ids[2])).toBeNull();
     });
 
-    it('never overwrites or deletes a summary written after it read the climbs', async () => {
+    it('leaves alone a summary written after its clock read, which only a racing mutation could write', async () => {
       await insertStats([{ name: 'raced', angle: 40, grade: 18 }]);
       const raced = await createPlaylist('raced', OWNER_ID, [{ name: 'raced', angle: 40 }]);
       const orphan = await createPlaylist('orphan', OWNER_ID, [{ name: 'no-grade', angle: 40 }]);
       // Stand-ins for rows a mutation wrote while the job was computing: a later
       // updated_at than the job's clock read, and values the job would change.
-      const later = new Date(Date.now() + 60 * 60 * 1000);
+      const later = sql`localtimestamp + interval '1 hour'`;
       await db.insert(dbSchema.playlistGradeSummaries).values([
         {
           playlistId: raced,

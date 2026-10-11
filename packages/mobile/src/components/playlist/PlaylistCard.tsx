@@ -4,7 +4,7 @@ import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { hapticLight } from '../../lib/haptics';
-import { spacing } from '../../theme/tokens';
+import { overlays, spacing } from '../../theme/tokens';
 import { PlaylistPreviewSquare } from './PlaylistPreviewSquare';
 import { PlaylistPinButton } from './PlaylistPinButton';
 
@@ -152,10 +152,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[1],
     paddingVertical: 2,
     borderRadius: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: overlays.scrim,
   },
   gradeText: {
-    color: '#FFFFFF',
+    color: overlays.onScrim,
     fontWeight: '600',
   },
   pinOverlay: {
