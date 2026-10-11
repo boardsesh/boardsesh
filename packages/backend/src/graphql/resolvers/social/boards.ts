@@ -2414,11 +2414,16 @@ export const socialBoardMutations = {
           validatedInput.serialNumber === undefined ? lockedBoard.serialNumber : validatedInput.serialNumber;
         const serialChanged =
           validatedInput.serialNumber !== undefined && validatedInput.serialNumber !== lockedBoard.serialNumber;
+        // An unchanged full-tuple metadata save does not write config fields.
+        // A concurrent reconfiguration may have committed while we waited for
+        // this row lock: validate the tuple we actually persist, not that echo.
+        const writtenLayoutId = hasConfigChange ? (validatedInput.layoutId ?? lockedLayoutId) : lockedLayoutId;
+        const writtenSizeId = hasConfigChange ? (validatedInput.sizeId ?? lockedSizeId) : lockedSizeId;
+        const writtenSetIds = hasConfigChange ? (validatedInput.setIds ?? lockedBoard.setIds) : lockedBoard.setIds;
         const serialConfigChanged =
-          (validatedInput.layoutId !== undefined && validatedInput.layoutId !== lockedLayoutId) ||
-          (validatedInput.sizeId !== undefined && validatedInput.sizeId !== lockedSizeId) ||
-          (validatedInput.setIds !== undefined &&
-            normaliseSetIds(validatedInput.setIds) !== normaliseSetIds(lockedBoard.setIds));
+          writtenLayoutId !== lockedLayoutId ||
+          writtenSizeId !== lockedSizeId ||
+          normaliseSetIds(writtenSetIds) !== normaliseSetIds(lockedBoard.setIds);
         const serialOrConfigBecomesActive =
           resultingSerial !== null && (serialChanged || serialConfigChanged || lockedBoard.deletedAt !== null);
 
@@ -2428,9 +2433,9 @@ export const socialBoardMutations = {
             {
               serialNumber: resultingSerial,
               boardType: lockedBoard.boardType,
-              layoutId: validatedInput.layoutId ?? lockedLayoutId,
-              sizeId: validatedInput.sizeId ?? lockedSizeId,
-              setIds: validatedInput.setIds ?? lockedBoard.setIds,
+              layoutId: writtenLayoutId,
+              sizeId: writtenSizeId,
+              setIds: writtenSetIds,
             },
             board.ownerId,
             board.id,
