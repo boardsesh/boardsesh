@@ -53,6 +53,7 @@
     "instructional-video*.ts",
     "__tests__/instructional-video*.test.ts",
     "../packages/web/scripts/render-instructional-video.ts",
+    "prepare-instructional-video-snapshots.ts",
     "../packages/db/scripts/migrate-instructional-video.ts",
     "showcase-video-*.ts",
     "../packages/web/scripts/render-showcase-video.ts",

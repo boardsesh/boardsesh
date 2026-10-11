@@ -157,6 +157,7 @@ const chapters: readonly TutorialChapter[] = [
         fromMark: 'photo',
         label: 'Your own wall photo',
         anchor: 'board-surface',
+        focus: { x: 0.035, y: 0.245, width: 0.93, height: 0.49 },
       },
       {
         id: 'spray-highlight',
@@ -167,17 +168,18 @@ const chapters: readonly TutorialChapter[] = [
         fromMark: 'highlight',
         label: 'Highlighted holds · no LEDs',
         anchor: 'board-surface',
+        focus: { x: 0.1, y: 0.38, width: 0.8, height: 0.22 },
         overview: true,
       },
       {
         id: 'spray-look',
-        title: 'Choose your hold look',
-        narration: 'Choose a hold look like Aura Outline to make the climb easy to read.',
+        title: 'Keep your own hold look',
+        narration: 'Turn on Use my look on spray walls to keep your own hold colors and outlines.',
         seconds: 7,
         takeId: 'spray',
         fromMark: 'look',
-        label: 'Choose Aura Outline',
-        focus: { x: 0.04, y: 0.2, width: 0.92, height: 0.64 },
+        label: 'Use your look on spray walls',
+        focus: { x: 0, y: 0.34, width: 1, height: 0.17 },
       },
       {
         id: 'spray-share',
@@ -187,7 +189,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'spray',
         fromMark: 'share',
         label: 'Share your wall with the crew',
-        focus: { x: 0.1, y: 0.2, width: 0.8, height: 0.6 },
+        focus: { x: 0, y: 0.56, width: 1, height: 0.43 },
       },
     ],
   },
@@ -203,7 +205,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'personal-grades',
         label: 'Turn on Use my grades',
-        focus: { x: 0, y: 0.42, width: 1, height: 0.1 },
+        focus: { x: 0, y: 0.45, width: 1, height: 0.1 },
       },
       {
         id: 'progress-filter',
@@ -213,7 +215,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'progress',
         fromMark: 'grade-filter',
         label: 'Filter using your own grades',
-        focus: { x: 0.04, y: 0.2, width: 0.92, height: 0.6 },
+        focus: { x: 0, y: 0.23, width: 1, height: 0.26 },
       },
       {
         id: 'progress-boards',
@@ -233,7 +235,7 @@ const chapters: readonly TutorialChapter[] = [
         seconds: 7,
         takeId: 'progress',
         fromMark: 'calendar',
-        label: 'Filter progress by board',
+        label: 'Kilter · climbing calendar',
         focus: { x: 0, y: 0.61, width: 1, height: 0.205 },
       },
     ],
@@ -243,12 +245,7 @@ const chapters: readonly TutorialChapter[] = [
 const takes: readonly TutorialTake[] = chapters.map((chapter) => ({
   id: chapter.id,
   chapterId: chapter.id,
-  route:
-    chapter.id === 'progress'
-      ? 'profile'
-      : chapter.id === 'spray'
-        ? 'climbs?screenshotBoardIndex=3&screenshotOpenFirst=1'
-        : 'climbs?screenshotBoardIndex=0',
+  route: chapter.id === 'progress' ? 'profile' : 'boards',
   flow: `packages/mobile/.maestro/tutorial/${chapter.id}.yaml`,
   requiredMarks: chapter.beats.map((beat) => beat.fromMark),
   requiredAnchors: [...new Set(chapter.beats.flatMap((beat) => (beat.anchor ? [beat.anchor] : [])))],
@@ -302,7 +299,7 @@ export const RELEASE_260_EPISODE: TutorialEpisode = {
     {
       id: 'crew-notes',
       chapterId: 'crew-notes',
-      route: 'climbs?screenshotBoardIndex=0&screenshotOpenFirst=1',
+      route: 'boards',
       flow: 'packages/mobile/.maestro/tutorial/crew-notes.yaml',
       requiredMarks: ['notes'],
       minSeconds: 8,

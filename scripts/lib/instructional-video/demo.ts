@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TUTORIAL_SNAPSHOT_BUCKET, TUTORIAL_SNAPSHOT_PREFIX } from './snapshots';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const COMPOSE_FILE = resolve(REPO_ROOT, 'scripts/lib/instructional-video/fixtures/compose.yml');
@@ -70,6 +71,16 @@ export function tutorialDemoEnvironment(
     PRIVATE_AWS_SECRET_ACCESS_KEY: 'tutorial-local',
     PRIVATE_S3_FORCE_PATH_STYLE: 'true',
     PRIVATE_DISABLE_ACL: 'true',
+    SNAPSHOTS_S3_BUCKET_NAME: TUTORIAL_SNAPSHOT_BUCKET,
+    SNAPSHOTS_AWS_ENDPOINT_URL: `http://127.0.0.1:${ports.s3}`,
+    SNAPSHOTS_AWS_REGION: 'us-east-1',
+    SNAPSHOTS_AWS_ACCESS_KEY_ID: 'tutorial-local',
+    SNAPSHOTS_AWS_SECRET_ACCESS_KEY: 'tutorial-local',
+    SNAPSHOTS_S3_FORCE_PATH_STYLE: 'true',
+    SNAPSHOTS_DISABLE_ACL: 'true',
+    SNAPSHOTS_PUBLIC_BASE_URL: `http://127.0.0.1:${ports.s3}/${TUTORIAL_SNAPSHOT_BUCKET}`,
+    SNAPSHOT_PUBLIC_BASE_URL: `http://127.0.0.1:${ports.s3}/${TUTORIAL_SNAPSHOT_BUCKET}`,
+    EXPO_PUBLIC_SNAPSHOT_BASE_URL: `http://127.0.0.1:${ports.s3}/${TUTORIAL_SNAPSHOT_BUCKET}/${TUTORIAL_SNAPSHOT_PREFIX}`,
     TUTORIAL_POSTGRES_PORT: String(ports.postgres),
     TUTORIAL_REDIS_PORT: String(ports.redis),
     TUTORIAL_S3_PORT: String(ports.s3),
@@ -312,6 +323,20 @@ export async function startTutorialDemo(workRoot: string, signal?: AbortSignal):
       logPath,
       signal,
     );
+    const snapshotDirectory = resolve(demoRoot, 'snapshots');
+    await run(
+      'vp',
+      ['exec', 'tsx', 'scripts/prepare-instructional-video-snapshots.ts', REPO_ROOT, seedPath, snapshotDirectory],
+      env,
+      logPath,
+      signal,
+    );
+    // The exact real artifact identity participates in per-take capture fingerprints through the scenario.
+    const seedDocument = JSON.parse(await readFile(seedPath, 'utf8')) as Record<string, unknown>;
+    seedDocument.offlineSnapshot = JSON.parse(
+      await readFile(resolve(snapshotDirectory, 'receipt.json'), 'utf8'),
+    ) as unknown;
+    await writeFile(seedPath, `${JSON.stringify(seedDocument, null, 2)}\n`);
     env.TUTORIAL_SEED_FILE = seedPath;
     const seed = JSON.parse(await readFile(seedPath, 'utf8')) as {
       fixtureFingerprint: string;

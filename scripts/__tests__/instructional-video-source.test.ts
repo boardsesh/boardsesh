@@ -72,6 +72,10 @@ describe('tutorial release source provenance', () => {
       'packages/mobile/assets/wall.jpg',
       'packages/db/drizzle/0001.sql',
       'packages/backend/src/scripts/seed-instructional-video.ts',
+      'scripts/prepare-instructional-video-snapshots.ts',
+      'packages/backend/src/scripts/export-board-snapshots.ts',
+      'scripts/lib/instructional-video/snapshots.ts',
+      'scripts/lib/instructional-video/fixtures/compose.yml',
     ]) {
       writeSource(directory, path, 'changed runtime input\n');
       const updatedHash = tutorialCaptureSourceHash(directory);

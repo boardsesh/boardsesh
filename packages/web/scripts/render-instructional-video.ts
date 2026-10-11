@@ -265,7 +265,11 @@ export async function renderTutorial(options: TutorialRenderOptions): Promise<st
       () => typeof (window as unknown as { renderTutorialAt?: unknown }).renderTutorialAt === 'function',
     );
     for (const cut of cuts) {
+      const firstBeat = cut.beats[0];
+      if (!firstBeat) throw new Error(`Cut ${cut.id} has no teaching beats.`);
       const segmentPaths: string[] = [];
+      const coverFrame = Math.floor(firstBeat.frames / 2);
+      let firstBeatCoverScene: StageScene | undefined;
       const segment = async (
         identity: unknown,
         frames: number,
@@ -334,6 +338,7 @@ export async function renderTutorial(options: TutorialRenderOptions): Promise<st
             anchor,
           };
         };
+        if (beat === firstBeat) firstBeatCoverScene = sceneAt(coverFrame);
         // Cut position does not affect beat visuals; reuse the same beat across overview/master.
         await segment(
           {
@@ -396,26 +401,8 @@ export async function renderTutorial(options: TutorialRenderOptions): Promise<st
         throw new Error(`Invalid delivery encoding for ${cut.id}.`);
       renameSync(partialVideo, resolve(outputDirectory, videoName));
       register(videoName, 'video', 'video/mp4', cut.id);
-      const coverFrame = Math.floor(cut.beats[0].frames / 2);
-      const firstBeat = cut.beats[0];
-      const firstManifest = manifests.get(firstBeat.takeId)!;
-      await renderFrame(page, coverFrame, {
-        title: cut.title,
-        draft,
-        totalFrames: firstBeat.frames,
-        beat: firstBeat,
-        elapsedFrames: coverFrame,
-        image: pathToFileURL(
-          resolve(
-            tutorialTakeDir(workRoot, platform, firstBeat.takeId),
-            'frames',
-            `${String(sourceFrameIndex(firstBeat, firstManifest, coverFrame) + 1).padStart(6, '0')}.jpg`,
-          ),
-        ).href,
-        width: firstManifest.width,
-        height: firstManifest.height,
-        focus: firstBeat.focus,
-      });
+      if (!firstBeatCoverScene) throw new Error(`Cut ${cut.id} has no cover scene.`);
+      await renderFrame(page, coverFrame, firstBeatCoverScene);
       await sharp(await page.screenshot())
         .webp({ quality: 90 })
         .toFile(resolve(outputDirectory, `${cut.id}.webp`));
