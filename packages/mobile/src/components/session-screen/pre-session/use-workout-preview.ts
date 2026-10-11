@@ -5,10 +5,12 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../../providers/toast-provider';
+import { screenshotModeRandom } from '../../../lib/screenshot-mode';
 import { fetchGradePool } from './select-climbs-for-plan';
 import {
   buildPools,
   refreshSlotInState,
+  reshufflePools,
   selectItemsFromPools,
   type FetchGradePool,
   type PreviewFetchContext,
@@ -31,6 +33,8 @@ export type UseWorkoutPreviewResult = {
   /** Actual generated slot plan, before climb-pool shortfalls remove rows from the preview. */
   plannedSlots: readonly PlannedClimbSlot[];
   regenerate: () => void;
+  /** Pick new climbs for the same plan from the pools already fetched. No network. */
+  shuffle: () => void;
   refreshSlot: (itemUuid: string) => void;
   /** The current preview as a plain queue (the hand-off to `setQueue` on Start). */
   toQueueItems: () => ClimbQueueItem[];
@@ -109,6 +113,8 @@ export function useWorkoutPreview(
 
   // Mutable source of truth the async callbacks read/write without re-rendering.
   const dataRef = useRef<WorkoutPreviewData>(EMPTY_DATA());
+  // The committed plan, for a shuffle to re-fill without regenerating it.
+  const planRef = useRef<readonly PlannedClimbSlot[]>([]);
   // Monotonic token: a build/clear only commits if it's still the latest.
   const genTokenRef = useRef(0);
   const committedPreviewKeyRef = useRef<string | null>(null);
@@ -159,6 +165,7 @@ export function useWorkoutPreview(
     (nextStatus: WorkoutPreviewStatus) => {
       genTokenRef.current++; // invalidate any in-flight build
       dataRef.current = EMPTY_DATA();
+      planRef.current = [];
       setCommittedPreviewKey(null);
       setItems([]);
       setPlannedCount(0);
@@ -191,6 +198,7 @@ export function useWorkoutPreview(
       if (!ctx || token !== genTokenRef.current) return; // selection/board changed underneath
       if (plan.length === 0) {
         dataRef.current = EMPTY_DATA();
+        planRef.current = [];
         setCommittedPreviewKey(nextPreviewKey, nextBoardKey);
         setItems([]);
         setPlannedCount(0);
@@ -202,6 +210,7 @@ export function useWorkoutPreview(
       if (token !== genTokenRef.current) return; // superseded by a newer build
       const { items: nextItems, usedUuids } = selectItemsFromPools(plan, pools);
       dataRef.current = { items: nextItems, pools, usedUuids };
+      planRef.current = plan;
       setCommittedPreviewKey(nextPreviewKey, nextBoardKey);
       setItems(nextItems);
       setPlannedCount(plan.length);
@@ -243,6 +252,19 @@ export function useWorkoutPreview(
     },
     [buildCtx],
   );
+
+  const shuffle = useCallback(() => {
+    // A row refresh writes the whole state when it lands; let it finish first.
+    if (inFlightSlotsRef.current.size > 0) return;
+    // Only reshuffle the preview on screen. During a debounce or rebuild the
+    // committed plan belongs to the previous settings.
+    const currentPreviewKey = getPreviewGenerationKey(selectionRef.current, boardRef.current, isAuthRef.current);
+    if (committedPreviewKeyRef.current !== currentPreviewKey || planRef.current.length === 0) return;
+    const pools = reshufflePools(dataRef.current.pools, screenshotModeRandom());
+    const { items: nextItems, usedUuids } = selectItemsFromPools(planRef.current, pools);
+    dataRef.current = { items: nextItems, pools, usedUuids };
+    setItems(nextItems);
+  }, []);
 
   const toQueueItems = useCallback(() => {
     const currentPreviewKey = getPreviewGenerationKey(selectionRef.current, boardRef.current, isAuthRef.current);
@@ -291,6 +313,7 @@ export function useWorkoutPreview(
       plannedCount: hasActivePreviewRequest && isCommittedPreviewCurrent ? plannedCount : 0,
       plannedSlots: hasActivePreviewRequest && isCommittedPreviewCurrent ? plannedSlots : [],
       regenerate: regenerateVoid,
+      shuffle,
       refreshSlot: refreshSlotVoid,
       toQueueItems,
     };
@@ -306,6 +329,7 @@ export function useWorkoutPreview(
     plannedCount,
     plannedSlots,
     regenerateVoid,
+    shuffle,
     refreshSlotVoid,
     toQueueItems,
   ]);

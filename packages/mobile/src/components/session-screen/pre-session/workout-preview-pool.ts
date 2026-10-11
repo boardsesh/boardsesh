@@ -100,6 +100,19 @@ export async function buildPools(
 }
 
 /**
+ * Every pool reshuffled into a new map, for a whole-preview shuffle. The fetched
+ * climbs are reused (no network) and the caller re-runs `selectItemsFromPools`
+ * over the same plan, so the grades and sections stay put and only the climbs
+ * change.
+ */
+export function reshufflePools(
+  pools: ReadonlyMap<number, Climb[]>,
+  random: RandomSource = Math.random,
+): Map<number, Climb[]> {
+  return new Map(Array.from(pools, ([grade, climbs]) => [grade, shuffleInPlace(climbs.slice(), random)]));
+}
+
+/**
  * Walk each slot's shuffled pool, skipping climbs already chosen. Short or
  * empty pools skip the slot so the caller can report the shortfall as
  * `failedCount`, matching the web generator's behavior.

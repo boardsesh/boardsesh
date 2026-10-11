@@ -3,6 +3,8 @@ import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import { DEFAULT_VOLUME_OPTIONS } from '@boardsesh/playlist-generator';
+import type { GeneratorSelection } from '../GeneratorPickerCard';
 
 // The preview hook is mocked; the test mutates `preview.result.items` /
 // `refreshingUuids` and rerenders to drive the view's row props.
@@ -15,8 +17,9 @@ const preview = vi.hoisted(() => ({
     status: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
     refreshingUuids: new Set<string>(),
     plannedCount: 0,
-    plannedSlots: [],
+    plannedSlots: [] as unknown[],
     regenerate: vi.fn(),
+    shuffle: vi.fn(),
     refreshSlot: vi.fn(),
     toQueueItems: () => [] as ClimbQueueItem[],
   },
@@ -28,6 +31,21 @@ const rows = vi.hoisted(() => ({
   rendered: [] as Array<{ uuid: string; isActive: boolean; isRefreshing: boolean; refreshDisabled: boolean }>,
   onPress: null as ((item: ClimbQueueItem) => void) | null,
 }));
+
+// The latest props PreSessionView handed the summary line (count, shortfall, Shuffle).
+const summaryLine = vi.hoisted(() => ({
+  props: null as null | {
+    summary: { planned: number; filled: number; missing: number; sections: unknown[] };
+    onShuffle: () => void;
+    shuffleDisabled: boolean;
+  },
+}));
+
+// Surfaces GeneratorPickerCard's onChange so a test can turn the generator on.
+const picker = vi.hoisted(() => ({ onChange: null as ((selection: GeneratorSelection) => void) | null }));
+
+// Every section heading row the list rendered, in order.
+const headings = vi.hoisted(() => ({ rendered: [] as Array<{ section: string; count: number }> }));
 
 const list = vi.hoisted(() => ({
   props: [] as Array<{
@@ -173,8 +191,25 @@ vi.mock('../../../../hooks/use-bottom-chrome-metrics', () => ({
 }));
 vi.mock('../../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 }, borderRadius: { lg: 16 } }));
 vi.mock('../BoardSummaryCard', () => ({ BoardSummaryCard: () => null }));
-vi.mock('../GeneratorPickerCard', () => ({ GeneratorPickerCard: () => null }));
+vi.mock('../GeneratorPickerCard', () => ({
+  GeneratorPickerCard: ({ onChange }: { onChange: (selection: GeneratorSelection) => void }) => {
+    picker.onChange = onChange;
+    return null;
+  },
+}));
 vi.mock('../use-workout-preview', () => ({ useWorkoutPreview: () => preview.result }));
+vi.mock('../WorkoutPreviewSummary', () => ({
+  WorkoutPreviewSummary: (props: NonNullable<typeof summaryLine.props>) => {
+    summaryLine.props = props;
+    return null;
+  },
+}));
+vi.mock('../WorkoutPreviewSectionHeading', () => ({
+  WorkoutPreviewSectionHeading: ({ section, count }: { section: string; count: number }) => {
+    headings.rendered.push({ section, count });
+    return null;
+  },
+}));
 vi.mock('../WorkoutPreviewRow', () => ({
   WorkoutPreviewRow: ({
     item,
@@ -206,10 +241,19 @@ vi.mock('../../../../lib/onboarding/onboarding-storage', () => ({
 
 import { PreSessionView } from '../PreSessionView';
 
-function makeRow(uuid: string) {
+/** Render the view with a volume workout selected, so the preview section shows. */
+function renderWithWorkout() {
+  const view = render(createElement(PreSessionView));
+  act(() => {
+    picker.onChange?.({ type: 'on', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 } });
+  });
+  return view;
+}
+
+function makeRow(uuid: string, section = 'main', index = 0) {
   return {
     item: { uuid, climb: { uuid: `${uuid}-climb`, name: uuid } },
-    slot: { grade: 10, section: 'main', index: 0 },
+    slot: { grade: 10, section, index },
   };
 }
 
@@ -219,6 +263,8 @@ beforeEach(() => {
   rows.rendered = [];
   rows.onPress = null;
   list.props = [];
+  summaryLine.props = null;
+  headings.rendered = [];
   bottomChrome.metrics = {
     insideTabs: true,
     scrollBottomPadding: 200,
@@ -228,6 +274,8 @@ beforeEach(() => {
     preSessionFooterBottom: 100,
   };
   preview.result.items = [makeRow('a'), makeRow('b')] as unknown[];
+  preview.result.plannedSlots = (preview.result.items as Array<ReturnType<typeof makeRow>>).map((row) => row.slot);
+  preview.result.status = 'ready';
   preview.result.refreshingUuids = new Set<string>();
   fab.onHeightChange = null;
   fab.bottomOffset = null;
@@ -304,6 +352,55 @@ describe('PreSessionView preview rows', () => {
 
     expect(list.props.at(-1)).toMatchObject({ dataLength: 0, hasHeaderComponent: true });
     expect(rows.rendered).toEqual([]);
+  });
+
+  it('heads each section of a multi-section plan, in workout order', () => {
+    preview.result.items = [
+      makeRow('w1', 'warmUp', 0),
+      makeRow('w2', 'warmUp', 1),
+      makeRow('m1', 'main', 2),
+    ] as unknown[];
+
+    render(createElement(PreSessionView));
+
+    expect(list.props.at(-1)?.dataLength).toBe(5);
+    expect(headings.rendered).toEqual([
+      { section: 'warmUp', count: 2 },
+      { section: 'main', count: 1 },
+    ]);
+    expect(rows.rendered.map((row) => row.uuid)).toEqual(['w1', 'w2', 'm1']);
+  });
+
+  it('tells the summary how many planned climbs the preview could not fill', () => {
+    preview.result.plannedSlots = [
+      { grade: 10, section: 'main', index: 0 },
+      { grade: 10, section: 'main', index: 1 },
+      { grade: 11, section: 'main', index: 2 },
+    ];
+
+    renderWithWorkout();
+
+    expect(summaryLine.props?.summary).toMatchObject({ planned: 3, filled: 2, missing: 1 });
+  });
+
+  it('wires Shuffle to the preview and blocks it while a row regenerates', () => {
+    const view = renderWithWorkout();
+    expect(summaryLine.props?.onShuffle).toBe(preview.result.shuffle);
+    expect(summaryLine.props?.shuffleDisabled).toBe(false);
+
+    preview.result.refreshingUuids = new Set<string>(['a']);
+    act(() => {
+      view.rerender(createElement(PreSessionView));
+    });
+    expect(summaryLine.props?.shuffleDisabled).toBe(true);
+  });
+
+  it('hides the summary line while the preview is empty', () => {
+    preview.result.items = [];
+
+    renderWithWorkout();
+
+    expect(summaryLine.props).toBeNull();
   });
 
   it('reserves the Start FAB height + bottom offset as the list bottom padding', () => {

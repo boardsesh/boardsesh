@@ -36,13 +36,16 @@ import {
   DEFAULT_LADDER_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
+  summarizePlanFill,
 } from '@boardsesh/playlist-generator';
 import { assertNever } from '../../../lib/assert-never';
 import { SCREENSHOT_WORKOUT } from '../../../lib/screenshot-mode';
 import { GeneratorPickerCard, type GeneratorSelection } from './GeneratorPickerCard';
 import { WorkoutPreviewRow } from './WorkoutPreviewRow';
+import { WorkoutPreviewSectionHeading } from './WorkoutPreviewSectionHeading';
+import { WorkoutPreviewSummary } from './WorkoutPreviewSummary';
 import { useWorkoutPreview } from './use-workout-preview';
-import type { PreviewItem } from './workout-preview-pool';
+import { buildPreviewListRows, type PreviewListRow } from './workout-preview-sections';
 import { OnboardingTipBanner } from '../../onboarding/OnboardingTipBanner';
 import { hasSeenTip, markTipSeen } from '../../../lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_CREW_KEY, ONBOARDING_TIP_WORKOUT_KEY } from '@boardsesh/key-value-storage';
@@ -92,8 +95,12 @@ type PreSessionViewProps = {
  * created lazily) and queues the preview behind the live queue without moving the
  * current climb, then opens Climbs with the new session running.
  */
-function previewKeyExtractor(previewItem: PreviewItem): string {
-  return previewItem.item.uuid;
+function previewKeyExtractor(row: PreviewListRow): string {
+  return row.key;
+}
+
+function previewItemType(row: PreviewListRow): PreviewListRow['kind'] {
+  return row.kind;
 }
 
 export function PreSessionView({
@@ -180,12 +187,33 @@ export function PreSessionView({
   const [footerHeight, setFooterHeight] = useState(SESSION_START_FAB_HEIGHT);
 
   const preview = useWorkoutPreview(selection, activeBoard ?? null, { isAuthenticated });
-  const { items: previewItems, status, refreshingUuids, plannedCount, refreshSlot, toQueueItems } = preview;
+  const {
+    items: previewItems,
+    status,
+    refreshingUuids,
+    plannedCount,
+    plannedSlots,
+    refreshSlot,
+    shuffle,
+    toQueueItems,
+  } = preview;
+  // Section headings interleaved with the climbs, in the order the session runs them.
+  const previewRows = useMemo(() => buildPreviewListRows(previewItems), [previewItems]);
+  // What Start will queue: the planned slots that found a climb.
+  const planSummary = useMemo(
+    () =>
+      summarizePlanFill(
+        plannedSlots,
+        previewItems.map((previewItem) => previewItem.slot),
+      ),
+    [plannedSlots, previewItems],
+  );
 
   // Refreshes run one at a time, so once any row is regenerating every row's
   // refresh button is disabled (the rows dim it). Derived as a primitive so
   // renderItem keeps a stable, length-free dep.
   const isRefreshingAnyRow = refreshingUuids.size > 0;
+  const hasPreviewItems = previewItems.length > 0;
 
   // A rebuild (generator options changed) mints fresh queue-item uuids, so a
   // previously highlighted preview row no longer exists. Drop the stale uuid so
@@ -223,8 +251,10 @@ export function PreSessionView({
   );
 
   const renderPreviewRow = useCallback(
-    ({ item: previewItem }: { item: PreviewItem }) => {
+    ({ item: row }: { item: PreviewListRow }) => {
+      if (row.kind === 'section') return <WorkoutPreviewSectionHeading section={row.section} count={row.count} />;
       if (!previewBoard) return null;
+      const previewItem = row.preview;
       const isRefreshing = refreshingUuids.has(previewItem.item.uuid);
       return (
         <WorkoutPreviewRow
@@ -407,6 +437,14 @@ export function PreSessionView({
         {showPreviewSection ? (
           <View>
             <SectionHeader title={t('mobile.session.preWorkoutPreviewTitle')} />
+            {previewBoard && hasPreviewItems ? (
+              <WorkoutPreviewSummary
+                summary={planSummary}
+                boardName={previewBoard.boardName}
+                onShuffle={shuffle}
+                shuffleDisabled={status !== 'ready' || isRefreshingAnyRow}
+              />
+            ) : null}
             {previewStateMessage ? (
               <View style={styles.cardInset}>
                 <Card>
@@ -435,6 +473,12 @@ export function PreSessionView({
       effectiveSessionAudience,
       isStartPending,
       previewStateMessage,
+      previewBoard,
+      hasPreviewItems,
+      planSummary,
+      shuffle,
+      status,
+      isRefreshingAnyRow,
       selection,
       setSelection,
       showPreviewSection,
@@ -455,9 +499,10 @@ export function PreSessionView({
     <View style={styles.container}>
       <FlashList
         style={styles.scroll}
-        data={previewItems}
+        data={previewRows}
         renderItem={renderPreviewRow}
         keyExtractor={previewKeyExtractor}
+        getItemType={previewItemType}
         ListHeaderComponent={listHeader}
         // Use a gesture-handler scroll host so Android nested chip rails keep their
         // horizontal gestures while the preview rows stay virtualized.

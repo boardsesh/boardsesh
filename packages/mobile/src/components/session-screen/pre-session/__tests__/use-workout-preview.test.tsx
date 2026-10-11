@@ -326,4 +326,39 @@ describe('useWorkoutPreview', () => {
     expect(result.current.toQueueItems()).toEqual([]);
     expect(toast.showToast).toHaveBeenCalledWith('mobile.session.preWorkoutPreviewError', 'error');
   });
+
+  it('shuffles every row from the fetched pools without a new fetch', async () => {
+    const pool = Array.from({ length: 12 }, (_, index) => makeClimb(`c${index}`));
+    const fetchPool = vi.fn<FetchGradePool>(async () => pool);
+    const { result, rerender } = renderPreview(fetchPool, OFF);
+    rerender({ selection: on(10) });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const before = result.current.items.map((preview) => preview.item.uuid);
+
+    act(() => result.current.shuffle());
+
+    expect(fetchPool).toHaveBeenCalledTimes(1);
+    expect(result.current.items).toHaveLength(2);
+    // Fresh queue items for the same plan, each still a distinct climb from the pool.
+    expect(result.current.items.map((preview) => preview.item.uuid)).not.toEqual(before);
+    expect(result.current.items.map((preview) => preview.slot)).toEqual(generator.plan);
+    const climbUuids = result.current.items.map((preview) => preview.item.climb.uuid);
+    expect(new Set(climbUuids).size).toBe(2);
+    // Start queues exactly what the shuffled preview shows.
+    expect(result.current.toQueueItems().map((item) => item.climb.uuid)).toEqual(climbUuids);
+  });
+
+  it('ignores Shuffle while a changed selection is still rebuilding', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const { result, rerender } = renderPreview(fetchPool, OFF);
+    rerender({ selection: on(10) });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    rerender({ selection: on(11) });
+    expect(result.current.status).toBe('loading');
+    const during = result.current.items;
+    act(() => result.current.shuffle());
+
+    expect(result.current.items).toBe(during);
+  });
 });

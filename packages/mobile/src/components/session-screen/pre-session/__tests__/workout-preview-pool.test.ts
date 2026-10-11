@@ -15,6 +15,7 @@ import {
   pickRandomUnused,
   pickUnused,
   refreshSlotInState,
+  reshufflePools,
   selectItemsFromPools,
   shuffleInPlace,
   type PreviewFetchContext,
@@ -277,5 +278,24 @@ describe('shuffleInPlace', () => {
       const picked = () => pickRandomUnused(pool, new Set(), screenshotModeRandom())?.uuid;
       expect(picked()).toBe(picked());
     });
+  });
+});
+
+describe('reshufflePools', () => {
+  it('reorders a copy of every pool and leaves the originals alone', () => {
+    const tens = ['a', 'b', 'c', 'd', 'e'].map(makeClimb);
+    const elevens = ['f', 'g'].map(makeClimb);
+    const pools = new Map([
+      [10, tens],
+      [11, elevens],
+    ]);
+
+    const reshuffled = reshufflePools(pools, mulberry32(7));
+
+    expect(reshuffled).not.toBe(pools);
+    expect(reshuffled.get(10)).not.toBe(tens);
+    expect(pools.get(10)?.map((climb) => climb.uuid)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect([...(reshuffled.get(10) ?? [])].map((climb) => climb.uuid).sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect([...(reshuffled.get(11) ?? [])].map((climb) => climb.uuid).sort()).toEqual(['f', 'g']);
   });
 });
