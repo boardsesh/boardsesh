@@ -1,10 +1,10 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PlaylistChipsRow } from '../ClimbPlaylistChips';
 import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memberships';
 import { useClimbPlaylistMembershipQuery } from '../../hooks/use-climb-playlist-membership-query';
 import { usePlaylistsContextOptional } from '../../providers/playlists-provider';
-import { hasPlaylistForBoard } from '../../lib/sort-filter-playlists';
+import { usePlaylistMembershipMetadata } from '../../hooks/use-playlist-membership-metadata';
 import { useTheme } from '../../providers/theme-provider';
 
 /**
@@ -60,23 +60,13 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   const { systemColors } = useTheme();
   const { t } = useTranslation('climbs');
   const playlistsContext = usePlaylistsContextOptional();
-  const playlists = playlistsContext?.playlists;
   const isAuthenticated = playlistsContext?.isAuthenticated ?? false;
-
-  // Whether the climber has any playlist a chip could name. Board-scoped with the
-  // same rule the `playlistsForClimb` resolver applies, so this is exactly "can a
-  // chip ever appear here". It costs no height either way — it only decides
-  // whether the stats row shares its width.
-  const hasBoardPlaylists = useMemo(
-    () => (playlists ? hasPlaylistForBoard(playlists, boardName, layoutId) : false),
-    [playlists, boardName, layoutId],
-  );
 
   const { memberUuids } = useClimbPlaylistMembershipQuery({
     climbUuid,
     boardName,
     layoutId,
-    enabled: fetchMembership && isAuthenticated && hasBoardPlaylists && layoutId > 0,
+    enabled: fetchMembership && isAuthenticated && layoutId > 0,
   });
 
   // The store seed paints immediately when the climber arrived from the Climbs
@@ -88,6 +78,13 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   // No memo needed: both sides are already reference-stable (a React Query cache
   // array, the store's cached `Set`), so the coalesce is stable on its own.
   const members: Iterable<string> = memberUuids ?? seededMembers;
+  // The provider holds only the first metadata page. A membership is still
+  // valid when its playlist lies beyond that page or belongs to another board.
+  const playlistsById = usePlaylistMembershipMetadata({
+    playlistUuids: members,
+    knownPlaylists: playlistsContext?.playlistsById,
+    enabled: fetchMembership && isAuthenticated && layoutId > 0,
+  });
 
   // Every playlist by name, not just the one that fits — a "+2" token tells a
   // VoiceOver user nothing. The list variant stays hidden from the accessibility
@@ -98,14 +95,12 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
     [t],
   );
 
-  // Nothing at all for a signed-out climber or one with no playlist on this
-  // board: they can never see a chip here, so they should not pay the width
-  // either — the stats line keeps the room to itself.
-  if (!isAuthenticated || !hasBoardPlaylists) return null;
+  if (!isAuthenticated || layoutId <= 0) return null;
 
   return (
     <PlaylistChipsRow
       playlistUuids={members}
+      playlistsById={playlistsById}
       align="inline"
       maxVisible={HEADER_MAX_VISIBLE_CHIPS}
       // The exact grey the stats text beside it uses — one line, one colour.

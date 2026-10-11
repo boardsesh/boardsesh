@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 
 type MembershipQueryArgs = { climbUuid: string; boardName: string; layoutId: number; enabled: boolean };
 
 const ctrl = vi.hoisted(() => ({
+  metadataRequest: vi.fn(),
   playlists: [] as Playlist[],
   isAuthenticated: true,
   // What the shared membership store (fed only by the Climbs tab) already holds.
@@ -14,6 +16,10 @@ const ctrl = vi.hoisted(() => ({
   // What this climb's own fetch has returned, if anything.
   memberUuids: undefined as string[] | undefined,
   queryArgs: [] as MembershipQueryArgs[],
+}));
+
+vi.mock('../../../lib/graphql/client', () => ({
+  getHttpClient: () => ({ request: ctrl.metadataRequest }),
 }));
 
 vi.mock('react-native', () => ({
@@ -114,8 +120,17 @@ function playlist(uuid: string, name: string, layoutId: number | null = 1): Play
 
 const baseProps = { climbUuid: 'c1', boardName: 'kilter', layoutId: 1, fetchMembership: true };
 
-function renderChips(overrides: Partial<typeof baseProps> = {}) {
-  return render(createElement(PlayDrawerPlaylistChips, { ...baseProps, ...overrides }));
+function renderChips(
+  overrides: Partial<typeof baseProps> = {},
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
+  return render(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(PlayDrawerPlaylistChips, { ...baseProps, ...overrides }),
+    ),
+  );
 }
 
 function rowStyle(container: HTMLElement): string {
@@ -129,6 +144,8 @@ describe('PlayDrawerPlaylistChips', () => {
     ctrl.seeded = new Set();
     ctrl.memberUuids = undefined;
     ctrl.queryArgs = [];
+    ctrl.metadataRequest.mockReset();
+    ctrl.metadataRequest.mockResolvedValue({ playlist: null });
   });
 
   it('renders nothing, and fetches nothing, when the climber is signed out', () => {
@@ -142,24 +159,53 @@ describe('PlayDrawerPlaylistChips', () => {
     expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
   });
 
-  it('renders nothing, and fetches nothing, when the climber has no playlist on this board', () => {
-    // Playlists on another board can never produce a tag here, so nothing renders
-    // and nothing is requested.
+  it('requests membership even when the metadata page contains only another board', () => {
+    // A partial metadata page cannot prove absence of memberships on this board.
     ctrl.playlists = [{ ...playlist('p9', 'Tension list'), boardType: 'tension' }];
     const { container } = renderChips();
     expect(container.textContent).toBe('');
     expect(ctrl.queryArgs.length).toBeGreaterThan(0);
-    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(true);
   });
 
-  it('renders nothing, and fetches nothing, for a playlist on another layout of this board', () => {
-    // Layout-scoped playlists don't cross layouts, so this climber still can't
-    // see a tag here — nothing should render, and nothing should be fetched.
+  it('requests membership even when the metadata page contains only another layout', () => {
+    // The matching layout's playlist may be outside the first metadata page.
     ctrl.playlists = [playlist('p8', 'Original layout list', 2)];
     const { container } = renderChips();
     expect(container.textContent).toBe('');
     expect(ctrl.queryArgs.length).toBeGreaterThan(0);
-    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(true);
+  });
+
+  it('renders membership beyond the first 200 metadata entries', async () => {
+    ctrl.playlists = Array.from({ length: 200 }, (_, index) => ({
+      ...playlist(`early-${index}`, `Other ${index}`),
+      boardType: 'tension',
+    }));
+    ctrl.memberUuids = ['later-kilter'];
+    ctrl.metadataRequest.mockResolvedValue({ playlist: playlist('later-kilter', 'Beyond page one') });
+    const { container } = renderChips();
+    await waitFor(() => expect(container.textContent).toContain('Beyond page one'));
+    expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(true);
+    expect(ctrl.metadataRequest).toHaveBeenCalledTimes(1);
+    expect(ctrl.metadataRequest.mock.calls[0]?.[1]).toEqual({ playlistId: 'later-kilter' });
+    expect(container.querySelector('[aria-label]')?.getAttribute('aria-label')).toContain('Beyond page one');
+  });
+
+  it('reuses previously fetched metadata for the offscreen peek', () => {
+    ctrl.memberUuids = ['cached-playlist'];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(['playlist', 'cached-playlist'], playlist('cached-playlist', 'Cached sends'));
+    const { container } = renderChips({ fetchMembership: false }, client);
+    expect(container.textContent).toContain('Cached sends');
+    expect(ctrl.metadataRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch missing metadata for the offscreen peek', () => {
+    ctrl.memberUuids = ['outside-page'];
+    const { container } = renderChips({ fetchMembership: false });
+    expect(container.textContent).toBe('');
+    expect(ctrl.metadataRequest).not.toHaveBeenCalled();
   });
 
   it('does not request membership before a real layout is known', () => {
@@ -183,6 +229,7 @@ describe('PlayDrawerPlaylistChips', () => {
     ctrl.memberUuids = ['p1'];
     const { container } = renderChips();
     expect(container.textContent).toContain('Sunday sends');
+    expect(ctrl.metadataRequest).not.toHaveBeenCalled();
     expect(rowStyle(container)).toContain('"marginTop":0');
     expect(rowStyle(container)).not.toContain('"height"');
     // The chip itself: no capsule padding, no minHeight — a dot and a name, as

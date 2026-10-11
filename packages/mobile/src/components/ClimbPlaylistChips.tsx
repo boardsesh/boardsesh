@@ -65,6 +65,8 @@ type PlaylistChipsRowProps = {
   /** The playlist UUIDs to show. Pass a reference-stable value (the membership
    *  store's `Set`, or a React Query cache array) — it is a memo dependency. */
   playlistUuids: Iterable<string>;
+  /** Optional complete metadata for a detail surface; list rows use the provider. */
+  playlistsById?: Map<string, Playlist>;
   /**
    * `start` — the list row's own third line: leading-aligned, with its own top
    * margin. `inline` — a token sitting *inside* another line of text (the play
@@ -107,6 +109,7 @@ type PlaylistChipsRowProps = {
  */
 export const PlaylistChipsRow = React.memo(function PlaylistChipsRow({
   playlistUuids,
+  playlistsById: suppliedPlaylistsById,
   align = 'start',
   maxVisible = MAX_VISIBLE_CHIPS,
   inlineLabelColor,
@@ -116,7 +119,7 @@ export const PlaylistChipsRow = React.memo(function PlaylistChipsRow({
   const playlistsContext = usePlaylistsContextOptional();
   const { variant, systemColors, m3 } = useTheme();
 
-  const playlistsById = playlistsContext?.playlistsById;
+  const playlistsById = suppliedPlaylistsById ?? playlistsContext?.playlistsById;
 
   const chips = useMemo(() => resolvePlaylistChips(playlistUuids, playlistsById), [playlistUuids, playlistsById]);
 
