@@ -101,4 +101,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'SyncClimbStats',
   'SyncClimbs',
   'SyncSprayWalls',
+  // Capture flows never open the nested board picker in the logbook edit sheet.
+  'TickBoardOptions',
 ];

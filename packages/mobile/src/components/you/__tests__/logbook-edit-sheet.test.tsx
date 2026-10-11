@@ -338,6 +338,8 @@ describe('LogbookEditSheet', () => {
   it('keeps an untouched board out of the mutation', () => {
     renderSheet(makeAscent({ boardId: 942, boardDisplayName: 'Original' }));
     expect(screen.getByText('Original')).toBeTruthy();
+    expect(screen.queryByText('Choose Homewall')).toBeNull();
+    expect(screen.queryByText('Choose None')).toBeNull();
     save();
     expect(firstUpdateVariables().input).not.toHaveProperty('boardUuid');
   });
