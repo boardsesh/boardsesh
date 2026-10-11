@@ -555,17 +555,6 @@ function ClimbListInner() {
     setQuickActionsTipArmed(false);
     router.push('/settings');
   }, [router]);
-  useEffect(() => {
-    if (!showQuickActionsTip || quickActionsTipShownRef.current) return;
-    // Refocus or a reveal-banner toggle must not repeat the shown event. The
-    // launch-local seen flag also covers refocus before SecureStore settles.
-    quickActionsTipShownRef.current = true;
-    void markQuickActionsTipSeen();
-    track(SHARED_EVENTS.OnboardingTipShown, {
-      tip: QUICK_ACTIONS_TIP_NAME,
-      visitCount: quickActionsTipVisitRef.current,
-    });
-  }, [showQuickActionsTip]);
 
   // Screenshot mode: a second board-view shot renders a different wall via
   // ?screenshotBoardIndex=1 — slot 1 of SCREENSHOT_BOARDS, resolved by name so it
@@ -836,14 +825,25 @@ function ClimbListInner() {
   }, [searchPages?.pages]);
 
   // Waits for a climb row to exist: the tip teaches a gesture on one (#5960).
-  const showQuickActionsTip = shouldShowQuickActionsTip({
-    armed: quickActionsTipArmed,
-    revealTipShowing: showRevealTip,
-    connectCardVisible,
-    climbCount: visibleClimbs.length,
-  });
+  const quickActionsTipCanRender =
+    activeBoard != null &&
+    shouldShowQuickActionsTip({
+      armed: quickActionsTipArmed,
+      revealTipShowing: showRevealTip,
+      connectCardVisible,
+      climbCount: visibleClimbs.length,
+    });
+  const showQuickActionsTip = useQuickActionsTipVisibility(quickActionsTipArmed, !quickActionsTipCanRender);
   useEffect(() => {
-    if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
+    if (!showQuickActionsTip || quickActionsTipShownRef.current) return;
+    // Refocus or a reveal-banner toggle must not repeat the shown event. The
+    // launch-local seen flag also covers refocus before SecureStore settles.
+    quickActionsTipShownRef.current = true;
+    void markQuickActionsTipSeen();
+    track(SHARED_EVENTS.OnboardingTipShown, {
+      tip: QUICK_ACTIONS_TIP_NAME,
+      visitCount: quickActionsTipVisitRef.current,
+    });
   }, [showQuickActionsTip]);
 
   const firstSearchPage = searchPages?.pages[0];

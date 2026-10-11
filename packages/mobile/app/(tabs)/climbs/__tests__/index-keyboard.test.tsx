@@ -229,7 +229,12 @@ vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
     );
   },
 }));
-vi.mock('../../../../src/lib/onboarding/quick-actions-tip', () => ({
+vi.mock('../../../../src/lib/onboarding/quick-actions-tip', async () => ({
+  shouldShowQuickActionsTip: (
+    await vi.importActual<typeof import('../../../../src/lib/onboarding/quick-actions-tip')>(
+      '../../../../src/lib/onboarding/quick-actions-tip',
+    )
+  ).shouldShowQuickActionsTip,
   QUICK_ACTIONS_TIP_NAME: 'quick_actions',
   resolveQuickActionsTip: mocks.resolveQuickActionsTip,
   markQuickActionsTipSeen: mocks.markQuickActionsTipSeen,
