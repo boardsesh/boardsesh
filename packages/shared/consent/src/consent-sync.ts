@@ -213,6 +213,10 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
             if (!isCurrent()) return;
           } else {
             pending = stored;
+            // unconfirmedDecision rebuilds the record field by field and binds it
+            // to this account, so the stored record's own fields (which
+            // parsePendingConsentDecision already strips of any owner) can never
+            // carry another owner or token onto the device.
             const record = unconfirmedDecision(stored.record, identity, stored.basedOnDecidedAt);
             publish({ record, pending: true });
             persistRecord(record);

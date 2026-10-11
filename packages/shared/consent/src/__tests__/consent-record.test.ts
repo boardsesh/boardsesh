@@ -155,6 +155,10 @@ describe('device answer ownership', () => {
     );
     expect(isSameConsentRecord(localGrant, { ...localGrant, ownerAccountId: null })).toBe(true);
     expect(isSameConsentRecord(localGrant, { ...localGrant, ownerAccountId: 'account-a' })).toBe(false);
+    expect(isSameConsentRecord(localGrant, { ...localGrant, basedOnDecidedAt: null })).toBe(false);
+    expect(
+      isSameConsentRecord({ ...localGrant, basedOnDecidedAt: 'a' }, { ...localGrant, basedOnDecidedAt: 'b' }),
+    ).toBe(false);
     expect(isSameConsentRecord(localGrant, localDenial)).toBe(false);
     expect(isSameConsentRecord(null, null)).toBe(true);
     expect(isSameConsentRecord(localGrant, null)).toBe(false);

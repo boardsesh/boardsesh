@@ -41,7 +41,9 @@ privatePeers.addSubnet('fc00::', 7, 'ipv6');
 privatePeers.addAddress('::1', 'ipv6');
 
 // Addresses PostHog cannot place, beyond the private ranges above: link-local,
-// carrier-grade NAT and the unspecified addresses.
+// carrier-grade NAT and the unspecified addresses. No ::ffff:0:0/96 entry: Node's
+// BlockList already matches IPv4-mapped IPv6 (dotted or hex) against these IPv4
+// subnets, and that entry would match every plain IPv4 address too.
 const nonPublicPeers = new BlockList();
 nonPublicPeers.addSubnet('169.254.0.0', 16);
 nonPublicPeers.addSubnet('100.64.0.0', 10);

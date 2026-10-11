@@ -311,6 +311,20 @@ describe('PostHog Proxy Handler', () => {
     ['a trusted edge reporting a private address', '10.0.0.8', '104.16.0.5', '192.168.1.20', undefined],
     ['a trusted edge reporting carrier-grade NAT', '10.0.0.8', '104.16.0.5', '100.64.3.4', undefined],
     ['a trusted edge reporting loopback', '173.245.48.5', undefined, '127.0.0.1', undefined],
+    [
+      'a trusted edge reporting a hex IPv4-mapped private address',
+      '173.245.48.5',
+      undefined,
+      '::ffff:c0a8:114',
+      undefined,
+    ],
+    [
+      'a trusted edge reporting a hex IPv4-mapped CGNAT address',
+      '173.245.48.5',
+      undefined,
+      '::ffff:6440:304',
+      undefined,
+    ],
     ['a trusted edge reporting junk', '173.245.48.5', undefined, 'unknown', undefined],
   ])(
     'consented capture from %s forwards %s/%s/%s as %s',

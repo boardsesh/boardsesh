@@ -58,7 +58,11 @@ export function isConsentRecordOwnedBy(record: DeviceConsentRecord | null, accou
   );
 }
 
-/** Field-by-field equality, owner included. Key order and extra wire fields (`__typename`) do not matter. */
+/**
+ * Field-by-field equality, including `ownerAccountId` (missing equals null) and
+ * `basedOnDecidedAt` (missing differs from null: confirmed vs made against no
+ * answer). Key order and extra wire fields (`__typename`) do not matter.
+ */
 export function isSameConsentRecord(left: DeviceConsentRecord | null, right: DeviceConsentRecord | null): boolean {
   if (left === null || right === null) return left === right;
   return (

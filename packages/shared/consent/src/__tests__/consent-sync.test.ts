@@ -667,6 +667,13 @@ describe('account consent synchronization', () => {
       ],
       ['adopted grant, no account answer', ownedByA(grant), null, ownedByA(grant), null],
       [
+        'unconfirmed denial, first answer this account ever gives',
+        unconfirmedByA(denial, null),
+        null,
+        unconfirmedByA(denial, null),
+        unconfirmedByA(denial, null),
+      ],
+      [
         'unconfirmed grant, account answer under an old version',
         unconfirmedByA(grant, denial.decidedAt),
         { ...denial, version: 0 },
