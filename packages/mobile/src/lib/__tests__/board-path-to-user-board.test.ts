@@ -205,6 +205,8 @@ describe('resolveBoardForSession', () => {
       setIds: '27,28',
       angle: 30,
       isOwned: false,
+      isPublic: true,
+      hideLocation: true,
       name: 'Kilter',
     });
   });
