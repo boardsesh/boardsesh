@@ -99,11 +99,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Restore real timers and env first, so a failed assertion below (or in the
+  // test) cannot leave the fake clock from the five-second tests running.
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
   cleanup();
   consumeConsentDestination();
   expect(appState.listeners.size).toBe(0);
-  vi.useRealTimers();
-  vi.unstubAllEnvs();
 });
 
 async function flushEffects() {
@@ -205,6 +207,38 @@ describe('ConsentGate', () => {
     render(<ConsentGate />);
     await flushEffects();
 
+    expect(getConsentSnapshot().settled).toBe(true);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(isProductAnalyticsGranted()).toBe(false);
+  });
+
+  it('waits on an answer with no owner while the profile id is still loading', async () => {
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = null;
+    coordinator.snapshot = { accountResolved: false, syncing: true };
+    updateConsentState({ record: granted });
+    const view = render(<ConsentGate />);
+    await flushEffects();
+    expect(getConsentSnapshot().settled).toBe(false);
+    expect(router.push).not.toHaveBeenCalled();
+
+    // The id arrives and the account has no answer of its own: ask.
+    profile.authenticatedUserId = 'account-a';
+    coordinator.sync.mockResolvedValue(undefined);
+    await act(async () => {
+      updateConsentState({ record: null, accountResolved: true });
+      view.rerender(<ConsentGate />);
+    });
+    expect(router.push).toHaveBeenCalledWith('/privacy-consent');
+  });
+
+  it('settles at once on an answer bound to an account while the profile id is still loading', async () => {
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = null;
+    coordinator.snapshot = { accountResolved: false, syncing: true };
+    updateConsentState({ record: { ...granted, ownerAccountId: 'account-a' } });
+    render(<ConsentGate />);
+    await flushEffects();
     expect(getConsentSnapshot().settled).toBe(true);
     expect(router.push).not.toHaveBeenCalled();
     expect(isProductAnalyticsGranted()).toBe(false);

@@ -31,11 +31,16 @@ export function ConsentGate(): null {
   // An answer this device gave signed out, or under another account, does not
   // answer for this account. Wait for the account read (capped below) to say
   // whether the account has its own answer or the climber is asked again.
+  // While the profile id is still loading, an answer with no owner at all
+  // waits too; one bound to some account settles, since it is almost always
+  // this one. On the browser app the shared cookie never names an account, so
+  // a signed-in page load always waits for this one read.
   const awaitingAccountAnswer =
     isAuthenticated &&
-    authenticatedUserId !== null &&
     !consent.accountResolved &&
-    !isConsentRecordOwnedBy(consent.record, authenticatedUserId);
+    (authenticatedUserId === null
+      ? !consent.record?.ownerAccountId
+      : !isConsentRecordOwnedBy(consent.record, authenticatedUserId));
 
   useLayoutEffect(() => {
     updateConsentState({ killed, flagsResolved });
