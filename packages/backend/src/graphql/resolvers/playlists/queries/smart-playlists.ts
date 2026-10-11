@@ -3,7 +3,7 @@ import { canViewUserActivity } from '../../../../services/privacy';
 import { eq, and, desc, sql, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
 import {
-  climbReferenceVisibilityCondition,
+  climbReferenceReadableCondition,
   isRecommendationType,
   RECOMMENDATION_TYPES,
   withSerialPlan,
@@ -153,7 +153,7 @@ async function selectSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      climbReferenceVisibilityCondition(
+      climbReferenceReadableCondition(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
       ),
@@ -235,7 +235,7 @@ async function countSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      climbReferenceVisibilityCondition(
+      climbReferenceReadableCondition(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
         viewerUserId,
       ),

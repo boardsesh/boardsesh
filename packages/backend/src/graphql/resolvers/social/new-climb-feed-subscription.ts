@@ -1,7 +1,3 @@
-import { and, eq } from 'drizzle-orm';
-import { boardClimbs } from '@boardsesh/db/schema';
-import { db } from '../../../db/client';
-import { contentVisibilityCondition } from '../../../services/privacy';
 import { type ConnectionContext, type NewClimbCreatedEvent, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
@@ -52,21 +48,8 @@ export const newClimbFeedSubscription = {
       const gate = sprayStreamGate(boardType, layoutId, ctx.userId);
       for await (const event of asyncIterator) {
         if (gate && !(await gate())) return;
-        const [visibleClimb] = await db
-          .select({ uuid: boardClimbs.uuid })
-          .from(boardClimbs)
-          .where(
-            and(
-              eq(boardClimbs.boardType, boardType),
-              eq(boardClimbs.uuid, event.climb.uuid),
-              eq(boardClimbs.isDraft, false),
-              eq(boardClimbs.isHidden, false),
-              eq(boardClimbs.isListed, true),
-              contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, ctx.userId),
-            ),
-          )
-          .limit(1);
-        if (!visibleClimb) continue;
+        // The publisher announces a published climb only, and a published
+        // climb is public whoever set it, so there is no per-viewer check.
         yield { newClimbCreated: event };
       }
     }),

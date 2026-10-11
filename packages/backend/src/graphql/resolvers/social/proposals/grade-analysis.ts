@@ -1,6 +1,6 @@
 import { eq, and, sql } from 'drizzle-orm';
 import { executeRows } from '@boardsesh/db/client';
-import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import { climbReferenceReadableCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting } from '../community-settings';
@@ -40,6 +40,12 @@ export async function analyzeGradeOutlier(
         -- spray wall's grades after the wall is closed. A no-op on the other eight
         -- board types. (No backticks in here: this is a JS template literal.)
         AND ${sprayReferenceVisibilityCondition(
+          { boardType: sql`board_climb_stats.board_type`, climbUuid: sql`board_climb_stats.climb_uuid` },
+          viewerUserId ?? null,
+        )}
+        -- The draft rule: a draft's grades are its owner's alone, and this read
+        -- is unauthenticated. A published climb's grades are everyone's.
+        AND ${climbReferenceReadableCondition(
           { boardType: sql`board_climb_stats.board_type`, climbUuid: sql`board_climb_stats.climb_uuid` },
           viewerUserId ?? null,
         )}

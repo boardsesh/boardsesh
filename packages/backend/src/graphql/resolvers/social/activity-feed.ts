@@ -11,14 +11,10 @@ import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
-import {
-  anonymousOnBoardUserIds,
-  canAccessResource,
-  contentVisibilityCondition,
-  visibleBoardIdentityUuids,
-} from '../../../services/privacy';
+import { anonymousOnBoardUserIds, canAccessResource, visibleBoardIdentityUuids } from '../../../services/privacy';
 import { redactBoardIdentity } from '../../../services/board-session-privacy';
 import {
+  entityActorVisibilityCondition,
   socialEntityPrivacyCondition,
   commentPrivacyCondition,
   tickPrivacyCondition,
@@ -163,7 +159,10 @@ export const activityFeedQueries = {
     // Build base conditions
     const conditions = [
       eq(dbSchema.feedItems.recipientId, myUserId),
-      contentVisibilityCondition(
+      // A published climb is public whoever set it, so a new-climb row's
+      // author skips their account privacy. Its draft rule and spray-wall
+      // rule are in socialEntityPrivacyCondition below.
+      entityActorVisibilityCondition(
         dbSchema.feedItems.entityType,
         dbSchema.feedItems.entityId,
         dbSchema.feedItems.actorId,

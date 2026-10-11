@@ -1,5 +1,3 @@
-import { pubsub } from '../../../pubsub';
-import { setContentPrivacy, canViewContent } from '../../../services/privacy';
 import crypto from 'crypto';
 import { GraphQLError } from 'graphql';
 import { and, eq, sql } from 'drizzle-orm';
@@ -300,15 +298,6 @@ export const climbMutations = {
     const gateRuleSignature = buildStoredRuleSignature(boardType, storedCharacteristics, storedDescription);
     const gateSizeId = woodsShape?.sizeId;
     await db.transaction(async (tx) => {
-      if (validated.privacy)
-        await setContentPrivacy(
-          tx,
-          ctx.userId!,
-          'climb',
-          uuid,
-          validated.privacy.audience,
-          validated.privacy.privacyRevision,
-        );
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, validated.layoutId, gateSignature, {
           ruleSignature: gateRuleSignature,
@@ -496,7 +485,7 @@ export const climbMutations = {
     // somebody's home wall to people who cannot open it. Public walls only
     // (epic decision 2026-09-14: private-wall ticks are the owner's logbook).
     const mayAnnounce = !sprayTarget || sprayMayAnnounce;
-    if (!validated.isDraft && mayAnnounce && (await canViewContent(null, 'climb', uuid, ctx.userId!))) {
+    if (!validated.isDraft && mayAnnounce) {
       await publishSocialEvent({
         type: 'climb.created',
         actorId: ctx.userId!,
@@ -591,15 +580,6 @@ export const climbMutations = {
     const frames = encodeMoonBoardHoldsToFrames(validated.holds);
 
     await db.transaction(async (tx) => {
-      if (validated.privacy)
-        await setContentPrivacy(
-          tx,
-          ctx.userId!,
-          'climb',
-          uuid,
-          validated.privacy.audience,
-          validated.privacy.privacyRevision,
-        );
       await tx.insert(UNIFIED_TABLES.climbs).values({
         boardType: validated.boardType,
         uuid,
@@ -686,7 +666,7 @@ export const climbMutations = {
       }
     });
 
-    if (!isDraft && (await canViewContent(null, 'climb', uuid, ctx.userId!))) {
+    if (!isDraft) {
       await publishSocialEvent({
         type: 'climb.created',
         actorId: ctx.userId!,
@@ -1081,15 +1061,6 @@ export const climbMutations = {
         throw new Error('Climb not found');
       }
       if (beforeEdit.userId !== ctx.userId) throw new Error('Climb not found or access denied');
-      if (validated.privacy)
-        await setContentPrivacy(
-          tx,
-          ctx.userId!,
-          'climb',
-          validated.uuid,
-          validated.privacy.audience,
-          validated.privacy.privacyRevision,
-        );
       // Everything decided above (who may edit, whether this publishes, whether
       // the holds or the rules changed, what the duplicate gate checked) was
       // decided for the row `existing` held. If another edit committed in
@@ -1350,12 +1321,7 @@ export const climbMutations = {
     //
     // The actor is the caller, which is right because only the setter can edit,
     // and so publish, a climb.
-    if (validated.privacy) pubsub.publishPrivacyChanged();
-    if (
-      transitioningToPublished &&
-      (!sprayTarget || sprayMayAnnounce) &&
-      (await canViewContent(null, 'climb', validated.uuid, ctx.userId!))
-    ) {
+    if (transitioningToPublished && (!sprayTarget || sprayMayAnnounce)) {
       const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
       const preferredSetter = displayName || name || null;
       await publishSocialEvent({

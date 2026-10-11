@@ -39,7 +39,7 @@ import { redactBoardIdentity } from '../../../services/board-session-privacy';
 import {
   boardIdentityVisibleCondition,
   canViewUserActivity,
-  contentVisibilityCondition,
+  climbDraftVisibilityCondition,
 } from '../../../services/privacy';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
@@ -537,10 +537,10 @@ export const tickQueries = {
           and(
             sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
             eq(dbSchema.boardClimbs.boardType, boardType),
-            contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
-            or(
-              viewerUserId ? eq(dbSchema.boardClimbs.userId, viewerUserId) : sql`false`,
-              and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true)),
+            // A published climb is readable whoever set it; a draft by its owner alone.
+            climbDraftVisibilityCondition(
+              { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+              viewerUserId,
             ),
             sprayClimbVisibilityCondition(
               { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
@@ -1669,15 +1669,10 @@ export const tickQueries = {
               and(
                 sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
                 eq(dbSchema.boardClimbs.boardType, boardType),
-                contentVisibilityCondition(
-                  'climb',
-                  dbSchema.boardClimbs.uuid,
-                  dbSchema.boardClimbs.userId,
+                // A published climb is readable whoever set it; a draft by its owner alone.
+                climbDraftVisibilityCondition(
+                  { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
                   viewerUserId,
-                ),
-                or(
-                  viewerUserId ? eq(dbSchema.boardClimbs.userId, viewerUserId) : sql`false`,
-                  and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true)),
                 ),
                 sprayClimbVisibilityCondition(
                   { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
@@ -1714,15 +1709,10 @@ export const tickQueries = {
               and(
                 sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
                 eq(dbSchema.boardClimbs.boardType, boardType),
-                contentVisibilityCondition(
-                  'climb',
-                  dbSchema.boardClimbs.uuid,
-                  dbSchema.boardClimbs.userId,
+                // A published climb is readable whoever set it; a draft by its owner alone.
+                climbDraftVisibilityCondition(
+                  { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
                   viewerUserId,
-                ),
-                or(
-                  viewerUserId ? eq(dbSchema.boardClimbs.userId, viewerUserId) : sql`false`,
-                  and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true)),
                 ),
                 sprayClimbVisibilityCondition(
                   { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },

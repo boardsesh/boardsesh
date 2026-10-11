@@ -1,7 +1,11 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayReferenceClimbExistsCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  climbDraftVisibilityCondition,
+  sprayReferenceClimbExistsCondition,
+  sprayReferenceVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { dbRead } from '../../../db/client';
 
 /** Known spray references must have a live, readable climb. One query for a batch. */
@@ -43,12 +47,18 @@ export async function readableSocialEntityIds(
     case 'climb': {
       // Threads do not retain board type after deletion. Product policy hides
       // all missing-climb threads, including catalogue archives, for privacy.
+      // A published climb's thread is everyone's, whoever set the climb; a
+      // draft's is its owner's alone. The spray half is the wall's rule.
       const climbs = await dbRead
         .select({ uuid: dbSchema.boardClimbs.uuid })
         .from(dbSchema.boardClimbs)
         .where(
           and(
             inArray(dbSchema.boardClimbs.uuid, entityIds),
+            climbDraftVisibilityCondition(
+              { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+              viewerUserId,
+            ),
             sprayReferenceVisibilityCondition(
               { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.boardClimbs.uuid },
               viewerUserId,

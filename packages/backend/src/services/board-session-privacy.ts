@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
-import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { ownedOrPublicReferenceClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type {
   BoardConnectionHolder,
   BoardPresenceClimb,
@@ -370,6 +370,7 @@ async function holdsDeletedBoard(
   return !!grant;
 }
 
+// Publication/ownership checks below use the shared two-valued predicate.
 export async function canReadClimbContent(
   climbUuid: string,
   viewerId: string | null | undefined,
@@ -381,15 +382,11 @@ export async function canReadClimbContent(
     .where(
       and(
         eq(boardClimbs.uuid, climbUuid),
-        contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, viewerId),
+        ownedOrPublicReferenceClimbCondition(boardClimbs, viewerId),
         sprayClimbVisibilityCondition(
           { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
           viewerId,
           wallUuid,
-        ),
-        or(
-          viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
-          and(eq(boardClimbs.isDraft, false), eq(boardClimbs.isListed, true)),
         ),
       ),
     )
@@ -470,15 +467,11 @@ export async function redactBoardClimbs(
           .where(
             and(
               inArray(boardClimbs.uuid, climbUuids),
-              contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, viewerId),
+              ownedOrPublicReferenceClimbCondition(boardClimbs, viewerId),
               sprayClimbVisibilityCondition(
                 { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
                 viewerId,
                 wallUuid,
-              ),
-              or(
-                viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
-                and(eq(boardClimbs.isDraft, false), eq(boardClimbs.isListed, true)),
               ),
             ),
           );
@@ -545,13 +538,13 @@ export async function redactBoardStats(
 ): Promise<BoardPresenceStats> {
   const hardest = stats.hardestSend;
   if (!hardest) return stats;
-  // A restricted user-created climb is never featured publicly. Aggregate
-  // grades and counts above remain unchanged.
-  if (!(await canViewContent(viewerId, 'climb', hardest.climbUuid, hardest.climbOwnerId ?? null))) {
-    return { ...stats, hardestSend: null };
-  }
-  // Cached metadata may predate a draft, audience or wall-policy change.
-  // Known catalog rows must pass the same current item/layout gate as history.
+  // Featured only when the viewer may see the climb in a list: published and
+  // listed whoever set it, or their own, and not on a wall they cannot see (a
+  // held link opens its own wall). A draft or an unlisted climb is named to its
+  // owner alone, and the board sheet and kiosk are browse surfaces. Cached
+  // metadata may predate a draft, unlisting or wall-policy change, so a known
+  // catalog row is checked now, by the same gate as history. Aggregate grades
+  // and counts above remain unchanged.
   const [catalogClimb] = await db
     .select({ uuid: boardClimbs.uuid })
     .from(boardClimbs)

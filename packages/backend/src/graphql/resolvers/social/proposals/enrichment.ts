@@ -3,7 +3,7 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   sprayClimbVisibilityCondition,
-  contentVisibilityCondition,
+  climbDraftVisibilityCondition,
   userActivityVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
@@ -75,10 +75,8 @@ export async function enrichProposal(
         and(
           eq(dbSchema.boardClimbs.uuid, proposal.climbUuid),
           eq(dbSchema.boardClimbs.boardType, proposal.boardType),
-          contentVisibilityCondition(
-            'climb',
-            dbSchema.boardClimbs.uuid,
-            dbSchema.boardClimbs.userId,
+          climbDraftVisibilityCondition(
+            { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
             authenticatedUserId,
           ),
           // `browseProposals` is auth-optional and takes `boardType` from the
@@ -323,10 +321,8 @@ export async function batchEnrichProposals(
     .where(
       and(
         inArray(dbSchema.boardClimbs.uuid, uniqueClimbUuids),
-        contentVisibilityCondition(
-          'climb',
-          dbSchema.boardClimbs.uuid,
-          dbSchema.boardClimbs.userId,
+        climbDraftVisibilityCondition(
+          { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
           authenticatedUserId,
         ),
         // Same as the single-proposal path above.

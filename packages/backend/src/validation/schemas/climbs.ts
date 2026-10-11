@@ -1,4 +1,3 @@
-import { PrivacyPublicationInputSchema } from './privacy-publication';
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
@@ -321,7 +320,6 @@ const ClimbSizeIdSchema = z.number().int().positive('Size ID must be positive').
 
 export const SaveClimbInputSchema = z
   .object({
-    privacy: PrivacyPublicationInputSchema.optional(),
     boardType: BoardNameSchema,
     layoutId: z.number().int().positive('Layout ID must be positive'),
     name: z.string().min(1).max(200),
@@ -366,7 +364,6 @@ export const SaveClimbInputSchema = z
 
 export const UpdateClimbInputSchema = z
   .object({
-    privacy: PrivacyPublicationInputSchema.optional(),
     uuid: z.string().min(1).max(100),
     boardType: BoardNameSchema,
     name: z.string().min(1).max(200).optional(),
@@ -406,7 +403,6 @@ export const MoonBoardHoldsInputSchema = z.object({
 });
 
 export const SaveMoonBoardClimbInputSchema = z.object({
-  privacy: PrivacyPublicationInputSchema.optional(),
   boardType: z.literal('moonboard'),
   layoutId: z.number().int().positive('Layout ID must be positive'),
   name: z.string().min(1).max(200),

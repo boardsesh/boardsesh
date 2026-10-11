@@ -28,7 +28,8 @@ const resourceAudience = z.enum(['public', 'unlisted', 'followers', 'invite_only
 // public account follows auto-approve, so it would not restrict anything.
 const locationAudience = z.enum(['public', 'followers', 'members', 'only_me']).transform(normalizeLocationAudience);
 const contentAudience = z.enum(['public', 'followers', 'only_me']);
-const contentType = z.enum(['tick', 'session', 'comment', 'climb', 'playlist', 'beta']);
+// No climb: a published climb is public to everyone, so it has no audience.
+const contentType = z.enum(['tick', 'session', 'comment', 'playlist', 'beta']);
 const identifier = z.string().min(1).max(2048);
 const updateSettingsSchema = z
   .object({
@@ -264,15 +265,6 @@ async function contentOwner(
       .select({ ownerId: schema.comments.userId })
       .from(schema.comments)
       .where(and(eq(schema.comments.uuid, entityId), sql`${schema.comments.deletedAt} IS NULL`))
-      .limit(1)
-      .for('update');
-    return row?.ownerId ?? notFound();
-  }
-  if (entityType === 'climb') {
-    const [row] = await executor
-      .select({ ownerId: schema.boardClimbs.userId })
-      .from(schema.boardClimbs)
-      .where(eq(schema.boardClimbs.uuid, entityId))
       .limit(1)
       .for('update');
     return row?.ownerId ?? notFound();

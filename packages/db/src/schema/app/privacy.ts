@@ -24,10 +24,11 @@ export const userFollowRequests = pgTable(
 export const contentPrivacy = pgTable(
   'content_privacy',
   {
-    entityType: text('entity_type').$type<'tick' | 'session' | 'comment' | 'climb' | 'playlist' | 'beta'>().notNull(),
+    // No climb: a published climb is public to everyone and has no audience.
+    entityType: text('entity_type').$type<'tick' | 'session' | 'comment' | 'playlist' | 'beta'>().notNull(),
     entityId: text('entity_id').notNull(),
     // Deleted-account policies remain as ownerless deny tombstones. Otherwise
-    // SET NULL on a climb/beta author would misclassify it as external catalogue.
+    // SET NULL on a beta author would misclassify it as external catalogue.
     ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
     audience: text('audience').$type<'public' | 'followers' | 'only_me'>().notNull(),
     publicConsentRevision: integer('public_consent_revision'),
@@ -37,10 +38,7 @@ export const contentPrivacy = pgTable(
     primaryKey({ columns: [table.entityType, table.entityId] }),
     index('content_privacy_owner_idx').on(table.ownerId),
     check('content_privacy_audience_check', sql`${table.audience} IN ('public', 'followers', 'only_me')`),
-    check(
-      'content_privacy_type_check',
-      sql`${table.entityType} IN ('tick', 'session', 'comment', 'climb', 'playlist', 'beta')`,
-    ),
+    check('content_privacy_type_check', sql`${table.entityType} IN ('tick', 'session', 'comment', 'playlist', 'beta')`),
   ],
 );
 

@@ -1,5 +1,4 @@
 import { duplicateDisclosureCondition, projectDuplicateIdentity } from './duplicate-privacy';
-import { contentVisibilityCondition } from '../../../services/privacy';
 import { sql } from 'drizzle-orm';
 import type { SQL, SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -301,7 +300,6 @@ export async function findExactDuplicateMatch({
 }
 
 type FindSimilarClimbsArgs = {
-  viewerUserId?: string;
   boardType: BoardName;
   layoutId: number;
   holds: ReadonlyArray<NormalizedHold>;
@@ -346,7 +344,6 @@ type FindSimilarClimbsArgs = {
  * thread it through to `executeRows` (same pattern as the gate function).
  */
 export async function findSimilarClimbs({
-  viewerUserId,
   boardType,
   layoutId,
   holds,
@@ -474,8 +471,7 @@ export async function findSimilarClimbs({
       LEFT JOIN ${dbSchema.boardDifficultyGrades} bdg
         ON bdg.board_type = c.board_type
        AND bdg.difficulty = ROUND(${dbSchema.boardClimbStats.displayDifficulty})
-      WHERE ${contentVisibilityCondition('climb', sql`c.uuid`, sql`c.user_id`, viewerUserId)}
-        AND (o.shared::float / (${targetSize} + cs.n - o.shared)) >= ${safeThreshold}
+      WHERE (o.shared::float / (${targetSize} + cs.n - o.shared)) >= ${safeThreshold}
       ORDER BY jaccard DESC, COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) DESC, c.uuid ASC
       LIMIT ${safeLimit}
       `,
