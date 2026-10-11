@@ -141,6 +141,108 @@ export function resourceLocationCondition(boardUuid: SQLWrapper, viewerId: Viewe
       )))`;
 }
 
+/**
+ * Board types with no reference set at all.
+ *
+ * A snapshot artifact goes to a PUBLIC bucket under guessable keys
+ * (`<prefix>/<board>/<layout>/*.db`) and carries every reference climb of that
+ * `(board_type, layout_id)` partition. A spray wall's partition is one
+ * climber's private wall — an explicitly private-by-default surface whose photo
+ * is behind a 15-minute presigned URL — so publishing its climbs would hand out
+ * exactly the data the private bucket exists to withhold.
+ *
+ * This is an exclusion by board TYPE rather than a per-wall visibility check on
+ * purpose: `is_public` on a wall governs who may view it in the app, and a
+ * nightly dump of every public wall's climbs to an unauthenticated bucket is not
+ * something a climber opted into by sharing a link. The row predicate below
+ * cannot express it either: a legacy spray climb with no owner and no policy
+ * row would pass.
+ *
+ * One set for the three readers that must agree: the per-layout snapshot export,
+ * the catalogue export, and the `REFERENCE` sync stream.
+ */
+export const REFERENCE_EXCLUDED_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+
+const SAFE_SQL_ALIAS = /^[a-z_][a-z0-9_]*$/;
+const REFERENCE_PRIVACY_ALIAS = 'reference_climb_privacy';
+
+/**
+ * The predicates below are raw text, so the alias is the one piece a caller
+ * supplies. Every caller passes a literal; this keeps a future caller from
+ * interpolating anything that is not a plain identifier.
+ */
+function safeClimbAlias(alias: string): string {
+  if (!SAFE_SQL_ALIAS.test(alias) || alias === REFERENCE_PRIVACY_ALIAS) {
+    throw new Error(`Refusing to build a climb audience predicate with the alias: ${alias}`);
+  }
+  return alias;
+}
+
+/**
+ * True for a reference climb: no Boardsesh owner, not Boardsesh-authored (an
+ * authored climb outlives its deleted account with `user_id` cleared), and no
+ * privacy policy row. Parenthesized, so it can be negated or ANDed as it is.
+ *
+ * The test is ownership, not visibility. An unowned climb that is a draft,
+ * unlisted or hidden by moderation passes, exactly as it is carried by the
+ * snapshot artifact and by the single-stream pull today. "Public" in the name
+ * says where these rows are published, not that every one of them is listed.
+ *
+ * `alias` names the `board_climbs` row: a table alias, or `board_climbs` itself
+ * for an unaliased FROM. Combine with {@link REFERENCE_EXCLUDED_BOARD_TYPES},
+ * which this row predicate does not cover.
+ *
+ * Raw text on purpose. The snapshot exports build `sqlClient.unsafe` strings and
+ * the sync resolvers build drizzle `sql`, and text is the only form both can
+ * share. One definition is the point: the artifact a phone imports and the
+ * `REFERENCE` stream that resumes from its watermark must select the same rows,
+ * or a row inside the watermark that only one of them carries is lost for good.
+ */
+export function publicReferenceClimbSql(alias: string): string {
+  const climb = safeClimbAlias(alias);
+  return `(${climb}.user_id IS NULL AND NOT ${climb}.is_boardsesh_authored AND NOT EXISTS (SELECT 1 FROM content_privacy ${REFERENCE_PRIVACY_ALIAS} WHERE ${REFERENCE_PRIVACY_ALIAS}.entity_type = 'climb' AND ${REFERENCE_PRIVACY_ALIAS}.entity_id = ${climb}.uuid))`;
+}
+
+/**
+ * True for a climb that can only be served per viewer: it has, or once had, a
+ * Boardsesh author. Whether THIS viewer may see it is a separate question,
+ * answered by {@link contentVisibilityCondition}.
+ *
+ * The two columns are the two halves of that sentence. `user_id` is the
+ * Boardsesh account that set the climb, and is NULL on every imported
+ * manufacturer climb. `is_boardsesh_authored` is what account deletion leaves
+ * behind once it clears `user_id`. Either one keeps a climb out of the
+ * reference set, so this is the exact complement of the owner and author terms
+ * of {@link publicReferenceClimbSql}.
+ *
+ * The text is the predicate of `board_climbs_protected_sync_idx`, character for
+ * character apart from the alias. Postgres only uses a partial index when the
+ * query implies its predicate, so a query that should use the index must carry
+ * this conjunct as written here. Change one and change the other.
+ */
+export function protectedClimbCandidateSql(alias: string): string {
+  const climb = safeClimbAlias(alias);
+  return `(${climb}.user_id IS NOT NULL OR ${climb}.is_boardsesh_authored)`;
+}
+
+/**
+ * True for a climb on a board type that has a reference set at all. For a query
+ * that spans board types; a reader that already holds one board type checks
+ * {@link REFERENCE_EXCLUDED_BOARD_TYPES} directly.
+ */
+export function referenceBoardTypeSql(alias: string): string {
+  const climb = safeClimbAlias(alias);
+  const excluded = [...REFERENCE_EXCLUDED_BOARD_TYPES].map((boardType) => {
+    if (!SAFE_SQL_ALIAS.test(boardType)) {
+      throw new Error(`Refusing to inline the board type as a SQL literal: ${boardType}`);
+    }
+    return `'${boardType}'`;
+  });
+  // `NOT IN ()` is a syntax error, and an empty set excludes nothing.
+  if (excluded.length === 0) return 'TRUE';
+  return `${climb}.board_type NOT IN (${excluded.join(', ')})`;
+}
+
 /** Applies the authored climb policy to its stats, grades and other reference rows. */
 export function climbReferenceVisibilityCondition(
   reference: { boardType: SQLWrapper; climbUuid: SQLWrapper },

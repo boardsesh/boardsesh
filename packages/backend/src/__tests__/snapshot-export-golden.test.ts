@@ -702,6 +702,126 @@ describe('board-snapshot export ↔ live pull parity', () => {
   });
 });
 
+// The REFERENCE sync stream (#6306) is what a phone resumes from an artifact's
+// watermark. A row at or below the watermark that the stream carries and the
+// artifact does not is never delivered, and one the artifact carries and the
+// stream does not is never corrected. So the two must select the same rows —
+// they share one predicate (`publicReferenceClimbSql`), and this is the test
+// that fails if either side stops using it.
+describe('board-snapshot export ↔ REFERENCE stream', () => {
+  const OTHER_AUTHOR_ID = 'snapshot-export-other-author';
+
+  // The real resolvers again, asked for the REFERENCE stream only.
+  const referenceGraphqlFetch: typeof graphqlFetch = (query, variables) =>
+    graphqlFetch(query, { ...variables, audience: 'REFERENCE' });
+
+  async function pullInto(fetchPage: typeof graphqlFetch) {
+    const clientDb = createTestDatabase();
+    await runMigrations(clientDb);
+    await pullSync(clientDb, noopQueryClient(), fetchPage, { enabledBoards: [SCOPE_KEY] });
+    return {
+      climbs: await clientDb.getAllAsync<Record<string, unknown>>(
+        `SELECT ${CLIMB_COLUMNS.join(', ')} FROM board_climbs ORDER BY uuid`,
+      ),
+      stats: await clientDb.getAllAsync<Record<string, unknown>>(
+        `SELECT ${STATS_COLUMNS.join(', ')} FROM board_climb_stats ORDER BY climb_uuid, angle`,
+      ),
+      grades: await clientDb.getAllAsync<Record<string, unknown>>(
+        `SELECT ${GRADES_COLUMNS.join(', ')} FROM board_climb_grades ORDER BY climb_uuid, angle`,
+      ),
+    };
+  }
+
+  it('carries exactly the rows a REFERENCE pull returns, column for column', async () => {
+    await db.execute(sql`
+      INSERT INTO users (id, name, email) VALUES
+        (${USER_ID}, 'Viewer', 'snapshot-viewer@example.test'),
+        (${OTHER_AUTHOR_ID}, 'Other author', 'snapshot-other-author@example.test')
+      ON CONFLICT DO NOTHING
+    `);
+    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
+
+    // Every class of climb the predicate has to place. Only the two imported
+    // ones are reference rows; the viewer may see three of the others.
+    const climbUuids = [
+      'imported-a',
+      'imported-b',
+      'authored-by-viewer',
+      'authored-by-other',
+      'deleted-public',
+      'deleted-private',
+      'orphan-policy',
+    ];
+    for (const uuid of climbUuids) {
+      await insertClimb({ uuid, name: uuid, compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+      await insertStat({
+        climbUuid: uuid,
+        angle: 40,
+        displayDifficulty: 21.5,
+        ascensionistCount: 7,
+        faUsername: `Stored FA ${uuid}`,
+        faAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2026-05-01T00:00:00Z',
+      });
+      await insertGrade({ climbUuid: uuid, angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
+    }
+    await insertStat({ climbUuid: 'imported-a', angle: 45, updatedAt: '2026-05-01T00:00:01.5Z' });
+    await db.execute(sql`UPDATE board_climbs SET user_id = ${USER_ID} WHERE uuid = 'authored-by-viewer'`);
+    await db.execute(sql`UPDATE board_climbs SET user_id = ${OTHER_AUTHOR_ID} WHERE uuid = 'authored-by-other'`);
+    await db.execute(sql`
+      UPDATE board_climbs SET is_boardsesh_authored = true WHERE uuid IN ('deleted-public', 'deleted-private')
+    `);
+    await db.execute(sql`
+      INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience) VALUES
+        ('climb', 'deleted-private', NULL, 'only_me'),
+        ('climb', 'orphan-policy', NULL, 'only_me')
+    `);
+
+    const filePath = join(workDir, 'reference-artifact.db');
+    const gradesFilePath = join(workDir, 'reference-grades.db');
+    await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      gradesFilePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+    const artifact = {
+      climbs: readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS),
+      stats: readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS),
+      grades: readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS),
+    };
+
+    const reference = await pullInto(referenceGraphqlFetch);
+    expect(artifact.climbs).toEqual(reference.climbs);
+    expect(artifact.stats).toEqual(reference.stats);
+    expect(artifact.grades).toEqual(reference.grades);
+
+    expect(artifact.climbs.map((row) => row.uuid)).toEqual(['imported-a', 'imported-b']);
+    expect(artifact.stats.map((row) => `${String(row.climb_uuid)}@${String(row.angle)}`)).toEqual([
+      'imported-a@40',
+      'imported-a@45',
+      'imported-b@40',
+    ]);
+    expect(artifact.grades.map((row) => row.climb_uuid)).toEqual(['imported-a', 'imported-b']);
+    // The stored manufacturer credit survives both paths unchanged.
+    expect(reference.stats.find((row) => row.climb_uuid === 'imported-b')?.fa_username).toBe('Stored FA imported-b');
+
+    // The fixture has to tell the two apart: the same viewer's single-stream
+    // pull holds authored climbs the artifact withholds.
+    const singleStream = await pullInto(graphqlFetch);
+    expect(singleStream.climbs.map((row) => row.uuid)).toEqual([
+      'authored-by-other',
+      'authored-by-viewer',
+      'deleted-public',
+      'imported-a',
+      'imported-b',
+    ]);
+  });
+});
+
 // The SEPARATE per-layout grades artifact (issue #4310). Boardsesh grades are
 // the one per-board table the whole-layout artifact never carried, so every
 // Kilter/Tension download paid hundreds of serial authenticated GraphQL pages

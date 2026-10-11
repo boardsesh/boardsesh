@@ -29,6 +29,15 @@
 //    also keeps it safe from a teardown landing between chunks: the teardown
 //    deletes that marker in the same transaction as the index rows.
 //
+//  - AND ONLY ONCE THE PROTECTED STREAM IS BACK (issue #6306). A privacy event
+//    deletes other climbers' climbs and the next pull brings the permitted ones
+//    back with the `sync_seq` they always had. A build between those two would
+//    stamp a watermark above rows that are about to return, and they would never
+//    be indexed. So the build also needs `isScopeProtectedComplete`, under the
+//    same write-lock re-check. A protected page that does land at or below a
+//    watermark drops it (`invalidateLayoutHoldIndex`), which covers a climb the
+//    viewer has only just been allowed to see.
+//
 //  - FIRST BUILD, then INCREMENTAL. With no watermark, the build records the
 //    scope's MAX(sync_seq), walks the scope in uuid order (so new local ids and
 //    their uuid index append rather than scatter), writes hold sets in short
@@ -53,7 +62,7 @@
 import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '../database';
 import { offlineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter } from '../sync/board-scope-sql';
-import { isScopeDownloadComplete } from '../sync/checkpoints';
+import { isScopeDownloadComplete, isScopeProtectedComplete } from '../sync/checkpoints';
 import { invalidateKeysForTable, scopedInvalidateFilters } from '../sync/invalidate-keys';
 import { runPullWrite } from '../sync/pull-write';
 import {
@@ -107,7 +116,8 @@ export type EnsureHoldIndexResult = {
   /**
    * `complete` — the index covers every climb of the scope.
    * `aborted` — `shouldContinue` said stop, or the scope changed under the build.
-   * `not-downloaded` — the scope has no `scope-complete:` marker, so nothing ran.
+   * `not-downloaded` — the scope has no `scope-complete:` marker, or its
+   * protected stream is still being replayed after a privacy event, so nothing ran.
    */
   status: 'complete' | 'aborted' | 'not-downloaded';
   /** Climbs read from `board_climbs` and committed. */
@@ -388,6 +398,113 @@ export async function clearLayoutHoldIndex(txn: SqlExecutor, boardType: string, 
 }
 
 /**
+ * Make one layout's index rebuild itself, keeping the hold sets it already has.
+ *
+ * Drops the watermark of every scope of the layout and bumps the layout's
+ * generation, so a build in flight stops and the next one runs as a first
+ * build. That pass re-derives every climb, but a hold set that has not changed
+ * is not rewritten, so it costs parsing rather than the ~67 MB of writes a
+ * Kilter index is.
+ *
+ * `dropPostings` also removes the layout's postings, for the caller that has
+ * just deleted climbs: a posting would otherwise go on naming, by local id, the
+ * holds of a climb this device may no longer keep. The rebuild writes them
+ * again from the hold sets that are left.
+ *
+ * `clearLayoutHoldIndex` is the heavier sibling, for a teardown that deletes
+ * the layout's climbs anyway.
+ */
+export async function invalidateLayoutHoldIndex(
+  txn: SqlExecutor,
+  boardType: string,
+  layoutId: number,
+  options: { dropPostings: boolean },
+): Promise<void> {
+  if (options.dropPostings) {
+    await txn.runAsync('DELETE FROM board_climb_hold_postings WHERE board_type = ? AND layout_id = ?', [
+      boardType,
+      layoutId,
+    ]);
+  }
+  const prefix = `${HOLD_INDEX_KEY_PREFIX}${boardType}:${layoutId}:`;
+  await txn.runAsync('DELETE FROM sync_meta WHERE substr(key, 1, ?) = ?', [prefix.length, prefix]);
+  await bumpGeneration(txn, layoutGenerationKey(boardType, layoutId));
+}
+
+/**
+ * Take these climbs' hold sets and local ids out of the index, by uuid, inside
+ * the caller's transaction. For rows a privacy event is deleting: the hold set
+ * is the climb's holds and the id row is its uuid, so neither may outlive it.
+ *
+ * Returns the uuids that had a hold set. Their local ids are still in their
+ * layout's postings, so the caller drops those for each such layout
+ * (`invalidateLayoutHoldIndex` with `dropPostings`). A climb that was never
+ * indexed (a draft, say) is in no posting, and its layout can keep its index.
+ */
+export async function dropHoldIndexRowsForClimbs(txn: SqlExecutor, climbUuids: readonly string[]): Promise<string[]> {
+  const indexedUuids: string[] = [];
+  for (let start = 0; start < climbUuids.length; start += IN_LIST_BATCH) {
+    const batch = climbUuids.slice(start, start + IN_LIST_BATCH);
+    const uuidList = placeholders(batch.length);
+    const indexed = await txn.getAllAsync<{ uuid: string }>(
+      `SELECT hic.uuid FROM holds_index_climbs hic
+       JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
+       WHERE hic.uuid IN (${uuidList})`,
+      batch,
+    );
+    indexedUuids.push(...indexed.map((row) => row.uuid));
+    await txn.runAsync(
+      `DELETE FROM board_climb_hold_sets WHERE climb_id IN (
+         SELECT id FROM holds_index_climbs WHERE uuid IN (${uuidList}))`,
+      batch,
+    );
+    await txn.runAsync(`DELETE FROM holds_index_climbs WHERE uuid IN (${uuidList})`, batch);
+  }
+  return indexedUuids;
+}
+
+/**
+ * Called in the transaction that has just written these climbs through the
+ * protected stream. If one of them belongs in the index, is not in it, and sits
+ * at or below the scope's watermark, the incremental pass would never reach it,
+ * so the layout is sent back to a first build (`invalidateLayoutHoldIndex`,
+ * keeping postings: they are still right for every climb already indexed).
+ *
+ * That is a climb the viewer has only just been allowed to see, arriving with
+ * the `sync_seq` it has had all along. A climb edited since the watermark is
+ * above it and needs nothing here. Neither does a scope with no watermark: its
+ * first build has not run yet and will find the climb.
+ */
+export async function invalidateHoldIndexBehindWrittenClimbs(
+  txn: SqlExecutor,
+  scope: OfflineBoardScope,
+  climbUuids: readonly string[],
+): Promise<void> {
+  const watermark = parseWatermark(await readRawWatermark(txn, offlineBoardKey(scope)));
+  if (!watermark) return;
+  for (let start = 0; start < climbUuids.length; start += IN_LIST_BATCH) {
+    const batch = climbUuids.slice(start, start + IN_LIST_BATCH);
+    // The same three flags `deriveHoldSet` reads: a draft, unlisted or hidden
+    // climb is never indexed, so its absence is not a gap.
+    const unindexed = await txn.getFirstAsync<{ uuid: string }>(
+      `SELECT c.uuid FROM board_climbs c
+       WHERE c.uuid IN (${placeholders(batch.length)})
+         AND c.sync_seq <= ?
+         AND c.is_listed = 1 AND c.is_draft = 0 AND COALESCE(c.is_hidden, 0) = 0
+         AND NOT EXISTS (
+           SELECT 1 FROM holds_index_climbs hic
+           JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
+           WHERE hic.uuid = c.uuid)
+       LIMIT 1`,
+      [...batch, watermark.syncSeq],
+    );
+    if (!unindexed) continue;
+    await invalidateLayoutHoldIndex(txn, scope.boardType, scope.layoutId, { dropPostings: false });
+    return;
+  }
+}
+
+/**
  * Clear one board type from the index — the spray wipe on sign-out, where a
  * private wall's climbs must not outlive the account. Run it before the board
  * type's climbs are deleted.
@@ -444,7 +561,10 @@ async function buildHoldIndex(
 
   // Read BEFORE anything else: a teardown that lands after this point changes it.
   const generation = await readHoldIndexGeneration(db, boardType, layoutId);
-  if (!(await isScopeDownloadComplete(db, scopeKey))) return { ...result, status: 'not-downloaded' };
+  /** Both halves of the scope are on the device: see the header's two ONLY rules. */
+  const isScopeIndexable = async (executor: SqlExecutor): Promise<boolean> =>
+    (await isScopeDownloadComplete(executor, scopeKey)) && (await isScopeProtectedComplete(executor, scopeKey));
+  if (!(await isScopeIndexable(db))) return { ...result, status: 'not-downloaded' };
 
   const filter = climbsScopeFilter(scope);
   let rawWatermark = await readRawWatermark(db, scopeKey);
@@ -468,7 +588,7 @@ async function buildHoldIndex(
     try {
       await runPullWrite(db, async (txn) => {
         tally = { holdSetsWritten: 0, holdSetsDeleted: 0, postingsWritten: 0 };
-        if (!shouldContinue() || !(await isScopeDownloadComplete(txn, scopeKey))) {
+        if (!shouldContinue() || !(await isScopeIndexable(txn))) {
           throw new HoldIndexChunkAbortedError();
         }
         if ((await readRawWatermark(txn, scopeKey)) !== expectedRaw) throw new HoldIndexChunkAbortedError();

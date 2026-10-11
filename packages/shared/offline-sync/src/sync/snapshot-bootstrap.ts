@@ -9,6 +9,13 @@
 // reuses the client's `toSqliteValue` shaping); the backend snapshot-export-golden
 // test pins that equivalence.
 //
+// WHICH PULL RESUMES (issue #6306). An artifact carries the REFERENCE rows only:
+// climbs that are public for every viewer. The watermarks stamped here are
+// therefore the reference stream's cursors, and they are the artifact's real
+// watermarks. Climbs with a Boardsesh author are never in an artifact. They come
+// through the protected stream, which this import resets for the scope so it
+// replays from the epoch: a few small pages.
+//
 // Platform I/O is injected via `SnapshotSource`: the shared engine never fetches,
 // downloads, or gunzips — it ATTACHes a decompressed artifact file the adapter
 // hands it, imports the scope's rows, and stamps the resume checkpoints. The
@@ -29,6 +36,8 @@ import { markSchemaRefreshComplete } from './schema-refresh';
 import {
   compareCheckpoints,
   getCheckpointKey,
+  parseTopLevelCheckpoint,
+  resetScopeProtectedSyncState,
   rewindDeletionsCheckpoint,
   SCOPE_COMPLETE_PREFIX,
   setCheckpoint,
@@ -40,8 +49,11 @@ import { applyBulkImportPragmas, applyBusyTimeout } from '../db/pragmas';
 import { isDatabaseLockedError } from '../db/lock-errors';
 import {
   BOOTSTRAP_ATTEMPTS_PREFIX,
+  BOOTSTRAP_DONE_HEAL_VALUE,
+  BOOTSTRAP_DONE_VALUE,
   BOOTSTRAP_PAGED_FALLBACK_PREFIX,
   BOOTSTRAP_RETRY_PREFIX,
+  LEGACY_BOOTSTRAP_DONE_HEAL_VALUE,
   clearBootstrapPagedFallback,
   isTerminal,
   parseBootstrapRetryState,
@@ -469,7 +481,7 @@ export type BootstrapScopeMetadata = {
   readonly isBootstrapDone: boolean;
   /** The latest bootstrap decision for this scope selected the ordinary paged crawl. */
   readonly isPagedFallback: boolean;
-  /** Either board table has a checkpoint. */
+  /** Either board table has a reference cursor, as `getCheckpoint` would read it. */
   readonly hasBoardCheckpoint: boolean;
   /** The whole scope has reached the tail and can serve complete offline results. */
   readonly isScopeComplete: boolean;
@@ -590,7 +602,11 @@ export async function getBootstrapMetadataByScope(
         existing.isTerminal = isTerminal(retryState);
       }
     }
-    if (climbsCheckpointScopeKey || statsCheckpointScopeKey) existing.hasBoardCheckpoint = true;
+    // A row that only carries a protected cursor is not a board checkpoint: the
+    // engine reads it as none (`getCheckpoint`), and this must say the same.
+    if ((climbsCheckpointScopeKey || statsCheckpointScopeKey) && parseTopLevelCheckpoint(row.value)) {
+      existing.hasBoardCheckpoint = true;
+    }
     if (completeScopeKey) existing.isScopeComplete = true;
     metadataByScope.set(scopeKey, existing);
   }
@@ -615,9 +631,6 @@ export async function recordGradesBootstrapAttempt(db: SqlExecutor, scopeKey: st
   return next;
 }
 
-/** The `bootstrap-done:` value that records a heal over a partly-crawled catalog. */
-const BOOTSTRAP_DONE_HEAL_VALUE = 'heal';
-
 /**
  * Permanent "this scope was warmed from a snapshot" marker (cheap, unambiguous).
  *
@@ -626,9 +639,13 @@ const BOOTSTRAP_DONE_HEAL_VALUE = 'heal';
  * is read at scope completion — which is routinely a LATER cycle than the
  * import, since `board_climb_grades` is not a snapshot table and still crawls to
  * its tail. An in-memory per-cycle set would report `false` for exactly the
- * population the field exists to filter out. Legacy rows hold `'1'`, which reads
- * as done-and-not-healed — correct for every scope written before this marker
- * carried a value.
+ * population the field exists to filter out.
+ *
+ * It also says WHICH bundle imported. This one writes `BOOTSTRAP_DONE_VALUE` /
+ * `BOOTSTRAP_DONE_HEAL_VALUE`; an earlier one wrote `'1'` / `'heal'` and left a
+ * scope this bundle cannot resume from (see `isBootstrapDoneHonoured`). An older
+ * bundle reading the new values still sees a marker, and reads a new heal as
+ * not healed, which only affects one telemetry prop.
  */
 export async function markBootstrapDone(
   db: SqlExecutor,
@@ -637,7 +654,7 @@ export async function markBootstrapDone(
 ): Promise<void> {
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
-    options?.healed ? BOOTSTRAP_DONE_HEAL_VALUE : '1',
+    options?.healed ? BOOTSTRAP_DONE_HEAL_VALUE : BOOTSTRAP_DONE_VALUE,
   ]);
   // Write done first: if clearing the stale outcome fails, done still outranks
   // it in derivation. The reverse order has a crash window that mislabels a
@@ -645,11 +662,26 @@ export async function markBootstrapDone(
   await clearBootstrapPagedFallback(db, scopeKey);
 }
 
-export async function isBootstrapDone(db: SqlExecutor, scopeKey: string): Promise<boolean> {
-  const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [
+/**
+ * The raw `bootstrap-done:` value, or null when the scope has no marker. What
+ * `evaluateBootstrapEligibility` and `estimateScopeDownload` take, so both judge
+ * the marker by the same rule.
+ */
+export async function getBootstrapDoneMarker(db: SqlExecutor, scopeKey: string): Promise<string | null> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
   ]);
-  return row !== null;
+  return row?.value ?? null;
+}
+
+/** Whether the scope carries a `bootstrap-done:` marker at all, whoever wrote it. */
+export async function isBootstrapDone(db: SqlExecutor, scopeKey: string): Promise<boolean> {
+  return (await getBootstrapDoneMarker(db, scopeKey)) !== null;
+}
+
+/** Drop a marker the engine no longer honours, so the scope can import again. */
+export async function clearBootstrapDone(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${BOOTSTRAP_DONE_PREFIX}${scopeKey}`]);
 }
 
 /**
@@ -693,10 +725,8 @@ export async function clearReusedImportFailure(db: SqlExecutor, scopeKey: string
 
 /** Whether this scope's snapshot import was a heal over an existing partial crawl. */
 export async function wasBootstrapHealed(db: SqlExecutor, scopeKey: string): Promise<boolean> {
-  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
-    `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
-  ]);
-  return row?.value === BOOTSTRAP_DONE_HEAL_VALUE;
+  const marker = await getBootstrapDoneMarker(db, scopeKey);
+  return marker === BOOTSTRAP_DONE_HEAL_VALUE || marker === LEGACY_BOOTSTRAP_DONE_HEAL_VALUE;
 }
 
 // --- Column helpers -----------------------------------------------------------
@@ -808,6 +838,22 @@ async function scopedWatermarks(
   return { board_climbs: climbWatermark, board_climb_stats: statsWatermark };
 }
 
+/**
+ * Remove the scope's local rows the artifact no longer carries: reference rows
+ * the server deleted or moved out of the scope since this device last saw them.
+ *
+ * ONLY ROWS WITH NO OWNER (issue #6306). The watermark is the artifact's real
+ * one, so "at or below the watermark and absent from the artifact" is true of
+ * every climb with a Boardsesh author: an artifact never carries those. Without
+ * the `user_id IS NULL` guard this would delete the climber's own climbs, their
+ * unsynced drafts, and every other protected climb on the board, on each
+ * import. A stats row follows its climb, so it is spared with it.
+ *
+ * One protected kind still goes: a climb whose author deleted their account
+ * keeps no `user_id`, so nothing here can tell it from a stale reference row.
+ * The import's final transaction resets the scope's protected cursors, and the
+ * replay that follows brings those back.
+ */
 async function reconcileScope(
   txn: SqlExecutor,
   scope: OfflineBoardScope,
@@ -843,6 +889,7 @@ async function reconcileScope(
          WHERE main_climb.uuid = main_stats.climb_uuid
            AND main_climb.board_type = ?
            AND main_climb.layout_id = ?${localStatsSize}
+           AND main_climb.user_id IS NULL
        )
        AND NOT EXISTS (
          SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climb_stats snapshot_stats
@@ -862,6 +909,7 @@ async function reconcileScope(
   await txn.runAsync(
     `DELETE FROM main.board_climbs AS main_climb
      WHERE ${mainClimbScope.sql}
+       AND main_climb.user_id IS NULL
        AND ${checkpointLeqSql('main_climb.')}
        AND NOT EXISTS (
          SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climbs snapshot_climb
@@ -992,12 +1040,19 @@ async function importScopeBatched(
   // Stage the scope's climb UUIDs once, in autocommit. This pays the size-scoped
   // `json_each` membership parse ONE time instead of once per stats row, and
   // gives the climbs import a dense rowid to batch on.
+  //
+  // `user_id IS NULL` selects every row of a well-formed artifact, which holds
+  // reference climbs only. It is here so a file that is not well-formed cannot
+  // put another climber's climb on the device: an owned climb is never a
+  // reference row, the reference cursor this import stamps does not have to
+  // cover it, and the protected stream delivers it to a viewer who may see it.
+  // The stats import below reads this table, so their stats stay out with them.
   const climbScope = climbsScopeFilter(scope);
   await txn.execAsync(`DROP TABLE IF EXISTS temp.${IMPORT_STAGING_TABLE}`);
   await txn.execAsync(`CREATE TEMP TABLE ${IMPORT_STAGING_TABLE} (uuid TEXT PRIMARY KEY)`);
   await txn.runAsync(
     `INSERT OR IGNORE INTO temp.${IMPORT_STAGING_TABLE} (uuid)
-     SELECT uuid FROM ${SNAPSHOT_ALIAS}.board_climbs WHERE ${climbScope.sql}`,
+     SELECT uuid FROM ${SNAPSHOT_ALIAS}.board_climbs WHERE ${climbScope.sql} AND user_id IS NULL`,
     climbScope.params,
   );
   const stagedRow = await txn.getFirstAsync<{ max_rowid: number }>(
@@ -1275,8 +1330,10 @@ function defaultImportSleep(ms: number): Promise<void> {
 /**
  * Warm one board scope from a downloaded artifact. ATTACHes the file, integrity-
  * checks it, verifies the meta, then imports the scoped climbs + stats,
- * reconciles stale scoped rows absent from the artifact, and stamps both resume
- * checkpoints at the scoped imported-row watermarks.
+ * reconciles stale scoped rows absent from the artifact, and stamps both
+ * REFERENCE cursors at the scoped imported-row watermarks. The scope's protected
+ * cursors are reset in that same final transaction, so the pull that follows
+ * replays the protected streams from the epoch.
  *
  * NO LONGER ONE TRANSACTION (issue #4310). It is: an autocommit preamble
  * (COMMIT the wrapper's empty transaction, ATTACH, quick_check, meta verify,
@@ -1318,8 +1375,6 @@ export async function bootstrapScopeFromSnapshot(params: {
   scope: OfflineBoardScope;
   scopeKey: string;
   filePath: string;
-  /** Privacy-safe artifacts omit authored rows; replay authorized rows from epoch. */
-  replayFromEpoch?: boolean;
   onSchemaDrift?: SchemaDriftReporter;
   /**
    * The scope's CURRENT board-table checkpoints, when it already has any (the
@@ -1447,9 +1502,9 @@ export async function bootstrapScopeFromSnapshot(params: {
       // the caller dispatches on (SnapshotSchemaStaleError vs SnapshotWipedError
       // vs a counted failure). The `.catch` covers the already-open case.
       try {
-        const stampedWatermarks: Record<SnapshotTableName, SyncCheckpoint> = params.replayFromEpoch
-          ? { board_climbs: EPOCH_WATERMARK, board_climb_stats: EPOCH_WATERMARK }
-          : watermarks;
+        // A const alias: `watermarks` is a reassignable binding the closures
+        // below would otherwise see as possibly null again.
+        const stampedWatermarks: Record<SnapshotTableName, SyncCheckpoint> = watermarks;
 
         /** One short exclusive transaction: take the lock, re-check, write, let go. */
         const runExclusive = async (body: () => Promise<void>): Promise<void> => {
@@ -1540,6 +1595,14 @@ export async function bootstrapScopeFromSnapshot(params: {
               ? stampedWatermarks.board_climbs
               : stampedWatermarks.board_climb_stats;
           await rewindDeletionsCheckpoint(txn, deletionsReplayFrom ?? minWatermark);
+
+          // With the cursors, for the same crash reason: the reconcile above can
+          // have removed protected rows this device cannot recognise (see
+          // `reconcileScope`), and a protected cursor left past them would never
+          // fetch them again. `setCheckpoint` kept those cursors when it stamped
+          // the two reference ones, so they are cleared explicitly, for all of
+          // the scope's tables.
+          await resetScopeProtectedSyncState(txn, scopeKey);
         });
 
         // Hand the wrapper an empty transaction to close. Committing the final
@@ -1641,8 +1704,6 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   scope: OfflineBoardScope;
   scopeKey: string;
   filePath: string;
-  /** Privacy-safe artifacts omit authored rows; replay authorized rows from epoch. */
-  replayFromEpoch?: boolean;
   onSchemaDrift?: SchemaDriftReporter;
   /** Sleep seam for the lost-lock ladder. Defaults to a real setTimeout. */
   sleep?: (ms: number) => Promise<void>;
@@ -1761,7 +1822,6 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
 
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
-        if (params.replayFromEpoch) watermark = EPOCH_WATERMARK;
         await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
         await markSchemaRefreshComplete(txn, GRADES_TABLE, scopeKey, watermark);
         // COMMIT here rather than leaving it for the wrapper, so gradesLockMs

@@ -49,6 +49,10 @@ export {
   hasPurgeLanded,
   beginScopePurge,
   beginGlobalPurge,
+  // The narrow fence a privacy event raises (issue #6306): it stops protected
+  // sync pages and the saved-climb mirror, and nothing else.
+  beginProtectedWithdrawal,
+  hasProtectedWithdrawalLanded,
   setBackgrounded,
   isBackgrounded,
   // Subscribed by the mobile downloader so a transfer can record that the app
@@ -115,6 +119,7 @@ export type {
   ScopeDownloadStartInfo,
   ScopeDownloadStartReporter,
   ScopeDownloadPhaseBreakdown,
+  AudienceUnsupportedInfo,
   CoverageResetInfo,
   CoverageResetReporter,
   CoverageEvaluatedInfo,
@@ -143,6 +148,8 @@ export {
   HOLD_INDEX_GENERATION_PREFIX,
   clearBoardTypeHoldIndex,
   clearLayoutHoldIndex,
+  invalidateLayoutHoldIndex,
+  dropHoldIndexRowsForClimbs,
 } from './holds-index/hold-index';
 export type { HoldRow, HoldRowParser, EnsureHoldIndexOptions, EnsureHoldIndexResult } from './holds-index/hold-index';
 export {
@@ -180,6 +187,7 @@ export {
   getBootstrapMetadataByScope,
   markBootstrapDone,
   isBootstrapDone,
+  getBootstrapDoneMarker,
   MAX_GRADES_BOOTSTRAP_ATTEMPTS,
   SNAPSHOT_IMPORT_BATCH_ROWS,
   SnapshotWipedError,
@@ -215,6 +223,7 @@ export {
   EMPTY_BOOTSTRAP_RETRY_STATE,
   classifyBootstrapFailure,
   evaluateBootstrapEligibility,
+  isBootstrapDoneHonoured,
   isTerminal as isBootstrapRetryTerminal,
   getBootstrapAttempts,
   readBootstrapRetryState,
@@ -231,6 +240,12 @@ export type { SyncProgressSink, SchedulerTriggers, SchedulerOptions, DrainQueue 
 export {
   getCheckpoint,
   setCheckpoint,
+  // The protected stream's half of a board table's checkpoint row (issue #6306).
+  getProtectedCheckpoint,
+  setProtectedCheckpoint,
+  isScopeProtectedComplete,
+  resetProtectedSyncState,
+  LEGACY_FIRST_ASCENT_SCRUB_KEY,
   deleteCheckpoint,
   deleteAllCheckpoints,
   deleteUserCheckpoints,
@@ -247,9 +262,15 @@ export {
   // rewindDeletionsCheckpoint / compareCheckpoints / DELETIONS_CHECKPOINT_KEY
   // stay package-internal (only the bootstrap engine consumes them).
 } from './sync/checkpoints';
-export type { SyncCheckpoint } from './sync/checkpoints';
-export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './sync/table-config';
-export type { TableSyncConfig } from './sync/table-config';
+export type { ProtectedCheckpoint, SyncCheckpoint } from './sync/checkpoints';
+export {
+  TABLE_CONFIGS,
+  USER_DATA_TABLES,
+  BOARD_DATA_TABLES,
+  boardSyncStreamsFor,
+  hasReferenceStream,
+} from './sync/table-config';
+export type { BoardSyncStream, TableSyncConfig } from './sync/table-config';
 export {
   TABLE_INVALIDATE_KEYS,
   invalidateKeysForTable,

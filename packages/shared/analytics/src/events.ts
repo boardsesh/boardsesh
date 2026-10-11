@@ -856,6 +856,7 @@ export const SHARED_EVENTS = {
   // statsPullMs, gradesPullMs, gradesRows?, gradesArtifactRows?,
   // importVerifyMs?, importReconcileMs?, importRowsMs?, importLockMaxMs?,
   // importBatches?, gradesDownloadMs?, gradesVerifyMs?, gradesLockMs?,
+  // audienceMode, protectedPullMs, protectedRows?,
   // keepAwake, suspendedMs? (iOS only), offlineEngineEnabled }.
   // Every optional prop is ABSENT rather than faked when this cycle cannot vouch
   // for it — most often because the completing delta pull landed in a later cycle
@@ -906,6 +907,28 @@ export const SHARED_EVENTS = {
   //    grades artifact, whose transfer and (still unbatched) exclusive
   //    transaction were invisible to every phase field — most of the ~11s p50
   //    gap between `durationMs` and the sum of the phases.
+  //
+  // THE TWO STREAMS (issue #6306). A board table is pulled as a reference
+  // stream (rows that are public for every viewer, the same rows the artifact
+  // carries) and a protected stream (climbs with an author, replayed for this
+  // viewer). Three props, none of which says anything about a person:
+  //  - `audienceMode`: 'split' on every event from a two-stream bundle, absent
+  //    on every earlier one. It is the series marker: filter on it before
+  //    reading any `*PullMs` percentile.
+  //  - SERIES BREAK: on an `audienceMode = 'split'` event `climbsPullMs`,
+  //    `statsPullMs` and `gradesPullMs` time the REFERENCE stream only. Before,
+  //    each timed one stream that carried every row, so the two populations do
+  //    not compare. A spray wall has no reference rows and reports 0 for all
+  //    three; a board that imported an artifact reports close to 0.
+  //  - `protectedPullMs`: paged time on the protected streams this cycle, summed
+  //    over the scope's tables. Cycle-scoped like the other phase timings.
+  //  - `protectedRows`: rows the protected streams delivered this cycle. Present
+  //    only when every protected stream started from no cursor, so the number
+  //    is the whole set this viewer may see for the scope. ABSENT, never 0,
+  //    when any of them resumed from an earlier cycle. A count, never an id.
+  // The event still fires ONCE per download. A privacy change replays the
+  // protected streams and does not fire it again, so a second Completed for
+  // one scope means the board was removed and downloaded again.
   //
   // KEEP-AWAKE AND SUSPENSION (issue #4310), also on `Offline Board Download
   // Failed` for every reason except the three 'abandoned-*' ones:

@@ -8,6 +8,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  BOOTSTRAP_DONE_HEAL_VALUE,
+  BOOTSTRAP_DONE_VALUE,
   BOOTSTRAP_RETRY_GRACE_WINDOW_MS,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
@@ -310,7 +312,7 @@ describe('evaluateBootstrapEligibility', () => {
       retryState: state(),
       hasBoardCheckpoint: false,
       isScopeComplete: false,
-      isBootstrapDone: false,
+      bootstrapDoneMarker: null,
       now: NOW,
       ...patch,
     });
@@ -343,8 +345,53 @@ describe('evaluateBootstrapEligibility', () => {
     ).toMatchObject({ eligible: false, reason: 'scope-complete' });
   });
 
-  it('never re-runs for a scope that already imported an artifact', () => {
-    expect(evaluate({ isBootstrapDone: true })).toMatchObject({ eligible: false, reason: 'bootstrap-done' });
+  it('never re-runs for a scope this bundle imported an artifact for, while its reference cursor stands', () => {
+    for (const bootstrapDoneMarker of [BOOTSTRAP_DONE_VALUE, BOOTSTRAP_DONE_HEAL_VALUE]) {
+      expect(evaluate({ bootstrapDoneMarker, hasBoardCheckpoint: true })).toMatchObject({
+        eligible: false,
+        reason: 'bootstrap-done',
+      });
+    }
+  });
+
+  // Issue #6306. The marker used to be honoured whatever stood behind it, so a
+  // scope that kept it and lost its cursors could neither import nor crawl.
+  describe('a bootstrap-done marker on an incomplete scope', () => {
+    it('is not honoured without a climbs or stats reference cursor, so the scope imports again', () => {
+      // What an earlier bundle's privacy revalidation left: marker kept, every
+      // board checkpoint deleted. Also this bundle's own marker after an older
+      // bundle ran that revalidation on a rollback.
+      for (const bootstrapDoneMarker of ['1', 'heal', BOOTSTRAP_DONE_VALUE, BOOTSTRAP_DONE_HEAL_VALUE]) {
+        expect(evaluate({ bootstrapDoneMarker, hasBoardCheckpoint: false })).toEqual({ eligible: true, kind: 'fresh' });
+      }
+    });
+
+    it('is not honoured when an earlier bundle wrote it, even with a cursor: that import stamped the epoch', () => {
+      for (const bootstrapDoneMarker of ['1', 'heal']) {
+        expect(evaluate({ bootstrapDoneMarker, hasBoardCheckpoint: true })).toEqual({
+          eligible: true,
+          kind: 'heal-over-partial',
+        });
+      }
+    });
+
+    it('still waits out a cooldown and still respects a spent budget once the marker is set aside', () => {
+      const cooling = state({ transportFailures: 1, hasPriorSnapshotFailure: true, retryAfter: NOW + 1 });
+      expect(evaluate({ bootstrapDoneMarker: '1', retryState: cooling })).toMatchObject({ reason: 'cooling-down' });
+      const spent = state({ transportFailures: MAX_TRANSPORT_DOWNLOAD_FAILURES });
+      expect(evaluate({ bootstrapDoneMarker: '1', retryState: spent })).toMatchObject({ reason: 'terminal' });
+    });
+  });
+
+  it('leaves a complete scope alone whoever wrote its marker', () => {
+    for (const bootstrapDoneMarker of ['1', 'heal', BOOTSTRAP_DONE_VALUE, BOOTSTRAP_DONE_HEAL_VALUE, null]) {
+      for (const hasBoardCheckpoint of [true, false]) {
+        expect(evaluate({ bootstrapDoneMarker, hasBoardCheckpoint, isScopeComplete: true })).toMatchObject({
+          eligible: false,
+          reason: 'scope-complete',
+        });
+      }
+    }
   });
 
   it('holds a scope until its scheduled retry, then admits it', () => {
@@ -484,7 +531,7 @@ describe('clearRetryStateForUserRequest', () => {
         retryState: clearRetryStateForUserRequest(settled),
         hasBoardCheckpoint: true,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
         now: NOW,
       }),
     ).toEqual({ eligible: true, kind: 'heal-over-partial' });
@@ -734,7 +781,7 @@ describe('bootstrap-retry persistence', () => {
         retryState: reread,
         hasBoardCheckpoint: true,
         isScopeComplete: false,
-        isBootstrapDone: false,
+        bootstrapDoneMarker: null,
         now: NOW,
       }).eligible,
     ).toBe(true);

@@ -20,7 +20,7 @@
 // and cached it) and the scope's local checkpoint/attempt state.
 
 import type { SnapshotManifest, SnapshotManifestEntry } from './snapshot-manifest';
-import { evaluateBootstrapEligibility, type BootstrapRetryState } from './bootstrap-retry';
+import { evaluateBootstrapEligibility, isBootstrapDoneHonoured, type BootstrapRetryState } from './bootstrap-retry';
 import { ARTIFACT_SCHEMA_VERSION } from '../db/migrations';
 
 export type SnapshotDownloadEstimate =
@@ -103,7 +103,8 @@ export function estimateScopeDownload(input: {
   retryState: BootstrapRetryState;
   hasBoardCheckpoint: boolean;
   isScopeComplete: boolean;
-  isBootstrapDone: boolean;
+  /** The raw `bootstrap-done:` value (`getBootstrapDoneMarker`), or null. */
+  bootstrapDoneMarker: string | null;
   now: number;
   userRequested?: boolean;
 }): SnapshotDownloadEstimate {
@@ -111,8 +112,10 @@ export function estimateScopeDownload(input: {
   if (!manifest) return { kind: 'unknown' };
   if (!userRequested && !evaluateBootstrapEligibility(input).eligible) return { kind: 'unknown' };
   // Even a user-requested retry cannot download over a catalog that is already
-  // complete or already snapshot-warmed — the engine would refuse it too.
-  if (userRequested && (input.isScopeComplete || input.isBootstrapDone)) return { kind: 'unknown' };
+  // complete or already snapshot-warmed — the engine would refuse it too. A
+  // marker the engine no longer honours does not count: it clears that one and
+  // imports again.
+  if (userRequested && (input.isScopeComplete || isBootstrapDoneHonoured(input))) return { kind: 'unknown' };
 
   const entry = findSnapshotEntry(manifest, boardType, layoutId);
   if (!entry) return { kind: 'unknown' };

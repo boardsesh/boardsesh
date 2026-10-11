@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   downloaded: true,
   enabled: true,
   purged: false,
+  protectedWithdrawn: false,
+  revalidationPending: false,
   board: { uuid: 'wall', boardType: 'spray', layoutId: 12, sizeId: 12 },
   mirror: vi.fn(),
   request: vi.fn(),
@@ -12,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@boardsesh/offline-sync', () => ({
   capturePurgeToken: () => ({}),
   hasPurgeLanded: () => mocks.purged,
+  hasProtectedWithdrawalLanded: () => mocks.protectedWithdrawn,
   isSigningOut: () => false,
   isScopeDownloadComplete: () => Promise.resolve(mocks.downloaded),
   mirrorSavedClimb: mocks.mirror,
@@ -26,6 +29,7 @@ vi.mock('../../lib/auth-store', () => ({
 vi.mock('../../lib/graphql/client', () => ({ getOfflineSyncHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('../../lib/error-reporting', () => ({ reportHandledError: mocks.report }));
 vi.mock('../../lib/offline-engine', () => ({ isOfflineEngineEnabled: () => mocks.enabled }));
+vi.mock('../privacy-revalidation', () => ({ needsPrivacyRevalidation: () => mocks.revalidationPending }));
 import { mirrorWrittenClimb } from '../mirror-written-climb';
 const write = { boardType: 'spray', climbUuid: 'saved-climb', layoutId: 12, sizeId: 12, authEpoch: 7 };
 const documents = { viewerId: 'viewer', climb: { uuid: 'saved-climb' }, stats: [] };
@@ -35,6 +39,8 @@ beforeEach(() => {
   mocks.downloaded = true;
   mocks.enabled = true;
   mocks.purged = false;
+  mocks.protectedWithdrawn = false;
+  mocks.revalidationPending = false;
   mocks.request.mockResolvedValue({ syncClimbDocuments: documents });
   mocks.mirror.mockResolvedValue(true);
 });
@@ -79,6 +85,34 @@ describe('mirror a written climb on the downloaded active board', () => {
     await mirrorWrittenClimb(write);
     expect(mocks.mirror).not.toHaveBeenCalled();
     expect(mocks.report).not.toHaveBeenCalled();
+  });
+  // A mirrored climb is a protected row. A privacy event withdraws those, and
+  // its purge deletes them, so a response fetched before the event must not be
+  // written after it (issue #6306).
+  it('does not write a response a privacy event overtook while it was on the wire', async () => {
+    mocks.request.mockImplementation(async () => {
+      mocks.protectedWithdrawn = true;
+      return { syncClimbDocuments: documents };
+    });
+    await mirrorWrittenClimb(write);
+    expect(mocks.mirror).not.toHaveBeenCalled();
+    expect(mocks.report).not.toHaveBeenCalled();
+  });
+  it('hands the engine a write check that fails once a privacy event lands or a revalidation is pending', async () => {
+    await mirrorWrittenClimb(write);
+    const canMirror = mocks.mirror.mock.calls[0][4] as () => boolean;
+    expect(canMirror()).toBe(true);
+    // The engine re-checks under the write lock, where the purge may have won.
+    mocks.protectedWithdrawn = true;
+    expect(canMirror()).toBe(false);
+    mocks.protectedWithdrawn = false;
+    mocks.revalidationPending = true;
+    expect(canMirror()).toBe(false);
+  });
+  it('writes nothing while a privacy revalidation is pending', async () => {
+    mocks.revalidationPending = true;
+    await mirrorWrittenClimb(write);
+    expect(mocks.mirror).not.toHaveBeenCalled();
   });
   it('reports an unavailable canonical response without writing local rows', async () => {
     mocks.request.mockResolvedValue({ syncClimbDocuments: null });

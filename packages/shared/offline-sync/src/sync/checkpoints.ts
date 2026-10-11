@@ -1,12 +1,107 @@
 import type { SqlExecutor } from '../database';
+import { parseOfflineBoardKey } from '../offline-board-key';
 import { DELETIONS_COVERAGE_KEY } from './retention';
 import { LOCAL_USER_ID_KEY } from './local-user-owner';
-import { BOARD_DATA_TABLES } from './table-config';
+import { BOARD_DATA_TABLES, boardSyncStreamsFor } from './table-config';
 
 export type SyncCheckpoint = {
   updatedAt: string;
   syncSeq: string;
 };
+
+/**
+ * Where one board table's PROTECTED stream has got to for one scope (issue
+ * #6306). It lives inside the same `sync_meta` row as the reference cursor:
+ *
+ *     checkpoint:board_climbs:kilter:1:10
+ *     { "updatedAt": "...", "syncSeq": "...",
+ *       "protected": { "updatedAt": "...", "syncSeq": "...", "complete": true, "revision": 1 } }
+ *
+ * The top level is the reference cursor, in the exact shape every earlier
+ * bundle wrote and reads. `protected` is absent until the stream first writes,
+ * and absent means "replay from the epoch, not complete": the direction that
+ * costs a few small pages and can never skip a row.
+ *
+ * ONE ROW, NOT A SECOND KEY, and that is the rollback story. A bundle from
+ * before the split knows nothing about `protected`. Its `setCheckpoint` rewrote
+ * the whole row, its privacy revalidation deleted `checkpoint:<table>:%`, and
+ * its teardown deletes an exact key list. Each of those takes `protected` away
+ * with the row it sits in, so whatever an older bundle does, this one finds the
+ * cursor absent and replays. A cursor under a key of its own would have
+ * survived all three, sitting above rows the older bundle had just deleted.
+ */
+export type ProtectedCheckpoint = SyncCheckpoint & {
+  /**
+   * The stream has reached its tail since the cursor was last reset. Sticky: a
+   * later delta does not clear it, the way `scope-complete:` outlives the
+   * initial download. Only a reset does.
+   */
+  complete: boolean;
+  /**
+   * The table's refresh revision this cursor was pulled at, 0 when the table
+   * has none. A cursor behind the current revision is replayed from the epoch,
+   * which is how the protected stream picks up a newly synced column: it is a
+   * few pages, so it needs none of the reference stream's metered-link replay.
+   */
+  revision: number;
+  /**
+   * Wall-clock ms at which this stream was last pulled to its tail. Kept only
+   * for the streams the pull client rations (protected stats and grades, see
+   * `PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS`); absent everywhere else, and
+   * absent reads as "not pulled recently".
+   */
+  pulledAt?: number;
+};
+
+/**
+ * The top level of a row that exists only to carry a protected cursor. The
+ * stream it belongs to has no reference cursor: a spray table, or a board table
+ * whose reference stream has delivered nothing yet. `referenceUnset` is how this
+ * bundle tells that from a reference cursor genuinely stamped at the epoch (an
+ * artifact with no row for the scope). An older bundle reads the epoch and
+ * replays the table, which is correct for it.
+ */
+const UNSET_REFERENCE_CURSOR: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
+
+type StoredCheckpointRow = Partial<Record<'updatedAt' | 'syncSeq' | 'referenceUnset' | 'protected', unknown>>;
+
+function parseStoredCheckpoint(raw: string | null | undefined): StoredCheckpointRow | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as StoredCheckpointRow)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseProtectedCheckpoint(row: StoredCheckpointRow | null): ProtectedCheckpoint | null {
+  const stored = row?.protected;
+  if (typeof stored !== 'object' || stored === null) return null;
+  const { updatedAt, syncSeq, complete, revision, pulledAt } = stored as Record<string, unknown>;
+  // Anything that is not a cursor this bundle could have written reads as
+  // absent, never as a guess: a replay from the epoch is always safe.
+  if (
+    typeof updatedAt !== 'string' ||
+    !Number.isFinite(Date.parse(updatedAt)) ||
+    typeof syncSeq !== 'string' ||
+    !/^\d+$/.test(syncSeq) ||
+    typeof complete !== 'boolean' ||
+    typeof revision !== 'number' ||
+    !Number.isSafeInteger(revision)
+  ) {
+    return null;
+  }
+  return {
+    updatedAt,
+    syncSeq,
+    complete,
+    revision,
+    ...(typeof pulledAt === 'number' && Number.isFinite(pulledAt) ? { pulledAt } : {}),
+  };
+}
 
 /**
  * Checkpoint key for a table. For per-board tables `scope` is the encoded board
@@ -261,19 +356,187 @@ export async function clearScopeDownloadFunnelMarkers(db: SqlExecutor, scopeKey:
   await db.runAsync(`DELETE FROM sync_meta WHERE key IN (${keys.map(() => '?').join(', ')})`, keys);
 }
 
+/**
+ * The cursor stored at the top level of a checkpoint row. For a board table
+ * that is the REFERENCE stream's cursor; for a user table and the deletions
+ * stream it is the only cursor there is.
+ *
+ * Null when the row is missing, unreadable, or exists only to carry a protected
+ * cursor (`referenceUnset`). So "no checkpoint" keeps meaning what every caller
+ * already takes it to mean: this stream has consumed nothing.
+ */
 export async function getCheckpoint(db: SqlExecutor, key: string): Promise<SyncCheckpoint | null> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]);
-  if (!row) return null;
-  try {
-    return JSON.parse(row.value) as SyncCheckpoint;
-  } catch {
-    return null;
+  return parseTopLevelCheckpoint(row?.value);
+}
+
+/**
+ * `getCheckpoint`'s reading of a stored value, for a caller that already holds
+ * the row (the My Boards metadata batch), so the two cannot disagree about
+ * whether a row is a cursor.
+ */
+export function parseTopLevelCheckpoint(raw: string | null | undefined): SyncCheckpoint | null {
+  const stored = parseStoredCheckpoint(raw);
+  if (!stored || stored.referenceUnset === true) return null;
+  if (typeof stored.updatedAt !== 'string' || typeof stored.syncSeq !== 'string') return null;
+  return { updatedAt: stored.updatedAt, syncSeq: stored.syncSeq };
+}
+
+/**
+ * Write the top-level cursor, keeping a protected cursor the row already holds.
+ *
+ * One upsert rather than a read and a write, so it stays atomic for the callers
+ * that run it outside a transaction. `CASE` and not `AND`: SQLite evaluates the
+ * arms of a `CASE` in order, so `json_type` is never handed a value
+ * `json_valid` has just rejected, which would fail the statement, and with it
+ * the page it belongs to.
+ */
+export async function setCheckpoint(db: SqlExecutor, key: string, checkpoint: SyncCheckpoint): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+     ON CONFLICT (key) DO UPDATE SET value = CASE WHEN json_valid(sync_meta.value) THEN
+       CASE WHEN json_type(sync_meta.value, '$.protected') = 'object'
+         THEN json_set(excluded.value, '$.protected', json(json_extract(sync_meta.value, '$.protected')))
+         ELSE excluded.value END
+       ELSE excluded.value END`,
+    [key, JSON.stringify({ updatedAt: checkpoint.updatedAt, syncSeq: checkpoint.syncSeq })],
+  );
+}
+
+/** The protected stream's cursor for one board table and scope, or null when it must replay. */
+export async function getProtectedCheckpoint(db: SqlExecutor, key: string): Promise<ProtectedCheckpoint | null> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]);
+  return parseProtectedCheckpoint(parseStoredCheckpoint(row?.value));
+}
+
+/**
+ * Write the protected cursor, leaving the reference cursor beside it untouched.
+ * A row that does not exist yet (or holds something that is not a checkpoint) is
+ * created with an unset reference cursor.
+ */
+export async function setProtectedCheckpoint(
+  db: SqlExecutor,
+  key: string,
+  checkpoint: ProtectedCheckpoint,
+): Promise<void> {
+  const protectedCursor = {
+    updatedAt: checkpoint.updatedAt,
+    syncSeq: checkpoint.syncSeq,
+    complete: checkpoint.complete,
+    revision: checkpoint.revision,
+    ...(checkpoint.pulledAt === undefined ? {} : { pulledAt: checkpoint.pulledAt }),
+  };
+  await db.runAsync(
+    `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+     ON CONFLICT (key) DO UPDATE SET value = CASE WHEN json_valid(sync_meta.value) THEN
+       CASE WHEN json_type(sync_meta.value) = 'object'
+         THEN json_set(sync_meta.value, '$.protected', json(?))
+         ELSE excluded.value END
+       ELSE excluded.value END`,
+    [
+      key,
+      JSON.stringify({ ...UNSET_REFERENCE_CURSOR, referenceUnset: true, protected: protectedCursor }),
+      JSON.stringify(protectedCursor),
+    ],
+  );
+}
+
+/** The checkpoint keys of the tables one scope pulls a protected stream for. */
+function protectedCheckpointKeys(scopeKey: string): string[] {
+  const boardType = parseOfflineBoardKey(scopeKey)?.boardType;
+  if (!boardType) return [];
+  return BOARD_DATA_TABLES.filter((tableName) => boardSyncStreamsFor(tableName, boardType).includes('protected')).map(
+    (tableName) => getCheckpointKey(tableName, scopeKey),
+  );
+}
+
+/**
+ * Whether every protected stream of a scope has reached its tail since it was
+ * last reset: the device holds every protected row the server currently lets
+ * this viewer see.
+ *
+ * False after a privacy event until the replay finishes, and for a scope whose
+ * key cannot be parsed. Read gates and the holds index use it; a scope's
+ * `scope-complete:` marker does not depend on it once the first download is
+ * done, because a catalogue board is still worth serving from its reference
+ * rows and the climber's own.
+ */
+export async function isScopeProtectedComplete(db: SqlExecutor, scopeKey: string): Promise<boolean> {
+  const keys = protectedCheckpointKeys(scopeKey);
+  if (keys.length === 0) return false;
+  const rows = await db.getAllAsync<{ key: string; value: string }>(
+    `SELECT key, value FROM sync_meta WHERE key IN (${keys.map(() => '?').join(', ')})`,
+    keys,
+  );
+  const completeKeys = new Set(
+    rows
+      .filter((row) => parseProtectedCheckpoint(parseStoredCheckpoint(row.value))?.complete === true)
+      .map((row) => row.key),
+  );
+  return keys.every((key) => completeKeys.has(key));
+}
+
+// Both statements guard `json_*` behind `json_valid` in a `CASE`, for the reason
+// on `setCheckpoint`: an unreadable row must be skipped, not fail the caller's
+// transaction. For the privacy revalidation that would mean a purge that can
+// never commit.
+const DELETE_PROTECTED_ONLY_ROWS = `CASE WHEN json_valid(value) THEN json_extract(value, '$.referenceUnset') END = 1`;
+const HOLDS_PROTECTED_CURSOR = `CASE WHEN json_valid(value) THEN json_type(value, '$.protected') END IS NOT NULL`;
+
+/**
+ * Forget how far every protected stream has got, on every board, so the next
+ * pull replays them from the epoch. Reference cursors are left exactly where
+ * they are.
+ *
+ * Mobile's privacy revalidation runs this in the SAME transaction that deletes
+ * other climbers' rows. A protected cursor that outlived those rows would skip
+ * them for good, because the pull is a strict `>` keyset.
+ *
+ * A row that only ever carried a protected cursor is deleted outright rather
+ * than left as an empty shell. GLOB, not LIKE: `_` is a wildcard to LIKE, and
+ * GLOB keeps the prefix range scan on `sync_meta`'s primary key.
+ */
+export async function resetProtectedSyncState(db: SqlExecutor): Promise<void> {
+  for (const tableName of BOARD_DATA_TABLES) {
+    const scopedKeys = `checkpoint:${tableName}:*`;
+    await db.runAsync(`DELETE FROM sync_meta WHERE key GLOB ? AND ${DELETE_PROTECTED_ONLY_ROWS}`, [scopedKeys]);
+    await db.runAsync(
+      `UPDATE sync_meta SET value = json_remove(value, '$.protected') WHERE key GLOB ? AND ${HOLDS_PROTECTED_CURSOR}`,
+      [scopedKeys],
+    );
   }
 }
 
-export async function setCheckpoint(db: SqlExecutor, key: string, checkpoint: SyncCheckpoint): Promise<void> {
-  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, JSON.stringify(checkpoint)]);
+/**
+ * The same reset for ONE scope. The snapshot import runs it in its final
+ * checkpoint transaction: reconciling against an artifact removes local rows the
+ * artifact does not carry, and a few of those can be protected rows this device
+ * cannot tell apart from stale reference ones. Replaying the scope's protected
+ * streams puts them back.
+ */
+export async function resetScopeProtectedSyncState(db: SqlExecutor, scopeKey: string): Promise<void> {
+  const keys = BOARD_DATA_TABLES.map((tableName) => getCheckpointKey(tableName, scopeKey));
+  const keyList = keys.map(() => '?').join(', ');
+  await db.runAsync(`DELETE FROM sync_meta WHERE key IN (${keyList}) AND ${DELETE_PROTECTED_ONLY_ROWS}`, keys);
+  await db.runAsync(
+    `UPDATE sync_meta SET value = json_remove(value, '$.protected') WHERE key IN (${keyList}) AND ${HOLDS_PROTECTED_CURSOR}`,
+    keys,
+  );
 }
+
+/**
+ * Set once mobile's privacy revalidation has blanked the first-ascent names an
+ * earlier bundle stored. Those came through the single stream, where the server
+ * filled each name in for whoever was asking; the protected stream ships none.
+ *
+ * It sits under the stats checkpoint prefix on purpose, with a scope part no
+ * real scope key can equal (a scope key always has two colons). A bundle from
+ * before the split deletes `checkpoint:board_climb_stats:%` on every
+ * revalidation and then pulls stats again with viewer-dependent names. Taking
+ * this row with them is what makes the scrub run again when a newer bundle
+ * returns. Nothing reads it as a checkpoint.
+ */
+export const LEGACY_FIRST_ASCENT_SCRUB_KEY = getCheckpointKey('board_climb_stats', 'legacy-first-ascent-scrub');
 
 export async function deleteCheckpoint(db: SqlExecutor, key: string): Promise<void> {
   await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [key]);
@@ -350,6 +613,10 @@ export async function deleteUserCheckpoints(db: SqlExecutor): Promise<void> {
        ${preserveBoardTableClauses}`,
     preserveBoardTableParams,
   );
+  // The board rows survive as a shared cache, and so do their reference cursors.
+  // A protected cursor says how far THIS account's authorized rows were pulled,
+  // so it goes with the account: the next one replays from the epoch.
+  await resetProtectedSyncState(db);
   await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [DELETIONS_COVERAGE_KEY]);
   // The owner stamp goes too, for the same reason as the coverage marker: it
   // describes the departing account's rows, which this sign-out is deleting.

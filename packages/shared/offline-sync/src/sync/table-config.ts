@@ -53,6 +53,13 @@ export type TableSyncConfig = {
   /** Cumulative fields that must be present before coverage can be stamped. */
   refreshColumns?: readonly string[];
   /**
+   * The resolver takes the `audience` argument, so this table is pulled as two
+   * streams (see `boardSyncStreamsFor`). Set on `syncClimbs`, `syncClimbStats`
+   * and `syncClimbGrades`; `syncSprayWalls` has no such argument and one
+   * viewer-scoped stream.
+   */
+  takesAudience?: boolean;
+  /**
    * The timestamp half of this table's `(timestamp, sync_seq)` keyset cursor —
    * whatever the resolver passes as `updatedAtColumn` in
    * packages/backend/src/graphql/resolvers/sync/queries.ts. Almost every table
@@ -177,6 +184,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     // everywhere would let one such page reopen coverage on every catalogue.
     refreshColumnsByBoardType: { spray: ['retired_by_reset'] },
     queryName: 'syncClimbs',
+    takesAudience: true,
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMBS',
     isPerBoard: true,
@@ -259,6 +267,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   board_climb_stats: {
     queryName: 'syncClimbStats',
+    takesAudience: true,
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMB_STATS',
     isPerBoard: true,
@@ -280,6 +289,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   },
   board_climb_grades: {
     queryName: 'syncClimbGrades',
+    takesAudience: true,
     // The one table that does NOT cursor on updated_at — it has no such column.
     // Matches `updatedAtColumn: sql`board_climb_grades.computed_at`` in the
     // syncClimbGrades resolver.
@@ -382,3 +392,48 @@ export const USER_DATA_TABLES = Object.entries(TABLE_CONFIGS)
 export const BOARD_DATA_TABLES = Object.entries(TABLE_CONFIGS)
   .filter(([, config]) => config.isPerBoard)
   .map(([tableName]) => tableName);
+
+/**
+ * One of the two streams a per-board table is pulled through (issue #6306).
+ *
+ *  - `reference`: the public catalogue, the same rows for every viewer and
+ *    exactly the rows a snapshot artifact carries. Its cursor is the artifact's
+ *    watermark after an import, and a privacy event never resets it.
+ *  - `protected`: rows the server authorizes per viewer, which is every climb
+ *    with a Boardsesh author. Small, and the only stream a privacy event makes
+ *    the device replay.
+ */
+export type BoardSyncStream = 'reference' | 'protected';
+
+/**
+ * Board types with no reference set: nothing of theirs is ever in a snapshot
+ * artifact, so everything arrives through the protected stream. Mirrors the
+ * backend's `REFERENCE_EXCLUDED_BOARD_TYPES`, as a literal because this package
+ * has no dependency on `@boardsesh/db`.
+ *
+ * The two lists may drift without losing a row. The server answers `REFERENCE`
+ * with an empty page for a board type it excludes and `PROTECTED` with every
+ * row the viewer may see, so a board type missing here costs three empty
+ * requests a cycle and nothing else.
+ */
+const BOARD_TYPES_WITHOUT_REFERENCE: ReadonlySet<string> = new Set(['spray']);
+
+/** Whether a board type has rows that are public for every viewer. */
+export function hasReferenceStream(boardType: string): boolean {
+  return !BOARD_TYPES_WITHOUT_REFERENCE.has(boardType);
+}
+
+/**
+ * The streams one board scope pulls `tableName` through, in pull order.
+ *
+ * A table whose resolver takes `audience` splits in two, reference first. A
+ * table without it (`spray_walls`) is one viewer-scoped stream, so it is
+ * protected, and only a board type that has walls asks for it at all: the
+ * server answers every other board type with an empty page.
+ */
+export function boardSyncStreamsFor(tableName: string, boardType: string): readonly BoardSyncStream[] {
+  const config = TABLE_CONFIGS[tableName];
+  if (!config?.isPerBoard) return [];
+  if (!config.takesAudience) return hasReferenceStream(boardType) ? [] : ['protected'];
+  return hasReferenceStream(boardType) ? ['reference', 'protected'] : ['protected'];
+}

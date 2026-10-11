@@ -3,6 +3,14 @@
 // mobile local columns — see docs/sync-table-manifest.md), so they are typed as
 // `unknown` here. Timestamps are ISO-8601 strings, never a DateTime scalar.
 
+/**
+ * Which half of a board's climbs a per-board pull returns. `REFERENCE` is the
+ * climbs with no Boardsesh owner, author flag or privacy policy row (the
+ * snapshot artifact's row set, the same for every viewer); `PROTECTED` is the
+ * Boardsesh-authored climbs the caller may see. Absent means both in one stream.
+ */
+export type SyncAudience = 'REFERENCE' | 'PROTECTED';
+
 export type SyncCursorInput = {
   updatedAt?: string | null;
   syncSeq?: string | null;

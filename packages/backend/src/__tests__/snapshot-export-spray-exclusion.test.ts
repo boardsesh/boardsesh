@@ -14,14 +14,15 @@ type DiscoveredRow = { board_type: string; layout_id: number };
 
 /**
  * A stand-in for `postgres`'s tagged-template client. Every call — the two
- * predicate fragments and the SELECT itself — returns the same thenable row
- * list; the fragments are interpolated into a template the stub ignores. So the
- * stub cannot notice a regression in the SQL predicates — deliberately: the guard
+ * predicate fragments, the shared reference predicate inlined through
+ * `sql.unsafe`, and the SELECT itself — returns the same thenable row list; the
+ * fragments are interpolated into a template the stub ignores. So the stub
+ * cannot notice a regression in the SQL predicates — deliberately: the guard
  * under test is the TypeScript post-filter, which is the only spray exclusion.
  */
 function sqlClientReturning(rows: readonly DiscoveredRow[]): Sql {
   const stub = () => Promise.resolve([...rows]);
-  return stub as unknown as Sql;
+  return Object.assign(stub, { unsafe: stub }) as unknown as Sql;
 }
 
 const ROWS: DiscoveredRow[] = [

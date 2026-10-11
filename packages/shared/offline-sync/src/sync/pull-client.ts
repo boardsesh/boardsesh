@@ -4,13 +4,17 @@ import {
   TABLE_CONFIGS,
   USER_DATA_TABLES,
   BOARD_DATA_TABLES,
+  boardSyncStreamsFor,
   refreshColumnsFor,
   refreshRevisionFor,
+  type BoardSyncStream,
 } from './table-config';
 import {
   getCheckpoint,
+  getProtectedCheckpoint,
   compareCheckpoints,
   setCheckpoint,
+  setProtectedCheckpoint,
   getCheckpointKey,
   markScopeDownloadComplete,
   isScopeDownloadComplete,
@@ -30,7 +34,7 @@ import {
   REFRESH_START_CURSOR,
   type SchemaRefreshState,
 } from './schema-refresh';
-import type { SyncCheckpoint } from './checkpoints';
+import type { ProtectedCheckpoint, SyncCheckpoint } from './checkpoints';
 import {
   bootstrapScopeFromSnapshot,
   bootstrapScopeGradesFromSnapshot,
@@ -39,6 +43,8 @@ import {
   MAX_GRADES_BOOTSTRAP_ATTEMPTS,
   markBootstrapDone,
   isBootstrapDone,
+  getBootstrapDoneMarker,
+  clearBootstrapDone,
   wasBootstrapHealed,
   getReusedImportFailure,
   recordReusedImportFailure,
@@ -60,6 +66,7 @@ import {
   clearTransportFailures,
   deferHeal,
   evaluateBootstrapEligibility,
+  isBootstrapDoneHonoured,
   isTerminal,
   markBootstrapPagedFallback,
   nextRetryState,
@@ -95,11 +102,12 @@ import {
 } from './deletions-coverage';
 import { classifySqliteLockError } from '../db/lock-errors';
 import { runPullWrite } from './pull-write';
-import { writePullDocuments } from './document-writer';
+import { withoutFirstAscentCredit, writePullDocuments } from './document-writer';
 export { toSqliteValue } from './document-writer';
 import {
   ensureHoldIndex,
   clearLayoutHoldIndex,
+  invalidateHoldIndexBehindWrittenClimbs,
   removeClimbFromHoldIndex,
   type HoldRowParser,
 } from '../holds-index/hold-index';
@@ -116,6 +124,7 @@ import {
   getPurgeEpoch,
   beginScopePurge,
   hasPurgeLanded,
+  hasProtectedWithdrawalLanded,
   type PurgeToken,
 } from '../mutation-queue/drainer';
 import {
@@ -211,10 +220,27 @@ export type ScopeDownloadPhaseBreakdown = {
   artifactBytes: number;
   /** The artifact came off disk from an earlier cycle — no bytes crossed the network. */
   artifactReused: boolean;
-  /** Paged GraphQL crawl time per board table, the term the artifact does NOT cover. */
+  /**
+   * Paged GraphQL time per board table on the REFERENCE stream: what is left to
+   * fetch behind an artifact, or the whole public catalogue without one.
+   *
+   * SERIES BREAK at the two-stream sync (issue #6306). Before it, each of these
+   * timed one stream that carried every row. Authored climbs now arrive through
+   * the protected streams and are timed in `protectedPullMs`, so a spray wall,
+   * which has no reference rows at all, reports 0 for all three.
+   */
   climbsPullMs: number;
   statsPullMs: number;
   gradesPullMs: number;
+  /** Paged GraphQL time on the PROTECTED streams, summed across the scope's tables. */
+  protectedPullMs: number;
+  /**
+   * Rows the protected streams delivered this cycle. Present only when every
+   * one of them started from no cursor, so the number is the scope's whole
+   * protected set as this viewer may see it. ABSENT (never 0) when any stream
+   * resumed: the rows an earlier cycle wrote are not counted here.
+   */
+  protectedRows?: number;
   /**
    * Rows the PAGED grades crawl consumed this cycle — the denominator for
    * `gradesPullMs`. Present iff this cycle's crawl started from a cursor no
@@ -313,8 +339,8 @@ export type ScopeDownloadPhaseBreakdown = {
 
 /**
  * A zeroed breakdown: what a scope reports before any phase has run.
- * `gradesRows`, `gradesArtifactRows` and every `import*` / `grades*Ms` timing are
- * deliberately ABSENT rather than 0 — see their docs.
+ * `gradesRows`, `gradesArtifactRows`, `protectedRows` and every `import*` /
+ * `grades*Ms` timing are deliberately ABSENT rather than 0 — see their docs.
  */
 export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
   return {
@@ -326,13 +352,15 @@ export function emptyScopeDownloadPhases(): ScopeDownloadPhaseBreakdown {
     climbsPullMs: 0,
     statsPullMs: 0,
     gradesPullMs: 0,
+    protectedPullMs: 0,
   };
 }
 
 /**
  * Fired once a board scope's initial download completes this cycle (every
- * BOARD_DATA_TABLES entry reached its tail — the same gate as
- * `markScopeDownloadComplete`). Lets the app compare the two download paths in
+ * stream of every BOARD_DATA_TABLES entry reached its tail — the same gate as
+ * `markScopeDownloadComplete`). Once per download: the `scope-complete:` marker
+ * that guards it outlives a privacy event, which resets protected cursors only. Lets the app compare the two download paths in
  * the field: `method` is `'snapshot'` when a bootstrap warm-up ever succeeded
  * for this scope (the persisted `isBootstrapDone` marker — the import and the
  * completing delta pull may land in different cycles when connectivity drops
@@ -383,6 +411,14 @@ export type ScopeDownloadCompleteInfo = {
   rowCount?: number;
   downloadMs?: number;
   importMs?: number;
+  /**
+   * How the board tables were pulled. `'split'` is the reference and protected
+   * streams of issue #6306, and the only value this engine sends: a backend that
+   * rejects `audience` gets no board pull at all (`onAudienceUnsupported`), so no
+   * download can complete against one. The prop is what tells a completion by a
+   * two-stream bundle from an earlier one, which sends nothing here.
+   */
+  audienceMode: 'split';
   /** Where this cycle's time went. See ScopeDownloadPhaseBreakdown. */
   phases: ScopeDownloadPhaseBreakdown;
 };
@@ -591,6 +627,31 @@ export type SyncOptions = {
   /** Per-page side-effect sink for applied tombstones. See RowsDeletedSink. */
   onRowsDeleted?: RowsDeletedSink;
   /**
+   * Whether protected rows may be pulled right now. The platform answers false
+   * from the moment a privacy event withdraws them until its purge of the
+   * device's copies has committed (mobile: `needsPrivacyRevalidation()`).
+   *
+   * The engine's own fence (`beginProtectedWithdrawal`) already drops a page a
+   * cycle fetched BEFORE the event. This covers a cycle queued AFTER it, while
+   * the purge is still waiting on the network or the write lock: a protected
+   * page written then would be deleted a moment later, and its `complete` stamp
+   * would be reset with it. Checked before each request and again under the
+   * write lock.
+   *
+   * DEFAULTS TO `() => true`, like `isOnline`: a caller with no privacy gate
+   * behaves as before.
+   */
+  isProtectedSyncAllowed?: () => boolean;
+  /**
+   * The backend rejected the `audience` argument: it predates the two-stream
+   * sync, which only happens when it has been rolled back past it. The cycle
+   * pulls no board table (a board pull without `audience` would deliver other
+   * climbers' rows into the reference cursor) and carries on with everything
+   * else. Fires once per cycle that hits it; dedupe belongs in the platform
+   * binding, like `onCoverageEvaluated`.
+   */
+  onAudienceUnsupported?: (info: AudienceUnsupportedInfo) => void;
+  /**
    * Connectivity probe, mirroring `DrainOptions.isOnline` (drainer.ts). A pull
    * that starts with no connection can only fail every request it makes, and
    * the snapshot bootstrap phase would report each enabled-but-undownloaded
@@ -648,9 +709,10 @@ export type SyncOptions = {
    */
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
   /**
-   * Wall clock for the bootstrap retry ladder and progress throttle. Injected so
-   * both schedules are testable without fake timers fighting the SQLite double.
-   * Defaults to `Date.now`.
+   * Wall clock for the bootstrap retry ladder, the progress throttle and the
+   * rationing of protected stats and grades pulls. Injected so those schedules
+   * are testable without fake timers fighting the SQLite double. Defaults to
+   * `Date.now`.
    */
   now?: () => number;
   /** Jitter source for the retry ladder. Defaults to `Math.random`. */
@@ -662,6 +724,13 @@ export type SyncOptions = {
    * it lazily. See holds-index/hold-index.ts.
    */
   holdIndex?: HoldIndexSyncOptions;
+};
+
+/** Which pull first met a backend that does not know `audience`. See SyncOptions.onAudienceUnsupported. */
+export type AudienceUnsupportedInfo = {
+  tableName: string;
+  scopeKey: string;
+  cause: unknown;
 };
 
 export type HoldIndexSyncOptions = {
@@ -680,12 +749,58 @@ type BoardScope = OfflineBoardScope & { scopeKey: string };
 
 const PAGE_LIMIT = 500;
 
-function buildSyncQuery(queryName: string, isPerBoard: boolean): string {
+/**
+ * The longest a scope's protected stats and grades streams go unpulled when
+ * nothing says they changed.
+ *
+ * They are rationed because of what one request costs the server, not the
+ * phone. An empty protected page answers with the cursor it was sent, so a
+ * sparse stream's cursor never reaches the end of the table, and every pull of
+ * these two streams costs the same as a replay from the epoch: about 30,000
+ * buffer hits each on Kilter's largest layout (measured for #6322), where a
+ * reference tail check costs 2. A cycle runs on every foreground and reconnect,
+ * so pulling them each time would spend that for nothing nearly always.
+ *
+ * So they are pulled only when one of these holds (see `isProtectedPullDue`):
+ *  - the stream's protected cursor was reset or never completed: after a
+ *    privacy event, an import, or on a first download;
+ *  - the protected CLIMBS stream delivered a row this cycle, since a new or
+ *    edited climb is what usually brings stats and grades with it;
+ *  - this long has passed since the stream last reached its tail, which bounds
+ *    how stale an ascent count on an authored climb can get.
+ *
+ * The protected climbs stream is not rationed: it reads a partial index and is
+ * cheap at its tail. Neither is a wall's `spray_walls` row.
+ */
+export const PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS = 15 * 60_000;
+
+const RATIONED_PROTECTED_TABLES: ReadonlySet<string> = new Set(['board_climb_stats', 'board_climb_grades']);
+
+/**
+ * Whether a rationed protected stream has to be pulled this cycle, given the
+ * cursor it has stored. False only for a stream that is complete, at the
+ * table's current revision, and was pulled to its tail within the interval. A
+ * `pulledAt` in the future (the clock moved back) counts as due, so a stream
+ * can never be parked until a wrong clock catches up.
+ */
+function isProtectedPullDue(stored: ProtectedCheckpoint | null, revision: number, now: number): boolean {
+  if (!stored?.complete || stored.revision < revision || stored.pulledAt === undefined) return true;
+  const sincePulled = now - stored.pulledAt;
+  return sincePulled < 0 || sincePulled >= PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS;
+}
+
+function buildSyncQuery(queryName: string, isPerBoard: boolean, takesAudience: boolean): string {
   // Per-board pulls carry the board type plus optional layout/size scope so a
   // downloaded board is a fixed (boardType, layout, size) superset — all sets.
   // layoutId/sizeId are nullable server-side, so passing them undefined is a no-op.
-  const boardScopeParam = isPerBoard ? '$boardType: String!, $layoutId: Int, $sizeId: Int, ' : '';
-  const boardScopeArg = isPerBoard ? 'boardType: $boardType, layoutId: $layoutId, sizeId: $sizeId, ' : '';
+  //
+  // `audience` picks the reference or the protected stream (issue #6306). It is
+  // declared only for the tables whose resolver takes it. The operation name is
+  // unchanged, so anything keyed on it still matches.
+  const audienceParam = takesAudience ? '$audience: SyncAudience, ' : '';
+  const audienceArg = takesAudience ? 'audience: $audience, ' : '';
+  const boardScopeParam = isPerBoard ? `$boardType: String!, $layoutId: Int, $sizeId: Int, ${audienceParam}` : '';
+  const boardScopeArg = isPerBoard ? `boardType: $boardType, layoutId: $layoutId, sizeId: $sizeId, ${audienceArg}` : '';
   return `
     query ${queryName[0].toUpperCase()}${queryName.slice(1)}(${boardScopeParam}$cursor: SyncCursorInput, $limit: Int! = ${PAGE_LIMIT}) {
       ${queryName}(${boardScopeArg}cursor: $cursor, limit: $limit) {
@@ -742,7 +857,7 @@ const CONFIRM_SPRAY_WALL_VISIBILITY_QUERY = `query ConfirmSprayWallVisibility($l
 export function listSyncPullDocuments(): SyncPullDocument[] {
   const tableDocuments = Object.values(TABLE_CONFIGS).map((config) => ({
     operationName: `${config.queryName[0].toUpperCase()}${config.queryName.slice(1)}`,
-    document: buildSyncQuery(config.queryName, config.isPerBoard),
+    document: buildSyncQuery(config.queryName, config.isPerBoard, config.takesAudience === true),
   }));
   return [
     ...tableDocuments,
@@ -842,6 +957,62 @@ class RefreshColumnsMissingError extends Error {
   }
 }
 
+/**
+ * The backend this pull reached does not know the `audience` argument: it
+ * predates the two-stream sync (issue #6306). The backend ships before the
+ * client, so this means it was rolled back.
+ *
+ * Thrown in place of the validation error, before anything is written. pullSync
+ * catches it and pulls no board table for the rest of the cycle. It does not
+ * fall back to a pull without `audience`: that stream carries every row the
+ * viewer may see, other climbers' included, and writing it under the reference
+ * cursor would put rows on the device that no privacy event would replay.
+ */
+class SyncAudienceUnsupportedError extends Error {
+  constructor(tableName: string, cause: unknown) {
+    super(`Sync backend does not support the audience argument (${tableName})`, { cause });
+    this.name = 'SyncAudienceUnsupportedError';
+  }
+}
+
+/**
+ * Is this the GraphQL validation failure for the `audience` argument or its
+ * `SyncAudience` type?
+ *
+ * graphql-js reports both from `validate()`, before any resolver runs, with no
+ * `extensions.code`, so the message is all there is to match (the same reason
+ * `isUnknownBaselineArgumentError` in @boardsesh/queue-react matches text). Kept
+ * narrow: both names AND the validator's own phrase, so a real server error that
+ * merely mentions an audience is never taken for deploy skew. A transport client
+ * may quote the response inside its message as JSON, hence the optional
+ * backslash before each quote.
+ */
+function isSyncAudienceUnsupportedError(error: unknown): boolean {
+  const messages: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 3 && current instanceof Error; depth += 1) {
+    messages.push(current.message);
+    current = current.cause;
+  }
+  return messages.some((message) =>
+    /Unknown argument \\?"audience\\?"|Unknown type \\?"SyncAudience\\?"/.test(message),
+  );
+}
+
+/** The board scope a per-board pull is for, and which of the table's streams it reads. */
+type BoardStreamTarget = {
+  scope: BoardScope;
+  stream: BoardSyncStream;
+  /** See SyncOptions.isProtectedSyncAllowed. Read only by a protected pull. */
+  isProtectedSyncAllowed?: () => boolean;
+  /**
+   * For a rationed protected stream: the time to record once it reaches its
+   * tail (`ProtectedCheckpoint.pulledAt`). Left out for every other stream,
+   * which then writes nothing at an unchanged tail.
+   */
+  pulledAt?: number;
+};
+
 async function syncTable(
   db: OfflineDatabase,
   /** The cycle's batch; pullSync flushes it at the end of the phase. */
@@ -850,7 +1021,8 @@ async function syncTable(
   tableName: string,
   /** The purge token pullSync captured at CYCLE start — see `cycleAborted` there. */
   purgeToken: PurgeToken,
-  boardScope?: BoardScope,
+  /** Absent for a user table, which has one stream and no board scope. */
+  boardTarget?: BoardStreamTarget,
   onProgress?: (documentsProcessed: number) => void,
   onSchemaDrift?: SchemaDriftReporter,
   refresh?: { state: SchemaRefreshState; shouldContinue: () => Promise<boolean> },
@@ -861,6 +1033,9 @@ async function syncTable(
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
 
+  const boardScope = boardTarget?.scope;
+  const isProtectedStream = boardTarget?.stream === 'protected';
+
   // Derived ONCE here rather than at each guard, and from `boardScope` rather
   // than from a caller argument, so there is exactly one place a board-scoped
   // call could forget it (a forgotten namespace degrades to global-only, i.e.
@@ -869,23 +1044,59 @@ async function syncTable(
   const purgeKey = boardScope ? purgeNamespaceKey(boardScope) : undefined;
 
   const checkpointKey = getCheckpointKey(tableName, boardScope?.scopeKey);
-  const checkpoint = refresh?.state ?? (await getCheckpoint(db, checkpointKey));
   const revision = boardScope ? refreshRevisionFor(tableName, boardScope.boardType) : undefined;
+
+  // THE PROTECTED CURSOR lives beside the reference one, in the same row (see
+  // ProtectedCheckpoint). One written at an older refresh revision is not
+  // resumed: the stream is a few pages, so a column added since is picked up by
+  // replaying from the epoch rather than by the reference stream's separate
+  // unmetered replay. `complete` survives that replay, because the rows it
+  // vouches for are still on the device.
+  const protectedRevision = revision ?? 0;
+  const storedProtected = isProtectedStream ? await getProtectedCheckpoint(db, checkpointKey) : null;
+  let protectedState: ProtectedCheckpoint | null =
+    storedProtected && storedProtected.revision >= protectedRevision ? storedProtected : null;
+  const wasProtectedComplete = storedProtected?.complete === true;
+  /** False once a page lacked a column the current revision exists to deliver. */
+  let protectedCoversRevision = true;
+
+  const checkpoint: SyncCheckpoint | null = isProtectedStream
+    ? protectedState
+    : (refresh?.state ?? (await getCheckpoint(db, checkpointKey)));
+  // The schema-refresh bookkeeping below belongs to the reference stream. The
+  // protected stream carries its revision in its own cursor.
   const previousRefresh =
-    revision && boardScope ? await getSchemaRefreshState(db, tableName, boardScope.scopeKey) : null;
+    !isProtectedStream && revision && boardScope
+      ? await getSchemaRefreshState(db, tableName, boardScope.scopeKey)
+      : null;
   let fullDownload =
+    !isProtectedStream &&
     !refresh &&
     (!checkpoint ||
       (previousRefresh?.revision === revision && previousRefresh?.mode === 'download' && !previousRefresh.complete));
-  const canWrite = (): boolean => !isSigningOut() && !hasPurgeLanded(purgeToken, purgeKey) && !isBackgrounded();
+  // THE PROTECTED FENCE. A protected page is the server's answer to "what may
+  // this viewer see", as of when it was built. A privacy event after that makes
+  // the answer stale, and the event's purge deletes exactly the rows such a page
+  // would write, so the page must not land behind it. Two halves:
+  //  - the engine's epoch, captured when this cycle was queued, drops a page
+  //    fetched before the event;
+  //  - the platform probe keeps a cycle queued after the event from pulling
+  //    until the purge has committed.
+  // A reference page is never fenced: its rows are public for every viewer.
+  const protectedPullAllowed = (): boolean =>
+    !hasProtectedWithdrawalLanded(purgeToken) && (boardTarget?.isProtectedSyncAllowed?.() ?? true);
+  const canWrite = (): boolean =>
+    !isSigningOut() &&
+    !hasPurgeLanded(purgeToken, purgeKey) &&
+    !isBackgrounded() &&
+    (!isProtectedStream || protectedPullAllowed());
   let lastCursor: SyncCheckpoint = checkpoint ?? REFRESH_START_CURSOR;
   // Whether some earlier call already advanced this cursor, so the caller can
   // tell "these are all the rows" from "these are the tail of a crawl someone
-  // else started" (issue #4393). Sound because `setCheckpoint` below only runs
-  // after a NON-EMPTY page: a table that genuinely never had rows never leaves
-  // a checkpoint behind.
+  // else started" (issue #4393). Sound because a cursor is only written after a
+  // NON-EMPTY page, or, for the protected stream, at a tail this call reached.
   const resumedFromCheckpoint = checkpoint !== null;
-  const query = buildSyncQuery(config.queryName, config.isPerBoard);
+  const query = buildSyncQuery(config.queryName, config.isPerBoard, config.takesAudience === true);
 
   let cursor: SyncCursorInput | undefined = checkpoint
     ? { updatedAt: checkpoint.updatedAt, syncSeq: checkpoint.syncSeq }
@@ -919,20 +1130,42 @@ async function syncTable(
         variables.boardType = boardScope.boardType;
         variables.layoutId = boardScope.layoutId;
         variables.sizeId = boardScope.sizeId;
+        if (config.takesAudience) variables.audience = isProtectedStream ? 'PROTECTED' : 'REFERENCE';
       }
 
-      const response = await graphqlFetch<Record<string, SyncResult>>(query, variables);
+      let response: Record<string, SyncResult>;
+      try {
+        response = await graphqlFetch<Record<string, SyncResult>>(query, variables);
+      } catch (error) {
+        if (variables.audience !== undefined && isSyncAudienceUnsupportedError(error)) {
+          throw new SyncAudienceUnsupportedError(tableName, error);
+        }
+        throw error;
+      }
       const result = response[config.queryName];
 
-      // Re-check after the await: the wipe (or this scope's purge) may have
-      // started AND fully completed while this page was on the wire. This is the
-      // check that discards an in-flight page.
-      if (isSigningOut() || hasPurgeLanded(purgeToken, purgeKey) || isBackgrounded()) return finish(false);
+      // Re-check after the await: the wipe (or this scope's purge, or a privacy
+      // event for a protected page) may have started AND fully completed while
+      // this page was on the wire. This is the check that discards an in-flight
+      // page.
+      if (!canWrite()) return finish(false);
 
       assertSyncPageProgress(result, cursor);
       if (result.documents.length === 0) {
         if (onEmptyPage && (await onEmptyPage())) return finish(true);
         break;
+      }
+      // A reference row is public for every viewer, and the server's predicate
+      // for that starts with "has no owner". An owned climb here means the two
+      // sides disagree about what the reference stream is, and this device would
+      // be keeping another climber's climb under a cursor no privacy event
+      // resets. Refuse the page; the cycle fails and says so.
+      if (
+        boardTarget?.stream === 'reference' &&
+        tableName === 'board_climbs' &&
+        result.documents.some((document) => document.user_id !== null && document.user_id !== undefined)
+      ) {
+        throw new Error('Sync returned an owned climb in the reference stream');
       }
       const missingRefreshColumns = refreshColumnsFor(tableName, boardScope?.boardType).filter((column) =>
         result.documents.some((document) => !Object.prototype.hasOwnProperty.call(document, column)),
@@ -942,29 +1175,61 @@ async function syncTable(
       }
       // A later ordinary delta can also erase a previously repaired field.
       // Invalidate coverage even when this catalog already completed a refresh.
-      const clearDownloadCoverage = !refresh && missingRefreshColumns.length > 0;
+      const clearDownloadCoverage = !isProtectedStream && !refresh && missingRefreshColumns.length > 0;
       if (clearDownloadCoverage) fullDownload = false;
+      // The protected stream's version of the same thing: a page without the
+      // column cannot be stamped at the revision that promises it.
+      if (isProtectedStream && missingRefreshColumns.length > 0) protectedCoversRevision = false;
+
+      const documents =
+        isProtectedStream && tableName === 'board_climb_stats'
+          ? result.documents.map(withoutFirstAscentCredit)
+          : result.documents;
+      // Every protected climb or stats row is one a local mirror can have moved
+      // ahead of the page: the climber's own saved climb, written from the
+      // mutation's response. On a spray wall that is every climb, which is the
+      // rule this replaces.
+      const isMirrorableProtectedTable =
+        isProtectedStream && (tableName === 'board_climbs' || tableName === 'board_climb_stats');
 
       const committed = await upsertDocuments(
         db,
         tableName,
-        result.documents,
+        documents,
         config.localColumns,
         config.transientColumns ?? [],
         onSchemaDrift,
         {
           canWrite,
-          preserveNewerRows:
-            !!refresh ||
-            (boardScope?.boardType === 'spray' && (tableName === 'board_climbs' || tableName === 'board_climb_stats')),
+          preserveNewerRows: !!refresh || isMirrorableProtectedTable,
           afterUpsert: async (transaction) => {
             if (tableName === 'board_climbs' && boardScope?.boardType === 'spray') {
               // A targeted saved-row mirror can move the derived index ahead
               // of delayed ordinary or refresh rows. Rebuild bounded spray
               // layouts on next use, and fence in-flight index work atomically.
               await clearLayoutHoldIndex(transaction, boardScope.boardType, boardScope.layoutId);
+            } else if (tableName === 'board_climbs' && isProtectedStream && boardScope) {
+              // A catalogue board is far too big to rebuild per page, so only a
+              // climb the index is actually missing sends it back to a build.
+              await invalidateHoldIndexBehindWrittenClimbs(
+                transaction,
+                boardScope,
+                result.documents.flatMap((document) => (typeof document.uuid === 'string' ? [document.uuid] : [])),
+              );
             }
-            if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
+            if (isProtectedStream) {
+              protectedState = {
+                ...result.cursor,
+                complete: wasProtectedComplete || !result.hasMore,
+                revision: protectedCoversRevision ? protectedRevision : 0,
+                // Only the page that ends the stream may say it was pulled: a
+                // pull cut short after this page has not seen the tail.
+                ...(result.hasMore || boardTarget?.pulledAt === undefined ? {} : { pulledAt: boardTarget.pulledAt }),
+              };
+              await setProtectedCheckpoint(transaction, checkpointKey, protectedState);
+            } else if (!refresh) {
+              await setCheckpoint(transaction, checkpointKey, result.cursor);
+            }
             if (clearDownloadCoverage && boardScope) {
               await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
                 schemaRefreshKey(tableName, boardScope.scopeKey),
@@ -1042,6 +1307,41 @@ async function syncTable(
         completed = true;
       });
       if (!completed) return finish(false);
+    }
+
+    // THE PROTECTED TAIL. The last page that carried rows stamped `complete`
+    // itself. This covers the stream that ended on an empty page, including the
+    // one with no rows at all, which is every board the viewer sees no authored
+    // climb on. Skipped when the row already says so, which is every later
+    // cycle, so an unchanged board costs no write here. A rationed stream is the
+    // exception: it records the time of every pull, which is at most one small
+    // write per interval.
+    const protectedTail: ProtectedCheckpoint | null = isProtectedStream
+      ? {
+          ...lastCursor,
+          complete: true,
+          revision: protectedCoversRevision ? protectedRevision : 0,
+          ...(boardTarget?.pulledAt === undefined ? {} : { pulledAt: boardTarget.pulledAt }),
+        }
+      : null;
+    if (
+      protectedTail &&
+      !(
+        protectedState?.complete &&
+        protectedState.revision === protectedTail.revision &&
+        protectedState.pulledAt === protectedTail.pulledAt
+      )
+    ) {
+      let stamped = false;
+      await runPullWrite(db, async (transaction) => {
+        stamped = false;
+        // Under the write lock, like a page: a privacy event that began while
+        // the empty tail page was on the wire must not be answered "complete".
+        if (!canWrite()) return;
+        await setProtectedCheckpoint(transaction, checkpointKey, protectedTail);
+        stamped = true;
+      });
+      if (!stamped) return finish(false);
     }
 
     // Completion requires a terminal page; malformed empty/nonadvancing pages throw.
@@ -1830,7 +2130,6 @@ async function runBootstrapPhase(params: {
         scope,
         scopeKey: scope.scopeKey,
         filePath: gradesDownload.filePath,
-        replayFromEpoch: entry.privacyVersion === 1,
         onSchemaDrift,
       });
       // The artifact's own row count, reported alongside the paged crawl's
@@ -1948,7 +2247,22 @@ async function runBootstrapPhase(params: {
         const statsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_stats', scope.scopeKey));
         const hasBoardCheckpoint = climbsCheckpoint !== null || statsCheckpoint !== null;
         const isScopeComplete = await isScopeDownloadComplete(db, scope.scopeKey);
-        const isAlreadyBootstrapped = await isBootstrapDone(db, scope.scopeKey);
+        // A `bootstrap-done:` marker only counts while the import it records can
+        // still be resumed from (`isBootstrapDoneHonoured`). One that cannot is
+        // cleared here, and the scope is then judged as if it had never
+        // imported, which makes it eligible again. That is what un-sticks a
+        // board an earlier bundle left with the marker and no cursors (#6306).
+        const storedBootstrapDoneMarker = await getBootstrapDoneMarker(db, scope.scopeKey);
+        const isAlreadyBootstrapped = isBootstrapDoneHonoured({
+          bootstrapDoneMarker: storedBootstrapDoneMarker,
+          hasBoardCheckpoint,
+          isScopeComplete,
+        });
+        const bootstrapDoneMarker = isAlreadyBootstrapped ? storedBootstrapDoneMarker : null;
+        if (storedBootstrapDoneMarker !== null && !isAlreadyBootstrapped) {
+          await clearBootstrapDone(db, scope.scopeKey);
+          metadataSettled = true;
+        }
         // ONE clock reading for this scope's whole decision: the cooldown
         // comparison, the ladder it schedules, and the reported retryAfterMs must
         // all be made against the same instant or a slow download would report a
@@ -1976,7 +2290,7 @@ async function runBootstrapPhase(params: {
           retryState,
           hasBoardCheckpoint,
           isScopeComplete,
-          isBootstrapDone: isAlreadyBootstrapped,
+          bootstrapDoneMarker,
           now: evaluatedAt,
         });
         if (!verdict.eligible && verdict.reason === 'cooling-down' && retryState.retryAfter !== null) {
@@ -1998,7 +2312,17 @@ async function runBootstrapPhase(params: {
           // the same for a checkpointed scope so My Boards re-reads the row even
           // though this run did not mutate its markers.
           metadataSettled = true;
-          if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
+          // Only a cooldown may skip the crawl: the skip is a wait for the retry
+          // it scheduled. A `bootstrap-done` or `scope-complete` scope has no
+          // retry coming, yet it can be without a reference cursor: a stream that
+          // has delivered no row never writes one, and an earlier bundle's
+          // privacy revalidation deleted them all. Then `shouldSkipPagedPull`
+          // reads it as fresh and would skip it on every cycle, so the board
+          // never syncs again (issue #6306).
+          if (
+            verdict.reason === 'cooling-down' &&
+            shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })
+          ) {
             skipPagedPull.add(scope.scopeKey);
           }
           // RETRO-FIT (issue #4310): a scope with a COMPLETE climb catalog but
@@ -2008,6 +2332,12 @@ async function runBootstrapPhase(params: {
           // in exactly this state. Import them from the artifact instead. Gated
           // on the local checkpoint read, so once a scope has grades this costs
           // nothing, and the manifest is only fetched for scopes that need it.
+          //
+          // "Grades checkpoint" is the REFERENCE cursor, which is what the
+          // artifact stamps and what `getCheckpoint` returns. A privacy event
+          // resets the protected cursor in that row and leaves this one alone, so
+          // the 27 MB grades artifact is fetched once per scope and not again
+          // after each event (issue #6306).
           //
           // COMPLETENESS IS THE GATE, not the mere presence of a board
           // checkpoint. The import filters the artifact's grade rows through
@@ -2625,7 +2955,6 @@ async function runBootstrapPhase(params: {
             scope,
             scopeKey: scope.scopeKey,
             filePath: download.filePath,
-            replayFromEpoch: entry.privacyVersion === 1,
             onSchemaDrift,
             // Arms the watermark-regression guard on the heal path: the artifact
             // may not stamp a checkpoint BELOW what this scope already crawled.
@@ -3073,6 +3402,10 @@ async function performPullSync(
   const scopePurged = (scope: BoardScope): boolean => hasPurgeLanded(purgeToken, purgeNamespaceKey(scope));
   const retiredWalls = new Map<string, { scope: BoardScope; row: Record<string, unknown> }>();
   let allPullsReachedTail = true;
+  // Set by the first board pull the backend refuses for its `audience` argument
+  // (see SyncAudienceUnsupportedError). Every board pull after it in this cycle
+  // is skipped: they would all be refused the same way.
+  let audienceUnsupported = false;
   let retirementInterrupted = false;
   const retirementEpochs = new Map<string, number>();
   // Every invalidation of this cycle goes through one batch, flushed at the end
@@ -3126,6 +3459,7 @@ async function performPullSync(
 
     const enabledBoards = options?.enabledBoards ?? [];
     const onProgress = options?.onProgress;
+    const now = options?.now ?? Date.now;
 
     // Parse the enabled scope keys once; malformed keys are dropped (a stray value
     // can't crash the pull) so both the bootstrap phase and the paged board loop
@@ -3207,7 +3541,7 @@ async function performPullSync(
         bootstrapTimings,
         phaseTimings,
         options,
-        now: options.now ?? Date.now,
+        now,
         random: options.random ?? Math.random,
       });
       skipBootstrapPagedPull = bootstrapPhase.skipPagedPull;
@@ -3326,12 +3660,32 @@ async function performPullSync(
       await emitScopeDownloadStartOnce({ scopeKey, pathIntent: 'paged', artifactBytes: null });
       if (cycleAborted()) return reportInterruptedCycle();
       if (scopePurged(boardScope)) continue;
-      // A scope whose bootstrap failed this cycle (with attempts still left) skips
-      // its paged pull: a first-page checkpoint would permanently disqualify the
-      // snapshot path, so the next cycle retries the snapshot instead.
+      // A fresh scope waiting on a snapshot retry skips its paged pull: its
+      // bootstrap failed this cycle with budget left, or a cooldown an earlier
+      // cycle scheduled is still running. The crawl would be round trips the
+      // retry throws away, and its first-page checkpoint would turn that retry
+      // into a heal. Never a scope the bootstrap has finished with (#6306).
       if (skipBootstrapPagedPull.has(scopeKey)) continue;
+      // A backend that refused `audience` for an earlier scope refuses it for
+      // this one too. The scope keeps what it has and tries again next cycle.
+      if (audienceUnsupported) continue;
       let allTablesReachedTail = true;
-      for (const tableName of BOARD_DATA_TABLES) {
+      // Each table is pulled as its streams, reference before protected (see
+      // `boardSyncStreamsFor`). One flat list, so the `break`s below leave the
+      // scope whichever stream they are in. The reference stream goes first
+      // because it is the bulk of a first download; the protected one is a few
+      // pages and replays after every privacy event.
+      const streamPulls = BOARD_DATA_TABLES.flatMap((tableName) =>
+        boardSyncStreamsFor(tableName, boardScope.boardType).map((stream) => ({ tableName, stream })),
+      );
+      // For `protectedRows`: a number only when every protected stream replayed
+      // from the epoch this cycle, so it counts the scope's whole protected set.
+      let protectedRowsThisCycle = 0;
+      let protectedStreamsReplayed = true;
+      // Whether the protected climbs stream brought a row this cycle: one of
+      // the three reasons to pull the rationed streams behind it.
+      let protectedClimbsDelivered = false;
+      for (const { tableName, stream } of streamPulls) {
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope)) {
           // Not `continue` on the OUTER loop's terms: clearing the flag is what
@@ -3341,6 +3695,23 @@ async function performPullSync(
           allTablesReachedTail = false;
           break;
         }
+        // Protected stats and grades are rationed; see
+        // PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS. A stream left alone here
+        // stands as at its tail: it reached it within the interval, and that is
+        // what its stored `complete` says.
+        const isRationedStream = stream === 'protected' && RATIONED_PROTECTED_TABLES.has(tableName);
+        const pullStartedAt = now();
+        if (isRationedStream && !protectedClimbsDelivered) {
+          const storedProtected = await getProtectedCheckpoint(db, getCheckpointKey(tableName, scopeKey));
+          const revision = refreshRevisionFor(tableName, boardScope.boardType) ?? 0;
+          if (!isProtectedPullDue(storedProtected, revision, pullStartedAt)) {
+            protectedStreamsReplayed = false;
+            continue;
+          }
+        }
+        // One label per TABLE, whichever stream is running: the My Boards row
+        // matches these exactly (board-offline-state.ts) and has no use for the
+        // distinction.
         const tableLabel = `${tableName}:${scopeKey}`;
         onProgress?.({
           phase: 'board_data',
@@ -3354,29 +3725,57 @@ async function performPullSync(
         // in one shot) apart from board_climb_grades, which the artifact does not
         // carry at all and which therefore crawls page by page every time.
         const tableStartedAt = Date.now();
-        const { reachedTail, rowsProcessed, resumedFromCheckpoint } = await syncTable(
-          db,
-          invalidations,
-          graphqlFetch,
-          tableName,
-          purgeToken,
-          boardScope,
-          (tableProcessed) => {
-            totalDocuments = baseCount + tableProcessed;
-            onProgress?.({
-              phase: 'board_data',
-              currentTable: tableLabel,
-              documentsProcessed: totalDocuments,
-              currentTableProcessed: tableProcessed,
-            });
-          },
-          options?.onSchemaDrift,
-          undefined,
-          options?.onDocumentsPulled,
-          tableName === 'spray_walls' ? () => confirmWallRemoval(boardScope) : undefined,
-        );
+        let streamPull: Awaited<ReturnType<typeof syncTable>>;
+        try {
+          streamPull = await syncTable(
+            db,
+            invalidations,
+            graphqlFetch,
+            tableName,
+            purgeToken,
+            {
+              scope: boardScope,
+              stream,
+              isProtectedSyncAllowed: options?.isProtectedSyncAllowed,
+              pulledAt: isRationedStream ? pullStartedAt : undefined,
+            },
+            (tableProcessed) => {
+              totalDocuments = baseCount + tableProcessed;
+              onProgress?.({
+                phase: 'board_data',
+                currentTable: tableLabel,
+                documentsProcessed: totalDocuments,
+                currentTableProcessed: tableProcessed,
+              });
+            },
+            options?.onSchemaDrift,
+            undefined,
+            options?.onDocumentsPulled,
+            tableName === 'spray_walls' ? () => confirmWallRemoval(boardScope) : undefined,
+          );
+        } catch (error) {
+          if (!(error instanceof SyncAudienceUnsupportedError)) throw error;
+          // Nothing was written. Leave every board table alone for the rest of
+          // the cycle; deletions and the user tables are already done, and
+          // local reads carry on from what the device holds.
+          audienceUnsupported = true;
+          allTablesReachedTail = false;
+          allPullsReachedTail = false;
+          try {
+            options?.onAudienceUnsupported?.({ tableName, scopeKey, cause: error.cause });
+          } catch {
+            // A broken reporter must not turn a skipped pull into a failed cycle.
+          }
+          break;
+        }
+        const { reachedTail, rowsProcessed, resumedFromCheckpoint } = streamPull;
         const tableMs = Date.now() - tableStartedAt;
-        if (tableName === 'board_climbs') phases.climbsPullMs += tableMs;
+        if (stream === 'protected') {
+          phases.protectedPullMs += tableMs;
+          protectedRowsThisCycle += rowsProcessed;
+          if (resumedFromCheckpoint) protectedStreamsReplayed = false;
+          if (tableName === 'board_climbs' && rowsProcessed > 0) protectedClimbsDelivered = true;
+        } else if (tableName === 'board_climbs') phases.climbsPullMs += tableMs;
         else if (tableName === 'board_climb_stats') phases.statsPullMs += tableMs;
         else if (tableName === 'board_climb_grades') {
           // gradesPullMs accumulates unconditionally — it is a real measurement of
@@ -3401,7 +3800,8 @@ async function performPullSync(
       // Gate for local-first reads: only a scope whose climbs, stats AND grades
       // (every BOARD_DATA_TABLES entry) have all pulled to the tail may serve
       // searches — a first-page checkpoint would otherwise serve a sliver of the
-      // catalog as if it were everything.
+      // catalog as if it were everything. Both streams of each: the reference
+      // tail alone is the public catalogue without the climber's own climbs.
       //
       // `scope-complete:` is the marker scope-teardown.ts's invariant #1 calls
       // unrecoverable when it outlives its rows, and this block is the ONLY place
@@ -3413,6 +3813,11 @@ async function performPullSync(
       // table, so it cannot cover this.
       if (cycleAborted()) return reportInterruptedCycle();
       if (scopePurged(boardScope) || retiredWalls.has(scopeKey)) continue;
+      // A privacy event since this cycle was queued has reset, or is about to
+      // reset, the protected tails counted above. A scope that was already
+      // complete stays complete; a first download finishes on the next cycle,
+      // which the revalidation wakes.
+      if (allTablesReachedTail && hasProtectedWithdrawalLanded(purgeToken)) continue;
       if (allTablesReachedTail) {
         const wasScopeComplete = await isScopeDownloadComplete(db, scopeKey);
         // Checked again after the read, so the window between the decision and the
@@ -3447,6 +3852,7 @@ async function performPullSync(
         // running), and this event fires exactly once per scope — misreporting
         // that one event would permanently skew the rollout comparison.
         const timings = bootstrapTimings.get(scopeKey);
+        if (protectedStreamsReplayed) phases.protectedRows = protectedRowsThisCycle;
         options?.onScopeDownloadComplete?.({
           scopeKey,
           method: (await isBootstrapDone(db, scopeKey)) ? 'snapshot' : 'paged',
@@ -3457,6 +3863,7 @@ async function performPullSync(
           // Spread rather than set explicitly: absent when this cycle did not do
           // the import, which is the honest answer (see ScopeDownloadCompleteInfo).
           ...timings,
+          audienceMode: 'split',
           phases,
         });
       }
@@ -3467,8 +3874,16 @@ async function performPullSync(
 
     // Ordinary deltas retain priority and their own checkpoint, including on cellular.
     // Only already-complete catalogs need this conservative replay after an upgrade.
+    //
+    // REFERENCE STREAMS ONLY. This replay exists because re-crawling a board's
+    // whole public catalogue is too much for a metered link. A protected stream
+    // is a few pages and replays itself, on any link, when its cursor is behind
+    // the table's revision (see `syncTable`). So a spray wall, which has no
+    // reference stream, is never replayed here.
     for (const boardScope of boardScopes) {
       if (cycleAborted()) return reportInterruptedCycle();
+      // Every request below carries `audience` too.
+      if (audienceUnsupported) break;
       if (
         retiredWalls.has(boardScope.scopeKey) ||
         scopePurged(boardScope) ||
@@ -3476,6 +3891,7 @@ async function performPullSync(
       )
         continue;
       for (const tableName of BOARD_DATA_TABLES) {
+        if (!boardSyncStreamsFor(tableName, boardScope.boardType).includes('reference')) continue;
         const revision = refreshRevisionFor(tableName, boardScope.boardType);
         if (!revision) continue;
         const state = await getSchemaRefreshState(db, tableName, boardScope.scopeKey);
@@ -3491,7 +3907,7 @@ async function performPullSync(
             graphqlFetch,
             tableName,
             purgeToken,
-            boardScope,
+            { scope: boardScope, stream: 'reference' },
             undefined,
             options?.onSchemaDrift,
             {

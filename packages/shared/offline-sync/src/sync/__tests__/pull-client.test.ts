@@ -28,7 +28,7 @@ vi.mock('../table-config', async () => {
 import { pullSync, type SyncProgress, multiRowChunkSize } from '../pull-client';
 import { setSigningOut, setBackgrounded, beginGlobalPurge, beginScopePurge } from '../../mutation-queue/drainer';
 import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from '../checkpoints';
-import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
+import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES, boardSyncStreamsFor } from '../table-config';
 import { triggerSync, isSyncInFlight, __resetSyncSchedulerStateForTests } from '../sync-scheduler';
 
 type SqlCall = { sql: string; params: unknown[] };
@@ -305,7 +305,6 @@ describe('pullSync', () => {
     const callQueries = graphqlFetch.mock.calls.map((args: unknown[]) => args[0] as string);
 
     const userTableQueryNames = USER_DATA_TABLES.map((t) => TABLE_CONFIGS[t].queryName);
-    const boardTableQueryNames = BOARD_DATA_TABLES.map((t) => TABLE_CONFIGS[t].queryName);
 
     const deletionsIndex = callQueries.findIndex((q: string) => q.includes('syncDeletions'));
     expect(deletionsIndex).toBe(0);
@@ -317,12 +316,31 @@ describe('pullSync', () => {
       lastUserIndex = index;
     }
 
-    let lastBoardIndex = lastUserIndex;
-    for (const queryName of boardTableQueryNames) {
-      const index = callQueries.findIndex((q: string) => q.includes(queryName));
-      expect(index).toBeGreaterThan(lastBoardIndex);
-      lastBoardIndex = index;
-    }
+    // Then the board tables, each as its streams, reference before protected
+    // (issue #6306). A catalogue board has no wall, so `spray_walls` is not asked.
+    const expectedBoardPulls = BOARD_DATA_TABLES.flatMap((tableName) =>
+      boardSyncStreamsFor(tableName, 'kilter').map((stream) => [
+        TABLE_CONFIGS[tableName].queryName,
+        stream.toUpperCase(),
+      ]),
+    );
+    expect(expectedBoardPulls).toEqual([
+      ['syncClimbs', 'REFERENCE'],
+      ['syncClimbs', 'PROTECTED'],
+      ['syncClimbStats', 'REFERENCE'],
+      ['syncClimbStats', 'PROTECTED'],
+      ['syncClimbGrades', 'REFERENCE'],
+      ['syncClimbGrades', 'PROTECTED'],
+    ]);
+    const boardPulls = graphqlFetch.mock.calls.slice(lastUserIndex + 1).map((args: unknown[]) => {
+      const query = args[0] as string;
+      const variables = args[1] as Record<string, unknown>;
+      return [
+        Object.values(TABLE_CONFIGS).find((config) => query.includes(`${config.queryName}(`))?.queryName,
+        variables.audience,
+      ];
+    });
+    expect(boardPulls).toEqual(expectedBoardPulls);
 
     // Both board tables pulled to their tail → the scope's "initial download
     // complete" marker is written (the gate for local-first reads).
@@ -406,15 +424,19 @@ describe('pullSync', () => {
     const climbsConfig = TABLE_CONFIGS.board_climbs;
     const documents = Array.from({ length: 100 }, (_, index) =>
       Object.fromEntries(
-        climbsConfig.localColumns.map((column) => [column, column === 'uuid' ? `climb-${index}` : `${column}-value`]),
+        climbsConfig.localColumns.map((column) => [
+          column,
+          // A reference climb has no owner; every other column is filler.
+          column === 'uuid' ? `climb-${index}` : column === 'user_id' ? null : `${column}-value`,
+        ]),
       ),
     );
 
-    graphqlFetch.mockImplementation(async (query: string) => {
+    graphqlFetch.mockImplementation(async (query: string, variables: Record<string, unknown>) => {
       if (query.includes('syncDeletions')) {
         return makeDeletionsResult([], false);
       }
-      if (query.includes('syncClimbs')) {
+      if (query.includes('syncClimbs') && variables.audience === 'REFERENCE') {
         return makeSyncResult('syncClimbs', documents, false);
       }
       for (const config of Object.values(TABLE_CONFIGS)) {
@@ -451,8 +473,14 @@ describe('pullSync', () => {
     );
     expect(totalRowsInserted).toBe(100);
 
-    // Still one exclusive transaction for the whole page, batching or not.
-    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    // Still one exclusive transaction for the whole page, batching or not. The
+    // rest are the one-statement stamps that mark each protected stream's tail.
+    const protectedStreams = BOARD_DATA_TABLES.filter((tableName) =>
+      boardSyncStreamsFor(tableName, 'kilter').includes('protected'),
+    );
+    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
+      1 + protectedStreams.length,
+    );
   });
 
   it('updates checkpoint after each page', async () => {
@@ -549,15 +577,20 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
+    // One request per stream, both carrying the scope.
     const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
-    expect(climbsCalls).toHaveLength(1);
-    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
+    expect(climbsCalls.map((args: unknown[]) => args[1])).toEqual([
+      expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5, audience: 'REFERENCE' }),
+      expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5, audience: 'PROTECTED' }),
+    ]);
 
     const statsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) =>
       (args[0] as string).includes('syncClimbStats'),
     );
-    expect(statsCalls).toHaveLength(1);
-    expect(statsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
+    expect(statsCalls.map((args: unknown[]) => args[1])).toEqual([
+      expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5, audience: 'REFERENCE' }),
+      expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5, audience: 'PROTECTED' }),
+    ]);
   });
 
   it('skips malformed board scope keys without crashing the pull', async () => {
@@ -578,8 +611,10 @@ describe('pullSync', () => {
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter', 'a:b:c', 'tension:8:10'] });
 
     const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
-    expect(climbsCalls).toHaveLength(1);
-    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'tension', layoutId: 8, sizeId: 10 }));
+    expect(climbsCalls).toHaveLength(2); // the one well-formed scope's two streams
+    for (const [, variables] of climbsCalls) {
+      expect(variables).toEqual(expect.objectContaining({ boardType: 'tension', layoutId: 8, sizeId: 10 }));
+    }
   });
 
   it('only syncs enabled boards', async () => {
@@ -598,7 +633,7 @@ describe('pullSync', () => {
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
     const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
-    expect(climbsCalls).toHaveLength(1);
+    expect(climbsCalls).toHaveLength(2); // its two streams
     expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
 
     const allBoardTypeVars = graphqlFetch.mock.calls
@@ -967,10 +1002,14 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5', 'tension:8:10'] });
 
+    // Each board's reference stream, then its protected one, before the next board.
     const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
-    expect(climbsCalls).toHaveLength(2);
-    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
-    expect(climbsCalls[1][1]).toEqual(expect.objectContaining({ boardType: 'tension', layoutId: 8, sizeId: 10 }));
+    expect(climbsCalls.map((args: unknown[]) => args[1])).toEqual([
+      expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5, audience: 'REFERENCE' }),
+      expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5, audience: 'PROTECTED' }),
+      expect.objectContaining({ boardType: 'tension', layoutId: 8, sizeId: 10, audience: 'REFERENCE' }),
+      expect.objectContaining({ boardType: 'tension', layoutId: 8, sizeId: 10, audience: 'PROTECTED' }),
+    ]);
   });
 
   it('skips board data entirely when enabledBoards is empty', async () => {

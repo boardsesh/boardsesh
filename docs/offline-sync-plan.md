@@ -503,6 +503,60 @@ type Query {
 }
 ```
 
+The block above is the original design. The per-board pulls have since gained
+arguments: `layoutId` and `sizeId` (see **Per-board selective sync** below),
+`syncClimbGrades`, and an optional `audience: SyncAudience` on `syncClimbs`,
+`syncClimbStats` and `syncClimbGrades`. The current signatures are in
+[`sync-table-manifest.md`](sync-table-manifest.md).
+
+`audience` splits a board's pull into two streams with separate cursors (#6306):
+
+- `REFERENCE`: climbs with no Boardsesh owner, not Boardsesh-authored, and with
+  no privacy policy row, plus their stats and grades. The same rows for every
+  viewer, and exactly the rows a snapshot artifact carries. Selected by
+  ownership, not visibility: unowned drafts, unlisted and moderation-hidden
+  climbs are included, as they are with no audience. Always empty for spray
+  walls.
+- `PROTECTED`: climbs with a Boardsesh author that the caller may see, plus their
+  stats and grades. On a spray wall, every climb the caller may see there.
+- omitted: both in one stream, which is what every client older than the split
+  sends. That response is unchanged.
+
+The partition rule is that the two streams are disjoint and together equal the
+pull with no audience. See
+[Sync audiences](board-snapshots.md#sync-audiences-6306) for the shared predicate,
+the index and the query shapes.
+
+The client pulls each board table as its reference stream and then its protected
+stream, and a scope is complete only when every stream has reached its tail. What
+that buys (#6306):
+
+- **A privacy change replays only the protected streams.** The revalidation deletes
+  other climbers' rows and resets the protected cursors in one transaction. The
+  reference rows, their cursors, the `scope-complete:` marker and the artifacts
+  stay, so a downloaded board stays downloaded. Before the split the same event
+  reset every cursor and purged every enabled scope, and a privacy event arrives
+  on every launch and reconnect: Kilter's main layout started its roughly 2,200
+  pages over each time.
+- **A download in progress survives the event.** The engine's global and per-scope
+  purge epochs are no longer bumped by it. A narrower fence takes their place:
+  `beginProtectedWithdrawal()` moves an epoch that only protected page writes and
+  the two saved-climb mirrors check, inside their own transactions, and
+  `SyncOptions.isProtectedSyncAllowed` keeps protected pulls from starting until
+  the deletion has committed. Reference pages, artifact transfers and imports run
+  through it untouched.
+- **Protected stats and grades are rationed** to one pull per scope per
+  `PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS` (15 minutes) unless the protected
+  state was reset or the protected climbs stream delivered a row that cycle. An
+  ordinary cycle makes no protected stats or grades request.
+- **A backend without `audience`** (a rollback) gets no board-table pull at all:
+  the cycle skips them, reports once per launch through
+  `SyncOptions.onAudienceUnsupported`, and carries on with the user tables.
+
+The cursor layout, the import's real watermark, the marker rule and the
+mixed-version table are in
+[The client half](board-snapshots.md#the-client-half-two-cursors-per-table-6306).
+
 Each resolver queries Postgres using the composite cursor:
 
 ```sql
@@ -733,7 +787,7 @@ Both manual entry points (**More → Sign out** and the user drawer's **Log out*
 
 ### Per-board selective sync
 
-User data (ticks, playlists, favorites, follows) syncs on native with no per-board opt-in. Board reference data syncs per-**scope**, where a scope is one `(boardType, layoutId, sizeId)` a user made available offline in **My Boards** (the offline toggle writes an encoded `"boardType:layoutId:sizeId"` key into `syncEnabledBoards`). Downloading always pulls **all sets** for that layout/size — a fixed superset that stays cacheable across users. `syncClimbs`/`syncClimbStats` take optional `layoutId`/`sizeId` args to scope the pull server-side (see the manifest); `sizeId` is ignored for moonboard. Checkpoints are keyed by `(tableName, scopeKey)` so each scope resumes from its own cursor. They survive a forced sign-out (the rows do too) so the next sign-in doesn't re-crawl; an explicit sign-out deletes both (see **Sign-out and queued writes** above).
+User data (ticks, playlists, favorites, follows) syncs on native with no per-board opt-in. Board reference data syncs per-**scope**, where a scope is one `(boardType, layoutId, sizeId)` a user made available offline in **My Boards** (the offline toggle writes an encoded `"boardType:layoutId:sizeId"` key into `syncEnabledBoards`). Downloading always pulls **all sets** for that layout/size — a fixed superset that stays cacheable across users. `syncClimbs`/`syncClimbStats` take optional `layoutId`/`sizeId` args to scope the pull server-side (see the manifest); `sizeId` is ignored for moonboard. They and `syncClimbGrades` also take an optional `audience` (`REFERENCE` or `PROTECTED`) that splits the scope's rows into two disjoint streams, and the client always sends it (see **Pull queries** above). Checkpoints are keyed by `(tableName, scopeKey)` so each scope resumes from its own cursor; one row holds the reference cursor at its top level and the protected cursor in a nested `protected` object. They survive a forced sign-out (the rows do too) so the next sign-in doesn't re-crawl; an explicit sign-out deletes both (see **Sign-out and queued writes** above).
 
 **Turning the toggle off does not delete anything** — the rows and checkpoints are the expensive shared cache, so re-enabling resumes from the checkpoint instead of re-crawling. Reclaiming that disk space is a separate, explicit action: **More → Storage** (`StorageSettingsScreen`), which lists every scope that has rows (not just the enabled ones — a forced sign-out clears `syncEnabledBoards` while deliberately keeping the rows, and a kill-switch rollback leaves rows with the toggle unavailable, so "has rows, not enabled" is a real state, never an orphan to auto-reap). Removal goes through `removeOfflineBoard` (`packages/mobile/src/offline/remove-offline-board.ts`) → `removeBoardScopeData` (`@boardsesh/offline-sync`'s `sync/scope-teardown.ts`), which drops the scope's rows **and every `sync_meta` marker describing them in one exclusive transaction**: a surviving checkpoint would make the strict-`>` delta pull resume past the deleted rows and never revisit them, permanently gutting the catalog while `scope-complete:` still advertised it as whole. See that module's header for the full hazard list. A full `VACUUM` afterwards is what actually returns the pages to the filesystem (`db/vacuum.ts`).
 

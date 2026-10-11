@@ -631,7 +631,11 @@ Boards, which restores both budgets behind the same size-disclosing confirm dial
 deadline wakes a drain+pull cycle; later scope deadlines remain armed, ad-hoc download triggers feed the
 same coordinator, and scheduler cleanup cancels its alarms. The paged skip is still a grace window: only a
 FRESH, non-terminal scope whose retry lands within 30 minutes waits for it. Past that window the crawl runs,
-and a scope that already holds rows keeps crawling while a failed heal cools down. Failures outside snapshot
+and a scope that already holds rows keeps crawling while a failed heal cools down. A `scope-complete:` or
+`bootstrap-done:` scope is never skipped: it has no retry to wait for, and it can be without a board
+checkpoint (the privacy revalidation of a bundle from before the two-stream sync deletes them, and an
+empty table never writes one), so treating it as fresh stopped the board syncing for good (issue #6306).
+Failures outside snapshot
 bootstrap (queue drain, deletions, paged GraphQL, or SQLite) arm a separate 30-second cycle retry, so a
 foregrounded connected app does not depend on a later reconnect or foreground event to resume.
 
@@ -697,7 +701,7 @@ sync if the code comment changes):
 
 | Condition                                                            | Budget burned           | Result this cycle                                                                         |
 | -------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------- |
-| `scope-complete:` / `bootstrap-done:`                                | —                       | not eligible → normal delta/paged pull                                                    |
+| `scope-complete:` / an honoured `bootstrap-done:` (marker rule below) | —                       | not eligible → normal delta/paged pull                                                    |
 | incomplete scope with board checkpoints                              | —                       | heal on unmetered; a size-confirmed re-enable also heals on metered                       |
 | `isOnline()` reports offline                                         | —                       | whole cycle skipped before the phase starts; retried on reconnect                         |
 | a scheduled retry has not elapsed                                    | —                       | not eligible this cycle; crawl runs unless the retry is inside the 30-minute grace window |
@@ -1086,8 +1090,12 @@ pre-import empty result set.
     pull — an apples-to-apples comparison against a full paged crawl). A HEALED scope carries
     `bootstrapHealed: true` and must be filtered out of those percentiles: its duration excludes the paged
     work earlier cycles already did. Both fields read the persisted `bootstrap-done:` row (its presence for
-    `method`, its value — `'heal'` vs `'1'` — for `bootstrapHealed`) rather than anything in-memory, because
-    completion routinely lands cycles after the import.
+    `method`, its value — `'heal2'` or the older `'heal'` against `'2'` or `'1'` — for `bootstrapHealed`)
+    rather than anything in-memory, because completion routinely lands cycles after the import. A privacy
+    event replays the protected streams of a finished board and does not fire the event again. The
+    two-stream props (`audienceMode`, `protectedPullMs`, `protectedRows`) and the series break they put in
+    `climbsPullMs` / `statsPullMs` / `gradesPullMs` are documented on the event in
+    `packages/shared/analytics/src/events.ts`.
   - Sentry handled errors, `tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' }`, for every
     bootstrap failure (manifest/download/import stage, with
     `scopeKey`/`stage`/`attempt`/`expected`/`cause`/`causeName` in `extra`) and for the gzip-sniff failure
@@ -1723,9 +1731,179 @@ must not import the filtered dataset with their old high-watermark logic: that
 would permanently skip older authorized authored rows. The separate reference
 catalog manifest retains its own format version. Old entries
 are rebuilt and excluded from manifest merges until rebuilt. Clients reject older
-artifacts and replay live scope sync from epoch after import so the snapshot
-watermark cannot skip older authorized authored climbs. This temporarily duplicates
-reference downloads; a separate authored-content cursor can optimize it later.
+artifacts: `verifySnapshotMeta` refuses anything but format 2 before a row is written.
+A bundle from before the two-stream sync then replays live scope sync from epoch after
+an import, so the snapshot watermark cannot skip older authorized authored climbs, at
+the cost of downloading the reference rows twice. The sync audiences below removed
+that replay.
+
+### Sync audiences (#6306)
+
+`syncClimbs`, `syncClimbStats` and `syncClimbGrades` take an optional
+`audience: SyncAudience` argument that splits a board's pull into two streams, each
+with its own cursor:
+
+| Audience | Rows | Depends on the viewer |
+| --- | --- | --- |
+| `REFERENCE` | Climbs with no Boardsesh owner, not Boardsesh-authored, and with no privacy policy row, plus their stats and grades. Exactly the rows an artifact carries. | No |
+| `PROTECTED` | Climbs that have, or once had, a Boardsesh author and that the caller may see, plus their stats and grades. | Yes |
+| omitted | Both, in one stream. What every client older than the split sends, and unchanged for them. | Yes |
+
+`REFERENCE` is selected by ownership, not by visibility. An unowned climb that is a
+draft, unlisted, or hidden by moderation is in it, exactly as it is in the snapshot
+artifact and in the pull with no audience today. The set is the same for every
+viewer; that is not a claim that every row in it is listed. The split does not change
+which rows these are.
+
+The partition rule: the two streams are disjoint, and together they are exactly the
+rows the same request returns with no audience. A climb the caller may see that is
+not a reference climb always has, or once had, an author. With no owner, no author
+flag and no policy row it would be a reference climb, and with a policy row and no
+owner nobody may see it.
+
+One predicate decides what a reference climb is: `publicReferenceClimbSql` in
+`packages/db/src/queries/privacy.ts`. The per-layout export, the catalogue export and
+the `REFERENCE` stream all build their SQL from it, and all three take spray from
+`REFERENCE_EXCLUDED_BOARD_TYPES` in the same file. That is what lets a phone resume
+`REFERENCE` from an artifact's watermark: a row at or below the watermark that the
+stream carried and the artifact did not would never be delivered.
+`snapshot-export-golden.test.ts` compares an artifact against a `REFERENCE` pull row
+for row.
+
+Details that differ by stream:
+
+- **Spray walls have no reference set.** `REFERENCE` answers an empty page for any
+  spray layout without checking who is asking, so it cannot reveal which walls exist.
+  `PROTECTED` on a wall is every climb the caller may see there, behind the same
+  by-layout gate as before.
+- **First-ascent credit.** `REFERENCE` stats ship the stored manufacturer
+  `fa_username` and `fa_at`. `PROTECTED` stats ship `NULL` for both, on every board
+  type: a name there depends on who is asking, and a phone keeps its own protected rows
+  across a privacy event. No offline reader selects either column.
+- **Index.** `PROTECTED` reads `board_climbs` through the partial index
+  `board_climbs_protected_sync_idx (board_type, layout_id, updated_at, sync_seq) WHERE
+  (user_id IS NOT NULL OR is_boardsesh_authored)`. Kilter 1 has 3,366 such climbs among
+  387,101 (production standby, 2026-10-11). A query has to repeat that predicate to use
+  the index; `protectedClimbCandidateSql` is its text.
+- **Stats and grades.** A `PROTECTED` page is driven from the protected climbs: collect
+  them through the partial index, probe the reference table by primary key once per
+  climb, then sort and limit. The query fences that order with two `OFFSET 0`
+  subqueries, the second `LATERAL` to the first. The planner is not left to find it:
+  on the standby it planned the plain join as a walk of the 425,172-row stats cursor
+  index to return 252 rows. A scope with more than 10,000 candidates
+  (`SYNC_PROTECTED_JOIN_MAX_CLIMBS`) falls back to the cursor-order walk the other
+  streams use. Both shapes return the same pages, and both run under the serial-plan
+  guard. Setting the variable to 0 is not an off switch: it sends every layout down
+  the slower walk.
+- **Steady-state cost.** Neither shape is cheap between privacy events, because this
+  stream's cursor does not follow the table. An empty page echoes the cursor it was
+  given, so a sparse stream's cursor stays at the last protected row delivered,
+  however far the rest of the board has moved on. The driven page therefore costs the
+  same at the tail as from epoch: about 30,000 buffers and 20 ms for Kilter 1 on a
+  local fixture of its size, 3,212 buffers on a 400-candidate fixture. The walk passes
+  every stats or grades row changed since that cursor, on every pull. The server does
+  not limit this; the client is expected to bound how often it pulls the protected
+  stats and grades streams.
+
+What moves a row between streams, and whether a phone hears about it:
+
+| Change | Row bumped | How it reaches a phone |
+| --- | --- | --- |
+| Account made private or public, follow approved or removed, climb audience changed | No | `privacyChanged`, then a `PROTECTED` replay from epoch |
+| Account deleted, climb that was public | Yes: setting the author flag and clearing the owner each bump it | The retained climb stays in `PROTECTED` and arrives again past the old cursor |
+| Account deleted, climb that was restricted | Yes, the same two bumps | Nothing delivers it. Its ownerless policy row lets nobody see it, so it leaves `PROTECTED` for every viewer and no stream carries the bump. A phone drops its copy only on `privacyChanged` |
+| Climb hidden, unlisted, published or edited | Yes | The ordinary delta of the stream that holds it |
+| Climb hard-deleted | Tombstone | `syncDeletions`, whichever stream held it |
+
+Nothing can move a reference climb out of `REFERENCE` without a bump: a policy row
+needs an owner, and `setContentAudience` refuses a climb that has none.
+
+### The client half: two cursors per table (#6306)
+
+A bundle with the two-stream sync always sends `audience`. Each board table is pulled
+as its reference stream and then its protected stream, and the scope is complete
+only when every stream has reached its tail. Spray walls skip the reference stream:
+the server would answer an empty page, so not asking saves three requests per wall
+per cycle. `spray_walls` has no audience and is pulled for spray scopes only.
+
+**One `sync_meta` row holds both cursors**, under the key it always had, so there
+is no device schema migration and an older bundle still reads what it expects:
+
+```json
+{ "updatedAt": "…", "syncSeq": "…",
+  "protected": { "updatedAt": "…", "syncSeq": "…", "complete": true, "revision": 2, "pulledAt": 1760000000000 } }
+```
+
+- The top level is the reference cursor. `protected` is the protected cursor. A
+  missing `protected` means "replay from epoch, not complete", which fails closed.
+- A stream with no reference set (a spray wall) keeps the top level at epoch with
+  `"referenceUnset": true`, and `getCheckpoint` reads that row as no cursor.
+- An older bundle ignores the extra fields. Its `setCheckpoint` rewrites the row
+  without them and its revalidation deletes the row. Either way this bundle finds
+  no protected cursor and replays the protected streams, which is the cheap half.
+- A reference write keeps `protected` in place with a `json_set` upsert. The upsert
+  tests `json_valid` in a `CASE`, so a malformed row is overwritten instead of
+  failing the transaction.
+
+**The import stamps the artifact's real watermark.** The epoch stamp is gone, with
+every `replayFromEpoch` remnant. After an import the reference streams resume from
+the watermark and fetch only what the artifact does not hold; the authored climbs
+arrive through the protected streams. The import's last transaction also resets
+that scope's protected cursors, which brings back an ownerless authored climb the
+reconcile removed and repairs a row the import overwrote with an older public
+version. Both reconcile deletes are limited to rows with no owner, and the staging
+filter imports only rows with no owner, so an artifact can neither delete nor
+replace a climb someone owns. A reference page that carries an owned climb fails
+the pull instead of being written.
+
+**A privacy event resets only the protected cursors.** It leaves `scope-complete:`,
+the reference cursors, `bootstrap-done:` and both artifacts alone, so a finished
+board stays finished, a download in progress resumes, and neither artifact is
+downloaded again. See [privacy](privacy.md#reads-live-updates-and-downloaded-copies) for what the
+event deletes and the three gates around it.
+
+**The marker rule.** `bootstrap-done:<scope>` on a scope that is not complete is
+honoured only when this generation of the import wrote it (value `2`, or `heal2`
+for a heal) and a climbs or stats cursor exists. Anything else is a marker an
+earlier bundle left over state that no longer matches it: the marker is cleared
+and the scope is evaluated again as if it had never imported. That is what turns
+an earlier bundle's epoch-stamped import, and a board stuck with a marker and no
+cursor, into one fresh import instead of a paged crawl from epoch. On a metered
+link the import waits and the paged crawl carries on. `estimateScopeDownload` uses
+the same rule (`isBootstrapDoneHonoured`), so the size the confirm dialog shows is
+the download that will run.
+
+**Protected stats and grades are rationed.** A protected stats or grades page costs
+the server about 30,000 buffer hits on Kilter's main layout even when nothing
+changed, so those two streams are pulled for a scope only when its protected state
+was reset or is incomplete, when the protected climbs stream delivered a row this
+cycle, or when `PROTECTED_STATS_AND_GRADES_PULL_INTERVAL_MS` (15 minutes) has passed
+since the last pull. The time of that pull is `pulledAt` in the same row. The
+protected climbs stream is cheap at its tail and runs every cycle.
+
+**Schema refresh** runs on the reference streams. A protected stream compares its
+stored `revision` with the table's refresh revision and replays from epoch when it
+is behind.
+
+**A backend that does not know `audience`** can only be a rolled-back one, since
+#6322 deploys first. The client recognises the validation error (`Unknown argument
+"audience"` or `Unknown type "SyncAudience"`), skips every board-table pull for
+that cycle and reports once per launch. It does not fall back to the single
+stream: that would write another climber's rows under a cursor the privacy event
+no longer resets. Local reads and the sync of the climber's own tables carry on.
+
+**Mixed versions**, each row a test in
+`two-stream-import.integration.test.ts`:
+
+| The device arrives with | What this bundle does |
+| --- | --- |
+| A board that finished downloading under an earlier bundle | Keeps it, crawls nothing, replays the protected rows once |
+| A paged download part-way through | Resumes the reference crawl from its cursor; heals from an artifact once one is published |
+| An earlier bundle's import with epoch stamps | Imports the artifact again for its real watermark; never crawls from epoch; waits for an unmetered link |
+| A stuck board: `bootstrap-done:` and no cursor | Clears the marker and imports; crawls its way out when there is no artifact |
+| A format-1 manifest | Downloads nothing from it, crawls the reference catalogue once, and not again after a privacy event |
+| A format-2 manifest | Imports, stamps the real watermark, pulls only what the artifact does not hold |
+| A return from an earlier bundle after this one wrote the new shape | One protected replay after a delta pull; resumes an earlier bundle's re-crawl; imports once more only when no cursor is left |
 
 Before enabling `BOARDSESH_PRIVACY_ENABLED`, regenerate every artifact and remove or
 expire previously published layout, grades and catalog artifacts plus CDN copies.

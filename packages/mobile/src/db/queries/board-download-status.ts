@@ -1,11 +1,34 @@
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import {
+  hasReferenceStream,
   offlineBoardKey,
   parseOfflineBoardKey,
   isScopeDownloadComplete,
+  isScopeProtectedComplete,
   type OfflineBoardScope,
   type OfflineDatabase,
 } from '@boardsesh/offline-sync';
+
+/**
+ * Whether a scope's rows may be read from the device: its download finished
+ * and, for a board with no public catalogue, its protected rows are back.
+ *
+ * A privacy event deletes other climbers' protected rows and leaves the
+ * `scope-complete:` marker alone, then the next pull fetches the ones this
+ * viewer may still see (issue #6306). In between:
+ *
+ *  - a catalogue board (Kilter, Tension, MoonBoard) still holds its whole
+ *    reference catalogue and the climber's own climbs, so it keeps serving.
+ *    What it lacks is other climbers' Boardsesh climbs, a small part of the
+ *    board;
+ *  - a spray wall holds nothing BUT protected rows. Until they are back it has
+ *    no wall row and none of anybody else's climbs, and a wall minus all that
+ *    is not the wall, so it reads as not downloaded.
+ */
+async function isScopeReadableLocally(db: OfflineDatabase, scopeKey: string, boardType: string): Promise<boolean> {
+  if (!(await isScopeDownloadComplete(db, scopeKey))) return false;
+  return hasReferenceStream(boardType) || (await isScopeProtectedComplete(db, scopeKey));
+}
 
 /**
  * Whether a board's exact (type, layout, size) scope is available to browse
@@ -28,7 +51,7 @@ export async function isBoardDownloadedLocally(db: OfflineDatabase, scope: Offli
   const { getSetting } = await import('../../settings/hooks');
   const scopeKey = offlineBoardKey(scope);
   if (!getSetting('syncEnabledBoards').includes(scopeKey)) return false;
-  if (!(await isScopeDownloadComplete(db, scopeKey))) return false;
+  if (!(await isScopeReadableLocally(db, scopeKey, scope.boardType))) return false;
 
   const sizeScoped = isSizeScopedBoard(scope.boardType);
   const sizeClause = sizeScoped
@@ -60,9 +83,34 @@ export async function isBoardTypeDownloadedLocally(db: OfflineDatabase, boardTyp
   const { getSetting } = await import('../../settings/hooks');
   for (const scopeKey of getSetting('syncEnabledBoards')) {
     if (parseOfflineBoardKey(scopeKey)?.boardType !== boardType) continue;
-    if (await isScopeDownloadComplete(db, scopeKey)) return true;
+    if (await isScopeReadableLocally(db, scopeKey, boardType)) return true;
   }
   return false;
+}
+
+/**
+ * Whether every downloaded scope of a board TYPE holds all the protected rows
+ * the server currently lets this viewer see. False from a privacy event until
+ * the replay that follows it has finished.
+ *
+ * `offlineAwareRequest` asks this before a local-first read WHILE ONLINE. A
+ * catalogue board stays readable through that window (see
+ * `isScopeReadableLocally`), which is right with no signal and wrong with one:
+ * the server has the complete answer, so a list missing other climbers' climbs
+ * is not the one to show. The window is a few small requests long.
+ *
+ * By board type because that is all some reads carry (the grade ones have no
+ * layout). A scope that is still downloading is skipped: it is not served
+ * locally anyway. Short-circuits on the in-memory setting like its neighbours.
+ */
+export async function isBoardTypeProtectedSettled(db: OfflineDatabase, boardType: string): Promise<boolean> {
+  const { getSetting } = await import('../../settings/hooks');
+  for (const scopeKey of getSetting('syncEnabledBoards')) {
+    if (parseOfflineBoardKey(scopeKey)?.boardType !== boardType) continue;
+    if (!(await isScopeDownloadComplete(db, scopeKey))) continue;
+    if (!(await isScopeProtectedComplete(db, scopeKey))) return false;
+  }
+  return true;
 }
 
 /**
@@ -126,7 +174,7 @@ export async function isClimbLayoutDownloadedLocally(
     const scope = parseOfflineBoardKey(scopeKey);
     if (scope?.layoutId !== climb.layout_id) continue;
     if (climbSizeIds && !climbSizeIds.has(scope.sizeId)) continue;
-    if (await isScopeDownloadComplete(db, scopeKey)) return true;
+    if (await isScopeReadableLocally(db, scopeKey, boardType)) return true;
   }
   return false;
 }

@@ -123,16 +123,19 @@ const STATS_PAGE = [
   { climb_uuid: 'climb-2', angle: 40, ascensionist_count: 3 },
 ];
 
-/** Every table serves one page except board_climb_stats, which serves STATS_PAGE. */
+/**
+ * Every stream serves an empty page except board_climb_stats' reference stream,
+ * which serves STATS_PAGE.
+ */
 function createGraphqlFetch() {
-  return vi.fn(async (query: string) => {
+  return vi.fn(async (query: string, variables?: Record<string, unknown>) => {
     if (query.includes('syncDeletions')) {
       return {
         syncDeletions: { deletions: [], cursor: { updatedAt: '2026-09-08T00:00:00Z', syncSeq: '1' }, hasMore: false },
       };
     }
     const statsQuery = TABLE_CONFIGS.board_climb_stats.queryName;
-    if (query.includes(statsQuery)) {
+    if (query.includes(statsQuery) && variables?.audience === 'REFERENCE') {
       return {
         [statsQuery]: {
           documents: STATS_PAGE,

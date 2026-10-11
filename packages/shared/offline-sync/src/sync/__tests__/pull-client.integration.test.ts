@@ -20,7 +20,7 @@
 // resolver MISNAMING a required column still fails loudly because the row then
 // violates the DDL's NOT NULL. (Both proven by the drift tests below.)
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,13 +40,17 @@ import {
   __resetDrainerStateForTests,
 } from '../../mutation-queue/drainer';
 import { processMutation, type GraphQLFetch } from '../../mutation-queue/handlers';
-import { runMigrations } from '../../db/migrations';
+import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
+import { markScopeDownloaded } from '../../testing/downloaded-scope';
 import { getDeletionsCoverageAt } from '../deletions-coverage';
-import { setCheckpoint } from '../checkpoints';
+import { EMPTY_BOOTSTRAP_RETRY_STATE, writeBootstrapRetryState } from '../bootstrap-retry';
+import { compareCheckpoints, setCheckpoint } from '../checkpoints';
 import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS } from '../retention';
-import { TABLE_CONFIGS } from '../table-config';
+import type { SnapshotSource } from '../snapshot-bootstrap';
+import { SNAPSHOT_MANIFEST_FORMAT_VERSION, type SnapshotManifest } from '../snapshot-manifest';
+import { BOARD_DATA_TABLES, TABLE_CONFIGS } from '../table-config';
 
 // The non-null fields of the backend's `input SaveTickInput`
 // (packages/shared-schema/src/schema/ticks.ts) — i.e. every `Field!` minus the
@@ -82,6 +86,9 @@ type DeletionRecord = { tableName: string; recordId: string; deletedAt: string }
  * empty `syncDeletions`. Dispatch is by query name, exactly how `pullSync`'s
  * `syncTable` reaches a resolver (`query.includes(config.queryName)`), so this
  * exercises the full pull loop including the hasMore→empty-page termination.
+ *
+ * A board table is asked for twice, once per stream. The documents are served
+ * on the reference stream (they have no owner), and the protected one is empty.
  */
 function makeSingleTableFetch(options: {
   queryName: string;
@@ -90,11 +97,11 @@ function makeSingleTableFetch(options: {
   deletions?: DeletionRecord[];
 }): GraphQLFetch {
   const cursor = options.cursor ?? DEFAULT_CURSOR;
-  return vi.fn(async <T>(query: string): Promise<T> => {
+  return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
     if (query.includes('syncDeletions')) {
       return { syncDeletions: { deletions: options.deletions ?? [], cursor, hasMore: false } } as T;
     }
-    if (query.includes(options.queryName)) {
+    if (query.includes(options.queryName) && variables?.audience !== 'PROTECTED') {
       return { [options.queryName]: { documents: options.documents, cursor, hasMore: false } } as T;
     }
     // Every other sync query returns an empty page so the loop is well-formed.
@@ -114,10 +121,17 @@ function createMockQueryClient(): QueryInvalidator {
   return { invalidateQueries: vi.fn().mockResolvedValue(undefined) } as unknown as QueryInvalidator;
 }
 
-/** Reads the JSON checkpoint a sync wrote into sync_meta for a table. */
+/**
+ * Reads what a sync wrote into sync_meta under `key`. For a checkpoint row that
+ * is the top-level cursor (a board table's row also carries its protected
+ * stream's cursor, which these suites do not look at); for a marker, its value.
+ */
 async function readCheckpoint(db: TestSqliteDb, key: string): Promise<typeof DEFAULT_CURSOR | null> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]);
-  return row ? (JSON.parse(row.value) as typeof DEFAULT_CURSOR) : null;
+  if (!row) return null;
+  const stored = JSON.parse(row.value) as (typeof DEFAULT_CURSOR & { referenceUnset?: boolean }) | null;
+  if (stored === null || typeof stored !== 'object') return stored;
+  return stored.referenceUnset ? null : { updatedAt: stored.updatedAt, syncSeq: stored.syncSeq };
 }
 
 describe('sync layer — real-DDL integration', () => {
@@ -381,6 +395,8 @@ describe('sync layer — real-DDL integration', () => {
             if (column === 'angle') return [column, 40];
             if (column === 'is_draft' || column === 'is_listed') return [column, index % 2 === 0];
             if (column === 'frames') return [column, { p: index }];
+            // The reference stream carries climbs with no owner.
+            if (column === 'user_id') return [column, null];
             return [column, `${column}-${index}`];
           }),
         ),
@@ -745,7 +761,7 @@ describe('sync layer — real-DDL integration', () => {
     it('a board_climbs tombstone takes the climb out of the holds index, unless the guard keeps the climb', async () => {
       // The holds index is derived on the device, so nothing on the server ever
       // tombstones it; the climb's tombstone has to cascade locally.
-      await db.runAsync("INSERT INTO sync_meta (key, value) VALUES ('scope-complete:kilter:1:12', '1')");
+      await markScopeDownloaded(db, 'kilter:1:12');
       for (const [uuid, updatedAt] of [
         ['gone', '2024-05-01T00:00:00Z'],
         ['re-added', '2024-06-02T00:00:00Z'],
@@ -1492,7 +1508,7 @@ describe('query invalidation over one pull cycle', () => {
   function makeCycleFetch(
     pages: Record<string, Record<string, unknown>[]>,
     deletions: DeletionRecord[] = [],
-    onRequest?: (resolver: string) => void,
+    onRequest?: (resolver: string, audience: unknown) => void,
   ): GraphQLFetch {
     return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
       if (query.includes('syncDeletions')) {
@@ -1501,9 +1517,11 @@ describe('query invalidation over one pull cycle', () => {
       const queryName = extractQueryName(query);
       const { boardType, layoutId } = (variables ?? {}) as { boardType?: string; layoutId?: number };
       const board = boardType ? `@${boardType}:${layoutId}` : '';
-      onRequest?.(`${queryName}${board}`);
-      // Past its first page a table has nothing more: the cursor is set.
-      const documents = variables?.cursor ? [] : (pages[`${queryName}${board}`] ?? []);
+      onRequest?.(`${queryName}${board}`, variables?.audience);
+      // Past its first page a table has nothing more: the cursor is set. The
+      // pages hold reference rows, so the protected stream has none of them.
+      const documents =
+        variables?.cursor || variables?.audience === 'PROTECTED' ? [] : (pages[`${queryName}${board}`] ?? []);
       return { [queryName]: { documents, cursor: DEFAULT_CURSOR, hasMore: false } } as T;
     }) as unknown as GraphQLFetch;
   }
@@ -1582,8 +1600,8 @@ describe('query invalidation over one pull cycle', () => {
       makeCycleFetch(
         { syncTicks: [tickDocument], 'syncClimbs@kilter:1': [climbDocument('kilter-climb', 'kilter', 1, 5)] },
         [],
-        (resolver) => {
-          if (resolver === 'syncClimbs@kilter:1') events.push('board pull');
+        (resolver, audience) => {
+          if (resolver === 'syncClimbs@kilter:1' && audience === 'REFERENCE') events.push('board pull');
         },
       ),
       { enabledBoards: [KILTER] },
@@ -1693,5 +1711,259 @@ describe('query invalidation over one pull cycle', () => {
       expect(filtersFor('logbook')).toEqual([{ queryKey: ['logbook'] }]);
       expect(filtersFor('infiniteSearchClimbs')).toEqual([{ queryKey: ['infiniteSearchClimbs'] }]);
     });
+  });
+});
+
+// Issue #6306. The bootstrap phase names the scopes whose paged pull is skipped
+// this cycle. That skip is a wait for a snapshot retry that is about to run, so
+// it only fits a scope that is cooling down. A scope the phase turns away because
+// it already imported an artifact, or already completed, has no retry coming:
+// skipped once, it is skipped on every cycle and the board never syncs again.
+//
+// The two-stream cases built on this one are in two-stream-sync.integration.test.ts.
+describe('a scope the snapshot bootstrap has finished with still runs its paged pull', () => {
+  const SCOPE_KEY = 'kilter:1:12';
+  const VIEWER_ID = 'viewer';
+  const BUILT_AT = '2026-06-01T00:00:00.000Z';
+  const REFERENCE_CURSOR = { updatedAt: '2026-05-02T00:00:00.000Z', syncSeq: '10' };
+  const AUTHORED_CURSOR = { updatedAt: '2026-05-03T00:00:00.000Z', syncSeq: '11' };
+
+  type ServerClimb = { document: Record<string, unknown>; cursor: typeof DEFAULT_CURSOR };
+
+  const serverClimb = (uuid: string, userId: string | null, cursor: typeof DEFAULT_CURSOR): ServerClimb => ({
+    document: {
+      uuid,
+      board_type: 'kilter',
+      layout_id: 1,
+      user_id: userId,
+      compatible_size_ids: [12],
+      is_draft: false,
+      is_listed: true,
+      is_hidden: false,
+      updated_at: cursor.updatedAt,
+      sync_seq: cursor.syncSeq,
+    },
+    cursor,
+  });
+  // The manufacturer climb a public artifact carries, and another climber's
+  // climb that only the authenticated API serves.
+  const referenceClimb = serverClimb('reference-climb', null, REFERENCE_CURSOR);
+  const authoredClimb = serverClimb('authored-climb', 'another-climber', AUTHORED_CURSOR);
+
+  let workDirectory: string;
+  let db: TestSqliteDb;
+  let queryClient: QueryInvalidator;
+
+  beforeEach(async () => {
+    workDirectory = mkdtempSync(join(tmpdir(), 'bootstrap-finished-scope-'));
+    // File-backed: the import ATTACHes the artifact inside an exclusive
+    // transaction, which only a file-backed double runs the way the device does.
+    db = createTestDatabase(join(workDirectory, 'client.db'));
+    await runMigrations(db);
+    await ensureMutationQueueTable(db);
+    queryClient = createMockQueryClient();
+    __resetDrainerStateForTests();
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(workDirectory, { recursive: true, force: true });
+  });
+
+  /**
+   * Pages climbs on the resolvers' strict `>` keyset; every other table is
+   * empty. A climb with no owner is served on the reference stream and an owned
+   * one on the protected stream, as the server splits them.
+   */
+  function makeClimbServer(climbs: () => ServerClimb[]): GraphQLFetch {
+    return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (query.includes('syncDeletions')) {
+        return { syncDeletions: { deletions: [], cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+      }
+      const cursor = variables?.cursor as typeof DEFAULT_CURSOR | undefined;
+      const queryName = extractQueryName(query);
+      const isProtectedRequest = variables?.audience === 'PROTECTED';
+      const pendingClimbs =
+        queryName === 'syncClimbs'
+          ? climbs().filter(
+              (climb) =>
+                (climb.document.user_id !== null) === isProtectedRequest &&
+                (!cursor || compareCheckpoints(climb.cursor, cursor) > 0),
+            )
+          : [];
+      const lastPendingClimb = pendingClimbs[pendingClimbs.length - 1];
+      return {
+        [queryName]: {
+          documents: pendingClimbs.map((climb) => climb.document),
+          cursor: lastPendingClimb?.cursor ?? cursor ?? DEFAULT_CURSOR,
+          hasMore: false,
+        },
+      } as T;
+    }) as unknown as GraphQLFetch;
+  }
+
+  function makeSnapshotSource(manifest: SnapshotManifest | null, artifactPath: string | null) {
+    const downloadArtifact = vi.fn(async () => (artifactPath ? { filePath: artifactPath } : null));
+    const source: SnapshotSource = {
+      fetchManifest: async () => manifest,
+      downloadArtifact,
+      deleteArtifact: async () => {},
+    };
+    return { source, downloadArtifact };
+  }
+
+  /** Writes a format-2 artifact holding the reference climb and returns the manifest that lists it. */
+  async function buildReferenceArtifact(filePath: string): Promise<SnapshotManifest> {
+    const artifact = createTestDatabase(filePath);
+    try {
+      await runMigrations(artifact);
+      await artifact.execAsync(
+        `CREATE TABLE snapshot_meta (table_name TEXT PRIMARY KEY, watermark_updated_at TEXT,
+           watermark_sync_seq TEXT, row_count INTEGER, built_at TEXT, schema_version INTEGER, format_version INTEGER)`,
+      );
+      await artifact.runAsync(
+        `INSERT INTO board_climbs (uuid, board_type, layout_id, is_draft, is_listed, compatible_size_ids, updated_at, sync_seq)
+         VALUES ('reference-climb', 'kilter', 1, 0, 1, '[12]', ?, ?)`,
+        [REFERENCE_CURSOR.updatedAt, Number(REFERENCE_CURSOR.syncSeq)],
+      );
+      await artifact.runAsync(
+        `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, updated_at, sync_seq)
+         VALUES ('kilter', 'reference-climb', 40, ?, ?)`,
+        [REFERENCE_CURSOR.updatedAt, Number(REFERENCE_CURSOR.syncSeq)],
+      );
+      for (const tableName of ['board_climbs', 'board_climb_stats']) {
+        await artifact.runAsync('INSERT INTO snapshot_meta VALUES (?, ?, ?, 1, ?, ?, ?)', [
+          tableName,
+          REFERENCE_CURSOR.updatedAt,
+          REFERENCE_CURSOR.syncSeq,
+          BUILT_AT,
+          LATEST_SCHEMA_VERSION,
+          SNAPSHOT_MANIFEST_FORMAT_VERSION,
+        ]);
+      }
+    } finally {
+      artifact.close();
+    }
+    const tableStats = {
+      watermarkUpdatedAt: REFERENCE_CURSOR.updatedAt,
+      watermarkSyncSeq: REFERENCE_CURSOR.syncSeq,
+      rowCount: 1,
+    };
+    return {
+      formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
+      generatedAt: BUILT_AT,
+      entries: [
+        {
+          privacyVersion: 1,
+          boardType: 'kilter',
+          layoutId: 1,
+          key: 'board-snapshots/v1/kilter/1/2026-06-01.db',
+          url: 'https://example.test/kilter-1.db',
+          bytes: 1024,
+          contentEncoding: 'identity',
+          builtAt: BUILT_AT,
+          schemaVersion: LATEST_SCHEMA_VERSION,
+          tables: { board_climbs: tableStats, board_climb_stats: tableStats },
+        },
+      ],
+    };
+  }
+
+  /**
+   * What the privacy revalidation of a bundle from BEFORE the two-stream sync
+   * did to a downloaded board on every privacy event: other climbers' rows went,
+   * every board-table checkpoint and every `scope-complete:` marker went, and
+   * `bootstrap-done:` stayed. This bundle's revalidation resets protected
+   * cursors only, so this is now the state a rollback leaves behind.
+   */
+  async function withdrawCatalogAsAnOlderBundleDid(): Promise<void> {
+    await db.runAsync('DELETE FROM board_climbs WHERE user_id IS NOT NULL AND user_id <> ?', [VIEWER_ID]);
+    for (const tableName of BOARD_DATA_TABLES) {
+      await db.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`checkpoint:${tableName}:%`]);
+    }
+    await db.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', ['scope-complete:%']);
+  }
+
+  async function localClimbUuids(): Promise<string[]> {
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
+    return climbs.map((climb) => climb.uuid);
+  }
+
+  it('brings back a snapshot-bootstrapped scope whose checkpoints an older bundle wiped, by importing once more', async () => {
+    const artifactPath = join(workDirectory, 'kilter-1.db');
+    const manifest = await buildReferenceArtifact(artifactPath);
+    const { source, downloadArtifact } = makeSnapshotSource(manifest, artifactPath);
+    const server = makeClimbServer(() => [referenceClimb, authoredClimb]);
+    const syncOptions = { enabledBoards: [SCOPE_KEY], snapshotSource: source };
+
+    await pullSync(db, queryClient, server, syncOptions);
+
+    expect(downloadArtifact).toHaveBeenCalledTimes(1);
+    expect(await localClimbUuids()).toEqual(['authored-climb', 'reference-climb']);
+    expect(await readCheckpoint(db, `bootstrap-done:${SCOPE_KEY}`)).not.toBeNull();
+    expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
+
+    await withdrawCatalogAsAnOlderBundleDid();
+    expect(await localClimbUuids()).toEqual(['reference-climb']);
+
+    await pullSync(db, queryClient, server, syncOptions);
+
+    // Before #6316 this scope was skipped on every cycle and never synced again.
+    // The marker it kept has no cursor behind it, so it is set aside and the
+    // artifact is imported again: once, and it puts the reference cursor back at
+    // the artifact's watermark. The withdrawn row returns through the protected
+    // stream and the board serves offline again.
+    expect(downloadArtifact).toHaveBeenCalledTimes(2);
+    expect(await localClimbUuids()).toEqual(['authored-climb', 'reference-climb']);
+    expect(await readCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toEqual(REFERENCE_CURSOR);
+    expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
+    expect(await readCheckpoint(db, `bootstrap-done:${SCOPE_KEY}`)).not.toBeNull();
+
+    // And it settles: nothing is imported on the cycles that follow.
+    await pullSync(db, queryClient, server, syncOptions);
+    expect(downloadArtifact).toHaveBeenCalledTimes(2);
+  });
+
+  it('pulls a completed scope that holds no climbs yet, so a climb set later arrives', async () => {
+    // No manifest, so the scope takes the paged path. A stream that has
+    // delivered no row leaves no reference cursor behind, which is the same shape
+    // the older bundle's reset above produced.
+    const { source } = makeSnapshotSource(null, null);
+    let climbsOnServer: ServerClimb[] = [];
+    const server = makeClimbServer(() => climbsOnServer);
+    const syncOptions = { enabledBoards: [SCOPE_KEY], snapshotSource: source };
+
+    await pullSync(db, queryClient, server, syncOptions);
+
+    expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
+    expect(await readCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toBeNull();
+
+    climbsOnServer = [authoredClimb];
+    await pullSync(db, queryClient, server, syncOptions);
+
+    expect(await localClimbUuids()).toEqual(['authored-climb']);
+  });
+
+  it('still holds a fresh scope back while its snapshot retry is cooling down', async () => {
+    const cycleStartedAt = 1_800_000_000_000;
+    await writeBootstrapRetryState(db, SCOPE_KEY, {
+      ...EMPTY_BOOTSTRAP_RETRY_STATE,
+      transportFailures: 1,
+      lastFailureKind: 'transport',
+      hasPriorSnapshotFailure: true,
+      retryAfter: cycleStartedAt + 2 * 60_000,
+    });
+    const { source } = makeSnapshotSource(null, null);
+    const server = makeClimbServer(() => [authoredClimb]);
+
+    await pullSync(db, queryClient, server, {
+      enabledBoards: [SCOPE_KEY],
+      snapshotSource: source,
+      now: () => cycleStartedAt,
+    });
+
+    // A first-page checkpoint here would turn the retry into a heal.
+    expect(await localClimbUuids()).toEqual([]);
+    expect(await readCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toBeNull();
   });
 });

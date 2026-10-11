@@ -14,6 +14,7 @@ import {
   type RowsDeletedSink,
   type BootstrapRetryWakeInfo,
   type HoldIndexSyncOptions,
+  type SyncOptions,
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
 import { onPurgeSettled } from '../mutation-queue/drainer';
@@ -98,6 +99,10 @@ export type SchedulerOptions = {
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
   /** Threaded through to pullSync's SyncOptions — see HoldIndexSyncOptions. */
   holdIndex?: HoldIndexSyncOptions;
+  /** Threaded through to pullSync's SyncOptions: the platform's privacy gate on protected pulls. */
+  isProtectedSyncAllowed?: SyncOptions['isProtectedSyncAllowed'];
+  /** Threaded through to pullSync's SyncOptions: the backend rejected the `audience` argument. */
+  onAudienceUnsupported?: SyncOptions['onAudienceUnsupported'];
 };
 
 let isSyncing = false;
@@ -190,6 +195,8 @@ async function runSync(request: SyncRunRequest): Promise<void> {
       onRowsDeleted: options?.onRowsDeleted,
       isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork,
       holdIndex: options?.holdIndex,
+      isProtectedSyncAllowed: options?.isProtectedSyncAllowed,
+      onAudienceUnsupported: options?.onAudienceUnsupported,
       // Lifecycle-only callbacks. The active scheduler may be newer than this
       // run (for example after a React effect replacement), so resolve it at
       // callback time and require the same database before handing it a wake.
