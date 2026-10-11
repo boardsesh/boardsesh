@@ -8,7 +8,9 @@ name: Tutorial setup - require a completed local hold index
     visible: 'Filters.*'
     timeout: 90000
 - tapOn: 'Filters.*'
-- assertVisible: Grade range
+- assertVisible:
+    id: sheet-top-bar-trailing
+    text: '(Show.*climbs?|Apply filters)'
 - scrollUntilVisible:
     element: 'Hold types'
     direction: DOWN
@@ -57,6 +59,9 @@ name: Tutorial setup - require a completed local hold index
     id: hold-heatmap-download-line
 - tapOn: 'Heatmap.*'
 - back
-- back
+- tapOn:
+    id: sheet-top-bar-trailing
+- assertNotVisible:
+    id: climb-filter-column
 - openLink: com.boardsesh.app://climbs
 - waitForAnimationToEnd

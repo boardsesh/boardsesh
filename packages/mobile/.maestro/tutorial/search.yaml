@@ -6,7 +6,9 @@ name: Tutorial - choose holds, regions and similar climbs
     visible: 'Filters.*'
     timeout: 90000
 - tapOn: 'Filters.*'
-- assertVisible: Grade range
+- assertVisible:
+    id: sheet-top-bar-trailing
+    text: '(Show.*climbs?|Apply filters)'
 - scrollUntilVisible:
     element: Hold types
     direction: DOWN
@@ -24,6 +26,10 @@ name: Tutorial - choose holds, regions and similar climbs
     optional: true
 - tapOn: Clear all
 - back
+- scrollUntilVisible:
+    element: Board region
+    direction: DOWN
+    timeout: 90000
 - tapOn: Board region
 - tapOn: Add a region
 - assertVisible: Clear region
@@ -38,7 +44,10 @@ name: Tutorial - choose holds, regions and similar climbs
     optional: true
 - tapOn: Clear region
 - back
-- back
+- tapOn:
+    id: sheet-top-bar-trailing
+- assertNotVisible:
+    id: climb-filter-column
 - openLink: com.boardsesh.app://climbs/0003517a70744dbdbb606f784571f626?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
 - extendedWaitUntil:
     visible: Phase 2
@@ -47,6 +56,7 @@ name: Tutorial - choose holds, regions and similar climbs
     element: Similar Climbs
     direction: DOWN
     timeout: 90000
+    centerElement: true
 # This existing catalogue pair uses the same nine holds. A real result card,
 # not the absence of an error, proves the downloaded local similarity query.
 - runFlow:
@@ -56,6 +66,10 @@ name: Tutorial - choose holds, regions and similar climbs
         below: Similar Climbs
     commands:
       - tapOn: Similar Climbs
+- scrollUntilVisible:
+    element: 100plus
+    direction: DOWN
+    timeout: 120000
 - extendedWaitUntil:
     visible:
       text: 100plus
@@ -75,7 +89,9 @@ name: Tutorial - choose holds, regions and similar climbs
     visible: 'Filters.*'
     timeout: 90000
 - tapOn: 'Filters.*'
-- assertVisible: Grade range
+- assertVisible:
+    id: sheet-top-bar-trailing
+    text: '(Show.*climbs?|Apply filters)'
 - scrollUntilVisible:
     element: Hold types
     direction: DOWN
@@ -94,4 +110,7 @@ name: Tutorial - choose holds, regions and similar climbs
     optional: true
 # Return from the hold picker and its Filters sheet after the last readable hold.
 - back
-- back
+- tapOn:
+    id: sheet-top-bar-trailing
+- assertNotVisible:
+    id: climb-filter-column

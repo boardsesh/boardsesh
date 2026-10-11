@@ -119,7 +119,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'search',
         fromMark: 'region',
         label: 'Drag a region',
-        focus: { x: 0.05, y: 0.16, width: 0.9, height: 0.65 },
+        focus: { x: 0.05, y: 0.13, width: 0.9, height: 0.68 },
       },
       {
         id: 'search-similar',
@@ -129,7 +129,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'search',
         fromMark: 'similar',
         label: 'Similar climbs · downloaded board',
-        focus: { x: 0.04, y: 0.42, width: 0.92, height: 0.44 },
+        focus: { x: 0.03, y: 0.725, width: 0.94, height: 0.25 },
         overview: true,
       },
       {

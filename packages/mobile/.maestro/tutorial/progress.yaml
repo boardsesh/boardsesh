@@ -34,7 +34,14 @@ name: Tutorial - your grades and combined progress
     optional: true
 - runFlow: kilter-ready.yaml
 - tapOn: 'Filters.*'
-- assertVisible: Grade range
+- assertVisible:
+    id: sheet-top-bar-trailing
+    text: '(Show.*climbs?|Apply filters)'
+# The Filters sheet retains its scroll position after hold/region selection.
+- scrollUntilVisible:
+    element: Grade range
+    direction: UP
+    timeout: 90000
 - tapOn:
     id: sheet-top-bar-leading
 - repeat:
