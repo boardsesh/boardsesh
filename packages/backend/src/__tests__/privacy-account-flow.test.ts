@@ -5,6 +5,7 @@ import type * as GraphQLModule from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import { lockFollowRequestPair } from '../events/follow-request-notifications';
 import { schema as executableSchema } from '../graphql/index';
 import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
 import { socialFollowMutations } from '../graphql/resolvers/social/follows';
@@ -176,6 +177,63 @@ describe('privacy controls against Postgres', () => {
     expect(await followRequestNotifications(recipient, asker)).toEqual([]);
     expect(await inboxTypes(recipient)).toEqual([]);
     expect(await canViewUserActivity(asker, recipient)).toBe(false);
+
+    // Unlike a cancel, a decline leaves no row behind to hold the day-long
+    // window, so asking again at once is a fresh request with one unread row.
+    await privacyMutations.requestFollow(null, { userId: recipient }, context(asker));
+    const [again] = await followRequestNotifications(recipient, asker);
+    expect(again).toMatchObject({ type: 'follow_request', entityId: asker, readAt: null });
+    expect(await followRequestNotifications(recipient, asker)).toHaveLength(1);
+    expect(await inboxTypes(recipient)).toEqual([
+      { type: 'follow_request', entityId: asker, actors: [expect.objectContaining({ id: asker })] },
+    ]);
+    expect(await socialNotificationQueries.unreadNotificationCount(null, null, context(recipient))).toBe(1);
+  });
+
+  it('makes approve and decline wait for a follow request write on the same pair', async () => {
+    const recipient = 'privacy-flow-lock-recipient';
+    const asker = 'privacy-flow-lock-asker';
+    await db.insert(schema.users).values([
+      { id: recipient, email: `${recipient}@test.com` },
+      { id: asker, email: `${asker}@test.com` },
+    ]);
+    await db.insert(schema.userProfiles).values({ userId: recipient, isPrivate: true });
+
+    for (const answer of [privacyMutations.approveFollowRequest, privacyMutations.declineFollowRequest]) {
+      await db
+        .delete(schema.userFollows)
+        .where(and(eq(schema.userFollows.followerId, asker), eq(schema.userFollows.followingId, recipient)));
+      await privacyMutations.requestFollow(null, { userId: recipient }, context(asker));
+
+      // Stand in for a worker or the inline fallback mid-write: hold the pair lock.
+      let releaseWriter = () => {};
+      const writerReleased = new Promise<void>((resolve) => {
+        releaseWriter = resolve;
+      });
+      let markLockHeld = () => {};
+      const lockHeld = new Promise<void>((resolve) => {
+        markLockHeld = resolve;
+      });
+      const writer = db.transaction(async (transaction) => {
+        await lockFollowRequestPair(transaction, asker, recipient);
+        markLockHeld();
+        await writerReleased;
+      });
+      await lockHeld;
+
+      let answered = false;
+      const answering = answer(null, { userId: asker }, context(recipient)).then(() => {
+        answered = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(answered).toBe(false);
+
+      releaseWriter();
+      await writer;
+      await answering;
+      expect(answered).toBe(true);
+      expect(await followRequestNotifications(recipient, asker)).toEqual([]);
+    }
   });
 
   it('lets the owner answer a pending request while the privacy controls are switched off', async () => {

@@ -20,7 +20,7 @@ import {
 } from '../../../services/privacy';
 import { publishSocialEvent } from '../../../events';
 import { isShareLinkAudience, revokeBoardShareLinks } from '../../../services/board-share-links';
-import { deleteFollowRequestNotifications } from '../../../events/follow-request-notifications';
+import { deleteFollowRequestNotifications, lockFollowRequestPair } from '../../../events/follow-request-notifications';
 import { logger } from '../../../utils/logger';
 
 const resourceAudience = z.enum(['public', 'unlisted', 'followers', 'invite_only', 'only_me']);
@@ -154,6 +154,8 @@ export async function requestPrivacyFollow(followerId: string, followingId: stri
   let createdRequest = false;
   let outcome: PrivacyFollowOutcome = 'following';
   await db.transaction(async (transaction) => {
+    // Pair lock before the users row lock: see lockFollowRequestPair.
+    await lockFollowRequestPair(transaction, followerId, followingId);
     const [subject] = await transaction
       .select({ id: schema.users.id })
       .from(schema.users)
@@ -560,6 +562,8 @@ export const privacyMutations = {
     const recipientId = await followRequestAnswerActor(ctx);
     let accepted = false;
     await db.transaction(async (transaction) => {
+      // Pair lock before the users row lock: see lockFollowRequestPair.
+      await lockFollowRequestPair(transaction, userId, recipientId);
       await transaction
         .select({ id: schema.users.id })
         .from(schema.users)
@@ -592,6 +596,8 @@ export const privacyMutations = {
   declineFollowRequest: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
     const recipientId = await followRequestAnswerActor(ctx);
     await db.transaction(async (transaction) => {
+      // Pair lock before the users row lock: see lockFollowRequestPair.
+      await lockFollowRequestPair(transaction, userId, recipientId);
       await transaction
         .select({ id: schema.users.id })
         .from(schema.users)
