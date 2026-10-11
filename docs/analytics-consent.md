@@ -48,10 +48,13 @@ the server.
 ## Whose answer is it
 
 The device copy remembers the account that was signed in when the answer was
-given (`ownerAccountId` on `DeviceConsentRecord`; the app stores it beside the
-answer). An answer given signed out has no owner, and neither has one saved
-before this field existed. The web cookie never names an account, so every
-cookie answer is ownerless.
+given or adopted from the account (`ownerAccountId` on `DeviceConsentRecord`;
+the app stores it beside the answer). An answer given signed out has no owner,
+and neither has one saved before this field existed. The web cookie never names
+an account, so every cookie answer is ownerless. A decision this device made
+signed in also keeps `basedOnDecidedAt`, the account answer it was made
+against, until the account confirms it; a copy adopted from the account never
+has it.
 
 `mergeAccountConsent` applies the merge rule only to an answer this device gave
 under the signed-in account. For anything else:
@@ -199,11 +202,12 @@ Only two things are ever written to an account:
 
 1. A decision the climber makes on this device while signed in to it (`decide`),
    including its durable retries.
-2. A stored answer this device gave under the same account that is strictly
-   newer than the account's (a later consent version, or the same version
-   decided later): a decision whose pending write was lost. A stored grant
-   never overwrites an account denial this way; that needs a fresh decision
-   and its compare-and-set token.
+2. A decision this device made under the same account whose write was lost,
+   and only while the account still holds exactly the answer that decision was
+   made against (`basedOnDecidedAt`). It is written with that answer as its
+   compare-and-set token. No clocks are compared, so a phone whose clock runs
+   ahead cannot re-deny a newer answer, and a copy adopted from the account is
+   never written back.
 
 A stored answer is never pushed over a newer account answer. Say No thanks on
 phone A, later Allow on phone B: when A comes back, the account stays Allow and
@@ -212,13 +216,20 @@ withdrawal that arrives while a grant is in flight stops tracking on this
 device and drops the grant, but is not written by this tab: the origin that
 took it writes it if it was signed in.
 If the app is killed before that dropped grant leaves pending storage, the
-restored grant meets the newer cookie denial on the next launch, loses, and is
-discarded; neither is written, online or offline.
+restored grant meets the newer denial on the next launch, loses, and is
+discarded. The denial is not written before the account is read: after the
+read, rule 2 decides, so an adopted or stale denial never flips a newer grant
+made on another device.
 
 The app's consent gate waits for the account read (at most 5 s, as for a
-first answer) before it trusts an answer that is not this account's. When the
-account has none, the prompt opens; when the read never returns, the gate
-settles on the device answer and tracking stays off until the account resolves.
+first answer) before it trusts an answer that is not this account's. While the
+profile id is still loading it waits on an answer with no owner, and settles
+at once on one bound to an account. When the account has none, the prompt
+opens; when the read never returns, the gate settles on the device answer and
+tracking stays off until the account resolves. On the browser app the cookie
+never names an account, so every signed-in page load waits for that one read
+before deep links, share targets and the onboarding steps proceed. That is the
+cost of the cookie carrying no account, not a bug.
 The website clears the cookie, which shows the banner again.
 
 The coordinator retains the precise last-server `decidedAt` for compare-and-set.

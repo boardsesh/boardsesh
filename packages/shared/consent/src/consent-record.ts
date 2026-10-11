@@ -31,13 +31,22 @@ export type ConsentRecord = {
 };
 
 /**
- * The device's copy of an answer. `ownerAccountId` is the account that was
- * signed in when this device made or adopted the answer. Null or missing means
- * it was made signed out (or predates this field, or came from the shared web
- * cookie, which never carries an account): a device-only answer that is never
- * written to any account. See `createConsentSyncCoordinator`.
+ * The device's copy of an answer. See `createConsentSyncCoordinator`.
+ *
+ * - `ownerAccountId` is the account that was signed in when this device made
+ *   the answer or adopted it from the account. Null or missing means it was
+ *   made signed out (or predates this field, or came from the shared web
+ *   cookie, which never carries an account): a device-only answer that is
+ *   never written to any account.
+ * - `basedOnDecidedAt` is present only on a decision this device made signed in
+ *   that the account has not confirmed yet: the account `decidedAt` it was made
+ *   against (null when the account had no answer). A copy adopted from the
+ *   account never has it, so an adopted copy is never written back.
  */
-export type DeviceConsentRecord = ConsentRecord & { ownerAccountId?: string | null };
+export type DeviceConsentRecord = ConsentRecord & {
+  ownerAccountId?: string | null;
+  basedOnDecidedAt?: string | null;
+};
 
 /** True when this device answer was made or adopted while `accountId` was signed in. */
 export function isConsentRecordOwnedBy(record: DeviceConsentRecord | null, accountId: string | null): boolean {
@@ -57,7 +66,8 @@ export function isSameConsentRecord(left: DeviceConsentRecord | null, right: Dev
     left.version === right.version &&
     left.decidedAt === right.decidedAt &&
     left.source === right.source &&
-    (left.ownerAccountId ?? null) === (right.ownerAccountId ?? null)
+    (left.ownerAccountId ?? null) === (right.ownerAccountId ?? null) &&
+    left.basedOnDecidedAt === right.basedOnDecidedAt
   );
 }
 

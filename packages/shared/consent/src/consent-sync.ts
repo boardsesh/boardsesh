@@ -83,15 +83,13 @@ function accountCopy(record: ConsentRecord, accountId: string): DeviceConsentRec
   };
 }
 
-/**
- * True when a device answer is strictly newer than the account's: a later
- * consent version, or the same version decided later. An account answer under
- * an older version counts as no answer.
- */
-function isNewerThanAccount(local: ConsentRecord, server: ConsentRecord | null): boolean {
-  if (!isCurrentConsentRecord(server)) return true;
-  if (local.version !== server.version) return local.version > server.version;
-  return Date.parse(local.decidedAt) > Date.parse(server.decidedAt);
+/** This device's unconfirmed decision, recorded with the account answer it was made against. */
+function unconfirmedDecision(
+  record: ConsentRecord,
+  accountId: string,
+  basedOnDecidedAt: string | null,
+): DeviceConsentRecord {
+  return { ...accountCopy(record, accountId), basedOnDecidedAt };
 }
 
 export type AccountConsentMerge = {
@@ -104,12 +102,13 @@ export type AccountConsentMerge = {
 /**
  * Merge a stored device answer with the account answer just read.
  *
- * A device answer given while signed in to this account follows
- * {@link resolveConsent}, and is written back only when it is strictly newer
- * than the account's (its pending write was lost). A stored answer never
- * overwrites a newer account answer, and never resurrects a grant over an
- * account denial: only an explicit decision, with its compare-and-set token,
- * can do that.
+ * A device answer bound to this account follows {@link resolveConsent}. It is
+ * written back only when it is a decision this device made that never reached
+ * the account (its pending write was lost) AND the account still holds exactly
+ * the answer that decision was made against (`basedOnDecidedAt`). That is a
+ * causal test, not a clock comparison, and it is the same token the server's
+ * compare-and-set checks. A copy adopted from the account is never written, so
+ * a stored answer never overwrites a newer account answer.
  *
  * A device answer given signed out or under another account is not this
  * account's answer and is never written. Its denial still stops tracking on
@@ -125,10 +124,7 @@ export function mergeAccountConsent(
   const currentLocal = isCurrentConsentRecord(local) ? local : null;
   const currentServer = isCurrentConsentRecord(server) ? server : null;
   if (currentLocal !== null && isConsentRecordOwnedBy(currentLocal, accountId)) {
-    const resolved = resolveConsent(currentLocal, currentServer);
-    // Account denial wins (merge rule 2).
-    if (resolved !== currentLocal && resolved !== null) return { record: accountCopy(resolved, accountId), push: null };
-    // Same answer: hold the account's copy, so later comparisons use server stamps.
+    // Same answer: hold the account's copy. Nothing to write.
     if (
       currentServer !== null &&
       currentServer.analytics === currentLocal.analytics &&
@@ -136,7 +132,15 @@ export function mergeAccountConsent(
     ) {
       return { record: accountCopy(currentServer, accountId), push: null };
     }
-    return { record: currentLocal, push: isNewerThanAccount(currentLocal, server) ? currentLocal : null };
+    // A lost write of a decision made against the account's current answer is
+    // this account's newest word: write it again, with that answer as its token.
+    if (currentLocal.basedOnDecidedAt !== undefined && currentLocal.basedOnDecidedAt === (server?.decidedAt ?? null)) {
+      return { record: currentLocal, push: currentLocal };
+    }
+    const resolved = resolveConsent(currentLocal, currentServer);
+    // Account denial wins (merge rule 2); otherwise the device keeps its own answer.
+    if (resolved !== currentLocal && resolved !== null) return { record: accountCopy(resolved, accountId), push: null };
+    return { record: currentLocal, push: null };
   }
   if (currentServer === null) return { record: null, push: null };
   if (currentServer.analytics === 'granted' && currentLocal?.analytics === 'denied') {
@@ -200,16 +204,16 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
             (local.version > stored.record.version ||
               !Number.isFinite(Date.parse(local.decidedAt)) ||
               Math.floor(Date.parse(local.decidedAt) / 1000) >= Math.floor(Date.parse(stored.record.decidedAt) / 1000));
-          if (localDenialWins && !isConsentRecordOwnedBy(local, identity)) {
-            // A newer denial given signed out or under another account (or
-            // read from the shared cookie) supersedes this account's older
-            // grant on this device. It is not this account's answer, so it is
-            // kept here and never written; the superseded grant is dropped.
+          if (localDenialWins) {
+            // A newer denial on this device supersedes the stored grant, which
+            // is dropped. The denial is not written here: after the account
+            // read, mergeAccountConsent writes it only if it is this account's
+            // unconfirmed decision and the account has not moved on since.
             await persistPending(identity, null);
             if (!isCurrent()) return;
           } else {
-            pending = localDenialWins ? { record: local, basedOnDecidedAt: null } : stored;
-            const record = accountCopy(pending.record, identity);
+            pending = stored;
+            const record = unconfirmedDecision(stored.record, identity, stored.basedOnDecidedAt);
             publish({ record, pending: true });
             persistRecord(record);
           }
@@ -241,8 +245,13 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
               pending !== null &&
               pending === explicitPendingGrant
             ) {
-              pending = { ...pending, basedOnDecidedAt: result.decidedAt };
+              const record = { ...pending.record, basedOnDecidedAt: result.decidedAt };
+              pending = { record, basedOnDecidedAt: result.decidedAt };
               explicitPendingGrant = pending;
+              if (snapshot.record?.analytics === 'granted') {
+                publish({ record });
+                persistRecord(record);
+              }
               await persistPending(identity, pending);
             }
             continue;
@@ -314,15 +323,21 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
     sync,
     async decide(analytics: AnalyticsConsentChoice, source: ConsentSource): Promise<void> {
       revision += 1;
-      // A decision made signed out stays on this device; one made signed in belongs to that account.
-      const record: DeviceConsentRecord = {
-        analytics,
-        source,
-        version: CONSENT_VERSION,
-        decidedAt: new Date().toISOString(),
-        ownerAccountId: accountId,
-      };
-      pending = accountId ? { record, basedOnDecidedAt: serverRecord?.decidedAt ?? null } : null;
+      // A decision made signed out stays on this device. One made signed in
+      // belongs to that account and remembers the account answer it was made
+      // against until the account confirms it.
+      const basedOnDecidedAt = serverRecord?.decidedAt ?? null;
+      const record: DeviceConsentRecord = accountId
+        ? {
+            analytics,
+            source,
+            version: CONSENT_VERSION,
+            decidedAt: new Date().toISOString(),
+            ownerAccountId: accountId,
+            basedOnDecidedAt,
+          }
+        : { analytics, source, version: CONSENT_VERSION, decidedAt: new Date().toISOString(), ownerAccountId: null };
+      pending = accountId ? { record, basedOnDecidedAt } : null;
       explicitPendingGrant = analytics === 'granted' ? pending : null;
       publish({ record, pending: pending !== null });
       persistRecord(record);
@@ -343,12 +358,13 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         if (!isCurrentConsentRecord(record) || record.analytics !== 'denied' || pending.record.analytics === 'denied')
           return;
         revision += 1;
-        // Only an answer given under this account is written to it. A denial
-        // from the shared cookie or another sign-in stops tracking here and
-        // drops the superseded grant without touching the account.
+        // Only this account's own unconfirmed decision is written to it. A
+        // denial from the shared cookie, another sign-in, or a copy adopted
+        // from the account stops tracking here and drops the superseded grant
+        // without touching the account.
         pending =
-          accountId && isConsentRecordOwnedBy(record, accountId)
-            ? { record, basedOnDecidedAt: serverRecord?.decidedAt ?? null }
+          accountId && isConsentRecordOwnedBy(record, accountId) && record.basedOnDecidedAt !== undefined
+            ? { record, basedOnDecidedAt: record.basedOnDecidedAt }
             : null;
         explicitPendingGrant = null;
         publish({ record, pending: pending !== null });

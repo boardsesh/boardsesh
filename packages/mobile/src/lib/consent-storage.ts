@@ -15,7 +15,8 @@ export function readLatestExternalConsent(): DeviceConsentRecord | null {
 
 /**
  * The stored device answer. An answer saved before answers carried an account,
- * or given signed out, reads back with no owner and is never written to an account.
+ * or given signed out, reads back with no owner and is never written to an
+ * account; neither is a copy adopted from the account (no `basedOnDecidedAt`).
  */
 export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
   const candidate = await getPreference<unknown>(CONSENT_KEY);
@@ -25,13 +26,19 @@ export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
   if (typeof record.version !== 'number' || !Number.isInteger(record.version) || record.version < CONSENT_VERSION)
     return null;
   if (typeof record.decidedAt !== 'string' || !Number.isFinite(Date.parse(record.decidedAt))) return null;
-  return {
+  const ownerAccountId = typeof record.ownerAccountId === 'string' ? record.ownerAccountId : null;
+  const device: DeviceConsentRecord = {
     analytics: record.analytics,
     version: record.version,
     decidedAt: record.decidedAt,
     source: record.source,
-    ownerAccountId: typeof record.ownerAccountId === 'string' ? record.ownerAccountId : null,
+    ownerAccountId,
   };
+  // Only a signed-in decision the account has not confirmed carries its token.
+  const token = record.basedOnDecidedAt;
+  if (ownerAccountId !== null && (token === null || (typeof token === 'string' && Number.isFinite(Date.parse(token)))))
+    device.basedOnDecidedAt = token;
+  return device;
 }
 
 let localWrites: Promise<void> = Promise.resolve();
