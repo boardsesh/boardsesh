@@ -1,6 +1,7 @@
 import {
   CONSENT_VERSION,
   isAnalyticsConsentChoice,
+  isConsentBasis,
   isConsentSource,
   type DeviceConsentRecord,
 } from '@boardsesh/consent';
@@ -26,6 +27,9 @@ export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
   if (typeof record.version !== 'number' || !Number.isInteger(record.version) || record.version < CONSENT_VERSION)
     return null;
   if (typeof record.decidedAt !== 'string' || !Number.isFinite(Date.parse(record.decidedAt))) return null;
+  // Records stored before the basis field existed have none and read as explicit.
+  if (record.basis !== undefined && !isConsentBasis(record.basis)) return null;
+  if (record.basis === 'region_default' && record.analytics !== 'granted') return null;
   const ownerAccountId = typeof record.ownerAccountId === 'string' ? record.ownerAccountId : null;
   const device: DeviceConsentRecord = {
     analytics: record.analytics,
@@ -34,6 +38,7 @@ export async function readLocalConsent(): Promise<DeviceConsentRecord | null> {
     source: record.source,
     ownerAccountId,
   };
+  if (record.basis === 'region_default') device.basis = 'region_default';
   // Only a signed-in decision the account has not confirmed carries its token.
   const token = record.basedOnDecidedAt;
   if (ownerAccountId !== null && (token === null || (typeof token === 'string' && Number.isFinite(Date.parse(token)))))

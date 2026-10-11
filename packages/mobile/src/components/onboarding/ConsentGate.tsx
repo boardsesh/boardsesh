@@ -1,11 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useRouter, useSegments, type Href } from 'expo-router';
-import { isConsentRecordOwnedBy, needsPrompt } from '@boardsesh/consent';
+import { isConsentRecordOwnedBy, isRegionDefaultConsent, needsPrompt, type ConsentSource } from '@boardsesh/consent';
 import { useAuth } from '../../providers/auth-provider';
 import { usePartyProfile } from '../../providers/party-profile-provider';
 import { useLaunchReady } from '../../providers/launch-ready-context';
-import { getConsentCoordinator, useConsentSettled } from '../../providers/consent-provider';
+import {
+  applyRegionDefaultConsent,
+  clearRegionDefaultConsent,
+  getConsentCoordinator,
+  useConsentSettled,
+} from '../../providers/consent-provider';
+import { lookUpConsentRegion } from '../../lib/consent-region';
 import { getConsentSnapshot, subscribeConsent, updateConsentState } from '../../lib/consent-state';
 import { readLocalConsent } from '../../lib/consent-storage';
 import { consumeConsentDestination } from '../../lib/consent-navigation';
@@ -14,6 +20,10 @@ import { setPosthogFlagIdentity, subscribePosthogInitialized } from '../../lib/p
 
 export { useConsentSettled } from '../../providers/consent-provider';
 export const CONSENT_SERVER_WAIT_MS = 5000;
+
+function consentSource(): ConsentSource {
+  return Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
+}
 
 export function ConsentGate(): null {
   const consent = useSyncExternalStore(subscribeConsent, getConsentSnapshot, getConsentSnapshot);
@@ -88,6 +98,31 @@ export function ConsentGate(): null {
     };
   }, [consent.loaded, isAuthenticated, isLoading, authenticatedUserId, consent.authEpoch]);
 
+  // Region: the prompt is only shown in GDPR regions (and when the region is
+  // unknown). Look it up as soon as the device turns out to have no answer, so
+  // the answer is usually in by the time the prompt would open. A device that
+  // holds a region default re-checks once per launch and drops it in a prompt
+  // region, so a climber who travels into the EU is asked there.
+  const recordIsRegionDefault = isRegionDefaultConsent(consent.record);
+  const recordNeedsPrompt = needsPrompt(consent.record);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !consent.loaded || killed) return;
+    if (recordNeedsPrompt) {
+      void lookUpConsentRegion();
+      return;
+    }
+    if (!recordIsRegionDefault) return;
+    let cancelled = false;
+    void lookUpConsentRegion().then((promptRequired) => {
+      // Only a positive "this region asks" drops the default. An unknown region
+      // (offline launch) keeps it rather than re-asking on every flaky start.
+      if (!cancelled && promptRequired === true) clearRegionDefaultConsent();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [consent.loaded, killed, recordNeedsPrompt, recordIsRegionDefault]);
+
   useEffect(() => {
     if (!launchReady || !consent.loaded) return;
     if (isAuthenticated) serverWaitStartedAtRef.current ??= Date.now();
@@ -103,16 +138,26 @@ export function ConsentGate(): null {
       return;
     }
     let cancelled = false;
+    let asked = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ask = () => {
-      if (cancelled) return;
+      if (cancelled || asked) return;
       if (!needsPrompt(getConsentSnapshot().record)) {
         // The cap passed with a device answer still in place (offline): settle on
         // it. Tracking stays off until this account's answer resolves.
         updateConsentState({ settled: true });
         return;
       }
-      if (routeRef.current[0] !== 'privacy-consent') router.push('/privacy-consent');
+      asked = true;
+      // Capped at five seconds; an unknown region (null) asks.
+      void lookUpConsentRegion().then((promptRequired) => {
+        if (cancelled || !needsPrompt(getConsentSnapshot().record)) return;
+        if (promptRequired === false) {
+          applyRegionDefaultConsent(consentSource());
+          return;
+        }
+        if (routeRef.current[0] !== 'privacy-consent') router.push('/privacy-consent');
+      });
     };
     if (isAuthenticated) {
       serverWaitStartedAtRef.current ??= Date.now();

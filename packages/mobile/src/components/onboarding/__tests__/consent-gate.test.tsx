@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from '@testing-library/react';
-import type { ConsentRecord } from '@boardsesh/consent';
+import { createRegionDefaultConsent, type ConsentRecord, type ConsentSource } from '@boardsesh/consent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getConsentSnapshot,
@@ -28,8 +28,15 @@ const coordinator = vi.hoisted(() => ({
 }));
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
 const posthog = vi.hoisted(() => ({ setFlagIdentity: vi.fn(), subscribeInitialized: vi.fn(() => () => {}) }));
+// promptRequired from the backend: true (e.g. DE), false (e.g. US), null (unknown or failed).
+const region = vi.hoisted(() => ({ lookup: vi.fn<() => Promise<boolean | null>>() }));
+const regionDefault = vi.hoisted(() => ({
+  apply: vi.fn<(source: ConsentSource) => void>(),
+  clear: vi.fn<() => void>(),
+}));
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   AppState: {
     addEventListener: (_event: string, listener: (state: string) => void) => {
       appState.listeners.add(listener);
@@ -50,11 +57,22 @@ vi.mock('../../../providers/consent-provider', async () => {
   const consent = await import('../../../lib/consent-state');
   return {
     getConsentCoordinator: () => coordinator,
+    // Stand-ins for the real provider: the coordinator publishes the record,
+    // and the provider mirrors it into the consent state.
+    applyRegionDefaultConsent: (source: ConsentSource) => {
+      regionDefault.apply(source);
+      consent.updateConsentState({ record: createRegionDefaultConsent(source) });
+    },
+    clearRegionDefaultConsent: () => {
+      regionDefault.clear();
+      consent.updateConsentState({ record: null });
+    },
     useConsentSettled: () =>
       useSyncExternalStore(consent.subscribeConsent, consent.getConsentSnapshot, consent.getConsentSnapshot).settled,
   };
 });
 vi.mock('../../../lib/consent-storage', () => ({ readLocalConsent: localConsent.read }));
+vi.mock('../../../lib/consent-region', () => ({ lookUpConsentRegion: region.lookup }));
 vi.mock('../../../lib/posthog-client', () => ({
   setPosthogFlagIdentity: posthog.setFlagIdentity,
   subscribePosthogInitialized: posthog.subscribeInitialized,
@@ -81,6 +99,7 @@ beforeEach(() => {
   route.segments = ['(tabs)', 'climbs'];
   coordinator.snapshot = { accountResolved: true, syncing: false };
   coordinator.sync.mockReset().mockResolvedValue(undefined);
+  region.lookup.mockReset().mockResolvedValue(true);
   localConsent.read.mockReset().mockImplementation(async () => getConsentSnapshot().record);
   setBrowserConsentReader(() => getConsentSnapshot().record);
   updateConsentState({
@@ -109,9 +128,11 @@ afterEach(() => {
 });
 
 async function flushEffects() {
-  await act(async () => {
-    await Promise.resolve();
-  });
+  for (let tick = 0; tick < 3; tick += 1) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
 }
 
 describe('ConsentGate', () => {
@@ -322,5 +343,115 @@ describe('ConsentGate', () => {
     view.rerender(<ConsentGate />);
     expect(router.navigate).toHaveBeenCalledOnce();
     expect(consumeConsentDestination()).toBeNull();
+  });
+});
+
+describe('ConsentGate regions', () => {
+  it('asks a launch in a prompt region such as Germany', async () => {
+    region.lookup.mockResolvedValue(true);
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+    expect(getConsentSnapshot().settled).toBe(false);
+  });
+
+  it('skips the prompt outside the prompt regions and writes the region default', async () => {
+    region.lookup.mockResolvedValue(false);
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(router.push).not.toHaveBeenCalled();
+    expect(regionDefault.apply).toHaveBeenCalledExactlyOnceWith('ios');
+    expect(getConsentSnapshot().record).toMatchObject({ analytics: 'granted', basis: 'region_default' });
+    expect(getConsentSnapshot().settled).toBe(true);
+  });
+
+  it('asks when the region lookup fails or runs out of time', async () => {
+    region.lookup.mockResolvedValue(null);
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+    expect(isProductAnalyticsGranted()).toBe(false);
+  });
+
+  it('waits on a slow region lookup instead of guessing', async () => {
+    let answer!: (promptRequired: boolean | null) => void;
+    region.lookup.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    render(<ConsentGate />);
+    await flushEffects();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+
+    await act(async () => {
+      answer(null);
+    });
+    await flushEffects();
+    expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
+  });
+
+  it('lets an account denial win over the region default', async () => {
+    region.lookup.mockResolvedValue(false);
+    auth.isAuthenticated = true;
+    profile.authenticatedUserId = 'account-a';
+    coordinator.sync.mockImplementation(async () => {
+      updateConsentState({ record: { ...granted, analytics: 'denied' } });
+    });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(getConsentSnapshot().record?.analytics).toBe('denied');
+    expect(getConsentSnapshot().settled).toBe(true);
+  });
+
+  it('leaves an account answer alone in any region', async () => {
+    region.lookup.mockResolvedValue(true);
+    updateConsentState({ record: granted });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(regionDefault.clear).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(getConsentSnapshot().record).toEqual(granted);
+  });
+
+  it('drops a region default and asks once this launch is in a prompt region', async () => {
+    region.lookup.mockResolvedValue(true);
+    updateConsentState({ record: createRegionDefaultConsent('ios') });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(regionDefault.clear).toHaveBeenCalledOnce();
+    expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
+  });
+
+  it('keeps a region default when an offline launch cannot tell the region', async () => {
+    region.lookup.mockResolvedValue(null);
+    updateConsentState({ record: createRegionDefaultConsent('android') });
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(regionDefault.clear).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(getConsentSnapshot().settled).toBe(true);
+  });
+
+  it('never looks up the region in screenshot mode', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    render(<ConsentGate />);
+    await flushEffects();
+
+    expect(region.lookup).not.toHaveBeenCalled();
+    expect(regionDefault.apply).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
   });
 });

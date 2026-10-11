@@ -33,7 +33,17 @@ export async function exchangeAppleAdsAttribution(
   try {
     const response = await getHttpClient().request<{ exchangeAppleAdsAttribution: AppleAdsAttributionResult }>({
       document: EXCHANGE_APPLE_ADS_ATTRIBUTION,
-      variables: { token, consent },
+      // Name the four wire fields: device-only fields such as `basis` are not
+      // part of AppleAdsConsentInput and would fail GraphQL validation.
+      variables: {
+        token,
+        consent: {
+          analytics: consent.analytics,
+          version: consent.version,
+          source: consent.source,
+          decidedAt: consent.decidedAt,
+        },
+      },
       signal,
     });
     const result = response.exchangeAppleAdsAttribution;

@@ -1,5 +1,12 @@
 import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
-import { createConsentSyncCoordinator, type AnalyticsConsentChoice, type ConsentSource } from '@boardsesh/consent';
+import {
+  createConsentSyncCoordinator,
+  createRegionDefaultConsent,
+  isRegionDefaultConsent,
+  needsPrompt,
+  type AnalyticsConsentChoice,
+  type ConsentSource,
+} from '@boardsesh/consent';
 import { getConsentSnapshot, subscribeConsent, updateConsentState } from '../lib/consent-state';
 import {
   readLocalConsent,
@@ -127,6 +134,31 @@ export function decideAnalyticsConsent(choice: AnalyticsConsentChoice, source: C
   // The coordinator publishes the new local answer before doing any network I/O.
   updateConsentState({ settled: true });
   return decided;
+}
+
+/**
+ * Outside the prompt regions a device with no answer starts with analytics on.
+ * The default stays on this device: the coordinator never writes it to an
+ * account, and an account denial still replaces it. No-op once the device has
+ * any answer, so it can never overwrite a choice.
+ */
+export function applyRegionDefaultConsent(source: ConsentSource): void {
+  if (!coordinator || !needsPrompt(coordinator.getSnapshot().record)) return;
+  const record = createRegionDefaultConsent(source);
+  // Persist first: on the browser app this writes the shared cookie
+  // synchronously, so a capture-time cookie read already sees the default.
+  void persistLocalConsent(record).catch((error) => reportHandledError(error));
+  coordinator.replaceLocalRecord(record);
+}
+
+/**
+ * Drop a region default when this launch is in a prompt region (a climber who
+ * travelled into the EU, say), so the prompt asks. Leaves any explicit answer.
+ */
+export function clearRegionDefaultConsent(): void {
+  if (!coordinator || !isRegionDefaultConsent(coordinator.getSnapshot().record)) return;
+  void persistLocalConsent(null).catch((error) => reportHandledError(error));
+  coordinator.replaceLocalRecord(null);
 }
 
 export function ConsentProvider({ children }: { children: ReactNode }) {

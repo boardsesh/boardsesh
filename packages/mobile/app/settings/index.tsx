@@ -1,5 +1,5 @@
 import { decideAnalyticsConsent } from '../../src/providers/consent-provider';
-import { useAnalyticsConsent, useAnalyticsPreference } from '../../src/lib/consent-hooks';
+import { useAnalyticsConsent, useAnalyticsPreference, useAnalyticsRegionDefault } from '../../src/lib/consent-hooks';
 import { isProductAnalyticsGranted } from '../../src/lib/consent-state';
 import { reportHandledError } from '../../src/lib/error-reporting';
 import { Platform } from 'react-native';
@@ -111,6 +111,7 @@ export default function MoreScreen() {
   const { t: consentT } = useTranslation('consent');
   const analyticsGranted = useAnalyticsConsent();
   const analyticsPreference = useAnalyticsPreference();
+  const analyticsRegionDefault = useAnalyticsRegionDefault();
   const { enabled: sessionRecordingEnabled, setEnabled: setSessionRecordingPreference } =
     useSessionRecordingPreference();
   const bottomChromeDiagnosticsEligible = useBottomChromeDiagnosticsEligible();
@@ -868,7 +869,9 @@ export default function MoreScreen() {
         kind: 'toggle',
         key: 'analytics',
         label: consentT('analyticsLabel'),
-        subtitle: consentT('settingsBody'),
+        subtitle: analyticsRegionDefault
+          ? `${consentT('regionDefaultNote')} ${consentT('settingsBody')}`
+          : consentT('settingsBody'),
         value: analyticsPreference,
         onValueChange: (next) => {
           void decideAnalyticsConsent(

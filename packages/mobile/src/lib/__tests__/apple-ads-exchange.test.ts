@@ -72,3 +72,17 @@ describe('Apple Ads mobile transport boundary', () => {
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
   });
 });
+
+describe('Apple Ads consent variables', () => {
+  it('sends only the four AppleAdsConsentInput fields, never device-only ones', async () => {
+    request.mockReset().mockResolvedValue({
+      exchangeAppleAdsAttribution: { status: 'UNATTRIBUTED', attribution: null },
+    });
+    await exchangeAppleAdsAttribution(
+      'SENSITIVE_TOKEN',
+      { ...consent, basis: 'region_default' },
+      new AbortController().signal,
+    );
+    expect(request.mock.calls[0]?.[0].variables.consent).toEqual(consent);
+  });
+});
