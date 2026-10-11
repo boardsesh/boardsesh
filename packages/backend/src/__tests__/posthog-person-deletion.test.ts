@@ -57,6 +57,12 @@ describe('deletePosthogPerson', () => {
     });
   });
 
+  it.each([200, 204])('accepts a %i as done', async (status) => {
+    const response =
+      status === 204 ? new Response(null, { status }) : jsonResponse(status, { persons_found: 1, persons_deleted: 1 });
+    await expect(deletePosthogPerson(job, { fetchImpl: mockFetch(response) })).resolves.toBe('deleted');
+  });
+
   it('defaults to the US private API host and the Boardsesh project', async () => {
     vi.stubEnv('POSTHOG_PROJECT_ID', '');
     vi.stubEnv('POSTHOG_API_HOST', '');

@@ -326,6 +326,7 @@ describe('grantIsStale', () => {
 
   it('with no basedOnDecidedAt, is stale only against a different answer', () => {
     expect(grantIsStale(denial, null)).toBe(true);
+    expect(grantIsStale(denial, undefined)).toBe(true);
     expect(grantIsStale(grant, null)).toBe(false);
     expect(grantIsStale(grant, undefined)).toBe(false);
   });

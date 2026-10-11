@@ -15,6 +15,15 @@ vi.mock('../preference-store', () => ({
   },
 }));
 
+const expoCrypto = vi.hoisted(() => ({ available: true, calls: 0 }));
+vi.mock('expo-crypto', () => ({
+  getRandomBytes: (byteCount: number) => {
+    expoCrypto.calls += 1;
+    if (!expoCrypto.available) throw new Error("Cannot find native module 'ExpoCrypto'");
+    return Uint8Array.from({ length: byteCount }, (_, index) => (index * 37 + 11) % 256);
+  },
+}));
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 async function loadModule() {
@@ -25,6 +34,9 @@ async function loadModule() {
 beforeEach(() => {
   storage.values.clear();
   storage.failReads = false;
+  expoCrypto.available = true;
+  expoCrypto.calls = 0;
+  vi.unstubAllGlobals();
 });
 
 describe('getAnonymousInstallId', () => {
@@ -69,5 +81,37 @@ describe('getAnonymousInstallId', () => {
   it('prefixes the flags distinct id', async () => {
     const launch = await loadModule();
     expect(await launch.getFlagsInstallDistinctId()).toBe(`flags-install:${await launch.getAnonymousInstallId()}`);
+  });
+
+  it('uses getRandomValues when randomUUID is missing', async () => {
+    const getRandomValues = vi.fn(<T extends ArrayBufferView>(array: T) => {
+      new Uint8Array(array.buffer).fill(0xab);
+      return array;
+    });
+    vi.stubGlobal('crypto', { getRandomValues });
+    const launch = await loadModule();
+    expect(await launch.getAnonymousInstallId()).toMatch(UUID);
+    expect(getRandomValues).toHaveBeenCalledOnce();
+    expect(expoCrypto.calls).toBe(0);
+  });
+
+  it('falls back to expo-crypto when the runtime has no Web Crypto', async () => {
+    vi.stubGlobal('crypto', undefined);
+    const launch = await loadModule();
+    expect(await launch.getAnonymousInstallId()).toMatch(UUID);
+    expect(expoCrypto.calls).toBe(1);
+  });
+
+  it('fails closed with no secure random source: no id, nothing stored, never Math.random', async () => {
+    vi.stubGlobal('crypto', undefined);
+    expoCrypto.available = false;
+    const mathRandom = vi.spyOn(Math, 'random');
+    const launch = await loadModule();
+
+    expect(await launch.getAnonymousInstallId()).toBeNull();
+    expect(await launch.getFlagsInstallDistinctId()).toBeNull();
+    expect(storage.values.size).toBe(0);
+    expect(mathRandom).not.toHaveBeenCalled();
+    mathRandom.mockRestore();
   });
 });

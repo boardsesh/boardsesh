@@ -24,40 +24,61 @@ const ANONYMOUS_INSTALL_ID_KEY = 'anonymousInstallId';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let storedId: string | null = null;
-let pending: Promise<string> | null = null;
+let pending: Promise<string | null> | null = null;
 let launchFallbackId: string | null = null;
 
-function randomId(): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-  // RFC 4122 v4 layout from Math.random, for a runtime without crypto.randomUUID.
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (placeholder) => {
-    const nibble = Math.floor(Math.random() * 16);
-    return (placeholder === 'x' ? nibble : (nibble & 0x3) | 0x8).toString(16);
-  });
+function uuidFromBytes(bytes: Uint8Array): string {
+  // RFC 4122 version 4 layout.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-async function loadOrCreate(): Promise<string> {
+/**
+ * A UUID from a cryptographically secure source, or null when there is none.
+ * Never Math.random: a guessable id would let one install's flag bucket and
+ * health reports be predicted. Fails closed instead (callers send nothing).
+ */
+async function secureRandomId(): Promise<string | null> {
+  const webCrypto = globalThis.crypto;
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
+  if (typeof webCrypto?.getRandomValues === 'function')
+    return uuidFromBytes(webCrypto.getRandomValues(new Uint8Array(16)));
+  try {
+    // Loaded on demand: the native module ships in every binary (auth uses it),
+    // and test graphs that never reach this line need no native stub.
+    const { getRandomBytes } = await import('expo-crypto');
+    return uuidFromBytes(getRandomBytes(16));
+  } catch {
+    return null;
+  }
+}
+
+async function loadOrCreate(): Promise<string | null> {
   const stored = await getPreference<unknown>(ANONYMOUS_INSTALL_ID_KEY);
   if (typeof stored === 'string' && UUID_PATTERN.test(stored)) return stored;
-  const created = randomId();
+  const created = await secureRandomId();
+  if (!created) return null;
   await setPreference(ANONYMOUS_INSTALL_ID_KEY, created);
   return created;
 }
 
 /**
- * The install's id. Never rejects: when storage cannot be read (iOS before
- * first unlock on a background launch) it returns a launch-only id without
- * caching it, and the next call tries storage again.
+ * The install's id, or null when no secure random source exists (fail closed:
+ * no flag request, no health report). Never rejects: when storage cannot be
+ * read (iOS before first unlock on a background launch) it returns a
+ * launch-only id without caching it, and the next call tries storage again.
  */
-export function getAnonymousInstallId(): Promise<string> {
+export function getAnonymousInstallId(): Promise<string | null> {
   if (storedId) return Promise.resolve(storedId);
   pending ??= loadOrCreate()
     .then((id) => {
       storedId = id;
       return id;
     })
-    .catch(() => {
-      launchFallbackId ??= randomId();
+    .catch(async () => {
+      launchFallbackId ??= await secureRandomId();
       return launchFallbackId;
     })
     .finally(() => {
@@ -66,9 +87,10 @@ export function getAnonymousInstallId(): Promise<string> {
   return pending;
 }
 
-/** The distinct id a signed-out flag request uses. */
-export async function getFlagsInstallDistinctId(): Promise<string> {
-  return `flags-install:${await getAnonymousInstallId()}`;
+/** The distinct id a signed-out flag request uses, or null (see getAnonymousInstallId). */
+export async function getFlagsInstallDistinctId(): Promise<string | null> {
+  const id = await getAnonymousInstallId();
+  return id ? `flags-install:${id}` : null;
 }
 
 /** Test-only: forget the cached id so a test can start from empty storage. */

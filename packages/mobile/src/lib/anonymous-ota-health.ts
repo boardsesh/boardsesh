@@ -24,6 +24,8 @@ async function reportAnonymousHealth(
   const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
   if (isDevBuild() || !apiKey || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
   const installId = await getAnonymousInstallId();
+  // No secure random source: send nothing rather than a guessable id.
+  if (!installId) return;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {

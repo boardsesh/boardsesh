@@ -141,6 +141,9 @@ export class ConsentPostHog extends PostHog {
               ? payload.distinct_id
               : flagsIdentity
             : await getFlagsInstallDistinctId();
+          // No secure id: fail closed. Flags keep their cached or shipped
+          // defaults rather than bucketing on something guessable.
+          if (distinctId === null) throw new Error('No secure random source for the flags id');
           options = {
             ...options,
             body: JSON.stringify({

@@ -13,6 +13,8 @@ import { applySessionReplayConsent } from '../session-replay-consent';
 import { BACKEND_URL } from '../env';
 import { deferConsentDestination, consumeConsentDestination } from '../consent-navigation';
 import { grantedConsent, grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { resetAnonymousInstallIdForTests } from '../anonymous-install-id';
+import { removePreference } from '../preference-store';
 vi.mock('../replay-privacy', () => ({
   isNativeReplayPrivacyReady: () => true,
   applyNativeReplayPrivacy: async () => {},
@@ -233,6 +235,27 @@ describe('mobile consent privacy boundaries', () => {
     updateConsentState({ sdkReady: false });
     expect(isProductAnalyticsGranted()).toBe(false);
     expect(await flagsDistinctId('memory-anonymous')).toBe(consented);
+  });
+  it('fails closed for signed-out flags when no secure random source exists', async () => {
+    const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
+    resetAnonymousInstallIdForTests();
+    await removePreference('anonymousInstallId');
+    // No Web Crypto, and expo-crypto's native module is absent under node.
+    vi.stubGlobal('crypto', undefined);
+    try {
+      const client = new ConsentPostHog('phc_test');
+      await expect(
+        client.fetch('https://backend/api/posthog/flags/', {
+          method: 'POST',
+          headers: {},
+          body: JSON.stringify({ distinct_id: 'sdk-anonymous' }),
+        }),
+      ).rejects.toThrow('No secure random source');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      resetAnonymousInstallIdForTests();
+    }
   });
   it('consented signed-in flags keep the identified account id', async () => {
     const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
