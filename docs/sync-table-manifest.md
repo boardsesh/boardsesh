@@ -365,8 +365,8 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   already written the newer row — its apply transaction waits behind whatever else holds the lock — and the
   row would read stale until the next cycle. The comparison is `>=`, not `>`: the pull usually carries the
   SAME revision the stream did, and that row still has to land, because it is what fills `updated_at`,
-  `benchmark_difficulty` and the `fa_*` pair. Every other table keeps its unconditional `INSERT OR REPLACE`;
-  they have exactly one writer, so there is nothing to lose a race with.
+  `benchmark_difficulty` and the `fa_*` pair. Other tables retain the existing cursor guards for refresh pages and spray
+  pulls; ordinary pages retain their previous `INSERT OR REPLACE` behavior.
 - **Restore hazard the guard introduces.** The guard trusts `sync_seq` to be monotonic on the server. A restore
   that moves the sequence BACKWARDS — a `pg_restore` into a fresh database whose bigserial restarts below the
   highest value devices already hold, or a rollback to an older snapshot — leaves every device frozen on the
