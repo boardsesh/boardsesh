@@ -119,7 +119,7 @@ describe('mobile consent privacy boundaries', () => {
       headers: {},
       body: JSON.stringify({ distinct_id: 'account-b' }),
     });
-    expect(JSON.parse(String(fetchSpy.mock.calls.at(-1)?.[1]?.body)).distinct_id).toMatch(/^flags-launch:/);
+    expect(JSON.parse(String(fetchSpy.mock.calls.at(-1)?.[1]?.body)).distinct_id).toMatch(/^flags-install:/);
   });
   it('preserves the real fetch Response contract when guarding flags JSON', async () => {
     vi.spyOn(PostHog.prototype, 'fetch').mockImplementation(
@@ -215,15 +215,36 @@ describe('mobile consent privacy boundaries', () => {
     });
     expect(sanitizeRememberedPosthogFile('broken')).toBeNull();
   });
-  it('consented signed-out flags retain the SDK anonymous bucketing identity', async () => {
+  it('signed-out flags bucket on the install id, unchanged by Allow', async () => {
     const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
+    const client = new ConsentPostHog('phc_test');
+    const flagsDistinctId = async (sdkDistinctId: string) => {
+      await client.fetch('https://backend/api/posthog/flags/', {
+        method: 'POST',
+        headers: {},
+        body: JSON.stringify({ distinct_id: sdkDistinctId }),
+      });
+      return (JSON.parse(fetchSpy.mock.calls.at(-1)?.[1]?.body as string) as { distinct_id: string }).distinct_id;
+    };
+    // Consented: the SDK's own anonymous id never decides the bucket.
+    const consented = await flagsDistinctId('consented-anonymous');
+    expect(consented).toMatch(/^flags-install:[0-9a-f-]{36}$/);
+    // Without consent, the same install keeps the same bucket.
+    updateConsentState({ sdkReady: false });
+    expect(isProductAnalyticsGranted()).toBe(false);
+    expect(await flagsDistinctId('memory-anonymous')).toBe(consented);
+  });
+  it('consented signed-in flags keep the identified account id', async () => {
+    const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
+    updateConsentState({ accountId: 'account-c', authSettled: true });
+    setPosthogFlagIdentity('account-c');
     const client = new ConsentPostHog('phc_test');
     await client.fetch('https://backend/api/posthog/flags/', {
       method: 'POST',
       headers: {},
-      body: JSON.stringify({ distinct_id: 'consented-anonymous' }),
+      body: JSON.stringify({ distinct_id: 'account-c' }),
     });
-    expect(JSON.parse(String(fetchSpy.mock.calls.at(-1)?.[1]?.body)).distinct_id).toBe('consented-anonymous');
+    expect(JSON.parse(fetchSpy.mock.calls.at(-1)?.[1]?.body as string).distinct_id).toBe('account-c');
   });
   it('a delayed disk write finishes before withdrawal deletes every legacy SDK file', async () => {
     const files = new Map<string, string>();

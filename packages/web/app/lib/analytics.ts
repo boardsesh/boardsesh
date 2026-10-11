@@ -14,6 +14,7 @@ import { getBackendHttpUrl } from './backend-url';
 import { getSessionInboundCampaign, type InboundCampaign } from './inbound-campaign';
 import { isAutomatedCrawlerUserAgent } from './is-crawler';
 import { isProductionHost } from './production-hosts';
+import { getFlagsBrowserDistinctId, withAnonymousFlagsIdentity } from './anonymous-flags-id';
 
 // The property values a tracked event may carry. `undefined` is accepted at the
 // call site and dropped before capture (sanitizeForPosthog in
@@ -88,6 +89,16 @@ function installConsentTransport(client: PostHog, backendProxyHost: string | nul
     const flagsRequest = /\/(flags|decide)\/?(?:\?|$)/.test(url);
     if (retiredClients.has(client) || suspendedClients.has(client) || (!flagsRequest && !hasAnalyticsConsent())) {
       throw new Error('Analytics consent does not permit this request');
+    }
+    if (flagsRequest && flagAccountId === null && typeof options.body === 'string') {
+      // Signed out, flags bucket on one id per browser whatever the consent
+      // answer, so a rollout neither re-rolls per load nor flips on Allow.
+      // Signed in, the request already carries the account id.
+      const distinctId = await getFlagsBrowserDistinctId();
+      options = { ...options, body: withAnonymousFlagsIdentity(options.body, distinctId, hasAnalyticsConsent()) };
+      if (retiredClients.has(client) || suspendedClients.has(client)) {
+        throw new Error('Analytics consent does not permit this request');
+      }
     }
     const controller = new AbortController();
     const abort = () => controller.abort();

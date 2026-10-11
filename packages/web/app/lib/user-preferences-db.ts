@@ -42,6 +42,12 @@ export type UserPreferenceKeyMap = {
    */
   'homeGymCard:dismissed': boolean;
   lastUsedGrade: number;
+  /**
+   * A random UUID that a signed-out visitor's feature-flag requests bucket on,
+   * so a percentage rollout stays put across page loads and across the consent
+   * answer. Flags only; never on a captured event. See anonymous-flags-id.ts.
+   */
+  anonymousFlagsId: string;
 };
 
 // Map of IDB preference keys to their legacy localStorage keys for one-time migration
