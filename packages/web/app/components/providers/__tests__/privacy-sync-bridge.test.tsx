@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { QueryClient } from '@tanstack/react-query';
-import { render, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Sink = { next: () => void; error: (error: unknown) => void; complete: () => void };
 const mocks = vi.hoisted(() => ({
@@ -49,7 +49,7 @@ vi.mock('@/app/lib/realtime/websocket-connection-manager', () => ({
   connectionManager: { registerClient: vi.fn(() => () => {}) },
 }));
 import { PrivacySyncBridge } from '../privacy-sync-bridge';
-import { __resetSharedRealtimeClientForTests, acquireRealtimeClient } from '@/app/lib/realtime/graphql-client';
+import { acquireRealtimeClient } from '@/app/lib/realtime/graphql-client';
 import { rendersProtectedContentOnServer } from '@/app/lib/privacy-client';
 
 const sensitiveKeys = [
@@ -64,8 +64,14 @@ const transportKeys = [
 ];
 
 describe('website privacy revocation', () => {
+  // Unmounting the bridge and releasing every extra holder returns the shared
+  // socket to nobody, even when a test throws before its own cleanup.
+  const holders: Array<{ release: () => void }> = [];
+  afterEach(() => {
+    cleanup();
+    for (const holder of holders.splice(0)) holder.release();
+  });
   beforeEach(() => {
-    __resetSharedRealtimeClientForTests();
     mocks.createClient.mockClear();
     mocks.router.refresh.mockClear();
     mocks.sinks.length = 0;
@@ -82,6 +88,7 @@ describe('website privacy revocation', () => {
 
     // A comment thread on the same page joins the bridge's socket.
     const thread = acquireRealtimeClient({ url: 'ws://localhost/graphql', authToken: 'accepted-token' });
+    holders.push(thread);
     expect(mocks.createClient).toHaveBeenCalledOnce();
 
     mocks.sinks[0].next();

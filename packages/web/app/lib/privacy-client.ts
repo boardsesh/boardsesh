@@ -22,6 +22,8 @@ export async function revokeWebPrivacySnapshots(queryClient: QueryClient): Promi
 // content: walls (including spray views), sessions, profiles, playlists,
 // setters, gyms, and climb pages under the board-config routes. React Query
 // cannot withdraw that markup, so a privacy event re-renders these pages.
+// There is no notifications page to list: the inbox lives in the app, not on
+// the website.
 const PROTECTED_SECTIONS = new Set(['b', 'session', 'profile', 'playlists', 'setter', 'gym']);
 const CLIMB_ROUTE_ACTIONS = new Set(['view', 'play', 'list']);
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { CreateGraphQLClientOptions, ExtendedClient } from '@boardsesh/graphql-client';
 
 const shared = vi.hoisted(() => ({
@@ -21,7 +21,7 @@ vi.mock('../websocket-connection-manager', () => ({
   connectionManager: { registerClient: vi.fn(() => () => {}) },
 }));
 
-import { __resetSharedRealtimeClientForTests, acquireRealtimeClient, createGraphQLClient } from '../graphql-client';
+import { acquireRealtimeClient as acquireSharedRealtimeClient, createGraphQLClient } from '../graphql-client';
 import { WEB_CLIENT_VERSION } from '@/app/lib/client-identity';
 
 const BROWSER_IDENTITY = `boardsesh-web/${WEB_CLIENT_VERSION}`;
@@ -62,9 +62,19 @@ describe('web realtime createGraphQLClient connectionParams', () => {
 });
 
 describe('acquireRealtimeClient', () => {
+  // Every handle a test takes is released after it, even when the test throws,
+  // so the module's shared client never carries over into the next test.
+  const handles: Array<{ release: () => void }> = [];
+  const acquireRealtimeClient = (options: Parameters<typeof acquireSharedRealtimeClient>[0]) => {
+    const handle = acquireSharedRealtimeClient(options);
+    handles.push(handle);
+    return handle;
+  };
   beforeEach(() => {
     shared.capturedOptions.length = 0;
-    __resetSharedRealtimeClientForTests();
+  });
+  afterEach(() => {
+    for (const handle of handles.splice(0)) handle.release();
   });
 
   it('hands every holder of the same token one client and disposes it after the last release', () => {
