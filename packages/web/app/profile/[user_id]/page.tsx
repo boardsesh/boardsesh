@@ -109,7 +109,7 @@ export default async function ProfilePage({ params }: PageProps) {
       {/* Success path only — the notFound() above and the metadata catch branch
           are both `noindex, follow`, and neither reaches here. */}
       {!initialProfile.isPrivate && (
-      <ProfileJsonLd userId={user_id} displayName={initialProfile.displayName || null} locale={locale} />
+        <ProfileJsonLd userId={user_id} displayName={initialProfile.displayName || null} locale={locale} />
       )}
       <ProfilePageContent
         userId={user_id}

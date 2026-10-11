@@ -37,6 +37,22 @@ export const GET_PUBLIC_PROFILE = gql`
   query GetPublicProfile($userId: ID!) {
     publicProfile(userId: $userId) {
       id
+      displayName
+      avatarUrl
+      instagramUrl
+      followerCount
+      followingCount
+      isFollowedByMe
+    }
+  }
+`;
+
+// Web profile rendering needs the backend authorization decision. Keep the
+// recorded native profile document stable; web uses its own operation name.
+export const GET_WEB_PUBLIC_PROFILE = gql`
+  query GetWebPublicProfile($userId: ID!) {
+    publicProfile(userId: $userId) {
+      id
       isPrivate
       canViewActivity
       displayName

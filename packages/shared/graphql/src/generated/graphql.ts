@@ -14443,6 +14443,26 @@ export type GetPublicProfileQuery = {
   } | null;
 };
 
+export type GetWebPublicProfileQueryVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type GetWebPublicProfileQuery = {
+  __typename?: 'Query';
+  publicProfile?: {
+    __typename?: 'PublicUserProfile';
+    id: string;
+    isPrivate: boolean;
+    canViewActivity: boolean;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    instagramUrl?: string | null;
+    followerCount: number;
+    followingCount: number;
+    isFollowedByMe: boolean;
+  } | null;
+};
+
 export type GetFollowersQueryVariables = Exact<{
   input: FollowListInput;
 }>;
@@ -23844,6 +23864,53 @@ export const GetPublicProfileDocument = {
     },
   ],
 } as unknown as DocumentNode<GetPublicProfileQuery, GetPublicProfileQueryVariables>;
+export const GetWebPublicProfileDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetWebPublicProfile' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'publicProfile' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'canViewActivity' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'instagramUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetWebPublicProfileQuery, GetWebPublicProfileQueryVariables>;
 export const GetFollowersDocument = {
   kind: 'Document',
   definitions: [

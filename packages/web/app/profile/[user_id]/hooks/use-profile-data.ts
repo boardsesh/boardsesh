@@ -13,7 +13,7 @@ import {
   type GetUserProfileStatsQueryResponse,
   GET_USER_CLIMB_PERCENTILE,
   type GetUserClimbPercentileQueryResponse,
-  GET_PUBLIC_PROFILE,
+  GET_WEB_PUBLIC_PROFILE,
 } from '@boardsesh/graphql/operations';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -127,7 +127,11 @@ export function useProfileData(userId: string, initialData?: InitialData) {
       // authToken. Firing this anonymously would come back false and stomp the
       // SSR-seeded "Following" state on every refetch.
       const client = createGraphQLHttpClient(authToken);
-      const response = await client.request<GetPublicProfileResponse>({ document: GET_PUBLIC_PROFILE, variables: { userId }, signal });
+      const response = await client.request<GetPublicProfileResponse>({
+        document: GET_WEB_PUBLIC_PROFILE,
+        variables: { userId },
+        signal,
+      });
       const publicProfile = response.publicProfile;
       if (!publicProfile) throw new ProfileNotFoundError();
       return {

@@ -47,6 +47,8 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: mocks.translate, i18n: { language: 'en-US' } }),
 }));
 
+vi.mock('@/app/components/consent/consent-settings-card', () => ({ default: () => null }));
+
 vi.mock('@/app/components/account/controllers-section', () => ({ default: () => null }));
 vi.mock('@/app/components/account/set-password-section', () => ({
   default: ({

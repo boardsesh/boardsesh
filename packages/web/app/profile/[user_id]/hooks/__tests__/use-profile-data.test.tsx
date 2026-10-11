@@ -8,7 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import {
-  GET_PUBLIC_PROFILE,
+  GET_WEB_PUBLIC_PROFILE,
   GET_USER_CLIMB_PERCENTILE,
   GET_USER_PROFILE_STATS,
   GET_USER_TICKS,
@@ -154,7 +154,7 @@ describe('useProfileData', () => {
   it('fetches missing profile, ticks, stats, and percentile data on mount', async () => {
     mockRequest.mockImplementation(async (request: { document: unknown; variables?: Record<string, unknown> }) => {
       const { document: query, variables } = request;
-      if (query === GET_PUBLIC_PROFILE) {
+      if (query === GET_WEB_PUBLIC_PROFILE) {
         return {
           publicProfile: {
             id: 'user-1',
@@ -213,7 +213,11 @@ describe('useProfileData', () => {
       expect(result.current.loadingProfileStats).toBe(false);
     });
 
-    expect(mockRequest).toHaveBeenCalledWith({ document: GET_PUBLIC_PROFILE, variables: { userId: 'user-1' }, signal: expect.any(AbortSignal) });
+    expect(mockRequest).toHaveBeenCalledWith({
+      document: GET_WEB_PUBLIC_PROFILE,
+      variables: { userId: 'user-1' },
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.profile?.displayName).toBe('Fetched User');
     // Resolved from the viewer's bearer token — an anonymous request would
     // come back false and stomp the SSR-seeded follow state.
@@ -249,7 +253,7 @@ describe('useProfileData', () => {
       await profileQuery?.fetch();
     });
 
-    expect(mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE)).toHaveLength(0);
+    expect(mockRequest.mock.calls.filter((call) => call[0]?.document === GET_WEB_PUBLIC_PROFILE)).toHaveLength(0);
     expect(result.current.profile?.isFollowedByMe).toBe(true);
   });
 
@@ -260,8 +264,8 @@ describe('useProfileData', () => {
       data: null,
       update: vi.fn(),
     });
-    mockRequest.mockImplementation(async (query: unknown) => {
-      if (query === GET_PUBLIC_PROFILE) {
+    mockRequest.mockImplementation(async (request: { document: unknown }) => {
+      if (request.document === GET_WEB_PUBLIC_PROFILE) {
         return {
           publicProfile: {
             id: 'user-1',
@@ -279,7 +283,11 @@ describe('useProfileData', () => {
 
     const { result } = renderProfileDataHook(() => useProfileData('user-1'));
     await waitFor(() => expect(result.current.profile?.displayName).toBe('Public User'));
-    expect(mockRequest).toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
+    expect(mockRequest).toHaveBeenCalledWith({
+      document: GET_WEB_PUBLIC_PROFILE,
+      variables: { userId: 'user-1' },
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('does not fetch the profile while the NextAuth session is loading', async () => {
@@ -295,7 +303,7 @@ describe('useProfileData', () => {
       await Promise.resolve();
     });
 
-    expect(mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE)).toHaveLength(0);
+    expect(mockRequest.mock.calls.filter((call) => call[0]?.document === GET_WEB_PUBLIC_PROFILE)).toHaveLength(0);
   });
 
   it('recomputes hardest grades when filtering to a single board', async () => {
@@ -389,15 +397,15 @@ describe('useProfileData', () => {
       await Promise.resolve();
     });
 
-    expect(mockRequest).not.toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
-    expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_PROFILE_STATS, { userId: 'user-1' });
-    expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_CLIMB_PERCENTILE, { userId: 'user-1' });
-    expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_TICKS, { userId: 'user-1', boardType: 'kilter' });
+    expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ document: GET_WEB_PUBLIC_PROFILE }));
+    expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ document: GET_USER_PROFILE_STATS }));
+    expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ document: GET_USER_CLIMB_PERCENTILE }));
+    expect(mockRequest).not.toHaveBeenCalledWith(expect.objectContaining({ document: GET_USER_TICKS }));
   });
 
   it('flags notFound when publicProfile resolves to null', async () => {
-    mockRequest.mockImplementation(async (query: unknown) => {
-      if (query === GET_PUBLIC_PROFILE) return { publicProfile: null };
+    mockRequest.mockImplementation(async (request: { document: unknown }) => {
+      if (request.document === GET_WEB_PUBLIC_PROFILE) return { publicProfile: null };
       return {};
     });
 
@@ -408,7 +416,7 @@ describe('useProfileData', () => {
     });
     expect(result.current.profile).toBeNull();
     // A missing profile must not be retried — it's an answer, not a failure.
-    const publicProfileCalls = mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE);
+    const publicProfileCalls = mockRequest.mock.calls.filter((call) => call[0]?.document === GET_WEB_PUBLIC_PROFILE);
     expect(publicProfileCalls).toHaveLength(1);
   });
 

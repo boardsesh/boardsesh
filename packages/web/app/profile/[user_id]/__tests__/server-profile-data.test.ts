@@ -5,7 +5,7 @@ const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL }));
 
-import { GET_PUBLIC_PROFILE } from '@boardsesh/graphql/operations';
+import { GET_WEB_PUBLIC_PROFILE } from '@boardsesh/graphql/operations';
 import { getProfileData } from '../server-profile-data';
 
 describe('getProfileData', () => {
@@ -17,7 +17,11 @@ describe('getProfileData', () => {
     executeAuthenticatedGraphQL.mockResolvedValue({ publicProfile: null });
 
     await expect(getProfileData('missing-user')).resolves.toBeNull();
-    expect(executeAuthenticatedGraphQL).toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'missing-user' }, undefined);
+    expect(executeAuthenticatedGraphQL).toHaveBeenCalledWith(
+      GET_WEB_PUBLIC_PROFILE,
+      { userId: 'missing-user' },
+      undefined,
+    );
   });
 
   it('propagates backend failures instead of converting them to a profile 404', async () => {
@@ -31,6 +35,8 @@ describe('getProfileData', () => {
     executeAuthenticatedGraphQL.mockResolvedValue({
       publicProfile: {
         id: 'user-1',
+        isPrivate: true,
+        canViewActivity: false,
         displayName: 'Climber',
         avatarUrl: null,
         instagramUrl: null,
@@ -42,6 +48,8 @@ describe('getProfileData', () => {
 
     await expect(getProfileData('user-1', 'viewer-token')).resolves.toEqual({
       id: 'user-1',
+      isPrivate: true,
+      canViewActivity: false,
       email: undefined,
       displayName: 'Climber',
       avatarUrl: null,

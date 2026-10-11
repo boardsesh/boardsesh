@@ -1,5 +1,5 @@
 import 'server-only';
-import { GET_PUBLIC_PROFILE } from '@boardsesh/graphql/operations';
+import { GET_WEB_PUBLIC_PROFILE } from '@boardsesh/graphql/operations';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import type { UserProfile } from './utils/profile-constants';
@@ -24,7 +24,7 @@ type GetPublicProfileResponse = {
  */
 export async function getProfileData(userId: string, authToken?: string): Promise<UserProfile | null> {
   const response = await executeAuthenticatedGraphQL<GetPublicProfileResponse>(
-    GET_PUBLIC_PROFILE,
+    GET_WEB_PUBLIC_PROFILE,
     { userId },
     authToken,
   );
