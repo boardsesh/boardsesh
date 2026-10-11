@@ -579,6 +579,91 @@ describe('complete comment ancestry', () => {
     },
   );
 
+  it('keeps each surviving reply on its own author’s privacy and audience after the ancestor is gone', async () => {
+    // A missing ancestor stops blocking the chain, nothing more: the subthread is
+    // not orphaned, and each reply under it reads exactly as it would under a
+    // live public ancestor.
+    const deletedAuthor = 'privacy-deleted-ancestor-audience';
+    const privateReplier = 'privacy-surviving-private-replier';
+    await db
+      .insert(schema.users)
+      .values([deletedAuthor, privateReplier].map((id) => ({ id, email: `${id}@test.com` })));
+    await db
+      .insert(schema.userProfiles)
+      .values([deletedAuthor, privateReplier].map((userId) => ({ userId, isPrivate: true })));
+    await db.insert(schema.userFollows).values({ followerId: approved, followingId: privateReplier });
+    const [root] = await db
+      .insert(schema.comments)
+      .values({
+        uuid: `${deletedAuthor}-root`,
+        userId: deletedAuthor,
+        entityType: 'climb',
+        entityId: climbUuid,
+        body: 'Thread starter',
+      })
+      .returning();
+    const replies = {
+      publicAccount: { uuid: `${deletedAuthor}-public-reply`, authorUserId: stranger },
+      privateAccount: { uuid: `${deletedAuthor}-private-reply`, authorUserId: privateReplier },
+      onlyMe: { uuid: `${deletedAuthor}-only-me-reply`, authorUserId: stranger },
+    };
+    await db.insert(schema.comments).values(
+      Object.values(replies).map(({ uuid, authorUserId }) => ({
+        uuid,
+        userId: authorUserId,
+        entityType: 'climb' as const,
+        entityId: climbUuid,
+        parentCommentId: root.id,
+        body: 'Reply under a thread whose starter leaves',
+      })),
+    );
+    await db
+      .insert(schema.contentPrivacy)
+      .values({ entityType: 'comment', entityId: replies.onlyMe.uuid, ownerId: stranger, audience: 'only_me' });
+
+    await db.delete(schema.users).where(eq(schema.users.id, deletedAuthor));
+    expect(await db.select().from(schema.comments).where(eq(schema.comments.id, root.id))).toEqual([]);
+
+    const readers = async (reply: { uuid: string; authorUserId: string }) => {
+      const allowed: string[] = [];
+      for (const viewerId of [null, bystander, stranger, approved, privateReplier]) {
+        const live = await canReadSocialEntity('comment', reply.uuid, viewerId);
+        // The subscription's tombstone check for the same reply agrees with the live read.
+        const tombstone = await canReadDeletedComment(
+          {
+            commentUuid: reply.uuid,
+            authorUserId: reply.authorUserId,
+            parentCommentId: root.id,
+            entityType: 'climb',
+            entityId: climbUuid,
+          },
+          viewerId,
+        );
+        expect(tombstone).toBe(live);
+        if (live) allowed.push(viewerId ?? 'anonymous');
+      }
+      return allowed;
+    };
+
+    // A public account's reply: everyone, as under a live public ancestor.
+    expect(await readers(replies.publicAccount)).toEqual(['anonymous', bystander, stranger, approved, privateReplier]);
+    // A private account's reply: its author and accepted followers. The stranger
+    // replied beside it under the same deleted root and still does not read it.
+    expect(await readers(replies.privateAccount)).toEqual([approved, privateReplier]);
+    // A public account's Only-me reply: its author alone.
+    expect(await readers(replies.onlyMe)).toEqual([stranger]);
+
+    const feed = await socialCommentQueries.globalCommentFeed(null, { input: { limit: 50 } }, {
+      userId: null,
+      isAuthenticated: false,
+      connectionId: 'privacy-orphan-audience',
+    } as unknown as ConnectionContext);
+    const anonymousFeed = feed.comments.map((comment) => comment.uuid);
+    expect(anonymousFeed).toContain(replies.publicAccount.uuid);
+    expect(anonymousFeed).not.toContain(replies.privateAccount.uuid);
+    expect(anonymousFeed).not.toContain(replies.onlyMe.uuid);
+  });
+
   it('allows chains ending at a root or a missing row within 32 ancestors and rejects deeper chains and cycles', async () => {
     let parentCommentId: number | null = null;
     const chain = [];
