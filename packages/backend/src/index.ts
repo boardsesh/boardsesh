@@ -17,6 +17,7 @@ import { db } from './db/client';
 import { startPopularBoardConfigsRefresh } from './services/popular-board-configs';
 import { startClimbPopularityRefresh } from './services/climb-popularity-refresh';
 import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summary-refresh';
+import { startPosthogPersonDeletion } from './services/analytics/posthog-person-deletion';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -52,6 +53,11 @@ async function main() {
   // removed through the app; only upstream grade drift and synced circuits wait.
   await startPlaylistGradeSummaryRefresh(jobQueue).catch((error: unknown) => {
     logger.error('[PlaylistGradeSummaries] Could not register the refresh job', { error });
+  });
+  // Not fatal: erasure jobs stay queued (pg-boss keeps them up to 14 days)
+  // and the next replica that registers the worker sends them.
+  await startPosthogPersonDeletion(jobQueue).catch((error: unknown) => {
+    logger.error('[PostHogErasure] Could not register the PostHog person deletion worker', { error });
   });
 
   let shuttingDown = false;

@@ -78,6 +78,28 @@ const PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE_OPTIONS = {
 } as const;
 
 /**
+ * The backend's PostHog person erasure (docs/analytics-consent.md, "Erasure").
+ * One job per deleted account or per withdrawal after a grant, enqueued in the
+ * transaction that records it. Lives here because the migrator creates the queue.
+ */
+export const POSTHOG_PERSON_DELETION_QUEUE = 'posthog-person-deletion';
+
+/**
+ * Twelve tries with doubling delays capped at six hours cover a PostHog outage
+ * of about a day: 60 s, 2 min, 4 min ... then 6 h, 6 h. A job (the account id
+ * and a reason, nothing else) is kept 7 days after it completes or fails, so
+ * an operator can retry a failed erasure by hand.
+ */
+export const POSTHOG_PERSON_DELETION_QUEUE_OPTIONS = {
+  retryLimit: 12,
+  retryDelay: 60,
+  retryBackoff: true,
+  retryDelayMax: 6 * 60 * 60,
+  expireInSeconds: 120,
+  deleteAfterSeconds: 7 * 24 * 60 * 60,
+} as const;
+
+/**
  * Completed jobs of the once-a-minute crons (the two reconcilers and pg-boss's
  * own `__pgboss__send-it` dispatcher) are kept 1 day, not pg-boss's 7-day
  * default. The queue-stats monitor seq-scans this table on every pass.
@@ -715,6 +737,11 @@ export async function initializeJobQueueSchema(
     const { policy: _playlistGradePolicy, ...mutablePlaylistGradeOptions } =
       PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE_OPTIONS;
     await boss.updateQueue(PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE, mutablePlaylistGradeOptions);
+    await boss.createQueue(POSTHOG_PERSON_DELETION_QUEUE, {
+      partition: false,
+      ...POSTHOG_PERSON_DELETION_QUEUE_OPTIONS,
+    });
+    await boss.updateQueue(POSTHOG_PERSON_DELETION_QUEUE, POSTHOG_PERSON_DELETION_QUEUE_OPTIONS);
     // Family queues are stately. A queue created under an earlier policy keeps
     // it (pg-boss cannot change a policy), which is why these are new names
     // rather than the retired `background-probe-<role>` queues.

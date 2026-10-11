@@ -39,6 +39,7 @@ import { purgeDeletedSprayWallPhotos } from '../board/spray-wall-moderation';
 import { retryAccountDeletion, withdrawDeletedAccountContent } from './delete-account-privacy';
 import { deleteAccountBoards } from './delete-account-boards';
 import { pubsub } from '../../../pubsub';
+import { enqueuePosthogPersonDeletion } from '../../../services/analytics/posthog-person-deletion';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
@@ -329,6 +330,12 @@ export const userMutations = {
             .set({ setterUsername: null })
             .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
         }
+
+        // Erase the account's PostHog person once this deletion commits. The
+        // job rides this transaction (a savepoint, so a queue failure cannot
+        // abort the deletion); the PostHog call happens later, with retries.
+        // docs/analytics-consent.md, "Erasure".
+        await enqueuePosthogPersonDeletion(tx, { distinctId: userId, reason: 'account_deleted' });
 
         // Delete the user row — all related tables with onDelete: cascade
         // will be cleaned up automatically by the database.

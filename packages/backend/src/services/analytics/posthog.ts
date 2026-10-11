@@ -207,7 +207,7 @@ function getPosthogClient(): PostHog | null {
 // away. Sentry doesn't have that failure mode; now neither does this.
 // Preview/staging still opt out for free: branch-deploy.yml declares
 // SENTRY_ENVIRONMENT=preview (#3808), which wins over the runtime inference.
-function getAnalyticsEnvironment(): string {
+export function getAnalyticsEnvironment(): string {
   return readOptionalEnv('POSTHOG_ENVIRONMENT') ?? resolveSentryEnvironment();
 }
 
