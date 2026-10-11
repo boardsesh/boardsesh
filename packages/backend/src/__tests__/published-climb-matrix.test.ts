@@ -1,11 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, like, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { climbQueries } from '../graphql/resolvers/climbs/queries';
 import { setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
-import { tickPrivacyCondition } from '../graphql/resolvers/shared/activity-privacy';
+import {
+  canSeeEntityActor,
+  notificationPrivacyCondition,
+  tickPrivacyCondition,
+} from '../graphql/resolvers/shared/activity-privacy';
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
@@ -49,6 +53,7 @@ const anonymous = { isAuthenticated: false, userId: undefined, connectionId: 'ma
 const boardInput = { boardName: BOARD, layoutId: LAYOUT_ID, sizeId: 1, setIds: '1', angle: ANGLE };
 
 async function removeFixtures(): Promise<void> {
+  await db.execute(sql`DELETE FROM notifications WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM content_privacy WHERE entity_id LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE climb_uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE 'matrix-%'`);
@@ -252,5 +257,45 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(await firstAscent(anonymous)).toBe('Public sender');
     // A follower of the first sender sees them credited.
     expect(await firstAscent(ctxFor(FOLLOWER))).toBe(`Name ${PRIVATE_SENDER}`);
+  });
+
+  it('names a climb’s author on a notification about it, and keeps any other private actor hidden', async () => {
+    await db.insert(schema.notifications).values([
+      // The private author published it: their authorship is public with the climb.
+      {
+        uuid: 'matrix-n-author',
+        recipientId: STRANGER,
+        actorId: PRIVATE_AUTHOR,
+        type: 'new_climb',
+        entityType: 'climb',
+        entityId: PRIVATE_PUBLISHED,
+      },
+      // A different private account acting on the same climb keeps its privacy.
+      {
+        uuid: 'matrix-n-other',
+        recipientId: STRANGER,
+        actorId: PRIVATE_SENDER,
+        type: 'proposal_created',
+        entityType: 'climb',
+        entityId: PRIVATE_PUBLISHED,
+      },
+    ]);
+    const visibleTo = async (viewerId: string) =>
+      (
+        await db
+          .select({ uuid: schema.notifications.uuid })
+          .from(schema.notifications)
+          .where(and(like(schema.notifications.uuid, 'matrix-n-%'), notificationPrivacyCondition(viewerId)))
+      )
+        .map((row) => row.uuid)
+        .sort();
+    expect(await visibleTo(STRANGER)).toEqual(['matrix-n-author']);
+    // An approved follower of the other actor sees both.
+    expect(await visibleTo(FOLLOWER)).toEqual(['matrix-n-author', 'matrix-n-other']);
+
+    // The worker's check before it writes a notification agrees.
+    expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(true);
+    expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER)).toBe(false);
+    expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER)).toBe(true);
   });
 });
