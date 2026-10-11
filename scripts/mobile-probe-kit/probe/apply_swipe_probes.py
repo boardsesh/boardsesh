@@ -85,36 +85,31 @@ edit("src/components/play-drawer/use-carousel-gesture.ts", [
         }
 
 """),
-("""  const commitStep = (direction: 1 | -1, step: number) => {
-    callbacksRef.current.requestStep(direction, step, () => {
-      if (direction === 1) {
-        callbacksRef.current.onSwipeNext();
-      } else {
-        callbacksRef.current.onSwipePrevious();
-      }
-    });
-""",
-"""  const commitStep = (direction: 1 | -1, step: number) => {
-    perfProbe('swipe-commit-js', { direction: direction === 1 ? 'next' : 'previous', step });
-    callbacksRef.current.requestStep(direction, step, () => {
-      if (direction === 1) {
-        callbacksRef.current.onSwipeNext();
-      } else {
-        callbacksRef.current.onSwipePrevious();
-      }
-      perfProbe('swipe-commit-js-done', { step });
-    });
-"""),
-], ["import { perfProbe, perfProbeUi, perfProbeUiFramesStart } from '../../lib/perf-probe';"])
+], ["import { perfProbeUi, perfProbeUiFramesStart } from '../../lib/perf-probe';"])
 
-# The UI thread hearing that the JS thread has rendered every step it took.
+# The pager: the JS thread hearing of a step and asking the queue for the climb, and
+# the UI thread hearing that the JS thread has rendered every step it took.
 edit("src/components/play-drawer/use-swipe-pager.ts", [
+("""    (direction: 1 | -1, step: number) => {
+      waitingStepsRef.current.push({ direction, step });
+""",
+"""    (direction: 1 | -1, step: number) => {
+      perfProbe('swipe-commit-js', { direction: direction === 1 ? 'next' : 'previous', step });
+      waitingStepsRef.current.push({ direction, step });
+"""),
+("""      navigation?.onPrevious();
+    }
+""",
+"""      navigation?.onPrevious();
+    }
+    perfProbe('swipe-commit-js-done', { step: next.step });
+"""),
 ("""      if (state.processedStep !== uiSteps.value) return;
 """,
 """      if (state.processedStep !== uiSteps.value) return;
       perfProbeUi('swipe-js-caught-up', { center: state.center, step: state.processedStep });
 """),
-], ["import { perfProbeUi } from '../../lib/perf-probe';"])
+], ["import { perfProbe, perfProbeUi } from '../../lib/perf-probe';"])
 
 # apply_probes.py already imports `perfProbe` into the carousel; importing a name twice does not compile.
 edit("src/components/play-drawer/SwipeBoardCarousel.tsx", [

@@ -211,13 +211,19 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // Mirror the exact condition the overlay `<Image>` below renders under, so a
   // consumer waiting on a paint learns the instant there is nothing left to
   // paint — the app backgrounding, or this tab's board art being released while
-  // the component stays mounted. The cleanup covers unmount as well.
+  // the component stays mounted.
+  //
+  // One image replacing another is reported as the new one and nothing else.
+  // "Nothing is mounted" in between would be false, and the consumer forgets
+  // on hearing it: a decoded image can fire `onLoad` before this effect has
+  // run, and that answer was thrown away with the image it replaced.
   const overlayMountedKey = !hidden && overlayUri ? (overlayLoadKey ?? null) : null;
   const overlayImageMounted = !hidden && !!overlayUri;
   useEffect(() => {
     onOverlayMounted?.(overlayImageMounted ? overlayMountedKey : null);
-    return () => onOverlayMounted?.(null);
   }, [onOverlayMounted, overlayImageMounted, overlayMountedKey]);
+  // Unmount, or a consumer that is no longer listening.
+  useEffect(() => () => onOverlayMounted?.(null), [onOverlayMounted]);
   // What `revealWithOverlay` has already let through. `key` is the climb for
   // 'each-climb' and a constant for 'first-paint', so one comparison serves both.
   const [revealed, setRevealed] = useState<{ key: string | null } | null>(null);

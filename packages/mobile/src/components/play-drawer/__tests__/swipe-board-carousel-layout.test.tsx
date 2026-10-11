@@ -119,8 +119,11 @@ function restingPager(): SwipePager {
     jsState: { value: { center: 0, hasPrevious: false, hasNext: true, processedStep: 0 } },
     slideWidth: { value: 0 },
     resetGeneration: { value: 0 },
+    untoldStep: { value: 0 },
+    tellUntoldStep: () => {},
     requestStep: () => {},
     stepRendered: () => {},
+    setNavigation: () => {},
   } as unknown as SwipePager;
 }
 
@@ -186,6 +189,8 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
       const standIn = getByTestId('play-drawer-board-accessibility');
       expect(standIn.dataset.accessible).toBe('true');
       expect(standIn.dataset.importantForAccessibility).toBeUndefined();
+      // It takes touches, or exploring by touch with a screen reader on cannot find the board.
+      expect(standIn.dataset.pointerEvents).toBeUndefined();
       expectDimensions(standIn, 250, 500);
       expect(board.parentElement?.parentElement?.dataset.importantForAccessibility).toBe('no-hide-descendants');
       expect(board.dataset.overlayTestid).toBeUndefined();
@@ -234,6 +239,30 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
     expectDimensions(getByTestId('board-next'), 200, 400);
     expect(currentImage.dataset.renderWidth).toBe('600');
   });
+});
+
+it("keeps screenshot mode's plain board mounted across a step, so the wall photo never drops", async () => {
+  vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+  const props = { ...baseProps, prevFrames: null, currentFrames: 'a', nextFrames: 'b' };
+  const { getByTestId, queryAllByTestId, rerender } = render(createElement(SwipeBoardCarousel, props));
+  measure(350, 500);
+  await nextFrame();
+  const plainBoard = getByTestId('board-a');
+  expect(plainBoard.dataset.overlayTestid).toBe('play-drawer-board-overlay');
+
+  // A swipe forward. The plain board changes climb by a prop; it is not one of the pages.
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      prevFrames: 'a',
+      currentFrames: 'b',
+      nextFrames: 'c',
+      centerPage: 1,
+    }),
+  );
+
+  const current = queryAllByTestId('board-b').filter((board) => board.dataset.overlayTestid);
+  expect(current).toEqual([plainBoard]);
 });
 
 it('contains a wide board and updates climbs without remounting the current image', () => {
@@ -307,6 +336,10 @@ describe('SwipeBoardCarousel pages', () => {
     );
 
     expect(getByTestId('play-drawer-board-accessibility')).toBe(standIn);
+    // Ahead of every board in its parent, so no board that is added or dropped
+    // can change where it sits: a view that is put back into its parent loses
+    // the touch that began on it.
+    expect(standIn.parentElement?.firstElementChild).toBe(standIn);
   });
 
   it('gives every board the zoom wrapper, so one that stops being current cannot keep a stale zoom', async () => {

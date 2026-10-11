@@ -856,6 +856,42 @@ describe('the overlay paint watchdog', () => {
       expect(paintTimeouts()).toHaveLength(0);
     });
 
+    // A neighbour is mounted before its overlay is rendered. The view layer
+    // reports no image, then the render lands and a decoded image answers
+    // ahead of the report of its mount.
+    it('counts an early answer for an image that mounted after the first paint', async () => {
+      vi.useFakeTimers();
+      const { result, rerender } = renderNeighbour();
+      act(() => result.current.onOverlayMounted(null));
+      act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
+      act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+
+      rerender({ playSurface: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(paintTimeouts()).toHaveLength(0);
+    });
+
+    it('does not let one image answer for a later one that shows the same file', async () => {
+      vi.useFakeTimers();
+      const { result } = renderPlayBoard();
+      const loadKey = result.current.overlayLoadKey;
+      act(() => result.current.onOverlayMounted(loadKey));
+      act(() => result.current.onOverlayLoad(loadKey));
+
+      // Another image takes its place and has not answered when the first file
+      // is shown again, in a new image that never paints.
+      act(() => result.current.onOverlayMounted('99:0'));
+      act(() => result.current.onOverlayMounted(loadKey));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4100);
+      });
+
+      expect(paintTimeouts()).toHaveLength(1);
+    });
+
     it('asks again of an image that was unmounted and mounted again', async () => {
       vi.useFakeTimers();
       const { result } = renderPlayBoard();

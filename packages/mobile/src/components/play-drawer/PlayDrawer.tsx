@@ -50,7 +50,7 @@ import { LivePlayDrawerHeader } from './PlayDrawerHeader';
 import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
-import { useSwipePager, useSwipePages } from './use-swipe-pager';
+import { useSwipeNavigation, useSwipePager, useSwipePages } from './use-swipe-pager';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { WallStatePill } from './WallStatePill';
 import { WallStateCallout } from './WallStateCallout';
@@ -1466,6 +1466,8 @@ export function PlayDrawer({
     browseByDefault,
     setDrawerPreviewItem,
   ]);
+  // A swipe step changes the climb with these, whichever render it follows.
+  useSwipeNavigation(swipePager, handleNext, handlePrev);
 
   // Commit the browse latch: the previewed climb becomes the current queue item,
   // the latch drops, and the lightbulb (which acts on the current climb) now

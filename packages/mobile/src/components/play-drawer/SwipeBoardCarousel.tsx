@@ -84,9 +84,9 @@ const NO_PREFETCH_FRAMES: string[] = [];
  * No board slot is an accessibility element or a touch target. A screen reader
  * lands on one fixed stand-in for the board (see `boardStandIn` below): the
  * boards themselves change places on every swipe, and focus that sat on one of
- * them would be left on a hidden view. Touches fall through to the container,
- * which owns the gestures, so a board being inserted or removed can never be
- * the view a touch began on.
+ * them would be left on a hidden view. Touches pass through the boards to that
+ * stand-in or to the container, which owns the gestures, so a board being
+ * inserted or removed can never be the view a touch began on.
  */
 const NOT_AN_ELEMENT: ViewProps = {
   accessibilityElementsHidden: true,
@@ -302,8 +302,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 
   const { gesture: swipeGesture } = useCarouselGesture({
     pager,
-    onSwipeNext,
-    onSwipePrevious,
     boardWidth: boardWidthForSwipe,
     screenWidth,
     enabled,
@@ -406,7 +404,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // is the culprit. overlayTestID anchors on the painted holds overlay.
   const currentBoard = isScreenshotMode ? (
     <View
-      key={centerPage}
+      // One key for every climb, unlike the pages: this board changes climb by
+      // a prop, so the wall photo stays mounted across a swipe and only the
+      // holds are loaded again.
+      key="plain-current"
       style={[styles.boardWrapper, boardBox]}
       {...boardSurfaceAnchor}
       {...boardAccessibility}
@@ -447,6 +448,20 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   return (
     <GestureDetector gesture={composedGesture}>
       <View style={styles.container} onLayout={handleLayout} testID="play-drawer-board-container">
+        {/* What a screen reader lands on: one view the size of the board that
+            never moves, is never remounted, and describes the current climb.
+            It takes touches, so exploring by touch finds it. That is also why
+            it is the first child: the boards come and go after it, and the
+            view a touch began on must never be one that is put back into its
+            parent, which cancels the touch. Screenshot mode has its own, on
+            the plain board. */}
+        {isScreenshotMode ? null : (
+          <View
+            style={[styles.boardStandIn, boardBox]}
+            testID="play-drawer-board-accessibility"
+            {...boardAccessibility}
+          />
+        )}
         {/* One keyed list, so the board that was a neighbour stays mounted when it
             becomes the current one. In page order, which lets a step add a board
             at one end and drop one at the other without moving the two that
@@ -463,17 +478,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               currentBoard,
               neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
             ]}
-        {/* What a screen reader lands on: one view the size of the board that
-            never moves, is never remounted, and describes the current climb.
-            Screenshot mode has its own, on the plain board. */}
-        {isScreenshotMode ? null : (
-          <View
-            style={[styles.boardStandIn, boardBox]}
-            pointerEvents="none"
-            testID="play-drawer-board-accessibility"
-            {...boardAccessibility}
-          />
-        )}
 
         {/* Draws nothing: warms the renders for the climbs a few swipes ahead
             while the renderer is idle, so those swipes are cache hits. Skipped
@@ -538,6 +542,8 @@ const styles = StyleSheet.create({
     zIndex: CAROUSEL_LAYER_Z.board,
   },
   // In flow, so the container centres it exactly where it centres the boards.
+  // Their level, and ahead of them in the tree: it draws nothing, and sits
+  // under boards that let every touch through.
   boardStandIn: {
     zIndex: CAROUSEL_LAYER_Z.board,
   },

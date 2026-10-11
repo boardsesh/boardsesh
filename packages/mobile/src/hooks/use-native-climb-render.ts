@@ -2843,9 +2843,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   const playSurfaceRef = useRef(playSurface);
   playSurfaceRef.current = playSurface;
   // The overlay image that is mounted now, and whether expo-image has answered
-  // for it. A load key names one cache entry, so the last key that answered is
-  // enough to know: an `onLoad` can reach JS before the view layer's mount
-  // effect has run, and must still count.
+  // for it. An `onLoad` can reach JS before the view layer's mount effect has
+  // run, and must still count, so the last key that answered is kept until the
+  // next report from the view layer has looked at it.
   const mountedOverlayRef = useRef<{ loadKey: string; answered: boolean } | null>(null);
   const lastAnsweredLoadKeyRef = useRef<string | null>(null);
   const noteOverlayAnswered = useCallback((emittingLoadKey: string | null) => {
@@ -2882,6 +2882,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         return;
       }
       const answered = lastAnsweredLoadKeyRef.current === mountedLoadKey;
+      // Spent: an answer speaks for the image that gave it, not for a later
+      // one that happens to show the same file.
+      lastAnsweredLoadKeyRef.current = null;
       mountedOverlayRef.current = { loadKey: mountedLoadKey, answered };
       if (!playSurfaceRef.current || answered) return;
       armPaintWatchdog(mountedLoadKey);

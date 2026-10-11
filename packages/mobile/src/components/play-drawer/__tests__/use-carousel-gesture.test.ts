@@ -10,16 +10,13 @@ vi.mock('react-native', () => ({ Platform: platform }));
 // runs in node. What these tests are really about: the Pan gesture composes
 // ONCE per mount (recomposing mid-session left RNGH stuck on iOS); which page is
 // in the middle is settled by the worklets, from the pager's shared values,
-// without waiting for the JS thread; and a swipe that starts while the last
-// fling is still running takes it over instead of being ignored.
+// without waiting for the JS thread; a swipe that starts while the last fling
+// is still running takes it over instead of being ignored; and a fling or a
+// drag survives the carousel being taken down under it, because what it needs
+// is the pager's.
 
 const springCallbacks = vi.hoisted(() => [] as ((finished: boolean) => void)[]);
-// The hook's one reaction: has the incoming board stopped in the middle yet.
-const stoppedReaction = vi.hoisted(() => ({
-  prepare: null as null | (() => boolean),
-  react: null as null | ((now: boolean, before: boolean | null) => void),
-  before: null as boolean | null,
-}));
+const cancelAnimation = vi.hoisted(() => vi.fn());
 
 // Mirror reanimated's contract: useSharedValue returns the SAME mutable ref
 // across re-renders; animations resolve to their target value synchronously.
@@ -31,10 +28,7 @@ vi.mock('react-native-reanimated', async () => {
       if (ref.current === null) ref.current = { value: initial };
       return ref.current;
     },
-    useAnimatedReaction: (prepare: () => boolean, react: (now: boolean, before: boolean | null) => void) => {
-      stoppedReaction.prepare = prepare;
-      stoppedReaction.react = react;
-    },
+    cancelAnimation,
     withTiming: (toValue: unknown) => toValue,
     // Resolves to its target at once, like the rest of this mock, and hands the
     // completion callback to the test, which decides when the fling lands.
@@ -43,6 +37,10 @@ vi.mock('react-native-reanimated', async () => {
       return toValue;
     },
     runOnJS:
+      (fn: (...args: unknown[]) => unknown) =>
+      (...args: unknown[]) =>
+        fn(...args),
+    runOnUI:
       (fn: (...args: unknown[]) => unknown) =>
       (...args: unknown[]) =>
         fn(...args),
@@ -85,8 +83,6 @@ import type { SwipePager, SwipePagerJsState } from '../use-swipe-pager';
 
 type Options = Parameters<typeof useCarouselGesture>[0];
 
-const onSwipeNext = vi.fn();
-const onSwipePrevious = vi.fn();
 const BOARD_WIDTH = 320;
 const SCREEN_WIDTH = 390;
 const FLING_TARGET = SCREEN_WIDTH + SWIPE_OFFSCREEN_PAD;
@@ -95,29 +91,43 @@ function shared<Value>(value: Value) {
   return { value } as unknown as SwipePager['translateX'] & { value: Value };
 }
 
-/** A pager whose JS side has rendered page 0 with a neighbour each side. */
+/**
+ * A pager whose JS side has rendered page 0 with a neighbour each side.
+ *
+ * `tellUntoldStep` does what the real one does, so a test can see which step
+ * reached the JS thread and that it got there once. WHEN the pager tells it of
+ * its own accord (the incoming board stopping in the middle) is the pager's
+ * business and is tested with it.
+ */
 function makePager(state: Partial<SwipePagerJsState> = {}) {
+  const requestStep = vi.fn();
+  const untoldStep = shared(0);
+  const flingDirection = shared(0);
   return {
     translateX: shared(0),
     isAnimating: shared(false),
     anchorPage: shared(0),
-    flingDirection: shared(0),
+    flingDirection,
     uiSteps: shared(0),
     jsState: shared<SwipePagerJsState>({ center: 0, hasPrevious: true, hasNext: true, processedStep: 0, ...state }),
     slideWidth: shared(0),
     resetGeneration: shared(0),
-    // The real pager runs a step's navigation when its turn comes; with nothing
-    // ahead of it, that is at once.
-    requestStep: vi.fn((_direction: 1 | -1, _step: number, navigate: () => void) => navigate()),
+    untoldStep,
+    tellUntoldStep: () => {
+      const step = untoldStep.value;
+      if (step === 0) return;
+      untoldStep.value = 0;
+      requestStep(flingDirection.value > 0 ? 1 : -1, step);
+    },
+    requestStep,
     stepRendered: vi.fn(),
+    setNavigation: vi.fn(),
   } as unknown as SwipePager & { requestStep: ReturnType<typeof vi.fn> };
 }
 
 function makeOptions(overrides: Partial<Options> = {}): Options {
   return {
     pager: makePager(),
-    onSwipeNext,
-    onSwipePrevious,
     boardWidth: BOARD_WIDTH,
     screenWidth: SCREEN_WIDTH,
     ...overrides,
@@ -143,27 +153,11 @@ function landFling() {
   onFinished(true);
 }
 
-/** Run the reaction the way Reanimated does after a frame in which its inputs changed. */
-function runStoppedReaction() {
-  const { prepare, react } = stoppedReaction;
-  if (!prepare || !react) throw new Error('the hook registered no reaction');
-  const now = prepare();
-  react(now, stoppedReaction.before);
-  stoppedReaction.before = now;
-}
-
-/** Put the outgoing board `offset` along its fling: the mock jumps straight to the fling's target. */
-function flingReaches(pager: ReturnType<typeof makePager>, offset: number) {
-  pager.translateX.value = offset;
-  runStoppedReaction();
-}
-
 describe('useCarouselGesture', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     recordedBuilders.length = 0;
     springCallbacks.length = 0;
-    stoppedReaction.before = null;
     platform.OS = 'ios';
   });
 
@@ -186,7 +180,7 @@ describe('useCarouselGesture', () => {
     expect(settings.blocksExternalGesture).toBeUndefined();
   });
 
-  it('keeps the gesture identity stable across enabled, Reduce Motion and board-width changes', () => {
+  it('keeps the gesture identity stable across enabled, board-width and screen-width changes', () => {
     const pager = makePager();
     const { result, rerender } = renderHook((props: Options) => useCarouselGesture(props), {
       initialProps: makeOptions({ pager }),
@@ -195,7 +189,7 @@ describe('useCarouselGesture', () => {
     const firstGesture = result.current.gesture;
 
     rerender(makeOptions({ pager, enabled: false, boardWidth: 280 }));
-    rerender(makeOptions({ pager, reduceMotion: true, onSwipeNext: vi.fn() }));
+    rerender(makeOptions({ pager, screenWidth: 430 }));
 
     expect(result.current.gesture).toBe(firstGesture);
     // One composition total — recomposing mid-session is the iOS RNGH wedge.
@@ -222,44 +216,16 @@ describe('useCarouselGesture', () => {
     expect(pager.flingDirection.value).toBe(0);
   });
 
-  it('tells the JS thread once the incoming board has stopped in the middle, and only once', () => {
+  it('leaves the JS thread out of it at finger-up: the pager tells it while the fling runs', () => {
     const pager = makePager();
     renderHook(() => useCarouselGesture(makeOptions({ pager })));
 
     swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
-    // Finger-up: nothing yet. Changing the climb can cost the UI thread a frame,
-    // and both boards are moving.
+
+    // Changing the climb can cost the UI thread a frame, and both boards are moving.
     expect(pager.requestStep).not.toHaveBeenCalled();
-
-    flingReaches(pager, -(BOARD_WIDTH - 40));
-    expect(pager.requestStep).not.toHaveBeenCalled();
-
-    // The outgoing board has travelled its own width: the incoming one is home.
-    flingReaches(pager, -BOARD_WIDTH);
-    expect(pager.requestStep).toHaveBeenCalledWith(1, 1, expect.any(Function));
-    expect(onSwipeNext).toHaveBeenCalledTimes(1);
-    // The anchor still waits for the outgoing board to leave.
-    expect(pager.anchorPage.value).toBe(0);
-
-    flingReaches(pager, -(BOARD_WIDTH + 60));
-    landFling();
-    expect(pager.requestStep).toHaveBeenCalledTimes(1);
-    expect(onSwipeNext).toHaveBeenCalledTimes(1);
-    expect(pager.anchorPage.value).toBe(1);
-  });
-
-  it('tells the JS thread at once when the board was let go already past the middle', () => {
-    const pager = makePager();
-    renderHook(() => useCarouselGesture(makeOptions({ pager })));
-    const handlers = latestHandlers();
-
-    handlers.onStart({ translationX: 0 });
-    handlers.onUpdate({ translationX: -(BOARD_WIDTH + 10) });
-    runStoppedReaction();
-    handlers.onEnd({ translationX: -(BOARD_WIDTH + 10), velocityX: 0 });
-    flingReaches(pager, -(BOARD_WIDTH + 12));
-
-    expect(pager.requestStep).toHaveBeenCalledWith(1, 1, expect.any(Function));
+    // The step is the pager's to hand over, so it outlives this carousel.
+    expect(pager.untoldStep.value).toBe(1);
   });
 
   it('tells the JS thread when the fling lands if it had not been told', () => {
@@ -269,8 +235,21 @@ describe('useCarouselGesture', () => {
     swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
     landFling();
 
-    expect(pager.requestStep).toHaveBeenCalledWith(1, 1, expect.any(Function));
-    expect(onSwipeNext).toHaveBeenCalledTimes(1);
+    expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
+    expect(pager.untoldStep.value).toBe(0);
+  });
+
+  it('does not tell it twice when the pager had told it during the fling', () => {
+    const pager = makePager();
+    renderHook(() => useCarouselGesture(makeOptions({ pager })));
+
+    swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+    // The incoming board stopped in the middle: the pager's own reaction.
+    pager.tellUntoldStep();
+    landFling();
+
+    expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
+    expect(pager.anchorPage.value).toBe(1);
   });
 
   it('steps back the same way', () => {
@@ -279,11 +258,9 @@ describe('useCarouselGesture', () => {
 
     swipe(latestHandlers(), SWIPE_THRESHOLD + 1);
     expect(pager.translateX.value).toBe(FLING_TARGET);
-    flingReaches(pager, BOARD_WIDTH);
-    expect(pager.requestStep).toHaveBeenCalledWith(-1, 1, expect.any(Function));
-    expect(onSwipePrevious).toHaveBeenCalledTimes(1);
 
     landFling();
+    expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(-1, 1);
     expect(pager.anchorPage.value).toBe(-1);
     expect(pager.translateX.value).toBe(0);
   });
@@ -294,7 +271,7 @@ describe('useCarouselGesture', () => {
 
     swipe(latestHandlers(), -20, -1200);
     landFling();
-    expect(onSwipeNext).toHaveBeenCalledTimes(1);
+    expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
   });
 
   it('judges a release against the pager as it is NOW, not as it was when the gesture was composed', () => {
@@ -306,8 +283,8 @@ describe('useCarouselGesture', () => {
     pager.jsState.value = { center: 0, hasPrevious: true, hasNext: false, processedStep: 0 };
     swipe(handlers, -(SWIPE_THRESHOLD + 1));
 
-    expect(onSwipeNext).not.toHaveBeenCalled();
     expect(pager.requestStep).not.toHaveBeenCalled();
+    expect(pager.untoldStep.value).toBe(0);
     expect(pager.isAnimating.value).toBe(false);
     expect(pager.anchorPage.value).toBe(0);
   });
@@ -352,31 +329,10 @@ describe('useCarouselGesture', () => {
 
     swipe(latestHandlers(), -(SWIPE_THRESHOLD - 1));
 
-    expect(onSwipeNext).not.toHaveBeenCalled();
-    expect(onSwipePrevious).not.toHaveBeenCalled();
+    expect(pager.uiSteps.value).toBe(0);
+    expect(pager.untoldStep.value).toBe(0);
     expect(pager.translateX.value).toBe(0);
     expect(pager.anchorPage.value).toBe(0);
-  });
-
-  it('looks the navigation callback up when the step runs, not when the finger lifted', () => {
-    const pager = makePager();
-    const waiting: (() => void)[] = [];
-    pager.requestStep.mockImplementation((_direction: 1 | -1, _step: number, navigate: () => void) => {
-      waiting.push(navigate);
-    });
-    const laterOnSwipeNext = vi.fn();
-    const { rerender } = renderHook((props: Options) => useCarouselGesture(props), {
-      initialProps: makeOptions({ pager }),
-    });
-
-    swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
-    landFling();
-    // The drawer rendered again before the pager got to this step.
-    rerender(makeOptions({ pager, onSwipeNext: laterOnSwipeNext }));
-    waiting[0]();
-
-    expect(onSwipeNext).not.toHaveBeenCalled();
-    expect(laterOnSwipeNext).toHaveBeenCalledTimes(1);
   });
 
   it('starts a drag over when the pager drops the page under it', () => {
@@ -423,17 +379,56 @@ describe('useCarouselGesture', () => {
     expect(pager.slideWidth.value).toBe(280);
   });
 
-  it('with Reduce Motion, moves the anchor at finger-up with no fling', () => {
-    const pager = makePager();
-    renderHook(() => useCarouselGesture(makeOptions({ pager, reduceMotion: true })));
+  describe('a carousel taken down while the pager is in use', () => {
+    it('returns a drag to rest: no release will ever come for it', () => {
+      const pager = makePager();
+      const { unmount } = renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      const handlers = latestHandlers();
+      handlers.onStart({ translationX: 0 });
+      handlers.onUpdate({ translationX: -60 });
+      expect(pager.translateX.value).toBe(-60);
 
-    swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+      unmount();
 
-    expect(onSwipeNext).toHaveBeenCalledTimes(1);
-    expect(pager.anchorPage.value).toBe(1);
-    expect(pager.translateX.value).toBe(0);
-    expect(pager.isAnimating.value).toBe(false);
-    expect(springCallbacks).toHaveLength(0);
+      // Left there, the header would sit off centre and the pull-down would stand aside.
+      expect(cancelAnimation).toHaveBeenCalledWith(pager.translateX);
+      expect(pager.translateX.value).toBe(0);
+    });
+
+    it('leaves a fling to land by itself, and the step it carries still reaches the JS thread', () => {
+      const pager = makePager();
+      const { unmount } = renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+
+      unmount();
+
+      expect(cancelAnimation).not.toHaveBeenCalled();
+      expect(pager.translateX.value).toBe(-FLING_TARGET);
+      expect(pager.flingDirection.value).toBe(1);
+
+      landFling();
+      expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
+      expect(pager.anchorPage.value).toBe(1);
+      expect(pager.translateX.value).toBe(0);
+    });
+
+    it('lets the carousel mounted in its place take over the fling without losing the step', () => {
+      const pager = makePager();
+      const first = renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+      pager.translateX.value = -200;
+      first.unmount();
+
+      renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      expect(recordedBuilders).toHaveLength(2);
+      // A touch on the new carousel, while the old one's fling is still running.
+      latestHandlers().onStart({ translationX: -12 });
+
+      // The step was the pager's to keep, so the new carousel could hand it over.
+      expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
+      expect(pager.anchorPage.value).toBe(1);
+      expect(pager.translateX.value).toBe(120);
+    });
   });
 
   describe('a swipe that starts while the last fling is still running', () => {
@@ -454,7 +449,7 @@ describe('useCarouselGesture', () => {
       handlers.onStart({ translationX: -12 });
 
       // It hears now: the swipe that took over needs the page after this one.
-      expect(pager.requestStep).toHaveBeenCalledWith(1, 1, expect.any(Function));
+      expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
 
       // The incoming board was 120 short of the middle (320 wide, outgoing at
       // -200). In the new anchor's terms it is the middle page, 120 to the right.
@@ -513,8 +508,8 @@ describe('useCarouselGesture', () => {
 
       expect(pager.flingDirection.value).toBe(1);
       landFling();
-      expect(onSwipeNext).toHaveBeenCalledTimes(2);
-      expect(pager.requestStep).toHaveBeenLastCalledWith(1, 2, expect.any(Function));
+      expect(pager.requestStep).toHaveBeenCalledTimes(2);
+      expect(pager.requestStep).toHaveBeenLastCalledWith(1, 2);
       expect(pager.anchorPage.value).toBe(2);
     });
 
@@ -529,7 +524,8 @@ describe('useCarouselGesture', () => {
       handlers.onEnd({ translationX: -60, velocityX: -2500 });
 
       // Page 2 does not exist yet, so this swipe changes nothing more; the first one stands.
-      expect(onSwipeNext).toHaveBeenCalledTimes(1);
+      expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
+      expect(pager.uiSteps.value).toBe(1);
       expect(pager.anchorPage.value).toBe(1);
       expect(pager.translateX.value).toBe(0);
       expect(pager.isAnimating.value).toBe(false);

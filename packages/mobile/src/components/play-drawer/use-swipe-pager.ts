@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelAnimation, useAnimatedReaction, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  cancelAnimation,
+  runOnJS,
+  useAnimatedReaction,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 /**
  * Which climb sits in the middle of the play drawer's swipe, decided on the UI
@@ -31,12 +37,19 @@ import { cancelAnimation, useAnimatedReaction, useSharedValue, type SharedValue 
  * What the JS thread still decides is how far ahead a swipe may go: one page
  * either side of ITS middle page, because those are the boards it has mounted.
  * A second swipe the same way has to wait for it to render the first step, 30 to
- * 66 ms on an iPhone 13 Pro from when it is told; a swipe back never does.
+ * 66 ms on an iPhone 13 Pro from when it is told; a swipe back never does. A
+ * second flick let go inside that wait springs back: the one case left in which
+ * a swipe is lost to the JS thread.
  *
  * The JS thread takes the steps one at a time (`requestStep`). Two of them can
  * be waiting when it has been busy, and the navigation callbacks read state that
  * only a render brings up to date: run back to back, the second would act on
  * the climb the first had already left.
+ *
+ * Everything a step needs lives here, with the drawer, and not in the carousel:
+ * the offset, the step a fling is carrying, and the callbacks that change the
+ * climb. The carousel is unmounted while the drawer measures itself again, and
+ * a fling or a step in progress has to survive that.
  */
 
 /** What the JS thread has rendered. One object, so the UI thread never reads half an update. */
@@ -69,13 +82,19 @@ export type SwipePager = {
   slideWidth: SharedValue<number>;
   /** Bumped each time the UI thread abandons what it was doing to follow the JS thread. A drag in progress starts over. */
   resetGeneration: SharedValue<number>;
+  /** The step a fling is carrying that the JS thread has not been told about yet; 0 when there is none. */
+  untoldStep: SharedValue<number>;
+  /** UI thread. Hand the step the fling is carrying to the JS thread, unless it has it already. */
+  tellUntoldStep: () => void;
   /**
-   * JS thread. Take a step the UI thread took: `navigate` changes the climb.
-   * Steps are run one per committed render, in order.
+   * JS thread. Take a step the UI thread took, by calling the drawer's Next or
+   * Previous. Steps are run one per committed render, in order.
    */
-  requestStep: (direction: 1 | -1, step: number, navigate: () => void) => void;
+  requestStep: (direction: 1 | -1, step: number) => void;
   /** JS thread. A render that reflects swipe step `step` has committed. */
   stepRendered: (step: number) => void;
+  /** JS thread. What a step calls to change the climb. See `useSwipeNavigation`. */
+  setNavigation: (onNext: () => void, onPrevious: () => void) => void;
 };
 
 export type SwipePageAssignment = {
@@ -131,13 +150,18 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
   });
   const slideWidth = useSharedValue(0);
   const resetGeneration = useSharedValue(0);
+  const untoldStep = useSharedValue(0);
 
   const [stepSignal, setStepSignal] = useState<SwipeStepSignal>({ direction: 0, step: 0 });
+  const navigationRef = useRef<{ onNext: () => void; onPrevious: () => void } | null>(null);
+  const setNavigation = useCallback((onNext: () => void, onPrevious: () => void) => {
+    navigationRef.current = { onNext, onPrevious };
+  }, []);
   // Steps the UI thread has taken that the JS thread has not started on, and
-  // the one whose render it is waiting for. `setStepSignal` and `navigate` are
-  // one batch, so the render that shows the new climb is also the one that
+  // the one whose render it is waiting for. `setStepSignal` and the navigation
+  // are one batch, so the render that shows the new climb is also the one that
   // reports the step as rendered.
-  const waitingStepsRef = useRef<{ direction: 1 | -1; step: number; navigate: () => void }[]>([]);
+  const waitingStepsRef = useRef<{ direction: 1 | -1; step: number }[]>([]);
   const stepInFlightRef = useRef<number | null>(null);
   const startNextStep = useCallback(() => {
     if (stepInFlightRef.current !== null) return;
@@ -145,11 +169,18 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
     if (!next) return;
     stepInFlightRef.current = next.step;
     setStepSignal({ direction: next.direction, step: next.step });
-    next.navigate();
+    // Looked up now, when the step's turn has come, not when the finger
+    // lifted: these are the callbacks of the render the step before produced.
+    const navigation = navigationRef.current;
+    if (next.direction === 1) {
+      navigation?.onNext();
+    } else {
+      navigation?.onPrevious();
+    }
   }, []);
   const requestStep = useCallback(
-    (direction: 1 | -1, step: number, navigate: () => void) => {
-      waitingStepsRef.current.push({ direction, step, navigate });
+    (direction: 1 | -1, step: number) => {
+      waitingStepsRef.current.push({ direction, step });
       startNextStep();
     },
     [startNextStep],
@@ -161,6 +192,31 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       startNextStep();
     },
     [startNextStep],
+  );
+
+  const tellUntoldStep = useCallback(() => {
+    'worklet';
+    const step = untoldStep.value;
+    if (step === 0) return;
+    untoldStep.value = 0;
+    runOnJS(requestStep)(flingDirection.value > 0 ? 1 : -1, step);
+  }, [untoldStep, flingDirection, requestStep]);
+  // The JS thread is told once the incoming board has stopped in the middle,
+  // which is when the outgoing one has travelled its own width: about two thirds
+  // of the way through the fling. From there on the fling is only the outgoing
+  // board's tail leaving a picture that is otherwise still.
+  //
+  // Changing the climb costs the UI thread a frame now and then (the new
+  // neighbour's board is mounted, the rest of the drawer updates), and it
+  // should not be a frame in which a board is moving. Told at finger-up it
+  // was: 5 to 7 frames in 2,500 on an iPhone 13 Pro, all of them mid-fling.
+  // Told only when the fling has landed, the next swipe has to wait 50 ms
+  // longer for its page.
+  useAnimatedReaction(
+    () => flingDirection.value !== 0 && Math.abs(translateX.value) >= slideWidth.value,
+    (incomingBoardHasStopped, before) => {
+      if (incomingBoardHasStopped && !before) tellUntoldStep();
+    },
   );
 
   useAnimatedReaction(
@@ -188,8 +244,11 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       jsState,
       slideWidth,
       resetGeneration,
+      untoldStep,
+      tellUntoldStep,
       requestStep,
       stepRendered,
+      setNavigation,
     }),
     [
       translateX,
@@ -200,8 +259,11 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       jsState,
       slideWidth,
       resetGeneration,
+      untoldStep,
+      tellUntoldStep,
       requestStep,
       stepRendered,
+      setNavigation,
     ],
   );
 
@@ -213,8 +275,10 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
  * UI thread once the render has committed.
  *
  * `previousId`, `currentId` and `nextId` identify the three climbs by something
- * that survives the climb becoming current: a climb uuid, not a queue-item uuid,
- * because a suggestion is given a new queue item when it is swiped onto.
+ * that survives the climb becoming current. The drawer passes the climb's uuid
+ * and not the queue item's, because a suggestion is given a new queue item when
+ * it is swiped onto. An id that does change under a swipe costs that one swipe
+ * its mounted board and nothing else: the new climb takes the middle page.
  */
 export function useSwipePages(
   pager: SwipePager,
@@ -252,6 +316,22 @@ export function useSwipePages(
   }, [previousId, currentId, nextId, centerPage, processedStep, jsState, stepRendered]);
 
   return centerPage;
+}
+
+/**
+ * What a swipe step calls to change the climb: the drawer's own Next and Previous.
+ *
+ * Handed over after every commit, ahead of `useSwipePages` letting the next
+ * waiting step run, so a step always runs the callbacks of the render it
+ * follows. They are the pager's rather than the carousel's because a fling can
+ * outlive the carousel, and the step it carries must not change the climb with
+ * the callbacks of a render that is gone.
+ */
+export function useSwipeNavigation(pager: SwipePager, onNext: () => void, onPrevious: () => void): void {
+  const { setNavigation } = pager;
+  useLayoutEffect(() => {
+    setNavigation(onNext, onPrevious);
+  }, [setNavigation, onNext, onPrevious]);
 }
 
 /**

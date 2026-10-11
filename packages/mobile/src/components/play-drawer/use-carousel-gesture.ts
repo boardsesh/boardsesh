@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useRef, type ComponentType, type RefObject } from 'react';
+import { useEffect, useMemo, type ComponentType, type RefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
-import { useAnimatedReaction, useSharedValue, withSpring, runOnJS, type SharedValue } from 'react-native-reanimated';
+import {
+  cancelAnimation,
+  runOnJS,
+  runOnUI,
+  useSharedValue,
+  withSpring,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { SWIPE_THRESHOLD, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO, SWIPE_OFFSCREEN_PAD } from '@boardsesh/play-view';
 import { carouselCommitDirection } from './carousel-commit';
 import type { SwipePager } from './use-swipe-pager';
@@ -8,10 +15,11 @@ import { springs } from '../../theme/animations';
 import { hapticMedium } from '../../lib/haptics';
 
 type UseCarouselGestureOptions = {
-  /** Which page is in the middle, and the offset every swiping surface rides. See use-swipe-pager. */
+  /**
+   * Which page is in the middle, the offset every swiping surface rides, and
+   * the way a step reaches the JS thread. See use-swipe-pager.
+   */
   pager: SwipePager;
-  onSwipeNext: () => void;
-  onSwipePrevious: () => void;
   /** Width the incoming board enters by (the contained board width). */
   boardWidth: number;
   /** Full screen width — the card flings to ±(screenWidth + pad) so it fully
@@ -23,9 +31,6 @@ type UseCarouselGestureOptions = {
    *  vertical scrolling start immediately while horizontal swipes still drive
    *  the carousel. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
-  /** When true (Reduce Motion), commit the swap instantly with no slide-off /
-   *  spring snap-back. The gesture still works; only the animation is dropped. */
-  reduceMotion?: boolean;
 };
 
 type UseCarouselGestureReturn = {
@@ -35,33 +40,36 @@ type UseCarouselGestureReturn = {
 /**
  * The horizontal swipe between climbs.
  *
- * Everything the climber sees is settled on the UI thread: a committing release
- * flings the board off, and the frame it is gone the pager's anchor moves to the
- * neighbour's page and the offset returns to 0, so the next swipe can start at
- * once. A swipe that starts before the fling has landed takes over from it; see
- * `landFling`.
+ * A committing release flings the board off, and the frame it is gone the
+ * pager's anchor moves to the neighbour's page and the offset returns to 0, so
+ * the next swipe can start at once. A swipe that starts before the fling has
+ * landed takes over from it; see `landFling`. None of that asks the JS thread
+ * anything. The pager tells it while the fling runs (`tellUntoldStep`), and it
+ * follows.
  *
- * The JS thread is told once the incoming board has stopped in the middle, which
- * is about two thirds of the way through the fling. Changing the climb costs the
- * UI thread a frame now and then (the new neighbour's board is mounted, the rest
- * of the drawer updates), and it should not be a frame in which a board is
- * moving. Told at finger-up it was: 5 to 7 frames in 2,500 on an iPhone 13 Pro,
- * all of them mid-fling. Told only when the fling has landed, the next swipe has
- * to wait 50 ms longer for its page. In between, the picture is already still
- * and the JS thread has most of the fling as a head start.
+ * Under the system's Reduce Motion setting Reanimated ends a spring the moment
+ * it is assigned, so a release changes the climb with no slide and a let-go
+ * drag is back in the middle at once. Nothing here has to ask for that.
  */
 export function useCarouselGesture({
   pager,
-  onSwipeNext,
-  onSwipePrevious,
   boardWidth,
   screenWidth,
   enabled = true,
   isZoomedSV,
   scrollRef,
-  reduceMotion = false,
 }: UseCarouselGestureOptions): UseCarouselGestureReturn {
-  const { translateX, isAnimating, anchorPage, flingDirection, uiSteps, jsState, resetGeneration } = pager;
+  const {
+    translateX,
+    isAnimating,
+    anchorPage,
+    flingDirection,
+    uiSteps,
+    jsState,
+    resetGeneration,
+    untoldStep,
+    tellUntoldStep,
+  } = pager;
   const hasTriggeredHaptic = useSharedValue(false);
 
   // Mirror enabled into a shared value so the gesture useMemo doesn't rebuild
@@ -70,13 +78,6 @@ export function useCarouselGesture({
   useEffect(() => {
     enabledSV.value = enabled;
   }, [enabled, enabledSV]);
-
-  // Mirror Reduce Motion into a shared value for the same reason — flipping it
-  // shouldn't rebuild the gesture.
-  const reduceMotionSV = useSharedValue(reduceMotion);
-  useEffect(() => {
-    reduceMotionSV.value = reduceMotion;
-  }, [reduceMotion, reduceMotionSV]);
 
   // The incoming board's travel (board width) lives in a shared value so the
   // post-layout change from screenWidth to the contained board width doesn't
@@ -95,29 +96,26 @@ export function useCarouselGesture({
     screenWidthSV.value = screenWidth;
   }, [screenWidth, screenWidthSV]);
 
-  const callbacksRef = useRef({ onSwipeNext, onSwipePrevious, requestStep: pager.requestStep });
-  callbacksRef.current = { onSwipeNext, onSwipePrevious, requestStep: pager.requestStep };
+  // A carousel taken down under a finger gets no `onEnd`. The offset is the
+  // pager's and outlives it: left where the drag was, the header would sit off
+  // centre and the drawer's pull-down would stand aside for a swipe that is no
+  // longer happening. A fling is left alone; it lands by itself.
+  useEffect(
+    () => () => {
+      runOnUI(() => {
+        'worklet';
+        if (flingDirection.value !== 0) return;
+        cancelAnimation(translateX);
+        translateX.value = 0;
+      })();
+    },
+    [flingDirection, translateX],
+  );
 
-  // The JS callbacks below are captured ONCE by the gesture memo (it composes a
-  // single time per mount) — they must only close over refs and shared values.
-  // Route any new render-scoped value through callbacksRef.
+  // Captured ONCE by the gesture memo (it composes a single time per mount):
+  // it must only close over refs and shared values.
   const triggerHaptic = () => {
     hapticMedium();
-  };
-
-  // Fired while the fling is still running (see `tellJsThread`): the JS thread
-  // changes the climb under an animation that no longer needs it. The pager runs the
-  // navigation callback when its turn comes, which is at once unless an earlier
-  // step is still being rendered; the callback is looked up then, not now, so it
-  // is the one from the render that step produced.
-  const commitStep = (direction: 1 | -1, step: number) => {
-    callbacksRef.current.requestStep(direction, step, () => {
-      if (direction === 1) {
-        callbacksRef.current.onSwipeNext();
-      } else {
-        callbacksRef.current.onSwipePrevious();
-      }
-    });
   };
 
   // Lock direction on first significant move. Once locked horizontal, the gesture
@@ -141,27 +139,6 @@ export function useCarouselGesture({
   // starts over from the finger's position rather than add to an offset that
   // belonged to the old page.
   const dragGeneration = useSharedValue(0);
-  // The step a fling is carrying that the JS thread has not been told about
-  // yet; 0 when there is none.
-  const untoldStep = useSharedValue(0);
-
-  const tellJsThread = () => {
-    'worklet';
-    const step = untoldStep.value;
-    if (step === 0) return;
-    untoldStep.value = 0;
-    runOnJS(commitStep)(flingDirection.value > 0 ? 1 : -1, step);
-  };
-  // The incoming board stops in the middle when the outgoing one has travelled
-  // its own width; from there on the fling is only the outgoing board's tail
-  // leaving a picture that is otherwise still.
-  useAnimatedReaction(
-    () => flingDirection.value !== 0 && Math.abs(translateX.value) >= boardWidthSV.value,
-    (incomingBoardHasStopped, before) => {
-      if (incomingBoardHasStopped && !before) tellJsThread();
-    },
-    [flingDirection, translateX, boardWidthSV, untoldStep],
-  );
 
   const gesture = useMemo(() => {
     /** Whether the page one step that way is mounted. The JS thread mounts one each side of ITS middle page. */
@@ -176,16 +153,24 @@ export function useCarouselGesture({
      * End the fling now: the neighbour's page becomes the anchor.
      *
      * At the fling's own end the offset simply returns to 0, on the same frame,
-     * so nothing moves. When a new swipe cuts the fling short, `carry` keeps
-     * both boards where they are: the incoming board has not reached the middle
-     * yet, so in the new anchor's terms it is still that far off centre.
+     * so nothing moves. When a new swipe cuts the fling short, `carry` keeps the
+     * incoming board where it is: if it has not reached the middle yet, then in
+     * the new anchor's terms it is still that far off centre, and the outgoing
+     * board beside it stays put too.
+     *
+     * Two cases are not carried exactly. Once the incoming board has stopped,
+     * the outgoing one is dropped a few frames before it would have left; that
+     * shows only beside a letterboxed board, whose margins it was still
+     * crossing. And a fling cut short before it has crossed the middle, which
+     * takes a touch that activates within a frame or two of the last release,
+     * puts the board it was leaving in the middle.
      */
     const landFling = (carry: boolean) => {
       'worklet';
       const direction = flingDirection.value;
       if (direction === 0) return;
       // A swipe that cut the fling short got here before the incoming board did.
-      tellJsThread();
+      tellUntoldStep();
       const remaining =
         direction > 0
           ? Math.max(0, boardWidthSV.value + translateX.value)
@@ -292,7 +277,6 @@ export function useCarouselGesture({
       .onEnd((event) => {
         'worklet';
         const offset = translateX.value;
-        const skipAnimation = reduceMotionSV.value;
         const velocity = event.velocityX ?? 0;
         // Judged on the finger's own travel, like the haptic: a hard flick must
         // count however little of a taken-over offset it had undone by
@@ -310,12 +294,6 @@ export function useCarouselGesture({
 
         if (direction !== 0 && canStep(direction)) {
           uiSteps.value += 1;
-          if (skipAnimation) {
-            runOnJS(commitStep)(direction, uiSteps.value);
-            anchorPage.value += direction;
-            translateX.value = 0;
-            return;
-          }
           untoldStep.value = uiSteps.value;
           isAnimating.value = true;
           flingDirection.value = direction;
@@ -333,7 +311,7 @@ export function useCarouselGesture({
           return;
         }
         if (offset !== 0) {
-          translateX.value = skipAnimation ? 0 : withSpring(0, { ...springs.interactive, velocity });
+          translateX.value = withSpring(0, { ...springs.interactive, velocity });
         }
       })
       // manualActivation hands the touch lifecycle to these worklets, so a touch
@@ -365,7 +343,6 @@ export function useCarouselGesture({
     hasTriggeredHaptic,
     isZoomedSV,
     enabledSV,
-    reduceMotionSV,
     directionLock,
     startTouchX,
     startTouchY,
@@ -373,6 +350,7 @@ export function useCarouselGesture({
     dragOrigin,
     dragGeneration,
     untoldStep,
+    tellUntoldStep,
     scrollRef,
   ]);
 

@@ -548,6 +548,67 @@ describe('LayeredClimbImage', () => {
     expect(onOverlayError).toHaveBeenCalledWith({ error: 'mock image failure' }, '1:0');
   });
 
+  describe('onOverlayMounted', () => {
+    it('reports one image replacing another as the new one, with no "nothing is mounted" in between', () => {
+      const onOverlayMounted = vi.fn();
+      const { rerender } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: 'file:///overlay.png',
+          overlayLoadKey: '1:0',
+          backgroundPaths: [],
+          onOverlayMounted,
+        }),
+      );
+
+      rerender(
+        createElement(LayeredClimbImage, {
+          overlayUri: 'file:///overlay-next.png',
+          overlayLoadKey: '2:0',
+          backgroundPaths: [],
+          onOverlayMounted,
+        }),
+      );
+
+      // A consumer that hears "nothing" forgets what it knew, including an
+      // `onLoad` for the new image that arrived ahead of this report.
+      expect(onOverlayMounted.mock.calls).toEqual([['1:0'], ['2:0']]);
+    });
+
+    it('reports a render that arrives after the first paint without a second "nothing is mounted"', () => {
+      const onOverlayMounted = vi.fn();
+      const { rerender } = render(
+        createElement(LayeredClimbImage, { overlayUri: null, backgroundPaths: [], onOverlayMounted }),
+      );
+
+      rerender(
+        createElement(LayeredClimbImage, {
+          overlayUri: 'file:///overlay.png',
+          overlayLoadKey: '1:0',
+          backgroundPaths: [],
+          onOverlayMounted,
+        }),
+      );
+
+      expect(onOverlayMounted.mock.calls).toEqual([[null], ['1:0']]);
+    });
+
+    it('says nothing is mounted when the component goes away', () => {
+      const onOverlayMounted = vi.fn();
+      const { unmount } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: 'file:///overlay.png',
+          overlayLoadKey: '1:0',
+          backgroundPaths: [],
+          onOverlayMounted,
+        }),
+      );
+
+      unmount();
+
+      expect(onOverlayMounted.mock.calls).toEqual([['1:0'], [null]]);
+    });
+  });
+
   it('does not expose the painted anchor for a queued load from a replaced overlay generation', () => {
     const onOverlayLoad = vi.fn();
     const { container, rerender } = render(
