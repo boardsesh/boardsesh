@@ -5,6 +5,7 @@ import {
   CONSENT_VERSION,
   isAnalyticsGranted,
   isCurrentConsentRecord,
+  isRegionDefaultConsent,
   parseConsentCookieValue,
   serializeConsentCookieValue,
   type ConsentRecord,
@@ -14,6 +15,12 @@ let initialized = false;
 let currentRecord: ConsentRecord | null = null;
 let lastCookieValue: string | null = null;
 let accountResolved = false;
+/**
+ * This page load's region lookup said no prompt is needed here (and the browser
+ * sends no Global Privacy Control). A region-default cookie counts as "on" only
+ * once it has, so it sends nothing before the lookup answers or when it fails.
+ */
+let regionConfirmed = false;
 const listeners = new Set<() => void>();
 function consentCookieValue(): string | null {
   if (typeof document === 'undefined') return null;
@@ -38,7 +45,27 @@ export function hasAnalyticsConsent(): boolean {
   // Cookies are shared across origins, unlike BroadcastChannel. A www/app withdrawal must
   // stop a background tab's next capture/request even before its next focus event.
   refreshWebConsent();
-  return accountResolved && isAnalyticsGranted(getWebConsentRecord());
+  return accountResolved && isConsentRecordAuthorized(getWebConsentRecord());
+}
+/**
+ * An analytics "on" this page load may act on: an explicit Allow, or the region
+ * default once this page load's region lookup confirmed it.
+ */
+export function isConsentRecordAuthorized(record: ConsentRecord | null): boolean {
+  return isAnalyticsGranted(record) && (!isRegionDefaultConsent(record) || regionConfirmed);
+}
+export function isConsentRegionConfirmed(): boolean {
+  return regionConfirmed;
+}
+export function setConsentRegionConfirmed(confirmed: boolean): void {
+  if (regionConfirmed === confirmed) return;
+  regionConfirmed = confirmed;
+  listeners.forEach((listener) => listener());
+}
+/** Global Privacy Control as the page's script sees it (Firefox, Brave, DuckDuckGo, some extensions). */
+export function isGlobalPrivacyControlEnabled(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return (navigator as Navigator & { globalPrivacyControl?: unknown }).globalPrivacyControl === true;
 }
 export function setConsentAccountResolved(resolved: boolean): void {
   if (accountResolved === resolved) return;

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { createRegionDefaultConsent, isRegionDefaultConsent, needsPrompt } from '@boardsesh/consent';
-import { getWebConsentRecord, writeWebConsent } from '@/app/lib/consent';
+import { getWebConsentRecord, setConsentRegionConfirmed, writeWebConsent } from '@/app/lib/consent';
 import { lookUpConsentRegion } from '@/app/lib/consent-region';
 import { useConsent } from './consent-provider';
 
@@ -16,6 +16,14 @@ import { useConsent } from './consent-provider';
  * one cookie write that does not follow a click; the account never receives it
  * and an account denial still replaces it. A region default seen again from a
  * prompt region (a traveller) is dropped so the banner asks.
+ *
+ * A stored region default sends nothing until this page load's lookup says the
+ * region needs no prompt (`setConsentRegionConfirmed`). A failed lookup keeps
+ * the cookie but sends nothing on this page.
+ *
+ * Global Privacy Control counts as a "no" outside the prompt regions: no
+ * region default is written (an existing one is dropped), and no banner shows.
+ * Privacy choices still lets the visitor allow analytics explicitly.
  *
  * `enabled` is false on chrome-less pages (kiosks, embeds), which never ask and
  * must not write cookies.
@@ -33,18 +41,30 @@ export function useConsentRegionPrompt(enabled: boolean): boolean {
   useEffect(() => {
     if (!regionCheckNeeded) return;
     let cancelled = false;
-    void lookUpConsentRegion().then((promptRequired) => {
-      if (cancelled) return;
-      const current = getWebConsentRecord();
-      if (promptRequired === false) {
-        if (needsPrompt(current)) writeWebConsent(createRegionDefaultConsent('web'));
-        return;
-      }
-      // Only a positive "this region asks" drops a region default; an unknown
-      // region keeps it (the banner stays hidden behind the cookie either way).
-      if (promptRequired === true && isRegionDefaultConsent(current)) writeWebConsent(null);
-      setPromptRegion(true);
-    });
+    void lookUpConsentRegion()
+      .then(({ promptRequired, globalPrivacyControl }) => {
+        if (cancelled) return;
+        const current = getWebConsentRecord();
+        const regionDefaultAllowed = promptRequired === false && !globalPrivacyControl;
+        setConsentRegionConfirmed(regionDefaultAllowed);
+        if (regionDefaultAllowed) {
+          if (needsPrompt(current)) writeWebConsent(createRegionDefaultConsent('web'));
+          return;
+        }
+        if (promptRequired === false) {
+          // Global Privacy Control: the browser already said no.
+          if (isRegionDefaultConsent(current)) writeWebConsent(null);
+          return;
+        }
+        // Only a positive "this region asks" drops a region default; an unknown
+        // region keeps it (the banner stays hidden behind the cookie either way).
+        if (promptRequired === true && isRegionDefaultConsent(current)) writeWebConsent(null);
+        setPromptRegion(true);
+      })
+      .catch(() => {
+        // Unreachable today (the lookup never rejects), but an unknown region asks.
+        if (!cancelled) setPromptRegion(true);
+      });
     return () => {
       cancelled = true;
     };

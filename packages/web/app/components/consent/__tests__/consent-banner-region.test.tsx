@@ -8,6 +8,10 @@ const transport = vi.hoisted(() => ({
   regionRequest: vi.fn(),
   // promptRequired the backend returns; an Error means the lookup fails.
   region: true as boolean | null | Error,
+  // Sec-GPC as the backend saw it.
+  headerGpc: false,
+  // Resolves the next region request by hand when set.
+  pendingRegion: null as Promise<boolean | null> | null,
   pathname: '/',
 }));
 vi.mock('next-auth/react', () => ({ useSession: () => ({ status: 'unauthenticated', data: null }) }));
@@ -45,8 +49,13 @@ async function renderBanner() {
   const { ConsentProvider, useConsent } = await import('../consent-provider');
   const { default: ConsentBanner } = await import('../consent-banner');
   function OpenChoices() {
-    const { openChoices } = useConsent();
-    return <button onClick={openChoices}>open-privacy-choices</button>;
+    const { openChoices, granted } = useConsent();
+    return (
+      <>
+        <button onClick={openChoices}>open-privacy-choices</button>
+        <span data-testid="analytics-authorized">{granted ? 'on' : 'off'}</span>
+      </>
+    );
   }
   return render(
     <ConsentProvider>
@@ -56,17 +65,26 @@ async function renderBanner() {
   );
 }
 
+async function sendsAnalytics(): Promise<boolean> {
+  const { hasAnalyticsConsent } = await import('@/app/lib/consent');
+  return hasAnalyticsConsent();
+}
+
 beforeEach(() => {
   vi.resetModules();
   transport.region = true;
+  transport.headerGpc = false;
+  transport.pendingRegion = null;
   transport.pathname = '/';
   transport.regionRequest.mockReset().mockImplementation(async ({ document }: { document: string }) => {
     if (document !== GET_CONSENT_REGION) throw new Error('unexpected operation');
-    if (transport.region instanceof Error) throw transport.region;
+    const promptRequired = transport.pendingRegion ? await transport.pendingRegion : transport.region;
+    if (promptRequired instanceof Error) throw promptRequired;
     return {
       consentRegion: {
-        countryCode: transport.region === false ? 'US' : null,
-        promptRequired: transport.region,
+        countryCode: promptRequired === false ? 'US' : null,
+        promptRequired,
+        globalPrivacyControl: transport.headerGpc,
       },
     };
   });
@@ -85,6 +103,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  delete (navigator as unknown as Record<string, unknown>).globalPrivacyControl;
   cleanup();
   delete (document as unknown as Record<string, unknown>).cookie;
   delete document.documentElement.dataset.consent;
@@ -180,5 +199,82 @@ describe('consent banner by region', () => {
     fireEvent.click(await view.findByRole('button', { name: 'deny' }));
     await waitFor(() => expect(consentCookie()).toMatch(/^v1\.denied\.\d+\.web$/));
     expect(document.documentElement.dataset.consent).toBe('denied');
+  });
+
+  it('sends nothing on a stored region default until this page load confirms the region', async () => {
+    cookies = `boardsesh-consent=${serializeConsentCookieValue(createRegionDefaultConsent('web'))}`;
+    let answer!: (promptRequired: boolean | null) => void;
+    transport.pendingRegion = new Promise((resolve) => {
+      answer = resolve;
+    });
+    const view = await renderBanner();
+    await waitFor(() => expect(regionLookups()).toBe(1));
+    expect(view.getByTestId('analytics-authorized').textContent).toBe('off');
+    expect(await sendsAnalytics()).toBe(false);
+
+    await act(async () => {
+      answer(false);
+    });
+    await waitFor(() => expect(view.getByTestId('analytics-authorized').textContent).toBe('on'));
+    expect(await sendsAnalytics()).toBe(true);
+    expect(view.queryByTestId('consent-banner')).toBeNull();
+  });
+
+  it('keeps a region default through a failed lookup but sends nothing on that page', async () => {
+    const regionDefault = serializeConsentCookieValue(createRegionDefaultConsent('web'));
+    cookies = `boardsesh-consent=${regionDefault}`;
+    transport.region = new Error('backend unreachable');
+    const view = await renderBanner();
+    await waitFor(() => expect(regionLookups()).toBe(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(consentCookie()).toBe(regionDefault);
+    expect(view.getByTestId('analytics-authorized').textContent).toBe('off');
+    expect(await sendsAnalytics()).toBe(false);
+  });
+
+  it('tracks a fresh visitor outside the prompt regions once the default is written', async () => {
+    transport.region = false;
+    const view = await renderBanner();
+    await waitFor(() => expect(view.getByTestId('analytics-authorized').textContent).toBe('on'));
+    expect(await sendsAnalytics()).toBe(true);
+  });
+
+  it.each([
+    ['navigator.globalPrivacyControl', true, false],
+    ['the Sec-GPC header', false, true],
+  ])(
+    'treats Global Privacy Control (%s) as a no outside the prompt regions: no default, no banner',
+    async (_source, navigatorGpc, headerGpc) => {
+      if (navigatorGpc) Object.defineProperty(navigator, 'globalPrivacyControl', { value: true, configurable: true });
+      transport.headerGpc = headerGpc;
+      transport.region = false;
+      const view = await renderBanner();
+      await waitFor(() => expect(regionLookups()).toBe(1));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(consentCookie()).toBeUndefined();
+      expect(view.queryByTestId('consent-banner')).toBeNull();
+      expect(view.getByTestId('analytics-authorized').textContent).toBe('off');
+    },
+  );
+
+  it('drops a stored region default under Global Privacy Control', async () => {
+    cookies = `boardsesh-consent=${serializeConsentCookieValue(createRegionDefaultConsent('web'))}`;
+    transport.headerGpc = true;
+    transport.region = false;
+    const view = await renderBanner();
+    await waitFor(() => expect(consentCookie()).toBeUndefined());
+    expect(view.queryByTestId('consent-banner')).toBeNull();
+    expect(document.documentElement.dataset.consent).toBeUndefined();
+  });
+
+  it('still asks in a prompt region under Global Privacy Control', async () => {
+    transport.headerGpc = true;
+    transport.region = true;
+    const view = await renderBanner();
+    expect(await view.findByTestId('consent-banner')).toBeTruthy();
   });
 });

@@ -14,6 +14,7 @@ import { useSession } from 'next-auth/react';
 import {
   createConsentSyncCoordinator,
   isAnalyticsGranted,
+  isRegionDefaultConsent,
   type AnalyticsConsentChoice,
   type ConsentSyncSnapshot,
 } from '@boardsesh/consent';
@@ -27,6 +28,8 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { executeGraphQL } from '@/app/lib/graphql/client';
 import {
   getWebConsentRecord,
+  isConsentRecordAuthorized,
+  isConsentRegionConfirmed,
   writeWebConsent,
   refreshWebConsent,
   subscribeWebConsent,
@@ -97,7 +100,12 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
   const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot, () => SERVER_SNAPSHOT);
   const accountId = status === 'authenticated' ? (session?.user.id ?? null) : null;
   const accountReady = status !== 'loading' && accountId === coordinator.getAccountId() && snapshot.accountResolved;
-  const analyticsAuthorized = accountReady && isAnalyticsGranted(snapshot.record);
+  // A region default counts only once this page load's region lookup confirmed it.
+  const regionConfirmed = useSyncExternalStore(subscribeWebConsent, isConsentRegionConfirmed, () => false);
+  const analyticsAuthorized =
+    accountReady &&
+    isAnalyticsGranted(snapshot.record) &&
+    (!isRegionDefaultConsent(snapshot.record) || regionConfirmed);
   useIsomorphicLayoutEffect(() => {
     authorityActiveRef.current = true;
     setConsentAccountResolved(analyticsAuthorized);
@@ -126,7 +134,7 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
           auth.status !== 'loading' &&
           auth.accountId === coordinator.getAccountId() &&
           coordinator.getSnapshot().accountResolved &&
-          isAnalyticsGranted(coordinator.getSnapshot().record),
+          isConsentRecordAuthorized(coordinator.getSnapshot().record),
       );
     };
     const unsubscribe = subscribeWebConsent(updateCookie);

@@ -85,4 +85,24 @@ test.describe('analytics privacy choices outside the prompt regions', () => {
     await page.goto('/');
     await expect(page.getByTestId('consent-banner')).toBeVisible();
   });
+
+  test('a US visitor whose browser sends Global Privacy Control gets no default and no banner', async ({
+    page,
+    context,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'globalPrivacyControl', { value: true, configurable: true });
+    });
+    await stubConsentRegion(page, { countryCode: 'US', promptRequired: false });
+    await context.clearCookies();
+    // Wait for the lookup to land before checking that nothing was written.
+    const regionAnswered = page.waitForResponse((response) =>
+      (response.request().postData() ?? '').includes('consentRegion'),
+    );
+    await page.goto('/');
+    await regionAnswered;
+    await page.waitForTimeout(500);
+    expect((await context.cookies()).find((stored) => stored.name === 'boardsesh-consent')).toBeUndefined();
+    await expect(page.getByTestId('consent-banner')).toHaveCount(0);
+  });
 });
