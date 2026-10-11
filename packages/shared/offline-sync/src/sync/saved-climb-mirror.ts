@@ -4,7 +4,7 @@ import { offlineBoardKey } from '../offline-board-key';
 import { isScopeDownloadComplete } from './checkpoints';
 import { getLocalUserId } from './local-user-owner';
 import { runPullWrite } from './pull-write';
-import { writePullDocuments } from './document-writer';
+import { withoutFirstAscentCredit, writePullDocuments } from './document-writer';
 import { TABLE_CONFIGS } from './table-config';
 
 class StaleMirrorError extends Error {}
@@ -24,7 +24,9 @@ export async function mirrorSavedClimb(
   canWrite: () => boolean,
 ): Promise<boolean> {
   const climb = documentRow(result.climb);
-  const stats = result.stats.map(documentRow);
+  // A mirrored climb is a protected write, so its stats carry no first-ascent
+  // name, exactly as a protected sync page's do.
+  const stats = result.stats.map(documentRow).map(withoutFirstAscentCredit);
   if (
     climb.uuid !== climbUuid ||
     climb.board_type !== scope.boardType ||

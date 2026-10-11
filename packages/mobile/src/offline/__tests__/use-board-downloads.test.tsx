@@ -108,12 +108,14 @@ describe('useBoardDownloads', () => {
     syncOptions?.onScopeDownloadComplete?.({
       scopeKey: 'kilter:1:10',
       method: 'snapshot',
+      audienceMode: 'split',
       durationMs: 12,
       phases: emptyScopeDownloadPhases(),
     });
     syncOptions?.onScopeDownloadComplete?.({
       scopeKey: 'tension:2:11',
       method: 'paged',
+      audienceMode: 'split',
       durationMs: 34,
       phases: emptyScopeDownloadPhases(),
     });

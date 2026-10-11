@@ -4,12 +4,16 @@ import {
   clearBoardTypeHoldIndex,
   ensureHoldIndex,
   ensureMutationQueueTable,
-  markScopeDownloadComplete,
   offlineBoardKey,
   runMigrations,
   stampLocalUserId,
 } from '@boardsesh/offline-sync';
-import { createTestDatabase, rejectBinaryDatabaseResults, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import {
+  createTestDatabase,
+  markScopeDownloaded,
+  rejectBinaryDatabaseResults,
+  type TestSqliteDb,
+} from '@boardsesh/offline-sync/testing';
 
 // The parser module reports build failures as breadcrumbs; keep Sentry out of it.
 vi.mock('../../../lib/error-reporting', () => ({ addErrorBreadcrumb: vi.fn() }));
@@ -79,7 +83,7 @@ describe('getHoldHeatmapLocal', () => {
     await ensureMutationQueueTable(db);
     await runMigrations(db);
     await stampLocalUserId(db, OWNER);
-    await markScopeDownloadComplete(db, offlineBoardKey(SCOPE));
+    await markScopeDownloaded(db, offlineBoardKey(SCOPE));
 
     // alpha: start 1, hand 2, foot 3. bravo: start 1, finish 2.
     await insertClimb(db, { uuid: 'alpha', seq: 1, frames: 'p1r12p2r13p3r15' });
@@ -286,7 +290,7 @@ describe('getHoldHeatmapLocal', () => {
     await insertManyClimbs(3000);
     await db.runAsync("UPDATE board_climbs SET layout_id = 2 WHERE uuid LIKE 'bulk-%'");
     const otherScope = { ...SCOPE, layoutId: 2 };
-    await markScopeDownloadComplete(db, offlineBoardKey(otherScope));
+    await markScopeDownloaded(db, offlineBoardKey(otherScope));
     await ensureHoldIndex(db, otherScope, { parseHoldRows });
 
     const { pages, plans, candidatePlans } = observePages();
