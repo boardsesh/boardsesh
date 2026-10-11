@@ -30,7 +30,7 @@ counts (see [analytics-consent.md](./analytics-consent.md)).
   `x-boardsesh-platform` / `clientPlatform` (PRs B and C of #2644).
 - **PostHog MAU is no longer comparable.** Since the consent prompt shipped
   (PRs B and C of #2644), PostHog sees climbers in the prompt regions (EU, EEA,
-  UK, Switzerland and the rest of `CONSENT_PROMPT_COUNTRIES`) only after they
+  UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`) only after they
   choose "Allow", and everyone else unless they switch analytics off (the
   region default). The opted-in share therefore differs by region: European
   numbers drop by the share who declined or never answered, the rest barely
@@ -936,6 +936,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6336 OTA (2026-10-11) | The climbs grade row stays open once the Grade chip opens it (hidden by default, kept across launches); `Grade Filter Changed` and `Grade Row Toggled` start; `Climb Search Performed` carries `gradeFormat`. Under V grades one "V0" chip now sets `minGrade` 10 and `maxGrade` 12, so `minGrade != maxGrade` stops meaning "built a range" from this date. Count ranges from `Grade Filter Changed`: `withinRangeWindow = true` (the quick second tap) plus `gesture = 'hold'`. A range misfire is a `withinRangeWindow = true` change followed by a change back to one grade; `msSincePrevious` on that second event is the real gap between the two |
 | 2026-10-10 (#6256 backend deploy) | The proxy stops forwarding visitor IPs: event and person country become the backend's location |
 | #6342 backend deploy (fill in the date when it ships) | Consented capture is geolocated to the visitor again; country-based filters work from here |
+| #6358 web deploy and OTA (fill in the date when it ships) | Analytics starts on by default outside the prompt regions (EU, EEA, UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`), so PostHog person and event counts from those other countries jump on this date. Do not compare those counts across it. Install attribution (`Install Attributed`, Apple Ads campaign fields, `install_*` person properties) keeps needing an explicit Allow, so its counts do not jump; the share of people who carry them falls instead |
 
 None of these repairs past data. Annotate them; do not backfill.
 

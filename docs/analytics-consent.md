@@ -1,10 +1,10 @@
 # Analytics consent
 
 Boardsesh asks before it runs product analytics, on the web and in the app,
-in the EU, the EEA, the UK, Switzerland and the other places listed under
-[Who is asked](#who-is-asked), and whenever it cannot tell where a visitor is.
-Everywhere else analytics starts on and the climber can switch it off in
-Settings. Answers are stored on the device and on the account. Tracking issue
+in the EU, the EEA, the UK, Switzerland, China, South Korea and the other places
+listed under [Who is asked](#who-is-asked), and whenever it cannot tell where a
+visitor is. Everywhere else analytics starts on and the climber can switch it
+off in Settings. Install attribution needs the climber's own Allow everywhere. Answers are stored on the device and on the account. Tracking issue
 #2644.
 This page covers the shared consent model, account synchronization, backend
 statistics, web banner and privacy policy. The app shares the model and account
@@ -51,9 +51,18 @@ type ConsentRecord = {
 - The UK `GB`, and places with their own copy of GDPR: Switzerland `CH`
   (revised FADP), Gibraltar `GI`, Guernsey `GG`, Jersey `JE`, Isle of Man `IM`.
   These are a policy choice, kept in their own list so they can be dropped.
+- China `CN` (PIPL has no legitimate-interest basis) and South Korea `KR`
+  (PIPA is built on consent). Also a policy choice, in a list of their own.
 - Every code that does not name one known country: null, `XX`, `ZZ`, Tor's
   `T1`, the other user-assigned codes (`AA`, `QM`-`QZ`, `X*`), the reserved
   `EU` and `UK`, lowercase or malformed values. When in doubt, ask.
+
+Not on the list, on purpose: Quebec. Law 25 wants identifying or profiling
+technology off by default, but Cloudflare's country header says `CA` for all of
+Canada, and asking every Canadian for one province is not the trade we chose.
+Andorra, Monaco, San Marino, the Vatican and the Faroe Islands (laws modelled on
+GDPR) are not on it either; adding any of them is one line in
+`consent-region.ts`.
 
 **Where the country comes from.** The unauthenticated GraphQL query
 `consentRegion { countryCode promptRequired }`. The backend reads Cloudflare's
@@ -69,26 +78,59 @@ it is signed-in only and null exactly when the region is needed.
 takes `createRegionDefaultConsent(source)`: analytics granted, `basis:
 'region_default'`. It is device-only:
 
-- The sync coordinator never writes it to the account, so it is never recorded
-  as an Art. 7 consent. (The one guard is in `consent-sync.ts`; the
-  `resolveConsent` change below is in `consent-record.ts`.)
-- An account denial replaces it (merge rule 2). An account grant replaces it
-  with the account's explicit answer (merge rule 3).
+- It is nobody's answer, so it never carries `ownerAccountId` or
+  `basedOnDecidedAt`. `mergeAccountConsent` checks for it before anything else:
+  with no account answer the device keeps it and writes nothing; any account
+  answer, grant or denial, replaces it with the account's copy. So it is never
+  written to the account and never recorded as an Art. 7 consent.
+  `parsePendingConsentDecision` refuses one, `decide()` never makes one, and
+  `accountCopy` never copies `basis`. `isSameConsentRecord` compares `basis`, so
+  a re-read default and an explicit grant from the same second differ.
 - Any choice in Settings, the footer's Privacy choices or the prompt replaces it
   with an explicit record that syncs as before.
-- A device that holds a region default re-checks the region once per app launch
-  or page load. A prompt region drops the default and the prompt asks (a climber
-  who travels into the EU). An unknown region keeps it, so a flaky or offline
-  start does not re-ask.
+- It counts as "on" only once this launch or page load looked the region up and
+  got `false` (`regionConfirmed` in the app's consent state, the same flag
+  behind `hasAnalyticsConsent()` on the website). Before that answer, and when
+  the lookup fails, it stays stored but sends nothing, and nothing is asked.
+- A prompt region drops it and the prompt asks (a climber who travels into the
+  EU). The app looks the region up once per launch, and again on a resume once
+  the last answer is 24 hours old or failed: a phone keeps a backgrounded
+  process for days.
+- Install attribution (Apple Ads, the Play install referrer) never runs on it.
+  See [Legal basis per tracker](#legal-basis-per-tracker).
+
+**Stored apart from answers.** The app keeps the region default under its own
+key, `analyticsConsentRegionDefault`. The answer key, `analyticsConsent`, holds
+only the climber's own answers, because every bundle before this change reads
+that key as an explicit answer it may write to the account. An older bundle can
+still run on the device (expo-updates falls back to the embedded bundle after a
+crash, or an OTA is rolled back): it finds no answer and asks. This is the
+expand-then-contract rule from the offline database, applied to consent
+storage. `persistLocalConsent` writes the new key before clearing the other, and
+`readLocalConsent` reads the answer key first. On the web the cookie's fifth
+part does the same job: every parser before it, including the pre-paint script,
+requires exactly four parts, so an older bundle reads a region-default cookie as
+no answer and asks.
+
+**Global Privacy Control.** On the website and the browser app, a browser that
+sends Global Privacy Control (`navigator.globalPrivacyControl`, or `Sec-GPC: 1`,
+which `consentRegion` echoes as `globalPrivacyControl`) gets no region default
+outside the prompt regions: no cookie is written, a stored default is dropped,
+no banner shows and nothing is tracked. Privacy choices still lets the visitor
+allow analytics. Inside the prompt regions the banner asks as usual. The native
+app sends no GPC.
 
 **App.** `ConsentGate` (`packages/mobile/src/components/onboarding/ConsentGate.tsx`)
 starts the lookup as soon as the device turns out to have no answer
 (`lookUpConsentRegion`, one request per launch, capped at 5 seconds). Where it
 would open the prompt it waits for that answer: `false` writes the region
-default, `true` or no answer opens the prompt. Signed-in climbers still wait up
-to 5 seconds for their account answer first; an account answer is never
-touched. Screenshot mode and the `privacy-consent-step-kill` flag skip the
-lookup, as they skip the prompt.
+default, `true` or no answer opens the prompt. It applies the default at most
+once per launch and account; if anything drops it again, the gate settles with
+no answer (nothing tracked, no prompt) rather than apply it in a loop. Signed-in
+climbers still wait up to 5 seconds for their account answer first; an account
+answer is never touched. The gate never starts an account read itself: it runs
+again when the sync effect's read lands. Screenshot mode and the
+`privacy-consent-step-kill` flag skip the lookup, as they skip the prompt.
 
 **Website.** The browser asks, never the server: list and climb pages are cached
 at Cloudflare (`boardsesh:www-html-edge-cache`) and shared between visitors, so a
@@ -98,13 +140,24 @@ per page load while the cookie holds no answer or a region default. The banner
 renders only after a prompt region or an unknown answer (capped at 5 seconds),
 so a visitor outside those regions never sees it flash. A `false` answer writes
 the region-default cookie; this is the one consent cookie written without a
-click. Kiosk and embed pages never look up the region and never write it.
+click. Kiosk and embed pages never look up the region and never write it. The
+lookup is a cross-origin POST, so backend CORS answers its preflight with
+`Access-Control-Max-Age: 600`: one OPTIONS per ten minutes, not per page load.
 
 **Legal basis outside the prompt regions.** Product analytics there runs under
 legitimate interest with an opt-out: the Analytics toggle in app Settings, and
 Privacy choices on the website. Both are global, for every visitor in every
 region, and so is the account merge rule. Session replay stays a separate
-opt-in that defaults off everywhere.
+opt-in that defaults off everywhere. Install attribution needs an explicit
+Allow everywhere.
+
+**Location with the region default.** A device on a confirmed region default
+captures like one with an Allow, so its capture requests carry the
+`x-boardsesh-analytics-consent: granted` header and the PostHog proxy forwards
+the edge-reported visitor IP for PostHog's GeoIP (see
+[Website and browser app](#website-and-browser-app)). That is the same
+legitimate-interest basis as the capture itself. An unconfirmed default sends
+no capture at all.
 
 ## The merge rule
 
@@ -137,8 +190,10 @@ under the signed-in account. For anything else:
 
 | Device answer (signed out, other account, cookie) | Account answer | Device holds | Written to the account |
 | --- | --- | --- | --- |
-| any | none | nothing: ask again, no tracking until answered | nothing |
-| any | denied | the account's denial | nothing |
+| region default | none | the region default | nothing |
+| region default | Allow or denied | the account's answer | nothing |
+| any other | none | nothing: ask again, no tracking until answered | nothing |
+| any other | denied | the account's denial | nothing |
 | Allow | Allow | the account's Allow | nothing |
 | No thanks | Allow | its own No thanks (rule 3) | nothing |
 
@@ -191,8 +246,8 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | PostHog capture and identify (web, app) | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Only after "Allow" in the prompt regions; on by default elsewhere (region default). Feature flags still resolve without consent. |
 | PostHog session replay | Consent | Off unless analytics is on and the climber also switches replay on; never on by default. |
 | Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
-| Android install-referrer attribution | Consent in the prompt regions; legitimate interest with opt-out elsewhere | `Install Attributed` is sent only while analytics is on (a grant or the region default). |
-| iOS Apple Ads attribution | Consent in the prompt regions; legitimate interest with opt-out elsewhere | Native token acquisition, the first-party backend exchange with Apple, and campaign-linked PostHog publication require a current Allow. Tokens are never persisted or sent to diagnostics. |
+| Android install-referrer attribution | Consent, everywhere | `Install Attributed` and the install person properties are sent only after the climber's own Allow (`isAttributionPublicationGranted`). The region default does not enable them. |
+| iOS Apple Ads attribution | Consent, everywhere | Native token acquisition, the first-party backend exchange with Apple, and campaign-linked PostHog publication require the climber's own current Allow; the region default never enables them. The exchange sends `basis`, and the backend refuses anything but `explicit` (absent, from an older app, reads as explicit). Tokens are never persisted or sent to diagnostics. |
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
@@ -391,7 +446,8 @@ visitor IP as `X-Forwarded-For` only when all of these hold:
 
 - the path is a capture path (`/batch`, `/e`, `/i/v0/e`, `/s`);
 - the request carries `x-boardsesh-analytics-consent: granted`
-  (`ANALYTICS_CONSENT_HEADER` in `@boardsesh/consent`);
+  (`ANALYTICS_CONSENT_HEADER` in `@boardsesh/consent`), which a client adds
+  while analytics is on: an Allow, or a region default this launch confirmed;
 - it came through a trusted Cloudflare edge, and the address is the public
   `CF-Connecting-IP` that edge reports (`resolveEdgeVisitorIp` in
   `packages/backend/src/utils/flag-country.ts`, the same trust boundary as the
@@ -400,8 +456,8 @@ visitor IP as `X-Forwarded-For` only when all of these hold:
 Earlier `X-Forwarded-For` entries are caller-controlled and are never used, nor
 is the socket peer (our own ingress), a private or carrier-grade NAT address,
 or a request that did not come through Cloudflare. Web and app add the header
-only to capture sent with a current Allow (not to flags or the SDK config
-request); www adds it only when it talks to exactly our proxy, not to a
+only to capture sent while analytics is on, an Allow or a region default
+confirmed this launch (not to flags or the SDK config request); www adds it only when it talks to exactly our proxy, not to a
 direct-to-PostHog override. Everything else is stripped: flags, the public
 config request, surveys, logs, the anonymous OTA health event, kiosk telemetry
 and any older client. The default is strip, so a missing or
