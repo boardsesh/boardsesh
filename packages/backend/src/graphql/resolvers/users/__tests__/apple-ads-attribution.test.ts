@@ -75,6 +75,23 @@ describe('exchangeAppleAdsAttribution consent and abuse boundaries', () => {
     expect(mockRateLimit).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['the region default', { ...grant, basis: 'region_default' as const }],
+    ['an unknown basis', { ...grant, basis: 'guessed' } as unknown as AppleAdsConsentInput],
+  ])('refuses %s: attribution needs an explicit Allow everywhere', async (_name, consent) => {
+    expect(await exchange(consent, authenticated)).toMatchObject({ status: 'CONSENT_REQUIRED', attribution: null });
+    expect(mockExchange).not.toHaveBeenCalled();
+    expect(mockRateLimit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['explicit', { ...grant, basis: 'explicit' as const }],
+    ['absent (an app that predates the field)', grant],
+    ['null', { ...grant, basis: null }],
+  ])('exchanges an explicit Allow whose basis is %s', async (_name, consent) => {
+    expect(await exchange(consent)).toEqual(attributed);
+  });
+
   it('refuses invalid supplied credentials rather than using anonymous device consent', async () => {
     expect(await exchange(grant, { ...anonymous, authCredentialProvided: true })).toMatchObject({
       status: 'CONSENT_REQUIRED',

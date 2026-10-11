@@ -42,6 +42,7 @@ export const GET_CONSENT_REGION = gql`
     consentRegion {
       countryCode
       promptRequired
+      globalPrivacyControl
     }
   }
 `;

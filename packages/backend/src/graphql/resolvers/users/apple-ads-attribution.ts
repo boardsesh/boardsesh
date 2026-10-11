@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { ANALYTICS_CONSENT_CHOICES, CONSENT_SOURCES, isAnalyticsGranted, resolveConsent } from '@boardsesh/consent';
+import {
+  ANALYTICS_CONSENT_CHOICES,
+  CONSENT_BASES,
+  CONSENT_SOURCES,
+  isAnalyticsGranted,
+  resolveConsent,
+} from '@boardsesh/consent';
 import type { AppleAdsAttributionResult, AppleAdsConsentInput, ConnectionContext } from '@boardsesh/shared-schema';
 import { appleAdsTerminalResult, exchangeAppleAdsToken } from '../../../services/apple-ads-attribution';
 import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
@@ -17,9 +23,19 @@ const consentSnapshotSchema = z.object({
       const timestampMs = Date.parse(timestamp);
       return Number.isFinite(timestampMs) && new Date(timestampMs).toISOString() === timestamp;
     }),
+  // An app that predates the field sends none: its answers are all explicit.
+  basis: z.enum(CONSENT_BASES).nullish(),
 });
 
-async function isExchangeAllowed(consent: AppleAdsConsentInput, ctx: ConnectionContext): Promise<boolean> {
+/**
+ * Attribution needs the climber's own Allow everywhere: the region default that
+ * turns analytics on outside the prompt regions never enables it.
+ */
+async function isExchangeAllowed(
+  { basis, ...consent }: AppleAdsConsentInput,
+  ctx: ConnectionContext,
+): Promise<boolean> {
+  if ((basis ?? 'explicit') !== 'explicit') return false;
   if (!isAnalyticsGranted(consent)) return false;
   if (ctx.credentialExpiresAt !== undefined && ctx.credentialExpiresAt <= Date.now()) return false;
   if (ctx.authCredentialProvided && (!ctx.isAuthenticated || !ctx.userId)) return false;

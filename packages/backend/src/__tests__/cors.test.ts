@@ -436,6 +436,14 @@ describe('CORS Handler', () => {
       expect(res.end).toHaveBeenCalled();
     });
 
+    it('lets browsers cache a preflight for ten minutes', () => {
+      const req = createMockReq('OPTIONS', 'https://boardsesh.com');
+      const res = createMockRes();
+      applyCorsHeaders(req, res);
+
+      expect(res.setHeader).toHaveBeenCalledWith('Access-Control-Max-Age', '600');
+    });
+
     it('returns true for non-OPTIONS requests', () => {
       const req = createMockReq('GET', 'https://boardsesh.com');
       const res = createMockRes();
@@ -444,6 +452,7 @@ describe('CORS Handler', () => {
       expect(result).toBe(true);
       expect(res.writeHead).not.toHaveBeenCalled();
       expect(res.end).not.toHaveBeenCalled();
+      expect(res.setHeader).not.toHaveBeenCalledWith('Access-Control-Max-Age', expect.anything());
     });
 
     it('returns true for POST requests', () => {

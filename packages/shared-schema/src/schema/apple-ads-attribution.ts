@@ -4,6 +4,8 @@ export const appleAdsAttributionTypeDefs = /* GraphQL */ `
     version: Int!
     source: String!
     decidedAt: String!
+    "explicit for the climber's own answer. Anything else (the region default) is refused; absent means explicit."
+    basis: String
   }
 
   enum AppleAdsAttributionStatus {

@@ -177,9 +177,15 @@ export async function readAnalyticsConsentForUser(userId: string): Promise<Analy
  * never read, logged or stored here. An unknown or untrusted country, and every
  * WebSocket request, resolves to "ask".
  */
-export function resolveConsentRegion(ctx: Pick<ConnectionContext, 'edgeCountry'>): ConsentRegion {
+export function resolveConsentRegion(
+  ctx: Pick<ConnectionContext, 'edgeCountry' | 'globalPrivacyControl'>,
+): ConsentRegion {
   const countryCode = normalizeConsentCountry(ctx.edgeCountry);
-  return { countryCode, promptRequired: consentPromptRequired(countryCode) };
+  return {
+    countryCode,
+    promptRequired: consentPromptRequired(countryCode),
+    globalPrivacyControl: ctx.globalPrivacyControl === true,
+  };
 }
 
 export const analyticsConsentQueries = {

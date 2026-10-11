@@ -4,6 +4,8 @@ export type AppleAdsConsentInput = {
   version: number;
   source: 'web' | 'ios' | 'android';
   decidedAt: string;
+  /** Absent (an older app) means explicit. The region default is refused. */
+  basis?: 'explicit' | 'region_default' | null;
 };
 
 export type AppleAdsAttributionStatus =

@@ -351,6 +351,8 @@ export type AppleAdsAttributionStatus =
 
 export type AppleAdsConsentInput = {
   analytics: Scalars['String']['input'];
+  /** explicit for the climber's own answer. Anything else (the region default) is refused; absent means explicit. */
+  basis?: InputMaybe<Scalars['String']['input']>;
   decidedAt: Scalars['String']['input'];
   source: Scalars['String']['input'];
   version: Scalars['Int']['input'];
@@ -1864,6 +1866,8 @@ export type ConsentRegion = {
   __typename?: 'ConsentRegion';
   /** The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted. */
   countryCode?: Maybe<Scalars['String']['output']>;
+  /** True when the request carried Sec-GPC: 1 (Global Privacy Control). The website treats it as a no outside the prompt regions. */
+  globalPrivacyControl: Scalars['Boolean']['output'];
   /** True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown. */
   promptRequired: Scalars['Boolean']['output'];
 };
@@ -11859,7 +11863,12 @@ export type GetConsentRegionQueryVariables = Exact<{ [key: string]: never }>;
 
 export type GetConsentRegionQuery = {
   __typename?: 'Query';
-  consentRegion: { __typename?: 'ConsentRegion'; countryCode?: string | null; promptRequired: boolean };
+  consentRegion: {
+    __typename?: 'ConsentRegion';
+    countryCode?: string | null;
+    promptRequired: boolean;
+    globalPrivacyControl: boolean;
+  };
 };
 
 export type ExchangeAppleAdsAttributionMutationVariables = Exact<{
@@ -16976,6 +16985,7 @@ export const GetConsentRegionDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'countryCode' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'promptRequired' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'globalPrivacyControl' } },
               ],
             },
           },

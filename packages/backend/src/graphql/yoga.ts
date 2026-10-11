@@ -101,6 +101,8 @@ export async function buildHttpConnectionContext({
     // The trusted-edge country decides whether the analytics prompt is shown
     // (consentRegion). Without the Node request there is no peer to trust.
     edgeCountry: req ? resolveFlagCountry(req) : undefined,
+    // Global Privacy Control: the browser sets this header, a page script cannot.
+    globalPrivacyControl: request.headers.get('sec-gpc')?.trim() === '1',
     clientIdentity,
     clientIdentityRaw,
   };

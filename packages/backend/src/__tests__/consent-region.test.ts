@@ -95,6 +95,25 @@ describe('consentRegion', () => {
   });
 
   it('asks on a context with no edge country, such as a WebSocket operation', () => {
-    expect(resolveConsentRegion({})).toEqual({ countryCode: null, promptRequired: true });
+    expect(resolveConsentRegion({})).toEqual({ countryCode: null, promptRequired: true, globalPrivacyControl: false });
+  });
+
+  it.each([
+    [{ 'sec-gpc': '1' }, true],
+    [{ 'sec-gpc': '0' }, false],
+    [{}, false],
+  ])('echoes the Global Privacy Control header %j as %s', async (gpcHeader, expected) => {
+    const headers = { 'cf-ipcountry': 'US', ...gpcHeader };
+    const context = await buildHttpConnectionContext({
+      request: new Request('http://backend.test/graphql', { method: 'POST', headers }),
+      req: nodeRequest(CLOUDFLARE_PEER, headers),
+    });
+    const result = await graphql({
+      schema,
+      source: 'query { consentRegion { promptRequired globalPrivacyControl } }',
+      contextValue: context,
+    });
+    expect(result.errors).toBeUndefined();
+    expect(result.data).toEqual({ consentRegion: { promptRequired: false, globalPrivacyControl: expected } });
   });
 });

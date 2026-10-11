@@ -289,6 +289,10 @@ export function applyCorsHeaders(req: IncomingMessage, res: ServerResponse): boo
   );
 
   if (req.method === 'OPTIONS') {
+    // Let browsers reuse a preflight for 10 minutes (Chrome caps it at 2 h).
+    // Without it Chrome keeps one for 5 s, so every www page load that asks for
+    // the consent region paid an extra OPTIONS round trip.
+    res.setHeader('Access-Control-Max-Age', '600');
     res.writeHead(200);
     res.end();
     return false; // Signal that response was sent

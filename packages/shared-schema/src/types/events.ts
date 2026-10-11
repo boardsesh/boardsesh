@@ -193,6 +193,10 @@ export type ConnectionContext = {
   // 'XX' when unknown or untrusted, undefined on WebSocket and test contexts.
   // A coarse country only: no IP is derived from or stored with it.
   edgeCountry?: string;
+  // True when an HTTP request carries `Sec-GPC: 1`, the browser's Global
+  // Privacy Control signal. `consentRegion` echoes it so the website treats it
+  // as a "no" outside the prompt regions. Undefined on WebSocket contexts.
+  globalPrivacyControl?: boolean;
   // Which client app made the request, from the `x-boardsesh-client` header on
   // HTTP and `connectionParams.clientIdentity` on WebSocket (see
   // client-identity.ts). Identification only: nothing is gated on it.

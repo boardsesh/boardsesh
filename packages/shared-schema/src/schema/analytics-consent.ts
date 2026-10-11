@@ -44,6 +44,8 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
     countryCode: String
     "True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown."
     promptRequired: Boolean!
+    "True when the request carried Sec-GPC: 1 (Global Privacy Control). The website treats it as a no outside the prompt regions."
+    globalPrivacyControl: Boolean!
   }
 
   "Daily first-party active-user counts for one platform."

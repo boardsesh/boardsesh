@@ -354,6 +354,8 @@ export type AppleAdsAttributionStatus =
 
 export type AppleAdsConsentInput = {
   analytics: Scalars['String']['input'];
+  /** explicit for the climber's own answer. Anything else (the region default) is refused; absent means explicit. */
+  basis?: InputMaybe<Scalars['String']['input']>;
   decidedAt: Scalars['String']['input'];
   source: Scalars['String']['input'];
   version: Scalars['Int']['input'];
@@ -1867,6 +1869,8 @@ export type ConsentRegion = {
   __typename?: 'ConsentRegion';
   /** The ISO 3166-1 country the edge reported, or null when it is unknown or untrusted. */
   countryCode?: Maybe<Scalars['String']['output']>;
+  /** True when the request carried Sec-GPC: 1 (Global Privacy Control). The website treats it as a no outside the prompt regions. */
+  globalPrivacyControl: Scalars['Boolean']['output'];
   /** True in the EU, EEA, UK, Switzerland and the other prompt regions, and whenever the country is unknown. */
   promptRequired: Scalars['Boolean']['output'];
 };
@@ -13280,6 +13284,7 @@ export type ConsentRegionResolvers<
   ParentType extends ResolversParentTypes['ConsentRegion'] = ResolversParentTypes['ConsentRegion'],
 > = ResolversObject<{
   countryCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  globalPrivacyControl?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   promptRequired?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
