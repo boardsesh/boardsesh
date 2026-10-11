@@ -173,5 +173,5 @@ describe('SettingsPageContent', () => {
 });
 
 vi.mock('@/app/components/consent/consent-provider', () => ({
-  useConsent: () => ({ granted: true, openChoices: vi.fn() }),
+  useConsent: () => ({ granted: true, openChoices: vi.fn(), snapshot: { record: null } }),
 }));

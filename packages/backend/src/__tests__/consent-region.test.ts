@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { IncomingMessage } from 'node:http';
-import { graphql } from 'graphql';
+import { createRequire } from 'node:module';
+import type * as GraphQLModule from 'graphql';
 import { schema } from '../graphql';
 import { buildHttpConnectionContext } from '../graphql/yoga';
 import { resolveConsentRegion } from '../graphql/resolvers/users/analytics-consent';
+
+// A static `import { graphql }` gets the ESM copy, while the schema was built
+// with the CJS copy `@graphql-tools/schema` loaded ("Cannot use GraphQLSchema
+// from another module"). Reach the backend's copy, as spray-visibility-sweep does.
+const { graphql } = createRequire(import.meta.url)('graphql') as typeof GraphQLModule;
 
 /**
  * The analytics prompt is shown only where GDPR (or a copy of it) applies, and
