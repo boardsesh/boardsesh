@@ -47,7 +47,13 @@ const preview = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
+vi.mock('../../../src/components/privacy/RequestResourceAccess', () => ({ RequestResourceAccess: () => null }));
 vi.mock('../../../src/lib/analytics', () => ({ track: analytics.track }));
+
+// The launch hold is covered by its own suite; here the screen renders as is.
+vi.mock('../../../src/components/launch-update/hold-until-launch-ready', () => ({
+  holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -103,7 +109,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   fetchBoardByUuid,
 }));
 vi.mock('../../../src/lib/graphql/hooks/fetch-all-my-owned-boards', () => ({ fetchAllMyOwnedBoards }));
-vi.mock('../../../src/theme/tokens', () => ({ spacing: {}, borderRadius: {} }));
+vi.mock('../../../src/theme/tokens', () => ({ spacing: {}, cardCorners: {} }));
 
 import JoinSessionScreen from '../[sessionId]';
 

@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   setStoredSessionId: vi.fn((_sessionId: string) => Promise.resolve()),
   setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
-  clearStoredQueueSnapshot: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../lib/active-board-store', () => ({

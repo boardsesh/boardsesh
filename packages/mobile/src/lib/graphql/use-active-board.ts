@@ -63,7 +63,11 @@ function enqueueActiveBoardWrite(
 
     // A newer intent may have arrived while AsyncStorage was in flight. Its
     // write is queued next, so do not briefly roll the React Query cache back.
-    if (generation !== activeBoardWriteGeneration || privacyGeneration !== getPrivacyRevocationGeneration() || !isStillCurrent())
+    if (
+      generation !== activeBoardWriteGeneration ||
+      privacyGeneration !== getPrivacyRevocationGeneration() ||
+      !isStillCurrent()
+    )
       return false;
     commitCache();
     return true;
@@ -148,7 +152,8 @@ export function useSetActiveBoard() {
   );
   return useCallback(
     async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration() || (isOperationCurrent && !isOperationCurrent())) return false;
+      if (privacyGeneration !== getPrivacyRevocationGeneration() || (isOperationCurrent && !isOperationCurrent()))
+        return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
       return enqueueActiveBoardWrite(

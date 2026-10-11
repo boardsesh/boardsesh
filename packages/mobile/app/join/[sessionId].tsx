@@ -353,7 +353,12 @@ function JoinSessionScreen() {
             disabled={isCurrentJoinPending}
             onPress={handleJoinPress}
           />
-          <Button title={t('mobileJoin.cancel')} variant="text" disabled={isCurrentJoinPending} onPress={() => router.back()} />
+          <Button
+            title={t('mobileJoin.cancel')}
+            variant="text"
+            disabled={isCurrentJoinPending}
+            onPress={() => router.back()}
+          />
         </View>
       </Card>
     </View>

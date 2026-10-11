@@ -281,7 +281,7 @@ describe('useBoardRouteTarget', () => {
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
     expect(setActiveBoard).toHaveBeenCalledWith({ ...wallBoard, angle: 40 });
     expect(fetchBoardBySlug).not.toHaveBeenCalled();
-    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
   });
 
@@ -360,7 +360,7 @@ describe('useBoardRouteTarget', () => {
       expect(getStoredActiveBoard).not.toHaveBeenCalled();
       expect(getOfflineBoards).not.toHaveBeenCalled();
       expect(fetchBoardBySlug).not.toHaveBeenCalled();
-      expect(fetchAllMyBoards).not.toHaveBeenCalled();
+      expect(fetchAllMyOwnedBoards).not.toHaveBeenCalled();
       expect(createBoardMutateAsync).not.toHaveBeenCalled();
 
       if (initiallyOnline) {
