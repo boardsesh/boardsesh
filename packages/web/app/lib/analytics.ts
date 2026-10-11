@@ -69,8 +69,9 @@ function installConsentTransport(client: PostHog, viaBackendProxy: boolean): voi
     if (options.signal?.aborted) controller.abort();
     requests.add(controller);
     // Consented capture tells our proxy it may forward the visitor IP for GeoIP.
-    // Flags never carry it, and a direct-to-PostHog override never sends it (its
-    // CORS policy does not list our header).
+    // Flags never carry it. A direct-to-PostHog override never sends it: only our
+    // proxy reads it, and a header PostHog's CORS policy does not allow would
+    // fail the preflight.
     const headers =
       viaBackendProxy && !flagsRequest
         ? { ...options.headers, [ANALYTICS_CONSENT_HEADER]: ANALYTICS_CONSENT_HEADER_GRANTED }
