@@ -117,7 +117,11 @@ export default function LegalContent({ showBuildPlans = false }: LegalContentPro
       {showBuildPlans && (
         <PageSection title={t('legal.buildPlans.title')}>
           <Prose>
-            <Trans i18nKey="legal.buildPlans.body" t={t} components={{ licence: <MuiLink component={LocaleLink} href="/build-plans/licence" /> }} />
+            <Trans
+              i18nKey="legal.buildPlans.body"
+              t={t}
+              components={{ licence: <MuiLink component={LocaleLink} href="/build-plans/licence" /> }}
+            />
           </Prose>
         </PageSection>
       )}
