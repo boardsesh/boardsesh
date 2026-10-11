@@ -28,13 +28,6 @@ const PUBLIC_PLAYLIST_SELECT = {
   creatorName: sql<string>`COALESCE(${dbSchema.users.name}, 'Anonymous')`,
   climbCount: sql<number>`count(DISTINCT ${dbSchema.playlistClimbs.id})::int`,
   generatedRecommendation: dbSchema.playlists.generatedRecommendation,
-  // LEFT JOINed, so all null for a playlist with no graded climb.
-  gradedClimbCount: dbSchema.playlistGradeSummaries.gradedClimbCount,
-  gradeMin: dbSchema.playlistGradeSummaries.minDifficulty,
-  gradeP10: dbSchema.playlistGradeSummaries.p10Difficulty,
-  gradeMedian: dbSchema.playlistGradeSummaries.medianDifficulty,
-  gradeP90: dbSchema.playlistGradeSummaries.p90Difficulty,
-  gradeMax: dbSchema.playlistGradeSummaries.maxDifficulty,
 } as const;
 
 /** Shared GROUP BY columns for public playlist queries. */
@@ -52,26 +45,16 @@ const PUBLIC_PLAYLIST_GROUP_BY = [
   dbSchema.playlistOwnership.userId,
   dbSchema.users.name,
   dbSchema.playlists.generatedRecommendation,
-  dbSchema.playlistGradeSummaries.gradedClimbCount,
-  dbSchema.playlistGradeSummaries.minDifficulty,
-  dbSchema.playlistGradeSummaries.p10Difficulty,
-  dbSchema.playlistGradeSummaries.medianDifficulty,
-  dbSchema.playlistGradeSummaries.p90Difficulty,
-  dbSchema.playlistGradeSummaries.maxDifficulty,
 ] as const;
 
-/** One summary row per playlist (its primary key), so this join never multiplies rows. */
-const PLAYLIST_GRADE_SUMMARY_JOIN = eq(dbSchema.playlistGradeSummaries.playlistId, dbSchema.playlists.id);
-
-/** Build the base query for public playlists with owner join + climb join + grade summary. */
+/** Build the base query for public playlists with owner join + climb join. */
 function publicPlaylistBaseQuery() {
   return db
     .select(PUBLIC_PLAYLIST_SELECT)
     .from(dbSchema.playlists)
     .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
     .innerJoin(dbSchema.playlistClimbs, eq(dbSchema.playlistClimbs.playlistId, dbSchema.playlists.id))
-    .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId))
-    .leftJoin(dbSchema.playlistGradeSummaries, PLAYLIST_GRADE_SUMMARY_JOIN);
+    .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId));
 }
 
 /** Build the count query for public playlists. */
@@ -81,8 +64,48 @@ function publicPlaylistCountQuery() {
     .from(dbSchema.playlists)
     .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
     .innerJoin(dbSchema.playlistClimbs, eq(dbSchema.playlistClimbs.playlistId, dbSchema.playlists.id))
+    .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId));
+}
+
+/**
+ * Discover's grade band, LEFT JOINed on the summary's primary key so it never
+ * multiplies rows: all null for a playlist with no graded climb. Discover-only;
+ * search neither returns nor filters on it, so it doesn't pay for the join.
+ */
+const PLAYLIST_GRADE_SUMMARY_JOIN = eq(dbSchema.playlistGradeSummaries.playlistId, dbSchema.playlists.id);
+
+const DISCOVER_PLAYLIST_SELECT = {
+  ...PUBLIC_PLAYLIST_SELECT,
+  gradedClimbCount: dbSchema.playlistGradeSummaries.gradedClimbCount,
+  gradeMin: dbSchema.playlistGradeSummaries.minDifficulty,
+  gradeP10: dbSchema.playlistGradeSummaries.p10Difficulty,
+  gradeMedian: dbSchema.playlistGradeSummaries.medianDifficulty,
+  gradeP90: dbSchema.playlistGradeSummaries.p90Difficulty,
+  gradeMax: dbSchema.playlistGradeSummaries.maxDifficulty,
+} as const;
+
+const DISCOVER_PLAYLIST_GROUP_BY = [
+  ...PUBLIC_PLAYLIST_GROUP_BY,
+  dbSchema.playlistGradeSummaries.gradedClimbCount,
+  dbSchema.playlistGradeSummaries.minDifficulty,
+  dbSchema.playlistGradeSummaries.p10Difficulty,
+  dbSchema.playlistGradeSummaries.medianDifficulty,
+  dbSchema.playlistGradeSummaries.p90Difficulty,
+  dbSchema.playlistGradeSummaries.maxDifficulty,
+] as const;
+
+function discoverPlaylistBaseQuery() {
+  return db
+    .select(DISCOVER_PLAYLIST_SELECT)
+    .from(dbSchema.playlists)
+    .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
+    .innerJoin(dbSchema.playlistClimbs, eq(dbSchema.playlistClimbs.playlistId, dbSchema.playlists.id))
     .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.playlistOwnership.userId))
     .leftJoin(dbSchema.playlistGradeSummaries, PLAYLIST_GRADE_SUMMARY_JOIN);
+}
+
+function discoverPlaylistCountQuery() {
+  return publicPlaylistCountQuery().leftJoin(dbSchema.playlistGradeSummaries, PLAYLIST_GRADE_SUMMARY_JOIN);
 }
 
 // Re-export for search.ts to reuse
@@ -240,11 +263,11 @@ export const discoverPlaylists = async (
               .as('banded'),
           )
       )[0]?.count ?? 0)
-    : ((await publicPlaylistCountQuery().where(whereClause))[0]?.count ?? 0);
+    : ((await discoverPlaylistCountQuery().where(whereClause))[0]?.count ?? 0);
 
-  const results = await publicPlaylistBaseQuery()
+  const results = await discoverPlaylistBaseQuery()
     .where(whereClause)
-    .groupBy(...PUBLIC_PLAYLIST_GROUP_BY)
+    .groupBy(...DISCOVER_PLAYLIST_GROUP_BY)
     .having(havingClause)
     .orderBy(
       // 'popular' used to mean count(climbs) DESC — biggest, not popular. It is

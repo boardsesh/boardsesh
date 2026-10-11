@@ -4,11 +4,15 @@
  * the playlist mutations and the daily refresh, and how discoverPlaylists
  * filters on it (#6217, docs/playlist-grade-summaries.md).
  */
-import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { eq, inArray, like, sql } from 'drizzle-orm';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { refreshAllPlaylistGradeSummaries, refreshPlaylistGradeSummariesFor } from '@boardsesh/db/queries';
+import {
+  isForeignKeyViolation,
+  refreshAllPlaylistGradeSummaries,
+  refreshPlaylistGradeSummariesFor,
+} from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 import { playlistMutations } from '../graphql/resolvers/playlists/mutations';
@@ -20,6 +24,8 @@ const FOLLOWED_ID = 'pgs-followed-setter';
 const STRANGER_ID = 'pgs-stranger';
 
 const climb = (name: string) => PREFIX + name;
+/** `PLAYLIST_GRADE_SUMMARY_LOCK_NAMESPACE` in grade-summaries.ts: the lock's first key, shown as `classid` in pg_locks. */
+const PLAYLIST_LOCK_NAMESPACE = 0x5047534c;
 
 function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -309,46 +315,193 @@ describe('playlist grade summaries', () => {
       expect(await summaryOf(ids[2])).toBeNull();
     });
 
-    it('leaves alone a summary written after its clock read, which only a racing mutation could write', async () => {
-      await insertStats([{ name: 'raced', angle: 40, grade: 18 }]);
-      const raced = await createPlaylist('raced', OWNER_ID, [{ name: 'raced', angle: 40 }]);
-      const orphan = await createPlaylist('orphan', OWNER_ID, [{ name: 'no-grade', angle: 40 }]);
-      // Stand-ins for rows a mutation wrote while the job was computing: a later
-      // updated_at than the job's clock read, and values the job would change.
-      const later = sql`localtimestamp + interval '1 hour'`;
-      await db.insert(dbSchema.playlistGradeSummaries).values([
-        {
-          playlistId: raced,
-          boardType: BOARD,
-          gradedClimbCount: 2,
-          minDifficulty: 18,
-          p10Difficulty: 18,
-          medianDifficulty: 18,
-          p90Difficulty: 24,
-          maxDifficulty: 24,
-          updatedAt: later,
+    it('redoes a chunk once when a playlist is deleted between its read and its write', async () => {
+      await insertStats([
+        { name: 'kept', angle: 40, grade: 18 },
+        { name: 'doomed', angle: 40, grade: 22 },
+      ]);
+      const kept = await createPlaylist('kept', OWNER_ID, [{ name: 'kept', angle: 40 }]);
+      const doomed = await createPlaylist('doomed', OWNER_ID, [{ name: 'doomed', angle: 40 }]);
+
+      let deletions = 0;
+      const result = await refreshAllPlaylistGradeSummaries(db, {
+        onComputed: async () => {
+          if (deletions > 0) return;
+          deletions += 1;
+          // Deleting a playlist takes no grade-summary lock, so it lands mid-chunk.
+          await db.delete(dbSchema.playlists).where(eq(dbSchema.playlists.id, doomed));
         },
-        {
-          playlistId: orphan,
-          boardType: BOARD,
-          gradedClimbCount: 1,
-          minDifficulty: 20,
-          p10Difficulty: 20,
-          medianDifficulty: 20,
-          p90Difficulty: 20,
-          maxDifficulty: 20,
-          updatedAt: later,
-        },
+      });
+
+      expect(result).toMatchObject({ written: 1, completed: true });
+      expect(await summaryOf(kept)).toMatchObject({ p10Difficulty: 18 });
+      expect(await summaryOf(doomed)).toBeNull();
+    });
+  });
+
+  describe('concurrent writers', () => {
+    // Every gate opens after each test, so a failing assertion never leaves a
+    // writer paused inside its transaction for the next test to trip over.
+    const openGates: Array<() => void> = [];
+    afterEach(() => {
+      for (const release of openGates.splice(0)) release();
+    });
+
+    /** A promise the test resolves by hand, to hold one writer between its read and its write. */
+    function gate() {
+      let release = () => {};
+      const opened = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      openGates.push(release);
+      return { opened, release };
+    }
+
+    /** Resolves once some session is queued on a playlist's grade-summary lock. */
+    async function someoneWaitsOnTheLock(): Promise<void> {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const rows = await db.execute(sql`
+          SELECT count(*)::int AS waiting FROM pg_locks
+          WHERE locktype = 'advisory' AND NOT granted AND classid = ${PLAYLIST_LOCK_NAMESPACE}
+        `);
+        if ((rows as unknown as Array<{ waiting: number }>)[0]?.waiting > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error('no writer ever waited on the grade-summary lock');
+    }
+
+    async function climbIsGone(playlistId: bigint, name: string): Promise<void> {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const rows = await db
+          .select({ id: dbSchema.playlistClimbs.id })
+          .from(dbSchema.playlistClimbs)
+          .where(
+            and(eq(dbSchema.playlistClimbs.playlistId, playlistId), eq(dbSchema.playlistClimbs.climbUuid, climb(name))),
+          );
+        if (rows.length === 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(`${name} was never removed`);
+    }
+
+    it('lets a newer mutation refresh win over an older one paused after its read', async () => {
+      await insertStats([
+        { name: 'race-easy', angle: 40, grade: 16 },
+        { name: 'race-hard', angle: 40, grade: 24 },
+      ]);
+      const playlistId = await createPlaylist('race-mutations', OWNER_ID, [
+        { name: 'race-easy', angle: 40 },
+        { name: 'race-hard', angle: 40 },
       ]);
 
-      expect(await refreshAllPlaylistGradeSummaries(db)).toMatchObject({ written: 0, deleted: 0 });
-      expect(await summaryOf(raced)).toMatchObject({ gradedClimbCount: 2, p90Difficulty: 24 });
-      expect(await summaryOf(orphan)).not.toBeNull();
+      // Refresh A reads both climbs (16 and 24), then stops before writing.
+      const computed = gate();
+      const resume = gate();
+      const olderRefresh = refreshPlaylistGradeSummariesFor(db, [playlistId], {
+        onComputed: async () => {
+          computed.release();
+          await resume.opened;
+        },
+      });
+      await computed.opened;
 
-      // The mutation path has no such guard: it always writes what it just read.
-      await refreshPlaylistGradeSummariesFor(db, [raced, orphan]);
-      expect(await summaryOf(raced)).toMatchObject({ gradedClimbCount: 1, p90Difficulty: 18 });
-      expect(await summaryOf(orphan)).toBeNull();
+      // Removing the hard climb commits, and its own refresh B queues behind A.
+      const removal = playlistMutations.removeClimbFromPlaylist(
+        null,
+        { input: { playlistId: 'race-mutations', climbUuid: climb('race-hard') } },
+        makeCtx(),
+      );
+      await climbIsGone(playlistId, 'race-hard');
+      await someoneWaitsOnTheLock();
+
+      resume.release();
+      await olderRefresh;
+      expect(await removal).toBe(true);
+
+      // B read after A wrote, so the band is the one climb that is left.
+      expect(await summaryOf(playlistId)).toMatchObject({ gradedClimbCount: 1, minDifficulty: 16, maxDifficulty: 16 });
+    });
+
+    it('keeps an add that lands while an older refresh that saw no grade is paused', async () => {
+      await insertStats([{ name: 'race-added', angle: 40, grade: 24 }]);
+      const playlistId = await createPlaylist('race-add', OWNER_ID, [{ name: 'race-ungraded', angle: 40 }]);
+
+      const computed = gate();
+      const resume = gate();
+      const olderRefresh = refreshPlaylistGradeSummariesFor(db, [playlistId], {
+        onComputed: async () => {
+          computed.release();
+          await resume.opened;
+        },
+      });
+      await computed.opened;
+
+      const add = playlistMutations.addClimbToPlaylist(
+        null,
+        { input: { playlistId: 'race-add', climbUuid: climb('race-added'), angle: 40 } },
+        makeCtx(),
+      );
+      await someoneWaitsOnTheLock();
+
+      resume.release();
+      await olderRefresh;
+      await add;
+
+      expect(await summaryOf(playlistId)).toMatchObject({ gradedClimbCount: 1, p90Difficulty: 24 });
+    });
+
+    it('never brings back a summary a mutation deleted while the daily refresh was paused', async () => {
+      await insertStats([{ name: 'last-graded', angle: 40, grade: 24 }]);
+      const playlistId = await createPlaylist('race-daily', OWNER_ID, [
+        { name: 'last-graded', angle: 40 },
+        { name: 'still-ungraded', angle: 40 },
+      ]);
+      await refreshPlaylistGradeSummariesFor(db, [playlistId]);
+      expect(await summaryOf(playlistId)).toMatchObject({ p90Difficulty: 24 });
+
+      // The daily chunk reads the grade-24 climb, then stops before writing.
+      const computed = gate();
+      const resume = gate();
+      const dailyRun = refreshAllPlaylistGradeSummaries(db, {
+        onComputed: async () => {
+          computed.release();
+          await resume.opened;
+        },
+      });
+      await computed.opened;
+
+      // The last graded climb goes; an ungraded one stays in the playlist.
+      const removal = playlistMutations.removeClimbFromPlaylist(
+        null,
+        { input: { playlistId: 'race-daily', climbUuid: climb('last-graded') } },
+        makeCtx(),
+      );
+      await climbIsGone(playlistId, 'last-graded');
+      await someoneWaitsOnTheLock();
+
+      resume.release();
+      await dailyRun;
+      expect(await removal).toBe(true);
+
+      expect(await summaryOf(playlistId)).toBeNull();
+      expect((await discover({ minGrade: 1, maxGrade: 100 })).uuids).not.toContain('race-daily');
+    });
+  });
+
+  describe('isForeignKeyViolation', () => {
+    it('finds the SQLSTATE on the error or any cause, and falls back to the Postgres message', () => {
+      expect(isForeignKeyViolation({ code: '23503' })).toBe(true);
+      expect(isForeignKeyViolation(new Error('wrapped', { cause: { code: '23503' } }))).toBe(true);
+      expect(
+        isForeignKeyViolation(
+          new Error(
+            'insert or update on table "playlist_grade_summaries" violates foreign key constraint "playlist_grade_summaries_playlist_id_playlists_id_fk"',
+          ),
+        ),
+      ).toBe(true);
+      expect(isForeignKeyViolation({ code: '23505' })).toBe(false);
+      expect(isForeignKeyViolation(new Error('boom'))).toBe(false);
+      expect(isForeignKeyViolation(null)).toBe(false);
     });
   });
 

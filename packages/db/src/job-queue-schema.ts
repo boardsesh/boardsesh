@@ -67,7 +67,7 @@ export const PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE = 'playlist-grade-summary-refr
 /**
  * `exclusive`: one job queued or running, so the daily cron and the one-off
  * backfill a fresh table asks for collapse to one run. The handler stops
- * starting new 500-playlist chunks after 1,500 s, well under this expiry, so
+ * starting new 50-playlist chunks after 1,500 s, well under this expiry, so
  * pg-boss never starts a second copy beside a live one.
  */
 const PLAYLIST_GRADE_SUMMARY_REFRESH_QUEUE_OPTIONS = {

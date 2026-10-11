@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { alias, type PgDatabase, type PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { boardClimbStats, playlistClimbs, playlistGradeSummaries, playlists } from '../../schema/index';
 
@@ -20,8 +20,14 @@ import { boardClimbStats, playlistClimbs, playlistGradeSummaries, playlists } fr
 
 export type PlaylistGradeSummaryDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
-/** Playlists per job statement. Private Aurora circuits can run to a few hundred climbs each. */
-export const REFRESH_CHUNK_PLAYLISTS = 500;
+/**
+ * Playlists per job transaction. The transaction holds one advisory lock per
+ * playlist on top of its relation locks, and Postgres sizes the shared lock
+ * table at `max_locks_per_transaction` (64 by default) per connection, so a
+ * chunk stays under that: 200 locks per transaction ran the test database out
+ * of shared memory beside the other suites.
+ */
+export const REFRESH_CHUNK_PLAYLISTS = 50;
 
 /** Lower and upper percentile of the band Discover shows and filters on. */
 export const GRADE_BAND_LOW_PERCENTILE = 0.1;
@@ -128,90 +134,149 @@ async function computeSummaries(db: PlaylistGradeSummaryDb, playlistScope: SQL):
 }
 
 /**
- * Recompute the summaries of the playlists `playlistScope` selects, writing
- * only rows whose values moved and deleting the ones that no longer have a
- * graded climb. `summaryScope` must select the same playlists on the summary
- * table, so a playlist outside the scope is never deleted.
+ * Namespace of the per-playlist write lock (ASCII "PGSL"). The two-int
+ * `pg_advisory_xact_lock` overload keys on (namespace, playlist), so this
+ * cannot collide with another feature's two-int lock under its own namespace.
+ */
+const PLAYLIST_GRADE_SUMMARY_LOCK_NAMESPACE = 0x5047534c;
+
+/**
+ * Take every playlist's write lock, lowest id first, for the rest of the
+ * transaction. The playlist id is folded into the int4 second key; two ids
+ * that fold together only ever wait for each other, never write wrong.
+ */
+async function lockPlaylists(db: PlaylistGradeSummaryDb, playlistIds: readonly bigint[]): Promise<void> {
+  const sorted = [...playlistIds].sort((first, second) => (first < second ? -1 : first > second ? 1 : 0));
+  for (const playlistId of sorted) {
+    await db.execute(
+      sql`SELECT pg_advisory_xact_lock(${PLAYLIST_GRADE_SUMMARY_LOCK_NAMESPACE}, (${playlistId}::bigint % 2147483647)::int)`,
+    );
+  }
+}
+
+export type PlaylistGradeSummaryWriteOptions = {
+  /**
+   * Called after the summaries are computed and before they are written, with
+   * the locks held. A test seam: it lets a regression test pause an older
+   * computation while a newer climb change lands.
+   */
+  onComputed?: () => Promise<void>;
+};
+
+/**
+ * Recompute these playlists' summaries in one transaction that holds each
+ * playlist's write lock from before the read to after the write: lock, read
+ * the climbs, upsert the rows whose values moved, delete the rows of
+ * playlists left with no graded climb.
  *
- * `onlyRowsOlderThanCompute`: the daily job's guard. A mutation can recompute
- * a playlist between the job reading its climbs and the job writing, and the
- * job's answer is then the older one. So the job reads the database clock
- * before it computes and leaves alone (no update, no delete) any row whose
- * `updated_at` is not older than that. The mutations write without the guard:
- * theirs is always the newest read.
+ * Every writer of the table goes through here (the mutations and the daily
+ * job), so two recomputes of one playlist never interleave. The later one
+ * reads after the earlier one has written, and a climb change that commits
+ * while a recompute is computing is followed by its own recompute, which waits
+ * for the lock and reads it. So the last write always reflects the climbs as
+ * they stand, whichever writer it came from.
  */
 async function writeSummaries(
   db: PlaylistGradeSummaryDb,
-  playlistScope: SQL,
-  summaryScope: SQL,
-  { onlyRowsOlderThanCompute = false }: { onlyRowsOlderThanCompute?: boolean } = {},
+  playlistIds: readonly bigint[],
+  options: PlaylistGradeSummaryWriteOptions,
 ): Promise<PlaylistGradeSummaryWriteResult> {
-  let computeStartedAt: string | null = null;
-  if (onlyRowsOlderThanCompute) {
-    // Same clock and type as the `updated_at` default, read before the compute.
-    const [clock] = await db.select({ now: sql<string>`localtimestamp::text` }).from(sql`(SELECT 1) AS clock`);
-    // Never fall back to an unguarded write: that is the race this guards.
-    if (!clock?.now) throw new Error('playlist grade summaries: could not read the database clock');
-    computeStartedAt = clock.now;
-  }
-  const notWrittenSinceCompute =
-    computeStartedAt === null ? undefined : sql`${playlistGradeSummaries.updatedAt} < ${computeStartedAt}::timestamp`;
-  const computed = await computeSummaries(db, playlistScope);
+  if (playlistIds.length === 0) return { written: 0, deleted: 0 };
+  const ids = [...playlistIds];
+  return db.transaction(async (tx) => {
+    await lockPlaylists(tx, ids);
+    const computed = await computeSummaries(tx, inArray(playlists.id, ids));
+    await options.onComputed?.();
 
-  let written = 0;
-  if (computed.length > 0) {
-    const rows = await db
-      .insert(playlistGradeSummaries)
-      .values(computed)
-      .onConflictDoUpdate({
-        target: playlistGradeSummaries.playlistId,
-        set: {
-          boardType: sql`excluded.board_type`,
-          gradedClimbCount: sql`excluded.graded_climb_count`,
-          minDifficulty: sql`excluded.min_difficulty`,
-          p10Difficulty: sql`excluded.p10_difficulty`,
-          medianDifficulty: sql`excluded.median_difficulty`,
-          p90Difficulty: sql`excluded.p90_difficulty`,
-          maxDifficulty: sql`excluded.max_difficulty`,
-          updatedAt: sql`now()`,
-        },
-        // No dead tuple and no updated_at bump for a summary that did not move.
-        setWhere: and(
-          notWrittenSinceCompute,
-          sql`(
-          ${playlistGradeSummaries.boardType}, ${playlistGradeSummaries.gradedClimbCount},
-          ${playlistGradeSummaries.minDifficulty}, ${playlistGradeSummaries.p10Difficulty},
-          ${playlistGradeSummaries.medianDifficulty}, ${playlistGradeSummaries.p90Difficulty},
-          ${playlistGradeSummaries.maxDifficulty}
-        ) IS DISTINCT FROM (
-          excluded.board_type, excluded.graded_climb_count,
-          excluded.min_difficulty, excluded.p10_difficulty,
-          excluded.median_difficulty, excluded.p90_difficulty,
-          excluded.max_difficulty
-        )`,
+    let written = 0;
+    if (computed.length > 0) {
+      const rows = await tx
+        .insert(playlistGradeSummaries)
+        .values(computed)
+        .onConflictDoUpdate({
+          target: playlistGradeSummaries.playlistId,
+          set: {
+            boardType: sql`excluded.board_type`,
+            gradedClimbCount: sql`excluded.graded_climb_count`,
+            minDifficulty: sql`excluded.min_difficulty`,
+            p10Difficulty: sql`excluded.p10_difficulty`,
+            medianDifficulty: sql`excluded.median_difficulty`,
+            p90Difficulty: sql`excluded.p90_difficulty`,
+            maxDifficulty: sql`excluded.max_difficulty`,
+            updatedAt: sql`now()`,
+          },
+          // No dead tuple and no updated_at bump for a summary that did not move.
+          setWhere: sql`(
+            ${playlistGradeSummaries.boardType}, ${playlistGradeSummaries.gradedClimbCount},
+            ${playlistGradeSummaries.minDifficulty}, ${playlistGradeSummaries.p10Difficulty},
+            ${playlistGradeSummaries.medianDifficulty}, ${playlistGradeSummaries.p90Difficulty},
+            ${playlistGradeSummaries.maxDifficulty}
+          ) IS DISTINCT FROM (
+            excluded.board_type, excluded.graded_climb_count,
+            excluded.min_difficulty, excluded.p10_difficulty,
+            excluded.median_difficulty, excluded.p90_difficulty,
+            excluded.max_difficulty
+          )`,
+        })
+        .returning({ playlistId: playlistGradeSummaries.playlistId });
+      written = rows.length;
+    }
+
+    const stale = await tx
+      .delete(playlistGradeSummaries)
+      .where(
+        and(
+          inArray(playlistGradeSummaries.playlistId, ids),
+          computed.length > 0
+            ? notInArray(
+                playlistGradeSummaries.playlistId,
+                computed.map((summary) => summary.playlistId),
+              )
+            : undefined,
         ),
-      })
+      )
       .returning({ playlistId: playlistGradeSummaries.playlistId });
-    written = rows.length;
+
+    return { written, deleted: stale.length };
+  });
+}
+
+/** Postgres foreign_key_violation. */
+const FOREIGN_KEY_VIOLATION = '23503';
+
+/**
+ * Whether `error` is a foreign-key violation, wherever the driver or Drizzle
+ * put it: the SQLSTATE on the error or any `cause` below it, or, for a wrapper
+ * that kept only the text, Postgres's own message.
+ */
+export function isForeignKeyViolation(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current && typeof current === 'object' && depth < 10; depth += 1) {
+    const record = current as { code?: unknown; message?: unknown; cause?: unknown };
+    if (record.code === FOREIGN_KEY_VIOLATION) return true;
+    if (typeof record.message === 'string' && record.message.includes('violates foreign key constraint')) return true;
+    current = record.cause;
   }
+  return false;
+}
 
-  const stale = await db
-    .delete(playlistGradeSummaries)
-    .where(
-      and(
-        summaryScope,
-        notWrittenSinceCompute,
-        computed.length > 0
-          ? notInArray(
-              playlistGradeSummaries.playlistId,
-              computed.map((summary) => summary.playlistId),
-            )
-          : undefined,
-      ),
-    )
-    .returning({ playlistId: playlistGradeSummaries.playlistId });
-
-  return { written, deleted: stale.length };
+/**
+ * `writeSummaries`, redone once if a playlist was deleted between the read and
+ * the upsert. Deleting a playlist does not take its write lock, and the
+ * cascade has already removed its summary, so the insert finds no row to
+ * update and fails the foreign key, rolling the transaction back. The redo
+ * reads again without the deleted playlist.
+ */
+async function writeSummariesRetryingDeletedPlaylist(
+  db: PlaylistGradeSummaryDb,
+  playlistIds: readonly bigint[],
+  options: PlaylistGradeSummaryWriteOptions,
+): Promise<PlaylistGradeSummaryWriteResult> {
+  try {
+    return await writeSummaries(db, playlistIds, options);
+  } catch (error) {
+    if (!isForeignKeyViolation(error)) throw error;
+    return writeSummaries(db, playlistIds, options);
+  }
 }
 
 /**
@@ -222,58 +287,20 @@ async function writeSummaries(
 export async function refreshPlaylistGradeSummariesFor(
   db: PlaylistGradeSummaryDb,
   playlistIds: readonly bigint[],
+  options: PlaylistGradeSummaryWriteOptions = {},
 ): Promise<PlaylistGradeSummaryWriteResult> {
-  if (playlistIds.length === 0) return { written: 0, deleted: 0 };
-  const ids = [...playlistIds];
-  return writeSummaries(db, inArray(playlists.id, ids), inArray(playlistGradeSummaries.playlistId, ids));
+  return writeSummariesRetryingDeletedPlaylist(db, playlistIds, options);
 }
 
-/** The playlist id that closes the chunk starting after `after`, or null when the rest fits in one. */
-async function nextChunkEnd(
-  db: PlaylistGradeSummaryDb,
-  after: bigint | null,
-  chunkPlaylists: number,
-): Promise<bigint | null> {
-  const [row] = await db
+/** The next chunk's playlist ids, in order, after `after`. */
+async function nextChunk(db: PlaylistGradeSummaryDb, after: bigint | null, chunkPlaylists: number): Promise<bigint[]> {
+  const rows = await db
     .select({ id: playlists.id })
     .from(playlists)
     .where(after === null ? undefined : gt(playlists.id, after))
     .orderBy(asc(playlists.id))
-    .offset(chunkPlaylists - 1)
-    .limit(1);
-  return row?.id ?? null;
-}
-
-/** Postgres foreign_key_violation. */
-const FOREIGN_KEY_VIOLATION = '23503';
-
-function isForeignKeyViolation(error: unknown): boolean {
-  for (let current: unknown = error; current && typeof current === 'object';) {
-    const record = current as { code?: unknown; cause?: unknown };
-    if (record.code === FOREIGN_KEY_VIOLATION) return true;
-    current = record.cause;
-  }
-  return false;
-}
-
-/**
- * One chunk of the daily pass, redone once if a playlist was deleted between
- * the compute and the upsert: the cascade has already removed its summary, so
- * the insert finds no row to update and fails the foreign key, failing the
- * whole statement. The redo computes without the deleted playlist.
- */
-async function writeChunkRetryingDeletedPlaylist(
-  db: PlaylistGradeSummaryDb,
-  playlistScope: SQL,
-  summaryScope: SQL,
-  options: { onlyRowsOlderThanCompute: boolean },
-): Promise<PlaylistGradeSummaryWriteResult> {
-  try {
-    return await writeSummaries(db, playlistScope, summaryScope, options);
-  } catch (error) {
-    if (!isForeignKeyViolation(error)) throw error;
-    return writeSummaries(db, playlistScope, summaryScope, options);
-  }
+    .limit(chunkPlaylists);
+  return rows.map((row) => row.id);
 }
 
 /**
@@ -285,10 +312,13 @@ async function writeChunkRetryingDeletedPlaylist(
  * ever returned attached to a playlist the viewer can already see, and keeping
  * every playlist covered means turning a playlist public needs no recompute.
  * It is one narrow row per playlist.
+ *
+ * A summary whose playlist is deleted goes with it (the foreign key cascades),
+ * so the pass only ever needs the playlists that exist.
  */
 export async function refreshAllPlaylistGradeSummaries(
   db: PlaylistGradeSummaryDb,
-  options: {
+  options: PlaylistGradeSummaryWriteOptions & {
     /** Checked before each chunk; returning false stops the pass where it is. */
     shouldContinue?: () => boolean;
     /** Playlists per chunk. Defaults to `REFRESH_CHUNK_PLAYLISTS`; tests set it small. */
@@ -306,26 +336,19 @@ export async function refreshAllPlaylistGradeSummaries(
   let after: bigint | null = null;
   for (;;) {
     if (!shouldContinue()) return result;
-    const end = await nextChunkEnd(db, after, chunkPlaylists);
-    // (after, end]: the chunk's playlists, and the same range on the summary
-    // table so a summary whose playlist lost its last graded climb is deleted.
-    const chunk = await writeChunkRetryingDeletedPlaylist(
-      db,
-      and(after === null ? undefined : gt(playlists.id, after), end === null ? undefined : lte(playlists.id, end)) ??
-        sql`true`,
-      and(
-        after === null ? undefined : gt(playlistGradeSummaries.playlistId, after),
-        end === null ? undefined : lte(playlistGradeSummaries.playlistId, end),
-      ) ?? sql`true`,
-      { onlyRowsOlderThanCompute: true },
-    );
-    result.written += chunk.written;
-    result.deleted += chunk.deleted;
-    result.chunks += 1;
-    if (end === null) {
+    const ids = await nextChunk(db, after, chunkPlaylists);
+    if (ids.length === 0) {
       result.completed = true;
       return result;
     }
-    after = end;
+    const chunk = await writeSummariesRetryingDeletedPlaylist(db, ids, options);
+    result.written += chunk.written;
+    result.deleted += chunk.deleted;
+    result.chunks += 1;
+    if (ids.length < chunkPlaylists) {
+      result.completed = true;
+      return result;
+    }
+    after = ids[ids.length - 1];
   }
 }

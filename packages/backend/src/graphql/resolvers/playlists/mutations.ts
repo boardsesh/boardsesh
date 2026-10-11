@@ -105,7 +105,7 @@ async function refreshGradeSummaryAfterClimbChange(playlistId: bigint): Promise<
   try {
     await refreshPlaylistGradeSummariesFor(db, [playlistId]);
   } catch (error) {
-    logger.warn('[PlaylistGradeSummaries] Could not refresh after a climb change', {
+    logger.error('[PlaylistGradeSummaries] Could not refresh after a climb change', {
       playlistId: playlistId.toString(),
       error,
     });
