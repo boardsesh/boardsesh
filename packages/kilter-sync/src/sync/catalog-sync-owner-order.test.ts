@@ -39,12 +39,17 @@ describe('catalog fingerprint owner ordering', () => {
 });
 
 const compatibilityTestDatabaseUrl = process.env.KILTER_COMPAT_TEST_DB_URL;
+const inspectedContainerId = process.env.BOARDSESH_4161_OWNED_CONTAINER_ID;
+const inspectedPort = process.env.BOARDSESH_4161_OWNED_PG_PORT;
 const ownedCompatibilityDatabase = (() => {
   if (
     process.env.BOARDSESH_4161_SQL_APPROVED !== '1' ||
-    process.env.BOARDSESH_4161_OWNED_PG_PORT !== '32785' ||
-    process.env.BOARDSESH_4161_OWNED_CONTAINER_ID !==
-      '47c56beae33b3f73ecce8556290f2f91b24f5f18f44ad538f478ff614126f210' ||
+    !inspectedPort ||
+    !/^\d+$/.test(inspectedPort) ||
+    Number(inspectedPort) < 1024 ||
+    Number(inspectedPort) > 65535 ||
+    !inspectedContainerId ||
+    !/^[0-9a-f]{64}$/i.test(inspectedContainerId) ||
     !compatibilityTestDatabaseUrl ||
     compatibilityTestDatabaseUrl !== process.env.DATABASE_URL ||
     compatibilityTestDatabaseUrl !== process.env.POSTGRES_URL
@@ -55,7 +60,7 @@ const ownedCompatibilityDatabase = (() => {
   return (
     url.protocol === 'postgres:' &&
     url.hostname === '127.0.0.1' &&
-    url.port === '32785' &&
+    url.port === inspectedPort &&
     url.pathname === '/boardsesh_pr_sweep_4161' &&
     decodeURIComponent(url.username) === 'boardsesh_4161' &&
     decodeURIComponent(url.password) === 'fixture-only-4161' &&

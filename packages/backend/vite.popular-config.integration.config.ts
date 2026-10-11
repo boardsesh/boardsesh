@@ -1,14 +1,19 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
-const expectedDatabaseUrl = 'postgres://boardsesh_4161:fixture-only-4161@127.0.0.1:32785/boardsesh_pr_sweep_4161';
-const expectedContainerId = '47c56beae33b3f73ecce8556290f2f91b24f5f18f44ad538f478ff614126f210';
+const expectedPort = process.env.BOARDSESH_4161_OWNED_PG_PORT;
+const inspectedContainerId = process.env.BOARDSESH_4161_OWNED_CONTAINER_ID;
+const expectedDatabaseUrl = `postgres://boardsesh_4161:fixture-only-4161@127.0.0.1:${expectedPort}/boardsesh_pr_sweep_4161`;
 
 function assertApproved4161Target(): void {
   if (
     process.env.BOARDSESH_4161_SQL_APPROVED !== '1' ||
-    process.env.BOARDSESH_4161_OWNED_CONTAINER_ID !== expectedContainerId ||
-    process.env.BOARDSESH_4161_OWNED_PG_PORT !== '32785' ||
+    !inspectedContainerId ||
+    !/^[0-9a-f]{64}$/i.test(inspectedContainerId) ||
+    !expectedPort ||
+    !/^\d+$/.test(expectedPort) ||
+    Number(expectedPort) < 1024 ||
+    Number(expectedPort) > 65535 ||
     process.env.DATABASE_URL !== expectedDatabaseUrl ||
     process.env.POSTGRES_URL !== expectedDatabaseUrl ||
     process.env.REDIS_URL !== 'redis://127.0.0.1:9/0' ||

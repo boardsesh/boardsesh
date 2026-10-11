@@ -70,6 +70,10 @@ export async function initializeAuroraRecoveryFixture(client: FixtureClient): Pr
       ADD COLUMN IF NOT EXISTS compatible_size_ids integer[],
       ADD COLUMN IF NOT EXISTS hold_fingerprint text,
       ADD COLUMN IF NOT EXISTS missing_hold_count integer,
+      ADD COLUMN IF NOT EXISTS is_boardsesh_authored boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS retired_by_reset boolean,
+      ADD COLUMN IF NOT EXISTS revision_number integer NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS holds_revision_number integer NOT NULL DEFAULT 1,
       ADD COLUMN IF NOT EXISTS updated_at timestamp NOT NULL DEFAULT now(),
       ADD COLUMN IF NOT EXISTS sync_seq bigserial NOT NULL
   `);

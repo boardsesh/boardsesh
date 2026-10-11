@@ -27,7 +27,12 @@ import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapability } from './spray-read-access';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
-import { findSimilarClimbs, isSupportedSimilarityHold, parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
+import {
+  findSimilarClimbs,
+  isSupportedSimilarityHold,
+  parseFramesToHoldEntries,
+  type NormalizedHold,
+} from './climb-similarity';
 import { hasCatalogQueryAccess, requireCatalogQueryAccess } from '../social/roles';
 import {
   BoardNameSchema,
@@ -285,7 +290,13 @@ export const climbQueries = {
             ),
           ),
         )
-        .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid), contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, ctx.userId)));
+        .where(
+          and(
+            eq(dbSchema.boardClimbs.boardType, boardType),
+            eq(dbSchema.boardClimbs.uuid, validated.climbUuid),
+            contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, ctx.userId),
+          ),
+        );
 
       const climbRow = targetRows[0];
       if (!climbRow) return [];

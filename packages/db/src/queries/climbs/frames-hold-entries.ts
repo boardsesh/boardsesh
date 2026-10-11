@@ -1,5 +1,11 @@
 import { woodsSizeIdToDimension } from '@boardsesh/board-config';
-import { convertLitUpHoldsStringToMap, isSentinelHoldState, isAuroraBoardName, minimumStoredHoldId, projectAuroraFramesToStoredRows } from '@boardsesh/board-constants/hold-states';
+import {
+  convertLitUpHoldsStringToMap,
+  isSentinelHoldState,
+  isAuroraBoardName,
+  minimumStoredHoldId,
+  projectAuroraFramesToStoredRows,
+} from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 
 export type NormalizedHold = {

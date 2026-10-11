@@ -3,10 +3,7 @@ import { contentVisibilityCondition } from '../../../services/privacy';
 import { sql } from 'drizzle-orm';
 import type { SQL, SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import {
-  STATE_TO_PRIMARY_CODE,
-  minimumStoredHoldId,
-} from '@boardsesh/board-constants/hold-states';
+import { STATE_TO_PRIMARY_CODE, minimumStoredHoldId } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 import {
   CLIMB_CHARACTERISTICS,
