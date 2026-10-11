@@ -61,7 +61,7 @@ const chapters: readonly TutorialChapter[] = [
         takeId: 'workouts',
         fromMark: 'generated',
         label: 'Build a workout queue',
-        focus: { x: 0.43, y: 0.52, width: 0.42, height: 0.16 },
+        focus: { x: 0.02, y: 0.495, width: 0.96, height: 0.31 },
         overview: true,
       },
       {
