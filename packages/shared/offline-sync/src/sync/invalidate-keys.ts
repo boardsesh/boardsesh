@@ -14,6 +14,11 @@
  * queries only, so the cost of a correct key is bounded to what is on screen.
  * The pull client already gates the whole loop on `totalProcessed > 0`, so a
  * cycle that moved zero rows invalidates nothing at all.
+ *
+ * "On screen" is still not free. A climb list is an infinite query, so one
+ * invalidation re-reads every page it has loaded, in sequence, and cancels a
+ * next-page fetch in flight. The heads in `BOARD_SCOPED_KEY_HEADS` are therefore
+ * narrowed to the board whose rows changed (`scopedInvalidateFilters`).
  */
 export type InvalidateKeys = readonly (readonly string[])[];
 
@@ -177,8 +182,20 @@ export function invalidateKeysForTable(tableName: string): InvalidateKeys | null
  * say to another board's entry, and the heatmap's aggregate is the most
  * expensive read on the device — re-running it for a board nobody is looking at
  * on every sync page is pure cost.
+ *
+ * The three climb-search heads are here for the same reason, at a higher price
+ * (#6302): every key is `[head, ClimbSearchInput, viewerId?]`, and a pull of one
+ * spray wall used to refetch the Kilter list on screen once per table. A list
+ * reads SQLite only when its own `boardName:layoutId:sizeId` is a downloaded
+ * scope, so rows landing for any other board cannot change what it shows.
  */
-const BOARD_SCOPED_KEY_HEADS: ReadonlySet<string> = new Set(['holdHeatmap', 'similarClimbs']);
+const BOARD_SCOPED_KEY_HEADS: ReadonlySet<string> = new Set([
+  'holdHeatmap',
+  'similarClimbs',
+  'searchClimbs',
+  'infiniteSearchClimbs',
+  'searchClimbsCount',
+]);
 
 export type BoardScopeKey = { boardType: string; layoutId: number };
 

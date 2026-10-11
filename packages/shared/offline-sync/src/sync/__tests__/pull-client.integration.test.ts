@@ -1412,3 +1412,286 @@ describe('the holds index at the end of a pull cycle', () => {
     expect(onProgress).not.toHaveBeenCalledWith(expect.objectContaining({ interrupted: true }));
   });
 });
+
+// Issue #6302. A cycle used to invalidate once per table that moved rows and
+// once per tombstone page, with nothing scoped to a board: nine pinned spray
+// walls refetched the Kilter list on screen twelve times in twenty seconds.
+describe('query invalidation over one pull cycle', () => {
+  const KILTER = 'kilter:1:5';
+  const TENSION = 'tension:9:1';
+  const kilterList = { queryKey: ['infiniteSearchClimbs', { boardName: 'kilter', layoutId: 1, sizeId: 5 }] };
+  const tensionList = { queryKey: ['infiniteSearchClimbs', { boardName: 'tension', layoutId: 9, sizeId: 1 }] };
+  type Filters = Parameters<QueryInvalidator['invalidateQueries']>[0];
+  let db: TestSqliteDb;
+  const invalidateQueries = vi.fn<QueryInvalidator['invalidateQueries']>();
+  const queryClient: QueryInvalidator = { invalidateQueries };
+  const filtersFor = (head: string): Filters[] =>
+    invalidateQueries.mock.calls.map(([filters]) => filters).filter((filters) => filters.queryKey[0] === head);
+
+  const climbDocument = (uuid: string, boardType: string, layoutId: number, sizeId: number) => ({
+    uuid,
+    board_type: boardType,
+    layout_id: layoutId,
+    compatible_size_ids: [sizeId],
+    frames: 'p1r13p2r13',
+    is_draft: false,
+    is_listed: true,
+    updated_at: '2024-06-01T00:00:00Z',
+    sync_seq: '5',
+  });
+  const statsDocument = (climbUuid: string, boardType: string) => ({
+    board_type: boardType,
+    climb_uuid: climbUuid,
+    angle: 40,
+    display_difficulty: 21.5,
+    benchmark_difficulty: null,
+    ascensionist_count: 12,
+    difficulty_average: 21.3,
+    quality_average: 2.6,
+    fa_username: null,
+    fa_at: null,
+    updated_at: '2024-06-01T00:00:00Z',
+    sync_seq: 6,
+  });
+  const gradeDocument = (climbUuid: string, boardType: string) => ({
+    board_type: boardType,
+    climb_uuid: climbUuid,
+    angle: 40,
+    local_grade: 21.4,
+    universal_grade: null,
+    grade_low: 19.8,
+    grade_high: 22.6,
+    confidence: 'confirmed',
+    ascensionist_count: 12,
+    computed_at: '2024-06-01T00:00:00Z',
+    sync_seq: 7,
+  });
+  const tickDocument = {
+    uuid: 'tick-1',
+    user_id: 'viewer',
+    board_type: 'kilter',
+    climb_uuid: 'kilter-climb',
+    angle: 40,
+    is_mirror: false,
+    status: 'send',
+    attempt_count: 1,
+    quality: null,
+    difficulty: 22,
+    is_benchmark: false,
+    comment: '',
+    climbed_at: '2024-05-30T10:00:00Z',
+    session_id: null,
+    created_at: '2024-05-30T10:00:00Z',
+    updated_at: '2024-05-30T10:05:00Z',
+  };
+
+  /**
+   * One page per (resolver, board), an empty page for everything else. A
+   * per-board resolver is keyed `syncClimbs@kilter:1`; a user one by name alone.
+   */
+  function makeCycleFetch(
+    pages: Record<string, Record<string, unknown>[]>,
+    deletions: DeletionRecord[] = [],
+    onRequest?: (resolver: string) => void,
+  ): GraphQLFetch {
+    return vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (query.includes('syncDeletions')) {
+        return { syncDeletions: { deletions, cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+      }
+      const queryName = extractQueryName(query);
+      const { boardType, layoutId } = (variables ?? {}) as { boardType?: string; layoutId?: number };
+      const board = boardType ? `@${boardType}:${layoutId}` : '';
+      onRequest?.(`${queryName}${board}`);
+      // Past its first page a table has nothing more: the cursor is set.
+      const documents = variables?.cursor ? [] : (pages[`${queryName}${board}`] ?? []);
+      return { [queryName]: { documents, cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+    }) as unknown as GraphQLFetch;
+  }
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+    await ensureMutationQueueTable(db);
+    invalidateQueries.mockClear();
+    __resetDrainerStateForTests();
+  });
+
+  it('refreshes a climb list once for the user tables and once for its own board', async () => {
+    const completedScopes = new Set<string>();
+    const completedWhenInvalidated: boolean[] = [];
+    invalidateQueries.mockImplementation((filters) => {
+      if (filters.queryKey[0] !== 'infiniteSearchClimbs' || !filters.predicate) return;
+      const scopeKey = filters.predicate(kilterList) ? KILTER : TENSION;
+      completedWhenInvalidated.push(completedScopes.has(scopeKey));
+    });
+
+    await pullSync(
+      db,
+      queryClient,
+      makeCycleFetch({
+        syncTicks: [tickDocument],
+        syncFavorites: [{ board_name: 'kilter', climb_uuid: 'kilter-climb', angle: 40, user_id: 'viewer' }],
+        'syncClimbs@kilter:1': [climbDocument('kilter-climb', 'kilter', 1, 5)],
+        'syncClimbStats@kilter:1': [statsDocument('kilter-climb', 'kilter')],
+        'syncClimbGrades@kilter:1': [gradeDocument('kilter-climb', 'kilter')],
+        'syncClimbs@tension:9': [climbDocument('tension-climb', 'tension', 9, 1)],
+        'syncClimbStats@tension:9': [statsDocument('tension-climb', 'tension')],
+        'syncClimbGrades@tension:9': [gradeDocument('tension-climb', 'tension')],
+      }),
+      {
+        enabledBoards: [KILTER, TENSION],
+        onScopeDownloadComplete: ({ scopeKey }) => completedScopes.add(scopeKey),
+      },
+    );
+
+    // Eight tables moved rows. Per table and unscoped, that was eight refetches
+    // of whichever list was on screen.
+    const [userPhase, kilterScope, tensionScope, ...rest] = filtersFor('infiniteSearchClimbs');
+    expect(rest).toEqual([]);
+    // Ticks and favourites name no board: every list, once.
+    expect(userPhase).toEqual({ queryKey: ['infiniteSearchClimbs'] });
+    expect(kilterScope.predicate?.(kilterList)).toBe(true);
+    expect(kilterScope.predicate?.(tensionList)).toBe(false);
+    expect(tensionScope.predicate?.(tensionList)).toBe(true);
+    expect(tensionScope.predicate?.(kilterList)).toBe(false);
+    // Each board's refresh runs once its scope is open to local reads.
+    expect(completedWhenInvalidated).toEqual([true, true]);
+    // Keys that name no board: once for the phase that moved them. The stats
+    // history is unscoped, so once per board rather than once per table.
+    expect(filtersFor('logbook')).toEqual([{ queryKey: ['logbook'] }]);
+    expect(filtersFor('climbStatsHistory')).toHaveLength(2);
+  });
+
+  it('refreshes the user tables after their marker and before the first board is pulled', async () => {
+    // The logbook reads SQLite only once `user_data_complete` is down, so its
+    // refetch must not start earlier. And it must not wait for the boards: a
+    // first download can crawl for minutes.
+    const events: string[] = [];
+    const runAsync = db.runAsync.bind(db);
+    vi.spyOn(db, 'runAsync').mockImplementation(async (sql, params) => {
+      if (Array.isArray(params) && params[0] === 'checkpoint:user_data_complete') events.push('marker');
+      return runAsync(sql, params);
+    });
+    invalidateQueries.mockImplementation((filters) => {
+      if (filters.queryKey[0] === 'logbook') events.push('logbook refreshed');
+    });
+
+    await pullSync(
+      db,
+      queryClient,
+      makeCycleFetch(
+        { syncTicks: [tickDocument], 'syncClimbs@kilter:1': [climbDocument('kilter-climb', 'kilter', 1, 5)] },
+        [],
+        (resolver) => {
+          if (resolver === 'syncClimbs@kilter:1') events.push('board pull');
+        },
+      ),
+      { enabledBoards: [KILTER] },
+    );
+
+    expect(events).toEqual(['marker', 'logbook refreshed', 'board pull']);
+  });
+
+  it('refreshes a board whose download completes without moving a row, and only that once', async () => {
+    // What a snapshot-satisfied scope looks like to the delta pull: no rows.
+    await pullSync(db, queryClient, makeCycleFetch({}), { enabledBoards: [KILTER] });
+
+    const searchRefreshes = filtersFor('infiniteSearchClimbs');
+    expect(searchRefreshes).toHaveLength(1);
+    expect(searchRefreshes[0].predicate?.(kilterList)).toBe(true);
+    expect(searchRefreshes[0].predicate?.(tensionList)).toBe(false);
+
+    invalidateQueries.mockClear();
+    await pullSync(db, queryClient, makeCycleFetch({}), { enabledBoards: [KILTER] });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  describe('tombstones', () => {
+    async function seedClimb(uuid: string): Promise<void> {
+      await db.runAsync(
+        `INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, frames, is_listed, is_draft, updated_at, sync_seq)
+         VALUES (?, 'kilter', 1, '[5]', 'p1r13p2r13', 1, 0, '2024-05-01T00:00:00Z', 1)`,
+        [uuid],
+      );
+    }
+
+    it('says nothing for a board row this device never had', async () => {
+      await seedClimb('local-climb');
+      const deletions: DeletionRecord[] = [
+        { tableName: 'board_climbs', recordId: 'someone-elses-climb', deletedAt: '2024-06-01T00:00:00Z' },
+        { tableName: 'board_climb_stats', recordId: 'tension:not-here:40', deletedAt: '2024-06-01T00:00:01Z' },
+        { tableName: 'board_climb_grades', recordId: 'tension:not-here:40', deletedAt: '2024-06-01T00:00:02Z' },
+      ];
+
+      await pullSync(db, queryClient, makeCycleFetch({}, deletions));
+
+      expect(invalidateQueries).not.toHaveBeenCalled();
+      expect(await readCheckpoint(db, 'checkpoint:deletions')).toEqual(DEFAULT_CURSOR);
+    });
+
+    it('refreshes the lists of the board that lost a climb, and no other', async () => {
+      await seedClimb('local-climb');
+      const deletions: DeletionRecord[] = [
+        { tableName: 'board_climbs', recordId: 'local-climb', deletedAt: '2024-06-01T00:00:00Z' },
+      ];
+
+      await pullSync(db, queryClient, makeCycleFetch({}, deletions));
+
+      expect(await db.getFirstAsync("SELECT 1 FROM board_climbs WHERE uuid = 'local-climb'")).toBeNull();
+      const searchRefreshes = filtersFor('infiniteSearchClimbs');
+      expect(searchRefreshes).toHaveLength(1);
+      expect(searchRefreshes[0].predicate?.(kilterList)).toBe(true);
+      expect(searchRefreshes[0].predicate?.(tensionList)).toBe(false);
+    });
+
+    it('keeps a deleted climb with stats and a grade to its own board', async () => {
+      // How a real deletion arrives: the server removes the stats and grade rows
+      // ahead of the climb, so their tombstones come first.
+      await seedClimb('local-climb');
+      await db.runAsync(
+        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, sync_seq) VALUES ('kilter', 'local-climb', 40, 1)",
+      );
+      await db.runAsync(
+        "INSERT INTO board_climb_grades (board_type, climb_uuid, angle, sync_seq) VALUES ('kilter', 'local-climb', 40, 1)",
+      );
+      const deletions: DeletionRecord[] = [
+        { tableName: 'board_climb_stats', recordId: 'kilter:local-climb:40', deletedAt: '2024-06-01T00:00:00Z' },
+        { tableName: 'board_climb_grades', recordId: 'kilter:local-climb:40', deletedAt: '2024-06-01T00:00:01Z' },
+        { tableName: 'board_climbs', recordId: 'local-climb', deletedAt: '2024-06-01T00:00:02Z' },
+      ];
+
+      await pullSync(db, queryClient, makeCycleFetch({}, deletions));
+
+      expect(await db.getFirstAsync("SELECT 1 FROM board_climb_stats WHERE climb_uuid = 'local-climb'")).toBeNull();
+      const searchRefreshes = filtersFor('infiniteSearchClimbs');
+      expect(searchRefreshes).toHaveLength(1);
+      expect(searchRefreshes[0].predicate?.(kilterList)).toBe(true);
+      expect(searchRefreshes[0].predicate?.(tensionList)).toBe(false);
+    });
+
+    it('refreshes every list for a deleted stats row whose climb it cannot place', async () => {
+      await db.runAsync(
+        "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, sync_seq) VALUES ('kilter', 'orphan-climb', 40, 1)",
+      );
+      const deletions: DeletionRecord[] = [
+        { tableName: 'board_climb_stats', recordId: 'kilter:orphan-climb:40', deletedAt: '2024-06-01T00:00:00Z' },
+      ];
+
+      await pullSync(db, queryClient, makeCycleFetch({}, deletions));
+
+      expect(filtersFor('infiniteSearchClimbs')).toEqual([{ queryKey: ['infiniteSearchClimbs'] }]);
+    });
+
+    it('always refreshes for a user row, pulled into SQLite or not', async () => {
+      // A tick deleted on another device can be on screen from the network.
+      const deletions: DeletionRecord[] = [
+        { tableName: 'boardsesh_ticks', recordId: 'never-pulled', deletedAt: '2024-06-01T00:00:00Z' },
+      ];
+
+      await pullSync(db, queryClient, makeCycleFetch({}, deletions));
+
+      expect(filtersFor('logbook')).toEqual([{ queryKey: ['logbook'] }]);
+      expect(filtersFor('infiniteSearchClimbs')).toEqual([{ queryKey: ['infiniteSearchClimbs'] }]);
+    });
+  });
+});

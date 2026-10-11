@@ -1209,20 +1209,43 @@ describe('pullSync snapshot bootstrap', () => {
     });
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
     const { fetch } = makeGraphqlFetch(); // delta returns zero documents everywhere
-    const invalidated: unknown[] = [];
-    const queryClient = {
-      invalidateQueries: vi.fn((filter: { queryKey: unknown }) => {
-        invalidated.push(filter.queryKey);
+    type Filters = Parameters<QueryInvalidator['invalidateQueries']>[0];
+    let phase = 'idle';
+    const invalidated: { head: unknown; phase: string; filters: Filters }[] = [];
+    const queryClient: QueryInvalidator = {
+      invalidateQueries: vi.fn((filters: Filters) => {
+        invalidated.push({ head: filters.queryKey[0], phase, filters });
       }),
-    } as unknown as QueryInvalidator;
+    };
 
-    await pullSync(db, queryClient, fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+    await pullSync(db, queryClient, fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onProgress: (progress) => {
+        phase = progress.phase;
+      },
+    });
 
     // syncTable's arrivals-only invalidation never fires (0 delta documents), so
-    // the bootstrap itself must have busted the board-table caches.
-    expect(invalidated.length).toBeGreaterThan(0);
-    const flattened = JSON.stringify(invalidated);
-    expect(flattened).toContain('climb');
+    // the bootstrap itself must have busted the board-table caches: before the
+    // tombstone and table phases, not only when the scope completes after them.
+    const duringImport = invalidated.filter((entry) => entry.phase === 'bootstrap');
+    expect(duringImport.map((entry) => entry.head)).toContain('climb');
+    expect(duringImport.map((entry) => entry.head)).toContain('infiniteSearchClimbs');
+    // And once more when the completion marker opens the scope to local reads.
+    expect(invalidated.filter((entry) => entry.phase !== 'bootstrap').map((entry) => entry.head)).toContain(
+      'infiniteSearchClimbs',
+    );
+    // Every climb-list refresh of the cycle is for this board alone (#6302).
+    const searchRefreshes = invalidated.filter((entry) => entry.head === 'infiniteSearchClimbs');
+    for (const { filters } of searchRefreshes) {
+      expect(filters.predicate?.({ queryKey: ['infiniteSearchClimbs', { boardName: 'kilter', layoutId: 1 }] })).toBe(
+        true,
+      );
+      expect(filters.predicate?.({ queryKey: ['infiniteSearchClimbs', { boardName: 'tension', layoutId: 1 }] })).toBe(
+        false,
+      );
+    }
   });
 
   it('downloads one artifact for two sizes of the same layout', async () => {

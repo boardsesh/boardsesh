@@ -278,6 +278,20 @@ A completed sync has to tell the UI. Today it mostly does not: `TABLE_CONFIGS[*]
 
 Invalidation stays gated on rows actually landing (`if (totalProcessed > 0)`), and `invalidateQueries` refetches active queries only, so the cost of correcting the keys is bounded to whatever is on screen when rows genuinely moved.
 
+"On screen" still has a price. A climb list is an infinite query: one invalidation re-reads every page it has loaded, in sequence, cancels a next-page fetch in flight, and holds paging back until it settles. Seven tables carry the climb-search keys, and a cycle that invalidated once per table refetched the list on screen once for each. With nine spray walls pinned for offline, a cold launch refetched a Kilter list twelve times in twenty seconds (#6302). Three rules bound it:
+
+- **One batch per cycle, flushed per phase.** The pull client queues its invalidations in an `InvalidationBatch` (`sync/invalidation-batch.ts`), so a key is invalidated once for everything a phase changed. The flushes: after the tombstones and the user tables together; after each board scope; after each scope's refresh replay; after a wall retirement; and in the cycle's `finally`, so rows committed before a throw or a teardown still reach the UI. The coverage reset and a snapshot import flush at once, as they always did. Two flushes are placed after a completion marker on purpose (`user_data_complete`, `scope-complete:`): the refetch they start must find the marker that opens the local read.
+- **The search keys are scoped to the board that changed.** `searchClimbs`, `infiniteSearchClimbs` and `searchClimbsCount` are in `BOARD_SCOPED_KEY_HEADS` with the heatmap and similar climbs. A list reads SQLite only when its own `boardName:layoutId:sizeId` is a downloaded scope, so rows for another board cannot change it. The scope is the layout, not the size. User tables name no board and refresh every list.
+- **A board tombstone that removed nothing says nothing.** Board tombstones reach every device for every board. Only one that deleted a local row invalidates, scoped to the climb's board when the climb is still on the device to say which. A user-table tombstone always invalidates: those are the climber's own rows, and one can be on screen from the network without ever having been pulled.
+
+In an ordinary cycle that leaves a list at most two refetches: one if a user table or a tombstone moved, one when its own board's rows moved. Three cases add to that. A first download refreshes its board at the import, at the grades import, and again at completion. Two pinned sizes of one layout are two scopes, and each refreshes that layout's lists. A refresh replay adds one for its scope.
+
+A scope that completes for the first time queues its board's keys even when the delta pull moved no rows, which is the case for a download a snapshot satisfied outright. The import's own refresh ran while the scope was still closed to local reads, so without this the list stays on the network read it made then.
+
+What this gives up: a board that is not downloaded is read from the network, and a board pull or a board tombstone no longer refreshes its lists (the user tables still do, for every board). A climb deleted there stays in the list, and on its detail screen, until the query goes stale (5 minutes) and is next mounted or the app next comes to the front. Before, the tombstone refreshed it at the next sync. New and edited climbs on such a board never had a signal.
+
+The mutation drainer does not use the batch yet: it still invalidates once per drained mutation.
+
 ## Deliberately deferred
 
 **The You-tab logbook (`GET_USER_TICKS`) cannot be served locally.** `boardsesh_ticks.localColumns` has no `layout_id`, and `use-you-data.ts` needs a `layoutId` per entry; joining `board_climbs` only covers downloaded scopes. Fixing it needs a local schema column plus a backend `syncTicks` selectList change, so it gets its own issue and stays on the honest-empty-state path for now.

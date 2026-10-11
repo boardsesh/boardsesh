@@ -1009,16 +1009,22 @@ describe('pullSync', () => {
     expect(insertCalls[0].params).toContain(JSON.stringify(nestedObject));
   });
 
-  it('invalidates deletion-affected query keys only once per key', async () => {
+  it('invalidates deletion-affected query keys only once per key, across tombstone pages', async () => {
+    let deletionRequestCount = 0;
     graphqlFetch.mockImplementation(async (query: string) => {
       if (query.includes('syncDeletions')) {
-        return makeDeletionsResult(
-          [
-            { tableName: 'boardsesh_ticks', recordId: 'uuid-1', deletedAt: '2024-06-01T00:00:00Z' },
-            { tableName: 'boardsesh_ticks', recordId: 'uuid-2', deletedAt: '2024-06-01T00:00:01Z' },
-          ],
-          false,
-        );
+        deletionRequestCount += 1;
+        // Two pages: a per-page set would invalidate each key twice.
+        return deletionRequestCount === 1
+          ? makeDeletionsResult(
+              [{ tableName: 'boardsesh_ticks', recordId: 'uuid-1', deletedAt: '2024-06-01T00:00:00Z' }],
+              true,
+            )
+          : makeDeletionsResult(
+              [{ tableName: 'boardsesh_ticks', recordId: 'uuid-2', deletedAt: '2024-06-01T00:00:01Z' }],
+              false,
+              { updatedAt: '2024-06-01T00:00:01Z', syncSeq: '2' },
+            );
       }
       for (const config of Object.values(TABLE_CONFIGS)) {
         if (query.includes(config.queryName)) {
@@ -1039,11 +1045,11 @@ describe('pullSync', () => {
     const logbookKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["logbook"]').length;
     const userTicksKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["userTicks"]').length;
 
-    expect(logbookKeyCount).toBeGreaterThanOrEqual(1);
-    expect(userTicksKeyCount).toBeGreaterThanOrEqual(1);
+    expect(logbookKeyCount).toBe(1);
+    expect(userTicksKeyCount).toBe(1);
   });
 
-  it('invalidates a committed deletion page before a later page request fails', async () => {
+  it('invalidates a committed deletion page even when a later page request fails', async () => {
     let deletionRequestCount = 0;
     graphqlFetch.mockImplementation(async (query: string) => {
       if (query.includes('syncDeletions')) {
