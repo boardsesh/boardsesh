@@ -9,11 +9,17 @@ const mocks = vi.hoisted(() => ({
   queryClient: undefined as unknown as QueryClient,
   createClient: vi.fn(),
   sinks: [] as Sink[],
+  router: { refresh: vi.fn() },
+  pathname: '/settings',
 }));
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQueryClient: () => mocks.queryClient,
   useQuery: () => ({ data: { enabled: false } }),
+}));
+vi.mock('next/navigation', () => ({
+  useRouter: () => mocks.router,
+  usePathname: () => mocks.pathname,
 }));
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ status: 'authenticated', data: { user: { id: 'viewer' } } }),
@@ -44,6 +50,7 @@ vi.mock('@/app/lib/realtime/websocket-connection-manager', () => ({
 }));
 import { PrivacySyncBridge } from '../privacy-sync-bridge';
 import { __resetSharedRealtimeClientForTests, acquireRealtimeClient } from '@/app/lib/realtime/graphql-client';
+import { rendersProtectedContentOnServer } from '@/app/lib/privacy-client';
 
 const sensitiveKeys = [
   ['userProfile', 'private-user'],
@@ -60,7 +67,9 @@ describe('website privacy revocation', () => {
   beforeEach(() => {
     __resetSharedRealtimeClientForTests();
     mocks.createClient.mockClear();
+    mocks.router.refresh.mockClear();
     mocks.sinks.length = 0;
+    mocks.pathname = '/settings';
   });
 
   it('withdraws protected queries over the shared socket, without a page reload, while controls are disabled', async () => {
@@ -91,9 +100,47 @@ describe('website privacy revocation', () => {
       expect(mocks.queryClient.getQueryData(queryKey)).toEqual({ copied: true });
     }
     expect(persister.removeClient).toHaveBeenCalledOnce();
+    // A settings page renders nothing protected on the server.
+    expect(mocks.router.refresh).not.toHaveBeenCalled();
 
     thread.release();
     view.unmount();
     mocks.queryClient.clear();
   });
+
+  it('re-renders a page whose server markup carries protected content', async () => {
+    mocks.queryClient = new QueryClient();
+    mocks.pathname = '/es/b/home-wall/40/view/climb-uuid';
+    const persister = { persistClient: vi.fn(), restoreClient: vi.fn(), removeClient: vi.fn() };
+    const view = render(<PrivacySyncBridge persister={persister} />);
+    await waitFor(() => expect(mocks.sinks).toHaveLength(1));
+    mocks.sinks[0].next();
+    expect(mocks.router.refresh).toHaveBeenCalledOnce();
+    view.unmount();
+    mocks.queryClient.clear();
+  });
+});
+
+describe('rendersProtectedContentOnServer', () => {
+  it.each([
+    '/b/home-wall',
+    '/b/home-wall/40/view/climb-uuid',
+    '/fr/session/abc',
+    '/profile/user-1',
+    '/de/playlists/p-1',
+    '/playlists',
+    '/setter/someone',
+    '/gym/the-gym',
+    '/kilter/1/10/1,20/40/view/climb-uuid',
+    '/es/tension/9/1/1/40/list',
+  ])('re-renders %s', (pathname) => {
+    expect(rendersProtectedContentOnServer(pathname)).toBe(true);
+  });
+
+  it.each(['/', '/es', '/settings', '/gyms', '/help/getting-started', '/legal', '/kilter', '/about/team'])(
+    'leaves %s alone',
+    (pathname) => {
+      expect(rendersProtectedContentOnServer(pathname)).toBe(false);
+    },
+  );
 });

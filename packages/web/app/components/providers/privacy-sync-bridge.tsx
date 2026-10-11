@@ -3,17 +3,22 @@
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
+import { usePathname, useRouter } from 'next/navigation';
 import type { Persister } from '@tanstack/react-query-persist-client';
 import { GET_PRIVACY_SETTINGS, type PrivacySettings } from '@boardsesh/graphql/operations/privacy';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
-import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
+import { rendersProtectedContentOnServer, revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
 
 export function PrivacySyncBridge({ persister }: { persister: Persister }) {
   const { data: session, status } = useSession();
   const { token } = useWsAuthToken(status === 'authenticated');
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const viewerId = session?.user?.id;
   const viewerRef = useRef(viewerId);
   viewerRef.current = viewerId;
@@ -37,9 +42,9 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
     let dispose: (() => void) | undefined;
     // Withdraw and refetch the cached client queries. The persisted cache only
     // ever holds the viewer's own profile queries, which are withdrawn too, so
-    // dropping it removes nothing else. Server-rendered markup already on
-    // screen is not re-rendered; the next navigation renders it for the
-    // current viewer.
+    // dropping it removes nothing else. A page whose server-rendered markup can
+    // carry someone else's protected content is re-rendered as well; every
+    // other page keeps its markup.
     const revoke = () => {
       if (cancelled || viewerRef.current !== viewerId) return;
       void Promise.all([revokeWebPrivacySnapshots(queryClient), Promise.resolve(persister.removeClient())]).catch(
@@ -47,6 +52,7 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
           console.error('Failed to withdraw privacy snapshots:', error);
         },
       );
+      if (pathnameRef.current && rendersProtectedContentOnServer(pathnameRef.current)) router.refresh();
     };
     // The websocket wrapper extends the browser WebSocket constructor.
     // Load it only in an effect so SSR never evaluates that browser global.
@@ -76,6 +82,6 @@ export function PrivacySyncBridge({ persister }: { persister: Persister }) {
       cancelled = true;
       dispose?.();
     };
-  }, [!!settings, viewerId, token, queryClient, persister]);
+  }, [!!settings, viewerId, token, queryClient, persister, router]);
   return null;
 }
