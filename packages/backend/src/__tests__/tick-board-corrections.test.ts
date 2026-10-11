@@ -298,9 +298,47 @@ describe('tick board corrections', () => {
           ),
         ).rejects.toMatchObject({ extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
         expect((await readTick(uuid)).comment).toBe('');
+        const edited = await tickMutations.updateTick(undefined, { uuid, input: { comment: 'My own recap' } }, ctx);
+        expect(edited).toMatchObject({ comment: 'My own recap', boardDisplayName: null });
       } finally {
         await db.delete(schema.resourcePrivacy).where(eq(schema.resourcePrivacy.resourceId, board.uuid));
         await db.delete(schema.resourceGrants).where(eq(schema.resourceGrants.resourceId, board.uuid));
+        await db.delete(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
+      }
+    },
+  );
+
+  it.each(['deleted', 'hidden_spray'] as const)(
+    'does not expose a historical %s board through an ordinary tick edit',
+    async (kind) => {
+      const sprayLayout = 1_990_562_700;
+      const [board] = await db
+        .insert(schema.userBoards)
+        .values({
+          uuid: uuidv4(),
+          slug: uuidv4(),
+          ownerId: otherUser,
+          name: 'Unavailable wall',
+          isPublic: true,
+          boardType: kind === 'hidden_spray' ? 'spray' : 'kilter',
+          layoutId: kind === 'hidden_spray' ? sprayLayout : 8,
+          sizeId: kind === 'hidden_spray' ? sprayLayout : 25,
+          setIds: kind === 'hidden_spray' ? '1' : '26,27',
+          deletedAt: kind === 'deleted' ? new Date() : null,
+        })
+        .returning();
+      if (kind === 'hidden_spray')
+        await db
+          .insert(schema.sprayWalls)
+          .values({ boardUuid: board.uuid, layoutId: sprayLayout, hiddenAt: new Date() });
+      try {
+        const uuid = await save(homewall, { boardUuid: homewall.uuid });
+        await db.update(schema.boardseshTicks).set({ boardId: board.id }).where(eq(schema.boardseshTicks.uuid, uuid));
+        expect((await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, ctx)).currentBoard).toBeNull();
+        const edited = await tickMutations.updateTick(undefined, { uuid, input: { comment: 'Keep my recap' } }, ctx);
+        expect(edited).toMatchObject({ comment: 'Keep my recap', boardDisplayName: null });
+      } finally {
+        await db.delete(schema.sprayWalls).where(eq(schema.sprayWalls.boardUuid, board.uuid));
         await db.delete(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
       }
     },

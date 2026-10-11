@@ -94,6 +94,7 @@ export const tickBoardQueries = {
                 eq(schema.userBoards.id, tick.boardId),
                 resourceAccessCondition('board', schema.userBoards.uuid, userId, { allowUnlistedLink: false }),
                 isNull(schema.userBoards.deletedAt),
+                listableSprayWallCondition(userId),
               ),
             )
             .limit(1);

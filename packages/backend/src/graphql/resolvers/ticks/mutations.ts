@@ -1836,7 +1836,13 @@ export const tickMutations = {
             : await tx
                 .select({ name: dbSchema.userBoards.name })
                 .from(dbSchema.userBoards)
-                .where(eq(dbSchema.userBoards.id, updatedTarget.boardId))
+                .where(
+                  and(
+                    eq(dbSchema.userBoards.id, updatedTarget.boardId),
+                    resourceAccessCondition('board', dbSchema.userBoards.uuid, userId, { allowUnlistedLink: false }),
+                    listableSprayWallCondition(userId),
+                  ),
+                )
                 .limit(1);
         return {
           existingTicks,
