@@ -29,7 +29,7 @@
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import { purgeNamespaceKey, type OfflineBoardScope } from '../offline-board-key';
 import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
-import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
+import { SNAPSHOT_MANIFEST_FORMAT_VERSION, SNAPSHOT_PRIVACY_VERSION } from './snapshot-manifest';
 import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
 import { TABLE_CONFIGS, unstoredColumnsOf } from './table-config';
 import { reportExtraColumn, SnapshotSchemaCompatibilityError } from './schema-compatibility';
@@ -37,11 +37,11 @@ import { markSchemaRefreshComplete } from './schema-refresh';
 import { LOCAL_USER_ID_KEY } from './local-user-owner';
 import {
   compareCheckpoints,
-  getCheckpoint,
   getCheckpointKey,
   getReferenceRuleGaps,
   parseTopLevelCheckpoint,
   resetScopeProtectedSyncState,
+  restartReferenceStream,
   rewindDeletionsCheckpoint,
   SCOPE_COMPLETE_PREFIX,
   setCheckpoint,
@@ -164,6 +164,7 @@ const GRADES_ALIAS = 'bs_grades';
  */
 export const MAX_GRADES_BOOTSTRAP_ATTEMPTS = 2;
 export const GRADES_BOOTSTRAP_ATTEMPTS_PREFIX = 'grades-bootstrap-attempts:';
+export const GRADES_RULE_CATCH_UP_PREFIX = 'grades-rule-catch-up:';
 
 // Package-internal (deliberately NOT re-exported from index.ts, same posture as
 // checkpoints.ts's DELETIONS_CHECKPOINT_KEY): scope-teardown.ts must clear this
@@ -649,6 +650,18 @@ export async function recordGradesBootstrapAttempt(db: SqlExecutor, scopeKey: st
     String(next),
   ]);
   return next;
+}
+
+/** Re-arm the grades artifact budget once per publication rule. Caller owns the transaction. */
+export async function rearmGradesBootstrapForRule(db: SqlExecutor, scopeKey: string): Promise<void> {
+  const key = `${GRADES_RULE_CATCH_UP_PREFIX}${scopeKey}`;
+  const marker = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]);
+  if (marker?.value === String(SNAPSHOT_PRIVACY_VERSION)) return;
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${GRADES_BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`]);
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    key,
+    String(SNAPSHOT_PRIVACY_VERSION),
+  ]);
 }
 
 /**
@@ -1564,11 +1577,11 @@ export async function bootstrapScopeFromSnapshot(params: {
    * The scope already holds a FINISHED catalogue whose cursors are at the tail,
    * past this artifact (the publication-rule catch-up, `getReferenceRuleGaps`).
    * The import then goes over rows that are newer than the artifact's, so it
-   * starts by moving the scope's two reference cursors and the deletions
-   * cursor BACK to the artifact's, in the same transaction as the reconcile's
-   * first write. Whatever happens after that, the next pull delivers again
-   * every row the artifact's older copy was written over, and every deletion
-   * of a row the artifact brought back.
+   * starts by moving both reference cursors to the epoch and rewinding the
+   * deletions cursor, in the same transaction as the reconcile's first write.
+   * If a later batch fails, ordinary paging restores omitted old rows and
+   * newer rows overwritten by the artifact. Only the final successful commit
+   * moves the reference cursors to the artifact watermarks.
    *
    * Never together with `existingCheckpoints`: that guard exists to stop a
    * cursor moving backwards, which here is the point.
@@ -1767,10 +1780,7 @@ export async function bootstrapScopeFromSnapshot(params: {
           if (!overFinishedScope) return;
           for (const tableName of SNAPSHOT_TABLES) {
             const key = getCheckpointKey(tableName, scopeKey);
-            const current = await getCheckpoint(txn, key);
-            if (current && compareCheckpoints(current, stampedWatermarks[tableName]) > 0) {
-              await setCheckpoint(txn, key, stampedWatermarks[tableName]);
-            }
+            await restartReferenceStream(txn, key);
           }
           await rewindDeletionsCheckpoint(txn, deletionsReplayBoundary);
         });

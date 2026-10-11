@@ -30,10 +30,14 @@ import {
   getReferenceRuleGaps,
   isScopeDownloadComplete,
   isScopeProtectedComplete,
+  setProtectedCheckpoint,
 } from '../checkpoints';
 import { stampLocalUserId } from '../local-user-owner';
 import { pullSync, type ScopeDownloadCompleteInfo, type SyncOptions } from '../pull-client';
 import {
+  bootstrapScopeFromSnapshot,
+  getGradesBootstrapAttempts,
+  MAX_GRADES_BOOTSTRAP_ATTEMPTS,
   getBootstrapDoneMarker,
   getBootstrapMetadataByScope,
   getRuleCatchUpState,
@@ -574,6 +578,63 @@ describe('arriving from, and returning to, a bundle from before the split', () =
       expect(await localClimbs()).not.toContain(withheldThen.uuid);
     });
 
+    it('recovers omitted old climbs and overwritten newer rows after the second batch fails', async () => {
+      const newer = { ...catalogueClimb(10), cursor: cursorAt(85), fields: { name: 'Fresh title' } };
+      await db.runAsync('UPDATE board_climbs SET name = ?, updated_at = ?, sync_seq = ? WHERE uuid = ?', [
+        'Fresh title',
+        newer.cursor.updatedAt,
+        newer.cursor.syncSeq,
+        newer.uuid,
+      ]);
+      let batches = 0;
+      onImportStatement((statement) => {
+        if (statement.includes('INSERT OR REPLACE INTO main.board_climbs') && ++batches === 2)
+          throw new Error('disk I/O error');
+      });
+      await expect(
+        bootstrapScopeFromSnapshot({
+          db,
+          scope: { boardType: 'kilter', layoutId: 1, sizeId: 12 },
+          scopeKey: SCOPE_KEY,
+          filePath: layoutPath,
+          overFinishedScope: true,
+          batchRows: 1,
+        }),
+      ).rejects.toThrow('disk I/O error');
+      expect(await localClimbs()).not.toContain(withheldThen.uuid);
+      expect(await db.getFirstAsync('SELECT name FROM board_climbs WHERE uuid = ?', [newer.uuid])).toEqual({
+        name: newer.uuid,
+      });
+      expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(EPOCH);
+      expect(await getCheckpoint(db, STATS_KEY)).toEqual(EPOCH);
+      expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+      const currentServer = backend(SERVER_CLIMBS.map((climb) => (climb.uuid === newer.uuid ? newer : climb)));
+      await sync(currentServer.fetch);
+      expect(currentServer.requestsFor('syncClimbs', 'REFERENCE')[0].cursor).toEqual(EPOCH);
+      expect(currentServer.requestsFor('syncClimbStats', 'REFERENCE')[0].cursor).toEqual(EPOCH);
+      expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
+      expect(await localStats()).toContain(withheldThen.uuid);
+      expect(await db.getFirstAsync('SELECT name, updated_at FROM board_climbs WHERE uuid = ?', [newer.uuid])).toEqual({
+        name: 'Fresh title',
+        updated_at: newer.cursor.updatedAt,
+      });
+      expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+    });
+
+    it('rearms an exhausted older grades budget when the layout catches up to the rule', async () => {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+        `grades-bootstrap-attempts:${SCOPE_KEY}`,
+        String(MAX_GRADES_BOOTSTRAP_ATTEMPTS),
+      ]);
+      await sync(server.fetch, options);
+      expect(snapshot.downloadGradesArtifact).toHaveBeenCalledTimes(1);
+      expect(await localGrades()).toContain(withheldThen.uuid);
+      expect(await getGradesBootstrapAttempts(db, SCOPE_KEY)).toBe(0);
+      expect(
+        await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [`grades-rule-catch-up:${SCOPE_KEY}`]),
+      ).toEqual({ value: '2' });
+    });
+
     describe('when the import fails part-way', () => {
       const NOW = Date.parse('2026-10-11T08:00:00Z');
       let failNextImport: boolean;
@@ -591,10 +652,10 @@ describe('arriving from, and returning to, a bundle from before the split', () =
 
         await sync(server.fetch, { ...options, onRuleCatchUp, now: () => NOW });
 
-        // The delta of this very cycle resumed from the artifact's watermark,
+        // Ordinary paging starts at the epoch to recover rows below the artifact watermark,
         // although the import never reached its last transaction.
-        expect(referenceCursorsAsked('syncClimbs')).toEqual([ARTIFACT_WATERMARK]);
-        expect(referenceCursorsAsked('syncClimbStats')).toEqual([ARTIFACT_WATERMARK]);
+        expect(referenceCursorsAsked('syncClimbs')).toEqual([EPOCH]);
+        expect(referenceCursorsAsked('syncClimbStats')).toEqual([EPOCH]);
         // So did the deletions: one of a row the artifact brought back must be
         // applied again. They page on time alone, from the artifact's boundary.
         expect(
@@ -602,8 +663,8 @@ describe('arriving from, and returning to, a bundle from before the split', () =
         ).toEqual([{ updatedAt: ARTIFACT_WATERMARK.updatedAt, syncSeq: '0' }]);
         expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(cursorAt(LAST_SEQUENCE));
         expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
-        // Still owed, charged once, and reported apart from the download funnel.
-        expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: true, grades: true });
+        // The reference crawl repairs the layout in this cycle. Grades are still owed.
+        expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: true });
         expect(await getRuleCatchUpState(db, SCOPE_KEY)).toEqual({
           failures: 1,
           retryAfter: NOW + RULE_CATCH_UP_RETRY_DELAYS_MS[0],
@@ -620,25 +681,18 @@ describe('arriving from, and returning to, a bundle from before the split', () =
         expect(onScopeDownloadComplete).not.toHaveBeenCalled();
       });
 
-      it('waits out its cooldown, then finishes', async () => {
-        const onRuleCatchUp = vi.fn();
+      it('does not retry an artifact once epoch paging repaired the layout', async () => {
         await sync(server.fetch, { ...options, now: () => NOW });
         failNextImport = false;
-
-        await sync(server.fetch, { ...options, now: () => NOW + RULE_CATCH_UP_RETRY_DELAYS_MS[0] - 1 });
+        await sync(server.fetch, { ...options, now: () => NOW + 1 });
         expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
-
-        await sync(server.fetch, { ...options, onRuleCatchUp, now: () => NOW + RULE_CATCH_UP_RETRY_DELAYS_MS[0] });
-        expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(2);
+        expect(snapshot.downloadGradesArtifact).toHaveBeenCalledTimes(1);
         expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
+        expect(await localGrades()).toContain(withheldThen.uuid);
         expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
-        expect(await getRuleCatchUpState(db, SCOPE_KEY)).toEqual({ failures: 0, retryAfter: null });
-        expect(onRuleCatchUp).toHaveBeenCalledWith(
-          expect.objectContaining({ scopeKey: SCOPE_KEY, outcome: 'imported', artifactBytes: artifactEntry.bytes }),
-        );
       });
 
-      it('stops for good after its budget, and leaves the board as it is', async () => {
+      it('keeps the repaired board complete without repeatedly spending the artifact budget', async () => {
         const onRuleCatchUp = vi.fn();
         let clock = NOW;
         for (let attempt = 1; attempt <= MAX_RULE_CATCH_UP_FAILURES + 2; attempt += 1) {
@@ -646,12 +700,12 @@ describe('arriving from, and returning to, a bundle from before the split', () =
           clock += 7 * 24 * 60 * 60 * 1000;
         }
 
-        expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(MAX_RULE_CATCH_UP_FAILURES);
+        expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
         expect(onRuleCatchUp).toHaveBeenLastCalledWith(
-          expect.objectContaining({ outcome: 'failed', failures: MAX_RULE_CATCH_UP_FAILURES, gaveUp: true }),
+          expect.objectContaining({ outcome: 'failed', failures: 1, gaveUp: false }),
         );
         expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
-        expect(await localClimbs()).toEqual(deliveredThen.map((climb) => climb.uuid).sort());
+        expect(await localClimbs()).toEqual(ALL_CLIMB_UUIDS);
       });
     });
 
@@ -690,12 +744,14 @@ describe('arriving from, and returning to, a bundle from before the split', () =
       // The layout import goes through, and this time the grades file does not come down.
       const layoutOnly = createSnapshotSource({ manifest: () => manifestOf([artifactEntry]), layoutPath });
       await sync(server.fetch, { ...options, snapshotSource: layoutOnly.source });
-      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: true });
-      expect(await localGrades()).not.toContain(withheldThen.uuid);
+      // No grades artifact landed, so the prepared epoch reference pull fills
+      // every grade now that the complete climb catalogue is here.
+      expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
+      expect(await localGrades()).toContain(withheldThen.uuid);
 
       await sync(server.fetch, options);
       expect(snapshot.downloadArtifact).not.toHaveBeenCalled();
-      expect(snapshot.downloadGradesArtifact).toHaveBeenCalledTimes(2);
+      expect(snapshot.downloadGradesArtifact).toHaveBeenCalledTimes(1);
       expect(await localGrades()).toContain(withheldThen.uuid);
       expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
     });
@@ -729,6 +785,44 @@ describe('arriving from, and returning to, a bundle from before the split', () =
     expect(snapshot.downloadArtifact).toHaveBeenCalledTimes(1);
     expect(snapshot.downloadGradesArtifact).toHaveBeenCalledTimes(2);
     expect(await localGrades()).toContain('friend-climb');
+    expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
+  });
+
+  it('rearms capped grades-only catch-up once and repairs a failed artifact through epoch paging', async () => {
+    const snapshot = artifactSource();
+    await sync(backend().fetch, { snapshotSource: snapshot.source });
+    const protectedCursor = await getProtectedCheckpoint(db, GRADES_KEY);
+    expect(protectedCursor).not.toBeNull();
+    await olderBundleSetCheckpoint(db, GRADES_KEY, cursorAt(95));
+    await setProtectedCheckpoint(db, GRADES_KEY, protectedCursor!);
+    await db.runAsync("DELETE FROM board_climb_grades WHERE climb_uuid = 'friend-climb'");
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `grades-bootstrap-attempts:${SCOPE_KEY}`,
+      String(MAX_GRADES_BOOTSTRAP_ATTEMPTS),
+    ]);
+    snapshot.source.downloadGradesArtifact = vi.fn(async () => {
+      throw new TypeError('Network request failed');
+    });
+    await sync(backend().fetch, { snapshotSource: snapshot.source, isOnUnmeteredNetwork: () => false });
+    expect(await getGradesBootstrapAttempts(db, SCOPE_KEY)).toBe(MAX_GRADES_BOOTSTRAP_ATTEMPTS);
+    expect(await getCheckpoint(db, GRADES_KEY)).toEqual(cursorAt(95));
+    const server = backend();
+    await sync(server.fetch, { snapshotSource: snapshot.source });
+    expect(server.requestsFor('syncClimbGrades', 'REFERENCE')[0].cursor).toEqual(EPOCH);
+    expect(await localGrades()).toContain('friend-climb');
+    expect(await getGradesBootstrapAttempts(db, SCOPE_KEY)).toBe(1);
+    expect(await getProtectedCheckpoint(db, GRADES_KEY)).toEqual(protectedCursor);
+    expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
+    // An earlier bundle loses the stamp again: restart paging, but do not re-arm
+    // the artifact budget repeatedly for the same publication rule.
+    await olderBundleSetCheckpoint(db, GRADES_KEY, cursorAt(95));
+    await sync(backend().fetch, { snapshotSource: snapshot.source });
+    expect(await getGradesBootstrapAttempts(db, SCOPE_KEY)).toBe(2);
+    await olderBundleSetCheckpoint(db, GRADES_KEY, cursorAt(95));
+    const cappedServer = backend();
+    await sync(cappedServer.fetch, { snapshotSource: snapshot.source });
+    expect(await getGradesBootstrapAttempts(db, SCOPE_KEY)).toBe(2);
+    expect(cappedServer.requestsFor('syncClimbGrades', 'REFERENCE')[0].cursor).toEqual(EPOCH);
     expect(await getReferenceRuleGaps(db, SCOPE_KEY)).toEqual({ layout: false, grades: false });
   });
 

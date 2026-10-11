@@ -2131,9 +2131,10 @@ climb left out. Importing it at its real watermark would skip every owned publis
 climb below that watermark for good, so a board with no rule-2 artifact downloads
 through the paged pull instead.
 
-**The import stamps the artifact's real watermark.** The epoch stamp is gone, with
-every `replayFromEpoch` remnant. After an import the reference streams resume from
-the watermark and fetch only what the artifact does not hold.
+**A successful import stamps the artifact's real watermark.** Reference streams
+resume from that watermark and fetch only what the artifact does not hold. Rule
+catch-up first arms epoch paging for failure recovery, then replaces those
+preparatory cursors with the artifact watermarks after all batches succeed.
 
 - The reconcile removes local climbs at or below the watermark that the artifact
   lacks, with their stats and grades: such a climb was deleted, or is no longer
@@ -2167,14 +2168,20 @@ catalogue board with a climbs or stats cursor past the start and no `rule`.
 - The layout's rule-2 artifact is imported over the board. The import is the one a
   fresh board gets, told that the board's cursors are ahead of the artifact
   (`overFinishedScope`): in the reconcile's first transaction, before it writes a
-  row, it moves the two reference cursors and the deletions cursor back to the
-  artifact's. The pull that follows then delivers again whatever changed since the
-  build, and the board equals the server's reference set when it ends. An import that
-  fails part-way has therefore already asked for that pull.
+  row, it resets both reference cursors to the epoch and rewinds deletions to the
+  artifact's safe replay boundary. Only the final successful transaction stamps
+  artifact watermarks. A failed batch therefore resumes ordinary paging from the
+  epoch, recovering old rows not yet imported and newer rows overwritten by an
+  older artifact. The board keeps its completion marker and stays readable.
 - The grades artifact follows in the same step. Its import keeps the grade rows whose
   climb is on the device, so it stamps `rule` on the grades cursor only when the
   climbs and stats cursors already carry it. A board whose grades cursor alone lacks
-  the stamp imports the grades artifact alone.
+  the stamp imports the grades artifact alone. Both paths reset its reference
+  cursor to the epoch before trying the grades artifact, preserving its protected
+  cursor. `grades-rule-catch-up:<scope>` resets an older exhausted grades budget
+  once per publication rule. Failed or unavailable grades artifacts fall back to
+  complete reference paging; another lost stamp does not re-arm the budget again.
+  Removing the board clears this marker with its rows and other retry metadata.
 - The layout's holds-index watermarks and postings are dropped in the import's last
   transaction: climbs arrived behind them. The next build rewrites only the hold sets
   that changed.
@@ -2187,7 +2194,8 @@ catalogue board with a climbs or stats cursor past the start and no `rule`.
   like a heal, and does nothing until a rule-2 artifact is published. A failed
   download or import is charged to a budget of its own (`rule-catch-up:<scope>`):
   three failures per board, with 6 and then 24 hours between attempts. After the
-  third the board stays as it was.
+  third no further layout artifact is fetched. A failure before row writes leaves
+  the board as it was; a partial import has already armed epoch reference paging.
 - Cost on the largest board, Kilter layout 1: one layout artifact (110.2 MB gzipped
   in shape 1, 82.4 MB in shape 2) and one grades artifact (27.1 MB or 16.8 MB), then a
   delta of at most one export interval. The alternative on today's contract is to pull

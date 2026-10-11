@@ -53,6 +53,7 @@ import {
   BOOTSTRAP_DONE_PREFIX,
   REUSED_IMPORT_FAILED_PREFIX,
   GRADES_BOOTSTRAP_ATTEMPTS_PREFIX,
+  GRADES_RULE_CATCH_UP_PREFIX,
   RULE_CATCH_UP_PREFIX,
 } from './snapshot-bootstrap';
 import {
@@ -140,6 +141,7 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     // give it a clean counter, and a stale one over emptied tables would keep
     // the scope on the grades crawl for no reason.
     `${GRADES_BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
+    `${GRADES_RULE_CATCH_UP_PREFIX}${scopeKey}`,
     // The publication-rule catch-up's budget. The rule stamp itself sits in the
     // checkpoint rows above and goes with them.
     `${RULE_CATCH_UP_PREFIX}${scopeKey}`,

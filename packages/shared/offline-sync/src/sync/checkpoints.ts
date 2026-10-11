@@ -416,6 +416,12 @@ export async function setCheckpoint(
   );
 }
 
+/** Restart reference paging without changing the account's protected cursor. Caller owns the transaction. */
+export async function restartReferenceStream(db: SqlExecutor, key: string): Promise<void> {
+  await setCheckpoint(db, key, { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' });
+  await db.runAsync("UPDATE sync_meta SET value = json_remove(value, '$.rule') WHERE key = ?", [key]);
+}
+
 const isStartOfStream = (cursor: SyncCheckpoint): boolean => Date.parse(cursor.updatedAt) === 0;
 
 /** Whether a reference pull resuming from this cursor starts at the beginning of its stream. */

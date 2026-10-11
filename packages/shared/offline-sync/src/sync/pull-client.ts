@@ -18,6 +18,7 @@ import {
   getReferenceRuleGaps,
   compareCheckpoints,
   setCheckpoint,
+  restartReferenceStream,
   setProtectedCheckpoint,
   startsReferenceStream,
   getCheckpointKey,
@@ -45,6 +46,7 @@ import {
   bootstrapScopeGradesFromSnapshot,
   getGradesBootstrapAttempts,
   recordGradesBootstrapAttempt,
+  rearmGradesBootstrapForRule,
   MAX_GRADES_BOOTSTRAP_ATTEMPTS,
   getRuleCatchUpState,
   recordRuleCatchUpFailure,
@@ -2185,6 +2187,23 @@ async function runBootstrapPhase(params: {
     return null;
   };
 
+  // A failed rule-2 grades artifact must still recover through paging, even
+  // when the previous rule spent the grades budget. Commit the epoch cursor,
+  // protected cursor preservation and one-time budget re-arm together.
+  const prepareGradesRuleCatchUp = async (scope: BoardScope): Promise<boolean> => {
+    let prepared = false;
+    await runPullWrite(db, async (transaction) => {
+      prepared = false;
+      if (teardownVerdict(scope.scopeKey)) return;
+      if ((await getReferenceRuleGaps(transaction, scope.scopeKey)).grades) {
+        await restartReferenceStream(transaction, getCheckpointKey('board_climb_grades', scope.scopeKey));
+        await rearmGradesBootstrapForRule(transaction, scope.scopeKey);
+      }
+      prepared = true;
+    });
+    return prepared;
+  };
+
   /**
    * THE PUBLICATION-RULE CATCH-UP (issue #6306): bring a FINISHED board up to
    * the rule the server applies today, once, from the layout's artifact.
@@ -2198,7 +2217,8 @@ async function runBootstrapPhase(params: {
    * The artifact holds every published, listed climb of the layout, so one
    * import over the finished board supplies them. It is the import a fresh
    * board gets, told that the board's cursors are ahead of the artifact
-   * (`overFinishedScope`): it moves them back to the artifact's first, so the
+   * (`overFinishedScope`): epoch paging is armed before row writes, and the
+   * artifact watermarks are stamped only after all batches succeed, so the
    * pull that follows delivers again whatever changed since the build, and
    * the board is exactly the server's reference set when that pull ends. The
    * stamps the import leaves on the cursors are what stop it running twice.
@@ -2339,8 +2359,9 @@ async function runBootstrapPhase(params: {
       cause: null,
     });
     // The grades of the climbs that just arrived, from the grades artifact.
-    // Its cursor is stamped only now that the climbs are here; if this fails
-    // the retro-fit branch asks again on a later cycle.
+    // Its cursor is stamped only now that the climbs are here. Preparation
+    // first arms epoch paging, so a failed grades artifact loses no old rows.
+    if (!(await prepareGradesRuleCatchUp(scope))) return teardownVerdict(scope.scopeKey)?.kind ?? 'waiting';
     return (await importGradesForScope(scope, entry)) ?? 'imported';
   };
 
@@ -2563,11 +2584,15 @@ async function runBootstrapPhase(params: {
           if ((isAlreadyBootstrapped || isScopeComplete) && source.downloadGradesArtifact) {
             const gradesCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_grades', scope.scopeKey));
             const gradesPredateTheRule =
-              gradesCheckpoint !== null &&
-              ruleGaps.grades &&
-              !ruleGaps.layout &&
-              (await getGradesBootstrapAttempts(db, scope.scopeKey)) < MAX_GRADES_BOOTSTRAP_ATTEMPTS &&
-              (await isOnUnmeteredNetwork());
+              gradesCheckpoint !== null && ruleGaps.grades && !ruleGaps.layout && (await isOnUnmeteredNetwork());
+            if (gradesPredateTheRule && !(await prepareGradesRuleCatchUp(scope))) {
+              const preparationVerdict = teardownVerdict(scope.scopeKey);
+              if (preparationVerdict?.kind === 'cycle') {
+                cycleInterrupted = true;
+                break;
+              }
+              continue;
+            }
             if (!gradesCheckpoint || gradesPredateTheRule) {
               const retrofitResolution = await resolveManifestOnce(source, manifestCache);
               const retrofitVerdict = teardownVerdict(scope.scopeKey);

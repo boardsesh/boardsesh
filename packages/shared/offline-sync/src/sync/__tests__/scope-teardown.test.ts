@@ -271,6 +271,10 @@ describe('removeBoardScopeData — markers', () => {
       '1',
     ]);
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `grades-rule-catch-up:${scopeKey}`,
+      '2',
+    ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
       `rule-catch-up:${scopeKey}`,
       JSON.stringify({ failures: 1, retryAfter: 1 }),
     ]);
@@ -361,6 +365,7 @@ describe('removeBoardScopeData — markers', () => {
         'scope-download-started:kilter:1:5',
         'reused-import-failed:kilter:1:5',
         'grades-bootstrap-attempts:kilter:1:5',
+        'grades-rule-catch-up:kilter:1:5',
         // The publication-rule catch-up's budget: a re-added board starts clean.
         'rule-catch-up:kilter:1:5',
         // The device-derived holds index's watermark: a re-download re-imports
