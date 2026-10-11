@@ -890,6 +890,10 @@ export function triggerSync(
   });
 }
 
+// Not wrapped in downloadTrackingProgressSink on purpose. The one caller
+// (refresh-published-spray-climbs.ts) refreshes a wall after a publish; a board
+// download someone tapped starts through triggerSync or the scheduler, and both
+// feed the screen hold.
 export function pullSync(
   db: OfflineDatabase,
   queryClient: QueryClient,

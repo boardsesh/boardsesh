@@ -931,7 +931,11 @@ export const SHARED_EVENTS = {
   //    which also counts the time between cycles and across app launches.
   //    Each event reports the suspension since the board's previous event in
   //    the cycle, so summing it over one cycle's events never counts a gap
-  //    twice.
+  //    twice. Expect 0 on a paged crawl even when the phone was locked:
+  //    backgrounding interrupts that cycle within a second, before the process
+  //    is suspended (on a simulator, 17.9 s and 38.8 s in the background both
+  //    reported 0). It can only be non-zero for work that keeps its cycle
+  //    alive through a suspension, such as the snapshot import.
   // Mobile-only today (the engine is shared, so a future web offline consumer
   // would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',

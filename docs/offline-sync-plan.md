@@ -613,7 +613,9 @@ Neither is sent on the three `abandoned-*` failure reasons.
   suspended. On Android, React Native stops JS timers when the activity pauses while JS keeps running, so the
   same gap is ordinary work there. It covers one cycle, like the phase timings. Filter on `suspendedMs = 0` for
   clean-run phase percentiles. Subtracting it from a phase gives a lower bound, because iOS keeps a transfer
-  going while the app is suspended. It does not cover `durationMs`.
+  going while the app is suspended. It does not cover `durationMs`. Expect 0 on a paged crawl even when the
+  phone was locked: backgrounding interrupts that cycle within a second, before the process is suspended. It can
+  only be non-zero for work that keeps its cycle alive through a suspension, such as the snapshot import.
 
 ### Backend reachability (#4862)
 
