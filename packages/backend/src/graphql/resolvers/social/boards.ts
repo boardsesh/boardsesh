@@ -2113,10 +2113,11 @@ export const socialBoardMutations = {
               slug: gymSlug,
               ownerId: userId,
               name: gymName,
-              // A gym is listed with its coordinates, so it is public only when
-              // the board's exact location is: a minted gym must never publish
-              // the address of a board whose location is hidden.
-              isPublic: boardValues.isPublic && !boardValues.hideLocation,
+              // A gym is listed with its coordinates and name, so it is public
+              // only when the board is listed publicly AND its exact location is
+              // shown. A hidden location or an unlisted (link-only) board must
+              // never publish its address through a minted gym.
+              isPublic: audience === 'public' && locationAudience === 'public',
               latitude: incomingLocation.latitude,
               longitude: incomingLocation.longitude,
             })

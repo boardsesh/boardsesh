@@ -103,7 +103,7 @@ const createBoard = (input: Record<string, unknown>, ctx: ConnectionContext) =>
     null,
     { input: { boardType: 'kilter', layoutId: 1, sizeId: 900, setIds: '1,2', ...input } },
     ctx,
-  ) as Promise<{ gymId: number | null; gymUuid: string | null }>;
+  ) as Promise<{ uuid: string; gymId: number | null; gymUuid: string | null }>;
 
 let cleanupAutoGymCatalogFixture: () => Promise<void> = async () => {};
 
@@ -647,5 +647,42 @@ describe('createBoard auto-gym — per-location minting', () => {
     );
     expect(second.gymId).toBe(board.gymId);
     expect(await countGyms()).toBe(before + 1);
+  });
+});
+
+describe('createBoard auto-gym — minted gym visibility', () => {
+  // A gym is listed with its name and coordinates, so a minted gym may only be
+  // public when the board is listed publicly with its exact location shown.
+  const mintedGymIsPublic = async (boardUuid: string): Promise<boolean | null> => {
+    const result = await db.execute(sql`
+      SELECT g.is_public AS "isPublic"
+        FROM user_boards b
+        JOIN gyms g ON g.id = b.gym_id
+       WHERE b.uuid = ${boardUuid}
+    `);
+    const rows = Array.from(result as Iterable<{ isPublic: boolean }>);
+    return rows[0]?.isPublic ?? null;
+  };
+  const place = { locationName: 'Garage wall', latitude: BASE.latitude, longitude: BASE.longitude };
+
+  it('keeps the gym private when the create sends no visibility (location hidden by default)', async () => {
+    const board = await createBoard({ name: 'Default board', ...place }, authCtx(QUERIER));
+    expect(await mintedGymIsPublic(board.uuid)).toBe(false);
+  });
+
+  it('makes the gym public for a public board with its location shown', async () => {
+    const board = await createBoard(
+      { name: 'Shown board', isPublic: true, hideLocation: false, ...place },
+      authCtx(QUERIER),
+    );
+    expect(await mintedGymIsPublic(board.uuid)).toBe(true);
+  });
+
+  it('keeps the gym private for an unlisted board, even with its location shown', async () => {
+    const board = await createBoard(
+      { name: 'Link-only board', isPublic: true, isUnlisted: true, hideLocation: false, ...place },
+      authCtx(QUERIER),
+    );
+    expect(await mintedGymIsPublic(board.uuid)).toBe(false);
   });
 });

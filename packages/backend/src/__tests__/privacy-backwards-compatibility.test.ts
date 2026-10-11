@@ -262,6 +262,13 @@ describe('installed-client privacy contracts', () => {
     );
     const [stored] = await db.select().from(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
     expect(stored).toMatchObject({ isPublic: false, isUnlisted: false, hideLocation: true });
+    // Legacy booleans only: no policy row, so the old Public switch still works.
+    expect(
+      await db
+        .select()
+        .from(schema.resourcePrivacy)
+        .where(and(eq(schema.resourcePrivacy.kind, 'board'), eq(schema.resourcePrivacy.resourceId, board.uuid))),
+    ).toEqual([]);
   });
 
   it('stores a followers location as invited people, on create and on update', async () => {

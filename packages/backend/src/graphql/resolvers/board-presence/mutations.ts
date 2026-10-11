@@ -268,6 +268,10 @@ async function bindOrCreateOwnBoardForSerial(
         setIds: normaliseSetIds(config.setIds),
         name,
         serialNumber: serial,
+        // Same defaults as createBoard: public, exact location hidden until the
+        // owner shares it. The column default for hide_location is false.
+        isPublic: true,
+        hideLocation: true,
       })
       .returning();
     return created;

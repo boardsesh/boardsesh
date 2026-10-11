@@ -429,6 +429,12 @@ describe('board-presence resolvers', () => {
       expect(first.boardId).toBeGreaterThan(0);
       expect(first.boardType).toBe('kilter');
       expect(first.setIds).toBe('1,2');
+      // Same defaults as createBoard: public with the exact location hidden.
+      const [createdRow] = await db
+        .select({ isPublic: dbSchema.userBoards.isPublic, hideLocation: dbSchema.userBoards.hideLocation })
+        .from(dbSchema.userBoards)
+        .where(eq(dbSchema.userBoards.id, first.boardId));
+      expect(createdRow).toEqual({ isPublic: true, hideLocation: true });
 
       // Second call (same serial) returns the already-bound shared board.
       const second = await boardPresenceMutations.resolveBoardForSerial(
