@@ -18,14 +18,27 @@ void describe('publicReferenceClimbSql', () => {
   void it('selects climbs with no owner, no author flag and no policy row', () => {
     assert.equal(
       publicReferenceClimbSql('bc'),
-      "bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND NOT EXISTS (SELECT 1 FROM content_privacy reference_climb_privacy WHERE reference_climb_privacy.entity_type = 'climb' AND reference_climb_privacy.entity_id = bc.uuid)",
+      "(bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND NOT EXISTS (SELECT 1 FROM content_privacy reference_climb_privacy WHERE reference_climb_privacy.entity_type = 'climb' AND reference_climb_privacy.entity_id = bc.uuid))",
     );
   });
 
   void it('qualifies every column with the alias it is given', () => {
     const predicate = publicReferenceClimbSql('board_climbs');
-    assert.match(predicate, /^board_climbs\.user_id IS NULL AND NOT board_climbs\.is_boardsesh_authored /);
-    assert.match(predicate, /reference_climb_privacy\.entity_id = board_climbs\.uuid\)$/);
+    assert.match(predicate, /^\(board_climbs\.user_id IS NULL AND NOT board_climbs\.is_boardsesh_authored /);
+    assert.match(predicate, /reference_climb_privacy\.entity_id = board_climbs\.uuid\)\)$/);
+  });
+
+  void it('is one parenthesized expression, so NOT and AND apply to all of it', () => {
+    // `NOT a AND b AND c` negates only `a`. The PROTECTED stream writes
+    // `NOT <this>`, so the outer parentheses are what make the two streams disjoint.
+    const predicate = publicReferenceClimbSql('bc');
+    let depth = 0;
+    for (let position = 0; position < predicate.length; position += 1) {
+      if (predicate[position] === '(') depth += 1;
+      if (predicate[position] === ')') depth -= 1;
+      // The opening parenthesis closes on the last character and not before.
+      assert.equal(depth === 0, position === predicate.length - 1);
+    }
   });
 });
 

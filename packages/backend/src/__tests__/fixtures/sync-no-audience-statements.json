@@ -1,0 +1,3645 @@
+{
+  "capturedFrom": "origin/main 044146ce6e",
+  "statements": [
+    "\n    SELECT uuid, board_type, layout_id, setter_id, setter_username, name, description,\n        hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,\n        is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,\n        characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,\n        updated_at, sync_seq, updated_at AS __updated_at, sync_seq AS __seq\n    FROM board_climbs\n    WHERE (board_type = $1) AND COALESCE(((board_climbs.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $2::text AND orphan_privacy.entity_id = board_climbs.uuid)) OR $3 = board_climbs.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $4::text\n      AND privacy_content.entity_id = board_climbs.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = board_climbs.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $5 AND privacy_follow.following_id = board_climbs.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $6 AND privacy_follow.following_id = board_climbs.user_id) END\n  )), false)\n      AND (updated_at, sync_seq) > ($7::timestamp, $8::bigint)\n      AND updated_at < now() - make_interval(secs => $9)\n    ORDER BY updated_at ASC, sync_seq ASC\n    LIMIT $10\n  ",
+    "\n    SELECT uuid, board_type, layout_id, setter_id, setter_username, name, description,\n        hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,\n        is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,\n        characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,\n        updated_at, sync_seq, updated_at AS __updated_at, sync_seq AS __seq\n    FROM board_climbs\n    WHERE (board_type = $1 AND layout_id = $2) AND COALESCE(((board_climbs.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $3::text AND orphan_privacy.entity_id = board_climbs.uuid)) OR $4 = board_climbs.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $5::text\n      AND privacy_content.entity_id = board_climbs.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = board_climbs.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $6 AND privacy_follow.following_id = board_climbs.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $7 AND privacy_follow.following_id = board_climbs.user_id) END\n  )), false)\n      AND (updated_at, sync_seq) > ($8::timestamp, $9::bigint)\n      AND updated_at < now() - make_interval(secs => $10)\n    ORDER BY updated_at ASC, sync_seq ASC\n    LIMIT $11\n  ",
+    "\n    SELECT uuid, board_type, layout_id, setter_id, setter_username, name, description,\n        hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,\n        is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,\n        characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,\n        updated_at, sync_seq, updated_at AS __updated_at, sync_seq AS __seq\n    FROM board_climbs\n    WHERE (board_type = $1 AND layout_id = $2 AND compatible_size_ids @> ARRAY[$3]::int[]) AND COALESCE(((board_climbs.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $4::text AND orphan_privacy.entity_id = board_climbs.uuid)) OR $5 = board_climbs.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $6::text\n      AND privacy_content.entity_id = board_climbs.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = board_climbs.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $7 AND privacy_follow.following_id = board_climbs.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $8 AND privacy_follow.following_id = board_climbs.user_id) END\n  )), false)\n      AND (updated_at, sync_seq) > ($9::timestamp, $10::bigint)\n      AND updated_at < now() - make_interval(secs => $11)\n    ORDER BY updated_at ASC, sync_seq ASC\n    LIMIT $12\n  ",
+    "SET LOCAL max_parallel_workers_per_gather = 0",
+    "\n    SELECT board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,\n        ascensionist_count, difficulty_average, quality_average, CASE WHEN EXISTS (\n    SELECT 1 FROM board_climbs privacy_fa_owned WHERE privacy_fa_owned.board_type = board_climb_stats.board_type\n      AND privacy_fa_owned.uuid = board_climb_stats.climb_uuid\n      AND (privacy_fa_owned.user_id IS NOT NULL OR privacy_fa_owned.is_boardsesh_authored)\n  ) THEN (\n    SELECT CASE WHEN (COALESCE(((privacy_fa_tick.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $1::text AND orphan_privacy.entity_id = privacy_fa_tick.uuid)) OR $2 = privacy_fa_tick.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $3::text\n      AND privacy_content.entity_id = privacy_fa_tick.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = privacy_fa_tick.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $4 AND privacy_follow.following_id = privacy_fa_tick.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $5 AND privacy_follow.following_id = privacy_fa_tick.user_id) END\n  )), false)\n    AND (privacy_fa_tick.user_id = $6 OR (\n      (privacy_fa_tick.session_id IS NULL OR (EXISTS (SELECT 1 FROM (SELECT privacy_session.id AS id, privacy_session.created_by_user_id AS owner_id,\n      CASE WHEN privacy_session.is_public THEN 'public' ELSE 'invite_only' END AS audience FROM board_sessions privacy_session) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $7 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $8 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $9\n    WHERE privacy_resource.id = privacy_fa_tick.session_id AND (\n      privacy_resource.owner_id = $10 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) IN ('public', 'unlisted') OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR (privacy_override.resource_id IS NULL AND EXISTS (SELECT 1 FROM board_session_participants legacy_participant WHERE legacy_participant.session_id = privacy_resource.id AND legacy_participant.user_id = $11)) OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $12 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    )) AND NOT EXISTS (\n    SELECT 1 FROM (\n      SELECT privacy_parent_session.board_id FROM board_sessions privacy_parent_session\n      WHERE privacy_parent_session.id = privacy_fa_tick.session_id AND privacy_parent_session.board_id IS NOT NULL\n      UNION SELECT privacy_parent_membership.board_id FROM session_boards privacy_parent_membership\n      WHERE privacy_parent_membership.session_id = privacy_fa_tick.session_id\n      UNION SELECT privacy_named_board.id FROM (SELECT privacy_path_source.id,\n    regexp_replace(regexp_replace(trim(both '/' from privacy_path_source.board_path), '/+', '/', 'g'), '^[a-z]{2}/', '') AS path\n    FROM board_sessions privacy_path_source) privacy_named_session\n      LEFT JOIN user_boards privacy_named_board ON privacy_named_board.slug = split_part(privacy_named_session.path, '/', 2)\n        AND privacy_named_board.deleted_at IS NULL\n      WHERE privacy_named_session.id = privacy_fa_tick.session_id AND split_part(privacy_named_session.path, '/', 1) = 'b'\n      UNION SELECT privacy_spray_board.id FROM (SELECT privacy_path_source.id,\n    regexp_replace(regexp_replace(trim(both '/' from privacy_path_source.board_path), '/+', '/', 'g'), '^[a-z]{2}/', '') AS path\n    FROM board_sessions privacy_path_source) privacy_spray_session\n      LEFT JOIN spray_walls privacy_spray_wall ON privacy_spray_wall.layout_id = CASE\n        WHEN split_part(privacy_spray_session.path, '/', 2) ~ '^[0-9]{1,18}$'\n        THEN split_part(privacy_spray_session.path, '/', 2)::bigint ELSE NULL END\n        AND privacy_spray_wall.deleted_at IS NULL\n      LEFT JOIN user_boards privacy_spray_board ON privacy_spray_board.uuid = privacy_spray_wall.board_uuid\n        AND privacy_spray_board.deleted_at IS NULL\n        AND (privacy_spray_wall.hidden_at IS NULL OR privacy_spray_board.owner_id = $13)\n      WHERE privacy_spray_session.id = privacy_fa_tick.session_id AND split_part(privacy_spray_session.path, '/', 1) = 'spray'\n    ) privacy_parent_refs\n    LEFT JOIN user_boards privacy_parent_board ON privacy_parent_board.id = privacy_parent_refs.board_id\n    WHERE privacy_parent_board.id IS NULL OR NOT EXISTS (SELECT 1 FROM (SELECT privacy_board.uuid AS id, privacy_board.owner_id AS owner_id,\n      CASE WHEN privacy_board.owner_id = '00000000-0000-0000-0000-000000000000' THEN 'public' WHEN privacy_board.is_unlisted THEN 'unlisted' WHEN privacy_board.is_public THEN 'public' ELSE 'only_me' END AS audience\n      FROM user_boards privacy_board WHERE privacy_board.deleted_at IS NULL) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $14 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $15 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $16\n    WHERE privacy_resource.id = privacy_parent_board.uuid AND (\n      privacy_resource.owner_id = $17 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) = 'public' OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR false OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $18 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    ))\n  )))\n      AND (privacy_fa_tick.board_id IS NULL OR EXISTS (SELECT 1 FROM (SELECT privacy_board.uuid AS id, privacy_board.owner_id AS owner_id,\n      CASE WHEN privacy_board.owner_id = '00000000-0000-0000-0000-000000000000' THEN 'public' WHEN privacy_board.is_unlisted THEN 'unlisted' WHEN privacy_board.is_public THEN 'public' ELSE 'only_me' END AS audience\n      FROM user_boards privacy_board WHERE privacy_board.deleted_at IS NULL) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $19 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $20 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $21\n    WHERE privacy_resource.id = (SELECT uuid FROM user_boards privacy_fa_board WHERE privacy_fa_board.id = privacy_fa_tick.board_id) AND (\n      privacy_resource.owner_id = $22 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) IN ('public', 'unlisted') OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR false OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $23 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    )))\n    ))) THEN COALESCE(privacy_fa_profile.display_name, privacy_fa_user.name) ELSE NULL END\n    FROM boardsesh_ticks privacy_fa_tick\n    JOIN board_climbs privacy_fa_climb ON privacy_fa_climb.board_type = privacy_fa_tick.board_type AND privacy_fa_climb.uuid = privacy_fa_tick.climb_uuid\n    JOIN users privacy_fa_user ON privacy_fa_user.id = privacy_fa_tick.user_id\n    LEFT JOIN user_profiles privacy_fa_profile ON privacy_fa_profile.user_id = privacy_fa_tick.user_id\n    WHERE privacy_fa_tick.board_type = board_climb_stats.board_type AND privacy_fa_tick.climb_uuid = board_climb_stats.climb_uuid\n      AND privacy_fa_tick.angle = board_climb_stats.angle AND privacy_fa_tick.status IN ('flash', 'send')\n      AND privacy_fa_tick.kilter_detached_at IS NULL\n      AND COALESCE(privacy_fa_tick.climb_revision, 1) >= COALESCE(privacy_fa_climb.holds_revision_number, 1)\n    ORDER BY privacy_fa_tick.climbed_at ASC, privacy_fa_tick.id ASC LIMIT 1\n  ) ELSE board_climb_stats.fa_username END AS fa_username, fa_at, updated_at, sync_seq, board_climb_stats.updated_at AS __updated_at, board_climb_stats.sync_seq AS __seq\n    FROM board_climb_stats\n    WHERE board_type = $24 AND EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $25 AND COALESCE(((bc.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $26::text AND orphan_privacy.entity_id = bc.uuid)) OR $27 = bc.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $28::text\n      AND privacy_content.entity_id = bc.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = bc.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $29 AND privacy_follow.following_id = bc.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $30 AND privacy_follow.following_id = bc.user_id) END\n  )), false))\n      AND (board_climb_stats.updated_at, board_climb_stats.sync_seq) > ($31::timestamp, $32::bigint)\n      AND board_climb_stats.updated_at < now() - make_interval(secs => $33)\n    ORDER BY board_climb_stats.updated_at ASC, board_climb_stats.sync_seq ASC\n    LIMIT $34\n  ",
+    "\n    SELECT board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,\n        ascensionist_count, difficulty_average, quality_average, CASE WHEN EXISTS (\n    SELECT 1 FROM board_climbs privacy_fa_owned WHERE privacy_fa_owned.board_type = board_climb_stats.board_type\n      AND privacy_fa_owned.uuid = board_climb_stats.climb_uuid\n      AND (privacy_fa_owned.user_id IS NOT NULL OR privacy_fa_owned.is_boardsesh_authored)\n  ) THEN (\n    SELECT CASE WHEN (COALESCE(((privacy_fa_tick.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $1::text AND orphan_privacy.entity_id = privacy_fa_tick.uuid)) OR $2 = privacy_fa_tick.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $3::text\n      AND privacy_content.entity_id = privacy_fa_tick.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = privacy_fa_tick.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $4 AND privacy_follow.following_id = privacy_fa_tick.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $5 AND privacy_follow.following_id = privacy_fa_tick.user_id) END\n  )), false)\n    AND (privacy_fa_tick.user_id = $6 OR (\n      (privacy_fa_tick.session_id IS NULL OR (EXISTS (SELECT 1 FROM (SELECT privacy_session.id AS id, privacy_session.created_by_user_id AS owner_id,\n      CASE WHEN privacy_session.is_public THEN 'public' ELSE 'invite_only' END AS audience FROM board_sessions privacy_session) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $7 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $8 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $9\n    WHERE privacy_resource.id = privacy_fa_tick.session_id AND (\n      privacy_resource.owner_id = $10 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) IN ('public', 'unlisted') OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR (privacy_override.resource_id IS NULL AND EXISTS (SELECT 1 FROM board_session_participants legacy_participant WHERE legacy_participant.session_id = privacy_resource.id AND legacy_participant.user_id = $11)) OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $12 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    )) AND NOT EXISTS (\n    SELECT 1 FROM (\n      SELECT privacy_parent_session.board_id FROM board_sessions privacy_parent_session\n      WHERE privacy_parent_session.id = privacy_fa_tick.session_id AND privacy_parent_session.board_id IS NOT NULL\n      UNION SELECT privacy_parent_membership.board_id FROM session_boards privacy_parent_membership\n      WHERE privacy_parent_membership.session_id = privacy_fa_tick.session_id\n      UNION SELECT privacy_named_board.id FROM (SELECT privacy_path_source.id,\n    regexp_replace(regexp_replace(trim(both '/' from privacy_path_source.board_path), '/+', '/', 'g'), '^[a-z]{2}/', '') AS path\n    FROM board_sessions privacy_path_source) privacy_named_session\n      LEFT JOIN user_boards privacy_named_board ON privacy_named_board.slug = split_part(privacy_named_session.path, '/', 2)\n        AND privacy_named_board.deleted_at IS NULL\n      WHERE privacy_named_session.id = privacy_fa_tick.session_id AND split_part(privacy_named_session.path, '/', 1) = 'b'\n      UNION SELECT privacy_spray_board.id FROM (SELECT privacy_path_source.id,\n    regexp_replace(regexp_replace(trim(both '/' from privacy_path_source.board_path), '/+', '/', 'g'), '^[a-z]{2}/', '') AS path\n    FROM board_sessions privacy_path_source) privacy_spray_session\n      LEFT JOIN spray_walls privacy_spray_wall ON privacy_spray_wall.layout_id = CASE\n        WHEN split_part(privacy_spray_session.path, '/', 2) ~ '^[0-9]{1,18}$'\n        THEN split_part(privacy_spray_session.path, '/', 2)::bigint ELSE NULL END\n        AND privacy_spray_wall.deleted_at IS NULL\n      LEFT JOIN user_boards privacy_spray_board ON privacy_spray_board.uuid = privacy_spray_wall.board_uuid\n        AND privacy_spray_board.deleted_at IS NULL\n        AND (privacy_spray_wall.hidden_at IS NULL OR privacy_spray_board.owner_id = $13)\n      WHERE privacy_spray_session.id = privacy_fa_tick.session_id AND split_part(privacy_spray_session.path, '/', 1) = 'spray'\n    ) privacy_parent_refs\n    LEFT JOIN user_boards privacy_parent_board ON privacy_parent_board.id = privacy_parent_refs.board_id\n    WHERE privacy_parent_board.id IS NULL OR NOT EXISTS (SELECT 1 FROM (SELECT privacy_board.uuid AS id, privacy_board.owner_id AS owner_id,\n      CASE WHEN privacy_board.owner_id = '00000000-0000-0000-0000-000000000000' THEN 'public' WHEN privacy_board.is_unlisted THEN 'unlisted' WHEN privacy_board.is_public THEN 'public' ELSE 'only_me' END AS audience\n      FROM user_boards privacy_board WHERE privacy_board.deleted_at IS NULL) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $14 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $15 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $16\n    WHERE privacy_resource.id = privacy_parent_board.uuid AND (\n      privacy_resource.owner_id = $17 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) = 'public' OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR false OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $18 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    ))\n  )))\n      AND (privacy_fa_tick.board_id IS NULL OR EXISTS (SELECT 1 FROM (SELECT privacy_board.uuid AS id, privacy_board.owner_id AS owner_id,\n      CASE WHEN privacy_board.owner_id = '00000000-0000-0000-0000-000000000000' THEN 'public' WHEN privacy_board.is_unlisted THEN 'unlisted' WHEN privacy_board.is_public THEN 'public' ELSE 'only_me' END AS audience\n      FROM user_boards privacy_board WHERE privacy_board.deleted_at IS NULL) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $19 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $20 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $21\n    WHERE privacy_resource.id = (SELECT uuid FROM user_boards privacy_fa_board WHERE privacy_fa_board.id = privacy_fa_tick.board_id) AND (\n      privacy_resource.owner_id = $22 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) IN ('public', 'unlisted') OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR false OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $23 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    )))\n    ))) THEN COALESCE(privacy_fa_profile.display_name, privacy_fa_user.name) ELSE NULL END\n    FROM boardsesh_ticks privacy_fa_tick\n    JOIN board_climbs privacy_fa_climb ON privacy_fa_climb.board_type = privacy_fa_tick.board_type AND privacy_fa_climb.uuid = privacy_fa_tick.climb_uuid\n    JOIN users privacy_fa_user ON privacy_fa_user.id = privacy_fa_tick.user_id\n    LEFT JOIN user_profiles privacy_fa_profile ON privacy_fa_profile.user_id = privacy_fa_tick.user_id\n    WHERE privacy_fa_tick.board_type = board_climb_stats.board_type AND privacy_fa_tick.climb_uuid = board_climb_stats.climb_uuid\n      AND privacy_fa_tick.angle = board_climb_stats.angle AND privacy_fa_tick.status IN ('flash', 'send')\n      AND privacy_fa_tick.kilter_detached_at IS NULL\n      AND COALESCE(privacy_fa_tick.climb_revision, 1) >= COALESCE(privacy_fa_climb.holds_revision_number, 1)\n    ORDER BY privacy_fa_tick.climbed_at ASC, privacy_fa_tick.id ASC LIMIT 1\n  ) ELSE board_climb_stats.fa_username END AS fa_username, fa_at, updated_at, sync_seq, board_climb_stats.updated_at AS __updated_at, board_climb_stats.sync_seq AS __seq\n    FROM board_climb_stats\n    WHERE board_type = $24 AND EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $25 AND bc.layout_id = $26 AND COALESCE(((bc.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $27::text AND orphan_privacy.entity_id = bc.uuid)) OR $28 = bc.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $29::text\n      AND privacy_content.entity_id = bc.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = bc.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $30 AND privacy_follow.following_id = bc.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $31 AND privacy_follow.following_id = bc.user_id) END\n  )), false))\n      AND (board_climb_stats.updated_at, board_climb_stats.sync_seq) > ($32::timestamp, $33::bigint)\n      AND board_climb_stats.updated_at < now() - make_interval(secs => $34)\n    ORDER BY board_climb_stats.updated_at ASC, board_climb_stats.sync_seq ASC\n    LIMIT $35\n  ",
+    "\n    SELECT board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,\n        ascensionist_count, difficulty_average, quality_average, CASE WHEN EXISTS (\n    SELECT 1 FROM board_climbs privacy_fa_owned WHERE privacy_fa_owned.board_type = board_climb_stats.board_type\n      AND privacy_fa_owned.uuid = board_climb_stats.climb_uuid\n      AND (privacy_fa_owned.user_id IS NOT NULL OR privacy_fa_owned.is_boardsesh_authored)\n  ) THEN (\n    SELECT CASE WHEN (COALESCE(((privacy_fa_tick.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $1::text AND orphan_privacy.entity_id = privacy_fa_tick.uuid)) OR $2 = privacy_fa_tick.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $3::text\n      AND privacy_content.entity_id = privacy_fa_tick.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = privacy_fa_tick.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $4 AND privacy_follow.following_id = privacy_fa_tick.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $5 AND privacy_follow.following_id = privacy_fa_tick.user_id) END\n  )), false)\n    AND (privacy_fa_tick.user_id = $6 OR (\n      (privacy_fa_tick.session_id IS NULL OR (EXISTS (SELECT 1 FROM (SELECT privacy_session.id AS id, privacy_session.created_by_user_id AS owner_id,\n      CASE WHEN privacy_session.is_public THEN 'public' ELSE 'invite_only' END AS audience FROM board_sessions privacy_session) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $7 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $8 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $9\n    WHERE privacy_resource.id = privacy_fa_tick.session_id AND (\n      privacy_resource.owner_id = $10 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) IN ('public', 'unlisted') OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR (privacy_override.resource_id IS NULL AND EXISTS (SELECT 1 FROM board_session_participants legacy_participant WHERE legacy_participant.session_id = privacy_resource.id AND legacy_participant.user_id = $11)) OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $12 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    )) AND NOT EXISTS (\n    SELECT 1 FROM (\n      SELECT privacy_parent_session.board_id FROM board_sessions privacy_parent_session\n      WHERE privacy_parent_session.id = privacy_fa_tick.session_id AND privacy_parent_session.board_id IS NOT NULL\n      UNION SELECT privacy_parent_membership.board_id FROM session_boards privacy_parent_membership\n      WHERE privacy_parent_membership.session_id = privacy_fa_tick.session_id\n      UNION SELECT privacy_named_board.id FROM (SELECT privacy_path_source.id,\n    regexp_replace(regexp_replace(trim(both '/' from privacy_path_source.board_path), '/+', '/', 'g'), '^[a-z]{2}/', '') AS path\n    FROM board_sessions privacy_path_source) privacy_named_session\n      LEFT JOIN user_boards privacy_named_board ON privacy_named_board.slug = split_part(privacy_named_session.path, '/', 2)\n        AND privacy_named_board.deleted_at IS NULL\n      WHERE privacy_named_session.id = privacy_fa_tick.session_id AND split_part(privacy_named_session.path, '/', 1) = 'b'\n      UNION SELECT privacy_spray_board.id FROM (SELECT privacy_path_source.id,\n    regexp_replace(regexp_replace(trim(both '/' from privacy_path_source.board_path), '/+', '/', 'g'), '^[a-z]{2}/', '') AS path\n    FROM board_sessions privacy_path_source) privacy_spray_session\n      LEFT JOIN spray_walls privacy_spray_wall ON privacy_spray_wall.layout_id = CASE\n        WHEN split_part(privacy_spray_session.path, '/', 2) ~ '^[0-9]{1,18}$'\n        THEN split_part(privacy_spray_session.path, '/', 2)::bigint ELSE NULL END\n        AND privacy_spray_wall.deleted_at IS NULL\n      LEFT JOIN user_boards privacy_spray_board ON privacy_spray_board.uuid = privacy_spray_wall.board_uuid\n        AND privacy_spray_board.deleted_at IS NULL\n        AND (privacy_spray_wall.hidden_at IS NULL OR privacy_spray_board.owner_id = $13)\n      WHERE privacy_spray_session.id = privacy_fa_tick.session_id AND split_part(privacy_spray_session.path, '/', 1) = 'spray'\n    ) privacy_parent_refs\n    LEFT JOIN user_boards privacy_parent_board ON privacy_parent_board.id = privacy_parent_refs.board_id\n    WHERE privacy_parent_board.id IS NULL OR NOT EXISTS (SELECT 1 FROM (SELECT privacy_board.uuid AS id, privacy_board.owner_id AS owner_id,\n      CASE WHEN privacy_board.owner_id = '00000000-0000-0000-0000-000000000000' THEN 'public' WHEN privacy_board.is_unlisted THEN 'unlisted' WHEN privacy_board.is_public THEN 'public' ELSE 'only_me' END AS audience\n      FROM user_boards privacy_board WHERE privacy_board.deleted_at IS NULL) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $14 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $15 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $16\n    WHERE privacy_resource.id = privacy_parent_board.uuid AND (\n      privacy_resource.owner_id = $17 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) = 'public' OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR false OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $18 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    ))\n  )))\n      AND (privacy_fa_tick.board_id IS NULL OR EXISTS (SELECT 1 FROM (SELECT privacy_board.uuid AS id, privacy_board.owner_id AS owner_id,\n      CASE WHEN privacy_board.owner_id = '00000000-0000-0000-0000-000000000000' THEN 'public' WHEN privacy_board.is_unlisted THEN 'unlisted' WHEN privacy_board.is_public THEN 'public' ELSE 'only_me' END AS audience\n      FROM user_boards privacy_board WHERE privacy_board.deleted_at IS NULL) privacy_resource\n    LEFT JOIN resource_privacy privacy_override ON privacy_override.kind = $19 AND privacy_override.resource_id = privacy_resource.id\n    LEFT JOIN resource_grants privacy_grant ON privacy_grant.kind = $20 AND privacy_grant.resource_id = privacy_resource.id AND privacy_grant.user_id = $21\n    WHERE privacy_resource.id = (SELECT uuid FROM user_boards privacy_fa_board WHERE privacy_fa_board.id = privacy_fa_tick.board_id) AND (\n      privacy_resource.owner_id = $22 OR (\n        COALESCE(privacy_grant.status, 'pending') <> 'revoked' AND (\n          COALESCE(privacy_override.audience, privacy_resource.audience) IN ('public', 'unlisted') OR (\n            COALESCE(privacy_override.audience, privacy_resource.audience) <> 'only_me' AND (\n              privacy_grant.status = 'approved' OR false OR (\n                (COALESCE(privacy_override.audience, privacy_resource.audience) = 'followers' OR COALESCE(privacy_override.inherit_followers, false))\n                AND EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $23 AND privacy_follow.following_id = privacy_resource.owner_id)\n              )\n            )\n          )\n        )\n      )\n    )))\n    ))) THEN COALESCE(privacy_fa_profile.display_name, privacy_fa_user.name) ELSE NULL END\n    FROM boardsesh_ticks privacy_fa_tick\n    JOIN board_climbs privacy_fa_climb ON privacy_fa_climb.board_type = privacy_fa_tick.board_type AND privacy_fa_climb.uuid = privacy_fa_tick.climb_uuid\n    JOIN users privacy_fa_user ON privacy_fa_user.id = privacy_fa_tick.user_id\n    LEFT JOIN user_profiles privacy_fa_profile ON privacy_fa_profile.user_id = privacy_fa_tick.user_id\n    WHERE privacy_fa_tick.board_type = board_climb_stats.board_type AND privacy_fa_tick.climb_uuid = board_climb_stats.climb_uuid\n      AND privacy_fa_tick.angle = board_climb_stats.angle AND privacy_fa_tick.status IN ('flash', 'send')\n      AND privacy_fa_tick.kilter_detached_at IS NULL\n      AND COALESCE(privacy_fa_tick.climb_revision, 1) >= COALESCE(privacy_fa_climb.holds_revision_number, 1)\n    ORDER BY privacy_fa_tick.climbed_at ASC, privacy_fa_tick.id ASC LIMIT 1\n  ) ELSE board_climb_stats.fa_username END AS fa_username, fa_at, updated_at, sync_seq, board_climb_stats.updated_at AS __updated_at, board_climb_stats.sync_seq AS __seq\n    FROM board_climb_stats\n    WHERE board_type = $24 AND EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $25 AND bc.layout_id = $26 AND bc.compatible_size_ids @> ARRAY[$27]::int[] AND COALESCE(((bc.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $28::text AND orphan_privacy.entity_id = bc.uuid)) OR $29 = bc.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $30::text\n      AND privacy_content.entity_id = bc.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = bc.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $31 AND privacy_follow.following_id = bc.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $32 AND privacy_follow.following_id = bc.user_id) END\n  )), false))\n      AND (board_climb_stats.updated_at, board_climb_stats.sync_seq) > ($33::timestamp, $34::bigint)\n      AND board_climb_stats.updated_at < now() - make_interval(secs => $35)\n    ORDER BY board_climb_stats.updated_at ASC, board_climb_stats.sync_seq ASC\n    LIMIT $36\n  ",
+    "\n    SELECT board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,\n        confidence, ascensionist_count, computed_at, sync_seq, board_climb_grades.computed_at AS __updated_at, board_climb_grades.sync_seq AS __seq\n    FROM board_climb_grades\n    WHERE board_type = $1 AND EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $2 AND COALESCE(((bc.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $3::text AND orphan_privacy.entity_id = bc.uuid)) OR $4 = bc.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $5::text\n      AND privacy_content.entity_id = bc.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = bc.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $6 AND privacy_follow.following_id = bc.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $7 AND privacy_follow.following_id = bc.user_id) END\n  )), false))\n      AND (board_climb_grades.computed_at, board_climb_grades.sync_seq) > ($8::timestamp, $9::bigint)\n      AND board_climb_grades.computed_at < now() - make_interval(secs => $10)\n    ORDER BY board_climb_grades.computed_at ASC, board_climb_grades.sync_seq ASC\n    LIMIT $11\n  ",
+    "\n    SELECT board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,\n        confidence, ascensionist_count, computed_at, sync_seq, board_climb_grades.computed_at AS __updated_at, board_climb_grades.sync_seq AS __seq\n    FROM board_climb_grades\n    WHERE board_type = $1 AND EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $2 AND bc.layout_id = $3 AND COALESCE(((bc.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $4::text AND orphan_privacy.entity_id = bc.uuid)) OR $5 = bc.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $6::text\n      AND privacy_content.entity_id = bc.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = bc.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $7 AND privacy_follow.following_id = bc.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $8 AND privacy_follow.following_id = bc.user_id) END\n  )), false))\n      AND (board_climb_grades.computed_at, board_climb_grades.sync_seq) > ($9::timestamp, $10::bigint)\n      AND board_climb_grades.computed_at < now() - make_interval(secs => $11)\n    ORDER BY board_climb_grades.computed_at ASC, board_climb_grades.sync_seq ASC\n    LIMIT $12\n  ",
+    "\n    SELECT board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,\n        confidence, ascensionist_count, computed_at, sync_seq, board_climb_grades.computed_at AS __updated_at, board_climb_grades.sync_seq AS __seq\n    FROM board_climb_grades\n    WHERE board_type = $1 AND EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $2 AND bc.layout_id = $3 AND bc.compatible_size_ids @> ARRAY[$4]::int[] AND COALESCE(((bc.user_id IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = $5::text AND orphan_privacy.entity_id = bc.uuid)) OR $6 = bc.user_id OR EXISTS (\n    SELECT 1 FROM users privacy_owner\n    LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id\n    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = $7::text\n      AND privacy_content.entity_id = bc.uuid AND privacy_content.owner_id = privacy_owner.id\n    WHERE privacy_owner.id = bc.user_id AND CASE\n      WHEN privacy_content.audience = 'only_me' THEN false\n      WHEN privacy_content.audience = 'followers' THEN EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $8 AND privacy_follow.following_id = bc.user_id)\n      WHEN NOT COALESCE(privacy_profile.is_private, false) THEN true\n      WHEN privacy_content.audience = 'public' AND privacy_content.public_consent_revision = privacy_profile.privacy_revision THEN true\n      ELSE EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = $9 AND privacy_follow.following_id = bc.user_id) END\n  )), false))\n      AND (board_climb_grades.computed_at, board_climb_grades.sync_seq) > ($10::timestamp, $11::bigint)\n      AND board_climb_grades.computed_at < now() - make_interval(secs => $12)\n    ORDER BY board_climb_grades.computed_at ASC, board_climb_grades.sync_seq ASC\n    LIMIT $13\n  "
+  ],
+  "cases": [
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter" },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 0,
+          "params": ["kilter", "climb", "user-1", "climb", "user-1", "user-1", "1970-01-01T00:00:00.000Z", "0", 0, 1]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter" },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 0,
+          "params": ["kilter", "climb", "user-1", "climb", "user-1", "user-1", "1970-01-01T00:00:00.000Z", "0", 0, 500]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 0,
+          "params": [
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 0,
+          "params": [
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 0,
+          "params": ["kilter", "climb", "user-1", "climb", "user-1", "user-1", "2026-05-01 00:00:00.25", "7", 0, 1]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 0,
+          "params": ["kilter", "climb", "user-1", "climb", "user-1", "user-1", "2026-05-01 00:00:00.25", "7", 0, 500]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": ["kilter", 1, "climb", "user-1", "climb", "user-1", "user-1", "1970-01-01T00:00:00.000Z", "0", 0, 1]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": ["kilter", 1, "climb", "user-1", "climb", "user-1", "user-1", "2026-05-01 00:00:00.25", "7", 0, 1]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": ["kilter", 1, "climb", "user-1", "climb", "user-1", "user-1", "2026-05-01 00:00:00.25", "7", 0, 500]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 1,
+          "params": [
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbs",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        {
+          "handle": "database",
+          "statement": 2,
+          "params": [
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter" },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 4,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter" },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 4,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 4,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 4,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 4,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 4,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 5,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbStats",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 6,
+          "params": [
+            "tick",
+            "user-1",
+            "tick",
+            "user-1",
+            "user-1",
+            "user-1",
+            "session",
+            "session",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "board",
+            "board",
+            "user-1",
+            "user-1",
+            "user-1",
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter" },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 7,
+          "params": [
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter" },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 7,
+          "params": [
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 7,
+          "params": [
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 7,
+          "params": [
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 7,
+          "params": [
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter" },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 7,
+          "params": [
+            "kilter",
+            "kilter",
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "kilter", "layoutId": 1, "sizeId": 10 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "kilter",
+            "kilter",
+            1,
+            10,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "tension", "layoutId": 10, "sizeId": 6 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "tension",
+            "tension",
+            10,
+            6,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "moonboard", "layoutId": 2, "sizeId": 9 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 8,
+          "params": [
+            "moonboard",
+            "moonboard",
+            2,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": null,
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": null,
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "1970-01-01T00:00:00.000Z",
+            "0",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01T00:00:00.000Z", "syncSeq": "910004" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01T00:00:00.000Z",
+            "910004",
+            0,
+            500
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 1,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "resolver": "syncClimbGrades",
+      "scope": { "boardType": "spray", "layoutId": 9001, "sizeId": 9001 },
+      "cursor": { "updatedAt": "2026-05-01 00:00:00.25", "syncSeq": "7" },
+      "limit": 500,
+      "sent": [
+        { "handle": "transaction", "statement": 3, "params": [] },
+        {
+          "handle": "transaction",
+          "statement": 9,
+          "params": [
+            "spray",
+            "spray",
+            9001,
+            9001,
+            "climb",
+            "user-1",
+            "climb",
+            "user-1",
+            "user-1",
+            "2026-05-01 00:00:00.25",
+            "7",
+            0,
+            500
+          ]
+        }
+      ]
+    }
+  ]
+}

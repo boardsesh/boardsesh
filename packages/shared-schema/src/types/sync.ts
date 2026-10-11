@@ -5,9 +5,9 @@
 
 /**
  * Which half of a board's climbs a per-board pull returns. `REFERENCE` is the
- * public catalogue (the snapshot artifact's row set, the same for every viewer);
- * `PROTECTED` is the Boardsesh-authored climbs the caller may see. Absent means
- * both in one stream.
+ * climbs with no Boardsesh owner, author flag or privacy policy row (the
+ * snapshot artifact's row set, the same for every viewer); `PROTECTED` is the
+ * Boardsesh-authored climbs the caller may see. Absent means both in one stream.
  */
 export type SyncAudience = 'REFERENCE' | 'PROTECTED';
 

@@ -5,32 +5,43 @@ import { db } from '../../db/client';
 import { syncQueries } from '../../graphql/resolvers/sync/queries';
 
 /**
- * One catalogue layout and one spray wall holding a climb of every class the
- * sync audience split (#6306) has to place: a row belongs to the REFERENCE
- * stream, to the PROTECTED stream of the viewers who may see it, or to neither.
- * Shared by the climb, stats, grades and plan tests so all four argue about the
- * same rows.
+ * A catalogue board and one spray wall holding a climb of every class the sync
+ * audience split (#6306) has to place: a row belongs to the REFERENCE stream,
+ * to the PROTECTED stream of the viewers who may see it, or to neither. Shared
+ * by the climb, stats and grades tests so all three argue about the same rows.
  */
 
 /** A private account. Owns the restricted climbs. */
 export const AUDIENCE_OWNER = 'sync-audience-owner';
 /** An accepted follower of the owner. */
 export const AUDIENCE_FOLLOWER = 'sync-audience-follower';
+/** Asked to follow the owner and has not been approved. Sees what a stranger sees. */
+export const AUDIENCE_PENDING_FOLLOWER = 'sync-audience-pending-follower';
 /** No relationship to anybody. */
 export const AUDIENCE_STRANGER = 'sync-audience-stranger';
 /** A public account whose climbs every signed-in climber may see. */
 export const AUDIENCE_PUBLIC_AUTHOR = 'sync-audience-public-author';
 
-export const AUDIENCE_VIEWERS = [AUDIENCE_OWNER, AUDIENCE_FOLLOWER, AUDIENCE_STRANGER] as const;
+export const AUDIENCE_VIEWERS = [
+  AUDIENCE_OWNER,
+  AUDIENCE_FOLLOWER,
+  AUDIENCE_PENDING_FOLLOWER,
+  AUDIENCE_STRANGER,
+] as const;
 
-const ALL_USERS = [AUDIENCE_OWNER, AUDIENCE_FOLLOWER, AUDIENCE_STRANGER, AUDIENCE_PUBLIC_AUTHOR];
+const ALL_USERS = [...AUDIENCE_VIEWERS, AUDIENCE_PUBLIC_AUTHOR];
 
 export const AUDIENCE_BOARD_TYPE = 'kilter';
 export const AUDIENCE_LAYOUT_ID = 1;
 export const AUDIENCE_SIZE_ID = 5;
 export const AUDIENCE_OTHER_SIZE_ID = 7;
+/** Holds only the draft, unlisted and moderation-hidden climbs. See {@link STATE_CLIMBS}. */
+export const AUDIENCE_STATE_LAYOUT_ID = 3;
 /** A private spray wall owned by {@link AUDIENCE_OWNER}. */
 export const AUDIENCE_SPRAY_LAYOUT_ID = 9001;
+
+/** The owner's current privacy revision. An explicit Public choice holds only at this revision. */
+const OWNER_PRIVACY_REVISION = 2;
 
 type FixtureClimb = {
   uuid: string;
@@ -39,12 +50,29 @@ type FixtureClimb = {
   sizeIds?: number[];
   userId?: string;
   authored?: boolean;
-  /** An explicit policy row. `ownerless` is what account deletion leaves behind. */
-  policy?: { audience: 'followers' | 'only_me'; ownerless?: boolean };
+  isDraft?: boolean;
+  isListed?: boolean;
+  isHidden?: boolean;
+  /**
+   * An explicit policy row. `ownerless` is what account deletion leaves behind.
+   * `consentRevision` is the account revision a Public choice was made at.
+   */
+  policy?: { audience: 'public' | 'followers' | 'only_me'; ownerless?: boolean; consentRevision?: number };
+};
+
+/**
+ * Climbs that are a draft, unlisted, or hidden by moderation: one with no owner
+ * and one set by a public account, for each state. Neither the single stream
+ * nor either audience filters on these flags today, and the tests pin that as
+ * it stands. It is current behaviour, not a privacy guarantee.
+ */
+export const STATE_CLIMBS = {
+  unowned: ['state-unowned-draft', 'state-unowned-hidden', 'state-unowned-unlisted'],
+  owned: ['state-owned-draft', 'state-owned-hidden', 'state-owned-unlisted'],
 };
 
 const FIXTURE_CLIMBS: FixtureClimb[] = [
-  // The public catalogue: no owner, no author flag, no policy row.
+  // Reference climbs: no owner, no author flag, no policy row.
   { uuid: 'ref-a' },
   { uuid: 'ref-b' },
   { uuid: 'ref-size-7', sizeIds: [AUDIENCE_OTHER_SIZE_ID] },
@@ -54,6 +82,20 @@ const FIXTURE_CLIMBS: FixtureClimb[] = [
   { uuid: 'own-private', userId: AUDIENCE_OWNER },
   { uuid: 'own-private-size-7', userId: AUDIENCE_OWNER, sizeIds: [AUDIENCE_OTHER_SIZE_ID] },
   { uuid: 'own-only-me', userId: AUDIENCE_OWNER, policy: { audience: 'only_me' } },
+  // The private account's explicit Public choices. One was made at the
+  // account's current revision and opens the climb to everyone. The other
+  // predates a later privacy change, so it no longer counts and the climb is
+  // back to the owner and accepted followers.
+  {
+    uuid: 'own-public-consent',
+    userId: AUDIENCE_OWNER,
+    policy: { audience: 'public', consentRevision: OWNER_PRIVACY_REVISION },
+  },
+  {
+    uuid: 'own-stale-consent',
+    userId: AUDIENCE_OWNER,
+    policy: { audience: 'public', consentRevision: OWNER_PRIVACY_REVISION - 1 },
+  },
   // A deleted account's climbs. The owner is gone and the author flag stays. A
   // climb that was public is retained; a restricted one keeps an ownerless
   // policy row that no viewer satisfies.
@@ -65,6 +107,13 @@ const FIXTURE_CLIMBS: FixtureClimb[] = [
   // Another layout of the same board: never part of a layout-scoped pull.
   { uuid: 'other-layout-ref', layoutId: 2 },
   { uuid: 'other-layout-own', layoutId: 2, userId: AUDIENCE_PUBLIC_AUTHOR },
+  // A layout of their own for the draft, unlisted and hidden climbs.
+  { uuid: 'state-unowned-draft', layoutId: AUDIENCE_STATE_LAYOUT_ID, isDraft: true },
+  { uuid: 'state-unowned-unlisted', layoutId: AUDIENCE_STATE_LAYOUT_ID, isListed: false },
+  { uuid: 'state-unowned-hidden', layoutId: AUDIENCE_STATE_LAYOUT_ID, isHidden: true },
+  { uuid: 'state-owned-draft', layoutId: AUDIENCE_STATE_LAYOUT_ID, userId: AUDIENCE_PUBLIC_AUTHOR, isDraft: true },
+  { uuid: 'state-owned-unlisted', layoutId: AUDIENCE_STATE_LAYOUT_ID, userId: AUDIENCE_PUBLIC_AUTHOR, isListed: false },
+  { uuid: 'state-owned-hidden', layoutId: AUDIENCE_STATE_LAYOUT_ID, userId: AUDIENCE_PUBLIC_AUTHOR, isHidden: true },
   // The spray wall. One climb its owner set, and one legacy row with no owner,
   // no author flag and no policy: by the row predicate alone it would be a
   // reference climb, which is why spray is excluded by board TYPE.
@@ -120,9 +169,16 @@ export async function seedSyncAudienceFixture(): Promise<void> {
       sql`INSERT INTO users (id, name, email) VALUES (${userId}, ${userId}, ${`${userId}@example.test`})`,
     );
   }
-  await db.execute(sql`INSERT INTO user_profiles (user_id, is_private) VALUES (${AUDIENCE_OWNER}, true)`);
+  await db.execute(sql`
+    INSERT INTO user_profiles (user_id, is_private, privacy_revision)
+    VALUES (${AUDIENCE_OWNER}, true, ${OWNER_PRIVACY_REVISION})
+  `);
   await db.execute(sql`
     INSERT INTO user_follows (follower_id, following_id) VALUES (${AUDIENCE_FOLLOWER}, ${AUDIENCE_OWNER})
+  `);
+  await db.execute(sql`
+    INSERT INTO user_follow_requests (requester_id, recipient_id)
+    VALUES (${AUDIENCE_PENDING_FOLLOWER}, ${AUDIENCE_OWNER})
   `);
 
   const wallBoardUuid = 'sync-audience-wall';
@@ -141,17 +197,18 @@ export async function seedSyncAudienceFixture(): Promise<void> {
     const sizeIds = `{${(climb.sizeIds ?? [AUDIENCE_SIZE_ID]).join(',')}}`;
     await db.execute(sql`
       INSERT INTO board_climbs
-        (uuid, board_type, layout_id, name, is_listed, is_draft, compatible_size_ids, user_id,
+        (uuid, board_type, layout_id, name, is_listed, is_draft, is_hidden, compatible_size_ids, user_id,
          is_boardsesh_authored, updated_at)
       VALUES
-        (${climb.uuid}, ${boardType}, ${climb.layoutId ?? AUDIENCE_LAYOUT_ID}, ${`Climb ${climb.uuid}`}, true, false,
-         ${sizeIds}::int[], ${climb.userId ?? null}, ${climb.authored ?? false}, '2026-05-01T00:00:00Z'::timestamp)
+        (${climb.uuid}, ${boardType}, ${climb.layoutId ?? AUDIENCE_LAYOUT_ID}, ${`Climb ${climb.uuid}`},
+         ${climb.isListed ?? true}, ${climb.isDraft ?? false}, ${climb.isHidden ?? false}, ${sizeIds}::int[],
+         ${climb.userId ?? null}, ${climb.authored ?? false}, '2026-05-01T00:00:00Z'::timestamp)
     `);
     if (climb.policy) {
       await db.execute(sql`
-        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience, public_consent_revision)
         VALUES ('climb', ${climb.uuid}, ${climb.policy.ownerless ? null : (climb.userId ?? null)},
-                ${climb.policy.audience})
+                ${climb.policy.audience}, ${climb.policy.consentRevision ?? null})
       `);
     }
     const angles = SECOND_ANGLE_CLIMBS.has(climb.uuid) ? [40, 45] : [40];
