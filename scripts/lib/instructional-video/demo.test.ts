@@ -30,6 +30,7 @@ describe('isolated instructional demo environment', () => {
       SENTRY_DSN: 'production-sentry',
       POSTHOG_API_KEY: 'production-analytics',
       NEXTAUTH_SECRET: 'production-auth',
+      BOARDSESH_PRIVACY_ENABLED: '0',
       ANDROID_SDK_ROOT: '/sdk',
     };
     const configured = tutorialDemoEnvironment(ports, inherited);
@@ -37,6 +38,7 @@ describe('isolated instructional demo environment', () => {
     expect(configured.ANDROID_SDK_ROOT).toBe('/sdk');
     expect(new URL(configured.DATABASE_URL!).pathname).toBe('/boardsesh_tutorial');
     expect(configured.READ_REPLICA_URL).toBe('');
+    expect(configured.BOARDSESH_PRIVACY_ENABLED).toBe('1');
     expect(configured.PRIVATE_AWS_SECRET_ACCESS_KEY).toBe('tutorial-local');
     for (const removed of [
       'AWS_ACCESS_KEY_ID',
@@ -79,6 +81,7 @@ describe('isolated instructional demo environment', () => {
     expect(configured.PRIVATE_DISABLE_ACL).toBe('true');
     expect(configured.DOTENV_CONFIG_PATH).toBe('/dev/null');
     expect(configured.BOARDSESH_TUTORIAL_DEMO).toBe('1');
+    expect(configured.BOARDSESH_PRIVACY_ENABLED).toBe('1');
   });
 
   it('rejects invalid or colliding ports before any process can start', () => {

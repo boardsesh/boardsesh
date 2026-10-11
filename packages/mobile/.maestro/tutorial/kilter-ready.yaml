@@ -1,0 +1,14 @@
+appId: com.boardsesh.app.dev
+name: Tutorial setup - actual owned Kilter board
+---
+# Select the real owned board. Screenshot slot parameters in retained tab
+# screens can keep changing the active board while another board is selected.
+- openLink: com.boardsesh.app://boards
+- waitForAnimationToEnd
+- tapOn: Tutorial Kilter
+- extendedWaitUntil:
+    visible: Tutorial Kilter
+    timeout: 90000
+- extendedWaitUntil:
+    visible: 'Filters.*'
+    timeout: 90000

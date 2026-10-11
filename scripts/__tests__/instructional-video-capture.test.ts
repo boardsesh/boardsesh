@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertLocalTutorialBackend,
@@ -6,7 +7,12 @@ import {
   tutorialCaptureFingerprint,
   tutorialManifestProblems,
 } from '../lib/instructional-video/capture';
-import { selectActiveTutorialSession, tutorialSessionStillActive } from '../lib/instructional-video/capture-crew';
+import {
+  selectActiveTutorialSession,
+  tutorialSessionStillActive,
+  discoverTutorialSession,
+  authorizeTutorialCrew,
+} from '../lib/instructional-video/capture-crew';
 import type { TutorialTake, TutorialTakeManifest } from '../lib/instructional-video/types';
 
 const take: TutorialTake = {
@@ -126,6 +132,28 @@ describe('tutorial capture safety and evidence', () => {
       fingerprint,
     );
   });
+  it('invalidates crew capture when its real tutorial invite setup changes', () => {
+    const crewTake: TutorialTake = {
+      ...take,
+      session: 'crew',
+      flow: 'packages/mobile/.maestro/tutorial/crew.yaml',
+      setupFlows: [],
+    };
+    const invitePath = 'packages/mobile/.maestro/tutorial/crew-invite.yaml';
+    const visited = new Set<string>();
+    const readActualFlow = (path: string) => {
+      visited.add(path);
+      return readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+    };
+    const before = tutorialCaptureFingerprint(crewTake, identity, readActualFlow);
+    expect(visited.has(invitePath)).toBe(true);
+    expect(visited.has('packages/mobile/.maestro/showcase/android/crew-invite.yaml')).toBe(false);
+    const after = tutorialCaptureFingerprint(crewTake, identity, (path) => {
+      const content = readActualFlow(path);
+      return path === invitePath ? `${content}\n- assertVisible: 'Require a different invite state'\n` : content;
+    });
+    expect(after).not.toBe(before);
+  });
   it('rejects missing evidence and marks outside the recorded clip', () => {
     expect(tutorialManifestProblems(manifest, take, fingerprint)).toEqual([]);
     expect(
@@ -155,25 +183,43 @@ describe('tutorial session teardown evidence', () => {
     }
   });
 
-  it('checks the exact recorded session while another session remains active', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
-      async () =>
-        new Response(
-          JSON.stringify({
-            data: {
+  it('uses durable status even when ended-session presence still looks active', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+      const body = JSON.parse(options?.body as string) as { variables?: { id: string } };
+      return Response.json({
+        data: body.variables
+          ? { sessionStatus: body.variables.id === 'captured' ? 'ended' : 'active' }
+          : {
               mySessions: [
-                { id: 'captured', isActive: false, boardPath: 'kilter/1/7/1' },
-                { id: 'other', isActive: true, boardPath: 'tension/1/1/1' },
+                { id: 'captured', isActive: true, boardPath: 'kilter/1/7/1' },
+                { id: 'other', isActive: true, boardPath: 'kilter/1/7/1' },
               ],
             },
-          }),
-        ),
-    );
+      });
+    });
     try {
       expect(await tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'primary-token', 'captured')).toBe(
         false,
       );
       expect(await tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'primary-token', 'other')).toBe(true);
+      expect(await discoverTutorialSession(new URL('http://127.0.0.1:8000'), 'primary-token', 'kilter/1/7/1')).toBe(
+        'other',
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+  it.each([null, ['ended']])('rejects malformed durable status %j instead of accepting teardown', async (status) => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        Response.json({ data: { mySessions: [{ id: 'captured', isActive: true, boardPath: 'kilter/1/7/1' }] } }),
+      )
+      .mockResolvedValueOnce(Response.json({ data: { sessionStatus: status } }));
+    try {
+      await expect(
+        tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'primary-token', 'captured'),
+      ).rejects.toThrow('no authoritative durable status');
     } finally {
       fetchSpy.mockRestore();
     }
@@ -184,6 +230,53 @@ describe('tutorial session teardown evidence', () => {
       await expect(
         tutorialSessionStillActive(new URL('http://127.0.0.1:8000'), 'primary-token', 'captured'),
       ).rejects.toThrow('no session list');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe('private tutorial crew access', () => {
+  it('requests as Sam before approving as the owner', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ data: { requestResourceAccess: true } }))
+      .mockResolvedValueOnce(Response.json({ data: { approveResourceAccess: true } }));
+    try {
+      await authorizeTutorialCrew(new URL('http://127.0.0.1:34273'), 'primary', 'crew', 'session', 'sam-user');
+      expect(fetchSpy.mock.calls.map(([, options]) => options?.headers)).toEqual([
+        { 'content-type': 'application/json', authorization: 'Bearer crew' },
+        { 'content-type': 'application/json', authorization: 'Bearer primary' },
+      ]);
+      expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string).variables).toEqual({
+        kind: 'session',
+        resourceId: 'session',
+        userId: 'sam-user',
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+  it('rejects a denied request before sending approval', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ errors: [{ message: 'Not found' }] }));
+    try {
+      await expect(
+        authorizeTutorialCrew(new URL('http://127.0.0.1:34273'), 'primary', 'crew', 'session', 'sam-user'),
+      ).rejects.toThrow('could not authorize');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+  it('rejects a missing mutation result without authorizing the participant', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ data: {} }));
+    try {
+      await expect(
+        authorizeTutorialCrew(new URL('http://127.0.0.1:34273'), 'primary', 'crew', 'session', 'sam-user'),
+      ).rejects.toThrow('could not authorize');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
     } finally {
       fetchSpy.mockRestore();
     }

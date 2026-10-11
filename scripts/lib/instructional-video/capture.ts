@@ -15,7 +15,12 @@ import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CrewParticipant, discoverTutorialSession, tutorialSessionStillActive } from './capture-crew';
+import {
+  CrewParticipant,
+  discoverTutorialSession,
+  tutorialSessionStillActive,
+  authorizeTutorialCrew,
+} from './capture-crew';
 import { extractTutorialFrames } from './capture-media';
 import {
   assertTutorialMetroPortFree,
@@ -145,6 +150,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
   const signals = new Set<string>();
   const signalValues = new Map<string, string>();
   let crewAdd: (() => Promise<void>) | undefined;
+  let crewCurrentUuid: string | undefined;
   let signalFailure: Error | undefined;
   const metroLog = join(work, 'metro.log');
   let timerSessionId: string | undefined;
@@ -181,7 +187,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         data?: { session?: { queueState: { currentClimbQueueItem?: { climb: { uuid: string } } } } };
         errors?: unknown;
       };
-      if (!result.ok || body.errors) throw new Error('Could not read authoritative workout queue.');
+      if (!result.ok || body.errors) throw new Error('Could not read authoritative tutorial queue.');
       return body.data?.session?.queueState.currentClimbQueueItem?.climb.uuid;
     };
     if (kind === 'set' && name === 'timer-baseline') {
@@ -191,6 +197,18 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         timerCurrentUuid = await sessionCurrent(timerSessionId);
         if (!timerCurrentUuid) throw new Error('Workout has no authoritative current climb.');
         response.end('ready');
+      })().catch((error: unknown) => {
+        signalFailure = error instanceof Error ? error : new Error(String(error));
+        response.writeHead(500).end('failed');
+      });
+      return;
+    }
+    if (kind === 'mark' && name === 'preview' && crewCurrentUuid) {
+      void (async () => {
+        if (!capturedSessionId || (await sessionCurrent(capturedSessionId)) !== crewCurrentUuid)
+          throw new Error('Private preview changed the authoritative wall climb.');
+        marks.set(name, Date.now());
+        response.end('ok');
       })().catch((error: unknown) => {
         signalFailure = error instanceof Error ? error : new Error(String(error));
         response.writeHead(500).end('failed');
@@ -522,7 +540,8 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
           'signed-in app home',
         );
         appLaunched = true;
-      } else openLink('com.boardsesh.app://home');
+      }
+      openLink('com.boardsesh.app://home');
       await flow('packages/mobile/.maestro/tutorial/home-ready.yaml', `${take.id}-home-ready`);
       openLink(`com.boardsesh.app://${take.route}`);
       await sleep(2500);
@@ -542,6 +561,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         });
         const jwt = ((await signIn.json()) as { jwt?: string }).jwt;
         if (!signIn.ok || !jwt) throw new Error('Local crew account could not authenticate.');
+        await authorizeTutorialCrew(backend, primaryJwt!, jwt, sessionId, env.TUTORIAL_CREW_USER_ID ?? '');
         crew = new CrewParticipant(backend, jwt);
         const joined = (await crew.execute(JOIN_SESSION, {
           sessionId,
@@ -557,6 +577,12 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
             };
           };
         };
+        if (!joined.joinSession.queueState.currentClimbQueueItem || joined.joinSession.queueState.queue.length !== 1)
+          throw new Error('Crew capture requires one actual wall-current row before Sam contributes.');
+        const currentUuid = joined.joinSession.queueState.currentClimbQueueItem.climb.uuid;
+        if (typeof currentUuid !== 'string' || currentUuid.toLowerCase() !== '00007da715ce4e7dbf60928d240ce7f2')
+          throw new Error('Crew wall-current climb is not the intended real NuVu fixture.');
+        crewCurrentUuid = currentUuid;
         const seed = existsSync(scenarioPath)
           ? (JSON.parse(readFileSync(scenarioPath, 'utf8')) as { crewClimbs?: Record<string, unknown>[] })
           : undefined;
@@ -567,7 +593,8 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
         const climb = seed?.crewClimbs?.find((candidate) => !queuedIds.has(candidate.uuid));
         if (!climb) throw new Error('Crew seed has no distinct real climb to contribute.');
         const profile = joined.joinSession.users.find((user) => user.username === 'Sam');
-        if (!profile?.userId) throw new Error('Joined crew socket has no authenticated Sam profile.');
+        if (!profile?.userId || profile.userId !== env.TUTORIAL_CREW_USER_ID)
+          throw new Error('Joined crew socket does not match the authenticated tutorial Sam identity.');
         crewAdd = async () => {
           await crew!.execute(ADD_QUEUE_ITEM, {
             item: {
@@ -578,7 +605,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
             },
           });
         };
-        await flow('packages/mobile/.maestro/showcase/android/crew-invite.yaml', 'crew-invite');
+        await flow('packages/mobile/.maestro/tutorial/crew-invite.yaml', 'crew-invite');
       }
       marks.clear();
       signals.clear();

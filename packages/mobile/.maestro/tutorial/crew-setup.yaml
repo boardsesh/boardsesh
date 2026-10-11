@@ -1,8 +1,21 @@
 appId: com.boardsesh.app.dev
 name: Tutorial setup - private crew session
 ---
-- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0&screenshotOpenFirst=1
-- waitForAnimationToEnd
+- runFlow: kilter-ready.yaml
+- openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
+- extendedWaitUntil:
+    visible: NuVu
+    timeout: 90000
+- extendedWaitUntil:
+    visible: '.*Board:.*'
+    timeout: 90000
+- runFlow:
+    when:
+      visible: Switch board
+    commands:
+      - tapOn: Switch board
+      - waitForAnimationToEnd
+- assertNotVisible: Switch to Kilter to climb this
 - runFlow:
     when:
       visible: '.*Connect.*[Bb]oard.*'
@@ -16,3 +29,21 @@ name: Tutorial setup - private crew session
 - runFlow: session-private.yaml
 - tapOn: Start
 - waitForAnimationToEnd
+# Starting the session resets its queue. Explicitly commit the real climb so
+# Sam becomes the first future row rather than an unanchored first item.
+- openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
+- extendedWaitUntil:
+    visible: NuVu
+    timeout: 90000
+- extendedWaitUntil:
+    visible: '.*Board:.*'
+    timeout: 90000
+# The native hierarchy omits this visible commit-bar button. Its measured center
+# is 574,1477 on the dedicated 720x1616 capture screen; JOIN verifies the result.
+- tapOn:
+    point: '80%,91%'
+    waitToSettleTimeoutMs: 500
+- back
+- extendedWaitUntil:
+    visible: 'On the wall: NuVu,.*'
+    timeout: 20000

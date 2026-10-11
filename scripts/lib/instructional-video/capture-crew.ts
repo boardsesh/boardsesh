@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
+import {
+  REQUEST_RESOURCE_ACCESS,
+  APPROVE_RESOURCE_ACCESS,
+} from '../../../packages/shared/graphql/src/operations/privacy';
 
 /** One persistent graphql-transport-ws connection: session context belongs to this socket. */
 export class CrewParticipant {
@@ -106,13 +110,45 @@ async function readTutorialSessions(backend: URL, jwt: string | undefined): Prom
   return result.data.mySessions;
 }
 
+async function readTutorialSessionStatus(
+  backend: URL,
+  jwt: string | undefined,
+  sessionId: string,
+): Promise<'active' | 'ended'> {
+  if (!jwt) throw new Error('Primary tutorial account is not authenticated.');
+  const response = await fetch(new URL('/graphql', backend), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${jwt}` },
+    body: JSON.stringify({ query: 'query($id: ID!){sessionStatus(sessionId: $id)}', variables: { id: sessionId } }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const result = (await response.json()) as { data?: { sessionStatus?: unknown }; errors?: unknown };
+  if (
+    !response.ok ||
+    result.errors ||
+    (result.data?.sessionStatus !== 'active' && result.data?.sessionStatus !== 'ended')
+  )
+    throw new Error('Captured tutorial session has no authoritative durable status.');
+  return result.data!.sessionStatus as 'active' | 'ended';
+}
+
 /** Read the primary user's actual current session without restarting the native app. */
 export async function discoverTutorialSession(
   backend: URL,
   jwt: string | undefined,
   boardPath: string,
 ): Promise<string> {
-  return selectActiveTutorialSession(await readTutorialSessions(backend, jwt), boardPath);
+  const sessions = await readTutorialSessions(backend, jwt);
+  const candidates = sessions.filter(
+    (session) => session.isActive && (session.boardPath === boardPath || session.boardPath.startsWith(`${boardPath}/`)),
+  );
+  const durable = await Promise.all(
+    candidates.map(async (session) => ({
+      ...session,
+      isActive: (await readTutorialSessionStatus(backend, jwt, session.id)) === 'active',
+    })),
+  );
+  return selectActiveTutorialSession(durable, boardPath);
 }
 
 /** Teardown must end the exact captured session before another warm chapter starts. */
@@ -123,5 +159,34 @@ export async function tutorialSessionStillActive(
 ): Promise<boolean> {
   const session = (await readTutorialSessions(backend, jwt)).find((candidate) => candidate.id === sessionId);
   if (!session) throw new Error('Captured tutorial session is missing from its owner session list.');
-  return session.isActive;
+  return (await readTutorialSessionStatus(backend, jwt, sessionId)) === 'active';
+}
+
+/** Sam requests access; the authenticated owner approves before the private JOIN. */
+export async function authorizeTutorialCrew(
+  backend: URL,
+  primaryJwt: string,
+  crewJwt: string,
+  sessionId: string,
+  crewUserId: string,
+): Promise<void> {
+  if (!crewUserId) throw new Error('Tutorial crew identity is missing.');
+  const mutate = async (jwt: string, query: string, variables: Record<string, string>, field: string) => {
+    const response = await fetch(new URL('/graphql', backend), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${jwt}` },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const result = (await response.json()) as { data?: Record<string, unknown>; errors?: unknown[] };
+    if (!response.ok || result.errors?.length || result.data?.[field] !== true)
+      throw new Error('The private tutorial session could not authorize its authenticated crew participant.');
+  };
+  await mutate(crewJwt, REQUEST_RESOURCE_ACCESS, { kind: 'session', resourceId: sessionId }, 'requestResourceAccess');
+  await mutate(
+    primaryJwt,
+    APPROVE_RESOURCE_ACCESS,
+    { kind: 'session', resourceId: sessionId, userId: crewUserId },
+    'approveResourceAccess',
+  );
 }

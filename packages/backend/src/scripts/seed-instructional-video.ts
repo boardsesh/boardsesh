@@ -10,7 +10,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { createDb, closePool } from '@boardsesh/db/client';
 import * as schema from '@boardsesh/db/schema';
 import { allocateWallIds, allocateHoldIds, createSprayWallCatalogueRows } from '@boardsesh/db/queries';
-import { MOONBOARD_SIZE, MOONBOARD_SETS, SPRAY_SET, SPRAY_ROLE } from '@boardsesh/board-config';
+import { MOONBOARD_SIZE, MOONBOARD_SETS, SPRAY_SET, SPRAY_ROLE, spraySizeIdForLayout } from '@boardsesh/board-config';
 import { DEFAULT_BOARDSESH_RENDER_SETTINGS } from '@boardsesh/board-look';
 
 const namespace = '63300000-0000-4000-8000-';
@@ -352,15 +352,16 @@ async function main(): Promise<void> {
     throw new Error(
       'Tutorial manual hold geometry changed; add a reviewed fixture revision instead of replacing recorded holds',
     );
-  const roleCodes = [
-    SPRAY_ROLE.STARTING,
-    SPRAY_ROLE.STARTING,
-    SPRAY_ROLE.HAND,
-    SPRAY_ROLE.HAND,
-    SPRAY_ROLE.FINISH,
-    SPRAY_ROLE.FOOT,
-  ];
-  const roleStates = ['STARTING', 'STARTING', 'HAND', 'HAND', 'FINISH', 'FOOT'];
+  const roleStates = [
+    'STARTING',
+    'STARTING',
+    'HAND',
+    'HAND',
+    'FINISH',
+    'FOOT',
+  ] as const satisfies readonly (keyof typeof SPRAY_ROLE)[];
+  const roleCodes = roleStates.map((state) => SPRAY_ROLE[state]);
+  const spraySizeId = spraySizeIdForLayout(wall.layoutId);
   for (const [index, name] of ['After Work', 'Crew Project', 'One More Go'].entries()) {
     const climbUuid = `${namespace}${String(100 + index).padStart(12, '0')}`;
     const selected = [holds[23], holds[24], holds[22], holds[18 + index], holds[index * 3], holds[25 + index]];
@@ -380,7 +381,7 @@ async function main(): Promise<void> {
         isDraft: false,
         isListed: true,
         requiredSetIds: [SPRAY_SET.id],
-        compatibleSizeIds: [wall.layoutId],
+        compatibleSizeIds: [spraySizeId],
         missingHoldCount: 0,
         edgeLeft: 0,
         edgeRight: photoWidth,
@@ -421,7 +422,7 @@ async function main(): Promise<void> {
     name: 'Tutorial Spray Wall',
     boardType: 'spray',
     layoutId: wall.layoutId,
-    sizeId: wall.layoutId,
+    sizeId: spraySizeId,
     setIds: String(SPRAY_SET.id),
     angle: 30,
   });

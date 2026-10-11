@@ -1,15 +1,31 @@
 appId: com.boardsesh.app.dev
 name: Tutorial - a workout advances after real rest
 ---
+- runFlow: kilter-ready.yaml
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd
 - runFlow: session-private.yaml
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
-- tapOn: Pyramid
+- tapOn: 'Workout, Pyramid.*'
 - extendedWaitUntil:
     notVisible: 'Building your workout…'
     timeout: 20000
 - assertNotVisible: "No climbs found for this grade. Try another."
+- extendedWaitUntil:
+    visible:
+      text: Start
+      enabled: true
+    timeout: 120000
+# Native semantics clip the shelf card bounds, so centering its label does not
+# bring the whole selected chart into frame. Swipe the measured shelf itself.
+- assertVisible: 'Workout, Pyramid.*'
+- swipe:
+    start: '90%,60%'
+    end: '20%,60%'
+    duration: 800
+- assertVisible:
+    text: 'Workout, Pyramid.*'
+    selected: true
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/generated')}
 - extendedWaitUntil:
     visible: tutorial-pause
@@ -23,13 +39,13 @@ name: Tutorial - a workout advances after real rest
 - runFlow:
     when:
       notVisible:
-        text: 'Rest timer.*'
-        checked: true
+        id: rest-length-pill
     commands:
       - tapOn: 'Rest timer.*'
-- assertVisible:
-    text: 'Rest timer.*'
-    checked: true
+- extendedWaitUntil:
+    visible:
+      id: rest-length-pill
+    timeout: 20000
 - repeat:
     times: 22
     commands:
@@ -49,20 +65,28 @@ name: Tutorial - a workout advances after real rest
 - runFlow:
     when:
       notVisible:
-        text: 'Move to the next climb.*'
+        rightOf: 'Move to the next climb.*'
+        above: Only while Boardsesh is open.
+        below: Your rest restarts every time you log an attempt or a send.
         checked: true
     commands:
       - tapOn: 'Move to the next climb.*'
 - assertVisible:
-    text: 'Move to the next climb.*'
+    rightOf: 'Move to the next climb.*'
+    above: Only while Boardsesh is open.
+    below: Your rest restarts every time you log an attempt or a send.
     checked: true
-- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/rest-configured')}
 - extendedWaitUntil:
-    visible: tutorial-pause
-    timeout: 7000
-    optional: true
+    visible:
+      text: Start
+      enabled: true
+    timeout: 120000
 - tapOn: Start
 - waitForAnimationToEnd
+- openLink: com.boardsesh.app://play
+- extendedWaitUntil:
+    visible: '.*Board:.*'
+    timeout: 90000
 - runFlow:
     when:
       visible: '.*Connect.*[Bb]oard.*'
@@ -71,13 +95,34 @@ name: Tutorial - a workout advances after real rest
 - extendedWaitUntil:
     visible: 'On the wall.*'
     timeout: 15000
-- tapOn: Log ascent
-- tapOn: Attempt
-- assertTrue: ${http.get(TUTORIAL_SIGNAL_URL + '/set/timer-baseline').body == 'ready'}
-- tapOn: Save
+- tapOn:
+    id: rest-timer-pill
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
-    visible: Tick saved
+    visible:
+      id: rest-timer-hero-clock
+      text: '.*Log a climb to start.*'
     timeout: 15000
+- assertVisible: 'Rest length, 0:30'
+- assertVisible: Your rest restarts every time you log an attempt or a send.
+- assertVisible:
+    rightOf: 'Move to the next climb.*'
+    above: Only while Boardsesh is open.
+    below: Your rest restarts every time you log an attempt or a send.
+    checked: true
+- evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/rest-configured')}
+- extendedWaitUntil:
+    visible: tutorial-pause
+    timeout: 7000
+    optional: true
+- back
+- tapOn:
+    text: Log ascent
+    waitToSettleTimeoutMs: 500
+- assertTrue: ${http.get(TUTORIAL_SIGNAL_URL + '/set/timer-baseline').body == 'ready'}
+- tapOn:
+    text: Attempt
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible:
       id: rest-timer-pill
@@ -85,6 +130,7 @@ name: Tutorial - a workout advances after real rest
     timeout: 15000
 - tapOn:
     id: rest-timer-pill
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible:
       id: rest-timer-hero-clock

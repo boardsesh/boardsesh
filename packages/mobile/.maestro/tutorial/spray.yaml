@@ -1,8 +1,20 @@
 appId: com.boardsesh.app.dev
 name: Tutorial - real photo spray wall
 ---
+# Enter through the owned wall card so the renderer has its real photo/hold registry.
+- openLink: com.boardsesh.app://boards
+- waitForAnimationToEnd
+- tapOn: Tutorial Spray Wall
+- extendedWaitUntil:
+    visible: Crew Project
+    timeout: 90000
+- tapOn: Crew Project
+- extendedWaitUntil:
+    visible: '.*Board:.*'
+    timeout: 90000
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
 - assertVisible: '.*Board:.*'
+- assertVisible: Crew Project
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/photo')}
 - extendedWaitUntil:
     visible: tutorial-pause
@@ -18,14 +30,8 @@ name: Tutorial - real photo spray wall
     visible: tutorial-pause
     timeout: 7000
     optional: true
-- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0&screenshotOpenFirst=1
-- waitForAnimationToEnd
 - openLink: com.boardsesh.app://settings/board-look
-- extendedWaitUntil:
-    visible: Aura Outline
-    timeout: 90000
-- tapOn: Aura Outline
-- assertVisible: '.*Aura Outline.*'
+- waitForAnimationToEnd
 - scrollUntilVisible:
     element: Use my look on spray walls
     centerElement: true
@@ -49,13 +55,22 @@ name: Tutorial - real photo spray wall
     below: Spray walls
     above: Reset board look
     checked: true
-- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=3&screenshotOpenFirst=1
-- waitForAnimationToEnd
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/look')}
 - extendedWaitUntil:
     visible: tutorial-pause
     timeout: 7000
     optional: true
+- openLink: com.boardsesh.app://boards
+- waitForAnimationToEnd
+- tapOn: Tutorial Spray Wall
+- extendedWaitUntil:
+    visible: Crew Project
+    timeout: 90000
+- tapOn: Crew Project
+- extendedWaitUntil:
+    visible: '.*Board:.*'
+    timeout: 90000
+- assertVisible: Crew Project
 - openLink: com.boardsesh.app://boards
 - waitForAnimationToEnd
 - scrollUntilVisible:
@@ -71,3 +86,7 @@ name: Tutorial - real photo spray wall
     visible: tutorial-pause
     timeout: 7000
     optional: true
+# Dismiss both real sheets after the readable QR hold, before the capture tail.
+- back
+- assertNotVisible: Share this wall
+- back

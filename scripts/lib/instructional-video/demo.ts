@@ -57,6 +57,7 @@ export function tutorialDemoEnvironment(
     BOARD_IMAGES_ROOT: resolve(REPO_ROOT, 'packages/web/public'),
     DOTENV_CONFIG_PATH: '/dev/null',
     BOARDSESH_TUTORIAL_DEMO: '1',
+    BOARDSESH_PRIVACY_ENABLED: '1',
     DATABASE_URL: `postgresql://postgres:password@127.0.0.1:${ports.postgres}/boardsesh_tutorial`,
     READ_REPLICA_URL: '',
     REDIS_URL: `redis://127.0.0.1:${ports.redis}`,

@@ -8,19 +8,18 @@ name: Tutorial - your crew builds the queue
     visible: tutorial-pause
     timeout: 7000
     optional: true
-- swipe:
-    start: '50%,52%'
-    end: '50%,95%'
-    duration: 400
 - tapOn:
-    point: '40%,86%'
+    id: sheet-top-bar-leading
+- assertNotVisible: Invite to this session
+- openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
+- extendedWaitUntil:
+    visible: NuVu
+    timeout: 90000
+- extendedWaitUntil:
+    visible: 'Queue, [0-9]+ climbs'
+    timeout: 20000
+- tapOn: 'Queue, [0-9]+ climbs'
 - waitForAnimationToEnd
-- tapOn:
-    point: '90%,89%'
-- swipe:
-    start: '50%,51%'
-    end: '50%,8%'
-    duration: 600
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/set/crew-add')}
 - repeat:
     while:
@@ -40,12 +39,30 @@ name: Tutorial - your crew builds the queue
 - assertVisible: 'Preview'
 - tapOn: 'Preview'
 - waitForAnimationToEnd
+# Preview changes the player behind the queue. Dismiss the queue before teaching
+# the full preview, then reopen it explicitly for the next action.
+- back
+- assertNotVisible: Up next
+- assertVisible: '.*Board:.*'
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/preview')}
 - extendedWaitUntil:
     visible: tutorial-pause
     timeout: 7000
     optional: true
-- back
+# The preview commit bar replaces Queue. Its native accessibility omits the
+# measured Back to live control, so use its proven left-button center.
+- assertVisible: '.*Board:.*'
+- tapOn:
+    point: 20%,91%
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: NuVu
+    timeout: 20000
+- extendedWaitUntil:
+    visible: 'Queue, [0-9]+ climbs'
+    timeout: 20000
+- tapOn: 'Queue, [0-9]+ climbs'
+- waitForAnimationToEnd
 - longPressOn: '.*Added by Sam.*'
 - assertVisible: 'Play next'
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/play-next')}
@@ -56,3 +73,4 @@ name: Tutorial - your crew builds the queue
 
 - tapOn: 'Play next'
 - waitForAnimationToEnd
+- back

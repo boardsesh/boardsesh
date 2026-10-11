@@ -1,9 +1,14 @@
 appId: com.boardsesh.app.dev
 name: Tutorial setup - require a completed local hold index
 ---
+- runFlow: kilter-ready.yaml
 # A real downloaded-board heatmap is the readiness gate. No fixed sleep or
 # simulated success can turn an unavailable similarity index into footage.
+- extendedWaitUntil:
+    visible: 'Filters.*'
+    timeout: 90000
 - tapOn: 'Filters.*'
+- assertVisible: Grade range
 - scrollUntilVisible:
     element: 'Hold types'
     direction: DOWN
@@ -27,17 +32,27 @@ name: Tutorial setup - require a completed local hold index
         id: hold-heatmap-download-line
     commands:
       - tapOn: Download
+      - extendedWaitUntil:
+          visible: 'Download Tutorial Kilter\?'
+          timeout: 90000
+      - assertVisible: ".*Downloads all this board's climbs.*"
+      # Native hierarchy exposes both the nudge and confirmation as Download.
+      # Scope the real dialog button so snapshot size text may change its position.
       - tapOn:
-          text: 'Download.*'
+          id: button
+          text: Download
+          childOf:
+            id: modal-surface
+      - assertNotVisible: 'Download Tutorial Kilter\?'
       - extendedWaitUntil:
           visible:
             id: hold-filter-heatmap-legend
-          timeout: 120000
+          timeout: 300000
 - runFlow: heatmap-ready.yaml
 - assertNotVisible:
     id: hold-heatmap-download-line
 - tapOn: Heatmap
 - back
 - back
-- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+- openLink: com.boardsesh.app://climbs
 - waitForAnimationToEnd

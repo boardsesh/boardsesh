@@ -4,7 +4,15 @@ name: Tutorial teardown - end the captured session
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd
 - tapOn: Stop
-- tapOn: End session
+- tapOn:
+    id: sheet-top-bar-trailing
+# Ending resolves before the recap route is pushed. Wait for that real route
+# and close it so a transient Start beneath it cannot satisfy teardown.
+- extendedWaitUntil:
+    visible: Session Summary
+    timeout: 90000
+- tapOn:
+    id: header-leading-action
 - extendedWaitUntil:
     visible: Start
-    timeout: 20000
+    timeout: 90000

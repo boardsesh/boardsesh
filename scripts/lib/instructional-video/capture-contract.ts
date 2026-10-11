@@ -83,10 +83,7 @@ export function tutorialCaptureFingerprint(
     ...(take.setupFlows ?? []),
     ...(take.requiresDownload ? ['packages/mobile/.maestro/tutorial/download-ready.yaml'] : []),
     ...(take.session === 'crew'
-      ? [
-          'packages/mobile/.maestro/tutorial/crew-setup.yaml',
-          'packages/mobile/.maestro/showcase/android/crew-invite.yaml',
-        ]
+      ? ['packages/mobile/.maestro/tutorial/crew-setup.yaml', 'packages/mobile/.maestro/tutorial/crew-invite.yaml']
       : []),
     ...(take.session ? ['packages/mobile/.maestro/tutorial/session-end.yaml'] : []),
   ])

@@ -2,15 +2,31 @@ appId: com.boardsesh.app.dev
 name: Tutorial setup - invitation-only session
 ---
 - scrollUntilVisible:
-    element: Show this session live
+    element: '(Audience: (Public|Approved followers|Invited people)|Show this session live)'
     centerElement: true
     direction: DOWN
     timeout: 90000
 - runFlow:
     when:
-      visible:
-        text: 'Show this session live.*'
-        checked: true
+      visible: 'Audience: (Public|Approved followers|Invited people)'
     commands:
-      - tapOn: 'Show this session live.*'
-- assertVisible: '.*Only people with your invite link can join.*'
+      - runFlow:
+          when:
+            notVisible: 'Audience: Invited people'
+          commands:
+            - tapOn: 'Audience: (Public|Approved followers)'
+            - tapOn: Invited people
+      - assertVisible: 'Audience: Invited people'
+# Legacy servers expose the controlled description instead of an audience picker.
+- runFlow:
+    when:
+      visible: Show this session live
+    commands:
+      - runFlow:
+          when:
+            notVisible: '.*Only people with your invite link can join.*'
+          commands:
+            - assertVisible: '.*Your crew and climbers on this board can see it and join.*'
+            - tapOn: Show this session live
+      - assertVisible: '.*Only people with your invite link can join.*'
+- assertVisible: '(Audience: Invited people|.*Only people with your invite link can join.*)'

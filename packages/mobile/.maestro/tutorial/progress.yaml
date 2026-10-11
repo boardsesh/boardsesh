@@ -32,8 +32,7 @@ name: Tutorial - your grades and combined progress
     visible: tutorial-pause
     timeout: 7000
     optional: true
-- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
-- waitForAnimationToEnd
+- runFlow: kilter-ready.yaml
 - tapOn: 'Filters.*'
 - assertVisible: Grade range
 - tapOn:

@@ -1,0 +1,11 @@
+appId: com.boardsesh.app.dev
+name: Tutorial setup - open the actual session invite
+---
+- openLink: com.boardsesh.app://record
+- extendedWaitUntil:
+    visible: Invite climbers
+    timeout: 90000
+- tapOn: Invite climbers
+- extendedWaitUntil:
+    visible: Invite to this session
+    timeout: 20000

@@ -2,7 +2,11 @@ appId: com.boardsesh.app.dev
 name: Tutorial - choose holds, regions and similar climbs
 ---
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
+- extendedWaitUntil:
+    visible: 'Filters.*'
+    timeout: 90000
 - tapOn: 'Filters.*'
+- assertVisible: Grade range
 - scrollUntilVisible:
     element: Hold types
     direction: DOWN
@@ -35,26 +39,43 @@ name: Tutorial - choose holds, regions and similar climbs
 - tapOn: Clear region
 - back
 - back
-- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0&screenshotOpenFirst=1
-- waitForAnimationToEnd
+- openLink: com.boardsesh.app://climbs/0003517a70744dbdbb606f784571f626?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
+- extendedWaitUntil:
+    visible: Phase 2
+    timeout: 90000
 - scrollUntilVisible:
     element: Similar Climbs
     direction: DOWN
     timeout: 90000
-- tapOn: Similar Climbs
+# This existing catalogue pair uses the same nine holds. A real result card,
+# not the absence of an error, proves the downloaded local similarity query.
+- runFlow:
+    when:
+      notVisible:
+        text: 100plus
+        below: Similar Climbs
+    commands:
+      - tapOn: Similar Climbs
 - extendedWaitUntil:
-    notVisible: 'Preparing similar climbs…'
-    timeout: 20000
+    visible:
+      text: 100plus
+      below: Similar Climbs
+    timeout: 120000
+- assertNotVisible: 'Preparing similar climbs…'
 - assertNotVisible: 'No similar climbs found'
-- waitForAnimationToEnd
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/similar')}
 - extendedWaitUntil:
     visible: tutorial-pause
     timeout: 7000
     optional: true
-- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+- back
+- openLink: com.boardsesh.app://climbs
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'Filters.*'
+    timeout: 90000
 - tapOn: 'Filters.*'
+- assertVisible: Grade range
 - scrollUntilVisible:
     element: Hold types
     direction: DOWN
@@ -71,3 +92,6 @@ name: Tutorial - choose holds, regions and similar climbs
     visible: tutorial-pause
     timeout: 7000
     optional: true
+# Return from the hold picker and its Filters sheet after the last readable hold.
+- back
+- back
