@@ -379,10 +379,17 @@ describe('downloaded catalogue privacy', () => {
     await runMigrations(database);
     await database.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq) VALUES
       ('foreign-unlisted', 'kilter', 1, 'other', 0, 0, 5),
+      ('foreign-unflagged', 'kilter', 1, 'other', 0, NULL, 5),
       ('foreign-listed', 'kilter', 1, 'other', 0, 1, 6),
       ('own-unlisted', 'kilter', 1, 'viewer', 0, 0, 7),
       ('manufacturer-unlisted', 'kilter', 1, NULL, 0, 0, 8)`);
-    for (const climbUuid of ['foreign-unlisted', 'foreign-listed', 'own-unlisted', 'manufacturer-unlisted']) {
+    for (const climbUuid of [
+      'foreign-unlisted',
+      'foreign-unflagged',
+      'foreign-listed',
+      'own-unlisted',
+      'manufacturer-unlisted',
+    ]) {
       await database.runAsync(
         "INSERT INTO board_climb_stats (board_type, climb_uuid, angle) VALUES ('kilter', ?, 40)",
         [climbUuid],
@@ -393,6 +400,7 @@ describe('downloaded catalogue privacy', () => {
       );
     }
     await revalidatePrivateCatalog(database, 'viewer', []);
+    // A row that does not say it is listed is treated as unlisted.
     const kept = [{ uuid: 'foreign-listed' }, { uuid: 'manufacturer-unlisted' }, { uuid: 'own-unlisted' }];
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs ORDER BY uuid')).toEqual(kept);
     expect(await database.getAllAsync('SELECT climb_uuid AS uuid FROM board_climb_stats ORDER BY uuid')).toEqual(kept);
