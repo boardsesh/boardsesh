@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Platform, View, StyleSheet, type ColorValue } from 'react-native';
 import { Image } from 'expo-image';
 import type { ImageErrorEventData } from 'expo-image';
@@ -213,17 +213,19 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // paint — the app backgrounding, or this tab's board art being released while
   // the component stays mounted.
   //
-  // One image replacing another is reported as the new one and nothing else.
-  // "Nothing is mounted" in between would be false, and the consumer forgets
-  // on hearing it: a decoded image can fire `onLoad` before this effect has
-  // run, and that answer was thrown away with the image it replaced.
+  // A layout effect, so the report is made inside the commit that mounts the
+  // image. A decoded image can fire `onLoad` within the frame, ahead of any
+  // passive effect; the consumer would then hear the answer before it knew
+  // there was an image to answer for. One image replacing another is reported
+  // as the new one and nothing else: "nothing is mounted" in between would
+  // be false.
   const overlayMountedKey = !hidden && overlayUri ? (overlayLoadKey ?? null) : null;
   const overlayImageMounted = !hidden && !!overlayUri;
-  useEffect(() => {
+  useLayoutEffect(() => {
     onOverlayMounted?.(overlayImageMounted ? overlayMountedKey : null);
   }, [onOverlayMounted, overlayImageMounted, overlayMountedKey]);
   // Unmount, or a consumer that is no longer listening.
-  useEffect(() => () => onOverlayMounted?.(null), [onOverlayMounted]);
+  useLayoutEffect(() => () => onOverlayMounted?.(null), [onOverlayMounted]);
   // What `revealWithOverlay` has already let through. `key` is the climb for
   // 'each-climb' and a constant for 'first-paint', so one comparison serves both.
   const [revealed, setRevealed] = useState<{ key: string | null } | null>(null);

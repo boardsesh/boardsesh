@@ -101,7 +101,7 @@ export function useDrawerDismissGesture({
   const startedAtTop = useSharedValue(false);
 
   // Captured ONCE by the gesture memo — must only close over the ref so a later
-  // render's onDismiss is still reached (mirrors use-carousel-gesture).
+  // render's onDismiss is still reached.
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = swipeDismiss?.onComplete ?? onDismiss;
   const commitDismiss = () => {
