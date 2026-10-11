@@ -140,6 +140,7 @@ describe('privacy revocation', () => {
       ['climb', { boardName: 'kilter', climbUuid: 'climb' }],
       ['searchClimbs', { boardName: 'spray', layoutId: 9001 }],
       ['infiniteSearchClimbs', { boardName: 'spray', layoutId: 9001 }],
+      ['searchClimbsCount', { boardName: 'spray', layoutId: 9001 }],
       ['someFutureQuery', 'id'],
     ];
     for (const key of sensitiveKeys) queryClient.setQueryData(key, { copied: 'identity' });
