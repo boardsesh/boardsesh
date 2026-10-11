@@ -339,7 +339,10 @@ describe('BoardseshGradeSection personal grade', () => {
     expect(text).toContain('V10');
     // The existing explanation is kept, not replaced.
     expect(text).toContain('boardseshGrade.woodsBody');
-    expect(container.querySelector('[data-icon="person"]')).not.toBeNull();
+    // The rung's own provenance glyph, in its 20pt gutter. Exactly one: the
+    // grade slot beside it is the `ladder` variant, which never adds a second
+    // marker to a row that already states whose grade it is in words.
+    expect(container.querySelectorAll('[data-icon="person"]')).toHaveLength(1);
   });
 
   it('offers the grade-it prompt on Woods when you have not graded it', () => {
@@ -382,6 +385,9 @@ describe('BoardseshGradeSection personal grade', () => {
 
     expect(text).toContain('boardseshGrade.yours.label');
     expect(text).toContain('boardseshGrade.yours.community');
+    // One glyph per rung, in the gutter — never a second one on the number.
+    expect(container.querySelectorAll('[data-icon="person"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-icon="people"]')).toHaveLength(1);
     // The shipped hero is untouched below it.
     expect(text).toContain('boardseshGrade.hero.everywhere');
   });

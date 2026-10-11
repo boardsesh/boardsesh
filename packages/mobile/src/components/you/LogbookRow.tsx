@@ -23,8 +23,8 @@ import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { getLayoutDisplayName, parseTickTime } from '@boardsesh/profile-stats';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import {
-  deriveLogbookGradeDisplay,
-  consensusDeltaDirection,
+  deriveGradeTokenModel,
+  gradeTokenA11yLabel,
   logbookAttemptsKind,
   displayedAttemptCount,
   normalizeLogbookQuality,
@@ -32,6 +32,7 @@ import {
 } from '@boardsesh/logbook';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
+import { GradeValue } from '../grade/GradeValue';
 import { type IconName } from '../icon-map';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { useSwipeArm } from '../use-swipe-arm';
@@ -190,42 +191,45 @@ export const LogbookRow = memo(function LogbookRow({
   const statusColor =
     ascent.status === 'flash' ? brand.warning : ascent.status === 'send' ? brand.success : systemColors.secondaryLabel;
 
-  // --- Grade column: the big grade is always the climber's effective grade
-  // (their own, or the crowd grade when they never graded it — marked with the
-  // `people` glyph). The crowd grade shows as a small secondary only when it
-  // disagrees, with an arrow for the direction of the disagreement.
+  // --- Grade column. ONE number, and a `people` marker only when that number
+  // is the crowd's. This is a DIARY surface: it is about what YOU did, so your
+  // own grade is the unremarkable one here and needs no glyph — the mirror of
+  // the climbs list, where the crowd's number is the expected one.
   //
   // A climber's OWN logged grade (`ascent.difficulty`) always wins; the crowd
   // side is the only thing the app-wide "Show Boardsesh grades" toggle swaps —
   // the Boardsesh grade replaces the legacy community consensus as the crowd
   // grade when it's active, present and trusted (see resolveCrowdDifficultyId).
+  // The crowd's number, when it differs, leads the meta line below rather than
+  // stacking under this one.
   const crowdDifficulty = resolveCrowdDifficultyId(ascent, boardseshActive);
-  const { showConsensusSecondary, gradeIsConsensus } = deriveLogbookGradeDisplay(ascent.difficulty, crowdDifficulty);
   const rawGradeLabel = ascent.difficultyName ?? ascent.consensusDifficultyName;
-  const bigGradeDifficulty = ascent.difficulty ?? crowdDifficulty;
-  // Each row formats on its own ascent's board: the logbook mixes boards, and
-  // MoonBoard converts Font to V differently.
-  const gradeLabel =
-    formatGradeByDifficultyId(bigGradeDifficulty, ascent.boardType) ??
-    formatGrade(rawGradeLabel, ascent.boardType) ??
-    rawGradeLabel;
-  // Colour the big grade to match the value actually shown: when the row is
-  // showing a crowd grade (Boardsesh grade when active), colour it from that
-  // grade's own difficulty bucket rather than the legacy consensus name; the
-  // climber's own logged-grade colour path is untouched.
+  const personalGradeLabel =
+    ascent.difficulty != null
+      ? (formatGradeByDifficultyId(ascent.difficulty, ascent.boardType) ??
+        formatGrade(ascent.difficultyName, ascent.boardType) ??
+        ascent.difficultyName)
+      : null;
+  const crowdGradeLabel =
+    crowdDifficulty != null
+      ? (formatGradeByDifficultyId(crowdDifficulty, ascent.boardType) ??
+        formatGrade(ascent.consensusDifficultyName, ascent.boardType) ??
+        ascent.consensusDifficultyName)
+      : null;
+  const gradeModel = deriveGradeTokenModel({
+    personalLabel: personalGradeLabel,
+    crowdLabel: crowdGradeLabel,
+    baseline: 'personal',
+  });
+  // Colour the number actually shown: when the row is showing a crowd grade
+  // (the Boardsesh grade when active), colour it from that grade's own
+  // difficulty bucket rather than the legacy consensus name; the climber's own
+  // logged-grade colour path is untouched.
   const gradeColorName =
-    gradeIsConsensus && crowdDifficulty != null
+    gradeModel.source === 'crowd' && crowdDifficulty != null
       ? (getBoulderGradeById(clampDifficultyId(crowdDifficulty), ascent.boardType)?.difficulty_name ?? rawGradeLabel)
       : rawGradeLabel;
   const gradeColor = gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR;
-  const consensusGradeLabel = showConsensusSecondary
-    ? (formatGradeByDifficultyId(crowdDifficulty, ascent.boardType) ??
-      formatGrade(ascent.consensusDifficultyName, ascent.boardType) ??
-      ascent.consensusDifficultyName)
-    : null;
-  // 'up' = you found it harder than the crowd. Informational, not a warning —
-  // the sub-line renders in secondaryLabel, never an alert tone.
-  const deltaDirection = showConsensusSecondary ? consensusDeltaDirection(ascent.difficulty, crowdDifficulty) : null;
 
   // --- Meta line parts (review data — the climber's own record, not the
   // crowd's). Board+angle always renders: with no thumbnail it is the only
@@ -267,7 +271,9 @@ export const LogbookRow = memo(function LogbookRow({
   );
 
   const showTimeInline = fontScale < FONT_SCALE_DROP_TIME;
-  const resultMetaText = [attemptsLabel, showTimeInline ? timeLabel : null].filter(Boolean).join(' · ');
+  const resultMetaText = [gradeModel.crowdLineToken, attemptsLabel, showTimeInline ? timeLabel : null]
+    .filter(Boolean)
+    .join(' · ');
   const notePreview = hasNote ? ascent.comment?.trim().replace(/\s+/g, ' ') : null;
 
   // Rows whose board config can't resolve (frameless MoonBoard ticks) dead-end
@@ -439,16 +445,15 @@ export const LogbookRow = memo(function LogbookRow({
       : ascent.status === 'send'
         ? t('mobile.logbook.row.a11ySent')
         : t('mobile.logbook.row.project');
+  // `gradeTokenA11yLabel` resolves its keys out of @boardsesh/logbook, which the
+  // i18n orphan checker does not scan — so name them here:
+  // i18n-keep common.mobile.gradeToken.a11yYours
+  // i18n-keep common.mobile.gradeToken.a11yCommunity
+  const gradeA11yLabel = gradeTokenA11yLabel(gradeModel, t);
   const accessibilityLabel = [
     `${statusA11y} ${ascent.climbName}`,
-    gradeLabel
-      ? gradeIsConsensus
-        ? t('mobile.logbook.row.a11yCommunityGrade', { grade: gradeLabel })
-        : gradeLabel
-      : null,
-    consensusGradeLabel
-      ? t('mobile.logbook.row.a11yGradeDelta', { logged: gradeLabel, consensus: consensusGradeLabel })
-      : null,
+    gradeA11yLabel,
+    gradeModel.crowdLineToken ? t('mobile.logbook.row.a11yCommunityGrade', { grade: gradeModel.crowdLineToken }) : null,
     attemptsKind === 'flash' && !flashShowsTries ? null : t('mobile.logbook.tries', { count: triesShown }),
     quality != null ? t('mobile.logbook.row.a11yStars', { count: quality }) : null,
     notePreview ? `${t('mobile.logbook.row.a11yHasNote')}: ${notePreview}` : null,
@@ -563,44 +568,33 @@ export const LogbookRow = memo(function LogbookRow({
               ) : null}
             </View>
 
-            {/* Grade column — your grade big; the crowd's as a small secondary
-                  with the disagreement direction. flexShrink:0 so the title never
-                  squeezes the grade. */}
+            {/* Grade slot — ONE number, one line. Your rating and the beta
+                marker sit LEFT of it (review feedback: the meta line was too
+                crowded to scan them); the crowd's number, when it differs, is
+                the leading token of the meta line above rather than a second
+                row here. flexShrink:0 so the title never squeezes the grade.
+
+                No delta arrow: the two numbers are adjacent on an ordinal
+                scale, so an arrow only restates what reading them already
+                says — a third glyph family for nothing. */}
             <View style={styles.trailing}>
-              {gradeLabel || starsLabel || hasBetaVideo ? (
-                <View style={styles.iconGradeRow}>
-                  {/* Your rating + beta marker sit LEFT of the grade (review
-                        feedback: the meta line was too crowded to scan them).
-                        Camera keeps its filled brand-violet emphasis. */}
-                  {starsLabel ? (
-                    <Text variant="caption1" color={systemColors.secondaryLabel}>
-                      {starsLabel}
-                    </Text>
-                  ) : null}
-                  {hasBetaVideo ? <Icon name="video.fill" size={13} color={brand.primary} /> : null}
-                  {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
-                  {gradeLabel ? (
-                    <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-                      {gradeLabel}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-              {consensusGradeLabel ? (
-                <View style={styles.iconGradeRow}>
-                  <Icon name="people" size={11} color={systemColors.secondaryLabel} />
-                  <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
-                    {consensusGradeLabel}
+              <View style={styles.iconGradeRow}>
+                {starsLabel ? (
+                  <Text variant="caption1" color={systemColors.secondaryLabel}>
+                    {starsLabel}
                   </Text>
-                  {deltaDirection ? (
-                    <Icon
-                      name={deltaDirection === 'up' ? 'chevron.up' : 'chevron.down'}
-                      size={9}
-                      color={systemColors.secondaryLabel}
-                    />
-                  ) : null}
-                </View>
-              ) : null}
+                ) : null}
+                {hasBetaVideo ? <Icon name="video.fill" size={13} color={brand.primary} /> : null}
+                {gradeModel.source !== 'none' ? (
+                  <GradeValue
+                    label={gradeModel.label}
+                    color={gradeColor}
+                    source={gradeModel.source}
+                    baseline="personal"
+                    accessibilityLabel={gradeA11yLabel ?? undefined}
+                  />
+                ) : null}
+              </View>
               <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.resultText}>
                 {resultMetaText}
               </Text>
@@ -663,22 +657,12 @@ const styles = StyleSheet.create({
   },
   boardIdentity: { fontWeight: '500' },
   resultText: { textAlign: 'right' },
-  trailing: {
-    flexShrink: 0,
-    alignItems: 'flex-end',
-    gap: 1,
-    marginStart: spacing[2],
-    maxWidth: 120,
-  },
-  gradeText: {
-    fontWeight: '700',
-    textAlign: 'right',
-    fontVariant: ['tabular-nums'],
-  },
+  trailing: { flexShrink: 0, alignItems: 'flex-end', gap: 1, marginStart: spacing[2], maxWidth: 140 },
   iconGradeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
+    maxWidth: 140,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
