@@ -72,10 +72,11 @@ describe('frozen reader fails closed', () => {
     const output = join(mobile, 'dist');
     const bundlePath = '_expo/static/js/ios/entry-fixture.hbc';
     mkdirSync(join(output, '_expo/static/js/ios'), { recursive: true });
-    writeFileSync(join(output, bundlePath), bundle);
+    const debugId = '00000000-0000-4000-8000-000000000000';
+    writeFileSync(join(output, bundlePath), Buffer.concat([bundle, Buffer.from(debugId)]));
     writeFileSync(
       join(output, bundlePath + '.map'),
-      JSON.stringify({ version: 3, sources: [], mappings: '', debugId: '00000000-0000-4000-8000-000000000000' }),
+      JSON.stringify({ version: 3, sources: [], mappings: '', debugId }),
     );
     writeFileSync(join(output, 'asset.bin'), 'public fixture asset');
     const metadata = (path: unknown) =>
