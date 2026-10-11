@@ -138,6 +138,29 @@ describe('privacy controls against Postgres', () => {
     expect(await socialFollowMutations.followUser(null, { input: { userId: recipient } }, context(asker))).toBe(true);
   });
 
+  it('keeps one hidden row after a cancel or an unfollow, so the dedup still holds', async () => {
+    const recipient = 'privacy-flow-hidden-recipient';
+    const asker = 'privacy-flow-hidden-asker';
+    await db.insert(schema.users).values([
+      { id: recipient, email: `${recipient}@test.com` },
+      { id: asker, email: `${asker}@test.com` },
+    ]);
+    await db.insert(schema.userProfiles).values({ userId: recipient, isPrivate: true });
+
+    for (const withdraw of [
+      () => privacyMutations.cancelFollowRequest(null, { userId: recipient }, context(asker)),
+      () => socialFollowMutations.unfollowUser(null, { input: { userId: recipient } }, context(asker)),
+      () => privacyMutations.removeFollower(null, { userId: asker }, context(recipient)),
+    ]) {
+      await privacyMutations.requestFollow(null, { userId: recipient }, context(asker));
+      await withdraw();
+      // Nothing to answer: out of the inbox and the badge, and never a second row.
+      expect(await inboxTypes(recipient)).toEqual([]);
+      expect(await socialNotificationQueries.unreadNotificationCount(null, null, context(recipient))).toBe(0);
+      expect(await followRequestNotifications(recipient, asker)).toHaveLength(1);
+    }
+  });
+
   it('removes the follow request row when the request is declined', async () => {
     const recipient = 'privacy-flow-decline-recipient';
     const asker = 'privacy-flow-decline-asker';

@@ -206,7 +206,10 @@ export async function requestPrivacyFollow(followerId: string, followingId: stri
   if (createdRequest) await publishFollowRequest(followerId, followingId);
   return outcome;
 }
-/** Returns whether a follow existed and was removed, so callers can skip no-ops. */
+/**
+ * Unfollow or remove a follower, retaining a hidden request notification for
+ * its day-long dedup window. Returns whether approved access was removed.
+ */
 export async function removePrivacyFollow(followerId: string, followingId: string): Promise<boolean> {
   return db.transaction(async (transaction) => {
     // Same recipient lock as approval and account visibility, so a racing approval cannot recreate access.
@@ -533,6 +536,7 @@ export const privacyMutations = {
     await requestPrivacyFollow(requesterId, userId);
     return getPrivacyRelationship(requesterId, userId);
   },
+  // The follow_request notification is kept, hidden, on purpose: see removePrivacyFollow.
   cancelFollowRequest: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
     const requesterId = await privacyActor(ctx);
     await db.transaction(async (transaction) => {
