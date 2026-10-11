@@ -32,7 +32,27 @@ name: Tutorial - your grades and combined progress
     visible: tutorial-pause
     timeout: 7000
     optional: true
-- runFlow: kilter-ready.yaml
+# The active spray wall sorts first in the retained horizontal board carousel.
+# Normalize this chapter's picker without changing other takes' setup flows.
+- openLink: com.boardsesh.app://boards
+- assertVisible: Your boards
+- repeat:
+    while:
+      notVisible: Tutorial Kilter
+    times: 4
+    commands:
+      - swipe:
+          start: '90%,46%'
+          end: '15%,46%'
+          duration: 800
+      - waitForAnimationToEnd
+- tapOn: Tutorial Kilter
+- extendedWaitUntil:
+    visible: Tutorial Kilter
+    timeout: 90000
+- extendedWaitUntil:
+    visible: 'Filters.*'
+    timeout: 90000
 - tapOn: 'Filters.*'
 - assertVisible:
     id: sheet-top-bar-trailing
