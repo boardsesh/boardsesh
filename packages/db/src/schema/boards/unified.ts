@@ -452,6 +452,16 @@ export const boardClimbs = pgTable(
     holdsMovedIdx: index('board_climbs_holds_moved_idx')
       .on(table.boardType, table.uuid, table.holdsRevisionNumber)
       .where(sql`${table.holdsRevisionNumber} > 1`),
+    // The climbs with a Boardsesh author, alive or deleted (#6306): a few
+    // thousand rows beside ~387k on the largest layout. The `PROTECTED` sync
+    // stream reads only these, per layout and in cursor order, and replays them
+    // from epoch after every privacy event, so it must not walk the catalogue
+    // to find them. Queries must repeat the predicate to use the index:
+    // `protectedClimbCandidateSql` in queries/privacy.ts is its text.
+    // Built out-of-band in production (see the migration's header).
+    protectedSyncIdx: index('board_climbs_protected_sync_idx')
+      .on(table.boardType, table.layoutId, table.updatedAt, table.syncSeq)
+      .where(sql`(${table.userId} IS NOT NULL OR ${table.isBoardseshAuthored})`),
     // Note: a GIN index on compatible_size_ids already exists from migration 0073
     // (board_climbs_compatible_size_ids_idx); the recommendation size filter uses
     // `compatible_size_ids @> ARRAY[sizeId]` so it can use that existing index.
