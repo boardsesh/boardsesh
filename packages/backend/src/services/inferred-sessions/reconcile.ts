@@ -198,14 +198,14 @@ export async function reconcileInferredSessions(
   ];
   const sourcePrivacy = await loadInferredPrivacy(tx, sourceIds);
   const [profile] = await tx
-    .select({ audience: dbSchema.userProfiles.defaultSessionAudience })
+    .select({ isPrivate: dbSchema.userProfiles.isPrivate, audience: dbSchema.userProfiles.defaultSessionAudience })
     .from(dbSchema.userProfiles)
     .where(eq(dbSchema.userProfiles.userId, userId))
     .limit(1);
-  // A private account already limits who reads its sessions and ticks; the
-  // session audience only narrows further when the climber chose a default.
+  // The same default getPrivacySettings gives explicit sessions: a session's
+  // name and notes follow the session audience, not the account.
   const defaultPrivacy: InferredPrivacy = {
-    audience: profile?.audience ?? 'public',
+    audience: profile?.audience ?? (profile?.isPrivate ? 'followers' : 'public'),
     inheritFollowers: false,
     grants: new Map(),
   };

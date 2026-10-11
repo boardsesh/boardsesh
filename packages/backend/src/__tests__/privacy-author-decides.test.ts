@@ -4,29 +4,42 @@
  * board it was logged on never hide it; board privacy only blanks the board's
  * identity on the item.
  */
-import { beforeAll, describe, expect, it } from 'vite-plus/test';
-import { eq } from 'drizzle-orm';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { canReadSocialEntity } from '../graphql/resolvers/shared/activity-privacy';
 import { tickQueries } from '../graphql/resolvers/ticks/queries';
+import { activityFeedQueries } from '../graphql/resolvers/social/activity-feed';
+import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
+import { sessionEditMutations } from '../graphql/resolvers/social/session-mutations';
+import { betaLinkQueries } from '../graphql/resolvers/beta-videos/queries';
+import { privacyMutations } from '../graphql/resolvers/privacy';
 import { canAccessResource } from '../services/privacy';
+import { projectSessionBoardPath } from '../services/board-session-privacy';
 
 const HOST = 'author-decides-host';
 const CLIMBER = 'author-decides-climber';
 const CLIMBER_FOLLOWER = 'author-decides-climber-follower';
 const STRANGER = 'author-decides-stranger';
 const BOARD_OWNER = 'author-decides-board-owner';
+const GRANTEE = 'author-decides-grantee';
 const CLIMB_UUID = 'author-decides-climb';
 
 let inviteOnlyBoardId: number;
 let deletedBoardId: number;
+let unlistedBoardId: number;
+
+afterEach(() => vi.unstubAllEnvs());
 
 const viewer = (userId: string | null): ConnectionContext =>
   ({ connectionId: `author-decides-${userId ?? 'anon'}`, isAuthenticated: !!userId, userId }) as ConnectionContext;
 
-async function insertTick(uuid: string, options: { userId?: string; sessionId?: string | null; boardId?: number }) {
+async function insertTick(
+  uuid: string,
+  options: { userId?: string; sessionId?: string | null; boardId?: number; climbedAt?: string },
+) {
   await db.insert(dbSchema.boardseshTicks).values({
     uuid,
     userId: options.userId ?? CLIMBER,
@@ -34,29 +47,40 @@ async function insertTick(uuid: string, options: { userId?: string; sessionId?: 
     boardType: 'kilter',
     angle: 40,
     status: 'send',
-    climbedAt: '2026-10-01T10:00:00Z',
+    climbedAt: options.climbedAt ?? '2026-10-01T10:00:00Z',
     sessionId: options.sessionId ?? null,
     boardId: options.boardId ?? null,
   });
 }
 
-async function insertSession(id: string, options: { createdBy?: string; boardId?: number | null } = {}) {
+async function insertSession(
+  id: string,
+  options: { createdBy?: string; boardId?: number | null; boardPath?: string; isPublic?: boolean; name?: string } = {},
+) {
   await db.insert(dbSchema.boardSessions).values({
     id,
-    boardPath: 'kilter/1/10/1/40',
+    boardPath: options.boardPath ?? 'kilter/1/10/1/40',
     createdByUserId: options.createdBy ?? HOST,
     boardId: options.boardId ?? null,
-    isPublic: true,
+    isPublic: options.isPublic ?? true,
+    name: options.name ?? null,
     status: 'ended',
   });
 }
 
+const ascentBoard = async (reader: string | null, tickUuid: string) =>
+  (await tickQueries.userAscentsFeed(null, { userId: CLIMBER, input: { limit: 50 } }, viewer(reader))).items.find(
+    (item) => item.uuid === tickUuid,
+  );
+
 beforeAll(async () => {
-  await db
-    .insert(dbSchema.users)
-    .values(
-      [HOST, CLIMBER, CLIMBER_FOLLOWER, STRANGER, BOARD_OWNER].map((id) => ({ id, email: `${id}@test.com`, name: id })),
-    );
+  await db.insert(dbSchema.users).values(
+    [HOST, CLIMBER, CLIMBER_FOLLOWER, STRANGER, BOARD_OWNER, GRANTEE].map((id) => ({
+      id,
+      email: `${id}@test.com`,
+      name: id,
+    })),
+  );
   await db.insert(dbSchema.userProfiles).values({ userId: HOST, isPrivate: true });
   await db.insert(dbSchema.userFollows).values({ followerId: CLIMBER_FOLLOWER, followingId: CLIMBER });
   await db.insert(dbSchema.boardClimbs).values({
@@ -95,10 +119,31 @@ beforeAll(async () => {
         isPublic: false,
         deletedAt: new Date(),
       },
+      {
+        uuid: 'author-decides-unlisted',
+        slug: 'author-decides-unlisted',
+        ownerId: BOARD_OWNER,
+        name: 'Link Only Shed',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1',
+        isPublic: true,
+        isUnlisted: true,
+      },
     ])
     .returning({ id: dbSchema.userBoards.id, uuid: dbSchema.userBoards.uuid });
   inviteOnlyBoardId = boards.find((board) => board.uuid === 'author-decides-invite-only')!.id;
   deletedBoardId = boards.find((board) => board.uuid === 'author-decides-deleted')!.id;
+  unlistedBoardId = boards.find((board) => board.uuid === 'author-decides-unlisted')!.id;
+  await db.insert(dbSchema.resourceGrants).values(
+    ['author-decides-invite-only', 'author-decides-unlisted'].map((resourceId) => ({
+      kind: 'board' as const,
+      resourceId,
+      userId: GRANTEE,
+      status: 'approved' as const,
+    })),
+  );
   await db.insert(dbSchema.resourcePrivacy).values({
     kind: 'board',
     resourceId: 'author-decides-invite-only',
@@ -204,5 +249,231 @@ describe('author decides', () => {
     } finally {
       await db.delete(dbSchema.userProfiles).where(eq(dbSchema.userProfiles.userId, CLIMBER));
     }
+  });
+});
+
+describe('author decides across feeds', () => {
+  it('names a board to its grant holder and blanks it for a stranger and an anonymous reader', async () => {
+    await insertTick('author-decides-feeds-invite', { boardId: inviteOnlyBoardId });
+    expect(await ascentBoard(GRANTEE, 'author-decides-feeds-invite')).toMatchObject({
+      boardDisplayName: 'Invite Only Garage',
+    });
+    for (const reader of [STRANGER, null]) {
+      expect(await ascentBoard(reader, 'author-decides-feeds-invite')).toMatchObject({
+        boardId: null,
+        boardDisplayName: null,
+      });
+    }
+
+    type GroupItem = { uuid: string; boardDisplayName: string | null };
+    const grouped = async (reader: string) =>
+      (
+        (await tickQueries.userGroupedAscentsFeed(undefined, { userId: CLIMBER, input: {} }, viewer(reader))) as {
+          groups: Array<{ items: GroupItem[] }>;
+        }
+      ).groups
+        .flatMap((group) => group.items)
+        .find((item) => item.uuid === 'author-decides-feeds-invite');
+    expect((await grouped(GRANTEE))?.boardDisplayName).toBe('Invite Only Garage');
+    expect(await grouped(STRANGER)).toMatchObject({ boardDisplayName: null });
+  });
+
+  it('names an unlisted board to the people who hold it, never to a reader with only a log', async () => {
+    await insertTick('author-decides-feeds-unlisted', { boardId: unlistedBoardId });
+    expect((await ascentBoard(GRANTEE, 'author-decides-feeds-unlisted'))?.boardDisplayName).toBe('Link Only Shed');
+    expect((await ascentBoard(BOARD_OWNER, 'author-decides-feeds-unlisted'))?.boardDisplayName).toBe('Link Only Shed');
+    expect(await ascentBoard(STRANGER, 'author-decides-feeds-unlisted')).toMatchObject({
+      boardId: null,
+      boardDisplayName: null,
+    });
+  });
+
+  it('blanks a hidden board in the materialized feed and refuses a feed filtered to it', async () => {
+    await insertTick('author-decides-fanned-out', { boardId: inviteOnlyBoardId });
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, board_uuid, metadata, created_at)
+      VALUES (${CLIMBER_FOLLOWER}, ${CLIMBER}, 'ascent', 'tick', 'author-decides-fanned-out',
+              'author-decides-invite-only', ${JSON.stringify({ climbUuid: CLIMB_UUID, boardType: 'kilter' })}::jsonb, now()),
+             (${GRANTEE}, ${CLIMBER}, 'ascent', 'tick', 'author-decides-fanned-out',
+              'author-decides-invite-only', ${JSON.stringify({ climbUuid: CLIMB_UUID, boardType: 'kilter' })}::jsonb, now())
+    `);
+    type FeedItem = { entityId: string; boardUuid: string | null };
+    const read = async (reader: string, boardUuid?: string) =>
+      (
+        (await activityFeedQueries.activityFeed({}, { input: { limit: 20, boardUuid } }, viewer(reader))) as {
+          items: FeedItem[];
+        }
+      ).items.filter((item) => item.entityId === 'author-decides-fanned-out');
+
+    // The follower sees their climber's send, without the board they cannot see.
+    expect(await read(CLIMBER_FOLLOWER)).toEqual([expect.objectContaining({ boardUuid: null })]);
+    expect(await read(GRANTEE)).toEqual([expect.objectContaining({ boardUuid: 'author-decides-invite-only' })]);
+    // A feed for one wall is the wall's activity: it needs the wall.
+    expect(await read(CLIMBER_FOLLOWER, 'author-decides-invite-only')).toEqual([]);
+    expect(await read(GRANTEE, 'author-decides-invite-only')).toHaveLength(1);
+  });
+
+  it('refuses a trending list filtered to a board the reader cannot see', async () => {
+    await insertTick('author-decides-trending', { boardId: inviteOnlyBoardId });
+    type TrendingItem = { entityId: string };
+    const trending = async (reader: string) =>
+      (
+        (await activityFeedQueries.trendingFeed(
+          {},
+          { input: { limit: 50, boardUuid: 'author-decides-invite-only' } },
+          viewer(reader),
+        )) as { items: TrendingItem[] }
+      ).items.map((item) => item.entityId);
+    expect(await trending(STRANGER)).toEqual([]);
+    expect(await trending(GRANTEE)).toContain('author-decides-trending');
+  });
+
+  it('puts a followed climber’s log from a session the reader cannot open on their daily card', async () => {
+    const day = '2026-09-20T10:00:00Z';
+    await insertSession('author-decides-host-followers', { createdBy: HOST, name: 'Host secret session' });
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'session',
+      resourceId: 'author-decides-host-followers',
+      ownerId: HOST,
+      audience: 'followers',
+    });
+    await insertTick('author-decides-home-tick', { sessionId: 'author-decides-host-followers', climbedAt: day });
+
+    const feed = (await sessionFeedQueries.sessionGroupedFeed(
+      undefined,
+      { input: { followingOnly: true, includeDailyHighlights: true, limit: 50 } },
+      viewer(CLIMBER_FOLLOWER),
+    )) as {
+      sessions: Array<{ sessionId: string; sessionName: string | null; participants: Array<{ userId: string }> }>;
+    };
+    expect(feed.sessions.map((card) => card.sessionId)).not.toContain('author-decides-host-followers');
+    const daily = feed.sessions.find((card) => card.sessionId === `daily:${CLIMBER}:2026-09-20`);
+    expect(daily).toMatchObject({ sessionName: null, participants: [expect.objectContaining({ userId: CLIMBER })] });
+    expect(JSON.stringify(feed)).not.toContain('Host secret session');
+
+    const detail = (await sessionFeedQueries.sessionDetail(
+      undefined,
+      { sessionId: `daily:${CLIMBER}:2026-09-20` },
+      viewer(CLIMBER_FOLLOWER),
+    )) as { ticks: Array<{ uuid: string }> } | null;
+    expect(detail?.ticks.map((tick) => tick.uuid)).toContain('author-decides-home-tick');
+  });
+
+  it('keeps an unlisted session’s card off a stranger’s feed while its link still opens', async () => {
+    await insertSession('author-decides-unlisted-session', { createdBy: CLIMBER, isPublic: false, name: 'Quiet one' });
+    await insertTick('author-decides-unlisted-tick', {
+      sessionId: 'author-decides-unlisted-session',
+      climbedAt: '2026-09-21T10:00:00Z',
+    });
+    const cards = async (reader: string | null) =>
+      (
+        (await sessionFeedQueries.sessionGroupedFeed(undefined, { input: { limit: 50 } }, viewer(reader))) as {
+          sessions: Array<{ sessionId: string }>;
+        }
+      ).sessions.map((card) => card.sessionId);
+    expect(await cards(null)).not.toContain('author-decides-unlisted-session');
+    expect(await cards(STRANGER)).not.toContain('author-decides-unlisted-session');
+    expect(await cards(CLIMBER)).toContain('author-decides-unlisted-session');
+    expect(await canAccessResource('session', 'author-decides-unlisted-session', STRANGER)).toBe(true);
+  });
+
+  it('returns a tick’s session id only to its climber from a public logbook', async () => {
+    await insertSession('author-decides-logbook-session', { createdBy: CLIMBER, isPublic: false });
+    await insertTick('author-decides-logbook-tick', { sessionId: 'author-decides-logbook-session' });
+    const sessionIdFor = async (reader: string | null) =>
+      (
+        (await tickQueries.userTicks(null, { userId: CLIMBER, boardType: 'kilter' }, viewer(reader))) as Array<{
+          uuid: string;
+          sessionId: string | null;
+        }>
+      ).find((tick) => tick.uuid === 'author-decides-logbook-tick')?.sessionId;
+    expect(await sessionIdFor(null)).toBeNull();
+    expect(await sessionIdFor(STRANGER)).toBeNull();
+    expect(await sessionIdFor(CLIMBER)).toBe('author-decides-logbook-session');
+  });
+
+  it('lists a public climber’s beta filmed on a hidden board, without the board', async () => {
+    await insertTick('author-decides-beta-tick', { boardId: inviteOnlyBoardId });
+    await db.insert(dbSchema.boardBetaLinks).values({
+      boardType: 'kilter',
+      climbUuid: CLIMB_UUID,
+      link: 'https://www.youtube.com/watch?v=author-decides-beta',
+      isListed: true,
+      createdByUserId: CLIMBER,
+      tickUuid: 'author-decides-beta-tick',
+      boardId: inviteOnlyBoardId,
+      thumbnail: 'https://example.test/thumb.jpg',
+    });
+    type Beta = { link: string; boardId: number | null };
+    const beta = async (reader: string | null) =>
+      (
+        (await betaLinkQueries.betaLinks(
+          undefined,
+          { boardType: 'kilter', climbUuid: CLIMB_UUID },
+          viewer(reader),
+        )) as Beta[]
+      ).find((link) => link.link.includes('author-decides-beta'));
+    expect(await beta(STRANGER)).toMatchObject({ boardId: null });
+    expect(await beta(null)).toMatchObject({ boardId: null });
+    expect(await beta(GRANTEE)).toMatchObject({ boardId: inviteOnlyBoardId });
+    expect(await beta(CLIMBER)).toMatchObject({ boardId: inviteOnlyBoardId });
+  });
+
+  it('gives a joiner who cannot see a named board its geometry instead of its slug', async () => {
+    const slugPath = '/b/author-decides-invite-only/35';
+    expect(await projectSessionBoardPath(slugPath, BOARD_OWNER)).toBe(slugPath);
+    expect(await projectSessionBoardPath(slugPath, GRANTEE)).toBe(slugPath);
+    expect(await projectSessionBoardPath(slugPath, STRANGER)).toBe('/kilter/1/10/1/35');
+    expect(await projectSessionBoardPath(slugPath, null)).toBe('/kilter/1/10/1/35');
+    // Paths that name nothing pass through.
+    expect(await projectSessionBoardPath('/kilter/1/10/1/40', STRANGER)).toBe('/kilter/1/10/1/40');
+    expect(await projectSessionBoardPath('/b/never-existed/40', STRANGER)).toBe('/b/never-existed/40');
+  });
+
+  it('lets the legacy switch move a session between Public and Unlisted both ways', async () => {
+    await insertSession('author-decides-switch', { createdBy: CLIMBER, isPublic: true });
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'session',
+      resourceId: 'author-decides-switch',
+      ownerId: CLIMBER,
+      audience: 'public',
+    });
+    const policy = async () =>
+      (
+        await db
+          .select({ audience: dbSchema.resourcePrivacy.audience })
+          .from(dbSchema.resourcePrivacy)
+          .where(
+            and(
+              eq(dbSchema.resourcePrivacy.kind, 'session'),
+              eq(dbSchema.resourcePrivacy.resourceId, 'author-decides-switch'),
+            ),
+          )
+      )[0]?.audience;
+    const toggle = (isPublic: boolean) =>
+      sessionEditMutations.updateSession(undefined, { input: { sessionId: 'author-decides-switch', isPublic } }, {
+        ...viewer(CLIMBER),
+        connectionId: 'author-decides-switch-conn',
+      } as ConnectionContext);
+    expect(await toggle(false)).toMatchObject({ isPublic: false });
+    expect(await policy()).toBe('unlisted');
+    expect(await toggle(true)).toMatchObject({ isPublic: true });
+    expect(await policy()).toBe('public');
+  });
+
+  it('accepts Unlisted as a session audience from the audience control', async () => {
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '1');
+    await insertSession('author-decides-control', { createdBy: CLIMBER, isPublic: true });
+    await privacyMutations.updateResourcePrivacy(
+      undefined,
+      { input: { kind: 'session', resourceId: 'author-decides-control', audience: 'unlisted' } },
+      viewer(CLIMBER),
+    );
+    const [row] = await db
+      .select({ isPublic: dbSchema.boardSessions.isPublic })
+      .from(dbSchema.boardSessions)
+      .where(eq(dbSchema.boardSessions.id, 'author-decides-control'));
+    expect(row.isPublic).toBe(false);
+    expect(await canAccessResource('session', 'author-decides-control', STRANGER)).toBe(true);
   });
 });

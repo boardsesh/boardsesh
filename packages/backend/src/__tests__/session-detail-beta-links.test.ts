@@ -388,4 +388,9 @@ vi.mock('../services/privacy', async (importOriginal) => ({
   canAccessResource: vi.fn(async (_kind: string, resourceId: string) => resourceId !== 'unknown-uuid'),
   canViewActivityIdentity: vi.fn(async () => true),
   canViewContent: vi.fn(async () => true),
+  // Every fixture board may be named; board-identity redaction has its own real-DB cases.
+  visibleBoardIdentityIds: vi.fn(
+    async (boardIds: readonly (number | null | undefined)[]) =>
+      new Set(boardIds.filter((boardId): boardId is number => boardId != null)),
+  ),
 }));

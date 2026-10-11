@@ -224,8 +224,8 @@ describe('reconcileInferredSessions (real DB)', () => {
     expect(privacy.audience).toBe('followers');
   });
 
-  it('gives a private account without a session default a public inferred session', async () => {
-    // The account's privacy already limits who reads it; the session adds nothing.
+  it('gives a private account without a session default a Followers inferred session', async () => {
+    // Session access never reads the host's account, so the default carries it.
     await db.insert(dbSchema.userProfiles).values({ userId: USER_ID, isPrivate: true });
     await insertTick(BASE);
     await reconcileAt(BASE);
@@ -234,7 +234,7 @@ describe('reconcileInferredSessions (real DB)', () => {
       .select()
       .from(dbSchema.resourcePrivacy)
       .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, session.id)));
-    expect(privacy.audience).toBe('public');
+    expect(privacy.audience).toBe('followers');
   });
 
   it('preserves restricted source privacy when a bridge merges sessions', async () => {

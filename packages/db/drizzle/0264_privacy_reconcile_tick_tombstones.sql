@@ -1,4 +1,5 @@
--- Remove the "Only me" stamps inferred-session reconciliation put on ticks.
+-- Remove the "Only me" stamps inferred-session reconciliation put on ticks, and
+-- read legacy private session policies as unlisted.
 --
 -- From #6254 (merged 2026-10-09) until this release, reconciling a climber's
 -- inferred sessions wrote content_privacy (tick, only_me) for every tick it
@@ -18,6 +19,33 @@
 --     have never made an explicit audience choice that this could be mistaken for.
 -- Anything else, including an "Only me" a climber picked on a tick that is not
 -- in an explicit session, is left alone.
+--
+-- Precondition: BOARDSESH_PRIVACY_ENABLED has never been 1 in production (the
+-- default is off, docs/privacy.md and #6273). With the flag off nobody could pick
+-- a tick or session audience (setContentAudience and updateResourcePrivacy go
+-- through privacyActor), so every row this touches was written by the server.
+-- Confirm it before deploying. It also covers two reconcile quirks: its upsert
+-- never touched updated_at, so a tick row it overwrote keeps the older row's time
+-- (a pre-2026-10-09 row is missed and stays Only me; a row written after it and
+-- then overwritten is removed and falls back to the account default).
+--
+-- Second block: session policies the legacy switch wrote as invite_only.
+-- After #6254 an old or flag-off client's Private switch, reconcile merges and
+-- splits of a private source, and session creation all wrote
+-- resource_privacy (session, invite_only) from the is_public boolean, not from a
+-- choice. With the flag off nobody can approve a request, so those links were
+-- dead. A legacy private session now means unlisted (off the listings, the link
+-- joins), so those rows become unlisted. Same guards: written on or after
+-- 2026-10-09, the session's is_public is false, and the owner never changed their
+-- account privacy or chose a session default.
+--
+-- Dry run for the second block:
+--   SELECT COUNT(*) FROM resource_privacy policy
+--   JOIN board_sessions session ON session.id = policy.resource_id AND session.is_public = false
+--   WHERE policy.kind = 'session' AND policy.audience = 'invite_only'
+--     AND policy.updated_at >= '2026-10-09'
+--     AND NOT EXISTS (SELECT 1 FROM user_profiles profile WHERE profile.user_id = policy.owner_id
+--                     AND (profile.privacy_revision <> 0 OR profile.default_session_audience IS NOT NULL));
 --
 -- Dry run (read-only, run against the primary before deploying):
 --   SELECT COUNT(*) FROM content_privacy stamp
@@ -68,4 +96,32 @@ BEGIN
   RAISE NOTICE 'Removed % reconciliation tick stamps', v_removed;
 
   INSERT INTO _bs_migration_guards (tag) VALUES ('privacy_reconcile_tick_tombstones_author_decides');
+END $$;--> statement-breakpoint
+
+DO $$
+DECLARE
+  v_remapped bigint;
+BEGIN
+  IF EXISTS (SELECT 1 FROM _bs_migration_guards WHERE tag = 'privacy_legacy_private_sessions_unlisted') THEN
+    RAISE NOTICE 'Legacy private session policies already remapped (guard row present)';
+    RETURN;
+  END IF;
+
+  UPDATE resource_privacy policy
+  SET audience = 'unlisted', revision = policy.revision + 1, updated_at = now()
+  FROM board_sessions session
+  WHERE session.id = policy.resource_id
+    AND session.is_public = false
+    AND policy.kind = 'session'
+    AND policy.audience = 'invite_only'
+    AND policy.updated_at >= '2026-10-09'
+    AND NOT EXISTS (
+      SELECT 1 FROM user_profiles profile
+      WHERE profile.user_id = policy.owner_id
+        AND (profile.privacy_revision <> 0 OR profile.default_session_audience IS NOT NULL)
+    );
+  GET DIAGNOSTICS v_remapped = ROW_COUNT;
+  RAISE NOTICE 'Remapped % legacy private session policies to unlisted', v_remapped;
+
+  INSERT INTO _bs_migration_guards (tag) VALUES ('privacy_legacy_private_sessions_unlisted');
 END $$;

@@ -106,7 +106,7 @@ export function boardIdentityVisibleCondition(
 }
 
 /** Every current and legacy board a session names, for location redaction. */
-function sessionBoardReferences(sessionIdColumn: SQLWrapper, viewerId: ViewerId): SQL {
+function sessionBoardReferences(sessionIdColumn: SQLWrapper): SQL {
   // Match the shared board-path parsers: repeated/leading slashes and an optional
   // two-letter locale are accepted. Legacy path-only sessions still name a wall.
   const pathSource = sql`SELECT privacy_path_source.id,
@@ -128,7 +128,6 @@ function sessionBoardReferences(sessionIdColumn: SQLWrapper, viewerId: ViewerId)
         AND privacy_spray_wall.deleted_at IS NULL
       LEFT JOIN user_boards privacy_spray_board ON privacy_spray_board.uuid = privacy_spray_wall.board_uuid
         AND privacy_spray_board.deleted_at IS NULL
-        AND (privacy_spray_wall.hidden_at IS NULL OR privacy_spray_board.owner_id = ${viewerId ?? null})
       WHERE privacy_spray_session.id = ${sessionIdColumn} AND split_part(privacy_spray_session.path, '/', 1) = 'spray'
     )`;
 }
@@ -137,14 +136,20 @@ function sessionBoardReferences(sessionIdColumn: SQLWrapper, viewerId: ViewerId)
  * Distances and coordinates must respect every referenced board's location policy.
  * Only a live board that denies the viewer blocks: an unresolvable or soft-deleted
  * parent has no policy left to enforce, so it never hides the session's own place.
+ * An admin-hidden spray wall withholds its sessions' place from everyone but its
+ * owner, the same spray wall rule that hides the wall itself.
  */
 export function sessionBoardLocationCondition(sessionIdColumn: SQLWrapper, viewerId: ViewerId): SQL {
   return sql`NOT EXISTS (
-    SELECT 1 FROM ${sessionBoardReferences(sessionIdColumn, viewerId)} privacy_parent_refs
+    SELECT 1 FROM ${sessionBoardReferences(sessionIdColumn)} privacy_parent_refs
     JOIN user_boards privacy_parent_board ON privacy_parent_board.id = privacy_parent_refs.board_id
       AND privacy_parent_board.deleted_at IS NULL
     WHERE NOT ${resourceAccessCondition('board', sql`privacy_parent_board.uuid`, viewerId, { allowUnlistedLink: false })}
       OR NOT ${resourceLocationCondition(sql`privacy_parent_board.uuid`, viewerId)}
+      OR EXISTS (SELECT 1 FROM spray_walls privacy_hidden_wall
+        WHERE privacy_hidden_wall.board_uuid = privacy_parent_board.uuid
+          AND privacy_hidden_wall.hidden_at IS NOT NULL
+          AND privacy_parent_board.owner_id IS DISTINCT FROM ${viewerId ?? null})
   )`;
 }
 

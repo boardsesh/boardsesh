@@ -8,6 +8,8 @@ import { canAccessResource, canAccessResourceWithoutLink } from '../services/pri
 const ownerId = 'privacy-path-owner';
 let publicBoardId: number;
 let privateBoardId: number;
+let hiddenSprayBoardId: number;
+const hiddenSprayLayoutId = 987_654;
 
 beforeAll(async () => {
   await db.insert(schema.users).values({ id: ownerId, name: 'Owner', email: 'privacy-path-owner@test.invalid' });
@@ -52,6 +54,28 @@ beforeAll(async () => {
     .returning({ id: schema.userBoards.id, slug: schema.userBoards.slug });
   publicBoardId = boards.find((board) => board.slug === 'privacy-public-path')!.id;
   privateBoardId = boards.find((board) => board.slug === 'privacy-private-path')!.id;
+  // A public spray wall an admin has hidden.
+  const [sprayBoard] = await db
+    .insert(schema.userBoards)
+    .values({
+      uuid: 'privacy-hidden-spray-board',
+      slug: 'privacy-hidden-spray',
+      ownerId,
+      name: 'Hidden spray wall',
+      boardType: 'spray',
+      layoutId: hiddenSprayLayoutId,
+      sizeId: hiddenSprayLayoutId,
+      setIds: '1',
+      isPublic: true,
+      hasLeds: false,
+    })
+    .returning({ id: schema.userBoards.id });
+  hiddenSprayBoardId = sprayBoard.id;
+  await db.insert(schema.sprayWalls).values({
+    boardUuid: 'privacy-hidden-spray-board',
+    layoutId: hiddenSprayLayoutId,
+    hiddenAt: new Date(),
+  });
 });
 
 beforeEach(async () => {
@@ -66,6 +90,12 @@ beforeEach(async () => {
       { id: 'path-private-board', boardPath: 'b/privacy-public-path', boardId: privateBoardId },
       { id: 'path-missing', boardPath: '/b/missing-private-wall', boardId: null },
       { id: 'path-spray-missing', boardPath: '/spray/999999999/1/1/40', boardId: null },
+      {
+        id: 'path-spray-hidden',
+        boardPath: `/spray/${hiddenSprayLayoutId}/${hiddenSprayLayoutId}/1/40`,
+        boardId: null,
+      },
+      { id: 'path-spray-hidden-bound', boardPath: 'kilter/1/1/1/40', boardId: hiddenSprayBoardId },
     ].map((session) => ({ ...session, isPublic: true, createdByUserId: ownerId })),
   );
 });
@@ -90,10 +120,12 @@ describe('legacy session paths', () => {
       'path-private',
       'path-private-board',
       'path-public',
+      'path-spray-hidden',
+      'path-spray-hidden-bound',
       'path-spray-missing',
       'path-stale-public-board',
     ];
-    // Private, missing and stale boards never hide the session itself.
+    // Private, missing, hidden and stale boards never hide the session itself.
     expect(await readable()).toEqual(everySession);
     expect(await readable({ allowUnlistedLink: false })).toEqual(
       everySession.filter((sessionId) => sessionId !== 'path-private'),
@@ -111,6 +143,11 @@ describe('legacy session paths', () => {
       ).map((session) => session.id);
     expect(await visibleLocations(null)).toEqual(['path-catalog', 'path-missing', 'path-public', 'path-spray-missing']);
     expect(await visibleLocations(ownerId)).toContain('path-hidden-location');
+    // An admin-hidden spray wall withholds its sessions' place, path-only or bound,
+    // from everyone but the wall's owner.
+    expect(await visibleLocations(ownerId)).toEqual(
+      expect.arrayContaining(['path-spray-hidden', 'path-spray-hidden-bound']),
+    );
 
     // A soft-deleted parent has no policy left to enforce.
     await db.update(schema.userBoards).set({ deletedAt: new Date() }).where(eq(schema.userBoards.id, privateBoardId));
