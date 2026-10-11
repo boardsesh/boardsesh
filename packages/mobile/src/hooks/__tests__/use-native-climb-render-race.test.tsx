@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { useLayoutEffect } from 'react';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 
 // In-flight render race regression (play-drawer "unlit holds"): a slow native
@@ -178,6 +179,77 @@ describe('useNativeClimbRender in-flight race', () => {
     expect(_renderedOverlaysForTests.get(slowKey)?.uri).toBe('file:///overlay-slow.png');
     rerender({ frames: FRAMES_SLOW });
     await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay-slow.png'));
+  });
+
+  // A recycled list row keeps the hook instance and hands it a new climb. An
+  // overlay already in the index used to reach the row one commit late: the row
+  // committed once with no overlay (bare board), then again with it.
+  it('shows an already-rendered overlay in the same commit a recycled row takes the climb', async () => {
+    const slowKey = cacheKeyFor(FRAMES_SLOW);
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES_CACHED), 'file:///overlay-cached.png');
+
+    const committed: Array<{ frames: string; overlayUri: string | null; immediate: boolean }> = [];
+    const { result, rerender } = renderHook(
+      (props: { frames: string }) => {
+        const render = useNativeClimbRender({ ...BASE, ...props });
+        useLayoutEffect(() => {
+          committed.push({ frames: props.frames, overlayUri: render.overlayUri, immediate: render.overlayImmediate });
+        });
+        return render;
+      },
+      { initialProps: { frames: FRAMES_SLOW } },
+    );
+    await waitFor(() => expect(pendingRenders.has(slowKey)).toBe(true));
+    // Nothing rendered yet for the first climb: it is not "immediate".
+    expect(result.current.overlayImmediate).toBe(false);
+
+    committed.length = 0;
+    rerender({ frames: FRAMES_CACHED });
+
+    // No commit ever showed the cached climb without its overlay.
+    expect(committed.filter((commit) => commit.frames === FRAMES_CACHED && commit.overlayUri === null)).toEqual([]);
+    expect(result.current.overlayUri).toBe('file:///overlay-cached.png');
+    expect(result.current.overlayImmediate).toBe(true);
+  });
+
+  it('reports a late overlay as not immediate, so the view layer can hold the photo back for it', async () => {
+    const slowKey = cacheKeyFor(FRAMES_SLOW);
+    const { result } = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_SLOW }));
+    await waitFor(() => expect(pendingRenders.has(slowKey)).toBe(true));
+    expect(result.current.overlayUri).toBeNull();
+    expect(result.current.overlayImmediate).toBe(false);
+
+    await act(async () => {
+      resolveNextRender(slowKey, 'file:///overlay-slow.png');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay-slow.png'));
+    // It arrived after the surface had already been showing this climb.
+    expect(result.current.overlayImmediate).toBe(false);
+  });
+
+  // A surface that holds its photo back for the holds must not wait when the
+  // board cannot be drawn at all.
+  it('says no overlay is coming for a board it has no render data for', async () => {
+    const { getBoardRenderData } = await import('../../lib/board-details');
+    const renderData = vi.mocked(getBoardRenderData);
+    const original = renderData.getMockImplementation();
+    renderData.mockImplementation(() => null as unknown as ReturnType<typeof getBoardRenderData>);
+    try {
+      const { result } = renderHook(() => useNativeClimbRender({ ...BASE, layoutId: 777, frames: FRAMES_SLOW }));
+      await waitFor(() => expect(result.current.overlayUnavailable).toBe(true));
+      expect(result.current.overlayUri).toBeNull();
+      expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    } finally {
+      renderData.mockImplementation(original ?? (() => null as unknown as ReturnType<typeof getBoardRenderData>));
+    }
+  });
+
+  it('reports an overlay found by the first render of a fresh mount as immediate', () => {
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES_CACHED), 'file:///overlay-cached.png');
+    const { result } = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_CACHED }));
+    expect(result.current.overlayUri).toBe('file:///overlay-cached.png');
+    expect(result.current.overlayImmediate).toBe(true);
   });
 
   it('regenerates one missing cache entry and exposes a new load key even when the URI is unchanged', async () => {

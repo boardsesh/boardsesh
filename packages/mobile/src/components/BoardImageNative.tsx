@@ -8,6 +8,7 @@ import type { HoldColorOverrides } from '../lib/hold-color-overrides';
 import { LayeredClimbImage } from './LayeredClimbImage';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
+import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
 
 type BoardImageNativeProps = {
   accessible?: boolean;
@@ -59,6 +60,13 @@ type BoardImageNativeProps = {
    */
   recyclingKey?: string;
   style?: ViewStyle;
+  /**
+   * Hold the board photo back until the holds have painted, so a board that
+   * opens onto a climb nobody has rendered yet appears whole instead of as a bare
+   * wall the holds then fade onto. Ignored when the overlay is already rendered
+   * or cannot come at all. See `LayeredClimbImage`.
+   */
+  revealWithOverlay?: 'each-climb' | 'first-paint';
   /**
    * Drop the holds overlay's cross-fade for this render — forwarded to
    * LayeredClimbImage. The play-drawer carousel sets it on the current board while
@@ -145,6 +153,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   backgroundVariant,
   recyclingKey,
   style,
+  revealWithOverlay,
   suppressOverlayTransition,
   overlayTestID,
   renderSettingsOverride,
@@ -157,6 +166,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
   const {
     overlayUri,
     overlayLoadKey,
+    overlayImmediate,
+    overlayUnavailable,
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,
@@ -178,6 +189,11 @@ const BoardImageNative = React.memo(function BoardImageNative({
     holdColorOverride,
     maxVeilOpacity,
   });
+
+  // Already rendered when the board took this climb AND decoded into memory, so
+  // it is on the layer the frame the board mounts. Rendered alone is not enough:
+  // the view would show the bare wall for the frames its own decode takes.
+  const overlayPaintsWithBoard = overlayImmediate && isBoardArtInMemory(overlayUri);
 
   const containerStyle: ViewStyle = {
     width: '100%',
@@ -205,7 +221,11 @@ const BoardImageNative = React.memo(function BoardImageNative({
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={recyclingKey}
-        suppressOverlayTransition={suppressOverlayTransition}
+        // Nothing to wait for when the holds are already rendered and decoded,
+        // when there are none to draw, or when no overlay is coming.
+        revealWithOverlay={frames && !overlayPaintsWithBoard && !overlayUnavailable ? revealWithOverlay : undefined}
+        // An overlay that paints with the board has nothing to fade from.
+        suppressOverlayTransition={suppressOverlayTransition || overlayPaintsWithBoard}
         overlayTestID={overlayTestID}
         // A bridge only makes sense while a replacement is on its way. Empty
         // frames render nothing at all — `useNativeClimbRender` returns before

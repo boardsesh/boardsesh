@@ -497,6 +497,21 @@ describe('one bounded self-retry after a native render failure', () => {
 describe('Board Render Failed — the config stage', () => {
   const OFF_BOARD_FRAMES = 'p4000r12p4001r13';
 
+  // A surface that holds its photo back until the holds have painted must not
+  // wait on holds that are never coming.
+  it('says no overlay is coming for a climb that matches no hold on this board', async () => {
+    const { result, rerender } = renderHook(
+      (props: { frames: string }) => useNativeClimbRender({ ...BASE, ...props }),
+      { initialProps: { frames: OFF_BOARD_FRAMES } },
+    );
+    await waitFor(() => expect(result.current.overlayUnavailable).toBe(true));
+    expect(result.current.overlayUri).toBeNull();
+
+    // The flag belongs to that climb: a recycled row's next climb starts clean.
+    rerender({ frames: FRAMES });
+    expect(result.current.overlayUnavailable).toBe(false);
+  });
+
   it('reports a climb whose frames match no hold on this board, and skips the render', async () => {
     renderRow({ frames: OFF_BOARD_FRAMES });
     await waitFor(() => expect(failureEvents()).toHaveLength(1));

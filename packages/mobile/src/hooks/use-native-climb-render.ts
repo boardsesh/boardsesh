@@ -286,6 +286,20 @@ type NativeClimbRenderResult = {
    * including a regeneration that writes back to the same file:// URI.
    */
   overlayLoadKey: string | null;
+  /**
+   * True when the overlay was already rendered the moment this surface took the
+   * climb, so the holds are in the same commit as everything else. Pass it to
+   * `suppressOverlayTransition`: a cross-fade from nothing would put the bare
+   * board on screen for 150ms that it never had to be there.
+   */
+  overlayImmediate: boolean;
+  /**
+   * True when no overlay is coming for this climb at all: the renderer is
+   * missing, the climb names no hold this board has, the board has no render
+   * config, or renders are backed off after a full disk. A surface that holds
+   * its photo back for the holds (`revealWithOverlay`) must not wait on these.
+   */
+  overlayUnavailable: boolean;
   /** Exact-attempt callbacks consumed by LayeredClimbImage's overlay Image. */
   onOverlayLoad: (loadKey: string | null) => void;
   onOverlayError: (event: { error: string }, loadKey: string | null) => void;
@@ -2143,12 +2157,45 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     const existing = getRenderedOverlay(currentCacheKey);
     return existing ? { key: currentCacheKey, entry: existing, loadAttempt: 0 } : null;
   });
+  // A recycled list row keeps this hook instance and hands it a new climb. Left
+  // to the effect below, an overlay that is ALREADY in the index reaches state
+  // one commit late: the row first commits with no overlay at all (the key guard
+  // on `overlayUri`), then commits again with it, and the image fades up from
+  // nothing. That is a bare board followed by the holds flashing in on every
+  // recycled row of a scroll, for a picture that was on disk the whole time.
+  // Adopting the entry during render (React re-runs this render before it
+  // commits anything) lands the new climb's holds in the same commit as its name.
+  //
+  // `overlayArrivalRef` records, once per key, whether the overlay was there the
+  // moment this surface took the climb. The view layer skips the cross-fade when
+  // it was: nothing was ever shown without the holds, so there is nothing to
+  // fade from.
+  //
+  // Only on a key CHANGE. State for the current key can legitimately hold no
+  // overlay while the index still has one — a decode that failed for good
+  // withholds its entry on purpose — and re-adopting on every render would put
+  // that failed image straight back.
+  const overlayArrivalRef = useRef<{ key: string; immediate: boolean } | null>(null);
+  if (overlayArrivalRef.current === null) {
+    // First render of this instance: the state initializer consulted the index.
+    overlayArrivalRef.current = {
+      key: currentCacheKey,
+      immediate: nativeRender?.key === currentCacheKey && nativeRender.entry != null,
+    };
+  } else if (overlayArrivalRef.current.key !== currentCacheKey) {
+    const existing = flatFrames ? getRenderedOverlay(currentCacheKey) : undefined;
+    overlayArrivalRef.current = { key: currentCacheKey, immediate: existing !== undefined };
+    if (existing) setNativeRender({ key: currentCacheKey, entry: existing, loadAttempt: 0 });
+  }
   const [verifiedOverlay, setVerifiedOverlay] = useState<{
     cacheKey: string;
     uri: string;
     loadKey: string;
   } | null>(null);
   const [recoveryRequest, setRecoveryRequest] = useState(0);
+  // The cache key the overlay effect last gave up on; see `overlayUnavailable`
+  // on the result. Keyed, so a recycled row's next climb starts clean.
+  const [unavailableOverlayKey, setUnavailableOverlayKey] = useState<string | null>(null);
   // Mirrors the module-level give-up so it can drive a re-render; see the
   // `!nativeModule` branch in the overlay effect.
   const [rendererGaveUp, setRendererGaveUp] = useState(isNativeRendererUnavailable);
@@ -2405,6 +2452,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           // effect ever runs, so a stale entry is already on screen by now.
           // Dropping it from the index alone would leave it painted.
           setNativeRender((previous) => (previous?.key === currentCacheKey ? null : previous));
+          setUnavailableOverlayKey(currentCacheKey);
           return;
         }
         // A partial match still draws: a climb that legitimately reaches past a
@@ -2518,11 +2566,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       litHoldIds,
       extraHoldStates,
     );
-    if (!boardConfig) return;
+    if (!boardConfig) {
+      setUnavailableOverlayKey(currentCacheKey);
+      return;
+    }
     // Backed off after a full-disk failure: the write cannot succeed, and every
     // recycled row retrying it is what turned one out-of-space device into 50
     // Sentry events in 50 minutes. Overlay stays null; backgrounds still show.
     if (isDiskPressureLatched()) {
+      setUnavailableOverlayKey(currentCacheKey);
       // Come back once when the latch lifts. A list scrolls and remounts rows,
       // so it recovers on its own; a stationary play view never re-runs this
       // effect, and would sit with no overlay for the rest of the mount even
@@ -3065,6 +3117,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   return {
     overlayUri,
     overlayLoadKey,
+    overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,
+    overlayUnavailable:
+      rendererGaveUp ||
+      isNativeRendererUnavailable() ||
+      (flatFrames !== '' && unavailableOverlayKey === currentCacheKey),
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,

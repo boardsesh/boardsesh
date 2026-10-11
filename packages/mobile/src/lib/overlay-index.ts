@@ -39,7 +39,18 @@ const renderedOverlays = new Map<string, RenderedOverlayEntry>();
  */
 const lastUsedAtMs = new Map<string, number>();
 
-export const RENDERED_OVERLAYS_MAX = 200;
+/**
+ * How many rendered overlays JS remembers. An entry is two short strings, so the
+ * cap is about bounding a Map, not memory: at 1500 it is well under a megabyte.
+ *
+ * It was 200, which one scroll session outgrows — every list row is an entry,
+ * and so is every row warmed ahead of the scroll. A climb that fell out of the
+ * index is still on disk, but the hook can no longer answer for it during
+ * render: it has to ask native (which finds the file) and gets the overlay back
+ * a commit late, so the row shows its bare board first. Scrolling back up a long
+ * list did exactly that for every row past the cap.
+ */
+export const RENDERED_OVERLAYS_MAX = 1500;
 let nextOverlayGeneration = 1;
 
 let overlayWritesSinceSweep = 0;

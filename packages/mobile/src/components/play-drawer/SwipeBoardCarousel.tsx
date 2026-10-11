@@ -21,6 +21,7 @@ import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
 import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 import { ScreenshotSmokeMarker } from '../ScreenshotSmokeMarker';
 import { countLitHolds } from '../../lib/screenshot-smoke';
+import { clearPlayBoardPrewarm, rememberPlayOverlayWidth } from '../../lib/board-render/play-board-prewarm';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -268,6 +269,15 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     [currentFrames],
   );
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+  // Remembered so the climbs list can start the next climb's play-size render at
+  // the tap, before this carousel has mounted and measured again.
+  const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;
+  useEffect(() => {
+    if (measuredOverlayWidth === null) return;
+    rememberPlayOverlayWidth({ boardName, layoutId, sizeId, setIds }, measuredOverlayWidth);
+    // The board below now holds the render the tap started.
+    clearPlayBoardPrewarm();
+  }, [measuredOverlayWidth, boardName, layoutId, sizeId, setIds]);
   // The lit climb, for the showcase video's callouts (screenshot mode only, like the plain board below).
   const boardSurfaceAnchor = useShowcaseAnchor('board-surface');
 
@@ -357,6 +367,13 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 // instant (no-fade) swap lands it before the reset uncovers it —
                 // killing the Android end-of-swipe flash. See isCommitting above.
                 suppressOverlayTransition={isCommitting}
+                // Opening onto a climb whose play-size overlay is not rendered
+                // yet: show the wall and its holds together, a few frames later,
+                // rather than the bare wall first. Only the first paint — a
+                // swipe to the next climb keeps the photo up. No placeholder
+                // colour on purpose: the drawer behind is a blur material, and no
+                // solid block matches it, so the wait shows the drawer itself.
+                revealWithOverlay="first-paint"
                 // See the screenshot-mode board above: the current card is the
                 // only `surface: 'play'` in the app.
                 playSurface
