@@ -13,7 +13,7 @@
 // One <Host> wraps a horizontal SwiftUI ScrollView + HStack of chips:
 //   Filters · N → opens the long-tail sheet (Button, no menu)
 //   Recent ▾    → native Menu of saved filters + Clear (hidden when none)
-//   Grade       → opens the GradeRangeRail overlay (Button, no menu)   [PRIMARY #1]
+//   Grade       → discloses the GradeRangeRail row (Button, no menu) [PRIMARY #1]
 //   Your progress ▾ → native Menu + Picker (single-select, auth-gated) [PRIMARY #2]
 //   Collection ▾→ native Menu + Picker (Any / Benchmarks / My drafts)  [PRIMARY #3]
 //   Tall / Wide → tap toggles, long-press Lock / Unlock (iOS-only lock)
@@ -171,8 +171,8 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
-          {/* Grade → the range rail overlay. A button, not a menu; tap toggles the
-              rail (close path beyond the tap-outside dismiss layer). [PRIMARY #1] */}
+          {/* Grade → the range rail, a row under the chips (a popover on regular-width
+              iPad). A button, not a menu; tap toggles the rail. [PRIMARY #1] */}
           {pinnedChips.includes('grade') ? (
             gradePopoverContent ? (
               <Popover

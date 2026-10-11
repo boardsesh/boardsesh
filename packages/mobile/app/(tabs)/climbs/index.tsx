@@ -1,6 +1,5 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
-import { PressableSurface } from '../../../src/components/PressableSurface';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
   View,
@@ -236,7 +235,7 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 
 function ClimbListInner() {
   const { isPad, widthClass } = useDeviceLayout();
-  const [gradePresentation, setGradePresentation] = useState<'popover' | 'overlay' | null>(null);
+  const [gradePresentation, setGradePresentation] = useState<'popover' | 'inline' | null>(null);
   const gradeUsesPopover =
     gradePresentation === 'popover' || (gradePresentation === null && isPad && widthClass === 'regular');
   const nativeRootHeader = useNativeRootHeader();
@@ -346,9 +345,11 @@ function ClimbListInner() {
   const [showFilters, setShowFilters] = useState(false);
   const [showGrade, setShowGrade] = useState(false);
   const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
-  // Measured height of the floating glass chrome (incl. the top safe-area inset).
-  // The list pads its top by this so the first row rests below the chrome and the
-  // rest scroll under it.
+  // Measured height of the chrome the list has to clear: the whole floating glass
+  // chrome (incl. the top safe-area inset), or only the controls block under the
+  // bar when UIKit owns the header (the list's automatic inset covers the bar).
+  // The list pads its top by this, so it is not a screen offset: never position
+  // an overlay with it.
   const [searchBarHeight, setSearchBarHeight] = useState(() => insets.top + 60);
 
   const blurSearchInputs = useCallback(() => {
@@ -370,7 +371,7 @@ function ClimbListInner() {
   const handleOpenGrade = useCallback(() => {
     blurSearchInputs();
     setShowFilters(false);
-    setGradePresentation(isPad && widthClass === 'regular' ? 'popover' : 'overlay');
+    setGradePresentation(isPad && widthClass === 'regular' ? 'popover' : 'inline');
     setShowGrade(true);
   }, [blurSearchInputs, isPad, widthClass]);
   const handleDismissGrade = useCallback(() => {
@@ -1729,11 +1730,28 @@ function ClimbListInner() {
           betaActive={!!filters.onlyWithBetaVideos}
           onToggleBeta={handleToggleBeta}
         />
+        {/* On Liquid Glass the Grade chip discloses the range rail as a row of the
+            chrome itself, so the native header can never cover it and the list
+            insets by the taller chrome. (Material renders its own rail inside
+            ClimbTopChrome; regular-width iPad uses the chip's popover.) */}
+        {showGrade && !filterInTopChrome && !gradeUsesPopover ? (
+          <View style={styles.chipGradeRail}>
+            <GradeRangeRail
+              grades={grades}
+              bound={gradeBound}
+              lastUsedGradeId={lastUsedGrade}
+              boardName={boardName}
+              onChange={handleGradeChange}
+              dismissible={false}
+            />
+          </View>
+        ) : null}
         <FilterTokenRow tokens={sheetOnlyFilterTokens} />
       </>
     );
   }, [
     showFilterChips,
+    filterInTopChrome,
     gradeUsesPopover,
     grades,
     gradeBound,
@@ -2254,32 +2272,6 @@ function ClimbListInner() {
         showPersistentChips={filterInTopChrome}
       />
 
-      {/* On Liquid Glass the Grade chip opens a top-anchored range rail +
-          dismiss layer, just below the measured chrome. (Material renders its own
-          grade rail inside ClimbTopChrome, so this glass-only overlay is gated on
-          !filterInTopChrome.) */}
-      {showFilterChips && !filterInTopChrome && !gradeUsesPopover && showGrade ? (
-        <>
-          <PressableSurface
-            style={styles.chipGradeDismiss}
-            onPress={handleDismissGrade}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          />
-          <View pointerEvents="box-none" style={[styles.chipGradeRailSlot, { top: searchBarHeight + spacing[2] }]}>
-            <GradeRangeRail
-              grades={grades}
-              bound={gradeBound}
-              lastUsedGradeId={lastUsedGrade}
-              boardName={boardName}
-              onChange={handleGradeChange}
-              onRequestClose={handleDismissGrade}
-              dismissible={false}
-            />
-          </View>
-        </>
-      ) : null}
-
       {showFilters ? (
         <ClimbFilterSheet
           onDismiss={handleDismissFilters}
@@ -2368,22 +2360,10 @@ const styles = StyleSheet.create({
   placeholderTint: {
     opacity: 0.4,
   },
-  // Top-anchored grade rail for the persistent chip row (the FAB's bottom rail
-  // is suppressed when chips are on). The dismiss layer sits below the rail so a
-  // tap outside closes it without stealing the rail's own touches.
-  chipGradeDismiss: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 24,
-  },
-  chipGradeRailSlot: {
-    position: 'absolute',
-    left: spacing[4],
-    right: spacing[4],
-    zIndex: 25,
+  // The grade rail the Grade chip discloses, in flow under the chip row.
+  chipGradeRail: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[2],
   },
   emptyContainer: {
     flex: 1,

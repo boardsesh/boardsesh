@@ -299,7 +299,7 @@ function FilterChipRowComponent({
             />
           ) : null}
 
-          {/* Grade → the range rail overlay. Action chip, no menu; tap toggles the rail. */}
+          {/* Grade → the range rail. Action chip, no menu; tap toggles the rail. */}
           {pinnedChips.includes('grade') ? (
             <ActionChip
               label={gradeLabel}
