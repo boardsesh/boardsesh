@@ -58,10 +58,15 @@ export function playlistClimbEntityClimbUuid(entityIdColumn: SQLWrapper): SQL<st
 /**
  * Whether the viewer owns the item a comment, like or notification is about:
  * the tick's climber, the session's host, the climb's setter, the playlist's
- * owner, the proposer, the comment's author, the board's or gym's owner. An
- * owner sees every comment and like on their own item, whatever the commenter's
- * account privacy. A deleted board or gym has no owner here, and an unknown
- * entity type has none at all.
+ * owner, the comment's author, the board's or gym's owner. An owner sees every
+ * comment and like on their own item, whatever the commenter's account privacy.
+ * A deleted board or gym has no owner here, and an unknown entity type has none
+ * at all.
+ *
+ * A proposal has no owner. It is moderation on someone else's climb: its
+ * proposer reads other people's comments on it and hears about its votes and
+ * outcome by the same account rule as everyone else: a private moderator, voter
+ * or later reporter is named to them only if they follow that account.
  *
  * The entity type is compared as text: social columns are enums, and callers
  * also pass the non-social types `content_privacy` covers (which own nothing).
@@ -83,8 +88,6 @@ export function entityOwnerCondition(
       JOIN playlist_ownership owner_playlist_role ON owner_playlist_role.playlist_id = owner_playlist.id
       WHERE owner_playlist.uuid = ${playlistClimbEntityPlaylistUuid(entityIdColumn)}
         AND owner_playlist_role.user_id = ${viewerId} AND owner_playlist_role.role = 'owner')
-    WHEN 'proposal' THEN EXISTS (SELECT 1 FROM climb_proposals owner_proposal
-      WHERE owner_proposal.uuid = ${entityIdColumn} AND owner_proposal.proposer_id = ${viewerId})
     WHEN 'comment' THEN EXISTS (SELECT 1 FROM comments owner_comment
       WHERE owner_comment.uuid = ${entityIdColumn} AND owner_comment.user_id = ${viewerId})
     WHEN 'board' THEN EXISTS (SELECT 1 FROM user_boards owner_board
