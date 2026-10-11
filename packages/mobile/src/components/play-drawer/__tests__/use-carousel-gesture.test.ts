@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { SWIPE_OFFSCREEN_PAD, SWIPE_THRESHOLD } from '@boardsesh/play-view';
 
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
@@ -29,6 +29,9 @@ vi.mock('react-native-reanimated', async () => {
       return ref.current;
     },
     cancelAnimation,
+    // Only the real pager registers reactions (one test below uses it). Nothing
+    // here drives them: a fling that lands hands its step over by itself.
+    useAnimatedReaction: () => {},
     withTiming: (toValue: unknown) => toValue,
     // Resolves to its target at once, like the rest of this mock, and hands the
     // completion callback to the test, which decides when the fling lands.
@@ -79,7 +82,13 @@ vi.mock('react-native-gesture-handler', () => {
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
 
 import { useCarouselGesture } from '../use-carousel-gesture';
-import type { SwipePager, SwipePagerJsState } from '../use-swipe-pager';
+import {
+  useSwipeNavigation,
+  useSwipePager,
+  useSwipePages,
+  type SwipePager,
+  type SwipePagerJsState,
+} from '../use-swipe-pager';
 
 type Options = Parameters<typeof useCarouselGesture>[0];
 
@@ -410,6 +419,33 @@ describe('useCarouselGesture', () => {
       expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
       expect(pager.anchorPage.value).toBe(1);
       expect(pager.translateX.value).toBe(0);
+    });
+
+    // The whole path, with the real pager: the step's own render can be what
+    // takes the carousel down, and the drawer goes on rendering without it.
+    it('changes the climb with the callbacks of the render the drawer made after the carousel went', () => {
+      const whileTheCarouselWasUp = vi.fn();
+      const afterItWentDown = vi.fn();
+      const drawer = renderHook(
+        ({ onNext }: { onNext: () => void }) => {
+          const { pager, stepSignal } = useSwipePager();
+          useSwipePages(pager, stepSignal, 'a', 'b', 'c');
+          useSwipeNavigation(pager, onNext, onNext);
+          return pager;
+        },
+        { initialProps: { onNext: whileTheCarouselWasUp } },
+      );
+      const pager = drawer.result.current;
+      const carousel = renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+
+      carousel.unmount();
+      drawer.rerender({ onNext: afterItWentDown });
+      act(() => landFling());
+
+      expect(whileTheCarouselWasUp).not.toHaveBeenCalled();
+      expect(afterItWentDown).toHaveBeenCalledTimes(1);
+      expect(pager.anchorPage.value).toBe(1);
     });
 
     it('lets the carousel mounted in its place take over the fling without losing the step', () => {

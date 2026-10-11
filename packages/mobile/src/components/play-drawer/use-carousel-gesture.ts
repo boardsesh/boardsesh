@@ -50,6 +50,8 @@ type UseCarouselGestureReturn = {
  * Under the system's Reduce Motion setting Reanimated ends a spring the moment
  * it is assigned, so a release changes the climb with no slide and a let-go
  * drag is back in the middle at once. Nothing here has to ask for that.
+ * Reanimated reads the setting once, when the app starts: switched on while
+ * the app is running, it takes effect here at the next launch.
  */
 export function useCarouselGesture({
   pager,
