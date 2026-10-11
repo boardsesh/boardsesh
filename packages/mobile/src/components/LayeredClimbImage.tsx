@@ -298,7 +298,18 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   useLayoutEffect(() => {
     onOverlayMounted?.(overlayImageMounted ? overlayMountedKey : null);
   }, [onOverlayMounted, overlayImageMounted, overlayMountedKey]);
-  // Unmount, or a consumer that is no longer listening.
+  // Unmount, or a consumer that is no longer listening. A new callback
+  // identity counts as that: the old one hears `null`, the new one hears the
+  // image above as freshly mounted, and a watch that had been answered starts
+  // again. `useNativeClimbRender` keeps one identity for its whole life so
+  // that this never happens to an image that has already painted.
+  //
+  // Both effects take an effect that runs again to mean an image that mounted
+  // again. That does not hold under an `<Activity>` or a Suspense boundary
+  // that hides this subtree: React runs layout effects again on the reveal
+  // while the native image stays where it was and fires nothing, and a play
+  // surface would be reported for a paint that is not coming. Nothing wraps
+  // one in either today.
   useLayoutEffect(() => () => onOverlayMounted?.(null), [onOverlayMounted]);
   // What `revealWithOverlay` has already let through. `key` is the climb for
   // 'each-climb' and a constant for 'first-paint', so one comparison serves both.

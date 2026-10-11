@@ -49,6 +49,7 @@ type DeferredBoardProps = {
 };
 
 /** The persistent current board mounts with the player, before JS layout callbacks. */
+
 export const DeferredBoard = memo(function DeferredBoard({
   open,
   layoutReady: _layoutReady,

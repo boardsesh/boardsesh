@@ -216,9 +216,10 @@ it can read on the UI thread.
   forward began with the wrong holds on the incoming board, and swipes were ignored for 160 to 230 ms
   after each release. Two things are left. The page after the next exists only once the JS thread
   has rendered the step before, so a second flick the same way that is let go inside those 30 to
-  66 ms springs back (#6351). And with the Logbook and Climber logs sections hidden, a swipe between
-  a climb with setter notes and one without makes the drawer measure itself again, which takes the
-  boards down and mounts them again (#6373). See rule 9.
+  66 ms springs back (#6351). And with the Logbook section hidden, and Climber logs hidden too or
+  the climber signed out, a swipe between a climb with setter notes and one without makes the
+  drawer measure itself again, which takes the boards down and mounts them again (#6373). See
+  rule 9.
 - `packages/mobile/src/components/ClimbListRow.tsx` follows the same pattern: the swipe-commit
   haptic is gated by `useAnimatedReaction` on the `>= COMMIT_THRESHOLD` boolean edge (lines 39–43),
   so `runOnJS(hapticLight)` fires once per arm, not per frame.

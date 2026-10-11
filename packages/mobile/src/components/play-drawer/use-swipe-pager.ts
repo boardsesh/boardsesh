@@ -49,8 +49,9 @@ import {
  * the offset, the step a fling is carrying, and the callbacks that change the
  * climb. The carousel is unmounted while the drawer measures itself again, and
  * a fling or a step in progress has to survive that. The boards do not: in the
- * one section layout where a climb change sets off that measuring, they are
- * mounted again after the swipe (#6373).
+ * section layouts where a climb change sets off that measuring (Logbook
+ * hidden, and Climber logs hidden or signed out), they are mounted again
+ * after the swipe (#6373).
  */
 
 /** What the JS thread has rendered. One object, so the UI thread never reads half an update. */

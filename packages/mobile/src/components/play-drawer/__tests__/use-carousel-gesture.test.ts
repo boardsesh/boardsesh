@@ -421,8 +421,11 @@ describe('useCarouselGesture', () => {
       expect(pager.translateX.value).toBe(0);
     });
 
-    // The whole path, with the real pager: the step's own render can be what
-    // takes the carousel down, and the drawer goes on rendering without it.
+    // With the real pager and navigation hooks, since the step's own render can
+    // be what takes the carousel down while the drawer goes on rendering. The
+    // pager's UI-thread reactions are stubbed in this file: the step reaches
+    // the JS thread because the fling lands, and where the anchor ends up is
+    // the pager tests' business.
     it('changes the climb with the callbacks of the render the drawer made after the carousel went', () => {
       const whileTheCarouselWasUp = vi.fn();
       const afterItWentDown = vi.fn();
@@ -445,7 +448,7 @@ describe('useCarouselGesture', () => {
 
       expect(whileTheCarouselWasUp).not.toHaveBeenCalled();
       expect(afterItWentDown).toHaveBeenCalledTimes(1);
-      expect(pager.anchorPage.value).toBe(1);
+      drawer.unmount();
     });
 
     it('lets the carousel mounted in its place take over the fling without losing the step', () => {
