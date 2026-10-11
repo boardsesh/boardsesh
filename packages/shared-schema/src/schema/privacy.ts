@@ -41,14 +41,16 @@ export const privacyTypeDefs = /* GraphQL */ `
   type PrivacySettings {
     isPrivate: Boolean!
     privacyRevision: Int!
-    privacyOnboardingVersion: Int!
+    "Always 1. Apps that still ship the retired setup screen open it below 1."
+    privacyOnboardingVersion: Int! @deprecated(reason: "Retired with the privacy setup screen. Always 1.")
     defaultSessionAudience: PrivacyResourceAudience!
     enabled: Boolean!
   }
   input UpdatePrivacySettingsInput {
     isPrivate: Boolean
     defaultSessionAudience: PrivacyResourceAudience
-    privacyOnboardingVersion: Int
+    "Accepted and ignored."
+    privacyOnboardingVersion: Int @deprecated(reason: "Retired with the privacy setup screen. Accepted and ignored.")
   }
   type PrivacyFollowRequest {
     requesterId: ID!

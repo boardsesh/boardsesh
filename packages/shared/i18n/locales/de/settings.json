@@ -569,7 +569,6 @@
   },
   "privacy": {
     "title": "Privatsphäre",
-    "onboardingTitle": "Wähle, wer deine Kletteraktivität sieht",
     "intro": "Deine Einträge helfen weiterhin bei Bewertungen und im Board-Verlauf. Du entscheidest, wer erkennt, dass sie von dir stammen.",
     "accountAudience": "Wer kann deine Aktivität sehen?",
     "publicAccount": "Öffentliches Konto",
@@ -582,7 +581,6 @@
     "saveFailed": "Speichern fehlgeschlagen. Deine gespeicherten Einstellungen bleiben bestehen. Verbinde dich und versuche es erneut.",
     "saved": "Privatsphäre gespeichert",
     "save": "Privatsphäre speichern",
-    "finishSetup": "Meine Auswahl speichern",
     "requests": "Follow-Anfragen",
     "followers": "Follower",
     "approve": "Bestätigen",

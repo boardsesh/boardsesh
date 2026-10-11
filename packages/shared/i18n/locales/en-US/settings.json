@@ -569,7 +569,6 @@
   },
   "privacy": {
     "title": "Privacy",
-    "onboardingTitle": "Choose who sees your climbing",
     "intro": "Your ticks still help climb grades and board history. You decide who can see they came from you.",
     "accountAudience": "Who can see your activity?",
     "publicAccount": "Public account",
@@ -582,7 +581,6 @@
     "saveFailed": "Could not save. Your saved settings have not changed. Connect and try again.",
     "saved": "Privacy settings saved",
     "save": "Save privacy settings",
-    "finishSetup": "Save my choices",
     "requests": "Follow requests",
     "followers": "Followers",
     "approve": "Approve",

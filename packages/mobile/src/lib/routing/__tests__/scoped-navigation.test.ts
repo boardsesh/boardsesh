@@ -8,7 +8,7 @@ describe('navigation keeps the originating tab', () => {
     'resolves privacy settings to registered routes from %s',
     (scope) => {
       publishNavigationScope(scope === 'account' ? ['account'] : ['(tabs)', scope]);
-      for (const route of ['privacy', 'privacy-access', 'privacy-onboarding']) {
+      for (const route of ['privacy', 'privacy-access']) {
         const destination = resolveScopedDestination({
           pathname: `/settings/${route}`,
           params: { kind: 'board', resourceId: 'home-board' },

@@ -77,7 +77,6 @@ export default function SettingsLayout() {
       <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
       <Stack.Screen name="privacy-access" options={{ title: tSettings('privacy.manageAccess') }} />
       <Stack.Screen name="privacy" options={{ title: tSettings('privacy.title') }} />
-      <Stack.Screen name="privacy-onboarding" options={{ title: tSettings('privacy.title') }} />
       <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
       <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />
       <Stack.Screen name="export" options={{ title: tSettings('export.title') }} />

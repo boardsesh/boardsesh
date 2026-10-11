@@ -3,7 +3,7 @@ import { and, count, eq } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
+import { privacyMutations, privacyQueries, privacySettingsFields } from '../graphql/resolvers/privacy';
 import { canAccessResource, canViewUserActivity, getPrivacySettings, setContentPrivacy } from '../services/privacy';
 
 const owner = 'privacy-flow-owner';
@@ -40,11 +40,12 @@ describe('privacy controls against Postgres', () => {
     expect(await canViewUserActivity(requester, owner)).toBe(false);
   });
 
-  it('stores onboarding across clients and rejects a public write with an old account revision atomically', async () => {
+  it('ignores the retired setup flag and rejects a public write with an old account revision atomically', async () => {
     await privacyMutations.updatePrivacySettings(null, { input: { isPrivate: false } }, context(owner));
     const publicSettings = await getPrivacySettings(owner);
     await privacyMutations.updatePrivacySettings(
       null,
+      // Installed apps that still show the retired setup screen send its flag.
       {
         input: { isPrivate: true, privacyOnboardingVersion: 1, defaultSessionAudience: 'followers' },
       },
@@ -52,10 +53,12 @@ describe('privacy controls against Postgres', () => {
     );
     const settings = await privacyQueries.privacySettings(null, null, context(owner));
     expect(settings).toMatchObject({
-      privacyOnboardingVersion: 1,
       defaultSessionAudience: 'followers',
       privacyRevision: publicSettings.privacyRevision + 1,
     });
+    expect(settings).not.toHaveProperty('privacyOnboardingVersion');
+    // Those apps open setup below 1, so the retired field always reads 1.
+    expect(privacySettingsFields.privacyOnboardingVersion()).toBe(1);
     await expect(
       db.transaction(async (transaction) => {
         await transaction.insert(schema.boardseshTicks).values({

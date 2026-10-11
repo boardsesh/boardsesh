@@ -117,7 +117,6 @@ describe('createSession authentication', () => {
         isPrivate: defaultSessionAudience !== 'public',
         defaultSessionAudience,
         privacyRevision: 2,
-        privacyOnboardingVersion: 1,
         enabled: false,
       });
       try {

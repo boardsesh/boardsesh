@@ -6,7 +6,6 @@ export type PrivacyContentType = 'tick' | 'session' | 'comment' | 'climb' | 'pla
 export type PrivacySettings = {
   isPrivate: boolean;
   privacyRevision: number;
-  privacyOnboardingVersion: number;
   defaultSessionAudience: PrivacyResourceAudience;
   enabled: boolean;
 };
@@ -23,16 +22,13 @@ export type PrivacyFollowRequest = {
   displayName: string | null;
   avatarUrl: string | null;
 };
-export type UpdatePrivacySettingsInput = Partial<
-  Pick<PrivacySettings, 'isPrivate' | 'defaultSessionAudience' | 'privacyOnboardingVersion'>
->;
+export type UpdatePrivacySettingsInput = Partial<Pick<PrivacySettings, 'isPrivate' | 'defaultSessionAudience'>>;
 
 export const GET_PRIVACY_SETTINGS = gql`
   query PrivacySettings {
     privacySettings {
       isPrivate
       privacyRevision
-      privacyOnboardingVersion
       defaultSessionAudience
       enabled
     }
@@ -43,7 +39,6 @@ export const UPDATE_PRIVACY_SETTINGS = gql`
     updatePrivacySettings(input: $input) {
       isPrivate
       privacyRevision
-      privacyOnboardingVersion
       defaultSessionAudience
       enabled
     }

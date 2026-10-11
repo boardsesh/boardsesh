@@ -16,7 +16,6 @@ const original: PrivacySettings = {
   enabled: true,
   isPrivate: false,
   privacyRevision: 1,
-  privacyOnboardingVersion: 0,
   defaultSessionAudience: 'public',
 };
 function setup() {
@@ -33,7 +32,7 @@ beforeEach(() => {
   state.request.mockReset();
 });
 describe('privacy writes', () => {
-  it('only completes onboarding and shows private after server acknowledgement', async () => {
+  it('only shows private after server acknowledgement', async () => {
     const { queryClient, wrapper } = setup();
     let acknowledge!: (response: { updatePrivacySettings: PrivacySettings }) => void;
     state.request.mockImplementation(
@@ -43,21 +42,21 @@ describe('privacy writes', () => {
         }),
     );
     const { result } = renderHook(() => useUpdatePrivacySettings(), { wrapper });
-    act(() => result.current.mutate({ isPrivate: true, privacyOnboardingVersion: 1 }));
+    act(() => result.current.mutate({ isPrivate: true }));
     await waitFor(() => expect(result.current.isPending).toBe(true));
     expect(queryClient.getQueryData(['privacySettings', 'viewer'])).toEqual(original);
     acknowledge({
-      updatePrivacySettings: { ...original, isPrivate: true, privacyRevision: 2, privacyOnboardingVersion: 1 },
+      updatePrivacySettings: { ...original, isPrivate: true, privacyRevision: 2 },
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryData<PrivacySettings>(['privacySettings', 'viewer'])?.privacyOnboardingVersion).toBe(1);
+    expect(queryClient.getQueryData<PrivacySettings>(['privacySettings', 'viewer'])?.isPrivate).toBe(true);
     queryClient.clear();
   });
-  it('preserves saved settings and onboarding state after server failure', async () => {
+  it('preserves saved settings after server failure', async () => {
     const { queryClient, wrapper } = setup();
     state.request.mockRejectedValue(new Error('network disconnected'));
     const { result } = renderHook(() => useUpdatePrivacySettings(), { wrapper });
-    act(() => result.current.mutate({ isPrivate: true, privacyOnboardingVersion: 1 }));
+    act(() => result.current.mutate({ isPrivate: true }));
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(queryClient.getQueryData(['privacySettings', 'viewer'])).toEqual(original);
     queryClient.clear();

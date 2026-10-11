@@ -11,7 +11,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { useFollowers, useProfile } from '../../lib/graphql/hooks';
 import {
-  PRIVACY_ONBOARDING_VERSION,
   useIncomingFollowRequests,
   usePrivacyFollowAction,
   usePrivacySettings,
@@ -67,7 +66,7 @@ const PrivacyPersonRow = memo(function PrivacyPersonRow({
   );
 });
 
-export function PrivacySettingsScreen({ onboarding = false }: { onboarding?: boolean }) {
+export function PrivacySettingsScreen() {
   const { t } = useTranslation('settings');
   const { spacing, systemColors, brandColors } = useTheme();
   const { effectiveOffline } = useConnectivity();
@@ -75,8 +74,8 @@ export function PrivacySettingsScreen({ onboarding = false }: { onboarding?: boo
   const settings = usePrivacySettings();
   const update = useUpdatePrivacySettings();
   const enabled = settings.data?.enabled === true;
-  const requests = useIncomingFollowRequests(enabled && !onboarding);
-  const followers = useFollowers(profile?.id, enabled && !onboarding);
+  const requests = useIncomingFollowRequests(enabled);
+  const followers = useFollowers(profile?.id, enabled);
   const followAction = usePrivacyFollowAction();
   const [isPrivate, setIsPrivate] = useState<boolean | null>(null);
   const [sessionAudience, setSessionAudience] = useState<PrivacyResourceAudience>('public');
@@ -85,23 +84,24 @@ export function PrivacySettingsScreen({ onboarding = false }: { onboarding?: boo
   const [peopleMode, setPeopleMode] = useState<'request' | 'follower'>('request');
   useEffect(() => {
     if (!settings.data || dirty) return;
-    if (!onboarding) setIsPrivate(settings.data.isPrivate);
+    setIsPrivate(settings.data.isPrivate);
     setSessionAudience(settings.data.defaultSessionAudience);
-  }, [settings.data, dirty, onboarding]);
-  const people = useMemo<PrivacyPerson[]>(() => {
-    if (onboarding) return [];
-    return peopleMode === 'request'
-      ? (requests.data ?? []).map((request) => ({
-          userId: request.requesterId,
-          displayName: request.displayName,
-          kind: 'request',
-        }))
-      : (followers.data?.pages.flatMap((page) => page.users) ?? []).map((person) => ({
-          userId: person.id,
-          displayName: person.displayName ?? null,
-          kind: 'follower',
-        }));
-  }, [onboarding, peopleMode, requests.data, followers.data]);
+  }, [settings.data, dirty]);
+  const people = useMemo<PrivacyPerson[]>(
+    () =>
+      peopleMode === 'request'
+        ? (requests.data ?? []).map((request) => ({
+            userId: request.requesterId,
+            displayName: request.displayName,
+            kind: 'request',
+          }))
+        : (followers.data?.pages.flatMap((page) => page.users) ?? []).map((person) => ({
+            userId: person.id,
+            displayName: person.displayName ?? null,
+            kind: 'follower',
+          })),
+    [peopleMode, requests.data, followers.data],
+  );
   const handleAction = useCallback(
     (action: 'approve' | 'decline' | 'remove', userId: string) => {
       followAction.mutate({ action, userId });
@@ -128,23 +128,18 @@ export function PrivacySettingsScreen({ onboarding = false }: { onboarding?: boo
   const save = () => {
     if (isPrivate === null || disabled || !enabled) return;
     update.mutate(
-      {
-        isPrivate,
-        defaultSessionAudience: sessionAudience,
-        ...(onboarding ? { privacyOnboardingVersion: PRIVACY_ONBOARDING_VERSION } : {}),
-      },
+      { isPrivate, defaultSessionAudience: sessionAudience },
       {
         onSuccess: () => {
           setDirty(false);
           setSaved(true);
-          if (onboarding) router.back();
         },
       },
     );
   };
   const header = (
     <View style={{ padding: spacing[4], gap: spacing[4] }}>
-      <Text variant="title2">{onboarding ? t('privacy.onboardingTitle') : t('privacy.title')}</Text>
+      <Text variant="title2">{t('privacy.title')}</Text>
       <Text>{t('privacy.intro')}</Text>
       {!settings.data && settings.isPending ? (
         <ActivityIndicator />
@@ -195,29 +190,25 @@ export function PrivacySettingsScreen({ onboarding = false }: { onboarding?: boo
             </Text>
           ) : null}
           <Button
-            title={onboarding ? t('privacy.finishSetup') : t('privacy.save')}
+            title={t('privacy.save')}
             loading={update.isPending}
-            disabled={disabled || isPrivate === null || (!dirty && !onboarding)}
+            disabled={disabled || isPrivate === null || !dirty}
             onPress={save}
           />
-          {!onboarding ? (
-            <>
-              <View style={styles.actions}>
-                <Button
-                  title={t('privacy.requests')}
-                  variant={peopleMode === 'request' ? 'filled' : 'outlined'}
-                  onPress={() => setPeopleMode('request')}
-                />
-                <Button
-                  title={t('privacy.followers')}
-                  variant={peopleMode === 'follower' ? 'filled' : 'outlined'}
-                  onPress={() => setPeopleMode('follower')}
-                />
-              </View>
-              {requests.isError || followers.isError ? <Text>{t('privacy.loadFailed')}</Text> : null}
-              {(peopleMode === 'request' ? requests.isFetching : followers.isFetching) ? <ActivityIndicator /> : null}
-            </>
-          ) : null}
+          <View style={styles.actions}>
+            <Button
+              title={t('privacy.requests')}
+              variant={peopleMode === 'request' ? 'filled' : 'outlined'}
+              onPress={() => setPeopleMode('request')}
+            />
+            <Button
+              title={t('privacy.followers')}
+              variant={peopleMode === 'follower' ? 'filled' : 'outlined'}
+              onPress={() => setPeopleMode('follower')}
+            />
+          </View>
+          {requests.isError || followers.isError ? <Text>{t('privacy.loadFailed')}</Text> : null}
+          {(peopleMode === 'request' ? requests.isFetching : followers.isFetching) ? <ActivityIndicator /> : null}
         </>
       )}
     </View>

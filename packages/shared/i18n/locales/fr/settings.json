@@ -569,7 +569,6 @@
   },
   "privacy": {
     "title": "Confidentialité",
-    "onboardingTitle": "Choisis qui voit ta grimpe",
     "intro": "Tes croix contribuent toujours aux cotations et à l’historique de la board. Tu choisis qui peut savoir qu’elles sont à toi.",
     "accountAudience": "Qui peut voir ton activité ?",
     "publicAccount": "Compte public",
@@ -582,7 +581,6 @@
     "saveFailed": "Enregistrement impossible. Tes réglages enregistrés n’ont pas changé. Connecte-toi et réessaie.",
     "saved": "Réglages de confidentialité enregistrés",
     "save": "Enregistrer la confidentialité",
-    "finishSetup": "Enregistrer mes choix",
     "requests": "Demandes d’abonnement",
     "followers": "Abonnés",
     "approve": "Approuver",

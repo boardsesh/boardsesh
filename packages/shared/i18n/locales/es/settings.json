@@ -569,7 +569,6 @@
   },
   "privacy": {
     "title": "Privacidad",
-    "onboardingTitle": "Elige quién ve tu escalada",
     "intro": "Tus registros siguen ayudando a las cotaciones y al historial del plafón. Tú decides quién puede saber que son tuyos.",
     "accountAudience": "¿Quién puede ver tu actividad?",
     "publicAccount": "Cuenta pública",
@@ -582,7 +581,6 @@
     "saveFailed": "No se pudo guardar. Tus ajustes guardados no han cambiado. Conéctate e inténtalo de nuevo.",
     "saved": "Ajustes de privacidad guardados",
     "save": "Guardar privacidad",
-    "finishSetup": "Guardar mis elecciones",
     "requests": "Solicitudes de seguimiento",
     "followers": "Seguidores",
     "approve": "Aprobar",

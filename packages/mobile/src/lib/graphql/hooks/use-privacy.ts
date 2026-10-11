@@ -23,8 +23,6 @@ import { useProfile } from './index';
 import { getConnectivitySnapshot } from '../../connectivity/connectivity-store';
 import { invalidatePrivacyQueries } from '../../privacy/privacy-cache';
 
-export const PRIVACY_ONBOARDING_VERSION = 1;
-
 /** Feature discovery fails closed against backends that predate privacy enforcement. */
 export function usePrivacySettings() {
   const { data: profile } = useProfile();

@@ -1,5 +1,11 @@
 import { boardSessionPrivacyResolvers } from './shared/board-session-privacy';
-import { privacyQueries, privacyMutations, privacyProfileFields, privacySubscriptions } from './privacy';
+import {
+  privacyQueries,
+  privacyMutations,
+  privacyProfileFields,
+  privacySettingsFields,
+  privacySubscriptions,
+} from './privacy';
 import { notificationDeviceMutations } from './social/notification-devices';
 // eslint-disable-next-line import/no-named-as-default -- `graphql-type-json` exports both default and named `GraphQLJSON`; default is the canonical scalar.
 import GraphQLJSON from 'graphql-type-json';
@@ -216,6 +222,7 @@ export const resolvers = {
 
   ...boardSessionPrivacyResolvers,
   PublicUserProfile: privacyProfileFields,
+  PrivacySettings: privacySettingsFields,
 
   // Field-level resolvers
   ClimbSearchResult: climbFieldResolvers,

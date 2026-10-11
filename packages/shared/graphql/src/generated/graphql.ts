@@ -6143,6 +6143,10 @@ export type PrivacySettings = {
   defaultSessionAudience: PrivacyResourceAudience;
   enabled: Scalars['Boolean']['output'];
   isPrivate: Scalars['Boolean']['output'];
+  /**
+   * Always 1. Apps that still ship the retired setup screen open it below 1.
+   * @deprecated Retired with the privacy setup screen. Always 1.
+   */
   privacyOnboardingVersion: Scalars['Int']['output'];
   privacyRevision: Scalars['Int']['output'];
 };
@@ -10736,6 +10740,10 @@ export type UpdatePlaylistInput = {
 export type UpdatePrivacySettingsInput = {
   defaultSessionAudience?: InputMaybe<PrivacyResourceAudience>;
   isPrivate?: InputMaybe<Scalars['Boolean']['input']>;
+  /**
+   * Accepted and ignored.
+   * @deprecated Retired with the privacy setup screen. Accepted and ignored.
+   */
   privacyOnboardingVersion?: InputMaybe<Scalars['Int']['input']>;
 };
 
@@ -13534,7 +13542,6 @@ export type PrivacySettingsQuery = {
     __typename?: 'PrivacySettings';
     isPrivate: boolean;
     privacyRevision: number;
-    privacyOnboardingVersion: number;
     defaultSessionAudience: PrivacyResourceAudience;
     enabled: boolean;
   };
@@ -13550,7 +13557,6 @@ export type UpdatePrivacySettingsMutation = {
     __typename?: 'PrivacySettings';
     isPrivate: boolean;
     privacyRevision: number;
-    privacyOnboardingVersion: number;
     defaultSessionAudience: PrivacyResourceAudience;
     enabled: boolean;
   };
@@ -21342,7 +21348,6 @@ export const PrivacySettingsDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'privacyRevision' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'privacyOnboardingVersion' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'defaultSessionAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'enabled' } },
               ],
@@ -21388,7 +21393,6 @@ export const UpdatePrivacySettingsDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'privacyRevision' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'privacyOnboardingVersion' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'defaultSessionAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'enabled' } },
               ],

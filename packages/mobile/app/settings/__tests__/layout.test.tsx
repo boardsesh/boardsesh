@@ -82,7 +82,6 @@ const SETTINGS_PAGES = [
   'storage',
   'privacy-access',
   'privacy',
-  'privacy-onboarding',
   'edit',
   'integrations',
   'export',

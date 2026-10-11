@@ -7,7 +7,6 @@ export type PrivacyContentType = 'tick' | 'session' | 'comment' | 'climb' | 'pla
 export interface PrivacySettings {
   isPrivate: boolean;
   privacyRevision: number;
-  privacyOnboardingVersion: number;
   defaultSessionAudience: PrivacyResourceAudience;
   enabled: boolean;
 }

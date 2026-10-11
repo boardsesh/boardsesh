@@ -11,7 +11,6 @@ beforeEach(() => {
     enabled: true,
     isPrivate: true,
     privacyRevision: 4,
-    privacyOnboardingVersion: 1,
     defaultSessionAudience: 'followers',
   };
 });

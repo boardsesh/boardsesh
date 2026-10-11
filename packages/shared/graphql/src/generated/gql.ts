@@ -108,8 +108,8 @@ type Documents = {
   '\n  mutation UnfollowPlaylist($input: FollowPlaylistInput!) {\n    unfollowPlaylist(input: $input)\n  }\n': typeof types.UnfollowPlaylistDocument;
   '\n  query GetSmartPlaylist($input: GetSmartPlaylistInput!) {\n    smartPlaylist(input: $input) {\n      meta {\n        type\n        userId\n        userName\n        userAvatar\n        climbCount\n      }\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n        compatibleSizeIds\n        characteristics\n        is_no_match\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetSmartPlaylistDocument;
   '\n  query GetMySmartPlaylistCounts {\n    mySmartPlaylistCounts {\n      type\n      count\n    }\n  }\n': typeof types.GetMySmartPlaylistCountsDocument;
-  '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n': typeof types.PrivacySettingsDocument;
-  '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n': typeof types.UpdatePrivacySettingsDocument;
+  '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n': typeof types.PrivacySettingsDocument;
+  '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n': typeof types.UpdatePrivacySettingsDocument;
   '\n  query IncomingFollowRequests {\n    incomingFollowRequests {\n      requesterId\n      recipientId\n      createdAt\n      displayName\n      avatarUrl\n    }\n  }\n': typeof types.IncomingFollowRequestsDocument;
   '\n  query PrivacyRelationship($userId: ID!) {\n    privacyRelationship(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n': typeof types.PrivacyRelationshipDocument;
   '\n  mutation RequestFollow($userId: ID!) {\n    requestFollow(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n': typeof types.RequestFollowDocument;
@@ -381,9 +381,9 @@ const documents: Documents = {
     types.GetSmartPlaylistDocument,
   '\n  query GetMySmartPlaylistCounts {\n    mySmartPlaylistCounts {\n      type\n      count\n    }\n  }\n':
     types.GetMySmartPlaylistCountsDocument,
-  '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n':
+  '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n':
     types.PrivacySettingsDocument,
-  '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n':
+  '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n':
     types.UpdatePrivacySettingsDocument,
   '\n  query IncomingFollowRequests {\n    incomingFollowRequests {\n      requesterId\n      recipientId\n      createdAt\n      displayName\n      avatarUrl\n    }\n  }\n':
     types.IncomingFollowRequestsDocument,
@@ -1129,14 +1129,14 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n',
-): (typeof documents)['\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n'];
+  source: '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n',
+): (typeof documents)['\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n',
-): (typeof documents)['\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n'];
+  source: '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      defaultSessionAudience\n      enabled\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

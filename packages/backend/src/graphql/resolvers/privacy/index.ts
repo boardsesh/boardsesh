@@ -30,6 +30,8 @@ const updateSettingsSchema = z
   .object({
     isPrivate: z.boolean().optional(),
     defaultSessionAudience: z.enum(['public', 'followers', 'invite_only', 'only_me']).optional(),
+    // Retired with the privacy setup screen. Installed apps that still show it
+    // send this on finishing; it is accepted and ignored.
     privacyOnboardingVersion: z.number().int().min(1).max(1).optional(),
   })
   .strict();
@@ -415,11 +417,6 @@ export const privacyMutations = {
           ...(settings.defaultSessionAudience !== undefined
             ? { defaultSessionAudience: settings.defaultSessionAudience }
             : {}),
-          ...(settings.privacyOnboardingVersion !== undefined
-            ? {
-                privacyOnboardingVersion: Math.max(settings.privacyOnboardingVersion, current.privacyOnboardingVersion),
-              }
-            : {}),
           privacyRevision: current.privacyRevision + (becomingPrivate ? 1 : 0),
           updatedAt: new Date(),
         })
@@ -729,6 +726,15 @@ export const privacyMutations = {
     return true;
   },
 };
+/**
+ * `privacyOnboardingVersion` is retired with the forced privacy setup screen.
+ * Installed apps open that screen while the value is below 1, so it always
+ * reads 1: nobody is sent to setup, and privacy lives in Settings.
+ */
+export const privacySettingsFields = {
+  privacyOnboardingVersion: () => 1,
+};
+
 export const privacyProfileFields = {
   isPrivate: async (profile: { id: string; isPrivate?: boolean }) =>
     profile.isPrivate ?? (await getPrivacySettings(profile.id)).isPrivate,
