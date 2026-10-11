@@ -23,6 +23,10 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   BottomSheetView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
+vi.mock('../../ModalSheet', () => ({
+  ModalSheet: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
+vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('expo-clipboard', () => ({ setStringAsync: clipboard.setStringAsync }));
 vi.mock('react-native-qrcode-svg', () => ({ default: () => null }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -42,7 +46,7 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({ onChange: vi.fn(), onFullyDismissed: vi.fn() }),
 }));
-vi.mock('../../sheet-snap-points', () => ({ androidSafeSnapPoints: (points: unknown) => points }));
+vi.mock('../../sheet-snap-points', () => ({ MEDIUM_LARGE_SNAP_POINTS: ['50%', '90%'] }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({ spacing: {}, borderRadius: {}, sheetStyles: {} }));
 vi.mock('../../../lib/session-share', () => ({
