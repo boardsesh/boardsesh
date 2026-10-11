@@ -2845,6 +2845,10 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     (defense-in-depth). Because the PR's own copy runs, anything reachable from the publish job's
     secrets context is one PR diff away from a log — which is why that job carries no environment and
     why the admin creds must never be added to one it declares.
+  - **Production channel mapping.** The mapping is declared in `infra/ota/config.ts`. The jobs that
+    apply and check it take the admin login from a third environment, `ota-stable-release`, which
+    the owner must create with a deployment-branch policy of `main` before adding secrets. They run
+    `main`'s code with no dependency install.
 - **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close. The secret-scoping `reset` / `cleanup` jobs use
