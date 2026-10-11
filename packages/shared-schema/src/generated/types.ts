@@ -2086,6 +2086,13 @@ export type CreateSprayWallVersionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type CreateSupportCheckoutSessionInput = {
+  amount: Scalars['Int']['input'];
+  cadence: SupportCadence;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  publicCredit: Scalars['Boolean']['input'];
+};
+
 /**
  * Several climbs one setter published on one local day, newest first.
  *
@@ -2168,6 +2175,8 @@ export type CurrentClimbChanged = {
 /** Information needed before account deletion. */
 export type DeleteAccountInfo = {
   __typename?: 'DeleteAccountInfo';
+  /** Whether account deletion will schedule a linked Stripe subscription to end */
+  hasActiveStripeSubscription: Scalars['Boolean']['output'];
   /** Number of published (non-draft) climbs the user has created */
   publishedClimbCount: Scalars['Int']['output'];
 };
@@ -4104,6 +4113,10 @@ export type Mutation = {
    * anchors were tapped. There are no user-entered wall dimensions. Owner only.
    */
   createSprayWallVersion: SprayWallVersion;
+  /** Open Stripe's self-service billing portal for the signed-in supporter. */
+  createSupportBillingPortalSession: SupportBillingPortalSession;
+  /** Create a Stripe-hosted Checkout Session. Public credit requires authentication. */
+  createSupportCheckoutSession: SupportCheckoutSession;
   declineFollowRequest: Scalars['Boolean']['output'];
   /**
    * Delete the current user's account.
@@ -4680,6 +4693,8 @@ export type Mutation = {
    * default, because a wall is somebody's home — could never be shown to anybody.
    */
   updateSprayWall: SprayWall;
+  /** Show or hide the signed-in supporter on public credit lists. */
+  updateSupporterVisibility: SupporterStatus;
   /** Update an existing tick. Only the owner can update their own ticks. */
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
@@ -4832,6 +4847,16 @@ export type MutationCreateSprayWallArgs = {
 /** Root mutation type for all write operations. */
 export type MutationCreateSprayWallVersionArgs = {
   input: CreateSprayWallVersionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateSupportBillingPortalSessionArgs = {
+  locale?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateSupportCheckoutSessionArgs = {
+  input: CreateSupportCheckoutSessionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5522,6 +5547,11 @@ export type MutationUpdateSprayWallArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpdateSupporterVisibilityArgs = {
+  showPublicly: Scalars['Boolean']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUpdateTickArgs = {
   input: UpdateTickInput;
   uuid: Scalars['ID']['input'];
@@ -6193,6 +6223,14 @@ export type ProviderSyncRequest = {
   status: Scalars['String']['output'];
 };
 
+export type PublicSupporter = {
+  __typename?: 'PublicSupporter';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName: Scalars['String']['output'];
+  supportedAt: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -6746,6 +6784,8 @@ export type Query = {
   mySmartPlaylistCounts: Array<SmartPlaylistCount>;
   /** Every wall the caller owns, newest first. Includes walls with no published version. */
   mySprayWalls: Array<SprayWall>;
+  /** The signed-in user's Stripe supporter settings. */
+  mySupporterStatus: SupporterStatus;
   /**
    * Find discoverable sessions near a GPS location.
    * Default radius is 1000 meters.
@@ -6807,6 +6847,8 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
+  /** Accounts that chose public credit after a verified Stripe payment. */
+  publicSupporters: Array<PublicSupporter>;
   /**
    * Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
    * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
@@ -6981,6 +7023,8 @@ export type Query = {
    * the same spot. Merged-twin candidates first, then nearest. Capped at 25.
    */
   strayBoardsForGym: Array<StrayBoard>;
+  /** Stripe Checkout availability and accepted amount range, in minor units. */
+  supportConfiguration: SupportConfiguration;
   /** Read a saved climb immediately: own drafts or published spray climbs on accessible walls. */
   syncClimbDocuments?: Maybe<SyncClimbDocuments>;
   /**
@@ -7588,6 +7632,12 @@ export type QueryProposeSprayWallResetArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicSupportersArgs = {
+  limit?: Scalars['Int']['input'];
+  offset?: Scalars['Int']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -10257,6 +10307,36 @@ export type SubscriptionSessionUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
+export type SupportBillingPortalSession = {
+  __typename?: 'SupportBillingPortalSession';
+  url: Scalars['String']['output'];
+};
+
+export type SupportCadence = 'MONTHLY' | 'ONE_TIME';
+
+export type SupportCheckoutSession = {
+  __typename?: 'SupportCheckoutSession';
+  url: Scalars['String']['output'];
+};
+
+export type SupportConfiguration = {
+  __typename?: 'SupportConfiguration';
+  currency: Scalars['String']['output'];
+  enabled: Scalars['Boolean']['output'];
+  legacyDonateUrl?: Maybe<Scalars['String']['output']>;
+  maximumAmount: Scalars['Int']['output'];
+  minimumAmount: Scalars['Int']['output'];
+};
+
+export type SupporterStatus = {
+  __typename?: 'SupporterStatus';
+  cancelAtPeriodEnd: Scalars['Boolean']['output'];
+  hasActiveSubscription: Scalars['Boolean']['output'];
+  hasSupported: Scalars['Boolean']['output'];
+  linked: Scalars['Boolean']['output'];
+  showPublicly: Scalars['Boolean']['output'];
+};
+
 /** Canonical saved-climb documents from one snapshot, without changing a pull cursor. */
 export type SyncClimbDocuments = {
   __typename?: 'SyncClimbDocuments';
@@ -11311,6 +11391,7 @@ export type ResolversTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CreateSupportCheckoutSessionInput: CreateSupportCheckoutSessionInput;
   CrewClimbGroupItem: ResolverTypeWrapper<CrewClimbGroupItem>;
   CrewClimbItem: ResolverTypeWrapper<CrewClimbItem>;
   CrewFeedInput: CrewFeedInput;
@@ -11507,6 +11588,7 @@ export type ResolversTypes = ResolversObject<{
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ResolverTypeWrapper<ProviderSyncRequest>;
+  PublicSupporter: ResolverTypeWrapper<PublicSupporter>;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
@@ -11655,6 +11737,11 @@ export type ResolversTypes = ResolversObject<{
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
   SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: ResolverTypeWrapper<{}>;
+  SupportBillingPortalSession: ResolverTypeWrapper<SupportBillingPortalSession>;
+  SupportCadence: SupportCadence;
+  SupportCheckoutSession: ResolverTypeWrapper<SupportCheckoutSession>;
+  SupportConfiguration: ResolverTypeWrapper<SupportConfiguration>;
+  SupporterStatus: ResolverTypeWrapper<SupporterStatus>;
   SyncClimbDocuments: ResolverTypeWrapper<SyncClimbDocuments>;
   SyncCursor: ResolverTypeWrapper<SyncCursor>;
   SyncCursorInput: SyncCursorInput;
@@ -11819,6 +11906,7 @@ export type ResolversParentTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CreateSupportCheckoutSessionInput: CreateSupportCheckoutSessionInput;
   CrewClimbGroupItem: CrewClimbGroupItem;
   CrewClimbItem: CrewClimbItem;
   CrewFeedInput: CrewFeedInput;
@@ -11988,6 +12076,7 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalVoteSummary: ProposalVoteSummary;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ProviderSyncRequest;
+  PublicSupporter: PublicSupporter;
   PublicUserProfile: PublicUserProfile;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
@@ -12118,6 +12207,10 @@ export type ResolversParentTypes = ResolversObject<{
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
   SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: {};
+  SupportBillingPortalSession: SupportBillingPortalSession;
+  SupportCheckoutSession: SupportCheckoutSession;
+  SupportConfiguration: SupportConfiguration;
+  SupporterStatus: SupporterStatus;
   SyncClimbDocuments: SyncClimbDocuments;
   SyncCursor: SyncCursor;
   SyncCursorInput: SyncCursorInput;
@@ -13288,6 +13381,7 @@ export type DeleteAccountInfoResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['DeleteAccountInfo'] = ResolversParentTypes['DeleteAccountInfo'],
 > = ResolversObject<{
+  hasActiveStripeSubscription?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   publishedClimbCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -14360,6 +14454,18 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateSprayWallVersionArgs, 'input'>
   >;
+  createSupportBillingPortalSession?: Resolver<
+    ResolversTypes['SupportBillingPortalSession'],
+    ParentType,
+    ContextType,
+    Partial<MutationCreateSupportBillingPortalSessionArgs>
+  >;
+  createSupportCheckoutSession?: Resolver<
+    ResolversTypes['SupportCheckoutSession'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateSupportCheckoutSessionArgs, 'input'>
+  >;
   declineFollowRequest?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -15115,6 +15221,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUpdateSprayWallArgs, 'input'>
   >;
+  updateSupporterVisibility?: Resolver<
+    ResolversTypes['SupporterStatus'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateSupporterVisibilityArgs, 'showPublicly'>
+  >;
   updateTick?: Resolver<
     ResolversTypes['Tick'],
     ParentType,
@@ -15550,6 +15662,17 @@ export type ProviderSyncRequestResolvers<
   coalesced?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   runId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PublicSupporterResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PublicSupporter'] = ResolversParentTypes['PublicSupporter'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  supportedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16047,6 +16170,7 @@ export type QueryResolvers<
   mySessions?: Resolver<Array<ResolversTypes['DiscoverableSession']>, ParentType, ContextType>;
   mySmartPlaylistCounts?: Resolver<Array<ResolversTypes['SmartPlaylistCount']>, ParentType, ContextType>;
   mySprayWalls?: Resolver<Array<ResolversTypes['SprayWall']>, ParentType, ContextType>;
+  mySupporterStatus?: Resolver<ResolversTypes['SupporterStatus'], ParentType, ContextType>;
   nearbySessions?: Resolver<
     Array<ResolversTypes['DiscoverableSession']>,
     ParentType,
@@ -16133,6 +16257,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryPublicProfileArgs, 'userId'>
+  >;
+  publicSupporters?: Resolver<
+    Array<ResolversTypes['PublicSupporter']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryPublicSupportersArgs, 'limit' | 'offset'>
   >;
   qaPreviews?: Resolver<
     Array<ResolversTypes['QaPreview']>,
@@ -16338,6 +16468,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryStrayBoardsForGymArgs, 'gymUuid'>
   >;
+  supportConfiguration?: Resolver<ResolversTypes['SupportConfiguration'], ParentType, ContextType>;
   syncClimbDocuments?: Resolver<
     Maybe<ResolversTypes['SyncClimbDocuments']>,
     ParentType,
@@ -17623,6 +17754,47 @@ export type SubscriptionResolvers<
   >;
 }>;
 
+export type SupportBillingPortalSessionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SupportBillingPortalSession'] =
+    ResolversParentTypes['SupportBillingPortalSession'],
+> = ResolversObject<{
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SupportCheckoutSessionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SupportCheckoutSession'] = ResolversParentTypes['SupportCheckoutSession'],
+> = ResolversObject<{
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SupportConfigurationResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SupportConfiguration'] = ResolversParentTypes['SupportConfiguration'],
+> = ResolversObject<{
+  currency?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  enabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  legacyDonateUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  maximumAmount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  minimumAmount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SupporterStatusResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SupporterStatus'] = ResolversParentTypes['SupporterStatus'],
+> = ResolversObject<{
+  cancelAtPeriodEnd?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  hasActiveSubscription?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  hasSupported?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  linked?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  showPublicly?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SyncClimbDocumentsResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SyncClimbDocuments'] = ResolversParentTypes['SyncClimbDocuments'],
@@ -18153,6 +18325,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
   ProviderSyncRequest?: ProviderSyncRequestResolvers<ContextType>;
+  PublicSupporter?: PublicSupporterResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
   QaLabel?: QaLabelResolvers<ContextType>;
   QaPreview?: QaPreviewResolvers<ContextType>;
@@ -18234,6 +18407,10 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SprayWallVersion?: SprayWallVersionResolvers<ContextType>;
   StrayBoard?: StrayBoardResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;
+  SupportBillingPortalSession?: SupportBillingPortalSessionResolvers<ContextType>;
+  SupportCheckoutSession?: SupportCheckoutSessionResolvers<ContextType>;
+  SupportConfiguration?: SupportConfigurationResolvers<ContextType>;
+  SupporterStatus?: SupporterStatusResolvers<ContextType>;
   SyncClimbDocuments?: SyncClimbDocumentsResolvers<ContextType>;
   SyncCursor?: SyncCursorResolvers<ContextType>;
   SyncDeletion?: SyncDeletionResolvers<ContextType>;

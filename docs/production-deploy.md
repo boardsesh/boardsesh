@@ -706,7 +706,7 @@ request, changeable without a rebuild.
 
 | Name                 | Kind   | Purpose                                                                            |
 | -------------------- | ------ | ---------------------------------------------------------------------------------- |
-| `STRIPE_DONATE_URL`  | var    | Stripe Payment Link behind the one-time donation rail on `/support`. Unset hides the rail. |
+| `STRIPE_DONATE_URL`  | var    | Legacy Payment Link fallback while backend Checkout is unavailable.                        |
 
 `STRIPE_DONATE_URL` has no `NEXT_PUBLIC_` prefix on purpose. A prefixed name is
 inlined at build time, and neither `Dockerfile.web` nor `production-deploy.yml`
@@ -715,6 +715,75 @@ set in production at all. `/support` reads it from a server component, so the
 unprefixed name resolves from the service environment on every request. It must
 be an `https://` URL; anything else is treated as unset and the rail stays
 hidden rather than linking somewhere unintended.
+
+The Railway backend service owns Stripe Checkout and must set:
+
+| Name                    | Kind   | Purpose                                                               |
+| ----------------------- | ------ | --------------------------------------------------------------------- |
+| `STRIPE_SECRET_KEY`     | secret | Creates Checkout and Billing Portal sessions.                         |
+| `STRIPE_WEBHOOK_SECRET` | secret | Verifies `POST /webhooks/stripe` before linking supporter accounts.   |
+| `BOARDSESH_URL`         | var    | Builds locale-preserving Checkout and Billing Portal return URLs.     |
+| `STRIPE_DONATE_URL`     | var    | Optional HTTPS Payment Link fallback returned by `supportConfiguration`. |
+
+Use Stripe test-mode keys (`sk_test_...` and the matching `whsec_...`) in
+development, CI, staging, and preview environments. Only production may use a
+live secret key, and rotating either secret requires a backend restart.
+Production requires a nonempty `BOARDSESH_URL` before Checkout or Billing Portal
+return URLs can be created. Development defaults to `http://localhost:3000`.
+
+Configure Stripe to send `checkout.session.completed`,
+`checkout.session.async_payment_succeeded`, `checkout.session.expired`,
+`checkout.session.async_payment_failed`, `customer.subscription.updated`, and
+`customer.subscription.deleted` to the backend webhook URL. Keep
+`STRIPE_DONATE_URL` on both the backend and web services during rollout. The
+backend exposes it through `supportConfiguration` for the web support page when
+Checkout is unavailable. Mobile support links open that page. The web service also supplies its local fallback if
+the backend returns no link or the configuration request fails.
+
+Anonymous one-time and monthly support remains unlinked and gets no profile
+credit; public credit requires a signed-in Boardsesh account.
+
+Linked Checkout claims block account deletion until completion, expiration, or
+payment failure is processed. A second monthly Checkout is refused while a
+monthly claim is pending. Checkout creation uses the opaque claim ID as its
+[Stripe idempotency key](https://docs.stripe.com/api/idempotent_requests).
+The database accepts only `monthly` and `one_time` claim cadences, preserving
+the one-pending-monthly-claim constraint even if a caller supplies wrong casing.
+
+New Checkout claims store a fixed 23-hour expiration, also sent to Stripe.
+Creation and account deletion first reconcile expired claims under a persisted
+billing operation. Each attempt checks at most 10 claims and 1,000 sessions per
+claim with a missing session ID, within a shared 15-second network budget. Stripe requests
+time out after five seconds; reconciliation disables retries, while other
+requests allow one retry. Checkout requests minimize retries and release a
+definitively rejected claim only after exactly one observed request with its
+unique idempotency key; a later rejection after a connection retry stays uncertain. It clears only confirmed expired sessions, or claims with
+no matching session after exhausting that bounded creation-window search.
+Paid/completed sessions, failed lookups, and truncated searches retain claims.
+Cleanup webhooks use the same persisted billing reservation and re-read the
+Checkout session from Stripe before removing a binding, so delayed cleanup
+cannot erase supporter credit for a completed payment.
+Legacy claims without a fixed expiration require manual reconciliation.
+
+Billing operations reserve and finalize in short database transactions; Stripe
+requests run between them, outside account locks. A five-minute lease and owner
+token fence stale results. Expired read operations can be retried. Account
+deletion persists its subscription target and setter-name choice before contacting
+Stripe; failures retain that intent and allow deletion to resume. Other billing
+operations stay blocked until deletion finishes. Recovery reapplies cancellation
+to that same subscription rather than replaying a cached Stripe success. If a
+deleting operation remains after a crash, retry account deletion; do not clear
+its intent or admit a new Checkout while cancellation is uncertain.
+
+If a network or Stripe server error leaves the creation outcome uncertain, the
+backend retains the claim and logs its ID for reconciliation. Look up the
+request using that idempotency key in Stripe's request logs. Replay its signed
+completion/cleanup event if a session exists; an open session can be
+[expired through Stripe](https://docs.stripe.com/api/checkout/sessions/expire).
+If no session was created, confirm that outcome in Stripe before clearing the
+claim. Never remove a claim just because it is old: a payment may already have
+completed while its webhook is delayed. Missing-session-ID bookkeeping errors
+use the same reconciliation procedure.
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper

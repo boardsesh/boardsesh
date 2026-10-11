@@ -74,6 +74,38 @@
   margin-top: var(--spacing-10);
 }
 
+.supporters {
+  margin-top: var(--spacing-10);
+}
+
+.supporterGroup {
+  display: grid;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-5);
+}
+
+.supporterList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+}
+
+.supporter {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-full);
+  text-decoration: none;
+}
+
+.supporterAvatar {
+  width: 28px;
+  height: 28px;
+}
+
 .communityLinks {
   display: flex;
   flex-wrap: wrap;

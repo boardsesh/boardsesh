@@ -1,3 +1,5 @@
+import { reconcileExpiredSupportClaims } from '../../../services/reconcile-support-claims';
+import { withSupportOperation } from '../../../services/stripe-support-operation';
 import { eq, and, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
@@ -39,6 +41,7 @@ import { purgeDeletedSprayWallPhotos } from '../board/spray-wall-moderation';
 import { retryAccountDeletion, withdrawDeletedAccountContent } from './delete-account-privacy';
 import { deleteAccountBoards } from './delete-account-boards';
 import { pubsub } from '../../../pubsub';
+import { getStripeClient, isStripeSupportConfigured } from '../../../services/stripe-support';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
 const SYNCABLE_CREDENTIAL_STATUSES = ['pending', 'active', 'error'];
@@ -270,72 +273,128 @@ export const userMutations = {
     validateInput(DeleteAccountInputSchema, input, 'input');
 
     const userId = ctx.userId!;
+    // A retry of a persisted deletion must resume its original intent first.
+    const [operation] = await db
+      .select({ state: dbSchema.stripeSupportOperations.state })
+      .from(dbSchema.stripeSupportOperations)
+      .where(eq(dbSchema.stripeSupportOperations.userId, userId))
+      .limit(1);
+    if (operation?.state !== 'deleting') await reconcileExpiredSupportClaims(userId);
 
     let deletedWallIds: number[] = [];
     await retryAccountDeletion(() =>
-      db.transaction(async (tx) => {
-        // This guard must be serving before migration 0250 can create its
-        // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
-        // holding ROW EXCLUSIVE here makes one operation wait for the other.
-        // The archive lookup is a separate READ COMMITTED statement after the
-        // lock, so it sees an archive created by a migration that committed
-        // while this transaction waited. If the archive is still absent, this
-        // transaction keeps the lock until deletion commits and prevents the
-        // migration from archiving favorites for an account being removed.
-        await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
-        deletedWallIds = await deleteAccountSprayWalls(tx, userId);
-        await withdrawDeletedAccountContent(tx, userId);
-        await deleteAccountBoards(tx, userId);
-        await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
-        const favoriteArchive = await executeFirstRow<{ present: boolean }>(
-          tx,
-          sql`SELECT to_regclass('public.user_favorites_dedup_backup_0194') IS NOT NULL AS present`,
-        );
-        if (favoriteArchive?.present) {
-          // The archive intentionally has no users FK because it retains legacy
-          // angle variants for offline clients. A deleted account can no longer
-          // sync, so remove only its archived rows in this same transaction.
-          await tx.execute(sql`DELETE FROM public.user_favorites_dedup_backup_0194 WHERE user_id = ${userId}`);
-        }
+      withSupportOperation(
+        userId,
+        'deleting',
+        async (tx, priorDeletionIntent) => {
+          if (priorDeletionIntent) return priorDeletionIntent;
+          const [pendingClaim] = await tx
+            .select({ id: dbSchema.stripeSupportClaims.id })
+            .from(dbSchema.stripeSupportClaims)
+            .where(eq(dbSchema.stripeSupportClaims.userId, userId))
+            .limit(1);
+          if (pendingClaim) {
+            throw new GraphQLError(
+              'Finish your pending Stripe Checkout or wait for it to expire before deleting your account.',
+              {
+                extensions: { code: 'PENDING_CHECKOUT_EXISTS' },
+              },
+            );
+          }
+          const [supporter] = await tx
+            .select({ subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId })
+            .from(dbSchema.stripeSupporters)
+            .where(eq(dbSchema.stripeSupporters.userId, userId))
+            .limit(1);
+          return {
+            subscriptionId: supporter?.subscriptionId ?? null,
+            removeSetterName: input.removeSetterName ?? false,
+          };
+        },
+        async (intent) => {
+          if (!intent.subscriptionId) return;
+          try {
+            const stripe = getStripeClient();
+            const currentSubscription = await stripe.subscriptions.retrieve(intent.subscriptionId);
+            if (!['canceled', 'incomplete_expired'].includes(currentSubscription.status)) {
+              // Reapply this idempotent assignment on every recovery attempt.
+              // A stable Stripe key could replay an old success after a portal resume.
+              const subscription = await stripe.subscriptions.update(intent.subscriptionId, {
+                cancel_at_period_end: true,
+              });
+              if (
+                !subscription.cancel_at_period_end &&
+                !['canceled', 'incomplete_expired'].includes(subscription.status)
+              ) {
+                throw new Error('Stripe did not confirm cancellation');
+              }
+            }
+          } catch (error) {
+            logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
+            const message = isStripeSupportConfigured()
+              ? 'Could not cancel your Stripe subscription. Your account was not deleted.'
+              : 'Stripe billing is temporarily unavailable. Your account was not deleted. Try again later.';
+            throw new GraphQLError(message, {
+              extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+            });
+          }
+        },
+        async (tx, intent) => {
+          deletedWallIds = await deleteAccountSprayWalls(tx, userId);
+          await withdrawDeletedAccountContent(tx, userId);
+          await deleteAccountBoards(tx, userId);
+          await tx.execute(sql`LOCK TABLE public.user_favorites IN ROW EXCLUSIVE MODE`);
+          const favoriteArchive = await executeFirstRow<{ present: boolean }>(
+            tx,
+            sql`SELECT to_regclass('public.user_favorites_dedup_backup_0194') IS NOT NULL AS present`,
+          );
+          if (favoriteArchive?.present) {
+            // The archive intentionally has no users FK because it retains legacy
+            // angle variants for offline clients. A deleted account can no longer
+            // sync, so remove only its archived rows in this same transaction.
+            await tx.execute(sql`DELETE FROM public.user_favorites_dedup_backup_0194 WHERE user_id = ${userId}`);
+          }
 
-        // Find this user's draft climbs first — the dependent-row cleanup below
-        // needs the (boardType, uuid) pairs, and it must run before the drafts
-        // themselves are deleted or the rows it targets would already be gone.
-        const draftClimbs = await tx
-          .select({ uuid: dbSchema.boardClimbs.uuid, boardType: dbSchema.boardClimbs.boardType })
-          .from(dbSchema.boardClimbs)
-          .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
+          // Find this user's draft climbs first — the dependent-row cleanup below
+          // needs the (boardType, uuid) pairs, and it must run before the drafts
+          // themselves are deleted or the rows it targets would already be gone.
+          const draftClimbs = await tx
+            .select({ uuid: dbSchema.boardClimbs.uuid, boardType: dbSchema.boardClimbs.boardType })
+            .from(dbSchema.boardClimbs)
+            .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
 
-        // board_climb_stats/_history/board_beta_links have no FK back to
-        // board_climbs (stats can legitimately arrive before their climb during
-        // upstream sync), so deleting a draft here without also clearing these
-        // strands an orphan row (issue #3943). Only the user's OWN drafts are
-        // touched — published climbs survive account deletion with userId set
-        // to null, and their stats must remain untouched.
-        const draftsByBoardType = groupClimbUuidsByBoardType(draftClimbs);
-        for (const [draftBoardType, uuids] of draftsByBoardType) {
-          await deleteClimbDependentRows(tx, draftBoardType, uuids);
-        }
+          // board_climb_stats/_history/board_beta_links have no FK back to
+          // board_climbs (stats can legitimately arrive before their climb during
+          // upstream sync), so deleting a draft here without also clearing these
+          // strands an orphan row (issue #3943). Only the user's OWN drafts are
+          // touched — published climbs survive account deletion with userId set
+          // to null, and their stats must remain untouched.
+          const draftsByBoardType = groupClimbUuidsByBoardType(draftClimbs);
+          for (const [draftBoardType, uuids] of draftsByBoardType) {
+            await deleteClimbDependentRows(tx, draftBoardType, uuids);
+          }
 
-        // Delete draft climbs created by this user
-        await tx
-          .delete(dbSchema.boardClimbs)
-          .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
-
-        // Optionally remove setter name from published climbs
-        if (input.removeSetterName) {
+          // Delete draft climbs created by this user
           await tx
-            .update(dbSchema.boardClimbs)
-            .set({ setterUsername: null })
-            .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
-        }
+            .delete(dbSchema.boardClimbs)
+            .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, true)));
 
-        // Delete the user row — all related tables with onDelete: cascade
-        // will be cleaned up automatically by the database.
-        // boardClimbs.userId has onDelete: 'set null', so published climbs
-        // will have their userId set to null (preserved).
-        await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
-      }),
+          // Optionally remove setter name from published climbs
+          if (intent.removeSetterName) {
+            await tx
+              .update(dbSchema.boardClimbs)
+              .set({ setterUsername: null })
+              .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
+          }
+
+          // Delete the user row — all related tables with onDelete: cascade
+          // will be cleaned up automatically by the database.
+          // boardClimbs.userId has onDelete: 'set null', so published climbs
+          // will have their userId set to null (preserved).
+          await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
+        },
+        { deletionIntent: (intent) => intent },
+      ),
     );
 
     pubsub.publishPrivacyChanged();

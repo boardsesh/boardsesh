@@ -209,9 +209,42 @@
       "title": "La suite",
       "body": "Plus de boards, un meilleur mode hors ligne, et sortir tes données aussi facilement qu'elles sont entrées. La feuille de route est publique et on en débat sur Discord.",
       "cta": "Lis la feuille de route"
+    },
+    "supporters": {
+      "title": "Soutiens",
+      "body": "Merci aux grimpeurs qui participent aux frais et choisissent d’être nommés.",
+      "stripeTitle": "Soutiens Stripe",
+      "githubTitle": "Sponsors GitHub"
     }
   },
   "support": {
+    "stripe": {
+      "title": "Soutenir avec Stripe",
+      "body": "Choisissez le montant et payez par carte, Apple Pay ou Google Pay. Aucun compte GitHub nécessaire.",
+      "amount": "Montant (USD)",
+      "amountError": "Choisissez un montant entre 1 et 500 dollars.",
+      "monthly": "Mensuel",
+      "oneTime": "Une fois",
+      "publicCredit": "Me remercier sur la page À propos",
+      "publicCreditSignIn": "Connectez-vous pour être remercié publiquement",
+      "publicCreditHint": "Facultatif. Nous affichons votre nom et avatar Boardsesh, jamais le montant.",
+      "cta": "Soutenir avec Stripe",
+      "processing": "Ouverture de Stripe…",
+      "error": "Impossible d’ouvrir Stripe. Réessayez.",
+      "thanks": "Merci de soutenir Boardsesh. Votre remerciement apparaîtra après confirmation du paiement par Stripe.",
+      "cancelled": "Le paiement a été annulé. Aucun débit n’a été effectué.",
+      "unavailable": "Le paiement par carte est temporairement indisponible. GitHub Sponsors reste disponible ci-dessous.",
+      "authError": "Impossible de confirmer si vous êtes connecté. Réessayez pour continuer.",
+      "pendingCheckout": "Un paiement mensuel est en attente. Terminez-le dans votre onglet Stripe déjà ouvert ou attendez son expiration.",
+      "activeSubscription": "Vous avez déjà un soutien mensuel. Choisissez Gérer la facturation dans Stripe pour le modifier ou l’annuler.",
+      "operationPending": "Une autre mise à jour de facturation est en cours. Réessayez dans quelques minutes.",
+      "operationStale": "Cette demande de facturation a expiré. Réessayez pour vérifier votre situation actuelle."
+    },
+    "manage": {
+      "title": "Votre soutien Stripe",
+      "publicCredit": "M’afficher sur la page À propos",
+      "billing": "Gérer la facturation dans Stripe"
+    },
     "hero": {
       "title": "Gardez Boardsesh en vie",
       "subtitle": "Gratuit, open source, et payé par des grimpeurs"
@@ -230,11 +263,7 @@
       "body": "Soutenez Boardsesh chaque mois. Le plus simple si vous avez déjà un compte GitHub.",
       "cta": "Devenir sponsor sur GitHub"
     },
-    "oneTime": {
-      "title": "Don unique",
-      "body": "Payez par carte, Apple Pay ou Google Pay depuis le navigateur. Aucun compte à créer.",
-      "cta": "Faire un don"
-    },
+    "oneTime": {},
     "otherWays": {
       "title": "Autres façons d'aider",
       "body": "L'argent est la plus lente des quatre. N'importe laquelle fait avancer l'app.",
@@ -1057,16 +1086,21 @@
       "expoLink": "la documentation d’Expo Observe",
       "hostingBody": "Railway héberge l’application et la base de données. Cloudflare distribue le contenu, héberge l’app du navigateur et stocke les médias. Ces prestataires traitent les requêtes nécessaires au fonctionnement de Boardsesh. Voir ",
       "sentryBody": "Nous utilisons Sentry pour surveiller les erreurs au titre de l’intérêt légitime afin de maintenir Boardsesh en état de marche. La collecte par défaut d’informations personnelles est désactivée ; les rapports d’erreur sont limités et les champs sensibles supprimés. Ce service reste actif si tu refuses les statistiques. Voir ",
-      "expoBody": "Nous utilisons Expo Observe pour les temps de performance, les informations sur l’appareil et la version de l’app et les diagnostics d’erreurs sur notre propre serveur, au titre de l’intérêt légitime pour maintenir Boardsesh en état de marche. Les diagnostics restent activés si tu refuses les statistiques. Les identifiants d’installation et de session du SDK servent au suivi des mises à jour ; nous n’associons aucune identité de compte Boardsesh à Observe. Voir "
+      "expoBody": "Nous utilisons Expo Observe pour les temps de performance, les informations sur l’appareil et la version de l’app et les diagnostics d’erreurs sur notre propre serveur, au titre de l’intérêt légitime pour maintenir Boardsesh en état de marche. Les diagnostics restent activés si tu refuses les statistiques. Les identifiants d’installation et de session du SDK servent au suivi des mises à jour ; nous n’associons aucune identité de compte Boardsesh à Observe. Voir ",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Stripe traite les soutiens et gère la facturation. Boardsesh ne conserve que les identifiants Stripe nécessaires pour lier un remerciement public facultatif et gérer un abonnement ; nous ne conservons ni carte, ni adresse de facturation, ni montant. Voir ",
+      "stripeLink": "la politique de confidentialité de Stripe"
     },
     "sharing": {
       "title": "Partage de données",
       "body1ProductAnalytics": "Nous ne vendons pas tes données, n’affichons pas de publicités et ne partageons pas d’informations avec des annonceurs ou des courtiers en données. Les prestataires décrits ci-dessus traitent les données pour l’hébergement, le stockage, la fiabilité du service et les statistiques facultatives. La synchronisation Aurora Climbing fonctionne quand tu l’actives.",
-      "body2": "Les autres utilisateurs de Boardsesh peuvent voir votre nom d'utilisateur, votre profil et vos blocs enregistrés si vous participez à des fonctionnalités sociales comme le Mode Party. C'est visible dans l'app et fait partie du fonctionnement du produit."
+      "body2": "Les autres utilisateurs de Boardsesh peuvent voir votre nom d'utilisateur, votre profil et vos blocs enregistrés si vous participez à des fonctionnalités sociales comme le Mode Party. C'est visible dans l'app et fait partie du fonctionnement du produit.",
+      "stripe": "Si vous acceptez le remerciement public, votre nom et votre avatar Boardsesh apparaissent sur les pages À propos et Remerciements. Le montant n’est jamais affiché."
     },
     "retention": {
       "title": "Conservation des données",
-      "body": "Nous conservons les données de votre compte et votre historique de blocs tant que votre compte est actif. Si vous arrêtez d'utiliser Boardsesh, vos données restent jusqu'à ce que vous supprimiez votre compte."
+      "body": "Nous conservons les données de votre compte et votre historique de blocs tant que votre compte est actif. Si vous arrêtez d'utiliser Boardsesh, vos données restent jusqu'à ce que vous supprimiez votre compte.",
+      "stripe": "Un soutien lié et vérifié conserve son remerciement jusqu’à ce que vous le masquiez ou supprimiez votre compte. La résiliation d’un abonnement ne retire pas ce remerciement historique. Stripe conserve les paiements selon sa politique."
     },
     "deletion": {
       "title": "Suppression du compte",
@@ -1077,7 +1111,8 @@
       "onWebBody": " Connectez-vous sur ",
       "onWebLink": "app.boardsesh.com",
       "onWebBodyEnd": " et ouvrez Paramètres depuis le menu de votre avatar pour trouver le même bouton Supprimer le compte.",
-      "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé."
+      "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé.",
+      "stripe": "Si un abonnement Stripe lié est actif, nous programmons d’abord sa fin à l’issue de la période de facturation. Si Stripe ne confirme pas ce changement, votre compte n’est pas supprimé. La suppression retire le lien Stripe et le remerciement public de Boardsesh."
     },
     "children": {
       "title": "Enfants",

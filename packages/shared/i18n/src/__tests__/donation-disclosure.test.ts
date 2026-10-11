@@ -74,10 +74,10 @@ const SUPPORT_COPY_KEYS = [
   'support.why.p1',
   'support.why.p2',
   'support.rails.title',
+  'support.stripe.body',
+  'support.stripe.cta',
   'support.sponsors.body',
   'support.sponsors.cta',
-  'support.oneTime.body',
-  'support.oneTime.cta',
   // "Other ways to help" is the non-monetary column. It is the copy most likely
   // to drift into promising something back, so every string on it is listed.
   'support.otherWays.title',
@@ -125,9 +125,9 @@ describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale
   // `withBrandTitle` in the web app appends " | Boardsesh" unless the title
   // already carries the brand. A title containing "Boardsesh" therefore either
   // doubles the brand or loses the suffix entirely, depending on where it sits.
-  // The Stripe rail renders only when STRIPE_DONATE_URL is set, which it is not
-  // in production today. A heading that counts the rails is therefore wrong
-  // half the time, in whichever direction — so it must not count them at all.
+  // Stripe configuration can still be unavailable in an environment. A
+  // heading that counts the rails is therefore wrong in one state or another,
+  // so it must not count them at all.
   // Cardinals only: the indefinite articles (un/una/une/eine) are ordinary
   // words here, and Spanish "echar una mano" is an idiom, not a count.
   it('does not count the donation rails in their heading', () => {

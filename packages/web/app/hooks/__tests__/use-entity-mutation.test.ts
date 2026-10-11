@@ -34,6 +34,7 @@ describe('useEntityMutation', () => {
 
   it('returns null and shows auth error when no token', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: null,
       isAuthenticated: false,
       isLoading: false,
@@ -57,6 +58,7 @@ describe('useEntityMutation', () => {
 
   it('executes mutation and returns data on success', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -82,6 +84,7 @@ describe('useEntityMutation', () => {
 
   it('shows success message when provided', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -106,6 +109,7 @@ describe('useEntityMutation', () => {
 
   it('shows error message on failure', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -129,6 +133,7 @@ describe('useEntityMutation', () => {
 
   it('logs error on failure', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -155,6 +160,7 @@ describe('useEntityMutation', () => {
 
   it('does not show success message when not provided', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -178,6 +184,7 @@ describe('useEntityMutation', () => {
 
   it('surfaces the server error message over the generic one', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -204,6 +211,7 @@ describe('useEntityMutation', () => {
 
   it('delegates to onError instead of showing a toast when provided', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -235,6 +243,7 @@ describe('useEntityMutation', () => {
 
   it('passes a null server message to onError for non-GraphQL failures', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -262,6 +271,7 @@ describe('useEntityMutation', () => {
 
   it('awaits an async onError so its side-effects are visible before execute resolves', async () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -293,6 +303,7 @@ describe('useEntityMutation', () => {
 
   it('returns token from useWsAuthToken', () => {
     mockUseWsAuthToken.mockReturnValue({
+      refetch: vi.fn(),
       token: 'my-token-abc',
       isAuthenticated: true,
       isLoading: false,
