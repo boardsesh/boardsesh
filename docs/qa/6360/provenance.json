@@ -1,8 +1,8 @@
 {
   "issue": 6360,
-  "productionCommit": "2cce83130e",
-  "captureCommit": "5831626c5f3efa0cccfcbe7eda2827fb36c29d45",
-  "androidRun": "https://github.com/boardsesh/boardsesh/actions/runs/38138055161",
+  "productionCommit": "b997f8990aac354b4f5136a419ef264137c43c8f",
+  "captureCommit": "7ba0b799ff",
+  "androidRun": "https://github.com/boardsesh/boardsesh/actions/runs/38140113366",
   "androidDevice": "Pixel 2",
   "androidFontScales": {
     "default": 1.0,
