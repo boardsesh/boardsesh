@@ -34,7 +34,11 @@ import { executeFirstRow } from '../src/client/postgres.js';
 // =============================================================================
 
 import { MOONBOARD_CATALOG_IMPORT_LOCK_KEY } from '../src/moonboard/catalog-lock-key.js';
-export { fnv1a64, MOONBOARD_CATALOG_IMPORT_LOCK_NAME, MOONBOARD_CATALOG_IMPORT_LOCK_KEY } from '../src/moonboard/catalog-lock-key.js';
+export {
+  fnv1a64,
+  MOONBOARD_CATALOG_IMPORT_LOCK_NAME,
+  MOONBOARD_CATALOG_IMPORT_LOCK_KEY,
+} from '../src/moonboard/catalog-lock-key.js';
 
 // Every query below interpolates this bigint straight into a Drizzle `sql`
 // tag. postgres.js serialises a JS `bigint` parameter as OID 20 (int8)
