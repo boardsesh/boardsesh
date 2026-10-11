@@ -27,7 +27,12 @@ const thumbnailRenders = vi.hoisted(() => ({ count: 0 }));
 const fontScale = vi.hoisted(() => ({ current: 1 }));
 const clock = vi.hoisted(() => ({ nowMs: Date.UTC(2026, 6, 15, 12) }));
 const translate = vi.hoisted(
-  () => (key: string, options?: { count?: number }) => (options?.count == null ? key : `${key}:${options.count}`),
+  () => (key: string, options?: { count?: number; direction?: string; status?: string }) =>
+    key === 'mobile.climbRow.directionStatus' && options
+      ? `${options.direction}: ${options.status}`
+      : options?.count == null
+        ? key
+        : `${key}:${options.count}`,
 );
 
 // Recency must use the app clock even when the fixture date differs from today.
@@ -94,6 +99,8 @@ vi.mock('../../hooks/use-display-grade', () => ({
 }));
 
 vi.mock('../../hooks/use-is-climb-favorited', () => ({ useIsClimbFavorited: () => false }));
+vi.mock('../../hooks/use-my-grade', () => ({ useMyGrade: () => ({ status: 'unknown' }) }));
+vi.mock('../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v-grade' }) }));
 
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#000000', secondaryLabel: '#8E8E93' } }),
@@ -159,13 +166,17 @@ function logbook(entries: LogbookEntry[]) {
   return { logbookByClimbAngle };
 }
 
-function renderRow(density: 'compact' | 'default' | 'rich', entries: LogbookEntry[]) {
+function renderRow(
+  density: 'compact' | 'default' | 'rich',
+  entries: LogbookEntry[],
+  boardName: 'kilter' | 'tension' = 'kilter',
+) {
   const context = logbookContextRef.current;
   if (context === null) throw new Error('board-react mock did not create the logbook context');
   const row = (
     <ClimbListItemContent
       climb={climb}
-      boardName="kilter"
+      boardName={boardName}
       layoutId={1}
       sizeId={1}
       setIds="1"
@@ -218,6 +229,24 @@ describe('rich-tier progress line', () => {
     expect(progressText(container)).toBe(
       'mobile.climbRow.progress.sentTimes:2 · mobile.climbRow.progress.bothWays · mobile.climbRow.progress.today',
     );
+  });
+
+  it('keeps distinct original and mirrored outcomes accessible in a rich row', () => {
+    const { container } = renderRow(
+      'rich',
+      [entry(), entry({ uuid: 'mirror-attempt', is_mirror: true, status: 'attempt', is_ascent: false, tries: 3 })],
+      'tension',
+    );
+    const original = container.querySelector(
+      '[aria-label="mobile.logbook.originalTag: mobile.climbRow.ascentStatus.send"]',
+    );
+    const mirror = container.querySelector(
+      '[aria-label="mobile.logbook.mirroredTag: mobile.climbRow.ascentStatus.attempt"]',
+    );
+    expect(original).not.toBeNull();
+    expect(mirror).not.toBeNull();
+    expect(original?.closest('[data-a11y-hidden="true"]')).toBeNull();
+    expect(mirror?.closest('[data-a11y-hidden="true"]')).toBeNull();
   });
 
   it('omits the mirror token for an original-only send, since that is the default', () => {

@@ -26,7 +26,9 @@ function tick(status: 'send' | 'attempt', climbRevision: number): LogbookEntry {
 }
 
 describe('useClimbProgress current holds', () => {
-  beforeEach(() => { logbook.entries = []; });
+  beforeEach(() => {
+    logbook.entries = [];
+  });
 
   it('omits progress when all ticks precede the current holds', () => {
     logbook.entries = [tick('send', 1)];
@@ -35,12 +37,17 @@ describe('useClimbProgress current holds', () => {
 
   it('shows a current attempt instead of a send on old holds', () => {
     logbook.entries = [tick('send', 1), tick('attempt', 2)];
-    expect(renderHook(() => useClimbProgress('climb', 40, 2)).result.current?.outcome).toEqual({ kind: 'attempt', tries: 2 });
+    expect(renderHook(() => useClimbProgress('climb', 40, 2)).result.current?.outcome).toEqual({
+      kind: 'attempt',
+      tries: 2,
+    });
   });
 
   it('recomputes when the holds revision changes without a new bucket', () => {
     logbook.entries = [tick('send', 1)];
-    const { result, rerender } = renderHook(({ revision }) => useClimbProgress('climb', 40, revision), { initialProps: { revision: 1 } });
+    const { result, rerender } = renderHook(({ revision }) => useClimbProgress('climb', 40, revision), {
+      initialProps: { revision: 1 },
+    });
     expect(result.current?.outcome.kind).toBe('send');
     rerender({ revision: 2 });
     expect(result.current).toBeNull();

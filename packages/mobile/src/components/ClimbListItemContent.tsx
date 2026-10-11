@@ -300,7 +300,12 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   if (!supportsMirroring) {
     if (!ascentStatus) return null;
     return (
-      <View accessibilityRole="image" accessibilityLabel={hideFromAccessibility ? undefined : statusLabels[ascentStatus]} accessibilityElementsHidden={hideFromAccessibility} importantForAccessibility={hideFromAccessibility ? 'no-hide-descendants' : 'auto'}>
+      <View
+        accessibilityRole="image"
+        accessibilityLabel={hideFromAccessibility ? undefined : statusLabels[ascentStatus]}
+        accessibilityElementsHidden={hideFromAccessibility}
+        importantForAccessibility={hideFromAccessibility ? 'no-hide-descendants' : 'auto'}
+      >
         <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={16} color={systemColors.secondaryLabel} />
       </View>
     );
@@ -618,7 +623,13 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             thumbnail — see the comment on `AscentStatusGlyph`. Renders null for
             a climb you have no history with, so a compact/default row and every
             signed-out rich row stay byte-for-byte what they were. */}
-        {isRich ? <ClimbProgressLine climbUuid={climb.uuid} angle={angle} holdsRevisionNumber={climb.holdsRevisionNumber ?? null} /> : null}
+        {isRich ? (
+          <ClimbProgressLine
+            climbUuid={climb.uuid}
+            angle={angle}
+            holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+          />
+        ) : null}
         {/* Compact drops the whole subtitle line — and with it `LiveClimbSubtitle`'s
             per-row `useEffectiveClimbStats` subscription, so a compact row costs
             strictly less than a default one rather than just looking smaller. */}
