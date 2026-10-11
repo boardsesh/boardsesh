@@ -1,4 +1,4 @@
-import { ReadableColumn } from '../ReadableColumn';
+import { ReadableColumn, READABLE_CONTENT_WIDTH } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
@@ -38,6 +38,7 @@ import { BoardLinkPrompt } from './BoardLinkPrompt';
 import { LogbookFilterSheet } from './LogbookFilterSheet';
 import { LogbookEntryChooserSheet } from './LogbookEntryChooserSheet';
 import { LogbookChipRow } from './LogbookChipRow';
+import { LogbookCompactToolbar } from './LogbookCompactToolbar';
 import { LogbookFacetRail } from './LogbookFacetRail';
 import type { LogbookFacetKey } from './LogbookChipRow.logic';
 import { useLogbookSearch, countActiveLogbookFilters } from './use-logbook-search';
@@ -111,6 +112,7 @@ export function LogbookTab({
   const nativeRootHeader = useNativeRootHeader();
   const [headerHeight, setHeaderHeight] = useState(0);
   const hasComposedHeader = renderHeader != null;
+  const compactControls = hasComposedHeader && nativeRootHeader && viewerIsOwner;
   const headerMeasured = !hasComposedHeader || headerHeight > 0;
   const scrollHeaderInset = hasComposedHeader && nativeRootHeader ? headerHeight : 0;
   const { t } = useTranslation('you');
@@ -122,15 +124,18 @@ export function LogbookTab({
   // switchable without opening the sheet; the variant goes through selectByVariant
   // per the mobile variant guard. When shown, the sheet's Sort block is suppressed.
   const showSortChips =
-    logbookFiltersEnabled && Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
+    logbookFiltersEnabled &&
+    !compactControls &&
+    Platform.OS === 'ios' &&
+    selectByVariant(variant, { liquidGlass: true, material: false });
   // Grade scale for the chip row's grade label — fetched only when the chip row is
   // shown (the Android/Material toolbar has no grade chip). Same query as the sheet.
-  const { data: grades } = useGrades(GRADE_SCALE_BOARD, showSortChips);
+  const { data: grades } = useGrades(GRADE_SCALE_BOARD, showSortChips || (compactControls && logbookFiltersEnabled));
   const router = useRouter();
   const { openPlayDrawer, openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   // One dimension subscription for the whole list; rows take fontScale as a prop.
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, width: windowWidth } = useWindowDimensions();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
 
   const editSheetRef = useRef<BottomSheet | null>(null);
@@ -572,15 +577,38 @@ export function LogbookTab({
   const controls = (
     <ReadableColumn>
       <View style={[styles.toolbar, { paddingTop: hasComposedHeader ? 0 : topInset }]}>
-        <View style={styles.heading}>
-          <Text variant="title2" accessibilityRole="header">
-            {t('tabs.logbook')}
-          </Text>
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('mobile.filter.allBoards')}
-          </Text>
-        </View>
-        {logbookFiltersEnabled ? (
+        {compactControls ? null : (
+          <View style={styles.heading}>
+            <Text variant="title2" accessibilityRole="header">
+              {t('tabs.logbook')}
+            </Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('mobile.filter.allBoards')}
+            </Text>
+          </View>
+        )}
+        {logbookFiltersEnabled && compactControls ? (
+          <LogbookCompactToolbar
+            search={
+              <SearchHeader
+                ref={searchHeaderRef}
+                placeholder={t('mobile.logbook.searchPlaceholder')}
+                onChangeText={handleSearchChange}
+                initialValue={name}
+                height={Math.max(FILTER_FAB_SIZE, Math.ceil(44 * fontScale))}
+              />
+            }
+            fontScale={fontScale}
+            availableWidth={Math.min(windowWidth, READABLE_CONTENT_WIDTH) - spacing[4] * 2}
+            sortPreset={sortPreset}
+            onSelectPreset={handleSelectPreset}
+            onOpenFilters={handleOpenFilters}
+            filters={filters}
+            grades={grades ?? EMPTY_GRADES}
+            activeFilterCount={activeFilterCount}
+            onUpdateFilters={handleUpdateFilters}
+          />
+        ) : logbookFiltersEnabled ? (
           <View style={styles.searchRow}>
             <SearchHeader
               ref={searchHeaderRef}
@@ -745,8 +773,7 @@ export function LogbookTab({
           currentSort={sort}
           onApply={apply}
           onClearSearch={clearSearch}
-          // When the top-level sort chips are shown, drop the sheet's Sort block
-          // so sort isn't worded twice.
+          // Compact controls keep the complete sort/filter choices in the sheet.
           showSort={!showSortChips}
         />
       ) : null}

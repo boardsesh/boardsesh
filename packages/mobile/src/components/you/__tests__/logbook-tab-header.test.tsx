@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '@boardsesh/logbook';
 
@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   offline: false,
   pending: false,
   error: false,
+  sheetSort: undefined as boolean | undefined,
   measure: undefined as ((height: number) => void) | undefined,
   listProps: undefined as
     | {
@@ -131,7 +132,21 @@ vi.mock('../LogbookRow', () => ({ LogbookRow: () => null }));
 vi.mock('../LogbookDayDivider', () => ({ LogbookDayDivider: () => null, LogbookWallSubDivider: () => null }));
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
 vi.mock('../LogbookEntryChooserSheet', () => ({ LogbookEntryChooserSheet: () => null }));
-vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
+vi.mock('../LogbookFilterSheet', () => ({
+  LogbookFilterSheet: ({ showSort }: { showSort: boolean }) => {
+    state.sheetSort = showSort;
+    return createElement('div', { 'data-testid': 'filter-sheet' });
+  },
+}));
+vi.mock('../LogbookCompactToolbar', () => ({
+  LogbookCompactToolbar: ({ search, onOpenFilters }: { search: ReactNode; onOpenFilters: () => void }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'compact-toolbar' },
+      search,
+      createElement('button', { 'data-testid': 'filters', onClick: onOpenFilters }),
+    ),
+}));
 vi.mock('../BoardLinkPrompt', () => ({ BoardLinkPrompt: () => null }));
 vi.mock('../LogbookChipRow', () => ({ LogbookChipRow: () => null }));
 vi.mock('../LogbookFacetRail', () => ({ LogbookFacetRail: () => null }));
@@ -150,6 +165,7 @@ beforeEach(() => {
   state.offline = false;
   state.pending = false;
   state.error = false;
+  state.sheetSort = undefined;
   state.listProps = undefined;
   state.measure = undefined;
 });
@@ -159,6 +175,24 @@ afterEach(() => {
 });
 
 describe('Logbook composed profile header', () => {
+  it('uses compact owner controls without the duplicate heading and keeps sort in the sheet', () => {
+    const { getByTestId, queryByText } = render(<LogbookTab userId="me" renderHeader={renderHeader} />);
+    expect(getByTestId('compact-toolbar')).toBeTruthy();
+    expect(queryByText('tabs.logbook')).toBeNull();
+    expect(queryByText('mobile.filter.allBoards')).toBeNull();
+    fireEvent.click(getByTestId('filters'));
+    expect(getByTestId('filter-sheet')).toBeTruthy();
+    expect(state.sheetSort).toBe(true);
+  });
+
+  it('retains the heading and existing controls for a public composed header', () => {
+    const { getByText, queryByTestId } = render(
+      <LogbookTab userId="other" viewerIsOwner={false} renderHeader={renderHeader} />,
+    );
+    expect(getByText('tabs.logbook')).toBeTruthy();
+    expect(queryByTestId('compact-toolbar')).toBeNull();
+  });
+
   it('reports list scrolling to the floating header and clears it on unmount', () => {
     const scrollEdge = createScrollEdgeBackdrop();
     const { unmount } = render(<LogbookTab userId="me" renderHeader={renderHeader} scrollEdge={scrollEdge} />);
@@ -243,7 +277,9 @@ describe('Logbook composed profile header', () => {
 
   it('starts Material results below the entire opaque measured header', () => {
     state.native = false;
-    const { getByTestId } = render(<LogbookTab userId="me" renderHeader={renderHeader} />);
+    const { getByTestId, getByText, queryByTestId } = render(<LogbookTab userId="me" renderHeader={renderHeader} />);
+    expect(getByText('tabs.logbook')).toBeTruthy();
+    expect(queryByTestId('compact-toolbar')).toBeNull();
     act(() => state.measure?.(280));
     expect(getByTestId('results').parentElement!.dataset.style).toContain('"paddingTop":280');
     expect(getByTestId('results').parentElement!.dataset.style).toContain('"overflow":"hidden"');

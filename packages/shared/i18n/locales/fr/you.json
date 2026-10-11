@@ -169,7 +169,8 @@
       "boardPickerLabel": "Choisir une board",
       "boardBack": "Revenir à la modification",
       "boardRetry": "Impossible de charger les boards. Appuie pour réessayer.",
-      "boardEmpty": "Aucune board enregistrée ou récente ne convient à ce bloc."
+      "boardEmpty": "Aucune board enregistrée ou récente ne convient à ce bloc.",
+      "customSort": "Ordre personnalisé"
     },
     "boardLink": {
       "title": "Vos croix {{boardName}} manquent à l’appel ?",

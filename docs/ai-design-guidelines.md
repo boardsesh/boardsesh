@@ -417,12 +417,18 @@ comparison initially shows one row before "Show all". Material keeps a neutral t
 collapsed rows. These are Boardsesh hierarchy choices, not an Apple-prescribed row count; expansion
 stays virtualized and the all-board total remains independent of progress filters.
 
-Profile's Logbook keeps its profile tabs, search/filter row, sort chips, and any expanded facet
-rail in one measured header. On Liquid Glass, the full-height results list uses the native title
-inset plus padding for these supplementary controls; Material places the results viewport below
-the entire opaque header. The filter button stays beside search, outside the horizontally scrolling
-chips. Public profiles keep their toolbar in the page's normal flow. This header is the one block
-that stays on a painted band on iOS 26 (`opaqueControls`): see "Controls pinned under the bar".
+Your native Profile Logbook keeps the profile tabs above a compact row containing search,
+the current sort, and the filter button. The selected Logbook tab already names the page, so this
+header omits the repeated Logbook heading and All boards scope. Grade, angle, status and date
+choices live in the filter sheet; only active filter summaries need an extra row. Controls retain
+at least 44pt touch targets and grow or stack for larger text instead of squeezing their labels.
+
+The full-height native results list uses the UIKit title inset plus measured padding for these
+supplementary controls. Automatic row anchoring is disabled in this composed native header so
+FlashList does not cancel that padding when the controls are first measured or change height.
+Its controls use the shared scroll-driven backdrop and clear it when the list disappears.
+Material keeps its results viewport below the entire opaque header. Public profiles keep their
+heading, scope and toolbar in the page's normal flow.
 
 Neutral tiles in session summaries and Profile's period comparison use `systemColors.tertiaryFill`
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
@@ -500,8 +506,8 @@ never reach this component and keep their own chrome.
 control and the grade row's `systemColors.fill` capsules have one. The filter tokens carry an
 opaque `systemColors.secondaryBackground` fill for this reason. The fill is on every path: on the
 Material band it is the band's own colour and does not show, and on the iOS band it shows as a
-quiet grey pill. Bare text does not survive a row scrolling behind it, which is why Profile's
-Logbook header (a text heading above its search and sort rows) opts out.
+quiet grey pill. Keep floating control labels on a control surface rather than adding a bare
+section heading above them. The native Profile Logbook uses its selected tab as the heading.
 
 **It always swallows touches.** The block is `pointerEvents="auto"` whether it floats or not: a row
 the blur has smeared must not take a tap through the gap between two chips.
@@ -515,8 +521,9 @@ block (`progressViewOffset`).
 
 A filter control that lives in place is a plain row. The reference is the grade picker,
 `GradeRangeRail` (`src/components/grade/GradeRail.tsx`). On Climbs the Grade chip opens it as a row
-of the chrome under the filter chips. The Grade facet in the Logbook opens the same row, and the two
-filter sheets and the iPad popover show it too.
+of the chrome under the filter chips. The in-flow Logbook toolbar can open the same row; your
+compact native Logbook places grade choices in its filter sheet. Both filter sheets and the iPad
+popover use the same picker.
 
 **No frame, no grab handle.** The row belongs to the surface that holds it; it is not a sheet. [HIG
 Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) keeps the grabber for

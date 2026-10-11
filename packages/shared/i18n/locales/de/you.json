@@ -169,7 +169,8 @@
       "boardPickerLabel": "Board auswählen",
       "boardBack": "Zurück zur Bearbeitung",
       "boardRetry": "Boards konnten nicht geladen werden. Tippe zum Wiederholen.",
-      "boardEmpty": "Kein gespeichertes oder kürzlich genutztes Board passt zu diesem Boulder."
+      "boardEmpty": "Kein gespeichertes oder kürzlich genutztes Board passt zu diesem Boulder.",
+      "customSort": "Eigene Sortierung"
     },
     "boardLink": {
       "title": "Fehlen deine {{boardName}}-Begehungen?",
