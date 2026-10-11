@@ -580,10 +580,6 @@ describe('a draft saved with a setter grade by an older build (#5971)', () => {
 
 // This suite exercises the existing flow before the server privacy rollout.
 vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: undefined }) }));
-vi.mock('../../privacy/PublicationAudiencePicker', () => ({
-  PublicationAudiencePicker: () => null,
-  SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
-}));
 vi.mock('../../privacy/ContentAudienceControl', () => ({
   ContentAudienceControl: () => null,
   SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
@@ -596,14 +592,3 @@ vi.mock('../../privacy/AudiencePicker', () => ({
   AudiencePicker: () => null,
   SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
 }));
-vi.mock('../../privacy/use-publication-audience', () => ({
-  usePublicationAudience: () => ({
-    enabled: false,
-    isPrivate: false,
-    audience: 'public',
-    publication: undefined,
-    chooseAudience: () => {},
-  }),
-}));
-
-vi.mock('../../../lib/graphql/hooks/use-resource-privacy', () => ({ useContentAudience: () => ({ data: undefined }) }));
