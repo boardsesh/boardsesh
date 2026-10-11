@@ -13,6 +13,10 @@ const denial: ConsentRecord = { ...grant, analytics: 'denied' };
 function ownedByA(record: ConsentRecord): DeviceConsentRecord {
   return { ...record, ownerAccountId: 'account-a' };
 }
+/** The account's copy of a record once the account has confirmed it: bound to `account-a`, no token. */
+function confirmedByA({ analytics, version, decidedAt, source }: ConsentRecord): DeviceConsentRecord {
+  return { analytics, version, decidedAt, source, ownerAccountId: 'account-a' };
+}
 /** A decision this device made under `account-a` that the account has not confirmed. */
 function unconfirmedByA(record: ConsentRecord, basedOnDecidedAt: string | null): DeviceConsentRecord {
   return { ...record, ownerAccountId: 'account-a', basedOnDecidedAt };
@@ -208,7 +212,7 @@ describe('account consent synchronization', () => {
         record: localDenial,
         basedOnDecidedAt: grant.decidedAt,
       });
-      expect(coordinator.getSnapshot()).toMatchObject({ record: ownedByA(localDenial), pending: false });
+      expect(coordinator.getSnapshot()).toMatchObject({ record: confirmedByA(localDenial), pending: false });
     },
   );
   it('never writes an adopted older denial over a newer account grant after a restored pending grant', async () => {
@@ -431,7 +435,7 @@ describe('account consent synchronization', () => {
     await Promise.all([denying, allowing]);
     expect(writeAccountConsent).toHaveBeenCalledTimes(2);
     expect(writeAccountConsent.mock.calls.every(([_accountId, input]) => input.analytics === 'denied')).toBe(true);
-    expect(coordinator.getSnapshot()).toMatchObject({ record: externalDenial, pending: false });
+    expect(coordinator.getSnapshot()).toMatchObject({ record: confirmedByA(externalDenial), pending: false });
   });
   it('does not restore an older grant after a withdrawal during the pending-decision read', async () => {
     const pendingRead = deferred<PendingConsentDecision | null>();
