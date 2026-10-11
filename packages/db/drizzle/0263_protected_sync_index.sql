@@ -1,0 +1,33 @@
+-- The climbs with a Boardsesh author, alive or deleted, per layout and in sync
+-- cursor order (#6306). The PROTECTED sync stream (syncClimbs, syncClimbStats,
+-- syncClimbGrades with audience: PROTECTED) reads only these rows and replays
+-- them from epoch after every privacy event. They are a small slice of the
+-- table: 3,366 of 387,101 climbs on the largest layout (Kilter 1), 581 on
+-- Kilter 8 and under 100 on every other layout (production standby,
+-- 2026-10-11). Without this index the stream has to walk a layout's whole
+-- catalogue to find them.
+--
+-- A query only uses a partial index when it implies the predicate, so the
+-- stream's queries carry it as written here: protectedClimbCandidateSql in
+-- packages/db/src/queries/privacy.ts.
+--
+-- Drizzle's Postgres migrator wraps migrations in a transaction, so
+-- CREATE INDEX CONCURRENTLY is not valid here (same constraint as
+-- 0121_add_quality_search_covering_index, 0240_yielding_hellion and
+-- 0253_climb_holds_moved_index). The index itself is small, but building it
+-- scans all of board_climbs, which is large and write-hot in production, under
+-- a SHARE lock that blocks every climb write for the whole scan. Build it
+-- concurrently out-of-band there first:
+--
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS "board_climbs_protected_sync_idx"
+--     ON "board_climbs" USING btree ("board_type","layout_id","updated_at","sync_seq")
+--     WHERE ("board_climbs"."user_id" IS NOT NULL OR "board_climbs"."is_boardsesh_authored");
+--
+-- and this migration is then the idempotent dev/test parity no-op. The
+-- is_boardsesh_authored column arrives with 0261, so that has to be applied
+-- before the out-of-band build. A concurrent build that fails leaves an INVALID
+-- index that IF NOT EXISTS would then skip: check
+-- SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid and drop it
+-- (DROP INDEX CONCURRENTLY) before retrying.
+-- Full pattern: docs/db-migrations.md, "Indexes on a large, write-hot table".
+CREATE INDEX IF NOT EXISTS "board_climbs_protected_sync_idx" ON "board_climbs" USING btree ("board_type","layout_id","updated_at","sync_seq") WHERE ("board_climbs"."user_id" IS NOT NULL OR "board_climbs"."is_boardsesh_authored");

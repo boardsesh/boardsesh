@@ -503,6 +503,27 @@ type Query {
 }
 ```
 
+The block above is the original design. The per-board pulls have since gained
+arguments: `layoutId` and `sizeId` (see **Per-board selective sync** below),
+`syncClimbGrades`, and an optional `audience: SyncAudience` on `syncClimbs`,
+`syncClimbStats` and `syncClimbGrades`. The current signatures are in
+[`sync-table-manifest.md`](sync-table-manifest.md).
+
+`audience` splits a board's pull into two streams with separate cursors (#6306):
+
+- `REFERENCE`: the public catalogue. Climbs with no owner, no author flag and no
+  policy row, plus their stats and grades. The same rows for every viewer, and
+  exactly the rows a snapshot artifact carries. Always empty for spray walls.
+- `PROTECTED`: climbs with a Boardsesh author that the caller may see, plus their
+  stats and grades. On a spray wall, every climb the caller may see there.
+- omitted: both in one stream, which is what every client older than the split
+  sends. That response is unchanged.
+
+The partition rule is that the two streams are disjoint and together equal the
+pull with no audience. See
+[Sync audiences](board-snapshots.md#sync-audiences-6306) for the shared predicate,
+the index and the query shapes.
+
 Each resolver queries Postgres using the composite cursor:
 
 ```sql
@@ -733,7 +754,7 @@ Both manual entry points (**More → Sign out** and the user drawer's **Log out*
 
 ### Per-board selective sync
 
-User data (ticks, playlists, favorites, follows) syncs on native with no per-board opt-in. Board reference data syncs per-**scope**, where a scope is one `(boardType, layoutId, sizeId)` a user made available offline in **My Boards** (the offline toggle writes an encoded `"boardType:layoutId:sizeId"` key into `syncEnabledBoards`). Downloading always pulls **all sets** for that layout/size — a fixed superset that stays cacheable across users. `syncClimbs`/`syncClimbStats` take optional `layoutId`/`sizeId` args to scope the pull server-side (see the manifest); `sizeId` is ignored for moonboard. Checkpoints are keyed by `(tableName, scopeKey)` so each scope resumes from its own cursor. They survive a forced sign-out (the rows do too) so the next sign-in doesn't re-crawl; an explicit sign-out deletes both (see **Sign-out and queued writes** above).
+User data (ticks, playlists, favorites, follows) syncs on native with no per-board opt-in. Board reference data syncs per-**scope**, where a scope is one `(boardType, layoutId, sizeId)` a user made available offline in **My Boards** (the offline toggle writes an encoded `"boardType:layoutId:sizeId"` key into `syncEnabledBoards`). Downloading always pulls **all sets** for that layout/size — a fixed superset that stays cacheable across users. `syncClimbs`/`syncClimbStats` take optional `layoutId`/`sizeId` args to scope the pull server-side (see the manifest); `sizeId` is ignored for moonboard. They and `syncClimbGrades` also take an optional `audience` (`REFERENCE` or `PROTECTED`) that splits the scope's rows into two disjoint streams; the client does not send it yet (see **Pull queries** above). Checkpoints are keyed by `(tableName, scopeKey)` so each scope resumes from its own cursor. They survive a forced sign-out (the rows do too) so the next sign-in doesn't re-crawl; an explicit sign-out deletes both (see **Sign-out and queued writes** above).
 
 **Turning the toggle off does not delete anything** — the rows and checkpoints are the expensive shared cache, so re-enabling resumes from the checkpoint instead of re-crawling. Reclaiming that disk space is a separate, explicit action: **More → Storage** (`StorageSettingsScreen`), which lists every scope that has rows (not just the enabled ones — a forced sign-out clears `syncEnabledBoards` while deliberately keeping the rows, and a kill-switch rollback leaves rows with the toggle unavailable, so "has rows, not enabled" is a real state, never an orphan to auto-reap). Removal goes through `removeOfflineBoard` (`packages/mobile/src/offline/remove-offline-board.ts`) → `removeBoardScopeData` (`@boardsesh/offline-sync`'s `sync/scope-teardown.ts`), which drops the scope's rows **and every `sync_meta` marker describing them in one exclusive transaction**: a surviving checkpoint would make the strict-`>` delta pull resume past the deleted rows and never revisit them, permanently gutting the catalog while `scope-complete:` still advertised it as whole. See that module's header for the full hazard list. A full `VACUUM` afterwards is what actually returns the pages to the filesystem (`db/vacuum.ts`).
 

@@ -34,6 +34,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Sql, TransactionSql } from 'postgres';
 import { createPool, closePool } from '@boardsesh/db/client';
+import { publicReferenceClimbSql, referenceBoardTypeSql } from '@boardsesh/db/queries';
 import { normalizeRow, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -194,18 +195,14 @@ async function streamTableIntoSqlite(
         AND EXISTS (SELECT 1 FROM board_climbs snapshot_beta_climb
           WHERE snapshot_beta_climb.board_type = board_beta_links.board_type
             AND snapshot_beta_climb.uuid = board_beta_links.climb_uuid
-            AND snapshot_beta_climb.user_id IS NULL AND NOT snapshot_beta_climb.is_boardsesh_authored
-            AND snapshot_beta_climb.board_type <> 'spray'
-            AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_climb_privacy
-              WHERE snapshot_climb_privacy.entity_type = 'climb' AND snapshot_climb_privacy.entity_id = snapshot_beta_climb.uuid))`
+            AND ${referenceBoardTypeSql('snapshot_beta_climb')}
+            AND ${publicReferenceClimbSql('snapshot_beta_climb')})`
       : tableName === 'board_climb_aliases'
         ? ` WHERE EXISTS (SELECT 1 FROM board_climbs snapshot_alias_climb
           WHERE snapshot_alias_climb.board_type = board_climb_aliases.board_type
             AND snapshot_alias_climb.uuid = board_climb_aliases.canonical_uuid
-            AND snapshot_alias_climb.user_id IS NULL AND NOT snapshot_alias_climb.is_boardsesh_authored
-            AND snapshot_alias_climb.board_type <> 'spray'
-            AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_alias_privacy
-              WHERE snapshot_alias_privacy.entity_type = 'climb' AND snapshot_alias_privacy.entity_id = snapshot_alias_climb.uuid))`
+            AND ${referenceBoardTypeSql('snapshot_alias_climb')}
+            AND ${publicReferenceClimbSql('snapshot_alias_climb')})`
         : '';
   const selectSql = `SELECT ${selectList} FROM ${tableName}${catalogueScope}`;
   for await (const batch of tx.unsafe(selectSql).cursor(2000)) {

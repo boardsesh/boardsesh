@@ -1,7 +1,18 @@
-import { privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import {
+  privateSafeFirstAscentName,
+  protectedClimbCandidateSql,
+  publicReferenceClimbSql,
+  REFERENCE_EXCLUDED_BOARD_TYPES,
+} from '@boardsesh/db/queries';
 import { contentVisibilityCondition } from '../../../services/privacy';
 import { sql, type SQL } from 'drizzle-orm';
-import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
+import type {
+  ConnectionContext,
+  SyncAudience,
+  SyncResult,
+  SyncDeletionsResult,
+  SyncCursorInput,
+} from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -17,6 +28,7 @@ import {
   SyncCursorInputSchema,
   SyncLimitSchema,
   SyncBoardScopeIdSchema,
+  SyncAudienceSchema,
   BoardNameSchema,
 } from '../../../validation/schemas';
 
@@ -54,6 +66,46 @@ const EPOCH_SEQ = '0';
 // every sync query with a NaN interval.
 const parsedStabilityWindow = Number(process.env.SYNC_STABILITY_WINDOW_SECONDS ?? 30);
 const STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsedStabilityWindow : 30;
+
+/**
+ * The most protected-climb candidates a scope may hold for a PROTECTED stats or
+ * grades page to be driven from those climbs. Above it the page falls back to
+ * walking the reference table in cursor order (see `runScopedBoardRefSyncPage`).
+ *
+ * Driven from the climbs, every page visits every candidate once, the empty
+ * tail check included, so a page costs in proportion to the candidates. The
+ * walk's worst case is a replay from epoch, which reads the board's whole
+ * reference table once however many pages that takes — and a phone replays
+ * this stream from epoch after every privacy event.
+ *
+ * Measured, 2026-10-11:
+ *  - Production (read-only standby): Kilter 1, the largest layout, has 3,366
+ *    candidates among 387,101 climbs, with 252 protected stats rows and 154
+ *    grades rows. Kilter 8 has 581 candidates and every other layout under 100.
+ *    Returning those 252 stats rows by walking the cursor index read 1,936,267
+ *    buffers from cache plus 11,398 from disk, in 3.8 s.
+ *  - A local fixture of the same size (Postgres 15, warm): the driven page read
+ *    30,575 buffers in about 20 ms, 9 per candidate, the same from epoch and at
+ *    the tail. The driven shape has not been timed on production.
+ *
+ * At 9 buffers a candidate the driven page stays under the walk's 1.9 million
+ * until a replay needs several pages, each visiting every candidate. That
+ * happens near 10,000 candidates if each had a stats row, and near 36,000 at
+ * today's one row for every thirteen climbs. 10,000 is the lower of the two and
+ * three times the largest layout today.
+ *
+ * `SYNC_PROTECTED_JOIN_MAX_CLIMBS` overrides it without a deploy; 0 always
+ * takes the walk.
+ */
+const DEFAULT_PROTECTED_JOIN_MAX_CLIMBS = 10_000;
+
+/** Read per call, so an operator change needs no restart and a test can pin either shape. */
+function protectedJoinMaxClimbs(): number {
+  const configured = process.env.SYNC_PROTECTED_JOIN_MAX_CLIMBS;
+  if (configured === undefined || configured.trim() === '') return DEFAULT_PROTECTED_JOIN_MAX_CLIMBS;
+  const parsed = Number(configured);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_PROTECTED_JOIN_MAX_CLIMBS;
+}
 
 /**
  * Resolve the incoming cursor into the two bound comparison values. Null/absent
@@ -176,6 +228,15 @@ function prepareBoardSync(
 }
 
 /**
+ * The validated `audience` of a per-board pull, or null for the single-stream
+ * pull every client older than the split sends. Called after `prepareBoardSync`
+ * so an unauthenticated request is still refused before anything is validated.
+ */
+function validateSyncAudience(audience: SyncAudience | null | undefined): SyncAudience | null {
+  return validateInput(SyncAudienceSchema, audience, 'audience') ?? null;
+}
+
+/**
  * The optional layout/size scope conditions on board_climbs, `prefix`-qualified so
  * they work both directly (empty prefix) and inside the syncClimbStats EXISTS
  * subquery (`bc.`). sizeId is ignored for moonboard via the shared
@@ -209,9 +270,102 @@ function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: nu
 }
 
 /**
+ * Which of a board's climbs one per-board pull reads (#6306).
+ *
+ *  - `union`: every climb the viewer may see, in one stream. What a request
+ *    with no `audience` gets, and so what every client older than the split
+ *    pulls. Its rows and documents must not change.
+ *  - `reference`: the public catalogue. The same rows for every viewer, and
+ *    exactly the rows a snapshot artifact carries, so a phone that imported an
+ *    artifact resumes this stream from the artifact's watermark.
+ *  - `protected`: the climbs with a Boardsesh author that the viewer may see.
+ *    Small, and the only stream a privacy event makes a phone replay.
+ *
+ * `reference` and `protected` are disjoint and together equal `union`. A climb
+ * the viewer may see that is not a reference climb has, or once had, an author:
+ * with no owner, no author flag and no policy row it would be a reference
+ * climb, and with a policy row and no owner nobody may see it.
+ */
+type ClimbAccess = { stream: 'reference' } | { stream: 'union' | 'protected'; viewerUserId: string | null | undefined };
+
+/**
+ * The stream a request reads, or null when it has no rows whatever the caller is.
+ *
+ * A board type with no reference set (spray) has an empty `REFERENCE`, so its
+ * `PROTECTED` has to be the whole union for the two to still add up to it. Both
+ * answers hang off the one set the snapshot exports use, so adding a board type
+ * there moves all three readers together.
+ */
+function climbStreamFor(audience: SyncAudience | null, boardType: string): ClimbAccess['stream'] | null {
+  if (audience === null) return 'union';
+  const hasReferenceSet = !REFERENCE_EXCLUDED_BOARD_TYPES.has(boardType);
+  if (audience === 'REFERENCE') return hasReferenceSet ? 'reference' : null;
+  return hasReferenceSet ? 'protected' : 'union';
+}
+
+/**
+ * The conditions that select one stream's climbs, on the `board_climbs` row
+ * named by `alias`.
+ *
+ * `reference` carries no viewer: the snapshot exports run the same text with no
+ * caller at all. `protected` repeats the partial index's predicate so the
+ * planner can use `board_climbs_protected_sync_idx`; its `NOT (reference)` is
+ * implied by the other two conjuncts and is there so the two streams are
+ * disjoint by construction rather than by that argument staying true.
+ */
+function climbAccessConditions(access: ClimbAccess, alias: 'board_climbs' | 'bc'): SQL[] {
+  if (access.stream === 'reference') return [sql.raw(publicReferenceClimbSql(alias))];
+  const visibility = contentVisibilityCondition(
+    'climb',
+    sql.raw(`${alias}.uuid`),
+    sql.raw(`${alias}.user_id`),
+    access.viewerUserId,
+  );
+  if (access.stream === 'union') return [visibility];
+  return [
+    sql.raw(protectedClimbCandidateSql(alias)),
+    sql`NOT (${sql.raw(publicReferenceClimbSql(alias))})`,
+    visibility,
+  ];
+}
+
+/**
+ * Whether a scope holds few enough protected-climb candidates to drive a page
+ * from them (see {@link DEFAULT_PROTECTED_JOIN_MAX_CLIMBS}).
+ *
+ * Counts through `board_climbs_protected_sync_idx` and stops one past the
+ * limit, so the answer never costs more than the page it is deciding about.
+ * Size is left out on purpose: the driven page visits every candidate of the
+ * layout before it can test a size, so the layout's count is the cost.
+ */
+async function protectedClimbsFitJoin(
+  executor: SerialPlanDb,
+  boardType: string,
+  layoutId: number | null,
+): Promise<boolean> {
+  const maxClimbs = protectedJoinMaxClimbs();
+  if (maxClimbs === 0) return false;
+
+  const candidateScope = sql.join(
+    [
+      sql`bc.board_type = ${boardType}`,
+      ...boardClimbsLayoutSizeConditions(boardType, layoutId, null, sql`bc.`),
+      sql.raw(protectedClimbCandidateSql('bc')),
+    ],
+    sql` AND `,
+  );
+  const result = await executor.execute(sql`
+    SELECT count(*)::int AS candidate_count
+    FROM (SELECT 1 FROM board_climbs bc WHERE ${candidateScope} LIMIT ${maxClimbs + 1}) capped_candidates
+  `);
+  const candidateCount = Number(rowsFromResult<{ candidate_count: unknown }>(result)[0]?.candidate_count ?? 0);
+  return candidateCount <= maxClimbs;
+}
+
+/**
  * Run one page of a per-board reference table that has no layout_id of its own
- * (board_climb_stats, board_climb_grades) — building the correlated-EXISTS scope
- * AND running the page under the serial-plan guard, together, in one call.
+ * (board_climb_stats, board_climb_grades) — building the scope AND running the
+ * page under the serial-plan guard, together, in one call.
  *
  * Both belong to the same function on purpose. Such a pull walks the reference
  * table in cursor order and probes 375k-row board_climbs through the EXISTS
@@ -228,11 +382,36 @@ function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: nu
  * The guard is unconditional, including for the unscoped `board_type`-only pull:
  * a full-table walk of either reference table can pick a parallel plan too, and
  * a serial plan can only change latency, never results.
+ *
+ * ## Two shapes for the `protected` stream
+ *
+ * The walk stops early only when matching rows are dense. The protected rows
+ * are sparse — 252 of Kilter's 425,172 stats rows on its largest layout — so a
+ * walk from epoch visits the whole board to return them.
+ *
+ * So a scope with few enough candidates is driven from the climbs instead:
+ * collect the protected climbs through the partial index, probe the reference
+ * table by its `(board_type, climb_uuid, angle)` primary key once per climb,
+ * then sort and limit. The planner is not asked to find that order. On the
+ * production standby (2026-10-11, before the partial index existed) it planned
+ * the plain join as the cursor-index walk and read 1.9 million buffers for those
+ * 252 rows: `ORDER BY … LIMIT` makes an ordered index look cheap whenever the
+ * planner overestimates how dense the matches are. Whether it does depends on
+ * its statistics — a local Postgres 15 fixture of the same size put the climbs
+ * first unprompted, and a small test fixture walked the cursor index at a page
+ * of 5 — so the order is written into the query. Both subqueries below end in
+ * `OFFSET 0`, which Postgres will not flatten: the first is planned on its own,
+ * and the second is LATERAL to the first, so the only legal join is a nested
+ * loop with the climbs outside.
+ *
+ * Both shapes select the same rows in the same order, so a cursor taken from
+ * one resumes correctly on the other. The count that picks between them runs in
+ * this transaction too, under the same guard.
  */
 async function runScopedBoardRefSyncPage(params: {
   table: SQL;
   climbUuidColumn: SQL;
-  viewerUserId?: string;
+  climbs: ClimbAccess;
   selectList: SQL;
   updatedAtColumn: SQL;
   seqColumn: SQL;
@@ -242,39 +421,84 @@ async function runScopedBoardRefSyncPage(params: {
   cursor: SyncCursorInput | null | undefined;
   limit: number;
 }): Promise<SyncResult> {
-  const { table, climbUuidColumn, selectList, updatedAtColumn, seqColumn, boardType, layoutId, sizeId, cursor, limit } =
-    params;
+  const { table, climbUuidColumn, climbs, selectList, updatedAtColumn, seqColumn } = params;
+  const { boardType, layoutId, sizeId, cursor, limit } = params;
 
-  // The reference row has no layout_id, so scope it to the climbs of that
-  // (layout, size) via a correlated EXISTS on board_climbs, reusing the same
-  // shared conditions syncClimbs uses (bc.-qualified here). No scope → plain
-  // board_type filter.
-  const scopeConditions = [
-    ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
-    contentVisibilityCondition('climb', sql`bc.uuid`, sql`bc.user_id`, params.viewerUserId),
-  ];
-  let scope: SQL = sql`board_type = ${boardType}`;
-  if (scopeConditions.length > 0) {
-    const sub = sql.join(
-      [sql`bc.uuid = ${climbUuidColumn}`, sql`bc.board_type = ${boardType}`, ...scopeConditions],
-      sql` AND `,
-    );
-    scope = sql`board_type = ${boardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sub})`;
-  }
+  // The reference row has no layout_id, so it is scoped to the climbs of that
+  // (layout, size) through board_climbs, reusing the same shared conditions
+  // syncClimbs uses (bc.-qualified here).
+  const climbScope = sql.join(
+    [
+      sql`bc.board_type = ${boardType}`,
+      ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
+      ...climbAccessConditions(climbs, 'bc'),
+    ],
+    sql` AND `,
+  );
 
-  return withSerialPlan(db, (transactionDb) =>
-    runSyncPage({
+  return withSerialPlan(db, async (transactionDb) => {
+    if (climbs.stream === 'protected' && (await protectedClimbsFitJoin(transactionDb, boardType, layoutId))) {
+      return runSyncPage({
+        executor: transactionDb,
+        selectList,
+        // The lateral subquery takes the table's own name, so the select list
+        // and cursor columns written for the walk resolve here unchanged.
+        fromClause: sql`(SELECT bc.uuid FROM board_climbs bc WHERE ${climbScope} OFFSET 0) protected_climbs
+          CROSS JOIN LATERAL (
+            SELECT protected_ref.* FROM ${table} protected_ref
+            WHERE protected_ref.board_type = ${boardType} AND protected_ref.climb_uuid = protected_climbs.uuid
+            OFFSET 0
+          ) ${table}`,
+        scope: sql`TRUE`,
+        updatedAtColumn,
+        seqColumn,
+        cursor,
+        limit,
+      });
+    }
+
+    return runSyncPage({
       executor: transactionDb,
       selectList,
       fromClause: table,
-      scope,
+      scope: sql`board_type = ${boardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE bc.uuid = ${climbUuidColumn} AND ${climbScope})`,
       updatedAtColumn,
       seqColumn,
       cursor,
       limit,
-    }),
-  );
+    });
+  });
 }
+
+// One column list for every stream of `syncClimbs`: the document is the same
+// whichever stream delivers the row.
+const BOARD_CLIMBS_SELECT_LIST = sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
+        hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
+        is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
+        characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,
+        updated_at, sync_seq`;
+
+/**
+ * The `board_climb_stats` column list. Only the first-ascent pair differs by
+ * stream, and it differs for a privacy reason each time:
+ *
+ *  - `union` projects the name from the first tick the viewer may see, because
+ *    the stored string on a Boardsesh climb can outlive the tick it came from;
+ *  - `reference` ships the stored manufacturer credit. No reference climb has a
+ *    Boardsesh author, so that projection would return the stored value anyway,
+ *    and leaving it out keeps the viewer out of the query;
+ *  - `PROTECTED` ships neither field, on every board type. A name there depends
+ *    on who is asking, and a phone keeps its own protected rows across a privacy
+ *    event, so a name delivered once could outlast the permission behind it.
+ *    No offline reader selects either column.
+ */
+function boardClimbStatsSelectList(firstAscent: SQL): SQL {
+  return sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
+        ascensionist_count, difficulty_average, quality_average, ${firstAscent}, updated_at, sync_seq`;
+}
+
+const BOARD_CLIMB_GRADES_SELECT_LIST = sql`board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,
+        confidence, ascensionist_count, computed_at, sync_seq`;
 
 /**
  * A wall's alive holds, in the shape the offline mirror stores and the mobile
@@ -511,7 +735,9 @@ export const syncQueries = {
    * Pull board climbs for a board type (reference data, per-board). Local PK =
    * uuid. Seq = sync_seq. Optional layoutId/sizeId scope the pull to one
    * (layout, size) — all sets — so a downloaded board is a fixed, cacheable
-   * superset (sizeId ignored for moonboard).
+   * superset (sizeId ignored for moonboard). Optional audience picks one of the
+   * two streams the pull splits into (see `ClimbAccess`); each has its own
+   * cursor.
    */
   syncClimbs: async (
     _: unknown,
@@ -519,12 +745,14 @@ export const syncQueries = {
       boardType,
       layoutId,
       sizeId,
+      audience,
       cursor,
       limit,
     }: {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
+      audience?: SyncAudience | null;
       cursor?: SyncCursorInput | null;
       limit: number;
     },
@@ -536,25 +764,30 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+    const stream = climbStreamFor(validateSyncAudience(audience), validBoardType);
+
+    // Before the spray gate below, and without it: a board type with no
+    // reference set answers the same empty page for every layout id and every
+    // caller, so the reference stream cannot tell anyone which walls exist.
+    if (stream === null) return emptySyncPage(cursor);
 
     // The board scope here is `board_type` + an optional `layout_id` and NOTHING
     // else — no `is_listed`, no `is_draft` — because this is a full row mirror for
     // the offline database. On the eight catalogue boards that is correct; on spray
     // it is the highest-fidelity leak in the API, because one authenticated account
     // could walk `layoutId` 1..N and pull every column of every private wall's
-    // climbs. An unreadable scope returns an ordinary empty page.
+    // climbs. An unreadable scope returns an ordinary empty page. The gate does
+    // not look at the stream: `reference` returned above for spray, and if spray
+    // ever gained a reference set this would still stand in front of it.
     if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
       return emptySyncPage(cursor);
     }
 
+    const climbs: ClimbAccess = stream === 'reference' ? { stream } : { stream, viewerUserId: ctx.userId };
     return runSyncPage({
-      selectList: sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
-        hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
-        is_draft, is_listed, is_hidden, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
-        characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,
-        updated_at, sync_seq`,
+      selectList: BOARD_CLIMBS_SELECT_LIST,
       fromClause: sql`board_climbs`,
-      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${contentVisibilityCondition('climb', sql`board_climbs.uuid`, sql`board_climbs.user_id`, ctx.userId)}`,
+      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${sql.join(climbAccessConditions(climbs, 'board_climbs'), sql` AND `)}`,
       updatedAtColumn: sql`updated_at`,
       seqColumn: sql`sync_seq`,
       cursor,
@@ -567,7 +800,8 @@ export const syncQueries = {
    * = (board_type, climb_uuid, angle). Seq = sync_seq. Optional layoutId/sizeId
    * scope the stats to the climbs of that (layout, size) via a correlated EXISTS
    * on board_climbs (board_climb_stats has no layout_id column). Cursor columns
-   * are fully qualified to stay unambiguous alongside the subquery.
+   * are fully qualified to stay unambiguous alongside the subquery. Optional
+   * audience returns the stats of that stream's climbs.
    */
   syncClimbStats: async (
     _: unknown,
@@ -575,12 +809,14 @@ export const syncQueries = {
       boardType,
       layoutId,
       sizeId,
+      audience,
       cursor,
       limit,
     }: {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
+      audience?: SyncAudience | null;
       cursor?: SyncCursorInput | null;
       limit: number;
     },
@@ -592,6 +828,9 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+    const syncAudience = validateSyncAudience(audience);
+    const stream = climbStreamFor(syncAudience, validBoardType);
+    if (stream === null) return emptySyncPage(cursor);
 
     // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
     // layout to decide which rows belong to the pull, so a private spray wall
@@ -601,12 +840,23 @@ export const syncQueries = {
       return emptySyncPage(cursor);
     }
 
+    // Keyed on the audience the caller asked for, not the stream it resolved
+    // to: PROTECTED on a spray wall reads the union's rows and still ships no
+    // name. See `boardClimbStatsSelectList`.
+    let firstAscent: SQL;
+    if (syncAudience === 'PROTECTED') {
+      firstAscent = sql`NULL AS fa_username, NULL AS fa_at`;
+    } else if (stream === 'reference') {
+      firstAscent = sql`fa_username, fa_at`;
+    } else {
+      firstAscent = sql`${privateSafeFirstAscentName({ boardType: sql`board_climb_stats.board_type`, climbUuid: sql`board_climb_stats.climb_uuid`, angle: sql`board_climb_stats.angle`, username: sql`board_climb_stats.fa_username` }, ctx.userId)} AS fa_username, fa_at`;
+    }
+
     return runScopedBoardRefSyncPage({
-      viewerUserId: ctx.userId,
+      climbs: stream === 'reference' ? { stream } : { stream, viewerUserId: ctx.userId },
       table: sql`board_climb_stats`,
       climbUuidColumn: sql`board_climb_stats.climb_uuid`,
-      selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
-        ascensionist_count, difficulty_average, quality_average, ${privateSafeFirstAscentName({ boardType: sql`board_climb_stats.board_type`, climbUuid: sql`board_climb_stats.climb_uuid`, angle: sql`board_climb_stats.angle`, username: sql`board_climb_stats.fa_username` }, ctx.userId)} AS fa_username, fa_at, updated_at, sync_seq`,
+      selectList: boardClimbStatsSelectList(firstAscent),
       updatedAtColumn: sql`board_climb_stats.updated_at`,
       seqColumn: sql`board_climb_stats.sync_seq`,
       boardType: validBoardType,
@@ -625,6 +875,7 @@ export const syncQueries = {
    * column, exactly like board_climb_stats). Cursor columns are fully qualified to
    * stay unambiguous alongside the subquery. model_version/coeff_version/
    * content_prior are dropped — the device only needs the surfaced grade + band.
+   * Optional audience returns the grades of that stream's climbs.
    */
   syncClimbGrades: async (
     _: unknown,
@@ -632,12 +883,14 @@ export const syncQueries = {
       boardType,
       layoutId,
       sizeId,
+      audience,
       cursor,
       limit,
     }: {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
+      audience?: SyncAudience | null;
       cursor?: SyncCursorInput | null;
       limit: number;
     },
@@ -649,6 +902,8 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+    const stream = climbStreamFor(validateSyncAudience(audience), validBoardType);
+    if (stream === null) return emptySyncPage(cursor);
 
     // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
     // layout to decide which rows belong to the pull, so a private spray wall
@@ -659,11 +914,10 @@ export const syncQueries = {
     }
 
     return runScopedBoardRefSyncPage({
-      viewerUserId: ctx.userId,
+      climbs: stream === 'reference' ? { stream } : { stream, viewerUserId: ctx.userId },
       table: sql`board_climb_grades`,
       climbUuidColumn: sql`board_climb_grades.climb_uuid`,
-      selectList: sql`board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,
-        confidence, ascensionist_count, computed_at, sync_seq`,
+      selectList: BOARD_CLIMB_GRADES_SELECT_LIST,
       updatedAtColumn: sql`board_climb_grades.computed_at`,
       seqColumn: sql`board_climb_grades.sync_seq`,
       boardType: validBoardType,
