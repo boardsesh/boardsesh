@@ -66,7 +66,7 @@ function catalogRow(overrides: Partial<LayoutCatalogClimbRow> & Pick<LayoutCatal
 function fingerprintFor(climbConcat: string, holeToPlacement: Map<number, number>, frameCount: number): string {
   const decoded = decodeGripsClimbConcat(climbConcat, holeToPlacement, frameCount);
   if (!decoded.ok) throw new Error(`expected this concat to decode, got ${decoded.reason}`);
-  return fingerprintFromHolds(decoded.holds);
+  return fingerprintFromHolds(decoded.fingerprintEvents);
 }
 
 function rerouteContext(entries: Array<[number, Map<number, number>]>): RerouteContext {

@@ -1,4 +1,7 @@
-import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import {
+  legacyAuroraRawFrameHoldEvents,
+  projectAuroraFramesToStoredRows,
+} from '@boardsesh/board-constants/hold-states';
 
 import { type HoldTuple } from './fingerprint';
 
@@ -28,7 +31,7 @@ export function isKilterSkipReason(value: string): value is KilterSkipReason {
 }
 
 export type GripsDecodeResult =
-  | { ok: true; frames: string; holds: HoldTuple[] }
+  | { ok: true; frames: string; fingerprintEvents: HoldTuple[]; holdRowsToInsert: HoldTuple[] }
   /** A hole in the concat has no placement on the resolved layout. */
   | { ok: false; reason: 'unplaceable_hole'; holeId: number }
   /** The token scan didn't consume the whole string — an encoding we don't know. */
@@ -38,8 +41,8 @@ export type GripsDecodeResult =
 
 /**
  * Decode a Kilter Grips `climb_concat` into the canonical Aurora frames
- * string plus the per-frame hold tuples that back `board_climb_holds` and the
- * dedup fingerprint.
+ * string, the complete raw set events used by the historical dedup fingerprint,
+ * and the one-row-per-hold projection stored in `board_climb_holds`.
  *
  * ## The two encodings
  *
@@ -151,7 +154,6 @@ export function decodeGripsClimbConcat(
   // holds on the wall.
   if (consumed !== climbConcat.length) return { ok: false, reason: 'unparsable_concat', offset: consumed };
 
-  const holds: HoldTuple[] = [];
   const frameStrings: string[] = [];
   for (let frameNumber = 0; frameNumber < totalFrames; frameNumber += 1) {
     const sets = setsByFrame.get(frameNumber);
@@ -176,18 +178,18 @@ export function decodeGripsClimbConcat(
         continue;
       }
       frameString += `p${entry.placementId}r${entry.roleCode}`;
-      holds.push({
-        holdId: entry.placementId,
-        frameNumber,
-        holdState: holdStateName(entry.placementId, entry.roleCode),
-      });
     }
     frameStrings.push(frameString);
   }
 
   // Aurora prefixes every frame after the first with a literal `"`.
   const frames = frameStrings.map((frameString, index) => (index === 0 ? frameString : `,"${frameString}`)).join('');
-  return { ok: true, frames, holds };
+  // Fingerprints retain every historical raw set event and its original comma
+  // slot. Storage remains the shared first-valid, one-row-per-hold projection:
+  // its table primary key cannot represent relights of the same placement.
+  const fingerprintEvents: HoldTuple[] = legacyAuroraRawFrameHoldEvents(frames, KILTER_BOARD);
+  const holdRowsToInsert: HoldTuple[] = projectAuroraFramesToStoredRows(frames, KILTER_BOARD).rows;
+  return { ok: true, frames, fingerprintEvents, holdRowsToInsert };
 }
 
 export type UniqueDecodableLayout = {
@@ -228,15 +230,4 @@ export function findUniqueDecodableLayout(
     onlyHit = { layoutId, decoded };
   }
   return onlyHit;
-}
-
-/**
- * Role code → hold-state name, mirroring `convertLitUpHoldsStringToMap` so a
- * decoded climb produces the same `board_climb_holds.hold_state` values the
- * rest of the catalog already stores. Unknown codes keep that function's
- * `{holdId}={code}` sentinel, which downstream readers (the fingerprint
- * backfill, the duplicate gate) already recognise and skip.
- */
-function holdStateName(placementId: number, roleCode: number): string {
-  return HOLD_STATE_MAP[KILTER_BOARD]?.[roleCode]?.name ?? `${placementId}=${roleCode}`;
 }

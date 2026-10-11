@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTableName, type Table } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import {
+  legacyAuroraRawFrameHoldEvents,
+  projectAuroraFramesToStoredRows,
+} from '@boardsesh/board-constants/hold-states';
+import { fingerprintFromHolds } from './fingerprint';
 
 import type { KilterCatalogClimb, KilterCatalogStat } from '../api/kilter-rest';
 import { KilterApiError } from '../api/errors';
@@ -125,10 +131,25 @@ function createFakeDb(queues: TableQueues) {
         inserts.push({ table: getTableName(table), values: Array.isArray(values) ? values : [values] });
         return insertResult();
       },
-      // insert().select(unnest …) carries its rows as SQL params; record the
-      // write without them.
-      select: () => {
-        inserts.push({ table: getTableName(table), values: [] });
+      // insert().select(unnest …) carries its rows in SQL parameters. Decode
+      // those values so reroute assertions observe the actual alias writes.
+      select: (query: Parameters<PgDialect['sqlToQuery']>[0]) => {
+        const [boardTypes, aliasUuids, canonicalUuids, sources] = new PgDialect().sqlToQuery(query).params as [
+          string[],
+          string[],
+          string[],
+          string[],
+        ];
+        const values =
+          getTableName(table) === 'board_climb_aliases'
+            ? boardTypes.map((boardType, index) => ({
+                boardType,
+                aliasUuid: aliasUuids[index],
+                canonicalUuid: canonicalUuids[index],
+                source: sources[index],
+              }))
+            : [];
+        inserts.push({ table: getTableName(table), values });
         return insertResult();
       },
     }),
@@ -181,6 +202,8 @@ function baseQueues(overrides: TableQueues = {}): TableQueues {
     // Preload order follows reference.productLayouts: layout 1, then layout 8.
     board_placements: [[{ holeId: 10, id: 100 }], [{ holeId: 4000, id: 900 }]],
     ...overrides,
+    // Once-per-run legacy bridge preload precedes each layout's normal reads.
+    board_climbs: [[], ...(overrides.board_climbs ?? [])],
   };
 }
 
@@ -303,4 +326,175 @@ void describe('a failed /delteduuids fetch', () => {
 
     return expect(runCatalog(db)).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 3_600_000 });
   });
+});
+
+void describe('reroute fingerprint compatibility', () => {
+  it.each(['raw', 'projected'] as const)(
+    'folds an identical animation onto an owner stored with its %s hash',
+    async (storedForm) => {
+      const frames = 'p900r12,"x900p900r13';
+      const rawFingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+      const projectedFingerprint = fingerprintFromHolds(projectAuroraFramesToStoredRows(frames, 'kilter').rows);
+      const owner = {
+        uuid: 'ANIMATED',
+        layoutId: TARGET_LAYOUT_ID,
+        fingerprint: storedForm === 'raw' ? rawFingerprint : projectedFingerprint,
+        isListed: true,
+        userId: null,
+        isDraft: false,
+      };
+      const queues = baseQueues({
+        board_climbs: [[], [], [owner]],
+        board_climb_aliases: [[], []],
+      });
+      queues.board_climbs[0] = [
+        { uuid: owner.uuid, layoutId: TARGET_LAYOUT_ID, frames, fingerprint: owner.fingerprint },
+      ];
+      restMocks.fetchLayoutClimbs.mockResolvedValue([
+        catalogClimb({ climbConcat: 'h4000p12e1h4000p13s2', frameCount: 2 }),
+      ]);
+      const { db, inserts } = createFakeDb(queues);
+      const summary = await runCatalog(db);
+      expect(summary.climbsRerouted).toBe(1);
+      expect(inserts.some((row) => row.table === 'board_climbs')).toBe(false);
+      expect(inserts.filter((row) => row.table === 'board_climb_aliases').flatMap((row) => row.values)).toContainEqual(
+        expect.objectContaining({ aliasUuid: 'MISTAGGED', canonicalUuid: 'ANIMATED' }),
+      );
+    },
+  );
+
+  it.each(['raw', 'projected'] as const)(
+    'folds an identical delayed-start animation onto an owner stored with its %s hash',
+    async (storedForm) => {
+      const frames = ',"p900r13';
+      const rawFingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+      const projectedFingerprint = fingerprintFromHolds(projectAuroraFramesToStoredRows(frames, 'kilter').rows);
+      const owner = {
+        uuid: 'DELAYED',
+        layoutId: TARGET_LAYOUT_ID,
+        fingerprint: storedForm === 'raw' ? rawFingerprint : projectedFingerprint,
+        isListed: true,
+        userId: null,
+        isDraft: false,
+      };
+      const queues = baseQueues({
+        board_climbs: [[], [], [owner]],
+        board_climb_aliases: [[], []],
+      });
+      queues.board_climbs[0] = [
+        { uuid: owner.uuid, layoutId: TARGET_LAYOUT_ID, frames, fingerprint: owner.fingerprint },
+      ];
+      restMocks.fetchLayoutClimbs.mockResolvedValue([catalogClimb({ climbConcat: 'h4000p13s2', frameCount: 2 })]);
+      const { db, inserts } = createFakeDb(queues);
+      const summary = await runCatalog(db);
+      expect(summary.climbsRerouted).toBe(1);
+      expect(inserts.some((row) => row.table === 'board_climbs')).toBe(false);
+      expect(inserts.filter((row) => row.table === 'board_climb_aliases').flatMap((row) => row.values)).toContainEqual(
+        expect.objectContaining({ aliasUuid: 'MISTAGGED', canonicalUuid: 'DELAYED' }),
+      );
+    },
+  );
+
+  it.each(['raw', 'projected'] as const)(
+    'does not fold a simple candidate through an animated owner stored with its %s hash',
+    async (storedForm) => {
+      const frames = 'p900r12,"x900p900r13';
+      const rawFingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+      const projectedFingerprint = fingerprintFromHolds(projectAuroraFramesToStoredRows(frames, 'kilter').rows);
+      const owner = {
+        uuid: 'ANIMATED',
+        layoutId: TARGET_LAYOUT_ID,
+        fingerprint: storedForm === 'raw' ? rawFingerprint : projectedFingerprint,
+        isListed: true,
+        userId: null,
+        isDraft: false,
+      };
+      const queues = baseQueues({ board_climbs: [[], [], [owner]], board_climb_aliases: [[], []] });
+      queues.board_climbs[0] = [
+        { uuid: owner.uuid, layoutId: TARGET_LAYOUT_ID, frames, fingerprint: owner.fingerprint },
+      ];
+      restMocks.fetchLayoutClimbs.mockResolvedValue([catalogClimb()]);
+      const { db, inserts } = createFakeDb(queues);
+      const summary = await runCatalog(db);
+      expect(summary.climbsRerouted).toBe(1);
+      expect(inserts.filter((row) => row.table === 'board_climbs').flatMap((row) => row.values)).toContainEqual(
+        expect.objectContaining({ uuid: 'MISTAGGED' }),
+      );
+      expect(inserts.filter((row) => row.table === 'board_climb_aliases').flatMap((row) => row.values)).toContainEqual(
+        expect.objectContaining({ aliasUuid: 'MISTAGGED', canonicalUuid: 'MISTAGGED' }),
+      );
+    },
+  );
+
+  it.each([
+    ['animated-first', ['ANIMATED', 'SIMPLE']],
+    ['simple-first', ['SIMPLE', 'ANIMATED']],
+  ] as const)('chooses the true simple owner when reroute lookup order is %s', async (_label, ownerOrder) => {
+    const animatedFrames = 'p900r12,"x900p900r13';
+    const sharedProjectedFingerprint = fingerprintFromHolds(
+      projectAuroraFramesToStoredRows(animatedFrames, 'kilter').rows,
+    );
+    const owners = {
+      ANIMATED: {
+        uuid: 'ANIMATED',
+        layoutId: TARGET_LAYOUT_ID,
+        fingerprint: sharedProjectedFingerprint,
+        isListed: true,
+        userId: null,
+        isDraft: false,
+      },
+      SIMPLE: {
+        uuid: 'SIMPLE',
+        layoutId: TARGET_LAYOUT_ID,
+        fingerprint: sharedProjectedFingerprint,
+        isListed: true,
+        userId: null,
+        isDraft: false,
+      },
+    };
+    const orderedOwners = ownerOrder.map((uuid) => owners[uuid]);
+    const queues = baseQueues({ board_climbs: [[], [], orderedOwners], board_climb_aliases: [[], []] });
+    queues.board_climbs[0] = [
+      {
+        uuid: owners.ANIMATED.uuid,
+        layoutId: TARGET_LAYOUT_ID,
+        frames: animatedFrames,
+        fingerprint: owners.ANIMATED.fingerprint,
+      },
+    ];
+    restMocks.fetchLayoutClimbs.mockResolvedValue([catalogClimb()]);
+    const { db, inserts } = createFakeDb(queues);
+    const summary = await runCatalog(db);
+    expect(summary.climbsRerouted).toBe(1);
+    expect(inserts.some((row) => row.table === 'board_climbs')).toBe(false);
+    expect(inserts.filter((row) => row.table === 'board_climb_aliases').flatMap((row) => row.values)).toContainEqual(
+      expect.objectContaining({ aliasUuid: 'MISTAGGED', canonicalUuid: 'SIMPLE' }),
+    );
+  });
+});
+
+it('preserves database UUID order when reroute fingerprints have mixed-case duplicate owners', async () => {
+  const frames = 'p900r12,"x900p900r13';
+  const fingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+  const owners = ['Z-owner', 'a-owner'].map((uuid) => ({
+    uuid,
+    layoutId: TARGET_LAYOUT_ID,
+    fingerprint,
+    isListed: true,
+    userId: null,
+    isDraft: false,
+  }));
+  const queues = baseQueues({ board_climbs: [[], [], owners], board_climb_aliases: [[], []] });
+  queues.board_climbs[0] = owners.map((owner) => ({
+    uuid: owner.uuid,
+    layoutId: TARGET_LAYOUT_ID,
+    frames,
+    fingerprint,
+  }));
+  restMocks.fetchLayoutClimbs.mockResolvedValue([catalogClimb({ climbConcat: 'h4000p12e1h4000p13s2', frameCount: 2 })]);
+  const { db, inserts } = createFakeDb(queues);
+  await runCatalog(db);
+  expect(inserts.filter((row) => row.table === 'board_climb_aliases').flatMap((row) => row.values)).toContainEqual(
+    expect.objectContaining({ aliasUuid: 'MISTAGGED', canonicalUuid: 'Z-owner' }),
+  );
 });

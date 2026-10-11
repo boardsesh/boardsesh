@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
+import { parseFramesToHoldEntries as parseStoredHoldEntries, distinctHoldIds } from '@boardsesh/db/queries';
 import {
   acquireDuplicateGateLock,
   buildDuplicateClimbErrorMessage,
@@ -9,6 +10,7 @@ import {
   CLIMB_DUPLICATE_ERROR_CODE,
   findExactDuplicateMatch,
   findSimilarClimbs,
+  isSupportedSimilarityHold,
   parseFramesToHoldEntries,
 } from '../graphql/resolvers/climbs/climb-similarity';
 
@@ -53,6 +55,23 @@ function getRenderedSimilarityQuery(): { sql: string; params: unknown[] } {
 }
 
 describe('parseFramesToHoldEntries', () => {
+  it('shares nightly and live canonical projections for invalid Aurora and Woods zero holds', () => {
+    const frames = 'p0r1p-2r1p9007199254740992r1p1r1,"p1r3p2r999,"p2r2';
+    const expected = [
+      { frameNumber: 0, holdId: 1, holdState: 'STARTING' },
+      { frameNumber: 2, holdId: 2, holdState: 'HAND' },
+    ];
+    expect(parseStoredHoldEntries('tension', frames)).toEqual(expected);
+    expect(parseFramesToHoldEntries('tension', frames)).toEqual(expected);
+    expect(distinctHoldIds('tension', frames)).toEqual([1, 2]);
+    expect(parseStoredHoldEntries('woods', 'p0r4p1r3')).toEqual([
+      { frameNumber: 0, holdId: 0, holdState: 'STARTING' },
+      { frameNumber: 0, holdId: 1, holdState: 'FINISH' },
+    ]);
+    expect(parseFramesToHoldEntries('woods', 'p0r4p1r3')).toEqual(parseStoredHoldEntries('woods', 'p0r4p1r3'));
+    expect(distinctHoldIds('woods', 'p0r4p1r3')).toEqual([0, 1]);
+  });
+
   it('parses a Kilter frame string into hold + state tuples', () => {
     const entries = parseFramesToHoldEntries('kilter', 'p1117r12p1140r15p1148r13');
     expect(entries).toEqual([
@@ -60,6 +79,18 @@ describe('parseFramesToHoldEntries', () => {
       { frameNumber: 0, holdId: 1140, holdState: 'FOOT' },
       { frameNumber: 0, holdId: 1148, holdState: 'HAND' },
     ]);
+  });
+
+  it('keeps Woods zero-based holds while rejecting Aurora zero placeholders', () => {
+    expect(parseFramesToHoldEntries('woods', 'p0r4p1r3')).toEqual([
+      { frameNumber: 0, holdId: 0, holdState: 'STARTING' },
+      { frameNumber: 0, holdId: 1, holdState: 'FINISH' },
+    ]);
+    expect(parseFramesToHoldEntries('tension', 'p0r1p1r3')).toEqual([
+      { frameNumber: 0, holdId: 1, holdState: 'FINISH' },
+    ]);
+    expect(isSupportedSimilarityHold({ holdId: 0, holdState: 'STARTING' }, 'woods')).toBe(true);
+    expect(isSupportedSimilarityHold({ holdId: 0, holdState: 'STARTING' }, 'kilter')).toBe(false);
   });
 
   it('returns an empty list for null / empty input', () => {
@@ -73,6 +104,13 @@ describe('parseFramesToHoldEntries', () => {
       { frameNumber: 0, holdId: 10, holdState: 'STARTING' },
       { frameNumber: 0, holdId: 20, holdState: 'HAND' },
       { frameNumber: 1, holdId: 30, holdState: 'FINISH' },
+    ]);
+  });
+
+  it('uses same-frame last-token-wins and cross-frame first-valid-wins for Aurora rows', () => {
+    expect(parseFramesToHoldEntries('tension', 'p10r1p10r2,"p10r3p20r999,"p20r2')).toEqual([
+      { frameNumber: 0, holdId: 10, holdState: 'HAND' },
+      { frameNumber: 2, holdId: 20, holdState: 'HAND' },
     ]);
   });
 });
@@ -213,7 +251,7 @@ describe('findExactDuplicateMatch', () => {
     expect(match).toBeNull();
   });
 
-  it('emits SQL that restricts the join to the canonical hold states', async () => {
+  it('emits SQL that restricts the join to positive IDs and canonical hold states', async () => {
     mockDb.execute.mockResolvedValueOnce([]);
     await findExactDuplicateMatch({
       boardType: 'kilter',
@@ -227,11 +265,24 @@ describe('findExactDuplicateMatch', () => {
     // longer signature, miss the candidate's, and slip past the gate.
     const [query] = mockDb.execute.mock.calls[0];
     const { sql: rendered, params } = new PgDialect().sqlToQuery(query as SQL);
+    expect(rendered).toContain('"hold_id" > 0');
     expect(rendered).toContain('hold_state" IN (');
     // Drizzle parameterises the inlined state names; check the param values.
     for (const state of ['STARTING', 'HAND', 'FINISH', 'FOOT']) {
       expect(params).toContain(state);
     }
+  });
+
+  it('keeps Woods hold zero in the duplicate-gate SQL', async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+    await findExactDuplicateMatch({
+      boardType: 'woods',
+      layoutId: 1,
+      signature: '0:STARTING',
+      ruleSignature: '',
+    });
+    const [query] = mockDb.execute.mock.calls[0];
+    expect(new PgDialect().sqlToQuery(query as SQL).sql).toContain('"hold_id" >= 0');
   });
 
   it('keys the gate on the rule signature instead of excluding no-match climbs', async () => {
@@ -418,6 +469,28 @@ describe('findSimilarClimbs', () => {
     expect(result).toEqual([]);
     expect(mockDb.execute).not.toHaveBeenCalled();
     expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it('excludes nonpositive materialized hold IDs from candidate overlap and size scans', async () => {
+    mockSimilarClimbRows([]);
+    await findSimilarClimbs({
+      boardType: 'kilter',
+      layoutId: 1,
+      holds: [{ holdId: 1, holdState: 'STARTING' }],
+      threshold: 0.5,
+    });
+    expect(getRenderedSimilarityQuery().sql.match(/hold_id > 0/g)).toHaveLength(2);
+  });
+
+  it('keeps Woods hold zero in candidate overlap and size scans', async () => {
+    mockSimilarClimbRows([]);
+    await findSimilarClimbs({
+      boardType: 'woods',
+      layoutId: 1,
+      holds: [{ holdId: 0, holdState: 'STARTING' }],
+      threshold: 0.5,
+    });
+    expect(getRenderedSimilarityQuery().sql.match(/hold_id >= 0/g)).toHaveLength(2);
   });
 
   it('maps each row to the SimilarClimbResult shape', async () => {
