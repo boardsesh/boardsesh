@@ -7,7 +7,7 @@
 // "which one did I pick?" in violet and amber and the grade ramp lives in the
 // header instead.
 //
-// This test pins four things:
+// This test pins five things:
 //   1. `grade` state is never colour alone: a dot at rest, a checkmark in range
 //      and on the solid selected chip, and no tint on an in-range chip.
 //   2. `selection` is untouched by the mark: no dot, no checkmark, same paint.
@@ -16,6 +16,8 @@
 //      so a tone that changes `borderWidth` resizes the content box under the
 //      label — which is exactly what a 0pt selected border did. In `grade` the
 //      mark's slot is one size in every tone for the same reason.
+//   5. A grade colour is never left to blend into what is behind it: the dot
+//      and the solid selected chip both carry a ring in the label colour.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -24,6 +26,7 @@ type CapturedStyle = Record<string, unknown>;
 type CapturedIcon = { name: string; color: unknown; size: number; maxFontSizeMultiplier: unknown };
 
 const captured = vi.hoisted(() => ({
+  frameProps: [] as unknown[],
   frameStyles: [] as unknown[],
   textColors: [] as unknown[],
   viewStyles: [] as unknown[],
@@ -44,9 +47,10 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
-    captured.frameStyles.push(style);
-    return createElement('div', { 'data-chip-frame': 'true' }, children);
+  PressableSurface: (props: { children?: ReactNode; style?: unknown }) => {
+    captured.frameProps.push(props);
+    captured.frameStyles.push(props.style);
+    return createElement('div', { 'data-chip-frame': 'true' }, props.children);
   },
 }));
 
@@ -70,14 +74,14 @@ vi.mock('../../../providers/theme-provider', async () => {
   return { useTheme: () => theme };
 });
 
-import { GradeChip, type GradeChipColorway, type GradeChipTone } from '../GradeChip';
+import { GRADE_CHIP_HEIGHT, GradeChip, type GradeChipColorway, type GradeChipTone } from '../GradeChip';
 import { makeThemeMock } from '../../../test/theme-mock';
 import { withAlpha } from '../../../theme/colors';
 import { spacing } from '../../../theme/tokens';
 import { readableTextColor } from '../grade-chip-colors';
 
 const theme = makeThemeMock();
-const { systemColors, brandColors } = theme;
+const { systemColors, brandColors, chartColors } = theme;
 
 /** A mid-ramp grade colour. Hex because `withAlpha` only speaks hex, and mid-ramp
  *  so `readableTextColor` has a real decision to make. */
@@ -86,11 +90,15 @@ const GRADE_COLOR = '#D64541';
 /** Geometry constants mirrored from `GradeChip`'s stylesheet. Duplicated on
  *  purpose: the point is to catch a change to them, so reading them back from the
  *  component would defeat the assertion. */
+const CHIP_HEIGHT = 44;
 const CHIP_MIN_WIDTH = 52;
 const CHIP_PADDING_X = spacing[3];
 const MARK_SLOT_SIZE = 12;
-const MARK_DOT_SIZE = 8;
+const MARK_DOT_SIZE = 10;
 const MARK_GAP = spacing[1];
+/** The ring round a grade colour: the label colour at 45%. From the theme's
+ *  plain-string palette, since `withAlpha` reads hex. */
+const GRADE_RING = withAlpha(chartColors.label, 0.45);
 
 type ChipPaint = {
   backgroundColor: unknown;
@@ -115,6 +123,7 @@ function flatten(style: unknown): CapturedStyle {
 
 /** `null` renders the chip with no grade colour at all, as the range rail's "Any" does. */
 function renderChip(tone: GradeChipTone, colorway: GradeChipColorway, gradeColor: string | null = GRADE_COLOR) {
+  captured.frameProps = [];
   captured.frameStyles = [];
   captured.textColors = [];
   captured.viewStyles = [];
@@ -186,6 +195,7 @@ function contentBoxWidth(chip: ChipPaint, labelWidth: number): number {
 }
 
 beforeEach(() => {
+  captured.frameProps = [];
   captured.frameStyles = [];
   captured.textColors = [];
   captured.viewStyles = [];
@@ -203,21 +213,33 @@ describe('GradeChip colorway="grade"', () => {
     });
   });
 
-  it('carries the grade colour of a neutral chip as an 8pt dot in a separator ring', () => {
+  it('carries the grade colour of a neutral chip as a 10pt dot in a label-colour ring', () => {
     expect(mark('neutral', 'grade')).toEqual({
       slotSize: MARK_SLOT_SIZE,
-      dot: { size: MARK_DOT_SIZE, color: GRADE_COLOR, ringColor: systemColors.separator, ringWidth: 1 },
+      dot: { size: MARK_DOT_SIZE, color: GRADE_COLOR, ringColor: GRADE_RING, ringWidth: 1 },
       check: undefined,
     });
   });
 
   it('paints selected in the grade colour with readable text on it', () => {
-    expect(paint('selected', 'grade')).toEqual({
+    expect(paint('selected', 'grade')).toMatchObject({
       backgroundColor: GRADE_COLOR,
-      borderColor: GRADE_COLOR,
-      borderWidth: 1,
       textColor: readableTextColor(GRADE_COLOR),
     });
+  });
+
+  // A dark grade colour on a dark background has no edge of its own.
+  it('rings a selected chip in the same colour as the dot, at the border width every tone has', () => {
+    const selected = paint('selected', 'grade');
+
+    expect(selected.borderColor).toBe(GRADE_RING);
+    expect(selected.borderWidth).toBe(paint('neutral', 'grade').borderWidth);
+  });
+
+  it('keeps the ring off every tone that is not a solid grade colour', () => {
+    expect(paint('neutral', 'grade').borderColor).toBe('transparent');
+    expect(paint('range', 'grade').borderColor).toBe('transparent');
+    expect(paint('consensus', 'grade').borderColor).not.toBe(GRADE_RING);
   });
 
   it('marks a selected chip with a checkmark in the label colour, not the dot', () => {
@@ -319,7 +341,7 @@ describe('GradeChip colorway="selection"', () => {
     renderChip('selected', 'selection');
 
     expect(contentStyle()).toEqual({
-      minHeight: 42,
+      minHeight: CHIP_HEIGHT - 2,
       paddingHorizontal: CHIP_PADDING_X,
       alignItems: 'center',
       justifyContent: 'center',
@@ -387,6 +409,19 @@ describe('GradeChip box geometry', () => {
     expect(mark('neutral', 'grade', null).slotSize).toBe(mark('range', 'grade', null).slotSize);
   });
 
+  it('sizes the chip from the one exported height', () => {
+    expect(GRADE_CHIP_HEIGHT).toBe(CHIP_HEIGHT);
+    for (const colorway of ['grade', 'selection'] as const) {
+      renderChip('neutral', colorway);
+      expect(flatten(captured.frameStyles.at(-1))).toMatchObject({
+        minHeight: GRADE_CHIP_HEIGHT,
+        borderRadius: GRADE_CHIP_HEIGHT / 2,
+      });
+      // Inside the 1pt border at the top and at the bottom.
+      expect(contentStyle().minHeight).toBe(GRADE_CHIP_HEIGHT - 2);
+    }
+  });
+
   it('scales the slot and the dot with the text size, up to the cap the checkmark glyph uses', () => {
     captured.fontScale = 1.3;
     const scaled = mark('neutral', 'grade');
@@ -398,5 +433,31 @@ describe('GradeChip box geometry', () => {
     // The checkmark is handed the same cap, so glyph and slot grow together.
     mark('selected', 'grade');
     expect((captured.icons.at(-1) as CapturedIcon).maxFontSizeMultiplier).toBe(1.5);
+  });
+});
+
+describe('GradeChip touch and hold', () => {
+  it('hands the hold and its delay to the pressable, beside the tap', () => {
+    const onPress = vi.fn();
+    const onLongPress = vi.fn();
+    render(
+      createElement(GradeChip, {
+        label: 'V6',
+        gradeColor: GRADE_COLOR,
+        onPress,
+        onLongPress,
+        delayLongPress: 400,
+        accessibilityLabel: 'V6',
+      }),
+    );
+
+    expect(captured.frameProps.at(-1)).toMatchObject({ onPress, onLongPress, delayLongPress: 400 });
+  });
+
+  it('has no hold unless one is given', () => {
+    renderChip('neutral', 'grade');
+    const frame = captured.frameProps.at(-1) as { onLongPress?: unknown };
+
+    expect(frame.onLongPress).toBeUndefined();
   });
 });

@@ -45,7 +45,8 @@ export type FilterChipRowProps = {
   gradeLabel: string;
   gradeActive: boolean;
   onOpenGrade: () => void;
-  /** Whether the grade range rail is currently shown — the chip toggles it. */
+  /** Whether the grade range rail is currently shown — the chip toggles it. The
+   *  rail is shown by default and stays until the chip hides it. */
   gradeRailOpen: boolean;
   onCloseGrade: () => void;
   /** Regular-width iPad places the range picker at its native chip anchor. */

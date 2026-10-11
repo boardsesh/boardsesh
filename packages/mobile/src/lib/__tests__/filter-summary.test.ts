@@ -59,6 +59,36 @@ describe('getFilterSummary', () => {
     expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('V2–V6');
   });
 
+  // The range rail draws grades that read the same as one chip, so one pick can
+  // set two ids. With the rail's stops a summary names it as the chip does.
+  describe('with the rail stops given', () => {
+    const sharedScale: Grade[] = [
+      { difficultyId: 10, name: '4a/V0' },
+      { difficultyId: 11, name: '4b/V0' },
+      { difficultyId: 12, name: '4c/V0' },
+      { difficultyId: 15, name: '5c/V2' },
+    ];
+    const stops = [
+      { minGradeId: 10, maxGradeId: 12, label: 'V0' },
+      { minGradeId: 15, maxGradeId: 15, label: 'V2' },
+    ];
+    const summaryOf = (minGrade: number, maxGrade: number) =>
+      getFilterSummary({ ...DEFAULT_FILTERS, minGrade, maxGrade }, '', sharedScale, mockT, stops);
+
+    it('reads a grouped stop as one grade', () => {
+      expect(summaryOf(10, 12)).toBe('V0');
+    });
+
+    it('reads a range by its stop labels', () => {
+      expect(summaryOf(11, 15)).toBe('V0–V2');
+    });
+
+    it('keeps the raw scale names without the stops', () => {
+      const filters: ClimbFilters = { ...DEFAULT_FILTERS, minGrade: 10, maxGrade: 12 };
+      expect(getFilterSummary(filters, '', sharedScale, mockT)).toBe('4a/V0–4c/V0');
+    });
+  });
+
   it('shows a single grade name when min and max are the same grade', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, minGrade: 15, maxGrade: 15 };
     expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('V6');

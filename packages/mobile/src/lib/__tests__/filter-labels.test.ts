@@ -26,6 +26,12 @@ describe('buildFilterLabels', () => {
     expect(labels.gradeRange('V0', 'V8')).toBe('V0–V8');
   });
 
+  // A rail chip can cover several grade ids, so a bound with two different ids
+  // can still be one grade to the climber.
+  it('gradeRange reads two ends with the same label as that one grade', () => {
+    expect(labels.gradeRange('V0', 'V0')).toBe('V0');
+  });
+
   it('gradeMin passes the grade arg', () => {
     expect(labels.gradeMin('V4')).toBe('V4+');
   });

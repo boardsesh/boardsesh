@@ -21,7 +21,7 @@ import { spacing } from '../../theme/tokens';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { iconMap } from '../icon-map';
 import { BoardSwitcherButton, CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
-import { GradeRangeRail } from '../grade';
+import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
@@ -58,7 +58,12 @@ type ClimbTopChromeProps = {
   onSearchChange: (text: string) => void;
   onSearchFocus: () => void;
   onSearchBlur: () => void;
+  /** The grade control's own toggle: hides the grade rail. */
   onCloseGrade: () => void;
+  /** Closes the transient grade popover (regular-width iPad). Called on search
+   *  focus and when the screen loses focus. Neither of those hides the grade
+   *  rail, which stays until the climber hides it. */
+  onDismissGradePopover: () => void;
   /** Active-filter count for the Material variant's filter button (rendered to
    *  the left of the search field — the affordance the native search bar can't
    *  host). Liquid Glass keeps the bottom filter FAB instead. */
@@ -72,9 +77,11 @@ type ClimbTopChromeProps = {
   /** Last-used grade id; centres an unselected rail on a familiar grade. */
   lastUsedGradeId?: number;
   gradeRailVisible?: boolean;
+  /** Passed to the rail: a change centres it on the selection again. */
+  gradeRecenterKey?: number;
   gradeChip?: { label: string; active: boolean; onClear?: () => void };
   onOpenGrade?: () => void;
-  onGradeChange?: (grade: GradeBound) => void;
+  onGradeChange?: (grade: GradeBound, change: GradeRailChange) => void;
   /** Persistent native filter-chip row + token row, rendered under the title on
    *  Liquid Glass, independent of search focus. On Material it renders in the search
    *  stack instead when `showPersistentChips` is set. The caller composes it so every
@@ -107,6 +114,7 @@ function ClimbTopChromeComponent({
   onSearchFocus,
   onSearchBlur,
   onCloseGrade,
+  onDismissGradePopover,
   activeFilterCount = 0,
   onOpenFilters,
   filterSummary,
@@ -114,6 +122,7 @@ function ClimbTopChromeComponent({
   grades = [],
   lastUsedGradeId,
   gradeRailVisible = false,
+  gradeRecenterKey,
   gradeChip,
   onOpenGrade,
   onGradeChange,
@@ -140,15 +149,15 @@ function ClimbTopChromeComponent({
   const handleCloseOverlays = useCallback(() => {
     searchFieldRef.current?.blur();
     Keyboard.dismiss();
-    onCloseGrade();
-  }, [onCloseGrade, searchFieldRef]);
+    onDismissGradePopover();
+  }, [onDismissGradePopover, searchFieldRef]);
 
   useFocusEffect(useCallback(() => () => handleCloseOverlays(), [handleCloseOverlays]));
 
   const handleFocus = useCallback(() => {
-    onCloseGrade();
+    onDismissGradePopover();
     onSearchFocus();
-  }, [onCloseGrade, onSearchFocus]);
+  }, [onDismissGradePopover, onSearchFocus]);
 
   const handleBlur = useCallback(() => {
     onSearchBlur();
@@ -159,7 +168,7 @@ function ClimbTopChromeComponent({
     // When the persistent chip row is the default filtering surface, the Material
     // top-chrome filter affordances (grade control, filter button, condensed summary)
     // are suppressed — the chips own filtering. The app-bar search field, the angle
-    // chip, and the in-chrome grade rail (opened by the chip row's Grade chip) stay.
+    // chip, and the in-chrome grade rail (there unless the chip row's Grade chip hid it) stay.
     const showTopChromeFilters = !showPersistentChips;
     const hasGradeFilter = gradeChip?.active === true;
     const nonGradeFilterCount = Math.max(0, activeFilterCount - (hasGradeFilter ? 1 : 0));
@@ -306,6 +315,7 @@ function ClimbTopChromeComponent({
                 lastUsedGradeId={lastUsedGradeId}
                 boardName={boardName}
                 onChange={onGradeChange}
+                recenterKey={gradeRecenterKey}
                 contentInsetRight={0}
                 style={styles.materialGradeRail}
               />

@@ -74,19 +74,72 @@ describe('getActiveFilterTokens', () => {
     expect(setGrade).toHaveBeenCalledWith({ minGradeId: undefined, maxGradeId: undefined });
   });
 
-  it('names a grade the way the rail chip does when the chip labels are given (#5960)', () => {
+  // The range rail draws grades that read the same as one chip: under V grades
+  // "V0" covers ids 10 to 12. The token has to name the pick as that chip does.
+  describe('with the rail stops given (#5960)', () => {
+    const FONT_SCALE: Grade[] = [
+      { difficultyId: 10, name: '4a/V0' },
+      { difficultyId: 11, name: '4b/V0' },
+      { difficultyId: 12, name: '4c/V0' },
+      { difficultyId: 13, name: '5a/V1' },
+      { difficultyId: 15, name: '5c/V2' },
+    ];
+    const V_GRADE_STOPS = [
+      { minGradeId: 10, maxGradeId: 12, label: 'V0' },
+      { minGradeId: 13, maxGradeId: 13, label: 'V1' },
+      { minGradeId: 15, maxGradeId: 15, label: 'V2' },
+    ];
+    const gradeLabel = (minGrade: number | undefined, maxGrade: number | undefined) =>
+      getActiveFilterTokens({
+        filters: { ...DEFAULT_FILTERS, minGrade, maxGrade },
+        boardFilters: {},
+        grades: FONT_SCALE,
+        t: mockT,
+        // Deliberately useless: every label below has to come from the stops.
+        formatGradeByDifficultyId: () => 'formatter',
+        gradeStops: V_GRADE_STOPS,
+        patchFilters: vi.fn(),
+        patchBoardFilters: vi.fn(),
+        setGrade: vi.fn(),
+      }).find((token) => token.key === 'grade')?.label;
+
+    it('reads a grouped stop as one grade, not "V0–V0"', () => {
+      expect(gradeLabel(10, 12)).toBe('V0');
+    });
+
+    it('reads a bound saved inside a group as that group', () => {
+      expect(gradeLabel(11, 11)).toBe('V0');
+      expect(gradeLabel(10, 11)).toBe('V0');
+    });
+
+    it('reads a range between two stops with each stop label once', () => {
+      expect(gradeLabel(10, 15)).toBe('V0–V2');
+      expect(gradeLabel(11, 13)).toBe('V0–V1');
+    });
+
+    it('names an open-ended bound by the stop its set end falls in', () => {
+      expect(gradeLabel(12, undefined)).toBe('V0+');
+      expect(gradeLabel(undefined, 11)).toBe('≤V0');
+    });
+
+    it('falls back to the formatter for a grade the rail has no chip for', () => {
+      expect(gradeLabel(99, 99)).toBe('formatter');
+    });
+  });
+
+  it('reads two ends with one formatted label as one grade without the stops too', () => {
+    const sameLabel = () => 'V0';
     const tokens = getActiveFilterTokens({
-      filters: { ...DEFAULT_FILTERS, minGrade: 5, maxGrade: 5 },
+      filters: { ...DEFAULT_FILTERS, minGrade: 5, maxGrade: 10 },
       boardFilters: {},
       grades: mockGrades,
       t: mockT,
-      formatGradeByDifficultyId: mockFormatGradeById,
-      gradeChipLabels: new Map([[5, 'V0 / 4B']]),
+      formatGradeByDifficultyId: sameLabel,
       patchFilters: vi.fn(),
       patchBoardFilters: vi.fn(),
       setGrade: vi.fn(),
     });
-    expect(tokens[0]).toMatchObject({ key: 'grade', label: 'V0 / 4B' });
+    expect(tokens[0]).toMatchObject({ key: 'grade', label: 'V0' });
   });
 
   it('omits the grade token when grades data is unavailable', () => {

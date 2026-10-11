@@ -13,6 +13,8 @@ import { useTheme } from '../../../providers/theme-provider';
 import { useGrades } from '../../../lib/graphql/hooks';
 import { hasActiveClimbFilters } from '@boardsesh/climb-filters';
 import { getFilterSummary } from '../../../lib/filter-summary';
+import { buildGradeRailStops } from '../../../lib/grade-stops';
+import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { DEFAULT_FILTERS } from '../../../lib/climb-filter-types';
 import { useHeatmapFirstRunCaption } from '../../../lib/heatmap-first-run';
 import { borderRadius, spacing } from '../../../theme/tokens';
@@ -144,8 +146,14 @@ function HeatmapScopeChip({
 }) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
-  // The summary's grade names need the board's grade table (cached per board).
+  // The summary's grade names need the board's grade table (cached per board),
+  // and name a grade as the list's grade row does.
   const { data: grades } = useGrades(boardName);
+  const { gradeFormat } = useGradeFormat();
+  const gradeStops = useMemo(
+    () => buildGradeRailStops(grades ?? [], gradeFormat, boardName),
+    [grades, gradeFormat, boardName],
+  );
   const summary = useMemo(() => {
     // The list's own summary covers the filter sheet and the name; the board
     // filters (benchmarks, region) are named the way the list's tokens name
@@ -161,10 +169,10 @@ function HeatmapScopeChip({
         sortOrder: DEFAULT_FILTERS.sortOrder,
       }) || search.searchText.trim().length > 0;
     const parts = listFiltered
-      ? [getFilterSummary(search.filters, search.searchText, grades, t), ...boardParts]
+      ? [getFilterSummary(search.filters, search.searchText, grades, t, gradeStops), ...boardParts]
       : boardParts;
     return parts.join(' · ');
-  }, [search, grades, t]);
+  }, [search, grades, gradeStops, t]);
   const label = wholeBoard ? t('mobile.heatmap.wholeBoard') : summary;
 
   return (

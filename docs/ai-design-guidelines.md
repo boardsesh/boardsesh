@@ -429,16 +429,23 @@ keeps `systemColors.fill`. Do not apply a violet background to every content car
 
 ### Inline facet rows
 
-A filter chip that opens a control in place opens it as a plain row. The reference is the grade
-picker, `GradeRangeRail` (`src/components/grade/GradeRail.tsx`): the Grade chip on Climbs and the
-Grade facet in the Logbook open it under the chip row, and the two filter sheets and the iPad
-popover show the same row.
+A filter control that lives in place is a plain row. The reference is the grade picker,
+`GradeRangeRail` (`src/components/grade/GradeRail.tsx`). On Climbs it is a row of the chrome under
+the filter chips, shown by default: the grade filter is in 74% of iOS searches (30 days, October
+2026). The Grade facet in the Logbook opens the same row, and the two filter sheets and the iPad
+popover show it too.
 
 **No frame, no grab handle.** The row belongs to the surface that holds it; it is not a sheet. [HIG
 Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) keeps the grabber for
 resizable sheets, and a glass capsule under a row of glass chips is glass on glass (see "Glass
-material" above). The chip that opened the row closes it; on iOS its chevron points up while the row
-is open.
+material" above).
+
+**Shown until the climber hides it.** On Climbs the Grade chip hides and shows the row, and the
+choice is a persisted setting (`gradeRowShown`, default shown). Nothing else hides it: not search
+focus, not opening Filters, not leaving the screen. On iOS the chip's chevron points up while the
+row is shown. Back on the screen, the row centres on the current selection again (`recenterKey`);
+it never scrolls itself while a finger is on it. The regular-width iPad popover is the exception:
+it stays transient.
 
 **Insets come from the container.** With no frame, the row lines up with what is above it: the
 first chip rests under the first chip of the chip row (or under the section's label in a sheet), and
@@ -449,18 +456,32 @@ Logbook toolbar) it clips on that row's line. A 1pt `systemColors.separator` hai
 the strip stops in front of the pinned control. No gradient fade: the background differs per call
 site.
 
-**Grade colour on the selection only.** A resting chip is a `systemColors.fill` capsule with an 8pt
-dot in the grade's colour. A selected grade, or either end of a range, is the solid grade colour
-with `readableTextColor` text. "Any" is a neutral chip, never a brand fill.
+**One chip per label.** Grades that read the same in the climber's format are one chip, a "stop"
+(`buildGradeRailStops`). Under V grades 4a, 4b and 4c are all "V0", so the row has one "V0" that
+filters all three; under Font nothing merges. Anything that names the selection compares labels,
+not ids: a pick of that "V0" is two different ids and still reads "V0", never "V0–V0". Logging
+keeps one chip per grade (`GradeSingleSelectRail`), because a tick needs the exact one.
+
+**Grade colour on the selection only.** A resting chip is a `systemColors.fill` capsule with a 10pt
+dot in the grade's colour. A selected stop, or either end of a range, is the solid grade colour
+with `readableTextColor` text. Both the dot and the solid chip carry a 1pt ring in the label colour
+at 45%, so a pale grade does not fade into a pale fill and a dark one does not fade into a dark
+background. "Any" is a neutral chip, never a brand fill.
 
 **State is never colour alone.** Every chip in the selection carries a checkmark where its dot was:
 the solid ends, the neutral chips between them, and "Any" while no filter is set. The mark sits in
-one slot of a set size, so a chip does not resize and its label does not move when its state changes.
+one slot of a set size, so a chip does not resize and its label does not move when its state
+changes. Every state keeps the same 1pt border for the same reason. The chip's height is one
+constant, `GRADE_CHIP_HEIGHT`, shared by the chip, the row and the Range button.
 
-**A visible mode, not a timed rule.** Range is a toggle the climber can see: a 44pt capsule, brand
-fill when on, announced as a toggle button. Off, a tap picks one grade. On, the first tap is one end
-and the second makes the range (`computeGradeTap` in `@boardsesh/climb-filters`). Nothing depends on
-how fast the second tap follows, and the row never closes itself. [HIG
+**A range is made on purpose, never by timing.** A tap picks one stop; a tap on the selected stop
+clears. A range takes one of two deliberate gestures. Range is a button with its word on it and a
+leading mark slot: tap it and the next tap on a stop is the far end, then it turns itself off (one
+shot). Armed, it is a brand capsule with a checkmark in the slot, announced as a toggle button; its
+width is the same in both states. Or touch and hold the far end for 400 ms. With a range already
+set, either gesture moves the nearer end to that stop (the upper end on a tie). The rules are
+`computeGradeTap` and `extendGradeRange` in `@boardsesh/climb-filters`. Nothing depends on how fast
+a second tap follows. [HIG
 Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility) asks to
 minimise time-boxed interface elements.
 

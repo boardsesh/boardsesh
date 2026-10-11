@@ -1,16 +1,27 @@
 import type { TFunction } from 'i18next';
 import type { Grade } from '@boardsesh/shared-schema';
-import { getBaseFilterParts, formatFilterSummary } from '@boardsesh/climb-filters';
+import { getBaseFilterParts, formatFilterSummary, type GradeStop } from '@boardsesh/climb-filters';
 import { DEFAULT_FILTERS, type ClimbFilters } from './climb-filter-types';
 import { buildFilterLabels, buildSortLabel, formatSettersLabel } from './filter-labels';
+import { gradeRailStopLabel } from './grade-stops';
 
 export function getFilterSummary(
   filters: ClimbFilters,
   searchText: string,
   grades: Grade[] | undefined,
   t: TFunction<'climbs'>,
+  /**
+   * The range rail's stops (`buildGradeRailStops`). Given, a grade is named as
+   * the rail's chip names it, so a pick of a grouped stop reads "V0" and not
+   * "4a/V0–4c/V0". Without them a grade keeps its raw scale name.
+   */
+  gradeStops?: ReadonlyArray<GradeStop & { label: string }>,
 ): string {
   const baseLabels = buildFilterLabels(t);
+  const namedGrades =
+    grades && gradeStops
+      ? grades.map((grade) => ({ ...grade, name: gradeRailStopLabel(gradeStops, grade.difficultyId) ?? grade.name }))
+      : grades;
   const labels = {
     ...baseLabels,
     setters: (count: number) =>
@@ -47,7 +58,7 @@ export function getFilterSummary(
       minUserRating: filters.minUserRating,
       onlyRatedByMe: filters.onlyRatedByMe,
     },
-    grades ?? [],
+    namedGrades ?? [],
     labels,
     buildSortLabel(t),
   );

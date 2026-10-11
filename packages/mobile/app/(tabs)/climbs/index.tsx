@@ -1,5 +1,6 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
+import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
@@ -61,8 +62,8 @@ import {
   type ClimbTypeFilter,
 } from '../../../src/lib/collection-filter';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
-import { GradeRangeRail } from '../../../src/components/grade';
-import { distinctGradeChipLabels } from '../../../src/components/grade/grade-chip-labels';
+import { GradeRangeRail, type GradeRailChange } from '../../../src/components/grade';
+import { buildGradeRailStops } from '../../../src/lib/grade-stops';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
 import { useDimensionLockUpkeep, useDimensionLocks } from '../../../src/lib/dimension-lock-store';
 import {
@@ -236,9 +237,13 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 
 function ClimbListInner() {
   const { isPad, widthClass } = useDeviceLayout();
-  const [gradePresentation, setGradePresentation] = useState<'popover' | 'inline' | null>(null);
-  const gradeUsesPopover =
-    gradePresentation === 'popover' || (gradePresentation === null && isPad && widthClass === 'regular');
+  // A regular-width iPad places the grade picker in a transient popover on the
+  // Grade chip; everywhere else it is a row of the chrome that stays on screen.
+  // An open popover stays a popover until it is dismissed, even if the window
+  // narrows under it.
+  const isRegularWidthPad = isPad && widthClass === 'regular';
+  const [gradePopoverOpen, setGradePopoverOpen] = useState(false);
+  const gradeUsesPopover = gradePopoverOpen || isRegularWidthPad;
   const nativeRootHeader = useNativeRootHeader();
   const router = useRouter();
   // Screenshot mode opens the first climb's board view via this deep-link param
@@ -268,6 +273,12 @@ function ClimbListInner() {
   const { t: tCommon } = useTranslation('common');
   const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
   const [lightOnClimbTap] = useSetting('lightOnClimbTap');
+  // The grade row is on screen unless the climber hid it with the Grade chip, a
+  // choice kept across launches.
+  const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
+  // As a row of the chrome (Liquid Glass) or inside it (Material), never beside
+  // the popover.
+  const gradeRowVisible = gradeRowShown && !gradeUsesPopover;
   // Whether anyone else is in this session. Read off a dedicated selector context
   // so this screen (which hosts a virtualized FlashList) doesn't re-render on the
   // ≤1/2s session-stats push — the boolean flips only across the solo ↔ crew
@@ -344,7 +355,6 @@ function ClimbListInner() {
   // the pills can never show — never re-renders the whole list per keystroke.
   const [searchTextEmpty, setSearchTextEmpty] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
-  const [showGrade, setShowGrade] = useState(false);
   const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
   // Measured height of the chrome the list has to clear: the whole floating glass
   // chrome (incl. the top safe-area inset), or only the controls block under the
@@ -360,25 +370,42 @@ function ClimbListInner() {
     setIsSearchFocused(false);
   }, []);
 
+  // Search focus, opening Filters and leaving the screen close the iPad popover.
+  // None of them hides the grade row: only the Grade chip does.
+  const handleDismissGradePopover = useCallback(() => {
+    setGradePopoverOpen(false);
+  }, []);
   const handleOpenFilters = useCallback(() => {
     blurSearchInputs();
-    setShowGrade(false);
-    setGradePresentation(null);
+    setGradePopoverOpen(false);
     setShowFilters(true);
   }, [blurSearchInputs]);
   const handleDismissFilters = useCallback(() => {
     setShowFilters(false);
   }, []);
+  // The Grade chip. On a regular-width iPad it presents and dismisses the
+  // popover. Everywhere else it shows and hides the grade row, and the setting
+  // remembers which.
   const handleOpenGrade = useCallback(() => {
-    blurSearchInputs();
-    setShowFilters(false);
-    setGradePresentation(isPad && widthClass === 'regular' ? 'popover' : 'inline');
-    setShowGrade(true);
-  }, [blurSearchInputs, isPad, widthClass]);
-  const handleDismissGrade = useCallback(() => {
-    setShowGrade(false);
-    setGradePresentation(null);
-  }, []);
+    if (isRegularWidthPad) {
+      blurSearchInputs();
+      setShowFilters(false);
+      setGradePopoverOpen(true);
+      return;
+    }
+    setGradeRowShown(true);
+    track(SHARED_EVENTS.GradeRowToggled, { shown: true });
+  }, [blurSearchInputs, isRegularWidthPad, setGradeRowShown]);
+  const handleCloseGrade = useCallback(() => {
+    // Also when the popover reports itself dismissed after the chip already
+    // closed it: in popover mode a close never reaches the row's setting.
+    if (gradeUsesPopover) {
+      setGradePopoverOpen(false);
+      return;
+    }
+    setGradeRowShown(false);
+    track(SHARED_EVENTS.GradeRowToggled, { shown: false });
+  }, [gradeUsesPopover, setGradeRowShown]);
 
   const applyVisibleSearchText = useCallback(
     (text: string) => {
@@ -459,7 +486,7 @@ function ClimbListInner() {
   }, [applyVisibleSearchText, setName]);
 
   const handleSearchFocus = useCallback(() => {
-    setShowGrade(false);
+    setGradePopoverOpen(false);
     setIsSearchFocused(true);
   }, []);
   const handleSearchBlur = useCallback(() => {
@@ -573,6 +600,13 @@ function ClimbListInner() {
   const formatBoardGradeByDifficultyId = useCallback(
     (difficultyId: number | null | undefined) => formatGradeByDifficultyId(difficultyId, boardName),
     [formatGradeByDifficultyId, boardName],
+  );
+  // The grade row's chips. The filter token and the recent pill name a grade by
+  // these, the way the chip does (one "V0" for 4a to 4c under V grades), so one
+  // pick is never spelled two ways (#5960).
+  const gradeStops = useMemo(
+    () => buildGradeRailStops(grades, gradeFormat, boardName),
+    [grades, gradeFormat, boardName],
   );
 
   const boardConfig = useMemo(
@@ -865,6 +899,10 @@ function ClimbListInner() {
       // `setterCount` is the size of the setter filter (0 = none, like web).
       minGrade: filters.minGrade ?? 0,
       maxGrade: filters.maxGrade ?? 0,
+      // Which grades the climber reads. Under V grades the grade row groups
+      // grades with one label, so a "V0" pick is minGrade 10, maxGrade 12 there
+      // and reads as a range without this.
+      gradeFormat,
       sortBy: filters.sortBy,
       sortOrder: filters.sortOrder,
       setterCount: filters.setter?.length ?? 0,
@@ -906,6 +944,7 @@ function ClimbListInner() {
     sizeId,
     setIds,
     angle,
+    gradeFormat,
   ]);
 
   // Feed the visible climb UUIDs into the shared logbook so the ascent badge
@@ -1328,14 +1367,14 @@ function ClimbListInner() {
       // filters), so we still gate on those for the pill.
       const currentSearch = name;
       if (hasActiveFilters(newFilters) || currentSearch.length > 0) {
-        const label = getFilterSummary(newFilters, currentSearch, gradesRef.current, t);
+        const label = getFilterSummary(newFilters, currentSearch, gradesRef.current, t, gradeStops);
         addRecentFilter(label, newFilters, currentSearch)
           .then(() => getRecentFilters({ isAuthenticated }))
           .then(setRecentFilters)
           .catch(() => {});
       }
     },
-    [t, isAuthenticated, name, setFilters, setBoardFilters],
+    [t, isAuthenticated, name, setFilters, setBoardFilters, gradeStops],
   );
 
   const handleApplyRecentFilter = useCallback(
@@ -1412,12 +1451,33 @@ function ClimbListInner() {
     [filters.minGrade, filters.maxGrade],
   );
   const activeFilterCount = useMemo(() => countActiveFilters(filters, boardFilters), [filters, boardFilters]);
-  // The pill names a grade the way the rail's chip does ("V0 / 4B" where V0
-  // alone would be ambiguous), so one pick is never spelled two ways (#5960).
-  const gradeChipLabels = useMemo(
-    () => (grades ? distinctGradeChipLabels(grades, gradeFormat, boardName) : undefined),
-    [grades, gradeFormat, boardName],
+  // `Grade Filter Changed`: each change the climber makes on the grade row or
+  // its iPad popover, with how they made it. The filter sheet's rail edits a
+  // draft and is not reported here.
+  const lastGradeChangeAtRef = useRef<number | null>(null);
+  const handleGradeRailChange = useCallback(
+    (next: GradeBound, change: GradeRailChange) => {
+      const changedAt = Date.now();
+      const previousChangeAt = lastGradeChangeAtRef.current;
+      lastGradeChangeAtRef.current = changedAt;
+      track(SHARED_EVENTS.GradeFilterChanged, {
+        // 0 = unset, the sentinel Climb Search Performed uses.
+        fromMin: gradeBound.minGradeId ?? 0,
+        fromMax: gradeBound.maxGradeId ?? 0,
+        toMin: next.minGradeId ?? 0,
+        toMax: next.maxGradeId ?? 0,
+        gesture: change.gesture,
+        // Left out on the first change of the session.
+        ...(previousChangeAt !== null && { msSincePrevious: changedAt - previousChangeAt }),
+      });
+      setGrade(next);
+    },
+    [gradeBound, setGrade],
   );
+  // The grade row stays on screen, so it outlives a visit to a climb. On the
+  // way back it centres on the current selection again, wherever the climber
+  // left it scrolled.
+  const gradeRecenterKey = useRefocusCount();
   // Removable active-filter tokens for the scope row beneath the search field.
   // Each token's `clear` patches just its field back to the default.
   const filterTokens = useMemo(
@@ -1428,7 +1488,7 @@ function ClimbListInner() {
         grades,
         t,
         formatGradeByDifficultyId: formatBoardGradeByDifficultyId,
-        gradeChipLabels,
+        gradeStops,
         patchFilters,
         patchBoardFilters,
         setGrade,
@@ -1439,7 +1499,7 @@ function ClimbListInner() {
       grades,
       t,
       formatBoardGradeByDifficultyId,
-      gradeChipLabels,
+      gradeStops,
       patchFilters,
       patchBoardFilters,
       setGrade,
@@ -1692,8 +1752,8 @@ function ClimbListInner() {
           gradeLabel={gradeChip.label}
           gradeActive={gradeChip.active}
           onOpenGrade={handleOpenGrade}
-          gradeRailOpen={showGrade}
-          onCloseGrade={handleDismissGrade}
+          gradeRailOpen={gradeUsesPopover ? gradePopoverOpen : gradeRowShown}
+          onCloseGrade={handleCloseGrade}
           gradePopoverContent={
             gradeUsesPopover ? (
               <GradeRangeRail
@@ -1701,7 +1761,7 @@ function ClimbListInner() {
                 bound={gradeBound}
                 lastUsedGradeId={lastUsedGrade}
                 boardName={boardName}
-                onChange={setGrade}
+                onChange={handleGradeRailChange}
               />
             ) : undefined
           }
@@ -1727,18 +1787,20 @@ function ClimbListInner() {
           betaActive={!!filters.onlyWithBetaVideos}
           onToggleBeta={handleToggleBeta}
         />
-        {/* On Liquid Glass the Grade chip discloses the range rail as a row of the
-            chrome itself, so the native header can never cover it and the list
-            insets by the taller chrome. (Material renders its own rail inside
-            ClimbTopChrome; regular-width iPad uses the chip's popover.) */}
-        {showGrade && !filterInTopChrome && !gradeUsesPopover ? (
+        {/* On Liquid Glass the grade row is a row of the chrome itself, so the
+            native header can never cover it and the list insets by the taller
+            chrome. It is there unless the Grade chip hid it. (Material renders
+            its own rail inside ClimbTopChrome; regular-width iPad uses the chip's
+            popover.) */}
+        {gradeRowVisible && !filterInTopChrome ? (
           <View style={styles.chipGradeRail}>
             <GradeRangeRail
               grades={grades}
               bound={gradeBound}
               lastUsedGradeId={lastUsedGrade}
               boardName={boardName}
-              onChange={setGrade}
+              onChange={handleGradeRailChange}
+              recenterKey={gradeRecenterKey}
             />
           </View>
         ) : null}
@@ -1753,7 +1815,11 @@ function ClimbListInner() {
     gradeBound,
     lastUsedGrade,
     boardName,
-    setGrade,
+    handleGradeRailChange,
+    gradeRecenterKey,
+    gradeRowVisible,
+    gradePopoverOpen,
+    gradeRowShown,
     pinnedChips,
     activeFilterCount,
     handleOpenFilters,
@@ -1764,8 +1830,7 @@ function ClimbListInner() {
     handleClearRecentFilters,
     gradeChip,
     handleOpenGrade,
-    showGrade,
-    handleDismissGrade,
+    handleCloseGrade,
     dimensionChips,
     handleChangePopularity,
     handleChangeRating,
@@ -2257,17 +2322,19 @@ function ClimbListInner() {
         onSearchChange={handleSearchChange}
         onSearchFocus={handleSearchFocus}
         onSearchBlur={handleSearchBlur}
-        onCloseGrade={handleDismissGrade}
+        onCloseGrade={handleCloseGrade}
+        onDismissGradePopover={handleDismissGradePopover}
         activeFilterCount={activeFilterCount}
         onOpenFilters={handleOpenFilters}
         filterSummary={filterSummaryProp}
         gradeBound={gradeBound}
         grades={grades}
         lastUsedGradeId={lastUsedGrade}
-        gradeRailVisible={showGrade}
+        gradeRailVisible={gradeRowVisible}
+        gradeRecenterKey={gradeRecenterKey}
         gradeChip={gradeChip}
         onOpenGrade={handleOpenGrade}
-        onGradeChange={setGrade}
+        onGradeChange={handleGradeRailChange}
         filterChrome={filterChrome}
         showPersistentChips={filterInTopChrome}
       />

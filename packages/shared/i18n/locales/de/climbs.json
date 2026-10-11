@@ -595,6 +595,7 @@
       "rangeToggle": "Bereich",
       "rangeToggleHint": "Einschalten, dann einen zweiten Grad antippen, um alles dazwischen zu filtern",
       "rangeHint": "Bildet mit dem gewählten Grad einen Bereich",
+      "rangeHoldHint": "Gedrückt halten, um mit dem gewählten Grad einen Bereich zu bilden",
       "setLogGradeAria": "Eingetragenen Grad auf {{grade}} setzen",
       "selectedLogGradeAria": "Eingetragener Grad {{grade}} ausgewählt",
       "consensusGradeAria": "{{grade}}, Konsens-Grad"

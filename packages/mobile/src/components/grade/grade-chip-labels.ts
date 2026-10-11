@@ -9,7 +9,11 @@ import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
  * 'both' format ("V0 / 4A"), which names the grade the chip stands for. A label
  * that is already unique stays as the climber's own format drew it.
  *
- * Keyed by difficulty id. Pure, so both rails memoize it once per grade list.
+ * For the single-select rail, where a tick needs the exact grade. The range
+ * rail answers the same problem the other way round: it draws grades that read
+ * the same as ONE chip (`buildGradeRailStops`).
+ *
+ * Keyed by difficulty id. Pure, so the rail memoizes it once per grade list.
  */
 export function distinctGradeChipLabels(
   grades: ReadonlyArray<{ difficultyId: number; name: string }>,

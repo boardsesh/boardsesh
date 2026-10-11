@@ -139,6 +139,17 @@ describe('gradeChipLabel', () => {
     expect(gradeChipLabel(12, 12, gradesById, formatGrade)).toBe('V4');
   });
 
+  // The grade rail draws grades that read the same as one chip, so a "V0" pick
+  // under V grades sets two different ids. The chip must not read "V0–V0".
+  it('collapses two bounds that read the same to that one grade', () => {
+    const groupedById = new Map([
+      [10, '4a'],
+      [12, '4c'],
+    ]);
+    const formatAsV0 = (name: string): string | null => (name.startsWith('4') ? 'V0' : null);
+    expect(gradeChipLabel(10, 12, groupedById, formatAsV0)).toBe('V0');
+  });
+
   it('prefixes a min-only bound with ≥', () => {
     expect(gradeChipLabel(12, '', gradesById, formatGrade)).toBe('≥V4');
   });

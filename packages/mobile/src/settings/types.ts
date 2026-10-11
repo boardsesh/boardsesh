@@ -95,6 +95,12 @@ export type AppSettings = {
   lightOnSwipe: boolean;
   /** Light the connected board when tapping a climb to select it from a climbs list. */
   lightOnClimbTap: boolean;
+  /**
+   * The climbs list shows its grade row under the filter chips. On by default:
+   * grade is the filter most searches use. The Grade chip hides and shows the
+   * row, and the choice is kept across launches.
+   */
+  gradeRowShown: boolean;
   keepScreenAwake: boolean;
   /**
    * Rest timer (#5378) — the shape of the timer, not whether it is armed.

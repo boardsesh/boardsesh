@@ -13,8 +13,8 @@
 // One <Host> wraps a horizontal SwiftUI ScrollView + HStack of chips:
 //   Filters · N → opens the long-tail sheet (Button, no menu)
 //   Recent ▾    → native Menu of saved filters + Clear (hidden when none)
-//   Grade ⌄     → discloses the GradeRangeRail row (Button, no menu; the chevron
-//                 points up while the row is open)                    [PRIMARY #1]
+//   Grade ⌃     → hides and shows the GradeRangeRail row (Button, no menu; the
+//                 chevron points up while the row is shown)            [PRIMARY #1]
 //   Your progress ▾ → native Menu + Picker (single-select, auth-gated) [PRIMARY #2]
 //   Collection ▾→ native Menu + Picker (Any / Benchmarks / My drafts)  [PRIMARY #3]
 //   Tall / Wide → tap toggles, long-press Lock / Unlock (iOS-only lock)
@@ -48,7 +48,6 @@ import {
   tag,
   padding,
   fixedSize,
-  imageScale,
   accessibilityHint,
   accessibilityHidden,
 } from '@expo/ui/swift-ui/modifiers';
@@ -80,6 +79,9 @@ import {
 import { buildSortLabel } from '../../lib/filter-labels';
 import { visibleCollectionValues } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
+
+// The Grade chip's chevron, in points. Small beside a `controlSize('small')` label.
+const GRADE_CHEVRON_SIZE = 12;
 
 function FilterChipRowComponent({
   pinnedChips,
@@ -151,10 +153,11 @@ function FilterChipRowComponent({
 
   // The Grade chip, built once for both of its placements below (the popover
   // trigger on regular-width iPad, the plain chip everywhere else). The trailing
-  // chevron marks it as the one chip that discloses a row, and flips while that
-  // row is open. No colour or size on the chevron: it takes the button's own, so
-  // it stays legible on the tinted active chip. VoiceOver skips the glyph and
-  // reads the hint instead.
+  // chevron says whether the grade row is shown: up while it is, down once the
+  // chip has hidden it. It needs an explicit size, since @expo/ui gives an Image
+  // without one a 24pt font (AppMenu sizes its caret the same way). No colour: it
+  // takes the button's own, so it stays legible on the tinted active chip.
+  // VoiceOver skips the glyph and reads the hint instead.
   const gradeChip = (
     <Button
       onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
@@ -167,7 +170,8 @@ function FilterChipRowComponent({
         <Text>{gradeLabel}</Text>
         <Image
           systemName={gradeRailOpen ? 'chevron.up' : 'chevron.down'}
-          modifiers={[imageScale('small'), accessibilityHidden()]}
+          size={GRADE_CHEVRON_SIZE}
+          modifiers={[accessibilityHidden()]}
         />
       </HStack>
     </Button>
@@ -218,8 +222,9 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
-          {/* Grade → the range rail, a row under the chips (a popover on regular-width
-              iPad). A button, not a menu; tap toggles the rail. [PRIMARY #1] */}
+          {/* Grade → hides and shows the range rail, a row under the chips that is
+              there by default (a popover on regular-width iPad). A button, not a
+              menu. [PRIMARY #1] */}
           {pinnedChips.includes('grade') ? (
             gradePopoverContent ? (
               <Popover

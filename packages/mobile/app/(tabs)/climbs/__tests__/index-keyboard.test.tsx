@@ -101,6 +101,26 @@ const mocks = vi.hoisted(() => ({
   deviceLayout: { isPad: false, isTablet: false, widthClass: 'compact' },
   openGrade: undefined as (() => void) | undefined,
   closeGrade: undefined as (() => void) | undefined,
+  // What the chrome calls when the screen loses focus or search takes focus.
+  dismissGradePopover: undefined as (() => void) | undefined,
+  focusSearch: undefined as (() => void) | undefined,
+  openFilters: undefined as (() => void) | undefined,
+  // Whether the chrome was told to draw its own (Material) grade rail.
+  chromeGradeRailVisible: undefined as boolean | undefined,
+  // The persisted "grade row shown" setting, as a store the screen re-renders
+  // from: `set` is the write that keeps the choice across launches.
+  gradeRow: {
+    shown: true,
+    listeners: new Set<() => void>(),
+    set: vi.fn<(shown: boolean) => void>(),
+  },
+  // The change the grade rail reports, so a test can make one.
+  changeGrade: undefined as
+    | ((next: { minGradeId: number | undefined; maxGradeId: number | undefined }, change: { gesture: string }) => void)
+    | undefined,
+  setGrade: vi.fn(),
+  // How many times the screen has come back into focus.
+  refocusCount: 0,
   scrollToOffset: vi.fn(),
   stackOptions: [] as NativeStackNavigationOptions[],
 }));
@@ -237,7 +257,12 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-item-1' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('@boardsesh/analytics', () => ({
-  SHARED_EVENTS: { ClimbSearchPerformed: 'Climb Search Performed', SearchResultSelected: 'Search Result Selected' },
+  SHARED_EVENTS: {
+    ClimbSearchPerformed: 'Climb Search Performed',
+    SearchResultSelected: 'Search Result Selected',
+    GradeFilterChanged: 'Grade Filter Changed',
+    GradeRowToggled: 'Grade Row Toggled',
+  },
 }));
 
 vi.mock('@boardsesh/climb-filters', () => ({
@@ -271,7 +296,7 @@ vi.mock('../../../../src/providers/climb-search-provider', () => ({
     ...mocks.searchState,
     setFilters: vi.fn(),
     setBoardFilters: vi.fn(),
-    setGrade: vi.fn(),
+    setGrade: mocks.setGrade,
     setName: vi.fn(),
     replaceSearch: vi.fn(),
     patchFilters: vi.fn(),
@@ -360,14 +385,26 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
       filterChrome,
       onOpenGrade,
       onCloseGrade,
+      onDismissGradePopover,
+      onSearchFocus,
+      onOpenFilters,
+      gradeRailVisible,
     }: {
       onHeightChange: (height: number) => void;
       filterChrome?: ReactNode;
       onOpenGrade?: () => void;
       onCloseGrade?: () => void;
+      onDismissGradePopover?: () => void;
+      onSearchFocus?: () => void;
+      onOpenFilters?: () => void;
+      gradeRailVisible?: boolean;
     }) => {
       mocks.openGrade = onOpenGrade;
       mocks.closeGrade = onCloseGrade;
+      mocks.dismissGradePopover = onDismissGradePopover;
+      mocks.focusSearch = onSearchFocus;
+      mocks.openFilters = onOpenFilters;
+      mocks.chromeGradeRailVisible = gradeRailVisible;
       if (mocks.renderFilterChrome) return createElement('div', { 'data-testid': 'top-chrome' }, filterChrome);
       return mocks.renderNativeChrome
         ? createElement(NativeRootHeader, {
@@ -378,11 +415,24 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
     },
   };
 });
-// Renders only the grade popover content, which regular-width iPad hands to the
-// chip in place of the inline rail.
+// Reports whether the Grade chip reads as open (its chevron), and renders the
+// grade popover content, which regular-width iPad hands to the chip in place of
+// the inline rail. A real popover draws that content only while presented.
 vi.mock('../../../../src/components/search/FilterChipRow', () => ({
-  FilterChipRow: ({ gradePopoverContent }: { gradePopoverContent?: ReactNode }) =>
-    gradePopoverContent ? createElement('div', { 'data-testid': 'grade-popover' }, gradePopoverContent) : null,
+  FilterChipRow: ({
+    gradeRailOpen,
+    gradePopoverContent,
+  }: {
+    gradeRailOpen: boolean;
+    gradePopoverContent?: ReactNode;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'chip-row', 'data-grade-open': String(gradeRailOpen) },
+      gradePopoverContent && gradeRailOpen
+        ? createElement('div', { 'data-testid': 'grade-popover' }, gradePopoverContent)
+        : null,
+    ),
 }));
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
 vi.mock('../../../../src/components/search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));
@@ -394,8 +444,20 @@ vi.mock('../../../../src/lib/haptics', () => ({
   hapticSuccess: () => {},
 }));
 vi.mock('../../../../src/components/grade', () => ({
-  GradeRangeRail: () => createElement('div', { 'data-testid': 'grade-range-rail' }),
+  GradeRangeRail: ({
+    onChange,
+    recenterKey,
+  }: {
+    onChange: NonNullable<typeof mocks.changeGrade>;
+    recenterKey?: number;
+  }) => {
+    mocks.changeGrade = onChange;
+    return createElement('div', { 'data-testid': 'grade-range-rail', 'data-recenter-key': String(recenterKey) });
+  },
 }));
+// The rail's stops feed the filter tokens, which this suite mocks out.
+vi.mock('../../../../src/lib/grade-stops', () => ({ buildGradeRailStops: () => [] }));
+vi.mock('../../../../src/hooks/use-refocus-count', () => ({ useRefocusCount: () => mocks.refocusCount }));
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
@@ -432,10 +494,22 @@ vi.mock('../../../../src/providers/queue-provider', () => ({
   useQueueActions: () => ({ addToQueue: mocks.addToQueue }),
 }));
 
-vi.mock('../../../../src/settings', () => ({
-  useSetting: (key: string) => (key === 'lightOnClimbTap' ? [mocks.lightOnClimbTap, vi.fn()] : [false, vi.fn()]),
-  setSetting: mocks.setSetting,
-}));
+vi.mock('../../../../src/settings', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribeGradeRow = (listener: () => void) => {
+    mocks.gradeRow.listeners.add(listener);
+    return () => mocks.gradeRow.listeners.delete(listener);
+  };
+  return {
+    useSetting: (key: string) => {
+      // Read through a store, like the real hook, so a write re-renders the screen.
+      const gradeRowShown = useSyncExternalStore(subscribeGradeRow, () => mocks.gradeRow.shown);
+      if (key === 'gradeRowShown') return [gradeRowShown, mocks.gradeRow.set];
+      return key === 'lightOnClimbTap' ? [mocks.lightOnClimbTap, vi.fn()] : [false, vi.fn()];
+    },
+    setSetting: mocks.setSetting,
+  };
+});
 
 vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({
   useNativeAccessoryActive: () => false,
@@ -460,7 +534,10 @@ vi.mock('../../../../src/hooks/use-screenshot-boards', () => ({
   useScreenshotBoards: () => [],
 }));
 vi.mock('../../../../src/hooks/use-grade-format', () => ({
-  useGradeFormat: () => ({ formatGradeByDifficultyId: (difficultyId: number) => String(difficultyId) }),
+  useGradeFormat: () => ({
+    gradeFormat: 'v-grade',
+    formatGradeByDifficultyId: (difficultyId: number) => String(difficultyId),
+  }),
 }));
 
 // Stub the SecureStore-backed last-used-grade hook so the screen test doesn't
@@ -627,6 +704,20 @@ beforeEach(() => {
   mocks.deviceLayout = { isPad: false, isTablet: false, widthClass: 'compact' };
   mocks.openGrade = undefined;
   mocks.closeGrade = undefined;
+  mocks.dismissGradePopover = undefined;
+  mocks.focusSearch = undefined;
+  mocks.openFilters = undefined;
+  mocks.chromeGradeRailVisible = undefined;
+  mocks.gradeRow.shown = true;
+  mocks.gradeRow.listeners.clear();
+  mocks.gradeRow.set.mockReset();
+  mocks.gradeRow.set.mockImplementation((shown: boolean) => {
+    mocks.gradeRow.shown = shown;
+    for (const listener of mocks.gradeRow.listeners) listener();
+  });
+  mocks.changeGrade = undefined;
+  mocks.setGrade.mockClear();
+  mocks.refocusCount = 0;
   mocks.scrollToOffset.mockClear();
   mocks.stackOptions.length = 0;
 });
@@ -1308,38 +1399,224 @@ describe('ClimbList row highlight', () => {
 // The native header is a UIKit bar outside the screen's view tree, so nothing the
 // screen positions itself can sit above it. The grade rail has to be a row of the
 // chrome, which the header lays out below itself and the list insets by.
-describe('ClimbList grade rail placement', () => {
-  it('opens the grade rail as a row of the top chrome and closes it again', () => {
+describe('ClimbList grade row', () => {
+  const gradeRowToggles = () => mocks.track.mock.calls.filter(([eventName]) => eventName === 'Grade Row Toggled');
+
+  it('is a row of the top chrome without a tap, and the Grade chip reads as open', () => {
+    mocks.renderFilterChrome = true;
+    const { getByTestId } = render(<ClimbList />);
+
+    expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
+    expect(getByTestId('chip-row').getAttribute('data-grade-open')).toBe('true');
+    expect(gradeRowToggles()).toEqual([]);
+  });
+
+  it('is hidden by the Grade chip, and the choice is written to settings', () => {
     mocks.renderFilterChrome = true;
     const { getByTestId, queryByTestId } = render(<ClimbList />);
-    expect(queryByTestId('grade-range-rail')).toBeNull();
-
-    act(() => mocks.openGrade?.());
-    expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
 
     act(() => mocks.closeGrade?.());
     expect(queryByTestId('grade-range-rail')).toBeNull();
+    expect(getByTestId('chip-row').getAttribute('data-grade-open')).toBe('false');
+    expect(mocks.gradeRow.set).toHaveBeenCalledExactlyOnceWith(false);
+    expect(gradeRowToggles()).toEqual([['Grade Row Toggled', { shown: false }]]);
   });
 
-  it('hands the rail to the chip popover on a regular-width iPad instead of adding a row', () => {
+  it('stays hidden on the next launch, until the Grade chip shows it again', () => {
     mocks.renderFilterChrome = true;
-    mocks.deviceLayout = { isPad: true, isTablet: true, widthClass: 'regular' };
-    const { getAllByTestId, getByTestId } = render(<ClimbList />);
-
-    expect(mocks.openGrade).toBeDefined();
-    act(() => mocks.openGrade?.());
-    expect(getAllByTestId('grade-range-rail')).toHaveLength(1);
-    expect(getByTestId('grade-popover').contains(getByTestId('grade-range-rail'))).toBe(true);
-  });
-
-  it('adds no row on Material, where the top chrome renders its own rail', () => {
-    mocks.renderFilterChrome = true;
-    mocks.filtersInTopChrome = true;
-    const { queryByTestId } = render(<ClimbList />);
-
-    expect(mocks.openGrade).toBeDefined();
-    act(() => mocks.openGrade?.());
+    mocks.gradeRow.shown = false;
+    const { getByTestId, queryByTestId } = render(<ClimbList />);
     expect(queryByTestId('grade-range-rail')).toBeNull();
+    expect(getByTestId('chip-row').getAttribute('data-grade-open')).toBe('false');
+
+    act(() => mocks.openGrade?.());
+    expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
+    expect(mocks.gradeRow.set).toHaveBeenCalledExactlyOnceWith(true);
+    expect(gradeRowToggles()).toEqual([['Grade Row Toggled', { shown: true }]]);
+  });
+
+  // Each of these used to close the rail. It is no longer an overlay to get out
+  // of the way: only the Grade chip hides it.
+  it.each([
+    ['the screen loses focus', () => mocks.dismissGradePopover?.()],
+    ['search takes focus', () => mocks.focusSearch?.()],
+    ['Filters opens', () => mocks.openFilters?.()],
+  ])('stays when %s', (_cause, trigger) => {
+    mocks.renderFilterChrome = true;
+    const { getByTestId } = render(<ClimbList />);
+
+    act(trigger);
+    expect(getByTestId('top-chrome').contains(getByTestId('grade-range-rail'))).toBe(true);
+    expect(mocks.gradeRow.set).not.toHaveBeenCalled();
+    expect(gradeRowToggles()).toEqual([]);
+  });
+
+  it('re-centres when the screen comes back into focus', () => {
+    mocks.renderFilterChrome = true;
+    const { getByTestId, rerender } = render(<ClimbList />);
+    expect(getByTestId('grade-range-rail').getAttribute('data-recenter-key')).toBe('0');
+
+    mocks.refocusCount = 1;
+    rerender(<ClimbList />);
+    expect(getByTestId('grade-range-rail').getAttribute('data-recenter-key')).toBe('1');
+  });
+
+  describe('on Material, where the top chrome draws its own rail', () => {
+    beforeEach(() => {
+      mocks.renderFilterChrome = true;
+      mocks.filtersInTopChrome = true;
+    });
+
+    it('adds no row of its own and tells the chrome to show its rail by default', () => {
+      const { queryByTestId } = render(<ClimbList />);
+
+      expect(queryByTestId('grade-range-rail')).toBeNull();
+      expect(mocks.chromeGradeRailVisible).toBe(true);
+    });
+
+    it('hides the chrome rail from the Grade chip, and keeps it through blur, search and Filters', () => {
+      render(<ClimbList />);
+
+      act(() => {
+        mocks.dismissGradePopover?.();
+        mocks.focusSearch?.();
+        mocks.openFilters?.();
+      });
+      expect(mocks.chromeGradeRailVisible).toBe(true);
+
+      act(() => mocks.closeGrade?.());
+      expect(mocks.chromeGradeRailVisible).toBe(false);
+      expect(mocks.gradeRow.set).toHaveBeenCalledExactlyOnceWith(false);
+    });
+  });
+
+  // Regular-width iPad keeps the transient popover on the Grade chip: closed
+  // until tapped, and closed again by anything that takes the climber elsewhere.
+  describe('on a regular-width iPad', () => {
+    beforeEach(() => {
+      mocks.renderFilterChrome = true;
+      mocks.deviceLayout = { isPad: true, isTablet: true, widthClass: 'regular' };
+    });
+
+    it('shows no row and no open popover until the Grade chip is tapped', () => {
+      const { getByTestId, queryByTestId } = render(<ClimbList />);
+
+      expect(queryByTestId('grade-range-rail')).toBeNull();
+      expect(getByTestId('chip-row').getAttribute('data-grade-open')).toBe('false');
+    });
+
+    it('hands the rail to the chip popover instead of adding a row', () => {
+      const { getAllByTestId, getByTestId } = render(<ClimbList />);
+
+      act(() => mocks.openGrade?.());
+      expect(getAllByTestId('grade-range-rail')).toHaveLength(1);
+      expect(getByTestId('grade-popover').contains(getByTestId('grade-range-rail'))).toBe(true);
+      expect(getByTestId('chip-row').getAttribute('data-grade-open')).toBe('true');
+    });
+
+    it.each([
+      ['the chip is tapped again', () => mocks.closeGrade?.()],
+      ['the screen loses focus', () => mocks.dismissGradePopover?.()],
+      ['search takes focus', () => mocks.focusSearch?.()],
+      ['Filters opens', () => mocks.openFilters?.()],
+    ])('closes the popover when %s', (_cause, trigger) => {
+      const { getByTestId, queryByTestId } = render(<ClimbList />);
+      act(() => mocks.openGrade?.());
+
+      act(trigger);
+      expect(queryByTestId('grade-popover')).toBeNull();
+      expect(getByTestId('chip-row').getAttribute('data-grade-open')).toBe('false');
+    });
+
+    it('never touches the row setting or reports a row toggle', () => {
+      render(<ClimbList />);
+
+      act(() => mocks.openGrade?.());
+      act(() => mocks.closeGrade?.());
+      // The popover reporting itself dismissed after the chip already closed it.
+      act(() => mocks.closeGrade?.());
+      expect(mocks.gradeRow.set).not.toHaveBeenCalled();
+      expect(gradeRowToggles()).toEqual([]);
+    });
+
+    it('does not show the chrome rail beside the popover', () => {
+      mocks.filtersInTopChrome = true;
+      render(<ClimbList />);
+
+      expect(mocks.chromeGradeRailVisible).toBe(false);
+    });
+  });
+});
+
+describe('ClimbList grade filter analytics', () => {
+  const gradeChanges = () =>
+    mocks.track.mock.calls.filter(([eventName]) => eventName === 'Grade Filter Changed').map(([, payload]) => payload);
+
+  beforeEach(() => {
+    mocks.renderFilterChrome = true;
+  });
+
+  it('reports a change from the grade row with both bounds, 0 for unset, and the gesture', () => {
+    render(<ClimbList />);
+
+    act(() => mocks.changeGrade?.({ minGradeId: 10, maxGradeId: 12 }, { gesture: 'tap' }));
+    expect(gradeChanges()).toEqual([{ fromMin: 0, fromMax: 0, toMin: 10, toMax: 12, gesture: 'tap' }]);
+    expect(mocks.setGrade).toHaveBeenCalledExactlyOnceWith({ minGradeId: 10, maxGradeId: 12 });
+  });
+
+  it('reports where the change started from', () => {
+    mocks.searchState = { filters: { minGrade: 14, maxGrade: 16 }, boardFilters: {}, name: '' };
+    render(<ClimbList />);
+
+    act(() => mocks.changeGrade?.({ minGradeId: undefined, maxGradeId: undefined }, { gesture: 'clear' }));
+    expect(gradeChanges()).toEqual([{ fromMin: 14, fromMax: 16, toMin: 0, toMax: 0, gesture: 'clear' }]);
+  });
+
+  it('leaves msSincePrevious off the first change and times every later one', () => {
+    const now = vi.spyOn(Date, 'now');
+    render(<ClimbList />);
+
+    now.mockReturnValue(1_000_000);
+    act(() => mocks.changeGrade?.({ minGradeId: 10, maxGradeId: 10 }, { gesture: 'tap' }));
+    now.mockReturnValue(1_002_500);
+    act(() => mocks.changeGrade?.({ minGradeId: 10, maxGradeId: 14 }, { gesture: 'hold' }));
+    now.mockReturnValue(1_002_900);
+    act(() => mocks.changeGrade?.({ minGradeId: 12, maxGradeId: 14 }, { gesture: 'range_button' }));
+    now.mockRestore();
+
+    const [first, second, third] = gradeChanges();
+    expect(first).not.toHaveProperty('msSincePrevious');
+    expect(second).toMatchObject({ gesture: 'hold', msSincePrevious: 2500 });
+    expect(third).toMatchObject({ gesture: 'range_button', msSincePrevious: 400 });
+  });
+
+  it('sends no free text and no identifier', () => {
+    render(<ClimbList />);
+
+    act(() => mocks.changeGrade?.({ minGradeId: 10, maxGradeId: 14 }, { gesture: 'hold' }));
+    const [payload] = gradeChanges();
+    expect(Object.keys(payload as object).sort()).toEqual(['fromMax', 'fromMin', 'gesture', 'toMax', 'toMin']);
+  });
+
+  it('reports a change made in the iPad popover too', () => {
+    mocks.deviceLayout = { isPad: true, isTablet: true, widthClass: 'regular' };
+    render(<ClimbList />);
+    act(() => mocks.openGrade?.());
+
+    act(() => mocks.changeGrade?.({ minGradeId: 10, maxGradeId: 12 }, { gesture: 'tap' }));
+    expect(gradeChanges()).toHaveLength(1);
+  });
+
+  it('adds the grade format to Climb Search Performed', async () => {
+    mocks.searchState = { filters: { minGrade: 10, maxGrade: 12 }, boardFilters: {}, name: 'crimp' };
+    render(<ClimbList />);
+
+    await waitFor(() =>
+      expect(mocks.track).toHaveBeenCalledWith(
+        'Climb Search Performed',
+        expect.objectContaining({ minGrade: 10, maxGrade: 12, gradeFormat: 'v-grade' }),
+      ),
+    );
   });
 });
 

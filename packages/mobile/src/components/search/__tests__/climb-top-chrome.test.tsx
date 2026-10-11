@@ -35,6 +35,9 @@ const ctrl = vi.hoisted(() => ({
   setBoardAngle: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   wallClimb: null as { climbUuid: string; name: string } | null,
+  // The chrome's focus effects, kept so a test can run one and its cleanup: the
+  // cleanup is what the screen losing focus does.
+  focusEffects: [] as Array<() => void | (() => void)>,
 }));
 const haptics = vi.hoisted(() => ({ light: vi.fn(), selection: vi.fn() }));
 
@@ -76,7 +79,11 @@ vi.mock('react-native-reanimated', () => ({
   useDerivedValue: () => ({ value: 0 }),
 }));
 
-vi.mock('expo-router', () => ({ useFocusEffect: () => {} }));
+vi.mock('expo-router', () => ({
+  useFocusEffect: (effect: () => void | (() => void)) => {
+    ctrl.focusEffects.push(effect);
+  },
+}));
 vi.mock('expo-linear-gradient', () => ({
   LinearGradient: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-gradient': 'true' }, children),
@@ -317,7 +324,14 @@ vi.mock('../../SearchHeader', () => ({
   }),
 }));
 
-vi.mock('../../grade', () => ({ GradeRangeRail: () => createElement('div', { 'data-grade-rail': 'true' }) }));
+vi.mock('../../grade', () => ({
+  GradeRangeRail: ({ recenterKey, contentInsetRight }: { recenterKey?: number; contentInsetRight?: number }) =>
+    createElement('div', {
+      'data-grade-rail': 'true',
+      'data-recenter-key': String(recenterKey),
+      'data-inset-right': String(contentInsetRight),
+    }),
+}));
 
 type AngleSelectorMockProps = {
   visible: boolean;
@@ -382,6 +396,7 @@ function makeProps(over: Partial<Parameters<typeof ClimbTopChrome>[0]> = {}) {
     onSearchFocus: vi.fn(),
     onSearchBlur: vi.fn(),
     onCloseGrade: vi.fn(),
+    onDismissGradePopover: vi.fn(),
     ...over,
   };
 }
@@ -421,6 +436,7 @@ describe('ClimbTopChrome', () => {
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
     ctrl.wallClimb = null;
+    ctrl.focusEffects.length = 0;
     ctrl.setBoardAngle.mockClear();
     haptics.light.mockClear();
     haptics.selection.mockClear();
@@ -761,5 +777,64 @@ describe('ClimbTopChrome', () => {
     fireEvent.click(container.querySelector('[data-pressable="mobile.search.gradeAction"]') as HTMLButtonElement);
     expect(onCloseGrade).toHaveBeenCalledTimes(1);
     expect(onOpenGrade).toHaveBeenCalledTimes(1);
+  });
+
+  // The grade rail stays on screen until the climber hides it. Losing focus and
+  // focusing search close the transient iPad popover and nothing else.
+  describe('grade rail persistence', () => {
+    it.each(['liquidGlass', 'material'] as const)(
+      'dismisses the popover, not the rail, when the screen loses focus (%s)',
+      (variant) => {
+        ctrl.variant = variant;
+        ctrl.board = typedBoard;
+        const onCloseGrade = vi.fn();
+        const onDismissGradePopover = vi.fn();
+        render(<ClimbTopChrome {...makeProps({ onCloseGrade, onDismissGradePopover })} />);
+
+        const loseFocus = ctrl.focusEffects.at(-1)?.();
+        expect(onDismissGradePopover).not.toHaveBeenCalled();
+        if (typeof loseFocus === 'function') loseFocus();
+
+        expect(onDismissGradePopover).toHaveBeenCalledTimes(1);
+        expect(onCloseGrade).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['liquidGlass', 'material'] as const)(
+      'dismisses the popover, not the rail, when search takes focus (%s)',
+      (variant) => {
+        ctrl.variant = variant;
+        ctrl.board = typedBoard;
+        const onCloseGrade = vi.fn();
+        const onDismissGradePopover = vi.fn();
+        const onSearchFocus = vi.fn();
+        const { container } = render(
+          <ClimbTopChrome {...makeProps({ onCloseGrade, onDismissGradePopover, onSearchFocus })} />,
+        );
+
+        fireEvent.focus(container.querySelector('[data-search-field="true"]') as HTMLInputElement);
+
+        expect(onSearchFocus).toHaveBeenCalledTimes(1);
+        expect(onDismissGradePopover).toHaveBeenCalledTimes(1);
+        expect(onCloseGrade).not.toHaveBeenCalled();
+      },
+    );
+
+    it('hands the Material rail its re-centre key, with no right inset inside the stack gutter', () => {
+      ctrl.variant = 'material';
+      ctrl.board = typedBoard;
+      const railProps = {
+        gradeRailVisible: true,
+        gradeBound: { minGradeId: 20, maxGradeId: 20 },
+        onGradeChange: vi.fn(),
+      };
+      const { container, rerender } = render(<ClimbTopChrome {...makeProps({ ...railProps, gradeRecenterKey: 3 })} />);
+      const rail = () => container.querySelector('[data-grade-rail="true"]');
+      expect(rail()?.getAttribute('data-recenter-key')).toBe('3');
+      expect(rail()?.getAttribute('data-inset-right')).toBe('0');
+
+      rerender(<ClimbTopChrome {...makeProps({ ...railProps, gradeRecenterKey: 4 })} />);
+      expect(rail()?.getAttribute('data-recenter-key')).toBe('4');
+    });
   });
 });

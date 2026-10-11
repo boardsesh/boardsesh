@@ -37,9 +37,12 @@ function gradeName(
 }
 
 /**
- * Grade-bound chip wording: "V4–V6" (both bounds, en dash), "V5" (equal bounds),
- * "≥V4" (only min set), "≤V6" (only max set). Caller guards that at least one
- * bound is set before calling.
+ * Grade-bound chip wording: "V4–V6" (both bounds, en dash), "V5" (both bounds
+ * read the same), "≥V4" (only min set), "≤V6" (only max set). Caller guards
+ * that at least one bound is set before calling.
+ *
+ * "Read the same", not "are the same id": the grade rail draws grades with one
+ * label as one chip, so picking "V0" under V grades sets 4a to 4c.
  */
 export function gradeChipLabel(
   minGrade: number | '',
@@ -50,7 +53,7 @@ export function gradeChipLabel(
   const minLabel = minGrade === '' ? null : gradeName(minGrade, gradesById, formatGrade);
   const maxLabel = maxGrade === '' ? null : gradeName(maxGrade, gradesById, formatGrade);
   if (minLabel != null && maxLabel != null) {
-    return minGrade === maxGrade ? minLabel : `${minLabel}–${maxLabel}`;
+    return minLabel === maxLabel ? minLabel : `${minLabel}–${maxLabel}`;
   }
   if (minLabel != null) return `≥${minLabel}`;
   if (maxLabel != null) return `≤${maxLabel}`;
