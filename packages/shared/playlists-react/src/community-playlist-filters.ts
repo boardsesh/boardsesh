@@ -7,8 +7,10 @@ import type { DiscoverPlaylistsInput } from '@boardsesh/graphql/operations/playl
  * `buildCommunityPlaylistsInput`; the screen only owns this object and never
  * builds server input itself. Adding a filter means: a field here, its default
  * in `DEFAULT_COMMUNITY_PLAYLIST_FILTERS`, its mapping in
- * `buildCommunityPlaylistsInput`, and (if it needs viewer data such as a follow
- * list) a field on `CommunityPlaylistsContext`.
+ * `buildCommunityPlaylistsInput`, its place in `hasActiveCommunityPlaylistFilters`,
+ * and (if it needs viewer data) a field on `CommunityPlaylistsContext`. The
+ * follow list is not viewer data the client sends: `following` maps to
+ * `followedOnly` and the server resolves who the viewer follows.
  */
 export type CommunityPlaylistFilters = {
   /** Free-text title search. Trimmed and capped before it reaches the server. */
@@ -17,13 +19,23 @@ export type CommunityPlaylistFilters = {
   creator: CommunityPlaylistCreatorScope;
   sort: CommunityPlaylistSort;
   size: CommunityPlaylistSize;
+  /**
+   * Lowest grade (difficulty id) a playlist's band may start at, or null for
+   * no floor. The server checks it against the playlist's 10th-percentile
+   * grade, so one easy warm-up doesn't let a hard list in.
+   */
+  minGrade: number | null;
+  /** Highest grade the band may end at (its 90th percentile), or null for no ceiling. */
+  maxGrade: number | null;
 };
 
 /**
  * Whose playlists the list shows. `everyone` leaves the viewer's own out (they
- * have My Playlists for those); `mine` shows only the viewer's public ones.
+ * have My Playlists for those); `mine` shows only the viewer's public ones;
+ * `following` shows the climbers the viewer follows, resolved on the server.
+ * `mine` and `following` need a signed-in viewer.
  */
-export type CommunityPlaylistCreatorScope = 'everyone' | 'mine';
+export type CommunityPlaylistCreatorScope = 'everyone' | 'mine' | 'following';
 
 /** `popular` matches the Discover shelf's default; `recent` is newest first. */
 export type CommunityPlaylistSort = 'popular' | 'recent';
@@ -31,13 +43,20 @@ export type CommunityPlaylistSort = 'popular' | 'recent';
 /** Climb-count bands. See `COMMUNITY_PLAYLIST_SIZE_BANDS` for the numbers. */
 export type CommunityPlaylistSize = 'any' | 'short' | 'session' | 'big';
 
-/** Inclusive climb-count bounds per size band. `any` sends no bound at all. */
+/**
+ * The most climbs a community playlist can hold and still be listed. Bigger
+ * lists are data exports with a playlist's name on them (a 600-climb
+ * "favorites" dump), not something to climb through, so every band stops here.
+ */
+export const COMMUNITY_PLAYLIST_MAX_CLIMBS = 150;
+
+/** Inclusive climb-count bounds per size band. The copy under the filters is built from these. */
 export const COMMUNITY_PLAYLIST_SIZE_BANDS: Record<CommunityPlaylistSize, { minClimbs?: number; maxClimbs?: number }> =
   {
-    any: {},
+    any: { maxClimbs: COMMUNITY_PLAYLIST_MAX_CLIMBS },
     short: { maxClimbs: 10 },
     session: { minClimbs: 11, maxClimbs: 30 },
-    big: { minClimbs: 31 },
+    big: { minClimbs: 31, maxClimbs: COMMUNITY_PLAYLIST_MAX_CLIMBS },
   };
 
 export const DEFAULT_COMMUNITY_PLAYLIST_FILTERS: CommunityPlaylistFilters = {
@@ -45,6 +64,8 @@ export const DEFAULT_COMMUNITY_PLAYLIST_FILTERS: CommunityPlaylistFilters = {
   creator: 'everyone',
   sort: 'popular',
   size: 'any',
+  minGrade: null,
+  maxGrade: null,
 };
 
 /** The server rejects a longer `name` (backend `DiscoverPlaylistsInputSchema`). */
@@ -62,14 +83,15 @@ export type CommunityPlaylistsContext = {
 export type CommunityPlaylistsInput = Omit<DiscoverPlaylistsInput, 'page' | 'pageSize'>;
 
 /**
- * The creator scope that actually applies. `mine` needs a viewer, so a
- * signed-out viewer (or one who signed out with `mine` picked) gets `everyone`.
+ * The creator scope that actually applies. `mine` and `following` need a
+ * viewer, so a signed-out viewer (or one who signed out with either picked)
+ * gets `everyone`.
  */
 export function effectiveCommunityCreatorScope(
   filters: CommunityPlaylistFilters,
   context: Pick<CommunityPlaylistsContext, 'viewerId'>,
 ): CommunityPlaylistCreatorScope {
-  if (filters.creator === 'mine' && !context.viewerId) return 'everyone';
+  if (filters.creator !== 'everyone' && !context.viewerId) return 'everyone';
   return filters.creator;
 }
 
@@ -93,6 +115,9 @@ export function buildCommunityPlaylistsInput(
   const scope = effectiveCommunityCreatorScope(filters, context);
   if (scope === 'mine' && context.viewerId) {
     input.creatorIds = [context.viewerId];
+  } else if (scope === 'following') {
+    // Nobody can follow themselves, so this never includes the viewer.
+    input.followedOnly = true;
   } else if (scope === 'everyone' && context.viewerId) {
     input.excludeCreatorIds = [context.viewerId];
   }
@@ -100,6 +125,9 @@ export function buildCommunityPlaylistsInput(
   const band = COMMUNITY_PLAYLIST_SIZE_BANDS[filters.size];
   if (band.minClimbs !== undefined) input.minClimbs = band.minClimbs;
   if (band.maxClimbs !== undefined) input.maxClimbs = band.maxClimbs;
+
+  if (filters.minGrade !== null) input.minGrade = filters.minGrade;
+  if (filters.maxGrade !== null) input.maxGrade = filters.maxGrade;
 
   return input;
 }
@@ -112,7 +140,9 @@ export function hasActiveCommunityPlaylistFilters(filters: CommunityPlaylistFilt
   return (
     filters.search.trim().length > 0 ||
     filters.creator !== DEFAULT_COMMUNITY_PLAYLIST_FILTERS.creator ||
-    filters.size !== DEFAULT_COMMUNITY_PLAYLIST_FILTERS.size
+    filters.size !== DEFAULT_COMMUNITY_PLAYLIST_FILTERS.size ||
+    filters.minGrade !== null ||
+    filters.maxGrade !== null
   );
 }
 

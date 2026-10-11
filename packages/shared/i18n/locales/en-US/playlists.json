@@ -40,7 +40,8 @@
       "madeByLabel": "Made by",
       "madeBy": {
         "everyone": "Everyone",
-        "mine": "Mine"
+        "mine": "Mine",
+        "following": "Following"
       },
       "sortLabel": "Sort",
       "sort": {
@@ -54,10 +55,13 @@
         "session": "Session",
         "big": "Big"
       },
+      "gradeLabel": "Grade",
+      "gradeAny": "Any grade",
+      "gradeA11y": "Grade range: {{band}}",
       "sizeBand": {
-        "short": "Up to {{max}} climbs",
-        "session": "{{min}}–{{max}} climbs",
-        "big": "{{min}}+ climbs"
+        "upTo": "Up to {{max}} climbs",
+        "range": "{{min}}–{{max}} climbs",
+        "atLeast": "{{min}}+ climbs"
       },
       "resultCount_one": "{{count}} playlist",
       "resultCount_other": "{{count}} playlists",
@@ -69,6 +73,10 @@
       "empty": {
         "title": "No playlists here yet",
         "description": "Make one of yours public and it shows up for the crew."
+      },
+      "emptyFollowing": {
+        "title": "No playlists from your crew yet",
+        "description": "Climbers you follow haven't made a public playlist on this board."
       },
       "noMatches": {
         "title": "Nothing fits those filters",

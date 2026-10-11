@@ -40,7 +40,8 @@
       "madeByLabel": "Créées par",
       "madeBy": {
         "everyone": "Tout le monde",
-        "mine": "Les miennes"
+        "mine": "Les miennes",
+        "following": "Abonnements"
       },
       "sortLabel": "Trier",
       "sort": {
@@ -54,10 +55,13 @@
         "session": "Séance",
         "big": "Longue"
       },
+      "gradeLabel": "Cotation",
+      "gradeAny": "Toutes cotations",
+      "gradeA11y": "Plage de cotations : {{band}}",
       "sizeBand": {
-        "short": "Jusqu'à {{max}} blocs",
-        "session": "{{min}}–{{max}} blocs",
-        "big": "{{min}}+ blocs"
+        "upTo": "Jusqu'à {{max}} blocs",
+        "range": "{{min}}–{{max}} blocs",
+        "atLeast": "{{min}}+ blocs"
       },
       "resultCount_one": "{{count}} playlist",
       "resultCount_other": "{{count}} playlists",
@@ -69,6 +73,10 @@
       "empty": {
         "title": "Pas encore de playlist ici",
         "description": "Rendez l'une des vôtres publique et elle apparaîtra pour la crew."
+      },
+      "emptyFollowing": {
+        "title": "Pas encore de playlist de votre crew",
+        "description": "Les grimpeurs que vous suivez n'ont pas encore de playlist publique sur ce board."
       },
       "noMatches": {
         "title": "Rien ne correspond à ces filtres",

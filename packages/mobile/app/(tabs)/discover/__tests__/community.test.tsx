@@ -18,7 +18,15 @@ import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { CommunityPlaylistsInput, UseCommunityPlaylistsOptions } from '@boardsesh/playlists-react';
 
-type PlaylistItem = { uuid: string; name: string; climbCount: number; creatorName: string };
+type PlaylistItem = {
+  uuid: string;
+  name: string;
+  climbCount: number;
+  creatorName: string;
+  boardType?: string;
+  gradeSummary?: { gradedClimbCount: number; p10Difficulty: number; p90Difficulty: number } | null;
+};
+type GradeBoundArg = { minGradeId: number | undefined; maxGradeId: number | undefined };
 
 const hook = vi.hoisted(() => ({
   playlists: [] as PlaylistItem[],
@@ -104,14 +112,36 @@ vi.mock('../../../../src/theme/tokens', () => ({
 }));
 vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { background: '#fff', secondaryLabel: '#666', tertiaryLabel: '#999' },
+    systemColors: { background: '#fff', secondaryLabel: '#666', tertiaryLabel: '#999', tertiaryFill: '#eee' },
     brandColors: { primary: '#6D28D9' },
   }),
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: viewer.isAuthenticated, isLoading: false }),
 }));
+vi.mock('../../../../src/hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({ gradeFormat: 'v-grade' }),
+}));
+// The rail is exercised in its own tests; here it is two buttons that set a band or clear it.
+vi.mock('../../../../src/components/grade', () => ({
+  GradeRangeRail: ({ bound, onChange }: { bound: GradeBoundArg; onChange: (next: GradeBoundArg) => void }) =>
+    createElement(
+      'div',
+      { 'data-grade-rail': `${bound.minGradeId ?? ''}-${bound.maxGradeId ?? ''}` },
+      createElement(
+        'button',
+        { 'aria-label': 'rail-pick-v3-v5', onClick: () => onChange({ minGradeId: 16, maxGradeId: 20 }) },
+        'pick',
+      ),
+      createElement(
+        'button',
+        { 'aria-label': 'rail-any', onClick: () => onChange({ minGradeId: undefined, maxGradeId: undefined }) },
+        'any',
+      ),
+    ),
+}));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
+  useGrades: () => ({ data: [{ difficultyId: 16, name: '6a/V3' }] }),
   useProfile: () => ({
     data: viewer.profileId ? { id: viewer.profileId } : undefined,
     isLoading: viewer.profileLoading,
@@ -187,8 +217,8 @@ vi.mock('../../../../src/components/SegmentedControl', () => ({
     ),
 }));
 vi.mock('../../../../src/components/playlist', () => ({
-  PlaylistListRow: ({ name, meta }: { name: string; meta?: string }) =>
-    createElement('div', { 'data-playlist-row': name }, meta),
+  PlaylistListRow: ({ name, meta, gradeLabel }: { name: string; meta?: string; gradeLabel?: string | null }) =>
+    createElement('div', { 'data-playlist-row': name, 'data-grade': gradeLabel ?? '' }, meta),
   PlaylistListRowSeparator: () => createElement('div', null),
 }));
 
@@ -233,6 +263,7 @@ describe('CommunityPlaylistsScreen filters', () => {
       generatedRecommendation: false,
       sortBy: 'popular',
       excludeCreatorIds: ['me'],
+      maxClimbs: 150,
     });
     expect(hookCalls.options.at(-1)?.enabled).toBe(true);
   });
@@ -251,7 +282,39 @@ describe('CommunityPlaylistsScreen filters', () => {
     fireEvent.click(getByLabelText('library.community.sizeLabel:session'));
     expect(lastInput()).toMatchObject({ minClimbs: 11, maxClimbs: 30 });
     // The summary states the same band the query sends.
-    expect(getByText('library.community.sizeBand.session:{"min":11,"max":30}', { exact: false })).toBeTruthy();
+    expect(getByText('library.community.sizeBand.range:{"min":11,"max":30}', { exact: false })).toBeTruthy();
+
+    // Big is capped at the community maximum, and its copy says so.
+    fireEvent.click(getByLabelText('library.community.sizeLabel:big'));
+    expect(lastInput()).toMatchObject({ minClimbs: 31, maxClimbs: 150 });
+    expect(getByText('library.community.sizeBand.range:{"min":31,"max":150}', { exact: false })).toBeTruthy();
+  });
+
+  it('asks the server for followed creators when Following is picked', () => {
+    const { getByLabelText } = render(<CommunityPlaylistsScreen />);
+    fireEvent.click(getByLabelText('library.community.madeByLabel:following'));
+    expect(lastInput().followedOnly).toBe(true);
+    expect(lastInput()).not.toHaveProperty('excludeCreatorIds');
+    expect(lastInput()).not.toHaveProperty('creatorIds');
+  });
+
+  it('opens the grade rail from its chip and sends the picked band', () => {
+    const { getByLabelText, queryByLabelText, container } = render(<CommunityPlaylistsScreen />);
+    const chipLabel = (band: string) => `library.community.gradeA11y:${JSON.stringify({ band })}`;
+    expect(container.querySelector('[data-grade-rail]')).toBeNull();
+
+    fireEvent.click(getByLabelText(chipLabel('library.community.gradeAny')));
+    fireEvent.click(getByLabelText('rail-pick-v3-v5'));
+    expect(lastInput()).toMatchObject({ minGrade: 16, maxGrade: 20 });
+    // The chip names the band it applied.
+    expect(getByLabelText(chipLabel('V3\u2013V5'))).toBeTruthy();
+
+    fireEvent.click(getByLabelText('rail-any'));
+    expect(lastInput()).not.toHaveProperty('minGrade');
+    expect(lastInput()).not.toHaveProperty('maxGrade');
+
+    fireEvent.click(getByLabelText(chipLabel('library.community.gradeAny')));
+    expect(queryByLabelText('rail-pick-v3-v5')).toBeNull();
   });
 
   it('debounces the search before it reaches the server input', () => {
@@ -288,6 +351,35 @@ describe('CommunityPlaylistsScreen states', () => {
         JSON.stringify({ creatorName: 'Jess', climbCount: 'detail.climbCount:{"count":12}' }),
     );
     expect(getByText('library.community.resultCount:{"count":1}')).toBeTruthy();
+  });
+
+  it("shows each row's grade band, and none for a playlist without graded climbs", () => {
+    hook.playlists = [
+      {
+        uuid: 'a',
+        name: 'Graded',
+        climbCount: 12,
+        creatorName: 'Jess',
+        boardType: 'kilter',
+        gradeSummary: { gradedClimbCount: 12, p10Difficulty: 16, p90Difficulty: 20 },
+      },
+      { uuid: 'b', name: 'Ungraded', climbCount: 3, creatorName: 'Sam', boardType: 'kilter', gradeSummary: null },
+    ];
+    const { container } = render(<CommunityPlaylistsScreen />);
+    expect(container.querySelector('[data-playlist-row="Graded"]')?.getAttribute('data-grade')).toBe('V3\u2013V5');
+    expect(container.querySelector('[data-playlist-row="Ungraded"]')?.getAttribute('data-grade')).toBe('');
+  });
+
+  it('says the crew has nothing yet when Following alone comes back empty', () => {
+    const { getByLabelText, getByText, queryByText } = render(<CommunityPlaylistsScreen />);
+    fireEvent.click(getByLabelText('library.community.madeByLabel:following'));
+    expect(getByText('library.community.emptyFollowing.title')).toBeTruthy();
+    expect(queryByText('library.community.noMatches.title')).toBeNull();
+
+    // Narrowed further, the climber can loosen a filter instead.
+    fireEvent.click(getByLabelText('library.community.sizeLabel:short'));
+    expect(getByText('library.community.noMatches.title')).toBeTruthy();
+    expect(queryByText('library.community.emptyFollowing.title')).toBeNull();
   });
 
   it('loads one more page on end-reach only while there is more', () => {

@@ -24,6 +24,7 @@ export {
   clearCommunityPlaylistFilters,
   effectiveCommunityCreatorScope,
   hasActiveCommunityPlaylistFilters,
+  COMMUNITY_PLAYLIST_MAX_CLIMBS,
   COMMUNITY_PLAYLIST_SEARCH_MAX_LENGTH,
   COMMUNITY_PLAYLIST_SIZE_BANDS,
   DEFAULT_COMMUNITY_PLAYLIST_FILTERS,

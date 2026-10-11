@@ -27,6 +27,11 @@ export type PlaylistListRowProps = {
    */
   meta?: string;
   /**
+   * The playlist's grade band, already formatted ("V3–V5"). Drawn as a pill
+   * before the chevron and read out after the byline. Omitted, no pill.
+   */
+  gradeLabel?: string | null;
+  /**
    * Called with this row's `uuid`. Passing the uuid back (rather than a
    * per-row closure) lets the parent supply one stable callback for the whole
    * list, so `React.memo` here actually prevents re-renders on page appends.
@@ -52,6 +57,7 @@ export const PlaylistListRow = memo(function PlaylistListRow({
   icon,
   index = 0,
   meta,
+  gradeLabel,
   onPressUuid,
 }: PlaylistListRowProps) {
   const { t } = useTranslation('playlists');
@@ -70,7 +76,9 @@ export const PlaylistListRow = memo(function PlaylistListRow({
       feedback="opacity"
       opacityTo={0.7}
       accessibilityRole="button"
-      accessibilityLabel={`${name}, ${metaLabel}`}
+      accessibilityLabel={
+        gradeLabel ? `${name}, ${metaLabel}, ${t('library.gradeBand', { band: gradeLabel })}` : `${name}, ${metaLabel}`
+      }
     >
       <View style={styles.row}>
         <PlaylistPreviewSquare color={color} icon={icon} index={index} size={THUMB_SIZE} />
@@ -82,6 +90,13 @@ export const PlaylistListRow = memo(function PlaylistListRow({
             {metaLabel}
           </Text>
         </View>
+        {gradeLabel ? (
+          <View style={[styles.gradePill, { backgroundColor: systemColors.tertiaryFill }]}>
+            <Text variant="caption1" numberOfLines={1} style={styles.gradeText}>
+              {gradeLabel}
+            </Text>
+          </View>
+        ) : null}
         <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
       </View>
     </PressableSurface>
@@ -107,6 +122,14 @@ const styles = StyleSheet.create({
   },
   meta: {
     opacity: 0.6,
+  },
+  gradePill: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
+    borderRadius: spacing[2],
+  },
+  gradeText: {
+    fontWeight: '600',
   },
 });
 

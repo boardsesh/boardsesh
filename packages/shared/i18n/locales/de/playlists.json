@@ -40,7 +40,8 @@
       "madeByLabel": "Erstellt von",
       "madeBy": {
         "everyone": "Alle",
-        "mine": "Meine"
+        "mine": "Meine",
+        "following": "Gefolgt"
       },
       "sortLabel": "Sortieren",
       "sort": {
@@ -54,10 +55,13 @@
         "session": "Session",
         "big": "Groß"
       },
+      "gradeLabel": "Grad",
+      "gradeAny": "Jeder Grad",
+      "gradeA11y": "Gradbereich: {{band}}",
       "sizeBand": {
-        "short": "Bis {{max}} Boulder",
-        "session": "{{min}}–{{max}} Boulder",
-        "big": "{{min}}+ Boulder"
+        "upTo": "Bis {{max}} Boulder",
+        "range": "{{min}}–{{max}} Boulder",
+        "atLeast": "{{min}}+ Boulder"
       },
       "resultCount_one": "{{count}} Playlist",
       "resultCount_other": "{{count}} Playlists",
@@ -69,6 +73,10 @@
       "empty": {
         "title": "Hier gibt es noch keine Playlists",
         "description": "Mach eine deiner Playlists öffentlich, dann sieht die Crew sie hier."
+      },
+      "emptyFollowing": {
+        "title": "Noch keine Playlists von deiner Crew",
+        "description": "Die Leute, denen du folgst, haben auf diesem Board noch keine öffentliche Playlist."
       },
       "noMatches": {
         "title": "Nichts passt zu diesen Filtern",

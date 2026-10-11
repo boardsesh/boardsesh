@@ -40,7 +40,8 @@
       "madeByLabel": "Creadas por",
       "madeBy": {
         "everyone": "Todos",
-        "mine": "Mías"
+        "mine": "Mías",
+        "following": "Siguiendo"
       },
       "sortLabel": "Ordenar",
       "sort": {
@@ -54,10 +55,13 @@
         "session": "Sesión",
         "big": "Larga"
       },
+      "gradeLabel": "Grado",
+      "gradeAny": "Cualquier grado",
+      "gradeA11y": "Rango de grados: {{band}}",
       "sizeBand": {
-        "short": "Hasta {{max}} bloques",
-        "session": "{{min}}–{{max}} bloques",
-        "big": "{{min}}+ bloques"
+        "upTo": "Hasta {{max}} bloques",
+        "range": "{{min}}–{{max}} bloques",
+        "atLeast": "{{min}}+ bloques"
       },
       "resultCount_one": "{{count}} playlist",
       "resultCount_other": "{{count}} playlists",
@@ -69,6 +73,10 @@
       "empty": {
         "title": "Aún no hay playlists aquí",
         "description": "Haz pública una de las tuyas y la verá toda la crew."
+      },
+      "emptyFollowing": {
+        "title": "Tu crew aún no tiene playlists",
+        "description": "Las personas que sigues todavía no han hecho pública ninguna playlist en este plafón."
       },
       "noMatches": {
         "title": "Nada encaja con esos filtros",

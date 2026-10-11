@@ -17,6 +17,8 @@ import {
   type CommunityPlaylistSort,
 } from '@boardsesh/playlists-react';
 import type { DiscoverablePlaylist } from '@boardsesh/graphql/operations/playlists';
+import type { GradeBound } from '@boardsesh/climb-filters';
+import { formatGradeBand } from '@boardsesh/play-view';
 import { ReadableColumn } from '../../../src/components/ReadableColumn';
 import { PressableSurface } from '../../../src/components/PressableSurface';
 import { SearchField } from '../../../src/components/SearchField';
@@ -26,12 +28,15 @@ import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { PlaylistListRow, PlaylistListRowSeparator } from '../../../src/components/playlist';
+import { GradeRangeRail } from '../../../src/components/grade';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
-import { useProfile } from '../../../src/lib/graphql/hooks';
+import { useGrades, useProfile } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
+import { useGradeFormat } from '../../../src/hooks/use-grade-format';
+import { usePlaylistGradeBand } from '../../../src/hooks/use-playlist-grade-band';
 import { spacing } from '../../../src/theme/tokens';
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -44,7 +49,8 @@ function playlistKey(playlist: DiscoverablePlaylist): string {
 /**
  * The full Community Playlists list behind the Discover shelf's "See all":
  * one vertical, paginated list of public playlists on the active board, with a
- * title search, who made it, sort, and a climb-count band. Every filter lives
+ * title search, who made it (everyone, mine, or climbers I follow), sort, a
+ * climb-count band and a grade range. Every filter lives
  * in one `CommunityPlaylistFilters` object; `buildCommunityPlaylistsInput`
  * turns it into server input, so adding a filter never touches the list.
  */
@@ -60,6 +66,10 @@ export default function CommunityPlaylistsScreen() {
     refetch: refetchProfile,
   } = useProfile({ enabled: isAuthenticated });
   const { data: activeBoard, isLoading: activeBoardLoading } = useActiveBoard();
+  const boardType = activeBoard?.boardType ?? '';
+  const { data: grades } = useGrades(boardType);
+  const { gradeFormat } = useGradeFormat();
+  const formatPlaylistGradeBand = usePlaylistGradeBand();
 
   const viewerId = isAuthenticated ? (profile?.id ?? null) : null;
 
@@ -88,6 +98,19 @@ export default function CommunityPlaylistsScreen() {
   );
   const setSort = useCallback((sort: CommunityPlaylistSort) => setFilters((previous) => ({ ...previous, sort })), []);
   const setSize = useCallback((size: CommunityPlaylistSize) => setFilters((previous) => ({ ...previous, size })), []);
+  // The grade rail opens inline under its chip and stays open while the
+  // climber adjusts it; every change applies at once, like the other controls.
+  const [gradeRailOpen, setGradeRailOpen] = useState(false);
+  const toggleGradeRail = useCallback(() => setGradeRailOpen((open) => !open), []);
+  const setGradeBound = useCallback(
+    (bound: GradeBound) =>
+      setFilters((previous) => ({
+        ...previous,
+        minGrade: bound.minGradeId ?? null,
+        maxGrade: bound.maxGradeId ?? null,
+      })),
+    [],
+  );
   const clearFilters = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setSearchInput('');
@@ -137,11 +160,30 @@ export default function CommunityPlaylistsScreen() {
 
   const creatorScope = effectiveCommunityCreatorScope(filters, { viewerId });
   const filtersActive = hasActiveCommunityPlaylistFilters({ ...filters, creator: creatorScope });
+  // Following with nothing else narrowing it gets its own empty state: the
+  // answer is "your crew hasn't shared any", not "loosen a filter".
+  const followingOnly =
+    creatorScope === 'following' && !hasActiveCommunityPlaylistFilters({ ...filters, creator: 'everyone' });
+
+  const gradeBound = useMemo<GradeBound>(
+    () => ({ minGradeId: filters.minGrade ?? undefined, maxGradeId: filters.maxGrade ?? undefined }),
+    [filters.minGrade, filters.maxGrade],
+  );
+  const gradeBandLabel =
+    filters.minGrade !== null || filters.maxGrade !== null
+      ? formatGradeBand(
+          filters.minGrade ?? filters.maxGrade,
+          filters.maxGrade ?? filters.minGrade,
+          gradeFormat,
+          boardType,
+        )
+      : null;
 
   const creatorOptions = useMemo<SegmentOption<CommunityPlaylistCreatorScope>[]>(
     () => [
       { key: 'everyone', label: t('library.community.madeBy.everyone') },
       { key: 'mine', label: t('library.community.madeBy.mine') },
+      { key: 'following', label: t('library.community.madeBy.following') },
     ],
     [t],
   );
@@ -166,7 +208,7 @@ export default function CommunityPlaylistsScreen() {
     router.push(`/(tabs)/discover/${uuid}`);
   }, []);
 
-  // `t` is the only non-stable input, and it changes only with the locale.
+  // `t` changes only with the locale, the band formatter only with the grade format.
   const renderItem = useCallback(
     ({ item, index }: { item: DiscoverablePlaylist; index: number }) => (
       <PlaylistListRow
@@ -180,10 +222,11 @@ export default function CommunityPlaylistsScreen() {
           creatorName: item.creatorName,
           climbCount: t('detail.climbCount', { count: item.climbCount }),
         })}
+        gradeLabel={formatPlaylistGradeBand(item.gradeSummary, item.boardType)}
         onPressUuid={goToPlaylist}
       />
     ),
-    [goToPlaylist, t],
+    [formatPlaylistGradeBand, goToPlaylist, t],
   );
 
   // One page per end-reach. The hook ignores a call while a page is in flight
@@ -204,14 +247,18 @@ export default function CommunityPlaylistsScreen() {
   if (playlists.length > 0) {
     summaryParts.push(t('library.community.resultCount', { count: totalCount }));
   }
-  // The numbers come from the band table, so the copy can't drift from the query.
+  // The numbers come from the band table, so the copy can't drift from the
+  // query. "Any size" is the default and says nothing, though it carries the
+  // community-wide climb cap too.
   const sizeBand = COMMUNITY_PLAYLIST_SIZE_BANDS[filters.size];
-  if (filters.size === 'short') {
-    summaryParts.push(t('library.community.sizeBand.short', { max: sizeBand.maxClimbs }));
-  } else if (filters.size === 'session') {
-    summaryParts.push(t('library.community.sizeBand.session', { min: sizeBand.minClimbs, max: sizeBand.maxClimbs }));
-  } else if (filters.size === 'big') {
-    summaryParts.push(t('library.community.sizeBand.big', { min: sizeBand.minClimbs }));
+  if (filters.size !== 'any') {
+    if (sizeBand.minClimbs !== undefined && sizeBand.maxClimbs !== undefined) {
+      summaryParts.push(t('library.community.sizeBand.range', { min: sizeBand.minClimbs, max: sizeBand.maxClimbs }));
+    } else if (sizeBand.maxClimbs !== undefined) {
+      summaryParts.push(t('library.community.sizeBand.upTo', { max: sizeBand.maxClimbs }));
+    } else if (sizeBand.minClimbs !== undefined) {
+      summaryParts.push(t('library.community.sizeBand.atLeast', { min: sizeBand.minClimbs }));
+    }
   }
   const summary = summaryParts.join(' · ');
 
@@ -242,6 +289,18 @@ export default function CommunityPlaylistsScreen() {
             {t('library.errors.tryAgain')}
           </Text>
         </PressableSurface>
+      </View>
+    );
+  } else if (followingOnly) {
+    listEmpty = (
+      <View style={[styles.centered, styles.stateBlock]}>
+        <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
+        <Text variant="headline" style={styles.stateTitle}>
+          {t('library.community.emptyFollowing.title')}
+        </Text>
+        <Text variant="subheadline" style={styles.stateSubtitle}>
+          {t('library.community.emptyFollowing.description')}
+        </Text>
       </View>
     );
   } else if (filtersActive) {
@@ -310,6 +369,38 @@ export default function CommunityPlaylistsScreen() {
             onSelect={setSize}
             accessibilityLabel={t('library.community.sizeLabel')}
           />
+          <PressableSurface
+            onPress={toggleGradeRail}
+            accessibilityRole="button"
+            accessibilityLabel={t('library.community.gradeA11y', {
+              band: gradeBandLabel ?? t('library.community.gradeAny'),
+            })}
+            accessibilityState={{ expanded: gradeRailOpen }}
+            style={[styles.gradeChip, { backgroundColor: systemColors.tertiaryFill }]}
+          >
+            <Text variant="subheadline" style={styles.gradeChipLabel}>
+              {t('library.community.gradeLabel')}
+            </Text>
+            <Text
+              variant="subheadline"
+              numberOfLines={1}
+              color={gradeBandLabel ? brandColors.primary : systemColors.secondaryLabel}
+              style={styles.gradeChipValue}
+            >
+              {gradeBandLabel ?? t('library.community.gradeAny')}
+            </Text>
+            <Icon name={gradeRailOpen ? 'chevron.up' : 'chevron.down'} size={12} color={systemColors.tertiaryLabel} />
+          </PressableSurface>
+          {gradeRailOpen && grades ? (
+            <GradeRangeRail
+              grades={grades}
+              bound={gradeBound}
+              onChange={setGradeBound}
+              boardName={boardType}
+              contentInsetLeft={0}
+              contentInsetRight={0}
+            />
+          ) : null}
           {summary.length > 0 ? (
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.summary}>
               {summary}
@@ -398,6 +489,20 @@ const styles = StyleSheet.create({
   },
   summary: {
     paddingTop: spacing[1],
+  },
+  gradeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: spacing[2],
+  },
+  gradeChipLabel: {
+    fontWeight: '600',
+  },
+  gradeChipValue: {
+    flex: 1,
   },
   stateBlock: {
     paddingTop: STATE_BLOCK_TOP_INSET,
