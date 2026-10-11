@@ -54,11 +54,12 @@ Every edit is an exact-text replacement that asserts its anchor occurs once. Whe
 
 | Event | Recorded when | Fields that matter |
 | --- | --- | --- |
-| `swipe-begin`, `swipe-release` | The carousel's pan activated; the finger lifted | `uiWallMs`, `commit` (`next`, `previous` or `none`) |
-| `swipe-settled` | The outgoing board is off screen | `uiWallMs` |
+| `swipe-begin`, `swipe-release` | The carousel's pan activated; the finger lifted | `uiWallMs`, `commit` (`next`, `previous` or `none`), `tookOver` (the last fling was still running) |
+| `swipe-settled`, `swipe-taken-over` | The outgoing board is off screen; or the next swipe ended the fling early | `uiWallMs` |
 | `swipe-reset-ui` | The carousel is at rest with the new climb in the middle | `uiWallMs` |
-| `swipe-dropped` | A finger lifted while the carousel was ignoring touches | `wouldCommit` |
+| `swipe-blocked` | Far or fast enough to change the climb, but no page was mounted that way | `jsBehind`: the JS thread had not rendered the last step yet, rather than the queue ending there |
 | `swipe-commit-js`, `swipe-reset-js` | The JS thread started changing the climb; it rendered the new one | `direction`, `queue` |
+| `swipe-js-caught-up` | The UI thread heard that the JS thread has rendered every step it took | `uiWallMs` |
 | `carousel-render` | The carousel rendered | Which climbs it has boards for, as ids |
 | `dismiss-begin`, `dismiss-release`, `dismiss-settled` | The pull-down close | `committed`, `translateY`, `velocityY` |
 | `dismiss-complete-js`, `play-route-unmounted` | The JS thread heard the close; the route is gone | |
@@ -198,25 +199,30 @@ Not changed by either PR, on `main` the same day: the app reads each queued clim
 
 ### Swiping between climbs, and closing the drawer
 
-iPhone 13 Pro, iOS 26.6.1, Kilter Original 12x12 at 40 degrees, downloaded for offline, queue of 52, battery at 32 to 35 C, `scenario_play_swipe.py`, 11 October 2026. Seven runs of `main` (`d0099a69c3`) over three sittings, 410 swipes that changed the climb.
+iPhone 13 Pro, iOS 26.6.1, Kilter Original 12x12 at 40 degrees, downloaded for offline, queue of 52, battery at 32 to 35 C, `scenario_play_swipe.py`, 11 October 2026. `main` is seven runs over three sittings, 410 swipes that changed the climb. The three-board carousel is two runs alternated with `main` in the last sitting, 136 swipes.
 
-| Measure | `main` on 11 Oct 2026 |
-| --- | --- |
-| Swipes forward that began with no board holding the incoming climb | 202 of 207. The one spare board held the other neighbour |
-| How long until the right holds were up on those | 6 to 37 ms, then a 150 ms fade when they were not decoded yet |
-| Swipes back that began the same way | 0 of 203 |
-| Swipes that changed the climb at 3.5 a second | 140 of 140 |
-| Swipes that changed the climb at 6 a second | 74 of 140 |
-| Finger-up to the carousel at rest | 141 to 248 ms, median 177, touches ignored throughout |
-| Whole-drawer renders per swipe | 4 to 8 |
-| UI frames missed while a board was moving | 0 of 18,812 |
-| UI frames missed with the picture still | 41 of 18,812, 17 of them in one run with a 90 ms stall |
+| Measure | `main` | With the three-board carousel |
+| --- | --- | --- |
+| Swipes forward that began with no board holding the incoming climb | 202 of 207. The one spare board held the other neighbour | 0 of 68 |
+| How long until the right holds were up on those | 6 to 37 ms, then a 150 ms fade when they were not decoded yet | |
+| Swipes back that began the same way | 0 of 203 | 0 of 68 |
+| Swipes that changed the climb at 3.5 a second | 140 of 140 | 40 of 40 |
+| Swipes that changed the climb at 6 a second | 74 of 140 | 40 of 40, 36 of them taking over the fling before |
+| Finger-up to the carousel at rest | 141 to 248 ms, median 177, touches ignored throughout | 99 to 171 ms, median 117, a swipe can start at any point |
+| Finger-up to the JS thread having rendered the new climb | The same 141 to 248 ms | 83 to 158 ms, median 113 |
+| Whole-drawer renders per swipe | 4 to 8 | 2 |
+| UI frames missed while a board was moving | 0 of 18,812 | 4 of 4,993, each at the instant of finger-up in the 3.5-a-second phase. Cause not found |
+| UI frames missed with the picture still | 41 of 18,812, 17 of them in one run with a 90 ms stall | 15 of 4,993 |
 
-A cold overlay cache changed none of this: the drawer warms three climbs ahead and kept up at 3.5 swipes a second. Nor did a queue of 5 in place of 52.
+A cold overlay cache changed none of this on either build: the drawer warms three climbs ahead and kept up at 3.5 swipes a second. Nor did a queue of 5 in place of 52.
 
-The pull-down close, 45 closes: a slow drag to 80% open with a still release was off screen 150 ms after finger-up, a hard flick 125 ms after, and a pull let go early was back in place in 183 ms, with no stand-still and at most two UI frames missed after finger-up in any group of ten. The drawer's holds painted 67 ms after its route mounted (median of 21 opens).
+The pull-down close did not change and did not need to. Thirty closes on each build: a slow drag to 80% open with a still release was off screen 150 ms after finger-up, a hard flick 125 ms after, and a pull let go early was back in place in 183 ms, with no stand-still and at most two UI frames missed after finger-up in any group of ten. The drawer's holds painted 65 ms after its route mounted on both (median of 21 opens).
 
-Instruments' Animation Hitches over the thumb-pace swipes, two 22 s traces of one drawer open and ten swipes each (`hitches.py`): no hitch in 20 swipes. Away from the swipes there were two and four, 33 and 50 ms in all, at rest or while the drawer opened.
+Instruments' Animation Hitches over the same thumb-pace swipes, 22 s traces of one drawer open and ten swipes, two traces a side (`hitches.py`): `main` had no hitch in 20 swipes, the three-board carousel one in 20 (16.7 ms, as the first swipe of a run began). Away from the swipes both had two to four a trace, 29 to 67 ms in all, at rest or while the drawer opened.
+
+A swipe onto a playlist's suggestion past the end of a one-climb queue, and fifteen swipes through a queue of 308 made from a playlist, behaved like the rest on the three-board carousel: no board before its holds, none lost. `main` was not run on that path. Opening the first climb of that 308-climb playlist took about 8 s before the drawer appeared, on either carousel's code path alike since the drawer is not mounted yet; it was seen once and not looked into.
+
+An earlier build of the three-board carousel was run on a hot phone before the heat was noticed (battery at 47.7 C): frames every 16.7 ms, the JS thread up to 318 ms behind a swipe where it had been 38 to 66, and 4 swipes of 24 lost. A slow phone behaves like that all the time. `main` was not run hot, so this is a warning about slow phones, not a comparison.
 
 **Launch numbers moved by a factor of six within an hour on one build.** At 11:28 the build above took 2.4 to 2.6 s to its first page, with 2.2 s of JS stalls and 0.6 s spent opening the database. At 11:47, untouched, it took 0.34 to 0.62 s, with 0.4 s of stalls and 7 ms to open the database. `main` measured in the slow hour took 3.2 s. The cause was not found. The UI driver had been attached for 14 hours and had failed to restart minutes before the slow runs, and every run in the slow hour came soon after an install. So: alternate A and B launch by launch, in one sitting, and never set a launch number beside one taken an hour earlier.
 

@@ -12,6 +12,7 @@ type ViewProps = {
   style?: unknown;
   accessible?: boolean;
   importantForAccessibility?: string;
+  pointerEvents?: string;
 };
 
 const recorded = vi.hoisted(() => ({
@@ -25,7 +26,7 @@ vi.mock('react-native', () => {
     return style && typeof style === 'object' ? (style as Record<string, unknown>) : {};
   };
   return {
-    View: ({ children, onLayout, testID, style, accessible, importantForAccessibility }: ViewProps) => {
+    View: ({ children, onLayout, testID, style, accessible, importantForAccessibility, pointerEvents }: ViewProps) => {
       if (testID === 'play-drawer-board-container') recorded.onLayout = onLayout;
       const dimensions = flattenStyle(style);
       return createElement(
@@ -34,8 +35,12 @@ vi.mock('react-native', () => {
           'data-testid': testID,
           'data-width': dimensions.width,
           'data-height': dimensions.height,
+          'data-opacity': dimensions.opacity,
+          'data-z-index': dimensions.zIndex,
           'data-accessible': accessible,
           'data-important-for-accessibility': importantForAccessibility,
+          'data-pointer-events': pointerEvents,
+          'data-zoomed': dimensions.zoomMarker,
         },
         children,
       );
@@ -50,9 +55,6 @@ vi.mock('react-native-reanimated', async () => {
   return {
     default: { View },
     useAnimatedStyle: (factory: () => unknown) => factory(),
-    useDerivedValue: (factory: () => unknown) => ({ value: factory() }),
-    useAnimatedReaction: () => undefined,
-    runOnJS: (callback: unknown) => callback,
   };
 });
 vi.mock('react-native-gesture-handler', () => ({
@@ -61,7 +63,7 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../use-carousel-gesture', () => ({
-  useCarouselGesture: () => ({ gesture: {}, translateX: { value: 0 } }),
+  useCarouselGesture: () => ({ gesture: {} }),
 }));
 vi.mock('../use-zoom-pan-gesture', () => ({
   useZoomPanGesture: () => ({
@@ -70,7 +72,8 @@ vi.mock('../use-zoom-pan-gesture', () => ({
     isZoomed: false,
     isZoomedSV: { value: false },
     resetZoom: () => {},
-    animatedZoomStyle: {},
+    // A marker the mocked View surfaces, standing in for the animated zoom transform.
+    animatedZoomStyle: { zoomMarker: 'yes' },
   }),
 }));
 vi.mock('../../BoardImageNative', () => ({
@@ -103,6 +106,23 @@ vi.mock('../UpcomingBoardPrefetch', () => ({
 vi.mock('../../board-controls/ResetZoomButton', () => ({ ResetZoomButton: () => null }));
 
 import { SwipeBoardCarousel } from '../SwipeBoardCarousel';
+import type { SwipePager } from '../use-swipe-pager';
+
+/** A pager at rest on page 0, as plain values: these tests never move it. */
+function restingPager(): SwipePager {
+  return {
+    translateX: { value: 0 },
+    isAnimating: { value: false },
+    anchorPage: { value: 0 },
+    flingDirection: { value: 0 },
+    uiSteps: { value: 0 },
+    jsState: { value: { center: 0, hasPrevious: false, hasNext: true, processedStep: 0 } },
+    slideWidth: { value: 0 },
+    resetGeneration: { value: 0 },
+    requestStep: () => {},
+    stepRendered: () => {},
+  } as unknown as SwipePager;
+}
 
 const baseProps = {
   boardName: 'kilter' as const,
@@ -113,6 +133,8 @@ const baseProps = {
   currentFrames: 'current',
   nextFrames: 'next',
   prevFrames: null,
+  pager: restingPager(),
+  centerPage: 0,
   mirrored: false,
   canSwipeNext: true,
   canSwipePrevious: false,
@@ -124,6 +146,15 @@ function measure(width: number, height: number) {
   const onLayout = recorded.onLayout;
   if (!onLayout) throw new Error('Carousel measurement container is missing');
   act(() => onLayout({ nativeEvent: { layout: { x: 0, y: 0, width, height } } } as LayoutChangeEvent));
+}
+
+/** The neighbours mount one frame after the board is measured. */
+async function nextFrame() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
 }
 
 function expectDimensions(element: HTMLElement, width: number, height: number) {
@@ -141,21 +172,27 @@ afterEach(() => vi.unstubAllEnvs());
 describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (screenshotMode) => {
   it('exposes the painted-overlay descendant only in screenshot mode and preserves the normal board group', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
-    const { getByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
+    const { getByTestId, queryByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
     measure(350, 500);
     const board = getByTestId('board-current');
     if (screenshotMode === '1') {
       expect(board.parentElement?.dataset.accessible).toBe('false');
       expect(board.parentElement?.dataset.importantForAccessibility).toBe('no');
       expect(board.dataset.overlayTestid).toBe('play-drawer-board-overlay');
+      expect(queryByTestId('play-drawer-board-accessibility')).toBeNull();
     } else {
-      expect(board.parentElement?.parentElement?.dataset.accessible).toBe('true');
-      expect(board.parentElement?.parentElement?.dataset.importantForAccessibility).toBeUndefined();
+      // One fixed stand-in is the accessibility element, the size of the board.
+      // The boards themselves change places on a swipe and are hidden from it.
+      const standIn = getByTestId('play-drawer-board-accessibility');
+      expect(standIn.dataset.accessible).toBe('true');
+      expect(standIn.dataset.importantForAccessibility).toBeUndefined();
+      expectDimensions(standIn, 250, 500);
+      expect(board.parentElement?.parentElement?.dataset.importantForAccessibility).toBe('no-hide-descendants');
       expect(board.dataset.overlayTestid).toBeUndefined();
     }
   });
 
-  it('withholds cached images and prefetch until both dimensions are positive', () => {
+  it('withholds cached images and prefetch until both dimensions are positive', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
     const { queryAllByTestId, getByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
     expect(getByTestId('play-drawer-board-container')).toBeTruthy();
@@ -168,22 +205,27 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
 
     measure(350, 500);
     expectDimensions(getByTestId('board-current'), 250, 500);
+    // The current board paints first; its neighbour follows a frame later.
+    expect(queryAllByTestId('board-next')).toHaveLength(0);
+    await nextFrame();
     expectDimensions(getByTestId('board-next'), 250, 500);
     expect(getByTestId('board-current').dataset.renderWidth).toBe('750');
     if (screenshotMode === '0') {
       expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ renderWidth: 750 }));
-      const zoomWrapper = getByTestId('board-current').parentElement!;
-      expectDimensions(zoomWrapper, 250, 500);
-      expectDimensions(zoomWrapper.parentElement!, 250, 500);
+      // The image and the zoom wrapper both carry explicit dimensions. The slot
+      // around them fills the container and centres them.
+      expectDimensions(getByTestId('board-current').parentElement!, 250, 500);
+      expectDimensions(getByTestId('board-next').parentElement!, 250, 500);
     } else {
       expect(recorded.prefetch).not.toHaveBeenCalled();
     }
   });
 
-  it('resizes a mounted board for rotation or a narrower iPad pane without a placeholder', () => {
+  it('resizes a mounted board for rotation or a narrower iPad pane without a placeholder', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
     const { getByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
     measure(350, 500);
+    await nextFrame();
     const currentImage = getByTestId('board-current');
 
     measure(200, 600);
@@ -204,4 +246,103 @@ it('contains a wide board and updates climbs without remounting the current imag
   rerender(createElement(SwipeBoardCarousel, { ...props, currentFrames: 'another-climb' }));
   expect(getByTestId('board-another-climb')).toBe(currentImage);
   expectDimensions(currentImage, 350, 175);
+});
+
+describe('SwipeBoardCarousel pages', () => {
+  it('keeps the board that was a neighbour mounted when it becomes the current one', async () => {
+    const props = { ...baseProps, prevFrames: null, currentFrames: 'a', nextFrames: 'b' };
+    const { getByTestId, queryAllByTestId, rerender } = render(createElement(SwipeBoardCarousel, props));
+    measure(350, 500);
+    await nextFrame();
+    const boardA = getByTestId('board-a');
+    const boardB = getByTestId('board-b');
+
+    // A swipe forward: `b` is current now, on the page it was already on.
+    rerender(
+      createElement(SwipeBoardCarousel, {
+        ...props,
+        prevFrames: 'a',
+        currentFrames: 'b',
+        nextFrames: 'c',
+        centerPage: 1,
+      }),
+    );
+
+    expect(getByTestId('board-b')).toBe(boardB);
+    expect(getByTestId('board-a')).toBe(boardA);
+    expect(queryAllByTestId('board-c')).toHaveLength(1);
+  });
+
+  it('draws only the page in the middle at rest, and keeps every board out of the accessibility tree', async () => {
+    const props = { ...baseProps, prevFrames: 'a', currentFrames: 'b', nextFrames: 'c' };
+    const { getByTestId } = render(createElement(SwipeBoardCarousel, props));
+    measure(350, 500);
+    await nextFrame();
+
+    const slotOf = (frames: string) => getByTestId(`board-${frames}`).parentElement!.parentElement!;
+    expect(slotOf('b').dataset.opacity).toBe('1');
+    expect(slotOf('a').dataset.opacity).toBe('0');
+    expect(slotOf('c').dataset.opacity).toBe('0');
+    for (const frames of ['a', 'b', 'c']) {
+      expect(slotOf(frames).dataset.importantForAccessibility).toBe('no-hide-descendants');
+      expect(slotOf(frames).dataset.pointerEvents).toBe('none');
+    }
+  });
+
+  it('keeps one accessibility element across a step, so focus is not left on a board that moved away', async () => {
+    const props = { ...baseProps, prevFrames: null, currentFrames: 'a', nextFrames: 'b' };
+    const { getByTestId, rerender } = render(createElement(SwipeBoardCarousel, props));
+    measure(350, 500);
+    await nextFrame();
+    const standIn = getByTestId('play-drawer-board-accessibility');
+
+    rerender(
+      createElement(SwipeBoardCarousel, {
+        ...props,
+        prevFrames: 'a',
+        currentFrames: 'b',
+        nextFrames: 'c',
+        centerPage: 1,
+      }),
+    );
+
+    expect(getByTestId('play-drawer-board-accessibility')).toBe(standIn);
+  });
+
+  it('gives every board the zoom wrapper, so one that stops being current cannot keep a stale zoom', async () => {
+    const props = { ...baseProps, prevFrames: 'a', currentFrames: 'b', nextFrames: 'c' };
+    const { getByTestId } = render(createElement(SwipeBoardCarousel, props));
+    measure(350, 500);
+    await nextFrame();
+
+    for (const frames of ['a', 'b', 'c']) {
+      expect(getByTestId(`board-${frames}`).parentElement!.dataset.zoomed).toBe('yes');
+    }
+  });
+
+  // A zIndex that changes re-inserts the native view among its siblings, and that
+  // cancels a touch that began on it: a swipe that took over a fling was cut off 3 ms
+  // after it started. So the boards share one level, wherever the anchor is.
+  it.each([0, 1])('gives all three boards one zIndex with page %i in the middle', async (anchor) => {
+    const pager = restingPager();
+    (pager.anchorPage as { value: number }).value = anchor;
+    const props = { ...baseProps, pager, prevFrames: 'a', currentFrames: 'b', nextFrames: 'c' };
+    const { getByTestId } = render(createElement(SwipeBoardCarousel, props));
+    measure(350, 500);
+    await nextFrame();
+
+    const levels = ['a', 'b', 'c'].map(
+      (frames) => getByTestId(`board-${frames}`).parentElement!.parentElement!.dataset.zIndex,
+    );
+    expect(levels).toEqual(['1', '1', '1']);
+  });
+
+  it('gives a neighbour an empty page when this board cannot draw its climb', async () => {
+    const props = { ...baseProps, prevFrames: null, currentFrames: 'b', nextFrames: null };
+    const { queryAllByTestId } = render(createElement(SwipeBoardCarousel, props));
+    measure(350, 500);
+    await nextFrame();
+
+    expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  });
 });

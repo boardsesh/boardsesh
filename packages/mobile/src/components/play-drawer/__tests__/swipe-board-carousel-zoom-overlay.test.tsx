@@ -78,7 +78,7 @@ vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => createElement
 vi.mock('../../board-controls/ResetZoomButton', () => ({ ResetZoomButton: () => null }));
 vi.mock('../UpcomingBoardPrefetch', () => ({ UpcomingBoardPrefetch: () => null }));
 vi.mock('../use-carousel-gesture', () => ({
-  useCarouselGesture: () => ({ gesture: { kind: 'swipe' }, translateX: { value: 0 } }),
+  useCarouselGesture: () => ({ gesture: { kind: 'swipe' } }),
 }));
 
 vi.mock('../use-zoom-pan-gesture', () => ({
@@ -102,6 +102,7 @@ vi.mock('../use-zoom-pan-gesture', () => ({
 }));
 
 import { SwipeBoardCarousel } from '../SwipeBoardCarousel';
+import type { SwipePager } from '../use-swipe-pager';
 
 const baseProps = {
   boardName: 'kilter' as const,
@@ -113,6 +114,19 @@ const baseProps = {
   nextFrames: null,
   prevFrames: null,
   mirrored: false,
+  pager: {
+    translateX: { value: 0 },
+    isAnimating: { value: false },
+    anchorPage: { value: 0 },
+    flingDirection: { value: 0 },
+    uiSteps: { value: 0 },
+    jsState: { value: { center: 0, hasPrevious: false, hasNext: true, processedStep: 0 } },
+    slideWidth: { value: 0 },
+    resetGeneration: { value: 0 },
+    requestStep: () => {},
+    stepRendered: () => {},
+  } as unknown as SwipePager,
+  centerPage: 0,
   canSwipeNext: true,
   canSwipePrevious: false,
   onSwipeNext: vi.fn(),

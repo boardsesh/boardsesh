@@ -2832,7 +2832,41 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
    * a backgrounded app's timers would land on resume before the remount.
    *
    * `playSurface` gates it to the one board a climber is actually waiting on.
+   * It is read through a ref so this callback keeps one identity: the view
+   * layer calls it from an effect, and a new identity would re-run that effect
+   * and report the SAME image as newly mounted. That matters since the play
+   * carousel keeps the neighbouring climbs' boards mounted and makes one of them
+   * the play surface when it is swiped onto. Its overlay painted long before;
+   * a watchdog armed then would wait four seconds for an `onLoad` that already
+   * happened and report a paint that never failed.
    */
+  const playSurfaceRef = useRef(playSurface);
+  playSurfaceRef.current = playSurface;
+  // The overlay image that is mounted now, and whether expo-image has answered
+  // for it. A load key names one cache entry, so the last key that answered is
+  // enough to know: an `onLoad` can reach JS before the view layer's mount
+  // effect has run, and must still count.
+  const mountedOverlayRef = useRef<{ loadKey: string; answered: boolean } | null>(null);
+  const lastAnsweredLoadKeyRef = useRef<string | null>(null);
+  const noteOverlayAnswered = useCallback((emittingLoadKey: string | null) => {
+    lastAnsweredLoadKeyRef.current = emittingLoadKey;
+    if (mountedOverlayRef.current?.loadKey === emittingLoadKey) mountedOverlayRef.current.answered = true;
+  }, []);
+  const armPaintWatchdog = useCallback((loadKey: string) => {
+    const timer = setTimeout(() => {
+      paintWatchdogRef.current = null;
+      if (!mountedRef.current) return;
+      // eslint-disable-next-line no-console
+      console.warn(`[useNativeClimbRender] overlay never painted within ${OVERLAY_PAINT_TIMEOUT_MS}ms`);
+      noteRenderFailure({
+        stage: 'image_load',
+        failureKind: 'paint_timeout',
+        errorCode: 'paint_timeout',
+        context: failureTelemetryContextRef.current,
+      });
+    }, OVERLAY_PAINT_TIMEOUT_MS);
+    paintWatchdogRef.current = { loadKey, timer };
+  }, []);
   const onOverlayMounted = useCallback(
     (mountedLoadKey: string | null) => {
       const pending = paintWatchdogRef.current;
@@ -2840,23 +2874,35 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         clearTimeout(pending.timer);
         paintWatchdogRef.current = null;
       }
-      if (!playSurface || mountedLoadKey === null) return;
-      const timer = setTimeout(() => {
-        paintWatchdogRef.current = null;
-        if (!mountedRef.current) return;
-        // eslint-disable-next-line no-console
-        console.warn(`[useNativeClimbRender] overlay never painted within ${OVERLAY_PAINT_TIMEOUT_MS}ms`);
-        noteRenderFailure({
-          stage: 'image_load',
-          failureKind: 'paint_timeout',
-          errorCode: 'paint_timeout',
-          context: failureTelemetryContextRef.current,
-        });
-      }, OVERLAY_PAINT_TIMEOUT_MS);
-      paintWatchdogRef.current = { loadKey: mountedLoadKey, timer };
+      if (mountedLoadKey === null) {
+        // Nothing is mounted: whatever mounts next, even the same file again,
+        // has to answer for itself.
+        mountedOverlayRef.current = null;
+        lastAnsweredLoadKeyRef.current = null;
+        return;
+      }
+      const answered = lastAnsweredLoadKeyRef.current === mountedLoadKey;
+      mountedOverlayRef.current = { loadKey: mountedLoadKey, answered };
+      if (!playSurfaceRef.current || answered) return;
+      armPaintWatchdog(mountedLoadKey);
     },
-    [playSurface],
+    [armPaintWatchdog],
   );
+  // A board can become the play surface, or stop being it, while its overlay
+  // image stays mounted. Start watching one that has not answered yet; stop
+  // watching when the climber is no longer looking at this board.
+  useEffect(() => {
+    const pending = paintWatchdogRef.current;
+    if (!playSurface) {
+      if (pending) {
+        clearTimeout(pending.timer);
+        paintWatchdogRef.current = null;
+      }
+      return;
+    }
+    const mounted = mountedOverlayRef.current;
+    if (mounted && !mounted.answered && !pending) armPaintWatchdog(mounted.loadKey);
+  }, [playSurface, armPaintWatchdog]);
 
   // The view layer's mount effect disarms on its own teardown, but only while it
   // is mounted at all. This covers the hook outliving nothing — a surface that
@@ -2877,6 +2923,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // Before the key-match guards below: a paint is a paint, and the watchdog
       // only ever asks whether expo-image answered.
       clearPaintWatchdog(emittingLoadKey);
+      noteOverlayAnswered(emittingLoadKey);
       const expected = nativeRenderRef.current;
       if (
         !isLoadedNativeRender(expected) ||
@@ -2892,7 +2939,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         retryBudgetRef.current.used = 0;
       }
     },
-    [currentCacheKey, clearPaintWatchdog],
+    [currentCacheKey, clearPaintWatchdog, noteOverlayAnswered],
   );
 
   const onOverlayError = useCallback(
@@ -2902,6 +2949,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // unconditional clear let that stale answer cancel the new image's watch —
       // silencing the very case the watchdog exists to catch.
       clearPaintWatchdog(emittingLoadKey);
+      noteOverlayAnswered(emittingLoadKey);
       // expo-image's message names the file it could not load, so it is bucketed
       // to a closed set of codes before it goes anywhere. `png` here means the
       // decoder said so, not that a filename happened to end in `.png`.
@@ -3031,7 +3079,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       );
       setRecoveryRequest((request) => request + 1);
     },
-    [currentCacheKey, failureTelemetryContext, clearPaintWatchdog],
+    [currentCacheKey, failureTelemetryContext, clearPaintWatchdog, noteOverlayAnswered],
   );
 
   const verifyOverlayForNativeUse = useCallback(

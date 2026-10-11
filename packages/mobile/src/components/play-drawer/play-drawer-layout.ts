@@ -107,13 +107,13 @@ export function computeFirstSectionScrollTarget(params: {
  * zIndex and hit-tests in reverse paint order, so these numbers decide which layer gets
  * the touch, not just what you see.
  *
- * The board is raised above the incoming peek card, which means the pan-while-zoomed
- * overlay — a SIBLING of the board, not an ancestor — has to be raised above the board
- * too. Bury it and it never receives a touch that starts on the board, which is exactly
- * how panning a zoomed climb died in the player (#4191).
+ * The three boards (the current climb and its two neighbours) share one level: only the
+ * one in the middle is drawn at rest, and two that are both drawn never overlap. The
+ * pan-while-zoomed overlay — a SIBLING of the boards, not an ancestor — has to be raised
+ * above them. Bury it and it never receives a touch that starts on the board, which is
+ * exactly how panning a zoomed climb died in the player (#4191).
  */
 export const CAROUSEL_LAYER_Z = {
-  peek: 0,
   board: 1,
   zoomPan: 2,
   resetZoom: 10,

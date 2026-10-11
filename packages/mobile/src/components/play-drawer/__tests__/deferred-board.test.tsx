@@ -43,6 +43,7 @@ vi.mock('../SwipeBoardCarousel', () => ({
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { fill: 'fill' } }) }));
 
 import { DeferredBoard } from '../DeferredBoard';
+import type { SwipePager } from '../use-swipe-pager';
 
 const baseProps = {
   layoutReady: true,
@@ -59,6 +60,9 @@ const baseProps = {
   canSwipePrevious: false,
   onSwipeNext: vi.fn(),
   onSwipePrevious: vi.fn(),
+  // Passed straight through to the carousel, which is mocked here.
+  pager: {} as SwipePager,
+  centerPage: 0,
 };
 
 function flushFrame() {

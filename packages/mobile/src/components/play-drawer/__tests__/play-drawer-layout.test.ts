@@ -105,14 +105,11 @@ describe('CAROUSEL_LAYER_Z', () => {
   // SIBLING of the board, so burying it under the board means a drag that starts on
   // the board never reaches the pan — that's #4191, where zooming a climb in the
   // player left you unable to move around it (the create board, which has no zIndex
-  // at all, kept working). Raising boardWrapper for the card-stack paint order is
-  // what buried it, so keep the whole order asserted here.
+  // at all, kept working). Raising the board for the card-stack paint order is what
+  // buried it, so keep the whole order asserted here. The boards themselves share one
+  // level: see swipe-board-carousel-layout.test.tsx for why it must not vary.
   it('puts the zoom-pan overlay above the board so a drag on the board can pan it', () => {
     expect(CAROUSEL_LAYER_Z.zoomPan).toBeGreaterThan(CAROUSEL_LAYER_Z.board);
-  });
-
-  it('keeps the board above the incoming peek card', () => {
-    expect(CAROUSEL_LAYER_Z.board).toBeGreaterThan(CAROUSEL_LAYER_Z.peek);
   });
 
   it('keeps the reset-zoom button tappable above the pan overlay', () => {

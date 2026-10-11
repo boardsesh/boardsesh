@@ -1,9 +1,9 @@
 import { memo, type ComponentType, type MutableRefObject, type RefObject } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { GestureType } from 'react-native-gesture-handler';
-import type { SharedValue } from 'react-native-reanimated';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { SwipeBoardCarousel } from './SwipeBoardCarousel';
+import type { SwipePager } from './use-swipe-pager';
 import { useTheme } from '../../providers/theme-provider';
 import { useDeferredUntilFrame } from '../../hooks/use-deferred-until-frame';
 
@@ -37,8 +37,9 @@ type DeferredBoardProps = {
   onResetZoomReady?: (resetZoom: () => void) => void;
   enabled?: boolean;
   scrollRef?: RefObject<ComponentType | undefined | null>;
-  swipeTranslateX?: SharedValue<number>;
-  swipeIsAnimating?: SharedValue<boolean>;
+  /** Shared with the play-drawer header so both swipe as one. See use-swipe-pager. */
+  pager: SwipePager;
+  centerPage: number;
   /** RNGH ref to the drawer-dismiss Pan, forwarded to the zoomed-only board pan. */
   dismissRef?: MutableRefObject<GestureType | undefined>;
 };
@@ -46,7 +47,7 @@ type DeferredBoardProps = {
 /**
  * Defers mounting the interactive {@link SwipeBoardCarousel} until one frame
  * after the open drawer's viewport and headers have measured. The carousel mounts
- * 2× `BoardImageNative` plus a pinch/swipe/zoom gesture composition; rendering all
+ * `BoardImageNative` (the neighbours follow a frame later) plus a pinch/swipe/zoom gesture composition; rendering all
  * of that synchronously when the route commits blocks the present animation for ~0.5–1s (the
  * user-reported stall). A single `requestAnimationFrame` gate lets the sheet
  * animate open immediately over a board-sized placeholder, then mounts the board

@@ -248,8 +248,8 @@ vi.mock('../PlayDrawerHeader', () => ({
   },
 }));
 vi.mock('../SwipeableHeader', () => ({
-  SwipeableHeader: ({ current, peek }: { current?: ReactNode; peek?: ReactNode }) =>
-    createElement('div', null, current, peek),
+  SwipeableHeader: ({ current, previous, next }: { current?: ReactNode; previous?: ReactNode; next?: ReactNode }) =>
+    createElement('div', null, previous, current, next),
 }));
 vi.mock('../AngleSelectorSheet', () => ({
   AngleSelectorSheet: (props: Props) => {

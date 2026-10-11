@@ -7,18 +7,22 @@ A swipe between climbs and the pull-down close both run on the UI thread, so
 these probes stamp the UI thread's clock (`uiWallMs`) and sample the gesture's
 own shared value at every UI frame (`ui-frames`). What each event is for:
 
-  swipe-begin              the carousel's pan activated (10 px of travel)
+  swipe-begin              the carousel's pan activated (10 px of travel). `tookOver`:
+                           the last fling was still running and this swipe carried on from it
   swipe-release            finger up: offset, velocity, and which way it commits
-  swipe-dropped            finger up while the last fling was still in progress,
-                           so the swipe did nothing. `wouldCommit` says what it
-                           would have done
-  swipe-settled            the fling finished: outgoing board off screen
-  swipe-commit-js(-done)   the JS thread started and finished changing the climb
-  swipe-reset-js           the host put the carousel back to rest
-  swipe-fling-ui / swipe-reset-ui   the same two edges as the UI thread saw them
-  peek-direction-ui        the swipe changed sides, so the incoming board changes
-  carousel-render          which climb the board and the incoming board hold, and how far
-                           the incoming board travels to reach the middle (`slide`)
+  swipe-blocked            far or fast enough to change the climb, but no page was mounted
+                           that way. `jsBehind`: because the JS thread had not rendered the
+                           last step yet, rather than the queue ending there
+  swipe-settled            the fling finished: outgoing board off screen, the anchor moved
+  swipe-taken-over         the next swipe ended the fling early instead
+  swipe-reset-ui           the carousel is at rest with the new climb in the middle
+  swipe-commit-js(-done)   the JS thread heard of the step, which is when the incoming board
+                           stopped in the middle; it has asked the queue for the climb (later
+                           than the first when an earlier step was still being rendered)
+  swipe-reset-js           the JS thread committed a render with that climb current
+  swipe-js-caught-up       the UI thread heard that the JS thread has rendered every step
+  carousel-render          which climbs the carousel has boards for, and how far the incoming
+                           board travels to reach the middle (`slide`)
   dismiss-begin / -release / -settled / -interrupted   the pull-down close
   dismiss-complete-js, dismiss-route-dismiss-js, play-route-unmounted
   queue-limited            the `perf-probe-queue-5` marker cut the restored queue
@@ -46,124 +50,102 @@ def edit(path, pairs, imports=()):
 
 
 edit("src/components/play-drawer/use-carousel-gesture.ts", [
-("""      .onStart(() => {
+("""      const direction = flingDirection.value;
+      if (direction === 0) return;
+""",
+"""      const direction = flingDirection.value;
+      if (direction === 0) return;
+      perfProbeUi(carry ? 'swipe-taken-over' : 'swipe-settled', { direction: direction > 0 ? 'next' : 'previous' });
+      perfProbeUi('swipe-reset-ui');
+"""),
+("""      .onStart((event) => {
         'worklet';
         hasTriggeredHaptic.value = false;
 """,
-"""      .onStart(() => {
+"""      .onStart((event) => {
         'worklet';
         hasTriggeredHaptic.value = false;
         perfProbeUiFramesStart('swipe', translateX, isAnimating);
-        perfProbeUi('swipe-begin', { ignored: isAnimating.value });
+        perfProbeUi('swipe-begin', { tookOver: isAnimating.value });
 """),
-("""      .onEnd((event) => {
-        'worklet';
-        if (isAnimating.value) return;
+("""        const direction = commitDirection === 'next' ? 1 : commitDirection === 'previous' ? -1 : 0;
 
-        const offset = translateX.value;
-        const skipAnimation = reduceMotionSV.value;
-        const velocity = event.velocityX ?? 0;
-        const commitDirection = carouselCommitDirection(offset, velocity, SWIPE_THRESHOLD);
 """,
-"""      .onEnd((event) => {
-        'worklet';
-        if (isAnimating.value) {
-          perfProbeUi('swipe-dropped', {
-            translationX: Math.round(event.translationX),
-            velocityX: Math.round(event.velocityX ?? 0),
-            wouldCommit:
-              carouselCommitDirection(event.translationX, event.velocityX ?? 0, SWIPE_THRESHOLD) ?? 'none',
-          });
-          return;
-        }
-
-        const offset = translateX.value;
-        const skipAnimation = reduceMotionSV.value;
-        const velocity = event.velocityX ?? 0;
-        const commitDirection = carouselCommitDirection(offset, velocity, SWIPE_THRESHOLD);
+"""        const direction = commitDirection === 'next' ? 1 : commitDirection === 'previous' ? -1 : 0;
         perfProbeUi('swipe-release', {
           offset: Math.round(offset),
           velocityX: Math.round(velocity),
-          commit: commitDirection ?? 'none',
-          canNext: canSwipeNextSV.value,
-          canPrevious: canSwipePreviousSV.value,
+          commit: direction !== 0 && canStep(direction) ? (commitDirection ?? 'none') : 'none',
         });
+        if (direction !== 0 && !canStep(direction)) {
+          perfProbeUi('swipe-blocked', {
+            wouldCommit: commitDirection ?? 'none',
+            jsBehind: anchorPage.value !== jsState.value.center || jsState.value.processedStep !== uiSteps.value,
+          });
+        }
+
 """),
-("""                if (finished) runOnJS(commitAtEnd)('next');
+("""  const commitStep = (direction: 1 | -1, step: number) => {
+    callbacksRef.current.requestStep(direction, step, () => {
+      if (direction === 1) {
+        callbacksRef.current.onSwipeNext();
+      } else {
+        callbacksRef.current.onSwipePrevious();
+      }
+    });
 """,
-"""                perfProbeUi(finished ? 'swipe-settled' : 'swipe-fling-interrupted', { direction: 'next' });
-                if (finished) runOnJS(commitAtEnd)('next');
-"""),
-("""                if (finished) runOnJS(commitAtEnd)('previous');
-""",
-"""                perfProbeUi(finished ? 'swipe-settled' : 'swipe-fling-interrupted', { direction: 'previous' });
-                if (finished) runOnJS(commitAtEnd)('previous');
-"""),
-("""  const commitAtEnd = (direction: 'next' | 'previous') => {
-    if (direction === 'next') {
-      callbacksRef.current.onSwipeNext();
-    } else {
-      callbacksRef.current.onSwipePrevious();
-    }
-""",
-"""  const commitAtEnd = (direction: 'next' | 'previous') => {
-    perfProbe('swipe-commit-js', { direction });
-    if (direction === 'next') {
-      callbacksRef.current.onSwipeNext();
-    } else {
-      callbacksRef.current.onSwipePrevious();
-    }
-    perfProbe('swipe-commit-js-done', { direction });
+"""  const commitStep = (direction: 1 | -1, step: number) => {
+    perfProbe('swipe-commit-js', { direction: direction === 1 ? 'next' : 'previous', step });
+    callbacksRef.current.requestStep(direction, step, () => {
+      if (direction === 1) {
+        callbacksRef.current.onSwipeNext();
+      } else {
+        callbacksRef.current.onSwipePrevious();
+      }
+      perfProbe('swipe-commit-js-done', { step });
+    });
 """),
 ], ["import { perfProbe, perfProbeUi, perfProbeUiFramesStart } from '../../lib/perf-probe';"])
 
+# The UI thread hearing that the JS thread has rendered every step it took.
+edit("src/components/play-drawer/use-swipe-pager.ts", [
+("""      if (state.processedStep !== uiSteps.value) return;
+""",
+"""      if (state.processedStep !== uiSteps.value) return;
+      perfProbeUi('swipe-js-caught-up', { center: state.center, step: state.processedStep });
+"""),
+], ["import { perfProbeUi } from '../../lib/perf-probe';"])
+
 # apply_probes.py already imports `perfProbe` into the carousel; importing a name twice does not compile.
 edit("src/components/play-drawer/SwipeBoardCarousel.tsx", [
-("""    (direction) => {
-      runOnJS(setJsDirection)(direction);
-    },
-""",
-"""    (direction) => {
-      perfProbeUi('peek-direction-ui', { direction });
-      runOnJS(setJsDirection)(direction);
-    },
-"""),
-("""      if (animating !== previous) runOnJS(handleAnimatingChange)(animating);
-""",
-"""      if (animating !== previous) {
-        perfProbeUi(animating ? 'swipe-fling-ui' : 'swipe-reset-ui');
-        runOnJS(handleAnimatingChange)(animating);
-      }
-"""),
-("""  const composedGesture = React.useMemo(
+("""  const renderSlot = (page: number, frames: string | null, isCurrent: boolean) => (
 """,
 """  perfProbe('carousel-render', {
+    center: centerPage,
     slide: Math.round(boardWidthForSwipe),
-    direction: jsDirection,
-    committing: isCommitting,
     current: perfProbeId(currentFrames),
-    peek: perfProbeId(peekFrames),
     next: perfProbeId(nextFrames),
     previous: perfProbeId(prevFrames),
+    boards: [neighboursMounted ? prevFrames : null, currentFrames, neighboursMounted ? nextFrames : null]
+      .map((frames) => perfProbeId(frames))
+      .filter(Boolean)
+      .join(','),
   });
-  const composedGesture = React.useMemo(
+  const renderSlot = (page: number, frames: string | null, isCurrent: boolean) => (
 """),
-], ["import { perfProbeId, perfProbeUi } from '../../lib/perf-probe';"])
+], ["import { perfProbeId } from '../../lib/perf-probe';"])
 
 drawer = "src/components/play-drawer/PlayDrawer.tsx"
 edit(drawer, [
-("""    if (swipeIsAnimating.value) {
-      swipeTranslateX.value = 0;
-      swipeIsAnimating.value = false;
-    }
-  }, [displayedQueueItemUuid, swipeIsAnimating, swipeTranslateX]);
+("""    navigationState.canNext ? swipePageId(navigationState.nextItem) : null,
+  );
 """,
-"""    if (swipeIsAnimating.value) {
-      perfProbe('swipe-reset-js', { queue: queue.length });
-      swipeTranslateX.value = 0;
-      swipeIsAnimating.value = false;
-    }
-  }, [displayedQueueItemUuid, swipeIsAnimating, swipeTranslateX]);
+"""    navigationState.canNext ? swipePageId(navigationState.nextItem) : null,
+  );
+  // The JS thread has committed a render with this climb in the middle.
+  useEffect(() => {
+    perfProbe('swipe-reset-js', { queue: queue.length, center: swipeCenterPage });
+  }, [swipeCenterPage]);
 """),
 ], ["import { perfProbe } from '../../lib/perf-probe';"])
 # How often the whole drawer renders per swipe. apply_launch_markers.py adds the same line; do not add it twice.

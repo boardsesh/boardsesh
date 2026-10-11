@@ -22,7 +22,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { ScrollView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useAnimatedReaction, useSharedValue, runOnJS } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { reportHandledError } from '../../lib/error-reporting';
 import { useTranslation } from 'react-i18next';
@@ -50,6 +50,7 @@ import { LivePlayDrawerHeader } from './PlayDrawerHeader';
 import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
+import { useSwipePager, useSwipePages } from './use-swipe-pager';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { WallStatePill } from './WallStatePill';
 import { WallStateCallout } from './WallStateCallout';
@@ -269,6 +270,15 @@ function peekFramesOnBoard(
  * still costs a cached PNG on disk and a slot in the overlay index.
  */
 const PREFETCH_AHEAD = 3;
+
+/**
+ * What identifies a queue item's page in the swipe (see use-swipe-pager): its
+ * climb, or the item itself until the climb is known. Never null for an item
+ * that exists, so a neighbour the queue says is there always has a page.
+ */
+function swipePageId(item: ClimbQueueItem | null | undefined): string {
+  return item?.climb?.uuid || item?.uuid || 'unresolved';
+}
 /** Joins the prefetch list into one memo key. Never appears in a frames string. */
 const PREFETCH_FRAMES_SEPARATOR = '\n';
 /** Hoisted so "nothing to warm" keeps one array identity across renders. */
@@ -448,15 +458,14 @@ export function PlayDrawer({
     else router.dismiss();
   }, [isPane, onClose]);
 
-  // The header (title + grade) rides this exact value as the board so they swipe
-  // in lockstep; the carousel's gesture writes into it (externalTranslateX). The
-  // direction (which climb the header peek shows) tracks the swipe sign.
-  const swipeTranslateX = useSharedValue(0);
-  // Fling-in-progress flag the gesture sets. PlayDrawer (the host) owns the reset:
-  // it leaves translateX where the fling left it (card off-screen, incoming peek
-  // covering centre) and snaps it back to 0 only once the new climb has actually
-  // rendered — so the swap is invisible instead of flashing the old climb.
-  const swipeIsAnimating = useSharedValue(false);
+  // Which climb is in the middle of a swipe, and the offset it rides. The board
+  // carousel and the header (title + grade) share it so they move as one; the
+  // carousel's gesture drives it on the UI thread. Created here, ahead of the
+  // queue lookups that name the neighbours, because the dismiss gesture below
+  // reads the offset. See use-swipe-pager.
+  const { pager: swipePager, stepSignal: swipeStepSignal } = useSwipePager();
+  const swipeTranslateX = swipePager.translateX;
+  const swipeIsAnimating = swipePager.isAnimating;
 
   // The dismiss reads these so it can stand down while a horizontal swipe owns the
   // gesture (offset non-zero) or a fling is still settling (carousel inert) — that's
@@ -476,35 +485,6 @@ export function PlayDrawer({
   const dismissAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: dismissTranslateY.value }],
   }));
-
-  const [swipeDirection, setSwipeDirection] = useState<'next' | 'prev'>('next');
-  useAnimatedReaction(
-    () => (swipeTranslateX.value < 0 ? 'next' : 'prev'),
-    (direction, previous) => {
-      if (direction !== previous) runOnJS(setSwipeDirection)(direction);
-    },
-  );
-  // Freeze the header peek's climb for the fling+commit window, mirroring the
-  // board's peek freeze (SwipeBoardCarousel), so the hand-off shows the right
-  // title/grade at centre rather than the new climb's neighbour. `peekClimbRef`
-  // holds the live value (assigned once peekClimb is computed below) so the
-  // capture reads it without making it a callback dep.
-  const peekClimbRef = useRef<Climb | null>(null);
-  const [isSwipeCommitting, setIsSwipeCommitting] = useState(false);
-  const [frozenPeekClimb, setFrozenPeekClimb] = usePrivacyScopedState<Climb | null>(null);
-  const handleSwipeAnimatingChange = useCallback(
-    (animating: boolean) => {
-      if (animating) setFrozenPeekClimb(peekClimbRef.current);
-      setIsSwipeCommitting(animating);
-    },
-    [setFrozenPeekClimb],
-  );
-  useAnimatedReaction(
-    () => swipeIsAnimating.value,
-    (animating, previous) => {
-      if (animating !== previous) runOnJS(handleSwipeAnimatingChange)(animating);
-    },
-  );
 
   // First section-header height feeds the first-screen reserve so the
   // header teases at the bottom of the full-screen view (the cue that there's
@@ -832,16 +812,30 @@ export function PlayDrawer({
     [queue, displayedQueueItem, navigationSuggestionSource, navigationBoardConfig, isReachableClimb],
   );
 
-  // The climb the header peek shows while swiping — the one being swiped toward.
-  const peekClimb =
-    swipeDirection === 'next' ? (navigationState.nextItem?.climb ?? null) : (navigationState.prevItem?.climb ?? null);
-  peekClimbRef.current = peekClimb;
-  // During the commit hand-off use the frozen climb (captured at fling start) so
-  // the peek doesn't jump to the new climb's neighbour mid-swap.
-  const headerPeekClimb = isSwipeCommitting ? frozenPeekClimb : peekClimb;
-  const headerPeekBoard = useMemo(
-    () => resolveClimbRenderBoard(headerPeekClimb, boardConfig)?.boardConfig ?? renderBoardConfig,
-    [headerPeekClimb, boardConfig, renderBoardConfig],
+  // The neighbours' headers stay mounted beside the current one, like their
+  // boards, so the title and grade being swiped towards are already there.
+  const nextHeaderClimb = navigationState.canNext ? (navigationState.nextItem?.climb ?? null) : null;
+  const previousHeaderClimb = navigationState.canPrevious ? (navigationState.prevItem?.climb ?? null) : null;
+  const nextHeaderBoard = useMemo(
+    () => resolveClimbRenderBoard(nextHeaderClimb, boardConfig)?.boardConfig ?? renderBoardConfig,
+    [nextHeaderClimb, boardConfig, renderBoardConfig],
+  );
+  const previousHeaderBoard = useMemo(
+    () => resolveClimbRenderBoard(previousHeaderClimb, boardConfig)?.boardConfig ?? renderBoardConfig,
+    [previousHeaderClimb, boardConfig, renderBoardConfig],
+  );
+  // The page each of the three climbs is on. Keyed on the CLIMB, which a
+  // suggestion keeps when a swipe turns it into a queue item, so the board that
+  // was the neighbour is recognised as the current one and is not remounted.
+  // Whether a neighbour EXISTS is `canNext` / `canPrevious`, the same answer the
+  // Next and Previous buttons use: a queue item a crew member added that has
+  // not been resolved to a climb yet is still somewhere to swipe to.
+  const swipeCenterPage = useSwipePages(
+    swipePager,
+    swipeStepSignal,
+    navigationState.canPrevious ? swipePageId(navigationState.prevItem) : null,
+    swipePageId(displayedQueueItem),
+    navigationState.canNext ? swipePageId(navigationState.nextItem) : null,
   );
 
   // The swipe peeks paint the neighbouring climbs' holds under the CURRENT
@@ -901,19 +895,6 @@ export function PlayDrawer({
     () => (upcomingPrefetchFramesKey ? upcomingPrefetchFramesKey.split(PREFETCH_FRAMES_SEPARATOR) : NO_PREFETCH_FRAMES),
     [upcomingPrefetchFramesKey],
   );
-
-  // Host-owned post-fling reset: once the swiped-to climb has actually rendered
-  // (the displayed queue item changes), snap the shared swipe offset back to 0 and
-  // clear the fling flag. Doing it here — after the new content is on screen —
-  // means the frozen incoming peek covered the swap, so there's no flash. Keyed on
-  // the queue ITEM uuid (unique per position) so duplicate climbs still reset.
-  const displayedQueueItemUuid = displayedQueueItem?.uuid;
-  useEffect(() => {
-    if (swipeIsAnimating.value) {
-      swipeTranslateX.value = 0;
-      swipeIsAnimating.value = false;
-    }
-  }, [displayedQueueItemUuid, swipeIsAnimating, swipeTranslateX]);
 
   // Multi-frame route playback (animation + BLE + party-sync). Boulders
   // short-circuit inside the hook (isAnimatable === false), so nothing renders
@@ -2014,7 +1995,8 @@ export function PlayDrawer({
                         the wall-state callout hangs from. */}
                       <View onLayout={handleHeaderLayout}>
                         <SwipeableHeader
-                          swipeTranslateX={swipeTranslateX}
+                          pager={swipePager}
+                          centerPage={swipeCenterPage}
                           viewportWidth={windowWidth}
                           current={
                             <LivePlayDrawerHeader
@@ -2035,18 +2017,31 @@ export function PlayDrawer({
                               onPressSetter={openSetterPlaylist}
                             />
                           }
-                          peek={
-                            headerPeekClimb ? (
+                          // A neighbour's header reserves the same flank the
+                          // current one spends on the pill, so the name and its
+                          // attribute glyphs slide across at a fixed position
+                          // instead of stepping mid-swipe. Invisible and
+                          // a11y-hidden: it holds space, it claims nothing.
+                          previous={
+                            previousHeaderClimb ? (
                               <LivePlayDrawerHeader
-                                climb={headerPeekClimb}
-                                boardName={headerPeekBoard.boardName as BoardName}
-                                layoutId={headerPeekBoard.layoutId}
-                                angle={headerPeekBoard.angle}
-                                // The incoming header reserves the same flank the
-                                // current one spends on the pill, so the name and
-                                // its attribute glyphs slide across at a fixed
-                                // position instead of stepping mid-swipe. Invisible
-                                // and a11y-hidden: it holds space, it claims nothing.
+                                climb={previousHeaderClimb}
+                                boardName={previousHeaderBoard.boardName as BoardName}
+                                layoutId={previousHeaderBoard.layoutId}
+                                angle={previousHeaderBoard.angle}
+                                leading={
+                                  wallPillState ? <WallStatePill state={wallPillState} reserveOnly /> : undefined
+                                }
+                              />
+                            ) : null
+                          }
+                          next={
+                            nextHeaderClimb ? (
+                              <LivePlayDrawerHeader
+                                climb={nextHeaderClimb}
+                                boardName={nextHeaderBoard.boardName as BoardName}
+                                layoutId={nextHeaderBoard.layoutId}
+                                angle={nextHeaderBoard.angle}
                                 leading={
                                   wallPillState ? <WallStatePill state={wallPillState} reserveOnly /> : undefined
                                 }
@@ -2095,8 +2090,8 @@ export function PlayDrawer({
                             onResetZoomReady={handleResetZoomReady}
                             enabled={!isTickBarActive}
                             scrollRef={scrollGestureRef}
-                            swipeTranslateX={swipeTranslateX}
-                            swipeIsAnimating={swipeIsAnimating}
+                            pager={swipePager}
+                            centerPage={swipeCenterPage}
                             dismissRef={dismissGestureRef}
                           />
                         ) : (

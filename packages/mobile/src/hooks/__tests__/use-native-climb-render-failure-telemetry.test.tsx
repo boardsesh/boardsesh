@@ -780,6 +780,99 @@ describe('the overlay paint watchdog', () => {
     expect(paintTimeouts()).toHaveLength(1);
   });
 
+  // The play carousel keeps the neighbouring climbs' boards mounted and makes one
+  // of them the play surface when it is swiped onto.
+  describe('a mounted board that becomes the play surface', () => {
+    function renderNeighbour() {
+      _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), 'file:///overlay-cached.png');
+      return renderHook(({ playSurface }) => useNativeClimbRender({ ...BASE, frames: FRAMES, playSurface }), {
+        initialProps: { playSurface: false },
+      });
+    }
+
+    it('is not watched for a paint that already happened', async () => {
+      vi.useFakeTimers();
+      const { result, rerender } = renderNeighbour();
+      act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+      act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
+
+      rerender({ playSurface: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(paintTimeouts()).toHaveLength(0);
+    });
+
+    it('keeps one mount callback, so the view layer does not report the same image as newly mounted', () => {
+      const { result, rerender } = renderNeighbour();
+      const whileNeighbour = result.current.onOverlayMounted;
+
+      rerender({ playSurface: true });
+
+      expect(result.current.onOverlayMounted).toBe(whileNeighbour);
+    });
+
+    it('is watched from then on when its image has not answered yet', async () => {
+      vi.useFakeTimers();
+      const { result, rerender } = renderNeighbour();
+      act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+
+      // Swiped onto before its holds painted, and they never do.
+      rerender({ playSurface: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4100);
+      });
+
+      expect(paintTimeouts()).toHaveLength(1);
+      expect(paintTimeouts()[0]).toMatchObject({ surface: 'play' });
+    });
+
+    it('stops being watched when it is no longer the board in the middle', async () => {
+      vi.useFakeTimers();
+      const { result, rerender } = renderNeighbour();
+      rerender({ playSurface: true });
+      act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+
+      rerender({ playSurface: false });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(paintTimeouts()).toHaveLength(0);
+    });
+
+    it('counts an answer that reached JS before the view layer reported the mount', async () => {
+      vi.useFakeTimers();
+      const { result } = renderPlayBoard();
+      // A decoded image can answer in the frame it mounts, ahead of the mount effect.
+      act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
+      act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(paintTimeouts()).toHaveLength(0);
+    });
+
+    it('asks again of an image that was unmounted and mounted again', async () => {
+      vi.useFakeTimers();
+      const { result } = renderPlayBoard();
+      act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+      act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
+
+      // Backgrounded and back: the same file, a new image, and this one never answers.
+      act(() => result.current.onOverlayMounted(null));
+      act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4100);
+      });
+
+      expect(paintTimeouts()).toHaveLength(1);
+    });
+  });
+
   it('is still cancelled by the error for the image it is actually watching', async () => {
     vi.useFakeTimers();
     const { result } = renderPlayBoard();

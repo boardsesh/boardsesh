@@ -1,19 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, useWindowDimensions, PixelRatio, type LayoutChangeEvent } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useDerivedValue,
-  useAnimatedReaction,
-  runOnJS,
-  type SharedValue,
-} from 'react-native-reanimated';
+import {
+  View,
+  StyleSheet,
+  useWindowDimensions,
+  PixelRatio,
+  type LayoutChangeEvent,
+  type ViewProps,
+  type ViewStyle,
+} from 'react-native';
+import Animated, { useAnimatedStyle, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import { computePeekOffset, type PeekDirection } from '@boardsesh/play-view';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
 import { useCarouselGesture } from './use-carousel-gesture';
+import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
@@ -38,12 +40,20 @@ type SwipeBoardCarouselProps = {
   /**
    * When playing a route, the per-frame BLE string to render for the ACTIVE
    * board only. Falls back to `currentFrames` when null/undefined (static climb
-   * or idle). Peek boards and the zoom-reset identity stay keyed on
+   * or idle). The neighbours and the zoom-reset identity stay keyed on
    * `currentFrames`, so per-frame ticks never disturb swipe navigation.
    */
   currentFrameOverride?: string | null;
+  /** The neighbours' frames. Null at the end of the queue, and for a climb this board cannot draw. */
   nextFrames: string | null;
   prevFrames: string | null;
+  /**
+   * Which page is in the middle and the offset the swipe rides, shared with the
+   * play-drawer header so both move as one. See use-swipe-pager.
+   */
+  pager: SwipePager;
+  /** The page `currentFrames` is on; the neighbours are the pages either side. */
+  centerPage: number;
   /**
    * Frames for the climbs a few swipes ahead, warmed while the renderer is idle
    * (see UpcomingBoardPrefetch). Nothing is drawn from these. Pass a stable
@@ -63,19 +73,135 @@ type SwipeBoardCarouselProps = {
   /** RNGH ref to the play-drawer scroll, so the swipe + pinch run simultaneously
    *  with it instead of being starved by it (see use-carousel-gesture). */
   scrollRef?: React.RefObject<React.ComponentType | undefined | null>;
-  /** Shared value the gesture writes translateX into, so the play-drawer header
-   *  (rendered above this carousel) can swipe off the same value. */
-  swipeTranslateX?: SharedValue<number>;
-  /** Shared "fling in progress" flag. When set, the host owns the post-fling
-   *  reset (it resets translateX once the new climb has rendered). The carousel
-   *  uses it to keep the incoming peek frozen + covering centre until then. */
-  swipeIsAnimating?: SharedValue<boolean>;
   /** RNGH ref to the drawer-dismiss Pan blocked by the zoomed-only board pan. */
   dismissRef?: React.MutableRefObject<GestureType | undefined>;
 };
 
 /** Hoisted so an omitted `prefetchFrames` doesn't remount the prefetch every render. */
 const NO_PREFETCH_FRAMES: string[] = [];
+
+/**
+ * No board slot is an accessibility element or a touch target. A screen reader
+ * lands on one fixed stand-in for the board (see `boardStandIn` below): the
+ * boards themselves change places on every swipe, and focus that sat on one of
+ * them would be left on a hidden view. Touches fall through to the container,
+ * which owns the gestures, so a board being inserted or removed can never be
+ * the view a touch began on.
+ */
+const NOT_AN_ELEMENT: ViewProps = {
+  accessibilityElementsHidden: true,
+  importantForAccessibility: 'no-hide-descendants',
+  pointerEvents: 'none',
+};
+
+type CarouselBoardSlotProps = {
+  /** The page this board is on. Fixed for the life of the mount: it is the React key. */
+  page: number;
+  /** The JS thread shows this climb as current. The UI thread may already have moved on. */
+  isCurrent: boolean;
+  frames: string | null;
+  /** Per-frame playback override. Passed for the current climb only. */
+  frameOverride: string | null;
+  anchorPage: SharedValue<number>;
+  translateX: SharedValue<number>;
+  /** How far the incoming board travels to reach the middle: the contained board width. */
+  slideWidth: number;
+  boardBox: { width: number; height: number };
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  boardWidth: number;
+  boardHeight: number;
+  mirrored: boolean;
+  overlayRenderWidth: number;
+  zoomStyle: AnimatedStyle<ViewStyle>;
+};
+
+/**
+ * One of the carousel's three boards: the current climb or a neighbour.
+ *
+ * All three are the same component with the same view structure, keyed by page.
+ * That is the point: when a swipe lands, the neighbour BECOMES the current board
+ * by a prop change. Nothing is remounted, so its photo and its holds, already on
+ * the layer, stay there. Where the board sits is worked out on the UI thread
+ * from the pager's anchor (`pageOffset`), which does not wait for that prop.
+ */
+const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
+  page,
+  isCurrent,
+  frames,
+  frameOverride,
+  anchorPage,
+  translateX,
+  slideWidth,
+  boardBox,
+  boardName,
+  layoutId,
+  sizeId,
+  setIds,
+  boardWidth,
+  boardHeight,
+  mirrored,
+  overlayRenderWidth,
+  zoomStyle,
+}: CarouselBoardSlotProps) {
+  const slotStyle = useAnimatedStyle(() => {
+    const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value, slideWidth);
+    // Opacity and transform only, and never zIndex. Two pages that are both
+    // drawn never overlap (the incoming one stops in the middle as the outgoing
+    // one's trailing edge leaves it), so there is no order to keep. And a
+    // zIndex that changes is not a paint-order tweak in Fabric: it re-inserts
+    // the native view among its siblings, which cancels a touch that began on
+    // it. A swipe that took over a fling was cut off that way, 3 ms after it
+    // started, until this stopped animating zIndex.
+    return { opacity: visible ? 1 : 0, transform: [{ translateX: offset }] };
+  }, [page, slideWidth]);
+
+  return (
+    <Animated.View style={[styles.slot, slotStyle]} {...NOT_AN_ELEMENT}>
+      {/* The zoom rides every board, not just the current one. Only the board
+          in the middle is drawn while zoomed (the swipe is off), and a style
+          taken away from a board that is zoomed leaves its last transform
+          behind: the board would come back zoomed on the next swipe. */}
+      <Animated.View style={[boardBox, zoomStyle]}>
+        {frames ? (
+          <BoardImageNative
+            accessible={false}
+            frames={frameOverride ?? frames}
+            boardName={boardName}
+            layoutId={layoutId}
+            sizeId={sizeId}
+            setIds={setIds}
+            boardWidth={boardWidth}
+            boardHeight={boardHeight}
+            mirrored={mirrored}
+            renderWidth={overlayRenderWidth}
+            backgroundVariant="full"
+            // Climb identity (not the per-frame override) so the overlay
+            // recycles on a change of climb, not on every playback frame.
+            recyclingKey={frames}
+            style={boardBox}
+            // A board whose play-size overlay is not rendered yet shows the wall
+            // and its holds together, a few frames later, rather than the bare
+            // wall first. Only the first paint of this mount. No placeholder
+            // colour on purpose: the drawer behind is a blur material, and no
+            // solid block matches it, so the wait shows the drawer itself.
+            revealWithOverlay="first-paint"
+            // A neighbour has nothing to fade from: it is out of sight until a
+            // swipe brings it in, and holds fading up on a board that is already
+            // sliding is the flicker this carousel exists to avoid.
+            suppressOverlayTransition={!isCurrent}
+            // The one board a climber is actually looking at: `surface: 'play'`
+            // on render-failure telemetry, and the only surface that watches
+            // for an overlay that never paints. Never a neighbour.
+            playSurface={isCurrent}
+          />
+        ) : null}
+      </Animated.View>
+    </Animated.View>
+  );
+});
 
 export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   boardName,
@@ -87,6 +213,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   currentFrameOverride,
   nextFrames,
   prevFrames,
+  pager,
+  centerPage,
   prefetchFrames = NO_PREFETCH_FRAMES,
   mirrored,
   canSwipeNext,
@@ -96,8 +224,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   onResetZoomReady,
   enabled = true,
   scrollRef,
-  swipeTranslateX,
-  swipeIsAnimating,
   dismissRef,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
@@ -144,8 +270,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     [containerSize, aspectRatio],
   );
   // The carousel works in board-width units: a letterboxed (narrower) board
-  // must slide off by its own width and the peek board must enter edge-adjacent.
-  // Using screenWidth instead leaves a gap equal to the letterbox margins.
+  // must slide off by its own width and the incoming board must enter
+  // edge-adjacent. Using screenWidth instead leaves a gap equal to the letterbox
+  // margins.
   const boardWidthForSwipe = boardBox?.width ?? screenWidth;
 
   const { pinchGesture, zoomPanGesture, isZoomed, isZoomedSV, resetZoom, animatedZoomStyle } = useZoomPanGesture({
@@ -173,80 +300,16 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     }
   }, [currentFrames, isZoomed, resetZoom]);
 
-  const { gesture: swipeGesture, translateX } = useCarouselGesture({
+  const { gesture: swipeGesture } = useCarouselGesture({
+    pager,
     onSwipeNext,
     onSwipePrevious,
-    canSwipeNext,
-    canSwipePrevious,
     boardWidth: boardWidthForSwipe,
     screenWidth,
     enabled,
     isZoomedSV,
     scrollRef,
-    externalTranslateX: swipeTranslateX,
-    externalIsAnimating: swipeIsAnimating,
   });
-
-  // The current board: slides horizontally with the finger, and on release the
-  // carousel's withTiming flings translateX off-screen. While zoomed the swipe is
-  // disabled so translateX is 0 (the board stays put under the zoom transform).
-  const currentStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  const peekDirection = useDerivedValue<PeekDirection>(() => (translateX.value < 0 ? 'next' : 'prev'));
-
-  const [jsDirection, setJsDirection] = useState<PeekDirection>('next');
-  useAnimatedReaction(
-    () => peekDirection.value,
-    (direction) => {
-      runOnJS(setJsDirection)(direction);
-    },
-    [peekDirection],
-  );
-
-  // The climb being swiped to slides in from the side you're swiping toward
-  // (filmstrip-style): it tracks the finger edge-adjacent to the current card, so
-  // it enters from the natural direction rather than growing from behind. It sits
-  // OFF-SCREEN at rest (offset == board width), so it's invisible until a swipe
-  // begins. On release the carousel flings translateX past the screen edge; the
-  // peek offset clamps at 0 (centered) and the new climb settles into place.
-  const peekStyle = useAnimatedStyle(() => {
-    if (translateX.value === 0) {
-      return { opacity: 0, transform: [{ translateX: boardWidthForSwipe }] };
-    }
-    const offset = computePeekOffset({
-      direction: peekDirection.value,
-      swipeOffset: translateX.value,
-      viewportWidth: boardWidthForSwipe,
-    });
-    return { opacity: 1, transform: [{ translateX: offset }] };
-  });
-
-  const livePeekFrames = jsDirection === 'next' ? nextFrames : prevFrames;
-
-  // Freeze the incoming peek's frames for the duration of a fling+commit. The
-  // peek sits at centre showing the new climb while the fling lands; without the
-  // freeze, the commit updates nextFrames/prevFrames to the NEW climb's
-  // neighbours mid-hand-off, so the peek would flash the wrong board at centre.
-  // Captured when the fling starts (isAnimating → true) and held until the host
-  // resets isAnimating (after the new climb has rendered).
-  const livePeekFramesRef = useRef(livePeekFrames);
-  livePeekFramesRef.current = livePeekFrames;
-  const [isCommitting, setIsCommitting] = useState(false);
-  const [frozenPeekFrames, setFrozenPeekFrames] = useState<string | null>(null);
-  const handleAnimatingChange = useCallback((animating: boolean) => {
-    if (animating) setFrozenPeekFrames(livePeekFramesRef.current);
-    setIsCommitting(animating);
-  }, []);
-  useAnimatedReaction(
-    () => (swipeIsAnimating ? swipeIsAnimating.value : false),
-    (animating, previous) => {
-      if (animating !== previous) runOnJS(handleAnimatingChange)(animating);
-    },
-    [swipeIsAnimating],
-  );
-  const peekFrames = isCommitting ? frozenPeekFrames : livePeekFrames;
 
   // Outer composition: pinch + swipe always. zoomPan is rendered separately
   // as a conditional overlay when zoomed (see below) so it doesn't claim
@@ -263,6 +326,18 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       Math.abs(prev.width - width) > 1 || Math.abs(prev.height - height) > 1 ? { width, height } : prev,
     );
   }, []);
+
+  // The neighbours mount one frame after the current board, so opening the
+  // drawer does no more work before its first paint than it did with one board.
+  // A swipe cannot outrun this in practice: the frame passes long before a
+  // finger has landed and moved 10 points.
+  const [neighboursMounted, setNeighboursMounted] = useState(false);
+  const boardMeasured = boardBox != null;
+  useEffect(() => {
+    if (!boardMeasured) return;
+    const handle = requestAnimationFrame(() => setNeighboursMounted(true));
+    return () => cancelAnimationFrame(handle);
+  }, [boardMeasured]);
 
   const smokeLitHoldCount = useMemo(
     () => (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? countLitHolds(currentFrames) : 0),
@@ -296,120 +371,109 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // stays full-res; useNativeClimbRender clamps the overlay to native resolution.
   const overlayRenderWidth = Math.round(boardBox.width * PixelRatio.get());
 
+  const renderSlot = (page: number, frames: string | null, isCurrent: boolean) => (
+    <CarouselBoardSlot
+      // The page, never the climb: a neighbour that becomes current keeps its
+      // page, and with it its mounted images.
+      key={page}
+      page={page}
+      isCurrent={isCurrent}
+      frames={frames}
+      frameOverride={isCurrent ? (currentFrameOverride ?? null) : null}
+      anchorPage={pager.anchorPage}
+      translateX={pager.translateX}
+      slideWidth={boardWidthForSwipe}
+      boardBox={boardBox}
+      boardName={boardName}
+      layoutId={layoutId}
+      sizeId={sizeId}
+      setIds={setIds}
+      boardWidth={boardWidth}
+      boardHeight={boardHeight}
+      mirrored={mirrored}
+      overlayRenderWidth={overlayRenderWidth}
+      zoomStyle={animatedZoomStyle}
+    />
+  );
+
+  // Screenshot mode renders the current board in PLAIN (non-reanimated) Views.
+  // The swipe/zoom `Animated.View` wrappers promote the board to a render layer
+  // that Android's `adb screencap` (Maestro's capture) intermittently misses
+  // inside the play-drawer modal — the board-view shot came out blank ~half the
+  // time even with a redraw swipe. The transforms are identity at rest, so the
+  // static board is pixel-identical without them; the simpler board-presence
+  // sheet (no carousel) already captures reliably, confirming the carousel layer
+  // is the culprit. overlayTestID anchors on the painted holds overlay.
+  const currentBoard = isScreenshotMode ? (
+    <View
+      key={centerPage}
+      style={[styles.boardWrapper, boardBox]}
+      {...boardSurfaceAnchor}
+      {...boardAccessibility}
+      // Android groups an accessible board and hides its nested test IDs.
+      // In captures, expose the actual onLoad-gated overlay anchor instead.
+      accessible={false}
+      importantForAccessibility="no"
+    >
+      {/* Inlined, not `isScreenshotMode`: the strip must not lean on constant propagation. */}
+      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+        <ScreenshotSmokeMarker route="play-drawer" count={smokeLitHoldCount} />
+      ) : null}
+      <BoardImageNative
+        accessible={false}
+        frames={currentFrameOverride ?? currentFrames}
+        boardName={boardName}
+        layoutId={layoutId}
+        sizeId={sizeId}
+        setIds={setIds}
+        boardWidth={boardWidth}
+        boardHeight={boardHeight}
+        mirrored={mirrored}
+        renderWidth={overlayRenderWidth}
+        backgroundVariant="full"
+        recyclingKey={currentFrames}
+        style={boardBox}
+        overlayTestID="play-drawer-board-overlay"
+        // The one board a climber is actually looking at: `surface: 'play'`
+        // on render-failure telemetry, and the only surface that watches
+        // for an overlay that never paints. Never a neighbour.
+        playSurface
+      />
+    </View>
+  ) : (
+    renderSlot(centerPage, currentFrames, true)
+  );
+
   return (
     <GestureDetector gesture={composedGesture}>
       <View style={styles.container} onLayout={handleLayout} testID="play-drawer-board-container">
-        {isScreenshotMode ? (
-          // Screenshot mode: render the board in PLAIN (non-reanimated) Views.
-          // The swipe/zoom `Animated.View` wrappers promote the board to a render
-          // layer that Android's `adb screencap` (Maestro's capture) intermittently
-          // misses inside the play-drawer modal — the board-view shot came out blank
-          // ~half the time even with a redraw swipe. The transforms are identity at
-          // rest, so the static board is pixel-identical without them; the simpler
-          // board-presence sheet (no carousel) already captures reliably, confirming
-          // the carousel layer is the culprit. overlayTestID anchors on the painted
-          // holds overlay.
+        {/* One keyed list, so the board that was a neighbour stays mounted when it
+            becomes the current one. In page order, which lets a step add a board
+            at one end and drop one at the other without moving the two that
+            stay. Screenshot mode's plain board is not on a layer the neighbours
+            can slide under, so there it goes first and they draw over it. */}
+        {isScreenshotMode
+          ? [
+              currentBoard,
+              neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
+              neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
+            ]
+          : [
+              neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
+              currentBoard,
+              neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
+            ]}
+        {/* What a screen reader lands on: one view the size of the board that
+            never moves, is never remounted, and describes the current climb.
+            Screenshot mode has its own, on the plain board. */}
+        {isScreenshotMode ? null : (
           <View
-            style={[styles.boardWrapper, boardBox]}
-            {...boardSurfaceAnchor}
+            style={[styles.boardStandIn, boardBox]}
+            pointerEvents="none"
+            testID="play-drawer-board-accessibility"
             {...boardAccessibility}
-            // Android groups an accessible board and hides its nested test IDs.
-            // In captures, expose the actual onLoad-gated overlay anchor instead.
-            accessible={false}
-            importantForAccessibility="no"
-          >
-            {/* Inlined, not `isScreenshotMode`: the strip must not lean on constant propagation. */}
-            {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
-              <ScreenshotSmokeMarker route="play-drawer" count={smokeLitHoldCount} />
-            ) : null}
-            <BoardImageNative
-              accessible={false}
-              frames={currentFrameOverride ?? currentFrames}
-              boardName={boardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              mirrored={mirrored}
-              renderWidth={overlayRenderWidth}
-              backgroundVariant="full"
-              recyclingKey={currentFrames}
-              style={boardBox}
-              overlayTestID="play-drawer-board-overlay"
-              // The one board a climber is actually looking at: `surface: 'play'`
-              // on render-failure telemetry, and the only surface that watches
-              // for an overlay that never paints. Never the peek below.
-              playSurface
-            />
-          </View>
-        ) : (
-          <Animated.View style={[styles.boardWrapper, boardBox, currentStyle]} {...boardAccessibility}>
-            <Animated.View style={[boardBox, animatedZoomStyle]}>
-              <BoardImageNative
-                accessible={false}
-                frames={currentFrameOverride ?? currentFrames}
-                boardName={boardName}
-                layoutId={layoutId}
-                sizeId={sizeId}
-                setIds={setIds}
-                boardWidth={boardWidth}
-                boardHeight={boardHeight}
-                mirrored={mirrored}
-                renderWidth={overlayRenderWidth}
-                backgroundVariant="full"
-                // Climb identity (not the per-frame override) so the overlay
-                // recycles on swipe-to-new-climb, not on every playback frame.
-                recyclingKey={currentFrames}
-                style={boardBox}
-                // During a swipe commit the current board's frames swap to the
-                // climb the peek was showing; that overlay is already cached, so an
-                // instant (no-fade) swap lands it before the reset uncovers it —
-                // killing the Android end-of-swipe flash. See isCommitting above.
-                suppressOverlayTransition={isCommitting}
-                // Opening onto a climb whose play-size overlay is not rendered
-                // yet: show the wall and its holds together, a few frames later,
-                // rather than the bare wall first. Only the first paint — a
-                // swipe to the next climb keeps the photo up. No placeholder
-                // colour on purpose: the drawer behind is a blur material, and no
-                // solid block matches it, so the wait shows the drawer itself.
-                revealWithOverlay="first-paint"
-                // See the screenshot-mode board above: the current card is the
-                // only `surface: 'play'` in the app.
-                playSurface
-              />
-            </Animated.View>
-          </Animated.View>
+          />
         )}
-
-        {/* The climb being swiped to, sliding in edge-adjacent from the swipe
-            direction (below the current card's zIndex). Off-screen at rest. */}
-        <Animated.View
-          style={[styles.peekWrapper, peekStyle]}
-          pointerEvents="none"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {peekFrames && (
-            <BoardImageNative
-              accessible={false}
-              frames={peekFrames}
-              boardName={boardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              mirrored={mirrored}
-              renderWidth={overlayRenderWidth}
-              backgroundVariant="full"
-              // Climb identity (peekFrames is the neighbour's frames, not a
-              // per-frame override) so the peek overlay recycles per climb.
-              recyclingKey={peekFrames}
-              style={boardBox}
-            />
-          )}
-        </Animated.View>
 
         {/* Draws nothing: warms the renders for the climbs a few swipes ahead
             while the renderer is idle, so those swipes are cache hits. Skipped
@@ -454,16 +518,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Screenshot mode's plain current board. In flow, above the neighbours.
   boardWrapper: {
     width: '100%',
     alignItems: 'center',
-    // Above the stacked (next) card so the current climb is the top card. Explicit
-    // because the stacked card is absolutely positioned and renders after this in
-    // source order — zIndex governs paint order on both iOS and Android. The
-    // zoom-pan overlay sits above this again; see CAROUSEL_LAYER_Z.
     zIndex: CAROUSEL_LAYER_Z.board,
   },
-  peekWrapper: {
+  // Every board fills the container and centres itself in it, so all three sit
+  // on the same spot and only their transform tells them apart. One zIndex for
+  // all of them, fixed: see CarouselBoardSlot for why it must never change.
+  slot: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -471,7 +535,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: CAROUSEL_LAYER_Z.peek,
+    zIndex: CAROUSEL_LAYER_Z.board,
+  },
+  // In flow, so the container centres it exactly where it centres the boards.
+  boardStandIn: {
+    zIndex: CAROUSEL_LAYER_Z.board,
   },
   zoomPanOverlay: {
     position: 'absolute',
@@ -479,7 +547,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // Must out-rank boardWrapper: this overlay is the board's SIBLING, so a drag that
+    // Must out-rank every board slot: this overlay is the boards' SIBLING, so a drag that
     // starts on the board only reaches its pan when the overlay hit-tests first (#4191).
     zIndex: CAROUSEL_LAYER_Z.zoomPan,
   },

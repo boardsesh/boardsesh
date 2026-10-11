@@ -157,7 +157,10 @@ type is what stops a call site inventing a combination no query would match.
 passes `playSurface` to it explicitly. Twelve other call sites render a board at
 full size and none of them do: the board-look preview cards and rails,
 `CustomLookPreview`, `BoardPreviewSheet`, `ClimbReactionMenu`, `WallHeroStage`,
-and the carousel's own off-screen peek. They are all `full`.
+and the carousel's own two neighbours, which stay mounted off screen. They are
+all `full`. A neighbour that is swiped onto becomes `play` without being
+remounted, so a failure is reported under the surface the board has when it
+fails.
 
 Do not collapse the two. `full` covers surfaces that are off-screen, behind a
 sheet, or one of a dozen preview cards drawn at once, so a failure rate pooled
