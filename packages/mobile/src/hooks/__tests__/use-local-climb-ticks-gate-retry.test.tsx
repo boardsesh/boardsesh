@@ -26,6 +26,7 @@ vi.mock('../../db', () => ({
       return [
         {
           uuid: 'tick-1',
+          climb_uuid: 'climb-1',
           angle: 40,
           is_mirror: 0,
           status: 'send',
@@ -34,6 +35,8 @@ vi.mock('../../db', () => ({
           difficulty: null,
           comment: '',
           climbed_at: '2026-05-30T10:00:00.000Z',
+          climb_revision: null,
+          revision_known: 1,
         },
       ];
     },

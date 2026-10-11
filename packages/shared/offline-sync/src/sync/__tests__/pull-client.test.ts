@@ -29,6 +29,7 @@ import { pullSync, type SyncProgress, multiRowChunkSize } from '../pull-client';
 import { setSigningOut, setBackgrounded, beginGlobalPurge, beginScopePurge } from '../../mutation-queue/drainer';
 import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from '../checkpoints';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
+import { USER_DATA_COMPLETE_KEY } from '../local-user-owner';
 import { triggerSync, isSyncInFlight, __resetSyncSchedulerStateForTests } from '../sync-scheduler';
 
 type SqlCall = { sql: string; params: unknown[] };
@@ -509,6 +510,57 @@ describe('pullSync', () => {
     expect(insertCalls).toHaveLength(0);
   });
 
+  it('refreshes local ticks after initial completion even when no rows changed, once across empty cycles', async () => {
+    setupGraphqlFetchForAllTables();
+    let userDataComplete = false;
+    const completionAtRefresh: boolean[] = [];
+    (db.getFirstAsync as ReturnType<typeof vi.fn>).mockImplementation(async (_sql: string, params: unknown[]) => {
+      if (params[0] === USER_DATA_COMPLETE_KEY) return userDataComplete ? { key: USER_DATA_COMPLETE_KEY } : null;
+      return null;
+    });
+    (db.runAsync as ReturnType<typeof vi.fn>).mockImplementation(async (sql: string, params: unknown[]) => {
+      sqlCalls.push({ sql, params });
+      if (params[0] === USER_DATA_COMPLETE_KEY) userDataComplete = true;
+    });
+    (queryClient.invalidateQueries as ReturnType<typeof vi.fn>).mockImplementation(
+      (filters: { queryKey?: string[] }) => {
+        if (filters.queryKey?.[0] === 'localTicks') completionAtRefresh.push(userDataComplete);
+      },
+    );
+
+    await pullSync(db, queryClient, graphqlFetch);
+    await pullSync(db, queryClient, graphqlFetch);
+
+    expect(completionAtRefresh).toEqual([true]);
+  });
+
+  it('does not mark completion or refresh local ticks when a purge lands during the completion read', async () => {
+    setupGraphqlFetchForAllTables();
+    (db.getFirstAsync as ReturnType<typeof vi.fn>).mockImplementation(async (_sql: string, params: unknown[]) => {
+      if (params[0] === USER_DATA_COMPLETE_KEY) beginGlobalPurge();
+      return null;
+    });
+
+    await pullSync(db, queryClient, graphqlFetch);
+
+    expect(sqlCalls.some((call) => call.params[0] === USER_DATA_COMPLETE_KEY)).toBe(false);
+    const queryInvalidations = queryClient as { invalidateQueries: ReturnType<typeof vi.fn> };
+    expect(queryInvalidations.invalidateQueries.mock.calls).not.toContainEqual([{ queryKey: ['localTicks'] }]);
+  });
+
+  it('does not refresh local ticks when a purge lands during the completion write', async () => {
+    setupGraphqlFetchForAllTables();
+    (db.runAsync as ReturnType<typeof vi.fn>).mockImplementation(async (sql: string, params: unknown[]) => {
+      sqlCalls.push({ sql, params });
+      if (params[0] === USER_DATA_COMPLETE_KEY) beginGlobalPurge();
+    });
+
+    await pullSync(db, queryClient, graphqlFetch);
+
+    const queryInvalidations = queryClient as { invalidateQueries: ReturnType<typeof vi.fn> };
+    expect(queryInvalidations.invalidateQueries.mock.calls).not.toContainEqual([{ queryKey: ['localTicks'] }]);
+  });
+
   it('seeds the deletions-coverage marker and wipes nothing when the marker is absent', async () => {
     // The mock db's getFirstAsync returns null, so the coverage marker reads as
     // ABSENT — exactly the state of every existing install on the first launch
@@ -820,6 +872,8 @@ describe('pullSync', () => {
 
     expect(invalidatedKeys).toContainEqual(['logbook']);
     expect(invalidatedKeys).toContainEqual(['userTicks']);
+    // Tick rows and the completion transition share one phase refresh.
+    expect(invalidatedKeys.filter((queryKey) => queryKey[0] === 'localTicks')).toHaveLength(1);
   });
 
   it('reports progress via onProgress callback', async () => {

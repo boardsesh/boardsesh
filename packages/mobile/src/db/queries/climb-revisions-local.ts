@@ -20,6 +20,13 @@ import type { SqlExecutor } from '@boardsesh/offline-sync';
 /** The tick aliases the local readers use. A literal union so no runtime string reaches the SQL. */
 export type LocalTickAlias = 't' | 'rating_below' | 'rating_newer';
 
+/** A synced NULL is known; a local write without a server answer is not. */
+export function tickRevisionKnownLocalSql(tickAlias: LocalTickAlias): string {
+  return `(${tickAlias}.climb_revision IS NOT NULL OR NOT EXISTS (
+           SELECT 1 FROM pending_mutations m
+           WHERE m.idempotency_key = ${tickAlias}.uuid AND m.table_name = 'boardsesh_ticks'))`;
+}
+
 /**
  * "This tick was logged on the holds the climb has now", the on-device copy of
  * `tickOnCurrentHoldsSql` in `packages/db/src/queries/climb-stats/holds-epoch.ts`.
@@ -116,9 +123,7 @@ export async function readTickRevisionsLocal(
        FROM boardsesh_ticks t
        WHERE t.board_type = ? AND t.climb_uuid IN (${chunk.map(() => '?').join(', ')})
          AND (t.user_id = ? OR t.user_id IS NULL)
-         AND (t.climb_revision IS NOT NULL OR NOT EXISTS (
-           SELECT 1 FROM pending_mutations m
-           WHERE m.idempotency_key = t.uuid AND m.table_name = 'boardsesh_ticks'))`,
+         AND ${tickRevisionKnownLocalSql('t')}`,
       [boardType, ...chunk, ownerUserId],
     );
     for (const row of rows) {

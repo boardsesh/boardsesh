@@ -17,7 +17,9 @@ export default defineConfig({
   // forces the same singletons via SINGLETON_MODULES, so the app has never shipped
   // two Reacts. Two bundlers, one decision — change both.
   resolve: {
-    dedupe: ['react', 'react-dom'],
+    // Shared hooks and mobile must also use the same React Query context and
+    // React peer, just as Metro's SINGLETON_MODULES requires in production.
+    dedupe: ['react', 'react-dom', '@tanstack/react-query'],
   },
   test: {
     name: 'mobile',

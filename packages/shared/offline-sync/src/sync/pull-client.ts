@@ -21,7 +21,7 @@ import {
   DELETIONS_CHECKPOINT_KEY,
 } from './checkpoints';
 import { removeBoardScopeRows } from './scope-teardown';
-import { markUserDataComplete } from './local-user-owner';
+import { isUserDataComplete, markUserDataComplete } from './local-user-owner';
 import {
   getSchemaRefreshState,
   schemaRefreshKey,
@@ -3282,8 +3282,16 @@ async function performPullSync(
     // in-page check is one await back, so a global wipe landing in that window
     // would otherwise stamp `user_data_complete` over data that is being deleted.
     if (cycleAborted()) return reportInterruptedCycle();
-    if (allUserTablesReachedTail) await markUserDataComplete(db);
-    else allPullsReachedTail = false;
+    if (allUserTablesReachedTail) {
+      const userDataWasComplete = await isUserDataComplete(db);
+      if (cycleAborted()) return reportInterruptedCycle();
+      await markUserDataComplete(db);
+      if (cycleAborted()) return reportInterruptedCycle();
+      // A local reader may have declined earlier in this cycle while the
+      // completion gate was closed. Wake it even when no tick rows changed,
+      // once per completed initial sync rather than on every empty pull.
+      if (!userDataWasComplete) invalidations.addFilters({ queryKey: ['localTicks'] });
+    } else allPullsReachedTail = false;
     if (!deletionsResult.reachedTail) allPullsReachedTail = false;
     // The tombstones and all seven user tables, as one refresh. After the marker
     // on purpose: a local reader gated on `user_data_complete` (the logbook) has

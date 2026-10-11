@@ -395,6 +395,11 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
   it('runs a full drain-then-pull cycle after a clean local write', async () => {
     const { queryClient, executeHttp } = await saveTick();
 
+    // Both the single-climb badge and list batch must see the committed tick
+    // while offline, when neither the drain nor the pull can refresh them.
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['localTicks', 'climb-1'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['localTicks', 'list'] });
+
     // A bare drain would push the tick and stop, leaving the climb list showing
     // the pre-tick grade on a downloaded board until the next foreground sync.
     expect(triggerSyncMock).toHaveBeenCalledTimes(1);

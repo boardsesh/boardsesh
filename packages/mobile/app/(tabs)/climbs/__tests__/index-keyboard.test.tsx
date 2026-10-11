@@ -111,7 +111,8 @@ const mocks = vi.hoisted(() => ({
   saveLastSearch: vi.fn(),
   getRecentFilters: vi.fn(),
   addRecentFilter: vi.fn(),
-  getLogbook: vi.fn(),
+  tickBatch: vi.fn(),
+  holdInteractions: false,
   track: vi.fn(),
   ensureBackgroundsCached: vi.fn(),
   imagePrefetch: vi.fn(),
@@ -210,7 +211,7 @@ vi.mock('react-native', () => ({
   // effects schedule through InteractionManager.runAfterInteractions in the screen.
   InteractionManager: {
     runAfterInteractions: (callback: () => void) => {
-      callback();
+      if (!mocks.holdInteractions) callback();
       return { cancel: () => undefined };
     },
   },
@@ -349,11 +350,17 @@ vi.mock('@boardsesh/climb-filters', async (importOriginal) => ({
 }));
 
 vi.mock('@boardsesh/board-react', () => ({
-  useBoardActions: () => ({ getLogbook: mocks.getLogbook }),
   // The screen's screenshot-mode whole-list stats prefetch reads the adapter.
   // It no-ops outside screenshot mode; these keep the module resolvable.
   useBoardAdapter: () => ({ isAuthenticated: false }),
   prefetchClimbStatsForClimbs: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../../../src/providers/climb-list-tick-display-provider', () => ({
+  ClimbListTickDisplayProvider: ({ climbUuids, children }: { climbUuids: readonly string[]; children: ReactNode }) => {
+    mocks.tickBatch(climbUuids);
+    return children;
+  },
 }));
 
 // Reads mocks.searchState (mutated per-test) instead of the real reducer, so a
@@ -792,7 +799,8 @@ beforeEach(() => {
   mocks.setSetting.mockClear();
   mocks.lightOnClimbTap = true;
   mocks.dismissKeyboard.mockClear();
-  mocks.getLogbook.mockClear();
+  mocks.tickBatch.mockClear();
+  mocks.holdInteractions = false;
   mocks.getLastSearch.mockReset();
   mocks.saveLastSearch.mockReset();
   mocks.getRecentFilters.mockReset();
@@ -1440,6 +1448,16 @@ describe('ClimbList board switch', () => {
 });
 
 describe('ClimbList keyboard handling', () => {
+  it('feeds tick display for new rows even while the interaction queue is held', async () => {
+    const { rerender } = render(<ClimbList />);
+    await waitFor(() => expect(mocks.tickBatch).toHaveBeenCalledWith(['climb-1', 'climb-2']));
+    mocks.tickBatch.mockClear();
+    mocks.holdInteractions = true;
+    mocks.searchClimbs = [...mocks.searchClimbs, { uuid: 'climb-3', name: 'Mercury' } as unknown as Climb];
+    rerender(<ClimbList />);
+    expect(mocks.tickBatch).toHaveBeenCalledWith(['climb-1', 'climb-2', 'climb-3']);
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+  });
   it('dismisses the climb-name keyboard before activating a pressed climb', async () => {
     const { findByText } = render(<ClimbList />);
 
@@ -1449,7 +1467,7 @@ describe('ClimbList keyboard handling', () => {
     expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' }, undefined);
     // Logbook is fetched for every visible row, not just the pressed one — the
     // default fixture now has two climbs (added for the rank-tracking tests).
-    await waitFor(() => expect(mocks.getLogbook).toHaveBeenCalledWith(['climb-1', 'climb-2']));
+    await waitFor(() => expect(mocks.tickBatch).toHaveBeenCalledWith(['climb-1', 'climb-2']));
   });
 });
 

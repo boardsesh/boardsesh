@@ -339,6 +339,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
             // staleTime Infinity and the drainer (its usual invalidator) no-ops
             // while offline — without this, an offline tick looks lost.
             void queryClient.invalidateQueries({ queryKey: ['localTicks', variables.input.climbUuid] });
+            void queryClient.invalidateQueries({ queryKey: ['localTicks', 'list'] });
             startSyncCycle();
 
             return toSavedTickShape(variables.input, tickUuid);

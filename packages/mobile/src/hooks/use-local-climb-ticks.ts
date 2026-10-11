@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { canServeLocalUserData, getLocalUserId } from '@boardsesh/offline-sync';
-import { toLogbookEntry, type LogbookEntry, type TickStatus } from '@boardsesh/board-react';
+import type { LogbookEntry } from '@boardsesh/board-react';
 import { getDatabaseHandle } from '../db';
+import { readClimbTicksLocal } from '../db/queries/get-climb-ticks-local';
 import { useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
 import { useStoredUserId } from './use-current-user-id';
 
@@ -15,19 +15,6 @@ import { useStoredUserId } from './use-current-user-id';
 export function localClimbTicksQueryKey(climbUuid: string, boardName: string, viewerId: string) {
   return ['localTicks', climbUuid, boardName, 'rows', viewerId] as const;
 }
-
-type LocalTickRow = {
-  uuid: string;
-  angle: number;
-  is_mirror: number | null;
-  status: TickStatus;
-  attempt_count: number | null;
-  quality: number | null;
-  difficulty: number | null;
-  comment: string | null;
-  climbed_at: string;
-  climb_revision: number | null;
-};
 
 /**
  * The climber's own ticks on one climb, read from the on-device
@@ -56,7 +43,8 @@ type LocalTickRow = {
  * not part of that: the copies are imports, which carry no version. Grouping
  * by it would split one ascent into two rows if only one copy were ever
  * stamped; MAX skips NULLs, so the collapsed row keeps a version when any copy
- * has one.
+ * has one. The shared batch reader leaves the revision absent for an unanswered
+ * offline write whose holds version is unknown, matching the send-mark reader.
  */
 export function useLocalClimbTicks(
   boardName: string | null,
@@ -78,35 +66,8 @@ export function useLocalClimbTicks(
     networkMode: 'always',
     queryFn: async (): Promise<LogbookEntry[] | null> => {
       const db = getDatabaseHandle();
-      if (!db || !climbUuid || !boardName) return null;
-      if (!(await canServeLocalUserData(db, viewerId))) return null;
-      const ownerUserId = await getLocalUserId(db);
-      const rows = await db.getAllAsync<LocalTickRow>(
-        `SELECT MIN(uuid) AS uuid, angle, is_mirror, status, attempt_count, quality, difficulty, comment, climbed_at,
-           MAX(climb_revision) AS climb_revision
-         FROM boardsesh_ticks
-         WHERE climb_uuid = ? AND board_type = ?
-           AND (user_id = ? OR user_id IS NULL)
-           AND status IN ('flash', 'send', 'attempt')
-           AND angle IS NOT NULL AND climbed_at IS NOT NULL
-         GROUP BY angle, climbed_at, is_mirror, status, attempt_count, quality, difficulty, is_benchmark, comment`,
-        [climbUuid, boardName, ownerUserId],
-      );
-      return rows.map((row) =>
-        toLogbookEntry({
-          uuid: row.uuid,
-          climbUuid,
-          angle: row.angle,
-          isMirror: row.is_mirror === 1,
-          status: row.status,
-          attemptCount: row.attempt_count ?? 1,
-          quality: row.quality,
-          difficulty: row.difficulty,
-          comment: row.comment ?? '',
-          climbedAt: row.climbed_at,
-          climbRevision: row.climb_revision,
-        }),
-      );
+      if (!db || !climbUuid || !boardName || !viewerId) return null;
+      return readClimbTicksLocal(db, boardName, [climbUuid], viewerId);
     },
   });
   return data ?? undefined;

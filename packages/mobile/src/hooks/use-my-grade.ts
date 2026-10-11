@@ -3,6 +3,7 @@ import { logbookClimbAngleKey, useOptionalBoardActions, useOptionalBoardLogbook 
 import { clampToBoulderScale, pickLatestGradedTick } from '@boardsesh/logbook';
 import { usePersonalGradesActive } from './use-personal-grades';
 import { useLocalMyGrade } from './use-local-my-grade';
+import { useClimbListTickDisplay } from '../providers/climb-list-tick-display-context';
 
 /**
  * What the app knows about the climber's own grade for one climb at one angle.
@@ -69,15 +70,17 @@ export type UseMyGradeOptions = {
  * #4828 exists to close, so the two halves read the same number or neither does.
  *
  * Sources, in order: the logbook once it has resolved this climb; else the
- * `myDifficulty` the search row carries; else (drawer only) the device's own
- * ticks table. The logbook is a network fetch that is never persisted, so
- * offline it never resolves — without the two fallbacks every surface showed
- * the crowd's grade while the on-device search filtered and sorted by the
- * climber's own.
+ * `myDifficulty` the search row carries; else the list's local tick batch or
+ * the drawer's local tick query. The network logbook is never persisted, so
+ * offline these fallbacks keep the displayed grade consistent with the
+ * climber's own grade used by on-device filtering and sorting.
  */
 export function useMyGrade(climbUuid: string, angle: number, options: UseMyGradeOptions = {}): MyGrade {
   const { rowDifficulty, localFallback = false } = options;
   const logbook = useOptionalBoardLogbook();
+  const display = useClimbListTickDisplay();
+  const displayEntries = display?.entriesByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle));
+  const displayCovered = display?.coveredClimbUuids.has(climbUuid) ?? false;
   // Depend on the BOOLEAN, not the context object. `logbook` is the volatile
   // half of the board context — a new reference on every tick merge — and it is
   // only ever read here as a null check. `entries` already carries the real data
@@ -122,10 +125,19 @@ export function useMyGrade(climbUuid: string, angle: number, options: UseMyGrade
       if (rowDifficulty == null) return NONE;
       return { status: 'set', difficultyId: clampToBoulderScale(rowDifficulty), climbedAt: null };
     }
+    const displayGrade = pickLatestGradedTick(displayEntries);
+    if (displayGrade?.difficulty != null) {
+      return {
+        status: 'set',
+        difficultyId: clampToBoulderScale(displayGrade.difficulty),
+        climbedAt: displayGrade.climbed_at,
+      };
+    }
+    if (displayCovered) return NONE;
     // Last, the device's own ticks table. `undefined` means it was not read
     // (offline downloads off, no handle, still loading): genuinely unknown.
     if (localGrade === undefined) return UNKNOWN;
     if (localGrade === null) return NONE;
     return { status: 'set', difficultyId: clampToBoulderScale(localGrade.difficulty), climbedAt: localGrade.climbedAt };
-  }, [personalGradesEnabled, logbookResolved, entries, rowDifficulty, localGrade]);
+  }, [personalGradesEnabled, logbookResolved, entries, rowDifficulty, displayEntries, displayCovered, localGrade]);
 }
