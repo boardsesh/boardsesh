@@ -168,10 +168,16 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     isRateLimited,
   } = useCncPreview(token);
   const {
-    order: previewOrder,
+    order: polledPreviewOrder,
     errorKey: pollErrorKey,
     seedOrder,
   } = useCncOrderPoll({ licenceId: state.previewLicenceId, authToken: token, enabled: true });
+  // The poll retains its last answer while switching keys. A cleared or new
+  // preview pointer must never display artwork for the previous wall.
+  const previewOrder =
+    state.previewLicenceId !== null && polledPreviewOrder?.licenceId === state.previewLicenceId
+      ? polledPreviewOrder
+      : null;
   const { finalise, isFinalising, errorKey: finaliseErrorKey } = useCncFinalise(token);
 
   // Published from the same constants the backend enforces, so a slider's
