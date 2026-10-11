@@ -27,6 +27,7 @@ import {
 import { GET_PRIVACY_SETTINGS } from '../packages/shared/graphql/src/operations/privacy';
 import { GET_SMART_PLAYLIST } from '../packages/shared/graphql/src/operations/playlists';
 import { mapPhotoHoldToCanonical } from '../packages/mobile/src/lib/spray/spray-hold-canonical';
+import { BACKEND_URL } from '../packages/mobile/src/lib/env';
 import type { SprayDetectionView } from '../packages/shared-schema/src/spray-detection';
 import type { ClimbInput, ClimbQueueItemInput } from '../packages/shared-schema/src/generated/types';
 import type { ScreenshotCaptureScenario } from './lib/screenshot-fixtures';
@@ -861,6 +862,11 @@ async function createTransport(
   return { transport, accountUserId: claims.sub };
 }
 
+/** The CLI and native capture share the same backend default. */
+export function resolveBootstrapUpstream(upstreamOverride?: string): string {
+  return (upstreamOverride ?? process.env.SCREENSHOT_UPSTREAM ?? BACKEND_URL).replace(/\/$/, '');
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2).filter((argument) => argument !== '--');
   const flags = new Map<string, string>();
@@ -898,11 +904,7 @@ async function main(): Promise<void> {
     throw new Error('Demo writes and accepted source binding require --apply');
   const target = flags.get('--target');
   if (!isCppTarget(target)) throw new Error('--target must identify exactly one CPP');
-  const upstream = (
-    flags.get('--upstream') ??
-    process.env.SCREENSHOT_UPSTREAM ??
-    'https://backend.boardsesh.com'
-  ).replace(/\/$/, '');
+  const upstream = resolveBootstrapUpstream(flags.get('--upstream'));
   const parsedUpstream = new URL(upstream);
   if (
     parsedUpstream.username ||

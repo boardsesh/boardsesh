@@ -9,6 +9,7 @@ import {
   photosMatch,
   ensureSprayPhoto,
   queueClimb,
+  resolveBootstrapUpstream,
   type BootstrapBoard,
   type BootstrapCheckpoint,
   type BootstrapOptions,
@@ -17,6 +18,7 @@ import {
 import { readCppPage } from '../lib/screenshot-cpp';
 import { typeDefs } from '../../packages/shared-schema/src/schema';
 import type { ClimbInput } from '../../packages/shared-schema/src/generated/types';
+import { BACKEND_URL } from '../../packages/mobile/src/lib/env';
 
 const ACCOUNT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SESSION = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -157,6 +159,26 @@ function manufacturerHarness(): {
 }
 
 describe('CPP account/bootstrap safety', () => {
+  it('resolves the CLI default to the same production origin as native capture', () => {
+    vi.stubEnv('SCREENSHOT_UPSTREAM', undefined);
+    try {
+      expect(resolveBootstrapUpstream()).toBe(BACKEND_URL.replace(/\/$/, ''));
+      expect(new URL(resolveBootstrapUpstream()).origin).toBe(new URL(BACKEND_URL).origin);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('retains screenshot environment and explicit CLI overrides in precedence order', () => {
+    vi.stubEnv('SCREENSHOT_UPSTREAM', `${UPSTREAM}/`);
+    try {
+      expect(resolveBootstrapUpstream()).toBe(UPSTREAM);
+      expect(resolveBootstrapUpstream('http://localhost:4000/')).toBe('http://localhost:4000');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('compares manufacturer identity by exact geometry rather than a board name', () => {
     const { owned } = manufacturerHarness();
     const primary = readCppPage('kilter').primaryBoard;
