@@ -82,6 +82,16 @@ So every user-scoped local read must satisfy all three of these, not one of them
 
 Note what the gate is **not**: it is not "is this board downloaded". User tables sync independently of board downloads, so gating a tick read on a board download would refuse to answer from a fully synced table.
 
+### What a board answers while its protected rows are replayed
+
+A privacy change deletes other climbers' authored climbs from the device and replays the protected sync streams (`docs/privacy.md` → "Reads, live updates and downloaded copies"). The `scope-complete:` marker stays, so "downloaded" alone no longer says the board holds everything the viewer may see. `packages/mobile/src/db/queries/board-download-status.ts` adds two rules:
+
+- **A catalogue board keeps serving from the device.** It still holds its whole reference catalogue and the climber's own climbs; what is missing for a few seconds is other climbers' authored climbs. Offline, that is the best answer there is.
+- **A spray wall does not.** It has no reference rows, so without its protected rows there is no wall. `isBoardDownloadedLocally`, `isBoardTypeDownloadedLocally` and `isClimbLayoutDownloadedLocally` answer false for a spray scope until `isScopeProtectedComplete`, and the read falls back to its "not downloaded" branch.
+- **Online, the server answers.** `offlineAwareRequest` takes the local-first branch only when `isBoardTypeProtectedSettled(boardType)` holds: every downloaded, enabled scope of that board type has its protected streams at the tail. During a replay an online read goes to the network, which is what the privacy doc promises ("online authenticated reads continue immediately through the server"). Offline the rule does not apply.
+
+All three sit behind the catalogue read gate, which is closed for the whole revalidation: they cover the time between the deletion committing and the replay finishing.
+
 ### Spray walls are board data that has to be scoped like user data
 
 A wall is a photograph of somebody's garage, not a public catalogue, so `spray_walls` (#5448) is the one board
@@ -196,7 +206,7 @@ Readers never decode bytes themselves. `holds-index/query.ts` provides `getHoldS
 
 None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no checkpoint and no tombstones, and they never ship in a snapshot artifact (`DEVICE_ONLY_TABLES`). The rules:
 
-- **Only complete scopes.** A scope is indexed only once its `scope-complete:` marker exists. The builder checks the marker again under each write lock, so it cannot write into a scope that a teardown is removing.
+- **Only complete scopes.** A scope is indexed only once its `scope-complete:` marker exists and its protected streams are at their tail (`isScopeProtectedComplete`). The builder checks both again under each write lock, so it cannot write into a scope that a teardown is removing, or index a board while a privacy event's replay is still bringing its authored climbs back. Until then `ensureHoldIndex` answers `not-downloaded`, and the similar-climbs and heatmap readers throw so React Query retries.
 - **One watermark per scope.** Progress is stored in the `holds-index:<scopeKey>` row of `sync_meta`, compared on `sync_seq` only. The watermark is per scope, not per layout, because a second size of a layout brings climbs with older `sync_seq` values.
 - **First build.** With no watermark, the builder records the scope's `MAX(sync_seq)`. It then walks the scope in `uuid` order in 2,000-climb transactions that write hold sets only; the uuid order makes new ids append instead of scatter. Next it rebuilds the layout's postings from every hold set of that layout, and finally stamps the watermark. An interrupted first build starts over. Nothing is lost, because hold-set writes skip unchanged rows and the rebuild reads the truth.
 - **Incremental.** Climbs past the watermark are re-derived 500 at a time. Each chunk edits only the postings its climbs enter or leave, and moves the watermark in the same short transaction.
@@ -206,6 +216,7 @@ None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no chec
 - **Re-checked under the lock.** Each chunk re-reads its climbs' `sync_seq` under the write lock. A climb that a tombstone deleted since the unlocked read is skipped, and so is one that changed; a later pass derives the new version.
 - **Yields between chunks.** The builder hands the JS thread back between chunks, and builds each posting list in a growable `Uint32Array`.
 - **When it runs.** `pullSync` builds the index for each scope at the end of every cycle, after the completion markers are written, so it never holds up a download. A build failure is reported through `holdIndex.onError` and never fails the cycle. The mobile similar-climbs and heatmap readers, which ship in later PRs, will also call `ensureHoldIndex` before they query.
+- **Privacy events.** The revalidation deletes the hold set and local id of every climb it withdraws, in its own transaction. A layout that lost an indexed climb also loses its postings and every scope watermark, and rebuilds once its protected rows are back; that pass re-reads the layout's frames but rewrites only the hold sets that changed. A layout that lost nothing the index held keeps its index. The watermark is `sync_seq` only, so a protected climb that arrives at or below it would never be indexed: a protected page that delivers an indexable climb with no hold set at or below the watermark drops the scope's watermarks, and the next pass picks it up.
 - **Cleanup.** A `board_climbs` tombstone takes the climb out of its postings and drops its hold set. Scope teardown clears the whole layout's index and every sibling scope's watermark, and a surviving sibling rebuilds on its next cycle. After a snapshot import, the orphan sweep deletes hold sets whose climb is gone and rebuilds that layout's postings. The spray sign-out wipe clears spray's hold sets, postings and watermarks. It also clears every hold set whose climb is already gone, then every local id that no hold set still uses, so no spray uuid is left behind. The explicit sign-out wipe clears all three tables.
 
 `board_climbs` and `board_climb_hold_sets` both invalidate `['similarClimbs']` and `['holdHeatmap']`. `board_climb_stats` invalidates `['holdHeatmap']` as well: stats colour the grade mode and also decide the climb set under `minAscents`, `minRating` and a grade range. `staleTime` never triggers a refetch on its own, so without that key the overlay would keep old numbers until it was switched off and on. `invalidateQueries` refetches active queries only, so the key costs nothing while the overlay is hidden.
@@ -241,7 +252,7 @@ The caller picks the source with `useCatalogQuerySource(scope)` (`packages/mobil
 
 | Source | When | What the play drawer does |
 | --- | --- | --- |
-| `local` | the exact `(board, layout, size)` scope is in `syncEnabledBoards` and has its `scope-complete:` marker — the same check `isBoardDownloadedLocally` makes before its row probe | `offlineAwareRequest`; the first read builds the holds index, and the strip shows "Preparing similar climbs…" meanwhile |
+| `local` | the exact `(board, layout, size)` scope is in `syncEnabledBoards` and has its `scope-complete:` marker — the same check `isBoardDownloadedLocally` makes before its row probe (the holds index adds its own protected-complete gate, see above) | `offlineAwareRequest`; the first read builds the holds index, and the strip shows "Preparing similar climbs…" meanwhile |
 | `network` | not downloaded, and the viewer is an admin (`useIsAdmin`) | `getHttpClient().request` directly, bypassing the interceptor |
 | `download` | everyone else | no query; the section offers the download (`OfflineNudgeCard`, nudge surface `similar_climbs`, trigger `similar_climbs`, source `play_drawer`) for the active board when it is the drawer's exact board, and a neutral "download this board to see similar climbs" line whenever no card shows (a climb from another board, the card dismissed, or offline downloads unavailable) |
 
