@@ -1091,10 +1091,10 @@ describe('runExport — artifact shape', () => {
       // (the scan would otherwise abort before any upload) and its entries read
       // as stale.
       await seedClimb('kilter', 1, 'k1-a');
-      const futureEntry = {
+      const futureEntry: SnapshotManifestEntry = {
         ...manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`),
         artifactShape: 3,
-      } as unknown as SnapshotManifestEntry;
+      };
       serveExistingManifest(manifestFixture([futureEntry]));
 
       await runExport(thresholdArgs);

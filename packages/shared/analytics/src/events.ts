@@ -1044,8 +1044,9 @@ export const SHARED_EVENTS = {
   //   outcome: 'completed' | 'failed' | 'aborted' ('aborted' = we cancelled it).
   //   wireBytes — the stored object size, the same scale the confirm dialog and
   //     the progress bar quote.
-  //   expectedDecodedBytes — `entry.uncompressedBytes`; absent on grades
-  //     artifacts and pre-#4311 manifest entries.
+  //   expectedDecodedBytes — the manifest's `uncompressedBytes`; absent on
+  //     pre-#4311 layout entries and on grades artifacts published in artifact
+  //     shape 1 (a shape-2 grades block carries it).
   //   bytesOnDisk — the finished file's size; absent when there is no file.
   //   wallMs — start of transfer to settle. INCLUDES suspension time when
   //     `backgroundedDuringTransfer` is true.

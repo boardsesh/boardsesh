@@ -258,15 +258,30 @@ For controlled migration exports, `--no-prune` (CLI) or `skipPrune: true` (opera
 object listing/deletion in identity, gzip, and catalog passes; ordinary nightly retention is unchanged.
 
 **Scratch space.** Each layout's SQLite file is written under `os.tmpdir()`, vacuumed into a second file
-beside it that then replaces it, and read whole into memory and gzipped. For `kilter:1` that is 241 MB
-unpacked plus 207 MB packed during the vacuum (447 MB, with the 51 MB unpacked grades file beside
-them), then 207 MB on disk, 207 MB in memory and 82 MB of gzip during the upload. Mount `/tmp` as a
-2 GB tmpfs on the batch container; peak use stays well under 1 GB. Tmpfs pages are charged to the
-container's memory cgroup, so a container memory limit must cover the Node heap (4 GB), the in-memory
-artifact and its gzip copy, and whatever sits in `/tmp` at the same time. The build also gives each of
-its two SQLite connections a 64 MiB page cache (up to about 100 MB resident each); both are released before
-the vacuum starts. Shape 1 has no vacuum and no enlarged cache: one 284 MB file, 284 MB in memory and
-110 MB of gzip.
+beside it that then replaces it, and read whole into memory and gzipped. The batch container's `/tmp` is
+a **1 GiB** tmpfs (`/tmp:size=1g` in blackheathdc-ansible,
+`roles/boardsesh_worker/templates/docker-compose.yml.j2`), and the container's `mem_limit` is 6 GiB.
+
+`kilter:1`, the largest layout, peaks at about **498 MB** of scratch: the unpacked layout file (241 MB),
+its packed copy (207 MB) and the unpacked grades file (51 MB), all three on disk while the vacuum runs.
+That is roughly 2x headroom on the 1 GiB mount. After both vacuums it is 252 MB on disk (layout plus
+grades), and during the upload 207 MB in memory and 82 MB of gzip. Shape 1 has no vacuum: about 351 MB of scratch (284 MB plus 67 MB
+of grades), 284 MB in memory and 110 MB of gzip.
+
+If a layout outgrows the mount, the write that fills it throws: `VACUUM INTO` in the usual case, since
+that is the moment two copies exist (`database or disk is full`; checked on a deliberately small volume,
+where the unpacked original stayed intact). The half-written packed copy and its journal are deleted,
+that layout fails and keeps its previous manifest entry, the other layouts still publish, and the run
+fails at the end. The layout is
+then picked up again by the next scan that selects it, and fails the same way: every scan while its
+entry is still in the other shape (`stale-shape`), otherwise each time 500 rows have landed. It does not
+heal on its own. Enlarge the tmpfs, or set `SNAPSHOT_ARTIFACT_SHAPE=1`
+([shape rollback](#rolling-back-the-artifact-shape)), which needs no second copy.
+
+Tmpfs pages are charged to the container's memory cgroup, so the 6 GiB limit has to cover the Node heap
+(4 GB cap), the in-memory artifact and its gzip copy, and whatever sits in `/tmp` at the same time. The
+build also gives each of its two SQLite connections a 64 MiB page cache (up to about 100 MB resident
+each); both are released before the vacuum starts.
 
 **Grants.** `batch=<login>` in `MIGRATION_WORKER_ROLES` adds SELECT on `board_climbs`,
 `board_climb_stats`, `board_climb_grades` and the catalogue tables, with `board_beta_links` limited to
@@ -294,7 +309,8 @@ never overlap:
    neither as enabled, and the host vars leave `boardsesh_dr_snapshot_enabled` and
    `boardsesh_dr_snapshot_timers_enabled` at their default `false`. Check what is deployed, not the
    defaults: #5622 allows one publisher across Actions, Ansible timers and pg-boss.
-2. Grant `pg_read_all_stats` (above), and deploy the environment and the 2 GB `/tmp`.
+2. Grant `pg_read_all_stats` (above), and deploy the environment and the `/tmp` tmpfs (1 GiB as
+   deployed; see "Scratch space" above).
 3. `gh workflow disable export-board-snapshots.yml`. That stops new scheduled runs, not a run already
    in progress or queued, so wait until
    `gh run list --workflow export-board-snapshots.yml --status in_progress` and `--status queued` both
@@ -1410,8 +1426,9 @@ node --import tsx src/scripts/export-board-snapshots.ts \
 `SNAPSHOT_ARTIFACT_SHAPE` is read by the export at the start of every run. Unset or blank is
 [shape 2](#artifact-shape). Set it to `1` on the batch container and the export goes back to publishing
 what it published before shape 2: rowid tables with the three secondary indexes, no vacuum, no enlarged
-page cache, no `artifactShape` on the entry and no `uncompressedBytes` on the grades block. Any other
-value fails the run before it reads the manifest or uploads anything.
+page cache, no `artifactShape` on the entry and no `uncompressedBytes` on the grades block. The accepted
+values are `1` and `2` (`2` is the same as leaving it unset). Anything else fails the run before it
+reads the manifest or uploads anything.
 
 Use it when shape-2 artifacts are suspected of breaking imports (a rise in `import`-stage failures on
 `Offline Board Download Failed` after a regeneration) or when the vacuum is too much for the worker.
@@ -1439,11 +1456,17 @@ Use it when shape-2 artifacts are suspected of breaking imports (a rise in `impo
    Every line should read `shape=1` with a `builtAt` after the redeploy. A layout whose rebuild failed
    keeps its previous entry and shape, and the run's log names it.
 
-The rebuild is a full pass over every layout on the live prefix, the same work as a nightly's gzip pass,
-so expect it to outlast one 15-minute slot; the scans queued behind it skip themselves. Clients need
-nothing: a manifest may mix shapes while a rebuild is in progress, and an artifact already downloaded
-stays valid. Phones that already imported a shape-2 artifact are unaffected either way, because the shape
-never reaches the device's own tables.
+The rebuild is a full pass over every layout on the live prefix, the same work as a nightly's gzip pass.
+That pass took 9 min 33 s for 23 layouts on 2026-10-10 (homelab worker log, `starting run` to
+`manifest uploaded`), so the rebuild is expected to fit inside one 15-minute slot. If it runs longer,
+nothing is lost: the next scan waits in the queue behind it, and once it starts it either runs normally
+or, having waited more than 840 s, logs `LIVE_SCAN_STALE` and leaves the work to the scan after it.
+
+Clients need nothing. The manifest is replaced once, at the end of the run, so it goes from all one
+shape to all the other in a single step; it holds both only when a layout's rebuild failed and kept its
+previous entry. Either is fine for a client, and an artifact already downloaded stays valid. Phones that
+already imported a shape-2 artifact are unaffected either way, because the shape never reaches the
+device's own tables.
 
 Unset the variable and redeploy to go forward again; the next scan rebuilds every entry in shape 2 the
 same way. That is also how shape 2 first reaches a prefix whose entries predate it.

@@ -470,8 +470,9 @@ type SnapshotArtifactRequest = {
   wireBytes: number;
   /**
    * The exact byte length the finished file must have, when the manifest can
-   * say. Absent for a gzip artifact with no `uncompressedBytes` (every grades
-   * block, and pre-#4311 layout entries), where there is nothing to compare to.
+   * say. Absent for a gzip artifact with no `uncompressedBytes` (pre-#4311
+   * layout entries, and grades blocks published in artifact shape 1), where
+   * there is nothing to compare to.
    */
   expectedDecodedBytes?: number;
   boardType?: string;
@@ -712,8 +713,10 @@ async function downloadSnapshotFile(
  * The exact byte length a finished artifact must have, or undefined when the
  * manifest cannot say. An `identity` entry's `bytes` IS the decoded size (the
  * `board-snapshots/v1/` rollback prefix); a gzip entry needs
- * `uncompressedBytes`, which every live grades block and every pre-#4311 layout
- * entry lacks.
+ * `uncompressedBytes`, which a pre-#4311 layout entry and a grades block
+ * published in artifact shape 1 lack. A shape-2 grades block carries it
+ * (docs/board-snapshots.md, "Artifact shape"), so a grades file is then held to
+ * its exact size like a layout file.
  */
 function expectedDecodedBytesFor(entry: {
   bytes: number;
@@ -765,18 +768,18 @@ async function downloadGradesArtifact(artifact: SnapshotGradesArtifact): Promise
   return downloadSnapshotFile({
     label: `grades ${artifact.key}`,
     url: artifact.url,
-    // No `uncompressedBytes` in the manifest's grades block, so this is the
-    // coarse multiplier path — cheap either way at a few MB.
+    // The coarse multiplier, whether or not the grades block carries
+    // `uncompressedBytes` (a shape-2 block does): cheap either way at a few MB.
     requiredBytes: artifact.bytes * gradesFreeSpaceMultiplier(artifact.contentEncoding),
     contentEncoding: artifact.contentEncoding,
     fileName: `${safeKey}.db`,
     telemetryExtra: { gradesKey: artifact.key, url: artifact.url },
     kind: 'grades',
     wireBytes: artifact.bytes,
-    // A gzip grades block carries no `uncompressedBytes` (verified against the
-    // live manifest), so the size gate applies to layout artifacts by
-    // construction — and to an identity grades artifact, where `bytes` IS the
-    // decoded size.
+    // A shape-2 grades block carries `uncompressedBytes`, so its file is held
+    // to that exact size, the same gate the layout artifact passes. A shape-1
+    // gzip block carries none and is not gated; an identity grades artifact is
+    // gated on `bytes`, which there IS the decoded size.
     ...(expectedDecodedBytesFor(artifact) !== undefined
       ? { expectedDecodedBytes: expectedDecodedBytesFor(artifact) }
       : {}),

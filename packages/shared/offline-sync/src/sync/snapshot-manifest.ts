@@ -89,9 +89,11 @@ export type SnapshotManifestEntry = {
    * The export job reads it to tell which entries to rebuild after its shape
    * setting changes. A client must NOT gate on it: the import reads an artifact
    * by table and column name only, so one import runs on every shape, and a
-   * value this build has never heard of is still a file it can import.
+   * value this build has never heard of is still a file it can import. Hence a
+   * plain number and not the literal `2`: the validator accepts any positive
+   * integer, and the type must not promise a reader more than that.
    */
-  artifactShape?: 2;
+  artifactShape?: number;
   boardType: string;
   layoutId: number;
   // S3 object key of the artifact, e.g. `board-snapshots/v1/kilter/8/<iso>.db`.

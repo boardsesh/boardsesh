@@ -23,7 +23,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schema';
@@ -42,6 +52,7 @@ import { toIso } from '../graphql/resolvers/sync/row-normalize';
 import {
   exportLayoutSnapshot,
   selectDeletionReplayBoundary,
+  vacuumArtifactFile,
   type SnapshotArtifactShape,
 } from '../scripts/export-board-snapshots';
 
@@ -1206,6 +1217,49 @@ describe('artifact shapes', () => {
     expect(readdirSync(workDir).sort()).toEqual(
       [shape2.filePath, shape2.gradesFilePath].map((artifactPath) => artifactPath.slice(workDir.length + 1)).sort(),
     );
+  });
+
+  it('clears what a failed vacuum left behind before it vacuums again', async () => {
+    // A vacuum that dies without cleaning up (the process killed mid-copy) leaves
+    // a packed copy, and perhaps its journal, beside the artifact. VACUUM INTO
+    // refuses to write over an existing file, so the next attempt has to clear
+    // them first or it can never succeed at that path.
+    await seedShuffledLayout(50);
+    for (const artifactName of ['shape-2.db', 'shape-2-grades.db']) {
+      writeFileSync(join(workDir, `${artifactName}.packed`), 'half a packed copy');
+      writeFileSync(join(workDir, `${artifactName}.packed-journal`), 'and its journal');
+    }
+
+    const shape2 = await exportInShape(2);
+
+    expect(readdirSync(workDir).sort()).toEqual(['shape-2-grades.db', 'shape-2.db']);
+    expect(readArtifactStorage(shape2.filePath).quickCheck).toBe('ok');
+    expect(readArtifactRows(shape2.filePath, 'board_climbs', ['uuid'])).toHaveLength(50);
+    expect(readArtifactRows(shape2.gradesFilePath, 'board_climb_grades', ['climb_uuid'])).toHaveLength(100);
+  });
+
+  it('a vacuum that fails part-way throws, leaves the unpacked file as it was and nothing beside it', async () => {
+    // The failure that matters in production is the scratch volume filling up
+    // while two copies of a layout exist. That cannot be staged here, so this
+    // breaks the vacuum another way: one page of the built file is overwritten,
+    // and the copy stops when it reaches it, with the packed file already begun.
+    await seedShuffledLayout(CLIMB_COUNT);
+    const shape2 = await exportInShape(2);
+    const pageSize = 4096;
+    const damagedPage = Math.floor(statSync(shape2.filePath).size / pageSize) - 3;
+    const artifactFile = openSync(shape2.filePath, 'r+');
+    writeSync(artifactFile, Buffer.alloc(pageSize, 0xff), 0, pageSize, damagedPage * pageSize);
+    closeSync(artifactFile);
+    const bytesBefore = readFileSync(shape2.filePath);
+
+    expect(() => vacuumArtifactFile(shape2.filePath)).toThrow(/malformed/);
+
+    // No half-written `.packed` file and no journal: both would otherwise sit in
+    // the scratch directory for the rest of the run, on a volume that may be full.
+    expect(readdirSync(workDir).sort()).toEqual(['shape-2-grades.db', 'shape-2.db']);
+    // The original is what the caller reports as failed and deletes. It was not
+    // replaced by a partial copy.
+    expect(readFileSync(shape2.filePath).equals(bytesBefore)).toBe(true);
   });
 
   it('skips the vacuum for a grades file that will never be published', async () => {

@@ -212,9 +212,10 @@ export const DEFAULT_SNAPSHOT_ARTIFACT_SHAPE: SnapshotArtifactShape = 2;
  * The rollback switch. `SNAPSHOT_ARTIFACT_SHAPE=1` makes the next run build and
  * publish exactly what the exporter published before shape 2 existed: the
  * unchanged DDL, no vacuum, no `artifactShape` and no grades `uncompressedBytes`
- * in the manifest. Unset or blank means the default. Anything else throws
- * before the run reads the database or touches storage, because a typo that
- * silently picked either shape would be found a download at a time.
+ * in the manifest. The accepted values are `1` and `2`; unset or blank means
+ * the default, `2`. Anything else throws before the run reads the database or
+ * touches storage, because a typo that silently picked either shape would be
+ * found a download at a time.
  *
  * Read per run, not at module load, so one process can be pointed at either.
  */
@@ -1091,12 +1092,24 @@ function writeSnapshotMeta(
  *
  * Runs on a connection of its own, after the build's connection has closed, so
  * the swap never replaces a file something still holds open.
+ *
+ * Exported for its failure path, which no export of a healthy layout reaches.
  */
-function vacuumArtifactFile(filePath: string): void {
+export function vacuumArtifactFile(filePath: string): void {
   const packedFilePath = `${filePath}.packed`;
+  // The packed copy and the rollback journal SQLite keeps beside the file it is
+  // writing. A vacuum that fails part-way leaves one or the other behind: an
+  // empty packed file when the source cannot be read, the journal when the
+  // scratch volume fills (`database or disk is full`, the case that matters).
+  // Either would sit in the scratch directory until the end of the run, on a
+  // volume that has just run out of room.
+  const removePackedCopy = (): void => {
+    rmSync(packedFilePath, { force: true });
+    rmSync(`${packedFilePath}-journal`, { force: true });
+  };
   // VACUUM INTO refuses to write over an existing file; a leftover can only be
   // a previous attempt's that died before its own cleanup.
-  rmSync(packedFilePath, { force: true });
+  removePackedCopy();
   try {
     const unpackedDb = new DatabaseSync(filePath);
     try {
@@ -1106,7 +1119,9 @@ function vacuumArtifactFile(filePath: string): void {
     }
     renameSync(packedFilePath, filePath);
   } catch (error) {
-    rmSync(packedFilePath, { force: true });
+    // The unpacked original is untouched: the caller reports the layout as
+    // failed and deletes it, and the layout keeps its previous manifest entry.
+    removePackedCopy();
     throw error;
   }
 }
@@ -1475,7 +1490,7 @@ function buildManifestEntry(
     builtAt: result.builtAt,
     schemaVersion: result.schemaVersion,
     privacyVersion: 1,
-    ...(isShape2 ? { artifactShape: 2 as const } : {}),
+    ...(isShape2 ? { artifactShape: result.artifactShape } : {}),
     tables: {
       board_climbs: result.tables.board_climbs,
       board_climb_stats: result.tables.board_climb_stats,

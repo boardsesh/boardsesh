@@ -68,6 +68,9 @@ privacy-filtered dataset with incompatible cursor assumptions. Each entry:
 
 Treat `schemaVersion` as informational: columns may be added over time (additive), and a breaking
 layout change would ship under a new `board-snapshots/v2*` prefix rather than mutating `v1-gzip`.
+That promise covers the tables, their columns and their rows. How a file stores them (whether a table
+has a `rowid`, which secondary indexes it carries, the order rows sit in) is not part of it and has
+changed under `v1-gzip`; see "Storage" below.
 A `board-snapshots/v1` prefix still carries identity-encoded copies of the same artifacts; it is
 retained as a nightly-published rollback target. New consumers should use `v1-gzip`.
 Removing the identity prefix or legacy Tigris data requires separate explicit approval.
@@ -78,13 +81,15 @@ Each per-layout artifact is a standard SQLite database with three tables. The au
 lives in `packages/shared/offline-sync/src/db/schema.ts`; the export rewrites how it is stored (see
 "Storage" below) but never the columns.
 
-**`board_climbs`** — one row per climb, all 27 columns: `uuid` (primary key), `board_type`,
+**`board_climbs`** — one row per climb, all 32 columns: `uuid` (primary key), `board_type`,
 `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
 `edge_left/right/bottom/top` (placement bounding box), `angle` (the setter's intended angle, where
 the board type has one), `frames_count`, `frames_pace`, `frames` (the hold sequence as the board's
-native frame string), `is_draft`, `is_listed`, `created_at`, `published_at`, `user_id`,
-`required_set_ids` / `compatible_size_ids` / `characteristics` (JSON arrays), `hold_fingerprint`,
-and sync bookkeeping (`updated_at`, `sync_seq`).
+native frame string), `is_draft`, `is_listed`, `is_hidden` (hidden by the community), `created_at`,
+`published_at`, `user_id`, `required_set_ids` / `compatible_size_ids` / `characteristics` (JSON
+arrays), `hold_fingerprint`, `missing_hold_count` and `retired_by_reset` (spray walls only, so NULL
+here), `revision_number` (the climb's current revision) and `holds_revision_number` (the revision at
+which its holds last changed), and sync bookkeeping (`updated_at`, `sync_seq`).
 
 Only imported climbs without a linked Boardsesh author are distributed. Personal climbs and beta
 are fetched through the viewer-authorized API, so account privacy changes can revoke access.
@@ -115,8 +120,9 @@ download. What that means if you read the files:
   tables. Use the primary key.
 - Rows come back in primary-key order when you do not ask for one, where they used to come back in
   roughly the order they were written. Neither is a promise. Use `ORDER BY`.
-- A reader should accept both shapes: a manifest can mix them while a rebuild is in progress, and the
-  export can be switched back to shape 1.
+- A reader should accept both shapes. The manifest is replaced once per export run, so it normally
+  goes from all one shape to all the other in a single step; it holds both only when one layout's
+  rebuild failed and kept its previous entry. The export can also be switched back to shape 1.
 
 **Grades** ride in a sibling file, not in this one. Where a layout has Boardsesh-computed universal
 grades (see `boardsesh-grade.md`), its manifest entry carries a `grades` object with its own `url`;

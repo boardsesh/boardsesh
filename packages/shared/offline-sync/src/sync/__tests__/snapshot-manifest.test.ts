@@ -264,7 +264,7 @@ describe('parseSnapshotManifest — artifactShape and the grades decoded size', 
   it('rejects an artifactShape that is not a positive integer', () => {
     for (const corrupt of [0, -1, 1.5, '2', null, true, {}]) {
       expect(
-        parseSnapshotManifest(withEntry({ artifactShape: corrupt as unknown as 2 })),
+        parseSnapshotManifest(withEntry({ artifactShape: corrupt as unknown as number })),
         JSON.stringify(corrupt),
       ).toBeNull();
     }
@@ -275,7 +275,7 @@ describe('parseSnapshotManifest — artifactShape and the grades decoded size', 
   // one is still a file this client can import. Rejecting it would also make an
   // export job rolled back across a shape change refuse the manifest it merges.
   it('accepts a shape number this build has never heard of', () => {
-    expect(parseSnapshotManifest(withEntry({ artifactShape: 3 as unknown as 2 }))).not.toBeNull();
+    expect(parseSnapshotManifest(withEntry({ artifactShape: 3 }))?.entries[0].artifactShape).toBe(3);
   });
 
   it('accepts a grades block with and without uncompressedBytes', () => {
