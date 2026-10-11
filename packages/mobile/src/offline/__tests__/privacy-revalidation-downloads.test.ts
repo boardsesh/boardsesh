@@ -1,10 +1,12 @@
 // A privacy event against the real pull client and the real on-device DDL: what
 // the sync engine asks the server for, and which pages land, around a
-// revalidation (issue #6306).
+// revalidation (issue #6306). The pull goes through the adapter, as it does in
+// the app, so only the platform seams below are stubbed.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const auth = vi.hoisted(() => ({ token: 'accepted-token', generation: 1 }));
 const request = vi.hoisted(() => vi.fn());
+const track = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/auth-store', () => ({
   getAuthToken: async () => auth.token,
   captureAuthCredentialGeneration: () => auth.generation,
@@ -15,18 +17,56 @@ vi.mock('expo-crypto', () => ({
   digestStringAsync: async (_algorithm: string, token: string) => `digest-${token}`,
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request }) }));
+// The settings store's native MMKV entry breaks the test bundler's scan. Same
+// in-memory stand-in as offline-sync-adapter.test.ts.
+const settingsStorage = new Map<string, string>();
+vi.mock('react-native-mmkv', () => ({
+  createMMKV: () => ({
+    getString: (key: string) => settingsStorage.get(key),
+    set: (key: string, value: string) => void settingsStorage.set(key, value),
+    remove: (key: string) => void settingsStorage.delete(key),
+    clearAll: () => settingsStorage.clear(),
+  }),
+}));
+vi.mock('react-native', () => ({
+  AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
+  Platform: { OS: 'ios' },
+}));
+vi.mock('@react-native-community/netinfo', () => ({
+  default: { addEventListener: () => () => {}, fetch: async () => ({ isConnected: true, type: 'wifi' }) },
+}));
+vi.mock('../../lib/connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => ({
+    effectiveOffline: false,
+    deviceReachability: 'reachable',
+    backend: 'reachable',
+    reason: null,
+  }),
+  subscribeConnectivity: () => () => {},
+  refreshDeviceState: async () => {},
+  confirmBackendAvailability: async () => true,
+}));
+vi.mock('../../lib/error-reporting', () => ({ reportHandledError: vi.fn(), addErrorBreadcrumb: vi.fn() }));
+vi.mock('../../lib/analytics', () => ({ track }));
+// The wall photograph is a filesystem asset; no row in these tests depends on it.
+vi.mock('../spray-photo-sink', () => ({
+  sprayWallPhotoSink: async () => {},
+  createSprayWallDeletedSink: () => async () => {},
+}));
 
+import type { QueryClient } from '@tanstack/react-query';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
-  pullSync,
   runMigrations,
   getCheckpoint,
   getCheckpointKey,
   isScopeDownloadComplete,
   type GraphQLFetch,
-  type QueryInvalidator,
+  type SyncOptions,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { canReadPrivateCatalog } from '../catalog-access';
+import { pullSync } from '../offline-sync-adapter';
 import { revalidatePrivateCatalog } from '../privacy-revalidation';
 
 const KILTER_SCOPE = 'kilter:1:1';
@@ -121,11 +161,21 @@ function createSyncServer(firstPages: Record<string, Record<string, unknown>[]>)
 }
 
 let database: TestSqliteDb;
-const queryClient: QueryInvalidator = { invalidateQueries: vi.fn().mockResolvedValue(undefined) };
+const queryClient = { invalidateQueries: vi.fn().mockResolvedValue(undefined) } as unknown as QueryClient;
+/** Online, and on a metered link so no refresh replay adds requests to the log. */
+const syncOptions = (enabledBoards: string[]): SyncOptions => ({
+  enabledBoards,
+  isOnline: () => true,
+  isOnUnmeteredNetwork: async () => false,
+});
+/** The telemetry event the phone in #6306 sent 42 times in 43 minutes. */
+const completedDownloadEvents = () =>
+  track.mock.calls.filter(([eventName]) => eventName === SHARED_EVENTS.OfflineBoardDownloadCompleted);
 
 beforeEach(async () => {
   auth.token = 'accepted-token';
   request.mockReset().mockImplementation(async () => ({ profile: { id: 'viewer' } }));
+  track.mockClear();
   // The purge epochs are module-level; a purge in one case must not leak into the next.
   __resetDrainerStateForTests();
   database = createTestDatabase();
@@ -140,10 +190,9 @@ describe('a privacy event and the sync engine', () => {
       'syncClimbStats@kilter:1': [statsDocument('community-climb', 'kilter')],
       'syncClimbGrades@kilter:1': [gradeDocument('community-climb', 'kilter')],
     });
-    const onScopeDownloadComplete = vi.fn();
-    const options = { enabledBoards: [KILTER_SCOPE], onScopeDownloadComplete };
+    const options = syncOptions([KILTER_SCOPE]);
     await pullSync(database, queryClient, server.fetch, options);
-    expect(onScopeDownloadComplete).toHaveBeenCalledOnce();
+    expect(completedDownloadEvents()).toHaveLength(1);
     expect(await isScopeDownloadComplete(database, KILTER_SCOPE)).toBe(true);
     const requestsForDownload = server.requests.length;
 
@@ -160,7 +209,7 @@ describe('a privacy event and the sync engine', () => {
     // download left. A request without a cursor is the start of a re-crawl.
     expect(laterBoardRequests.map(({ cursor }) => cursor)).toEqual(Array.from({ length: 9 }, () => SERVER_CURSOR));
     // "Offline Board Download Completed" stays a once-per-download event.
-    expect(onScopeDownloadComplete).toHaveBeenCalledOnce();
+    expect(completedDownloadEvents()).toHaveLength(1);
     expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'community-climb' }]);
     expect(await database.getAllAsync('SELECT climb_uuid FROM board_climb_stats')).toEqual([
       { climb_uuid: 'community-climb' },
@@ -178,7 +227,7 @@ describe('a privacy event and the sync engine', () => {
       'syncClimbGrades@kilter:1': [gradeDocument('community-climb', 'kilter')],
     });
     const pageOnWire = server.holdNextPage('syncClimbs@kilter:1');
-    const download = pullSync(database, queryClient, server.fetch, { enabledBoards: [KILTER_SCOPE] });
+    const download = pullSync(database, queryClient, server.fetch, syncOptions([KILTER_SCOPE]));
     await pageOnWire.requested;
 
     await revalidatePrivateCatalog(database, 'viewer', [KILTER_SCOPE]);
@@ -197,7 +246,7 @@ describe('a privacy event and the sync engine', () => {
       'syncClimbs@spray:7': [climbDocument('spray-climb', 'spray', 7, 7)],
     });
     const pageOnWire = server.holdNextPage('syncClimbs@spray:7');
-    const download = pullSync(database, queryClient, server.fetch, { enabledBoards: [SPRAY_SCOPE] });
+    const download = pullSync(database, queryClient, server.fetch, syncOptions([SPRAY_SCOPE]));
     await pageOnWire.requested;
 
     await revalidatePrivateCatalog(database, 'viewer', [SPRAY_SCOPE]);
