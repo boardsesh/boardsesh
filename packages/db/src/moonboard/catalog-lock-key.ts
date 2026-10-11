@@ -34,4 +34,3 @@ const MASK_63_BITS = (1n << 63n) - 1n;
 
 /** The advisory-lock key, derived once from MOONBOARD_CATALOG_IMPORT_LOCK_NAME above. */
 export const MOONBOARD_CATALOG_IMPORT_LOCK_KEY: bigint = fnv1a64(MOONBOARD_CATALOG_IMPORT_LOCK_NAME) & MASK_63_BITS;
-
