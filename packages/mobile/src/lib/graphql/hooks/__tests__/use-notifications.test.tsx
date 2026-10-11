@@ -267,6 +267,33 @@ describe('useAnswerFollowRequest', () => {
     expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(3);
   });
 
+  it('refreshes follower lists and profiles after an approval, but not after a decline', async () => {
+    requestMock.mockResolvedValue({ approveFollowRequest: true });
+    const { queryClient, Wrapper } = makeWrapper();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useAnswerFollowRequest(), { wrapper: Wrapper });
+
+    await act(async () => {
+      await result.current({ notification: request('a'), answer: 'approve' });
+    });
+    const approvedKeys = invalidate.mock.calls.map(([filters]) => filters?.queryKey?.[0]);
+    expect(approvedKeys).toEqual(
+      expect.arrayContaining([
+        'privacyFollowRequests',
+        'followers',
+        'following',
+        'publicProfile',
+        'privacyRelationship',
+      ]),
+    );
+
+    invalidate.mockClear();
+    await act(async () => {
+      await result.current({ notification: request('b'), answer: 'decline' });
+    });
+    expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey?.[0])).toEqual(['privacyFollowRequests']);
+  });
+
   it('declines without touching the badge for a row already read', async () => {
     requestMock.mockResolvedValue({ declineFollowRequest: true });
 

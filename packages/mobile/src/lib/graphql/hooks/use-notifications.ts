@@ -268,7 +268,7 @@ export function useAnswerFollowRequest() {
         userId: requesterId,
       });
     },
-    onSuccess: (_result, { notification }) => {
+    onSuccess: (_result, { notification, answer }) => {
       queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
@@ -287,6 +287,15 @@ export function useAnswerFollowRequest() {
       }
       // The requests list in privacy settings shows the same request.
       void queryClient.invalidateQueries({ queryKey: ['privacyFollowRequests'] });
+      if (answer === 'approve') {
+        // An approval adds a follower: the owner's follower list and count, the
+        // requester's following list, and both profiles' follow state change.
+        // The same keys the follow and privacy-settings approval paths refresh.
+        void queryClient.invalidateQueries({ queryKey: ['followers'] });
+        void queryClient.invalidateQueries({ queryKey: ['following'] });
+        void queryClient.invalidateQueries({ queryKey: ['publicProfile'] });
+        void queryClient.invalidateQueries({ queryKey: ['privacyRelationship'] });
+      }
     },
   });
 
