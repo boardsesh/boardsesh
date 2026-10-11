@@ -100,11 +100,19 @@ type Query {
   syncUserFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
   syncSetterFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
   syncPlaylistFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
-  syncClimbs(boardType: String!, layoutId: Int, sizeId: Int, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+  syncClimbs(
+    boardType: String!
+    layoutId: Int
+    sizeId: Int
+    audience: SyncAudience
+    cursor: SyncCursorInput
+    limit: Int! = 500
+  ): SyncResult!
   syncClimbStats(
     boardType: String!
     layoutId: Int
     sizeId: Int
+    audience: SyncAudience
     cursor: SyncCursorInput
     limit: Int! = 500
   ): SyncResult!
@@ -112,6 +120,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    audience: SyncAudience
     cursor: SyncCursorInput
     limit: Int! = 500
   ): SyncResult!
@@ -275,10 +284,23 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Del: `record_id = OLD.playlist_uuid` (1 seg).
 - Columns: `playlist_uuid`, `follower_id`, `created_at`, `updated_at`.
 
-### `board_climbs` — `syncClimbs(boardType, layoutId?, sizeId?)` (board data, per-board)
+### `board_climbs` — `syncClimbs(boardType, layoutId?, sizeId?, audience?)` (board data, per-board)
 
 - Scope: `board_type = $boardType` [`AND layout_id = $layoutId` `AND compatible_size_ids @> ARRAY[$sizeId]` when given;
-  `sizeId` ignored for moonboard]. Seq: **`sync_seq`**. Hook: no.
+  `sizeId` ignored for moonboard], limited to the published, listed climbs and the caller's own. Seq: **`sync_seq`**. Hook: no.
+- `audience` (`enum SyncAudience { REFERENCE PROTECTED }`, optional) picks one of two disjoint streams that together
+  equal the scope above. `REFERENCE` is the published, listed climbs (`is_draft IS NOT TRUE AND is_listed IS TRUE`),
+  whoever set them; the same for every viewer and empty for spray. `PROTECTED` is the caller's own climbs that are
+  not published and listed, which is their drafts and their unlisted climbs; on a spray wall it is every climb the
+  caller gets with no audience. Each stream has its own cursor. Omitted, the pull is the single stream every client
+  older than the split sends: `REFERENCE` plus the caller's `PROTECTED`.
+  **The publication rule:** no stream consults an account's privacy settings or an item audience. A draft or an
+  unlisted climb is returned to its owner alone (`user_id` = the caller), with its stats and grades rows, and one
+  with no owner to no one. The same argument applies to `syncClimbStats` and `syncClimbGrades`, where it selects the
+  rows of that stream's climbs. A stats row carries the stored `fa_username` and `fa_at` only when its climb has no
+  Boardsesh owner and never had a Boardsesh author; a `PROTECTED` stats row carries `NULL` for both. A published
+  climb that becomes a draft or is unlisted gets a `board_climbs` row in `syncDeletions`. Full rule:
+  [The publication rule](board-snapshots.md#the-publication-rule-6306).
 - Local PK: **`uuid`**. table-config: `['uuid']` ✓.
 - Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
@@ -328,7 +350,7 @@ composite-keyed sync table must keep this true (or version the encoding).
   (`search-climbs-local.ts` / `get-climb-local.ts`) even while online, for speed, with the background sync keeping
   them fresh. Default `syncEnabledBoards` is `[]` so nothing downloads until a board is enabled.
 
-### `board_climb_stats` — `syncClimbStats(boardType, layoutId?, sizeId?)` (board data, per-board)
+### `board_climb_stats` — `syncClimbStats(boardType, layoutId?, sizeId?, audience?)` (board data, per-board)
 
 - Scope: `board_type = $boardType` [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId
 AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table has no `layout_id`, so it correlates
@@ -343,7 +365,7 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   (`ascensionist_count`, `quality_average`, `display_difficulty`); provenance only ever decides which server-side
   writer may touch a column, so shipping it would grow every stats row for nothing.
 
-### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
+### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?, audience?)` (board data, per-board)
 
 - The nightly data-science Boardsesh grade (docs/boardsesh-grade.md). Scope: `board_type = $boardType`
   [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId AND
@@ -411,8 +433,9 @@ bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has 
   `photo_key` is the identity that survives — a stored signature would be stale, useless, and briefly live. Declaring
   it is not cosmetic: without it every pulled page would report schema drift for a column the resolver emits on
   purpose.
-- Snapshots stay excluded. `SNAPSHOT_EXCLUDED_BOARD_TYPES` in `export-board-snapshots.ts` withholds `spray`, so no
-  wall is ever baked into a nightly artifact and a manifest miss falls through to the paged crawl.
+- Snapshots stay excluded. `REFERENCE_EXCLUDED_BOARD_TYPES` in `packages/db/src/queries/privacy.ts` withholds
+  `spray`, so no wall is ever baked into a nightly artifact and a manifest miss falls through to the paged crawl.
+  The `REFERENCE` sync stream reads the same set, so it is empty for every wall.
 - Sign-out clears this table: `spray_walls` is the one entry in `USER_DATA_TABLES_TO_CLEAR` that is board reference
   data, and the photographs are wiped with it. See the spray-wall subsection of the auth-scoping contract in
   [`offline-reads.md`](offline-reads.md).
