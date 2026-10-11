@@ -2258,7 +2258,11 @@ leave `fa_username` and `fa_at` NULL, though an artifact still carries them. A b
 downloaded by an earlier bundle holds every climber's drafts and
 unlisted climbs (92,881 unlisted on Kilter on 2026-10-11), so the first run deletes
 them in batches of 2,000. See `prepareCatalogueForViewer` in
-`packages/mobile/src/offline/privacy-revalidation.ts`.
+`packages/mobile/src/offline/privacy-revalidation.ts`. A row a queued write refers
+to is kept, and local reads stay closed while any foreign row remains. Delivery of
+that write schedules one coalesced cleanup after authorization settles; the marker
+reopens once the last foreign row is removable, without another launch or privacy
+event. Ordinary deliveries do not repeat authorization after the marker reopens.
 
 Before enabling `BOARDSESH_PRIVACY_ENABLED`, regenerate every artifact and remove or
 expire previously published layout, grades and catalog artifacts plus CDN copies.
