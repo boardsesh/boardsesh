@@ -54,13 +54,17 @@ privacy-filtered dataset with incompatible cursor assumptions. Each entry:
 | `url`                                                   | Public download URL (valid until pruned — always re-resolve via the manifest)                   |
 | `key`                                                   | Object key under `board-snapshots/v1-gzip/`                                                     |
 | `bytes`                                                 | Stored size                                                                                     |
+| `uncompressedBytes`                                     | Size of the SQLite file once decoded; absent on entries built before the field existed          |
 | `contentEncoding`                                       | `identity` (a plain SQLite file) or `gzip` (gunzip before opening)                              |
 | `builtAt`                                               | When the export built this artifact                                                             |
 | `privacyVersion`                                       | Must be `1`: external catalog only; older artifacts cannot be installed by privacy-aware clients |
 | `schemaVersion`                                         | SQLite schema revision of the tables inside                                                     |
+| `artifactShape`                                         | How the file stores its rows; see "Storage" below. `2` today, absent on older (shape 1) files   |
 | `tables.<name>.rowCount`                                | Row counts, for sanity-checking a download                                                      |
 | `tables.<name>.watermarkUpdatedAt` / `watermarkSyncSeq` | Sync cursors (app-internal; irrelevant for dataset use)                                         |
 | `grades`                                                | Present when the layout has Boardsesh grades: a sibling artifact with its own `url` and `bytes` |
+
+`grades` carries its own `uncompressedBytes` too, on shape-2 entries.
 
 Treat `schemaVersion` as informational: columns may be added over time (additive), and a breaking
 layout change would ship under a new `board-snapshots/v2*` prefix rather than mutating `v1-gzip`.
@@ -71,7 +75,8 @@ Removing the identity prefix or legacy Tigris data requires separate explicit ap
 ## What's inside
 
 Each per-layout artifact is a standard SQLite database with three tables. The authoritative DDL
-lives in `packages/shared/offline-sync/src/db/schema.ts`.
+lives in `packages/shared/offline-sync/src/db/schema.ts`; the export rewrites how it is stored (see
+"Storage" below) but never the columns.
 
 **`board_climbs`** — one row per climb, all 27 columns: `uuid` (primary key), `board_type`,
 `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
@@ -93,6 +98,25 @@ scale), and first-ascent attribution (`fa_username`, `fa_at`).
 
 **`snapshot_meta`** — export bookkeeping (row counts, watermarks, schema/format versions). Useful
 for verifying integrity: `row_count` should match `SELECT COUNT(*)` on each table.
+
+**Storage.** Current files are "shape 2", marked `artifactShape: 2` in the manifest.
+`board_climbs`, `board_climb_stats` and the grades file's `board_climb_grades` are `WITHOUT ROWID`
+tables, the file has been vacuumed, and it carries **no secondary indexes**. Earlier files ("shape 1",
+no `artifactShape`) were ordinary rowid tables with three: `idx_climbs_search` on
+`board_climbs (board_type, layout_id, is_listed)`, and `idx_stats_lookup` and `idx_stats_difficulty` on
+`board_climb_stats`. They are gone. Same tables, columns and rows; about a quarter fewer bytes to
+download. What that means if you read the files:
+
+- A lookup by primary key is as fast as before: `board_climbs.uuid`, and
+  `(board_type, climb_uuid, angle)` on the stats and grades tables. Anything else scans the table. If
+  you filter by something else a lot, add your own index to your copy, for example
+  `CREATE INDEX stats_by_difficulty ON board_climb_stats (board_type, angle, display_difficulty);`.
+- There is no `rowid`. A query that selects or joins on `rowid`, `oid` or `_rowid_` fails on these
+  tables. Use the primary key.
+- Rows come back in primary-key order when you do not ask for one, where they used to come back in
+  roughly the order they were written. Neither is a promise. Use `ORDER BY`.
+- A reader should accept both shapes: a manifest can mix them while a rebuild is in progress, and the
+  export can be switched back to shape 1.
 
 **Grades** ride in a sibling file, not in this one. Where a layout has Boardsesh-computed universal
 grades (see `boardsesh-grade.md`), its manifest entry carries a `grades` object with its own `url`;
@@ -117,8 +141,9 @@ and first-ascent username attached to climbs and ascents by the climbers who pub
 ## Being a good consumer
 
 - Re-resolve through the manifest; download an artifact at most once per day (they only change
-  nightly). The full set is ~224 MB on the wire (~600 MB decoded), dominated by one 100 MB Kilter
-  artifact — please don't re-fetch it hourly.
+  nightly). The full set was ~224 MB on the wire (~600 MB decoded) in shape 1; expect about a quarter
+  less in shape 2. It is dominated by one Kilter artifact (110 MB in shape 1, 82 MB and 207 MB decoded
+  in shape 2) — please don't re-fetch it hourly.
 - Verify downloads: check `bytes` against what you received and run `PRAGMA quick_check` before
   trusting a file.
 

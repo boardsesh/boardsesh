@@ -15,6 +15,13 @@
  * derived here from each climb's `frames`, the same parse the render and
  * hold-filter paths use.
  *
+ * An artifact is read by table and column name only: `PRAGMA quick_check`,
+ * `PRAGMA table_info`, `count(*)` and plain `SELECT`s into `ON CONFLICT DO
+ * NOTHING` inserts. Nothing here depends on row order, a `rowid` or an index,
+ * so both artifact shapes load alike: shape 1 (rowid tables with secondary
+ * indexes) and shape 2 (`WITHOUT ROWID`, no secondary index, rows in key
+ * order; see `docs/board-snapshots.md`). Keep it that way.
+ *
  * Two shapes the artifacts cannot carry are filled in on the way through:
  *
  *  - `board_climb_grades.model_version` / `coeff_version` are stamped
@@ -292,7 +299,7 @@ async function downloadArtifact(url: string, destPath: string): Promise<void> {
  * artifact: the file must be a healthy SQLite database, and every table's
  * recorded `snapshot_meta.row_count` must equal its actual row count.
  */
-function verifyArtifact(db: DatabaseSync, label: string): void {
+export function verifyArtifact(db: DatabaseSync, label: string): void {
   const quickCheck = db.prepare('PRAGMA quick_check').get() as Record<string, unknown> | undefined;
   const quickCheckResult = quickCheck ? String(Object.values(quickCheck)[0]) : 'missing';
   if (quickCheckResult !== 'ok') {
@@ -352,7 +359,7 @@ async function pgColumns(sqlClient: Sql, tableName: string): Promise<PgColumn[]>
   }));
 }
 
-function sqliteColumns(db: DatabaseSync, tableName: string): string[] {
+export function sqliteColumns(db: DatabaseSync, tableName: string): string[] {
   const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[];
   if (rows.length === 0) throw new Error(`artifact has no table ${tableName}`);
   return rows.map((row) => row.name);
@@ -474,7 +481,7 @@ async function loadRows(params: {
   }
 }
 
-function* mapSqliteRows(
+export function* mapSqliteRows(
   db: DatabaseSync,
   selectSql: string,
   plans: readonly ColumnPlan[],
@@ -545,7 +552,7 @@ export function holdRowsForClimb(boardType: string, climbUuid: string, frames: s
   ]);
 }
 
-function* deriveHoldRows(db: DatabaseSync): Generator<readonly (string | null)[]> {
+export function* deriveHoldRows(db: DatabaseSync): Generator<readonly (string | null)[]> {
   const rows = db
     .prepare("SELECT uuid, board_type, frames FROM board_climbs WHERE frames IS NOT NULL AND frames != ''")
     .iterate() as Iterable<{ uuid: string; board_type: string; frames: string }>;

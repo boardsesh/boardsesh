@@ -14,11 +14,16 @@
 //
 // Both DBs are then read back and compared column-for-column. It also pins the
 // snapshot_meta watermarks and the 30s stability-window exclusion.
+//
+// Every export here that names no shape builds the default, shape 2
+// (`WITHOUT ROWID`, no secondary index, vacuumed), so the parity above is
+// proven on the shape the fleet downloads. The last describe block holds
+// shape 1 to the same rows and pins what differs between the two files.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schema';
@@ -34,7 +39,11 @@ import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
-import { exportLayoutSnapshot, selectDeletionReplayBoundary } from '../scripts/export-board-snapshots';
+import {
+  exportLayoutSnapshot,
+  selectDeletionReplayBoundary,
+  type SnapshotArtifactShape,
+} from '../scripts/export-board-snapshots';
 
 const USER_ID = 'snapshot-export-user';
 const BOARD_TYPE = 'kilter';
@@ -229,6 +238,126 @@ function readArtifactMeta(filePath: string, table: string): Record<string, unkno
   } finally {
     artifactDb.close();
   }
+}
+
+/** What distinguishes the two artifact shapes on disk. */
+type ArtifactStorage = {
+  /** Table name to whether it is a WITHOUT ROWID table. */
+  withoutRowid: Record<string, boolean>;
+  /** Every index in the file, implicit primary-key autoindexes included. */
+  indexes: string[];
+  quickCheck: string;
+  freePages: number;
+};
+
+function readArtifactStorage(filePath: string): ArtifactStorage {
+  const artifactDb = new DatabaseSync(filePath, { readOnly: true });
+  try {
+    const tables = artifactDb
+      .prepare("SELECT name, wr FROM pragma_table_list WHERE schema = 'main' AND type = 'table' ORDER BY name")
+      .all() as { name: string; wr: number }[];
+    return {
+      withoutRowid: Object.fromEntries(
+        tables.filter((table) => !table.name.startsWith('sqlite_')).map((table) => [table.name, table.wr === 1]),
+      ),
+      indexes: (
+        artifactDb.prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name").all() as {
+          name: string;
+        }[]
+      ).map((row) => row.name),
+      quickCheck: (artifactDb.prepare('PRAGMA quick_check').get() as { quick_check: string }).quick_check,
+      freePages: (artifactDb.prepare('PRAGMA freelist_count').get() as { freelist_count: number }).freelist_count,
+    };
+  } finally {
+    artifactDb.close();
+  }
+}
+
+/**
+ * How many of a table's leaf pages sit at a LOWER page number than the leaf
+ * before them in key order, out of how many leaves. A vacuumed table is written
+ * front to back in key order, so this is near zero; a table filled in arrival
+ * order scatters its leaves and roughly a third step backwards.
+ */
+function leafPagesOutOfKeyOrder(filePath: string, table: string): { backwardSteps: number; leafPages: number } {
+  const artifactDb = new DatabaseSync(filePath, { readOnly: true });
+  try {
+    const leafPageNumbers = (
+      artifactDb.prepare("SELECT pageno FROM dbstat WHERE name = ? AND pagetype = 'leaf' ORDER BY path").all(table) as {
+        pageno: number;
+      }[]
+    ).map((row) => row.pageno);
+    let backwardSteps = 0;
+    for (let index = 1; index < leafPageNumbers.length; index += 1) {
+      if (leafPageNumbers[index] < leafPageNumbers[index - 1]) backwardSteps += 1;
+    }
+    return { backwardSteps, leafPages: leafPageNumbers.length };
+  } finally {
+    artifactDb.close();
+  }
+}
+
+/** The file's size after one more vacuum: equal to its current size only if it is already packed. */
+function vacuumedSize(filePath: string, scratchPath: string): number {
+  const artifactDb = new DatabaseSync(filePath, { readOnly: true });
+  try {
+    artifactDb.prepare('VACUUM INTO ?').run(scratchPath);
+  } finally {
+    artifactDb.close();
+  }
+  return statSync(scratchPath).size;
+}
+
+/**
+ * A layout big enough for storage to matter: `climbCount` climbs whose uuids
+ * (md5 of a counter) are in an order unrelated to the order they are inserted
+ * and streamed in, two stats rows and two grade rows each. That mismatch is the
+ * production condition shape 2 exists for.
+ */
+async function seedShuffledLayout(climbCount: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO board_climbs
+      (uuid, board_type, layout_id, name, description, frames, is_draft, is_listed, compatible_size_ids, updated_at)
+    SELECT md5(climb_number::text), ${BOARD_TYPE}, ${LAYOUT_ID}, 'Climb ' || climb_number,
+           'Sit start, match the top. ' || climb_number, repeat('p1145r12p1146r13', 8), false, true,
+           '{5,6}'::int[], '2026-05-01T00:00:00Z'::timestamp + climb_number * interval '1 second'
+    FROM generate_series(1, ${climbCount}) AS climb_number
+  `);
+  await db.execute(sql`
+    INSERT INTO board_climb_stats
+      (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, quality_average, fa_username, updated_at)
+    SELECT ${BOARD_TYPE}, md5(climb_number::text), stat_angle, 20 + (climb_number % 10), climb_number, 2.5,
+           'setter' || climb_number, '2026-05-02T00:00:00Z'::timestamp + climb_number * interval '1 second'
+    FROM generate_series(1, ${climbCount}) AS climb_number
+    CROSS JOIN (VALUES (40), (45)) AS angles(stat_angle)
+  `);
+  await db.execute(sql`
+    INSERT INTO board_climb_grades
+      (board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high, confidence,
+       ascensionist_count, model_version, coeff_version, computed_at)
+    SELECT ${BOARD_TYPE}, md5(climb_number::text), grade_angle, 20.5, 19.25, 19, 22, 'high', climb_number,
+           'test-model', 'test-coeff', '2026-05-03T00:00:00Z'::timestamp + climb_number * interval '1 second'
+    FROM generate_series(1, ${climbCount}) AS climb_number
+    CROSS JOIN (VALUES (40), (45)) AS angles(grade_angle)
+  `);
+}
+
+async function exportInShape(
+  artifactShape: SnapshotArtifactShape,
+): Promise<{ filePath: string; gradesFilePath: string; result: Awaited<ReturnType<typeof exportLayoutSnapshot>> }> {
+  const filePath = join(workDir, `shape-${artifactShape}.db`);
+  const gradesFilePath = join(workDir, `shape-${artifactShape}-grades.db`);
+  const result = await exportLayoutSnapshot({
+    sqlClient: createPool(),
+    boardType: BOARD_TYPE,
+    layoutId: LAYOUT_ID,
+    filePath,
+    gradesFilePath,
+    builtAt: BUILT_AT,
+    stabilityWindowSeconds: 0,
+    artifactShape,
+  });
+  return { filePath, gradesFilePath, result };
 }
 
 let workDir: string;
@@ -942,5 +1071,193 @@ describe('board_climb_grades snapshot artifact', () => {
     });
 
     expect(result.grades).toBeUndefined();
+  });
+});
+
+// The two artifact shapes (SnapshotArtifactShape). Same rows, same snapshot_meta,
+// different storage: shape 2 is `WITHOUT ROWID` with no secondary index, and
+// vacuumed so the file is packed and in primary-key order.
+describe('artifact shapes', () => {
+  const CLIMB_COUNT = 1500;
+  const SECONDARY_INDEXES = ['idx_climbs_search', 'idx_stats_difficulty', 'idx_stats_lookup'];
+  const DATA_META_COLUMNS = [
+    'table_name',
+    'watermark_updated_at',
+    'watermark_sync_seq',
+    'row_count',
+    'built_at',
+    'schema_version',
+    'format_version',
+  ];
+
+  it('carries identical rows and identical data-table snapshot_meta in both shapes', async () => {
+    await seedShuffledLayout(CLIMB_COUNT);
+    const shape1 = await exportInShape(1);
+    const shape2 = await exportInShape(2);
+
+    const shape2Climbs = readArtifactRows(shape2.filePath, 'board_climbs', CLIMB_COLUMNS);
+    const shape2Stats = readArtifactRows(shape2.filePath, 'board_climb_stats', STATS_COLUMNS);
+    const shape2Grades = readArtifactRows(shape2.gradesFilePath, 'board_climb_grades', GRADES_COLUMNS);
+    expect(shape2Climbs).toEqual(readArtifactRows(shape1.filePath, 'board_climbs', CLIMB_COLUMNS));
+    expect(shape2Stats).toEqual(readArtifactRows(shape1.filePath, 'board_climb_stats', STATS_COLUMNS));
+    expect(shape2Grades).toEqual(readArtifactRows(shape1.gradesFilePath, 'board_climb_grades', GRADES_COLUMNS));
+    expect(shape2Climbs).toHaveLength(CLIMB_COUNT);
+    expect(shape2Stats).toHaveLength(CLIMB_COUNT * 2);
+    expect(shape2Grades).toHaveLength(CLIMB_COUNT * 2);
+
+    // snapshot_meta is what the client verifies before it imports a row. The
+    // sync_deletions row is left out: its boundary is each export
+    // transaction's own clock, so two exports never share it.
+    for (const [shape1Path, shape2Path, table] of [
+      [shape1.filePath, shape2.filePath, 'board_climbs'],
+      [shape1.filePath, shape2.filePath, 'board_climb_stats'],
+      [shape1.gradesFilePath, shape2.gradesFilePath, 'board_climb_grades'],
+    ]) {
+      const shape2Meta = readArtifactMeta(shape2Path, table);
+      expect(Object.keys(shape2Meta ?? {})).toEqual(DATA_META_COLUMNS);
+      expect(shape2Meta).toEqual(readArtifactMeta(shape1Path, table));
+    }
+    expect(shape2.result.tables).toEqual(shape1.result.tables);
+    expect(shape2.result.grades?.tables).toEqual(shape1.result.grades?.tables);
+    expect(readArtifactMetaTableNames(shape2.filePath)).toEqual(readArtifactMetaTableNames(shape1.filePath));
+  });
+
+  it('stores shape 2 WITHOUT ROWID with no secondary index, and shape 1 exactly as before', async () => {
+    await seedShuffledLayout(50);
+    const shape1 = await exportInShape(1);
+    const shape2 = await exportInShape(2);
+
+    expect(readArtifactStorage(shape2.filePath)).toEqual({
+      withoutRowid: { board_climb_stats: true, board_climbs: true, snapshot_meta: false },
+      indexes: ['sqlite_autoindex_snapshot_meta_1'],
+      quickCheck: 'ok',
+      freePages: 0,
+    });
+    expect(readArtifactStorage(shape2.gradesFilePath)).toEqual({
+      withoutRowid: { board_climb_grades: true, snapshot_meta: false },
+      indexes: ['sqlite_autoindex_snapshot_meta_1'],
+      quickCheck: 'ok',
+      freePages: 0,
+    });
+
+    expect(readArtifactStorage(shape1.filePath)).toEqual({
+      withoutRowid: { board_climb_stats: false, board_climbs: false, snapshot_meta: false },
+      indexes: [
+        ...SECONDARY_INDEXES,
+        'sqlite_autoindex_board_climb_stats_1',
+        'sqlite_autoindex_board_climbs_1',
+        'sqlite_autoindex_snapshot_meta_1',
+      ],
+      quickCheck: 'ok',
+      freePages: 0,
+    });
+    expect(readArtifactStorage(shape1.gradesFilePath).withoutRowid).toEqual({
+      board_climb_grades: false,
+      snapshot_meta: false,
+    });
+
+    expect(shape2.result.artifactShape).toBe(2);
+    expect(shape2.result.vacuumMs).toEqual(expect.any(Number));
+    expect(shape1.result.artifactShape).toBe(1);
+    // Shape 1 has no vacuum step at all, not a fast one.
+    expect(shape1.result.vacuumMs).toBeNull();
+  });
+
+  it('leaves a shape-2 file packed and in primary-key order, where shape 1 is neither', async () => {
+    await seedShuffledLayout(CLIMB_COUNT);
+    const shape1 = await exportInShape(1);
+    const shape2 = await exportInShape(2);
+
+    // Packed: vacuuming it again cannot make it smaller.
+    for (const artifactPath of [shape2.filePath, shape2.gradesFilePath]) {
+      expect(vacuumedSize(artifactPath, `${artifactPath}.again`)).toBe(statSync(artifactPath).size);
+    }
+
+    // In key order on disk: walking a table by key reads its pages front to
+    // back. SQLite renumbers sibling pages when it rebalances, so a handful of
+    // leaves may still sit one step out; 2% is far below the unvacuumed third.
+    for (const [artifactPath, table] of [
+      [shape2.filePath, 'board_climbs'],
+      [shape2.filePath, 'board_climb_stats'],
+      [shape2.gradesFilePath, 'board_climb_grades'],
+    ]) {
+      const { backwardSteps, leafPages } = leafPagesOutOfKeyOrder(artifactPath, table);
+      expect(leafPages, table).toBeGreaterThan(10);
+      expect(backwardSteps / leafPages, table).toBeLessThan(0.02);
+    }
+
+    // What that order replaces. Shape 1's primary-key index is filled in the
+    // order rows arrive, and md5 uuids arrive in no key order at all, so its
+    // leaves are allocated wherever the last split happened to land.
+    const shape1KeyIndex = leafPagesOutOfKeyOrder(shape1.filePath, 'sqlite_autoindex_board_climb_stats_1');
+    expect(shape1KeyIndex.backwardSteps).toBeGreaterThan(0);
+
+    // And the bytes: no index b-trees and no slack. The real layouts save about
+    // a quarter; this fixture's rows are small, so its indexes weigh more.
+    expect(statSync(shape2.filePath).size).toBeLessThan(statSync(shape1.filePath).size * 0.85);
+    expect(statSync(shape2.gradesFilePath).size).toBeLessThan(statSync(shape1.gradesFilePath).size * 0.85);
+  });
+
+  it('leaves nothing but the artifacts in the work directory', async () => {
+    await seedShuffledLayout(50);
+    const shape2 = await exportInShape(2);
+
+    // No `.packed` sibling from the vacuum, no rollback journal.
+    expect(readdirSync(workDir).sort()).toEqual(
+      [shape2.filePath, shape2.gradesFilePath].map((artifactPath) => artifactPath.slice(workDir.length + 1)).sort(),
+    );
+  });
+
+  it('skips the vacuum for a grades file that will never be published', async () => {
+    // No grade rows: the grades file exists on disk but the result omits it, so
+    // it is deleted by the caller and there is nothing to pack.
+    await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    const shape2 = await exportInShape(2);
+
+    expect(shape2.result.grades).toBeUndefined();
+    expect(readArtifactStorage(shape2.filePath).withoutRowid.board_climbs).toBe(true);
+    expect(readdirSync(workDir).some((fileName) => fileName.endsWith('.packed'))).toBe(false);
+  });
+
+  describe('SNAPSHOT_ARTIFACT_SHAPE', () => {
+    const originalValue = process.env.SNAPSHOT_ARTIFACT_SHAPE;
+    afterEach(() => {
+      if (originalValue === undefined) delete process.env.SNAPSHOT_ARTIFACT_SHAPE;
+      else process.env.SNAPSHOT_ARTIFACT_SHAPE = originalValue;
+    });
+
+    async function exportWithConfiguredShape(fileName: string): Promise<string> {
+      const filePath = join(workDir, fileName);
+      await exportLayoutSnapshot({
+        sqlClient: createPool(),
+        boardType: BOARD_TYPE,
+        layoutId: LAYOUT_ID,
+        filePath,
+        builtAt: BUILT_AT,
+        stabilityWindowSeconds: 0,
+      });
+      return filePath;
+    }
+
+    it('builds shape 2 when unset and rolls the build back to shape 1 when set to 1', async () => {
+      await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+
+      delete process.env.SNAPSHOT_ARTIFACT_SHAPE;
+      const defaultStorage = readArtifactStorage(await exportWithConfiguredShape('default.db'));
+      expect(defaultStorage.withoutRowid.board_climbs).toBe(true);
+      expect(defaultStorage.indexes).toEqual(['sqlite_autoindex_snapshot_meta_1']);
+
+      process.env.SNAPSHOT_ARTIFACT_SHAPE = '1';
+      const rolledBackStorage = readArtifactStorage(await exportWithConfiguredShape('rolled-back.db'));
+      expect(rolledBackStorage.withoutRowid.board_climbs).toBe(false);
+      for (const indexName of SECONDARY_INDEXES) expect(rolledBackStorage.indexes).toContain(indexName);
+    });
+
+    it('refuses an unknown value before it creates a file', async () => {
+      process.env.SNAPSHOT_ARTIFACT_SHAPE = '3';
+
+      await expect(exportWithConfiguredShape('typo.db')).rejects.toThrow(/SNAPSHOT_ARTIFACT_SHAPE must be 1 or 2/);
+      expect(readdirSync(workDir)).toEqual([]);
+    });
   });
 });

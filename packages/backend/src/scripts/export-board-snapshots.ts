@@ -21,6 +21,12 @@
 // consistent, so a lagging replica can omit a lower-cursor row while containing
 // higher-cursor ones — see the pool call-site comment in runExport.
 //
+// The rows are fixed by all of the above; how the FILE stores them is not. That
+// is the artifact shape (SnapshotArtifactShape below): `WITHOUT ROWID` tables
+// with no secondary index, vacuumed into key order, about a quarter fewer bytes
+// than the device schema copied as it stands. SNAPSHOT_ARTIFACT_SHAPE=1 goes
+// back to that copy.
+//
 // Structure: a testable core (`exportLayoutSnapshot`, `boardSnapshotDdlStatements`,
 // `discoverLayoutPairs`) under one pass (`runExportWithOptions`, also run by the
 // batch worker's `export-board-snapshots` family) and a thin CLI (`runExport`).
@@ -32,7 +38,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Sql, TransactionSql } from 'postgres';
@@ -46,6 +52,7 @@ import {
   multiRowChunkSize,
   parseSnapshotManifest,
   SNAPSHOT_MANIFEST_FORMAT_VERSION,
+  type Migration,
   type SnapshotManifest,
   type SnapshotManifestEntry,
   type SnapshotGradesArtifact,
@@ -121,7 +128,7 @@ const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_cl
 const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
 const SNAPSHOT_EXPORT_APPLICATION_PREFIX = 'boardsesh-snapshot-export-';
 
-// On the libuv pool, not the event loop: gzipping kilter's 271 MB artifact
+// On the libuv pool, not the event loop: gzipping kilter's 207 MB artifact
 // takes seconds, and the batch worker's heartbeat timer shares this loop.
 export const gzipAsync = promisify(gzip);
 
@@ -172,6 +179,92 @@ CREATE TABLE IF NOT EXISTS snapshot_meta (
 // keeps the string-built SQL provably injection-free.
 const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
+// --- Artifact shape -----------------------------------------------------------
+
+/**
+ * How an artifact's SQLite file is laid out. The tables, columns, rows and
+ * `snapshot_meta` are identical in both; only the storage differs.
+ *
+ * Shape 1 is the device schema copied as it stands: rowid tables, filled in the
+ * order Postgres streamed the rows, carrying the three secondary indexes the
+ * phone's own queries use. For kilter layout 1 (387,101 climbs, 372,669 stats)
+ * that is 284.3 MB decoded and 110.2 MB gzipped. The three secondary indexes
+ * are 36.5 MB of it and the two primary-key autoindexes another 39.2 MB, and
+ * every row sits at a position unrelated to its key.
+ *
+ * Shape 2 keeps the same data in `WITHOUT ROWID` tables with no secondary
+ * index, then vacuums the file. A `WITHOUT ROWID` table IS its primary-key
+ * b-tree, so the separate autoindex goes too, and the vacuum leaves the rows
+ * dense and in key order. The same layout is 206.6 MB decoded and 82.4 MB
+ * gzipped, and its grades file goes from 27.1 MB gzipped to 16.8 MB.
+ *
+ * The import never needed the indexes: it reads the attached artifact by table
+ * scan and by primary key only, and builds the phone's own indexes as it writes
+ * into the phone's own tables. In key order its reads and those writes both run
+ * front to back instead of jumping around a file many times the size of the
+ * phone's page cache.
+ */
+export type SnapshotArtifactShape = 1 | 2;
+
+export const DEFAULT_SNAPSHOT_ARTIFACT_SHAPE: SnapshotArtifactShape = 2;
+
+/**
+ * The rollback switch. `SNAPSHOT_ARTIFACT_SHAPE=1` makes the next run build and
+ * publish exactly what the exporter published before shape 2 existed: the
+ * unchanged DDL, no vacuum, no `artifactShape` and no grades `uncompressedBytes`
+ * in the manifest. Unset or blank means the default. Anything else throws
+ * before the run reads the database or touches storage, because a typo that
+ * silently picked either shape would be found a download at a time.
+ *
+ * Read per run, not at module load, so one process can be pointed at either.
+ */
+export function configuredSnapshotArtifactShape(): SnapshotArtifactShape {
+  const configured = process.env.SNAPSHOT_ARTIFACT_SHAPE?.trim();
+  if (!configured) return DEFAULT_SNAPSHOT_ARTIFACT_SHAPE;
+  if (configured === '1') return 1;
+  if (configured === '2') return 2;
+  throw new Error(`SNAPSHOT_ARTIFACT_SHAPE must be 1 or 2, got ${JSON.stringify(configured)}`);
+}
+
+/**
+ * The device's secondary indexes on artifact tables, and the table each one is
+ * on. A shape-2 artifact leaves all three out; the phone still creates them in
+ * its own database from migration v1.
+ *
+ * Deliberately a list of its own and not more entries in the shared
+ * DEVICE_ONLY_STATEMENTS. That list is not export-only: `artifactSchemaVersion`
+ * reads it on the device to decide how old an artifact may be, and a shape-1
+ * run has to put these three back, which a shared, unconditional list cannot.
+ */
+const SHAPE_2_OMITTED_INDEXES: ReadonlyMap<string, SnapshotTableName> = new Map([
+  ['idx_climbs_search', 'board_climbs'],
+  ['idx_stats_lookup', 'board_climb_stats'],
+  ['idx_stats_difficulty', 'board_climb_stats'],
+]);
+
+// The two statement forms the shape-2 transform rewrites or drops, anchored to
+// the exact spelling the client migrations use. A statement that starts like
+// one of these and does not match is an error, never a pass-through: see
+// `withoutRowid` and `boardSnapshotDdlStatements`.
+const CREATE_TABLE_STATEMENT = /^CREATE TABLE IF NOT EXISTS ([a-z_][a-z0-9_]*) \(\n[\s\S]*\n\);$/;
+const CREATE_INDEX_STATEMENT = /^CREATE INDEX IF NOT EXISTS ([a-z_][a-z0-9_]*) ON ([a-z_][a-z0-9_]*) \(/;
+
+// The page cache each build connection gets for a shape-2 artifact, in KiB
+// (SQLite reads a negative cache_size as a size, not a page count). Rows arrive
+// in an order unrelated to the primary key, so every insert lands on a random
+// leaf of a b-tree that for kilter grows to 241 MB. The 2 MB default keeps only
+// the interior pages warm, and nearly every row then costs a page read and a
+// page write-back. Replaying kilter layout 1's rows on a development machine,
+// the SQLite half of the build took 11.6 s of CPU at the default and 9.2 s at
+// 64 MiB (shape 1 takes 9.5 s), and with the machine under load 21.7 s against
+// 8.8 s. 256 MiB was no faster than 64.
+//
+// Bounded on purpose. It costs about 100 MB of resident memory per connection,
+// two connections are open at once (layout and grades), and the worker's
+// memory limit also has to cover the artifact held in memory for upload. Both
+// caches are freed before the vacuum and the upload, which is where the peak is.
+const SHAPE_2_BUILD_CACHE_KIB = 65_536;
+
 // --- Types --------------------------------------------------------------------
 
 export type SnapshotTableExportResult = {
@@ -202,6 +295,13 @@ export type LayoutSnapshotResult = {
   filePath: string;
   builtAt: string;
   schemaVersion: number;
+  /** The shape of the layout file and of its grades file, when there is one. */
+  artifactShape: SnapshotArtifactShape;
+  /**
+   * How long the shape-2 vacuum blocked the event loop, layout and grades files
+   * together. Null for shape 1, which has no vacuum.
+   */
+  vacuumMs: number | null;
   tables: Record<SnapshotTableName, SnapshotTableExportResult>;
   /**
    * The layout's grades artifact, when one was requested AND the layout has
@@ -233,12 +333,29 @@ type SnapshotWatermark = {
  * shared MIGRATIONS — the single source of truth — so a future column added on the
  * client (e.g. the v2 `characteristics` ALTER) flows into the snapshot with no
  * duplicated DDL here.
+ *
+ * Shape 1 is those statements untouched. Shape 2 (see SnapshotArtifactShape)
+ * makes each requested table `WITHOUT ROWID` and carries no secondary index.
+ * It is a rewrite of the same statements, so the columns can never differ
+ * between shapes, and it refuses a statement it does not recognise instead of
+ * passing it through: a table that silently stayed a rowid table, or an index
+ * that silently shipped, would cost every download its bytes with nothing
+ * failing.
+ *
+ * `migrations` is the client's own list everywhere but in tests, which pass
+ * statements no shipped migration holds to reach those refusals (the same seam
+ * `artifactSchemaVersion` has).
  */
 export function boardSnapshotDdlStatements(
   tables: readonly (SnapshotTableName | SnapshotGradesTableName)[] = SNAPSHOT_TABLES,
+  artifactShape: SnapshotArtifactShape = DEFAULT_SNAPSHOT_ARTIFACT_SHAPE,
+  migrations: readonly Pick<Migration, 'version' | 'statements'>[] = MIGRATIONS,
 ): string[] {
   const referencesSnapshotTable = (statement: string): boolean =>
     tables.some((table) => new RegExp(`\\b${table}\\b`).test(statement));
+  const requestedTables = new Set<string>(tables);
+  const withoutRowidTables = new Set<string>();
+  const omittedIndexes = new Set<string>();
 
   // The device builds some tables for itself (the derived holds index) and they
   // must never reach a public artifact. The word-boundary match above keeps them
@@ -249,7 +366,7 @@ export function boardSnapshotDdlStatements(
 
   const deviceOnlyStatements = new Set(DEVICE_ONLY_STATEMENTS.map((statement) => statement.trim()));
   const statements: string[] = [];
-  for (const migration of [...MIGRATIONS].sort((left, right) => left.version - right.version)) {
+  for (const migration of [...migrations].sort((left, right) => left.version - right.version)) {
     for (const statement of migration.statements) {
       if (!referencesSnapshotTable(statement)) continue;
       // Statements the device needs but an artifact must not carry (the holds
@@ -262,11 +379,92 @@ export function boardSnapshotDdlStatements(
             `${deviceOnlyTable}, which must never ship in a snapshot artifact`,
         );
       }
-      statements.push(statement.trim());
+      const artifactStatement = statement.trim();
+      if (artifactShape === 1) {
+        statements.push(artifactStatement);
+        continue;
+      }
+
+      if (/^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(artifactStatement)) {
+        const [, indexName, indexedTable] = CREATE_INDEX_STATEMENT.exec(artifactStatement) ?? [];
+        const expectedTable = indexName === undefined ? undefined : SHAPE_2_OMITTED_INDEXES.get(indexName);
+        if (indexName === undefined || expectedTable === undefined || indexedTable !== expectedTable) {
+          // A new index on an artifact table. It belongs in DEVICE_ONLY_STATEMENTS
+          // (the device needs it, no artifact does) or in SHAPE_2_OMITTED_INDEXES;
+          // shipping it would quietly undo part of what shape 2 is for.
+          throw new Error(
+            `boardSnapshotDdlStatements: migration v${migration.version} adds an index a shape-2 artifact ` +
+              `does not know how to leave out: ${artifactStatement}`,
+          );
+        }
+        omittedIndexes.add(indexName);
+        continue;
+      }
+
+      if (/^CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE\b/i.test(artifactStatement)) {
+        const [, createdTable] = CREATE_TABLE_STATEMENT.exec(artifactStatement) ?? [];
+        if (createdTable === undefined || !requestedTables.has(createdTable) || withoutRowidTables.has(createdTable)) {
+          throw new Error(
+            `boardSnapshotDdlStatements: migration v${migration.version} has a CREATE TABLE the shape-2 ` +
+              `transform does not recognise: ${artifactStatement.split('\n')[0]}`,
+          );
+        }
+        withoutRowidTables.add(createdTable);
+        statements.push(withoutRowid(artifactStatement));
+        continue;
+      }
+
+      statements.push(artifactStatement);
     }
   }
+
+  if (artifactShape === 2) {
+    const untransformedTable = tables.find((table) => !withoutRowidTables.has(table));
+    if (untransformedTable) {
+      throw new Error(`boardSnapshotDdlStatements: no CREATE TABLE found for ${untransformedTable}`);
+    }
+    // A listed index that never turned up was renamed or removed in the client
+    // schema. Fail here, where the list can be fixed, not by shipping whatever
+    // replaced it.
+    const missingIndex = [...SHAPE_2_OMITTED_INDEXES].find(
+      ([indexName, indexedTable]) => requestedTables.has(indexedTable) && !omittedIndexes.has(indexName),
+    );
+    if (missingIndex) {
+      throw new Error(
+        `boardSnapshotDdlStatements: expected to leave out ${missingIndex[0]} on ${missingIndex[1]}, ` +
+          `but no migration creates it`,
+      );
+    }
+  }
+
   statements.push(SNAPSHOT_META_DDL);
   return statements;
+}
+
+/**
+ * Append `WITHOUT ROWID` to one of the client's `CREATE TABLE` statements.
+ *
+ * SQLite requires an explicit PRIMARY KEY for it and would reject the DDL
+ * itself, but only at export time, per layout, with every layout failing the
+ * same way. Checking here turns that into one error that names the table, and
+ * lets the DDL test catch it without a database.
+ *
+ * The device's own tables are untouched: this rewrites the text handed to the
+ * artifact file, never MIGRATIONS.
+ */
+export function withoutRowid(createTableStatement: string): string {
+  const [, tableName] = CREATE_TABLE_STATEMENT.exec(createTableStatement) ?? [];
+  if (tableName === undefined) {
+    throw new Error(
+      `withoutRowid: not a "CREATE TABLE IF NOT EXISTS <name> (...);" statement: ${createTableStatement.split('\n')[0]}`,
+    );
+  }
+  if (!/\bPRIMARY\s+KEY\b/i.test(createTableStatement)) {
+    throw new Error(`withoutRowid: ${tableName} declares no PRIMARY KEY, which a WITHOUT ROWID table requires`);
+  }
+  // The trailing `);` is guaranteed by CREATE_TABLE_STATEMENT, so this is the
+  // closing parenthesis of the column list and nothing else.
+  return `${createTableStatement.slice(0, -1)} WITHOUT ROWID;`;
 }
 
 // --- Postgres discovery + streaming ------------------------------------------
@@ -461,7 +659,13 @@ async function hasSmallLayoutDeltaAtThreshold(params: {
   return rows.length >= threshold;
 }
 
-type RefreshReason = SnapshotTableName | SnapshotGradesTableName | 'missing-entry' | 'stale-schema' | 'stale-privacy';
+type RefreshReason =
+  | SnapshotTableName
+  | SnapshotGradesTableName
+  | 'missing-entry'
+  | 'stale-schema'
+  | 'stale-privacy'
+  | 'stale-shape';
 
 /** Return the first reason this pair needs a new artifact, or null when current. */
 async function layoutRefreshReason(params: {
@@ -470,8 +674,9 @@ async function layoutRefreshReason(params: {
   previousEntry: SnapshotManifestEntry | undefined;
   threshold: number;
   includeGrades: boolean;
+  artifactShape: SnapshotArtifactShape;
 }): Promise<RefreshReason | null> {
-  const { sqlClient, pair, previousEntry, threshold, includeGrades } = params;
+  const { sqlClient, pair, previousEntry, threshold, includeGrades, artifactShape } = params;
   if (!previousEntry) return 'missing-entry';
   if (previousEntry.privacyVersion !== 1 || (previousEntry.grades && previousEntry.grades.privacyVersion !== 1))
     return 'stale-privacy';
@@ -479,6 +684,12 @@ async function layoutRefreshReason(params: {
   if (includeGrades && previousEntry.grades && previousEntry.grades.schemaVersion < LATEST_SCHEMA_VERSION) {
     return 'stale-schema';
   }
+  // An entry built in another shape is rebuilt without waiting for 500 rows,
+  // like a stale schema. That is what lets SNAPSHOT_ARTIFACT_SHAPE act on the
+  // next 15-minute scan in both directions, shipping shape 2 and rolling it
+  // back, when the alternative is the fleet reading the old files until the
+  // nightly. An entry with no shape at all predates the field and is shape 1.
+  if ((previousEntry.artifactShape ?? 1) !== artifactShape) return 'stale-shape';
 
   const tableWatermarks: Array<{
     tableName: SnapshotTableName | SnapshotGradesTableName;
@@ -855,6 +1066,52 @@ function writeSnapshotMeta(
 }
 
 /**
+ * Rewrite a finished shape-2 artifact as a dense file in primary-key order.
+ *
+ * The build inserts rows in whatever order Postgres streams them, which for a
+ * `WITHOUT ROWID` table means random positions in its b-tree. Left like that,
+ * kilter layout 1 is 240.6 MB with a seventh of it slack, and one leaf page in
+ * three sits before its predecessor in the file. A vacuum walks each table by
+ * key and writes it out again packed: 206.6 MB, and 10 MB less after gzip. An
+ * `ORDER BY` on the Postgres side would do the same for the price of a
+ * board-wide sort on the primary, every run.
+ *
+ * `VACUUM INTO` a sibling file, then rename over the original, and not a plain
+ * `VACUUM`. Plain VACUUM writes its copy to SQLite's own temp directory (which
+ * may be the container's root filesystem, not the scratch mount) and then
+ * copies it back through a rollback journal as large as the file. `INTO` puts
+ * exactly one extra file exactly here, so peak scratch use is the unpacked file
+ * plus the packed one (447 MB for kilter layout 1).
+ *
+ * It is one synchronous SQLite call, so it blocks the event loop and with it
+ * the batch worker's heartbeat timer: a third of a second for kilter layout 1
+ * on an idle development machine, under two seconds for it and its grades file
+ * together on a busy one. `vacuumMs` in the per-layout log line is the number
+ * to read on the worker itself.
+ *
+ * Runs on a connection of its own, after the build's connection has closed, so
+ * the swap never replaces a file something still holds open.
+ */
+function vacuumArtifactFile(filePath: string): void {
+  const packedFilePath = `${filePath}.packed`;
+  // VACUUM INTO refuses to write over an existing file; a leftover can only be
+  // a previous attempt's that died before its own cleanup.
+  rmSync(packedFilePath, { force: true });
+  try {
+    const unpackedDb = new DatabaseSync(filePath);
+    try {
+      unpackedDb.prepare('VACUUM INTO ?').run(packedFilePath);
+    } finally {
+      unpackedDb.close();
+    }
+    renameSync(packedFilePath, filePath);
+  } catch (error) {
+    rmSync(packedFilePath, { force: true });
+    throw error;
+  }
+}
+
+/**
  * Build ONE (boardType, layoutId) SQLite snapshot at `filePath`, and — when
  * `gradesFilePath` is given and the layout has grade rows — a SECOND, separate
  * artifact carrying only `board_climb_grades`.
@@ -870,6 +1127,12 @@ function writeSnapshotMeta(
  * grades existed. Its additive metadata-only sync_deletions row is safe for old
  * clients because they query the two required snapshot_meta rows by name and
  * ignore extras.
+ *
+ * `artifactShape` picks the storage layout of both files (SnapshotArtifactShape)
+ * and nothing else: the rows, the watermarks and `snapshot_meta` are the same
+ * statement for statement. Shape 1 runs exactly the build that predates shapes,
+ * with no pragma and no vacuum, so the rollback is the code path that has
+ * already published every artifact to date.
  */
 export async function exportLayoutSnapshot(params: {
   sqlClient: Sql;
@@ -883,20 +1146,28 @@ export async function exportLayoutSnapshot(params: {
   streamBatchSize?: number;
   /** See probeDeletionReplayBoundary: refuse a same-role-only replay boundary. */
   requireAllRolesVisible?: boolean;
+  /** Defaults to SNAPSHOT_ARTIFACT_SHAPE, which defaults to shape 2. */
+  artifactShape?: SnapshotArtifactShape;
 }): Promise<LayoutSnapshotResult> {
   const { sqlClient, boardType, layoutId, filePath, builtAt, gradesFilePath } = params;
   const stabilityWindowSeconds = params.stabilityWindowSeconds ?? DEFAULT_STABILITY_WINDOW_SECONDS;
   const streamBatchSize = params.streamBatchSize ?? 5000;
+  const artifactShape = params.artifactShape ?? configuredSnapshotArtifactShape();
   const scopeParams: (string | number)[] = [boardType, layoutId, stabilityWindowSeconds];
 
   const sqliteDb = new DatabaseSync(filePath);
   const gradesDb = gradesFilePath ? new DatabaseSync(gradesFilePath) : null;
+  let built: LayoutSnapshotResult;
   try {
-    for (const statement of boardSnapshotDdlStatements()) {
+    if (artifactShape === 2) {
+      sqliteDb.exec(`PRAGMA cache_size = -${SHAPE_2_BUILD_CACHE_KIB}`);
+      gradesDb?.exec(`PRAGMA cache_size = -${SHAPE_2_BUILD_CACHE_KIB}`);
+    }
+    for (const statement of boardSnapshotDdlStatements(SNAPSHOT_TABLES, artifactShape)) {
       sqliteDb.exec(statement);
     }
     if (gradesDb) {
-      for (const statement of boardSnapshotDdlStatements(GRADES_SNAPSHOT_TABLES)) {
+      for (const statement of boardSnapshotDdlStatements(GRADES_SNAPSHOT_TABLES, artifactShape)) {
         gradesDb.exec(statement);
       }
     }
@@ -990,12 +1261,14 @@ export async function exportLayoutSnapshot(params: {
           }
         : { deletionsReplayFrom: streamed.deletionsReplayFrom, deletionsReplayFallbackReason: null };
 
-    return {
+    built = {
       boardType,
       layoutId,
       filePath,
       builtAt,
       schemaVersion: LATEST_SCHEMA_VERSION,
+      artifactShape,
+      vacuumMs: null,
       tables: streamed.tables,
       ...deletionReplayMetadata,
       ...(grades ? { grades } : {}),
@@ -1013,6 +1286,16 @@ export async function exportLayoutSnapshot(params: {
     sqliteDb.close();
     gradesDb?.close();
   }
+
+  if (artifactShape === 1) return built;
+
+  // After COMMIT and after both connections are closed: the vacuum needs the
+  // rows on disk and replaces each file. A grades file with no rows is skipped
+  // because it is never published (the caller deletes it).
+  const vacuumStartedAt = Date.now();
+  vacuumArtifactFile(filePath);
+  if (built.grades) vacuumArtifactFile(built.grades.filePath);
+  return { ...built, vacuumMs: Date.now() - vacuumStartedAt };
 }
 
 // --- CLI ----------------------------------------------------------------------
@@ -1152,14 +1435,28 @@ function buildManifestEntry(
     uncompressedBytes: number;
     contentEncoding: 'gzip' | 'identity';
   },
-  gradesUpload?: { url: string; key: string; bytes: number; contentEncoding: 'gzip' | 'identity' },
+  gradesUpload?: {
+    url: string;
+    key: string;
+    bytes: number;
+    // The grades file's pre-compression size, as above.
+    uncompressedBytes: number;
+    contentEncoding: 'gzip' | 'identity';
+  },
 ): SnapshotManifestEntry {
+  // Shape 1 is the rollback, and what it rolls back to is the manifest as it
+  // was before shapes: no `artifactShape`, and no decoded size on the grades
+  // block. That second one is not cosmetic. A client that finds the size holds
+  // the downloaded grades file to that exact length, so the field changes what
+  // shipped apps do, and one switch has to be able to take all of it back.
+  const isShape2 = result.artifactShape === 2;
   const grades: SnapshotGradesArtifact | undefined =
     gradesUpload && result.grades
       ? {
           key: gradesUpload.key,
           url: gradesUpload.url,
           bytes: gradesUpload.bytes,
+          ...(isShape2 ? { uncompressedBytes: gradesUpload.uncompressedBytes } : {}),
           contentEncoding: gradesUpload.contentEncoding,
           builtAt: result.builtAt,
           schemaVersion: result.schemaVersion,
@@ -1178,6 +1475,7 @@ function buildManifestEntry(
     builtAt: result.builtAt,
     schemaVersion: result.schemaVersion,
     privacyVersion: 1,
+    ...(isShape2 ? { artifactShape: 2 as const } : {}),
     tables: {
       board_climbs: result.tables.board_climbs,
       board_climb_stats: result.tables.board_climb_stats,
@@ -1353,6 +1651,10 @@ export async function runExportWithOptions(
   const isThresholdRefresh = options.refreshThreshold !== undefined;
   const keyPrefix = options.keyPrefix;
   const manifestKey = manifestKeyForPrefix(keyPrefix);
+  // Resolved once, up front: a mistyped SNAPSHOT_ARTIFACT_SHAPE aborts here with
+  // nothing read or written, and every layout of the run, its manifest entry
+  // and the threshold scan's "is this entry stale" check agree on one value.
+  const artifactShape = configuredSnapshotArtifactShape();
 
   // The production fleet reads this prefix as gzip. A mistyped manual command
   // must not replace it with an identity artifact or bypass its replay-boundary
@@ -1419,6 +1721,7 @@ export async function runExportWithOptions(
       dryRun: options.dryRun,
       filtered: isFilteredRun,
       gzip: options.gzip,
+      artifactShape,
       keyPrefix,
       pairs: discoveredPairs.length,
       refreshThreshold: options.refreshThreshold ?? null,
@@ -1446,6 +1749,7 @@ export async function runExportWithOptions(
           previousEntry: previousEntriesByPair.get(`${pair.boardType}:${pair.layoutId}`),
           threshold: options.refreshThreshold,
           includeGrades: options.gzip,
+          artifactShape,
         });
         if (reason) {
           stalePairs.push(pair);
@@ -1488,6 +1792,7 @@ export async function runExportWithOptions(
           layoutId: pair.layoutId,
           filePath,
           builtAt,
+          artifactShape,
           requireAllRolesVisible: dependencies.requireAllRolesVisible ?? false,
           // GZIP PASS ONLY. The nightly runs twice — once at the identity `v1`
           // prefix kept as a rollback target, once at `v1-gzip` where the fleet
@@ -1555,6 +1860,8 @@ export async function runExportWithOptions(
             uploadBytes: uploadBody.length,
             gradesUploadBytes: gradesUploadBody?.length ?? 0,
             contentEncoding,
+            artifactShape: result.artifactShape,
+            vacuumMs: result.vacuumMs,
             deletionsReplayFrom: result.deletionsReplayFrom,
             deletionsReplayFallbackReason: result.deletionsReplayFallbackReason,
             durationMs: Date.now() - startedAt,
@@ -1573,11 +1880,12 @@ export async function runExportWithOptions(
                 uncompressedBytes: rawBuffer.length,
                 contentEncoding,
               },
-              gradesUploadBody
+              gradesRawBuffer && gradesUploadBody
                 ? {
                     url: canBuildPublicUrl ? publicUrlForKey(gradesKey) : `dry-run:${gradesKey}`,
                     key: gradesKey,
                     bytes: gradesUploadBody.length,
+                    uncompressedBytes: gradesRawBuffer.length,
                     contentEncoding: 'gzip' as const,
                   }
                 : undefined,
@@ -1610,6 +1918,8 @@ export async function runExportWithOptions(
             contentEncoding,
             key: uploaded.key,
             gradesKey: uploadedGrades?.key ?? null,
+            artifactShape: result.artifactShape,
+            vacuumMs: result.vacuumMs,
             deletionsReplayFrom: result.deletionsReplayFrom,
             deletionsReplayFallbackReason: result.deletionsReplayFallbackReason,
             durationMs: Date.now() - startedAt,
@@ -1624,11 +1934,12 @@ export async function runExportWithOptions(
                 uncompressedBytes: rawBuffer.length,
                 contentEncoding,
               },
-              uploadedGrades && gradesUploadBody
+              uploadedGrades && gradesRawBuffer && gradesUploadBody
                 ? {
                     url: publicUrlForKey(uploadedGrades.key),
                     key: uploadedGrades.key,
                     bytes: gradesUploadBody.length,
+                    uncompressedBytes: gradesRawBuffer.length,
                     contentEncoding: 'gzip' as const,
                   }
                 : undefined,

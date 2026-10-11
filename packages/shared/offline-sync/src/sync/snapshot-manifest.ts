@@ -64,6 +64,12 @@ export type SnapshotGradesArtifact = {
   url: string;
   // Stored object size in bytes (gzip, like the whole-layout entry's `bytes`).
   bytes: number;
+  // The DECODED grades file size in bytes, the same quantity as the layout
+  // entry's `uncompressedBytes` and optional for the same reason: a block built
+  // before the field existed does not carry it. With it a downloader can check
+  // the finished file's exact length and reserve exact disk space instead of
+  // multiplying `bytes` by a guess. Never rendered.
+  uncompressedBytes?: number;
   contentEncoding: 'gzip' | 'identity';
   builtAt: string;
   schemaVersion: number;
@@ -73,6 +79,19 @@ export type SnapshotGradesArtifact = {
 export type SnapshotManifestEntry = {
   /** Authored climbs and mutable personal attribution are excluded. */
   privacyVersion?: 1;
+  /**
+   * How this entry's SQLite files are laid out on disk, the layout artifact and
+   * its grades sibling alike. Absent is shape 1: rowid tables in arrival order,
+   * carrying the device's secondary indexes. `2` is the same tables, columns
+   * and rows as `WITHOUT ROWID` tables with no secondary index, vacuumed so the
+   * file is dense and in primary-key order (about a quarter fewer bytes).
+   *
+   * The export job reads it to tell which entries to rebuild after its shape
+   * setting changes. A client must NOT gate on it: the import reads an artifact
+   * by table and column name only, so one import runs on every shape, and a
+   * value this build has never heard of is still a file it can import.
+   */
+  artifactShape?: 2;
   boardType: string;
   layoutId: number;
   // S3 object key of the artifact, e.g. `board-snapshots/v1/kilter/8/<iso>.db`.
@@ -174,9 +193,29 @@ function isGradesArtifact(value: unknown): value is SnapshotGradesArtifact {
   ) {
     return false;
   }
+  if (!isOptionalByteCount(value.uncompressedBytes)) return false;
   const tables = value.tables;
   if (!isRecord(tables)) return false;
   return SNAPSHOT_GRADES_TABLE_NAMES.every((tableName) => isTableStats(tables[tableName]));
+}
+
+// Optional and additive, so no formatVersion bump: an old client ignores the
+// key, a new client reading an old manifest gets `undefined` and falls back.
+// Present-but-corrupt is still a rejection — a fractional or negative decoded
+// size would drive a nonsense progress denominator and a nonsense disk-space
+// precheck.
+function isOptionalByteCount(value: unknown): boolean {
+  return value === undefined || (isInteger(value) && value >= 0);
+}
+
+// Optional and additive like the byte counts. Present, it must be a positive
+// integer: anything else is a corrupted or hand-edited manifest. It is NOT
+// pinned to the shapes this build knows. No reader imports differently by
+// shape, so rejecting an unknown one would turn a file this client can import
+// into a manifest it cannot parse, and would make an export job rolled back
+// across a shape change refuse the manifest it has to merge.
+function isOptionalArtifactShape(value: unknown): boolean {
+  return value === undefined || (isInteger(value) && value >= 1);
 }
 
 function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
@@ -193,14 +232,8 @@ function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
   ) {
     return false;
   }
-  // Optional and additive, so no formatVersion bump: an old client ignores the
-  // key, a new client reading an old manifest gets `undefined` and falls back.
-  // Present-but-corrupt is still a rejection — a fractional or negative decoded
-  // size would drive a nonsense progress denominator and a nonsense disk-space
-  // precheck.
-  if (value.uncompressedBytes !== undefined && (!isInteger(value.uncompressedBytes) || value.uncompressedBytes < 0)) {
-    return false;
-  }
+  if (!isOptionalByteCount(value.uncompressedBytes)) return false;
+  if (!isOptionalArtifactShape(value.artifactShape)) return false;
   if (value.grades !== undefined && !isGradesArtifact(value.grades)) return false;
   const tables = value.tables;
   if (!isRecord(tables)) return false;

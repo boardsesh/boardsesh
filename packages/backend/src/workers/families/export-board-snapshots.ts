@@ -159,13 +159,14 @@ export const exportBoardSnapshotsFamily: BackgroundJobFamilyModule<ExportRequest
     // payload).
     deadlineSeconds: 72_000,
     // The fence holds the run lock only for a SELECT 1, so the window is sized
-    // for the event loop instead: the synchronous SQLite inserts and reading
-    // the largest artifact (kilter, about 271 MB raw) back into memory block
-    // the heartbeat timer for seconds at a time (the gzip itself runs on the
-    // libuv pool), and the touch then queues for one of the pool's two
-    // connections while the other holds the export transaction. 120 s covers
-    // that with a wide margin, and a dead worker is still noticed within two
-    // minutes rather than at the six-hour lease.
+    // for the event loop instead: the synchronous SQLite inserts, the vacuum
+    // that packs a shape-2 artifact (one call per file, logged as `vacuumMs`),
+    // and reading the largest artifact (kilter, about 207 MB raw) back into
+    // memory block the heartbeat timer for seconds at a time (the gzip itself
+    // runs on the libuv pool), and the touch then queues for one of the pool's
+    // two connections while the other holds the export transaction. 120 s
+    // covers that with a wide margin, and a dead worker is still noticed within
+    // two minutes rather than at the six-hour lease.
     heartbeatSeconds: HEARTBEAT_SECONDS,
   },
   payload,

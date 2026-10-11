@@ -41,7 +41,12 @@ afterEach(async () => {
   await rm(fixtureDirectory, { recursive: true, force: true });
 });
 
-async function sqliteFixture(kind: 'main' | 'grades' | 'catalog'): Promise<Buffer> {
+/**
+ * `artifactShape` 2 stores the data tables the way the export's default shape
+ * does (docs/board-snapshots.md, "Artifact shape"): WITHOUT ROWID, no secondary
+ * index, vacuumed. The catalogue artifact has one shape only.
+ */
+async function sqliteFixture(kind: 'main' | 'grades' | 'catalog', artifactShape: 1 | 2 = 1): Promise<Buffer> {
   const filePath = join(fixtureDirectory, `${kind}.db`);
   const database = new DatabaseSync(filePath);
   database.exec(
@@ -58,8 +63,9 @@ async function sqliteFixture(kind: 'main' | 'grades' | 'catalog'): Promise<Buffe
       database.exec(`CREATE TABLE ${tableName} (id INTEGER); INSERT INTO ${tableName} VALUES (1)`);
     } else {
       const cursorColumn = kind === 'grades' ? 'computed_at' : 'updated_at';
+      const storage = artifactShape === 2 ? ', PRIMARY KEY (board_type, climb_uuid)) WITHOUT ROWID' : ')';
       database.exec(
-        `CREATE TABLE ${tableName} (uuid TEXT, climb_uuid TEXT, board_type TEXT, layout_id INTEGER, ${cursorColumn} TEXT, sync_seq INTEGER)`,
+        `CREATE TABLE ${tableName} (uuid TEXT, climb_uuid TEXT, board_type TEXT, layout_id INTEGER, ${cursorColumn} TEXT, sync_seq INTEGER${storage}`,
       );
       database
         .prepare(`INSERT INTO ${tableName} VALUES (?, ?, ?, ?, ?, ?)`)
@@ -81,15 +87,19 @@ async function sqliteFixture(kind: 'main' | 'grades' | 'catalog'): Promise<Buffe
     database
       .prepare('INSERT INTO snapshot_meta VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run('sync_deletions', 0, BUILD_TIME, ARTIFACT_SCHEMA_VERSION, 2, WATERMARK_TIME, '0');
+  if (artifactShape === 2 && kind !== 'catalog') database.exec('VACUUM');
   database.close();
   return readFile(filePath);
 }
 
-async function fixture() {
+async function fixture(artifactShape: 1 | 2 = 1) {
   const objects = new Map<string, FixtureObject>();
-  const main = await sqliteFixture('main');
-  const grades = await sqliteFixture('grades');
+  const main = await sqliteFixture('main', artifactShape);
+  const grades = await sqliteFixture('grades', artifactShape);
   const catalog = await sqliteFixture('catalog');
+  // A shape-1 entry says nothing about its shape, like every entry published
+  // before the field existed.
+  const shapeField = artifactShape === 2 ? { artifactShape: 2 } : {};
   function artifact(prefix: string, contents: Buffer, kind: 'main' | 'grades' | 'catalog'): ArtifactToVerify {
     const key = `${prefix}/${kind === 'catalog' ? '' : 'kilter/1/'}2026-10-02T00-00-00-000Z${kind === 'grades' ? '-grades' : ''}.db`;
     const contentEncoding = prefix.endsWith('/v1') ? 'identity' : 'gzip';
@@ -126,11 +136,13 @@ async function fixture() {
   }
   const identity = {
     ...artifact('board-snapshots/v1', main, 'main'),
+    ...shapeField,
     boardType: 'kilter',
     layoutId: 1,
   } as SnapshotManifestEntry;
   const gzip = {
     ...artifact('board-snapshots/v1-gzip', main, 'main'),
+    ...shapeField,
     boardType: 'kilter',
     layoutId: 1,
     grades: artifact('board-snapshots/v1-gzip', grades, 'grades'),
@@ -212,6 +224,37 @@ describe('complete snapshot verification', () => {
       expect(setup.publicGet).toHaveBeenCalledWith(`${BASE}/${key}`, undefined);
       expect(setup.publicGet).toHaveBeenCalledWith(`${BASE}/${key}`, 'https://app.boardsesh.com');
     }
+  });
+
+  it('passes shape-2 artifacts: WITHOUT ROWID tables, no secondary index, artifactShape in the manifest', async () => {
+    const setup = await fixture(2);
+    expect(setup.gzip).toMatchObject({ artifactShape: 2 });
+
+    await verifySnapshots(setup.options, setup.dependencies);
+
+    expect(setup.report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'passed', artifacts: 4 }));
+    // The fixture really is the other storage shape, not shape 1 relabelled.
+    const mainPath = join(fixtureDirectory, 'main.db');
+    const mainDatabase = new DatabaseSync(mainPath, { readOnly: true });
+    try {
+      expect(
+        mainDatabase.prepare("SELECT name, wr FROM pragma_table_list WHERE name LIKE 'board_%' ORDER BY name").all(),
+      ).toEqual([
+        { name: 'board_climb_stats', wr: 1 },
+        { name: 'board_climbs', wr: 1 },
+      ]);
+    } finally {
+      mainDatabase.close();
+    }
+    // The grades check ATTACHes the layout artifact and joins on its primary key.
+    expect(() =>
+      verifySqlite(
+        join(fixtureDirectory, 'grades.db'),
+        { ...setup.gzip.grades!, boardType: 'kilter', layoutId: 1 },
+        false,
+        mainPath,
+      ),
+    ).not.toThrow();
   });
 
   it('accepts chunked signed bodies while rejecting an incorrect length header when present', async () => {
