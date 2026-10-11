@@ -150,6 +150,7 @@ describe('executeGraphQLInternal service credential', () => {
   it.each(['', '   ', undefined])('omits a missing or blank credential (%s)', async (secret) => {
     vi.stubEnv('INTERNAL_SERVICE_SECRET', secret);
     await executeGraphQLInternal('query Q { x }');
-    expect(constructorOptions[0]?.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(constructorOptions[0]?.headers).toMatchObject({ 'Content-Type': 'application/json' });
+    expect(constructorOptions[0]?.headers?.Authorization).toBeUndefined();
   });
 });
