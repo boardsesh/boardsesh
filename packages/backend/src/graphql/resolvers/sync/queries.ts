@@ -449,6 +449,10 @@ async function runScopedBoardRefSyncPage(params: {
             WHERE protected_ref.board_type = ${boardType} AND protected_ref.climb_uuid = protected_climbs.uuid
             OFFSET 0
           ) ${table}`,
+        // Nothing left to scope: which climbs, and so which rows, was decided
+        // inside the first subquery. `runSyncPage` still adds the cursor and
+        // stability-window conditions on the outer query. A condition on the
+        // climbs belongs in `climbScope`, which both shapes read.
         scope: sql`TRUE`,
         updatedAtColumn,
         seqColumn,
