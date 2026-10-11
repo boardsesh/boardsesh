@@ -18,6 +18,8 @@ import { InteractionManager, Platform, Pressable, StyleSheet, View, useWindowDim
 import { FlashList } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
 import { parseSetIds } from '@boardsesh/board-config';
@@ -166,6 +168,9 @@ function NoBoardClimbsPreviewComponent({
   const { systemColors, brandColors, variant } = useTheme();
   const colorScheme = useAppColorScheme();
   const insets = useSafeAreaInsets();
+  const nativeRootHeader = useNativeRootHeader();
+  const headerHeight = useHeaderHeight();
+  const topSpace = nativeRootHeader ? Math.max(headerHeight, insets.top) : insets.top;
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { scrollBottomPadding, floatingControlBottom } = useBottomChromeMetrics();
   // The board is sized against the chrome as it is without the connectivity
@@ -287,13 +292,13 @@ function NoBoardClimbsPreviewComponent({
         ? computeNoBoardHeroBox({
             windowWidth,
             windowHeight,
-            insetTop: insets.top,
+            insetTop: topSpace,
             floatingControlBottom: restingControlBottom,
             hasChips,
             aspect: boardRenderData.boardWidth / boardRenderData.boardHeight,
           })
         : null,
-    [boardRenderData, windowWidth, windowHeight, insets.top, restingControlBottom, hasChips],
+    [boardRenderData, windowWidth, windowHeight, topSpace, restingControlBottom, hasChips],
   );
   const showHero = heroBox !== null && !searching;
   // `BoardImageNative` has no way to be told to wait, so the hero's board
@@ -346,13 +351,14 @@ function NoBoardClimbsPreviewComponent({
   // background, solid behind the clock with a short fade under it: nothing to
   // see at the top of the list, and no band of its own once the rows are
   // under it.
-  const statusCapHeight = insets.top + spacing[3];
+  const statusCapHeight = nativeRootHeader ? 0 : insets.top + spacing[3];
   const statusCapColors = useMemo(() => [stage.background, stage.background, stage.backgroundClear] as const, [stage]);
   const statusCapLocations = useMemo(
     () => [0, statusCapHeight > 0 ? insets.top / statusCapHeight : 0, 1] as const,
     [insets.top, statusCapHeight],
   );
-  const stageStyle = useMemo(() => [styles.stage, { top: insets.top }], [insets.top]);
+  const stageTop = nativeRootHeader ? 0 : insets.top;
+  const stageStyle = useMemo(() => [styles.stage, { top: stageTop }], [stageTop]);
 
   const heroHint = t('mobile.emptyState.noBoardPreview.heroHint');
   const boardTypeGroupLabel = t('mobile.emptyState.noBoardPreview.boardTypeGroup');
@@ -365,7 +371,7 @@ function NoBoardClimbsPreviewComponent({
         ? t('mobile.emptyState.noClimbs.title')
         : null;
   const retryTitle = t('mobile.emptyState.noBoardPreview.retry');
-  const headerTopPadding = insets.top + spacing[2];
+  const headerTopPadding = (nativeRootHeader ? 0 : insets.top) + spacing[2];
   const separatorColor = systemColors.separator;
   const secondaryLabelColor = systemColors.secondaryLabel;
   const labelColor = systemColors.label;
@@ -501,7 +507,7 @@ function NoBoardClimbsPreviewComponent({
         data={listClimbs}
         renderItem={renderRow}
         keyExtractor={previewRowKey}
-        contentInsetAdjustmentBehavior="never"
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentContainerStyle={listContentStyle}

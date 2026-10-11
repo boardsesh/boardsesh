@@ -24,6 +24,9 @@ const ensureBackgroundsMock = vi.hoisted(() => vi.fn(async () => null));
 const rowContentProps = vi.hoisted(() => vi.fn());
 const boardImageProps = vi.hoisted(() => vi.fn());
 const renderDataMock = vi.hoisted(() => vi.fn());
+const headerControls = vi.hoisted(() => ({ native: false, height: 130 }));
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => headerControls.native }));
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => headerControls.height }));
 const windowSize = vi.hoisted(() => ({ width: 393, height: 852 }));
 const chromeMetrics = vi.hoisted(() => ({ scrollBottomPadding: 120, floatingControlBottom: 90 }));
 // What the component subscribed with, by event name.
@@ -74,6 +77,7 @@ vi.mock('@shopify/flash-list', () => ({
     renderItem,
     keyExtractor,
     contentContainerStyle,
+    contentInsetAdjustmentBehavior,
     ListHeaderComponent,
     ListEmptyComponent,
     ListFooterComponent,
@@ -82,13 +86,18 @@ vi.mock('@shopify/flash-list', () => ({
     renderItem: (info: { item: TItem; index: number }) => ReactElement;
     keyExtractor: (item: TItem) => string;
     contentContainerStyle?: { paddingBottom?: number };
+    contentInsetAdjustmentBehavior?: string;
     ListHeaderComponent?: ReactElement | null;
     ListEmptyComponent?: ReactElement | null;
     ListFooterComponent?: ReactElement | null;
   }) =>
     createElement(
       'div',
-      { 'data-testid': 'list', 'data-padding-bottom': contentContainerStyle?.paddingBottom },
+      {
+        'data-testid': 'list',
+        'data-padding-bottom': contentContainerStyle?.paddingBottom,
+        'data-inset-adjustment': contentInsetAdjustmentBehavior,
+      },
       ListHeaderComponent,
       data.length === 0
         ? ListEmptyComponent
@@ -258,6 +267,7 @@ function lastBoardImage() {
 
 describe('NoBoardClimbsPreview', () => {
   beforeEach(() => {
+    headerControls.native = false;
     vi.clearAllMocks();
     windowSize.width = 393;
     windowSize.height = 852;
@@ -274,6 +284,16 @@ describe('NoBoardClimbsPreview', () => {
     };
   });
   afterEach(cleanup);
+
+  it.each([
+    [false, 'never', 380],
+    [true, 'automatic', 352],
+  ] as const)('sizes the hero below the native header: %s', (native, adjustment, expectedHeight) => {
+    headerControls.native = native;
+    renderPreview();
+    expect(screen.getByTestId('list').getAttribute('data-inset-adjustment')).toBe(adjustment);
+    expect(lastBoardImage().style.height).toBe(expectedHeight);
+  });
 
   it('searches the first setup by its config alone: one page of 30, most climbed first', () => {
     renderPreview();
