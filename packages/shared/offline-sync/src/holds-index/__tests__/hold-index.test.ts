@@ -8,7 +8,9 @@ import {
   clearBoardTypeHoldIndex,
   ensureHoldIndex,
   holdIndexKey,
+  invalidateHoldIndexBehindWrittenClimbs,
   isHoldIndexBehind,
+  readClimbsBeforeWrite,
   removeClimbFromHoldIndex,
 } from '../hold-index';
 import { removeBoardScopeData } from '../../sync/scope-teardown';
@@ -627,5 +629,93 @@ describe('isHoldIndexBehind', () => {
     const walkPlan = walk.map((row) => row.detail).join(' ');
     expect(walkPlan).not.toContain('TEMP B-TREE');
     expect(walkPlan).toMatch(/sqlite_autoindex_board_climbs_1/);
+  });
+});
+
+// A pull page says what it changed, so a climb that lands at or below a
+// watermark is not left out of the index (issue #6306). The page-level cases
+// are in sync/__tests__/two-stream-sync.integration.test.ts; these are the
+// rules of the two halves.
+describe('a climbs page written behind a watermark', () => {
+  const options = { parseHoldRows, yieldToHost: async () => {} };
+
+  /** One page: read what is there, write `seed`, report it. Returns whether the layout was sent back to a build. */
+  async function writePage(scope: OfflineBoardScope, seed: ClimbSeed): Promise<boolean> {
+    const before = await readClimbsBeforeWrite(db, scope, [seed.uuid]);
+    await insertClimb(seed);
+    if (!before) return false;
+    await invalidateHoldIndexBehindWrittenClimbs(db, scope, [seed.uuid], before);
+    return (await watermarkOf(scope)) === null;
+  }
+
+  beforeEach(async () => {
+    // `is_hidden` unknown, as a bundle from before the column left it.
+    await insertClimb({ uuid: 'indexed', seq: 10, frames: 'p1r13p2r13', sizes: [12], hidden: null });
+    await insertClimb({ uuid: 'newest', seq: 50, frames: 'p3r13', sizes: [12] });
+    expect((await ensureHoldIndex(db, KILTER_12, options)).status).toBe('complete');
+    expect(await watermarkOf(KILTER_12)).toMatchObject({ syncSeq: 50 });
+  });
+
+  it('has nothing to read when no scope of the layout has a watermark', async () => {
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [holdIndexKey(offlineBoardKey(KILTER_12))]);
+
+    expect(await readClimbsBeforeWrite(db, KILTER_12, ['indexed'])).toBeNull();
+  });
+
+  it('measures a climb against every indexed scope it belongs to, a sibling size included', async () => {
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      holdIndexKey(offlineBoardKey(KILTER_8)),
+      JSON.stringify({ syncSeq: 90, updatedAt: null }),
+    ]);
+    // Another layout's watermark is not this layout's business.
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      holdIndexKey('kilter:2:12'),
+      JSON.stringify({ syncSeq: 500, updatedAt: null }),
+    ]);
+
+    const before = await readClimbsBeforeWrite(db, KILTER_12, ['indexed', 'not-here']);
+
+    expect(before?.watermarks).toEqual([
+      { scope: KILTER_12, syncSeq: 50 },
+      { scope: KILTER_8, syncSeq: 90 },
+    ]);
+    expect([...(before?.indexInputs.keys() ?? [])]).toEqual(['indexed']);
+
+    // At 60: above this size's watermark, so the incremental pass has it, and
+    // not a climb of the sibling size at all.
+    expect(await writePage(KILTER_12, { uuid: 'this-size-only', seq: 60, frames: 'p4r13', sizes: [12] })).toBe(false);
+    // At 60 and on both sizes: behind the sibling's watermark of 90.
+    expect(await writePage(KILTER_12, { uuid: 'both-sizes', seq: 61, frames: 'p4r13', sizes: [8, 12] })).toBe(true);
+    expect(await watermarkOf(KILTER_8)).toBeNull();
+  });
+
+  it.each([
+    ['a climb the device did not have', { uuid: 'late', seq: 30, frames: 'p5r13', sizes: [12] }, true],
+    ['an indexed climb at a new version', { uuid: 'indexed', seq: 40, frames: 'p9r13', sizes: [12] }, true],
+    [
+      'an indexed climb that is now hidden',
+      { uuid: 'indexed', seq: 10, frames: 'p1r13p2r13', sizes: [12], hidden: 1 },
+      true,
+    ],
+    [
+      'an indexed climb exactly as it was',
+      { uuid: 'indexed', seq: 10, frames: 'p1r13p2r13', sizes: [12], hidden: null },
+      false,
+    ],
+    [
+      'a hidden flag filled in as not hidden',
+      { uuid: 'indexed', seq: 10, frames: 'p1r13p2r13', sizes: [12], hidden: 0 },
+      false,
+    ],
+    ['a draft the device did not have', { uuid: 'late-draft', seq: 30, frames: 'p5r13', sizes: [12], draft: 1 }, false],
+    ['a climb above the watermark', { uuid: 'newer', seq: 70, frames: 'p6r13', sizes: [12] }, false],
+    // The first download of a second size is all climbs like this one.
+    ['a climb of a sibling size only', { uuid: 'other-size', seq: 20, frames: 'p5r13', sizes: [8] }, false],
+  ] as const)('%s: rebuild %s', async (_name, seed, sendsBackToBuild) => {
+    expect(await writePage(KILTER_12, { ...seed, sizes: [...seed.sizes] })).toBe(sendsBackToBuild);
+
+    // Whatever the page did, the next pass leaves the index matching the rows.
+    expect((await ensureHoldIndex(db, KILTER_12, options)).status).toBe('complete');
+    await expectPostingsMatchHoldSets(db, KILTER_12.boardType, KILTER_12.layoutId);
   });
 });

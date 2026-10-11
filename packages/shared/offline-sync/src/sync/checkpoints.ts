@@ -32,9 +32,18 @@ export type SyncCheckpoint = {
  */
 export type ProtectedCheckpoint = SyncCheckpoint & {
   /**
-   * The stream has reached its tail since the cursor was last reset. Sticky: a
-   * later delta does not clear it, the way `scope-complete:` outlives the
-   * initial download. Only a reset does.
+   * The stream has reached its tail since the cursor was last RESET (a privacy
+   * event, an import, a sign-out), so no protected row is missing from the
+   * device that it once held. That is all it says.
+   *
+   * It does not say the stream is at its tail now, and it does not say every
+   * row carries the current revision's columns. It is sticky through both a
+   * later delta and a revision replay, the way `scope-complete:` outlives the
+   * initial download: neither deletes a row, so everything it vouched for is
+   * still here, and a wall that was readable before an app update must be
+   * readable offline after it. `updatedAt` / `syncSeq` say where the stream
+   * is, `revision` what it covers up to there, and a pull's own `reachedTail`
+   * says whether this cycle got to the end. Only a reset clears it.
    */
   complete: boolean;
   /**
@@ -452,14 +461,16 @@ function protectedCheckpointKeys(scopeKey: string): string[] {
 
 /**
  * Whether every protected stream of a scope has reached its tail since it was
- * last reset: the device holds every protected row the server currently lets
- * this viewer see.
+ * last reset: nothing the device held was withdrawn without being asked for
+ * again. See `ProtectedCheckpoint.complete` for what that does not promise.
  *
  * False after a privacy event until the replay finishes, and for a scope whose
- * key cannot be parsed. Read gates and the holds index use it; a scope's
- * `scope-complete:` marker does not depend on it once the first download is
- * done, because a catalogue board is still worth serving from its reference
- * rows and the climber's own.
+ * key cannot be parsed. It stays true while a later delta or a revision replay
+ * is part-way through, because the rows are all still on the device. Read
+ * gates and the holds index use it. A first download does NOT: it completes on
+ * every stream reaching its tail in one cycle. And a scope's `scope-complete:`
+ * marker does not depend on it once that download is done, because a catalogue
+ * board is still worth serving from its reference rows and the climber's own.
  */
 export async function isScopeProtectedComplete(db: SqlExecutor, scopeKey: string): Promise<boolean> {
   const keys = protectedCheckpointKeys(scopeKey);

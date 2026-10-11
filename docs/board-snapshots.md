@@ -2090,6 +2090,12 @@ is no device schema migration and an older bundle still reads what it expects:
 
 - The top level is the reference cursor. `protected` is the protected cursor. A
   missing `protected` means "replay from epoch, not complete", which fails closed.
+- `complete` means the stream has reached its tail since it was last reset, so
+  nothing the device held is missing. It does not mean "at the tail now". It stays
+  set while a later delta or a revision replay is part-way through, because
+  neither deletes a row: a downloaded wall stays readable offline after an app
+  update that adds a column. A first download does not read it. It completes on
+  every stream reaching its tail in one cycle.
 - A stream with no reference set (a spray wall) keeps the top level at epoch with
   `"referenceUnset": true`, and `getCheckpoint` reads that row as no cursor.
 - An older bundle ignores the extra fields. Its `setCheckpoint` rewrites the row

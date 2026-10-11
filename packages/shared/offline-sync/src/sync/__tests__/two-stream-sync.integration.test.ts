@@ -266,10 +266,45 @@ describe('pulling a board as a reference and a protected stream', () => {
   });
 
   describe('first-ascent names', () => {
+    const localFirstAscents = () =>
+      db.getAllAsync<{ climb_uuid: string; fa_username: string | null; fa_at: string | null }>(
+        'SELECT climb_uuid, fa_username, fa_at FROM board_climb_stats ORDER BY climb_uuid',
+      );
+
     it('stores the manufacturer credit a reference row carries', async () => {
       await sync(backend([catalogueClimb(10)]).fetch);
 
-      expect(await localStats()).toEqual([{ climb_uuid: 'catalogue-10', fa_username: 'Manufacturer Setter' }]);
+      expect(await localFirstAscents()).toEqual([
+        { climb_uuid: 'catalogue-10', fa_username: 'Manufacturer Setter', fa_at: '2020-01-01T00:00:00Z' },
+      ]);
+    });
+
+    it('keeps both columns on the reference rows and stores neither on the protected ones, in the same cycle', async () => {
+      // The backend ships the protected name too, so only the stream a row came
+      // through decides what is stored.
+      const server = backend([catalogueClimb(10), friendClimb], { leakProtectedFirstAscent: true });
+
+      await sync(server.fetch);
+      // A second cycle resumes both streams; neither may disturb the other's rows.
+      await sync(server.fetch);
+
+      expect(await localFirstAscents()).toEqual([
+        { climb_uuid: 'catalogue-10', fa_username: 'Manufacturer Setter', fa_at: '2020-01-01T00:00:00Z' },
+        { climb_uuid: 'friend-climb', fa_username: null, fa_at: null },
+      ]);
+    });
+
+    it('keeps the reference credit through a privacy event and the protected replay after it', async () => {
+      const server = backend([catalogueClimb(10), friendClimb]);
+      await sync(server.fetch);
+
+      await simulatePrivacyRevalidation(db, VIEWER);
+      await sync(server.fetch);
+
+      expect(await localFirstAscents()).toEqual([
+        { climb_uuid: 'catalogue-10', fa_username: 'Manufacturer Setter', fa_at: '2020-01-01T00:00:00Z' },
+        { climb_uuid: 'friend-climb', fa_username: null, fa_at: null },
+      ]);
     });
 
     it('stores no name from the protected stream, whatever the page carries', async () => {
@@ -683,6 +718,161 @@ describe('a privacy event', () => {
 // What a request for the protected stats or grades stream costs the server does
 // not depend on whether anything changed (about 30,000 buffer hits each on
 // Kilter's largest layout), so they are pulled only when there is a reason to.
+// A cursor written at an older refresh revision is not resumed: the stream is
+// replayed from the epoch so a column synced since reaches every row. The
+// replay deletes nothing, and `complete` says exactly that, so it stays set
+// from the replay's first page on. These pin what that does and does not let
+// through while the replay is part-way.
+describe('a protected stream replayed for a newer revision', () => {
+  const authored = Array.from({ length: 5 }, (_unused, index): ServerClimb => ({
+    uuid: `authored-${index}`,
+    ownerId: 'friend',
+    cursor: cursorAt(100 + index),
+  }));
+  const authoredUuids = authored.map((climb) => climb.uuid);
+
+  /** The climbs cursor as a bundle one revision back left it: at the tail, complete. */
+  const rewindClimbsRevision = async () => {
+    const stored = await getProtectedCheckpoint(db, CLIMBS_KEY);
+    if (!stored) throw new Error('expected a protected climbs cursor');
+    await setProtectedCheckpoint(db, CLIMBS_KEY, { ...stored, revision: 0 });
+  };
+
+  /** A backend that pages by two and drops the connection before the second protected climbs page. */
+  function backendThatDropsMidReplay(climbs: ServerClimb[] | (() => ServerClimb[]), midReplay: () => Promise<void>) {
+    let dropped = false;
+    return backend(climbs, {
+      pageSize: 2,
+      onRequest: async (request) => {
+        const isSecondProtectedClimbsPage =
+          request.queryName === 'syncClimbs' && request.audience === 'PROTECTED' && request.cursor !== undefined;
+        if (!isSecondProtectedClimbsPage || dropped) return;
+        dropped = true;
+        await midReplay();
+        throw new Error('connection dropped');
+      },
+    });
+  }
+
+  it('stays complete from the first page, with every row still on the device, and resumes where it stopped', async () => {
+    await sync(backend(authored).fetch);
+    await rewindClimbsRevision();
+    const onScopeDownloadComplete = vi.fn();
+    let afterPageOne: unknown;
+    const server = backendThatDropsMidReplay(authored, async () => {
+      afterPageOne = {
+        cursor: await getProtectedCheckpoint(db, CLIMBS_KEY),
+        isScopeProtectedComplete: await isScopeProtectedComplete(db, SCOPE_KEY),
+        climbs: await localClimbs(),
+      };
+    });
+
+    await sync(server.fetch, { onScopeDownloadComplete }).catch(() => {});
+
+    // One page in: the cursor is back near the start and already at the new
+    // revision, and the flag never dropped. Nothing was deleted to replay, so
+    // all five climbs are here, which is what a reader of the flag is asking.
+    expect(server.requestsFor('syncClimbs', 'PROTECTED').map((request) => request.cursor)).toEqual([
+      undefined,
+      cursorAt(101),
+    ]);
+    expect(afterPageOne).toEqual({
+      cursor: expect.objectContaining({ ...cursorAt(101), complete: true, revision: 1 }),
+      isScopeProtectedComplete: true,
+      climbs: authoredUuids,
+    });
+    expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+
+    // The next cycle carries on from page one. It neither starts the replay
+    // again nor takes the flag for "at the tail" and skips the rest.
+    server.requests.length = 0;
+    await sync(server.fetch, { onScopeDownloadComplete });
+
+    expect(server.requestsFor('syncClimbs', 'PROTECTED').map((request) => request.cursor)).toEqual([
+      cursorAt(101),
+      cursorAt(103),
+    ]);
+    expect(await getProtectedCheckpoint(db, CLIMBS_KEY)).toMatchObject({
+      ...cursorAt(104),
+      complete: true,
+      revision: 1,
+    });
+    expect(await localClimbs()).toEqual(authoredUuids);
+    // A board that was already downloaded did not download again.
+    expect(onScopeDownloadComplete).not.toHaveBeenCalled();
+  });
+
+  it('does not finish a first download on the flag: the replay has to reach its tail', async () => {
+    // Every protected stream has been to its tail, but the board itself has not
+    // finished downloading: no `scope-complete:` marker.
+    await sync(backend(authored).fetch);
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`scope-complete:${SCOPE_KEY}`]);
+    await rewindClimbsRevision();
+    const completions: ScopeDownloadCompleteInfo[] = [];
+    const onScopeDownloadComplete = (info: ScopeDownloadCompleteInfo) => completions.push(info);
+    // The climbs replay alone is cut short, after its first page and without
+    // an error. Every other stream then runs to its tail, so the cycle reaches
+    // the point where it decides whether the board is done with only this one
+    // stream short of it.
+    let protectedPullsAllowed = true;
+    const server = backend(authored, {
+      pageSize: 2,
+      onRequest: (request) => {
+        const isClimbsRequest = request.queryName === 'syncClimbs';
+        if (isClimbsRequest && request.audience === 'PROTECTED' && request.cursor !== undefined) {
+          protectedPullsAllowed = false;
+        } else if (!isClimbsRequest) {
+          protectedPullsAllowed = true;
+        }
+      },
+    });
+
+    await sync(server.fetch, { onScopeDownloadComplete, isProtectedSyncAllowed: () => protectedPullsAllowed });
+
+    expect(await getProtectedCheckpoint(db, CLIMBS_KEY)).toMatchObject({ ...cursorAt(101), complete: true });
+    expect(server.requestsFor('syncClimbStats', 'PROTECTED')).not.toEqual([]);
+    expect(server.requestsFor('syncClimbGrades', 'PROTECTED')).not.toEqual([]);
+    expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(true);
+    expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(false);
+    expect(completions).toEqual([]);
+
+    protectedPullsAllowed = true;
+    await sync(server.fetch, { onScopeDownloadComplete });
+
+    expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+    expect(completions).toHaveLength(1);
+  });
+
+  it('loses the flag to a privacy event that lands mid-replay, like any other protected cursor', async () => {
+    await sync(backend(authored).fetch);
+    await rewindClimbsRevision();
+    const server = backendThatDropsMidReplay(authored, async () => {});
+    await sync(server.fetch).catch(() => {});
+    expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(true);
+
+    await simulatePrivacyRevalidation(db, VIEWER);
+
+    expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(false);
+    expect(await localClimbs()).toEqual([]);
+
+    // Not sticky across the reset: complete again only at the tail.
+    const stampedBeforeRequest: unknown[] = [];
+    const afterEvent = backend(authored, {
+      pageSize: 2,
+      onRequest: async (request) => {
+        if (request.queryName === 'syncClimbs' && request.audience === 'PROTECTED') {
+          stampedBeforeRequest.push((await getProtectedCheckpoint(db, CLIMBS_KEY))?.complete ?? null);
+        }
+      },
+    });
+    await sync(afterEvent.fetch);
+
+    expect(stampedBeforeRequest).toEqual([null, false, false]);
+    expect(await isScopeProtectedComplete(db, SCOPE_KEY)).toBe(true);
+    expect(await localClimbs()).toEqual(authoredUuids);
+  });
+});
+
 describe('rationing the protected stats and grades streams', () => {
   const START = Date.UTC(2026, 9, 11, 12, 0, 0);
   const rationedRequests = (server: ReturnType<typeof backend>) =>
@@ -1004,6 +1194,11 @@ describe('the holds index across a protected replay', () => {
     const watermark = await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [`holds-index:${SCOPE_KEY}`]);
     expect(watermark).not.toBeNull();
 
+    // Every clear or invalidation of the layout's index bumps this counter.
+    const indexGeneration = () =>
+      db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['holds-index-generation:kilter:1']);
+    const generation = await indexGeneration();
+
     // The viewer's own climb survives the purge and comes back unchanged.
     await simulatePrivacyRevalidation(db, VIEWER);
     await sync(server.fetch, { holdIndex });
@@ -1011,6 +1206,109 @@ describe('the holds index across a protected replay', () => {
     expect(await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [`holds-index:${SCOPE_KEY}`])).toEqual(
       watermark,
     );
+    // Kept, not rebuilt to the same value: a rebuild re-reads every climb of
+    // the layout, and this replay happens on every launch.
+    expect(await indexGeneration()).toEqual(generation);
+  });
+
+  // The watermark assumes rows arrive in `sync_seq` order. One stream delivers
+  // them that way; two do not, so each climbs page says what it changed.
+  describe('a climb that arrives behind the watermark', () => {
+    const holdIds = async (uuid: string) => (await getHoldSet(db, uuid))?.map((hold) => hold.holdId) ?? null;
+
+    it('re-derives the climber’s own climb when its edit lands after a newer reference climb was indexed', async () => {
+      let climbsOnServer: ServerClimb[] = [catalogueClimb(10), ownClimb];
+      let protectedClimbsUnreachable = false;
+      const server = backend(() => climbsOnServer, {
+        onRequest: (request) => {
+          if (protectedClimbsUnreachable && request.queryName === 'syncClimbs' && request.audience === 'PROTECTED') {
+            throw new Error('connection dropped');
+          }
+        },
+      });
+      await sync(server.fetch, { holdIndex });
+      expect(await holdIds('viewer-own')).toEqual([1, 2]);
+
+      // Edited on another device (sequence 60), and a newer manufacturer climb
+      // (90). This cycle gets the reference row and loses the connection before
+      // the protected one.
+      climbsOnServer = [
+        catalogueClimb(10),
+        catalogueClimb(90),
+        { ...ownClimb, cursor: cursorAt(60), fields: { frames: 'p7r13p8r13' } },
+      ];
+      protectedClimbsUnreachable = true;
+      await sync(server.fetch, { holdIndex }).catch(() => {});
+      // A reader builds meanwhile: the watermark is now past the edit.
+      expect((await ensureHoldIndex(db, SCOPE, indexOptions)).status).toBe('complete');
+      expect(await holdIds('catalogue-90')).toEqual([1, 2]);
+
+      protectedClimbsUnreachable = false;
+      await sync(server.fetch, { holdIndex });
+
+      expect(await holdIds('viewer-own')).toEqual([7, 8]);
+    });
+
+    it('indexes a manufacturer climb that turns up after a newer authored climb raised the watermark', async () => {
+      let climbsOnServer: ServerClimb[] = [catalogueClimb(10), ownClimb];
+      const lateCatalogueClimb = catalogueClimb(80);
+      const newerOwnClimb: ServerClimb = { ...ownClimb, uuid: 'viewer-own-newer', cursor: cursorAt(95) };
+      let bothCommitAfterTheReferencePull = false;
+      const server = backend(() => climbsOnServer, {
+        onRequest: (request) => {
+          // The two rows commit between this cycle's reference and protected
+          // pulls, so only the protected one is seen this time round.
+          if (
+            bothCommitAfterTheReferencePull &&
+            request.queryName === 'syncClimbs' &&
+            request.audience === 'PROTECTED'
+          ) {
+            climbsOnServer = [catalogueClimb(10), ownClimb, lateCatalogueClimb, newerOwnClimb];
+          }
+        },
+      });
+      await sync(server.fetch, { holdIndex });
+
+      bothCommitAfterTheReferencePull = true;
+      await sync(server.fetch, { holdIndex });
+      expect(await localClimbs()).toEqual(['catalogue-10', 'viewer-own', 'viewer-own-newer']);
+      expect(await holdIds('viewer-own-newer')).toEqual([1, 2]);
+
+      await sync(server.fetch, { holdIndex });
+
+      expect(await localClimbs()).toEqual(['catalogue-10', 'catalogue-80', 'viewer-own', 'viewer-own-newer']);
+      expect(await holdIds('catalogue-80')).toEqual([1, 2]);
+    });
+
+    it('takes a climb out when a page hides it without its version moving', async () => {
+      let climbsOnServer: ServerClimb[] = [catalogueClimb(10), ownClimb];
+      const server = backend(() => climbsOnServer);
+      await sync(server.fetch, { holdIndex });
+      expect(await holdIds('viewer-own')).toEqual([1, 2]);
+
+      // What a replay for a new column looks like: the same row version, with
+      // a flag the device did not have.
+      climbsOnServer = [catalogueClimb(10), { ...ownClimb, fields: { is_hidden: true } }];
+      await simulatePrivacyRevalidation(db, VIEWER);
+      await sync(server.fetch, { holdIndex });
+
+      expect(await holdIds('viewer-own')).toBeNull();
+      expect(await holdIds('catalogue-10')).toEqual([1, 2]);
+    });
+
+    it('leaves the index alone on a first download, which has no watermark to fall behind', async () => {
+      const statements: string[] = [];
+      const run = db.getAllAsync.bind(db);
+      vi.spyOn(db, 'getAllAsync').mockImplementation((source, ...params) => {
+        statements.push(source);
+        return run(source, ...params);
+      });
+
+      await sync(backend([catalogueClimb(10), ownClimb]).fetch);
+
+      // No per-page read of the climbs about to be written.
+      expect(statements.filter((source) => source.includes('AS index_inputs'))).toEqual([]);
+    });
   });
 
   it('reads as indexable only with both halves of the scope down', async () => {

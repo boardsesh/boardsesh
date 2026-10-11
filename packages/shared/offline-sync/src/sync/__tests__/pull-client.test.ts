@@ -47,6 +47,8 @@ function createMockDb() {
     // The deletion path reads a row's `captureOnDelete` columns before deleting
     // it; null is "no such row", which is what every other table sees.
     getFirstAsync: vi.fn().mockResolvedValue(null),
+    // A climbs page asks whether its layout has a holds index to keep up with.
+    getAllAsync: vi.fn().mockResolvedValue([]),
   };
   const db = {
     runAsync: vi.fn(async (sql: string, params: unknown[]) => {

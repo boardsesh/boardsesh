@@ -60,7 +60,7 @@
 // dependencies by contract, and the parser lives in @boardsesh/board-constants.
 
 import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '../database';
-import { offlineBoardKey, type OfflineBoardScope } from '../offline-board-key';
+import { offlineBoardKey, parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter } from '../sync/board-scope-sql';
 import { isScopeDownloadComplete, isScopeProtectedComplete } from '../sync/checkpoints';
 import { invalidateKeysForTable, scopedInvalidateFilters } from '../sync/invalidate-keys';
@@ -464,43 +464,132 @@ export async function dropHoldIndexRowsForClimbs(txn: SqlExecutor, climbUuids: r
 }
 
 /**
- * Called in the transaction that has just written these climbs through the
- * protected stream. If one of them belongs in the index, is not in it, and sits
- * at or below the scope's watermark, the incremental pass would never reach it,
- * so the layout is sent back to a first build (`invalidateLayoutHoldIndex`,
- * keeping postings: they are still right for every climb already indexed).
+ * What a pull page needs to know before it overwrites climbs, so that
+ * `invalidateHoldIndexBehindWrittenClimbs` can tell afterwards what it changed.
+ */
+export type ClimbsBeforeWrite = {
+  /** Every scope of the layout that has an index, and the sequence its watermark stands at. */
+  watermarks: readonly { scope: OfflineBoardScope; syncSeq: number }[];
+  /** `sync_seq|is_listed|is_draft|is_hidden` (`indexInputsSql`) per climb that was on the device. */
+  indexInputs: ReadonlyMap<string, string>;
+};
+
+/**
+ * One climb's index inputs as a comparable string: the version it holds and the
+ * three flags that decide whether it is indexed at all. `is_hidden` reads NULL
+ * as 0, as `deriveHoldSet` does, so a replay that fills the column in with "not
+ * hidden" is not a change.
+ */
+const INDEX_INPUTS_SQL = `COALESCE(sync_seq, '') || '|' || COALESCE(is_listed, '') || '|' || COALESCE(is_draft, '') || '|' || COALESCE(is_hidden, 0)`;
+
+/**
+ * The first half of `invalidateHoldIndexBehindWrittenClimbs`: read, inside the
+ * page's transaction and BEFORE its rows are written, what the index was
+ * derived from for each climb the page carries.
  *
- * That is a climb the viewer has only just been allowed to see, arriving with
- * the `sync_seq` it has had all along. A climb edited since the watermark is
- * above it and needs nothing here. Neither does a scope with no watermark: its
- * first build has not run yet and will find the climb.
+ * Returns null when no scope of the layout has a watermark, which is every page
+ * of a first download: there is no index to fall behind, and the page pays one
+ * sync_meta read and nothing else.
+ */
+export async function readClimbsBeforeWrite(
+  txn: SqlExecutor,
+  scope: OfflineBoardScope,
+  climbUuids: readonly string[],
+): Promise<ClimbsBeforeWrite | null> {
+  // Every sibling size of the layout: they share the climbs this page writes.
+  const prefix = `${HOLD_INDEX_KEY_PREFIX}${scope.boardType}:${scope.layoutId}:`;
+  const stored = await txn.getAllAsync<{ key: string; value: string }>(
+    'SELECT key, value FROM sync_meta WHERE substr(key, 1, ?) = ? ORDER BY key',
+    [prefix.length, prefix],
+  );
+  const watermarks = stored.flatMap(({ key, value }) => {
+    const indexedScope = parseOfflineBoardKey(key.slice(HOLD_INDEX_KEY_PREFIX.length));
+    const syncSeq = parseWatermark(value)?.syncSeq;
+    return indexedScope && syncSeq !== undefined ? [{ scope: indexedScope, syncSeq }] : [];
+  });
+  if (watermarks.length === 0) return null;
+
+  const indexInputs = new Map<string, string>();
+  for (let start = 0; start < climbUuids.length; start += IN_LIST_BATCH) {
+    const batch = climbUuids.slice(start, start + IN_LIST_BATCH);
+    const rows = await txn.getAllAsync<{ uuid: string; index_inputs: string }>(
+      `SELECT uuid, ${INDEX_INPUTS_SQL} AS index_inputs FROM board_climbs WHERE uuid IN (${placeholders(batch.length)})`,
+      batch,
+    );
+    for (const row of rows) indexInputs.set(row.uuid, row.index_inputs);
+  }
+  return { watermarks, indexInputs };
+}
+
+/**
+ * Called in the transaction that has just written a page of climbs, with what
+ * `readClimbsBeforeWrite` saw before it did. If the page changed a climb that
+ * an indexed scope covers or should cover, and that climb sits at or below the
+ * scope's watermark, the incremental pass (`sync_seq > watermark`) would never
+ * reach it, so the layout is sent back to a first build
+ * (`invalidateLayoutHoldIndex`, keeping postings: that build rewrites them
+ * from the hold sets).
+ *
+ * The watermark assumes rows arrive in `sync_seq` order. One stream of one
+ * scope delivers them that way; several do not (issue #6306):
+ *  - a climb the viewer has only just been allowed to see arrives through the
+ *    protected stream with the `sync_seq` it has had all along;
+ *  - a climb of one stream can arrive after a row of the other with a higher
+ *    sequence has already been indexed;
+ *  - a saved-climb mirror, or a sibling size's pull, can have raised a
+ *    watermark past a climb this pull has not delivered yet.
+ *
+ * A page that only re-delivers what the device already holds changes nothing
+ * here: a replay brings rows back exactly as they were, and must not cost a
+ * rebuild. That is why this compares against the row as it was. The flags are
+ * compared beside the version because a replay for a new column can change one
+ * without the version moving. And a climb is measured against the scopes it
+ * belongs to, so the first download of a second size, whose own climbs are all
+ * new and all old, leaves the first size's index alone.
  */
 export async function invalidateHoldIndexBehindWrittenClimbs(
   txn: SqlExecutor,
   scope: OfflineBoardScope,
   climbUuids: readonly string[],
+  before: ClimbsBeforeWrite,
 ): Promise<void> {
-  const watermark = parseWatermark(await readRawWatermark(txn, offlineBoardKey(scope)));
-  if (!watermark) return;
+  const changed: { uuid: string; syncSeq: number }[] = [];
   for (let start = 0; start < climbUuids.length; start += IN_LIST_BATCH) {
     const batch = climbUuids.slice(start, start + IN_LIST_BATCH);
-    // The same three flags `deriveHoldSet` reads: a draft, unlisted or hidden
-    // climb is never indexed, so its absence is not a gap.
-    const unindexed = await txn.getFirstAsync<{ uuid: string }>(
-      `SELECT c.uuid FROM board_climbs c
-       WHERE c.uuid IN (${placeholders(batch.length)})
-         AND c.sync_seq <= ?
-         AND c.is_listed = 1 AND c.is_draft = 0 AND COALESCE(c.is_hidden, 0) = 0
-         AND NOT EXISTS (
-           SELECT 1 FROM holds_index_climbs hic
-           JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
-           WHERE hic.uuid = c.uuid)
-       LIMIT 1`,
-      [...batch, watermark.syncSeq],
+    const written = await txn.getAllAsync<{ uuid: string; index_inputs: string; sync_seq: number | null }>(
+      `SELECT uuid, ${INDEX_INPUTS_SQL} AS index_inputs, sync_seq
+       FROM board_climbs WHERE uuid IN (${placeholders(batch.length)})`,
+      batch,
     );
-    if (!unindexed) continue;
-    await invalidateLayoutHoldIndex(txn, scope.boardType, scope.layoutId, { dropPostings: false });
-    return;
+    for (const climb of written) {
+      if (climb.sync_seq === null || before.indexInputs.get(climb.uuid) === climb.index_inputs) continue;
+      changed.push({ uuid: climb.uuid, syncSeq: climb.sync_seq });
+    }
+  }
+  if (changed.length === 0) return;
+
+  for (const watermark of before.watermarks) {
+    const behind = changed.filter((climb) => climb.syncSeq <= watermark.syncSeq).map((climb) => climb.uuid);
+    const inScope = climbsScopeFilter(watermark.scope, 'c.');
+    for (let start = 0; start < behind.length; start += IN_LIST_BATCH) {
+      const batch = behind.slice(start, start + IN_LIST_BATCH);
+      // The same three flags `deriveHoldSet` reads: a draft, unlisted or hidden
+      // climb is never indexed, so one that was not indexed either is no gap.
+      const missed = await txn.getFirstAsync<{ uuid: string }>(
+        `SELECT c.uuid FROM board_climbs c
+         WHERE c.uuid IN (${placeholders(batch.length)}) AND ${inScope.sql}
+           AND ((c.is_listed = 1 AND c.is_draft = 0 AND COALESCE(c.is_hidden, 0) = 0)
+             OR EXISTS (
+               SELECT 1 FROM holds_index_climbs hic
+               JOIN board_climb_hold_sets hs ON hs.climb_id = hic.id
+               WHERE hic.uuid = c.uuid))
+         LIMIT 1`,
+        [...batch, ...inScope.params],
+      );
+      if (!missed) continue;
+      await invalidateLayoutHoldIndex(txn, scope.boardType, scope.layoutId, { dropPostings: false });
+      return;
+    }
   }
 }
 

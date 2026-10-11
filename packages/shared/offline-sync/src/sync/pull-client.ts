@@ -108,6 +108,8 @@ import {
   ensureHoldIndex,
   clearLayoutHoldIndex,
   invalidateHoldIndexBehindWrittenClimbs,
+  readClimbsBeforeWrite,
+  type ClimbsBeforeWrite,
   removeClimbFromHoldIndex,
   type HoldRowParser,
 } from '../holds-index/hold-index';
@@ -880,6 +882,8 @@ async function upsertDocuments(
   onSchemaDrift?: SchemaDriftReporter,
   page?: {
     canWrite: () => boolean;
+    /** Runs in the page's transaction before any row is written. */
+    beforeUpsert?: (transaction: SqlExecutor) => Promise<void>;
     afterUpsert: (transaction: SqlExecutor) => Promise<void>;
     preserveNewerRows: boolean;
   },
@@ -897,6 +901,7 @@ async function upsertDocuments(
     // attempt's verdict into this one.
     committed = false;
     if (page && !page.canWrite()) return;
+    await page?.beforeUpsert?.(transaction);
     await writePullDocuments(
       transaction,
       tableName,
@@ -1050,8 +1055,25 @@ async function syncTable(
   // ProtectedCheckpoint). One written at an older refresh revision is not
   // resumed: the stream is a few pages, so a column added since is picked up by
   // replaying from the epoch rather than by the reference stream's separate
-  // unmetered replay. `complete` survives that replay, because the rows it
-  // vouches for are still on the device.
+  // unmetered replay.
+  //
+  // `complete` SURVIVES THAT REPLAY, from its first page on, although the
+  // cursor has gone back to the start. It means "nothing this device held has
+  // been withdrawn", not "at the tail", and a replay withdraws nothing. What
+  // each reader of the flag needs, part-way through one:
+  //  - the spray read gate and the online-read preference need the wall's rows
+  //    to be here. They are, all of them, as they were before the replay began.
+  //    Clearing the flag would take every downloaded wall offline after an app
+  //    update until the next sync finished, and on a backend that cannot ship
+  //    the new column (#6161) it would do so again on every cycle;
+  //  - the holds index needs no climb to turn up behind a watermark unseen.
+  //    Every climbs page reports what it changed
+  //    (`invalidateHoldIndexBehindWrittenClimbs`), so a build between two
+  //    pages cannot strand one;
+  //  - a first download does not read the flag at all. It completes on this
+  //    call's `reachedTail`, which a replay cut short does not return, and a
+  //    rationed stream is only skipped on a `pulledAt` that a tail alone
+  //    writes.
   const protectedRevision = revision ?? 0;
   const storedProtected = isProtectedStream ? await getProtectedCheckpoint(db, checkpointKey) : null;
   let protectedState: ProtectedCheckpoint | null =
@@ -1191,6 +1213,15 @@ async function syncTable(
       // rule this replaces.
       const isMirrorableProtectedTable =
         isProtectedStream && (tableName === 'board_climbs' || tableName === 'board_climb_stats');
+      // A catalogue board's holds index is far too big to rebuild per page, so
+      // each climbs page says what it changed and only a climb the index would
+      // miss sends the layout back to a build. Both streams: a row of either
+      // can arrive behind a watermark the other raised.
+      const pageClimbUuids =
+        tableName === 'board_climbs' && boardScope && boardScope.boardType !== 'spray'
+          ? result.documents.flatMap((document) => (typeof document.uuid === 'string' ? [document.uuid] : []))
+          : null;
+      let climbsBeforeWrite: ClimbsBeforeWrite | null = null;
 
       const committed = await upsertDocuments(
         db,
@@ -1202,20 +1233,20 @@ async function syncTable(
         {
           canWrite,
           preserveNewerRows: !!refresh || isMirrorableProtectedTable,
+          beforeUpsert:
+            pageClimbUuids && boardScope
+              ? async (transaction) => {
+                  climbsBeforeWrite = await readClimbsBeforeWrite(transaction, boardScope, pageClimbUuids);
+                }
+              : undefined,
           afterUpsert: async (transaction) => {
             if (tableName === 'board_climbs' && boardScope?.boardType === 'spray') {
               // A targeted saved-row mirror can move the derived index ahead
               // of delayed ordinary or refresh rows. Rebuild bounded spray
               // layouts on next use, and fence in-flight index work atomically.
               await clearLayoutHoldIndex(transaction, boardScope.boardType, boardScope.layoutId);
-            } else if (tableName === 'board_climbs' && isProtectedStream && boardScope) {
-              // A catalogue board is far too big to rebuild per page, so only a
-              // climb the index is actually missing sends it back to a build.
-              await invalidateHoldIndexBehindWrittenClimbs(
-                transaction,
-                boardScope,
-                result.documents.flatMap((document) => (typeof document.uuid === 'string' ? [document.uuid] : [])),
-              );
+            } else if (pageClimbUuids && boardScope && climbsBeforeWrite) {
+              await invalidateHoldIndexBehindWrittenClimbs(transaction, boardScope, pageClimbUuids, climbsBeforeWrite);
             }
             if (isProtectedStream) {
               protectedState = {
