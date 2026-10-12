@@ -83,23 +83,6 @@ function renderLink(zoomSourceRetained = true) {
 }
 
 describe('accessory player navigation', () => {
-  it('keeps capture metadata on the actual pressable inside the retained zoom source', () => {
-    render(
-      <AccessoryPlayLink
-        accessibilityLabel="Actual climb"
-        testID="cpp-accessory-climb-real"
-        onOpen={() => {}}
-        onPrepare={() => true}
-        zoomSourceRetained
-      >
-        Actual climb
-      </AccessoryPlayLink>,
-    );
-    expect(screen.getByTestId('cpp-accessory-climb-real')).toBe(screen.getByRole('button', { name: 'Actual climb' }));
-    expect(screen.getByTestId('native-zoom-source').contains(screen.getByTestId('cpp-accessory-climb-real'))).toBe(
-      true,
-    );
-  });
   it('uses the opener for floating hosts that unmount under the player', () => {
     const callbacks = renderLink(false);
     fireEvent.click(screen.getByRole('button', { name: 'My project' }));

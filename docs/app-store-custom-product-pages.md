@@ -200,6 +200,11 @@ board's first ten results for the solo accessory preview. Its raw climb UUID,
 title, and displayed grade are recorded as `accessoryClimb`; the wall-status climb
 stays unchanged. Bootstrap stops if those results have no suitable different
 climb. Older scenarios without this field keep their existing capture behavior.
+On phones, the strict solo-head marker is attached to the existing visible
+accessory row: UIKit can omit its central Apple Zoom link from the accessibility
+tree. Only CPP captures group that row under its actual climb name; normal use
+keeps the controls' individual accessibility. The marker still rejects retained
+or shared-session content and requires the actual selected climb UUID.
 Bootstrap verifies the persisted owner, named board identity, configuration, private
 visibility, permanence, and durable lifecycle before joining; live presence alone
 does not determine whether a saved session is reusable. An account/backend-bound checkpoint whose durable lifecycle is ended may receive

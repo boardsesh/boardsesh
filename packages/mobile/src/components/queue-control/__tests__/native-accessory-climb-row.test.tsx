@@ -53,12 +53,10 @@ vi.mock('../AccessoryPlayLink', () => ({
   AccessoryPlayLink: ({
     children,
     accessibilityLabel,
-    testID,
   }: {
     children: ReactNode;
     style?: unknown;
     accessibilityLabel: string;
-    testID?: string;
   }) =>
     createElement(
       'div',
@@ -67,7 +65,6 @@ vi.mock('../AccessoryPlayLink', () => ({
         'data-role': 'button',
         'data-actions': '',
         'data-accessory-play-link': true,
-        'data-testid': testID,
       },
       children,
     ),
@@ -82,6 +79,8 @@ vi.mock('react-native', () => ({
     accessibilityRole,
     accessibilityLabel,
     accessibilityActions,
+    accessible,
+    testID,
     onLayout,
   }: {
     children?: ReactNode;
@@ -89,6 +88,8 @@ vi.mock('react-native', () => ({
     accessibilityRole?: string;
     accessibilityLabel?: string;
     accessibilityActions?: ReadonlyArray<{ name: string; label?: string }>;
+    accessible?: boolean;
+    testID?: string;
     onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
   }) => {
     // jsdom never lays out, so simulate the swipe viewport being measured —
@@ -130,6 +131,9 @@ vi.mock('react-native', () => ({
         'data-overflow': styleDataValue(overflow),
         'data-role': accessibilityRole ?? '',
         'data-label': accessibilityLabel ?? '',
+        'aria-label': accessibilityLabel,
+        'data-accessible': accessible,
+        'data-testid': testID,
         'data-actions': Array.isArray(accessibilityActions)
           ? accessibilityActions.map((action) => action.name).join(',')
           : '',
@@ -360,18 +364,21 @@ function expectNumericAttribute(element: HTMLElement, attributeName: string, exp
 }
 
 describe('NativeAccessoryClimbRow', () => {
-  it('forwards an actual accessory host ID without introducing an additional wrapper', () => {
+  it.each(['regular', 'inline'] as const)('exposes the existing %s row as the CPP accessibility host', (placement) => {
     const { container } = render(
       <NativeAccessoryClimbRow
         climb={makeClimb()}
-        placement="regular"
+        placement={placement}
         width={344}
         testID="cpp-accessory-climb-climb-1"
       />,
     );
-    expect(container.querySelector('[data-testid="cpp-accessory-climb-climb-1"]')?.getAttribute('aria-label')).toBe(
-      "Alvin's Nuts",
-    );
+    const host = container.querySelector('[data-testid="cpp-accessory-climb-climb-1"]');
+    expect(host).toBe(container.firstElementChild);
+    expect(host?.getAttribute('aria-label')).toBe("Alvin's Nuts");
+    expect(host?.getAttribute('data-accessible')).toBe('true');
+    expect(host?.querySelector('[data-accessory-play-link]')).not.toBeNull();
+    expect(host?.querySelector('[data-accessory-play-link]')?.getAttribute('data-testid')).toBeNull();
   });
   beforeEach(() => {
     const currentItem = makeItem(makeClimb());
@@ -388,6 +395,9 @@ describe('NativeAccessoryClimbRow', () => {
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
     const { container } = renderRow('regular');
 
+    expect(container.firstElementChild?.getAttribute('data-accessible')).toBeNull();
+    expect(container.firstElementChild?.getAttribute('aria-label')).toBeNull();
+    expect(container.firstElementChild?.getAttribute('data-testid')).toBeNull();
     expect(container.textContent).toContain("Alvin's Nuts");
     expect(container.textContent).toContain('V6');
     expect(container.querySelector('[data-thumbnail="p1r12"]')).not.toBeNull();

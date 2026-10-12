@@ -101,10 +101,17 @@ export function NativeAccessoryClimbRow({ climb, placement, width, testID }: Nat
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
 
+  // UIKit can omit the central zoom-source subtree from its accessory AX tree.
+  // CPP metadata belongs to this existing visible row; ordinary captures and
+  // normal use leave each control's accessibility unchanged.
   return (
-    <View style={[styles.row, { width, height: rowHeight }]}>
+    <View
+      style={[styles.row, { width, height: rowHeight }]}
+      testID={testID}
+      accessible={testID ? true : undefined}
+      accessibilityLabel={testID ? climb.name : undefined}
+    >
       <AccessoryPlayLink
-        testID={testID}
         style={styles.tapClip}
         accessibilityLabel={climb.name}
         onOpen={openPlay}
