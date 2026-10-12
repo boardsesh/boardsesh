@@ -129,10 +129,10 @@ describe('buildHealthQuery / buildLatestUpdateQuery', () => {
     expect(query).toContain("event = 'OTA Update Status'");
     expect(query).toContain("properties.channel = 'production'");
     expect(query).toContain('INTERVAL 6 HOUR');
-    // Emergencies still on a per-launch id tell when the installs gate can take over.
-    expect(query).toContain(
-      "countIf(startsWith(distinct_id, 'ota-launch:') AND toString(properties.isEmergencyLaunch) = 'true') AS legacy_emergency_launches",
-    );
+    // Every launch still on a per-launch id, healthy ones included, tells when
+    // the installs gate can take over: emergencies alone read 0 on a healthy week.
+    expect(query).toContain("countIf(startsWith(distinct_id, 'ota-launch:')) AS legacy_launches");
+    expect(query).not.toMatch(/ota-launch:'\)\s+AND/);
   });
 
   it('emits a constant 0 adoption column when no id is given', () => {
@@ -160,7 +160,7 @@ describe('evaluateOtaHealth', () => {
     emergencyInstalls,
     launches: installCount * 3,
     emergencyLaunches: emergencyInstalls * 5,
-    legacyEmergencyLaunches: 0,
+    legacyLaunches: 0,
     targetUpdateInstalls: null,
     updateId: null,
   });
@@ -172,7 +172,7 @@ describe('evaluateOtaHealth', () => {
         emergencyInstalls: 1,
         launches: 140,
         emergencyLaunches: 40,
-        legacyEmergencyLaunches: 0,
+        legacyLaunches: 0,
         targetUpdateInstalls: null,
         updateId: null,
       },
@@ -190,7 +190,7 @@ describe('evaluateOtaHealth', () => {
         emergencyInstalls: 1,
         launches: 140,
         emergencyLaunches: 40,
-        legacyEmergencyLaunches: 0,
+        legacyLaunches: 0,
         targetUpdateInstalls: null,
         updateId: null,
       },
@@ -210,7 +210,7 @@ describe('evaluateOtaHealth', () => {
     emergencyInstalls: 12,
     launches: 400 + 12,
     emergencyLaunches: 12,
-    legacyEmergencyLaunches: 12,
+    legacyLaunches: 12,
     targetUpdateInstalls: null,
     updateId: null,
   };
@@ -233,7 +233,7 @@ describe('evaluateOtaHealth', () => {
       emergencyInstalls: 8,
       launches: 400,
       emergencyLaunches: 300,
-      legacyEmergencyLaunches: 0,
+      legacyLaunches: 0,
       targetUpdateInstalls: null,
       updateId: null,
     };
@@ -286,7 +286,7 @@ describe('summarizeVerdict', () => {
       emergencyInstalls: 20,
       launches: 150,
       emergencyLaunches: 35,
-      legacyEmergencyLaunches: 30,
+      legacyLaunches: 30,
       targetUpdateInstalls: 60,
       updateId: 'abc-123',
     };
@@ -296,9 +296,26 @@ describe('summarizeVerdict', () => {
     expect(text).toContain('gate: launches, rate 23.3%');
     expect(text).toContain('launches: 150, emergency launches: 35');
     expect(text).toContain('installs: 100, with an emergency launch: 20 → 20.0%');
-    expect(text).toContain('legacy emergency launches (per-launch id, pre-change embedded JS): 30');
+    expect(text).toContain('legacy launches (per-launch id, pre-change JS; healthy and emergency): 30');
     expect(text).toContain('abc-123');
     expect(text).toContain('60 install(s)');
+  });
+
+  it('reports legacy launches on a healthy fleet, so zero emergencies never reads as "switch now"', () => {
+    // A week with no emergency at all, on a fleet where old binaries still
+    // run their embedded pre-change JS on some launches.
+    const healthyOldFleet: HealthMetrics = {
+      installs: 200,
+      emergencyInstalls: 0,
+      launches: 900,
+      emergencyLaunches: 0,
+      legacyLaunches: 140,
+      targetUpdateInstalls: null,
+      updateId: null,
+    };
+    const text = summarizeVerdict(healthyOldFleet, evaluate(healthyOldFleet), args).join('\n');
+    expect(text).toContain('healthy');
+    expect(text).toContain('legacy launches (per-launch id, pre-change JS; healthy and emergency): 140');
   });
 
   it('names the installs gate when it is chosen', () => {
@@ -308,7 +325,7 @@ describe('summarizeVerdict', () => {
       emergencyInstalls: 2,
       launches: 300,
       emergencyLaunches: 9,
-      legacyEmergencyLaunches: 0,
+      legacyLaunches: 0,
       targetUpdateInstalls: null,
       updateId: null,
     };
@@ -323,7 +340,7 @@ describe('summarizeVerdict', () => {
       emergencyInstalls: 2,
       launches: 9,
       emergencyLaunches: 6,
-      legacyEmergencyLaunches: 6,
+      legacyLaunches: 6,
       targetUpdateInstalls: null,
       updateId: null,
     };
@@ -370,7 +387,7 @@ describe('runHealthCheck (networked path)', () => {
 
   it('exits 1 and writes an UNHEALTHY summary when the emergency rate clears the gate', async () => {
     vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
-    // [installs, emergency_installs, launches, emergency_launches, target_update_installs, legacy_emergency_launches]
+    // [installs, emergency_installs, launches, emergency_launches, target_update_installs, legacy_launches]
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({ ok: true, json: async () => ({ results: [[100, 20, 180, 45, 60, 40]] }) })),

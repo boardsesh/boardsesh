@@ -35,9 +35,14 @@
  *   so this rate reads several times high and a normal day trips the gate.
  *
  * Switch to `--gate installs` once a store release with the per-install id in
- * its embedded JS has been adopted: when the `legacy emergency launches` line
- * (emergencies still on `ota-launch:`) has read 0 for 7 days running. The date
- * of the switch goes in docs/mobile-ota-updates.md ("The health check").
+ * its embedded JS has been adopted. Two conditions, both needed: the `legacy
+ * launches` line (every launch, healthy or not, still on `ota-launch:`) has
+ * read 0 for 7 days running, AND the store consoles show most installs on a
+ * binary built after the change. The first alone is not enough: an old binary
+ * that already runs the new OTA sends `ota-install:` on every healthy launch
+ * and shows up as legacy only on an emergency, which is exactly when it would
+ * inflate the install rate. The date of the switch goes in
+ * docs/mobile-ota-updates.md ("The health check").
  *
  * Exit code is non-zero ONLY when the gated rate exceeds the threshold AND the
  * gated denominator reached `--min-samples` — so low-volume noise (the minutes
@@ -97,8 +102,8 @@ export interface HealthMetrics {
   /** Launch counts: the `launches` gate's numerator and denominator. */
   launches: number;
   emergencyLaunches: number;
-  /** Emergency launches still sent under a per-launch id (`ota-launch:`), from pre-change embedded JS. */
-  legacyEmergencyLaunches: number;
+  /** Launches, healthy or emergency, still sent under a per-launch id (`ota-launch:`): pre-change JS. */
+  legacyLaunches: number;
   /** Installs running the target update id (isEmbeddedLaunch false). null when no id resolved. */
   targetUpdateInstalls: number | null;
   updateId: string | null;
@@ -213,7 +218,7 @@ export function buildLatestUpdateQuery(hours: number): string {
 
 /**
  * Fleet health over the window: launches and emergency launches, the same per
- * install (distinct `distinct_id`), emergencies still on a per-launch id, and —
+ * install (distinct `distinct_id`), launches still on a per-launch id, and —
  * when a target id is known — installs running it.
  */
 export function buildHealthQuery(options: { hours: number; updateId: string | null }): string {
@@ -229,7 +234,7 @@ export function buildHealthQuery(options: { hours: number; updateId: string | nu
       count() AS launches,
       countIf(toString(properties.isEmergencyLaunch) = 'true') AS emergency_launches,
       ${targetInstalls} AS target_update_installs,
-      countIf(startsWith(distinct_id, 'ota-launch:') AND toString(properties.isEmergencyLaunch) = 'true') AS legacy_emergency_launches
+      countIf(startsWith(distinct_id, 'ota-launch:')) AS legacy_launches
     FROM events
     WHERE event = '${OTA_UPDATE_STATUS_EVENT}'
       AND properties.channel = '${PRODUCTION_CHANNEL}'
@@ -275,7 +280,7 @@ export function summarizeVerdict(metrics: HealthMetrics, verdict: HealthVerdict,
     `• window: last ${args.hours}h • channel: ${PRODUCTION_CHANNEL}`,
     gateLine,
     ...(verdict.gate === 'installs' ? [installLine, launchLine] : [launchLine, installLine]),
-    `• legacy emergency launches (per-launch id, pre-change embedded JS): ${metrics.legacyEmergencyLaunches}`,
+    `• legacy launches (per-launch id, pre-change JS; healthy and emergency): ${metrics.legacyLaunches}`,
   ];
   if (metrics.updateId) {
     const adoption = metrics.targetUpdateInstalls ?? 0;
@@ -337,7 +342,7 @@ export async function runHealthCheck(args: HealthCheckArgs): Promise<number> {
       emergencyInstalls: toCount(row[1]),
       launches: toCount(row[2]),
       emergencyLaunches: toCount(row[3]),
-      legacyEmergencyLaunches: toCount(row[5]),
+      legacyLaunches: toCount(row[5]),
       targetUpdateInstalls: updateId ? toCount(row[4]) : null,
       updateId,
     };

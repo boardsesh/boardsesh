@@ -1730,8 +1730,8 @@ because "nothing published yet" is a diagnosis rather than a fault.
 
 `vp run mobile:ota-health-check` queries PostHog (HogQL) for `OTA Update Status` events on the
 `production` channel over a window and reports launches and emergency launches, the same per
-install (distinct `distinct_id`), emergency launches still sent under a per-launch id, and installs
-running the target update:
+install (distinct `distinct_id`), launches still sent under a per-launch id, and installs running the
+target update:
 
 ```bash
 vp run mobile:ota-health-check                                  # latest production update, last 24h
@@ -1760,11 +1760,18 @@ per install in the window the install rate reads about k times the launch rate, 
 emergency launches crosses 10%.
 
 **Switching to `--gate installs`.** Not before a store release whose embedded JS has the install id
-is what most of the fleet runs. The signal is the summary line `legacy emergency launches
-(per-launch id, pre-change embedded JS)`: once it has read 0 for 7 days running, add
-`--gate installs` to the health-check steps in `.github/workflows/production-deploy.yml` and
-`.github/workflows/mobile-ota-production.yml`, and record
-the date here. Switched: not yet.
+is what most of the fleet runs. Two conditions, both needed:
+
+1. The summary line `legacy launches (per-launch id, pre-change JS; healthy and emergency)` has read
+   0 for 7 days running. It counts every launch still on `ota-launch:`, healthy ones included, so a
+   quiet week with no emergencies does not read as zero on its own.
+2. App Store Connect and the Play Console show most installs on a binary built after the change.
+   Condition 1 cannot see this alone: an old binary that already runs the new OTA sends
+   `ota-install:` on every healthy launch, and shows up as legacy only on an emergency launch,
+   which is exactly when it would inflate the install rate.
+
+Then add `--gate installs` to the health-check steps in `.github/workflows/production-deploy.yml`
+and `.github/workflows/mobile-ota-production.yml`, and record the date here. Switched: not yet.
 
 Two notes on what it measures:
 
