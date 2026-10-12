@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { rowsFromResult } from '@boardsesh/db/client';
 import {
   applyClimbOwnerAssignments,
@@ -307,4 +308,53 @@ describeWithDatabase('climb owner backfill (real DB)', () => {
       'backfill-unlinked': UNLINKED_ACCOUNT,
     });
   });
+
+  it.each(['aurora_credentials', 'user_board_mappings'] as const)(
+    'waits for in-flight %s edits before deciding the unique owner',
+    async (linkTable) => {
+      const writer = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+      let assignment: Promise<number> | undefined;
+      try {
+        await writer.begin(async (transaction) => {
+          if (linkTable === 'aurora_credentials') {
+            await transaction`
+              UPDATE aurora_credentials SET aurora_user_id = ${SOLE_SETTER}
+              WHERE user_id = ${SHARED_ACCOUNT_A} AND board_type = ${BOARD}
+            `;
+          } else {
+            await transaction`
+              UPDATE user_board_mappings SET board_user_id = ${SOLE_SETTER}
+              WHERE user_id = ${SHARED_ACCOUNT_B} AND board_type = ${BOARD}
+            `;
+          }
+          assignment = applyClimbOwnerAssignments(db, [{ uuid: 'backfill-sole-a', userId: SOLE_ACCOUNT }]);
+          // Keep errors handled while observing the blocked write transaction.
+          void assignment.catch(() => {});
+          await expect
+            .poll(
+              async () => {
+                const [lock] = rowsFromResult<{ waiting: boolean }>(
+                  await db.execute(sql`
+              SELECT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_locks
+                WHERE relation = ${`public.${linkTable}`}::regclass
+                  AND mode = 'ShareLock' AND NOT granted
+              ) AS waiting
+            `),
+                );
+                return lock.waiting;
+              },
+              { timeout: 5000, interval: 20 },
+            )
+            .toBe(true);
+          // This second link becomes visible only when this transaction commits.
+        });
+        expect(await assignment).toBe(0);
+        expect(ownersOf(await storedClimbs())['backfill-sole-a']).toBeNull();
+      } finally {
+        await assignment?.catch(() => {});
+        await writer.end();
+      }
+    },
+  );
 });

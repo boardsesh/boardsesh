@@ -209,7 +209,7 @@ export async function selectClimbOwnerAssignments(
 }
 
 /**
- * Assign one batch, in one statement. Returns how many rows it wrote.
+ * Assign one bounded batch in a transaction. Returns how many rows it wrote.
  *
  * The row is re-checked where it is written: still without an owner, still not
  * public, the account still exists, and it is still the one account that links
@@ -225,40 +225,50 @@ export async function selectClimbOwnerAssignments(
  */
 export async function applyClimbOwnerAssignments(db: BackfillDb, assignments: ClimbOwnerAssignment[]): Promise<number> {
   if (assignments.length === 0) return 0;
-  const ownerByUuid = sql.join(
-    assignments.map((assignment) => sql`WHEN ${assignment.uuid} THEN ${assignment.userId}`),
-    sql` `,
+  return db.transaction(
+    async (transaction) => {
+      // SHARE conflicts with every link-table writer, including unlink and
+      // maintenance paths that do not take the backend advisory link lock. Wait
+      // before taking the UPDATE snapshot, then retain both fences through commit.
+      // This maintenance-only lock is released after each bounded batch.
+      await transaction.execute(sql`LOCK TABLE public.aurora_credentials, public.user_board_mappings IN SHARE MODE`);
+      const ownerByUuid = sql.join(
+        assignments.map((assignment) => sql`WHEN ${assignment.uuid} THEN ${assignment.userId}`),
+        sql` `,
+      );
+      const assignedOwner = sql`CASE ${boardClimbs.uuid} ${ownerByUuid} END`;
+      const accountIds = [...new Set(assignments.map((assignment) => assignment.userId))];
+      const existingAccounts = transaction.select({ id: users.id }).from(users).where(inArray(users.id, accountIds));
+      // The match the page was read with, made again on the row being written. The
+      // climb's columns are named with their table: inside the subquery a bare
+      // `board_type` would be the link's own.
+      const owners = setterOwners(transaction);
+      const stillTheOnlyLinkedAccount = sql`EXISTS (
+      SELECT 1 FROM ${owners}
+      WHERE ${owners.boardType} = ${sql.raw('board_climbs.board_type')}
+        AND ${owners.boardUserId} = ${sql.raw('board_climbs.setter_id')}
+        AND ${owners.accountCount} = 1
+        AND ${owners.userId} = ${assignedOwner}
+    )`;
+      const written = await transaction
+        .update(boardClimbs)
+        .set({ userId: assignedOwner })
+        .where(
+          and(
+            inArray(
+              boardClimbs.uuid,
+              assignments.map((assignment) => assignment.uuid),
+            ),
+            ownerlessInScope({}),
+            inArray(assignedOwner, existingAccounts),
+            stillTheOnlyLinkedAccount,
+          ),
+        )
+        .returning({ uuid: boardClimbs.uuid });
+      return written.length;
+    },
+    { isolationLevel: 'read committed' },
   );
-  const assignedOwner = sql`CASE ${boardClimbs.uuid} ${ownerByUuid} END`;
-  const accountIds = [...new Set(assignments.map((assignment) => assignment.userId))];
-  const existingAccounts = db.select({ id: users.id }).from(users).where(inArray(users.id, accountIds));
-  // The match the page was read with, made again on the row being written. The
-  // climb's columns are named with their table: inside the subquery a bare
-  // `board_type` would be the link's own.
-  const owners = setterOwners(db);
-  const stillTheOnlyLinkedAccount = sql`EXISTS (
-    SELECT 1 FROM ${owners}
-    WHERE ${owners.boardType} = ${sql.raw('board_climbs.board_type')}
-      AND ${owners.boardUserId} = ${sql.raw('board_climbs.setter_id')}
-      AND ${owners.accountCount} = 1
-      AND ${owners.userId} = ${assignedOwner}
-  )`;
-  const written = await db
-    .update(boardClimbs)
-    .set({ userId: assignedOwner })
-    .where(
-      and(
-        inArray(
-          boardClimbs.uuid,
-          assignments.map((assignment) => assignment.uuid),
-        ),
-        ownerlessInScope({}),
-        inArray(assignedOwner, existingAccounts),
-        stillTheOnlyLinkedAccount,
-      ),
-    )
-    .returning({ uuid: boardClimbs.uuid });
-  return written.length;
 }
 
 export type ClimbOwnerBackfillResult = {
@@ -269,7 +279,7 @@ export type ClimbOwnerBackfillResult = {
 
 /**
  * Plan, and when `apply` is set, assign every matched climb in batches. Each
- * batch is its own statement, so no lock is held across batches and a run that
+ * batch is its own transaction, so no lock is held across batches and a run that
  * stops part-way leaves a valid state that the next run finishes.
  */
 export async function backfillClimbOwners(

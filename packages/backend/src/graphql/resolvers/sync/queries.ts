@@ -21,6 +21,7 @@ import { requireAuthenticated } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
 import { syncClimbDocuments } from './saved-climb';
+import { resolveSyncStabilityWindowSeconds } from './stability-window';
 import {
   validateInput,
   SyncCursorInputSchema,
@@ -60,10 +61,12 @@ const EPOCH_SEQ = '0';
 // be skipped forever. Excluding rows younger than the longest realistic write
 // transaction bounds that race: a skip is unrecoverable, a re-pull is a free
 // upsert. Tests set SYNC_STABILITY_WINDOW_SECONDS=0 to pull their own writes.
-// A non-numeric env value falls back to the default rather than poisoning
-// every sync query with a NaN interval.
-const parsedStabilityWindow = Number(process.env.SYNC_STABILITY_WINDOW_SECONDS ?? 30);
-const STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? Math.max(0, parsedStabilityWindow) : 30;
+// Deployed windows must exceed the one-second publication marker backdate.
+// Invalid values use the default; only exact-zero test fixtures bypass it.
+const STABILITY_WINDOW_SECONDS = resolveSyncStabilityWindowSeconds(
+  process.env.SYNC_STABILITY_WINDOW_SECONDS,
+  process.env.NODE_ENV,
+);
 
 /**
  * Resolve the incoming cursor into the two bound comparison values. Null/absent

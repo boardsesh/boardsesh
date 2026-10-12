@@ -94,3 +94,9 @@ The old backend uses `deleted_at` and its existing indexes; the new backend can
 resume installed cursors later. Do not remove the helper while the new backend
 is running. Delivery stalls safely during a prepared transaction or loss of
 stats access; monitor paused polls and resolve that database condition.
+
+Deployed `SYNC_STABILITY_WINDOW_SECONDS` values are clamped to at least two
+seconds, above the publication marker’s one-second backdate. Invalid settings
+retain the 30-second default. Exact zero is permitted only in `NODE_ENV=test`
+for immediate real-database fixture reads. The timestamp helper still safely
+accepts any nonnegative bound; deployed pull resolvers supply the guarded one.
