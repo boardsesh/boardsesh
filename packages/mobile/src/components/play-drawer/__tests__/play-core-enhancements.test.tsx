@@ -11,15 +11,10 @@ import type { useToggleFavorite } from '../../../lib/graphql/hooks';
 
 type Mutate = ReturnType<typeof useToggleFavorite>['mutate'];
 const hooks = vi.hoisted(() => ({
-  profile: vi.fn(),
   favoriteStatus: vi.fn(),
   mutate: vi.fn<Mutate>(),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: (options: unknown) => {
-    hooks.profile(options);
-    return { data: { id: 'viewer' } };
-  },
   useFavoriteStatus: (...args: unknown[]) => {
     hooks.favoriteStatus(...args);
     return { data: true };
@@ -46,12 +41,10 @@ describe('PlayCoreEnhancements', () => {
     expect(latestSnapshot(onSnapshot)).toMatchObject({
       ...target,
       targetKey: getPlayCoreEnhancementTargetKey('kilter', 'climb-a', 40),
-      currentUserId: 'viewer',
       serverFavorited: true,
     });
     rerender(<PlayCoreEnhancements {...target} enabled={false} onSnapshot={onSnapshot} />);
     expect(onSnapshot).toHaveBeenLastCalledWith(null);
-    expect(hooks.profile).toHaveBeenLastCalledWith({ enabled: false });
     expect(hooks.favoriteStatus).toHaveBeenLastCalledWith('kilter', 'climb-a', 40, { enabled: false });
   });
 

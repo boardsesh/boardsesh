@@ -75,6 +75,8 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 }));
 vi.mock('../../../hooks/use-share-climb', () => ({ useShareClimb: () => openers.shareClimb }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+// A failed create handoff reports here; the reporting itself has its own tests.
+vi.mock('../../../lib/sentry', () => ({ captureToSentry: vi.fn() }));
 // The delete flow (confirm, mutation, toasts) has its own tests.
 vi.mock('../use-delete-climb-action', () => ({ useDeleteClimbAction: () => openers.requestDelete }));
 
@@ -705,6 +707,37 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
 
     await act(async () => finishPlayerDismiss({ status: 'dismissed' }));
     expect(openers.push).toHaveBeenCalledTimes(1);
+  });
+
+  // The player's ⋯ outlives a handoff. One that threw keeps its claim, so Edit
+  // and Remix would stay dead for the player's whole life without this.
+  it('lets go of a failed handoff once another climb is shown', async () => {
+    const dismissPlayerAndWait = vi.fn(async (): Promise<{ status: 'dismissed' }> => {
+      throw new Error('transition never ended');
+    });
+    const { result, rerender } = renderHook(
+      ({ shownClimb }: { shownClimb: Climb }) =>
+        useClimbActions({
+          climb: shownClimb,
+          boardConfig: kilterBoard,
+          isAuthenticated: false,
+          onSelectPlaylist: noopSelectPlaylist,
+          dismissPlayerAndWait,
+        }),
+      { initialProps: { shownClimb: climb } },
+    );
+    const fork = () => result.current.find((action) => action.id === 'fork')?.run();
+
+    await act(async () => fork());
+    expect(dismissPlayerAndWait).toHaveBeenCalledTimes(1);
+    // Same climb: the failed handoff still holds the claim.
+    await act(async () => fork());
+    expect(dismissPlayerAndWait).toHaveBeenCalledTimes(1);
+
+    rerender({ shownClimb: { ...climb, uuid: 'climb-2' } as Climb });
+    await act(async () => fork());
+    expect(dismissPlayerAndWait).toHaveBeenCalledTimes(2);
+    expect(openers.push).not.toHaveBeenCalled();
   });
 
   it('pushes directly when no source or player dismiss callback is present', () => {

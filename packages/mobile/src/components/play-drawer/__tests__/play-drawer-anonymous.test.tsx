@@ -59,7 +59,7 @@ const recorded = vi.hoisted(() => ({
 }));
 // Signed out unless a case says otherwise: both viewers here render without a
 // session, which is what the web export's read-only climb view is.
-const auth = vi.hoisted(() => ({ isAuthenticated: false, isLoading: false }));
+const auth = vi.hoisted(() => ({ isAuthenticated: false }));
 // The board the climber is STANDING at, deliberately different from the
 // boardConfig prop the drawer renders with (see the navigation-board case).
 const activeBoard = vi.hoisted(() => ({
@@ -538,7 +538,6 @@ beforeEach(() => {
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
   auth.isAuthenticated = false;
-  auth.isLoading = false;
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -1503,9 +1502,26 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(recorded.deferredSections).toHaveLength(0);
   });
 
-  // A session still resolving is not a signed-out reader yet.
-  it('keeps the stored choices while the session is still resolving', () => {
-    auth.isLoading = true;
+  // A guest without an account is still a member viewer: ⋯ → View options and
+  // Settings → Climb view both write the stored choices, so the drawer has to
+  // honour them. Only the anonymous reader, who can reach neither, is overridden.
+  it('keeps a signed-out member viewer on their stored Hide all', () => {
+    drawerSections.sections = {
+      logbook: false,
+      climberLogs: false,
+      setterNotes: false,
+      betaVideos: false,
+      boardseshGrade: false,
+      community: false,
+      similarClimbs: false,
+    };
+    renderDrawer('member');
+
+    expect(auth.isAuthenticated).toBe(false);
+    expect(recorded.deferredSections).toHaveLength(0);
+  });
+
+  it("keeps a signed-out member viewer's partial choices too", () => {
     drawerSections.sections = { ...drawerSections.defaults, logbook: false };
     renderDrawer('member');
 

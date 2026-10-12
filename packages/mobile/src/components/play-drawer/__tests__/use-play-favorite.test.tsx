@@ -98,6 +98,21 @@ describe('usePlayFavorite', () => {
     expect(initial.showToast).toHaveBeenCalledWith('playView.favoriteError', 'error');
   });
 
+  // The heart and ⋯'s row are one toggle, but two places to tap it.
+  it('tells a menu tap from a heart tap in the FavoriteToggle source', () => {
+    const { result } = renderHook(() => usePlayFavorite(options()));
+    act(() => result.current.handleToggleFavoriteFromMenu());
+    expect(effects.track).toHaveBeenLastCalledWith(
+      'Favorite Toggle',
+      expect.objectContaining({ action: 'added', source: 'play_drawer_menu' }),
+    );
+    act(() => result.current.handleToggleFavorite());
+    expect(effects.track).toHaveBeenLastCalledWith(
+      'Favorite Toggle',
+      expect.objectContaining({ action: 'removed', source: 'mobile_play_drawer' }),
+    );
+  });
+
   it('exposes a stable reset for the existing climb-change effect and explicit same-climb reopen', () => {
     const initial = options();
     const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });

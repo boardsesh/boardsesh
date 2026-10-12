@@ -84,7 +84,9 @@ player's **own** opener for every row that opens a sheet: `onTick`, `onAddBetaVi
 `onReportClimb`, `onSelectPlaylist` (the player's own `AddToPlaylistSheet` host), `onOpenQueue` and
 `onOpenViewOptions` (the sections sheet). Each drives a sheet mounted in `PlayCoreSheetHosts`, which
 presents inside the modal, above it. The props are **required** on `PlayDrawerActionsMenu`, so
-leaving one out fails typecheck instead of silently taking the root fallback. The favourite row
+one can't be left off by accident and silently take the root fallback; nothing in the types
+stops a root opener being passed in their place, so `play-drawer-cross-board.test.tsx` opens
+each sheet through the player and checks it is the player's own. The favourite row
 goes through the bar heart's own toggle (`handleToggleFavoriteFromMenu`), so the two never
 disagree. Off the player (climb list, logbook, board sheet) the long-press `ClimbReactionMenu`
 omits the overrides and the root sheet is correct — nothing covers it. **Any new ⋯ row that opens
@@ -260,12 +262,13 @@ Show all and Hide all
 stay together above the grouped switches, with 44-point targets and disabled states
 when every section already matches the action. Choices apply immediately; the close
 button dismisses the sheet without a save step. There is no eye button in the action bar
-any more. A signed-out web reader, who has no ⋯ and no Settings, ignores the stored
-choices and gets the default sections, ready at once (no read to wait for), so a
-member's Hide all left in the same browser can't strand them with nothing below the
-board. While the session is still resolving, the stored choices stand. These
-device-local choices use AsyncStorage (IndexedDB in the browser) and keep each
-section's existing expansion preference and order.
+any more. The anonymous web reader (`viewer="anonymous"`, the read-only climb view), who
+has no ⋯ and no Settings, ignores the stored choices and gets the default sections,
+ready at once (no read to wait for), so a member's Hide all left in the same browser
+can't strand them with nothing below the board. Every other viewer, a guest without an
+account included, keeps the stored choices, because ⋯ → View options and Settings →
+Climb view both write them. These device-local choices use AsyncStorage (IndexedDB in
+the browser) and keep each section's existing expansion preference and order.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.

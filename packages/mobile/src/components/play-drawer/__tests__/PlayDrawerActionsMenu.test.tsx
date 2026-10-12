@@ -23,6 +23,8 @@ const queue = vi.hoisted(() => ({
   playNext: vi.fn(),
 }));
 const toggleFavoriteMutate = vi.hoisted(() => vi.fn());
+// The app-wide profile cache: who is looking.
+const profile = vi.hoisted(() => ({ id: 'me' as string | undefined, reads: [] as { enabled?: boolean }[] }));
 const favoriteStatusReads = vi.hoisted(() => [] as { enabled?: boolean }[]);
 
 // A plain double for the native menu that counts mounts and, unlike every real
@@ -68,6 +70,10 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ actionColors: { success: '#0a0', favorite: '#f00', accent: '#00f' } }),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: (options?: { enabled?: boolean }) => {
+    profile.reads.push(options ?? {});
+    return { data: profile.id ? { id: profile.id } : undefined };
+  },
   useToggleFavorite: () => ({ mutate: toggleFavoriteMutate }),
   useFavoriteStatus: (_board: string, _uuid: string | null, _angle: number, options?: { enabled?: boolean }) => {
     favoriteStatusReads.push(options ?? {});
@@ -77,7 +83,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 vi.mock('../../../hooks/use-share-climb', () => ({ useShareClimb: () => vi.fn(async () => {}) }));
 vi.mock('../../climb-actions/use-delete-climb-action', () => ({ useDeleteClimbAction: () => vi.fn() }));
 vi.mock('../../create-climb/use-create-climb-navigation', () => ({
-  useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn() }),
+  useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
 }));
 
 import { PlayDrawerActionsMenu, type PlayDrawerActionsMenuProps } from '../PlayDrawerActionsMenu';
@@ -91,7 +97,6 @@ function makeProps(overrides: Partial<PlayDrawerActionsMenuProps> = {}): PlayDra
   return {
     climb: CLIMB,
     boardConfig: TENSION,
-    currentUserId: 'me',
     isAuthenticated: true,
     hidden: EVERYTHING_HIDDEN,
     boardMismatch: false,
@@ -122,6 +127,8 @@ beforeEach(() => {
   menu.props = [];
   queue.activeClimbUuid = null;
   favoriteStatusReads.length = 0;
+  profile.id = 'me';
+  profile.reads = [];
   vi.clearAllMocks();
 });
 
@@ -226,6 +233,31 @@ describe('PlayDrawerActionsMenu', () => {
       ),
     );
     expect(menu.mounts).toBe(4);
+  });
+
+  // Edit, Delete and Report hang on who is looking. The answer comes from the
+  // profile the whole app reads, so it is there from the first frame the menu
+  // is, and holds still when a crew member moves the wall's angle.
+  it('reads who is looking from the profile, so a setter never sees Report on their own climb', () => {
+    profile.id = 'setter-9';
+    const setter = render(createElement(PlayDrawerActionsMenu, makeProps()));
+    expect(setter.container.textContent).not.toContain('mobile.climbActions.report');
+    setter.unmount();
+
+    profile.id = 'someone-else';
+    const { container } = render(createElement(PlayDrawerActionsMenu, makeProps()));
+    expect(container.textContent).toContain('mobile.climbActions.report');
+  });
+
+  it('keeps the same menu across an angle change', () => {
+    const { rerender } = render(createElement(PlayDrawerActionsMenu, makeProps()));
+    rerender(createElement(PlayDrawerActionsMenu, makeProps({ boardConfig: { ...TENSION, angle: 45 } })));
+    expect(menu.mounts).toBe(1);
+  });
+
+  it('asks for no profile without a session', () => {
+    render(createElement(PlayDrawerActionsMenu, makeProps({ isAuthenticated: false })));
+    expect(profile.reads.every((read) => read.enabled === false)).toBe(true);
   });
 
   it('drops Play next once the climb is the one on the wall', () => {

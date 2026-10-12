@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { usePrivacyCredentialScope } from '../../hooks/use-privacy-scoped-state';
-import { useFavoriteStatus, useProfile, useToggleFavorite } from '../../lib/graphql/hooks';
+import { useFavoriteStatus, useToggleFavorite } from '../../lib/graphql/hooks';
 import {
   getPrivacyCredentialGeneration,
   getPrivacyRevocationGeneration,
@@ -20,7 +20,6 @@ export type PlayCoreEnhancementSnapshot = {
   angle: number;
   privacyGeneration: number;
   credentialGeneration: number;
-  currentUserId: string | null;
   serverFavorited: boolean | undefined;
   toggleFavoriteMutate: ToggleFavoriteMutate;
 };
@@ -49,10 +48,8 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
   const currentScopeRef = useRef(callbackScope);
   currentScopeRef.current = callbackScope;
   const mountedRef = useRef(false);
-  const { data: profile } = useProfile({ enabled });
   const { data: serverFavorited } = useFavoriteStatus(boardName, climbUuid, angle, { enabled });
   const { mutate } = useToggleFavorite();
-  const currentUserId = profile?.id ?? null;
 
   const toggleFavoriteMutate = useCallback<ToggleFavoriteMutate>(
     (variables, options) => {
@@ -117,7 +114,6 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
         angle,
         privacyGeneration,
         credentialGeneration,
-        currentUserId,
         serverFavorited,
         toggleFavoriteMutate,
       });
@@ -135,7 +131,6 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
     enabled,
     privacyGeneration,
     credentialGeneration,
-    currentUserId,
     serverFavorited,
     toggleFavoriteMutate,
   ]);

@@ -87,7 +87,8 @@ import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
-import { ChromeIconButton } from '../ChromeIconButton';
+import { ChromeIconButton, useChromeIconButtonSize } from '../ChromeIconButton';
+import { topBarByVariant } from '../../theme/top-bar';
 import {
   usePlaylistSuggestionSource,
   useQueueData,
@@ -137,6 +138,10 @@ function swipePageId(item: ClimbQueueItem | null | undefined): string {
 // How far right of the centre line the top row's trailing cluster starts: half
 // the 36pt grabber plus an 8pt gap, so the timer can never reach the grabber.
 const TOP_TRAILING_CENTRE_CLEARANCE = 26;
+// ⋯'s anchor as AppMenu draws it, which is split by OS rather than by variant:
+// Android's M3 overflow IconButton is a 48dp target, iOS and web draw 44pt.
+const MENU_ANCHOR_SIZE =
+  Platform.OS === 'android' ? topBarByVariant.material.iconTarget : topBarByVariant.liquidGlass.iconTarget;
 // Fallback used for the first-screen reserve before the Logbook header has
 // been measured, so the board fits without a visible jump on first open.
 // A collapsed section header is a single row (title + summary + chevron).
@@ -194,6 +199,10 @@ export function PlayCore({
   // of the climb actions' copy.
   const { t: tClimbs } = useTranslation('climbs');
   const insets = useSafeAreaInsets();
+  // The close chevron's footprint (44pt on iOS, 48dp on Material). The top row's
+  // trailing cluster takes the same height so ⋯ centres on the chevron, and an
+  // Android 48dp overflow button sits inside the cluster it is tapped through.
+  const chromeButtonSize = useChromeIconButtonSize();
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   // The route is mounted only while the player is open, so the player is "open"
   // for this component's whole lifetime — this gates the board render, favorite
@@ -365,16 +374,16 @@ export function PlayCore({
   // one exists, else the legacy Aurora grade. `boardseshActive` also seeds the
   // tick picker's default grade below.
   const { boardseshActive } = useDisplayGrade();
-  const { isAuthenticated, isLoading: authIsLoading } = useAuth();
-  // A signed-out reader (the web export's read-only climb view) gets the default
-  // sections, whatever this browser has stored. They have no ⋯ and no Settings,
-  // so a member's "Hide all" left on a shared computer would otherwise strand
-  // them with nothing below the board and no way back. The defaults need no
-  // read, so they are ready at once. While the session is still resolving, the
-  // stored choices stand.
-  const signedOut = !isAuthenticated && !authIsLoading;
-  const sections = signedOut ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
-  const sectionsReady = signedOut || storedSectionsPreference.ready;
+  const { isAuthenticated } = useAuth();
+  // The anonymous reader (the web export's read-only climb view) gets the
+  // default sections, whatever this browser has stored. They have no ⋯ and no
+  // Settings, so a member's "Hide all" left on a shared computer would otherwise
+  // strand them with nothing below the board and no way back. The defaults need
+  // no read, so they are ready at once. Every other viewer, a guest without an
+  // account included, keeps their stored choices: they can reach both ⋯ → View
+  // options and Settings → Climb view, and those write exactly that store.
+  const sections = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
+  const sectionsReady = isAnonymous || storedSectionsPreference.ready;
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
   const displayedClimb = displayedQueueItem?.climb;
@@ -571,7 +580,6 @@ export function PlayCore({
     enhancementSnapshot.privacyGeneration === getPrivacyRevocationGeneration()
       ? enhancementSnapshot
       : null;
-  const currentUserId = matchingEnhancement?.currentUserId ?? null;
   const serverFavorited = matchingEnhancement?.serverFavorited;
   const toggleFavoriteMutate = matchingEnhancement?.toggleFavoriteMutate;
   const { isFavorited, resetFavoriteOverride, handleToggleFavorite, handleToggleFavoriteFromMenu } = usePlayFavorite({
@@ -1530,7 +1538,7 @@ export function PlayCore({
                           timer shrinks rather than sliding under it. It sits outside
                           the commit bar and the switch-board scrim, so ⋯ stays in reach
                           while browsing and on another board's climb. */}
-                        <View style={styles.topTrailing} pointerEvents="box-none">
+                        <View style={[styles.topTrailing, { height: chromeButtonSize }]} pointerEvents="box-none">
                           <View style={styles.restTimerSlot}>
                             <RestTimerPillHost compact />
                           </View>
@@ -1544,7 +1552,6 @@ export function PlayCore({
                                 <PlayDrawerActionsMenu
                                   climb={displayedClimb}
                                   boardConfig={renderBoardConfig}
-                                  currentUserId={currentUserId}
                                   isAuthenticated={isAuthenticated}
                                   hidden={actionBarLayout.hidden}
                                   boardMismatch={showBoardMismatch}
@@ -1954,7 +1961,6 @@ const styles = StyleSheet.create({
     left: '50%',
     marginLeft: TOP_TRAILING_CENTRE_CLEARANCE,
     right: spacing[2],
-    height: 44,
     zIndex: 2,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1970,10 +1976,10 @@ const styles = StyleSheet.create({
   menuSlot: {
     marginLeft: spacing[2],
   },
-  // ⋯'s 44pt circle, held while the menu waits for its first frame.
+  // ⋯'s anchor, held while the menu waits for its first frame.
   menuPlaceholder: {
-    width: 44,
-    height: 44,
+    width: MENU_ANCHOR_SIZE,
+    height: MENU_ANCHOR_SIZE,
   },
   closeButton: {
     position: 'absolute',

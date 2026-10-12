@@ -124,12 +124,12 @@ function OverlayPortal({ children, onRequestClose }: { children: React.ReactNode
  * beside it. Built with Reanimated so we control the enlargement, the animation,
  * and the layout — the native context-menu library can't host a custom enlarged
  * preview on RN's New Architecture (the preview leaks into the row). Used for
- * every list long-press via the provider's `openClimbActions`; PlayDrawer keeps
- * its own bottom sheet.
+ * every list long-press via the provider's `openClimbActions`; the player's own
+ * ⋯ is a native menu instead (`PlayDrawerActionsMenu`).
  *
  * Mounted only while open; the enter animation runs on mount (using the passed
  * `reduceMotion`), and dismissal animates out before calling `onClose`. Actions come
- * from the shared `useClimbActions` hook — the same list the bottom sheet renders.
+ * from the shared `useClimbActions` hook — the same list the player's ⋯ builds on.
  */
 export function ClimbReactionMenu({
   climb,

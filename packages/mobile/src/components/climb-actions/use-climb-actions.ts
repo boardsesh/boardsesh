@@ -11,7 +11,7 @@
 // config, the two contextual flags (`currentUserId`, `isAuthenticated`), the required
 // inline playlist host (`onSelectPlaylist`), and the logbook-only `onEditEntry`.
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { OpaqueColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
@@ -199,7 +199,19 @@ export function useClimbActions({
   favoriteControl,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
-  const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
+  const { openRemix, openEdit, resetActionGuard } = useCreateClimbNavigation({
+    dismissSourceSheet,
+    dismissPlayerAndWait,
+  });
+  // Edit and Remix claim one handoff at a time, and a handoff that throws keeps
+  // its claim. The long-press menu mounts per open, so that never outlives it;
+  // the player's ⋯ lives as long as the player, and would leave Edit and Remix
+  // dead for the rest of the session. Let go whenever another climb is shown,
+  // as the lost-hold banner does.
+  const climbUuid = climb?.uuid;
+  useEffect(() => {
+    resetActionGuard();
+  }, [climbUuid, resetActionGuard]);
   // An archived wall keeps its climbs readable, but the server refuses every
   // edit and new climb on it, so neither Edit nor Fork is offered there.
   const wallArchived = useSprayWallIsArchived(boardConfig?.boardName, boardConfig?.layoutId ?? null);

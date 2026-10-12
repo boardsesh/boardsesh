@@ -1,7 +1,7 @@
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
 /** Which sub-drawer is currently open inside the play view. */
-export type ActiveSubDrawer = 'none' | 'queue' | 'actions' | 'playlist' | 'lightControl' | 'angleSelector';
+export type ActiveSubDrawer = 'none' | 'queue' | 'playlist' | 'lightControl' | 'angleSelector';
 
 /** Core state for the play view drawer. */
 export type PlayDrawerState = {

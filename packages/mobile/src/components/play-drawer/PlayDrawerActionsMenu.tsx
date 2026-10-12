@@ -5,6 +5,7 @@ import { AppMenu } from '../AppMenu';
 import { useClimbActions, type ClimbActionsFavoriteControl } from '../climb-actions/use-climb-actions';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
+import { useProfile } from '../../lib/graphql/hooks';
 import { buildPlayDrawerMenuRows, type PlayDrawerHiddenButtons } from './play-drawer-menu-rows';
 import type { BoardConfig } from './play-drawer-types';
 
@@ -19,7 +20,6 @@ export type PlayDrawerActionsMenuProps = {
    * against its own board.
    */
   boardConfig: BoardConfig;
-  currentUserId: string | null;
   isAuthenticated: boolean;
   /** Bar buttons ⋯ stands in for right now (`resolveActionBarLayout`). */
   hidden: PlayDrawerHiddenButtons;
@@ -30,9 +30,10 @@ export type PlayDrawerActionsMenuProps = {
   // Every row that opens a sheet takes the player's OWN opener. A root opener
   // (`useDrawerHost().openLogAscent` and friends) presents its sheet under the
   // `/play` modal, where it flashes open and vanishes (#3505, #3294 for the
-  // playlist). They are required so that mistake fails typecheck instead of
-  // reaching a climber: `useClimbActions` falls back to the root opener when one
-  // is left out.
+  // playlist). `useClimbActions` falls back to the root opener when one is left
+  // out, so these are required: leaving one off is a type error. Typing can't
+  // tell a player opener from a root one, though; the cross-board suite opens
+  // each sheet through the player and is the real guard on that.
   /** The bar heart's toggle, so the heart and the row can never disagree. */
   onToggleFavorite: () => void;
   onTick: PinnedSheetOpener;
@@ -58,7 +59,6 @@ export type PlayDrawerActionsMenuProps = {
 export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   climb,
   boardConfig,
-  currentUserId,
   isAuthenticated,
   hidden,
   boardMismatch,
@@ -74,6 +74,13 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
 }: PlayDrawerActionsMenuProps) {
   const { t } = useTranslation('session');
   const activeClimbUuid = useActiveClimbUuid();
+  // Who is looking decides Edit, Delete and Report. Read off the app-wide profile
+  // cache, the same answer the long-press menu gets, rather than the player's
+  // per-climb snapshot: that one is empty until it lands and again on every
+  // angle change, which would show a setter Report in place of Edit for a beat
+  // and remount the menu twice when a crew member moves the wall.
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
+  const currentUserId = isAuthenticated ? (profile?.id ?? null) : null;
 
   const favoriteControl = useMemo<ClimbActionsFavoriteControl>(
     () => ({ isFavorited, onToggle: onToggleFavorite }),
