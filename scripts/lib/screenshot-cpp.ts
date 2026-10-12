@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { CAPTION_IDS, type ScreenshotRecipe } from './screenshot-presentation';
+import {
+  CAPTION_IDS,
+  validateScreenshotBoardLabels,
+  type ScreenshotRecipe,
+  type ScreenshotLayout,
+} from './screenshot-presentation';
 import {
   screenshotCppBoardMatches,
   type ScreenshotCppBoardIdentity,
@@ -172,6 +177,21 @@ export function readCppPage(target: CppTarget, manifestPath = CPP_MANIFEST_PATH)
         recipe.sources.some((source) => typeof source !== 'string' || !captureNames.has(source))
       )
         throw new Error(`Invalid CPP recipe for ${target}/${device}`);
+      const boardLabels = validateScreenshotBoardLabels(
+        recipe.boardLabels,
+        recipe.layout as ScreenshotLayout,
+        recipe.sources.length,
+      );
+      if (boardLabels) {
+        const expectedLabels = recipe.sources.map((source: string) => {
+          const sourceVariant = /^(hero|other)-([123])\.png$/.exec(source);
+          if (!sourceVariant) return undefined;
+          const variants = (sourceVariant[1] === 'hero' ? page.heroBoards : page.otherBoards) as CppBoard[];
+          return variants[Number(sourceVariant[2]) - 1].selector;
+        });
+        if (boardLabels.some((label, index) => label !== expectedLabels[index]))
+          throw new Error(`CPP board labels do not match variant source order for ${target}/${device}`);
+      }
     }
   }
   return page as unknown as CppPage;

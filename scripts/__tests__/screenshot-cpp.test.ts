@@ -865,6 +865,18 @@ describe('custom product page captures', () => {
       expect(() => readCppPage('kilter', manifestPath)).toThrow('Invalid CPP recipe');
     }
   });
+  it('rejects a trio label that names a different source variant', () => {
+    const manifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8'));
+    const trio = manifest.targets.kilter.recipes.phone.find(
+      (recipe: { layout: string }) => recipe.layout === 'store-boards',
+    );
+    const directory = mkdtempSync(join(tmpdir(), 'cpp-mislabelled-trio-'));
+    directories.push(directory);
+    const manifestPath = join(directory, 'manifest.json');
+    [trio.boardLabels[0], trio.boardLabels[1]] = [trio.boardLabels[1], trio.boardLabels[0]];
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    expect(() => readCppPage('kilter', manifestPath)).toThrow('board labels do not match variant source order');
+  });
   it('verifies board geometry, target-specific scenes and distinct real source photos', () => {
     for (const target of CPP_TARGETS) {
       const { page, boards, coverage, fixturesDir } = scenario(target);

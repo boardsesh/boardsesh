@@ -31,6 +31,7 @@ import {
   resolveScreenshotRecipes,
   sha256Screenshot,
   sha256ScreenshotSources,
+  validateScreenshotBoardLabels,
   type CaptionLocale,
   type PresentationManifest,
   type ScreenshotCaption,
@@ -140,8 +141,10 @@ export async function frameComposition(
   caption: ScreenshotCaption,
   layout: ScreenshotLayout,
   showcase = false,
+  options: { boardLabels?: readonly string[] } = {},
 ): Promise<Buffer> {
-  if (showcase || layout.startsWith('store-')) return frameShowcaseComposition(sources, caption, layout);
+  validateScreenshotBoardLabels(options.boardLabels, layout, sources.length);
+  if (showcase || layout.startsWith('store-')) return frameShowcaseComposition(sources, caption, layout, options);
   if (
     ((layout === 'screen' || layout === 'wall-status' || layout === 'wall-column') && sources.length !== 1) ||
     (layout === 'board-family' && sources.length !== 2 && sources.length !== 3) ||
@@ -291,8 +294,9 @@ export async function frameShowcaseComposition(
   sources: readonly Buffer[],
   caption: ScreenshotCaption,
   layout: ScreenshotLayout,
-  options: { placement?: StoreCreativePlacement } = {},
+  options: { placement?: StoreCreativePlacement; boardLabels?: readonly string[] } = {},
 ): Promise<Buffer> {
+  const boardLabels = validateScreenshotBoardLabels(options.boardLabels, layout, sources.length);
   const boards = layout === 'store-boards';
   const boardCount = 3;
   if (sources.length !== (boards ? boardCount : 1)) throw new Error(`Invalid showcase source count for ${layout}`);
@@ -362,10 +366,25 @@ export async function frameShowcaseComposition(
     const foregroundDrop = wide ? 0.17 : 0.29;
     const sideTop = region.top + height * 0.032;
     const panelBleed = Math.max(2, Math.round(Math.min(width, height) * 0.002)) * 2 + 8;
+    const labelSize = Math.round(Math.min(width, height) * (wide ? 0.02 : 0.025));
+    const labelCellWidth = Math.floor(region.width / 3);
+    const labelPadding = Math.round(labelSize * 0.4);
+    const renderedLabels = boardLabels
+      ? await Promise.all(
+          boardLabels.map((label) =>
+            renderShowcaseText(label, labelSize, labelCellWidth - labelPadding * 2, colors.label, { bold: true }),
+          ),
+        )
+      : [];
+    const labelHeight = Math.max(0, ...renderedLabels.map((label) => label.info.height));
+    if (labelHeight > labelSize * 2.8) throw new Error('Board labels overflow the two-line trio footer');
+    const labelTop = Math.floor(height * 0.94 - labelHeight);
+    const panelBottom = boardLabels ? labelTop - height * 0.015 : height * 0.96;
     const panelWidth = Math.min(
       region.width * 0.49,
-      (height * 0.96 - sideTop - region.height * foregroundDrop - panelBleed) / aspect,
+      (panelBottom - sideTop - region.height * foregroundDrop - panelBleed) / aspect,
     );
+    if (panelWidth <= 0) throw new Error('Board labels leave no room for the complete native panels');
     // Short Header canvases limit phone height; keep the group compact enough
     // that the center spray panel overlaps both sides instead of becoming a row.
     const boardGroupWidth = options.placement ? Math.min(region.width, panelWidth * 2.05) : region.width;
@@ -378,6 +397,13 @@ export async function frameShowcaseComposition(
     for (const index of [0, 2, 1]) {
       const position = positions[index];
       panels.push({ raw: sources[index], ...position, width: panelWidth });
+    }
+    for (const [index, label] of renderedLabels.entries()) {
+      foreground.push({
+        input: label.data,
+        left: Math.round(region.left + (index + 0.5) * labelCellWidth - label.info.width / 2),
+        top: labelTop,
+      });
     }
   } else if (!wide && (layout === 'store-queue' || layout === 'store-wall')) {
     // These details are lifted from the same full native capture shown below.
@@ -707,6 +733,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
         catalog[recipe.caption],
         recipe.layout,
         options.platform === 'ios',
+        { boardLabels: recipe.boardLabels },
       );
       writeFileSync(join(staging, name), framed);
       thumbnails.push(await sharp(framed).resize({ width: 270 }).toBuffer({ resolveWithObject: true }));
@@ -724,6 +751,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
         rawSha256: buffers.length === 1 ? sha256Screenshot(buffers[0]) : sha256ScreenshotSources(sourceMetadata),
         framedSha256: sha256Screenshot(framed),
         ...(buffers.length > 1 ? { sources: sourceMetadata } : {}),
+        ...(recipe.boardLabels ? { boardLabels: recipe.boardLabels } : {}),
       };
     }
     if (options.platform === 'android') {

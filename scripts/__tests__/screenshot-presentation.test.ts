@@ -7,7 +7,15 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IOS_SCREENSHOT_DEVICES, deviceSlug } from '../mobile-screenshots';
-import { frameComposition, frameDirectory, frameScreenshot, main, parseFrameArguments } from '../frame-screenshots';
+import {
+  frameComposition,
+  frameDirectory,
+  frameScreenshot,
+  main,
+  parseFrameArguments,
+  renderShowcaseText,
+} from '../frame-screenshots';
+import { CPP_TARGETS, readCppPage } from '../lib/screenshot-cpp';
 import { ACCEPTED_SIZES, readPngDimensions } from '../assert-screenshot-dimensions';
 import { readPngSizesRecursively, findContentOffenders } from '../assert-screenshot-content';
 import { decideProbeScope } from '../screenshot-probe-scope';
@@ -22,6 +30,7 @@ import {
   screenshotCaptions,
   sha256Screenshot,
   sha256ScreenshotSources,
+  validateScreenshotBoardLabels,
 } from '../lib/screenshot-presentation';
 
 const directories: string[] = [];
@@ -32,6 +41,182 @@ function directory(): string {
 }
 afterEach(() => {
   for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true });
+});
+
+describe('CPP trio board labels', () => {
+  it('matches each label to its source slot and keeps Kilter Original in the center', () => {
+    for (const target of CPP_TARGETS) {
+      const page = readCppPage(target);
+      for (const recipes of Object.values(page.recipes)) {
+        for (const recipe of recipes.filter((candidate) => candidate.layout === 'store-boards')) {
+          const expected = recipe.sources.map((filename) => {
+            const [family, slot] = filename.replace('.png', '').split('-');
+            return (family === 'hero' ? page.heroBoards : page.otherBoards)[Number(slot) - 1].selector;
+          });
+          expect(recipe.boardLabels).toEqual(expected);
+          expect(validateScreenshotBoardLabels(recipe.boardLabels, recipe.layout, recipe.sources.length)).toEqual(
+            expected,
+          );
+          if (target === 'kilter' && recipe.sources.includes('hero-1.png')) {
+            expect(recipe.boardLabels?.[1]).toBe('Kilter Original 12x12');
+          }
+        }
+      }
+    }
+  });
+
+  it('preserves unlabeled default and Android pixels byte for byte', async () => {
+    const raw = await sharp({ create: { width: 1320, height: 2868, channels: 3, background: '#164c39' } })
+      .png()
+      .toBuffer();
+    const caption = readCaptionCatalog('en-US').storeBoards;
+    const original = await frameComposition([raw, raw, raw], caption, 'store-boards', true);
+    expect(await frameComposition([raw, raw, raw], caption, 'store-boards', true, { boardLabels: undefined })).toEqual(
+      original,
+    );
+    const android = await frameComposition([raw], caption, 'screen');
+    expect(await frameComposition([raw], caption, 'screen', false, { boardLabels: undefined })).toEqual(android);
+  });
+
+  it('rejects blank names, missing labels, the wrong layout, and overflowing labels', async () => {
+    const raw = await sharp({ create: { width: 1320, height: 2868, channels: 3, background: '#164c39' } })
+      .png()
+      .toBuffer();
+    const caption = readCaptionCatalog('en-US').storeBoards;
+    for (const boardLabels of [
+      ['Kilter', 'MoonBoard'],
+      ['Kilter', ' ', 'Tension'],
+    ]) {
+      await expect(frameComposition([raw, raw, raw], caption, 'store-boards', true, { boardLabels })).rejects.toThrow(
+        'three nonblank names',
+      );
+    }
+    await expect(
+      frameComposition([raw], caption, 'screen', true, { boardLabels: ['Kilter', 'MoonBoard', 'Tension'] }),
+    ).rejects.toThrow('source trio');
+    await expect(
+      frameComposition([raw, raw], caption, 'store-boards', true, {
+        boardLabels: ['Kilter', 'MoonBoard', 'Tension'],
+      }),
+    ).rejects.toThrow('source trio');
+    await expect(
+      frameComposition([raw, raw, raw], caption, 'store-boards', true, {
+        boardLabels: ['Kilter '.repeat(100), 'MoonBoard', 'Tension'],
+      }),
+    ).rejects.toThrow('labels overflow');
+  });
+
+  it('keeps the bottom of each complete native capture above the label footer', async () => {
+    const markerColors = ['#b03040', '#20a0d0', '#e0a030'];
+    for (const device of Object.keys(ACCEPTED_SIZES)) {
+      const { width, height } = ACCEPTED_SIZES[device][0];
+      const captures = await Promise.all(
+        markerColors.map((color) =>
+          sharp(
+            Buffer.from(
+              `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#164c39"/><rect y="${Math.floor(height * 0.94)}" width="100%" height="${Math.ceil(height * 0.06)}" fill="${color}"/></svg>`,
+            ),
+          )
+            .png()
+            .toBuffer(),
+        ),
+      );
+      const recipe = readCppPage('kilter').recipes[device.startsWith('ipad-') ? 'ipad' : 'phone'].find(
+        (candidate) => candidate.caption === 'cppKilterLayouts',
+      )!;
+      const framed = await frameComposition(
+        captures,
+        readCaptionCatalog('en-US')[recipe.caption],
+        recipe.layout,
+        true,
+        {
+          boardLabels: recipe.boardLabels,
+        },
+      );
+      const reduced = await sharp(framed).resize({ width: 300, kernel: 'nearest' }).raw().toBuffer();
+      for (const color of markerColors) {
+        const expected = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
+        let hits = 0;
+        for (let pixel = 0; pixel < reduced.length; pixel += 3) {
+          if (expected.every((channel, index) => reduced[pixel + index] === channel)) hits++;
+        }
+        expect(hits, `${device} must retain the ${color} native footer`).toBeGreaterThan(3);
+      }
+    }
+  });
+
+  it.each(Object.keys(ACCEPTED_SIZES))(
+    'fits complete panels and ordered labels on %s in every locale',
+    async (device) => {
+      const { width, height } = ACCEPTED_SIZES[device][0];
+      const raw = await sharp({ create: { width, height, channels: 3, background: '#164c39' } })
+        .png()
+        .toBuffer();
+      for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+        for (const target of CPP_TARGETS) {
+          const page = readCppPage(target);
+          for (const recipe of page.recipes[device.startsWith('ipad-') ? 'ipad' : 'phone'].filter(
+            (candidate) => candidate.layout === 'store-boards',
+          )) {
+            const labels = recipe.boardLabels!;
+            const caption = readCaptionCatalog(locale)[recipe.caption];
+            const framed = await frameComposition([raw, raw, raw], caption, recipe.layout, true, {
+              boardLabels: labels,
+            });
+            expect(readPngDimensions(framed)).toEqual({ width, height });
+            const wide = width > height;
+            const regionLeft = wide ? width * 0.42 : Math.round(width * 0.06);
+            const regionWidth = wide ? width * 0.52 : width - regionLeft * 2;
+            const labelSize = Math.round(Math.min(width, height) * (wide ? 0.02 : 0.025));
+            const cellWidth = Math.floor(regionWidth / 3);
+            const padding = Math.round(labelSize * 0.4);
+            const renderedLabels = await Promise.all(
+              labels.map((label) =>
+                renderShowcaseText(label, labelSize, cellWidth - padding * 2, '#FFFFFF', { bold: true }),
+              ),
+            );
+            const footerHeight = Math.max(...renderedLabels.map((label) => label.info.height));
+            const footerTop = Math.floor(height * 0.94 - footerHeight);
+            // The footer contains the three exact names in source order, and no
+            // native panel pixels. Native captures stay entirely above this band.
+            for (const [index, label] of renderedLabels.entries()) {
+              const left = Math.round(regionLeft + (index + 0.5) * cellWidth - label.info.width / 2);
+              const footer = await sharp(framed)
+                .extract({ left, top: footerTop, width: label.info.width, height: label.info.height })
+                .raw()
+                .toBuffer();
+              const mask = await sharp(label.data).ensureAlpha().raw().toBuffer();
+              let opaqueInk = 0;
+              for (let pixel = 0; pixel < mask.length / 4; pixel++) {
+                if (mask[pixel * 4 + 3] !== 255) continue;
+                opaqueInk++;
+                expect(footer[pixel * 3]).toBeGreaterThan(180);
+                expect(footer[pixel * 3 + 1]).toBeGreaterThan(180);
+                expect(footer[pixel * 3 + 2]).toBeGreaterThan(180);
+              }
+              expect(opaqueInk).toBeGreaterThan(0);
+            }
+            const footerPixels = await sharp(framed)
+              .extract({
+                left: Math.round(regionLeft),
+                top: footerTop,
+                width: Math.floor(regionWidth),
+                height: footerHeight,
+              })
+              .raw()
+              .toBuffer();
+            let nativePixels = 0;
+            for (let pixel = 0; pixel < footerPixels.length; pixel += 3) {
+              if (footerPixels[pixel] === 22 && footerPixels[pixel + 1] === 76 && footerPixels[pixel + 2] === 57)
+                nativePixels++;
+            }
+            expect(nativePixels).toBe(0);
+          }
+        }
+      }
+    },
+    120_000,
+  );
 });
 
 describe('store screenshot presentation', () => {

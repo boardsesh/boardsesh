@@ -149,13 +149,15 @@
             "output": "05-kilter-boards.png",
             "caption": "cppKilterLayouts",
             "layout": "store-boards",
-            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"]
+            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"],
+            "boardLabels": ["Kilter Homewall 7x10", "Kilter Original 12x12", "Kilter Homewall 10x10"]
           },
           {
             "output": "06-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Tension Board 2 Mirror", "MoonBoard 2024", "Woods 12x12"]
           },
           {
             "output": "07-workout.png",
@@ -205,13 +207,15 @@
             "output": "05-kilter-boards.png",
             "caption": "cppKilterLayouts",
             "layout": "store-boards",
-            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"]
+            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"],
+            "boardLabels": ["Kilter Homewall 7x10", "Kilter Original 12x12", "Kilter Homewall 10x10"]
           },
           {
             "output": "06-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Tension Board 2 Mirror", "MoonBoard 2024", "Woods 12x12"]
           },
           {
             "output": "07-workout.png",
@@ -360,7 +364,8 @@
             "output": "05-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "MoonBoard 2024", "Woods 12x12"]
           },
           {
             "output": "06-workout.png",
@@ -378,7 +383,8 @@
             "output": "08-tension-boards.png",
             "caption": "cppTensionLayouts",
             "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Tension Original", "Tension Board 2 Mirror", "Tension Board 2 Spray"]
           }
         ],
         "ipad": [
@@ -416,7 +422,8 @@
             "output": "05-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "MoonBoard 2024", "Woods 12x12"]
           },
           {
             "output": "06-workout.png",
@@ -434,7 +441,8 @@
             "output": "08-tension-boards.png",
             "caption": "cppTensionLayouts",
             "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Tension Original", "Tension Board 2 Mirror", "Tension Board 2 Spray"]
           }
         ]
       },
@@ -553,7 +561,8 @@
             "output": "02-sets.png",
             "caption": "cppMoonboardSets",
             "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["MoonBoard 2016", "MoonBoard Masters 2019", "MoonBoard 2024"]
           },
           {
             "output": "03-island.png",
@@ -577,7 +586,8 @@
             "output": "06-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "Woods 12x12"]
           },
           {
             "output": "07-workout.png",
@@ -609,7 +619,8 @@
             "output": "02-sets.png",
             "caption": "cppMoonboardSets",
             "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["MoonBoard 2016", "MoonBoard Masters 2019", "MoonBoard 2024"]
           },
           {
             "output": "03-kiosk.png",
@@ -633,7 +644,8 @@
             "output": "06-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "Woods 12x12"]
           },
           {
             "output": "07-workout.png",
@@ -752,7 +764,8 @@
             "output": "02-gym-boards.png",
             "caption": "cppSprayOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "MoonBoard 2024"]
           },
           {
             "output": "03-projects.png",
@@ -770,7 +783,8 @@
             "output": "05-walls.png",
             "caption": "cppSprayWalls",
             "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Liz's Wall", "Cherry's Wall", "The Bowlo"]
           },
           {
             "output": "06-holds.png",
@@ -808,7 +822,8 @@
             "output": "02-gym-boards.png",
             "caption": "cppSprayOtherBoards",
             "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "MoonBoard 2024"]
           },
           {
             "output": "03-projects.png",
@@ -826,7 +841,8 @@
             "output": "05-walls.png",
             "caption": "cppSprayWalls",
             "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Liz's Wall", "Cherry's Wall", "The Bowlo"]
           },
           {
             "output": "06-holds.png",
