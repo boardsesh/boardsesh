@@ -10,6 +10,7 @@ import { normaliseSetIds } from '@boardsesh/board-config';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import type { ProjectionGym } from '../../../services/board-location-projection';
 import { pubsub } from '../../../pubsub/index';
 import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
@@ -63,8 +64,10 @@ export function toResolvedBoard(board: ActivePresenceBoard, revealName = false):
 
 /**
  * A board sharing a (now non-unique) serial, with the extra fields the
- * disambiguation picker needs. Location fields are redacted later for
- * non-public boards the caller doesn't own (see `toBoardCandidate`).
+ * disambiguation picker needs. `locationName` and `gym` are the board's own,
+ * unprojected: `toBoardCandidate` decides per viewer what of them, or of a
+ * public gym's place, to show (`projectBoardLocation`). Nothing else may read
+ * them out to a client.
  */
 export type SerialCandidateBoard = {
   id: number;
@@ -79,9 +82,9 @@ export type SerialCandidateBoard = {
   angle: number;
   isPublic: boolean;
   locationName: string | null;
-  gymName: string | null;
-  /** The board's gym name when the gym is public and live: the place shown to a viewer its own is hidden from. */
-  publicGymName: string | null;
+  gymId: number | null;
+  /** The board's live gym, or null. */
+  gym: ProjectionGym | null;
 };
 
 export function candidateToActiveBoard(candidate: SerialCandidateBoard): ActivePresenceBoard {
@@ -138,9 +141,16 @@ export async function findActiveBoardsBySerial(
       angle: dbSchema.userBoards.angle,
       isPublic: dbSchema.userBoards.isPublic,
       locationName: dbSchema.userBoards.locationName,
-      hideLocation: dbSchema.userBoards.hideLocation,
-      gymName: dbSchema.gyms.name,
-      gymIsPublic: dbSchema.gyms.isPublic,
+      gymId: dbSchema.userBoards.gymId,
+      gym: {
+        id: dbSchema.gyms.id,
+        uuid: dbSchema.gyms.uuid,
+        name: dbSchema.gyms.name,
+        latitude: dbSchema.gyms.latitude,
+        longitude: dbSchema.gyms.longitude,
+        isPublic: dbSchema.gyms.isPublic,
+        deletedAt: dbSchema.gyms.deletedAt,
+      },
     })
     .from(dbSchema.userBoards)
     .leftJoin(dbSchema.gyms, and(eq(dbSchema.gyms.id, dbSchema.userBoards.gymId), isNull(dbSchema.gyms.deletedAt)))
@@ -165,11 +175,10 @@ export async function findActiveBoardsBySerial(
     serialNumber: row.serialNumber,
     angle: Number(row.angle),
     isPublic: row.isPublic,
-    // A board that opts into hiding its location is treated as location-private
-    // even when the board itself is public.
-    locationName: row.hideLocation ? null : row.locationName,
-    gymName: row.hideLocation ? null : (row.gymName ?? null),
-    publicGymName: row.gymIsPublic === true ? (row.gymName ?? null) : null,
+    locationName: row.locationName,
+    gymId: row.gymId,
+    // A left join yields an all-null object when the board has no live gym.
+    gym: row.gym?.id != null ? { ...row.gym, id: Number(row.gym.id) } : null,
   }));
 }
 

@@ -1025,7 +1025,10 @@ export const socialBoardQueries = {
    * Searches all boards (including unlisted/non-public) so BLE device
    * discovery can resolve any board regardless of visibility.
    * No auth required (BLE scan-before-login), but rate-limited.
-   * Unauthenticated callers receive stripped responses (no GPS/owner data).
+   * Unauthenticated callers receive stripped responses: no owner data and
+   * never the board's own coordinates. For a board whose location is hidden,
+   * the `UserBoard` field resolvers fill in a public gym's name, coordinates
+   * and uuid (projectBoardLocation); the board's own place never leaves.
    */
   boardsBySerialNumbers: async (
     _: unknown,
@@ -2050,7 +2053,7 @@ export const socialBoardMutations = {
     // location hidden and no policy row (see hasPrivacyInput below). An explicit
     // isPublic: false wins over isUnlisted, as it did on the old two-switch form.
     // A gym never changes the board's own location choice: a viewer the owner
-    // hid it from sees a public gym's listed place instead (boardLocationFor).
+    // hid it from sees a public gym's listed place instead (projectBoardLocation).
     const audience =
       validatedInput.audience ??
       (validatedInput.isPublic === false ? 'only_me' : validatedInput.isUnlisted ? 'unlisted' : 'public');

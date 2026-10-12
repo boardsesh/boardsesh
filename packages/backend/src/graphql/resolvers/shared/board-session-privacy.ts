@@ -110,21 +110,28 @@ function visibleHardestSend(send: BoardPresenceHardestSend, ctx: ConnectionConte
 }
 
 type BoardLocationField = ProjectedBoardLocation & { distanceMeters: number | null };
-const boardLocationFields = new WeakMap<UserBoard, Promise<BoardLocationField>>();
+// Per board object AND per viewer, like `pendingHardestSendVisibility`: the
+// decision is the viewer's, so one object resolved for two viewers must never
+// hand the second the first one's answer. An entry lives only while its seven
+// field resolvers share it.
+const pendingBoardLocations = new WeakMap<UserBoard, Map<string | null, Promise<BoardLocationField>>>();
 
 /**
  * The place a UserBoard shows this viewer, from `projectBoardLocation`, decided
- * once per board object for all of its location fields. This is the last line
+ * once per board object and viewer for all of its location fields. This is the last line
  * for every producer of a UserBoard (queries, mutation payloads, events): a
  * viewer the owner hid the board's place from gets its public gym's listed
  * place, read from the gym row itself, never from the object, which a
  * producer may have filled with the board's own place.
  */
 function boardLocationField(board: UserBoard, ctx: ConnectionContext): Promise<BoardLocationField> {
-  const cached = boardLocationFields.get(board);
-  if (cached) return cached;
+  const viewerId = ctx.userId ?? null;
+  const pending = pendingBoardLocations.get(board) ?? new Map<string | null, Promise<BoardLocationField>>();
+  pendingBoardLocations.set(board, pending);
+  const existing = pending.get(viewerId);
+  if (existing) return existing;
   const decided = (async (): Promise<BoardLocationField> => {
-    if (await canViewResourceLocation(board.uuid, ctx.userId)) {
+    if (await canViewResourceLocation(board.uuid, viewerId)) {
       return {
         locationName: board.locationName ?? null,
         latitude: board.latitude ?? null,
@@ -144,8 +151,11 @@ function boardLocationField(board: UserBoard, ctx: ConnectionContext): Promise<B
     );
     return { ...location, distanceMeters: null };
   })();
-  boardLocationFields.set(board, decided);
-  return decided;
+  // Dropped once settled, so a later read (another request reusing the object,
+  // or the same viewer after a privacy change) decides afresh.
+  const tracked = decided.finally(() => pending.delete(viewerId));
+  pending.set(viewerId, tracked);
+  return tracked;
 }
 
 export const boardSessionPrivacyResolvers = {

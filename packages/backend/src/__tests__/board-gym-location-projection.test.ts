@@ -12,6 +12,7 @@ import { socialGymMutations } from '../graphql/resolvers/social/gyms';
 import { socialGymStrayBoardMutations } from '../graphql/resolvers/social/gym-stray-boards';
 import { projectBoardLocation } from '../services/board-location-projection';
 import { boardSessionPrivacyResolvers } from '../graphql/resolvers/shared/board-session-privacy';
+import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 
@@ -32,6 +33,7 @@ const { execute, parse } = createRequire(import.meta.url)('graphql') as typeof G
 const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const CLIMBER = 'projection-climber';
 const GYM_OWNER = 'projection-gym-owner';
+const STRANGER = 'projection-stranger';
 const BASE = { latitude: 47.0, longitude: 8.0 };
 const LAT_60M = 47.0 + 0.00054;
 const LAT_120M = 47.0 + 0.00108;
@@ -182,7 +184,7 @@ beforeEach(async () => {
     TRUNCATE TABLE "gym_members", "gym_follows", "location_sync_gym_sources", "user_boards", "gyms"
     RESTART IDENTITY CASCADE
   `);
-  await Promise.all([SYSTEM_OWNER, CLIMBER, GYM_OWNER].map(insertUser));
+  await Promise.all([SYSTEM_OWNER, CLIMBER, GYM_OWNER, STRANGER].map(insertUser));
 });
 
 describe('projectBoardLocation', () => {
@@ -306,7 +308,7 @@ describe("a board in a public gym, its owner's location hidden", () => {
     }).toEqual({ ...atGym(gym.uuid), distanceMeters: null });
   });
 
-  it("names the gym, not the board's place, to an anonymous serial lookup", async () => {
+  it("names the gym, not the board's place, to an anonymous serial lookup through the schema", async () => {
     const gym = await insertGym({ ownerId: SYSTEM_OWNER });
     const board = await createBoard({
       name: 'Serial board',
@@ -316,12 +318,95 @@ describe("a board in a public gym, its owner's location hidden", () => {
       serialNumber: 'PROJ-SERIAL-1',
     });
     await linkToGym(board.uuid, gym.uuid);
-    const [found] = (await socialBoardQueries.boardsBySerialNumbers(
+    const result = await execute({
+      schema: executableSchema,
+      document: parse(`
+        query Serial($serials: [String!]!) {
+          boardsBySerialNumbers(serialNumbers: $serials) { uuid latitude longitude locationName gymUuid gymName }
+        }
+      `),
+      variableValues: { serials: ['PROJ-SERIAL-1'] },
+      contextValue: anonCtx(),
+    });
+    expect(result.errors ?? []).toEqual([]);
+    const [found] = (result.data as { boardsBySerialNumbers: Array<LocationRead & { uuid: string }> })
+      .boardsBySerialNumbers;
+    // What a client receives: the public gym's place and link, never the board's.
+    expect(found).toMatchObject({ uuid: board.uuid, ...atGym(gym.uuid) });
+    expectNoOwnPlace(found, [LAT_60M]);
+  });
+
+  it("gives serial candidates the owner's own place and a stranger the gym's", async () => {
+    const gym = await insertGym({ ownerId: SYSTEM_OWNER });
+    const serial = 'PROJ-SERIAL-DUP';
+    const insertSerialBoard = async (ownerId: string, name: string, extra: Record<string, unknown> = {}) => {
+      const uuid = uuidv4();
+      const [row] = await db
+        .insert(dbSchema.userBoards)
+        .values({
+          uuid,
+          slug: uuid,
+          ownerId,
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 901,
+          setIds: '1,2',
+          name,
+          serialNumber: serial,
+          isPublic: true,
+          ...extra,
+        })
+        .returning({ id: dbSchema.userBoards.id });
+      return row.id;
+    };
+    // The climber's board at the gym, location hidden; a second board shares the serial.
+    const mine = await insertSerialBoard(CLIMBER, 'Gym Kilter', {
+      gymId: gym.id,
+      hideLocation: true,
+      locationName: 'Back room',
+      latitude: LAT_60M,
+      longitude: 8,
+    });
+    await insertSerialBoard(GYM_OWNER, 'Other Kilter');
+    const candidateFor = async (userId: string) => {
+      const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+        undefined,
+        { serial, boardType: 'kilter', layoutId: 1, sizeId: 901, setIds: '1,2' },
+        authCtx(userId),
+      );
+      return (result.candidates ?? []).find((candidate) => candidate.boardId === mine);
+    };
+
+    expect(await candidateFor(CLIMBER)).toMatchObject({ locationName: 'Back room', gymName: GYM_NAME });
+    expect(await candidateFor(STRANGER)).toMatchObject({ locationName: GYM_NAME, gymName: GYM_NAME });
+  });
+
+  it('decides the field resolvers per viewer, even for one board object resolved for two viewers', async () => {
+    const gym = await insertGym({ ownerId: SYSTEM_OWNER });
+    const board = await createBoard({ name: 'Shared object', locationName: HOME, latitude: LAT_60M, longitude: 8 });
+    await linkToGym(board.uuid, gym.uuid);
+    // The owner's read: the object carries the board's own place.
+    const object = (await socialBoardQueries.board(
       null,
-      { serialNumbers: ['PROJ-SERIAL-1'] },
-      anonCtx(),
-    )) as Array<{ locationName: string | null; latitude: number | null }>;
-    expect(found).toMatchObject({ locationName: GYM_NAME, latitude: null });
+      { boardUuid: board.uuid },
+      authCtx(CLIMBER),
+    )) as unknown as Parameters<typeof boardSessionPrivacyResolvers.UserBoard.latitude>[0];
+    const fields = boardSessionPrivacyResolvers.UserBoard;
+    const read = async (viewer: ConnectionContext) => ({
+      latitude: await fields.latitude(object, null, viewer),
+      longitude: await fields.longitude(object, null, viewer),
+      locationName: await fields.locationName(object, null, viewer),
+      gymUuid: await fields.gymUuid(object, null, viewer),
+      gymName: await fields.gymName(object, null, viewer),
+    });
+
+    // Concurrently, so a memo shared across viewers would hand one the other's.
+    const [owner, anonymous] = await Promise.all([read(authCtx(CLIMBER)), read(anonCtx())]);
+    expect(owner).toMatchObject({ latitude: LAT_60M, locationName: HOME });
+    expect(anonymous).toEqual(atGym(gym.uuid));
+    // And again after the owner's decision settled.
+    const later = await read(anonCtx());
+    expect(later).toEqual(atGym(gym.uuid));
   });
 });
 
@@ -354,7 +439,11 @@ describe("the old leak scenarios never show the board's own place", () => {
     expect(await anonymousRead(board.uuid)).toEqual(HIDDEN);
   });
 
-  it("a gym the server guessed from the climber's GPS fix", async () => {
+  // Accepted by the owner (round 6): a board created from a GPS fix with no gym
+  // picked is attached to the one synced gym within about 150 m, even with its
+  // location hidden, and then shows that gym's place to whoever can open the
+  // board. That tells them the board is near that gym; the fix itself stays hidden.
+  it("a gym the server guessed from the climber's GPS fix shows the gym, never the fix", async () => {
     const gym = await insertGym({ ownerId: SYSTEM_OWNER });
     const board = await createBoard({
       name: 'Home wall',

@@ -47,8 +47,9 @@ const HIDDEN: ProjectedBoardLocation = {
  *
  * A gym never changes the board's own setting; the owner's hide switch always
  * governs the board's own place. Every surface that returns a board's place,
- * gym link or a distance computed from it goes through this function (or
- * `boardLocationFor`), so a hidden place cannot reach a viewer by another path.
+ * gym link or a distance computed from it goes through this function, either
+ * directly or through the `UserBoard` location field resolvers, so a hidden
+ * place cannot reach a viewer by another path.
  */
 export function projectBoardLocation(
   board: { locationName: string | null; latitude: number | null; longitude: number | null; gymId: number | null },

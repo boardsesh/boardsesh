@@ -24,6 +24,7 @@ import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite } from '../board-serial-write-lock';
 import { logger } from '../../../utils/logger';
 import { canAccessResourceWithoutLink, canViewResourceLocation } from '../../../services/privacy';
+import { projectBoardLocation } from '../../../services/board-location-projection';
 import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
@@ -144,9 +145,10 @@ type BoardPresenceCommandDb = Pick<typeof db, 'select' | 'update' | 'insert'>;
  * an approved grant, follower inheritance, or a Public board. Everyone else gets
  * the board's geometry with an empty uuid, the projection anonymous
  * `boardsBySerialNumbers` uses; `chooseBoardForSerial` takes the numeric id.
- * Location and gym follow the board's location audience on top of that; a
- * viewer the board's own place is hidden from sees its public gym's name
- * instead (projectBoardLocation), never the board's own.
+ * Location and gym go through `projectBoardLocation` on top of that: the
+ * owner, and anyone the location audience admits, see the board's own place;
+ * anyone else who may name the board sees its public gym's name; nobody sees
+ * a hidden board's own place.
  */
 async function toBoardCandidate(
   candidate: SerialCandidateBoard,
@@ -156,6 +158,13 @@ async function toBoardCandidate(
   const isOwnedByMe = candidate.ownerId === userId;
   const showIdentity = isOwnedByMe || (await canAccessResourceWithoutLink('board', candidate.uuid, userId));
   const showLocation = showIdentity && (isOwnedByMe || (await canViewResourceLocation(candidate.uuid, userId)));
+  const location = showIdentity
+    ? projectBoardLocation(
+        { locationName: candidate.locationName, latitude: null, longitude: null, gymId: candidate.gymId },
+        candidate.gym,
+        showLocation,
+      )
+    : null;
   return {
     boardId: candidate.id,
     boardUuid: showIdentity ? candidate.uuid : '',
@@ -164,8 +173,8 @@ async function toBoardCandidate(
     layoutId: candidate.layoutId,
     sizeId: candidate.sizeId,
     setIds: candidate.setIds,
-    locationName: showLocation ? candidate.locationName : showIdentity ? candidate.publicGymName : null,
-    gymName: showLocation ? candidate.gymName : showIdentity ? candidate.publicGymName : null,
+    locationName: location?.locationName ?? null,
+    gymName: location?.gymName ?? null,
     isOwnedByMe,
     isPublic: candidate.isPublic,
     lastSentAt,
