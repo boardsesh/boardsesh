@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 import {
@@ -28,6 +29,7 @@ import {
   waitForCppRecordedRoster,
 } from '../mobile-screenshots';
 import { parseFrameArguments } from '../frame-screenshots';
+import { buildReadinessServerScript } from '../lib/metro-dev-server';
 
 const directories: string[] = [];
 afterEach(() => {
@@ -80,9 +82,62 @@ function scenario(target: (typeof CPP_TARGETS)[number]) {
   return { page, boards, coverage, fixturesDir };
 }
 
+function requestedCppScenes(commands: unknown): string[] {
+  if (Array.isArray(commands)) return commands.flatMap(requestedCppScenes);
+  if (typeof commands !== 'object' || commands === null) return [];
+  return Object.entries(commands).flatMap(([key, command]) => {
+    if (key === 'evalScript' && typeof command === 'string') {
+      const requested = command.match(/\/set\?scene=([a-z0-9-]+)/);
+      return requested ? [requested[1]] : [];
+    }
+    return requestedCppScenes(command);
+  });
+}
+
+function readinessCommandTransport() {
+  let handleRequest:
+    | ((
+        request: { url: string; socket: { remoteAddress: string } },
+        response: { writeHead: (status: number) => void; end: (body?: string) => void },
+      ) => void)
+    | undefined;
+  runInNewContext(buildReadinessServerScript(), {
+    URL,
+    require: (name: string) => {
+      if (name === 'http')
+        return {
+          createServer: (handler: NonNullable<typeof handleRequest>) => {
+            handleRequest = handler;
+            return { listen: () => {} };
+          },
+        };
+      if (name === 'fs') return {};
+      throw new Error(`Unexpected readiness dependency ${name}`);
+    },
+  });
+  return (url: string, remoteAddress = '127.0.0.1') => {
+    let status = 0;
+    let body = '';
+    if (!handleRequest) throw new Error('Readiness child did not register a request handler');
+    handleRequest(
+      { url, socket: { remoteAddress } },
+      {
+        writeHead: (responseStatus) => {
+          status = responseStatus;
+        },
+        end: (responseBody = '') => {
+          body = responseBody;
+        },
+      },
+    );
+    return { status, body };
+  };
+}
+
 describe('custom product page captures', () => {
   it('resolves every emitted command through the actual Metro registry for all 64 CPP recipes', () => {
     let checkedDocuments = 0;
+    const readinessRequest = readinessCommandTransport();
     for (const target of CPP_TARGETS) {
       const { coverage, page, boards } = scenario(target);
       coverage.boardIds = Object.fromEntries(
@@ -103,11 +158,7 @@ describe('custom product page captures', () => {
           const documents = parseAllDocuments(source);
           expect(documents.flatMap((document) => document.errors)).toEqual([]);
           const steps = documents[1].toJS() as Record<string, unknown>[];
-          const requestedScenes = steps.flatMap((step) => {
-            if (typeof step.evalScript !== 'string') return [];
-            const requested = step.evalScript.match(/\/set\?scene=([a-z0-9-]+)/);
-            return requested ? [requested[1]] : [];
-          });
+          const requestedScenes = requestedCppScenes(steps);
           // This list is the approved capture sequence, independently of the
           // implementation's registry and scene builder (including the join).
           expect(requestedScenes).toEqual([
@@ -118,6 +169,7 @@ describe('custom product page captures', () => {
             'other-2',
             'other-3',
             'search',
+            'search-results',
             'logbook',
             'led',
             'workout',
@@ -135,7 +187,16 @@ describe('custom product page captures', () => {
             expect(
               new URL(registry[scene].route, 'https://capture.invalid').searchParams.get('screenshotCppScene'),
             ).toBe(scene);
+            const response = readinessRequest(`/cpp/set?scene=${scene}`);
+            expect(response.status).toBe(200);
+            expect(JSON.parse(response.body)).toMatchObject({ scene });
           }
+          const resultsRoute = new URL(registry['search-results'].route, 'https://capture.invalid');
+          expect(resultsRoute.pathname).toBe('/climbs');
+          expect(resultsRoute.searchParams.has('screenshotOpenFilters')).toBe(false);
+          expect(resultsRoute.searchParams.get('screenshotBoardIndex')).toBe(
+            new URL(registry.search.route, 'https://capture.invalid').searchParams.get('screenshotBoardIndex'),
+          );
           const finalRoute = new URL(registry[finalScene].route, 'https://capture.invalid');
           expect(finalRoute.pathname).toBe(target === 'spray' ? '/boards/spray/holds' : ipad ? '/wall' : '/climbs');
           if (target === 'spray') expect(finalRoute.searchParams.get('wallUuid')).toBe(coverage.scenes.island.boardId);
@@ -150,6 +211,24 @@ describe('custom product page captures', () => {
       }
     }
     expect(checkedDocuments).toBe(64);
+  });
+  it('keeps the readiness command transport restricted to known scenes and loopback clients', () => {
+    const request = readinessCommandTransport();
+    const accepted = request('/cpp/set?scene=search-results');
+    expect(accepted.status).toBe(200);
+    const command = JSON.parse(accepted.body) as { sequence: number };
+    for (const scene of ['', 'search-results-other-board', 'unregistered', 'search%26anything']) {
+      expect(request(`/cpp/set?scene=${scene}`).status).toBe(400);
+    }
+    expect(request('/cpp/set?scene=search-results', '192.0.2.1').status).toBe(403);
+    expect(request('/cpp/unregistered').status).toBe(404);
+    expect(JSON.parse(request('/cpp/command').body)).toMatchObject({
+      sequence: command.sequence,
+      scene: 'search-results',
+    });
+    expect(JSON.parse(request(`/cpp/ack?sequence=${command.sequence}`).body)).toMatchObject({
+      acknowledged: command.sequence,
+    });
   });
   it('generates a valid Maestro command document rather than expanding the marker inside a comment', () => {
     for (const target of CPP_TARGETS) {
@@ -179,6 +258,22 @@ describe('custom product page captures', () => {
   it('applies the real filter sheet after capturing search and before navigating to Logbook', () => {
     const expectedDismissal = [
       { tapOn: { id: 'sheet-top-bar-trailing' } },
+      {
+        evalScript:
+          "${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=search-results').body).sequence}",
+      },
+      {
+        retry: {
+          maxRetries: 3,
+          commands: [
+            {
+              evalScript:
+                "${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}",
+            },
+            { assertTrue: '${output.cppAcknowledged == output.cppSequence}' },
+          ],
+        },
+      },
       { extendedWaitUntil: { notVisible: { id: 'climb-filter-column' }, timeout: 60000 } },
       { waitForAnimationToEnd: { timeout: 30000 } },
     ];
@@ -203,8 +298,10 @@ describe('custom product page captures', () => {
             });
             expect(searchCapture + 1).toBeLessThan(logbookNavigation);
           } else {
-            expect(steps.slice(searchCapture + 1, searchCapture + 4)).toEqual(expectedDismissal);
-            expect(searchCapture + 3).toBeLessThan(logbookNavigation);
+            expect(steps.slice(searchCapture + 1, searchCapture + 1 + expectedDismissal.length)).toEqual(
+              expectedDismissal,
+            );
+            expect(searchCapture + expectedDismissal.length).toBeLessThan(logbookNavigation);
           }
         }
       }

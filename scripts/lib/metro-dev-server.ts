@@ -90,24 +90,14 @@ export function readinessServerReachable(): boolean {
   return probe.status === 0;
 }
 
-/**
- * Start the readiness server as a SEPARATE detached process. The orchestrator
- * itself is fully synchronous (spawnSync for sleep/simctl/maestro), so an
- * in-process HTTP server's event loop would be starved and never bind or accept.
- * A child process has its own event loop; it appends a line to READINESS_LOG_PATH
- * on every `/ready` GET, and the sync orchestrator just reads that file. Bound to
- * 0.0.0.0 so the simulator reaches it over IPv4 the same way it reaches Metro.
- * Truncates the log first; kill the returned process in a finally.
- */
-export function startReadinessServer(): ChildProcess {
-  writeFileSync(READINESS_LOG_PATH, '');
-  writeFileSync(SMOKE_PING_LOG_PATH, '');
-  const serverCode = [
+/** The exact detached child script, also exercised without opening a socket in tests. */
+export function buildReadinessServerScript(): string {
+  return [
     `const http = require('http');`,
     `const fs = require('fs');`,
     `let cppCommand = { sequence: 0, scene: 'reset' };`,
     `let cppAcknowledged = -1;`,
-    `const cppScenes = new Set(['reset', 'hero-1', 'hero-2', 'hero-3', 'other-1', 'other-2', 'other-3', 'search', 'logbook', 'led', 'queue-join', 'queue', 'workout', 'status', 'island', 'kiosk']);`,
+    `const cppScenes = new Set(['reset', 'hero-1', 'hero-2', 'hero-3', 'other-1', 'other-2', 'other-3', 'search', 'search-results', 'logbook', 'led', 'queue-join', 'queue', 'workout', 'status', 'island', 'kiosk']);`,
     `http.createServer((request, response) => {`,
     `  const url = new URL(request.url || '/', 'http://localhost');`,
     `  if (url.pathname.startsWith('/cpp/')) {`,
@@ -136,6 +126,21 @@ export function startReadinessServer(): ChildProcess {
     `  response.end();`,
     `}).listen(${SCREENSHOT_READY_PORT}, '0.0.0.0');`,
   ].join('\n');
+}
+
+/**
+ * Start the readiness server as a SEPARATE detached process. The orchestrator
+ * itself is fully synchronous (spawnSync for sleep/simctl/maestro), so an
+ * in-process HTTP server's event loop would be starved and never bind or accept.
+ * A child process has its own event loop; it appends a line to READINESS_LOG_PATH
+ * on every `/ready` GET, and the sync orchestrator just reads that file. Bound to
+ * 0.0.0.0 so the simulator reaches it over IPv4 the same way it reaches Metro.
+ * Truncates the log first; kill the returned process in a finally.
+ */
+export function startReadinessServer(): ChildProcess {
+  writeFileSync(READINESS_LOG_PATH, '');
+  writeFileSync(SMOKE_PING_LOG_PATH, '');
+  const serverCode = buildReadinessServerScript();
   const server = spawn(process.execPath, ['-e', serverCode], { stdio: 'ignore', detached: true });
   // Don't let the child keep the orchestrator's event loop alive at exit.
   server.unref();

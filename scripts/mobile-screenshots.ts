@@ -681,6 +681,12 @@ function cppRuntimeNavigationCommands(
   recordedBoards: readonly CppRecordedBoard[],
 ) {
   const commands = cppNavigationCommands(page, coverage, recordedBoards, false);
+  // Stop requesting the modal once its screenshot is captured. Replacing the
+  // same Climbs route clears its existing screenshotOpenFilters lifecycle gate.
+  const resultsRoute = new URL(commands.search.route, 'http://localhost');
+  resultsRoute.searchParams.delete('screenshotOpenFilters');
+  resultsRoute.searchParams.set('screenshotCppScene', 'search-results');
+  commands['search-results'] = { ...commands.search, route: `${resultsRoute.pathname}${resultsRoute.search}` };
   if (coverage.target !== 'spray') commands.kiosk = { ...commands.island, route: '/wall?screenshotCppScene=kiosk' };
   return commands;
 }
@@ -1981,7 +1987,13 @@ export function renderCppMaestroFlow(
   const commands: string[] = ipad ? ['- tapOn:\n    text: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}\n    optional: true'] : [];
   const dismiss = `- repeat:\n    times: 2\n    commands:\n      - runFlow:\n          when:\n            visible: \${SCREENSHOT_CLOSE_LABEL}\n          commands:\n            - tapOn: \${SCREENSHOT_CLOSE_LABEL}\n            - waitForAnimationToEnd`;
   for (const scene of scenes) {
-    for (const command of scene.command === 'queue' ? ['queue-join', scene.command] : [scene.command]) {
+    const sceneCommands =
+      scene.command === 'queue'
+        ? ['queue-join', scene.command]
+        : scene.command === 'search'
+          ? [scene.command, 'search-results']
+          : [scene.command];
+    for (const command of sceneCommands) {
       if (!navigation[command]) throw new Error(`CPP ${target} has no native navigation command for ${command}`);
     }
     if (!scene.ready?.trim()) throw new Error(`Missing CPP ready text for ${scene.command}`);
@@ -2041,7 +2053,7 @@ export function renderCppMaestroFlow(
       // label. Apply through its real top-bar control before changing routes;
       // native dismissal commits the draft and removes the modal obstruction.
       const applyFilters =
-        '- tapOn:\n    id: sheet-top-bar-trailing\n- extendedWaitUntil:\n    notVisible:\n      id: climb-filter-column\n    timeout: 60000\n- waitForAnimationToEnd:\n    timeout: 30000';
+        "- tapOn:\n    id: sheet-top-bar-trailing\n- evalScript: ${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=search-results').body).sequence}\n- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: ${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}\n      - assertTrue: ${output.cppAcknowledged == output.cppSequence}\n- extendedWaitUntil:\n    notVisible:\n      id: climb-filter-column\n    timeout: 60000\n- waitForAnimationToEnd:\n    timeout: 30000";
       // A static iPad filter column has no native sheet action to dismiss.
       commands.push(
         ipad
