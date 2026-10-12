@@ -355,6 +355,41 @@ describe("the owner's access list", () => {
     ).rejects.toThrow();
     await expect(accessList(board.uuid, {}, member)).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
   });
+
+  it('answers a lookup by id NOT_FOUND for anyone but the owner, so nobody can probe who belongs', async () => {
+    const notFound = { extensions: { code: 'NOT_FOUND' } };
+    const board = await seedBoard(owner, 'invite_only');
+    await redeem((await shareLink(board.uuid))!.token, member);
+    await privacyMutations.requestResourceAccess(null, { kind: 'board', resourceId: board.uuid }, context(second));
+    // Board uuids travel in session and presence payloads. A signed-in
+    // stranger and a member who is not the owner both hold this one.
+    for (const prober of [stranger, member]) {
+      await expect(accessList(board.uuid, { userIds: [member, second] }, prober)).rejects.toMatchObject(notFound);
+    }
+    expect(await accessList(board.uuid, { userIds: [member, second] })).toHaveLength(2);
+
+    // A session's grants answer the same way.
+    const sessionId = uuidv4();
+    await db
+      .insert(schema.boardSessions)
+      .values({ id: sessionId, createdByUserId: owner, isPublic: false, boardPath: 'kilter/1/1/1/40' });
+    await db
+      .insert(schema.resourcePrivacy)
+      .values({ kind: 'session', resourceId: sessionId, ownerId: owner, audience: 'invite_only' });
+    await db
+      .insert(schema.resourceGrants)
+      .values({ kind: 'session', resourceId: sessionId, userId: member, status: 'approved', invitedBy: owner });
+    const sessionLookup = (userId: string) =>
+      privacyQueries.resourceAccessRequests(
+        null,
+        { kind: 'session', resourceId: sessionId, userIds: [member] },
+        context(userId),
+      );
+    for (const prober of [stranger, member]) {
+      await expect(sessionLookup(prober)).rejects.toMatchObject(notFound);
+    }
+    expect(await sessionLookup(owner)).toEqual([expect.objectContaining({ userId: member, status: 'approved' })]);
+  });
 });
 
 describe('resetting and retiring a link', () => {
