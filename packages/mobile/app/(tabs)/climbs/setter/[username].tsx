@@ -88,6 +88,7 @@ export default function SetterPlaylist() {
           renderBoard={renderBoard}
           isLoading={query.isLoading}
           isFetchingNextPage={query.isFetchingNextPage}
+          isRefetching={query.isRefetching}
           hasNextPage={query.hasNextPage ?? false}
           fetchNextPage={query.fetchNextPage}
           onActivateClimb={activation.activate}

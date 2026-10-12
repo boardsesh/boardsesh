@@ -425,6 +425,7 @@ function makeProps(overrides: Partial<PlaylistDetailViewProps> = {}): PlaylistDe
     renderBoard: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
     isLoading: false,
     isFetchingNextPage: false,
+    isRefetching: false,
     hasNextPage: false,
     fetchNextPage: vi.fn(),
     onActivateClimb: vi.fn(),
@@ -492,6 +493,18 @@ describe('PlaylistDetailView', () => {
       const { container } = render(<PlaylistDetailView {...makeProps({ hasNextPage: true, fetchNextPage })} />);
       fireEvent.click(container.querySelector('[data-list="true"]') as HTMLElement);
       expect(fetchNextPage).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for an in-place refetch before paging', () => {
+      delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      const fetchNextPage = vi.fn();
+      // A next-page fetch would cancel a privacy event's refetch and merge onto
+      // the pre-event pages, leaving those rows dead to taps (#6402).
+      const { container } = render(
+        <PlaylistDetailView {...makeProps({ hasNextPage: true, isRefetching: true, fetchNextPage })} />,
+      );
+      fireEvent.click(container.querySelector('[data-list="true"]') as HTMLElement);
+      expect(fetchNextPage).not.toHaveBeenCalled();
     });
 
     it('never pages past the first page in screenshot mode', () => {

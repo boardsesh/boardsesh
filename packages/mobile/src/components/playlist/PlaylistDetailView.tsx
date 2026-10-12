@@ -140,6 +140,10 @@ export type PlaylistDetailViewProps = {
   isLoading: boolean;
   /** True while a subsequent page loads (trailing spinner). */
   isFetchingNextPage: boolean;
+  /** True while the loaded pages refetch in place (pull-to-refresh, a privacy
+   *  event). Paging waits for it, as on the Climbs tab: a next-page fetch would
+   *  cancel the refetch and merge onto the pages it was replacing. */
+  isRefetching: boolean;
   hasNextPage: boolean;
   fetchNextPage: () => void;
   /** Activate a tapped climb (wires the queue + opens the play drawer). */
@@ -224,6 +228,7 @@ export function PlaylistDetailView({
   boardBanner,
   isLoading,
   isFetchingNextPage,
+  isRefetching,
   hasNextPage,
   fetchNextPage,
   onActivateClimb,
@@ -339,8 +344,8 @@ export function PlaylistDetailView({
   ) : undefined;
 
   const loadNextPage = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (hasNextPage && !isFetchingNextPage && !isRefetching) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isRefetching, fetchNextPage]);
   // One page in screenshot mode — the same cap `screenshotModeNextPageParam`
   // applies to the app's own infinite queries, but from the consumer side:
   // both lists behind this view (`usePlaylistClimbs`, `useSmartPlaylist`) live

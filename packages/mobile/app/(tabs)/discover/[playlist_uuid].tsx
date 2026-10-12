@@ -701,6 +701,7 @@ export default function PlaylistDetail() {
         isLoading={query.isLoading}
         // Pagination is paused while editing the loaded window.
         isFetchingNextPage={editMode ? false : query.isFetchingNextPage}
+        isRefetching={query.isRefetching}
         hasNextPage={editMode ? false : (query.hasNextPage ?? false)}
         fetchNextPage={query.fetchNextPage}
         onActivateClimb={playlistActivation.activate}

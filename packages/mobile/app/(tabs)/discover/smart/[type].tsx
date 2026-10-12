@@ -165,6 +165,7 @@ export default function SmartPlaylistDetail() {
         renderBoard={renderBoard}
         isLoading={query.isLoading}
         isFetchingNextPage={query.isFetchingNextPage}
+        isRefetching={query.isRefetching}
         hasNextPage={query.hasNextPage ?? false}
         fetchNextPage={query.fetchNextPage}
         onActivateClimb={playlistActivation.activate}

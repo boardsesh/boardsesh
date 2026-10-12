@@ -1966,7 +1966,10 @@ describe('large climb-list query and activation privacy lifecycle', () => {
           viewOnlyBoard: VIEW_ONLY_BOARD,
           refreshErrorMessage: 'query lifecycle test',
         });
-        return { query, allClimbs, activation, isFetchingNextPage: query.isFetchingNextPage };
+        // Read during render so React Query re-renders when a refetch lands,
+        // even one whose data it shared unchanged.
+        const { isFetchingNextPage, isFetchedAfterMount } = query;
+        return { query, allClimbs, activation, isFetchingNextPage, isFetchedAfterMount };
       },
       {
         wrapper: ({ children }: { children: ReactNode }) => (
@@ -1993,6 +1996,9 @@ describe('large climb-list query and activation privacy lifecycle', () => {
       await act(async () => {
         await result.current.query.refetch();
       });
+      // React Query notifies on a timer after the refetch; read that render,
+      // not the one from before the refetch.
+      await waitFor(() => expect(result.current.isFetchedAfterMount).toBe(true));
       // TanStack structurally shares the authorized identical response. The
       // activation object's first-observed epoch is still the withdrawn one.
       expect(mocks.searchRequest).toHaveBeenCalledTimes(50);

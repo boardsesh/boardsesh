@@ -52,31 +52,50 @@ const PRIVACY_NEUTRAL_QUERY_ROOTS = new Set([
 const CATALOGUE_SEARCH_QUERY_ROOTS = new Set(['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount']);
 
 // Climb search data an on-screen list kept through a privacy event: the cache
-// entry and what each observer selected from it. usePlaylistActivation refuses
-// every row it saw before the event, and structural sharing would map an
-// identical authorized response back onto those rows, leaving the whole list
-// dead to taps until its search changed.
+// entry, what each observer selected from it, and an infinite list's pages.
+// usePlaylistActivation refuses every row it saw before the event, and
+// structural sharing would map an identical authorized response back onto
+// those rows, leaving the whole list dead to taps until its search changed.
+// The pages are marked because an observer that subscribes during the refetch
+// wraps the same page objects in a new object of its own.
+//
+// A mark covers only the objects it was put on. A write that keeps a marked
+// page (a next page merged onto pre-event pages) still counts as kept, but an
+// updater that copied pre-event rows into new objects would land them as rows a
+// tap accepts before the authorized answer arrives. Nothing writes these keys
+// that way today; keep it so.
 const searchDataKeptThroughPrivacyEvent = new WeakSet<object>();
 
+function isObject(candidate: unknown): candidate is object {
+  return typeof candidate === 'object' && candidate !== null;
+}
+
+function infiniteListPages(data: object): readonly unknown[] {
+  return 'pages' in data && Array.isArray(data.pages) ? data.pages : [];
+}
+
 function markKeptThroughPrivacyEvent(data: unknown): void {
-  if (typeof data === 'object' && data !== null) searchDataKeptThroughPrivacyEvent.add(data);
+  if (!isObject(data)) return;
+  searchDataKeptThroughPrivacyEvent.add(data);
+  for (const page of infiniteListPages(data)) {
+    if (isObject(page)) searchDataKeptThroughPrivacyEvent.add(page);
+  }
+}
+
+function isKeptThroughPrivacyEvent(data: unknown): boolean {
+  if (!isObject(data)) return false;
+  if (searchDataKeptThroughPrivacyEvent.has(data)) return true;
+  return infiniteListPages(data).some((page) => isObject(page) && searchDataKeptThroughPrivacyEvent.has(page));
 }
 
 /**
  * `structuralSharing` for the climb search lists a privacy event refetches in
- * place. The first write over data kept through an event lands as the
+ * place. A write over data that still holds what the event kept lands as the
  * response's own objects; every other write shares as React Query does by
  * default, so an ordinary refetch still keeps unchanged rows.
  */
 export function shareClimbSearchData(previousData: unknown, nextData: unknown): unknown {
-  if (
-    typeof previousData === 'object' &&
-    previousData !== null &&
-    searchDataKeptThroughPrivacyEvent.has(previousData)
-  ) {
-    return nextData;
-  }
-  return replaceEqualDeep(previousData, nextData);
+  return isKeptThroughPrivacyEvent(previousData) ? nextData : replaceEqualDeep(previousData, nextData);
 }
 
 type PrivacyQueryTreatment = 'keep' | 'refetch' | 'withdraw';

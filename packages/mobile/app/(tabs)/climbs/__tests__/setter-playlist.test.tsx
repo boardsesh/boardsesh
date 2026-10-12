@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     renderBoard: typeof board;
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
+    isRefetching?: boolean;
   } | null,
 }));
 vi.mock('react-native', () => ({
@@ -59,6 +60,7 @@ vi.mock('../../../../src/components/playlist', () => ({
     onActivateClimb: (climb: Climb) => void;
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
+    isRefetching?: boolean;
   }) => {
     mocks.detail = props;
     return (
@@ -178,6 +180,21 @@ describe('setter smart playlist route', () => {
     await expect(
       mocks.activation!.fetchPage({ page: 1, pageSize: 20, board, signal: during.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('holds paging while the setter list refetches in place', () => {
+    mocks.search.mockReturnValue({
+      data: { pages: [{ climbs: [climb] }] },
+      isLoading: false,
+      isFetchingNextPage: false,
+      isRefetching: true,
+      hasNextPage: true,
+      fetchNextPage: mocks.fetchNext,
+      refetch: mocks.refetch,
+      isError: false,
+    });
+    render(<SetterPlaylist />);
+    expect(mocks.detail).toMatchObject({ isRefetching: true });
   });
 
   it('offers retry when the climb search fails', () => {

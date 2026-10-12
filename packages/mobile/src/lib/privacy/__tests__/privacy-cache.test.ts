@@ -1,4 +1,4 @@
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { InfiniteQueryObserver, QueryClient, QueryObserver, type InfiniteData } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import {
   getPrivacyRevocationGeneration,
@@ -239,6 +239,54 @@ describe('privacy revocation', () => {
       expect(observer.getCurrentResult().data?.climbs[0]).toBe(authorizedRow);
     } finally {
       unsubscribe();
+      queryClient.clear();
+    }
+  });
+
+  it('lands new rows for an infinite list observer that subscribes during the refetch', async () => {
+    type SearchPage = { searchClimbs: { climbs: Array<{ uuid: string }> } };
+    const queryClient = new QueryClient();
+    const kilterSearch = ['infiniteSearchClimbs', { boardName: 'kilter', layoutId: 1 }];
+    const searchPage = (): SearchPage => ({ searchClimbs: { climbs: [{ uuid: 'climb-1' }] } });
+    queryClient.setQueryData(kilterSearch, { pages: [searchPage()], pageParams: [0] });
+    let resolveRefetch!: (page: SearchPage) => void;
+    // Like useInfiniteSearchClimbs, select wraps the cache's own page payloads
+    // in a new object per observer.
+    const observerOptions = {
+      queryKey: kilterSearch,
+      staleTime: Infinity,
+      initialPageParam: 0,
+      getNextPageParam: () => undefined,
+      queryFn: () =>
+        new Promise<SearchPage>((resolve) => {
+          resolveRefetch = resolve;
+        }),
+      select: (data: InfiniteData<SearchPage, number>) => ({
+        pages: data.pages.map((page) => page.searchClimbs),
+        pageParams: data.pageParams,
+      }),
+      structuralSharing: shareClimbSearchData,
+    };
+    const firstObserver = new InfiniteQueryObserver(queryClient, observerOptions);
+    const unsubscribeFirst = firstObserver.subscribe(() => {});
+    let unsubscribeLate = () => {};
+    try {
+      const keptRow = firstObserver.getCurrentResult().data?.pages[0].climbs[0];
+      const invalidation = invalidatePrivacyQueries(queryClient);
+      await vi.waitFor(() => expect(firstObserver.getCurrentResult().isFetching).toBe(true));
+      const lateObserver = new InfiniteQueryObserver(queryClient, observerOptions);
+      unsubscribeLate = lateObserver.subscribe(() => {});
+      expect(lateObserver.getCurrentResult().data?.pages[0].climbs[0]).toBe(keptRow);
+      resolveRefetch(searchPage());
+      await invalidation;
+      for (const observer of [firstObserver, lateObserver]) {
+        const authorizedRow = observer.getCurrentResult().data?.pages[0].climbs[0];
+        expect(authorizedRow).toEqual(keptRow);
+        expect(authorizedRow).not.toBe(keptRow);
+      }
+    } finally {
+      unsubscribeLate();
+      unsubscribeFirst();
       queryClient.clear();
     }
   });
