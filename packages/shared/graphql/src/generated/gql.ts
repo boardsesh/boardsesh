@@ -129,6 +129,10 @@ type Documents = {
   '\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n': typeof types.RequestResourceAccessDocument;
   '\n  mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.InviteResourceMemberDocument;
   '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n': typeof types.ProfilePrivacyDocument;
+  '\n  query BoardShareLink($boardUuid: ID!) {\n    boardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n': typeof types.BoardShareLinkDocument;
+  '\n  mutation ResetBoardShareLink($boardUuid: ID!) {\n    resetBoardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n': typeof types.ResetBoardShareLinkDocument;
+  '\n  mutation RedeemBoardShareLink($token: String!) {\n    redeemBoardShareLink(token: $token) {\n      boardUuid\n      slug\n    }\n  }\n': typeof types.RedeemBoardShareLinkDocument;
+  '\n  query BoardShareLinkPreview($token: String!) {\n    boardShareLinkPreview(token: $token) {\n      name\n    }\n  }\n': typeof types.BoardShareLinkPreviewDocument;
   '\n  query GetClimbProposals($input: GetClimbProposalsInput!) {\n    climbProposals(input: $input) {\n      proposals {\n        uuid\n        climbUuid\n        boardType\n        angle\n        proposerId\n        proposerDisplayName\n        proposerAvatarUrl\n        type\n        proposedValue\n        currentValue\n        status\n        reason\n        resolvedAt\n        resolvedBy\n        createdAt\n        weightedUpvotes\n        weightedDownvotes\n        requiredUpvotes\n        userVote\n        climbName\n        frames\n        layoutId\n        climbSetterUsername\n        climbDifficulty\n        climbQualityAverage\n        climbAscensionistCount\n        climbDifficultyError\n        climbBenchmarkDifficulty\n        climbIsNoMatch\n        upvoterCount\n        commentCount\n        climbIsHidden\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetClimbProposalsDocument;
   '\n  query GetClimbCommunityStatus($climbUuid: String!, $boardType: String!, $angle: Int!) {\n    climbCommunityStatus(climbUuid: $climbUuid, boardType: $boardType, angle: $angle) {\n      climbUuid\n      boardType\n      angle\n      communityGrade\n      isBenchmark\n      isClassic\n      isFrozen\n      freezeReason\n      openProposalCount\n      outlierAnalysis {\n        isOutlier\n        currentGrade\n        neighborAverage\n        neighborCount\n        gradeDifference\n      }\n      updatedAt\n    }\n  }\n': typeof types.GetClimbCommunityStatusDocument;
   '\n  query GetBulkClimbCommunityStatus($climbUuids: [String!]!, $boardType: String!, $angle: Int!) {\n    bulkClimbCommunityStatus(climbUuids: $climbUuids, boardType: $boardType, angle: $angle) {\n      climbUuid\n      boardType\n      angle\n      communityGrade\n      isBenchmark\n      isClassic\n      isFrozen\n      freezeReason\n      openProposalCount\n      updatedAt\n    }\n  }\n': typeof types.GetBulkClimbCommunityStatusDocument;
@@ -425,6 +429,14 @@ const documents: Documents = {
     types.InviteResourceMemberDocument,
   '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n':
     types.ProfilePrivacyDocument,
+  '\n  query BoardShareLink($boardUuid: ID!) {\n    boardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n':
+    types.BoardShareLinkDocument,
+  '\n  mutation ResetBoardShareLink($boardUuid: ID!) {\n    resetBoardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n':
+    types.ResetBoardShareLinkDocument,
+  '\n  mutation RedeemBoardShareLink($token: String!) {\n    redeemBoardShareLink(token: $token) {\n      boardUuid\n      slug\n    }\n  }\n':
+    types.RedeemBoardShareLinkDocument,
+  '\n  query BoardShareLinkPreview($token: String!) {\n    boardShareLinkPreview(token: $token) {\n      name\n    }\n  }\n':
+    types.BoardShareLinkPreviewDocument,
   '\n  query GetClimbProposals($input: GetClimbProposalsInput!) {\n    climbProposals(input: $input) {\n      proposals {\n        uuid\n        climbUuid\n        boardType\n        angle\n        proposerId\n        proposerDisplayName\n        proposerAvatarUrl\n        type\n        proposedValue\n        currentValue\n        status\n        reason\n        resolvedAt\n        resolvedBy\n        createdAt\n        weightedUpvotes\n        weightedDownvotes\n        requiredUpvotes\n        userVote\n        climbName\n        frames\n        layoutId\n        climbSetterUsername\n        climbDifficulty\n        climbQualityAverage\n        climbAscensionistCount\n        climbDifficultyError\n        climbBenchmarkDifficulty\n        climbIsNoMatch\n        upvoterCount\n        commentCount\n        climbIsHidden\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetClimbProposalsDocument,
   '\n  query GetClimbCommunityStatus($climbUuid: String!, $boardType: String!, $angle: Int!) {\n    climbCommunityStatus(climbUuid: $climbUuid, boardType: $boardType, angle: $angle) {\n      climbUuid\n      boardType\n      angle\n      communityGrade\n      isBenchmark\n      isClassic\n      isFrozen\n      freezeReason\n      openProposalCount\n      outlierAnalysis {\n        isOutlier\n        currentGrade\n        neighborAverage\n        neighborCount\n        gradeDifference\n      }\n      updatedAt\n    }\n  }\n':
@@ -1257,6 +1269,30 @@ export function graphql(
 export function graphql(
   source: '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n',
 ): (typeof documents)['\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query BoardShareLink($boardUuid: ID!) {\n    boardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n',
+): (typeof documents)['\n  query BoardShareLink($boardUuid: ID!) {\n    boardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation ResetBoardShareLink($boardUuid: ID!) {\n    resetBoardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n',
+): (typeof documents)['\n  mutation ResetBoardShareLink($boardUuid: ID!) {\n    resetBoardShareLink(boardUuid: $boardUuid) {\n      boardUuid\n      token\n      path\n      createdAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation RedeemBoardShareLink($token: String!) {\n    redeemBoardShareLink(token: $token) {\n      boardUuid\n      slug\n    }\n  }\n',
+): (typeof documents)['\n  mutation RedeemBoardShareLink($token: String!) {\n    redeemBoardShareLink(token: $token) {\n      boardUuid\n      slug\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query BoardShareLinkPreview($token: String!) {\n    boardShareLinkPreview(token: $token) {\n      name\n    }\n  }\n',
+): (typeof documents)['\n  query BoardShareLinkPreview($token: String!) {\n    boardShareLinkPreview(token: $token) {\n      name\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

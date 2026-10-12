@@ -19,6 +19,7 @@ import {
   setContentPrivacy,
 } from '../../../services/privacy';
 import { publishSocialEvent } from '../../../events';
+import { isShareLinkAudience, revokeBoardShareLinks } from '../../../services/board-share-links';
 import { logger } from '../../../utils/logger';
 
 const resourceAudience = z.enum(['public', 'unlisted', 'followers', 'invite_only', 'only_me']);
@@ -635,7 +636,7 @@ export const privacyMutations = {
           .update(schema.boardSessions)
           .set({ isPublic: update.audience === 'public' })
           .where(eq(schema.boardSessions.id, update.resourceId));
-      else
+      else {
         await transaction
           .update(schema.userBoards)
           .set({
@@ -644,6 +645,11 @@ export const privacyMutations = {
             hideLocation: settings.locationAudience !== 'public',
           })
           .where(eq(schema.userBoards.uuid, update.resourceId));
+        // A share link belongs to a Followers or Invite-only board. Leaving those
+        // retires it, so an old link cannot reopen the board after a round trip
+        // through Public or Only me.
+        if (!isShareLinkAudience(update.audience)) await revokeBoardShareLinks(transaction, update.resourceId);
+      }
     });
     await publishAfterBetaInvalidation('updateResourcePrivacy');
     await notifyResourceChanged(update.kind, update.resourceId);

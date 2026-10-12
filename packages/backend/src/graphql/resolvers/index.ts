@@ -6,6 +6,7 @@ import {
   privacySettingsFields,
   privacySubscriptions,
 } from './privacy';
+import { boardShareLinkMutations, boardShareLinkQueries } from './privacy/board-share-links';
 import { notificationDeviceMutations } from './social/notification-devices';
 // eslint-disable-next-line import/no-named-as-default -- `graphql-type-json` exports both default and named `GraphQLJSON`; default is the canonical scalar.
 import GraphQLJSON from 'graphql-type-json';
@@ -106,6 +107,7 @@ export const resolvers = {
   // Root operation types
   Query: {
     ...privacyQueries,
+    ...boardShareLinkQueries,
     ...sessionQueries,
     ...liveSessionQueries,
     ...boardQueries,
@@ -163,6 +165,7 @@ export const resolvers = {
 
   Mutation: {
     ...privacyMutations,
+    ...boardShareLinkMutations,
     ...sessionMutations,
     ...holdOutlineMutations,
     ...sprayWallMutations,

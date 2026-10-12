@@ -978,6 +978,33 @@ export type BoardSerialConfig = {
 };
 
 /**
+ * A home board's share link. Opening it signed in makes the climber an
+ * approved member of the board straight away.
+ */
+export type BoardShareLink = {
+  __typename?: 'BoardShareLink';
+  boardUuid: Scalars['ID']['output'];
+  createdAt: Scalars['String']['output'];
+  /** The path on the web host: /b/{slug}?invite={token} */
+  path: Scalars['String']['output'];
+  /** The link's capability. Treat it like a password: never log it. */
+  token: Scalars['String']['output'];
+};
+
+/** What a signed-out visitor holding a share link may see: the board's name only. */
+export type BoardShareLinkPreview = {
+  __typename?: 'BoardShareLinkPreview';
+  name: Scalars['String']['output'];
+};
+
+/** Where a redeemed share link points, so the client can open the board. */
+export type BoardShareLinkRedemption = {
+  __typename?: 'BoardShareLinkRedemption';
+  boardUuid: Scalars['ID']['output'];
+  slug: Scalars['String']['output'];
+};
+
+/**
  * Event: this board's durable stats changed (a tick was logged on the wall).
  * Carries the freshly recomputed snapshot so subscribers update their tiles live
  * instead of re-fetching — the stat counterpart of `BoardClimbSet`.
@@ -4347,6 +4374,8 @@ export type Mutation = {
    * Returns null when a saved board already matches the connect (nothing to record).
    */
   recordBoardSerial?: Maybe<BoardSerialConfig>;
+  /** Join the board a share link names as an approved member. NOT_FOUND for a revoked or unknown link. */
+  redeemBoardShareLink: BoardShareLinkRedemption;
   /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
   refreshGymActivityStats: GymActivityStatsRefreshResult;
   /**
@@ -4451,6 +4480,8 @@ export type Mutation = {
   requestSprayWallDetection: SprayWallDetection;
   /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
   requestUserDataExport: UserDataExportStatus;
+  /** Revoke the board's share link and mint a new one. Owner only; null when the board has no share link. */
+  resetBoardShareLink?: Maybe<BoardShareLink>;
   /**
    * Start a reset of a wall by cloning it. The clone copies the wall's settings
    * (name, description, angle, gym, location, look, climb edit policy and
@@ -5134,6 +5165,11 @@ export type MutationRecordBoardSerialArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRedeemBoardShareLinkArgs = {
+  token: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRefreshGymActivityStatsArgs = {
   force?: InputMaybe<Scalars['Boolean']['input']>;
 };
@@ -5258,6 +5294,11 @@ export type MutationRequestSprayWallDetectionArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestUserDataExportArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationResetBoardShareLinkArgs = {
+  boardUuid: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -6534,6 +6575,13 @@ export type Query = {
   /** Merged native and imported recent displays, used to infer the current climb by display time. */
   boardRecentHistory: Array<BoardPresenceClimb>;
   /**
+   * The owner's share link for a Followers or Invite-only home board, minted on
+   * first read. Null for a Public, Unlisted or Only-me board, and for a spray wall.
+   */
+  boardShareLink?: Maybe<BoardShareLink>;
+  /** The board name behind an active share link, for a signed-out visitor. Null when the link does not open anything. */
+  boardShareLinkPreview?: Maybe<BoardShareLinkPreview>;
+  /**
    * Look up boards by controller serial numbers.
    * Searches all boards (including unlisted/non-public).
    * Capped at 20 serials per request — exceeding this throws a validation
@@ -7326,6 +7374,16 @@ export type QueryBoardRecentClimbsArgs = {
 export type QueryBoardRecentHistoryArgs = {
   boardId: Scalars['Int']['input'];
   boardUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardShareLinkArgs = {
+  boardUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardShareLinkPreviewArgs = {
+  token: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -13829,6 +13887,54 @@ export type ProfilePrivacyQueryVariables = Exact<{
 export type ProfilePrivacyQuery = {
   __typename?: 'Query';
   publicProfile?: { __typename?: 'PublicUserProfile'; isPrivate: boolean; canViewActivity: boolean } | null;
+};
+
+export type BoardShareLinkQueryVariables = Exact<{
+  boardUuid: Scalars['ID']['input'];
+}>;
+
+export type BoardShareLinkQuery = {
+  __typename?: 'Query';
+  boardShareLink?: {
+    __typename?: 'BoardShareLink';
+    boardUuid: string;
+    token: string;
+    path: string;
+    createdAt: string;
+  } | null;
+};
+
+export type ResetBoardShareLinkMutationVariables = Exact<{
+  boardUuid: Scalars['ID']['input'];
+}>;
+
+export type ResetBoardShareLinkMutation = {
+  __typename?: 'Mutation';
+  resetBoardShareLink?: {
+    __typename?: 'BoardShareLink';
+    boardUuid: string;
+    token: string;
+    path: string;
+    createdAt: string;
+  } | null;
+};
+
+export type RedeemBoardShareLinkMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+export type RedeemBoardShareLinkMutation = {
+  __typename?: 'Mutation';
+  redeemBoardShareLink: { __typename?: 'BoardShareLinkRedemption'; boardUuid: string; slug: string };
+};
+
+export type BoardShareLinkPreviewQueryVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+export type BoardShareLinkPreviewQuery = {
+  __typename?: 'Query';
+  boardShareLinkPreview?: { __typename?: 'BoardShareLinkPreview'; name: string } | null;
 };
 
 export type GetClimbProposalsQueryVariables = Exact<{
@@ -22322,6 +22428,167 @@ export const ProfilePrivacyDocument = {
     },
   ],
 } as unknown as DocumentNode<ProfilePrivacyQuery, ProfilePrivacyQueryVariables>;
+export const BoardShareLinkDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'BoardShareLink' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'boardShareLink' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'boardUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'token' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'path' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<BoardShareLinkQuery, BoardShareLinkQueryVariables>;
+export const ResetBoardShareLinkDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ResetBoardShareLink' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'resetBoardShareLink' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'boardUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'token' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'path' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ResetBoardShareLinkMutation, ResetBoardShareLinkMutationVariables>;
+export const RedeemBoardShareLinkDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RedeemBoardShareLink' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'redeemBoardShareLink' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'token' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'boardUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'slug' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RedeemBoardShareLinkMutation, RedeemBoardShareLinkMutationVariables>;
+export const BoardShareLinkPreviewDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'BoardShareLinkPreview' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'boardShareLinkPreview' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'token' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'token' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'name' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<BoardShareLinkPreviewQuery, BoardShareLinkPreviewQueryVariables>;
 export const GetClimbProposalsDocument = {
   kind: 'Document',
   definitions: [

@@ -200,3 +200,46 @@ export const GET_PROFILE_PRIVACY = gql`
     }
   }
 `;
+
+/**
+ * A home board's share link (`/b/{slug}?invite={token}`). The token is a
+ * capability: pass it to these documents and nowhere else, never to a log line
+ * or an analytics property.
+ */
+export type BoardShareLink = { boardUuid: string; token: string; path: string; createdAt: string };
+export type BoardShareLinkRedemption = { boardUuid: string; slug: string };
+export const GET_BOARD_SHARE_LINK = gql`
+  query BoardShareLink($boardUuid: ID!) {
+    boardShareLink(boardUuid: $boardUuid) {
+      boardUuid
+      token
+      path
+      createdAt
+    }
+  }
+`;
+export const RESET_BOARD_SHARE_LINK = gql`
+  mutation ResetBoardShareLink($boardUuid: ID!) {
+    resetBoardShareLink(boardUuid: $boardUuid) {
+      boardUuid
+      token
+      path
+      createdAt
+    }
+  }
+`;
+export const REDEEM_BOARD_SHARE_LINK = gql`
+  mutation RedeemBoardShareLink($token: String!) {
+    redeemBoardShareLink(token: $token) {
+      boardUuid
+      slug
+    }
+  }
+`;
+export const GET_BOARD_SHARE_LINK_PREVIEW = gql`
+  query BoardShareLinkPreview($token: String!) {
+    boardShareLinkPreview(token: $token) {
+      name
+    }
+  }
+`;
