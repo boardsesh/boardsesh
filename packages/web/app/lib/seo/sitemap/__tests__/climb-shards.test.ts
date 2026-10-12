@@ -155,12 +155,12 @@ describe('the paged climbs shard', () => {
     expect(climbs.buildCalls).toBe(0);
   });
 
-  it('serves a page as application/xml on the long climb cache window', async () => {
+  it('serves XML without caching privacy-filtered climb URLs', async () => {
     const response = await pagedShardRouteHandler('climbs', '1.xml');
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/xml; charset=utf-8');
-    expect(response.headers.get('cache-control')).toBe('public, s-maxage=21600, stale-while-revalidate=604800');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(await response.text()).toContain('<urlset');
   });
 

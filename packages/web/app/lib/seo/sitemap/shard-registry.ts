@@ -124,24 +124,11 @@ const DEGRADED_HEADER = 'X-Sitemap-Degraded';
  */
 export const CLIMB_SOURCE_HEADER = 'X-Sitemap-Climbs-Source';
 
-/**
- * Climb shards get a far longer window than the hourly one the small shards use.
- * Google refetches a sitemap on the order of days, tier 2 changes on the order of
- * hours, and the CDN is what absorbs a crawl burst across a dozen pages before it
- * reaches a ten-connection pool.
- */
-const CLIMB_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
+// Privacy-filtered candidates must be checked on every request: unlisting,
+// moderation and spray-wall access can withdraw a previously published URL.
+const CLIMB_CACHE_CONTROL = 'private, no-store';
 const DISABLED_PAGED_SITEMAP_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
-
-/**
- * The setters shard's own window, equal to the climbs one today by judgement
- * rather than by construction — its own constant so retuning the climb window
- * for a climb-specific reason cannot silently retune this one. Same reasoning:
- * setter pages change on the order of a climb being set, Google refetches a
- * sitemap on the order of days, and the CDN is what absorbs a crawl burst across
- * three pages before it reaches a ten-connection pool.
- */
-const SETTER_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
+const SETTER_CACHE_CONTROL = 'private, no-store';
 
 function xmlResponse(
   body: string,
@@ -552,9 +539,8 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return unavailableResponse();
   }
 
-  // Climbs and setters list published, listed climbs, which are public whoever
-  // set them, so the page keeps its CDN window. The privacy filter above only
-  // drops a climb that was unlisted, drafted or hidden after the store ran.
+  // Recheck withdrawal on every request; shared caches cannot observe unlisting,
+  // moderation or spray-wall changes after this response was produced.
   return xmlResponse(body, shard.cacheControl, sourceHeaders(shard, source));
 }
 
