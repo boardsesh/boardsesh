@@ -326,6 +326,7 @@ type CachedRecentBetaLinkRow = {
   created_at: string | null;
   tick_uuid: string | null;
   board_id: number | null;
+  created_by_user_id: string | null;
   climb_name: string | null;
   layout_id: number | null;
 };
@@ -367,6 +368,7 @@ async function runRecentBetaLinksQuery(
         bl.created_at,
         bl.tick_uuid,
         bl.board_id,
+        bl.created_by_user_id,
         bc.name AS climb_name,
         bc.layout_id AS layout_id
       FROM ${dbSchema.boardBetaLinks} bl
@@ -387,7 +389,7 @@ async function runRecentBetaLinksQuery(
         ) AS user_rank
       FROM scoped
     )
-    SELECT board_type, climb_uuid, link, foreign_username, angle, thumbnail, is_listed, created_at, tick_uuid, board_id, climb_name, layout_id
+    SELECT board_type, climb_uuid, link, foreign_username, angle, thumbnail, is_listed, created_at, tick_uuid, board_id, created_by_user_id, climb_name, layout_id
     FROM ranked
     WHERE foreign_username IS NULL OR user_rank <= ${HOME_PER_USER_CAP}
     ORDER BY created_at DESC
@@ -724,6 +726,7 @@ export const betaLinkQueries = {
         ? await runRecentBetaLinksQuery(scope, ctx?.userId)
         : authorized;
 
+    const authorsByLink = new Map<BetaLinkResult, string | null>();
     const filtered: RecentBetaLinkResult[] = [];
     for (const r of cached) {
       if (isKayaClimbUrl(r.link)) continue;
@@ -746,11 +749,13 @@ export const betaLinkQueries = {
         boardType: r.board_type,
         layoutId: r.layout_id ?? null,
       });
+      authorsByLink.set(filtered[filtered.length - 1].betaLink, r.created_by_user_id);
       if (filtered.length >= cappedLimit) break;
     }
     const betaLinks = await withVisibleBetaBoards(
       filtered.map((item) => item.betaLink),
       ctx?.userId,
+      (item) => authorsByLink.get(item) ?? null,
     );
     return filtered.map((item, index) => ({ ...item, betaLink: betaLinks[index] }));
   },

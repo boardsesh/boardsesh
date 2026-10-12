@@ -738,6 +738,43 @@ describe('followedLiveSessions — board privacy and ordering', () => {
     expect(onSheet.board?.name).toBe('Link Only Wall');
   });
 
+  it('keeps the followed session visible while a revoked board grant hides its identity', async () => {
+    await follow(VIEWER, FRIEND);
+    const board = await makeBoard({ name: 'Revoked Board Identity' });
+    const sessionId = await makeSession({ createdBy: FRIEND, boardId: board.id });
+    await goLive(sessionId, FRIEND);
+    await db.insert(dbSchema.resourceGrants).values({
+      kind: 'board',
+      resourceId: board.uuid,
+      userId: VIEWER,
+      status: 'revoked',
+    });
+
+    const [session] = await followedLiveSessions(VIEWER);
+    expect(session.sessionId).toBe(sessionId);
+    expect(session.host?.userId).toBe(FRIEND);
+    expect(session.board).toBeNull();
+    expect(JSON.stringify(session)).not.toContain(board.uuid);
+    expect(JSON.stringify(session)).not.toContain(board.name);
+    expect(JSON.stringify(session)).not.toContain(board.slug);
+  });
+
+  it('uses the board audience override before its legacy public flag on live cards', async () => {
+    await follow(VIEWER, FRIEND);
+    const board = await makeBoard({ isPublic: false });
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: board.uuid,
+      ownerId: BOARD_OWNER,
+      audience: 'public',
+    });
+    const sessionId = await makeSession({ createdBy: FRIEND, boardId: board.id });
+    await goLive(sessionId, FRIEND);
+
+    const [session] = await followedLiveSessions(VIEWER);
+    expect(session.board?.uuid).toBe(board.uuid);
+  });
+
   it('hides a gym name behind hideLocation from everyone but the board owner', async () => {
     await follow(VIEWER, FRIEND);
     await follow(BOARD_OWNER, FRIEND);

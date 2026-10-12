@@ -22,7 +22,6 @@ import { pubsub } from '../pubsub/index';
 import { roomManager } from './room-manager';
 import { canReadClimbContent } from './board-session-privacy';
 import { toBoardQueuePreviewItem } from './board-queue-preview';
-import { isRowAnonReadable } from '../graphql/resolvers/board-presence/shared';
 import { isSprayBoardType, sprayBoardRowIsReadable } from '../graphql/resolvers/climbs/spray-read-access';
 import {
   consensusGradeJoinCondition,
@@ -104,8 +103,7 @@ type BoardRow = {
   layoutId: number;
   angle: number;
   ownerId: string;
-  isPublic: boolean;
-  isUnlisted: boolean;
+  identityVisible: boolean;
   deletedAt: Date | null;
   gymName: string | null;
 };
@@ -419,7 +417,11 @@ async function resolveCreatorConfigBoards(
   return resolved;
 }
 
-async function loadBoardRows(boardIds: readonly number[]): Promise<Map<number, BoardRow>> {
+async function loadBoardRows(
+  boardIds: readonly number[],
+  viewerId: string | null,
+  heldBoardIds: ReadonlySet<number>,
+): Promise<Map<number, BoardRow>> {
   if (boardIds.length === 0) return new Map();
   const rows = await db
     .select({
@@ -431,8 +433,10 @@ async function loadBoardRows(boardIds: readonly number[]): Promise<Map<number, B
       layoutId: dbSchema.userBoards.layoutId,
       angle: dbSchema.userBoards.angle,
       ownerId: dbSchema.userBoards.ownerId,
-      isPublic: dbSchema.userBoards.isPublic,
-      isUnlisted: dbSchema.userBoards.isUnlisted,
+      identityVisible: sql<boolean>`${resourceAccessCondition('board', dbSchema.userBoards.uuid, viewerId, {
+        allowUnlistedLink: false,
+        unlistedWhen: heldBoardIds.size > 0 ? inArray(dbSchema.userBoards.id, [...heldBoardIds]) : sql`false`,
+      })}`,
       deletedAt: dbSchema.userBoards.deletedAt,
       gymName: dbSchema.gyms.name,
     })
@@ -446,8 +450,8 @@ async function loadBoardRows(boardIds: readonly number[]): Promise<Map<number, B
  * The board as this viewer may see it, or null. Never leaks a board the viewer
  * could not otherwise find:
  *
- * - it must be live (not deleted) and anonymously readable (public, or a
- *   system-shared board — the one anon rule, `isRowAnonReadable`), or owned;
+ * - it must be live (not deleted) and readable under its current resource
+ *   policy, including audience overrides and revoked grants;
  * - an UNLISTED board is reachable by link, never enumerated, so it is only
  *   named to a viewer who already holds it: they follow it, selected it, or
  *   are reading that board's own sheet (`heldBoardIds`). Same rule as the tick
@@ -455,16 +459,10 @@ async function loadBoardRows(boardIds: readonly number[]): Promise<Map<number, B
  * - a spray wall additionally needs the wall's own enumerable rule, since a
  *   public-flagged wall can still be admin-hidden or scoped to a gym.
  */
-async function toVisibleBoard(
-  row: BoardRow | undefined,
-  viewerId: string | null,
-  heldBoardIds: ReadonlySet<number>,
-): Promise<LiveSessionBoard | null> {
-  if (!row || row.deletedAt) return null;
+async function toVisibleBoard(row: BoardRow | undefined, viewerId: string | null): Promise<LiveSessionBoard | null> {
+  if (!row || row.deletedAt || !row.identityVisible) return null;
   const isOwner = viewerId !== null && row.ownerId === viewerId;
   if (!isOwner) {
-    if (!isRowAnonReadable(row)) return null;
-    if (row.isUnlisted && !heldBoardIds.has(row.id)) return null;
     if (isSprayBoardType(row.boardType) && !(await sprayBoardRowIsReadable(row, viewerId, 'enumerable'))) {
       return null;
     }
@@ -890,7 +888,11 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
   const [profiles, tickStats, boardRows, visibleUserIds] = await Promise.all([
     loadProfiles(pageUserIds),
     loadTickStats(page.map(({ candidate }) => candidate.id)),
-    loadBoardRows(page.flatMap(({ boardId }) => (boardId ? [boardId] : []))),
+    loadBoardRows(
+      page.flatMap(({ boardId }) => (boardId ? [boardId] : [])),
+      viewerId,
+      heldBoardIds,
+    ),
     visibleActivityUserIds(pageUserIds, viewerId),
   ]);
 
@@ -934,7 +936,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
       const creatorId =
         candidate.createdByUserId && visibleUserIds.has(candidate.createdByUserId) ? candidate.createdByUserId : null;
       const [board, currentClimb] = await Promise.all([
-        toVisibleBoard(boardRow, viewerId, heldBoardIds),
+        toVisibleBoard(boardRow, viewerId),
         // Public sessions only, and only when the board type is known and is
         // not a spray wall: a spray wall's climbs stay private to the wall even
         // when the session is public, and an unknown type could be one.

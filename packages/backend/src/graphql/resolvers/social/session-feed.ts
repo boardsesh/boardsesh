@@ -62,23 +62,6 @@ function dailyCardTickSql(tickAlias: string, viewerUserId: string | null | undef
     AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, tickAlias))})`;
 }
 
-/** No session card the viewer can open already covers this climber's day. */
-function noOpenableSessionThatDaySql(
-  tickAlias: string,
-  viewerUserId: string | null | undefined,
-  snapshotAt?: string,
-): SQL {
-  const ticks = sql.identifier(tickAlias);
-  return sql`NOT EXISTS (
-    SELECT 1 FROM boardsesh_ticks session_tick
-    WHERE session_tick.user_id = ${ticks}.user_id
-      AND session_tick.climbed_at::date = ${ticks}.climbed_at::date
-      AND ${openableSessionSql('session_tick', viewerUserId)}
-      AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 'session_tick'))}
-      ${snapshotAt ? sql`AND session_tick.climbed_at <= ${snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
-  )`;
-}
-
 function tickScopeFilter(boardIdFilter: number | null, snapshotAt?: string): SQL {
   return sql`${boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``} ${tickSnapshotFilter(snapshotAt)}`;
 }
@@ -150,7 +133,7 @@ export type SessionFeedPagination = {
 /**
  * Session-grouped activity feed (public, no auth required).
  * Groups ticks by explicitly-created board sessions, with optional daily
- * fallback highlights for users who did not climb in a session that day.
+ * fallback highlights for readable logs outside the viewer's session cards.
  * Always chronological (newest first). Uses offset pagination.
  */
 export async function getSessionFeed(
@@ -249,7 +232,6 @@ export async function getSessionFeed(
           -- to show: a log in somebody else's restricted session lands here too.
           WHERE ${dailyCardTickSql('t', viewerUserId)}
             ${tickScope}
-            AND ${noOpenableSessionThatDaySql('t', viewerUserId, pagination?.snapshotAt)}
         ),
         daily_base AS (
           SELECT
@@ -636,7 +618,6 @@ export const sessionFeedQueries = {
           eq(dbSchema.boardseshTicks.userId, dailySession.userId),
           sql`${dbSchema.boardseshTicks.climbedAt}::date = ${dailySession.day}::date`,
           dailyCardTickSql('boardsesh_ticks', viewerUserId),
-          noOpenableSessionThatDaySql('boardsesh_ticks', viewerUserId),
         )
       : eq(dbSchema.boardseshTicks.sessionId, sessionId);
 

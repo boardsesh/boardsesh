@@ -14,7 +14,7 @@ import { tickQueries } from '../graphql/resolvers/ticks/queries';
 import { activityFeedQueries } from '../graphql/resolvers/social/activity-feed';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
 import { sessionEditMutations } from '../graphql/resolvers/social/session-mutations';
-import { betaLinkQueries } from '../graphql/resolvers/beta-videos/queries';
+import { betaLinkQueries, dropRecentBetaLinksFallback } from '../graphql/resolvers/beta-videos/queries';
 import { privacyMutations } from '../graphql/resolvers/privacy';
 import { canAccessResource } from '../services/privacy';
 import { projectSessionBoardPath } from '../services/board-session-privacy';
@@ -359,6 +359,44 @@ describe('author decides across feeds', () => {
     expect(detail?.ticks.map((tick) => tick.uuid)).toContain('author-decides-home-tick');
   });
 
+  it('keeps restricted-session and standalone ticks beside an openable session on the same day', async () => {
+    await insertSession('author-decides-same-day-open', { createdBy: CLIMBER });
+    await insertSession('author-decides-same-day-restricted', { createdBy: HOST, name: 'Private same-day session' });
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'session',
+      resourceId: 'author-decides-same-day-restricted',
+      ownerId: HOST,
+      audience: 'only_me',
+    });
+    for (const [uuid, sessionId] of [
+      ['author-decides-same-day-open-tick', 'author-decides-same-day-open'],
+      ['author-decides-same-day-restricted-tick', 'author-decides-same-day-restricted'],
+      ['author-decides-same-day-standalone-tick', null],
+    ] as const) {
+      await insertTick(uuid, { sessionId, climbedAt: '2026-09-19T10:00:00Z' });
+    }
+
+    for (const input of [
+      { userId: CLIMBER, includeDailyHighlights: true, limit: 50 },
+      { followingOnly: true, includeDailyHighlights: true, limit: 50 },
+    ]) {
+      const feed = await sessionFeedQueries.sessionGroupedFeed(undefined, { input }, viewer(CLIMBER_FOLLOWER));
+      expect(feed.sessions.find((card) => card.sessionId === 'author-decides-same-day-open')?.tickCount).toBe(1);
+      const daily = feed.sessions.find((card) => card.sessionId === `daily:${CLIMBER}:2026-09-19`);
+      expect(daily).toMatchObject({ tickCount: 2, totalSends: 2, sessionName: null });
+      expect(JSON.stringify(feed)).not.toContain('Private same-day session');
+    }
+    const detail = await sessionFeedQueries.sessionDetail(
+      undefined,
+      { sessionId: `daily:${CLIMBER}:2026-09-19` },
+      viewer(CLIMBER_FOLLOWER),
+    );
+    expect(detail?.ticks.map((tick) => tick.uuid).sort()).toEqual([
+      'author-decides-same-day-restricted-tick',
+      'author-decides-same-day-standalone-tick',
+    ]);
+  });
+
   it('keeps an unlisted session’s card off a stranger’s feed while its link still opens', async () => {
     await insertSession('author-decides-unlisted-session', { createdBy: CLIMBER, isPublic: false, name: 'Quiet one' });
     await insertTick('author-decides-unlisted-tick', {
@@ -417,6 +455,31 @@ describe('author decides across feeds', () => {
     expect(await beta(null)).toMatchObject({ boardId: null });
     expect(await beta(GRANTEE)).toMatchObject({ boardId: inviteOnlyBoardId });
     expect(await beta(CLIMBER)).toMatchObject({ boardId: inviteOnlyBoardId });
+  });
+
+  it('preserves the uploader’s board in recent beta even without ordinary board access', async () => {
+    const link = 'https://www.youtube.com/watch?v=author-decides-recent-beta';
+    await db.insert(dbSchema.boardBetaLinks).values({
+      boardType: 'kilter',
+      climbUuid: CLIMB_UUID,
+      link,
+      isListed: true,
+      createdByUserId: CLIMBER,
+      boardId: inviteOnlyBoardId,
+      thumbnail: '/static/beta-link-thumbnails/author-decides-recent.jpg',
+      createdAt: '2026-10-01T10:00:00Z',
+    });
+    dropRecentBetaLinksFallback();
+    const recent = async (reader: string | null) =>
+      (await betaLinkQueries.recentBetaLinks(undefined, { limit: 50 }, viewer(reader))).find(
+        (item) => item.betaLink.link === link,
+      )?.betaLink;
+    expect(await canAccessResource('board', 'author-decides-invite-only', CLIMBER)).toBe(false);
+    expect(await recent(null)).toMatchObject({ boardId: null });
+    expect(await recent(STRANGER)).toMatchObject({ boardId: null });
+    expect(await recent(CLIMBER)).toMatchObject({ boardId: inviteOnlyBoardId });
+    expect(await recent(GRANTEE)).toMatchObject({ boardId: inviteOnlyBoardId });
+    dropRecentBetaLinksFallback();
   });
 
   it('gives a joiner who cannot see a named board its geometry instead of its slug', async () => {
