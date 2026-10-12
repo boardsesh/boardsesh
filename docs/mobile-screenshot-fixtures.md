@@ -60,6 +60,51 @@ then commit only the updated snapshot reference. Publishing uses the dedicated
 It bundles only manifest-listed fixtures and rejects sensitive request variables
 or other climbers' unpseudonymised identity fields before upload.
 
+### Refresh only the Apple campaign's recorded PrivacySettings query
+
+The manual **Refresh Apple campaign PrivacySettings fixture** workflow records
+the current `GET_PRIVACY_SETTINGS` query through the existing screenshot backend,
+using the screenshot account credentials already held by CI. It has no inputs:
+the query, production upstream, committed Apple pin, and candidate output are
+fixed. A newly added workflow must first land on the default branch before its
+manual dispatch is available; a feature-branch workflow file alone is not a
+dispatchable entrypoint.
+
+The helper verifies the original archive and authenticated account, records one
+real response into a new directory, and uses the existing merger's `newest`
+policy. It checks that only the PrivacySettings fixture is replaced: the current
+document, response, and hashes travel together. All other response and photo
+bytes, capture selectors, session IDs, approved account IDs, and upstream remain
+unchanged. Credentials and live tokens never enter the archive, proof, or logs.
+Historical per-fixture provenance stays verbatim; the new extension must match
+the campaign's production upstream and authenticated account.
+Existing bundled spray photos need no preparation; rerunning the photo preparer
+on their reserved local URLs is not supported.
+
+The normal recorder and merger advance `frozenNow` past the new response's
+actual timestamp. They do not retain an older clock for a later read. The older
+seeded histories keep their genuine timestamps, so their displayed relative
+ages can change. Review those screens in the subsequent full native replay.
+
+The workflow only emits `ios-campaign-privacy-candidate`, containing
+`campaign.json.gz`, `campaign.digest.json`, and `campaign.proof.json`. Its one-query
+replay proves that the current document hits the new recorded response; it does
+not prove the nine native store scenes. Neither pin, the screenshot baseline,
+release assets, nor App Store resources are changed.
+
+1. After this workflow lands, dispatch it and review the candidate's proof.
+2. Publish the approved immutable candidate/reference using the existing portable
+   candidate process below, preserving the original archive and both pins.
+3. Run the iOS screenshot workflow with `cpp_target=none`, `flow=app-store`,
+   `fixtures=replay`, the candidate `fixture_snapshot`, `gate=full`, empty
+   `locales`, `upload=false`, and `publish_baseline=false`.
+4. Require all 16 native shards, nine scenes, five Apple locale folders, normal
+   capture gates, and visual review, including histories and the first headline
+   “One app for all your boards.”
+5. Only after that proof, update `app-stores/apple/campaign-fixtures.json` through
+   the reviewed PR and separately run the genuine regular-listing upload. Keep
+   `app-stores/screenshot-fixtures.json` unchanged for Android.
+
 ### Portable candidate validation
 
 The default publisher still uses the isolated dev bucket. When those `DEV_*`

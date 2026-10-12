@@ -1,0 +1,35 @@
+name: Refresh Apple campaign PrivacySettings fixture
+
+# One authenticated read through the normal recorder. No publication or pin writes.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  record-privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Record and verify the original account's current privacy response
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: vp exec node --import tsx scripts/record-ios-campaign-privacy.ts
+      - name: Upload verified candidate for review and full native replay
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-campaign-privacy-candidate
+          path: ${{ runner.temp }}/ios-campaign-privacy-candidate/export/
+          if-no-files-found: error
+          retention-days: 14
