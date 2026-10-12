@@ -91,17 +91,38 @@ describe('consentRegion', () => {
     expect(resolveConsentRegion(context).promptRequired).toBe(true);
   });
 
-  it('prefers the native Cloudflare province over the custom header', async () => {
-    vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', 'true');
-    await expect(
-      askRegion(CLOUDFLARE_PEER, {
-        host: 'ws.boardsesh.com',
-        'cf-ipcountry': 'CA',
-        'cf-region-code': 'QC',
-        [CONSENT_REGION_EDGE_HEADER_NAME]: 'ON',
-      }),
-    ).resolves.toEqual({ countryCode: 'CA', promptRequired: true });
-  });
+  it.each(['false', 'true'])(
+    'ignores a forged native province when the custom header is absent (gate %s)',
+    async (gate) => {
+      vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', gate);
+      await expect(
+        askRegion(CLOUDFLARE_PEER, {
+          host: 'ws.boardsesh.com',
+          'cf-ipcountry': 'CA',
+          'cf-region-code': 'ON',
+        }),
+      ).resolves.toEqual({ countryCode: 'CA', promptRequired: true });
+    },
+  );
+
+  it.each([
+    ['false', 'ON', 'ON', true],
+    ['true', 'ON', 'QC', true],
+    ['true', 'QC', 'ON', false],
+  ])(
+    'uses only the gated custom province when a native header is forged (gate %s, native %s, custom %s)',
+    async (gate, nativeRegion, customRegion, promptRequired) => {
+      vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', gate);
+      await expect(
+        askRegion(CLOUDFLARE_PEER, {
+          host: 'ws.boardsesh.com',
+          'cf-ipcountry': 'CA',
+          'cf-region-code': nativeRegion,
+          [CONSENT_REGION_EDGE_HEADER_NAME]: customRegion,
+        }),
+      ).resolves.toEqual({ countryCode: 'CA', promptRequired });
+    },
+  );
 
   it('skips the prompt for a US visitor arriving through Cloudflare, signed out', async () => {
     await expect(askRegion(CLOUDFLARE_PEER, { 'cf-ipcountry': 'US' })).resolves.toEqual({
@@ -125,10 +146,12 @@ describe('consentRegion', () => {
     ['qc', true],
     ['ZZ', true],
   ])('uses a trusted Canadian province %j to decide the prompt: %s', async (regionCode, promptRequired) => {
+    vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', 'true');
     await expect(
       askRegion(CLOUDFLARE_PEER, {
+        host: 'ws.boardsesh.com',
         'cf-ipcountry': 'CA',
-        'cf-region-code': regionCode,
+        [CONSENT_REGION_EDGE_HEADER_NAME]: regionCode,
       }),
     ).resolves.toEqual({ countryCode: 'CA', promptRequired });
   });
@@ -141,10 +164,12 @@ describe('consentRegion', () => {
   });
 
   it('accepts Quebec only behind the same trusted private ingress as the country', async () => {
+    vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', 'true');
     await expect(
       askRegion(RAILWAY_INGRESS_PEER, {
+        host: 'ws.boardsesh.com',
         'cf-ipcountry': 'CA',
-        'cf-region-code': 'QC',
+        [CONSENT_REGION_EDGE_HEADER_NAME]: 'QC',
         'x-forwarded-for': `198.51.100.4, ${CLOUDFLARE_PEER}`,
       }),
     ).resolves.toEqual({ countryCode: 'CA', promptRequired: true });

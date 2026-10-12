@@ -193,7 +193,7 @@ export type ConnectionContext = {
   // 'XX' when unknown or untrusted, undefined on WebSocket and test contexts.
   // A coarse country only: no IP is derived from or stored with it.
   edgeCountry?: string;
-  // Coarse province/subdivision from native Cloudflare or the enabled edge rule.
+  // Coarse province/subdivision from the enabled, verified GraphQL edge rule.
   // Unknown on untrusted, missing or malformed headers and WebSocket contexts.
   edgeRegionCode?: string;
   // True when an HTTP request carries `Sec-GPC: 1`, the browser's Global

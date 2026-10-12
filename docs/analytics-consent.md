@@ -70,8 +70,9 @@ the same trusted-hop check the PostHog proxy uses (see `docs/cloudflare.md`):
 a forged header from a direct-origin caller resolves as `XX` and asks. The HTTP
 context carries that coarse country (`ConnectionContext.edgeCountry`) and the
 trusted subdivision (`edgeRegionCode`), which the backend uses only for Canada.
-It prefers native `CF-Region-Code`. The narrow `X-Boardsesh-Region-Code` header
-is ignored until the edge overwrite/remove rule has been applied and
+The optional native `CF-Region-Code` is ignored: a trusted edge hop alone does
+not prove that header was overwritten. The narrow `X-Boardsesh-Region-Code`
+header is ignored until the edge overwrite/remove rule has been applied and
 `BOARDSESH_TRUST_EDGE_REGION_HEADER=true` is set; see
 [Cloudflare deployment order](./cloudflare.md#consent-province-header). Neither is stored; the IP is not read, logged or stored for this. WebSocket operations have no edge
 country and always ask. `myAnalyticsConsent` does not carry `promptRequired`:

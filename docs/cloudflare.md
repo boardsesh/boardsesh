@@ -153,8 +153,10 @@ An empty/undefined expression removes the header, clearing caller input too.
 
 Cloudflare [forbids setting `cf-*` headers in request transforms](https://developers.cloudflare.com/rules/transform/request-header-modification/#important-remarks),
 so the narrow custom header avoids enabling the broader city/coordinate managed
-transform. The backend prefers native `CF-Region-Code` if already available.
-It ignores the custom header unless the trusted CF hop, exact GraphQL route/host,
+transform. The backend ignores optional `CF-Region-Code` entirely because its
+[visitor-location managed transform](https://developers.cloudflare.com/rules/transform/managed-transforms/reference/)
+is not part of this contract; a trusted CF hop alone does not prove optional
+headers were overwritten. It ignores the custom header unless the trusted CF hop, exact GraphQL route/host,
 and `BOARDSESH_TRUST_EDGE_REGION_HEADER=true` are all present.
 
 Deploy order: apply and verify the edge overwrite/remove rule first, then enable

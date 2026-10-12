@@ -117,15 +117,13 @@ export function resolveFlagCountry(req: IncomingMessage): string {
 }
 
 /**
- * Cloudflare's coarse subdivision from the same trusted edge as country.
- * Prefer its native header. The narrow custom header is trusted only after an
- * operator has applied the overwrite/remove rule on our GraphQL edge route
- * and enabled BOARDSESH_TRUST_EDGE_REGION_HEADER. Before that it is caller input.
+ * Coarse subdivision from our verified GraphQL edge overwrite/remove rule.
+ * An operator must apply that rule before enabling BOARDSESH_TRUST_EDGE_REGION_HEADER.
+ * Ignore the optional cf-region-code header: a trusted edge hop does not prove
+ * its visitor-location managed transform was enabled to overwrite caller input.
  */
 export function resolveEdgeRegionCode(req: IncomingMessage): string | undefined {
   if (!isTrustedCloudflareEdge(req)) return undefined;
-  const nativeRegion = req.headers['cf-region-code'];
-  if (typeof nativeRegion === 'string' && /^[A-Z0-9]{1,3}$/.test(nativeRegion)) return nativeRegion;
   if (
     process.env.BOARDSESH_TRUST_EDGE_REGION_HEADER !== 'true' ||
     req.headers.host !== 'ws.boardsesh.com' ||
