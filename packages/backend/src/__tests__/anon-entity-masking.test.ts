@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { socialGymQueries } from '../graphql/resolvers/social/gyms';
@@ -119,15 +120,6 @@ const chooseUnlisted = async (board: { uuid: string }, ownerId: string) => {
   `);
   await db.execute(sql`UPDATE user_boards SET is_public = false, is_unlisted = true WHERE uuid = ${board.uuid}`);
 };
-
-/** Put a board on the map, so a proximity search can find it. */
-const placeBoard = (board: { uuid: string }, latitude: number, longitude: number) =>
-  db.execute(sql`
-    UPDATE user_boards
-    SET latitude = ${latitude}, longitude = ${longitude},
-        location = ST_MakePoint(${longitude}, ${latitude})::geography
-    WHERE uuid = ${board.uuid}
-  `);
 
 const UNLISTED_SHAPES = [
   ['legacy booleans', () => unlistedBoard],
@@ -355,18 +347,50 @@ describe('boardBySlug anonymous masking', () => {
     }
   });
 
-  it('keeps unlisted boards out of nearby search, while a public board on the same spot is found', async () => {
-    for (const board of [publicBoard, unlistedBoard, currentUnlistedBoard]) await placeBoard(board, 47.37, 8.54);
-    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
-      const result = (await socialBoardQueries.searchBoards(
-        {},
-        { input: { latitude: 47.37, longitude: 8.54, radiusKm: 5, limit: 20, offset: 0 } },
-        ctx,
-      )) as { boards: Array<{ uuid: string }> };
-      const found = result.boards.map((board) => board.uuid);
-      expect(found).toContain(publicBoard.uuid);
-      expect(found).not.toContain(unlistedBoard.uuid);
-      expect(found).not.toContain(currentUnlistedBoard.uuid);
+  // The backend test database has no PostGIS (no `user_boards.location`, no
+  // `geography` type), so the proximity branch cannot run here. Its WHERE is
+  // captured and rendered instead: it must carry the same two listing
+  // predicates the text search above proves on real rows, which exclude both
+  // saved shapes of an Unlisted board (`is_unlisted = true`, and the current
+  // control's `is_public = false`).
+  it('keeps unlisted boards out of nearby search: the proximity WHERE lists only public, not-unlisted boards', async () => {
+    const captured: SQL[] = [];
+    const chain = {
+      from: () => chain,
+      where: (condition: SQL) => {
+        captured.push(condition);
+        return chain;
+      },
+      orderBy: () => chain,
+      limit: () => chain,
+      offset: () => chain,
+      // Thenable like Drizzle's builder; no rows, so nothing is enriched.
+      // oxlint-disable-next-line unicorn/no-thenable
+      then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+    };
+    const select = vi.spyOn(db, 'select').mockImplementation((() => chain) as unknown as typeof db.select);
+    try {
+      for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+        captured.length = 0;
+        await socialBoardQueries.searchBoards(
+          {},
+          { input: { latitude: 47.37, longitude: 8.54, radiusKm: 5, limit: 20, offset: 0 } },
+          ctx,
+        );
+        expect(captured).toHaveLength(2);
+        for (const where of captured) {
+          const { sql: text, params } = new PgDialect().sqlToQuery(where);
+          expect(text).toContain('ST_DWithin');
+          const paramFor = (column: string) => {
+            const match = new RegExp(`"user_boards"\\."${column}" = \\$(\\d+)`).exec(text);
+            return match ? params[Number(match[1]) - 1] : undefined;
+          };
+          expect(paramFor('is_public')).toBe(true);
+          expect(paramFor('is_unlisted')).toBe(false);
+        }
+      }
+    } finally {
+      select.mockRestore();
     }
   });
 });
