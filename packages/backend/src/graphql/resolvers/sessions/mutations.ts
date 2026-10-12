@@ -1,3 +1,4 @@
+import { projectSessionBoardPath } from '../../../services/board-session-privacy';
 import { resolveSessionBoardId } from '../../../services/session-board-binding';
 import { canAccessResourceWithoutLink } from '../../../services/privacy';
 import { getPrivacySettings, legacyResourceAudience } from '../../../services/privacy';
@@ -725,7 +726,10 @@ export const sessionMutations = {
     return {
       id: sessionId,
       name: sessionData.name || null,
-      boardPath: sessionData.boardPath,
+      // A concurrent changer may have installed another path after our write.
+      boardPath: await projectSessionBoardPath(sessionData.boardPath, ctx.userId, {
+        presentedByViewer: sessionData.boardPath === boardPath,
+      }),
       users,
       queueState: {
         sequence: queueState.sequence,

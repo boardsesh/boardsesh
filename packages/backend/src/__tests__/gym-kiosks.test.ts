@@ -6,6 +6,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { MAX_KIOSKS_PER_GYM } from '@boardsesh/kiosk';
 import { db } from '../db/client';
 import { socialGymKioskQueries, socialGymKioskMutations } from '../graphql/resolvers/social/gym-kiosks';
+import { requireAnonReadableBoard, requireReadablePresenceBoard } from '../graphql/resolvers/board-presence/shared';
 
 /**
  * Real-DB coverage for PR E's gym-kiosk CRUD + public read surface:
@@ -722,6 +723,49 @@ describe('gymKiosk public read', () => {
     const manageList = await socialGymKioskQueries.gymKiosks(null, { gymUuid: publicGym.uuid }, authCtx(EDITOR));
     const managed = manageList.find((k) => k.slug === 'editor-view');
     expect(managed!.boards.map((b) => b.boardUuid)).toEqual([boardPub1.uuid, boardPriv.uuid]);
+  });
+
+  it('lets verified same-public-gym editors read private presence and revokes it with membership or association', async () => {
+    for (const reader of [OWNER, ADMIN, EDITOR]) {
+      await expect(requireAnonReadableBoard(boardPriv.id, reader)).resolves.toBeUndefined();
+      await expect(requireReadablePresenceBoard(boardPriv.id, reader)).resolves.toMatchObject({
+        anonReadableVerified: false,
+      });
+    }
+    for (const reader of [MEMBER, RANDOM, null]) {
+      await expect(requireAnonReadableBoard(boardPriv.id, reader)).rejects.toThrow('Board not found');
+      await expect(requireReadablePresenceBoard(boardPriv.id, reader)).rejects.toThrow('Board not found');
+    }
+    await db.execute(sql`DELETE FROM gym_members WHERE gym_id = ${publicGym.id} AND user_id = ${EDITOR}`);
+    await expect(requireReadablePresenceBoard(boardPriv.id, EDITOR)).rejects.toThrow('Board not found');
+    await db.update(userBoards).set({ gymId: null }).where(eq(userBoards.id, boardPriv.id));
+    await expect(requireReadablePresenceBoard(boardPriv.id, ADMIN)).rejects.toThrow('Board not found');
+  });
+
+  it('never trusts a kiosk slot or unrelated gym edit role to open a foreign home board', async () => {
+    const foreign = await insertBoard({
+      gymId: privateGym.id,
+      ownerId: RANDOM,
+      name: 'Foreign Private Wall',
+      isPublic: false,
+    });
+    await insertKiosk({
+      gymId: publicGym.id,
+      slug: 'forged-foreign',
+      name: 'Forged',
+      layout: { version: 1, boards: [{ boardUuid: foreign.uuid }], leaderboard: null },
+    });
+    const kiosk = await socialGymKioskQueries.gymKiosk(
+      null,
+      { gymSlug: publicGym.slug, kioskSlug: 'forged-foreign' },
+      authCtx(EDITOR),
+    );
+    expect(kiosk!.boards).toEqual([]);
+    await expect(requireReadablePresenceBoard(foreign.id, EDITOR, foreign.uuid)).rejects.toThrow('Board not found');
+    await db.update(userBoards).set({ gymId: null }).where(eq(userBoards.id, foreign.id));
+    await expect(requireAnonReadableBoard(foreign.id, EDITOR, foreign.uuid)).rejects.toThrow('Board not found');
+    await db.execute(sql`UPDATE gyms SET deleted_at = now() WHERE id = ${publicGym.id}`);
+    await expect(requireReadablePresenceBoard(boardPriv.id, EDITOR)).rejects.toThrow('Board not found');
   });
 
   it('still filters the private slot board for a signed-in NON-editor', async () => {

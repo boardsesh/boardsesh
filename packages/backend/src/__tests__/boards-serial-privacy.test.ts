@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { canAccessResource } from '../services/privacy';
+import { canAccessResourceWithoutLink, canViewResourceLocation } from '../services/privacy';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
 
 // Mock db + dependencies before importing resolver.
@@ -197,6 +197,8 @@ describe('boardsBySerialNumbers privacy', () => {
     });
 
     it('includes name, description, and locationName for public boards', async () => {
+      vi.mocked(canAccessResourceWithoutLink).mockResolvedValueOnce(true);
+      vi.mocked(canViewResourceLocation).mockResolvedValueOnce(true);
       const publicBoard = makeDbBoard({
         isPublic: true,
         name: 'Gym Wall',
@@ -216,6 +218,23 @@ describe('boardsBySerialNumbers privacy', () => {
       expect(board.name).toBe('Gym Wall');
       expect(board.description).toBe('Open to all');
       expect(board.locationName).toBe('Downtown Gym');
+    });
+
+    it('uses current policy to hide capability and UGC despite legacy public flags', async () => {
+      setupDbSelect([makeDbBoard({ isPublic: true, isUnlisted: false })]);
+      const [board] = await socialBoardQueries.boardsBySerialNumbers(
+        null,
+        { serialNumbers: ['SERIAL001'] },
+        makeUnauthCtx(),
+      );
+      expect(board).toMatchObject({
+        uuid: '',
+        slug: '',
+        boardId: null,
+        name: 'kilter',
+        description: null,
+        ownerId: '',
+      });
     });
 
     it('always strips GPS, owner identity, and stats', async () => {
@@ -257,7 +276,8 @@ describe('boardsBySerialNumbers privacy', () => {
       );
 
       const result = results[0];
-      expect(result.uuid).toBe('board-uuid-1');
+      expect(result.uuid).toBe('');
+      expect(result.boardId).toBeNull();
       expect(result.slug).toBe('');
       expect(result.boardType).toBe('kilter');
       expect(result.layoutId).toBe(1);
@@ -316,7 +336,7 @@ describe('boardsBySerialNumbers privacy', () => {
 
   describe('authenticated callers', () => {
     it('keeps controller and timer configuration for an authorized non-editor', async () => {
-      vi.mocked(canAccessResource).mockResolvedValueOnce(true);
+      vi.mocked(canAccessResourceWithoutLink).mockResolvedValueOnce(true);
       setupDbSelectSequence([[makeDbBoard({ isPublic: true, timerName: 'Rogue Gym Timer' })]]);
       const results = await socialBoardQueries.boardsBySerialNumbers(
         null,

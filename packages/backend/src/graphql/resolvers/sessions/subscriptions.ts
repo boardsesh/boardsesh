@@ -78,9 +78,7 @@ export const sessionSubscriptions = {
             // a null would raise a non-null-field violation that nulls the entire
             // sessionUpdates payload and silently drops the seed. Clients treat ''
             // as "keep current" (applySessionRuntimeEvent's `|| prev.boardPath`).
-            boardPath: await projectSessionBoardPath(session?.boardPath ?? '', ctx.userId, {
-              sessionCreatorId: session?.createdByUserId,
-            }),
+            boardPath: await projectSessionBoardPath(session?.boardPath ?? '', ctx.userId),
           } as SessionEvent,
         };
 
@@ -97,9 +95,7 @@ export const sessionSubscriptions = {
               sessionUpdates: {
                 __typename: 'SessionRosterSnapshot' as const,
                 users: roster,
-                boardPath: await projectSessionBoardPath(current?.boardPath ?? '', ctx.userId, {
-                  sessionCreatorId: current?.createdByUserId,
-                }),
+                boardPath: await projectSessionBoardPath(current?.boardPath ?? '', ctx.userId),
               },
             };
             continue;
@@ -131,7 +127,7 @@ export const sessionSubscriptions = {
               sessionUpdates: {
                 ...event,
                 boardPath: await projectSessionBoardPath(event.boardPath, ctx.userId, {
-                  sessionCreatorId: session?.createdByUserId,
+                  presentedByViewer: !!ctx.participantId && event.changedByParticipantId === ctx.participantId,
                 }),
               },
             };

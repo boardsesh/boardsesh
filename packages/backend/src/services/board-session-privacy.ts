@@ -102,18 +102,16 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
  * open, so it comes back as the empty path, which clients read as "no board
  * path". Any other path is returned unchanged.
  *
- * A session invite is not the board's link, so for a live board a joiner
- * normally gets the no-link reading (`visibleBoardIdentityIds`). Two viewers
- * hold the link, and keep the named path while that link still opens the board
- * for them (a home board's slug is its link; a spray wall's never was):
- *  - `presentedByViewer`: the path is the viewer's own input, the `boardPath` a
- *    `joinSession` sends from the board's page;
- *  - `sessionCreatorId`: the session's creator presented this path to start it.
+ * A session invite is not the board's link. A viewer keeps a named path when
+ * presenting it in this request or authoring the path-change event, and while
+ * that link still opens the board. Creating the session is no proof for its
+ * mutable current path, which another member may have selected. Snapshots use
+ * ordinary current board standing, or return geometry on reconnect.
  */
 export async function projectSessionBoardPath(
   boardPath: string,
   viewerId: string | null | undefined,
-  linkHolders: { presentedByViewer?: boolean; sessionCreatorId?: string | null } = {},
+  linkHolders: { presentedByViewer?: boolean } = {},
 ): Promise<string> {
   const named = parseNamedBoardPath(boardPath);
   if (!named) return boardPath;
@@ -156,9 +154,9 @@ export async function projectSessionBoardPath(
 async function holdsLiveBoardLink(
   board: { uuid: string; boardType: string },
   viewerId: string | null | undefined,
-  linkHolders: { presentedByViewer?: boolean; sessionCreatorId?: string | null },
+  linkHolders: { presentedByViewer?: boolean },
 ): Promise<boolean> {
-  const presented = linkHolders.presentedByViewer === true || (!!viewerId && linkHolders.sessionCreatorId === viewerId);
+  const presented = linkHolders.presentedByViewer === true;
   return presented && board.boardType !== 'spray' && (await canAccessResource('board', board.uuid, viewerId));
 }
 

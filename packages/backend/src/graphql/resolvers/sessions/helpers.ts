@@ -101,7 +101,7 @@ export async function buildSessionPayload(
     boardPath: await projectSessionBoardPath(
       inputs.boardPath !== undefined ? inputs.boardPath : sessionData?.boardPath || '',
       ctx.userId,
-      { presentedByViewer: inputs.boardPath !== undefined, sessionCreatorId: sessionData?.createdByUserId },
+      { presentedByViewer: inputs.boardPath !== undefined },
     ),
     users: await redactSessionUsers(users, ctx.userId, sessionId),
     queueState: queueState

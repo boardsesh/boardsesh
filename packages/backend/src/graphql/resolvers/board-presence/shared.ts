@@ -696,7 +696,9 @@ export async function requireActiveBoardById(boardId: number): Promise<ActivePre
   return board;
 }
 
-export type BoardVisibility = Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'isPublic' | 'ownerId'>;
+export type BoardVisibility = Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'isPublic' | 'ownerId'> & {
+  gymId?: number | null;
+};
 
 /**
  * The legacy-boolean anonymous mask: a board flagged `is_public`, or a
@@ -729,6 +731,27 @@ export async function isBoardAnonReadable(boardId: number): Promise<boolean> {
     .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
   return Boolean(board && (await canAccessResource('board', board.uuid, null)));
+}
+
+/** A gym editor may read presence only for boards actually linked to that public gym. */
+async function canReadPresenceBoard(
+  board: Pick<BoardVisibility, 'uuid' | 'gymId'>,
+  viewerUserId: string | null | undefined,
+  presentedBoardUuid?: string | null,
+): Promise<boolean> {
+  if (await canAccessBoard(board.uuid, viewerUserId, presentedBoardUuid)) return true;
+  if (!viewerUserId || board.gymId == null) return false;
+  const [gym] = await db
+    .select()
+    .from(dbSchema.gyms)
+    .where(and(eq(dbSchema.gyms.id, board.gymId), eq(dbSchema.gyms.isPublic, true), isNull(dbSchema.gyms.deletedAt)))
+    .limit(1);
+  if (!gym) return false;
+  // Load after policy denial to avoid the social-gym module's shared-constant
+  // import cycle. This is the same verified authority the kiosk editor uses;
+  // arbitrary kiosk configuration never supplies the board's gym association.
+  const { userCanEditGym } = await import('../social/gyms');
+  return userCanEditGym(gym, viewerUserId);
 }
 
 /**
@@ -777,6 +800,7 @@ export async function requireReadablePresenceBoard(
   const [row] = await db
     .select({
       uuid: dbSchema.userBoards.uuid,
+      gymId: dbSchema.userBoards.gymId,
       isPublic: dbSchema.userBoards.isPublic,
       ownerId: dbSchema.userBoards.ownerId,
       boardType: dbSchema.userBoards.boardType,
@@ -787,7 +811,7 @@ export async function requireReadablePresenceBoard(
     .where(eq(dbSchema.userBoards.id, boardId))
     .limit(1);
 
-  if (!row || row.deletedAt !== null || !(await canAccessBoard(row.uuid, viewerUserId, presentedBoardUuid))) {
+  if (!row || row.deletedAt !== null || !(await canReadPresenceBoard(row, viewerUserId, presentedBoardUuid))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   if (!row) return { anonReadableVerified: !viewerUserId, board: null };
@@ -827,6 +851,7 @@ export async function requireActiveBoardWithVisibilityById(
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
       uuid: dbSchema.userBoards.uuid,
+      gymId: dbSchema.userBoards.gymId,
       isPublic: dbSchema.userBoards.isPublic,
       ownerId: dbSchema.userBoards.ownerId,
     })
@@ -852,7 +877,7 @@ export async function assertAnonReadableBoard(
   viewerUserId: string | null | undefined,
   presentedBoardUuid?: string | null,
 ): Promise<void> {
-  if (!(await canAccessBoard(board.uuid, viewerUserId, presentedBoardUuid)))
+  if (!(await canReadPresenceBoard(board, viewerUserId, presentedBoardUuid)))
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
 }
 

@@ -599,10 +599,10 @@ async function enrichBoard(
 export async function enrichBoards(
   boards: Array<{ board: typeof dbSchema.userBoards.$inferSelect; distanceMeters?: number | null }>,
   authenticatedUserId?: string,
+  options: { allowUnlistedLink?: boolean } = {},
 ) {
-  const access = await Promise.all(
-    boards.map(({ board }) => canAccessResource('board', board.uuid, authenticatedUserId)),
-  );
+  const checkAccess = options.allowUnlistedLink === false ? canAccessResourceWithoutLink : canAccessResource;
+  const access = await Promise.all(boards.map(({ board }) => checkAccess('board', board.uuid, authenticatedUserId)));
   boards = boards.filter((_, index) => access[index]);
   if (boards.length === 0) return [];
 
@@ -1067,10 +1067,20 @@ export const socialBoardQueries = {
     // the DB rows — skip enrichBoards entirely (no owner/stats/follow queries).
     // Public boards include UGC fields; non-public boards get config only.
     if (!ctx.isAuthenticated) {
-      return boards.map((board) => {
+      const nameable = await Promise.all(
+        boards.map((board) => canAccessResourceWithoutLink('board', board.uuid, null)),
+      );
+      const locationVisible = await Promise.all(
+        boards.map(async (board, boardIndex) =>
+          nameable[boardIndex] ? canViewResourceLocation(board.uuid, null) : false,
+        ),
+      );
+      return boards.map((board, boardIndex) => {
+        const canName = nameable[boardIndex];
         return {
-          uuid: board.uuid,
-          slug: board.isPublic && !board.isUnlisted ? board.slug : '',
+          // A controller serial is geometry, never an Unlisted link capability.
+          uuid: canName ? board.uuid : '',
+          slug: canName ? board.slug : '',
           ownerId: '',
           ownerDisplayName: null,
           ownerAvatarUrl: null,
@@ -1078,9 +1088,9 @@ export const socialBoardQueries = {
           layoutId: Number(board.layoutId),
           sizeId: Number(board.sizeId),
           setIds: board.setIds,
-          name: board.isPublic && !board.isUnlisted ? board.name : board.boardType,
-          description: board.isPublic && !board.isUnlisted ? board.description : null,
-          locationName: board.isPublic && !board.isUnlisted && !board.hideLocation ? board.locationName : null,
+          name: canName ? board.name : board.boardType,
+          description: canName ? board.description : null,
+          locationName: canName && locationVisible[boardIndex] ? board.locationName : null,
           latitude: null,
           longitude: null,
           isPublic: board.isPublic,
@@ -1103,7 +1113,7 @@ export const socialBoardQueries = {
           gymId: null,
           // Anonymous caller: a serial is not the board's link, so only a
           // listed public board exposes its channel here.
-          boardId: boardPresenceChannelId(board, board.isPublic && !board.isUnlisted, false),
+          boardId: boardPresenceChannelId(board, canName, false),
           gymUuid: null,
           gymName: null,
           distanceMeters: null,
@@ -1119,6 +1129,7 @@ export const socialBoardQueries = {
     const enriched = await enrichBoards(
       boards.map((board) => ({ board })),
       ctx.userId,
+      { allowUnlistedLink: false },
     );
 
     return enriched;

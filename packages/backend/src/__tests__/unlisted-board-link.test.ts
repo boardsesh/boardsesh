@@ -34,6 +34,9 @@ import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions'
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { privacyMutations } from '../graphql/resolvers/privacy';
 import { projectSessionBoardPath } from '../services/board-session-privacy';
+import { sessionSubscriptions } from '../graphql/resolvers/sessions/subscriptions';
+import { buildSessionPayload } from '../graphql/resolvers/sessions/helpers';
+import * as sharedHelpers from '../graphql/resolvers/shared/helpers';
 
 vi.mock('../graphql/resolvers/shared/helpers', async (importOriginal) => {
   const original = (await importOriginal()) as Record<string, unknown>;
@@ -218,6 +221,91 @@ afterEach(() => {
 });
 
 describe.each(UNLISTED_SHAPES)('an Unlisted home board (%s)', (_shape, makeUnlistedBoard) => {
+  it('never turns a known controller serial into the hidden UUID, while owners and grantees retain it', async () => {
+    const board = await makeUnlistedBoard('Serial Hidden Wall');
+    const serialNumber = 'SERIAL123';
+    await db.update(dbSchema.userBoards).set({ serialNumber }).where(eq(dbSchema.userBoards.id, board.id));
+    expect(
+      await socialBoardQueries.boardsBySerialNumbers(null, { serialNumbers: [serialNumber] }, authCtx(STRANGER)),
+    ).toEqual([]);
+    const [anonymous] = await socialBoardQueries.boardsBySerialNumbers(
+      null,
+      { serialNumbers: [serialNumber] },
+      anonCtx(),
+    );
+    expect(anonymous).toMatchObject({
+      uuid: '',
+      slug: '',
+      boardId: null,
+      name: 'tension',
+      ownerId: '',
+      description: null,
+    });
+    expect(JSON.stringify(anonymous)).not.toContain(board.uuid);
+    expect(JSON.stringify(anonymous)).not.toContain(board.slug);
+    expect(JSON.stringify(anonymous)).not.toContain(board.name);
+    await grant(board, GRANTEE);
+    for (const userId of [OWNER, GRANTEE]) {
+      const [authorized] = await socialBoardQueries.boardsBySerialNumbers(
+        null,
+        { serialNumbers: [serialNumber] },
+        authCtx(userId),
+      );
+      expect(authorized).toMatchObject({ uuid: board.uuid, boardId: board.id, name: board.name });
+    }
+  });
+
+  it('keeps the changed link only for its actual actor, including creator snapshots and payload rereads', async () => {
+    const board = await makeUnlistedBoard('Changed Path Wall');
+    const path = `/b/${board.slug}/40`;
+    const sessionId = uuidv4();
+    await db
+      .insert(dbSchema.boardSessions)
+      .values({ id: sessionId, boardPath: path, createdByUserId: STRANGER, isPublic: true });
+    vi.spyOn(sharedHelpers, 'requireSessionMember').mockResolvedValue(undefined);
+    const creatorContext = { ...authCtx(STRANGER), participantId: 'creator-participant', sessionId };
+    const actorContext = { ...authCtx(OTHER_STRANGER), participantId: 'actual-actor-participant', sessionId };
+    const creator = sessionSubscriptions.sessionUpdates.subscribe(null, { sessionId }, creatorContext);
+    const actor = sessionSubscriptions.sessionUpdates.subscribe(null, { sessionId }, actorContext);
+    try {
+      expect((await creator.next()).value).toMatchObject({
+        sessionUpdates: { boardPath: expect.stringMatching(/^\/tension\/9\//) },
+      });
+      expect((await actor.next()).value).toMatchObject({
+        sessionUpdates: { boardPath: expect.stringMatching(/^\/tension\/9\//) },
+      });
+      const creatorDelta = creator.next();
+      const actorDelta = actor.next();
+      pubsub.publishSessionEvent(sessionId, {
+        __typename: 'SessionBoardPathChanged',
+        boardPath: path,
+        changedByParticipantId: actorContext.participantId,
+      });
+      expect((await creatorDelta).value).toMatchObject({
+        sessionUpdates: { boardPath: expect.stringMatching(/^\/tension\/9\//) },
+      });
+      expect((await actorDelta).value).toMatchObject({ sessionUpdates: { boardPath: path } });
+      const payload = await buildSessionPayload(sessionId, creatorContext, {
+        users: [],
+        queueState: null,
+        lastConnectedBoardSerial: null,
+        isLeader: false,
+      });
+      expect(payload.boardPath).toMatch(/^\/tension\/9\//);
+      const presented = await buildSessionPayload(sessionId, creatorContext, {
+        users: [],
+        queueState: null,
+        lastConnectedBoardSerial: null,
+        isLeader: false,
+        boardPath: path,
+      });
+      expect(presented.boardPath).toBe(path);
+    } finally {
+      await creator.return(undefined);
+      await actor.return(undefined);
+    }
+  });
+
   it('opens by its uuid and by its slug for anyone, signed out included, with its presence channel', async () => {
     const board = await makeUnlistedBoard('Link Wall');
     for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
@@ -297,16 +385,16 @@ describe.each(UNLISTED_SHAPES)('an Unlisted home board (%s)', (_shape, makeUnlis
     ).resolves.toMatchObject({ id: expect.any(String) });
   });
 
-  it("keeps the slug path for the session's creator and for a joiner who sent it, geometry for others", async () => {
+  it('keeps the slug only for a caller who presented it or holds current board standing', async () => {
     const board = await makeUnlistedBoard('Crew Wall');
     const path = `/b/${board.slug}/40`;
     const geometry = '/tension/9/';
 
-    expect(await projectSessionBoardPath(path, STRANGER, { sessionCreatorId: STRANGER })).toBe(path);
+    expect(await projectSessionBoardPath(path, STRANGER)).toMatch(/^\/tension\/9\//);
     expect(await projectSessionBoardPath(path, OTHER_STRANGER, { presentedByViewer: true })).toBe(path);
     expect(await projectSessionBoardPath(path, OWNER)).toBe(path);
     for (const viewer of [OTHER_STRANGER, null]) {
-      const projected = await projectSessionBoardPath(path, viewer, { sessionCreatorId: STRANGER });
+      const projected = await projectSessionBoardPath(path, viewer);
       expect(projected.startsWith(geometry)).toBe(true);
       expect(projected).not.toContain(board.slug);
     }
@@ -314,6 +402,42 @@ describe.each(UNLISTED_SHAPES)('an Unlisted home board (%s)', (_shape, makeUnlis
 });
 
 describe('walking board ids', () => {
+  it('keeps current Only-me location private even when legacy public/hideLocation fields name it', async () => {
+    const board = await insertBoard('Public Location Policy', { isPublic: true });
+    await db
+      .update(dbSchema.userBoards)
+      .set({ serialNumber: 'SERIALLOC', hideLocation: false, locationName: 'Owner home address' })
+      .where(eq(dbSchema.userBoards.id, board.id));
+    await db
+      .insert(dbSchema.resourcePrivacy)
+      .values({ kind: 'board', resourceId: board.uuid, audience: 'public', locationAudience: 'only_me' });
+    const [anonymous] = await socialBoardQueries.boardsBySerialNumbers(
+      null,
+      { serialNumbers: ['SERIALLOC'] },
+      anonCtx(),
+    );
+    expect(anonymous).toMatchObject({ uuid: board.uuid, name: board.name, locationName: null });
+    await grant(board, GRANTEE);
+    const [approved] = await socialBoardQueries.boardsBySerialNumbers(
+      null,
+      { serialNumbers: ['SERIALLOC'] },
+      authCtx(GRANTEE),
+    );
+    expect(approved.locationName).toBeNull();
+    const [owner] = await socialBoardQueries.boardsBySerialNumbers(
+      null,
+      { serialNumbers: ['SERIALLOC'] },
+      authCtx(OWNER),
+    );
+    expect(owner.locationName).toBe('Owner home address');
+    await db
+      .update(dbSchema.resourcePrivacy)
+      .set({ locationAudience: 'public' })
+      .where(eq(dbSchema.resourcePrivacy.resourceId, board.uuid));
+    const [visible] = await socialBoardQueries.boardsBySerialNumbers(null, { serialNumbers: ['SERIALLOC'] }, anonCtx());
+    expect(visible.locationName).toBe('Owner home address');
+  });
+
   it('finds no Unlisted or Invite-only board through any id-keyed read', async () => {
     const publicBoard = await insertBoard('Open Wall', { isPublic: true });
     const legacyUnlisted = await UNLISTED_SHAPES[0][1]('Legacy Link Wall');
