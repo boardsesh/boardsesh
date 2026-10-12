@@ -77,10 +77,11 @@ fixture-photo transport so replay does not rely on expiring private URLs.
 
 Each target declares a pending reference at `app-stores/apple/cpp-fixtures/<target>.json`.
 The files are created only after recording and verification; declaring their paths
-does not attest that a dataset exists. Publish a sanitized immutable snapshot
-through the existing fixture publisher, verify its public download, and save that
-target's checked JSON reference. It uses the existing `version`, `url`, `sha256`,
-`bytes`, and `files` format. Leave the default listing's fixture pin intact.
+does not attest that a dataset exists. Export a sanitized immutable snapshot,
+publish its hash-named archive/reference, and verify full replay before saving
+that target's checked JSON reference. It uses the existing `version`, `url`,
+`sha256`, `bytes`, and `files` format. Follow the target-specific commands below;
+the default publisher's upload mode always rewrites the shared Android pin.
 
 The workflow can prepare the dedicated screenshot account automatically: choose
 one `cpp_target`, `cpp_action=capture`, and `fixtures=record`, leaving `cpp_scenario`
@@ -158,11 +159,13 @@ ownership and the capture scenario, or copies manufacturer recordings unchanged.
 
 After a successful record matrix, CI merges the requested shards and prepares a
 sanitized, hashed fixture-candidate archive artifact. This artifact is reviewable
-and does not publish a pin. Download, publish, and verify its immutable public
-snapshot before committing the target reference and running full replay.
+and does not publish a pin. The `cpp-prepare-record` job requires every requested
+shard and emits `cpp-fixture-candidate-<target>`, containing `<target>.json.gz` and
+`<target>.digest.json`. A partial record matrix is diagnostic; successful archive
+preparation alone does not prove full replay coverage.
 
-Replay requires three
-distinct bundled wall images and validates every asset before launching.
+Spray CPP replay requires three distinct bundled wall images and validates every
+asset before launching.
 
 The iOS workflow dispatch accepts `cpp_target` and `cpp_action` (`plan`,
 `capture`, `upload`, or `submit`). A plan produces a read-only discovery artifact;
@@ -170,6 +173,122 @@ capture produces review artifacts. Upload and submit require full replay coverag
 serialize with the other store writers, and use the existing Production environment.
 That environment permits `main` and `release/next`; App Store operations on a feature
 branch are blocked by its deployment policy.
+
+## Prepare, publish, and verify one target
+
+Keep the shared Android and default Apple campaign pins unchanged. Do not run
+`mobile:screenshot-fixtures-publish` without `--archive` for a CPP: its upload
+mode writes `app-stores/screenshot-fixtures.json`, and it has no target-reference
+option. The steps below add immutable fixture assets to the existing
+`screenshots-baseline` prerelease; they do not replace its baseline manifest or
+screenshot ZIPs. Run the commands from the repository root.
+Use one Bash shell for these blocks so their variables persist. Start with
+`set -euo pipefail`, as shown in both preparation alternatives, so a failed
+new-directory or filename guard stops subsequent commands.
+
+1. Download the prepared artifact from a successful record run. Set the target
+   and actual run ID; `CPP_EXPORT` must be a new directory.
+
+   ```bash
+   set -euo pipefail
+   CPP_TARGET=kilter
+   CPP_RUN_ID='<successful-record-run-id>'
+   CPP_EXPORT=".boardsesh/cpp/$CPP_TARGET/candidate-$CPP_RUN_ID"
+   test ! -e "$CPP_EXPORT"
+   gh run download "$CPP_RUN_ID" --repo boardsesh/boardsesh \
+     --name "cpp-fixture-candidate-$CPP_TARGET" --dir "$CPP_EXPORT"
+   ```
+
+   For a local recording, use a new prepared directory and export instead:
+
+   ```bash
+   set -euo pipefail
+   CPP_TARGET=kilter
+   CPP_EXPORT=.boardsesh/cpp/kilter/candidate-new
+   test ! -e "$CPP_EXPORT"
+   vp exec node --import tsx scripts/prepare-ios-campaign-fixtures.ts \
+     .boardsesh/cpp/kilter/recording .boardsesh/cpp/kilter/prepared-new \
+     --cpp --refresh-photo-urls
+   vp run mobile:screenshot-fixtures-pseudonymise -- \
+     --dir .boardsesh/cpp/kilter/prepared-new --check
+   mkdir -p "$CPP_EXPORT"
+   (set -C; vp exec node --import tsx scripts/screenshot-fixtures-publish.ts \
+     --archive "$CPP_EXPORT/$CPP_TARGET.json.gz" \
+     .boardsesh/cpp/kilter/prepared-new > "$CPP_EXPORT/$CPP_TARGET.digest.json")
+   ```
+
+   Substitute the same target's directories for other pages. Spray signature
+   refresh uses `SCREENSHOT_USER_EMAIL`/`SCREENSHOT_USER_PASSWORD` and a
+   `SCREENSHOT_UPSTREAM` matching the recording. `--cpp` derives authorized walls
+   from the real recorded roster/scenario; manufacturer candidates are copied
+   unchanged. The archive exporter refuses to replace an existing archive.
+
+2. Name the archive/reference by its digest. The reference points to the archive,
+   not to another reference. Use fresh local filenames; preserve existing assets.
+
+   ```bash
+   CPP_SHA=$(jq -r .sha256 "$CPP_EXPORT/$CPP_TARGET.digest.json")
+   CPP_ARCHIVE_NAME="cpp-fixtures-$CPP_TARGET-$CPP_SHA.json.gz"
+   CPP_REFERENCE_NAME="cpp-fixtures-$CPP_TARGET-$CPP_SHA.json"
+   CPP_REFERENCE_URL="https://github.com/boardsesh/boardsesh/releases/download/screenshots-baseline/$CPP_REFERENCE_NAME"
+   test ! -e "$CPP_EXPORT/$CPP_ARCHIVE_NAME"
+   test ! -e "$CPP_EXPORT/$CPP_REFERENCE_NAME"
+   cp -n "$CPP_EXPORT/$CPP_TARGET.json.gz" "$CPP_EXPORT/$CPP_ARCHIVE_NAME"
+   (set -C; jq --arg url "https://github.com/boardsesh/boardsesh/releases/download/screenshots-baseline/$CPP_ARCHIVE_NAME" \
+     '{version: 1, url: $url, sha256, bytes, files}' \
+     "$CPP_EXPORT/$CPP_TARGET.digest.json" > "$CPP_EXPORT/$CPP_REFERENCE_NAME")
+   ```
+
+3. Publish both new immutable assets. Omit `--clobber`; if either hash-named
+   asset already exists, verify its bytes instead of replacing it.
+
+   ```bash
+   gh release upload screenshots-baseline --repo boardsesh/boardsesh \
+     "$CPP_EXPORT/$CPP_ARCHIVE_NAME" "$CPP_EXPORT/$CPP_REFERENCE_NAME"
+   vp run mobile:screenshot-fixtures-fetch -- \
+     --reference "$CPP_EXPORT/verified-reference.json" \
+     --reference-url "$CPP_REFERENCE_URL"
+   ```
+
+   Fetch verifies the public reference, archive checksum/size, file count,
+   paths, and base64 decoding of the archived bytes. It installs only the
+   explicit candidate reference here; neither default pin changes. Replay
+   startup and the full native capture validate fixture semantics and coverage.
+
+4. Replay the entire target with the candidate reference before committing a pin.
+   Use the reviewed feature branch until merge, then `main`. The branch must
+   contain the CPP workflow; the command below selects your current branch.
+
+   ```bash
+   CPP_CAPTURE_REF=$(git branch --show-current)
+   test -n "$CPP_CAPTURE_REF"
+   gh workflow run mobile-screenshots-ios.yml --repo boardsesh/boardsesh \
+     --ref "$CPP_CAPTURE_REF" -f cpp_target="$CPP_TARGET" \
+     -f cpp_action=capture -f fixtures=replay \
+     -f fixture_snapshot="$CPP_REFERENCE_URL" -f locales='' \
+     -f gate=full -f upload=false -f publish_baseline=false
+   ```
+
+   Empty workflow `locales` selects all four app languages and all four common
+   devices (16 shards for this target). A candidate override is scoped to one
+   target, so do not combine it with `cpp_target=all`. Keep `cpp_action=capture`:
+   `upload=false` alone does not disable CPP upload/submit actions. Require every
+   shard to pass and inspect the nine-image exports/contact sheets for all five
+   storefront locales. Record-mode images cannot be uploaded.
+
+5. After successful full replay and image review, install only the selected
+   target's verified reference, then commit that JSON file.
+
+   ```bash
+   vp run mobile:screenshot-fixtures-fetch -- \
+     --reference "app-stores/apple/cpp-fixtures/$CPP_TARGET.json" \
+     --reference-url "$CPP_REFERENCE_URL"
+   git diff -- "app-stores/apple/cpp-fixtures/$CPP_TARGET.json"
+   ```
+
+   Fetch preserves the previous target pin if verification fails. Review an
+   intentional target-pin update; never copy it onto
+   `app-stores/screenshot-fixtures.json` or `app-stores/apple/campaign-fixtures.json`.
 
 ## Capture and review
 

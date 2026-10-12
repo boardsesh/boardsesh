@@ -18,6 +18,14 @@ for Android and other capture flows. Each reference records the URL, SHA-256,
 compressed byte count, and file count. A checkout always fetches the same snapshot,
 without S3 credentials or production access.
 
+Custom product pages have separate target references at
+`app-stores/apple/cpp-fixtures/{kilter,tension,moonboard,spray}.json`. Prepare,
+publish, and replay each target using the
+[CPP candidate instructions](app-store-custom-product-pages.md#prepare-publish-and-verify-one-target).
+The default publisher writes `app-stores/screenshot-fixtures.json`; do not use
+its upload mode for CPPs. CPP archive export and target-reference installation
+leave both that shared pin and `app-stores/apple/campaign-fixtures.json` intact.
+
 The Apple campaign archive and reference are hash-named assets on the existing
 `screenshots-baseline` GitHub prerelease. They leave its screenshot ZIPs and
 baseline manifest unchanged. Adding these fixture assets does not promote a
@@ -165,7 +173,7 @@ startup check found a fixture it cannot replay, printing the list.
 | `GET /static/*`                    | recorded bytes + recorded `Content-Type`                             | fetched with `redirect: follow`, keyed by the ORIGINAL path          |
 | `GET /health`, `/health/db`        | `{"status":"healthy",...}`                                           | same                                                                 |
 | `GET /__screenshot-backend/status` | the counters                                                         | same                                                                 |
-| WS upgrade on `/graphql`           | manifest-listed GraphQL responses and initial subscription snapshots | inert graphql-ws: acks and pongs, never proxies or records responses |
+| WS upgrade on `/graphql`           | manifest-listed GraphQL responses and initial subscription snapshots | ordinary recording: inert acks/pongs; verified CPP recording: scoped native session relay |
 | anything else                      | `404` + `MISS route`                                                 | `404` + `MISS route`                                                 |
 
 The catch-all is deliberately **not** proxied in either mode. A call nobody
@@ -193,10 +201,26 @@ invalidation signal sent by the production backend.
 Captures that exercise cache revalidation must supply its initial snapshot in
 the fixture bundle; silent replay is only a no-event control for that path.
 
-Record mode still only acknowledges connections and pings over WebSocket. It
-does **not** record or proxy a live WebSocket stream. Initial subscription
+Ordinary record mode, including default-listing and Android recordings, only
+acknowledges connections and pings over WebSocket. Its initial subscription
 snapshots must be supplied in the sanitized fixture bundle using the ordinary
 GraphQL fixture format and manifest entries; payloads stay in object storage.
+
+CPP recording is the narrow exception: the backend must receive the explicit
+`app-store-cpp` flow and a real `capture.cpp` scenario. It binds the account from
+verified upstream authentication/profile data, checks the owned private session
+and primary board configuration, and maintains one genuine upstream connection
+so a dormant active session can be previewed and joined. Only the pinned native
+join, queue, and roster documents for that session are relayed. Full React Native
+JOIN replies and initial FullSync/roster snapshots supply fixtures; minimal
+ActivityKit JOIN/Queue replies are relayed but cannot win the recorded fixture
+key. Tokens remain in memory, and persisted responses use the same identity,
+pseudonymisation, credential, and provenance checks as HTTP. CPP replay projects
+only fields actually present in those full recorded responses for the pinned
+minimal native clients; missing fields and changed scopes fail. This does not
+enable general WebSocket recording or change ordinary record/replay behavior.
+Use [CPP bootstrap and capture](app-store-custom-product-pages.md#genuine-capture-data-comes-first)
+for the account, permanent-session, and scenario prerequisites.
 
 An optional manifest `capture` object selects the existing Android campaign
 scenario automatically. The campaign bundle carries:
@@ -227,8 +251,8 @@ the two approved test identities and their real avatars. The session preview,
 join response, `QueueUpdates` FullSync, `SessionUpdates` roster snapshot, and the
 queries used by those screens must all describe that same sanitized scenario.
 Changing the title, counts, or current climb requires updating the flow's visible
-anchors together with the bundle. WebSocket recording remains unsupported; supply
-these initial snapshots in the bundle explicitly.
+anchors together with the bundle. This ordinary Android campaign does not use
+the CPP recording exception; supply its initial snapshots in the bundle explicitly.
 
 The optional `profileSessionId` selects a separate, populated historical recap.
 With six board selectors, Android adds `14-logbook` and `15-session-detail` to
@@ -253,7 +277,7 @@ selectors must resolve to boards and climb responses present in the same bundle.
 Android uses these boards unless `--boards` explicitly overrides them, and passes
 the session ID to Maestro as `SCREENSHOT_SHARED_SESSION_ID` plus the effective
 selector count as `SCREENSHOT_BOARD_COUNT`. No manual environment setup is needed.
-Legacy manifests and record mode pass an empty session ID, keeping the original
+Legacy manifests and ordinary Android record mode pass an empty session ID, keeping the original
 eight-shot flow even when extra boards are configured. With a shared-session ID,
 the flow captures `10-wall-status` before joining the crew: it selects
 `Guessing Games` locally while the live header still says
