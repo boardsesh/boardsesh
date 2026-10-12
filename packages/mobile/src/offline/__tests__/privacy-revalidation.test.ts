@@ -40,6 +40,8 @@ import {
 import { createTestDatabase, markScopeDownloaded, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import {
   needsPrivacyRevalidation,
+  requirePrivacyRevalidation,
+  persistCatalogWithdrawal,
   revalidatePrivateCatalog,
   needsCatalogOutboxRepair,
   waitForPrivacyRevalidation,
@@ -56,6 +58,47 @@ beforeEach(() => {
 });
 
 describe('downloaded catalogue privacy', () => {
+  it('keeps a marker-only withdrawal closed after process memory resets', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await revalidatePrivateCatalog(database, 'viewer');
+    request.mockClear();
+    requirePrivacyRevalidation();
+    await persistCatalogWithdrawal(database);
+    expect(request).not.toHaveBeenCalled();
+    expect(await database.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY])).toBeNull();
+    vi.resetModules();
+    const restartedCatalog = await import('../catalog-access');
+    expect(await restartedCatalog.canReadPrivateCatalog(database)).toBe(false);
+  });
+
+  it('waits for marker-only withdrawal before a newer repair may authorize', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await revalidatePrivateCatalog(database, 'viewer');
+    request.mockClear();
+    const originalWrite = database.runAsync.bind(database);
+    let releaseWrite: (() => void) | undefined;
+    const writeHeld = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    vi.spyOn(database, 'runAsync').mockImplementationOnce(async (query, params) => {
+      await writeHeld;
+      return originalWrite(query, params);
+    });
+    requirePrivacyRevalidation();
+    const withdrawal = persistCatalogWithdrawal(database);
+    const repair = revalidatePrivateCatalog(database, 'viewer');
+    // Let immediately available work settle while the old SQL write is held.
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    expect(request).not.toHaveBeenCalled();
+    releaseWrite?.();
+    await withdrawal;
+    await repair;
+    expect(request).toHaveBeenCalledOnce();
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
   it('persists withdrawal while offline without attempting network authorization', async () => {
     database = createTestDatabase();
     await runMigrations(database);

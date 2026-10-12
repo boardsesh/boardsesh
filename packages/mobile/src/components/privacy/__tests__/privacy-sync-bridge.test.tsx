@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => ({
   viewer: 'viewer',
   database: { id: 1 } as { id: number } | null,
   online: true,
+  offlineMode: false,
+  transportRevision: 0,
+  authorizedViewer: 'viewer' as string | null,
+  markerRead: vi.fn<() => Promise<string | null>>(),
+  connectedListener: undefined as (() => void) | undefined,
+  stopConnected: vi.fn(),
   state: 'active',
   credential: 0,
   mismatch: false,
@@ -16,12 +22,14 @@ const mocks = vi.hoisted(() => ({
   mismatchListener: undefined as (() => void) | undefined,
   handler: undefined as (() => Promise<void>) | undefined,
   databaseListener: undefined as (() => void) | undefined,
+  databaseListeners: new Set<() => void>(),
   onlineListener: undefined as ((online: boolean) => void) | undefined,
   foreground: undefined as ((state: string) => void) | undefined,
   subscribe: vi.fn((_operation: unknown, _callbacks: unknown) => vi.fn()),
   revalidate: vi.fn<(...args: unknown[]) => Promise<void>>(),
   require: vi.fn(),
   report: vi.fn(),
+  persistWithdrawal: vi.fn<(...args: unknown[]) => Promise<void>>(),
   queryClient: {},
 }));
 vi.mock('react-native', () => ({
@@ -53,10 +61,29 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: mocks.viewer } }) }));
 vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: mocks.privacy }) }));
-vi.mock('../../../lib/graphql/ws-client', () => ({ getWsClient: () => ({ subscribe: mocks.subscribe }) }));
+vi.mock('../../../lib/graphql/ws-client', () => ({
+  getWsClient: () => ({
+    on: (_event: string, callback: () => void) => {
+      mocks.connectedListener = callback;
+      return () => {
+        mocks.stopConnected();
+        if (mocks.connectedListener === callback) mocks.connectedListener = undefined;
+      };
+    },
+    subscribe: mocks.subscribe,
+  }),
+}));
+vi.mock('../../../lib/connectivity/use-connectivity', () => ({
+  selectOfflineMode: () => mocks.offlineMode,
+  useConnectivityField: () => mocks.offlineMode,
+}));
+vi.mock('../../../lib/auth-transport-revision', () => ({
+  useAuthTransportRevision: () => mocks.transportRevision,
+}));
 vi.mock('../../../lib/privacy/privacy-cache', () => ({
   getPrivacyCredentialGeneration: () => mocks.credential,
-  invalidatePrivacyQueries: () => mocks.handler?.(),
+  invalidatePrivacyQueries: (_queryClient: unknown, beforeRefetch?: () => Promise<void>) =>
+    beforeRefetch ? beforeRefetch() : (mocks.handler?.() ?? Promise.resolve()),
   registerPrivacyRevalidation: (handler: () => Promise<void>) => {
     mocks.handler = handler;
     return () => {
@@ -70,6 +97,7 @@ vi.mock('../../../offline/privacy-revalidation', () => ({
   PrivacyRevalidationDeferredError: class extends Error {},
   revalidatePrivateCatalog: mocks.revalidate,
   requirePrivacyRevalidation: mocks.require,
+  persistCatalogWithdrawal: mocks.persistWithdrawal,
   needsCatalogOutboxRepair: () => mocks.outboxRepairRequired,
 }));
 vi.mock('../../../offline/offline-sync-adapter', () => ({
@@ -90,10 +118,7 @@ vi.mock('../../../db/connection', () => ({
   },
 }));
 vi.mock('../../../offline/catalog-access', () => ({
-  canReadPrivateCatalog: async () => {
-    if (mocks.mismatch) mocks.mismatchListener?.();
-    return !mocks.mismatch;
-  },
+  getAuthorizedCatalogViewerId: () => mocks.markerRead(),
   subscribeCatalogCredentialMismatch: (listener: () => void) => {
     mocks.mismatchListener = listener;
     return () => {
@@ -118,11 +143,21 @@ beforeEach(() => {
   mocks.viewer = 'viewer';
   mocks.database = { id: 1 };
   mocks.online = true;
+  mocks.offlineMode = false;
+  mocks.transportRevision = 0;
+  mocks.authorizedViewer = 'viewer';
+  mocks.connectedListener = undefined;
+  mocks.databaseListeners.clear();
+  mocks.markerRead.mockReset().mockImplementation(async () => {
+    if (mocks.mismatch) mocks.mismatchListener?.();
+    return mocks.mismatch ? null : mocks.authorizedViewer;
+  });
   mocks.state = 'active';
   mocks.credential = 0;
   mocks.mismatch = false;
   mocks.outboxRepairRequired = false;
   mocks.revalidate.mockReset().mockResolvedValue();
+  mocks.persistWithdrawal.mockReset().mockResolvedValue();
 });
 afterEach(() => {
   cleanup();
@@ -130,6 +165,312 @@ afterEach(() => {
 });
 
 describe('privacy revocation subscription', () => {
+  it.each([null, 'another-viewer'])(
+    'repairs the startup marker %j without a server first event',
+    async (authorizedViewer) => {
+      mocks.authorizedViewer = authorizedViewer;
+      render(<PrivacySyncBridge />);
+      await act(async () => {});
+      expect(mocks.revalidate).toHaveBeenCalledOnce();
+      expect(mocks.revalidate.mock.calls[0][1]).toBe('viewer');
+    },
+  );
+
+  it('keeps a matching startup marker until a connection needs fresh authorization', async () => {
+    render(<PrivacySyncBridge />);
+    await act(async () => {});
+    expect(mocks.markerRead).toHaveBeenCalledOnce();
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it('probes a missing startup marker when the database is first published', async () => {
+    mocks.database = null;
+    mocks.authorizedViewer = null;
+    render(<PrivacySyncBridge />);
+    await act(async () => {});
+    expect(mocks.markerRead).not.toHaveBeenCalled();
+    mocks.database = { id: 2 };
+    await act(async () => mocks.databaseListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    expect(mocks.revalidate.mock.calls[0][0]).toBe(mocks.database);
+  });
+
+  it('discards a startup marker probe after the credential changes', async () => {
+    let finishProbe: ((viewer: string | null) => void) | undefined;
+    mocks.markerRead.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishProbe = resolve;
+        }),
+    );
+    render(<PrivacySyncBridge />);
+    mocks.credential += 1;
+    await act(async () => finishProbe?.(null));
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    expect((mocks.revalidate.mock.calls[0][2] as () => boolean)()).toBe(true);
+  });
+
+  it('discards an old-account startup probe after the next account installs its bridge', async () => {
+    let finishProbe: ((viewer: string | null) => void) | undefined;
+    mocks.markerRead.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishProbe = resolve;
+        }),
+    );
+    const view = render(<PrivacySyncBridge />);
+    mocks.viewer = 'next-viewer';
+    mocks.authorizedViewer = null;
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    expect(mocks.revalidate.mock.calls[0][1]).toBe('next-viewer');
+    await act(async () => finishProbe?.(null));
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+  });
+
+  it('discards an old-handle startup probe while checking the replacement handle', async () => {
+    let finishProbe: ((viewer: string | null) => void) | undefined;
+    mocks.markerRead.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishProbe = resolve;
+        }),
+    );
+    render(<PrivacySyncBridge />);
+    mocks.database = { id: 2 };
+    mocks.authorizedViewer = null;
+    await act(async () => mocks.databaseListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    expect(mocks.revalidate.mock.calls[0][0]).toBe(mocks.database);
+    await act(async () => finishProbe?.(null));
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+  });
+
+  it('coalesces reconnects and the compatibility first event while a repair runs', async () => {
+    let finishRepair: (() => void) | undefined;
+    mocks.revalidate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRepair = resolve;
+        }),
+    );
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    const oldCurrent = mocks.revalidate.mock.calls[0][2] as () => boolean;
+    await act(async () => {
+      mocks.connectedListener?.();
+      revoke();
+    });
+    expect(oldCurrent()).toBe(false);
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    await act(async () => finishRepair?.());
+    expect(mocks.revalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebinds the replaced socket after offline mode without invalidating valid offline downloads', async () => {
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => {});
+    const oldConnected = mocks.connectedListener;
+    mocks.offlineMode = true;
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.connectedListener).toBeUndefined();
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    mocks.offlineMode = false;
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+    await act(async () => oldConnected?.());
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+  });
+
+  it('retires connection callbacks and a pending startup probe on unmount', async () => {
+    let finishProbe: ((viewer: string | null) => void) | undefined;
+    mocks.markerRead.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishProbe = resolve;
+        }),
+    );
+    const view = render(<PrivacySyncBridge />);
+    const oldConnected = mocks.connectedListener;
+    view.unmount();
+    expect(mocks.stopConnected).toHaveBeenCalledOnce();
+    expect(mocks.connectedListener).toBeUndefined();
+    await act(async () => {
+      oldConnected?.();
+      finishProbe?.(null);
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('withdraws on a connection before privacy readiness, then repairs once capability arrives', async () => {
+    mocks.privacy = undefined;
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.require).toHaveBeenCalledOnce();
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    mocks.privacy = { enabled: false };
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+  });
+
+  it('withdraws on a connection before the profile is ready, then repairs its current viewer', async () => {
+    mocks.viewer = '';
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.require).toHaveBeenCalledOnce();
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    mocks.viewer = 'viewer';
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    expect(mocks.revalidate.mock.calls[0][1]).toBe('viewer');
+  });
+
+  it('persists an early withdrawal after late database readiness while offline', async () => {
+    mocks.database = null;
+    mocks.privacy = undefined;
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.persistWithdrawal).not.toHaveBeenCalled();
+    mocks.offlineMode = true;
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    mocks.database = { id: 2 };
+    await act(async () => mocks.databaseListener?.());
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    expect(mocks.persistWithdrawal.mock.calls[0][0]).toBe(mocks.database);
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('retries an early locked withdrawal without another socket or handle event', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('bounds early withdrawal retries and resumes them on foreground after exhaustion', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValue(new Error('locked'));
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(4);
+    mocks.persistWithdrawal.mockResolvedValue();
+    await act(async () => mocks.foreground?.('active'));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(5);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(5);
+  });
+
+  it('defers an early withdrawal timer in the background and resumes without network on foreground', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    mocks.state = 'background';
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    mocks.online = false;
+    mocks.state = 'active';
+    await act(async () => mocks.foreground?.('active'));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it.each(['credentials', 'teardown'])('retires an early withdrawal timer after %s changes', async (change) => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    if (change === 'credentials') mocks.credential += 1;
+    else view.unmount();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('retires an early withdrawal timer when readiness hands off authorization', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    mocks.privacy = { enabled: false };
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+  });
+
+  it('retries an early withdrawal on the replacement handle after the old write rejects', async () => {
+    let rejectWrite: ((error: Error) => void) | undefined;
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectWrite = reject;
+        }),
+    );
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    mocks.database = { id: 2 };
+    await act(async () => mocks.databaseListener?.());
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => rejectWrite?.(new Error('old handle closed')));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    expect(mocks.persistWithdrawal.mock.calls[1][0]).toBe(mocks.database);
+    expect(mocks.report).not.toHaveBeenCalled();
+  });
+
+  it('rebinds the connection listener when the native viewer changes', async () => {
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => {});
+    const oldConnected = mocks.connectedListener;
+    mocks.viewer = 'next-viewer';
+    mocks.authorizedViewer = 'next-viewer';
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.stopConnected).toHaveBeenCalledOnce();
+    await act(async () => oldConnected?.());
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    expect(mocks.revalidate.mock.calls[0][1]).toBe('next-viewer');
+  });
+
+  it('rebinds a same-viewer browser auth transport replacement', async () => {
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => {});
+    const oldConnected = mocks.connectedListener;
+    mocks.transportRevision += 1;
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+    expect(mocks.stopConnected).toHaveBeenCalledOnce();
+    await act(async () => oldConnected?.());
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    expect((mocks.revalidate.mock.calls[0][2] as () => boolean)()).toBe(true);
+  });
+
   it('coalesces delivered writes into one repair of a preserved foreign row', async () => {
     render(<PrivacySyncBridge />);
     await act(async () => revoke());
@@ -242,6 +583,13 @@ describe('privacy revocation subscription', () => {
     expect((mocks.revalidate.mock.calls[0][3] as () => boolean)()).toBe(false);
     expect(mocks.report).not.toHaveBeenCalled();
     mocks.online = true;
+    mocks.offlineMode = false;
+    mocks.authorizedViewer = 'viewer';
+    mocks.connectedListener = undefined;
+    mocks.markerRead.mockReset().mockImplementation(async () => {
+      if (mocks.mismatch) mocks.mismatchListener?.();
+      return mocks.mismatch ? null : mocks.authorizedViewer;
+    });
     await act(async () => mocks.onlineListener?.(true));
     expect(mocks.revalidate).toHaveBeenCalledTimes(2);
     expect(mocks.revalidate.mock.calls[0][0]).toBe(mocks.database);

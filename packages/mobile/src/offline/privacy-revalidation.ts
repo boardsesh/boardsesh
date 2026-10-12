@@ -77,6 +77,27 @@ const backgroundWriteRetry = {
   budgetMs: OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
 };
 
+/** Persist an already withdrawn marker while identity/capability is still loading. */
+export function persistCatalogWithdrawal(db: OfflineDatabase, isCurrent: () => boolean = () => true): Promise<void> {
+  const generation = revalidationGeneration;
+  const previous = pendingRevalidation;
+  const current = () => generation === revalidationGeneration && isCurrent();
+  const task = (async () => {
+    if (previous) await previous.catch(() => {});
+    if (!current()) return;
+    await runLocalWriteWithRetry(async () => {
+      if (current()) await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY]);
+    }, backgroundWriteRetry);
+  })();
+  const completion = task.finally(() => {
+    if (pendingRevalidation === completion) pendingRevalidation = null;
+  });
+  // Full authorization waits for this write too. A delayed withdrawal must not
+  // delete the marker that a newer repair has already authorized.
+  pendingRevalidation = completion;
+  return completion;
+}
+
 export function needsPrivacyRevalidation(): boolean {
   return pendingRevalidation !== null || revalidationFailed;
 }
