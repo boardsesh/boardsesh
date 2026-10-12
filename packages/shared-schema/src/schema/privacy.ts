@@ -105,8 +105,8 @@ export const privacyTypeDefs = /* GraphQL */ `
     invitedBy: ID
   }
   """
-  A home board's share link. Opening it signed in makes the climber an
-  approved member of the board straight away.
+  A home board's share link. A signed-in climber who opens it and chooses Join
+  becomes an approved member of the board; opening it alone grants nothing.
   """
   type BoardShareLink {
     boardUuid: ID!
@@ -138,7 +138,18 @@ export const privacyTypeDefs = /* GraphQL */ `
     privacyRelationship(userId: ID!): PrivacyRelationship!
     contentAudience(entityType: PrivacyContentType!, entityId: ID!): PrivacyContentAudience!
     resourcePrivacy(kind: PrivacyResourceKind!, resourceId: ID!): ResourcePrivacySettings
-    resourceAccessRequests(kind: PrivacyResourceKind!, resourceId: ID!): [PrivacyResourceGrant!]!
+    """
+    The people with a grant on a board or session the viewer owns. Without
+    userIds: pending requests first, then members, newest first, 100 from
+    offset; removed people are left out. With userIds (up to 100): those
+    people's grants, whatever their status.
+    """
+    resourceAccessRequests(
+      kind: PrivacyResourceKind!
+      resourceId: ID!
+      offset: Int
+      userIds: [ID!]
+    ): [PrivacyResourceGrant!]!
     """
     The owner's share link for a Followers or Invite-only home board, minted on
     first read. Null for a Public, Unlisted or Only-me board, and for a spray wall.

@@ -11,6 +11,7 @@ import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
 import {
   useResourceAccessAction,
   useResourceAccessRequests,
+  useResourceGrantStatuses,
   useResourcePrivacy,
 } from '../../lib/graphql/hooks/use-resource-privacy';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
@@ -69,20 +70,35 @@ export function ResourceAccessScreen() {
   const isSearching = searchText.trim().length >= 2;
   const grants = useResourceAccessRequests(kind, resourceId, canManage);
   const search = useSearchUsers(searchText, canManage && isSearching);
+  const searchUserIdPages = useMemo(
+    () => (search.data?.pages ?? []).map((page) => page.results.map((result) => result.user.id)),
+    [search.data],
+  );
+  // Each search result's grant comes from the server, not from the loaded
+  // access list: a share link can put a member past its first page.
+  const statuses = useResourceGrantStatuses(kind, resourceId, searchUserIdPages, canManage && isSearching);
   const action = useResourceAccessAction();
   const people = useMemo<AccessPerson[]>(() => {
     if (!canManage) return [];
-    const grantIndex = new Map((grants.data ?? []).map((grant) => [grant.userId, grant.status]));
-    return isSearching
-      ? (search.data?.pages.flatMap((page) => page.results) ?? [])
-          .filter((result) => result.user.id !== profile?.id)
-          .map((result) => ({
-            userId: result.user.id,
-            displayName: result.user.displayName,
-            status: grantIndex.get(result.user.id) ?? 'invite',
-          }))
-      : (grants.data ?? []).filter((grant) => grant.status !== 'revoked');
-  }, [canManage, grants.data, isSearching, search.data, profile?.id]);
+    if (!isSearching) {
+      // Pages are offsets, so a join between two page loads can repeat a row.
+      const listed = new Map<string, AccessPerson>();
+      for (const grant of grants.data?.pages.flat() ?? []) {
+        if (grant.status !== 'revoked' && !listed.has(grant.userId)) listed.set(grant.userId, grant);
+      }
+      return [...listed.values()];
+    }
+    const grantIndex = new Map(statuses.grants.map((grant) => [grant.userId, grant.status]));
+    return (search.data?.pages ?? [])
+      .filter((_, pageIndex) => statuses.loadedPages[pageIndex])
+      .flatMap((page) => page.results)
+      .filter((result) => result.user.id !== profile?.id)
+      .map((result) => ({
+        userId: result.user.id,
+        displayName: result.user.displayName,
+        status: grantIndex.get(result.user.id) ?? 'invite',
+      }));
+  }, [canManage, grants.data, isSearching, search.data, statuses, profile?.id]);
   const onAction = useCallback(
     (next: 'invite' | 'approve' | 'revoke', userId: string) => {
       action.mutate({ action: next, kind, resourceId, userId });
@@ -95,8 +111,9 @@ export function ResourceAccessScreen() {
     [disabled, onAction],
   );
   const loadNext = useCallback(() => {
-    if (isSearching && search.hasNextPage && !search.isFetchingNextPage) void search.fetchNextPage();
-  }, [isSearching, search]);
+    const list = isSearching ? search : grants;
+    if (list.hasNextPage && !list.isFetchingNextPage) void list.fetchNextPage();
+  }, [isSearching, search, grants]);
   return (
     <View style={{ flex: 1, backgroundColor: systemColors.background }}>
       <FlashList
@@ -125,7 +142,7 @@ export function ResourceAccessScreen() {
               />
             ) : null}
             {effectiveOffline ? <Text>{t('privacy.offline')}</Text> : null}
-            {action.isError || grants.isError || search.isError ? (
+            {action.isError || grants.isError || search.isError || statuses.isError ? (
               <Text color={brandColors.error} accessibilityRole="alert">
                 {t('privacy.saveFailed')}
               </Text>

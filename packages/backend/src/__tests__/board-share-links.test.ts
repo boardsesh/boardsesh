@@ -6,7 +6,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { pubsub } from '../pubsub';
 import { boardShareLinkMutations, boardShareLinkQueries } from '../graphql/resolvers/privacy/board-share-links';
-import { privacyMutations } from '../graphql/resolvers/privacy';
+import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions';
@@ -283,6 +283,81 @@ describe('opening a share link', () => {
       context(owner),
     );
     expect(await canAccessResource('board', board.uuid, second)).toBe(true);
+  });
+});
+
+describe("the owner's access list", () => {
+  type AccessArgs = { offset?: number | null; userIds?: string[] | null };
+  async function accessList(boardUuid: string, args: AccessArgs = {}, userId = owner) {
+    return privacyQueries.resourceAccessRequests(
+      null,
+      { kind: 'board', resourceId: boardUuid, ...args },
+      context(userId),
+    );
+  }
+
+  it('pages every link joiner, pending requests first and then newest, and finds any one of them by id', async () => {
+    const board = await seedBoard(owner, 'invite_only');
+    // 40 people the owner removed, 80 waiting on a request and 30 older
+    // members. Every id sorts ahead of the joiner's, so the old list (no
+    // order, capped at 100) stopped before reaching them.
+    const crowd = Array.from({ length: 150 }, (_, index) => `share-link-crowd-${String(index).padStart(3, '0')}`);
+    const crowdStatus = (index: number): 'revoked' | 'pending' | 'approved' =>
+      index < 40 ? 'revoked' : index < 120 ? 'pending' : 'approved';
+    await db.insert(schema.users).values(crowd.map((id) => ({ id, email: `${id}@test.com` })));
+    await db.insert(schema.resourceGrants).values(
+      crowd.map((userId, index) => ({
+        kind: 'board' as const,
+        resourceId: board.uuid,
+        userId,
+        status: crowdStatus(index),
+        invitedBy: crowdStatus(index) === 'approved' ? owner : null,
+        updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
+      })),
+    );
+    const joiner = 'share-link-zz-joiner';
+    await db.insert(schema.users).values({ id: joiner, email: `${joiner}@test.com` });
+    await redeem((await shareLink(board.uuid))!.token, joiner);
+
+    const firstPage = await accessList(board.uuid);
+    const secondPage = await accessList(board.uuid, { offset: firstPage.length });
+    expect(firstPage).toHaveLength(100);
+    expect(await accessList(board.uuid, { offset: firstPage.length + secondPage.length })).toEqual([]);
+
+    const listed = [...firstPage, ...secondPage];
+    const pendingIds = crowd.filter((_, index) => crowdStatus(index) === 'pending').reverse();
+    const olderMemberIds = crowd.filter((_, index) => crowdStatus(index) === 'approved').reverse();
+    // Removed climbers are not on the list; the rest come once each, in order.
+    expect(listed.map((grant) => grant.userId)).toEqual([...pendingIds, joiner, ...olderMemberIds]);
+    expect(listed.find((grant) => grant.userId === joiner)).toMatchObject({ status: 'approved', invitedBy: owner });
+
+    // A search asks for its results' real state: the joiner reads as a member
+    // the owner can remove, a removed climber as removed, a stranger not at all.
+    const searched = await accessList(board.uuid, { userIds: [joiner, crowd[0], stranger] });
+    expect(new Map(searched.map((grant) => [grant.userId, grant.status]))).toEqual(
+      new Map([
+        [joiner, 'approved'],
+        [crowd[0], 'revoked'],
+      ]),
+    );
+
+    await privacyMutations.revokeResourceAccess(
+      null,
+      { kind: 'board', resourceId: board.uuid, userId: joiner },
+      context(owner),
+    );
+    expect(await canAccessResource('board', board.uuid, joiner)).toBe(false);
+    expect((await accessList(board.uuid, { userIds: [joiner] }))[0]).toMatchObject({ status: 'revoked' });
+  });
+
+  it('refuses a malformed page or lookup, and anyone but the owner', async () => {
+    const board = await seedBoard(owner, 'invite_only');
+    await expect(accessList(board.uuid, { offset: -1 })).rejects.toThrow();
+    await expect(accessList(board.uuid, { offset: 1.5 })).rejects.toThrow();
+    await expect(
+      accessList(board.uuid, { userIds: Array.from({ length: 101 }, (_, index) => `someone-${index}`) }),
+    ).rejects.toThrow();
+    await expect(accessList(board.uuid, {}, member)).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
   });
 });
 

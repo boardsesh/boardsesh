@@ -1,7 +1,7 @@
 import { pubsub, type PrivacyChangeSource } from '../../../pubsub';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { z } from 'zod';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -53,6 +53,16 @@ const resourceSchema = z
     inheritFollowers: z.boolean().optional(),
   })
   .strict();
+/**
+ * One page of an owner's access list. A share link lets anyone holding it add
+ * themselves, so the list can outgrow a page: the app pages by `offset`, and a
+ * search asks for its results' own grants by `userIds`.
+ */
+const ACCESS_LIST_PAGE_SIZE = 100;
+const accessListArgsSchema = z.object({
+  offset: z.number().int().min(0).max(1_000_000).nullish(),
+  userIds: z.array(identifier).max(ACCESS_LIST_PAGE_SIZE).nullish(),
+});
 function notFound(): never {
   throw new GraphQLError('Not found', { extensions: { code: 'NOT_FOUND' } });
 }
@@ -369,13 +379,27 @@ export const privacyQueries = {
     await requireResourceOwner(kind, resourceId, userId);
     return getResourcePrivacy(kind, resourceId);
   },
+  /**
+   * Without `userIds`: pending requests first, then members, newest first,
+   * one page from `offset`. Removed climbers are left out; the owner reaches
+   * them by searching. With `userIds`: those people's grants whatever their
+   * status, so a search shows each result's real state.
+   */
   resourceAccessRequests: async (
     _: unknown,
-    { kind, resourceId }: { kind: PrivacyResourceKind; resourceId: string },
+    {
+      kind,
+      resourceId,
+      ...page
+    }: { kind: PrivacyResourceKind; resourceId: string; offset?: number | null; userIds?: string[] | null },
     ctx: ConnectionContext,
   ) => {
-    await requireResourceOwner(kind, resourceId, actor(ctx));
-    return db
+    const ownerId = actor(ctx);
+    const { offset, userIds } = validateInput(accessListArgsSchema, page, 'access list');
+    await requireResourceOwner(kind, resourceId, ownerId);
+    if (userIds?.length === 0) return [];
+    const onResource = and(eq(schema.resourceGrants.kind, kind), eq(schema.resourceGrants.resourceId, resourceId));
+    const query = db
       .select({
         userId: schema.resourceGrants.userId,
         status: schema.resourceGrants.status,
@@ -385,9 +409,17 @@ export const privacyQueries = {
       })
       .from(schema.resourceGrants)
       .innerJoin(schema.users, eq(schema.users.id, schema.resourceGrants.userId))
-      .leftJoin(schema.userProfiles, eq(schema.userProfiles.userId, schema.users.id))
-      .where(and(eq(schema.resourceGrants.kind, kind), eq(schema.resourceGrants.resourceId, resourceId)))
-      .limit(100);
+      .leftJoin(schema.userProfiles, eq(schema.userProfiles.userId, schema.users.id));
+    if (userIds) return query.where(and(onResource, inArray(schema.resourceGrants.userId, userIds)));
+    return query
+      .where(and(onResource, ne(schema.resourceGrants.status, 'revoked')))
+      .orderBy(
+        sql`CASE WHEN ${schema.resourceGrants.status} = 'pending' THEN 0 ELSE 1 END`,
+        desc(schema.resourceGrants.updatedAt),
+        asc(schema.resourceGrants.userId),
+      )
+      .limit(ACCESS_LIST_PAGE_SIZE)
+      .offset(offset ?? 0);
   },
 };
 export const privacyMutations = {

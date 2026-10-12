@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GET_RESOURCE_ACCESS_REQUESTS,
   APPROVE_RESOURCE_ACCESS,
@@ -78,19 +78,73 @@ export type ResourceGrant = {
   displayName: string | null;
   avatarUrl: string | null;
 };
-export function useResourceAccessRequests(kind: 'board' | 'session', resourceId: string, enabled: boolean) {
+/** The server's page size for the access list (`resourceAccessRequests`). */
+const ACCESS_LIST_PAGE_SIZE = 100;
+type ResourceKind = 'board' | 'session';
+
+async function requestResourceGrants(
+  variables: { kind: ResourceKind; resourceId: string; offset?: number; userIds?: string[] },
+  signal: AbortSignal,
+): Promise<ResourceGrant[]> {
+  return (
+    await getHttpClient().request<{ resourceAccessRequests: ResourceGrant[] }>({
+      document: GET_RESOURCE_ACCESS_REQUESTS,
+      variables,
+      signal,
+    })
+  ).resourceAccessRequests;
+}
+
+/**
+ * The owner's access list: pending requests first, then members, newest first,
+ * a page at a time. A share link lets anyone holding it join, so the list can
+ * run past one page.
+ */
+export function useResourceAccessRequests(kind: ResourceKind, resourceId: string, enabled: boolean) {
   const { data: profile } = useProfile();
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ['resourceAccessRequests', profile?.id, kind, resourceId],
-    queryFn: async ({ signal }) =>
-      (
-        await getHttpClient().request<{ resourceAccessRequests: ResourceGrant[] }>({
-          document: GET_RESOURCE_ACCESS_REQUESTS,
-          variables: { kind, resourceId },
-          signal,
-        })
-      ).resourceAccessRequests,
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => requestResourceGrants({ kind, resourceId, offset: pageParam }, signal),
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < ACCESS_LIST_PAGE_SIZE ? undefined : allPages.reduce((sum, page) => sum + page.length, 0),
     enabled: enabled && !!resourceId,
+  });
+}
+
+type GrantStatusResult = { data?: ResourceGrant[]; isSuccess: boolean; isError: boolean };
+
+/** Module scope keeps its identity, so `useQueries` can hand back the same value when nothing changed. */
+function combineGrantStatuses(results: GrantStatusResult[]) {
+  return {
+    grants: results.flatMap((result) => result.data ?? []),
+    // A page's results are only shown once their grants are known; until then
+    // a member would read as someone to invite.
+    loadedPages: results.map((result) => result.isSuccess),
+    isError: results.some((result) => result.isError),
+  };
+}
+
+/**
+ * The owner's grants for the people on each page of a search, whatever their
+ * status, one request per page (pages are 30 people; the server takes 100).
+ * Reading them from the access list instead would miss anyone past its first
+ * page and offer to invite a member.
+ */
+export function useResourceGrantStatuses(
+  kind: ResourceKind,
+  resourceId: string,
+  userIdPages: string[][],
+  enabled: boolean,
+) {
+  const { data: profile } = useProfile();
+  return useQueries({
+    queries: userIdPages.map((userIds) => ({
+      queryKey: ['resourceGrantStatuses', profile?.id, kind, resourceId, userIds],
+      queryFn: ({ signal }: { signal: AbortSignal }) => requestResourceGrants({ kind, resourceId, userIds }, signal),
+      enabled: enabled && !!resourceId && userIds.length > 0,
+    })),
+    combine: combineGrantStatuses,
   });
 }
 const RESOURCE_ACTIONS = {

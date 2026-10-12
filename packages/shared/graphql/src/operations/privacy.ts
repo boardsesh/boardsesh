@@ -162,8 +162,8 @@ export const UPDATE_RESOURCE_PRIVACY = gql`
   }
 `;
 export const GET_RESOURCE_ACCESS_REQUESTS = gql`
-  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!) {
-    resourceAccessRequests(kind: $kind, resourceId: $resourceId) {
+  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!, $offset: Int, $userIds: [ID!]) {
+    resourceAccessRequests(kind: $kind, resourceId: $resourceId, offset: $offset, userIds: $userIds) {
       userId
       status
       invitedBy

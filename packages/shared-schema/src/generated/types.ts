@@ -981,8 +981,8 @@ export type BoardSerialConfig = {
 };
 
 /**
- * A home board's share link. Opening it signed in makes the climber an
- * approved member of the board straight away.
+ * A home board's share link. A signed-in climber who opens it and chooses Join
+ * becomes an approved member of the board; opening it alone grants nothing.
  */
 export type BoardShareLink = {
   __typename?: 'BoardShareLink';
@@ -6989,6 +6989,12 @@ export type Query = {
    * @deprecated Remix after a reset was retired. Always null.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
+  /**
+   * The people with a grant on a board or session the viewer owns. Without
+   * userIds: pending requests first, then members, newest first, 100 from
+   * offset; removed people are left out. With userIds (up to 100): those
+   * people's grants, whatever their status.
+   */
   resourceAccessRequests: Array<PrivacyResourceGrant>;
   resourcePrivacy?: Maybe<ResourcePrivacySettings>;
   /** Search public boards. */
@@ -7781,7 +7787,9 @@ export type QueryRemixClimbArgs = {
 /** Root query type for all read operations. */
 export type QueryResourceAccessRequestsArgs = {
   kind: PrivacyResourceKind;
+  offset?: InputMaybe<Scalars['Int']['input']>;
   resourceId: Scalars['ID']['input'];
+  userIds?: InputMaybe<Array<Scalars['ID']['input']>>;
 };
 
 /** Root query type for all read operations. */
