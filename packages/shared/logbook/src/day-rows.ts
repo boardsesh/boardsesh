@@ -103,9 +103,8 @@ export type LogbookListRow<T extends LogbookDayItem = LogbookDayItem> =
  * Dividers only make sense on a date-ordered feed: the `recent` preset, or a
  * custom sort whose PRIMARY field is the ascent date (either direction — the
  * run-based bucketing below is direction-agnostic). Keyed off the EFFECTIVE
- * feed input (what the query actually runs), not raw persisted sort state —
- * with the logbook-filters flag off the persisted sort is ignored and the feed
- * is date-desc regardless. A climb-name search does NOT suppress dividers:
+ * feed input (what the query actually runs), not raw persisted sort state. A
+ * climb-name search does NOT suppress dividers:
  * `climbName` is a filter; the result set is still a timeline.
  */
 export function shouldShowLogbookDividers(input: Pick<AscentFeedInput, 'sortBy'>): boolean {

@@ -48,8 +48,6 @@ type AppMenuTextAnchorProps = AppMenuSharedProps & {
   accessibilityLabel?: string;
   /** Trailing down-caret on the anchor. Default `true`. */
   showCaret?: boolean;
-  /** Let long labels wrap within maxWidth, retaining Dynamic Type text size. */
-  wrapLabel?: boolean;
 };
 
 /** Icon anchor: a bare glyph trigger (the "⋯" overflow button), with no visible text. */

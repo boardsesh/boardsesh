@@ -1,10 +1,10 @@
-import { ReadableColumn, READABLE_CONTENT_WIDTH } from '../ReadableColumn';
+import { ReadableColumn } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
 import { PressableSurface } from '../PressableSurface';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, RefreshControl, StyleSheet, useWindowDimensions } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -13,44 +13,54 @@ import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import {
   toAscentFeedInput,
   DEFAULT_LOGBOOK_FILTERS,
-  DEFAULT_LOGBOOK_SORT,
   buildLogbookListRows,
   dedupeLogbookItems,
   shouldShowLogbookDividers,
   pickBestGroupEntry,
   sumGroupTries,
   logbookDayKey,
+  logbookSortKeyOf,
   type LogbookFilterState,
-  type LogbookSortPreset,
+  type LogbookSortState,
   type LogbookListRow,
 } from '@boardsesh/logbook';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
+import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
-import { FilterButton, FILTER_FAB_SIZE } from '../search/FilterButton';
+import { FilterTokenRow } from '../search/FilterTokenRow';
 import { LogbookRow } from './LogbookRow';
 import { LogbookDayDivider, LogbookWallSubDivider } from './LogbookDayDivider';
 import { LogbookEditSheet } from './LogbookEditSheet';
 import { BoardLinkPrompt } from './BoardLinkPrompt';
-import { LogbookFilterSheet } from './LogbookFilterSheet';
+import { LogbookFilterSheet, type LogbookMatchCount } from './LogbookFilterSheet';
 import { LogbookEntryChooserSheet } from './LogbookEntryChooserSheet';
 import { LogbookChipRow } from './LogbookChipRow';
-import { LogbookCompactToolbar } from './LogbookCompactToolbar';
 import { LogbookFacetRail } from './LogbookFacetRail';
-import type { LogbookFacetKey } from './LogbookChipRow.logic';
-import { useLogbookSearch, countActiveLogbookFilters } from './use-logbook-search';
+import {
+  buildLogbookFilterTokens,
+  countLogbookFilters,
+  logbookBoardLabel,
+  type LogbookRailKind,
+} from './logbook-capsules';
+import { useLogbookSearch } from './use-logbook-search';
+import { useLogbookBoardOptions } from './use-logbook-board-options';
 import { useUserAscentsFeed, useUserGroupedAscentsFeed, useGrades } from '../../lib/graphql/hooks';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
+import { useToday } from '../../hooks/use-today';
+import { useGradeFormat } from '../../hooks/use-grade-format';
 import { OfflineState } from '../OfflineState';
 import type { Grade } from '@boardsesh/shared-schema';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
+import { buildGradeRailStops } from '../../lib/grade-stops';
+import { useLogbookPinnedChips } from '../../lib/logbook-pinned-chips-store';
+import { createLogbookSetterHandoffId, subscribeToLogbookSetterSelection } from '../../lib/logbook-setter-handoff';
+import { useScopedRouter } from '../../lib/routing/scoped-navigation';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
-import { nowDate } from '../../lib/clock';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
@@ -59,19 +69,20 @@ import { normalizeSearchName } from '../../lib/search-name';
 import { hapticSelection } from '../../lib/haptics';
 import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
-import { selectByVariant } from '../../theme/variants';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
 // Kilter and Tension share an identical difficulty-id scale, so one board's grade
-// list is the canonical scale for the grade chip's label — the same source the
-// filter sheet's GradeRangeRail uses (LogbookFilterSheet's GRADE_SCALE_BOARD), so
-// the chip and the rail never word a grade differently.
+// list is the canonical scale for the grade capsule's label, the inline rail and
+// the sheet's rail, so they never word a grade differently.
 const GRADE_SCALE_BOARD = 'kilter';
 
-// Stable empty grade list so the chip row + facet rail (both memo'd) keep their
-// `grades` prop identity while the grade query is still loading (undefined).
+// Stable empty grade list so the memo'd rails keep their `grades` prop identity
+// while the grade query is still loading (undefined).
 const EMPTY_GRADES: Grade[] = [];
+
+/** Where a filter or sort change came from, for `Logbook Filter Changed` / `Logbook Sort Changed`. */
+type LogbookChangeSurface = 'capsule' | 'rail' | 'sheet' | 'token' | 'setter_picker' | 'empty_state';
 
 type LogbookTabProps = {
   userId: string | undefined;
@@ -112,127 +123,179 @@ export function LogbookTab({
   const nativeRootHeader = useNativeRootHeader();
   const [headerHeight, setHeaderHeight] = useState(0);
   const hasComposedHeader = renderHeader != null;
-  const compactControls = hasComposedHeader && nativeRootHeader && viewerIsOwner;
   const headerMeasured = !hasComposedHeader || headerHeight > 0;
   const scrollHeaderInset = hasComposedHeader && nativeRootHeader ? headerHeight : 0;
-  const { t } = useTranslation('you');
-  const { systemColors, brandColors, variant } = useTheme();
-  // Kill switch for the search + filter UI — rolled out 100% in PostHog since
-  // 2026-07-03; the gate stays so a bad release can be turned off server-side.
-  const logbookFiltersEnabled = useFeatureFlag('logbook-filters') === true;
-  // Latest/Hardest become top-level Liquid Glass chips (iOS 26 only) so sort is
-  // switchable without opening the sheet; the variant goes through selectByVariant
-  // per the mobile variant guard. When shown, the sheet's Sort block is suppressed.
-  const showSortChips =
-    logbookFiltersEnabled &&
-    !compactControls &&
-    Platform.OS === 'ios' &&
-    selectByVariant(variant, { liquidGlass: true, material: false });
-  // Grade scale for the chip row's grade label — fetched only when the chip row is
-  // shown (the Android/Material toolbar has no grade chip). Same query as the sheet.
-  const { data: grades } = useGrades(GRADE_SCALE_BOARD, showSortChips || (compactControls && logbookFiltersEnabled));
+  const { t, i18n } = useTranslation('you');
+  const { systemColors, brandColors } = useTheme();
+  // One grade scale for the grade capsule's label, the inline rail and the sheet.
+  const { data: grades } = useGrades(GRADE_SCALE_BOARD);
+  const { gradeFormat } = useGradeFormat();
+  const gradeStops = useMemo(
+    () => buildGradeRailStops(grades ?? EMPTY_GRADES, gradeFormat, GRADE_SCALE_BOARD),
+    [grades, gradeFormat],
+  );
+  const boardOptions = useLogbookBoardOptions(userId);
+  const { pinned: pinnedChips, isPinned } = useLogbookPinnedChips();
   const router = useRouter();
+  const scopedRouter = useScopedRouter();
   const { openPlayDrawer, openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   // One dimension subscription for the whole list; rows take fontScale as a prop.
-  const { fontScale, width: windowWidth } = useWindowDimensions();
+  const { fontScale } = useWindowDimensions();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
+  // Day-granular: rolls over on focus and on foreground, so "Last 7 days" and
+  // "This month" move with the calendar. Frozen in screenshot mode.
+  const today = useToday();
+  const locale = i18n.language;
 
   const editSheetRef = useRef<BottomSheet | null>(null);
   const [editAscent, setEditAscent] = useState<AscentFeedItem | null>(null);
 
-  // Logbook search/filter/sort state. The committed name lives here; the visible
-  // input value is debounced before it commits to the query.
+  // Logbook search/filter/sort state. The name is typed in the filter sheet and
+  // debounced before it commits to the query.
   const logbookSearch = useLogbookSearch();
-  const { filters, sort, name, setName, setPreset, setFilters, apply, hydrated } = logbookSearch;
-  // Which preset the chips highlight; null (no chip lit) when a non-preset
-  // (custom) sort is in effect, rather than falsely lighting up Latest.
-  const sortPreset: LogbookSortPreset | null = sort.mode === 'preset' ? sort.preset : null;
-  const activeFilterCount = useMemo(() => countActiveLogbookFilters(filters), [filters]);
+  const { filters, sort, name, setName, setSort, setFilters, reset, hydrated } = logbookSearch;
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
-  // Which facet's inline rail is open below the chip row (Liquid Glass only); null
-  // when all closed. Tapping the open facet's chip closes it (toggle), tapping a
-  // different facet swaps to it — only one rail shows at a time.
-  const [openFacet, setOpenFacet] = useState<LogbookFacetKey | null>(null);
-  const handleToggleFacet = useCallback((facet: LogbookFacetKey) => {
+  // Which inline rail is open under the capsule row; one at a time. A rail only
+  // shows while its capsule is pinned: the capsule is its one way out.
+  const [openRail, setOpenRail] = useState<LogbookRailKind | null>(null);
+  const visibleRail = openRail != null && isPinned(openRail) ? openRail : null;
+  const handleToggleRail = useCallback((rail: LogbookRailKind) => {
     hapticSelection();
-    setOpenFacet((current) => (current === facet ? null : facet));
+    setOpenRail((current) => (current === rail ? null : rail));
   }, []);
-  // One stable "today" ceiling so the To-date row's maximumDate keeps a constant
-  // identity across renders (mirrors the filter sheet's `today`). Frozen at mount;
-  // if the app sits open past midnight it's a day stale, which is harmless here and
-  // matches the sheet.
-  const today = useMemo(() => nowDate(), []);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchHeaderRef = useRef<SearchHeaderHandle>(null);
 
   useEffect(() => () => clearTimeout(debounceTimerRef.current ?? undefined), []);
 
-  const handleSearchChange = useCallback(
+  // Each change is instrumented before it commits. Privacy: the changed field
+  // NAMES go as a sorted comma-joined string (analytics values are scalar), never
+  // the grade, date or setter values; `surface` says which control made it.
+  const changeFilters = useCallback(
+    (patch: Partial<LogbookFilterState>, surface: LogbookChangeSurface) => {
+      track(SHARED_EVENTS.LogbookFilterChanged, { fields: Object.keys(patch).sort().join(','), surface });
+      setFilters(patch);
+    },
+    [setFilters],
+  );
+  const changeSort = useCallback(
+    (nextSort: LogbookSortState, surface: LogbookChangeSurface) => {
+      const { key, direction } = logbookSortKeyOf(nextSort);
+      track(SHARED_EVENTS.LogbookSortChanged, {
+        preset: nextSort.mode === 'preset' ? nextSort.preset : 'custom',
+        sortKey: key,
+        direction,
+        surface,
+      });
+      setSort(nextSort);
+    },
+    [setSort],
+  );
+  // One stable handler per surface, so the memo'd row, rail and sheet hold.
+  const handleCapsuleFilters = useCallback(
+    (patch: Partial<LogbookFilterState>) => changeFilters(patch, 'capsule'),
+    [changeFilters],
+  );
+  const handleRailFilters = useCallback(
+    (patch: Partial<LogbookFilterState>) => changeFilters(patch, 'rail'),
+    [changeFilters],
+  );
+  const handleSheetFilters = useCallback(
+    (patch: Partial<LogbookFilterState>) => changeFilters(patch, 'sheet'),
+    [changeFilters],
+  );
+  const handleTokenFilters = useCallback(
+    (patch: Partial<LogbookFilterState>) => changeFilters(patch, 'token'),
+    [changeFilters],
+  );
+  const handleCapsuleSort = useCallback((nextSort: LogbookSortState) => changeSort(nextSort, 'capsule'), [changeSort]);
+  const handleSheetSort = useCallback((nextSort: LogbookSortState) => changeSort(nextSort, 'sheet'), [changeSort]);
+  const handleTokenSort = useCallback((nextSort: LogbookSortState) => changeSort(nextSort, 'token'), [changeSort]);
+
+  // The sheet's name field reports every keystroke; the term commits 300 ms after
+  // the last one. Privacy: only the committed term's length is tracked, never
+  // its text, and clearing back to '' is not a search.
+  const handleNameChange = useCallback(
     (text: string) => {
       const nextName = normalizeSearchName(text);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = setTimeout(() => {
         setName(nextName);
-        // Privacy: report only that a search was committed and its length, never
-        // the query text. A non-empty term marks intent; clearing back to '' is
-        // not a search.
         if (nextName) track(SHARED_EVENTS.LogbookSearched, { length: nextName.length });
       }, SEARCH_DEBOUNCE_MS);
     },
     [setName],
   );
-
-  // Wrap the reducer's sort/filter setters so each change is instrumented before
-  // it commits — the chip row's React.memo holds because these are memoised. We
-  // send the preset and the changed field NAMES only (never grade/date values),
-  // so PostHog can show which facets get used without leaking what was searched.
-  const handleSelectPreset = useCallback(
-    (preset: LogbookSortPreset) => {
-      track(SHARED_EVENTS.LogbookSortChanged, { preset });
-      setPreset(preset);
-    },
-    [setPreset],
-  );
-  const handleUpdateFilters = useCallback(
-    (partial: Partial<LogbookFilterState>) => {
-      // Analytics property values are scalar (no arrays), so the changed field
-      // NAMES go as a sorted comma-joined string — PostHog can still break down
-      // which facets get used. Sorted so a `{minGrade,maxGrade}` patch groups
-      // the same regardless of key order. Never the grade/date values themselves.
-      track(SHARED_EVENTS.LogbookFilterChanged, { fields: Object.keys(partial).sort().join(',') });
-      setFilters(partial);
-    },
-    [setFilters],
-  );
-
-  // Clear the committed term AND the input field (silent: don't re-arm the
-  // debounce). Wired to the sheet's Reset so "Reset" is a true clean slate.
-  const clearSearch = useCallback(() => {
+  // The field's ×, the name token and Reset clear the committed term at once.
+  const clearName = useCallback(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     setName('');
-    searchHeaderRef.current?.setText('', { silent: true });
   }, [setName]);
+
+  const handleReset = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    track(SHARED_EVENTS.LogbookFilterChanged, { fields: 'reset', surface: 'sheet' });
+    reset();
+  }, [reset]);
+
+  // The empty state's "Clear filters": every filter and the name, not the sort.
+  const handleClearFilters = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    track(SHARED_EVENTS.LogbookFilterChanged, { fields: 'all', surface: 'empty_state' });
+    setName('');
+    setFilters(DEFAULT_LOGBOOK_FILTERS);
+  }, [setName, setFilters]);
 
   const handleOpenFilters = useCallback(() => {
     hapticSelection();
-    // Close any open inline rail so it doesn't linger under the sheet (and leave
-    // the toolbar over-tall after the sheet dismisses).
-    setOpenFacet(null);
+    // Close any open inline rail so it doesn't linger under the sheet.
+    setOpenRail(null);
     setFilterSheetOpen(true);
   }, []);
 
   const handleCloseFilters = useCallback(() => setFilterSheetOpen(false), []);
 
-  // The query input is rebuilt only when the committed filters/sort/name change,
-  // so the React Query key (and the FlashList data identity downstream) is stable
-  // between unrelated re-renders. When the flag is off the toolbar is hidden, so
-  // ignore any persisted filter/sort/name and feed defaults — otherwise prefs
-  // saved during a prior flag-on session would silently narrow the list.
+  // The setter picker is a route (native sheets can't stack). The capsule pushes
+  // it directly; the sheet suspends itself first. The picks come back through
+  // the handoff below, addressed to this Logbook alone.
+  const [setterHandoffId] = useState(createLogbookSetterHandoffId);
+  const handleOpenSetters = useCallback(() => {
+    if (!userId) return;
+    const current = filtersRef.current;
+    scopedRouter.push({
+      pathname: '/users/[userId]/logbook-setters',
+      params: {
+        userId,
+        handoffId: setterHandoffId,
+        setters: JSON.stringify(current.setterUsernames),
+        boardType: current.boardType,
+        layoutIds: JSON.stringify(current.layoutIds),
+      },
+    });
+  }, [userId, scopedRouter, setterHandoffId]);
+
+  useEffect(
+    () =>
+      subscribeToLogbookSetterSelection(({ handoffId, setterUsernames, apply }) => {
+        if (handoffId !== setterHandoffId) return;
+        const current = filtersRef.current.setterUsernames;
+        const unchanged =
+          current.length === setterUsernames.length &&
+          current.every((setter, index) => setter === setterUsernames[index]);
+        if (!unchanged) changeFilters({ setterUsernames }, 'setter_picker');
+        // "Show climbs": back to the list. A suspended sheet closes rather than
+        // coming back over it.
+        if (apply) setFilterSheetOpen(false);
+      }),
+    [setterHandoffId, changeFilters],
+  );
+
+  // The query input is rebuilt only when the committed filters/sort/name or the
+  // calendar day change, so the React Query key (and the FlashList data
+  // identity downstream) is stable between unrelated re-renders.
   const feedInput = useMemo(() => {
-    const searchState = logbookFiltersEnabled
-      ? { filters, sort, name }
-      : { filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT, name: '' };
     const cppBoardTypes =
       process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
       process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
@@ -240,15 +303,12 @@ export function LogbookTab({
       ['kilter', 'tension', 'moonboard', 'spray'].includes(screenshotBoardType)
         ? [screenshotBoardType]
         : undefined;
-    // `today` (the screenshot-aware clock) anchors the rolling date windows.
-    return toAscentFeedInput({ ...searchState, boardTypes: cppBoardTypes, now: today });
-  }, [logbookFiltersEnabled, filters, sort, name, screenshotBoardType, today]);
+    // `today` (the screenshot-aware day clock) anchors the rolling date windows.
+    return toAscentFeedInput({ filters, sort, name, boardTypes: cppBoardTypes, now: today });
+  }, [filters, sort, name, screenshotBoardType, today]);
 
   // Gate on `hydrated` so the feed fetches once with the restored prefs rather
-  // than once with defaults then again after persistence loads. (With the flag
-  // off `feedInput` already ignores persisted prefs, so this just fetches the
-  // defaults once hydration settles. Keeping the gate while the flag is still
-  // resolving avoids an early default fetch for the flag-on cohort.)
+  // than once with defaults then again after persistence loads.
   // Date-DESC views use the GROUPED feed (same climb + same day collapses to
   // one row; the backend shares filter semantics with the flat feed). The
   // grouped resolver orders by latest activity DESC only, so a custom date-ASC
@@ -272,10 +332,57 @@ export function LogbookTab({
   // below — without this it spins forever.
   const offline = useOfflineQueryState(feed);
 
+  // The sheet's subtitle: the live feed's own total. The date-ordered feed
+  // counts one climb per day (its groups), every other order counts entries.
+  const groupedTotal = groupedFeed.data?.pages[0]?.userGroupedAscentsFeed.totalCount;
+  const flatTotal = flatFeed.data?.pages[0]?.userAscentsFeed.totalCount;
+  const matchTotal = groupedMode ? groupedTotal : flatTotal;
+  const matchCount = useMemo<LogbookMatchCount | null>(
+    () => (matchTotal == null ? null : { count: matchTotal, grouped: groupedMode }),
+    [matchTotal, groupedMode],
+  );
+
+  // Removable tokens for active filters whose capsule isn't pinned, plus the
+  // name, so a filtered list always says why.
+  const filterTokens = useMemo(
+    () =>
+      buildLogbookFilterTokens(
+        {
+          pinned: pinnedChips,
+          filters,
+          sort,
+          name,
+          viewerIsOwner,
+          gradeStops,
+          boardOptions,
+          locale,
+          onChangeFilters: handleTokenFilters,
+          onChangeSort: handleTokenSort,
+          onClearName: clearName,
+        },
+        t,
+      ),
+    [
+      pinnedChips,
+      filters,
+      sort,
+      name,
+      viewerIsOwner,
+      gradeStops,
+      boardOptions,
+      locale,
+      handleTokenFilters,
+      handleTokenSort,
+      clearName,
+      t,
+    ],
+  );
+  const isFiltered = countLogbookFilters(filters, name) > 0;
+
   // Day dividers render only on a date-ordered feed (the Latest preset or a
-  // custom date sort) — keyed off the EFFECTIVE feedInput, so the flag-off
-  // default (date-desc) gets dividers and a stale persisted custom sort can't
-  // suppress them wrongly. A climb-name search keeps them: it filters, the
+  // custom date sort) — keyed off the EFFECTIVE feedInput, so a stale
+  // persisted custom sort can't suppress them wrongly. A climb-name search
+  // keeps them: it filters, the
   // result is still a timeline. Both paths dedupe by uuid — offset pagination
   // can repeat a row across page boundaries (swipe-delete shifts offsets), and
   // duplicate FlashList keys throw. Memoised so the FlashList `data` identity
@@ -577,69 +684,43 @@ export function LogbookTab({
 
   const controls = (
     <ReadableColumn>
-      <View style={[styles.toolbar, { paddingTop: hasComposedHeader ? 0 : topInset }]}>
-        {compactControls ? null : (
+      <View style={[styles.controls, { paddingTop: hasComposedHeader ? 0 : topInset }]}>
+        {/* In a composed profile header the selected Logbook tab already names
+            the page. In flow (someone else's profile) the heading stays, and
+            its scope line names the board when one is picked. */}
+        {hasComposedHeader ? null : (
           <View style={styles.heading}>
             <Text variant="title2" accessibilityRole="header">
               {t('tabs.logbook')}
             </Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('mobile.filter.allBoards')}
+              {logbookBoardLabel(filters, boardOptions, t) ?? t('mobile.filter.allBoards')}
             </Text>
           </View>
         )}
-        {logbookFiltersEnabled && compactControls ? (
-          <LogbookCompactToolbar
-            search={
-              <SearchHeader
-                ref={searchHeaderRef}
-                placeholder={t('mobile.logbook.searchPlaceholder')}
-                onChangeText={handleSearchChange}
-                initialValue={name}
-                height={Math.max(FILTER_FAB_SIZE, Math.ceil(44 * fontScale))}
-              />
-            }
-            fontScale={fontScale}
-            availableWidth={Math.min(windowWidth, READABLE_CONTENT_WIDTH) - spacing[4] * 2}
-            sortPreset={sortPreset}
-            onSelectPreset={handleSelectPreset}
-            onOpenFilters={handleOpenFilters}
-            filters={filters}
-            grades={grades ?? EMPTY_GRADES}
-            activeFilterCount={activeFilterCount}
-            onUpdateFilters={handleUpdateFilters}
-          />
-        ) : logbookFiltersEnabled ? (
-          <View style={styles.searchRow}>
-            <SearchHeader
-              ref={searchHeaderRef}
-              placeholder={t('mobile.logbook.searchPlaceholder')}
-              onChangeText={handleSearchChange}
-              initialValue={name}
-              height={FILTER_FAB_SIZE}
-            />
-            <FilterButton activeFilterCount={activeFilterCount} onPress={handleOpenFilters} />
-          </View>
-        ) : null}
-        {showSortChips ? (
-          <>
-            <LogbookChipRow
-              sortPreset={sortPreset}
-              onSelectPreset={handleSelectPreset}
-              filters={filters}
-              grades={grades ?? EMPTY_GRADES}
-              onToggleFacet={handleToggleFacet}
-              onUpdateFilters={handleUpdateFilters}
-            />
-            <LogbookFacetRail
-              openFacet={openFacet}
-              filters={filters}
-              grades={grades ?? EMPTY_GRADES}
-              onUpdateFilters={handleUpdateFilters}
-              today={today}
-            />
-          </>
-        ) : null}
+        <LogbookChipRow
+          pinned={pinnedChips}
+          filters={filters}
+          sort={sort}
+          name={name}
+          viewerIsOwner={viewerIsOwner}
+          gradeStops={gradeStops}
+          boardOptions={boardOptions}
+          locale={locale}
+          openRail={visibleRail}
+          onOpenFilters={handleOpenFilters}
+          onToggleRail={handleToggleRail}
+          onChangeFilters={handleCapsuleFilters}
+          onChangeSort={handleCapsuleSort}
+          onOpenSetters={handleOpenSetters}
+        />
+        <LogbookFacetRail
+          openRail={visibleRail}
+          filters={filters}
+          grades={grades ?? EMPTY_GRADES}
+          onUpdateFilters={handleRailFilters}
+        />
+        <FilterTokenRow tokens={filterTokens} />
       </View>
     </ReadableColumn>
   );
@@ -734,15 +815,25 @@ export function LogbookTab({
                   <View style={styles.empty}>
                     <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
                     <Text variant="headline" style={styles.emptyTitle}>
-                      {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
+                      {isFiltered
+                        ? t('mobile.logbook.emptyFiltered')
+                        : viewerIsOwner
+                          ? t('mobile.logbook.empty')
+                          : t('mobile.logbook.emptyOther')}
                     </Text>
+                    {isFiltered ? (
+                      <View style={styles.emptyAction}>
+                        <Button
+                          title={t('mobile.logbook.clearFilters')}
+                          onPress={handleClearFilters}
+                          variant="tonal"
+                          size="medium"
+                        />
+                      </View>
+                    ) : null}
                     {/* Unfiltered only: a logbook emptied by a filter says nothing about
                   whether a board account is linked. */}
-                    <BoardLinkPrompt
-                      key={userId}
-                      viewerIsOwner={viewerIsOwner}
-                      hasNoSends={activeFilterCount === 0 && !name}
-                    />
+                    <BoardLinkPrompt key={userId} viewerIsOwner={viewerIsOwner} hasNoSends={!isFiltered} />
                   </View>
                 }
               />
@@ -767,15 +858,23 @@ export function LogbookTab({
         />
       ) : null}
 
-      {logbookFiltersEnabled && filterSheetOpen ? (
+      {filterSheetOpen ? (
         <LogbookFilterSheet
           onDismiss={handleCloseFilters}
-          currentFilters={filters}
-          currentSort={sort}
-          onApply={apply}
-          onClearSearch={clearSearch}
-          // Compact controls keep the complete sort/filter choices in the sheet.
-          showSort={!showSortChips}
+          filters={filters}
+          sort={sort}
+          name={name}
+          viewerIsOwner={viewerIsOwner}
+          grades={grades ?? EMPTY_GRADES}
+          boardOptions={boardOptions}
+          matchCount={matchCount}
+          today={today}
+          onChangeFilters={handleSheetFilters}
+          onChangeSort={handleSheetSort}
+          onNameChange={handleNameChange}
+          onClearName={clearName}
+          onReset={handleReset}
+          onOpenSetters={handleOpenSetters}
         />
       ) : null}
     </View>
@@ -797,9 +896,10 @@ const styles = StyleSheet.create({
   unmeasuredContent: { opacity: 0 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingVertical: spacing[5], alignItems: 'center' },
-  toolbar: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
+  // The capsule row and the rails pad their own 16pt gutter and scroll out to
+  // the column's edge, so the block itself has no side padding.
+  controls: {
+    paddingBottom: spacing[1],
   },
   heading: {
     flexDirection: 'row',
@@ -807,15 +907,9 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: spacing[2],
+    paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
-    paddingBottom: spacing[3],
-  },
-  // SearchHeader fills a horizontal slot; a vertical parent collapses its capsule.
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    marginBottom: spacing[2],
+    paddingBottom: spacing[1],
   },
   empty: {
     alignItems: 'center',
@@ -825,6 +919,7 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   emptyTitle: { opacity: 0.6, marginTop: spacing[3], textAlign: 'center' },
+  emptyAction: { marginTop: spacing[3] },
   errorContainer: {
     flex: 1,
     alignItems: 'center',

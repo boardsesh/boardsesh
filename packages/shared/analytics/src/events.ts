@@ -255,8 +255,12 @@ export const SHARED_EVENTS = {
   // these properties, because the app route has to match the bare pathname.
   ClimbHandoffClicked: 'Climb Handoff Clicked',
   // Logbook search / filter usage — privacy-safe (counts, field names, and the
-  // sort preset only; never the raw query text or grade/date values). Drives the
-  // "promote the most-used facets to the top level" call.
+  // sort choice only; never the raw query text, grade, date or setter values).
+  // Drives the "which capsules earn a default pin" call. Props:
+  // Searched { length }; Filter Changed { fields (sorted, comma-joined field
+  // names, or 'reset' / 'all'), surface: 'capsule' | 'rail' | 'sheet' | 'token'
+  // | 'setter_picker' | 'empty_state' }; Sort Changed { preset ('recent' |
+  // 'hardest' | 'easiest' | 'custom'), sortKey, direction, surface }.
   LogbookSearched: 'Logbook Searched',
   LogbookFilterChanged: 'Logbook Filter Changed',
   LogbookSortChanged: 'Logbook Sort Changed',

@@ -10,7 +10,7 @@ import {
 } from '@boardsesh/logbook';
 
 // Hydration + persistence go through the prefs store; mock it so the reducer's
-// hydrate/save behaviour (including the apply-before-hydrate race) is unit-testable.
+// hydrate/save behaviour (including the change-before-hydrate race) is unit-testable.
 vi.mock('../../../lib/logbook-prefs-store', () => ({
   loadLogbookPrefs: vi.fn(() => Promise.resolve(null)),
   saveLogbookPrefs: vi.fn(() => Promise.resolve()),
@@ -148,7 +148,7 @@ describe('useLogbookSearch', () => {
     vi.mocked(saveLogbookPrefs).mockClear();
 
     await act(async () => {
-      result.current.setPreset('hardest');
+      result.current.setSort(logbookSortFor('grade', 'desc'));
     });
 
     expect(saveLogbookPrefs).toHaveBeenCalledWith(
@@ -162,7 +162,7 @@ describe('useLogbookSearch', () => {
     // A name + a preset are in place before the partial filter patch.
     await act(async () => {
       result.current.setName('crimps');
-      result.current.setPreset('hardest');
+      result.current.setSort(logbookSortFor('grade', 'desc'));
     });
     vi.mocked(saveLogbookPrefs).mockClear();
 
@@ -179,7 +179,7 @@ describe('useLogbookSearch', () => {
     expect(result.current.sort.mode).toBe('preset');
     expect(result.current.sort.preset).toBe('hardest');
     expect(result.current.name).toBe('crimps');
-    // The patch persisted (same path as apply).
+    // The patch persisted.
     expect(saveLogbookPrefs).toHaveBeenCalledWith(
       expect.objectContaining({ filters: expect.objectContaining({ minGrade: 12, maxGrade: 20 }) }),
     );
@@ -245,10 +245,7 @@ describe('useLogbookSearch', () => {
 
     // User applies attempts-only before persisted prefs finish loading.
     await act(async () => {
-      result.current.apply(
-        { ...DEFAULT_LOGBOOK_FILTERS, includeSends: false, includeAttempts: true },
-        DEFAULT_LOGBOOK_SORT,
-      );
+      result.current.setFilters({ includeSends: false, includeAttempts: true });
     });
     expect(result.current.hydrated).toBe(false);
 

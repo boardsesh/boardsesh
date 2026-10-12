@@ -83,11 +83,6 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Share sends to Strava and the Strava connect option in Integrations.',
   },
   {
-    key: 'logbook-filters',
-    label: 'Logbook filters',
-    description: 'Search box and filter sheet on the logbook (shipped: 100% rollout since 2026-07-03).',
-  },
-  {
     key: 'board-link-onboarding-step',
     label: 'Onboarding board-account link step',
     description:

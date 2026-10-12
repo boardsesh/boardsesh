@@ -5,7 +5,6 @@ import {
   isLogbookDateFilterActive,
   statusSegmentFor,
   type LogbookFilterState,
-  type LogbookSortPreset,
   type LogbookSortState,
 } from '@boardsesh/logbook';
 import { loadLogbookPrefs, saveLogbookPrefs } from '../../lib/logbook-prefs-store';
@@ -27,7 +26,7 @@ export type LogbookSearchState = {
   /** True once persisted prefs have loaded (or been confirmed absent). */
   hydrated: boolean;
   /**
-   * True once the user has changed filters/sort this session. The Apply button is
+   * True once the user has changed filters/sort this session. The capsules are
    * live before hydration finishes, so a late `hydrate` must keep the user's
    * change instead of clobbering it with the just-loaded prefs.
    */
@@ -44,10 +43,8 @@ const DEFAULT_STATE: LogbookSearchState = {
 
 type Action =
   | { type: 'setName'; name: string }
-  | { type: 'setPreset'; preset: LogbookSortPreset }
   | { type: 'setSort'; sort: LogbookSortState }
   | { type: 'setFilters'; filters: Partial<LogbookFilterState> }
-  | { type: 'apply'; filters: LogbookFilterState; sort: LogbookSortState }
   | { type: 'hydrate'; filters: LogbookFilterState; sort: LogbookSortState }
   | { type: 'reset' };
 
@@ -57,22 +54,13 @@ function reducer(state: LogbookSearchState, action: Action): LogbookSearchState 
       // The name is transient and not persisted, so typing one must NOT block a
       // pending hydrate from applying the user's saved filters/sort.
       return { ...state, name: action.name };
-    case 'setPreset':
-      return {
-        ...state,
-        sort: { ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset: action.preset },
-        userModified: true,
-      };
     case 'setSort':
       // Live commit of a whole sort (Sort by + Order); filters and name untouched.
       return { ...state, sort: action.sort, userModified: true };
     case 'setFilters':
-      // Live per-field merge from the toolbar's facet chips/rails — same commit +
-      // persistence path as `apply`, but it touches only the named fields and
-      // never the sort or the name.
+      // Live per-field merge from the capsules, rails, tokens and the sheet. It
+      // touches only the named fields and never the sort or the name.
       return { ...state, filters: { ...state.filters, ...action.filters }, userModified: true };
-    case 'apply':
-      return { ...state, filters: action.filters, sort: action.sort, userModified: true };
     case 'hydrate':
       // If the user changed filters/sort while prefs were still loading, keep
       // their values and only open the gate; otherwise apply the loaded prefs.
@@ -88,12 +76,10 @@ function reducer(state: LogbookSearchState, action: Action): LogbookSearchState 
 
 export type UseLogbookSearch = LogbookSearchState & {
   setName: (name: string) => void;
-  setPreset: (preset: LogbookSortPreset) => void;
   /** Live-commit a whole sort, e.g. `logbookSortFor(key, direction)`. */
   setSort: (sort: LogbookSortState) => void;
-  /** Live-commit a partial filter patch (the toolbar's facet chips/rails). */
+  /** Live-commit a partial filter patch (capsules, rails, tokens, the sheet). */
   setFilters: (partial: Partial<LogbookFilterState>) => void;
-  apply: (filters: LogbookFilterState, sort: LogbookSortState) => void;
   reset: () => void;
 };
 
@@ -130,14 +116,12 @@ export function useLogbookSearch(): UseLogbookSearch {
     void saveLogbookPrefs({ filters: state.filters, sort: state.sort });
   }, [state.hydrated, state.filters, state.sort]);
 
-  // Stable action identities so the toolbar / name handler don't churn.
+  // Stable action identities so the capsule row and the name handler don't churn.
   const actions = useMemo(
     () => ({
       setName: (name: string) => dispatch({ type: 'setName', name }),
-      setPreset: (preset: LogbookSortPreset) => dispatch({ type: 'setPreset', preset }),
       setSort: (sort: LogbookSortState) => dispatch({ type: 'setSort', sort }),
       setFilters: (partial: Partial<LogbookFilterState>) => dispatch({ type: 'setFilters', filters: partial }),
-      apply: (filters: LogbookFilterState, sort: LogbookSortState) => dispatch({ type: 'apply', filters, sort }),
       reset: () => dispatch({ type: 'reset' }),
     }),
     [],

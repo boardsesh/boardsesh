@@ -14,8 +14,7 @@ vi.mock('@expo/ui/swift-ui', () => ({
     createElement('button', { onClick: onPress }, label),
   Divider: () => createElement('hr'),
   HStack: ({ children }: { children: ReactNode }) => createElement('div', null, children),
-  Text: ({ children, modifiers }: { children: ReactNode; modifiers: Modifier[] }) =>
-    createElement('span', { 'data-text-modifiers': JSON.stringify(modifiers) }, children),
+  Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
   Image: ({ systemName }: { systemName: string }) => createElement('i', { 'data-symbol': systemName }),
 }));
 vi.mock('@expo/ui/swift-ui/modifiers', () =>
@@ -28,7 +27,6 @@ vi.mock('@expo/ui/swift-ui/modifiers', () =>
       'disabled',
       'frame',
       'font',
-      'fixedSize',
       'lineLimit',
       'truncationMode',
       'accessibilityLabel',
@@ -89,31 +87,6 @@ describe('AppMenu (iOS) icon surfaces', () => {
     const { container } = render(createElement(AppMenu, { label: 'My crew', actions, onSelectIndex: vi.fn() }));
     expect(modifiersOf(container)).toContainEqual({ kind: 'buttonStyle', params: 'glass' });
     expect(modifiersOf(container)).toContainEqual({ kind: 'controlSize', params: 'large' });
-    const textModifiers = JSON.parse(
-      container.querySelector('[data-text-modifiers]')!.getAttribute('data-text-modifiers')!,
-    );
-    expect(textModifiers).toContainEqual({ kind: 'lineLimit', params: 1 });
-    expect(textModifiers).toContainEqual({ kind: 'truncationMode', params: 'tail' });
-  });
-
-  it('wraps an opted-in bounded label while preserving its full text size', () => {
-    const { container } = render(
-      createElement(AppMenu, {
-        label: 'Eigene Sortierung',
-        wrapLabel: true,
-        maxWidth: 220,
-        actions,
-        onSelectIndex: vi.fn(),
-      }),
-    );
-    expect(modifiersOf(container)).toContainEqual({ kind: 'frame', params: { maxWidth: 220 } });
-    const textModifiers = JSON.parse(
-      container.querySelector('[data-text-modifiers]')!.getAttribute('data-text-modifiers')!,
-    );
-    expect(textModifiers).toContainEqual({ kind: 'fixedSize', params: { horizontal: false, vertical: true } });
-    expect(
-      textModifiers.some((modifier: Modifier) => modifier.kind === 'lineLimit' || modifier.kind === 'truncationMode'),
-    ).toBe(false);
   });
 });
 

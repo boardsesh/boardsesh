@@ -1,240 +1,370 @@
-import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
-import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import type { GradeBound } from '@boardsesh/climb-filters';
 import {
-  DEFAULT_LOGBOOK_ANGLE_RANGE,
   DEFAULT_LOGBOOK_FILTERS,
-  DEFAULT_LOGBOOK_SORT,
+  LOGBOOK_DATE_WINDOWS,
+  LOGBOOK_SORT_KEYS,
+  LOGBOOK_STATUS_SEGMENTS,
+  filtersForStatusSegment,
+  logbookSortFor,
+  logbookSortKeyOf,
+  parseLocalIsoDate,
+  statusSegmentFor,
+  type LogbookDateWindow,
   type LogbookFilterState,
-  type LogbookSortPreset,
+  type LogbookSortDirection,
+  type LogbookSortKey,
   type LogbookSortState,
+  type LogbookStatusSegment,
 } from '@boardsesh/logbook';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
-import { Text } from '../Text';
-import { CollapsibleSection } from '../CollapsibleSection';
+import type { Grade } from '@boardsesh/shared-schema';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { SheetTopBar } from '../SheetTopBar';
 import { SegmentedControl } from '../SegmentedControl';
+import { StarRating } from '../StarRating';
 import { SwitchRow } from '../SwitchRow';
 import { GradeRangeRail } from '../grade';
-import { LogbookAngleRail, DateRangeRow } from './logbook-facet-controls';
-import { useTheme } from '../../providers/theme-provider';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
-import { useGrades } from '../../lib/graphql/hooks';
-import { hapticSelection } from '../../lib/haptics';
-import { spacing, borderRadius } from '../../theme/tokens';
-import { nowDate } from '../../lib/clock';
+import { AngleRangeRail } from '../filter-sheet/AngleRangeRail';
+import { FilterSheetSection } from '../filter-sheet/FilterSheetSection';
+import { FilterLabelRow } from '../filter-sheet/FilterLabelRow';
+import { FilterChip, FilterChipGroup } from '../filter-sheet/FilterChip';
+import { FilterNameField } from '../filter-sheet/FilterNameField';
+import { FilterTappableRow } from '../filter-sheet/FilterTappableRow';
+import { filterSheetStyles } from '../filter-sheet/filter-sheet-styles';
+import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { useSheetColumnStyle } from '../use-sheet-column-style';
+import { useSheetKeyboardInset } from '../sheet-keyboard-inset';
 import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
+import { useSheetSubRoute } from '../../hooks/use-sheet-sub-route';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
+import { useTheme } from '../../providers/theme-provider';
+import { useLogbookPinnedChips } from '../../lib/logbook-pinned-chips-store';
+import { LOGBOOK_PINNABLE_CHIP_KINDS, type LogbookPinnableChipKind } from '../../lib/logbook-pinnable-chips';
+import { visibleSearchTextNeedsSync } from '../../lib/search-name';
+import { hapticSelection } from '../../lib/haptics';
+import { spacing } from '../../theme/tokens';
+import { DateRangeRow } from './logbook-facet-controls';
+import {
+  countLogbookFilters,
+  isLogbookSortActive,
+  logbookAnglePatch,
+  logbookAngleRailValue,
+  logbookDateWindowLabel,
+  logbookSetterLabel,
+  logbookStatusLabel,
+} from './logbook-capsules';
+import type { LogbookBoardOption } from './use-logbook-board-options';
 
-// The logbook spans every board, but Kilter and Tension share an identical
-// difficulty-id scale (the font/V-grade taxonomy), so one board's grade list is
-// the canonical scale for the range rail. minDifficulty/maxDifficulty go to the
-// backend as difficulty ids, board-agnostic.
-const GRADE_SCALE_BOARD = 'kilter';
+/** How many results the live filters match, and what one result is. */
+export type LogbookMatchCount = {
+  count: number;
+  /**
+   * The date-ordered feed counts one climb per day (its groups); the others
+   * count entries. The subtitle says which, so the number never claims more.
+   */
+  grouped: boolean;
+};
 
 type LogbookFilterSheetProps = {
   onDismiss: () => void;
-  currentFilters: LogbookFilterState;
-  currentSort: LogbookSortState;
-  onApply: (filters: LogbookFilterState, sort: LogbookSortState) => void;
-  /** Clear the toolbar's committed climb-name search (called by Reset). */
-  onClearSearch?: () => void;
-  /** Show the in-sheet Sort (Latest/Hardest) block. Defaults true; the caller
-   *  passes false when the top-level sort chips own the sort, so it isn't shown
-   *  twice (Liquid Glass). The draft still tracks/commits sort either way. */
-  showSort?: boolean;
+  filters: LogbookFilterState;
+  sort: LogbookSortState;
+  /** The committed climb-name search; seeds the name field. */
+  name: string;
+  /** False on someone else's logbook: the copy says "Their", never "Your". */
+  viewerIsOwner: boolean;
+  /** The grade scale the capsule row's rail uses too. */
+  grades: readonly Grade[];
+  boardOptions: readonly LogbookBoardOption[];
+  matchCount: LogbookMatchCount | null;
+  /** Local midnight of today: the latest day the date rows offer. */
+  today: Date;
+  /** Each control commits as it changes; there is no Apply. */
+  onChangeFilters: (patch: Partial<LogbookFilterState>) => void;
+  onChangeSort: (sort: LogbookSortState) => void;
+  /** Every keystroke of the name field; the parent debounces the commit. */
+  onNameChange: (text: string) => void;
+  /** The name field's ×, and part of Reset: clears the committed name at once. */
+  onClearName: () => void;
+  /** Filters, sort and name back to their defaults. */
+  onReset: () => void;
+  /** Pushes the setter picker. The sheet suspends first and comes back when it pops. */
+  onOpenSetters: () => void;
 };
 
-type StatusKey = 'sends' | 'attempts' | 'both';
+// One native detent. The iOS height bound comes from useSheetColumnStyle.
+const SHEET_DETENT_FRACTION = 0.9;
+const ALL_BOARDS = '';
 
-function statusKeyFor(filters: LogbookFilterState): StatusKey {
-  if (filters.includeSends && !filters.includeAttempts) return 'sends';
-  if (!filters.includeSends && filters.includeAttempts) return 'attempts';
-  return 'both';
-}
-
-function statusPatchFor(key: StatusKey): Pick<LogbookFilterState, 'includeSends' | 'includeAttempts'> {
-  if (key === 'sends') return { includeSends: true, includeAttempts: false };
-  if (key === 'attempts') return { includeSends: false, includeAttempts: true };
-  return { includeSends: true, includeAttempts: true };
-}
-
+/**
+ * The Logbook's full filter set: the climb-name search, then every filter the
+ * capsule row can pin, then sort. Built from the shared filter-sheet parts, so
+ * it reads and spaces like the climbs sheet. Everything applies live: X and a
+ * swipe only close it. The setter row pushes a picker route; the sheet suspends
+ * around it the way the climbs sheet does (useSheetSubRoute).
+ */
 export function LogbookFilterSheet({
   onDismiss,
-  currentFilters,
-  currentSort,
-  onApply,
-  onClearSearch,
-  showSort = true,
+  filters,
+  sort,
+  name,
+  viewerIsOwner,
+  grades,
+  boardOptions,
+  matchCount,
+  today,
+  onChangeFilters,
+  onChangeSort,
+  onNameChange,
+  onClearName,
+  onReset,
+  onOpenSetters,
 }: LogbookFilterSheetProps) {
   const { t } = useTranslation('you');
-  const theme = useTheme();
-  const { systemColors } = theme;
+  const { systemColors } = useTheme();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetModal>(null);
-  const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
 
-  const { data: grades } = useGrades(GRADE_SCALE_BOARD);
-
-  const [draftFilters, setDraftFilters] = useState<LogbookFilterState>(currentFilters);
-  const [draftSort, setDraftSort] = useState<LogbookSortState>(currentSort);
-  // Bumped on Reset so the Refine/Advanced sections collapse back to default.
-  const [sectionResetKey, setSectionResetKey] = useState(0);
-
-  // Commit-on-close: there's no Apply button — the draft applies when the sheet
-  // closes. The ref holds the latest draft so the stable commit reads the newest
-  // values, never a stale closure.
-  const draftRef = useRef({ filters: draftFilters, sort: draftSort });
+  // Native callbacks can arrive after unmount, or after a close already finished.
+  const isMountedRef = useRef(true);
+  const closingRef = useRef(false);
+  const dismissedRef = useRef(false);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
   useEffect(() => {
-    draftRef.current = { filters: draftFilters, sort: draftSort };
-  }, [draftFilters, draftSort]);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const isCurrentPresentation = useCallback(() => isMountedRef.current && !dismissedRef.current, []);
 
-  // One commit per open. A user pan-down (onClose → handleDismiss) and the
-  // unmount cleanup below both call this, so the guard prevents a double-apply.
-  const committedRef = useRef(false);
-  const commitDraft = useCallback(() => {
-    if (committedRef.current) return;
-    committedRef.current = true;
-    onApply(draftRef.current.filters, draftRef.current.sort);
-  }, [onApply]);
+  // The latest committed state, so the stable handlers below build on what was
+  // just published even before the parent re-renders.
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+  const sortRef = useRef(sort);
+  sortRef.current = sort;
 
-  const handleDismiss = useCallback(() => {
-    commitDraft();
-    onDismiss();
-  }, [commitDraft, onDismiss]);
+  const subRoute = useSheetSubRoute<ComponentRef<typeof BottomSheetScrollView>>({ canResume: isCurrentPresentation });
+  const { suspended, presentEpoch, isAwaitingReturn, suspend } = subRoute;
 
-  // The parent only mounts the sheet while it should be open, so present/dismiss
-  // route through the coordinator (serialized, no overlapping native transitions).
-  // A user pan-down / scrim tap fires onClose → handleDismiss (commit the draft).
-  const managed = useManagedSheet({ open: true, sheetRef, onClose: handleDismiss });
+  const detentSnapPoints = useMemo(() => [`${SHEET_DETENT_FRACTION * 100}%`], []);
+  const snapPoints = useMemo(() => androidSafeSnapPoints(detentSnapPoints), [detentSnapPoints]);
+  // On iOS the SwiftUI host can propose an unbounded height; pin the one column
+  // child to the detent so the body scrolls (#3330). Android bounds it natively.
+  const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
+  // The sheet mounts only while open and has one detent: nothing to raise.
+  const { keyboardOverlap, columnRef, onColumnLayout } = useSheetKeyboardInset({ enabled: true });
+  const scrollContentStyle = useMemo(() => ({ paddingBottom: windowInsetBottom + spacing[4] }), [windowInsetBottom]);
 
-  // Commit on unmount too: a programmatic close — the parent unmounting the sheet,
-  // or a coordinator-driven dismiss — never fires onClose, so the draft would
-  // otherwise be discarded silently. Read commitDraft through a ref so the cleanup
-  // runs only on real unmount (empty deps), not on every onApply identity change.
-  const commitDraftRef = useRef(commitDraft);
-  commitDraftRef.current = commitDraft;
+  // The name field keeps its own display text (a trailing space survives while
+  // typing); the parent debounces the commit.
+  const [nameDraft, setNameDraft] = useState(name);
+  const nameDraftRef = useRef(nameDraft);
+  nameDraftRef.current = nameDraft;
   useEffect(() => {
-    return () => commitDraftRef.current();
-  }, []);
+    if (!visibleSearchTextNeedsSync(nameDraftRef.current, name)) return;
+    setNameDraft(name);
+  }, [name]);
 
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
-  // One stable "today" ceiling so the To-date row's maximumDate prop keeps a
-  // constant identity across renders (a fresh Date each render would re-arm
-  // DateRangeRow's openAndroid useCallback every time). Captured at sheet mount,
-  // so a sheet left open across midnight keeps the prior day's ceiling until it's
-  // reopened — an acceptable tradeoff for the stable identity.
-  const today = useMemo(() => nowDate(), []);
-
-  const updateFilters = useCallback((patch: Partial<LogbookFilterState>) => {
-    setDraftFilters((previous) => ({ ...previous, ...patch }));
-  }, []);
-
-  const handlePreset = useCallback((preset: LogbookSortPreset) => {
-    hapticSelection();
-    setDraftSort({ ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset });
-  }, []);
-
-  const handleStatusChange = useCallback(
-    (key: string) => {
-      const patch = statusPatchFor(key as StatusKey);
-      // Flash is a send refinement; drop it when sends leave the result set so a
-      // hidden flashOnly can't silently empty an attempts-only view.
-      updateFilters({ ...patch, ...(patch.includeSends ? {} : { flashOnly: false }) });
+  const handleNameChange = useCallback(
+    (text: string) => {
+      if (!isCurrentPresentation() || closingRef.current) return;
+      setNameDraft(text);
+      onNameChange(text);
     },
-    [updateFilters],
+    [isCurrentPresentation, onNameChange],
+  );
+  const handleClearName = useCallback(() => {
+    if (!isCurrentPresentation() || closingRef.current) return;
+    setNameDraft('');
+    onClearName();
+  }, [isCurrentPresentation, onClearName]);
+
+  const patchFilters = useCallback(
+    (patch: Partial<LogbookFilterState>) => {
+      if (!isCurrentPresentation() || closingRef.current) return;
+      filtersRef.current = { ...filtersRef.current, ...patch };
+      onChangeFilters(patch);
+    },
+    [isCurrentPresentation, onChangeFilters],
+  );
+  const commitSort = useCallback(
+    (nextSort: LogbookSortState) => {
+      if (!isCurrentPresentation() || closingRef.current) return;
+      sortRef.current = nextSort;
+      onChangeSort(nextSort);
+    },
+    [isCurrentPresentation, onChangeSort],
   );
 
-  const handleGradeChange = useCallback(
-    (bound: GradeBound) => {
-      updateFilters({
-        minGrade: bound.minGradeId ?? '',
-        maxGrade: bound.maxGradeId ?? '',
-      });
-    },
-    [updateFilters],
-  );
+  // Every selection is committed already: closing only waits for the native
+  // animation before releasing the parent.
+  const handleClose = useCallback(() => {
+    if (!isCurrentPresentation() || closingRef.current || isAwaitingReturn()) return;
+    closingRef.current = true;
+    sheetRef.current?.dismiss();
+  }, [isCurrentPresentation, isAwaitingReturn]);
+
+  const handleSheetDismiss = useCallback(() => {
+    if (!isCurrentPresentation() || isAwaitingReturn() || suspended) return;
+    dismissedRef.current = true;
+    closingRef.current = true;
+    onDismissRef.current();
+  }, [isCurrentPresentation, isAwaitingReturn, suspended]);
+
+  // `open: !suspended` lets the setter route dismiss the native sheet without
+  // unmounting it, then re-present on return (see useSheetSubRoute).
+  const managed = useManagedSheet({ open: !suspended, sheetRef, onClose: handleSheetDismiss });
 
   const handleReset = useCallback(() => {
+    if (!isCurrentPresentation() || closingRef.current) return;
     hapticSelection();
-    setDraftFilters(DEFAULT_LOGBOOK_FILTERS);
-    setDraftSort(DEFAULT_LOGBOOK_SORT);
-    setSectionResetKey((key) => key + 1);
-    // Reset is a clean slate: also clear the toolbar's committed search term.
-    onClearSearch?.();
-  }, [onClearSearch]);
+    setNameDraft('');
+    onReset();
+  }, [isCurrentPresentation, onReset]);
 
-  const presetOptions = useMemo(
-    () => [
-      { key: 'recent' as const, label: t('mobile.logbook.preset.latest') },
-      { key: 'hardest' as const, label: t('mobile.logbook.preset.hardest') },
-    ],
-    [t],
-  );
-  const presetKey: LogbookSortPreset = draftSort.mode === 'preset' ? draftSort.preset : 'recent';
+  const handleOpenSetters = useCallback(() => {
+    if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
+    suspend();
+    onOpenSetters();
+  }, [isCurrentPresentation, isAwaitingReturn, suspend, onOpenSetters]);
 
-  const statusOptions = useMemo(
-    () => [
-      { key: 'sends' as const, label: t('mobile.logbook.status.sends') },
-      { key: 'attempts' as const, label: t('mobile.logbook.status.attempts') },
-      { key: 'both' as const, label: t('mobile.logbook.status.both') },
-    ],
-    [t],
-  );
+  // --- Pins: one stable toggle per kind, so a pin tap re-renders only its row.
+  const { isPinned, togglePin } = useLogbookPinnedChips();
+  const pinToggles = useMemo(() => {
+    const toggles = {} as Record<LogbookPinnableChipKind, () => void>;
+    for (const kind of LOGBOOK_PINNABLE_CHIP_KINDS) toggles[kind] = () => togglePin(kind);
+    return toggles;
+  }, [togglePin]);
+  const pinProps = (kind: LogbookPinnableChipKind) => ({ pinned: isPinned(kind), onTogglePin: pinToggles[kind] });
 
+  // --- Difficulty
   const gradeBound = useMemo<GradeBound>(
     () => ({
-      minGradeId: draftFilters.minGrade === '' ? undefined : draftFilters.minGrade,
-      maxGradeId: draftFilters.maxGrade === '' ? undefined : draftFilters.maxGrade,
+      minGradeId: filters.minGrade === '' ? undefined : filters.minGrade,
+      maxGradeId: filters.maxGrade === '' ? undefined : filters.maxGrade,
     }),
-    [draftFilters.minGrade, draftFilters.maxGrade],
+    [filters.minGrade, filters.maxGrade],
+  );
+  const handleGradeChange = useCallback(
+    (bound: GradeBound) => patchFilters({ minGrade: bound.minGradeId ?? '', maxGrade: bound.maxGradeId ?? '' }),
+    [patchFilters],
   );
 
-  const [draftMinAngle, draftMaxAngle] = draftFilters.angleRange;
-  const handleAngleRange = useCallback(
-    (angleRange: [number, number]) => updateFilters({ angleRange }),
-    [updateFilters],
+  // --- Your ascents
+  const statusOptions = useMemo(
+    () => LOGBOOK_STATUS_SEGMENTS.map((segment) => ({ key: segment, label: logbookStatusLabel(segment, t) })),
+    [t],
   );
-
-  // Only the Custom window reads from/to, so picking a date selects it.
+  const handleStatusChange = useCallback(
+    (segment: LogbookStatusSegment) => patchFilters(filtersForStatusSegment(segment)),
+    [patchFilters],
+  );
+  const handleAnyStars = useCallback(() => patchFilters({ minQuality: '' }), [patchFilters]);
+  const handleStarsChange = useCallback(
+    (stars: number | undefined) => patchFilters({ minQuality: stars ?? '' }),
+    [patchFilters],
+  );
+  const handleDateWindow = useCallback((dateWindow: LogbookDateWindow) => patchFilters({ dateWindow }), [patchFilters]);
+  // Only the Custom window reads the dates, so picking one keeps it selected.
   const handleFromDate = useCallback(
-    (iso: string) => updateFilters({ fromDate: iso, dateWindow: 'custom' }),
-    [updateFilters],
+    (fromDate: string) => patchFilters({ fromDate, dateWindow: 'custom' }),
+    [patchFilters],
   );
-  const handleToDate = useCallback(
-    (iso: string) => updateFilters({ toDate: iso, dateWindow: 'custom' }),
-    [updateFilters],
+  const handleToDate = useCallback((toDate: string) => patchFilters({ toDate, dateWindow: 'custom' }), [patchFilters]);
+  // From can't pass To, and neither can pass today. Keyed on the ISO strings so
+  // the memo'd rows keep their props between unrelated edits.
+  const fromDay = useMemo(() => parseLocalIsoDate(filters.fromDate) ?? undefined, [filters.fromDate]);
+  const toDay = useMemo(() => parseLocalIsoDate(filters.toDate) ?? undefined, [filters.toDate]);
+  const fromCeiling = toDay && toDay < today ? toDay : today;
+
+  // --- The climb
+  const selectedBoard = boardOptions.find((board) => board.boardType === filters.boardType);
+  const showBoardControl = boardOptions.length >= 2 || filters.boardType !== '';
+  const boardChoices = useMemo(() => {
+    const choices = boardOptions.map((board) => ({ value: board.boardType, label: board.label }));
+    // A board saved from another logbook stays listed, so it can be cleared.
+    if (filters.boardType && !choices.some((choice) => choice.value === filters.boardType)) {
+      choices.push({ value: filters.boardType, label: formatBoardDisplayName(filters.boardType) });
+    }
+    return choices;
+  }, [boardOptions, filters.boardType]);
+  const layoutChoices = selectedBoard && selectedBoard.layouts.length >= 2 ? selectedBoard.layouts : null;
+  const handleBoardChange = useCallback(
+    (boardType: string) => patchFilters({ boardType, layoutIds: [] }),
+    [patchFilters],
+  );
+  const handleAllLayouts = useCallback(() => patchFilters({ layoutIds: [] }), [patchFilters]);
+  const handleLayoutToggle = useCallback(
+    (layoutId: number) => {
+      const current = filtersRef.current.layoutIds;
+      patchFilters({
+        layoutIds: current.includes(layoutId) ? current.filter((id) => id !== layoutId) : [...current, layoutId],
+      });
+    },
+    [patchFilters],
+  );
+  const angleValue = useMemo(() => logbookAngleRailValue(filters.angleRange), [filters.angleRange]);
+  const handleAngleChange = useCallback(
+    (next: [number, number] | null) => patchFilters(logbookAnglePatch(next)),
+    [patchFilters],
+  );
+  const handleBenchmarks = useCallback((benchmarkOnly: boolean) => patchFilters({ benchmarkOnly }), [patchFilters]);
+
+  // --- Sort
+  const currentSort = logbookSortKeyOf(sort);
+  const sortKeyLabels = useMemo<Record<LogbookSortKey, string>>(
+    () => ({
+      date: t('mobile.logbook.filterSheet.sortKey.date'),
+      grade: t('mobile.logbook.filterSheet.sortKey.grade'),
+      loggedGrade: viewerIsOwner
+        ? t('mobile.logbook.filterSheet.sortKey.yourGrade')
+        : t('mobile.logbook.filterSheet.sortKey.theirGrade'),
+      climbName: t('mobile.logbook.filterSheet.sortKey.name'),
+      attemptCount: t('mobile.logbook.filterSheet.sortKey.attempts'),
+    }),
+    [t, viewerIsOwner],
+  );
+  const orderOptions = useMemo(
+    () => [
+      { key: 'desc' as const, label: t('mobile.logbook.filterSheet.descending') },
+      { key: 'asc' as const, label: t('mobile.logbook.filterSheet.ascending') },
+    ],
+    [t],
+  );
+  // A new key keeps the order the climber set below it.
+  const handleSortKey = useCallback(
+    (key: LogbookSortKey) => commitSort(logbookSortFor(key, logbookSortKeyOf(sortRef.current).direction)),
+    [commitSort],
+  );
+  const handleSortOrder = useCallback(
+    (direction: LogbookSortDirection) => commitSort(logbookSortFor(logbookSortKeyOf(sortRef.current).key, direction)),
+    [commitSort],
   );
 
-  const flashDisabled = !draftFilters.includeSends;
-  const refineSummary = useMemo(() => {
-    const parts: string[] = [];
-    const statusKey = statusKeyFor(draftFilters);
-    if (statusKey !== 'both') parts.push(t(`mobile.logbook.status.${statusKey}`));
-    if (draftFilters.flashOnly && draftFilters.includeSends) parts.push(t('mobile.logbook.flashOnly'));
-    if (draftFilters.minGrade !== '' || draftFilters.maxGrade !== '') parts.push(t('mobile.logbook.grade'));
-    if (draftMinAngle !== DEFAULT_LOGBOOK_ANGLE_RANGE[0] || draftMaxAngle !== DEFAULT_LOGBOOK_ANGLE_RANGE[1]) {
-      parts.push(`${draftMinAngle}°–${draftMaxAngle}°`);
-    }
-    return parts.join(' · ') || null;
-  }, [draftFilters, draftMinAngle, draftMaxAngle, t]);
+  // Reset greys out until there is something to reset, the name included.
+  const anyActive =
+    countLogbookFilters(filters, nameDraft) > 0 ||
+    filters.dateWindow !== DEFAULT_LOGBOOK_FILTERS.dateWindow ||
+    isLogbookSortActive(sort);
 
-  const advancedSummary = useMemo(() => {
-    const parts: string[] = [];
-    if (draftFilters.fromDate || draftFilters.toDate) {
-      parts.push(`${draftFilters.fromDate || '…'} – ${draftFilters.toDate || '…'}`);
-    }
-    if (draftFilters.benchmarkOnly) parts.push(t('mobile.logbook.benchmarksOnly'));
-    return parts.join(' · ') || null;
-  }, [draftFilters.fromDate, draftFilters.toDate, draftFilters.benchmarkOnly, t]);
-
-  const trackColor = systemColors.fill;
+  const subtitle =
+    matchCount == null
+      ? undefined
+      : matchCount.grouped
+        ? t('mobile.logbook.filterSheet.groupedCount', { count: matchCount.count })
+        : t('mobile.logbook.filterSheet.entryCount', { count: matchCount.count });
 
   return (
     <BottomSheetModal
+      key={presentEpoch}
       ref={sheetRef}
       index={0}
       snapPoints={snapPoints}
@@ -242,122 +372,223 @@ export function LogbookFilterSheet({
       enablePanDownToClose
       onChange={managed.onChange}
       onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={{ ...styles.indicator, backgroundColor: theme.chartColors.separator }}
+      handleIndicatorStyle={[styles.indicator, { backgroundColor: systemColors.separator }]}
       backgroundStyle={iosBackgroundStyle}
     >
-      <View style={styles.header}>
-        <Text variant="title3">{t('mobile.logbook.filter')}</Text>
-        <PressableSurface onPress={handleReset} hitSlop={8} accessibilityRole="button">
-          <Text variant="subheadline" color={theme.systemColors.accent}>
-            {t('mobile.logbook.reset')}
-          </Text>
-        </PressableSurface>
-      </View>
-
-      <BottomSheetScrollView
-        ref={scrollRef}
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        // With a fixed 90% snap point + enableDynamicSizing off, the content must
-        // flex to fill the sheet and carry generous bottom padding so the last row
-        // (Benchmarks only) scrolls fully into view when both sections are expanded.
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: windowInsetBottom + spacing[8] }]}
+      {/* One column child bounded to the detent, padded by the keyboard overlap
+          (neither native sheet window resizes for the keyboard). */}
+      <View
+        testID="logbook-filter-column"
+        style={keyboardOverlap > 0 ? [sheetColumnStyle, { paddingBottom: keyboardOverlap }] : sheetColumnStyle}
+        ref={columnRef}
+        onLayout={onColumnLayout}
       >
-        {/* PRESET — the headline one-tap sort. Above Refine/Advanced. Suppressed
-            when the toolbar's top-level sort chips own it (Liquid Glass), so sort
-            isn't worded twice; the draft still tracks/commits it from chips. */}
-        {showSort ? (
-          <View style={styles.primary}>
-            <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.logbook.sort')}
-            </Text>
-            <SegmentedControl
-              options={presetOptions}
-              selectedKey={presetKey}
-              onSelect={(key) => handlePreset(key)}
-              textVariant="footnote"
-              trackColor={trackColor}
-              accessibilityLabel={t('mobile.logbook.sort')}
-            />
+        <SheetTopBar
+          title={t('mobile.logbook.filterSheet.title')}
+          subtitle={subtitle}
+          leading={{ kind: 'close', onPress: handleClose, accessibilityLabel: t('mobile.logbook.filterSheet.close') }}
+          trailing={{ kind: 'forward', label: t('mobile.logbook.reset'), onPress: handleReset, disabled: !anyActive }}
+        />
+
+        <BottomSheetScrollView
+          ref={subRoute.scrollRef}
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={scrollContentStyle}
+          onScroll={subRoute.onScroll}
+          scrollEventThrottle={32}
+          onContentSizeChange={subRoute.onContentSizeChange}
+          // A first tap on X / Reset / a chip while the keyboard is up over the
+          // name field would otherwise only dismiss the keyboard.
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={filterSheetStyles.body}>
+            <FilterSheetSection title={t('mobile.logbook.filterSheet.sectionName')} first>
+              <FilterNameField
+                value={nameDraft}
+                onChangeText={handleNameChange}
+                onClear={handleClearName}
+                placeholder={t('mobile.logbook.filterSheet.namePlaceholder')}
+                accessibilityLabel={t('mobile.logbook.filterSheet.sectionName')}
+              />
+            </FilterSheetSection>
+
+            <FilterSheetSection title={t('mobile.logbook.filterSheet.sectionDifficulty')}>
+              <FilterLabelRow label={t('mobile.logbook.filterSheet.gradeRange')} {...pinProps('grade')} />
+              <GradeRangeRail
+                grades={grades}
+                bound={gradeBound}
+                onChange={handleGradeChange}
+                centerOnEmpty={false}
+                style={filterSheetStyles.inlineRail}
+              />
+            </FilterSheetSection>
+
+            <FilterSheetSection
+              title={
+                viewerIsOwner
+                  ? t('mobile.logbook.filterSheet.sectionYourAscents')
+                  : t('mobile.logbook.filterSheet.sectionTheirAscents')
+              }
+            >
+              <FilterLabelRow label={t('mobile.logbook.filterSheet.status')} {...pinProps('status')} />
+              <View style={filterSheetStyles.controlGap} />
+              <SegmentedControl
+                options={statusOptions}
+                selectedKey={statusSegmentFor(filters)}
+                onSelect={handleStatusChange}
+                accessibilityLabel={t('mobile.logbook.filterSheet.status')}
+              />
+
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow
+                label={
+                  viewerIsOwner ? t('mobile.logbook.filterSheet.yourStars') : t('mobile.logbook.filterSheet.theirStars')
+                }
+                {...pinProps('stars')}
+              />
+              <View style={filterSheetStyles.ratingRow}>
+                <FilterChip
+                  label={t('mobile.logbook.filterSheet.anyStars')}
+                  value={undefined}
+                  selected={filters.minQuality === ''}
+                  onPress={handleAnyStars}
+                />
+                <StarRating
+                  value={filters.minQuality === '' ? undefined : filters.minQuality}
+                  onChange={handleStarsChange}
+                  clearValue={undefined}
+                />
+              </View>
+
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow label={t('mobile.logbook.filterSheet.when')} {...pinProps('date')} />
+              <FilterChipGroup>
+                {LOGBOOK_DATE_WINDOWS.map((window) => (
+                  <FilterChip
+                    key={window}
+                    label={logbookDateWindowLabel(window, t)}
+                    value={window}
+                    selected={filters.dateWindow === window}
+                    onPress={handleDateWindow}
+                  />
+                ))}
+              </FilterChipGroup>
+              {filters.dateWindow === 'custom' ? (
+                <View style={styles.dateRows}>
+                  <DateRangeRow
+                    label={t('mobile.logbook.dateFrom')}
+                    value={filters.fromDate}
+                    onChange={handleFromDate}
+                    clearLabel={t('mobile.logbook.dateAny')}
+                    maximumDate={fromCeiling}
+                  />
+                  <DateRangeRow
+                    label={t('mobile.logbook.dateTo')}
+                    value={filters.toDate}
+                    onChange={handleToDate}
+                    clearLabel={t('mobile.logbook.dateAny')}
+                    minimumDate={fromDay}
+                    maximumDate={today}
+                  />
+                </View>
+              ) : null}
+            </FilterSheetSection>
+
+            <FilterSheetSection title={t('mobile.logbook.filterSheet.sectionTheClimb')}>
+              {showBoardControl ? (
+                <>
+                  <FilterLabelRow label={t('mobile.logbook.filterSheet.board')} {...pinProps('board')} />
+                  <FilterChipGroup>
+                    <FilterChip
+                      label={t('mobile.filter.allBoards')}
+                      value={ALL_BOARDS}
+                      selected={filters.boardType === ''}
+                      onPress={handleBoardChange}
+                    />
+                    {boardChoices.map((board) => (
+                      <FilterChip
+                        key={board.value}
+                        label={board.label}
+                        value={board.value}
+                        selected={filters.boardType === board.value}
+                        onPress={handleBoardChange}
+                      />
+                    ))}
+                  </FilterChipGroup>
+                  {layoutChoices ? (
+                    <>
+                      <View style={filterSheetStyles.subsectionGap} />
+                      <FilterLabelRow label={t('mobile.logbook.filterSheet.layout')} />
+                      <FilterChipGroup>
+                        <FilterChip
+                          label={t('mobile.logbook.filterSheet.allLayouts')}
+                          value={undefined}
+                          selected={filters.layoutIds.length === 0}
+                          onPress={handleAllLayouts}
+                        />
+                        {layoutChoices.map((layout) => (
+                          <FilterChip
+                            key={layout.layoutId}
+                            label={layout.label}
+                            value={layout.layoutId}
+                            selected={filters.layoutIds.includes(layout.layoutId)}
+                            onPress={handleLayoutToggle}
+                          />
+                        ))}
+                      </FilterChipGroup>
+                    </>
+                  ) : null}
+                  <View style={filterSheetStyles.subsectionGap} />
+                </>
+              ) : null}
+
+              <FilterLabelRow label={t('mobile.logbook.angle')} {...pinProps('angle')} />
+              <AngleRangeRail value={angleValue} onChange={handleAngleChange} style={filterSheetStyles.inlineRail} />
+
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow label={t('mobile.logbook.filterSheet.setter')} {...pinProps('setter')} />
+              <FilterTappableRow
+                label={t('mobile.logbook.filterSheet.setter')}
+                value={logbookSetterLabel(filters.setterUsernames, t) ?? t('mobile.logbook.filterSheet.setterAny')}
+                onPress={handleOpenSetters}
+              />
+
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow label={t('mobile.logbook.filterSheet.benchmarks')} {...pinProps('benchmarks')} />
+              <SwitchRow
+                label={t('mobile.logbook.filterSheet.onlyBenchmarks')}
+                value={filters.benchmarkOnly}
+                onValueChange={handleBenchmarks}
+              />
+            </FilterSheetSection>
+
+            <FilterSheetSection title={t('mobile.logbook.filterSheet.sectionSort')}>
+              <FilterLabelRow label={t('mobile.logbook.filterSheet.sortBy')} {...pinProps('sort')} />
+              <FilterChipGroup>
+                {LOGBOOK_SORT_KEYS.map((key) => (
+                  <FilterChip
+                    key={key}
+                    label={sortKeyLabels[key]}
+                    value={key}
+                    selected={currentSort.key === key}
+                    onPress={handleSortKey}
+                  />
+                ))}
+              </FilterChipGroup>
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow label={t('mobile.logbook.filterSheet.order')} />
+              <View style={filterSheetStyles.controlGap} />
+              <SegmentedControl
+                options={orderOptions}
+                selectedKey={currentSort.direction}
+                onSelect={handleSortOrder}
+                accessibilityLabel={t('mobile.logbook.filterSheet.order')}
+              />
+            </FilterSheetSection>
           </View>
-        ) : null}
-
-        <View style={styles.sectionsContainer}>
-          {/* REFINE — status / flash / grade / angle. Open by default (the core
-              filters); Advanced (date / benchmarks) stays collapsed below. */}
-          <CollapsibleSection
-            title={t('mobile.logbook.refine')}
-            summary={refineSummary}
-            resetKey={sectionResetKey}
-            defaultExpanded
-          >
-            <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.logbook.statusLabel')}
-            </Text>
-            <SegmentedControl
-              options={statusOptions}
-              selectedKey={statusKeyFor(draftFilters)}
-              onSelect={handleStatusChange}
-              textVariant="footnote"
-              trackColor={trackColor}
-              accessibilityLabel={t('mobile.logbook.statusLabel')}
-            />
-
-            <View style={styles.subsectionGap} />
-            <View style={[styles.groupedCard, { backgroundColor: systemColors.tertiaryFill }]}>
-              <SwitchRow
-                label={t('mobile.logbook.flashOnly')}
-                value={draftFilters.flashOnly && !flashDisabled}
-                disabled={flashDisabled}
-                onValueChange={(value) => updateFilters({ flashOnly: value })}
-              />
-            </View>
-
-            <View style={styles.subsectionGap} />
-            <GradeRangeRail
-              grades={grades ?? []}
-              bound={gradeBound}
-              onChange={handleGradeChange}
-              showTitle
-              centerOnEmpty={false}
-              style={styles.inlineGradeRail}
-            />
-
-            <View style={styles.subsectionGap} />
-            <LogbookAngleRail angleRange={draftFilters.angleRange} onChange={handleAngleRange} />
-          </CollapsibleSection>
-
-          {/* ADVANCED — date range / benchmarks. */}
-          <CollapsibleSection title={t('mobile.logbook.advanced')} summary={advancedSummary} resetKey={sectionResetKey}>
-            <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.logbook.dateRange')}
-            </Text>
-            <DateRangeRow
-              label={t('mobile.logbook.dateFrom')}
-              value={draftFilters.fromDate}
-              onChange={handleFromDate}
-              clearLabel={t('mobile.logbook.dateAny')}
-            />
-            <View style={styles.dateRowGap} />
-            <DateRangeRow
-              label={t('mobile.logbook.dateTo')}
-              value={draftFilters.toDate}
-              onChange={handleToDate}
-              clearLabel={t('mobile.logbook.dateAny')}
-              maximumDate={today}
-            />
-
-            <View style={styles.subsectionGap} />
-            <View style={[styles.groupedCard, { backgroundColor: systemColors.tertiaryFill }]}>
-              <SwitchRow
-                label={t('mobile.logbook.benchmarksOnly')}
-                value={draftFilters.benchmarkOnly}
-                onValueChange={(value) => updateFilters({ benchmarkOnly: value })}
-              />
-            </View>
-          </CollapsibleSection>
-        </View>
-      </BottomSheetScrollView>
+        </BottomSheetScrollView>
+      </View>
     </BottomSheetModal>
   );
 }
@@ -371,52 +602,7 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
-  },
-  scrollContent: {
-    width: '100%',
-    maxWidth: 672,
-    alignSelf: 'center',
-    // Fill the sheet so the content is always scrollable to the last row (the
-    // inline override supplies the generous safe-area-aware bottom padding).
-    flexGrow: 1,
-    paddingBottom: spacing[4],
-  },
-  primary: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    paddingBottom: spacing[3],
-  },
-  sectionsContainer: {
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-  },
-  subsectionLabel: {
-    opacity: 0.55,
-    marginTop: spacing[1],
-    marginBottom: spacing[2],
-  },
-  subsectionGap: {
-    height: spacing[4],
-  },
-  groupedCard: {
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-  },
-  // Cancels the section card's content padding so the grade strip scrolls out to
-  // the card's edges; the rail's own insets put its title and its first and last
-  // chip back on that padding.
-  inlineGradeRail: {
-    marginTop: spacing[1],
-    marginHorizontal: -spacing[4],
-  },
-  dateRowGap: {
-    height: spacing[2],
+  dateRows: {
+    marginTop: spacing[2],
   },
 });

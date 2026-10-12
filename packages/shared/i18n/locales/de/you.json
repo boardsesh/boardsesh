@@ -96,31 +96,15 @@
       "errorTitle": "Dein Routenbuch konnte nicht geladen werden",
       "errorBody": "Prüf deine Verbindung und versuch es erneut.",
       "retry": "Erneut versuchen",
-      "searchPlaceholder": "Deine Boulder durchsuchen",
-      "filter": "Filtern",
-      "sort": "Sortieren",
-      "refine": "Verfeinern",
-      "advanced": "Erweitert",
-      "preset": {
-        "latest": "Neueste",
-        "hardest": "Schwerste"
-      },
-      "flashOnly": "Nur Flash",
       "grade": "Grad",
       "angle": "Winkel",
-      "show": "Anzeigen",
-      "angleMin": "Min. Winkel",
-      "angleMax": "Max. Winkel",
-      "dateRange": "Zeitraum",
       "dateFrom": "Von",
       "dateTo": "Bis",
       "dateAny": "Alle",
       "dateSince": "Seit {{date}}",
       "dateUntil": "Bis {{date}}",
-      "benchmarksOnly": "Nur Benchmarks",
       "reset": "Zurücksetzen",
       "editTitle": "Begehung bearbeiten",
-      "statusLabel": "Status",
       "delete": "Löschen",
       "deleteTitle": "Begehung löschen",
       "deleteConfirm": "Das entfernt die eingetragene Begehung und lässt sich nicht rückgängig machen.",
@@ -133,8 +117,7 @@
         "send": "Getoppt",
         "attempt": "Versuch",
         "sends": "Begehungen",
-        "attempts": "Versuche",
-        "both": "Beides"
+        "attempts": "Versuche"
       },
       "row": {
         "project": "Projekt",
@@ -169,8 +152,7 @@
       "boardPickerLabel": "Board auswählen",
       "boardBack": "Zurück zur Bearbeitung",
       "boardRetry": "Boards konnten nicht geladen werden. Tippe zum Wiederholen.",
-      "boardEmpty": "Kein gespeichertes oder kürzlich genutztes Board passt zu diesem Boulder.",
-      "customSort": "Eigene Sortierung"
+      "boardEmpty": "Kein gespeichertes oder kürzlich genutztes Board passt zu diesem Boulder."
     },
     "boardLink": {
       "title": "Fehlen deine {{boardName}}-Begehungen?",

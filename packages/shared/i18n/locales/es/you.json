@@ -96,31 +96,15 @@
       "errorTitle": "No se pudo cargar tu historial",
       "errorBody": "Comprueba tu conexión e inténtalo de nuevo.",
       "retry": "Inténtalo de nuevo",
-      "searchPlaceholder": "Busca tus bloques",
-      "filter": "Filtrar",
-      "sort": "Ordenar",
-      "refine": "Afinar",
-      "advanced": "Avanzado",
-      "preset": {
-        "latest": "Recientes",
-        "hardest": "Más difíciles"
-      },
-      "flashOnly": "Solo flash",
       "grade": "Grado",
       "angle": "Ángulo",
-      "show": "Mostrar",
-      "angleMin": "Ángulo mín.",
-      "angleMax": "Ángulo máx.",
-      "dateRange": "Rango de fechas",
       "dateFrom": "Desde",
       "dateTo": "Hasta",
       "dateAny": "Cualquiera",
       "dateSince": "Desde {{date}}",
       "dateUntil": "Hasta {{date}}",
-      "benchmarksOnly": "Solo referencias",
       "reset": "Restablecer",
       "editTitle": "Editar ascenso",
-      "statusLabel": "Estado",
       "delete": "Eliminar",
       "deleteTitle": "Eliminar ascenso",
       "deleteConfirm": "Esto elimina el ascenso registrado y no se puede deshacer.",
@@ -133,8 +117,7 @@
         "send": "Encadenada",
         "attempt": "Intento",
         "sends": "Encadenes",
-        "attempts": "Intentos",
-        "both": "Ambos"
+        "attempts": "Intentos"
       },
       "row": {
         "project": "Proyecto",
@@ -169,8 +152,7 @@
       "boardPickerLabel": "Elegir un plafón",
       "boardBack": "Volver a editar",
       "boardRetry": "No se pudieron cargar los plafones. Toca para reintentar.",
-      "boardEmpty": "Ningún plafón guardado o reciente es compatible con este bloque.",
-      "customSort": "Orden personalizado"
+      "boardEmpty": "Ningún plafón guardado o reciente es compatible con este bloque."
     },
     "boardLink": {
       "title": "¿Te faltan tus encadenes de {{boardName}}?",

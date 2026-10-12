@@ -1,36 +1,30 @@
-// The inline rail the logbook chip row drops below itself when a grade/angle/date
-// facet chip is open (the iOS-glass branch only — mounted by LogbookTab under the
-// SwiftUI Host). One facet open at a time; the chip toggles it. Every control is
-// the SAME one the LogbookFilterSheet uses (GradeRangeRail, LogbookAngleRail,
-// DateRangeRow), so a facet is never worded or behaves two ways. Commits are
-// live: each change calls setFilters straight away (no draft/apply).
+// The inline rail the Logbook's capsule row drops below itself while its Grade
+// or Angle capsule is open. One rail at a time; the capsule toggles it and the
+// Logbook tab owns which is open. Both are the same pickers the filter sheet
+// uses (GradeRangeRail, AngleRangeRail), so a facet never behaves two ways.
+// Commits are live: each change patches the filters straight away.
 
 import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import type { GradeBound } from '@boardsesh/climb-filters';
 import type { LogbookFilterState } from '@boardsesh/logbook';
 import type { Grade } from '@boardsesh/shared-schema';
 import { GradeRangeRail } from '../grade';
-import { LogbookAngleRail, DateRangeRow } from './logbook-facet-controls';
-import type { LogbookFacetKey } from './LogbookChipRow.logic';
+import { AngleRangeRail } from '../filter-sheet/AngleRangeRail';
+import { logbookAnglePatch, logbookAngleRailValue, type LogbookRailKind } from './logbook-capsules';
 import { spacing } from '../../theme/tokens';
 
 type LogbookFacetRailProps = {
-  /** Which facet's rail to show; null renders nothing. */
-  openFacet: LogbookFacetKey | null;
+  /** Which rail to show; null renders nothing. */
+  openRail: LogbookRailKind | null;
   filters: LogbookFilterState;
-  /** Grade scale (difficultyId → name) for the grade rail (same as the sheet). */
+  /** The grade scale the sheet's rail uses too. */
   grades: readonly Grade[];
   /** Live-commit a partial filter patch. */
   onUpdateFilters: (partial: Partial<LogbookFilterState>) => void;
-  /** A stable "today" ceiling for the To-date row's maximumDate. */
-  today: Date;
 };
 
-function LogbookFacetRailComponent({ openFacet, filters, grades, onUpdateFilters, today }: LogbookFacetRailProps) {
-  const { t } = useTranslation('you');
-
+function LogbookFacetRailComponent({ openRail, filters, grades, onUpdateFilters }: LogbookFacetRailProps) {
   const gradeBound = useMemo<GradeBound>(
     () => ({
       minGradeId: filters.minGrade === '' ? undefined : filters.minGrade,
@@ -38,67 +32,36 @@ function LogbookFacetRailComponent({ openFacet, filters, grades, onUpdateFilters
     }),
     [filters.minGrade, filters.maxGrade],
   );
+  const angleValue = useMemo(() => logbookAngleRailValue(filters.angleRange), [filters.angleRange]);
 
   const handleGradeChange = useCallback(
     (bound: GradeBound) => onUpdateFilters({ minGrade: bound.minGradeId ?? '', maxGrade: bound.maxGradeId ?? '' }),
     [onUpdateFilters],
   );
-  const handleAngleRange = useCallback(
-    (angleRange: [number, number]) => onUpdateFilters({ angleRange }),
-    [onUpdateFilters],
-  );
-  // Only the Custom window reads from/to, so picking a date selects it.
-  const handleFromDate = useCallback(
-    (iso: string) => onUpdateFilters({ fromDate: iso, dateWindow: 'custom' }),
-    [onUpdateFilters],
-  );
-  const handleToDate = useCallback(
-    (iso: string) => onUpdateFilters({ toDate: iso, dateWindow: 'custom' }),
+  const handleAngleChange = useCallback(
+    (next: [number, number] | null) => onUpdateFilters(logbookAnglePatch(next)),
     [onUpdateFilters],
   );
 
-  if (openFacet === null) return null;
+  if (openRail === null) return null;
 
+  // The capsule row pads its first capsule 16pt in from the column's edge, and
+  // the rails' default insets do the same, so both strips start on one line
+  // and scroll out to the column's edge.
   return (
     <View style={styles.rail}>
-      {/* The toolbar already owns the 16pt gutter, and the chip row above pads its
-          own chips a further 16pt inside it. The rail's default insets do the
-          same, so the first grade chip rests under that row's first chip and
-          both strips clip on the same line. */}
-      {openFacet === 'grade' ? (
+      {openRail === 'grade' ? (
         <GradeRangeRail grades={grades} bound={gradeBound} onChange={handleGradeChange} centerOnEmpty={false} />
-      ) : null}
-
-      {openFacet === 'angle' ? <LogbookAngleRail angleRange={filters.angleRange} onChange={handleAngleRange} /> : null}
-
-      {openFacet === 'date' ? (
-        <>
-          <DateRangeRow
-            label={t('mobile.logbook.dateFrom')}
-            value={filters.fromDate}
-            onChange={handleFromDate}
-            clearLabel={t('mobile.logbook.dateAny')}
-          />
-          <View style={styles.dateRowGap} />
-          <DateRangeRow
-            label={t('mobile.logbook.dateTo')}
-            value={filters.toDate}
-            onChange={handleToDate}
-            clearLabel={t('mobile.logbook.dateAny')}
-            maximumDate={today}
-          />
-        </>
-      ) : null}
+      ) : (
+        <AngleRangeRail value={angleValue} onChange={handleAngleChange} />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   rail: {
-    paddingTop: spacing[2],
-  },
-  dateRowGap: {
-    height: spacing[2],
+    paddingBottom: spacing[2],
   },
 });
 

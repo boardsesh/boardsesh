@@ -1,6 +1,5 @@
-import { memo, useCallback, useState } from 'react';
+import { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { describeLogbookDay, type LogbookDayStats } from '@boardsesh/logbook';
 import { Text } from '../Text';
@@ -9,7 +8,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { selectByVariant } from '../../theme/variants';
-import { nowMs } from '../../lib/clock';
+import { useToday } from '../../hooks/use-today';
 
 // Off-grid on purpose: 8pt (spacing[2]) reads too tall around caption1 text in
 // the compact chip, 4pt too tight against the wash edge.
@@ -48,16 +47,11 @@ export const LogbookDayDivider = memo(function LogbookDayDivider({
   const { brandColors: brand, systemColors, variant } = useTheme();
   const { formatGrade } = useGradeFormat();
 
-  // The divider owns its clock: refreshing on focus keeps "Today" honest past
-  // midnight while re-rendering ONLY dividers — a tab-level `now` in
-  // renderItem's deps would re-render every climb row on each focus for a
-  // value none of them read.
-  const [now, setNow] = useState(() => nowMs());
-  useFocusEffect(
-    useCallback(() => {
-      setNow(nowMs());
-    }, []),
-  );
+  // The divider reads the shared day clock: it rolls over on focus and on
+  // foreground, keeping "Today" honest past midnight while re-rendering ONLY
+  // dividers — a tab-level `now` in renderItem's deps would re-render every
+  // climb row for a value none of them read.
+  const now = useToday().getTime();
 
   const { kind } = describeLogbookDay(dayStartMs, now);
   const label =

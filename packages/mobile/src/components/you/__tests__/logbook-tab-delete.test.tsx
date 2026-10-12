@@ -100,7 +100,7 @@ vi.mock('@shopify/flash-list', () => ({
   }) => createElement('div', null, ...data.map((item, index) => renderItem({ item, index }))),
 }));
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
 vi.mock('../LogbookRow', () => ({
   LogbookRow: ({
     onDeleteRequest,
@@ -118,8 +118,14 @@ vi.mock('../LogbookEntryChooserSheet', () => ({ LogbookEntryChooserSheet: () => 
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
 vi.mock('../BoardLinkPrompt', () => ({ BoardLinkPrompt: () => null }));
 vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
-vi.mock('../../SearchHeader', () => ({ SearchHeader: () => null }));
-vi.mock('../../search/FilterButton', () => ({ FILTER_FAB_SIZE: 48, FilterButton: () => null }));
+// The capsule row's inputs, reduced to fixed values: these suites drive rows.
+vi.mock('../use-logbook-board-options', () => ({ useLogbookBoardOptions: () => [] }));
+vi.mock('../../../hooks/use-today', () => ({ useToday: () => new Date(2026, 5, 30) }));
+vi.mock('../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v' }) }));
+vi.mock('../../../lib/routing/scoped-navigation', () => ({ useScopedRouter: () => ({ push: vi.fn() }) }));
+vi.mock('../../../lib/logbook-pinned-chips-store', () => ({
+  useLogbookPinnedChips: () => ({ pinned: [], loaded: true, isPinned: () => false, togglePin: vi.fn() }),
+}));
 vi.mock('../../../lib/haptics', () => haptics);
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { black: '#000' } }));
 vi.mock('../../Text', () => ({ Text: () => null }));

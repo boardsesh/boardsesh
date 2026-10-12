@@ -13,6 +13,7 @@ import type { LogbookDayStats } from '@boardsesh/logbook';
 vi.mock('react-native', () => ({
   View: ({ children, ...props }: { children?: ReactNode }) => createElement('div', props, children),
   StyleSheet: { create: (styles: unknown) => styles },
+  AppState: { addEventListener: () => ({ remove: () => {} }) },
 }));
 vi.mock('expo-router', () => ({ useFocusEffect: () => {} }));
 vi.mock('react-i18next', () => ({

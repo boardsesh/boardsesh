@@ -22,7 +22,6 @@ import {
   disabled as disabledModifier,
   frame,
   font,
-  fixedSize,
   lineLimit,
   truncationMode,
   accessibilityLabel as a11yLabel,
@@ -91,10 +90,7 @@ export function AppMenu(props: AppMenuProps) {
   );
 
   return (
-    <Host
-      matchContents
-      style={[styles.host, props.iconName == null && props.wrapLabel && maxWidth != null ? { maxWidth } : null, style]}
-    >
+    <Host matchContents style={[styles.host, style]}>
       <Menu
         modifiers={menuModifiers}
         label={
@@ -109,14 +105,7 @@ export function AppMenu(props: AppMenuProps) {
             <HStack spacing={spacing[1]} alignment="center">
               {/* Headline weight + label colour by default — reads like the old pill's
                   bold title; truncates a long scope name within the capped frame. */}
-              <Text
-                modifiers={[
-                  font({ textStyle: 'headline' }),
-                  ...(props.wrapLabel
-                    ? [fixedSize({ horizontal: false, vertical: true })]
-                    : [lineLimit(1), truncationMode('tail')]),
-                ]}
-              >
+              <Text modifiers={[font({ textStyle: 'headline' }), lineLimit(1), truncationMode('tail')]}>
                 {props.label}
               </Text>
               {props.showCaret !== false ? (

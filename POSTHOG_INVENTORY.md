@@ -739,3 +739,18 @@ These events are separate from external `Integration*` events and do not change
 `integrations_connected_count`. Later linking surfaces can report `onboarding`,
 `progress_empty` or `logbook_empty`; this change does not configure production
 PostHog dashboards or person properties.
+
+## Logbook search and filters (mobile, #6363)
+
+Three events from `packages/mobile/src/components/you/LogbookTab.tsx`. None carries the typed
+text, a grade, a date or a setter name.
+
+| Event | Properties | When |
+| --- | --- | --- |
+| `Logbook Searched` | `length` | 300 ms after the last keystroke in the filter sheet's Climb name field, when the term isn't empty |
+| `Logbook Filter Changed` | `fields` (sorted, comma-joined field names; `reset` from the sheet's Reset, `all` from the empty state's Clear filters), `surface` (`capsule` / `rail` / `sheet` / `token` / `setter_picker` / `empty_state`) | Every committed filter change |
+| `Logbook Sort Changed` | `preset` (`recent` / `hardest` / `easiest` / `custom`), `sortKey`, `direction`, `surface` (`capsule` / `sheet` / `token`) | Every committed sort change |
+
+`surface` is new with the capsule row; events from older builds have only `fields` (Filter Changed)
+or only `preset` (Sort Changed). The sheet applies live, so each tap in it is its own event; there is no
+Apply to batch them.

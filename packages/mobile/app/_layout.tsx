@@ -187,10 +187,6 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
     flags['strava-integration'] = true;
   }
 
-  if (process.env.EXPO_PUBLIC_LOGBOOK_FILTERS === 'true') {
-    flags['logbook-filters'] = true;
-  }
-
   return Object.keys(flags).length > 0 ? flags : undefined;
 }
 
@@ -827,6 +823,10 @@ function RootLayout() {
                                                                             {/* A climber's full beta-video grid — the "See all" target of
                                                           the profile beta shelf. Sets its own solid header. */}
                                                                             <Stack.Screen name="users/[userId]/beta" />
+                                                                            {/* The Logbook's setter picker, pushed from a profile's
+                                                          Logbook filters. Mirrored into every tab's stack like
+                                                          the profile itself. Sets its own solid header. */}
+                                                                            <Stack.Screen name="users/[userId]/logbook-setters" />
                                                                             {/* Headerless push — hides the tab bar like the other pushed
                                                           screens, with its own in-body search bar. NOT a modal: a native
                                                           modal presentation traps the root play drawer beneath it when a

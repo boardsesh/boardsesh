@@ -10,7 +10,6 @@ const state = vi.hoisted(() => ({
   offline: false,
   pending: false,
   error: false,
-  sheetSort: undefined as boolean | undefined,
   measure: undefined as ((height: number) => void) | undefined,
   listProps: undefined as
     | {
@@ -58,7 +57,7 @@ vi.mock('@shopify/flash-list', () => ({
     return createElement('div', { 'data-testid': 'results' });
   },
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
 vi.mock('expo-router', () => ({ useRouter: () => ({}) }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => state.native }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -118,10 +117,13 @@ vi.mock('../../Text', () => ({
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
 }));
-vi.mock('../../SearchHeader', () => ({ SearchHeader: () => createElement('div', { 'data-testid': 'search' }) }));
-vi.mock('../../search/FilterButton', () => ({
-  FILTER_FAB_SIZE: 48,
-  FilterButton: () => createElement('button', { 'data-testid': 'filters' }),
+vi.mock('../../search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));
+vi.mock('../use-logbook-board-options', () => ({ useLogbookBoardOptions: () => [] }));
+vi.mock('../../../hooks/use-today', () => ({ useToday: () => new Date(2026, 5, 30) }));
+vi.mock('../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v' }) }));
+vi.mock('../../../lib/routing/scoped-navigation', () => ({ useScopedRouter: () => ({ push: vi.fn() }) }));
+vi.mock('../../../lib/logbook-pinned-chips-store', () => ({
+  useLogbookPinnedChips: () => ({ pinned: [], loaded: true, isPinned: () => false, togglePin: vi.fn() }),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'loading' }),
@@ -133,22 +135,14 @@ vi.mock('../LogbookDayDivider', () => ({ LogbookDayDivider: () => null, LogbookW
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
 vi.mock('../LogbookEntryChooserSheet', () => ({ LogbookEntryChooserSheet: () => null }));
 vi.mock('../LogbookFilterSheet', () => ({
-  LogbookFilterSheet: ({ showSort }: { showSort: boolean }) => {
-    state.sheetSort = showSort;
-    return createElement('div', { 'data-testid': 'filter-sheet' });
-  },
-}));
-vi.mock('../LogbookCompactToolbar', () => ({
-  LogbookCompactToolbar: ({ search, onOpenFilters }: { search: ReactNode; onOpenFilters: () => void }) =>
-    createElement(
-      'div',
-      { 'data-testid': 'compact-toolbar' },
-      search,
-      createElement('button', { 'data-testid': 'filters', onClick: onOpenFilters }),
-    ),
+  LogbookFilterSheet: () => createElement('div', { 'data-testid': 'filter-sheet' }),
 }));
 vi.mock('../BoardLinkPrompt', () => ({ BoardLinkPrompt: () => null }));
-vi.mock('../LogbookChipRow', () => ({ LogbookChipRow: () => null }));
+// The capsule row, reduced to its Filters opener.
+vi.mock('../LogbookChipRow', () => ({
+  LogbookChipRow: ({ onOpenFilters }: { onOpenFilters: () => void }) =>
+    createElement('button', { 'data-testid': 'capsules', onClick: onOpenFilters }),
+}));
 vi.mock('../LogbookFacetRail', () => ({ LogbookFacetRail: () => null }));
 
 import { LogbookTab } from '../LogbookTab';
@@ -165,7 +159,6 @@ beforeEach(() => {
   state.offline = false;
   state.pending = false;
   state.error = false;
-  state.sheetSort = undefined;
   state.listProps = undefined;
   state.measure = undefined;
 });
@@ -175,22 +168,21 @@ afterEach(() => {
 });
 
 describe('Logbook composed profile header', () => {
-  it('uses compact owner controls without the duplicate heading and keeps sort in the sheet', () => {
+  it('puts the capsule row in the composed header without the duplicate heading', () => {
     const { getByTestId, queryByText } = render(<LogbookTab userId="me" renderHeader={renderHeader} />);
-    expect(getByTestId('compact-toolbar')).toBeTruthy();
+    expect(getByTestId('composed-header').contains(getByTestId('capsules'))).toBe(true);
     expect(queryByText('tabs.logbook')).toBeNull();
     expect(queryByText('mobile.filter.allBoards')).toBeNull();
-    fireEvent.click(getByTestId('filters'));
+    fireEvent.click(getByTestId('capsules'));
     expect(getByTestId('filter-sheet')).toBeTruthy();
-    expect(state.sheetSort).toBe(true);
   });
 
-  it('retains the heading and existing controls for a public composed header', () => {
-    const { getByText, queryByTestId } = render(
+  it('drops the heading in any composed header: the selected tab names the page', () => {
+    const { getByTestId, queryByText } = render(
       <LogbookTab userId="other" viewerIsOwner={false} renderHeader={renderHeader} />,
     );
-    expect(getByText('tabs.logbook')).toBeTruthy();
-    expect(queryByTestId('compact-toolbar')).toBeNull();
+    expect(queryByText('tabs.logbook')).toBeNull();
+    expect(getByTestId('capsules')).toBeTruthy();
   });
 
   it('reports list scrolling to the floating header and clears it on unmount', () => {
@@ -277,9 +269,9 @@ describe('Logbook composed profile header', () => {
 
   it('starts Material results below the entire opaque measured header', () => {
     state.native = false;
-    const { getByTestId, getByText, queryByTestId } = render(<LogbookTab userId="me" renderHeader={renderHeader} />);
-    expect(getByText('tabs.logbook')).toBeTruthy();
-    expect(queryByTestId('compact-toolbar')).toBeNull();
+    const { getByTestId, queryByText } = render(<LogbookTab userId="me" renderHeader={renderHeader} />);
+    expect(queryByText('tabs.logbook')).toBeNull();
+    expect(getByTestId('composed-header').contains(getByTestId('capsules'))).toBe(true);
     act(() => state.measure?.(280));
     expect(getByTestId('results').parentElement!.dataset.style).toContain('"paddingTop":280');
     expect(getByTestId('results').parentElement!.dataset.style).toContain('"overflow":"hidden"');
@@ -289,9 +281,13 @@ describe('Logbook composed profile header', () => {
   });
 
   it('leaves public profile controls in flow without adding supplementary padding', () => {
-    const { getByTestId, queryByTestId } = render(<LogbookTab userId="other" viewerIsOwner={false} topInset={24} />);
+    const { getByTestId, getByText, queryByTestId } = render(
+      <LogbookTab userId="other" viewerIsOwner={false} topInset={24} />,
+    );
     expect(queryByTestId('composed-header')).toBeNull();
-    expect(getByTestId('search').compareDocumentPosition(getByTestId('results'))).toBe(
+    expect(getByText('tabs.logbook')).toBeTruthy();
+    expect(getByText('mobile.filter.allBoards')).toBeTruthy();
+    expect(getByTestId('capsules').compareDocumentPosition(getByTestId('results'))).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(state.listProps?.contentContainerStyle.paddingTop).toBe(0);
@@ -308,8 +304,7 @@ describe('Logbook composed profile header', () => {
       const { getByTestId, queryByTestId } = render(
         <LogbookTab userId={status === 'missing-user' ? undefined : 'me'} renderHeader={renderHeader} />,
       );
-      expect(getByTestId('composed-header').contains(getByTestId('search'))).toBe(true);
-      expect(getByTestId('composed-header').contains(getByTestId('filters'))).toBe(true);
+      expect(getByTestId('composed-header').contains(getByTestId('capsules'))).toBe(true);
       expect(queryByTestId('results')).toBeNull();
       act(() => state.measure?.(180));
       expect(getByTestId('composed-header')).toBeTruthy();
