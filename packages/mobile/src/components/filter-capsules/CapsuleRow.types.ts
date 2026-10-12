@@ -19,7 +19,8 @@ import type { ReactElement } from 'react';
 /**
  * A glyph a capsule or menu action can carry. Each platform maps the name to its
  * own icon set (SF Symbol, Material vector drawable, Paper icon name); a platform
- * with no glyph for a name draws none.
+ * with no glyph for a name draws none. The lock glyphs are iOS-only, like the
+ * Tall / Wide lock they belong to.
  */
 export type CapsuleIcon = 'filters' | 'recent' | 'locked' | 'lock' | 'unlock';
 

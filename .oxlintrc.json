@@ -160,11 +160,11 @@
             "patterns": [
               {
                 "group": ["@expo/ui/swift-ui", "@expo/ui/swift-ui/*"],
-                "message": "@expo/ui/swift-ui resolves native SwiftUI views at module load \u2014 importing it on Android crashes at runtime (\"Unable to get view config\"). Import it only from a *.ios.tsx / *.ios.ts file and platform-split the component (see SwitchRow / FilterChipRow and docs/expo-ui-components.md)."
+                "message": "@expo/ui/swift-ui resolves native SwiftUI views at module load \u2014 importing it on Android crashes at runtime (\"Unable to get view config\"). Import it only from a *.ios.tsx / *.ios.ts file and platform-split the component (see SwitchRow / CapsuleRow and docs/expo-ui-components.md)."
               },
               {
                 "group": ["@expo/ui/jetpack-compose", "@expo/ui/jetpack-compose/*"],
-                "message": "@expo/ui/jetpack-compose resolves native Compose views at module load \u2014 importing it on iOS crashes at runtime (\"Unable to get view config\"). Import it only from a *.android.tsx / *.android.ts file and platform-split the component (see SwitchRow / FilterChipRow and docs/expo-ui-components.md)."
+                "message": "@expo/ui/jetpack-compose resolves native Compose views at module load \u2014 importing it on iOS crashes at runtime (\"Unable to get view config\"). Import it only from a *.android.tsx / *.android.ts file and platform-split the component (see SwitchRow / CapsuleRow and docs/expo-ui-components.md)."
               }
             ],
             "paths": [

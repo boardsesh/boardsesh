@@ -74,7 +74,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../capsule-icons.android', () => ({
-  CAPSULE_ICON_SOURCE: { filters: 'tune', recent: 'history', locked: 'lock', lock: 'lock' },
+  CAPSULE_ICON_SOURCE: { filters: 'tune', recent: 'history' },
   CHECK_ICON_SOURCE: 'check',
 }));
 

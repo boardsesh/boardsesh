@@ -7,12 +7,15 @@
 import type { ImageSourcePropType } from 'react-native';
 import type { CapsuleIcon } from './CapsuleRow.types';
 
-/** Semantic capsule icon → Material vector. A name with no vector draws no icon. */
+/**
+ * Semantic capsule icon → Material vector. A name with no vector draws no icon:
+ * the lock glyphs ('locked' / 'lock' / 'unlock') stay out because the Tall /
+ * Wide lock is iOS-only (0011bc363d), so Android never has a locked capsule or a
+ * reachable Lock command to draw them on.
+ */
 export const CAPSULE_ICON_SOURCE: Partial<Record<CapsuleIcon, ImageSourcePropType>> = {
   filters: require('../../../assets/material-icons/tune.xml') as ImageSourcePropType,
   recent: require('../../../assets/material-icons/history.xml') as ImageSourcePropType,
-  locked: require('../../../assets/material-icons/lock.xml') as ImageSourcePropType,
-  lock: require('../../../assets/material-icons/lock.xml') as ImageSourcePropType,
 };
 
 /** The check a selected menu option carries. */

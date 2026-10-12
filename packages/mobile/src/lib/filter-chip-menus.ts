@@ -1,10 +1,11 @@
-// Pure helpers behind the persistent filter-chip row (FilterChipRow.tsx). Native
-// @expo/ui Pickers take string|number tags; these map our typed filter values to
-// stable tags and back, and reproduce the filter sheet's conflict-clear rules so
-// a chip menu and the sheet never diverge.
+// Pure helpers behind the climbs filter row (components/search/climb-capsules.ts).
+// Native @expo/ui Pickers take string|number tags; these map our typed filter
+// values to stable tags and back, and reproduce the filter sheet's conflict-clear
+// rules so a chip menu and the sheet never diverge.
 //
-// The JSX (Menu/Picker/Toggle) lives in FilterChipRow.tsx; only data + rules live
-// here so they can be unit-tested without a native host.
+// The capsule descriptors are built in climb-capsules.ts and drawn by
+// components/filter-capsules/CapsuleRow.*; only data + rules live here so they
+// can be unit-tested without a native host.
 
 import type { ClimbFilterState } from '@boardsesh/climb-filters';
 

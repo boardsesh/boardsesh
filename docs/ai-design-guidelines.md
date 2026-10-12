@@ -534,8 +534,12 @@ surface passes final, localised labels and bound handlers. Five kinds (`CapsuleR
 | `toggleMenu` | Flips a filter; iOS long-press opens extra commands      | Tall / Wide (lock)   |
 
 - **One active style.** An active capsule is filled with `primaryFill` and labelled in `onPrimary`
-  on every platform. Never the text brand colour: in dark mode it is a light lavender that white
-  text can't sit on (see "Brand colours").
+  on every platform, the web included (Paper's selected chip would draw `secondaryContainer`).
+  Never the text brand colour: in dark mode it is a light lavender that white text can't sit on
+  (see "Brand colours").
+- **Glass only where it is real.** Below iOS 26 `@expo/ui` turns the glass styles into plain text
+  buttons, so the row draws `bordered` (resting, neutral) and `borderedProminent` (active) there,
+  picked by `useGlassCapability()` as `Button` does.
 - **The rail chevron is iOS-only.** It points up while the rail is shown. On regular-width iPad a
   `rail` can carry a `popover` instead of the inline row.
 - **Android and the web are tap-only.** A Compose `FilterChip` eats the long-press (#3319, #3322),

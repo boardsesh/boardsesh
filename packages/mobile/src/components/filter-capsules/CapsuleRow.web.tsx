@@ -2,23 +2,22 @@
 // scrolling row of Paper Material 3 Chips + Menus, the Material counterpart to
 // the Compose chips in CapsuleRow.android.tsx, which it mirrors capsule for
 // capsule. `toggleMenu` draws a plain toggle chip here too (no long-press menu),
-// and the rail has no chevron.
+// and the rail has no chevron. Active chips take the brand fill with on-fill
+// text (CapsuleChips.web.tsx).
 
 import { memo } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
-import { Chip, Divider, Menu } from 'react-native-paper';
+import { Divider, Menu } from 'react-native-paper';
 import { spacing } from '../../theme/tokens';
-import { CapsuleMenuChip, capsuleChipStyles } from './CapsuleMenuChip.web';
+import { CapsuleChip, CapsuleMenuChip } from './CapsuleChips.web';
 import { isCapsuleActive } from './CapsuleRow.logic';
 import type { Capsule, CapsuleIcon, CapsuleRowProps, MenuCapsule } from './CapsuleRow.types';
 
-// Semantic capsule icon → Paper (MaterialCommunityIcons) icon name.
-const PAPER_ICON: Record<CapsuleIcon, string> = {
+// Semantic capsule icon → Paper (MaterialCommunityIcons) icon name. No lock
+// glyphs: the Tall / Wide lock is iOS-only, so the web never draws one.
+const PAPER_ICON: Partial<Record<CapsuleIcon, string>> = {
   filters: 'tune',
   recent: 'history',
-  locked: 'lock',
-  lock: 'lock',
-  unlock: 'lock-open',
 };
 
 function paperIconFor(icon: CapsuleIcon | undefined): string | undefined {
@@ -64,19 +63,16 @@ function MenuCapsuleChip({ capsule }: { capsule: MenuCapsule }) {
   );
 }
 
-function CapsuleChip({ capsule }: { capsule: Capsule }) {
+function CapsuleRowChip({ capsule }: { capsule: Capsule }) {
   if (capsule.kind === 'menu') return <MenuCapsuleChip capsule={capsule} />;
   return (
-    <Chip
-      mode="outlined"
+    <CapsuleChip
+      label={capsule.label}
       selected={isCapsuleActive(capsule)}
       icon={capsule.kind === 'sheet' || capsule.kind === 'toggleMenu' ? paperIconFor(capsule.icon) : undefined}
-      onPress={capsule.onPress}
       accessibilityLabel={capsule.kind === 'sheet' ? capsule.accessibilityLabel : undefined}
-      style={capsuleChipStyles.chip}
-    >
-      {capsule.label}
-    </Chip>
+      onPress={capsule.onPress}
+    />
   );
 }
 
@@ -89,7 +85,7 @@ function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
       keyboardShouldPersistTaps="handled"
     >
       {capsules.map((capsule) => (
-        <CapsuleChip key={capsule.key} capsule={capsule} />
+        <CapsuleRowChip key={capsule.key} capsule={capsule} />
       ))}
     </ScrollView>
   );
