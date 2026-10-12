@@ -325,7 +325,7 @@ type CachedRecentBetaLinkRow = {
   is_listed: boolean | null;
   created_at: string | null;
   tick_uuid: string | null;
-  board_id: number | null;
+  board_id: number | string | null;
   created_by_user_id: string | null;
   climb_name: string | null;
   layout_id: number | null;
@@ -743,7 +743,7 @@ export const betaLinkQueries = {
           isListed: r.is_listed,
           createdAt: r.created_at,
           tickUuid: r.tick_uuid ?? null,
-          boardId: r.board_id ?? null,
+          boardId: r.board_id == null ? null : Number(r.board_id),
         },
         climbName: r.climb_name,
         boardType: r.board_type,
