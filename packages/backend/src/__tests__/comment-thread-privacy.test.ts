@@ -458,7 +458,8 @@ describe('the author of a reply, beside a private subthread', () => {
 describe('proposals', () => {
   const PROPOSER = 'thread-privacy-proposer';
   const MODERATOR = 'thread-privacy-moderator';
-  const PROPOSAL_UUID = 'thread-privacy-proposal';
+  // `voteOnProposal` validates its input as a UUID.
+  const PROPOSAL_UUID = randomUUID();
 
   beforeAll(async () => {
     await db
@@ -606,9 +607,10 @@ describe('proposals', () => {
     await db
       .insert(dbSchema.boardClimbs)
       .values(climbs.map((climb) => ({ ...climb, name: climb.uuid, isListed: true, frames: 'p1r1' })));
+    const proposalUuids = climbs.map(() => randomUUID());
     await db.insert(dbSchema.climbProposals).values(
-      climbs.map((climb) => ({
-        uuid: `${climb.uuid}-proposal`,
+      climbs.map((climb, index) => ({
+        uuid: proposalUuids[index],
         climbUuid: climb.uuid,
         boardType: climb.boardType,
         angle: 40,
@@ -622,8 +624,8 @@ describe('proposals', () => {
 
     const vote = (proposalUuid: string) =>
       socialProposalMutations.voteOnProposal(null, { input: { proposalUuid, value: 1 } }, viewer(STRANGER));
-    for (const climb of climbs) {
-      await expect(vote(`${climb.uuid}-proposal`)).rejects.toThrow('Proposal not found');
+    for (const proposalUuid of proposalUuids) {
+      await expect(vote(proposalUuid)).rejects.toThrow('Proposal not found');
     }
     const voteRows = await db
       .select({ id: dbSchema.proposalVotes.id })
