@@ -69,14 +69,25 @@ vi.mock('../../lib/local-user-id', () => ({ readLocalUserId: controls.readIdenti
 vi.mock('../../hooks/use-personal-grades', () => ({ usePersonalGradesActive: () => true }));
 vi.mock('../../hooks/use-local-my-grade', () => ({ useLocalMyGrade: () => undefined }));
 vi.mock('../../hooks/use-display-grade', () => ({
+  useBoardseshGradesActive: () => false,
   useDisplayGrade: () => ({ resolveGrade: () => ({ label: 'V4', color: '#111111' }) }),
 }));
 vi.mock('../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v-grade' }) }));
-vi.mock('../theme-provider', () => ({ useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93' } }) }));
+vi.mock('../theme-provider', () => ({
+  useTheme: () => ({ textStyles: { body: { lineHeight: 22 } }, systemColors: { secondaryLabel: '#8E8E93' } }),
+}));
+vi.mock('../../lib/climb-row-display-preference', async () => {
+  const { DEFAULT_CLIMB_ROW_DISPLAY } = await import('../../lib/climb-row-display');
+  return { useClimbRowDisplay: () => DEFAULT_CLIMB_ROW_DISPLAY };
+});
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ fontScale: 1 }),
+  Platform: { OS: 'ios', select: () => undefined },
+  PlatformColor: (name: string) => name,
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
     createElement('div', { 'aria-label': accessibilityLabel }, children),
