@@ -16,8 +16,18 @@ const REGISTER =
 const UNREGISTER =
   'mutation UnregisterNotificationDevice($installationId: String!) { unregisterNotificationDevice(installationId: $installationId) }';
 let operations: Promise<void> = Promise.resolve();
-let registration: { bearer: string; installationId: string; locale: string; registeredAt: number } | null = null;
+let registration: {
+  bearer: string;
+  installationId: string;
+  locale: string;
+  token: string;
+  deviceToken?: string;
+  registeredAt: number;
+} | null = null;
+const registrationRequests = new Map<string, Promise<boolean>>();
 let lifecycleEpoch = 0;
+let nativeTokenRevision = 0;
+let latestNativeToken: { context: string; token: string } | null = null;
 
 async function installationId(): Promise<string> {
   const stored = await SecureStore.getItemAsync(INSTALLATION_KEY);
@@ -48,20 +58,80 @@ async function requestDevice(query: string, variables: Record<string, unknown>, 
  * Resolves true when this device is registered for pushes to the signed-in
  * account (just now, or within the last five minutes).
  */
-export async function registerNotificationDevice(requestPermission = false, force = false): Promise<boolean> {
+export async function registerNotificationDevice(
+  requestPermission = false,
+  force = false,
+  devicePushToken?: Notifications.DevicePushToken,
+): Promise<boolean> {
   if (!Device.isDevice || (Platform.OS !== 'ios' && Platform.OS !== 'android')) return false;
   const generation = captureAuthCredentialGeneration();
   const epoch = lifecycleEpoch;
   try {
     const bearer = await getAuthToken();
-    if (!bearer) return false;
+    if (!bearer || epoch !== lifecycleEpoch || !isAuthCredentialGenerationCurrent(generation)) return false;
     const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
+    let tokenRevision = nativeTokenRevision;
+    if (devicePushToken) {
+      const context = JSON.stringify([generation, epoch, bearer]);
+      const token = JSON.stringify(devicePushToken);
+      if (latestNativeToken?.context !== context || latestNativeToken.token !== token) {
+        latestNativeToken = { context, token };
+        nativeTokenRevision++;
+      }
+      tokenRevision = nativeTokenRevision;
+    }
+    const requestKey = JSON.stringify([
+      generation,
+      epoch,
+      bearer,
+      locale,
+      requestPermission,
+      force,
+      devicePushToken,
+      devicePushToken ? tokenRevision : undefined,
+    ]);
+    const pending = registrationRequests.get(requestKey);
+    if (pending) return await pending;
+    const request = performRegistration(
+      bearer,
+      locale,
+      generation,
+      epoch,
+      requestPermission,
+      force,
+      devicePushToken,
+      tokenRevision,
+    );
+    registrationRequests.set(requestKey, request);
+    try {
+      return await request;
+    } finally {
+      if (registrationRequests.get(requestKey) === request) registrationRequests.delete(requestKey);
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function performRegistration(
+  bearer: string,
+  locale: string,
+  generation: ReturnType<typeof captureAuthCredentialGeneration>,
+  epoch: number,
+  requestPermission: boolean,
+  force: boolean,
+  devicePushToken?: Notifications.DevicePushToken,
+  tokenRevision: number = nativeTokenRevision,
+): Promise<boolean> {
+  try {
+    const deviceToken = devicePushToken ? JSON.stringify(devicePushToken) : undefined;
     // Permission is granted by now, so asking again (each detection step mount)
     // shares the throttle instead of re-registering and re-running catch-up.
     if (
-      !force &&
+      (!force || (deviceToken !== undefined && registration?.deviceToken === deviceToken)) &&
       registration?.bearer === bearer &&
       registration.locale === locale &&
+      registration.registeredAt > 0 &&
       Date.now() - registration.registeredAt < 300_000
     )
       return true;
@@ -83,28 +153,68 @@ export async function registerNotificationDevice(requestPermission = false, forc
     // Permission is granted by now, so asking again (each detection step mount)
     // shares the throttle instead of re-registering and re-running catch-up.
     if (
-      !force &&
+      (!force || (deviceToken !== undefined && registration?.deviceToken === deviceToken)) &&
       registration?.bearer === bearer &&
       registration.locale === locale &&
+      registration.registeredAt > 0 &&
       Date.now() - registration.registeredAt < 300_000
     )
       return true;
+    if (epoch !== lifecycleEpoch || !isAuthCredentialGenerationCurrent(generation)) return false;
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
     if (typeof projectId !== 'string') return false;
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    // Supplying the listener's native token avoids another native lookup, which
+    // emits another token event on iOS and recursively triggers registration.
+    const token = (
+      await Notifications.getExpoPushTokenAsync({ projectId, ...(devicePushToken ? { devicePushToken } : {}) })
+    ).data;
+    // Native events can rotate while an older Expo exchange is in flight.
+    // A launch lookup may complete alongside its own event; allow matching tokens.
+    const isCurrentRegistration = () =>
+      !(
+        epoch !== lifecycleEpoch ||
+        !isAuthCredentialGenerationCurrent(generation) ||
+        (devicePushToken && tokenRevision !== nativeTokenRevision) ||
+        (!devicePushToken &&
+          tokenRevision !== nativeTokenRevision &&
+          registration?.bearer === bearer &&
+          registration.registeredAt > 0 &&
+          registration.token !== token)
+      );
     let registered = false;
     operations = operations
       .catch(() => {})
       .then(async () => {
-        if (epoch !== lifecycleEpoch || !isAuthCredentialGenerationCurrent(generation)) return;
+        if (!isCurrentRegistration()) return;
         const deviceId = await installationId();
-        if (epoch !== lifecycleEpoch || !isAuthCredentialGenerationCurrent(generation)) return;
-        registration = { bearer, installationId: deviceId, locale, registeredAt: 0 };
+        if (!isCurrentRegistration()) return;
+        if (
+          (!force || devicePushToken) &&
+          registration?.bearer === bearer &&
+          registration.locale === locale &&
+          registration.token === token &&
+          registration.registeredAt > 0 &&
+          Date.now() - registration.registeredAt < 300_000
+        ) {
+          registration.deviceToken = deviceToken ?? registration.deviceToken;
+          registered = true;
+          return;
+        }
+        const previousDeviceToken = registration?.token === token ? registration.deviceToken : undefined;
+        registration = {
+          bearer,
+          installationId: deviceId,
+          locale,
+          token,
+          deviceToken: deviceToken ?? previousDeviceToken,
+          registeredAt: 0,
+        };
         await requestDevice(
           REGISTER,
           { input: { installationId: deviceId, token, platform: Platform.OS, locale } },
           bearer,
         );
+        if (!isCurrentRegistration()) return;
         if (registration?.bearer === bearer) registration.registeredAt = Date.now();
         registered = true;
       });

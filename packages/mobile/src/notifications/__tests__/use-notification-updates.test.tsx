@@ -73,9 +73,10 @@ describe('native notification update bridge', () => {
 
   it('forces refreshed Expo registration on native token rotation without a permission prompt', () => {
     renderHook(() => useNotificationUpdates(true, 'account'));
-    const rotateToken = mocks.listenToken.mock.calls[0][0] as () => void;
-    act(() => rotateToken());
-    expect(mocks.register).toHaveBeenLastCalledWith(false, true);
+    const devicePushToken = { type: 'ios', data: 'rotated-native-token' };
+    const rotateToken = mocks.listenToken.mock.calls[0][0] as (token: typeof devicePushToken) => void;
+    act(() => rotateToken(devicePushToken));
+    expect(mocks.register).toHaveBeenLastCalledWith(false, true, devicePushToken);
   });
 
   it('refreshes on websocket model completion and ignores unrelated notifications', () => {

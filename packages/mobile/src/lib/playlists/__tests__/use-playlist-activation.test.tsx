@@ -1944,16 +1944,17 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     return { searchClimbs: { climbs: climbs.map(toSchemaClimb), hasMore: true } };
   }
 
-  function renderLoadedSearch(rows: Climb[]) {
+  function renderLoadedSearch(rows: Climb[], boardName = input.boardName) {
+    const searchInput = { ...input, boardName };
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     const pages = Array.from({ length: 50 }, (_, page) => response(rows.slice(page * 100, (page + 1) * 100)));
-    client.setQueryData(['infiniteSearchClimbs', { ...input, crossAngleStats: false }], {
+    client.setQueryData(['infiniteSearchClimbs', { ...searchInput, crossAngleStats: false }], {
       pages,
       pageParams: pages.map((_page, index) => index),
     });
     const hook = renderHook(
       () => {
-        const query = useInfiniteSearchClimbs(input, true, { staleTime: Infinity });
+        const query = useInfiniteSearchClimbs(searchInput, true, { staleTime: Infinity });
         const visibleClimbs = useMemo(
           () => query.data?.pages.flatMap((page) => page.climbs) ?? [],
           [query.data?.pages],
@@ -1977,7 +1978,45 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     return { ...hook, client };
   }
 
-  it('reproduces dead taps after snapshot-only withdrawal and an identical authorized refetch', async () => {
+  it.each(['privacy', 'credential'] as const)(
+    'restores identical authorized rows after %s withdrawal without reviving old taps',
+    async (reason) => {
+      const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+      mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+        const page = request.page ?? 0;
+        return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+      });
+      const { result, client, unmount } = renderLoadedSearch(rows);
+      try {
+        expect(result.current.allClimbs).toHaveLength(5000);
+        await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+        const previousProjection = result.current.allClimbs[0];
+        const previousActivation = result.current.activation.activate;
+        act(() => invalidatePrivacySnapshots(reason));
+        await act(() => result.current.activation.activate(previousProjection));
+        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+        await act(async () => {
+          await result.current.query.refetch();
+        });
+        // Identical authorized content must get new projections across withdrawal.
+        // Neither captured callbacks nor captured rows regain authorization.
+        expect(mocks.searchRequest).toHaveBeenCalledTimes(50);
+        await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(previousProjection));
+        await act(() => previousActivation(previousProjection));
+        await act(() => previousActivation(result.current.allClimbs[0]));
+        await act(() => result.current.activation.activate(previousProjection));
+        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+        await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
+      } finally {
+        unmount();
+        client.clear();
+      }
+    },
+  );
+
+  it('keeps identical rows shared when authorization has not changed', async () => {
     const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
     mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
       const page = request.page ?? 0;
@@ -1985,18 +2024,12 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     });
     const { result, client, unmount } = renderLoadedSearch(rows);
     try {
-      expect(result.current.allClimbs).toHaveLength(5000);
-      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
-      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-      const previousProjection = result.current.allClimbs[0];
-      act(() => invalidatePrivacySnapshots());
+      const previousRows = result.current.allClimbs;
       await act(async () => {
         await result.current.query.refetch();
       });
-      // TanStack structurally shares the authorized identical response. The
-      // activation object's first-observed epoch is still the withdrawn one.
       expect(mocks.searchRequest).toHaveBeenCalledTimes(50);
-      expect(result.current.allClimbs[0]).toBe(previousProjection);
+      expect(result.current.allClimbs).toBe(previousRows);
       await act(() => result.current.activation.activate(result.current.allClimbs[0]));
       expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
     } finally {
@@ -2005,41 +2038,110 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     }
   });
 
-  it('restores fresh same-UUID taps after complete withdrawal while rejecting a canceled old next page', async () => {
+  it('restores both observers when another observer fetches the authorized response', async () => {
     const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
-    let releasePage: (page: SearchClimbsQueryResponse) => void = () => {};
     mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
-      if ((request.page ?? 0) >= 50)
-        return new Promise((resolve) => {
-          releasePage = resolve;
+      const page = request.page ?? 0;
+      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+    });
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    const secondObserver = renderHook(
+      () => {
+        const query = useInfiniteSearchClimbs(input, true, { staleTime: Infinity });
+        const allClimbs = useMemo(
+          () => toQueueClimbs(query.data?.pages.flatMap((page) => page.climbs) ?? []),
+          [query.data?.pages],
+        );
+        const activation = usePlaylistActivation({
+          sourceId: 'second-climblist',
+          allClimbs,
+          fetchPage: vi.fn(),
+          viewOnlyBoard: VIEW_ONLY_BOARD,
+          refreshErrorMessage: 'second query observer test',
         });
+        return { query, allClimbs, activation };
+      },
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    try {
+      const withdrawnFirstRow = result.current.allClimbs[0];
+      const withdrawnSecondRow = secondObserver.result.current.allClimbs[0];
+      act(() => invalidatePrivacySnapshots());
+      await act(async () => {
+        await secondObserver.result.current.query.refetch();
+      });
+      await waitFor(() => {
+        expect(result.current.allClimbs[0]).not.toBe(withdrawnFirstRow);
+        expect(secondObserver.result.current.allClimbs[0]).not.toBe(withdrawnSecondRow);
+      });
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      await act(() => secondObserver.result.current.activation.activate(secondObserver.result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
+    } finally {
+      secondObserver.unmount();
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('rejects mixed old pages and a fresh next page until the whole list is reauthorized', async () => {
+    const rows = Array.from({ length: 5100 }, (_, index) => makeClimb(`query-${index}`));
+    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+      const page = request.page ?? 0;
+      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+    });
+    const { result, client, unmount } = renderLoadedSearch(rows.slice(0, 5000));
+    try {
+      act(() => invalidatePrivacySnapshots());
+      await act(async () => {
+        await result.current.query.fetchNextPage();
+      });
+      await waitFor(() => expect(result.current.allClimbs).toHaveLength(5100));
+      const mixedProjection = result.current.allClimbs[0];
+      await act(() => result.current.activation.activate(result.current.allClimbs[5000]));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(mixedProjection));
+      await act(() => result.current.activation.activate(result.current.allClimbs[5000]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('preserves sharing for changed and then identical refetches after withdrawal', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
       const page = request.page ?? 0;
       return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
     });
     const { result, client, unmount } = renderLoadedSearch(rows);
     try {
-      expect(result.current.allClimbs).toHaveLength(5000);
-      const capturedProjection = result.current.allClimbs[0];
-      const capturedActivation = result.current.activation.activate;
-      expect(result.current.query.hasNextPage).toBe(true);
-      let nextPagePromise: Promise<unknown> | undefined;
-      act(() => {
-        nextPagePromise = result.current.query.fetchNextPage();
-      });
-      await waitFor(() => expect(result.current.isFetchingNextPage).toBe(true));
+      const withdrawnRow = result.current.allClimbs[0];
+      act(() => invalidatePrivacySnapshots());
       await act(async () => {
-        await invalidatePrivacyQueries(client);
+        await result.current.query.refetch();
       });
-      await waitFor(() => expect(result.current.allClimbs).toHaveLength(100));
+      await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(withdrawnRow));
+      const unchangedRow = result.current.allClimbs[1];
+      rows[0] = { ...rows[0], name: 'Fresh name' };
       await act(async () => {
-        releasePage(response([makeClimb('withdrawn-next-page')]));
-        await nextPagePromise;
+        await result.current.query.refetch();
       });
-      expect(result.current.allClimbs[0].uuid).toBe(capturedProjection.uuid);
-      expect(result.current.allClimbs[0]).not.toBe(capturedProjection);
-      expect(result.current.allClimbs.some((climb) => climb.uuid === 'withdrawn-next-page')).toBe(false);
-      await act(() => capturedActivation(capturedProjection));
-      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      await waitFor(() => expect(result.current.allClimbs[0].name).toBe('Fresh name'));
+      expect(result.current.allClimbs[1]).toBe(unchangedRow);
+      const changedRows = result.current.allClimbs;
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      expect(result.current.allClimbs).toBe(changedRows);
       await act(() => result.current.activation.activate(result.current.allClimbs[0]));
       expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
     } finally {
@@ -2047,4 +2149,96 @@ describe('large climb-list query and activation privacy lifecycle', () => {
       client.clear();
     }
   });
+
+  it('keeps a response begun before a credential switch unauthorized until another refetch', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    let releaseFirstPage: (page: SearchClimbsQueryResponse) => void = () => {};
+    mocks.searchRequest.mockImplementationOnce(
+      () =>
+        new Promise<SearchClimbsQueryResponse>((resolve) => {
+          releaseFirstPage = resolve;
+        }),
+    );
+    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+      const page = request.page ?? 0;
+      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+    });
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      const withdrawnRow = result.current.allClimbs[0];
+      let refetch: Promise<unknown> | undefined;
+      act(() => {
+        refetch = result.current.query.refetch();
+      });
+      await waitFor(() => expect(mocks.searchRequest).toHaveBeenCalledTimes(1));
+      act(() => invalidatePrivacySnapshots('credential'));
+      await act(async () => {
+        releaseFirstPage(response(rows.slice(0, 100).map((climb) => ({ ...climb }))));
+        await refetch;
+      });
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(withdrawnRow));
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it.each([
+    ['kilter', 5000],
+    ['spray', 100],
+  ] as const)(
+    'restores fresh %s taps after privacy invalidation while rejecting a canceled old next page',
+    async (boardName, expectedCount) => {
+      const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+      let releasePage: (page: SearchClimbsQueryResponse) => void = () => {};
+      mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+        if ((request.page ?? 0) >= 50)
+          return new Promise((resolve) => {
+            releasePage = resolve;
+          });
+        const page = request.page ?? 0;
+        return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+      });
+      const { result, client, unmount } = renderLoadedSearch(rows, boardName);
+      try {
+        expect(result.current.allClimbs).toHaveLength(5000);
+        const capturedProjection = result.current.allClimbs[0];
+        const capturedActivation = result.current.activation.activate;
+        expect(result.current.query.hasNextPage).toBe(true);
+        let nextPagePromise: Promise<unknown> | undefined;
+        act(() => {
+          nextPagePromise = result.current.query.fetchNextPage();
+        });
+        await waitFor(() => expect(result.current.isFetchingNextPage).toBe(true));
+        await act(async () => {
+          await invalidatePrivacyQueries(client);
+        });
+        await waitFor(() => {
+          expect(result.current.allClimbs).toHaveLength(expectedCount);
+          expect(result.current.allClimbs[0]).not.toBe(capturedProjection);
+        });
+        await act(async () => {
+          releasePage(response([makeClimb('withdrawn-next-page')]));
+          await nextPagePromise;
+        });
+        expect(result.current.allClimbs[0].uuid).toBe(capturedProjection.uuid);
+        expect(result.current.allClimbs[0]).not.toBe(capturedProjection);
+        expect(result.current.allClimbs.some((climb) => climb.uuid === 'withdrawn-next-page')).toBe(false);
+        await act(() => capturedActivation(capturedProjection));
+        expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+        await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+      } finally {
+        unmount();
+        client.clear();
+      }
+    },
+  );
 });

@@ -60,6 +60,10 @@ Devices register the account, installation, Expo token, platform and locale;
 logout deactivates that account's registration. Recognition requests may prompt
 for permission, but denial and registration errors leave imports and in-app
 notifications available. Browser users receive the in-app notification only.
+Native token-change callbacks reuse the supplied device token when exchanging it
+for an Expo token. Requesting a native token again from that callback emits
+another event and can loop. Matching events and concurrent registrations share
+work; delayed exchanges cannot replace a newer token or another account's registration.
 Backend delivery uses per-device records, retry jobs and receipt checks, and
 retires invalid tokens. Expo phone delivery is best effort; an accepted ticket
 is not proof the phone displayed an alert.

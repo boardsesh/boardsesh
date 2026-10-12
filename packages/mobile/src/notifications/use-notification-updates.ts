@@ -31,8 +31,8 @@ export function useNotificationUpdates(authenticated: boolean, accountId: string
         refreshCompletion();
       }
     });
-    const token = Notifications.addPushTokenListener(() => {
-      void registerNotificationDevice(false, true);
+    const token = Notifications.addPushTokenListener((devicePushToken) => {
+      void registerNotificationDevice(false, true, devicePushToken);
     });
     return () => {
       foreground.remove();
