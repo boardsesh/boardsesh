@@ -678,11 +678,11 @@ them, keep old columns until no deployed image still references them, and
 split destructive changes across releases. If a change can't be made
 backward-compatible, it can't be rolled back by image alone.
 
-Once migration `0265_privacy_reconcile_tick_tombstones` has run, never roll the
-backend back to a build from before #6345. That migration rewrites the session
-policies the legacy Private switch wrote as `unlisted`, and an older backend
-reads an `unlisted` session as open: listed in Climbing, nearby discovery and
-the global comment feed.
+Migration `0265_privacy_reconcile_tick_tombstones` ran in production on
+2026-10-12 at 06:47:17 UTC: it removed 0 tick stamps and remapped 3 session
+policies to `unlisted`. Never roll the backend back to a build from before
+#6345: an older backend reads an `unlisted` session as open, so those sessions
+would be listed in Climbing, nearby discovery and the global comment feed.
 
 ## Required GitHub configuration
 

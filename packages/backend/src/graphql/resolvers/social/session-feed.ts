@@ -1779,11 +1779,13 @@ function betaCandidateJoinSql() {
 }
 
 function betaCandidateRankSql(partitionExpression: SQL) {
+  // The clip attached to the tick first. A guessed clip (no tick) compares as
+  // NULL, and PostgreSQL sorts NULL first under DESC, so it must read as false.
   return sql`
     ROW_NUMBER() OVER (
       PARTITION BY ${partitionExpression}
       ORDER BY
-        (bl.tick_uuid = t.uuid) DESC,
+        COALESCE(bl.tick_uuid = t.uuid, false) DESC,
         COALESCE(t.difficulty, ROUND(bcs_beta.display_difficulty)::int, -1) DESC,
         t.climbed_at DESC,
         t.id DESC,
