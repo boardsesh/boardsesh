@@ -144,7 +144,7 @@ Paper chips on the web (`CapsuleRow.web.tsx`). It shows the same split with a ri
 tree (menus, pickers / dropdowns, an iPad popover) driven by plain descriptors from
 `CapsuleRow.types.ts`, so a surface never touches native code: the climbs list's
 `FilterChipRow` is a builder (`search/climb-capsules.ts`) that hands its capsules to
-the row. The shared pieces sit beside it, one file each: `capsule-style.ios.ts` (the
+the row, and the Logbook's `LogbookChipRow` does the same with `you/logbook-capsules.ts`. The shared pieces sit beside it, one file each: `capsule-style.ios.ts` (the
 glass modifiers, with a `bordered` fallback below iOS 26 picked by `useGlassCapability()`), `CapsuleChips.android.tsx` (action chip, menu chip, menu row) and
 `CapsuleChips.web.tsx` (Paper chip, menu chip). On Android the climbs row is the climbs filtering surface
 (it replaces the Material top-chrome filter button + grade control + summary). See

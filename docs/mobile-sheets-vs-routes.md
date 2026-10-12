@@ -669,6 +669,13 @@ drafts.
   position and applies the picker selection live; the setters route's "Show N climbs" shortcut
   returns directly to results. Hold/zone are full-screen interactive boards → pushed routes
   (rule 3); setters is a searchable list route.
+- **Logbook setter picker** (`/users/[userId]/logbook-setters`) — the same suspend → push →
+  re-present round trip from the Logbook filter sheet, and a direct push from the Logbook's Setter
+  capsule. The Logbook lives on your own You tab and on anyone's profile in any tab, so the route
+  sits beside the public profile in the root stack and is mirrored into every tab's `users/[userId]`
+  folder; `useScopedRouter` resolves the push into the stack the Logbook is in. Its picks come back
+  through `logbook-setter-handoff.ts`, addressed by a per-Logbook `handoffId`, because two Logbooks
+  can be mounted at once. "Show climbs" hands them back with `apply` and the suspended sheet closes.
 - **Onboarding** (the walkthrough, replayed from Settings) — an immersive cover presented
   over the live tabs, so `transparentModal` + an opaque backing, like the player (rule 2). It was a
   `fullScreenModal` until #5654. Like the player it counts as a tabs-chrome route
