@@ -15,7 +15,7 @@ import {
 import { getHttpClient } from '../client';
 import { useProfile } from './index';
 import { usePrivacySettings } from './use-privacy';
-import { invalidatePrivacyQueries } from '../../privacy/privacy-cache';
+import { refreshAfterOwnPrivacyChange } from '../../privacy/privacy-cache';
 import { getConnectivitySnapshot } from '../../connectivity/connectivity-store';
 
 export function useContentAudience(entityType: PrivacyContentType, entityId?: string) {
@@ -67,7 +67,7 @@ export function useUpdateResourcePrivacy() {
         })
       ).updateResourcePrivacy;
     },
-    onSuccess: () => invalidatePrivacyQueries(queryClient),
+    onSuccess: () => refreshAfterOwnPrivacyChange(queryClient),
   });
 }
 
@@ -115,6 +115,6 @@ export function useResourceAccessAction() {
       if (getConnectivitySnapshot().effectiveOffline) throw new Error('Privacy changes require a connection.');
       return getHttpClient().request(RESOURCE_ACTIONS[action], variables);
     },
-    onSuccess: () => invalidatePrivacyQueries(queryClient),
+    onSuccess: () => refreshAfterOwnPrivacyChange(queryClient),
   });
 }

@@ -105,3 +105,23 @@ export async function getAuthorizedCatalogViewerId(db: SqlExecutor): Promise<str
 export async function canReadPrivateCatalog(db: SqlExecutor): Promise<boolean> {
   return (await getAuthorizedCatalogViewerId(db)) !== null;
 }
+
+/**
+ * True when a signed-in credential finds no viewer marker at all: a new install,
+ * a catalogue wiped at sign-out, a bundle that never stamped one, or a
+ * withdrawal that deleted the marker and never finished. A marker for another
+ * credential is not this case; reads report that through
+ * `subscribeCatalogCredentialMismatch`.
+ */
+export async function isCatalogViewerUnstamped(db: SqlExecutor): Promise<boolean> {
+  try {
+    const credential = await captureCatalogCredential();
+    if (!credential) return false;
+    const marker = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+      CATALOG_VIEWER_KEY,
+    ]);
+    return !marker && isCatalogCredentialCurrent(credential);
+  } catch {
+    return false;
+  }
+}

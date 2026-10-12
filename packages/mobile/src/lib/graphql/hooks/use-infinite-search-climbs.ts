@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { replaceEqualDeep, useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
+import { useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { useFeatureFlag } from '../../../providers/feature-flags-provider';
@@ -9,61 +9,6 @@ import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { screenshotModeNextPageParam } from '../../screenshot-mode';
 import { useGradeSourceSearchInput } from './search-grade-source';
-import { getPrivacyRevocationGeneration } from '../../privacy/privacy-cache';
-
-// Query data is shared across observers and survives observer remounts. Its
-// provenance must do the same; weak keys do not retain evicted cache snapshots.
-const searchClimbSnapshotGenerations = new WeakMap<object, number>();
-
-/** Preserve equal rows only when both reads belong to the same privacy epoch. */
-function createSearchClimbsSharing() {
-  const initialGeneration = getPrivacyRevocationGeneration();
-  const generations = searchClimbSnapshotGenerations;
-  const remember = (snapshot: object, generation: number) => {
-    // An already-known projection must never acquire new authorization.
-    if (!generations.has(snapshot)) generations.set(snapshot, generation);
-  };
-  const rememberSharedPages = (snapshot: unknown, generation: number) => {
-    if (!isRecord(snapshot)) return;
-    remember(snapshot, generation);
-    if (!Array.isArray(snapshot.pages)) return;
-    for (const page of snapshot.pages) {
-      if (!isRecord(page)) continue;
-      remember(page, generation);
-      if (isRecord(page.searchClimbs)) remember(page.searchClimbs, generation);
-    }
-  };
-  const generationFor = (snapshot: unknown): number => {
-    if (!isRecord(snapshot)) return initialGeneration;
-    const knownGeneration = generations.get(snapshot);
-    if (knownGeneration !== undefined) return knownGeneration;
-    // React Query invokes sharing for both raw InfiniteData and selected data.
-    // Their wrappers are new, but each constituent page has read provenance.
-    const generation =
-      Array.isArray(snapshot.pages) && snapshot.pages.length > 0
-        ? Math.min(...snapshot.pages.map(generationFor))
-        : initialGeneration;
-    remember(snapshot, generation);
-    return generation;
-  };
-  return {
-    rememberResponse(response: SearchClimbsQueryResponse, generation: number) {
-      remember(response, generation);
-      remember(response.searchClimbs, generation);
-    },
-    structuralSharing: (previous: unknown, incoming: unknown): unknown => {
-      const incomingGeneration = generationFor(incoming);
-      const shared =
-        previous !== undefined && generationFor(previous) === incomingGeneration
-          ? replaceEqualDeep(previous, incoming)
-          : incoming;
-      // Equal-deep sharing can construct page wrappers around shared rows.
-      // Carry the read epoch through those wrappers into the select stage too.
-      rememberSharedPages(shared, incomingGeneration);
-      return shared;
-    },
-  };
-}
 
 type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
 
@@ -124,7 +69,6 @@ export function useInfiniteSearchClimbs(
   enabled = true,
   options?: InfiniteSearchClimbsOptions,
 ) {
-  const privacySharing = useMemo(createSearchClimbsSharing, []);
   const { boardName, layoutId, sizeId, setIds } = input;
   const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   const keepPreviousResults = options?.keepPreviousResults === true && !input.onlyFollowedAuthors;
@@ -171,17 +115,10 @@ export function useInfiniteSearchClimbs(
   return useInfiniteQuery({
     queryKey: [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }) => {
-      const generation = getPrivacyRevocationGeneration();
-      const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+    queryFn: ({ pageParam }) =>
+      offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
         input: { ...searchInput, page: pageParam },
-      });
-      // offlineAwareRequest fences responses crossing a privacy boundary.
-      // Keep the original read epoch even if a caller retains its projection.
-      privacySharing.rememberResponse(response, generation);
-      return response;
-    },
-    structuralSharing: privacySharing.structuralSharing,
+      }),
     // getNextPageParam receives RAW pre-select pages in React Query v5.
     getNextPageParam: (lastPage, allPages) =>
       screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),

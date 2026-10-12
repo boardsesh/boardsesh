@@ -82,6 +82,8 @@ So every user-scoped local read must satisfy all three of these, not one of them
 
 Note what the gate is **not**: it is not "is this board downloaded". User tables sync independently of board downloads, so gating a tick read on a board download would refuse to answer from a fully synced table.
 
+Catalogue reads have one more gate, because a downloaded board holds other accounts' authored climbs and spray walls. `offlineAwareRequest` and the spray wall loader serve from SQLite only when `canReadPrivateCatalog` (`packages/mobile/src/offline/catalog-access.ts`) finds the `privacy:catalog-viewer:v1` row in `sync_meta` naming the signed-in viewer and the SHA-256 digest of the current token; otherwise they go to the server, or show the offline fallback. `startCatalogAuthorization` (`catalog-authorization.ts`) stamps it after a server profile check, when the signed-in session finds no marker or a read finds one for an older credential. The app does not listen to `privacyChanged`; `docs/privacy.md` has the rules.
+
 ### Spray walls are board data that has to be scoped like user data
 
 A wall is a photograph of somebody's garage, not a public catalogue, so `spray_walls` (#5448) is the one board

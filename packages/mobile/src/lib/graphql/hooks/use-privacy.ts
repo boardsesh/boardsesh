@@ -21,7 +21,7 @@ import {
 import { getHttpClient } from '../client';
 import { useProfile } from './index';
 import { getConnectivitySnapshot } from '../../connectivity/connectivity-store';
-import { invalidatePrivacyQueries } from '../../privacy/privacy-cache';
+import { refreshAfterOwnPrivacyChange } from '../../privacy/privacy-cache';
 
 /** Feature discovery fails closed against backends that predate privacy enforcement. */
 export function usePrivacySettings() {
@@ -59,7 +59,7 @@ export function useUpdatePrivacySettings() {
       return response.updatePrivacySettings;
     },
     onSuccess: async (settings) => {
-      await invalidatePrivacyQueries(queryClient);
+      await refreshAfterOwnPrivacyChange(queryClient);
       queryClient.setQueryData(['privacySettings', profile?.id], settings);
     },
   });
@@ -111,7 +111,7 @@ export function usePrivacyFollowAction() {
       requireConnected();
       return getHttpClient().request(FOLLOW_ACTIONS[action], { userId });
     },
-    onSuccess: () => invalidatePrivacyQueries(queryClient),
+    onSuccess: () => refreshAfterOwnPrivacyChange(queryClient),
   });
 }
 
@@ -128,7 +128,7 @@ export function useSetContentAudience() {
       requireConnected();
       return getHttpClient().request(SET_CONTENT_AUDIENCE, { input });
     },
-    onSuccess: () => invalidatePrivacyQueries(queryClient),
+    onSuccess: () => refreshAfterOwnPrivacyChange(queryClient),
   });
 }
 

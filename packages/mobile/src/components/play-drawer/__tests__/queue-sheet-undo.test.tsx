@@ -16,10 +16,9 @@ vi.mock('../../PressableSurface', async () => {
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient } from '@tanstack/react-query';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { restoreRemovedQueueItems } from '../../../lib/queue-undo';
-import { invalidatePrivacyQueries } from '../../../lib/privacy/privacy-cache';
+import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
 
 // The queue sheet's Clear and bulk Remove each offer an Undo (HIG "Undo and
 // redo"). The Undo must restore through the queue's ordinary whole-queue
@@ -214,8 +213,7 @@ beforeEach(() => {
 });
 
 describe('QueueSheet undo', () => {
-  it('rejects a stale Undo callback after privacy invalidation without waiting for a render', async () => {
-    const queryClient = new QueryClient();
+  it('rejects a stale Undo callback after an account change without waiting for a render', () => {
     live.playlistSource = {
       playlistUuid: 'private-playlist',
       activatedClimbUuid: 'climb-b',
@@ -227,13 +225,12 @@ describe('QueueSheet undo', () => {
     const undoButton = getByTestId('undo');
     // The mocked provider's scope stays unchanged: only the imperative privacy
     // generation can protect the callback captured by this rendered button.
-    await invalidatePrivacyQueries(queryClient);
+    invalidatePrivacySnapshots('credential');
     fireEvent.click(undoButton);
 
     expect(actions.restoreQueueItems).not.toHaveBeenCalled();
     expect(actions.setQueue).not.toHaveBeenCalled();
     expect(actions.setPlaylistSuggestionSource).not.toHaveBeenCalled();
-    queryClient.clear();
   });
 
   it('offers Undo after Clear and puts the queue back through setQueue', () => {

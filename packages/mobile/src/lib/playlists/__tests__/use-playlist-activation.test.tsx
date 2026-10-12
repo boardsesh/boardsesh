@@ -10,7 +10,7 @@ import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
 import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
 import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
-import { invalidatePrivacyQueries, invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
 import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
 import { toQueueClimbs, toSchemaClimb } from '../../climb-types';
 import type { SearchClimbsQueryResponse } from '../../graphql/operations';
@@ -231,15 +231,15 @@ function chooseValues(callIndex = 0): string[] {
 }
 
 describe('usePlaylistActivation (mobile wrapper)', () => {
-  it('carries row art into a preview only for the authorized climb projection', async () => {
-    const authorized = makeClimb('art-climb', { frames: 'p123r12' });
+  it('carries row art into a preview only for the loaded climb projection', async () => {
+    const loadedClimb = makeClimb('art-climb', { frames: 'p123r12' });
     const readyBoardArt: ReadyBoardArtSnapshot = {
       boardName: 'kilter',
       layoutId: 1,
       sizeId: 2,
       setIds: '3',
-      frames: authorized.frames,
-      climbUuid: authorized.uuid,
+      frames: loadedClimb.frames,
+      climbUuid: loadedClimb.uuid,
       mirrored: false,
       renderSignature: 'stroke',
       colorScheme: 'dark',
@@ -254,16 +254,18 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       sprayGeneration: '',
       sprayVersion: '',
     };
-    const { result } = renderActivation(vi.fn(), { allClimbs: [authorized], previewOnly: true });
-    await act(() => result.current.activate({ ...authorized }, readyBoardArt));
+    const { result } = renderActivation(vi.fn(), { allClimbs: [loadedClimb], previewOnly: true });
+    await act(() => result.current.activate({ ...loadedClimb }, readyBoardArt));
     expect(mocks.openPlayDrawer.mock.calls[0][1].readyBoardArt).toBe(readyBoardArt);
     expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
-    await act(() => result.current.activate({ ...authorized, frames: 'stale' }, { ...readyBoardArt, frames: 'stale' }));
-    expect(mocks.openPlayDrawer.mock.calls[1][0].frames).toBe(authorized.frames);
+    await act(() =>
+      result.current.activate({ ...loadedClimb, frames: 'stale' }, { ...readyBoardArt, frames: 'stale' }),
+    );
+    expect(mocks.openPlayDrawer.mock.calls[1][0].frames).toBe(loadedClimb.frames);
     expect(mocks.openPlayDrawer.mock.calls[1][1]).not.toHaveProperty('readyBoardArt');
   });
 
-  it('prepares one authorized compatible track before taps and reuses it across rerenders', async () => {
+  it('prepares one compatible track before taps and reuses it across rerenders', async () => {
     const first = makeClimb('a');
     const duplicate = { ...first, name: 'stale duplicate' };
     const climbs = [first, duplicate, makeClimb('b'), makeClimb('wrong-board', { boardType: 'tension', layoutId: 1 })];
@@ -1752,8 +1754,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
   });
 });
 
-describe('privacy withdrawal during playlist activation', () => {
-  it('keeps large loaded-list taps usable as pages append without a privacy boundary', async () => {
+describe('account change during playlist activation', () => {
+  it('keeps large loaded-list taps usable as pages append', async () => {
     const previousRows = Array.from({ length: 5000 }, (_, index) => makeClimb(`loaded-${index}`));
     const options = { allClimbs: previousRows, viewOnlyBoard: VIEW_ONLY_BOARD };
     const { result, rerender } = renderActivation(vi.fn(), options);
@@ -1770,57 +1772,6 @@ describe('privacy withdrawal during playlist activation', () => {
     ]);
   });
 
-  it('withdraws every row in a large mixed-generation array, including fresh same-UUID projections', async () => {
-    const previousRows = Array.from({ length: 5000 }, (_, index) => makeClimb(`loaded-${index}`));
-    const options = { allClimbs: previousRows, viewOnlyBoard: VIEW_ONLY_BOARD };
-    const { result, rerender } = renderActivation(vi.fn(), options);
-    await act(() => result.current.activate(previousRows[0]));
-    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-    act(() => invalidatePrivacySnapshots());
-    const reauthorized = { ...previousRows[0], name: 'Fresh authorized projection' };
-    options.allClimbs = [reauthorized, ...previousRows.slice(1)];
-    rerender();
-    await act(() => result.current.activate(reauthorized));
-    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-    // A complete replacement with fresh projections restores that exact UUID.
-    options.allClimbs = previousRows.map((climb) => ({ ...climb }));
-    rerender();
-    await act(() => result.current.activate(options.allClimbs[0]));
-    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps old loaded rows withdrawn across rerenders and shallow array copies', async () => {
-    const withdrawn = makeClimb('withdrawn');
-    const options = { allClimbs: [withdrawn], viewOnlyBoard: VIEW_ONLY_BOARD };
-    const { result, rerender } = renderActivation(vi.fn(), options);
-    act(() => invalidatePrivacySnapshots());
-    await act(async () => {
-      await result.current.activate(withdrawn);
-    });
-    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-
-    options.allClimbs = [...options.allClimbs];
-    rerender();
-    await act(async () => {
-      await result.current.activate(withdrawn);
-    });
-    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-
-    const allowed = makeClimb('fresh-authorized');
-    options.allClimbs = [allowed];
-    rerender();
-    await act(async () => {
-      await result.current.activate(withdrawn);
-      await result.current.activate({ ...withdrawn });
-    });
-    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-    await act(async () => {
-      await result.current.activate(allowed);
-    });
-    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-    expect(mocks.openPlayDrawer.mock.calls[0][0].uuid).toBe(allowed.uuid);
-  });
-
   it('rejects captured activation and shared refresh callbacks before React rerenders', async () => {
     const climb = makeClimb('withdrawn');
     const { result } = renderActivation();
@@ -1834,7 +1785,7 @@ describe('privacy withdrawal during playlist activation', () => {
     };
 
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidatePrivacySnapshots('credential');
       expect(await oldQueueApi.setCurrentClimb(climb, { playlistSuggestionSource: source })).toBeNull();
       oldQueueApi.refreshPlaylistSuggestionSource(source);
       await oldActivate(climb);
@@ -1843,14 +1794,14 @@ describe('privacy withdrawal during playlist activation', () => {
     expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
     expect(mocks.refreshPlaylistSuggestionSource).not.toHaveBeenCalled();
     expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-    // A fresh authorized result can still activate after the boundary.
+    // The callback built after the change still activates.
     await act(async () => {
       await captured().queueApi!.setCurrentClimb(makeClimb('allowed'), { playlistSuggestionSource: null });
     });
     expect(mocks.setCurrentClimb).toHaveBeenCalledTimes(1);
   });
 
-  it('discards a delayed append page after access changes', async () => {
+  it('discards a delayed append page after the account changes', async () => {
     let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
     const fetchPage = vi.fn(
       () =>
@@ -1863,7 +1814,7 @@ describe('privacy withdrawal during playlist activation', () => {
     expect(fetchPage).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidatePrivacySnapshots('credential');
       releaseFetch({ climbs: [makeClimb('withdrawn')], hasMore: false });
     });
 
@@ -1889,7 +1840,7 @@ describe('privacy withdrawal during playlist activation', () => {
     expect(mocks.setQueue).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidatePrivacySnapshots('credential');
       mocks.setQueue.mockClear();
       mocks.setPlaylistSuggestionSource.mockClear();
       releaseFetch({ climbs: [makeClimb('withdrawn')], hasMore: false });
@@ -1900,7 +1851,7 @@ describe('privacy withdrawal during playlist activation', () => {
     expect(mocks.setPlaylistSuggestionSource).not.toHaveBeenCalled();
   });
 
-  it('cancels an already-open replacement prompt when access changes', async () => {
+  it('cancels an already-open replacement prompt when the account changes', async () => {
     const current = makeQueueItem('current-slot', 'current');
     mocks.queueState = { queue: [current, makeQueueItem('future-slot', 'future')], currentClimbQueueItem: current };
     let answerPrompt: (answer: string) => void = () => {};
@@ -1919,7 +1870,7 @@ describe('privacy withdrawal during playlist activation', () => {
     expect(mocks.choose).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidatePrivacySnapshots('credential');
       answerPrompt('replace');
       await activation;
     });
@@ -1930,7 +1881,7 @@ describe('privacy withdrawal during playlist activation', () => {
   });
 });
 
-describe('large climb-list query and activation privacy lifecycle', () => {
+describe('climb-list rows from the search hook', () => {
   const input: ClimbSearchInput = {
     boardName: 'kilter',
     layoutId: 1,
@@ -1978,45 +1929,7 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     return { ...hook, client };
   }
 
-  it.each(['privacy', 'credential'] as const)(
-    'restores identical authorized rows after %s withdrawal without reviving old taps',
-    async (reason) => {
-      const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
-      mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
-        const page = request.page ?? 0;
-        return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
-      });
-      const { result, client, unmount } = renderLoadedSearch(rows);
-      try {
-        expect(result.current.allClimbs).toHaveLength(5000);
-        await act(() => result.current.activation.activate(result.current.allClimbs[0]));
-        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-        const previousProjection = result.current.allClimbs[0];
-        const previousActivation = result.current.activation.activate;
-        act(() => invalidatePrivacySnapshots(reason));
-        await act(() => result.current.activation.activate(previousProjection));
-        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-        await act(async () => {
-          await result.current.query.refetch();
-        });
-        // Identical authorized content must get new projections across withdrawal.
-        // Neither captured callbacks nor captured rows regain authorization.
-        expect(mocks.searchRequest).toHaveBeenCalledTimes(50);
-        await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(previousProjection));
-        await act(() => previousActivation(previousProjection));
-        await act(() => previousActivation(result.current.allClimbs[0]));
-        await act(() => result.current.activation.activate(previousProjection));
-        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-        await act(() => result.current.activation.activate(result.current.allClimbs[0]));
-        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
-      } finally {
-        unmount();
-        client.clear();
-      }
-    },
-  );
-
-  it('keeps identical rows shared when authorization has not changed', async () => {
+  it('opens a loaded row on the first tap after a refetch', async () => {
     const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
     mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
       const page = request.page ?? 0;
@@ -2038,207 +1951,24 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     }
   });
 
-  it('restores both observers when another observer fetches the authorized response', async () => {
+  it('opens the rows already on screen after an account change, through the new callback only', async () => {
     const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
-    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
-      const page = request.page ?? 0;
-      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
-    });
-    const { result, client, unmount } = renderLoadedSearch(rows);
-    const secondObserver = renderHook(
-      () => {
-        const query = useInfiniteSearchClimbs(input, true, { staleTime: Infinity });
-        const allClimbs = useMemo(
-          () => toQueueClimbs(query.data?.pages.flatMap((page) => page.climbs) ?? []),
-          [query.data?.pages],
-        );
-        const activation = usePlaylistActivation({
-          sourceId: 'second-climblist',
-          allClimbs,
-          fetchPage: vi.fn(),
-          viewOnlyBoard: VIEW_ONLY_BOARD,
-          refreshErrorMessage: 'second query observer test',
-        });
-        return { query, allClimbs, activation };
-      },
-      {
-        wrapper: ({ children }: { children: ReactNode }) => (
-          <QueryClientProvider client={client}>{children}</QueryClientProvider>
-        ),
-      },
-    );
-    try {
-      const withdrawnFirstRow = result.current.allClimbs[0];
-      const withdrawnSecondRow = secondObserver.result.current.allClimbs[0];
-      act(() => invalidatePrivacySnapshots());
-      await act(async () => {
-        await secondObserver.result.current.query.refetch();
-      });
-      await waitFor(() => {
-        expect(result.current.allClimbs[0]).not.toBe(withdrawnFirstRow);
-        expect(secondObserver.result.current.allClimbs[0]).not.toBe(withdrawnSecondRow);
-      });
-      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
-      await act(() => secondObserver.result.current.activation.activate(secondObserver.result.current.allClimbs[0]));
-      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
-    } finally {
-      secondObserver.unmount();
-      unmount();
-      client.clear();
-    }
-  });
-
-  it('rejects mixed old pages and a fresh next page until the whole list is reauthorized', async () => {
-    const rows = Array.from({ length: 5100 }, (_, index) => makeClimb(`query-${index}`));
-    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
-      const page = request.page ?? 0;
-      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
-    });
-    const { result, client, unmount } = renderLoadedSearch(rows.slice(0, 5000));
-    try {
-      act(() => invalidatePrivacySnapshots());
-      await act(async () => {
-        await result.current.query.fetchNextPage();
-      });
-      await waitFor(() => expect(result.current.allClimbs).toHaveLength(5100));
-      const mixedProjection = result.current.allClimbs[0];
-      await act(() => result.current.activation.activate(result.current.allClimbs[5000]));
-      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-      await act(async () => {
-        await result.current.query.refetch();
-      });
-      await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(mixedProjection));
-      await act(() => result.current.activation.activate(result.current.allClimbs[5000]));
-      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-    } finally {
-      unmount();
-      client.clear();
-    }
-  });
-
-  it('preserves sharing for changed and then identical refetches after withdrawal', async () => {
-    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
-    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
-      const page = request.page ?? 0;
-      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
-    });
     const { result, client, unmount } = renderLoadedSearch(rows);
     try {
-      const withdrawnRow = result.current.allClimbs[0];
-      act(() => invalidatePrivacySnapshots());
-      await act(async () => {
-        await result.current.query.refetch();
-      });
-      await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(withdrawnRow));
-      const unchangedRow = result.current.allClimbs[1];
-      rows[0] = { ...rows[0], name: 'Fresh name' };
-      await act(async () => {
-        await result.current.query.refetch();
-      });
-      await waitFor(() => expect(result.current.allClimbs[0].name).toBe('Fresh name'));
-      expect(result.current.allClimbs[1]).toBe(unchangedRow);
-      const changedRows = result.current.allClimbs;
-      await act(async () => {
-        await result.current.query.refetch();
-      });
-      expect(result.current.allClimbs).toBe(changedRows);
-      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
-      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-    } finally {
-      unmount();
-      client.clear();
-    }
-  });
-
-  it('keeps a response begun before a credential switch unauthorized until another refetch', async () => {
-    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
-    let releaseFirstPage: (page: SearchClimbsQueryResponse) => void = () => {};
-    mocks.searchRequest.mockImplementationOnce(
-      () =>
-        new Promise<SearchClimbsQueryResponse>((resolve) => {
-          releaseFirstPage = resolve;
-        }),
-    );
-    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
-      const page = request.page ?? 0;
-      return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
-    });
-    const { result, client, unmount } = renderLoadedSearch(rows);
-    try {
-      const withdrawnRow = result.current.allClimbs[0];
-      let refetch: Promise<unknown> | undefined;
-      act(() => {
-        refetch = result.current.query.refetch();
-      });
-      await waitFor(() => expect(mocks.searchRequest).toHaveBeenCalledTimes(1));
+      const shownRow = result.current.allClimbs[0];
+      const previousActivation = result.current.activation.activate;
       act(() => invalidatePrivacySnapshots('credential'));
-      await act(async () => {
-        releaseFirstPage(response(rows.slice(0, 100).map((climb) => ({ ...climb }))));
-        await refetch;
-      });
-      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      await act(() => previousActivation(shownRow));
       expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-      await act(async () => {
-        await result.current.query.refetch();
-      });
-      await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(withdrawnRow));
-      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      // No refetch: the same row objects stay tappable.
+      expect(result.current.allClimbs[0]).toBe(shownRow);
+      await act(() => result.current.activation.activate(shownRow));
       expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+      expect(mocks.openPlayDrawer.mock.calls[0][0].uuid).toBe(shownRow.uuid);
+      expect(mocks.searchRequest).not.toHaveBeenCalled();
     } finally {
       unmount();
       client.clear();
     }
   });
-
-  it.each([
-    ['kilter', 5000],
-    ['spray', 100],
-  ] as const)(
-    'restores fresh %s taps after privacy invalidation while rejecting a canceled old next page',
-    async (boardName, expectedCount) => {
-      const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
-      let releasePage: (page: SearchClimbsQueryResponse) => void = () => {};
-      mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
-        if ((request.page ?? 0) >= 50)
-          return new Promise((resolve) => {
-            releasePage = resolve;
-          });
-        const page = request.page ?? 0;
-        return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
-      });
-      const { result, client, unmount } = renderLoadedSearch(rows, boardName);
-      try {
-        expect(result.current.allClimbs).toHaveLength(5000);
-        const capturedProjection = result.current.allClimbs[0];
-        const capturedActivation = result.current.activation.activate;
-        expect(result.current.query.hasNextPage).toBe(true);
-        let nextPagePromise: Promise<unknown> | undefined;
-        act(() => {
-          nextPagePromise = result.current.query.fetchNextPage();
-        });
-        await waitFor(() => expect(result.current.isFetchingNextPage).toBe(true));
-        await act(async () => {
-          await invalidatePrivacyQueries(client);
-        });
-        await waitFor(() => {
-          expect(result.current.allClimbs).toHaveLength(expectedCount);
-          expect(result.current.allClimbs[0]).not.toBe(capturedProjection);
-        });
-        await act(async () => {
-          releasePage(response([makeClimb('withdrawn-next-page')]));
-          await nextPagePromise;
-        });
-        expect(result.current.allClimbs[0].uuid).toBe(capturedProjection.uuid);
-        expect(result.current.allClimbs[0]).not.toBe(capturedProjection);
-        expect(result.current.allClimbs.some((climb) => climb.uuid === 'withdrawn-next-page')).toBe(false);
-        await act(() => capturedActivation(capturedProjection));
-        expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-        await act(() => result.current.activation.activate(result.current.allClimbs[0]));
-        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-      } finally {
-        unmount();
-        client.clear();
-      }
-    },
-  );
 });

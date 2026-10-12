@@ -1844,9 +1844,10 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
   }
 
   /**
-   * What mobile's `revalidatePrivateCatalog` does to a downloaded board on every
-   * privacy event: other climbers' rows go, every board-table checkpoint and
-   * every `scope-complete:` marker goes, and `bootstrap-done:` stays.
+   * What mobile's `revalidatePrivateCatalog` does to a downloaded board when it
+   * authorizes the catalogue for a new credential: other climbers' rows go, every
+   * board-table checkpoint and every `scope-complete:` marker goes, and
+   * `bootstrap-done:` stays.
    */
   async function withdrawProtectedCatalog(): Promise<void> {
     await db.runAsync('DELETE FROM board_climbs WHERE user_id IS NOT NULL AND user_id <> ?', [VIEWER_ID]);

@@ -72,7 +72,6 @@ type EmptyBoardFetchOp = 'replace-queue-empty' | 'append-queue-empty';
 // shared key would let whichever fired first silently swallow the other's
 // canary for the rest of the session.
 const reportedEmptyBoardFetches = new Set<string>();
-const EMPTY_LOADED_CLIMBS: Climb[] = [];
 
 // Which page failures the drain should try again, injected so the shared package
 // keeps no dependency on `@boardsesh/offline-sync` (web does not have it).
@@ -238,7 +237,7 @@ function buildPlaylistQueue(
 /** Returns playlist activation controls to wire onto a climb row tap. */
 export function usePlaylistActivation({
   sourceId,
-  allClimbs: suppliedClimbs,
+  allClimbs,
   fetchPage,
   viewOnlyBoard,
   previewOnly = false,
@@ -259,34 +258,22 @@ export function usePlaylistActivation({
   const choose = useChoose();
   const { t } = useTranslation('playlists');
   const activeBoard = useActiveBoard().data ?? null;
+  // Bumped at credential boundaries (sign-in, sign-out). Work started for one
+  // account checks it after every await, so a late page, prompt answer or
+  // callback cannot write that account's playlist into the next one's queue.
   const privacyGeneration = useSyncExternalStore(
     subscribeToPrivacyRevocations,
     getPrivacyRevocationGeneration,
     getPrivacyRevocationGeneration,
   );
-  // A privacy notification can render before query cancellation clears props.
-  // A fresh callback must not bless the old array (or a shallow copy of it).
-  const loadedSnapshotGenerations = useRef(new WeakMap<object, number>());
-  const initialPrivacyGeneration = useRef(privacyGeneration);
-  const loadedSnapshotCurrent = useMemo(() => {
-    const snapshots = loadedSnapshotGenerations.current;
-    if (!snapshots.has(suppliedClimbs)) snapshots.set(suppliedClimbs, privacyGeneration);
-    let current = snapshots.get(suppliedClimbs) === privacyGeneration;
-    for (const climb of suppliedClimbs) {
-      if (!snapshots.has(climb)) snapshots.set(climb, privacyGeneration);
-      if (snapshots.get(climb) !== privacyGeneration) current = false;
-    }
-    return current;
-  }, [suppliedClimbs, privacyGeneration]);
-  const allClimbs = loadedSnapshotCurrent ? suppliedClimbs : EMPTY_LOADED_CLIMBS;
-  const authorizedClimbsByUuid = useMemo(() => {
+  const loadedClimbsByUuid = useMemo(() => {
     const climbsByUuid = new Map<string, Climb>();
     for (const climb of allClimbs) {
       if (!climbsByUuid.has(climb.uuid)) climbsByUuid.set(climb.uuid, climb);
     }
     return climbsByUuid;
-  }, [allClimbs, privacyGeneration]);
-  const preparedPreviewClimbs = useMemo(() => preparePlaylistClimbs(allClimbs), [allClimbs, privacyGeneration]);
+  }, [allClimbs]);
+  const preparedPreviewClimbs = useMemo(() => preparePlaylistClimbs(allClimbs), [allClimbs]);
 
   const replacementAbortRef = useRef<AbortController | null>(null);
   const appendAbortRef = useRef<AbortController | null>(null);
@@ -416,7 +403,7 @@ export function usePlaylistActivation({
   const resolveTarget = useCallback((_climb: Climb) => activationTarget, [activationTarget]);
   const preparedCompatibleClimbs = useMemo(
     () => (activationTarget ? preparePlaylistClimbs(allClimbs, activationTarget.isClimbable) : undefined),
-    [allClimbs, activationTarget, privacyGeneration],
+    [allClimbs, activationTarget],
   );
 
   const fetchClimbsForBoard = useCallback(
@@ -840,14 +827,10 @@ export function usePlaylistActivation({
   // preview.
   const activatePlaylistClimb = useCallback(
     (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot) => {
-      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();
-      const capturedGeneration = loadedSnapshotGenerations.current.get(requestedClimb);
-      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) return Promise.resolve();
-      const loadedClimb = authorizedClimbsByUuid.get(requestedClimb.uuid);
-      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) return Promise.resolve();
-      // Row adapters may clone a climb. Prefer the authorized loaded projection
-      // over details retained by a menu or native gesture callback.
-      const climb = loadedClimb ?? requestedClimb;
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();
+      // Row adapters may clone a climb. Prefer the loaded projection over
+      // details retained by a menu or native gesture callback.
+      const climb = loadedClimbsByUuid.get(requestedClimb.uuid) ?? requestedClimb;
       const schemaClimb = toSchemaClimb(climb);
       const readyBoardArt =
         tappedBoardArt?.climbUuid === climb.uuid && tappedBoardArt.frames === climb.frames ? tappedBoardArt : undefined;
@@ -1012,7 +995,7 @@ export function usePlaylistActivation({
     [
       activate,
       allClimbs,
-      authorizedClimbsByUuid,
+      loadedClimbsByUuid,
       preparedPreviewClimbs,
       preparedCompatibleClimbs,
       appendClimbsToQueue,
@@ -1026,7 +1009,6 @@ export function usePlaylistActivation({
       sourceId,
       viewOnlyBoard,
       privacyGeneration,
-      loadedSnapshotCurrent,
     ],
   );
 
