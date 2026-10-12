@@ -7,7 +7,7 @@ import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { lockFollowRequestPair } from '../events/follow-request-notifications';
 import { schema as executableSchema } from '../graphql/index';
-import { notifyingPrivacyMutations, privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
+import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
@@ -388,7 +388,7 @@ describe('privacy controls against Postgres', () => {
     // from the friend, no approval, and every connected app is told to refetch.
     const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
     try {
-      await notifyingPrivacyMutations.inviteResourceMember(
+      await privacyMutations.inviteResourceMember(
         null,
         { kind: 'board', resourceId: board.uuid, userId: friend },
         context(boardOwner),
