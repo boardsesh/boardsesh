@@ -103,11 +103,12 @@ export function BoardPresenceProvider({
   // when live (or the stable `null` literal otherwise), so there is nothing to
   // memoize: the reference only changes when `currentClimb` itself does.
   const wallClimb = value.isLive ? value.currentClimb : null;
-  // Retire all independent paging/byline caches when this reader terminates.
-  // Ordinary climb pushes keep this scope stable.
+  // Retire all independent paging/byline caches when the server refuses this
+  // reader. A transport failure only turns `isLive` off, so pages stay. Ordinary
+  // climb pushes keep this scope stable.
   const clientValue = useMemo<BoardPresenceClientValue>(
-    () => ({ boardId, boardUuid, client: value.isLive ? client : null }),
-    [boardId, boardUuid, client, value.isLive],
+    () => ({ boardId, boardUuid, client: value.isDenied ? null : client }),
+    [boardId, boardUuid, client, value.isDenied],
   );
 
   return (

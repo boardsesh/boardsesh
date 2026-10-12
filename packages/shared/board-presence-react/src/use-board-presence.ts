@@ -54,6 +54,23 @@ export type BoardPresenceCatchUpInfo = {
   recoveredThroughSeqDelta: number;
 };
 
+/**
+ * Whether a board-read error is the server's denial (`NOT_FOUND`, the mask every
+ * board gate throws) rather than a transport failure. Reads both shapes a
+ * transport can deliver: a `GraphQLOperationError`-like object carrying
+ * `graphqlErrors`/`extensions`, and a raw `GraphQLError[]` array.
+ */
+export function isBoardReadDenied(error: unknown): boolean {
+  const isNotFound = (candidate: unknown): boolean =>
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    (candidate as { extensions?: { code?: unknown } | null }).extensions?.code === 'NOT_FOUND';
+  if (Array.isArray(error)) return error.some(isNotFound);
+  if (typeof error !== 'object' || error === null) return false;
+  const graphqlErrors = (error as { graphqlErrors?: unknown }).graphqlErrors;
+  return isNotFound(error) || (Array.isArray(graphqlErrors) && graphqlErrors.some(isNotFound));
+}
+
 export type UseBoardPresenceResult = {
   currentClimb: BoardPresenceCurrentState['currentClimb'];
   previousClimb: BoardPresenceCurrentState['previousClimb'];
@@ -63,6 +80,13 @@ export type UseBoardPresenceResult = {
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
   isLive: BoardPresenceCurrentState['isLive'];
+  /**
+   * True once the server refused this reader (a `NOT_FOUND` read, or the live
+   * stream ended by its access recheck). The loaded wall is cleared and stays
+   * retired until the board, held link or client changes. A transport failure
+   * never sets it: that only turns `isLive` off.
+   */
+  isDenied: boolean;
   reportClimb: BoardPresenceActions['reportClimb'];
   reportClimbWithUndoTarget: BoardPresenceActions['reportClimbWithUndoTarget'];
   reportDisconnect: BoardPresenceActions['reportDisconnect'];
@@ -154,6 +178,7 @@ export function useBoardPresence(
 ): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
+  const [isDenied, setIsDenied] = useState(false);
   const [undoTarget, setUndoTarget] = useState<BoardPresenceClimb | null>(null);
   const [snapshotScope, setSnapshotScope] = useState({ boardId, boardUuid, client });
   const scopeMatches =
@@ -161,6 +186,7 @@ export function useBoardPresence(
   const visibleState = scopeMatches ? state : initialBoardPresenceState;
   const visibleUndoTarget = scopeMatches ? undoTarget : null;
   const visibleIsLive = scopeMatches && isLive;
+  const visibleIsDenied = scopeMatches && isDenied;
 
   // Live refs so the action callbacks stay identity-stable while still reading
   // the current board, client, and restore target.
@@ -196,6 +222,7 @@ export function useBoardPresence(
     setSnapshotScope({ boardId, boardUuid, client });
     // No board or no transport: collapse to the initial state and stay inert.
     // RESET clears stats too (they live in the reducer now).
+    setIsDenied(false);
     if (boardId === null || client === null) {
       dispatch({ type: 'RESET' });
       setIsLive(false);
@@ -239,6 +266,32 @@ export function useBoardPresence(
       dispatch({ type: 'RESET' });
       setUndoTarget(null);
       setIsLive(false);
+      setIsDenied(true);
+    };
+    // Set by a stream error that was not a denial, so the completion graphql-ws
+    // delivers after an error result is not read as the server ending the stream.
+    let streamFailed = false;
+    const onStreamError = (error: unknown) => {
+      if (!isCurrent()) return;
+      if (isBoardReadDenied(error)) {
+        retireReader();
+        return;
+      }
+      // A transport failure (including graphql-ws giving up reconnecting) or a
+      // non-denial server error: keep the loaded wall, refresh and catch-ups,
+      // and only drop the live flag.
+      streamFailed = true;
+      setIsLive(false);
+    };
+    const onStreamComplete = () => {
+      if (!isCurrent()) return;
+      if (streamFailed) {
+        setIsLive(false);
+        return;
+      }
+      // The server ended the stream without an error: its per-event access
+      // recheck no longer admits this reader.
+      retireReader();
     };
 
     const runCatchUp = (reason: BoardPresenceCatchUpReason) => {
@@ -339,8 +392,8 @@ export function useBoardPresence(
           dispatch(action);
         }
       },
-      retireReader,
-      retireReader,
+      onStreamError,
+      onStreamComplete,
       ...capabilityArgs,
     );
     setIsLive(isCurrent());
@@ -487,6 +540,7 @@ export function useBoardPresence(
       history: visibleState.history,
       stats: visibleState.stats,
       isLive: visibleIsLive,
+      isDenied: visibleIsDenied,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
@@ -502,6 +556,7 @@ export function useBoardPresence(
       visibleState.history,
       visibleState.stats,
       visibleIsLive,
+      visibleIsDenied,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,

@@ -6,7 +6,7 @@ import type {
   BoardPresenceEvent,
   BoardPresenceStats,
 } from '@boardsesh/shared-schema';
-import { useBoardPresence } from '../use-board-presence';
+import { isBoardReadDenied, useBoardPresence } from '../use-board-presence';
 import {
   BoardPresenceProvider,
   useBoardPresenceActions,
@@ -19,6 +19,17 @@ import {
 import type { BoardPresenceClient } from '../types';
 import { useBoardHistoryPagination } from '../use-board-history-pagination';
 import { useBoardClimbRecentSenders } from '../use-board-climb-recent-senders';
+
+// What the shared graphql-client subscribe wrapper hands an error sink: an
+// Error carrying the server's GraphQL errors (`GraphQLOperationError`).
+const graphqlOperationError = (code: string, message: string) =>
+  Object.assign(new Error(message), {
+    name: 'GraphQLOperationError',
+    extensions: { code },
+    graphqlErrors: [{ message, extensions: { code } }],
+  });
+const NOT_FOUND_ERROR = graphqlOperationError('NOT_FOUND', 'Board not found');
+const RATE_LIMITED_ERROR = graphqlOperationError('RATE_LIMITED', 'Rate limit exceeded. Try again in 30 seconds.');
 
 // Build a BoardPresenceClimb with only the fields the reducer/hook care about.
 const climb = (climbUuid: string, seq: number, overrides: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb => ({
@@ -1152,7 +1163,7 @@ it.each(['complete', 'error'] as const)(
     expect(fetchHistory).toHaveBeenCalledTimes(2);
     act(() => {
       if (terminal === 'complete') harness.emitComplete();
-      else harness.emitError(new Error('Board not found'));
+      else harness.emitError(NOT_FOUND_ERROR);
     });
     expect(snapshot.current?.currentClimb).toBeNull();
     expect(snapshot.feed?.history).toEqual([]);
@@ -1172,6 +1183,73 @@ it.each(['complete', 'error'] as const)(
     expect(snapshot.page?.olderHistory).toEqual([]);
   },
 );
+
+it.each([
+  ['a transport failure (graphql-ws giving up reconnecting)', [new Error('Socket closed after 10 retries')]],
+  ['a non-denial server error followed by completion', [RATE_LIMITED_ERROR, 'complete']],
+] as const)('keeps the loaded wall, pages and refresh through %s', async (_case, steps) => {
+  const harness = makeClient();
+  const fetchHistory = vi.fn().mockResolvedValue([climb('older-page', 1)]);
+  const client: BoardPresenceClient = { ...harness.client, fetchHistory };
+  const snapshot: {
+    page: ReturnType<typeof useBoardHistoryPagination> | null;
+    feed: ReturnType<typeof useBoardPresenceFeed> | null;
+    current: ReturnType<typeof useBoardPresenceCurrent> | null;
+    reader: ReturnType<typeof useBoardPresenceClient> | null;
+    actions: ReturnType<typeof useBoardPresenceActions> | null;
+  } = { page: null, feed: null, current: null, reader: null, actions: null };
+  function WallSurface() {
+    snapshot.page = useBoardHistoryPagination(1);
+    snapshot.feed = useBoardPresenceFeed();
+    snapshot.current = useBoardPresenceCurrent();
+    snapshot.reader = useBoardPresenceClient();
+    snapshot.actions = useBoardPresenceActions();
+    return null;
+  }
+  render(
+    <BoardPresenceProvider boardId={9} boardUuid="held-link" client={client}>
+      <WallSurface />
+    </BoardPresenceProvider>,
+  );
+  await act(async () => {
+    harness.emit(setEvent(climb('on-the-wall', 3)));
+    await harness.resolveRecent(9, [climb('backfill', 2)]);
+  });
+  act(() => snapshot.page?.loadOlder());
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(snapshot.page?.olderHistory).toHaveLength(1);
+
+  act(() => {
+    for (const step of steps) {
+      if (step === 'complete') harness.emitComplete();
+      else harness.emitError(step);
+    }
+  });
+  expect(snapshot.current?.isLive).toBe(false);
+  expect(snapshot.current?.currentClimb?.climbUuid).toBe('on-the-wall');
+  expect(snapshot.feed?.history.map((entry) => entry.climbUuid)).toContain('backfill');
+  expect(snapshot.page?.olderHistory).toHaveLength(1);
+  expect(snapshot.reader?.client).toBe(client);
+  const fetchesBeforeRefresh = harness.fetchRecentClimbs.mock.calls.length;
+  act(() => snapshot.actions?.refresh());
+  expect(harness.fetchRecentClimbs.mock.calls.length).toBe(fetchesBeforeRefresh + 1);
+});
+
+it.each([
+  ['a GraphQLOperationError carrying NOT_FOUND', NOT_FOUND_ERROR, true],
+  [
+    'a raw GraphQLError[] carrying NOT_FOUND',
+    [{ message: 'Board not found', extensions: { code: 'NOT_FOUND' } }],
+    true,
+  ],
+  ['a rate-limited result', RATE_LIMITED_ERROR, false],
+  ['a plain transport Error', new Error('Board not found'), false],
+  ['a socket close event', { code: 1006, reason: '' }, false],
+] as const)('isBoardReadDenied reads %s as %s', (_case, error, denied) => {
+  expect(isBoardReadDenied(error)).toBe(denied);
+});
 
 it('keeps the live reader and loaded wall data through an ordinary transport reconnect', async () => {
   const harness = makeClient();
