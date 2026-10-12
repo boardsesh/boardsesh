@@ -29,6 +29,16 @@ function jsonResponse(status: number, body: unknown = {}): Response {
 
 type Reply = Response | Error;
 
+/** PostHog's documented 202 for a queued deletion (OpenAPI `PersonBulkDeleteResponse`). */
+const queuedDeletion = (personsFound = 1) => ({
+  persons_found: personsFound,
+  persons_deleted: 0,
+  persons_queued_for_deletion: personsFound,
+  events_queued_for_deletion: true,
+  recordings_queued_for_deletion: true,
+  deletion_errors: [],
+});
+
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input;
   return input instanceof URL ? input.href : input.url;
@@ -40,7 +50,7 @@ function requestUrl(input: string | URL | Request): string {
  */
 function mockPosthog({
   lookup = () => jsonResponse(200, { results: [] }),
-  deletion = () => jsonResponse(202, { persons_found: 1, persons_queued_for_deletion: 1 }),
+  deletion = () => jsonResponse(202, queuedDeletion()),
 }: { lookup?: () => Reply; deletion?: () => Reply } = {}) {
   return vi.fn<typeof fetch>(async (input) => {
     const reply = requestUrl(input).endsWith('/query/') ? lookup() : deletion();
@@ -162,14 +172,33 @@ describe('deletePosthogPerson', () => {
     expect(callTo(fetchImpl, '/persons/bulk_delete/').body.distinct_ids).toEqual([DISTINCT_ID, 'sdk-anon-own']);
   });
 
-  it.each([200, 204])('accepts a %i as done', async (status) => {
-    const fetchImpl = mockPosthog({
-      deletion: () =>
-        status === 204
-          ? new Response(null, { status })
-          : jsonResponse(status, { persons_found: 1, persons_deleted: 1 }),
-    });
+  it.each([200, 202])('accepts a %i with the documented body as done', async (status) => {
+    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(status, queuedDeletion()) });
     await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
+  });
+
+  it('accepts no matching person (a 202 with persons_found 0) as done', async () => {
+    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(202, queuedDeletion(0)) });
+    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
+  });
+
+  it('accepts a documented body that leaves out the optional deletion_errors', async () => {
+    const { deletion_errors: _omitted, ...withoutErrors } = queuedDeletion();
+    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(202, withoutErrors) });
+    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
+  });
+
+  it.each([
+    ['no body (204)', () => new Response(null, { status: 204 })],
+    ['a body that is not JSON', () => new Response('<html>Bad gateway</html>', { status: 200 })],
+    ['a truncated body', () => new Response('{"persons_found": 1, "persons_queued', { status: 202 })],
+    ['an empty object', () => jsonResponse(202, {})],
+    ['no persons_queued_for_deletion', () => jsonResponse(202, { persons_found: 1, persons_deleted: 1 })],
+    ['deletion_errors that is not a list', () => jsonResponse(202, { ...queuedDeletion(), deletion_errors: 'boom' })],
+    ['counts that are not counts', () => jsonResponse(202, { ...queuedDeletion(), persons_found: '1' })],
+  ])('retries a 2xx with %s: it proves nothing was deleted', async (_label, deletion) => {
+    const fetchImpl = mockPosthog({ deletion });
+    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
   });
 
   it('defaults to the US private API host and the Boardsesh project', async () => {
@@ -185,17 +214,32 @@ describe('deletePosthogPerson', () => {
     expect(callTo(fetchImpl, '/query/').url).toBe('https://us.posthog.com/api/projects/412845/query/');
   });
 
-  it('treats a 404 from the delete as nothing left to delete', async () => {
-    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(404) });
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('not_found');
-  });
+  it('retries a 404 from the delete and logs the URL at error: the project id or host is wrong', async () => {
+    const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(404, { detail: 'Not found.' }) });
 
-  it.each([500, 502, 503, 429, 408, 401, 403])('throws on a %i from the delete so pg-boss retries', async (status) => {
-    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(status) });
     await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('will retry'),
+      expect.objectContaining({
+        status: 404,
+        url: 'https://eu.posthog.com/api/projects/999/persons/bulk_delete/',
+      }),
+    );
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('phx_test_key');
+    errorLog.mockRestore();
   });
 
-  it.each([500, 429, 403])('throws on a %i from the lookup, before deleting anything', async (status) => {
+  it.each([500, 502, 503, 429, 408, 401, 403, 404])(
+    'throws on a %i from the delete so pg-boss retries',
+    async (status) => {
+      const fetchImpl = mockPosthog({ deletion: () => jsonResponse(status) });
+      await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+    },
+  );
+
+  it.each([500, 429, 403, 404])('throws on a %i from the lookup, before deleting anything', async (status) => {
     const fetchImpl = mockPosthog({ lookup: () => jsonResponse(status) });
     await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
     expect(fetchImpl).toHaveBeenCalledOnce();
@@ -213,7 +257,8 @@ describe('deletePosthogPerson', () => {
 
   it('retries when PostHog reports a partial deletion', async () => {
     const fetchImpl = mockPosthog({
-      deletion: () => jsonResponse(202, { persons_found: 1, deletion_errors: [{ person_uuid: 'x', step: 'events' }] }),
+      deletion: () =>
+        jsonResponse(202, { ...queuedDeletion(), deletion_errors: [{ person_uuid: 'x', step: 'events' }] }),
     });
     await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
   });

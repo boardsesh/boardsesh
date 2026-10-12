@@ -355,12 +355,24 @@ Each job is the account id, a reason and a pass, nothing else.
      days. `GET /api/projects/<id>/persons/deletion_status/` lists what is
      still pending.
 
-Responses, on either call: 2xx is done (a non-empty `deletion_errors` retries);
-a 404 from the delete is done, nothing to delete; 401, 403, 408, 429, 5xx, a
-timeout or a network error retry. Any other 4xx means our request is wrong: the
-job is marked `failed` at once, without spending retries, and logged as an
-error. A lookup rejected that way still deletes the account id before the job
-fails. Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
+Responses:
+
+- **Done** only on a 2xx from the delete whose body is the documented
+  `PersonBulkDeleteResponse`: `persons_found` and `persons_queued_for_deletion`
+  as counts, and `deletion_errors`, when present, a list. No matching person is
+  a 202 with `persons_found: 0`, still done.
+- **Retry** on a 2xx without that body (no body, not JSON, truncated, a proxy's
+  page: none of them prove a deletion), on a non-empty `deletion_errors`, and,
+  on either call, on 401, 403, 404, 408, 429, 5xx, a timeout or a network
+  error. A 404 is not "nothing to delete": PostHog never answers that way, so
+  it means `POSTHOG_PROJECT_ID` or `POSTHOG_API_HOST` is wrong. 401, 403 and
+  404 log at error with the URL (host and path; the key travels in a header and
+  is never logged).
+- **Failed at once**, without spending retries, on any other 4xx: our request
+  is wrong. Logged as an error. A lookup rejected that way still deletes the
+  account id before the job fails.
+
+Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
 26.5 to 32.5 hours in all; a job that runs out is `failed` and logs
 `posthog_person_deletion_exhausted`. A queued job waits up to 14 days past its
 start for a worker (`retentionSeconds`). A finished or failed job is kept 7

@@ -147,11 +147,18 @@ function readPrivateApiConfig(): PosthogPrivateApiConfig | null {
   };
 }
 
+/**
+ * The documented 2xx body of `bulk_delete` (PostHog's OpenAPI
+ * `PersonBulkDeleteResponse`): the two counts are required, and
+ * `deletion_errors`, optional in that schema, must be a list when present.
+ * Anything else (truncated, not JSON, a proxy's HTML page) is no proof that
+ * anything was deleted, so the job retries.
+ */
 const bulkDeleteResponseSchema = z
   .object({
-    persons_found: z.number().optional(),
-    persons_queued_for_deletion: z.number().optional(),
-    deletion_errors: z.array(z.unknown()).optional(),
+    persons_found: z.number().int().nonnegative(),
+    persons_queued_for_deletion: z.number().int().nonnegative(),
+    deletion_errors: z.array(z.record(z.string(), z.unknown())).optional(),
   })
   .passthrough();
 
@@ -168,7 +175,7 @@ export class PosthogPersonDeletionRetryableError extends Error {
   }
 }
 
-export type PosthogPersonDeletionOutcome = 'deleted' | 'not_found' | 'skipped_non_production' | 'rejected';
+export type PosthogPersonDeletionOutcome = 'deleted' | 'skipped_non_production' | 'rejected';
 
 export type DeletePosthogPersonOptions = {
   fetchImpl?: typeof fetch;
@@ -176,9 +183,25 @@ export type DeletePosthogPersonOptions = {
   database?: Database;
 };
 
-/** A key can be fixed and an outage ends; any other 4xx is our request. */
+/**
+ * A key can be fixed, a project id or host corrected, and an outage ends; any
+ * other 4xx is our request. 404 is in the first group: PostHog answers "no such
+ * person" with a 202 and `persons_found: 0`, so a 404 means the URL is wrong
+ * (`POSTHOG_PROJECT_ID`, `POSTHOG_API_HOST`), and completing the job on it would
+ * record every erasure as done without deleting anything.
+ */
 function isRetryableStatus(status: number): boolean {
-  return status === 401 || status === 403 || status === 408 || status === 429 || status >= 500;
+  return status === 401 || status === 403 || status === 404 || status === 408 || status === 429 || status >= 500;
+}
+
+/** Statuses an operator must fix (key, project id, host): logged at error. */
+function isConfigurationStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 404;
+}
+
+/** The request URL for a log line: host and path only, never the key (it travels in a header). */
+function privateApiUrl(config: PosthogPrivateApiConfig, path: string): string {
+  return `${config.host}/api/projects/${encodeURIComponent(config.projectId)}/${path}`;
 }
 
 type RequestContext = {
@@ -195,9 +218,8 @@ async function postToPosthog(
   body: unknown,
   timeoutMs: number,
 ): Promise<Response> {
-  const url = `${config.host}/api/projects/${encodeURIComponent(config.projectId)}/${path}`;
   try {
-    return await fetchImpl(url, {
+    return await fetchImpl(privateApiUrl(config, path), {
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -208,20 +230,20 @@ async function postToPosthog(
       event: 'posthog_person_deletion_retry',
       reason,
       pass,
-      path,
+      url: privateApiUrl(config, path),
       error,
     });
     throw new PosthogPersonDeletionRetryableError(`PostHog request to ${path} failed`);
   }
 }
 
-function throwRetryable(context: RequestContext, path: string, status: number): never {
-  const level = status === 401 || status === 403 ? 'error' : 'warn';
-  logger[level]('[PostHogErasure] PostHog refused the request; will retry', {
+function throwRetryable(context: RequestContext, path: string, status: number, detail = 'refused the request'): never {
+  const level = isConfigurationStatus(status) ? 'error' : 'warn';
+  logger[level](`[PostHogErasure] PostHog ${detail}; will retry`, {
     event: 'posthog_person_deletion_retry',
     reason: context.reason,
     pass: context.pass,
-    path,
+    url: privateApiUrl(context.config, path),
     status,
   });
   throw new PosthogPersonDeletionRetryableError(`PostHog ${path} returned ${status}`, status);
@@ -279,7 +301,7 @@ async function findAnonymousIds(
   }
 
   const parsed = queryResponseSchema.safeParse(await response.json().catch(() => null));
-  if (!parsed.success) throwRetryable(context, path, response.status);
+  if (!parsed.success) throwRetryable(context, path, response.status, 'answered the lookup with no result set');
 
   const candidates = new Map<string, string[]>();
   for (const [anonId, identifiedAs] of parsed.data.results) {
@@ -329,10 +351,12 @@ async function findAnonymousIds(
  * 2. `POST /api/projects/:id/persons/bulk_delete/` (`person:write`) with the
  *    account id and those ids, events and recordings included.
  *
- * - 2xx: done. A non-empty `deletion_errors` throws so the job retries.
- * - 404 from the delete: nothing to delete. Done.
- * - 401, 403, 408, 429, 5xx, a timeout or a network error, on either call:
- *   throws. A key can be fixed and an outage ends, so pg-boss retries.
+ * - 2xx with the documented body: done (no matching person is a 202 with
+ *   `persons_found: 0`). A non-empty `deletion_errors`, or a 2xx body that is
+ *   not the documented shape, throws so the job retries.
+ * - 401, 403, 404, 408, 429, 5xx, a timeout or a network error, on either
+ *   call: throws. A key, a project id or a host can be fixed and an outage
+ *   ends, so pg-boss retries. 401/403/404 log at error with the URL.
  * - Any other 4xx: the request itself is wrong and a retry would send it
  *   again. Logged as an error and returned as `rejected`, which the worker
  *   turns into a failed job. A rejected lookup still deletes the account id.
@@ -386,49 +410,42 @@ export async function deletePosthogPerson(
   );
 
   const { status } = response;
-  let outcome: PosthogPersonDeletionOutcome;
-  if (status >= 200 && status < 300) {
-    const body = bulkDeleteResponseSchema.safeParse(await response.json().catch(() => ({})));
-    const result = body.success ? body.data : {};
-    if (result.deletion_errors && result.deletion_errors.length > 0) {
-      logger.warn('[PostHogErasure] PostHog reported an incomplete person deletion; will retry', {
-        event: 'posthog_person_deletion_retry',
-        reason,
-        pass,
-        status,
-        deletionErrors: result.deletion_errors.length,
-      });
-      throw new PosthogPersonDeletionRetryableError('PostHog reported deletion_errors', status);
-    }
-    logger.info('[PostHogErasure] PostHog person deletion accepted', {
-      event: 'posthog_person_deletion_accepted',
-      reason,
-      pass,
-      status,
-      anonymousIds: lookup.anonymousIds.length,
-      personsFound: result.persons_found,
-      personsQueuedForDeletion: result.persons_queued_for_deletion,
-    });
-    outcome = 'deleted';
-  } else if (status === 404) {
-    logger.info('[PostHogErasure] PostHog has no person to delete', {
-      event: 'posthog_person_deletion_not_found',
-      reason,
-      pass,
-    });
-    outcome = 'not_found';
-  } else if (isRetryableStatus(status)) {
-    throwRetryable(context, path, status);
-  } else {
+  if (status < 200 || status >= 300) {
+    if (isRetryableStatus(status)) throwRetryable(context, path, status);
     logger.error('[PostHogErasure] PostHog rejected the person deletion request; not retrying', {
       event: 'posthog_person_deletion_rejected',
       reason,
       pass,
+      url: privateApiUrl(config, path),
       status,
     });
-    outcome = 'rejected';
+    return 'rejected';
   }
-  return lookup.rejected ? 'rejected' : outcome;
+
+  // Only the documented body proves the deletion was taken.
+  const body = bulkDeleteResponseSchema.safeParse(await response.json().catch(() => null));
+  if (!body.success) throwRetryable(context, path, status, 'answered the delete without the documented body');
+  const result = body.data;
+  if (result.deletion_errors && result.deletion_errors.length > 0) {
+    logger.warn('[PostHogErasure] PostHog reported an incomplete person deletion; will retry', {
+      event: 'posthog_person_deletion_retry',
+      reason,
+      pass,
+      status,
+      deletionErrors: result.deletion_errors.length,
+    });
+    throw new PosthogPersonDeletionRetryableError('PostHog reported deletion_errors', status);
+  }
+  logger.info('[PostHogErasure] PostHog person deletion accepted', {
+    event: 'posthog_person_deletion_accepted',
+    reason,
+    pass,
+    status,
+    anonymousIds: lookup.anonymousIds.length,
+    personsFound: result.persons_found,
+    personsQueuedForDeletion: result.persons_queued_for_deletion,
+  });
+  return lookup.rejected ? 'rejected' : 'deleted';
 }
 
 export type StartPosthogPersonDeletionOptions = {

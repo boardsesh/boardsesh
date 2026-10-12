@@ -255,7 +255,17 @@ describe('the erasure worker', () => {
   const fetchImpl: typeof fetch = async (input) =>
     (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith('/query/')
       ? new Response(JSON.stringify({ results: [] }), { status: 200 })
-      : new Response(JSON.stringify({ persons_found: 1 }), { status: replies.deletion });
+      : new Response(
+          JSON.stringify({
+            persons_found: 1,
+            persons_deleted: 0,
+            persons_queued_for_deletion: 1,
+            events_queued_for_deletion: true,
+            recordings_queued_for_deletion: true,
+            deletion_errors: [],
+          }),
+          { status: replies.deletion },
+        );
 
   beforeAll(async () => {
     vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
