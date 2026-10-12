@@ -78,6 +78,63 @@ describe('useBoardBuilder', () => {
     expect(result.current.hideLocation).toBe(true);
   });
 
+  it.each([false, true])(
+    'keeps a typed address hidden when a public gym is picked beside it (controls on: %s)',
+    (privacyEnabled) => {
+      const { result } = renderHook(() => useBoardBuilder(null, { privacyEnabled }));
+      act(() => result.current.selectLayout(1));
+      act(() => result.current.setLocationName('12 Elm Street'));
+      act(() =>
+        result.current.setSelectedGym({
+          uuid: 'gym-1',
+          name: 'Boulder Central',
+          latitude: 47,
+          longitude: 8,
+          isPublic: true,
+        }),
+      );
+
+      // The typed name stays, so the board does not sit at the gym's own place.
+      expect(result.current.locationName).toBe('12 Elm Street');
+      expect(result.current.gymSharesLocation).toBe(false);
+      expect(result.current.hideLocation).toBe(true);
+      expect(result.current.buildCreateInput()).toMatchObject({ gymUuid: 'gym-1', hideLocation: true });
+      expect(result.current.buildCreateInput()).not.toHaveProperty('locationAudience');
+    },
+  );
+
+  it("hides an edited gym board's new place after a switch to another gym", () => {
+    const seed = {
+      boardName: 'kilter' as const,
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      name: 'Gym A Kilter',
+      hideLocation: false,
+      locationName: 'Gym A',
+      latitude: 47,
+      longitude: 8,
+      gymUuid: 'gym-a',
+      gymName: 'Gym A',
+    };
+    const { result } = renderHook(() => useBoardBuilder(seed));
+
+    // Gym A's name came from the gym, so switching to B replaces it.
+    act(() =>
+      result.current.setSelectedGym({ uuid: 'gym-b', name: 'Gym B', latitude: 47.001, longitude: 8, isPublic: true }),
+    );
+    expect(result.current.locationName).toBe('Gym B');
+    expect(result.current.gymSharesLocation).toBe(true);
+    expect(result.current.hideLocation).toBe(false);
+
+    // Clear location, then Use my location: the climber's own fix.
+    act(() => result.current.setCoords(null));
+    act(() => result.current.setCoords({ latitude: 47.2, longitude: 8.3 }));
+    expect(result.current.gymSharesLocation).toBe(false);
+    expect(result.current.hideLocation).toBe(true);
+    expect(result.current.buildUpdateInput('board-uuid')).toMatchObject({ hideLocation: true });
+  });
+
   it('auto-selects a size and all its sets when a layout is picked, satisfying canCreate', () => {
     const { result } = renderHook(() => useBoardBuilder());
     expect(result.current.canCreate).toBe(false);

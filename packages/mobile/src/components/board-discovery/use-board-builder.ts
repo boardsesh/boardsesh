@@ -290,7 +290,13 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
    * the back-fill sticky: pick gym A, switch to gym B, and the board ends up
    * linked to B but labelled A. Anything the user typed themselves is left alone.
    */
-  const autoFilledLocationRef = useRef<string | null>(null);
+  // An edited board whose location name is its gym's name took it from the gym,
+  // so switching gyms replaces it like any other back-fill.
+  const autoFilledLocationRef = useRef<string | null>(
+    seed?.gymName && seed.locationName === seed.gymName ? seed.gymName : null,
+  );
+  const locationNameRef = useRef(locationName);
+  locationNameRef.current = locationName;
   const privacyEnabled = options?.privacyEnabled === true;
   const setSelectedGym = useCallback(
     (
@@ -302,37 +308,39 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
         longitude?: number | null;
       } | null,
     ) => {
-      setSelectedGymState(
-        gym
-          ? {
-              uuid: gym.uuid,
-              name: gym.name,
-              isPublic: gym.isPublic === true,
-              latitude: gym.latitude ?? null,
-              longitude: gym.longitude ?? null,
-            }
-          : null,
-      );
-      // In a public gym the location is shown; anywhere else the board goes
-      // back to the home-wall default, hidden.
+      const picked: SelectedGym | null = gym
+        ? {
+            uuid: gym.uuid,
+            name: gym.name,
+            isPublic: gym.isPublic === true,
+            latitude: gym.latitude ?? null,
+            longitude: gym.longitude ?? null,
+          }
+        : null;
+      setSelectedGymState(picked);
+      // The place the board will have after this pick: the gym's coordinates,
+      // and its name unless the climber typed their own (kept below).
+      const previousName = locationNameRef.current;
+      const nameIsOurs = previousName.trim().length === 0 || previousName === autoFilledLocationRef.current;
+      const nextName = picked && nameIsOurs ? picked.name : previousName;
+      const nextCoords =
+        picked?.latitude != null && picked.longitude != null
+          ? { latitude: picked.latitude, longitude: picked.longitude }
+          : null;
+      // The location is shown only when the board will sit at a public gym's own
+      // place, the server's rule. A typed address kept beside a public gym, a
+      // private gym, or no gym puts back the home-wall default, hidden.
       if (boardNameRef.current !== 'spray') {
-        const sharesLocation = gym?.isPublic === true;
+        const sharesLocation = picked?.isPublic === true && sitsAtGymPlace(nextCoords, nextName, picked);
         setHideLocation(!sharesLocation);
         setPrivacyLocationAudience(sharesLocation && privacyEnabled ? 'public' : undefined);
       }
-      if (!gym) return;
-      if (gym.latitude != null && gym.longitude != null) {
-        setCoords({ latitude: gym.latitude, longitude: gym.longitude });
-      } else {
-        // A gym with no coordinates can't vouch for the previous gym's, and a
-        // stale pair would aim the server's proximity check at the wrong place.
-        setCoords(null);
-      }
-      setLocationName((previous) => {
-        const isOurs = previous.trim().length === 0 || previous === autoFilledLocationRef.current;
-        return isOurs ? gym.name : previous;
-      });
-      autoFilledLocationRef.current = gym.name;
+      if (!picked) return;
+      // A gym with no coordinates can't vouch for the previous gym's, and a stale
+      // pair would aim the server's proximity check at the wrong place.
+      setCoords(nextCoords);
+      setLocationName(nextName);
+      autoFilledLocationRef.current = picked.name;
     },
     [privacyEnabled],
   );

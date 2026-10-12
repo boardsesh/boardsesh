@@ -269,11 +269,11 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       hapticSelection();
       try {
         // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation,
-        // split around `updateBoard`. Leaving the old gym runs first: a board at a
-        // public gym's own place shows its location, and the server judges that
-        // from the gym the board is in when the edit lands, so a board moved home
-        // must already be out of the gym. If leaving fails, the save stops here,
-        // before the new place is sent. Joining the new gym runs after
+        // split around `updateBoard`. Leaving the old gym runs first, and if it
+        // fails the save stops here, before the new place is sent. The server
+        // keeps a moved board's place hidden in either order: leaving a public
+        // gym hides the location the gym was showing, and an edit that moves a
+        // board off its gym's place hides it too. Joining the new gym runs after
         // `updateBoard`: for a gym the climber doesn't run, the server checks the
         // board's stored coordinates, which `updateBoard` has just written from
         // the picker. A board with no stored place could not join one before.
