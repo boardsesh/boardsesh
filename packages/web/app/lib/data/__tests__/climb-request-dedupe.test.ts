@@ -49,6 +49,8 @@ vi.mock('next/cache', () => ({
 vi.mock('@/app/lib/db/db', () => ({
   sql: mockSqlTag,
   rowsFromResult: rowsFromResultMock,
+  dbz: {},
+  executeRows: mockSqlTag,
 }));
 
 vi.mock('@/app/lib/db/read-deadline', () => ({

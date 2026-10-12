@@ -39,9 +39,12 @@ vi.mock('@/app/lib/db/db', () => ({
   sql: mockSqlTag,
   rowsFromResult: <T>(result: unknown): T[] => (Array.isArray(result) ? (result as T[]) : []),
   getReadDb: vi.fn(() => ({})),
+  dbz: {},
+  executeRows: mockSqlTag,
 }));
 
-vi.mock('@boardsesh/db/queries', () => ({
+vi.mock('@boardsesh/db/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
   getGradeLabel: vi.fn(() => '6c/V5'),
   searchClimbs: vi.fn(async () => ({ climbs: [], hasMore: false })),
   mapSearchInputToParams: vi.fn((input: unknown) => input),

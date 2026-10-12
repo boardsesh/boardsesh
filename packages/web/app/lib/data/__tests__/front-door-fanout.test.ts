@@ -40,6 +40,8 @@ vi.mock('next/cache', () => ({
 vi.mock('@/app/lib/db/db', () => ({
   sql: mockSqlTag,
   rowsFromResult: rowsFromResultMock,
+  dbz: {},
+  executeRows: mockSqlTag,
 }));
 
 import { getClimb, getClimbStatsForAllAngles } from '../queries';
