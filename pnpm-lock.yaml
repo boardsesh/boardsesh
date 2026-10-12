@@ -285,6 +285,9 @@ importers:
       '@whatwg-node/fetch':
         specifier: ^0.10.13
         version: 0.10.13
+      '@xmldom/xmldom':
+        specifier: ^0.9.12
+        version: 0.9.12
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -327,6 +330,9 @@ importers:
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
+      stripe:
+        specifier: ^22.6.1
+        version: 22.6.1(@types/node@25.9.5)
       tsx:
         specifier: ^4.23.1
         version: 4.23.12
@@ -10995,6 +11001,15 @@ packages:
   strip-json-comments@2.0.1:
     resolution: {integrity: sha512-4gB8na07fecVVkOI6Rs4e7T6NOTki5EmL7TUduTs6bu3EdnSycntVJ4re8kgZA+wx9IueI2Y11bfbgwtzuE0KQ==}
     engines: {node: '>=0.10.0'}
+
+  stripe@22.6.1:
+    resolution: {integrity: sha512-hAKSkGeVt2u46TRYhmnvwmVHxBNtOCJnPjc+SH5sP2B2ypElYzAAY3Ljx0Ar8C2w8nfpFQiZ95qoDCDsFkXMTA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   structured-headers@0.4.1:
     resolution: {integrity: sha512-0MP/Cxx5SzeeZ10p/bZI0S6MpgD+yxAhi1BOQ34jgnMXsCq3j1t6tQnZu+KdlL7dvJTLT3g9xN8tl10TqgFMcg==}
@@ -22237,6 +22252,10 @@ snapshots:
 
   strip-json-comments@2.0.1:
     optional: true
+
+  stripe@22.6.1(@types/node@25.9.5):
+    optionalDependencies:
+      '@types/node': 25.9.5
 
   structured-headers@0.4.1: {}
 

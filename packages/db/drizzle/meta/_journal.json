@@ -1870,6 +1870,13 @@
       "when": 1791765691056,
       "tag": "0266_anonymous_on_foreign_boards",
       "breakpoints": true
+    },
+    {
+      "idx": 267,
+      "version": "7",
+      "when": 1791837681913,
+      "tag": "0267_cnc_packs",
+      "breakpoints": true
     }
   ]
 }

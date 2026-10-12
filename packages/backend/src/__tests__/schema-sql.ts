@@ -1613,6 +1613,104 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "hostname" text
   );
 
+  -- Mirrors packages/db schema/app/cnc-packs.ts (migrations 0216 + 0218). The
+  -- order row IS the generation queue, so the claim tests need the real enum
+  -- types and the (status, queued_at) index they scan. The four preview_*
+  -- values are appended, exactly as 0218's ALTER TYPE ... ADD VALUE leaves them.
+  -- Dropped and recreated rather than guarded with a duplicate_object handler.
+  -- The guarded form silently keeps whatever enum a previous run left behind,
+  -- so adding a value to the schema (0218's four preview_* statuses) would fail
+  -- every insert on a worker database that already had the old type. The tables
+  -- that use it go first so the type has no dependants.
+  DROP TABLE IF EXISTS "cnc_art_assets" CASCADE;
+  DROP TABLE IF EXISTS "cnc_stripe_events" CASCADE;
+  DROP TABLE IF EXISTS "cnc_orders" CASCADE;
+  DROP TYPE IF EXISTS cnc_order_status;
+  DROP TYPE IF EXISTS cnc_licence_tier;
+
+  CREATE TYPE cnc_order_status AS ENUM ('pending_payment', 'queued', 'generating', 'ready', 'failed', 'cancelled', 'refunded', 'preview_queued', 'preview_generating', 'preview_ready', 'preview_failed');
+  CREATE TYPE cnc_licence_tier AS ENUM ('personal', 'commercial_single');
+  CREATE TABLE IF NOT EXISTS "cnc_orders" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "licence_id" text NOT NULL,
+    "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "tier" cnc_licence_tier,
+    "status" cnc_order_status NOT NULL,
+    "board_name" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "size_id" integer NOT NULL,
+    "set_ids" text NOT NULL,
+    "options" jsonb NOT NULL,
+    "artwork" jsonb,
+    "catalog_version" text NOT NULL,
+    "config_hash" text,
+    "licensee_name" text,
+    "licensee_email" text,
+    "customer_site_name" text,
+    "licence_accepted_at" timestamp,
+    "currency" text,
+    "amount_cents" integer,
+    "stripe_checkout_session_id" text,
+    "stripe_payment_intent_id" text,
+    "paid_at" timestamp,
+    "refunded_at" timestamp,
+    "queued_at" timestamp,
+    "claimed_at" timestamp,
+    "heartbeat_at" timestamp,
+    "worker_id" text,
+    "claim_token" text,
+    "attempts" integer DEFAULT 0 NOT NULL,
+    "last_error" text,
+    "generation" integer DEFAULT 1 NOT NULL,
+    "generated_at" timestamp,
+    "zip_key" text,
+    "zip_size_bytes" bigint,
+    "zip_sha256" text,
+    "fingerprint_manifest" jsonb,
+    "preview_zip_key" text,
+    "preview_zip_size_bytes" bigint,
+    "preview_generated_at" timestamp,
+    "preview_keys" jsonb,
+    "previews_generated" integer DEFAULT 0 NOT NULL,
+    "download_count" integer DEFAULT 0 NOT NULL,
+    "last_downloaded_at" timestamp,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "cnc_orders_licence_id_unique" ON "cnc_orders" ("licence_id");
+  CREATE UNIQUE INDEX IF NOT EXISTS "cnc_orders_stripe_checkout_session_unique" ON "cnc_orders" ("stripe_checkout_session_id");
+  CREATE INDEX IF NOT EXISTS "cnc_orders_stripe_payment_intent_idx" ON "cnc_orders" ("stripe_payment_intent_id");
+  CREATE INDEX IF NOT EXISTS "cnc_orders_user_created_idx" ON "cnc_orders" ("user_id", "created_at" DESC NULLS LAST);
+  CREATE INDEX IF NOT EXISTS "cnc_orders_status_queued_idx" ON "cnc_orders" ("status", "queued_at");
+  CREATE INDEX IF NOT EXISTS "cnc_orders_user_config_hash_idx" ON "cnc_orders" ("user_id", "config_hash");
+
+  CREATE TABLE IF NOT EXISTS "cnc_stripe_events" (
+    "id" text PRIMARY KEY NOT NULL,
+    "type" text NOT NULL,
+    "order_id" bigint REFERENCES "cnc_orders"("id") ON DELETE SET NULL,
+    "received_at" timestamp DEFAULT now() NOT NULL,
+    "processed_at" timestamp
+  );
+
+  -- Mirrors migration 0217. user_id CASCADEs (an upload is the buyer's own
+  -- file) while order_id is SET NULL (losing an order must not delete the
+  -- file it named); the art-asset tests turn on exactly that asymmetry.
+  CREATE TABLE IF NOT EXISTS "cnc_art_assets" (
+    "id" text PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "key" text NOT NULL,
+    "mime" text NOT NULL,
+    "size_bytes" integer NOT NULL,
+    "width_px" integer,
+    "height_px" integer,
+    "sha256" text NOT NULL,
+    "order_id" bigint REFERENCES "cnc_orders"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "cnc_art_assets_key_unique" ON "cnc_art_assets" ("key");
+  CREATE INDEX IF NOT EXISTS "cnc_art_assets_user_created_idx" ON "cnc_art_assets" ("user_id", "created_at" DESC NULLS LAST);
+  CREATE INDEX IF NOT EXISTS "cnc_art_assets_order_idx" ON "cnc_art_assets" ("order_id");
+
   -- Mirrors 0146: sync cursor indexes lead with board_type; deleted_at serves
   -- the daily prune's DELETE WHERE deleted_at < cutoff.
   CREATE INDEX IF NOT EXISTS "sync_deletions_deleted_at_idx" ON "sync_deletions" ("deleted_at");

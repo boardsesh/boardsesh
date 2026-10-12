@@ -98,6 +98,8 @@ import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import'
 import { syncQueries } from './sync/queries';
 import { resolveClimbNoMatch } from './shared/helpers';
 import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
+import { cncPackQueries } from './cnc-packs/queries';
+import { cncPackMutations } from './cnc-packs/mutations';
 
 export const resolvers = {
   // Scalar types
@@ -159,6 +161,7 @@ export const resolvers = {
     ...syncQueries,
     ...feedbackQueries,
     ...qaQueries,
+    ...cncPackQueries,
   },
 
   Mutation: {
@@ -206,6 +209,7 @@ export const resolvers = {
     ...qaMutations,
     ...boardPresenceResolvers.Mutation,
     ...integrationMutations,
+    ...cncPackMutations,
   },
 
   Subscription: {
