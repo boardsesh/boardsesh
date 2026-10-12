@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { resourcePrivacy, userBoards } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { MAX_KIOSKS_PER_GYM } from '@boardsesh/kiosk';
 import { db } from '../db/client';
@@ -626,7 +627,7 @@ describe('gymKiosk public read', () => {
     expect(forOwner!.boards.map((b) => b.boardUuid)).toEqual([boardInPrivateGym.uuid]);
   });
 
-  it('filters non-public boards out of `boards` for anon but keeps them in `layout`', async () => {
+  it('filters non-public boards out of both `boards` and `layout` for anon', async () => {
     await insertKiosk({
       gymId: publicGym.id,
       slug: 'mixed',
@@ -647,9 +648,51 @@ describe('gymKiosk public read', () => {
     expect(kiosk!.boards.map((b) => b.boardUuid)).toEqual([boardPub1.uuid]);
     // ...and the surviving public board exposes its slug for the install QR.
     expect(kiosk!.boards.map((b) => b.slug)).toEqual([boardPub1.uuid]);
-    // ...but the layout JSON still records the slot (renderer degrades the preset).
-    expect(kiosk!.layout.boards.map((slot) => slot.boardUuid)).toEqual([boardPub1.uuid, boardPriv.uuid]);
+    // The layout must not distribute a hidden board uuid to the public.
+    expect(kiosk!.layout.boards.map((slot) => slot.boardUuid)).toEqual([boardPub1.uuid]);
   });
+
+  it.each(['legacy booleans', 'current audience control'] as const)(
+    'never exposes an Unlisted board capability in public kiosk JSON (%s)',
+    async (shape) => {
+      if (shape === 'legacy booleans') {
+        await db
+          .update(userBoards)
+          .set({ isPublic: true, isUnlisted: true })
+          .where(eq(userBoards.uuid, boardPriv.uuid));
+      } else {
+        await db.insert(resourcePrivacy).values({ kind: 'board', resourceId: boardPriv.uuid, audience: 'unlisted' });
+      }
+      await insertKiosk({
+        gymId: publicGym.id,
+        slug: 'unlisted-slot',
+        name: 'Unlisted slot',
+        layout: {
+          version: 1,
+          boards: [{ boardUuid: boardPub1.uuid }, { boardUuid: boardPriv.uuid }],
+          leaderboard: { boardUuid: boardPriv.uuid, period: 'week' },
+        },
+      });
+      for (const context of [anonCtx(), authCtx(RANDOM)]) {
+        const kiosk = await socialGymKioskQueries.gymKiosk(
+          null,
+          { gymSlug: publicGym.slug, kioskSlug: 'unlisted-slot' },
+          context,
+        );
+        expect(kiosk!.boards.map((board) => board.boardUuid)).toEqual([boardPub1.uuid]);
+        expect(kiosk!.layout.boards.map((slot) => slot.boardUuid)).toEqual([boardPub1.uuid]);
+        expect(kiosk!.layout.leaderboard).toBeNull();
+        expect(JSON.stringify(kiosk)).not.toContain(boardPriv.uuid);
+      }
+      const editorKiosk = await socialGymKioskQueries.gymKiosk(
+        null,
+        { gymSlug: publicGym.slug, kioskSlug: 'unlisted-slot' },
+        authCtx(EDITOR),
+      );
+      expect(editorKiosk!.layout.boards.map((slot) => slot.boardUuid)).toEqual([boardPub1.uuid, boardPriv.uuid]);
+      expect(editorKiosk!.layout.leaderboard?.boardUuid).toBe(boardPriv.uuid);
+    },
+  );
 
   it('shows a private slot board (with boardId) to a gym EDITOR member', async () => {
     // Gym-level edit access drives slot visibility: an editor placing a private
@@ -700,7 +743,7 @@ describe('gymKiosk public read', () => {
     expect(kiosk!.boards.map((b) => b.boardUuid)).toEqual([boardPub1.uuid]);
   });
 
-  it('omits a dead board (quad degrades) but keeps its slot in the layout', async () => {
+  it('omits a dead board and its slot from the public layout', async () => {
     const boardPub3 = await insertBoard({ gymId: publicGym.id, ownerId: OWNER, name: 'D Wall', isPublic: true });
     const boardPub4 = await insertBoard({ gymId: publicGym.id, ownerId: OWNER, name: 'E Wall', isPublic: true });
     await insertKiosk({
@@ -723,7 +766,7 @@ describe('gymKiosk public read', () => {
 
     const kiosk = await socialGymKioskQueries.gymKiosk(null, { gymSlug: publicGym.slug, kioskSlug: 'quad' }, anonCtx());
     expect(kiosk!.boards).toHaveLength(3);
-    expect(kiosk!.layout.boards).toHaveLength(4);
+    expect(kiosk!.layout.boards).toHaveLength(3);
   });
 
   it('reads a corrupted stored layout leniently as an empty layout', async () => {

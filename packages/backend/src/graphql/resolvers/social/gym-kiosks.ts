@@ -132,11 +132,11 @@ type EnrichedGym = Awaited<ReturnType<typeof enrichGym>>;
  *  - everyone else: a kiosk URL is a listing, not a board's link, so a slot
  *    board is included only when the viewer may read it WITHOUT the link (the
  *    no-link reading of its policy: Public, or a board they already hold). An
- *    Unlisted board stays off a public kiosk even though its uuid sits in the
- *    layout. The survivors then go through enrichBoards and its shared
+ *    Unlisted board stays off a public kiosk even when its uuid is configured
+ *    in a stored layout slot. The survivors then go through enrichBoards and its shared
  *    `UserBoard.boardId` gate. GymKioskBoard's boardId is non-null, so a
  *    filtered board is omitted rather than shown with a null id (the board
- *    stays in `layout`, off `boards`, and the kiosk client degrades the preset).
+ *    is also removed from `layout`, which otherwise exposes its link capability).
  */
 async function resolveKioskView(
   kiosk: KioskRow,
@@ -210,13 +210,29 @@ async function resolveKioskView(
     }
   }
 
+  // A board uuid is an Unlisted board's link capability. A public listing must
+  // not distribute it through raw layout slots or a leaderboard scope after
+  // excluding the same board from the resolved list. Editors keep their stored
+  // configuration so they can repair missing or inaccessible slot boards.
+  const visibleBoardUuids = new Set(boards.map((board) => board.boardUuid));
+  const layout = viewerCanEditGym
+    ? parsed.layout
+    : {
+        ...parsed.layout,
+        boards: parsed.layout.boards.filter((slot) => visibleBoardUuids.has(slot.boardUuid)),
+        leaderboard:
+          parsed.layout.leaderboard?.boardUuid && !visibleBoardUuids.has(parsed.layout.leaderboard.boardUuid)
+            ? null
+            : parsed.layout.leaderboard,
+      };
+
   return {
     uuid: kiosk.uuid,
     slug: kiosk.slug,
     name: kiosk.name,
     // Return the leniently-parsed layout, never the raw stored jsonb: a corrupt
     // or future-version row surfaces as an empty layout, never an error.
-    layout: parsed.layout,
+    layout,
     // Enriched once by the caller (the manage list shares one gym across all
     // its kiosks — enriching per kiosk would fan the same queries out N times).
     gym: enrichedGym,
