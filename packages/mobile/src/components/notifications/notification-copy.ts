@@ -151,7 +151,12 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
       return { textI18nKey: 'items.proposalOnYourClimb', params: { actor, climb } };
     case 'new_climb':
     case 'new_climb_global':
-      return { textI18nKey: 'items.newClimb', params: { actor } };
+      // A setter whose account the viewer may not see arrives with no actor.
+      // The climb's setter name is public, so it names them instead of "Someone".
+      return {
+        textI18nKey: 'items.newClimb',
+        params: { actor: notification.actors.length === 0 && setterUsername ? setterUsername : actor },
+      };
     case 'new_climbs_synced':
       return setterUsername
         ? { textI18nKey: 'items.newClimbsSyncedSetter', params: { setter: setterUsername } }

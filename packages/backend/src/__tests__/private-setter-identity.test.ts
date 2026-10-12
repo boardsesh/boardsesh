@@ -15,6 +15,7 @@ import { NotificationWorker } from '../events/notification-worker';
 import { publishSocialEvent } from '../events/index';
 import { newClimbSubscriptionResolvers } from '../graphql/resolvers/social/new-climb-subscriptions';
 import { crewFeedQueries } from '../graphql/resolvers/social/crew-feed';
+import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 
 // Feed fan-out is not under test here; the notification rows are.
 vi.mock('../events/feed-fanout', () => ({
@@ -108,13 +109,23 @@ function climbCreated(climbUuid: string): SocialEvent {
   };
 }
 
-/** Who got a notification about this climb, by type. */
-async function notifiedAbout(climbUuid: string): Promise<Record<string, string>> {
+/** Who got a notification about this climb: its type, and the account it names. */
+async function notifiedAbout(climbUuid: string): Promise<Record<string, { type: string; actorId: string | null }>> {
   const rows = await db
-    .select({ recipientId: dbSchema.notifications.recipientId, type: dbSchema.notifications.type })
+    .select({
+      recipientId: dbSchema.notifications.recipientId,
+      type: dbSchema.notifications.type,
+      actorId: dbSchema.notifications.actorId,
+    })
     .from(dbSchema.notifications)
     .where(and(eq(dbSchema.notifications.entityId, climbUuid), inArray(dbSchema.notifications.recipientId, USERS)));
-  return Object.fromEntries(rows.map((row) => [row.recipientId, row.type]));
+  return Object.fromEntries(rows.map(({ recipientId, type, actorId }) => [recipientId, { type, actorId }]));
+}
+
+/** The stranger's inbox row for this climb, as the app reads it. */
+async function strangerInboxGroup(climbUuid: string) {
+  const page = await socialNotificationQueries.groupedNotifications(null, { limit: 50 }, ctxFor(STRANGER));
+  return page.groups.find((group) => group.entityId === climbUuid);
 }
 
 describeWithDatabase("a private account's identity on the new-climb surfaces (real DB)", () => {
@@ -214,14 +225,32 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
   });
 
   describe('new-climb notifications', () => {
-    it('reach the follower and not a stranger watching the layout (notification worker)', async () => {
+    // Who set a published climb is public by its setter name, so a stranger
+    // watching the layout still hears about it: with no account id or avatar,
+    // the way the board's new-climb feed shows it. The follower is told who.
+    const expected = {
+      [FOLLOWER]: { type: 'new_climb', actorId: PRIVATE_AUTHOR },
+      [STRANGER]: { type: 'new_climb_global', actorId: null },
+    };
+
+    it('reach the stranger watching the layout under the setter name (notification worker)', async () => {
       await captureWorkerHandler()(climbCreated(PRIVATE_CLIMB));
-      expect(await notifiedAbout(PRIVATE_CLIMB)).toEqual({ [FOLLOWER]: 'new_climb' });
+      expect(await notifiedAbout(PRIVATE_CLIMB)).toEqual(expected);
+      expect(await strangerInboxGroup(PRIVATE_CLIMB)).toMatchObject({
+        type: 'new_climb_global',
+        actorCount: 0,
+        actors: [],
+        setterUsername: PRIVATE_SETTER_NAME,
+      });
     });
 
-    it('reach the follower and not a stranger watching the layout (inline, no Redis)', async () => {
+    it('reach the stranger watching the layout under the setter name (inline, no Redis)', async () => {
       await publishSocialEvent(climbCreated(PRIVATE_CLIMB_INLINE));
-      expect(await notifiedAbout(PRIVATE_CLIMB_INLINE)).toEqual({ [FOLLOWER]: 'new_climb' });
+      expect(await notifiedAbout(PRIVATE_CLIMB_INLINE)).toEqual(expected);
+      expect(await strangerInboxGroup(PRIVATE_CLIMB_INLINE)).toMatchObject({
+        actors: [],
+        setterUsername: PRIVATE_SETTER_NAME,
+      });
     });
   });
 });

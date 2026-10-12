@@ -34,6 +34,11 @@ import crypto from 'crypto';
 import { canViewUserActivity } from '../services/privacy';
 import { canReadSocialEntity, canSeeActorOnEntity } from '../graphql/resolvers/shared/activity-privacy';
 
+/** A new-climb notification: about a published climb, announced to followers or layout watchers. */
+export function isNewClimbNotification(type: string): boolean {
+  return type === 'new_climb' || type === 'new_climb_global';
+}
+
 /**
  * Whether the proposal behind this event is a `hide`.
  *
@@ -428,6 +433,9 @@ export class NotificationWorker {
     // Guard: don't notify yourself
     if (recipientId === actorId) return;
 
+    // Who the stored notification names. A new climb whose setter's account the
+    // recipient may not see is still announced, under its setter name alone.
+    let storedActorId: string | null = actorId;
     // A follower is telling the recipient about themselves, so the recipient
     // seeing their name is the point, whatever the actor's own activity privacy
     // says. Follow requests are written by handleFollowRequested, not here.
@@ -436,7 +444,7 @@ export class NotificationWorker {
       // commenters included: `canReadSocialEntity` admits the owner of a
       // commented item, and `canSeeActorOnEntity` the owner of a liked one.
       // On a climb, every actor keeps their own account privacy, its author
-      // included: a stranger watching the layout is not told who set it.
+      // included.
       const canSeeActor = commentUuid
         ? await canReadSocialEntity('comment', commentUuid, recipientId, 'listed')
         : entityType
@@ -444,8 +452,14 @@ export class NotificationWorker {
           : await canViewUserActivity(recipientId, actorId);
       // An inbox is a list: nothing about an unlisted climb reaches anyone but
       // its owner, the same test notificationPrivacyCondition reads with.
-      if (!canSeeActor || (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId, 'listed')))) {
-        return;
+      if (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId, 'listed'))) return;
+      if (!canSeeActor) {
+        // A published climb is public, and so is its setter name: a stranger
+        // watching the layout hears about it with no account id or avatar, the
+        // way the board's new-climb feed shows it. Anything else about a
+        // hidden actor is not sent.
+        if (!isNewClimbNotification(type)) return;
+        storedActorId = null;
       }
     }
 
@@ -466,7 +480,7 @@ export class NotificationWorker {
     await db.insert(dbSchema.notifications).values({
       uuid,
       recipientId,
-      actorId,
+      actorId: storedActorId,
       type,
       entityType: entityType as dbSchema.SocialEntityType | null,
       entityId,
@@ -474,7 +488,7 @@ export class NotificationWorker {
     });
 
     // Enrich for real-time delivery
-    const enriched = await this.enrichNotification(uuid, actorId, type, entityType, entityId, commentUuid);
+    const enriched = await this.enrichNotification(uuid, storedActorId, type, entityType, entityId, commentUuid);
 
     // Push to connected WS clients via PubSub
     pubsub.publishNotificationEvent(recipientId, { notification: enriched });
@@ -482,24 +496,26 @@ export class NotificationWorker {
 
   private async enrichNotification(
     uuid: string,
-    actorId: string,
+    actorId: string | null,
     type: NotificationType,
     entityType: string | null,
     entityId: string,
     commentUuid?: string,
   ) {
-    // Fetch actor profile
-    const [actor] = await db
-      .select({
-        name: dbSchema.users.name,
-        image: dbSchema.users.image,
-        displayName: dbSchema.userProfiles.displayName,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
-      })
-      .from(dbSchema.users)
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-      .where(eq(dbSchema.users.id, actorId))
-      .limit(1);
+    // Fetch actor profile. No actor: a new climb announced under its setter name.
+    const [actor] = actorId
+      ? await db
+          .select({
+            name: dbSchema.users.name,
+            image: dbSchema.users.image,
+            displayName: dbSchema.userProfiles.displayName,
+            avatarUrl: dbSchema.userProfiles.avatarUrl,
+          })
+          .from(dbSchema.users)
+          .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+          .where(eq(dbSchema.users.id, actorId))
+          .limit(1)
+      : [];
 
     // Fetch comment body preview if applicable
     let commentBody: string | undefined;
@@ -517,6 +533,7 @@ export class NotificationWorker {
     let climbName: string | undefined;
     let climbUuid: string | undefined;
     let climbBoardType: string | undefined;
+    let climbSetterUsername: string | undefined;
     let proposalUuid: string | undefined;
     let proposalType: dbSchema.ClimbProposal['type'] | undefined;
     // 'true'/'false' for a hide proposal: a hide asking for 'false' is an
@@ -528,6 +545,7 @@ export class NotificationWorker {
         .select({
           name: dbSchema.boardClimbs.name,
           boardType: dbSchema.boardClimbs.boardType,
+          setterUsername: dbSchema.boardClimbs.setterUsername,
         })
         .from(dbSchema.boardClimbs)
         .where(eq(dbSchema.boardClimbs.uuid, entityId))
@@ -536,6 +554,7 @@ export class NotificationWorker {
         climbName = climb.name ?? undefined;
         climbUuid = entityId;
         climbBoardType = climb.boardType;
+        climbSetterUsername = climb.setterUsername ?? undefined;
       }
     } else if (
       type === 'proposal_created' ||
@@ -575,7 +594,7 @@ export class NotificationWorker {
       uuid,
       type,
       actorId,
-      actorDisplayName: actor?.displayName || actor?.name || undefined,
+      actorDisplayName: actorId ? actor?.displayName || actor?.name || undefined : climbSetterUsername,
       actorAvatarUrl: actor?.avatarUrl || actor?.image || undefined,
       entityType: entityType as dbSchema.SocialEntityType | null,
       entityId,

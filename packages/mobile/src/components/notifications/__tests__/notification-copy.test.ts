@@ -200,6 +200,20 @@ describe('notificationCopy', () => {
     expect(copy).toEqual({ textI18nKey: 'items.newClimbsSyncedSetter', params: { setter: 'setterbot' } });
   });
 
+  it.each(['new_climb', 'new_climb_global'] as const)(
+    'names the setter of a %s with no actor by its setter name',
+    (type) => {
+      const hidden = makeNotification({ type, actors: [], actorCount: 0, setterUsername: 'wallhandle' });
+      expect(notificationCopy(hidden, 'Someone')).toEqual({
+        textI18nKey: 'items.newClimb',
+        params: { actor: 'wallhandle' },
+      });
+      // A visible account still wins over the setter name.
+      const shown = makeNotification({ type, setterUsername: 'wallhandle' });
+      expect(notificationCopy(shown, 'Alex')).toEqual({ textI18nKey: 'items.newClimb', params: { actor: 'Alex' } });
+    },
+  );
+
   it('names the gym when gym_claim_approved carries one', () => {
     const copy = notificationCopy(makeNotification({ type: 'gym_claim_approved', gymName: 'Boulder Barn' }), 'Alex');
     expect(copy).toEqual({ textI18nKey: 'items.gymClaimApproved', params: { gym: 'Boulder Barn' } });

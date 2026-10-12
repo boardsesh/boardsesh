@@ -463,6 +463,10 @@ export const socialNotificationQueries = {
           group.climbUuid = group.entityId;
           group.climbName = climb.name ?? undefined;
           group.boardType = climb.boardType;
+          // A published climb's setter name is public. A new-climb row whose
+          // setter's account the viewer may not see carries no actor, and the
+          // client names the setter by this instead.
+          group.setterUsername = climb.setterUsername ?? undefined;
           applyClimbBoardFields(group, climb);
         }
       } else if (proposalTypes.includes(group.type)) {
