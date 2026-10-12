@@ -1,5 +1,5 @@
 {
-  "id": "1f6b7833-ca99-4413-a554-b95801e2dea6",
+  "id": "5d78b7cb-72d0-4a5e-a2b8-a4d081087c10",
   "prevId": "b9b5e12b-59f4-42d5-bef0-e1702060047d",
   "version": "7",
   "dialect": "postgresql",
@@ -3547,6 +3547,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "anonymous_on_foreign_boards": {
+          "name": "anonymous_on_foreign_boards",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "display_name": {
           "name": "display_name",
@@ -13924,19 +13931,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "stream_at": {
-          "name": "stream_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_membership_withdrawal": {
-          "name": "is_membership_withdrawal",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -13974,55 +13968,6 @@
               "expression": "deleted_at",
               "isExpression": false,
               "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"sync_deletions\".\"user_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sync_deletions_user_stream_idx": {
-          "name": "sync_deletions_user_stream_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(\"stream_at\", \"deleted_at\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sync_deletions_null_stream_idx": {
-          "name": "sync_deletions_null_stream_idx",
-          "columns": [
-            {
-              "expression": "COALESCE(\"stream_at\", \"deleted_at\")",
-              "asc": true,
-              "isExpression": true,
               "nulls": "last"
             },
             {

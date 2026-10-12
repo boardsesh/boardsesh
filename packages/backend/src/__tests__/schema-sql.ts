@@ -9,7 +9,7 @@ import { socialEntityTypeEnum } from '@boardsesh/db/schema';
 const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
 
 const deletionStreamSchema = readFileSync(
-  new URL('../../../db/drizzle/0267_sync_deletions_stream.sql', import.meta.url),
+  new URL('../../../db/drizzle/0268_sync_deletions_stream.sql', import.meta.url),
   'utf8',
 );
 const deletionCutoffFunction = readFileSync(
@@ -19,7 +19,7 @@ const deletionCutoffFunction = readFileSync(
 // Worker databases use the test superuser. Production's separate-owner admin
 // prerequisite is covered by its dedicated contract tests, not bypassed there.
 const deletionStreamTrigger = readFileSync(
-  new URL('../../../db/drizzle/0268_sync_deletions_cutoff_guard.sql', import.meta.url),
+  new URL('../../../db/drizzle/0269_sync_deletions_cutoff_guard.sql', import.meta.url),
   'utf8',
 )
   .split('--> statement-breakpoint')
@@ -110,7 +110,7 @@ const boardShareLinksSchema = readFileSync(
 // has. It writes `sync_deletions`, `board_climb_stats` and `board_climb_grades`,
 // so it installs after all three exist.
 const referenceMembershipSchema = readFileSync(
-  new URL('../../../db/drizzle/0266_climb_reference_membership.sql', import.meta.url),
+  new URL('../../../db/drizzle/0267_climb_reference_membership.sql', import.meta.url),
   'utf8',
 );
 // The generated discriminator column, replayed instead of a separate fixture
@@ -118,7 +118,7 @@ const referenceMembershipSchema = readFileSync(
 // withdrawal ships one release later, once every backend serving sync filters
 // flagged markers.
 const membershipWithdrawalSchema = readFileSync(
-  new URL('../../../db/drizzle/0269_climb_membership_withdrawal_flag.sql', import.meta.url),
+  new URL('../../../db/drizzle/0270_climb_membership_withdrawal_flag.sql', import.meta.url),
   'utf8',
 );
 
