@@ -122,10 +122,10 @@
             "sources": ["hero-1.png"]
           },
           {
-            "output": "01-island.png",
-            "caption": "cppIsland",
-            "layout": "store-island",
-            "sources": ["08-island.png"]
+            "output": "01-logbook.png",
+            "caption": "cppKilterLogbookImport",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
           },
           {
             "output": "02-queue.png",
@@ -134,10 +134,10 @@
             "sources": ["05-queue.png"]
           },
           {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
-            "layout": "screen",
-            "sources": ["03-logbook.png"]
+            "output": "03-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
           },
           {
             "output": "04-search.png",
@@ -180,10 +180,10 @@
             "sources": ["hero-1.png"]
           },
           {
-            "output": "01-kiosk.png",
-            "caption": "cppKiosk",
+            "output": "01-logbook.png",
+            "caption": "cppKilterLogbookImport",
             "layout": "screen",
-            "sources": ["08-kiosk.png"]
+            "sources": ["03-logbook.png"]
           },
           {
             "output": "02-queue.png",
@@ -192,10 +192,10 @@
             "sources": ["05-queue.png"]
           },
           {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
+            "output": "03-kiosk.png",
+            "caption": "cppKiosk",
             "layout": "screen",
-            "sources": ["03-logbook.png"]
+            "sources": ["08-kiosk.png"]
           },
           {
             "output": "04-search.png",
@@ -233,19 +233,19 @@
       },
       "localizations": {
         "en-US": {
-          "promotionalText": "Works with Kilter. Filter climbs by grade and angle, and let friends queue the next one from their phones. Free, with no ads and no paid upgrades.",
+          "promotionalText": "Works with Kilter. Bring your logbook over, then share one queue so friends can light the next climb. Free, with no ads and no paid upgrades.",
           "keywords": ["Kilter", "kilterboard"]
         },
         "es": {
-          "promotionalText": "Compatible con Kilter. Filtra bloques por grado y ángulo, y deja que tus amigos añadan el siguiente a la cola desde su móvil. Gratis, sin anuncios.",
+          "promotionalText": "Compatible con Kilter. Trae tu logbook y comparte una cola para que tus amigos iluminen el siguiente bloque. Gratis, sin anuncios y sin mejoras de pago.",
           "keywords": ["Kilter", "kilterboard"]
         },
         "fr": {
-          "promotionalText": "Compatible Kilter. Filtre les blocs par cotation et inclinaison, et laisse tes potes ajouter le suivant à la file depuis leur téléphone. Gratuit, sans pub.",
+          "promotionalText": "Compatible Kilter. Importe ton carnet, puis partage une file pour que tes potes allument le bloc suivant. Gratuit, sans pub et sans options payantes.",
           "keywords": ["Kilter", "kilterboard"]
         },
         "de": {
-          "promotionalText": "Kompatibel mit Kilter. Filtere Boulder nach Grad und Winkel, und lass Freunde den nächsten vom Handy einreihen. Kostenlos, ohne Werbung, ohne kostenpflichtige Extras.",
+          "promotionalText": "Kompatibel mit Kilter. Bring dein Routenbuch mit und teile eine Warteschlange, damit Freunde den nächsten Boulder beleuchten. Kostenlos, ohne Werbung.",
           "keywords": ["Kilter", "kilterboard"]
         }
       },

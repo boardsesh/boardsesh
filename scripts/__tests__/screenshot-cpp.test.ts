@@ -839,8 +839,9 @@ describe('custom product page captures', () => {
         if (target === 'kilter') {
           const centerVariant = page.heroBoards[Number(targetTrio.sources[1].match(/hero-(\d+)/)?.[1]) - 1];
           expect(centerVariant.id).toBe('kilter-original-12x12');
-          expect(recipes[1].caption).toBe(device.startsWith('ipad-') ? 'cppKiosk' : 'cppIsland');
-          expect(recipes.some((recipe) => recipe.caption === 'cppKilterLogbookImport')).toBe(false);
+          expect(recipes[1].caption).toBe('cppKilterLogbookImport');
+          expect(recipes[3].caption).toBe(device.startsWith('ipad-') ? 'cppKiosk' : 'cppIsland');
+          expect(recipes[1].sources).toEqual(['03-logbook.png']);
         }
         expect(recipes.find((recipe) => recipe.sources.includes('other-1.png'))!.sources).toEqual([
           'other-1.png',

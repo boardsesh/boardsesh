@@ -15,16 +15,16 @@ three images carry distinct benefits, since they also appear in search ads.
 
 | Target | First three images | Later target trio |
 | --- | --- | --- |
-| Kilter | Climbs at your grade, Dynamic Island (iPad kiosk), friends queue | Homewall 7×10, Original 12×12 (centre), Homewall 10×10 |
+| Kilter | Climbs at your grade, Kilter logbook import, friends queue | Homewall 7×10, Original 12×12 (centre), Homewall 10×10 |
 | Tension | Friends queue, Tension logbook import, Dynamic Island (iPad kiosk) | Original, Tension 2 Mirror, Tension 2 Spray |
 | MoonBoard | Climbs at your grade, friends queue, supported sets | 2016, Masters 2019, 2024 |
 | Spray wall | Set on your wall photo, friends queue, gym boards in one logbook | Liz's Wall, Cherry's Wall, The Bowlo |
 
-Kilter uses the conservative fallback: its logbook image says **Track every send
-and try**. The new Kilter account-linking path is rollout-gated, although legacy
-Aurora export import remains available. An import-led story requires verifying
-the intended production path. Tension's import is available without that flag;
-MoonBoard copy specifically describes a CSV export. Spray walls never promise
+Kilter uses the import-led story: **Bring your Kilter logbook** is image two,
+and Dynamic Island (iPad kiosk) is image four. The owner confirmed that Kilter
+account linking is permanently enabled. Legacy Aurora export import also remains
+available. Tension's import is available without that flag; MoonBoard copy
+specifically describes a CSV export. Spray walls never promise
 logbook imports. The regular Apple page retains **One app for all your boards**
 and now says **One logbook for every board**.
 
