@@ -11,6 +11,26 @@ import { syncQueries } from '../graphql/resolvers/sync/queries';
 const userId = 'user-123';
 const context = { userId, isAuthenticated: true } as ConnectionContext;
 const pull = (cursor?: SyncCursorInput, limit = 10) => syncQueries.syncDeletions(undefined, { cursor, limit }, context);
+
+/**
+ * Pull until a page delivers something, for at most eight seconds, and return
+ * that page. The cutoff holds every marker behind the oldest open write
+ * transaction in the whole database, and the other backend test files run
+ * against it at the same time. So the first poll after this file's own writer
+ * commits can still be held, correctly, by another file's write. Waiting for
+ * the marker to arrive, instead of expecting it on that exact poll, keeps what
+ * these tests prove (held while a writer is open, then delivered with nothing
+ * skipped) and drops the race. A held page echoes its cursor, so every retry
+ * reads from the same position. The tests that use it get a 20 s timeout.
+ */
+async function pullUntilDelivered(cursor?: SyncCursorInput, limit = 10) {
+  const deadline = Date.now() + 8_000;
+  for (;;) {
+    const page = await pull(cursor, limit);
+    if (page.deletions.length > 0 || Date.now() >= deadline) return page;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
 const helperSql = readFileSync(
   new URL('../../../db/scripts/sync-deletions-cutoff-function.sql', import.meta.url),
   'utf8',
@@ -56,18 +76,18 @@ describe('deletion cursor commit ordering (real PostgreSQL, zero stability windo
       expect(held.hasMore).toBe(false);
 
       await writer.unsafe('COMMIT');
-      const first = await pull(held.cursor, 1);
+      const first = await pullUntilDelivered(held.cursor, 1);
       expect(first.deletions.map((marker) => marker.recordId)).toEqual(['late-old-writer']);
       expect(first.deletions[0].deletedAt).toBe('2026-05-01T00:00:00Z');
       expect(Date.parse(first.cursor.updatedAt!)).toBeGreaterThan(Date.parse('2026-05-02'));
       expect(first.hasMore).toBe(true);
-      const second = await pull(first.cursor, 1);
+      const second = await pullUntilDelivered(first.cursor, 1);
       expect(second.deletions.map((marker) => marker.recordId)).toEqual(['newer-committed-writer']);
       expect((await pull(second.cursor)).deletions).toEqual([]);
     } finally {
       await writer.unsafe('ROLLBACK');
     }
-  });
+  }, 20_000);
 
   it('takes the page snapshot after cutoff sampling, including a writer committed between queries', async () => {
     const writer = connection();
@@ -96,14 +116,14 @@ describe('deletion cursor commit ordering (real PostgreSQL, zero stability windo
       expect(queryCount).toBe(2);
       expect(held.deletions).toEqual([]);
       spy.mockRestore();
-      expect((await pull(held.cursor)).deletions.map((marker) => marker.recordId)).toEqual([
+      expect((await pullUntilDelivered(held.cursor)).deletions.map((marker) => marker.recordId)).toEqual([
         'commit-between-snapshots',
       ]);
     } finally {
       spy.mockRestore();
       await writer.unsafe('ROLLBACK');
     }
-  });
+  }, 20_000);
 
   it('preserves legacy NULL stream positions and keeps backdated payload guards independent', async () => {
     await db.execute(sql`ALTER TABLE sync_deletions DISABLE TRIGGER trg_sync_deletion_stream_at`);
@@ -115,17 +135,17 @@ describe('deletion cursor commit ordering (real PostgreSQL, zero stability windo
     } finally {
       await db.execute(sql`ALTER TABLE sync_deletions ENABLE TRIGGER trg_sync_deletion_stream_at`);
     }
-    const legacy = await pull(undefined, 1);
+    const legacy = await pullUntilDelivered(undefined, 1);
     expect(legacy.cursor.updatedAt).toBe('2026-05-01T00:00:00.123456Z');
     await db.execute(sql`
       INSERT INTO sync_deletions (table_name, record_id, user_id, deleted_at, stream_at)
       VALUES ('board_climbs', 'new-backdated-guard', ${userId}, '2026-04-01'::timestamp, '1970-01-01'::timestamp)
     `);
-    const appended = await pull(legacy.cursor);
+    const appended = await pullUntilDelivered(legacy.cursor);
     expect(appended.deletions.map((marker) => marker.recordId)).toEqual(['new-backdated-guard']);
     expect(appended.deletions[0].deletedAt).toBe('2026-04-01T00:00:00Z');
     expect(Date.parse(appended.cursor.updatedAt!)).toBeGreaterThan(Date.parse(legacy.cursor.updatedAt!));
-  });
+  }, 20_000);
 
   it('pauses without advancing when the helper loses effective stats access', async () => {
     const admin = connection();
