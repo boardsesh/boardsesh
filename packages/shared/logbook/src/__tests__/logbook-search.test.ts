@@ -40,11 +40,13 @@ describe('toAscentFeedInput', () => {
 
   it('maps status, flash, grade range, angle, dates, benchmark, and trims name', () => {
     const filters: LogbookFilterState = {
+      ...DEFAULT_LOGBOOK_FILTERS,
       includeSends: true,
       includeAttempts: false,
       flashOnly: true,
       minGrade: 12,
       maxGrade: 20,
+      dateWindow: 'custom',
       fromDate: '2026-01-01',
       toDate: '2026-02-01',
       angleRange: [20, 50],

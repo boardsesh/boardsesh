@@ -1,5 +1,7 @@
 import { DEFAULT_LOGBOOK_ANGLE_RANGE, DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from './defaults';
+import { LOGBOOK_DATE_WINDOWS } from './date-window';
 import type {
+  LogbookDateWindow,
   LogbookFilterState,
   LogbookSortDirection,
   LogbookSortField,
@@ -16,7 +18,15 @@ const VALID_SORT_FIELDS: Array<LogbookSortField | ''> = [
   'attemptCount',
 ];
 const VALID_SORT_DIRECTIONS: LogbookSortDirection[] = ['asc', 'desc'];
-const VALID_SORT_PRESETS: LogbookSortPreset[] = ['recent', 'hardest'];
+const VALID_SORT_PRESETS: LogbookSortPreset[] = ['recent', 'hardest', 'easiest'];
+
+/** Setter filters past this many are dropped (the picker never gets near it). */
+export const MAX_LOGBOOK_SETTER_FILTERS = 20;
+const MIN_QUALITY = 1;
+const MAX_QUALITY = 5;
+// Board types are lowercase slugs ('kilter', 'moonboard', 'spray'). The shape
+// check keeps junk out of the query without pinning the board list here.
+const BOARD_TYPE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
 
 const sanitizeDifficulty = (value: unknown): number | '' =>
   typeof value === 'number' && Number.isFinite(value) ? value : '';
@@ -31,6 +41,44 @@ const sanitizeDate = (value: unknown): string => {
 };
 
 const sanitizeBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
+
+/**
+ * A stored window, or the one an older payload implies: before the window
+ * existed a picked from/to WAS the date filter, so it reads as Custom (keeping
+ * the range); with neither it reads as Any time.
+ */
+function sanitizeDateWindow(value: unknown, fromDate: string, toDate: string): LogbookDateWindow {
+  if (typeof value === 'string' && (LOGBOOK_DATE_WINDOWS as readonly string[]).includes(value)) {
+    return value as LogbookDateWindow;
+  }
+  return fromDate || toDate ? 'custom' : 'any';
+}
+
+const sanitizeBoardType = (value: unknown): string =>
+  typeof value === 'string' && BOARD_TYPE_PATTERN.test(value) ? value : '';
+
+/** Positive integer layout ids, deduped and ascending (a stable query key). */
+function sanitizeLayoutIds(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const ids = value.filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0);
+  return Array.from(new Set(ids)).sort((left, right) => left - right);
+}
+
+/** Whole stars 1-5, or '' for any. Out-of-range numbers clamp to the scale. */
+function sanitizeMinQuality(value: unknown): number | '' {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '';
+  return Math.min(MAX_QUALITY, Math.max(MIN_QUALITY, Math.round(value)));
+}
+
+/** Trimmed, non-empty, de-duplicated setter usernames, first 20 kept. */
+function sanitizeSetterUsernames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const names = value
+    .filter((name): name is string => typeof name === 'string')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  return Array.from(new Set(names)).slice(0, MAX_LOGBOOK_SETTER_FILTERS);
+}
 
 function sanitizeAngleRange(value: unknown): [number, number] {
   if (!Array.isArray(value) || value.length !== 2) {
@@ -47,19 +95,31 @@ function sanitizeAngleRange(value: unknown): [number, number] {
  * Coerce untrusted persisted/serialized state into a valid filter object,
  * falling back to defaults per field. At least one of sends/attempts stays on,
  * and flash-only is cleared when sends are excluded (it only applies to sends).
+ * Payloads from before a field existed (no dateWindow, board, stars, setters)
+ * read as that field's default, except a stored from/to, which reads as Custom.
  */
 export function sanitizeLogbookFilters(value: unknown): LogbookFilterState {
-  const source = value && typeof value === 'object' ? (value as Partial<LogbookFilterState>) : {};
+  const source =
+    value && typeof value === 'object' ? (value as Partial<Record<keyof LogbookFilterState, unknown>>) : {};
+  const fromDate = sanitizeDate(source.fromDate);
+  const toDate = sanitizeDate(source.toDate);
+  const boardType = sanitizeBoardType(source.boardType);
   const sanitized: LogbookFilterState = {
     includeSends: sanitizeBoolean(source.includeSends, DEFAULT_LOGBOOK_FILTERS.includeSends),
     includeAttempts: sanitizeBoolean(source.includeAttempts, DEFAULT_LOGBOOK_FILTERS.includeAttempts),
     flashOnly: sanitizeBoolean(source.flashOnly, DEFAULT_LOGBOOK_FILTERS.flashOnly),
     minGrade: sanitizeDifficulty(source.minGrade),
     maxGrade: sanitizeDifficulty(source.maxGrade),
-    fromDate: sanitizeDate(source.fromDate),
-    toDate: sanitizeDate(source.toDate),
+    dateWindow: sanitizeDateWindow(source.dateWindow, fromDate, toDate),
+    fromDate,
+    toDate,
     angleRange: sanitizeAngleRange(source.angleRange),
     benchmarkOnly: sanitizeBoolean(source.benchmarkOnly, DEFAULT_LOGBOOK_FILTERS.benchmarkOnly),
+    boardType,
+    // Layout ids only mean something inside one board type.
+    layoutIds: boardType ? sanitizeLayoutIds(source.layoutIds) : [],
+    minQuality: sanitizeMinQuality(source.minQuality),
+    setterUsernames: sanitizeSetterUsernames(source.setterUsernames),
   };
   if (!sanitized.includeSends && !sanitized.includeAttempts) {
     sanitized.includeSends = true;
@@ -76,6 +136,10 @@ export function sanitizeLogbookFilters(value: unknown): LogbookFilterState {
     sanitized.minGrade > sanitized.maxGrade
   ) {
     [sanitized.minGrade, sanitized.maxGrade] = [sanitized.maxGrade, sanitized.minGrade];
+  }
+  // Same for a custom date range: ISO dates compare correctly as strings.
+  if (sanitized.fromDate && sanitized.toDate && sanitized.fromDate > sanitized.toDate) {
+    [sanitized.fromDate, sanitized.toDate] = [sanitized.toDate, sanitized.fromDate];
   }
   return sanitized;
 }

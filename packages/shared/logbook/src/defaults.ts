@@ -16,10 +16,15 @@ export const DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
   flashOnly: false,
   minGrade: '',
   maxGrade: '',
+  dateWindow: 'any',
   fromDate: '',
   toDate: '',
   angleRange: DEFAULT_LOGBOOK_ANGLE_RANGE,
   benchmarkOnly: false,
+  boardType: '',
+  layoutIds: [],
+  minQuality: '',
+  setterUsernames: [],
 };
 
 /** Default sort = the "Latest" preset (most recent ascent first). */
