@@ -451,11 +451,12 @@ export function commentPrivacyCondition(
 
 /**
  * Whether the viewer may see who acted on an entity (a notification's or feed
- * row's actor). On a climb, the climb's own author is public with the climb:
- * a published climb is public whoever set it, so its author is no secret.
- * Anyone else acting on a climb (a vote, a follow-up) is their own activity
- * and keeps their account privacy. Every other entity type keeps its item
- * audience.
+ * row's actor). A climb has no audience, so on a climb only the actor's
+ * account privacy decides, for its author as for anyone else acting on it (a
+ * vote, a proposal): a published climb is public whoever set it, but the
+ * account behind it keeps its identity, and a viewer who may not see that
+ * account's activity is not told who set it. Every other entity type keeps its
+ * item audience.
  */
 export function entityActorVisibilityCondition(
   entityType: SQLWrapper,
@@ -463,11 +464,8 @@ export function entityActorVisibilityCondition(
   actorId: SQLWrapper,
   viewerId: string | null | undefined,
 ): SQL {
-  return sql`(CASE WHEN ${entityType}::text = 'climb' THEN (
-    EXISTS (SELECT 1 FROM board_climbs privacy_actor_climb
-      WHERE privacy_actor_climb.uuid = ${entityId}::text AND privacy_actor_climb.user_id = ${actorId})
-    OR ${userActivityVisibilityCondition(actorId, viewerId)}
-  ) ELSE ${contentVisibilityCondition(entityType, entityId, actorId, viewerId)} END)`;
+  return sql`(CASE WHEN ${entityType}::text = 'climb' THEN ${userActivityVisibilityCondition(actorId, viewerId)}
+    ELSE ${contentVisibilityCondition(entityType, entityId, actorId, viewerId)} END)`;
 }
 
 /**

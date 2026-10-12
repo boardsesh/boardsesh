@@ -13,6 +13,7 @@ import { followedAuthorCondition, sprayClimbVisibilityCondition, withSerialPlan 
 import { rowsFromResult } from '@boardsesh/db/client';
 import { boardClimbs, boardClimbStats, boardDifficultyGrades, users, userProfiles } from '@boardsesh/db/schema';
 import { dbRead } from '../../../db/client';
+import { visibleActivityUserIds } from '../../../services/privacy';
 import { requireAuthenticated, applyRateLimit, resolveClimbNoMatch } from '../shared/helpers';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../../../db/queries/util/climb-stats-join';
 import { getSessionFeed } from './session-feed';
@@ -123,43 +124,55 @@ async function enrichClimbs(timeById: Map<string, string>, viewerId: string): Pr
     .leftJoin(users, eq(users.id, boardClimbs.userId))
     .leftJoin(userProfiles, eq(userProfiles.userId, boardClimbs.userId))
     .where(and(inArray(boardClimbs.uuid, climbUuids), ...visibleClimbs(viewerId)));
+  // A published climb is public whoever set it, and following its setter name
+  // needs no approval, but the account behind it keeps its identity: a viewer
+  // who may not see that account's activity gets the card under the setter
+  // name, with no account id or avatar. Decided on the primary, like every
+  // other policy read.
+  const setterIdentityVisible = await visibleActivityUserIds(
+    rows.map(({ climb }) => climb.userId),
+    viewerId,
+  );
   return new Map(
-    rows.map(({ climb, angle, difficultyName, actorDisplayName, actorAvatarUrl, ...stats }) => [
-      climb.uuid,
-      {
-        id: `climb:${climb.uuid}`,
-        type: 'new_climb',
-        entityType: 'climb',
-        entityId: climb.uuid,
-        actorId: climb.userId,
-        actorDisplayName: actorDisplayName ?? climb.setterUsername,
-        actorAvatarUrl,
-        climbUuid: climb.uuid,
-        climbName: climb.name,
-        boardType: climb.boardType,
-        layoutId: climb.layoutId,
-        renderBoard: resolveRenderBoard({
+    rows.map(({ climb, angle, difficultyName, actorDisplayName, actorAvatarUrl, ...stats }) => {
+      const showSetter = !!climb.userId && setterIdentityVisible.has(climb.userId);
+      return [
+        climb.uuid,
+        {
+          id: `climb:${climb.uuid}`,
+          type: 'new_climb',
+          entityType: 'climb',
+          entityId: climb.uuid,
+          actorId: showSetter ? climb.userId : null,
+          actorDisplayName: (showSetter ? actorDisplayName : null) ?? climb.setterUsername,
+          actorAvatarUrl: showSetter ? actorAvatarUrl : null,
+          climbUuid: climb.uuid,
+          climbName: climb.name,
           boardType: climb.boardType,
-          climbLayoutId: climb.layoutId,
-          compatibleSizeIds: climb.compatibleSizeIds,
-          requiredSetIds: climb.requiredSetIds,
-        }),
-        setterUsername: climb.setterUsername,
-        frames: climb.frames,
-        // Both were on the full climb the redirector used to fetch: the setter's
-        // notes render in the drawer, and framesPace is the authored playback
-        // speed for a multi-frame climb (the engine defaults to 750ms without it).
-        description: climb.description,
-        framesPace: climb.framesPace,
-        angle,
-        difficultyName,
-        ascensionistCount: stats.ascensionistCount,
-        qualityAverage: stats.qualityAverage,
-        isBenchmark: (stats.benchmarkDifficulty ?? 0) > 0,
-        isNoMatch: resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
-        createdAt: timeById.get(climb.uuid)!,
-      },
-    ]),
+          layoutId: climb.layoutId,
+          renderBoard: resolveRenderBoard({
+            boardType: climb.boardType,
+            climbLayoutId: climb.layoutId,
+            compatibleSizeIds: climb.compatibleSizeIds,
+            requiredSetIds: climb.requiredSetIds,
+          }),
+          setterUsername: climb.setterUsername,
+          frames: climb.frames,
+          // Both were on the full climb the redirector used to fetch: the setter's
+          // notes render in the drawer, and framesPace is the authored playback
+          // speed for a multi-frame climb (the engine defaults to 750ms without it).
+          description: climb.description,
+          framesPace: climb.framesPace,
+          angle,
+          difficultyName,
+          ascensionistCount: stats.ascensionistCount,
+          qualityAverage: stats.qualityAverage,
+          isBenchmark: (stats.benchmarkDifficulty ?? 0) > 0,
+          isNoMatch: resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
+          createdAt: timeById.get(climb.uuid)!,
+        },
+      ];
+    }),
   );
 }
 

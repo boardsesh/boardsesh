@@ -12,6 +12,7 @@ import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatc
 import { NewClimbFeedInputSchema, NewClimbSubscriptionInputSchema } from '../../../validation/schemas';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../../../db/queries/util/climb-stats-join';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
+import { userActivityVisibilityCondition } from '../../../services/privacy';
 
 export const newClimbSubscriptionResolvers = {
   Query: {
@@ -40,6 +41,10 @@ export const newClimbSubscriptionResolvers = {
         return { items: [], totalCount: 0, hasMore: false };
       }
 
+      // A published, listed climb is public whoever set it, but the account
+      // behind it keeps its identity: a viewer who may not see a private
+      // account's activity gets the climb under its setter name, with no avatar.
+      const setterIdentityVisible = userActivityVisibilityCondition(dbSchema.boardClimbs.userId, ctx.userId);
       const climbs = await db
         .select({
           uuid: dbSchema.boardClimbs.uuid,
@@ -51,10 +56,11 @@ export const newClimbSubscriptionResolvers = {
           angle: resolvedClimbAngleSql,
           frames: dbSchema.boardClimbs.frames,
           createdAt: dbSchema.boardClimbs.createdAt,
-          setterDisplayName: sql<
-            string | null
-          >`COALESCE(${dbSchema.userProfiles.displayName}, ${dbSchema.users.name}, ${dbSchema.boardClimbs.setterUsername})`,
-          setterAvatarUrl: sql<string | null>`COALESCE(${dbSchema.userProfiles.avatarUrl}, ${dbSchema.users.image})`,
+          setterDisplayName: sql<string | null>`CASE WHEN ${setterIdentityVisible}
+            THEN COALESCE(${dbSchema.userProfiles.displayName}, ${dbSchema.users.name}, ${dbSchema.boardClimbs.setterUsername})
+            ELSE ${dbSchema.boardClimbs.setterUsername} END`,
+          setterAvatarUrl: sql<string | null>`CASE WHEN ${setterIdentityVisible}
+            THEN COALESCE(${dbSchema.userProfiles.avatarUrl}, ${dbSchema.users.image}) END`,
           difficultyName: dbSchema.boardDifficultyGrades.boulderName,
         })
         .from(dbSchema.boardClimbs)

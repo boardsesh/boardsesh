@@ -159,9 +159,9 @@ export const activityFeedQueries = {
     // Build base conditions
     const conditions = [
       eq(dbSchema.feedItems.recipientId, myUserId),
-      // A published climb is public whoever set it, so a new-climb row's
-      // author skips their account privacy. Its draft rule and spray-wall
-      // rule are in socialEntityPrivacyCondition below.
+      // A row names its actor only to a viewer who may see that account's
+      // activity; on a climb, its author keeps that identity too. The climb's
+      // draft rule and spray-wall rule are in socialEntityPrivacyCondition below.
       entityActorVisibilityCondition(
         dbSchema.feedItems.entityType,
         dbSchema.feedItems.entityId,

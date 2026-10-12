@@ -27,11 +27,13 @@ import { newClimbFeedSubscription } from '../graphql/resolvers/social/new-climb-
 // ---------------------------------------------------------------------------
 // The live "new climb" push (real Postgres).
 //
-// A published, listed climb is public whoever set it, so the push carries no
-// per-viewer privacy check. Moderation `hide` is a separate rule and still
-// applies: a climb the community hid never announces itself, including one
-// hidden after the publisher announced it. Withdrawn climbs (draft, unlisted)
-// stay out too.
+// A published, listed climb is public whoever set it, so every subscriber is
+// sent it. Moderation `hide` is a separate rule and still applies: a climb the
+// community hid never announces itself, including one hidden after the
+// publisher announced it. Withdrawn climbs (draft, unlisted) stay out too.
+// The account behind the climb keeps its identity: a subscriber who may not
+// see a private account's activity gets the climb under its setter name, with
+// no avatar.
 // ---------------------------------------------------------------------------
 
 const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip : describe;
@@ -40,7 +42,11 @@ const BOARD = 'kilter';
 const LAYOUT_ID = 99_784;
 const PRIVATE_AUTHOR = 'new-climb-push-private-author';
 const STRANGER = 'new-climb-push-stranger';
-const USERS = [PRIVATE_AUTHOR, STRANGER];
+const FOLLOWER = 'new-climb-push-follower';
+const USERS = [PRIVATE_AUTHOR, STRANGER, FOLLOWER];
+const SETTER_NAME = 'new-climb-push-setter';
+const PRIVATE_DISPLAY = 'A private setter';
+const PRIVATE_AVATAR = 'https://example.test/new-climb-push-private.png';
 
 const PUBLISHED = 'new-climb-push-published';
 const LATER_HIDDEN = 'new-climb-push-later-hidden';
@@ -63,8 +69,8 @@ function eventFor(uuid: string): NewClimbCreatedEvent {
       name: `Name of ${uuid}`,
       boardType: BOARD,
       layoutId: LAYOUT_ID,
-      setterDisplayName: 'A private setter',
-      setterAvatarUrl: null,
+      setterDisplayName: PRIVATE_DISPLAY,
+      setterAvatarUrl: PRIVATE_AVATAR,
       angle: 40,
       frames: 'p1r12',
       difficultyName: null,
@@ -86,7 +92,7 @@ async function insertClimb(uuid: string, options: { isDraft?: boolean; isListed?
     layoutId: LAYOUT_ID,
     userId: PRIVATE_AUTHOR,
     name: `Name of ${uuid}`,
-    setterUsername: 'new-climb-push-setter',
+    setterUsername: SETTER_NAME,
     frames: 'p1r12',
     framesCount: 1,
     isDraft: options.isDraft ?? false,
@@ -102,7 +108,10 @@ function resetChannel(): void {
 }
 
 /** Subscribe, wait for the channel, push `uuids` in order, and return the first climb the viewer is sent. */
-async function firstAnnounced(ctx: ConnectionContext, uuids: string[]): Promise<string | null> {
+async function firstAnnouncedClimb(
+  ctx: ConnectionContext,
+  uuids: string[],
+): Promise<NewClimbCreatedEvent['climb'] | null> {
   resetChannel();
   const iterator = newClimbFeedSubscription.newClimbCreated.subscribe(
     undefined,
@@ -114,7 +123,11 @@ async function firstAnnounced(ctx: ConnectionContext, uuids: string[]): Promise<
   for (const uuid of uuids) channel.push?.(eventFor(uuid));
   const result = await next;
   await iterator.return(undefined);
-  return result.done ? null : result.value.newClimbCreated.climb.uuid;
+  return result.done ? null : result.value.newClimbCreated.climb;
+}
+
+async function firstAnnounced(ctx: ConnectionContext, uuids: string[]): Promise<string | null> {
+  return (await firstAnnouncedClimb(ctx, uuids))?.uuid ?? null;
 }
 
 describeWithDatabase('newClimbCreated push (real DB)', () => {
@@ -122,6 +135,7 @@ describeWithDatabase('newClimbCreated push (real DB)', () => {
     await removeFixtures();
     await db.insert(schema.users).values(USERS.map((id) => ({ id, name: `Name ${id}`, email: `${id}@example.test` })));
     await db.insert(schema.userProfiles).values({ userId: PRIVATE_AUTHOR, isPrivate: true });
+    await db.insert(schema.userFollows).values({ followerId: FOLLOWER, followingId: PRIVATE_AUTHOR });
     await insertClimb(PUBLISHED, {});
     await insertClimb(LATER_HIDDEN, {});
     await insertClimb(HIDDEN, { isHidden: true });
@@ -141,6 +155,28 @@ describeWithDatabase('newClimbCreated push (real DB)', () => {
       expect(await firstAnnounced(ctx, [HIDDEN, UNLISTED, DRAFT, PUBLISHED])).toBe(PUBLISHED);
     },
   );
+
+  it.each([
+    ['a stranger', ctxFor(STRANGER)],
+    ['an anonymous caller', anonymous],
+  ])("sends %s a private account's climb under its setter name, with no avatar", async (_label, ctx) => {
+    expect(await firstAnnouncedClimb(ctx, [PUBLISHED])).toMatchObject({
+      uuid: PUBLISHED,
+      setterDisplayName: SETTER_NAME,
+      setterAvatarUrl: null,
+    });
+  });
+
+  it.each([
+    ['an approved follower', ctxFor(FOLLOWER)],
+    ['the account itself', ctxFor(PRIVATE_AUTHOR)],
+  ])('names the private account to %s', async (_label, ctx) => {
+    expect(await firstAnnouncedClimb(ctx, [PUBLISHED])).toMatchObject({
+      uuid: PUBLISHED,
+      setterDisplayName: PRIVATE_DISPLAY,
+      setterAvatarUrl: PRIVATE_AVATAR,
+    });
+  });
 
   it('skips a climb the community hid after it was announced', async () => {
     await db.update(schema.boardClimbs).set({ isHidden: true }).where(eq(schema.boardClimbs.uuid, LATER_HIDDEN));

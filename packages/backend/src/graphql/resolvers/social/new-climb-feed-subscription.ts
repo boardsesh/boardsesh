@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { boardClimbs } from '@boardsesh/db/schema';
 import { publicReferenceClimbCondition } from '@boardsesh/db/queries';
 import { type ConnectionContext, type NewClimbCreatedEvent, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
@@ -7,6 +7,7 @@ import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { isSprayBoardType, sprayLayoutIsReadable, sprayStreamGate } from '../climbs/spray-read-access';
+import { userActivityVisibilityCondition } from '../../../services/privacy';
 
 export const newClimbFeedSubscription = {
   newClimbCreated: {
@@ -52,15 +53,25 @@ export const newClimbFeedSubscription = {
       const gate = sprayStreamGate(boardType, layoutId, ctx.userId);
       for await (const event of asyncIterator) {
         if (gate && !(await gate())) return;
-        // Re-read the climb per event. Who set it does not matter (a published,
-        // listed climb is public whoever set it), but the row may have changed
-        // since the publisher announced it: the community may have hidden it,
-        // or its setter withdrawn it. Moderation `hide` is its own rule, not a
-        // privacy one, and this push is a browse surface, so a hidden climb
-        // never announces itself here. Read on the primary, so a replica that
-        // has not caught up with the hide cannot let it through.
+        // Re-read the climb per event. Who set it does not decide whether it is
+        // sent (a published, listed climb is public whoever set it), but the
+        // row may have changed since the publisher announced it: the community
+        // may have hidden it, or its setter withdrawn it. Moderation `hide` is
+        // its own rule, not a privacy one, and this push is a browse surface,
+        // so a hidden climb never announces itself here. Read on the primary,
+        // so a replica that has not caught up with the hide cannot let it
+        // through.
+        //
+        // Who set it does decide what this subscriber is told about the
+        // setter: the event is published once for every subscriber, with the
+        // account's name and avatar, and a subscriber who may not see a private
+        // account's activity gets the climb under its setter name instead.
         const [stillAnnounced] = await db
-          .select({ uuid: boardClimbs.uuid })
+          .select({
+            uuid: boardClimbs.uuid,
+            setterUsername: boardClimbs.setterUsername,
+            setterIdentityVisible: sql<boolean>`${userActivityVisibilityCondition(boardClimbs.userId, ctx.userId)}`,
+          })
           .from(boardClimbs)
           .where(
             and(
@@ -72,7 +83,14 @@ export const newClimbFeedSubscription = {
           )
           .limit(1);
         if (!stillAnnounced) continue;
-        yield { newClimbCreated: event };
+        yield {
+          newClimbCreated: stillAnnounced.setterIdentityVisible
+            ? event
+            : {
+                ...event,
+                climb: { ...event.climb, setterDisplayName: stillAnnounced.setterUsername, setterAvatarUrl: null },
+              },
+        };
       }
     }),
   },

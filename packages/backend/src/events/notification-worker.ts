@@ -435,8 +435,8 @@ export class NotificationWorker {
       // The owner of the item hears about every comment and like on it, private
       // commenters included: `canReadSocialEntity` admits the owner of a
       // commented item, and `canSeeActorOnEntity` the owner of a liked one.
-      // On a climb, its author is public with the published climb; anyone
-      // else acting on it keeps their own account privacy.
+      // On a climb, every actor keeps their own account privacy, its author
+      // included: a stranger watching the layout is not told who set it.
       const canSeeActor = commentUuid
         ? await canReadSocialEntity('comment', commentUuid, recipientId, 'listed')
         : entityType

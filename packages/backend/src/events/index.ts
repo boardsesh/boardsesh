@@ -16,6 +16,7 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
 import { isHideProposalEvent } from './notification-worker';
+import { canSeeActorOnEntity } from '../graphql/resolvers/shared/activity-privacy';
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
 import { writeFollowRequestNotification } from './follow-request-notifications';
@@ -253,6 +254,9 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         const actor = actorRows[0];
 
         for (const recipient of recipients) {
+          // The same test the notification worker applies: a recipient who may
+          // not see the setter's account activity is not told they set it.
+          if (!(await canSeeActorOnEntity('climb', event.entityId, event.actorId, recipient.recipientId))) continue;
           const uuid = crypto.randomUUID();
           await db.insert(dbSchema.notifications).values({
             uuid,

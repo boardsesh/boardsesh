@@ -336,9 +336,10 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(await firstAscent(ctxFor(FOLLOWER))).toEqual({ name: `Name ${PRIVATE_SENDER}`, at: '2026-01-01' });
   });
 
-  it('names a climb’s author on a notification about it, and keeps any other private actor hidden', async () => {
+  it('names any private actor on a climb, its author included, only to who may see that account', async () => {
     await db.insert(schema.notifications).values([
-      // The private author published it: their authorship is public with the climb.
+      // The private author published it. The climb is public; the account
+      // behind it keeps its identity, as on every other surface.
       {
         uuid: 'matrix-n-author',
         recipientId: STRANGER,
@@ -347,7 +348,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
         entityType: 'climb',
         entityId: PRIVATE_PUBLISHED,
       },
-      // A different private account acting on the same climb keeps its privacy.
+      // A different private account acting on the same climb keeps it too.
       {
         uuid: 'matrix-n-other',
         recipientId: STRANGER,
@@ -370,12 +371,13 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       }
       return visible;
     };
-    expect(await visibleTo(STRANGER)).toEqual(['matrix-n-author']);
-    // An approved follower of the other actor sees both.
+    expect(await visibleTo(STRANGER)).toEqual([]);
+    // An approved follower of both accounts sees both.
     expect(await visibleTo(FOLLOWER)).toEqual(['matrix-n-author', 'matrix-n-other']);
 
     // The worker's check before it writes a notification agrees.
-    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(true);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(false);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, FOLLOWER)).toBe(true);
     expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER)).toBe(false);
     expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER)).toBe(true);
   });
