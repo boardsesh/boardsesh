@@ -41,7 +41,8 @@ async function seedBoard(
 ): Promise<SeededBoard> {
   boardSerial += 1;
   const uuid = uuidv4();
-  const slug = `share-link-${audience}-${boardSerial}`;
+  // Slugs are lower-case letters, digits and hyphens; `resolveBoardLinkBySlug` refuses anything else.
+  const slug = `share-link-${audience.replace(/_/g, '-')}-${boardSerial}`;
   const [row] = await db
     .insert(schema.userBoards)
     .values({
