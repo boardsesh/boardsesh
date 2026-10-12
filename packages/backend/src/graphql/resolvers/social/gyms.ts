@@ -26,6 +26,7 @@ import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
+import { gymSharesBoardLocation, shareGymBoardLocation } from './gym-board-location';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 
@@ -1101,6 +1102,17 @@ export const socialGymQueries = {
 // Mutations
 // ============================================
 
+/**
+ * Put a board in a gym. In a public gym the board shows its location from now
+ * on (see gymSharesBoardLocation), in the same transaction as the link.
+ */
+async function linkBoardRowToGym(board: { id: number; uuid: string; boardType: string }, gymId: number) {
+  await db.transaction(async (tx) => {
+    await tx.update(dbSchema.userBoards).set({ gymId }).where(eq(dbSchema.userBoards.id, board.id));
+    if (await gymSharesBoardLocation(tx, gymId, board.boardType)) await shareGymBoardLocation(tx, board);
+  });
+}
+
 export const socialGymMutations = {
   createGym: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
@@ -1150,13 +1162,18 @@ export const socialGymMutations = {
     // Optionally link a board
     if (validatedInput.boardUuid) {
       const [board] = await db
-        .select({ id: dbSchema.userBoards.id, ownerId: dbSchema.userBoards.ownerId })
+        .select({
+          id: dbSchema.userBoards.id,
+          uuid: dbSchema.userBoards.uuid,
+          ownerId: dbSchema.userBoards.ownerId,
+          boardType: dbSchema.userBoards.boardType,
+        })
         .from(dbSchema.userBoards)
         .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
         .limit(1);
 
       if (board && board.ownerId === userId) {
-        await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
+        await linkBoardRowToGym(board, gym.id);
       }
     }
 
@@ -1522,7 +1539,9 @@ export const socialGymMutations = {
     const [board] = await db
       .select({
         id: dbSchema.userBoards.id,
+        uuid: dbSchema.userBoards.uuid,
         ownerId: dbSchema.userBoards.ownerId,
+        boardType: dbSchema.userBoards.boardType,
         latitude: dbSchema.userBoards.latitude,
         longitude: dbSchema.userBoards.longitude,
       })
@@ -1547,9 +1566,10 @@ export const socialGymMutations = {
         boardLongitude: board.longitude,
       });
 
-      await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
+      await linkBoardRowToGym(board, gym.id);
     } else {
-      // Unlink from gym — always the board owner's own call.
+      // Unlink from gym — always the board owner's own call. The location stays
+      // as it is: leaving a gym is not a choice to hide where the board was.
       await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.id, board.id));
     }
 

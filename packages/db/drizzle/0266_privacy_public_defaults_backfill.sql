@@ -25,7 +25,8 @@
 --     all (the legacy-boolean create) or an `only_me` policy row with an
 --     `only_me` location nobody has edited (revision 0). A private board with
 --     its location shown, or one switched private after creation, was a
---     deliberate choice and stays private. hide_location is never touched.
+--     deliberate choice and stays private. This block never touches
+--     hide_location; the gym block at the end does, for gym boards only.
 --   * and the owner has shown no privacy intent anywhere else: no private
 --     account (checked after the account update below, so only a deliberate
 --     one counts), no board or session policy they edited (revision > 0), no
@@ -33,12 +34,20 @@
 --     cutoff, when the default was public.
 --   * profiles: private with the followers session default, never edited
 --     (privacy revision 0, setup never completed, updated_at = created_at).
---     Expected to change no rows in production: the flag was never turned on.
+--     Confirmed by the owner on 2026-10-12: the flag was never enabled in
+--     production, so this block is expected to be a no-op.
 --
 -- Residual, decided by the owner: on the #6254 bundle private WAS the
 -- preselected default, so a board a climber left private on purpose looks the
 -- same as one they never touched. Such boards go public unless the owner-intent
 -- guard above catches them. The first two dry-run counts are those boards.
+--
+-- Gym boards (second block, own guard): a board in a public gym always shows
+-- its location, because the gym already lists its name and coordinates. The
+-- #6254 builder sent hideLocation: true on every create, so boards created in a
+-- public gym since the cutoff with the location hidden show it again, and a
+-- stored policy location widens to public. Boards in a private gym (in practice
+-- a home wall whose typed location minted one) and spray walls are left alone.
 --
 -- A board a climber makes private after this runs can look the same as a
 -- default one, so a second run could undo their choice. The guard row below
@@ -46,7 +55,7 @@
 -- change if the file is renumbered.
 --
 -- Dry run (read-only; the CTE is the owner-intent guard, evaluated before the
--- account update, which production expects to match nothing):
+-- account update, a no-op in production as confirmed by the owner):
 --
 --   SHOW timezone;
 --
@@ -88,6 +97,12 @@
 --
 --   -- followers locations, narrowed to invited people (any date)
 --   SELECT count(*) FROM resource_privacy WHERE location_audience = 'followers';
+--
+--   -- gym boards whose location will show again
+--   SELECT count(*) FROM user_boards b
+--     JOIN gyms g ON g.id = b.gym_id AND g.is_public AND g.deleted_at IS NULL
+--    WHERE b.deleted_at IS NULL AND b.created_at >= '2026-10-08 21:27:51'
+--      AND b.hide_location = true AND b.board_type <> 'spray';
 --
 --   -- accounts
 --   SELECT count(*) FROM user_profiles
@@ -206,4 +221,49 @@ BEGIN
 
   RAISE NOTICE 'Privacy public-defaults backfill: % accounts, % boards without a policy, % boards with an Only me policy, % followers locations narrowed',
     v_profiles, v_boards, v_policy_boards, v_locations;
+END $$;--> statement-breakpoint
+
+DO $$
+DECLARE
+  v_gym_boards bigint;
+  v_gym_policies bigint;
+BEGIN
+  IF EXISTS (SELECT 1 FROM _bs_migration_guards WHERE tag = 'privacy_gym_board_location_backfill_b1') THEN
+    RAISE NOTICE 'Gym board location backfill already applied, skipping (guard row present)';
+    RETURN;
+  END IF;
+
+  -- Policy rows first, while hide_location still marks which boards to widen.
+  UPDATE resource_privacy p
+     SET location_audience = 'public',
+         updated_at = now()
+    FROM user_boards b
+    JOIN gyms g ON g.id = b.gym_id
+   WHERE p.kind = 'board'
+     AND p.resource_id = b.uuid
+     AND p.location_audience <> 'public'
+     AND b.deleted_at IS NULL
+     AND b.created_at >= '2026-10-08 21:27:51'
+     AND b.hide_location = true
+     AND b.board_type <> 'spray'
+     AND g.is_public
+     AND g.deleted_at IS NULL;
+  GET DIAGNOSTICS v_gym_policies = ROW_COUNT;
+
+  UPDATE user_boards b
+     SET hide_location = false
+    FROM gyms g
+   WHERE g.id = b.gym_id
+     AND b.deleted_at IS NULL
+     AND b.created_at >= '2026-10-08 21:27:51'
+     AND b.hide_location = true
+     AND b.board_type <> 'spray'
+     AND g.is_public
+     AND g.deleted_at IS NULL;
+  GET DIAGNOSTICS v_gym_boards = ROW_COUNT;
+
+  INSERT INTO _bs_migration_guards (tag) VALUES ('privacy_gym_board_location_backfill_b1');
+
+  RAISE NOTICE 'Gym board location backfill: % boards show their location again, % policies widened',
+    v_gym_boards, v_gym_policies;
 END $$;

@@ -11,6 +11,7 @@ import {
   type SimilarGymResult,
 } from '../graphql/resolvers/social/gym-matching';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
+import { socialGymMutations } from '../graphql/resolvers/social/gyms';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 
@@ -684,5 +685,112 @@ describe('createBoard auto-gym — minted gym visibility', () => {
       authCtx(QUERIER),
     );
     expect(await mintedGymIsPublic(board.uuid)).toBe(false);
+  });
+});
+
+describe('a board in a public gym shares its location', () => {
+  // The hidden-location default is for home walls. A public gym already lists
+  // its name and coordinates, so a board in one always shows where it is,
+  // whatever the builder sent (the post-#6254 builder sends hideLocation: true).
+  const boardPrivacy = async (boardUuid: string) => {
+    const result = await db.execute(sql`
+      SELECT b.hide_location AS "hideLocation", p.location_audience AS "locationAudience", g.is_public AS "gymIsPublic"
+        FROM user_boards b
+        LEFT JOIN resource_privacy p ON p.kind = 'board' AND p.resource_id = b.uuid
+        LEFT JOIN gyms g ON g.id = b.gym_id
+       WHERE b.uuid = ${boardUuid}
+    `);
+    return Array.from(
+      result as Iterable<{ hideLocation: boolean; locationAudience: string | null; gymIsPublic: boolean | null }>,
+    )[0];
+  };
+  const nearGym = { latitude: LAT_60M, longitude: BASE.longitude };
+  const publicGym = () =>
+    insertGym({ ownerId: SYSTEM_OWNER, name: 'Boulder Central', latitude: BASE.latitude, longitude: BASE.longitude });
+
+  it('shows the location of a board created in a named gym, with no location fields sent', async () => {
+    const gym = await publicGym();
+    const board = await createBoard({ name: 'Gym Kilter', gymUuid: gym.uuid, ...nearGym }, authCtx(QUERIER));
+    expect(await boardPrivacy(board.uuid)).toMatchObject({ hideLocation: false, locationAudience: null });
+  });
+
+  it('shows it even when the create asks to hide it', async () => {
+    const gym = await publicGym();
+    const legacy = await createBoard(
+      { name: 'Legacy hidden', gymUuid: gym.uuid, hideLocation: true, ...nearGym },
+      authCtx(QUERIER),
+    );
+    expect(await boardPrivacy(legacy.uuid)).toMatchObject({ hideLocation: false });
+    const modern = await createBoard(
+      {
+        name: 'Modern hidden',
+        gymUuid: gym.uuid,
+        audience: 'public',
+        locationAudience: 'only_me',
+        allowDuplicateConfig: true,
+        ...nearGym,
+      },
+      authCtx(QUERIER),
+    );
+    expect(await boardPrivacy(modern.uuid)).toMatchObject({ hideLocation: false, locationAudience: 'public' });
+  });
+
+  it('shows it for a default create at a gym address that matches a public gym', async () => {
+    await publicGym();
+    const board = await createBoard({ name: 'Matched', locationName: 'Boulder Central', ...nearGym }, authCtx(QUERIER));
+    expect(await boardPrivacy(board.uuid)).toMatchObject({ hideLocation: false, gymIsPublic: true });
+  });
+
+  it('keeps a home wall hidden, including one whose typed location mints a gym', async () => {
+    const bare = await createBoard({ name: 'Home wall' }, authCtx(QUERIER));
+    expect(await boardPrivacy(bare.uuid)).toMatchObject({ hideLocation: true, gymIsPublic: null });
+    // A typed home location mints the owner a gym. It is not a public gym, so
+    // the address stays hidden and the gym stays off the map.
+    const garage = await createBoard(
+      { name: 'Garage wall', locationName: 'My Garage', latitude: LAT_8KM, longitude: BASE.longitude },
+      authCtx(QUERIER),
+    );
+    expect(await boardPrivacy(garage.uuid)).toMatchObject({ hideLocation: true, gymIsPublic: false });
+  });
+
+  it("keeps the owner's choice for a board in their own private gym", async () => {
+    const homeGym = await insertGym({ ownerId: QUERIER, name: 'Back shed', isPublic: false });
+    const board = await createBoard({ name: 'Shed wall', gymUuid: homeGym.uuid }, authCtx(QUERIER));
+    expect(await boardPrivacy(board.uuid)).toMatchObject({ hideLocation: true, gymIsPublic: false });
+  });
+
+  it('shows the location when an existing board joins a public gym, or is edited while in one', async () => {
+    // Created before the gym exists, so the create cannot attach it by location.
+    const board = await createBoard(
+      { name: 'Moved in', audience: 'public', locationAudience: 'only_me', ...nearGym },
+      authCtx(QUERIER),
+    );
+    expect(await boardPrivacy(board.uuid)).toMatchObject({ hideLocation: true, locationAudience: 'only_me' });
+    const gym = await publicGym();
+
+    await socialGymMutations.linkBoardToGym(
+      null,
+      { input: { boardUuid: board.uuid, gymUuid: gym.uuid } },
+      authCtx(QUERIER),
+    );
+    expect(await boardPrivacy(board.uuid)).toMatchObject({ hideLocation: false, locationAudience: 'public' });
+
+    // An edit that resends hideLocation: true with a rename cannot hide it again.
+    await socialBoardMutations.updateBoard(
+      null,
+      { input: { boardUuid: board.uuid, name: 'Renamed', hideLocation: true } },
+      authCtx(QUERIER),
+    );
+    expect(await boardPrivacy(board.uuid)).toMatchObject({ hideLocation: false, locationAudience: 'public' });
+  });
+
+  it('shows the location of a board linked while creating a gym', async () => {
+    const board = await createBoard({ name: 'First board' }, authCtx(QUERIER));
+    await socialGymMutations.createGym(
+      null,
+      { input: { name: 'New Crag Gym', latitude: BASE.latitude, longitude: BASE.longitude, boardUuid: board.uuid } },
+      authCtx(QUERIER),
+    );
+    expect(await boardPrivacy(board.uuid)).toMatchObject({ hideLocation: false, gymIsPublic: true });
   });
 });

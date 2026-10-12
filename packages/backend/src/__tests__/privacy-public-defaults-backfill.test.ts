@@ -13,6 +13,7 @@ import { resetAllRateLimits } from '../utils/rate-limiter';
 const drizzleDir = fileURLToPath(new URL('../../../db/drizzle/', import.meta.url));
 const BACKFILL = readFileSync(`${drizzleDir}0266_privacy_public_defaults_backfill.sql`, 'utf8');
 const GUARD_TAG = 'privacy_public_defaults_backfill_b1';
+const GYM_GUARD_TAG = 'privacy_gym_board_location_backfill_b1';
 const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const owner = 'backfill-owner';
 // Owns the rows that are themselves a privacy signal (a board made private
@@ -71,7 +72,7 @@ beforeEach(async () => {
   await db.execute(
     sql`CREATE TABLE IF NOT EXISTS _bs_migration_guards (tag text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
   );
-  await db.execute(sql`DELETE FROM _bs_migration_guards WHERE tag = ${GUARD_TAG}`);
+  await db.execute(sql`DELETE FROM _bs_migration_guards WHERE tag IN (${GUARD_TAG}, ${GYM_GUARD_TAG})`);
   await db.execute(
     sql`TRUNCATE TABLE resource_grants, resource_privacy, content_privacy, user_boards, user_profiles CASCADE`,
   );
@@ -302,6 +303,69 @@ describe('0265 privacy public-defaults backfill', () => {
 
     expect(await boardPolicy(old.uuid)).toMatchObject({ audience: 'public', locationAudience: 'members', revision: 2 });
     expect(await boardRow(old.uuid)).toMatchObject({ isPublic: true, hideLocation: true });
+  });
+
+  it('shows the location again for boards created in a public gym since the cutoff, and only those', async () => {
+    let gymCount = 0;
+    const insertGym = async (overrides: Partial<typeof schema.gyms.$inferInsert> = {}) => {
+      gymCount += 1;
+      const uuid = `backfill-gym-${gymCount}`;
+      const [gym] = await db
+        .insert(schema.gyms)
+        .values({ uuid, slug: uuid, ownerId: SYSTEM_OWNER, name: `Gym ${gymCount}`, isPublic: true, ...overrides })
+        .returning({ id: schema.gyms.id });
+      return gym.id;
+    };
+    const publicGym = await insertGym();
+    const privateGym = await insertGym({ ownerId: owner, isPublic: false });
+    const deletedGym = await insertGym({ deletedAt: new Date() });
+
+    // The #6254 default in a public gym: goes public and shows its location.
+    const atGym = await insertBoard({ gymId: publicGym });
+    // Shown again whatever else the owner did: a public gym lists the place anyway.
+    const atGymEdited = await insertBoard({ gymId: publicGym, isPublic: true });
+    await db.execute(
+      sql`UPDATE user_boards SET updated_at = created_at + interval '1 minute' WHERE uuid = ${atGymEdited.uuid}`,
+    );
+    // An edited policy is a privacy signal, so it belongs to the other owner and
+    // leaves `owner`'s default board free to go public.
+    const atGymWithPolicy = await insertBoard({ gymId: publicGym, ownerId: otherOwner, isPublic: true });
+    await db.insert(schema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: atGymWithPolicy.uuid,
+      ownerId: otherOwner,
+      audience: 'public',
+      locationAudience: 'only_me',
+      revision: 3,
+    });
+    // Left alone: a private gym (a home wall's minted gym), a deleted gym, a
+    // spray wall, a board from before the cutoff and a board with no gym.
+    const atPrivateGym = await insertBoard({ gymId: privateGym, isPublic: true });
+    const atDeletedGym = await insertBoard({ gymId: deletedGym, isPublic: true });
+    const sprayAtGym = await insertBoard({ gymId: publicGym, boardType: 'spray' });
+    const atGymBeforeCutoff = await insertBoard({
+      gymId: publicGym,
+      ownerId: otherOwner,
+      isPublic: true,
+      createdAt: new Date('2026-10-08T21:27:50Z'),
+      updatedAt: new Date('2026-10-08T21:27:50Z'),
+    });
+    const homeWall = await insertBoard();
+
+    await runBackfill();
+
+    expect(await boardRow(atGym.uuid)).toMatchObject({ isPublic: true, hideLocation: false });
+    expect(await boardRow(atGymEdited.uuid)).toMatchObject({ isPublic: true, hideLocation: false });
+    expect(await boardRow(atGymWithPolicy.uuid)).toMatchObject({ hideLocation: false });
+    expect(await boardPolicy(atGymWithPolicy.uuid)).toMatchObject({ locationAudience: 'public', revision: 3 });
+    for (const kept of [atPrivateGym, atDeletedGym, sprayAtGym, atGymBeforeCutoff, homeWall]) {
+      expect((await boardRow(kept.uuid)).hideLocation, kept.uuid).toBe(true);
+    }
+
+    // Runs once: a board hidden again afterwards stays hidden on a second run.
+    await db.update(schema.userBoards).set({ hideLocation: true }).where(eq(schema.userBoards.uuid, atGym.uuid));
+    await runBackfill();
+    expect((await boardRow(atGym.uuid)).hideLocation).toBe(true);
   });
 
   it('runs once: a board made private after the backfill stays private on a second run', async () => {

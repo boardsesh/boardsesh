@@ -40,6 +40,7 @@ import {
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
+import { gymSharesBoardLocation, shareGymBoardLocation } from './gym-board-location';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
@@ -2046,8 +2047,14 @@ export const socialBoardMutations = {
     const audience =
       validatedInput.audience ??
       (validatedInput.isPublic === false ? 'only_me' : validatedInput.isUnlisted ? 'unlisted' : 'public');
-    const locationAudience =
-      validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me');
+    // A board joining a public gym (named, or matched by its location) shows
+    // where it is, whatever the builder sent: see gymSharesBoardLocation. A gym
+    // minted below is not one yet, so a minted board keeps the requested
+    // location and the gym follows it.
+    const sharesGymLocation = await gymSharesBoardLocation(db, gymId, validatedInput.boardType);
+    const locationAudience = sharesGymLocation
+      ? 'public'
+      : (validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me'));
     const privacyValues = { kind: 'board' as const, resourceId: uuid, ownerId: userId, audience, locationAudience };
     // A policy row records a choice made with the modern privacy controls.
     // Legacy booleans keep their original roundtrip until the owner makes one.
@@ -2116,7 +2123,8 @@ export const socialBoardMutations = {
               // A gym is listed with its coordinates and name, so it is public
               // only when the board is listed publicly AND its exact location is
               // shown. A hidden location or an unlisted (link-only) board must
-              // never publish its address through a minted gym.
+              // never publish its address through a minted gym: a home wall's
+              // typed location mints a gym too, and stays private here.
               isPublic: audience === 'public' && locationAudience === 'public',
               latitude: incomingLocation.latitude,
               longitude: incomingLocation.longitude,
@@ -2255,6 +2263,12 @@ export const socialBoardMutations = {
     if (validatedInput.locationName !== undefined) updateValues.locationName = validatedInput.locationName;
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
     if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
+    // A board in a public gym always shows its location (gymSharesBoardLocation),
+    // so its hideLocation input is ignored and the location is shared below on
+    // every save, whoever makes it: it is the server's rule, not the editor's
+    // privacy choice. Clients resend hideLocation: true with a rename.
+    const sharesGymLocation = await gymSharesBoardLocation(db, board.gymId, board.boardType);
+    const requestedHideLocation = sharesGymLocation ? undefined : validatedInput.hideLocation;
     // A spray wall's visibility is not an ordinary board flag: flipping it public
     // copies the wall photo into the world-readable bucket, and flipping it back
     // deletes that copy and retracts the climbs already fanned out to feeds
@@ -2268,7 +2282,7 @@ export const socialBoardMutations = {
     if (
       ((validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
         (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted) ||
-        (validatedInput.hideLocation !== undefined && validatedInput.hideLocation !== board.hideLocation)) &&
+        (requestedHideLocation !== undefined && requestedHideLocation !== board.hideLocation)) &&
       board.ownerId !== userId
     ) {
       throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
@@ -2303,7 +2317,7 @@ export const socialBoardMutations = {
 
     if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
     if (validatedInput.isUnlisted !== undefined) updateValues.isUnlisted = validatedInput.isUnlisted;
-    if (validatedInput.hideLocation !== undefined) updateValues.hideLocation = validatedInput.hideLocation;
+    if (requestedHideLocation !== undefined) updateValues.hideLocation = requestedHideLocation;
     if (validatedInput.isOwned !== undefined) updateValues.isOwned = validatedInput.isOwned;
     if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
     if (validatedInput.isAngleAdjustable !== undefined)
@@ -2492,7 +2506,7 @@ export const socialBoardMutations = {
           );
         }
         const hasVisibility = validatedInput.isPublic !== undefined || validatedInput.isUnlisted !== undefined;
-        if (hasVisibility || validatedInput.hideLocation !== undefined) {
+        if (hasVisibility || requestedHideLocation !== undefined) {
           const policyCondition = and(
             eq(dbSchema.resourcePrivacy.kind, 'board'),
             eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
@@ -2518,9 +2532,9 @@ export const socialBoardMutations = {
               if (audience !== policy.audience) privacyUpdates.audience = audience;
             }
           }
-          if (policy && validatedInput.hideLocation !== undefined) {
+          if (policy && requestedHideLocation !== undefined) {
             const locationAudience =
-              validatedInput.hideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
+              requestedHideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
             updateValues.hideLocation = locationAudience !== 'public';
             if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
           }
@@ -2542,6 +2556,10 @@ export const socialBoardMutations = {
               })
               .where(policyCondition);
           }
+        }
+        if (sharesGymLocation) {
+          await shareGymBoardLocation(tx, board);
+          updateValues.hideLocation = false;
         }
         return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
       });
