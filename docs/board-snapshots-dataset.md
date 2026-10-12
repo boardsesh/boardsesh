@@ -57,7 +57,8 @@ privacy-filtered dataset with incompatible cursor assumptions. Each entry:
 | `uncompressedBytes`                                     | Size of the SQLite file once decoded; absent on entries built before the field existed          |
 | `contentEncoding`                                       | `identity` (a plain SQLite file) or `gzip` (gunzip before opening)                              |
 | `builtAt`                                               | When the export built this artifact                                                             |
-| `privacyVersion`                                        | Must be `2`: published, listed climbs only; an artifact with any other value is superseded      |
+| `privacyVersion`                                        | Which app builds install the file (`1` today, `2` once the two-stream client ships); not a row filter |
+| `publicationRule`                                       | `2`: published, listed climbs only. An entry without it predates that rule and is being replaced |
 | `schemaVersion`                                         | SQLite schema revision of the tables inside                                                     |
 | `artifactShape`                                         | How the file stores its rows; see "Storage" below. `2` today, absent on older (shape 1) files   |
 | `tables.<name>.rowCount`                                | Row counts, for sanity-checking a download                                                      |

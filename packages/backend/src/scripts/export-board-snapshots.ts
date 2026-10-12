@@ -483,12 +483,59 @@ export function withoutRowid(createTableStatement: string): string {
 // --- Postgres discovery + streaming ------------------------------------------
 
 /**
- * The publication rule this exporter builds under, stamped on every manifest
- * entry and grades block: published, listed climbs whoever set them, and no
- * draft or unlisted climb. An entry stamped with anything else was built under
- * an older rule, is rebuilt on the next run, and is never merged forward.
+ * The rule this exporter's rows follow, stamped as `publicationRule` on every
+ * manifest entry and grades block: published, listed climbs whoever set them,
+ * and no draft or unlisted climb. An entry without it was built under the rule
+ * before (climbs with no Boardsesh owner, drafts and unlisted ones included):
+ * it is rebuilt on the next run, whatever its delta, and never merged forward.
  */
-const SNAPSHOT_PRIVACY_VERSION = 2 as const;
+const SNAPSHOT_PUBLICATION_RULE = 2 as const;
+
+/** The `privacyVersion` a client filters artifacts on. See {@link configuredSnapshotPrivacyVersion}. */
+export type SnapshotPrivacyVersion = 1 | 2;
+
+export const DEFAULT_SNAPSHOT_PRIVACY_VERSION: SnapshotPrivacyVersion = 1;
+
+/**
+ * Which `privacyVersion` this run stamps. It does not change a row of any
+ * artifact: every value builds the same files under the same publication rule.
+ * It decides which app builds take them, because each build accepts exactly one
+ * value and takes the paged crawl for every other.
+ *
+ *  - `1` (the default): what every shipped bundle accepts. They import the file
+ *    and then replay their sync from epoch, so the artifact only has to hold
+ *    rows they are allowed to have, which every published, listed climb is.
+ *  - `2`: what the two-stream client (#6329) accepts. It resumes its
+ *    `REFERENCE` stream from the artifact's watermark instead of replaying, and
+ *    takes the paged crawl for a `1` entry.
+ *
+ * Set `SNAPSHOT_PRIVACY_VERSION=2` once that client is on the fleet. Until
+ * then a `2` would send every new download on a shipped bundle to the paged
+ * crawl of the whole board. A change of value rebuilds every entry on the next
+ * run, like a change of shape. Anything but `1`, `2` or blank throws before the
+ * run reads the database or touches storage.
+ *
+ * Read per run, not at module load, so one process can be pointed at either.
+ */
+export function configuredSnapshotPrivacyVersion(): SnapshotPrivacyVersion {
+  const configured = process.env.SNAPSHOT_PRIVACY_VERSION?.trim();
+  if (!configured) return DEFAULT_SNAPSHOT_PRIVACY_VERSION;
+  if (configured === '1') return 1;
+  if (configured === '2') return 2;
+  throw new Error(`SNAPSHOT_PRIVACY_VERSION must be 1 or 2, got ${JSON.stringify(configured)}`);
+}
+
+/**
+ * Whether a published entry is current: its rows follow the publication rule,
+ * and it, and its grades block when it has one, carry the marker this run
+ * stamps. Anything else is rebuilt and never merged forward.
+ */
+function isEntryCurrent(entry: SnapshotManifestEntry, privacyVersion: SnapshotPrivacyVersion): boolean {
+  const blocks = entry.grades ? [entry, entry.grades] : [entry];
+  return blocks.every(
+    (block) => block.publicationRule === SNAPSHOT_PUBLICATION_RULE && block.privacyVersion === privacyVersion,
+  );
+}
 
 // Which climbs an artifact carries: the published, listed ones, whoever set them.
 // The same text scopes the `REFERENCE` sync stream (resolvers/sync/queries.ts),
@@ -680,14 +727,11 @@ async function layoutRefreshReason(params: {
   threshold: number;
   includeGrades: boolean;
   artifactShape: SnapshotArtifactShape;
+  privacyVersion: SnapshotPrivacyVersion;
 }): Promise<RefreshReason | null> {
-  const { sqlClient, pair, previousEntry, threshold, includeGrades, artifactShape } = params;
+  const { sqlClient, pair, previousEntry, threshold, includeGrades, artifactShape, privacyVersion } = params;
   if (!previousEntry) return 'missing-entry';
-  if (
-    previousEntry.privacyVersion !== SNAPSHOT_PRIVACY_VERSION ||
-    (previousEntry.grades && previousEntry.grades.privacyVersion !== SNAPSHOT_PRIVACY_VERSION)
-  )
-    return 'stale-privacy';
+  if (!isEntryCurrent(previousEntry, privacyVersion)) return 'stale-privacy';
   if (previousEntry.schemaVersion < LATEST_SCHEMA_VERSION) return 'stale-schema';
   if (includeGrades && previousEntry.grades && previousEntry.grades.schemaVersion < LATEST_SCHEMA_VERSION) {
     return 'stale-schema';
@@ -1472,14 +1516,17 @@ function buildManifestEntry(
     uncompressedBytes: number;
     contentEncoding: 'gzip' | 'identity';
   },
-  gradesUpload?: {
-    url: string;
-    key: string;
-    bytes: number;
-    // The grades file's pre-compression size, as above.
-    uncompressedBytes: number;
-    contentEncoding: 'gzip' | 'identity';
-  },
+  gradesUpload:
+    | {
+        url: string;
+        key: string;
+        bytes: number;
+        // The grades file's pre-compression size, as above.
+        uncompressedBytes: number;
+        contentEncoding: 'gzip' | 'identity';
+      }
+    | undefined,
+  privacyVersion: SnapshotPrivacyVersion,
 ): SnapshotManifestEntry {
   // Shape 1 is the rollback, and what it rolls back to is the manifest as it
   // was before shapes: no `artifactShape`, and no decoded size on the grades
@@ -1497,7 +1544,8 @@ function buildManifestEntry(
           contentEncoding: gradesUpload.contentEncoding,
           builtAt: result.builtAt,
           schemaVersion: result.schemaVersion,
-          privacyVersion: SNAPSHOT_PRIVACY_VERSION,
+          privacyVersion,
+          publicationRule: SNAPSHOT_PUBLICATION_RULE,
           tables: { board_climb_grades: result.grades.tables.board_climb_grades },
         }
       : undefined;
@@ -1511,7 +1559,8 @@ function buildManifestEntry(
     contentEncoding: upload.contentEncoding,
     builtAt: result.builtAt,
     schemaVersion: result.schemaVersion,
-    privacyVersion: SNAPSHOT_PRIVACY_VERSION,
+    privacyVersion,
+    publicationRule: SNAPSHOT_PUBLICATION_RULE,
     ...(isShape2 ? { artifactShape: result.artifactShape } : {}),
     tables: {
       board_climbs: result.tables.board_climbs,
@@ -1537,6 +1586,8 @@ export function mergeManifestEntries(params: {
   previousEntries: SnapshotManifestEntry[];
   newEntries: SnapshotManifestEntry[];
   livePairs: LayoutPair[] | null;
+  /** The marker this run stamps; a previous entry carrying another is not merged. */
+  privacyVersion: SnapshotPrivacyVersion;
 }): SnapshotManifestEntry[] {
   const pairKey = (boardType: string, layoutId: number): string => `${boardType}:${layoutId}`;
   const liveKeys = params.livePairs
@@ -1545,11 +1596,7 @@ export function mergeManifestEntries(params: {
 
   const merged = new Map<string, SnapshotManifestEntry>();
   for (const previousEntry of params.previousEntries) {
-    if (
-      previousEntry.privacyVersion !== SNAPSHOT_PRIVACY_VERSION ||
-      (previousEntry.grades && previousEntry.grades.privacyVersion !== SNAPSHOT_PRIVACY_VERSION)
-    )
-      continue;
+    if (!isEntryCurrent(previousEntry, params.privacyVersion)) continue;
     const entryKey = pairKey(previousEntry.boardType, previousEntry.layoutId);
     // Layout vanished from the DB — drop its entry (unfiltered runs only). A
     // failed layout is still discovered, so its previous entry survives here.
@@ -1695,6 +1742,9 @@ export async function runExportWithOptions(
   // nothing read or written, and every layout of the run, its manifest entry
   // and the threshold scan's "is this entry stale" check agree on one value.
   const artifactShape = configuredSnapshotArtifactShape();
+  // Resolved once for the same reason: every entry this run builds, the stale
+  // check and the merge agree on the marker shipped clients filter on.
+  const privacyVersion = configuredSnapshotPrivacyVersion();
 
   // The production fleet reads this prefix as gzip. A mistyped manual command
   // must not replace it with an identity artifact or bypass its replay-boundary
@@ -1762,6 +1812,7 @@ export async function runExportWithOptions(
       filtered: isFilteredRun,
       gzip: options.gzip,
       artifactShape,
+      privacyVersion,
       keyPrefix,
       pairs: discoveredPairs.length,
       refreshThreshold: options.refreshThreshold ?? null,
@@ -1790,6 +1841,7 @@ export async function runExportWithOptions(
           threshold: options.refreshThreshold,
           includeGrades: options.gzip,
           artifactShape,
+          privacyVersion,
         });
         if (reason) {
           stalePairs.push(pair);
@@ -1929,6 +1981,7 @@ export async function runExportWithOptions(
                     contentEncoding: 'gzip' as const,
                   }
                 : undefined,
+              privacyVersion,
             ),
           );
         } else {
@@ -1983,6 +2036,7 @@ export async function runExportWithOptions(
                     contentEncoding: 'gzip' as const,
                   }
                 : undefined,
+              privacyVersion,
             ),
           );
         }
@@ -2022,6 +2076,7 @@ export async function runExportWithOptions(
         // filtered run so a layout below threshold (or vanished since the last
         // full export) can never be dropped from the live manifest.
         livePairs: isFilteredRun || isThresholdRefresh ? null : discoveredPairs,
+        privacyVersion,
       });
       const manifest: SnapshotManifest = {
         formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,

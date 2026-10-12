@@ -1892,20 +1892,28 @@ see [The publication rule](#the-publication-rule-6306) below.
 Numeric aggregate stats still include every eligible tick. First-ascent credit in an
 artifact is the stored upstream credit of a climb that never had a Boardsesh author,
 and NULL for every other climb; the authenticated live API serves the rest.
-New manifests stamp `privacyVersion: 2` on layout and grades artifacts, in both
-artifact shapes, and use `formatVersion: 2` (including SQLite
-`snapshot_meta.format_version`; `snapshot_meta` has no privacy marker of its own). The
-URL namespace stays unchanged so installed format-1 clients see an unsupported
-contract and use their existing paged-sync fallback without an app update. The
-separate reference catalog manifest retains its own format version.
+Manifests use `formatVersion: 2` (including SQLite `snapshot_meta.format_version`;
+`snapshot_meta` has no privacy marker of its own). The URL namespace stays unchanged
+so installed format-1 clients see an unsupported contract and use their existing
+paged-sync fallback without an app update. The separate reference catalog manifest
+retains its own format version.
 
-`privacyVersion: 1` marked the dataset before the publication rule: it left out every
-climb with a Boardsesh owner, and it could hold drafts and unlisted climbs that had
-no owner. An entry stamped anything but 2 is rebuilt on the next export
-(`stale-privacy`) and is excluded from manifest merges until then. A client accepts
-the markers it was built for and takes the paged-sync fallback for an entry it does
-not accept, so a bundle that accepts only version 1 downloads through paged sync
-from the first export after this ships until it is updated.
+Two stamps on every layout entry and grades block, in both artifact shapes, say
+different things:
+
+| Stamp | Says | Who reads it |
+| --- | --- | --- |
+| `publicationRule: 2` | The rows follow the publication rule. Absent on an artifact built before it, which left out every climb with a Boardsesh owner and could hold drafts and unlisted climbs that had none. | The export job only. An entry without it is rebuilt on the next run (`stale-privacy`), whatever its delta, and is never merged forward. |
+| `privacyVersion` | Which app builds may install the file. | Clients. Every shipped bundle installs `1` only and replays its sync from epoch after the import; the two-stream client (#6329) installs `2` only and resumes `REFERENCE` from the artifact's watermark. Either one takes the paged crawl for an entry it does not accept. |
+
+`privacyVersion` changes no row. The job stamps `1` unless `SNAPSHOT_PRIVACY_VERSION=2`
+is set on it, so shipped bundles keep installing artifacts, built under the rule,
+while #6329 rolls out. A file stamped `1` is safe for them: every row in it is a
+published, listed climb, which the live sync they replay hands every caller anyway.
+Set `SNAPSHOT_PRIVACY_VERSION=2` on the worker that runs the export family once
+#6329 is on the fleet; the next run rebuilds every entry with the new stamp, and
+the older bundles still in use take the paged crawl from then on. Anything but `1`,
+`2` or blank fails the run before it reads anything.
 
 ### The publication rule (#6306)
 
@@ -2022,28 +2030,30 @@ nothing about who gets it.
 
 #### Leaving the reference set
 
-`trg_board_climbs_reference_membership` (introduced in 0266, guarded in 0270) fires when an update changes a protected owner or moves a
+`trg_board_climbs_reference_membership` (migration 0266) fires when an update changes a protected owner or moves a
 climb across the line, in either direction, whichever writer made it.
 
 - **Leaving** writes one `sync_deletions` row for `board_climbs` with no user, so
-  every device without current read access applies it. No stream delivers the new row to anyone but its owner, and
+  every device applies it. No stream delivers the new row to anyone but its owner, and
   without the marker every other device would keep the published copy. Bulk imports
   that delete and recreate a board set `boardsesh.suppress_sync_tombstones`; the marker
   honours it like the delete triggers do.
-- **The marker covers the old version, including a slow transaction.** Its guard
-  is the next whole UTC second after the old `updated_at` and the write clock.
-  Another device can fetch the old public MVCC row while privatization remains
-  uncommitted, even after that row is older than the stability window. Backdating
-  from the transaction's start would miss that copy. A whole-second guard also
-  orders correctly against variable-fraction ISO strings in installed SQLite.
-- **Current readers do not receive membership withdrawals.** These markers carry
-  `is_membership_withdrawal`; the page query checks current sync public/owner and
-  spray-wall access in the same snapshot and filters before pagination. This
-  preserves the current owner's or republished row on replay without advancing
-  document timestamps into the future. A later publication restriction or
-  protected-owner transfer writes a new marker. Wall/grant revocation still
-  uses its existing privacy invalidation protocol. Hard-delete markers retain
-  their original delivery behavior.
+- **The marker is stamped one second before the new row.** A device deletes a
+  row when `updated_at <= deletedAt`, so the marker removes every copy a device
+  pulled (each is at least a stability window older, and deployed windows are at
+  least two seconds) and never the owner's re-delivered row, even when a replay
+  of the deletion stream hands it over again. A copy read through MVCC while the
+  privatizing transaction is still open can be newer than that; the guard
+  migration that covers it ships one release later, together with the
+  `is_membership_withdrawal` flag it sets. This release adds the flag column and
+  the filter that omits a flagged marker for a viewer who can still read the
+  climb, before anything flags one. See
+  [sync-deletions-cutoff.md](sync-deletions-cutoff.md#the-withdrawal-guard-one-release-later).
+- **Losing access to a spray wall writes no marker.** A phone keeps the wall's
+  climbs it already synced until sign-out or an account switch: the app stopped
+  reacting to `privacyChanged` in #6411, and the server only stops sending that
+  wall anything new. Hard-delete markers retain their original delivery
+  behavior.
 - **Either direction** moves the climb's stats and grades rows to the climb's new
   cursor position (`updated_at` / `computed_at` and a new `sync_seq`). They changed
   stream with the climb and did not change themselves, so they sit behind every
@@ -2052,10 +2062,12 @@ climb across the line, in either direction, whichever writer made it.
   through the climb, so only callers who get the climb get them.
 - **No marker is written for the stats or grades rows.** `board_climb_grades` has none
   anywhere, and a device applies one with no newer-row guard, so a late marker would
-  delete the owner's re-delivered grade. A device drops a climb's stats, grades and
-  holds-index entries when it applies the climb's marker.
+  delete the owner's re-delivered grade. A device that applies the climb's marker
+  drops the climb and its holds-index entry. The climb's stats and grades rows stay
+  on the device with no climb to show them against, until the client in #6329
+  removes them with the climb.
 
-An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a membership-withdrawal marker is scoped to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
+An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a marker is scoped to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
 client engine against the real resolvers: other devices drop the climb, its owner
 keeps it on a device that had it and on a fresh install, a replay of the deletion
 stream does not remove it, and publishing it again delivers it to everyone.
@@ -2063,9 +2075,9 @@ stream does not remove it, and publishing it again delivers it to everyone.
 A device that pulled before the rule existed may hold drafts and unlisted climbs it
 does not own. The server cannot recall them; the client removes them once. An
 artifact built before the rule may hold such climbs where they had no owner. Those
-entries are stamped `privacyVersion: 1`, so the first export after this ships
-rebuilds every one of them; the old files still have to be withdrawn from storage
-and caches (#6273).
+entries carry no `publicationRule`, so the first export after this ships rebuilds
+every one of them; the old files still have to be withdrawn from storage and
+caches (#6273).
 
 Before enabling `BOARDSESH_PRIVACY_ENABLED`, regenerate every artifact and remove or
 expire previously published layout, grades and catalog artifacts plus CDN copies.

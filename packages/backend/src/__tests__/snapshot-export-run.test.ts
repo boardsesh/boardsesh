@@ -49,7 +49,11 @@ function manifestEntryFixture(boardType: string, layoutId: number, key: string):
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
     schemaVersion: LATEST_SCHEMA_VERSION,
-    privacyVersion: 2,
+    // What a run writes by default: the marker shipped bundles accept, on rows
+    // that follow the publication rule. A threshold scan rebuilds an entry with
+    // anything else, so a fixture without them would never be a no-op.
+    privacyVersion: 1,
+    publicationRule: 2,
     // The shape the export writes by default. A threshold scan rebuilds an entry
     // in any other shape, so a fixture without it would never be a no-op.
     artifactShape: 2,
@@ -136,7 +140,8 @@ function withGradesArtifact(
       contentEncoding: 'gzip',
       builtAt: entry.builtAt,
       schemaVersion,
-      privacyVersion: 2,
+      privacyVersion: 1,
+      publicationRule: 2,
       tables: {
         board_climb_grades: {
           watermarkUpdatedAt: '2026-05-01T00:00:00Z',
@@ -184,6 +189,7 @@ describe('mergeManifestEntries', () => {
       previousEntries: [kilterOld, tensionOld],
       newEntries: [kilterNew],
       livePairs: null,
+      privacyVersion: 1,
     });
     expect(merged).toEqual([kilterNew, tensionOld]);
   });
@@ -193,6 +199,7 @@ describe('mergeManifestEntries', () => {
       previousEntries: [kilterOld, tensionOld],
       newEntries: [kilterNew],
       livePairs: [{ boardType: 'kilter', layoutId: 1 }],
+      privacyVersion: 1,
     });
     expect(merged).toEqual([kilterNew]);
   });
@@ -205,8 +212,27 @@ describe('mergeManifestEntries', () => {
         { boardType: 'kilter', layoutId: 1 },
         { boardType: 'tension', layoutId: 9 },
       ],
+      privacyVersion: 1,
     });
     expect(merged).toEqual([kilterOld, tensionOld]);
+  });
+
+  it.each([
+    ['built before the publication rule', { publicationRule: undefined }],
+    ['stamped with another privacy marker', { privacyVersion: 2 as const }],
+  ])('never merges forward a previous entry %s', (_label, override) => {
+    const stale = { ...tensionOld, ...override };
+    const staleGrades = { ...withGradesArtifact(tensionOld) };
+    staleGrades.grades = { ...staleGrades.grades!, ...override };
+    for (const previousEntry of [stale, staleGrades]) {
+      const merged = mergeManifestEntries({
+        previousEntries: [kilterOld, previousEntry],
+        newEntries: [],
+        livePairs: null,
+        privacyVersion: 1,
+      });
+      expect(merged).toEqual([kilterOld]);
+    }
   });
 });
 
@@ -355,29 +381,97 @@ describe('runExport — threshold refresh', () => {
     expect(refreshedEntry.grades?.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
   });
 
-  // The marker names the publication rule an artifact was built under. An
-  // entry built under an older rule carries rows the current rule withholds
-  // (drafts, unlisted climbs) and lacks rows it publishes, and no row count
-  // says so: it is rebuilt whatever the delta, and stamped with the rule.
-  it.each([1, undefined] as const)(
-    'rebuilds an entry stamped privacyVersion %s with no delta at all, and stamps 2',
-    async (previousPrivacyVersion) => {
+  // An entry built before the publication rule carries rows the rule withholds
+  // (drafts and unlisted climbs nobody owns) and lacks rows it publishes, and no
+  // row count says so: it is rebuilt whatever the delta. It was stamped
+  // `privacyVersion: 1` too, the marker every shipped bundle accepts, so that
+  // marker cannot tell it apart; `publicationRule` does.
+  it.each([
+    ['privacyVersion 1 and no publication rule', { privacyVersion: 1 as const, publicationRule: undefined }],
+    ['no marker at all', { privacyVersion: undefined, publicationRule: undefined }],
+  ])('rebuilds an entry stamped %s with no delta at all', async (_label, stamps) => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+    const previousEntry: SnapshotManifestEntry = {
+      ...manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`),
+      ...stamps,
+    };
+    serveExistingManifest(manifestFixture([previousEntry]));
+
+    await runExport(thresholdArgs);
+
+    const refreshedEntry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+    expect(refreshedEntry.key).not.toBe(previousEntry.key);
+    expect(refreshedEntry.publicationRule).toBe(2);
+    expect(refreshedEntry.grades?.publicationRule).toBe(2);
+  });
+
+  // The filter every shipped bundle runs on the manifest before it will install
+  // an artifact (packages/mobile/src/offline/snapshot-source.ts, `fetchManifest`):
+  // an entry, and its grades block, survive only when stamped exactly 1.
+  const acceptedByShippedBundles = (entry: SnapshotManifestEntry) =>
+    entry.privacyVersion === 1 && (entry.grades === undefined || entry.grades.privacyVersion === 1);
+
+  it('stamps what shipped bundles install by default, so a rebuilt board keeps its download', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedGrade('kilter', 'k1-a', 40);
+    serveExistingManifest(
+      manifestFixture([
+        { ...manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`), publicationRule: undefined },
+      ]),
+    );
+
+    await runExport(thresholdArgs);
+
+    const [refreshedEntry] = uploadedManifest(GZIP_MANIFEST_KEY).entries;
+    expect(refreshedEntry.grades).toBeDefined();
+    expect(acceptedByShippedBundles(refreshedEntry)).toBe(true);
+  });
+
+  describe('with SNAPSHOT_PRIVACY_VERSION set', () => {
+    const originalPrivacyVersion = process.env.SNAPSHOT_PRIVACY_VERSION;
+    afterEach(() => {
+      if (originalPrivacyVersion === undefined) delete process.env.SNAPSHOT_PRIVACY_VERSION;
+      else process.env.SNAPSHOT_PRIVACY_VERSION = originalPrivacyVersion;
+    });
+
+    // The switch for the two-stream client (#6329), which installs 2 only. The
+    // files are the same; the entries are rebuilt to carry the other marker.
+    it('to 2, rebuilds a current entry with no delta and stamps 2 on it and its grades', async () => {
+      process.env.SNAPSHOT_PRIVACY_VERSION = '2';
       await seedClimb('kilter', 1, 'k1-a');
       await seedGrade('kilter', 'k1-a', 40);
-      const previousEntry: SnapshotManifestEntry = {
-        ...manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`),
-        privacyVersion: previousPrivacyVersion,
-      };
+      const previousEntry = withGradesArtifact(manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`));
       serveExistingManifest(manifestFixture([previousEntry]));
 
       await runExport(thresholdArgs);
 
-      const refreshedEntry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
+      const [refreshedEntry] = uploadedManifest(GZIP_MANIFEST_KEY).entries;
       expect(refreshedEntry.key).not.toBe(previousEntry.key);
-      expect(refreshedEntry.privacyVersion).toBe(2);
-      expect(refreshedEntry.grades?.privacyVersion).toBe(2);
-    },
-  );
+      expect(refreshedEntry).toMatchObject({ privacyVersion: 2, publicationRule: 2 });
+      expect(refreshedEntry.grades).toMatchObject({ privacyVersion: 2, publicationRule: 2 });
+    });
+
+    it('to 1, leaves a current entry alone below the threshold', async () => {
+      process.env.SNAPSHOT_PRIVACY_VERSION = '1';
+      await seedClimb('kilter', 1, 'k1-a');
+      serveExistingManifest(manifestFixture([manifestEntryFixture('kilter', 1, `${GZIP_PREFIX}/kilter/1/old.db`)]));
+
+      await runExport(thresholdArgs);
+
+      expect(uploadToS3).not.toHaveBeenCalled();
+    });
+
+    it('to anything else, refuses before it reads the manifest or uploads anything', async () => {
+      process.env.SNAPSHOT_PRIVACY_VERSION = 'two';
+      await seedClimb('kilter', 1, 'k1-a');
+
+      await expect(runExport(thresholdArgs)).rejects.toThrow(/SNAPSHOT_PRIVACY_VERSION must be 1 or 2/);
+
+      expect(getFromS3Strict).not.toHaveBeenCalled();
+      expect(uploadToS3).not.toHaveBeenCalled();
+    });
+  });
 
   it('rebuilds every discovered layout when the live manifest is missing', async () => {
     await seedClimb('kilter', 1, 'k1-a');
@@ -816,7 +910,8 @@ describe('runExport — board_climb_grades artifacts', () => {
         contentEncoding: 'gzip',
         builtAt: '2026-06-01T00:00:00.000Z',
         schemaVersion: LATEST_SCHEMA_VERSION,
-        privacyVersion: 2,
+        privacyVersion: 1,
+        publicationRule: 2,
         tables: {
           board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '9', rowCount: 4 },
         },
@@ -1003,6 +1098,9 @@ describe('runExport — artifact shape', () => {
         'key',
         'layoutId',
         'privacyVersion',
+        // Bookkeeping for the export job; no client reads it, so the rollback
+        // need not take it back.
+        'publicationRule',
         'schemaVersion',
         'tables',
         'uncompressedBytes',
