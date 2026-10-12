@@ -2,6 +2,8 @@ import { useEffect, useMemo, useReducer } from 'react';
 import {
   DEFAULT_LOGBOOK_FILTERS,
   DEFAULT_LOGBOOK_SORT,
+  isLogbookDateFilterActive,
+  statusSegmentFor,
   type LogbookFilterState,
   type LogbookSortPreset,
   type LogbookSortState,
@@ -43,6 +45,7 @@ const DEFAULT_STATE: LogbookSearchState = {
 type Action =
   | { type: 'setName'; name: string }
   | { type: 'setPreset'; preset: LogbookSortPreset }
+  | { type: 'setSort'; sort: LogbookSortState }
   | { type: 'setFilters'; filters: Partial<LogbookFilterState> }
   | { type: 'apply'; filters: LogbookFilterState; sort: LogbookSortState }
   | { type: 'hydrate'; filters: LogbookFilterState; sort: LogbookSortState }
@@ -60,6 +63,9 @@ function reducer(state: LogbookSearchState, action: Action): LogbookSearchState 
         sort: { ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset: action.preset },
         userModified: true,
       };
+    case 'setSort':
+      // Live commit of a whole sort (Sort by + Order); filters and name untouched.
+      return { ...state, sort: action.sort, userModified: true };
     case 'setFilters':
       // Live per-field merge from the toolbar's facet chips/rails — same commit +
       // persistence path as `apply`, but it touches only the named fields and
@@ -83,6 +89,8 @@ function reducer(state: LogbookSearchState, action: Action): LogbookSearchState 
 export type UseLogbookSearch = LogbookSearchState & {
   setName: (name: string) => void;
   setPreset: (preset: LogbookSortPreset) => void;
+  /** Live-commit a whole sort, e.g. `logbookSortFor(key, direction)`. */
+  setSort: (sort: LogbookSortState) => void;
   /** Live-commit a partial filter patch (the toolbar's facet chips/rails). */
   setFilters: (partial: Partial<LogbookFilterState>) => void;
   apply: (filters: LogbookFilterState, sort: LogbookSortState) => void;
@@ -127,6 +135,7 @@ export function useLogbookSearch(): UseLogbookSearch {
     () => ({
       setName: (name: string) => dispatch({ type: 'setName', name }),
       setPreset: (preset: LogbookSortPreset) => dispatch({ type: 'setPreset', preset }),
+      setSort: (sort: LogbookSortState) => dispatch({ type: 'setSort', sort }),
       setFilters: (partial: Partial<LogbookFilterState>) => dispatch({ type: 'setFilters', filters: partial }),
       apply: (filters: LogbookFilterState, sort: LogbookSortState) => dispatch({ type: 'apply', filters, sort }),
       reset: () => dispatch({ type: 'reset' }),
@@ -137,22 +146,25 @@ export function useLogbookSearch(): UseLogbookSearch {
   return useMemo(() => ({ ...state, ...actions }), [state, actions]);
 }
 
-/** Number of active (non-default) logbook filters — drives the filter-button badge. */
+/**
+ * Number of active (non-default) logbook filters — drives the filter-button
+ * badge. Each dimension counts once however many of its fields are set (Flashes
+ * is one status, a min+max grade is one range, a board + layouts is one board).
+ * The climb-name search is not a filter field; the UI counts it separately.
+ */
 export function countActiveLogbookFilters(filters: LogbookFilterState): number {
-  let count = 0;
-  // The status rests on sends+attempts (the default); sends-only and
-  // attempts-only count, so it's active when either half is off.
-  if (!filters.includeSends || !filters.includeAttempts) count += 1;
-  if (filters.flashOnly) count += 1;
-  if (filters.minGrade !== '' || filters.maxGrade !== '') count += 1;
-  if (filters.fromDate || filters.toDate) count += 1;
-  // The angle range is one filter even when both bounds are narrowed.
-  if (
+  const activeDimensions = [
+    // Status rests on All (sends + attempts); Sends, Flashes and Attempts count.
+    statusSegmentFor(filters) !== 'all',
+    filters.minGrade !== '' || filters.maxGrade !== '',
     filters.angleRange[0] !== DEFAULT_LOGBOOK_FILTERS.angleRange[0] ||
-    filters.angleRange[1] !== DEFAULT_LOGBOOK_FILTERS.angleRange[1]
-  ) {
-    count += 1;
-  }
-  if (filters.benchmarkOnly) count += 1;
-  return count;
+      filters.angleRange[1] !== DEFAULT_LOGBOOK_FILTERS.angleRange[1],
+    // A Custom window with no date picked yet narrows nothing.
+    isLogbookDateFilterActive(filters),
+    filters.boardType !== '',
+    filters.minQuality !== '',
+    filters.setterUsernames.length > 0,
+    filters.benchmarkOnly,
+  ];
+  return activeDimensions.filter(Boolean).length;
 }

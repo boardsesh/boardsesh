@@ -47,8 +47,15 @@ function LogbookFacetRailComponent({ openFacet, filters, grades, onUpdateFilters
     (angleRange: [number, number]) => onUpdateFilters({ angleRange }),
     [onUpdateFilters],
   );
-  const handleFromDate = useCallback((iso: string) => onUpdateFilters({ fromDate: iso }), [onUpdateFilters]);
-  const handleToDate = useCallback((iso: string) => onUpdateFilters({ toDate: iso }), [onUpdateFilters]);
+  // Only the Custom window reads from/to, so picking a date selects it.
+  const handleFromDate = useCallback(
+    (iso: string) => onUpdateFilters({ fromDate: iso, dateWindow: 'custom' }),
+    [onUpdateFilters],
+  );
+  const handleToDate = useCallback(
+    (iso: string) => onUpdateFilters({ toDate: iso, dateWindow: 'custom' }),
+    [onUpdateFilters],
+  );
 
   if (openFacet === null) return null;
 

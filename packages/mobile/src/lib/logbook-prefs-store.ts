@@ -20,18 +20,38 @@ const STORAGE_KEY = 'logbookSearchPrefs';
 //   v2 = the sends-only status default.
 //   v3 = the sends+attempts default (a climber's projects show next to sends).
 //   v4 = the full angle range starts at Grasshopper's -5° setting.
+//   v5 = date windows, board + layouts, stars and setters. Nothing is rewritten:
+//        the shared sanitizer fills each new field with its default, and a v4
+//        from/to (the only date filter v4 had) reads as the Custom window, so a
+//        saved range keeps filtering. The stamp just stops the check re-running.
 // There is no chained v1→v2 step anymore: ONE rule migrates every pre-v3
 // payload. A filter set still deep-equal to EITHER historical resting default
 // (v1 both-on or v2 sends-only) means the user never diverged and is refreshed
 // to the v3 defaults; anything the user changed is left as-is. The migration
-// stamps v3 either way.
-const LOGBOOK_PREFS_VERSION = 4;
+// stamps the current version either way.
+const LOGBOOK_PREFS_VERSION = 5;
+
+// The filter fields a pre-v3 payload could carry. The never-diverged check
+// compares only these: fields added later (date window, board, stars, setters)
+// did not exist then, so they can't tell a touched payload from an untouched one.
+type LegacyLogbookFilters = Pick<
+  LogbookFilterState,
+  | 'includeSends'
+  | 'includeAttempts'
+  | 'flashOnly'
+  | 'minGrade'
+  | 'maxGrade'
+  | 'fromDate'
+  | 'toDate'
+  | 'angleRange'
+  | 'benchmarkOnly'
+>;
 
 // The v2 resting filter (sends-only) — the value a v2 install persisted when the
 // user never touched a filter. Frozen here so the v3 "did the user diverge?"
 // check compares against the historical default, not today's default (which is
 // now sends+attempts). Update only if the pre-v3 filter shape itself changes.
-const V2_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
+const V2_DEFAULT_LOGBOOK_FILTERS: LegacyLogbookFilters = {
   includeSends: true,
   includeAttempts: false,
   flashOnly: false,
@@ -51,12 +71,12 @@ const V2_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
  * changed ONLY includeAttempts, so "v1 resting" is exactly "attempts on, and
  * everything else equal to the frozen v2 shape".
  */
-function equalsV1Defaults(filters: LogbookFilterState): boolean {
+function equalsV1Defaults(filters: LegacyLogbookFilters): boolean {
   return filters.includeAttempts === true && equalsV2Defaults({ ...filters, includeAttempts: false });
 }
 
 /** True when a filter state matches the frozen v2 sends-only default exactly. */
-function equalsV2Defaults(filters: LogbookFilterState): boolean {
+function equalsV2Defaults(filters: LegacyLogbookFilters): boolean {
   return (
     filters.includeSends === V2_DEFAULT_LOGBOOK_FILTERS.includeSends &&
     filters.includeAttempts === V2_DEFAULT_LOGBOOK_FILTERS.includeAttempts &&

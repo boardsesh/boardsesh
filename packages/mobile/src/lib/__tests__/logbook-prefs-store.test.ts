@@ -147,6 +147,66 @@ describe('logbook-prefs-store', () => {
   it('stamps the schema version when saving', async () => {
     store.set.mockResolvedValue(undefined);
     await saveLogbookPrefs({ filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT });
-    expect(store.set).toHaveBeenCalledWith('logbookSearchPrefs', expect.objectContaining({ version: 4 }));
+    expect(store.set).toHaveBeenCalledWith('logbookSearchPrefs', expect.objectContaining({ version: 5 }));
+  });
+
+  // What a v4 build wrote: no date window, board, stars or setters.
+  const v4Filters = {
+    includeSends: true,
+    includeAttempts: false,
+    flashOnly: true,
+    minGrade: 12,
+    maxGrade: 20,
+    fromDate: '2026-03-01',
+    toDate: '2026-04-01',
+    angleRange: [20, 50],
+    benchmarkOnly: true,
+  };
+
+  it('migrates a v4 payload to v5 without losing a field (a saved range reads as Custom)', async () => {
+    store.set.mockResolvedValue(undefined);
+    const v4Sort = { ...DEFAULT_LOGBOOK_SORT, preset: 'hardest' };
+    store.get.mockResolvedValue({ version: 4, filters: v4Filters, sort: v4Sort });
+    const prefs = await loadLogbookPrefs();
+    const expectedFilters = {
+      ...v4Filters,
+      dateWindow: 'custom',
+      boardType: '',
+      layoutIds: [],
+      minQuality: '',
+      setterUsernames: [],
+    };
+    expect(prefs).toEqual({ filters: expectedFilters, sort: v4Sort });
+    // Stamped v5 straight away so the migration doesn't re-run every launch.
+    expect(store.set).toHaveBeenCalledWith('logbookSearchPrefs', {
+      version: 5,
+      filters: expectedFilters,
+      sort: v4Sort,
+    });
+  });
+
+  it('reads a v4 payload without dates as Any time', async () => {
+    store.get.mockResolvedValue({
+      version: 4,
+      filters: { ...v4Filters, fromDate: '', toDate: '' },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    expect((await loadLogbookPrefs())?.filters.dateWindow).toBe('any');
+  });
+
+  it('keeps a v5 payload as saved and does not rewrite it', async () => {
+    const filters = {
+      ...DEFAULT_LOGBOOK_FILTERS,
+      dateWindow: 'month' as const,
+      fromDate: '2026-01-01',
+      boardType: 'kilter',
+      layoutIds: [1, 8],
+      minQuality: 4,
+      setterUsernames: ['jwebb'],
+    };
+    const sort = { ...DEFAULT_LOGBOOK_SORT, preset: 'easiest' as const };
+    store.get.mockResolvedValue({ version: 5, filters, sort });
+    expect(await loadLogbookPrefs()).toEqual({ filters, sort });
+    expect(store.set).not.toHaveBeenCalled();
   });
 });

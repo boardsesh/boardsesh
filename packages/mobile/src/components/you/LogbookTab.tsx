@@ -240,8 +240,9 @@ export function LogbookTab({
       ['kilter', 'tension', 'moonboard', 'spray'].includes(screenshotBoardType)
         ? [screenshotBoardType]
         : undefined;
-    return toAscentFeedInput({ ...searchState, boardTypes: cppBoardTypes });
-  }, [logbookFiltersEnabled, filters, sort, name, screenshotBoardType]);
+    // `today` (the screenshot-aware clock) anchors the rolling date windows.
+    return toAscentFeedInput({ ...searchState, boardTypes: cppBoardTypes, now: today });
+  }, [logbookFiltersEnabled, filters, sort, name, screenshotBoardType, today]);
 
   // Gate on `hydrated` so the feed fetches once with the restored prefs rather
   // than once with defaults then again after persistence loads. (With the flag

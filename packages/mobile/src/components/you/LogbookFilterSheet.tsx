@@ -199,8 +199,15 @@ export function LogbookFilterSheet({
     [updateFilters],
   );
 
-  const handleFromDate = useCallback((iso: string) => updateFilters({ fromDate: iso }), [updateFilters]);
-  const handleToDate = useCallback((iso: string) => updateFilters({ toDate: iso }), [updateFilters]);
+  // Only the Custom window reads from/to, so picking a date selects it.
+  const handleFromDate = useCallback(
+    (iso: string) => updateFilters({ fromDate: iso, dateWindow: 'custom' }),
+    [updateFilters],
+  );
+  const handleToDate = useCallback(
+    (iso: string) => updateFilters({ toDate: iso, dateWindow: 'custom' }),
+    [updateFilters],
+  );
 
   const flashDisabled = !draftFilters.includeSends;
   const refineSummary = useMemo(() => {

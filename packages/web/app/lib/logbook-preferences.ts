@@ -45,7 +45,22 @@ export type LogbookPreferences = {
 // Frozen LITERALLY (not spread from the live defaults): the never-diverged
 // check must compare against what v2 actually persisted, and a future change
 // to any live default would silently redefine history through a spread.
-const V2_DEFAULT_FILTERS: LogbookFilterState = {
+// Typed to the fields v2 had: the date window, board, stars and setters came
+// later and are filled by the shared sanitizer (a stored from/to reads as the
+// Custom window), so they need no version bump here.
+type LegacyLogbookFilters = Pick<
+  LogbookFilterState,
+  | 'includeSends'
+  | 'includeAttempts'
+  | 'flashOnly'
+  | 'minGrade'
+  | 'maxGrade'
+  | 'fromDate'
+  | 'toDate'
+  | 'angleRange'
+  | 'benchmarkOnly'
+>;
+const V2_DEFAULT_FILTERS: LegacyLogbookFilters = {
   includeSends: true,
   includeAttempts: false,
   flashOnly: false,
@@ -65,7 +80,7 @@ const V2_DEFAULT_FILTERS: LogbookFilterState = {
  * changed ONLY includeAttempts, so "v1 resting" is exactly "attempts on, and
  * everything else equal to the frozen v2 shape".
  */
-function filtersEqualV1Defaults(filters: LogbookFilterState): boolean {
+function filtersEqualV1Defaults(filters: LegacyLogbookFilters): boolean {
   return filters.includeAttempts === true && filtersEqualV2Defaults({ ...filters, includeAttempts: false });
 }
 
@@ -88,7 +103,7 @@ export const DEFAULT_LOGBOOK_PREFERENCES: LogbookPreferences = {
 };
 
 /** True when a filter state matches the frozen v2 sends-only default exactly. */
-function filtersEqualV2Defaults(filters: LogbookFilterState): boolean {
+function filtersEqualV2Defaults(filters: LegacyLogbookFilters): boolean {
   return (
     filters.includeSends === V2_DEFAULT_FILTERS.includeSends &&
     filters.includeAttempts === V2_DEFAULT_FILTERS.includeAttempts &&

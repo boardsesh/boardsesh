@@ -171,4 +171,34 @@ describe('sanitizeLogbookPreferences', () => {
     expect(explicitZero.filters.angleRange).toEqual([0, 70]);
     expect(positiveMinimum.filters.angleRange).toEqual([20, 50]);
   });
+
+  it('round-trips the date window, board, stars, setters and the easiest sort', () => {
+    const saved = {
+      ...DEFAULT_LOGBOOK_PREFERENCES,
+      filters: {
+        ...DEFAULT_LOGBOOK_PREFERENCES.filters,
+        dateWindow: 'month' as const,
+        boardType: 'kilter',
+        layoutIds: [1, 8],
+        minQuality: 4,
+        setterUsernames: ['jwebb'],
+      },
+      sort: { ...DEFAULT_LOGBOOK_PREFERENCES.sort, preset: 'easiest' as const },
+    };
+    expect(sanitizeLogbookPreferences(saved)).toEqual(saved);
+  });
+
+  it('reads a v4 web payload with a picked range as the Custom window', () => {
+    const result = sanitizeLogbookPreferences({
+      version: 4,
+      boardFilter: 'all',
+      layoutSelections: ALL_LAYOUT_SELECTIONS,
+      filters: { includeSends: true, includeAttempts: true, fromDate: '2026-03-01', toDate: '2026-04-01' },
+      sort: DEFAULT_LOGBOOK_PREFERENCES.sort,
+    });
+    expect(result.filters.dateWindow).toBe('custom');
+    expect(result.filters.fromDate).toBe('2026-03-01');
+    expect(result.filters.toDate).toBe('2026-04-01');
+    expect(result.filters.setterUsernames).toEqual([]);
+  });
 });
