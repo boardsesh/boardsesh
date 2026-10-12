@@ -55,8 +55,8 @@ const BOARD_PRESENCE_STATS_FIELDS = `
 // BoardConnectionChanged carries the current connection holder (or null when the
 // board goes free) so consumers can show held-vs-free distinct from the lit climb.
 export const BOARD_NOW_PLAYING = `
-  subscription BoardNowPlaying($boardId: Int!) {
-    boardNowPlaying(boardId: $boardId) {
+  subscription BoardNowPlaying($boardId: Int!, $boardUuid: ID) {
+    boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid) {
       __typename
       ... on BoardHistoryUpdated {
         seq
@@ -91,14 +91,14 @@ export const BOARD_NOW_PLAYING = `
 `;
 
 export const BOARD_RECENT_HISTORY = `
-  query BoardRecentHistory($boardId: Int!) {
-    boardRecentHistory(boardId: $boardId) { ${BOARD_PRESENCE_CLIMB_FIELDS} }
+  query BoardRecentHistory($boardId: Int!, $boardUuid: ID) {
+    boardRecentHistory(boardId: $boardId, boardUuid: $boardUuid) { ${BOARD_PRESENCE_CLIMB_FIELDS} }
   }
 `;
 
 export const BOARD_HISTORY_PAGE = `
-  query BoardHistoryPage($boardId: Int!, $limit: Int, $before: String) {
-    boardHistoryPage(boardId: $boardId, limit: $limit, before: $before) {
+  query BoardHistoryPage($boardId: Int!, $boardUuid: ID, $limit: Int, $before: String) {
+    boardHistoryPage(boardId: $boardId, boardUuid: $boardUuid, limit: $limit, before: $before) {
       entries { ${BOARD_PRESENCE_CLIMB_FIELDS} }
       nextCursor
     }
@@ -258,8 +258,8 @@ export const RESOLVE_BOARD_FOR_CONFIG = `
 // Query — newest-first recent climbs for a board, used by a late joiner to
 // backfill history before following the live subscription.
 export const BOARD_RECENT_CLIMBS = `
-  query BoardRecentClimbs($boardId: Int!) {
-    boardRecentClimbs(boardId: $boardId) {
+  query BoardRecentClimbs($boardId: Int!, $boardUuid: ID) {
+    boardRecentClimbs(boardId: $boardId, boardUuid: $boardUuid) {
       ${BOARD_PRESENCE_CLIMB_FIELDS}
     }
   }
@@ -272,8 +272,8 @@ export const BOARD_RECENT_CLIMBS = `
 // (default 50). Reuses the same climb fields as the live feed so every wall
 // surface decodes one shape.
 export const BOARD_HISTORY = `
-  query BoardHistory($boardId: Int!, $limit: Int, $before: String) {
-    boardHistory(boardId: $boardId, limit: $limit, before: $before) {
+  query BoardHistory($boardId: Int!, $boardUuid: ID, $limit: Int, $before: String) {
+    boardHistory(boardId: $boardId, boardUuid: $boardUuid, limit: $limit, before: $before) {
       ${BOARD_PRESENCE_CLIMB_FIELDS}
     }
   }
@@ -283,8 +283,8 @@ export const BOARD_HISTORY = `
 // climb at the displayed angle on this physical board. The backend resolves
 // canonical + alias UUIDs before reading ticks.
 export const BOARD_CLIMB_RECENT_SENDERS = `
-  query BoardClimbRecentSenders($boardId: Int!, $climbUuid: String!, $angle: Int!) {
-    boardClimbRecentSenders(boardId: $boardId, climbUuid: $climbUuid, angle: $angle) {
+  query BoardClimbRecentSenders($boardId: Int!, $boardUuid: ID, $climbUuid: String!, $angle: Int!) {
+    boardClimbRecentSenders(boardId: $boardId, boardUuid: $boardUuid, climbUuid: $climbUuid, angle: $angle) {
       userId
       displayName
       avatarUrl
@@ -295,8 +295,8 @@ export const BOARD_CLIMB_RECENT_SENDERS = `
 
 // Query — durable + live stats for a board's wall feed.
 export const BOARD_PRESENCE_STATS = `
-  query BoardPresenceStats($boardId: Int!) {
-    boardPresenceStats(boardId: $boardId) {
+  query BoardPresenceStats($boardId: Int!, $boardUuid: ID) {
+    boardPresenceStats(boardId: $boardId, boardUuid: $boardUuid) {
       ${BOARD_PRESENCE_STATS_FIELDS}
     }
   }
@@ -305,7 +305,7 @@ export const BOARD_PRESENCE_STATS = `
 // Query — the current connection holder for a board, used by a late joiner to
 // seed held-vs-free before the live BoardConnectionChanged subscription pushes.
 // Resolves null when the board is free.
-export const BOARD_CONNECTION = `query BoardConnection($boardId: Int!) { boardConnection(boardId: $boardId) { userId displayName avatarUrl lastSentAt } }`;
+export const BOARD_CONNECTION = `query BoardConnection($boardId: Int!, $boardUuid: ID) { boardConnection(boardId: $boardId, boardUuid: $boardUuid) { userId displayName avatarUrl lastSentAt } }`;
 
 // Mutation — release this client's hold on a board (e.g. on BLE disconnect).
 // Returns Boolean! (accepted).
@@ -346,8 +346,8 @@ const BOARD_QUEUE_PREVIEW_FIELDS = `
 // AND isPublic active session). Used by kiosks for initial paint before the
 // live subscription takes over.
 export const BOARD_QUEUE_PREVIEW = `
-  query BoardQueuePreview($boardId: Int!) {
-    boardQueuePreview(boardId: $boardId) {
+  query BoardQueuePreview($boardId: Int!, $boardUuid: ID) {
+    boardQueuePreview(boardId: $boardId, boardUuid: $boardUuid) {
       ${BOARD_QUEUE_PREVIEW_FIELDS}
     }
   }
@@ -358,8 +358,8 @@ export const BOARD_QUEUE_PREVIEW = `
 // snapshot when one exists, so late-joining kiosks paint without a separate
 // query round-trip.
 export const BOARD_QUEUE_PREVIEW_SUBSCRIPTION = `
-  subscription BoardQueuePreviewUpdates($boardId: Int!) {
-    boardQueuePreview(boardId: $boardId) {
+  subscription BoardQueuePreviewUpdates($boardId: Int!, $boardUuid: ID) {
+    boardQueuePreview(boardId: $boardId, boardUuid: $boardUuid) {
       ${BOARD_QUEUE_PREVIEW_FIELDS}
     }
   }

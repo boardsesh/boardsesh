@@ -122,7 +122,7 @@ export default async function EmbedBoardPage(props: EmbedBoardRouteProps) {
   return (
     <I18nProvider locale={locale} namespaces={['common', 'kiosk']}>
       <EmbedShell brandGym={brandGym} attributionHref={embedAttributionHref(brandGym)}>
-        <KioskPresenceHub boardIds={[board.boardId]}>
+        <KioskPresenceHub boardIds={[board.boardId]} boardUuids={{ [board.boardId]: board.uuid }}>
           <BoardSlot
             boardId={board.boardId}
             boardName={board.name}

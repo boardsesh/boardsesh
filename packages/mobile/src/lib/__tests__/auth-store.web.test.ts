@@ -5,6 +5,7 @@ import {
   clearTokens,
   getAuthToken,
   subscribeAuthTokenChanges,
+  subscribeAuthCredentialGenerationChanges,
   synchronizeWebSession,
 } from '../auth-store.web';
 
@@ -307,4 +308,16 @@ describe('synchronizeWebSession', () => {
     await expect(getAuthToken()).resolves.toBeNull();
     unsubscribe();
   });
+});
+
+it('notifies neutral provider generation subscribers synchronously on browser credential withdrawal', async () => {
+  const before = captureAuthCredentialGeneration();
+  const listener = vi.fn();
+  const unsubscribe = subscribeAuthCredentialGenerationChanges(listener);
+  const clearing = clearTokens();
+  expect(listener).toHaveBeenCalledWith(before + 1);
+  await clearing;
+  unsubscribe();
+  await clearTokens();
+  expect(listener).toHaveBeenCalledTimes(1);
 });

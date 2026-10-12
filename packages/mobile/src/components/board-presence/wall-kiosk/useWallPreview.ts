@@ -4,6 +4,7 @@ import {
   useBoardHistoryPagination,
   useBoardPresenceActions,
   useBoardPresenceCurrent,
+  useBoardPresenceClient,
   useBoardPresenceFeed,
 } from '@boardsesh/board-presence-react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -122,6 +123,15 @@ function deriveLightBlockedReason({
  * a scrubbed-back preview stays put across live pushes and backfill merges.
  */
 export function useWallPreview(): WallPreviewState {
+  const { boardId, boardUuid = null, client } = useBoardPresenceClient();
+  const scopeRef = useRef({ boardId, boardUuid, client });
+  if (
+    scopeRef.current.boardId !== boardId ||
+    scopeRef.current.boardUuid !== boardUuid ||
+    scopeRef.current.client !== client
+  ) {
+    scopeRef.current = { boardId, boardUuid, client };
+  }
   const { currentClimb } = useBoardPresenceCurrent();
   const { history: liveHistory } = useBoardPresenceFeed();
   const { olderHistory, isLoadingOlder, hasMore, loadOlder } = useBoardHistoryPagination();
@@ -186,6 +196,15 @@ export function useWallPreview(): WallPreviewState {
   refreshRef.current = refresh;
   const liveSeqAtStartRef = useRef<number | null>(null);
   const pendingOlderRef = useRef(false);
+
+  useEffect(() => {
+    setPreviewKey(null);
+    setIsLighting(false);
+    setLightError(false);
+    setPendingOverride(false);
+    liveSeqAtStartRef.current = null;
+    pendingOlderRef.current = false;
+  }, [boardId, boardUuid, client]);
 
   const bumpActivity = useCallback(() => setActivityNonce((nonce) => nonce + 1), []);
 
@@ -301,7 +320,10 @@ export function useWallPreview(): WallPreviewState {
     setPendingOverride(false);
     setLightError(false);
     setIsLighting(true);
+    const requestScope = scopeRef.current;
     const ok = (await bluetoothRef.current?.relightPresenceClimb(climb)) ?? false;
+    const currentScope = scopeRef.current;
+    if (requestScope !== currentScope) return;
     setIsLighting(false);
     if (ok) {
       // Do NOT force `previewKey=null` here: `reportClimbForBoard` doesn't locally

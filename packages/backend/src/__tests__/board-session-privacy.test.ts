@@ -13,7 +13,13 @@ const readable = vi.hoisted(() => ({
 }));
 vi.mock('../services/privacy', () => privacy);
 vi.mock('../db/client', () => ({
-  db: { select: () => ({ from: () => ({ where: async () => readable.climbs }) }) },
+  db: {
+    select: () => ({
+      from: () => ({
+        where: () => Object.assign(Promise.resolve(readable.climbs), { limit: async () => readable.climbs }),
+      }),
+    }),
+  },
 }));
 
 const {

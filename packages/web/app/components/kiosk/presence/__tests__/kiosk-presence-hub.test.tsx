@@ -10,13 +10,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, act } from '@testing-library/react';
-import React, { type ReactNode } from 'react';
+import React, { useContext, type ReactNode } from 'react';
 
 type FakeClient = {
   on: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 };
 
+const providerInputs: Array<{ boardId: number | null; boardUuid?: string | null }> = [];
 const createdClients: FakeClient[] = [];
 const createGraphQLClientSpy = vi.fn(() => {
   const client: FakeClient = {
@@ -46,7 +47,18 @@ vi.mock('@boardsesh/board-presence-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/board-presence-react')>();
   return {
     ...actual,
-    BoardPresenceProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+    BoardPresenceProvider: ({
+      boardId,
+      boardUuid,
+      children,
+    }: {
+      boardId: number | null;
+      boardUuid?: string | null;
+      children: ReactNode;
+    }) => {
+      providerInputs.push({ boardId, boardUuid });
+      return <>{children}</>;
+    },
   };
 });
 
@@ -65,6 +77,7 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
 
 import KioskPresenceHub from '../kiosk-presence-hub';
 import { ViewerKioskPresenceHub } from '../viewer-kiosk-presence-hub';
+import { KioskPresenceStoreContext, type KioskPresenceStore } from '../use-kiosk-board-presence';
 
 function optionsOfCall(callIndex: number): { authToken?: string | null; connectionName?: string } {
   const [options] = createGraphQLClientSpy.mock.calls[callIndex] as unknown as [
@@ -176,4 +189,39 @@ describe('read-only kiosk presence client', () => {
     const full = createWebBoardPresenceClient(getClient as never);
     await expect(full.reportClimb(1, { uuid: 'c1' } as never, 40)).rejects.toThrow('transport should not be reached');
   });
+});
+
+it('forwards only UUIDs held by selected slots and clears retired kiosk snapshots', () => {
+  providerInputs.length = 0;
+  let currentStore: KioskPresenceStore | null = null;
+  function StoreProbe() {
+    currentStore = useContext(KioskPresenceStoreContext);
+    return null;
+  }
+  const { rerender } = render(
+    <KioskPresenceHub boardIds={[7, 8]} boardUuids={{ 7: 'held-link' }}>
+      <StoreProbe />
+    </KioskPresenceHub>,
+  );
+  expect(providerInputs).toContainEqual({ boardId: 7, boardUuid: 'held-link' });
+  expect(providerInputs).toContainEqual({ boardId: 8, boardUuid: null });
+  const oldStore = currentStore as KioskPresenceStore | null;
+  expect(oldStore).not.toBeNull();
+  oldStore?.publish(7, {
+    currentClimb: { climbUuid: 'linked', seq: 1, sentAt: '', name: 'Linked', angle: 40 },
+    history: [],
+    isLive: true,
+  });
+  expect(oldStore?.getBoardSnapshot(7)?.currentClimb?.climbUuid).toBe('linked');
+  rerender(
+    <KioskPresenceHub boardIds={[7, 8]}>
+      <StoreProbe />
+    </KioskPresenceHub>,
+  );
+  const newStore = currentStore as KioskPresenceStore | null;
+  expect(newStore).not.toBe(oldStore);
+  expect(newStore?.getBoardSnapshot(7)).toBeNull();
+  oldStore?.publish(7, { currentClimb: null, history: [], isLive: true });
+  expect(newStore?.getBoardSnapshot(7)).toBeNull();
+  expect(providerInputs.at(-2)).toEqual({ boardId: 7, boardUuid: null });
 });

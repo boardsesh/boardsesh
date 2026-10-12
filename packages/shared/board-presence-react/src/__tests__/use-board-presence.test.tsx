@@ -14,8 +14,11 @@ import {
   useBoardPresenceFeed,
   useBoardPresenceHasClimb,
   useBoardPresenceWallClimb,
+  useBoardPresenceClient,
 } from '../board-presence-provider';
 import type { BoardPresenceClient } from '../types';
+import { useBoardHistoryPagination } from '../use-board-history-pagination';
+import { useBoardClimbRecentSenders } from '../use-board-climb-recent-senders';
 
 // Build a BoardPresenceClimb with only the fields the reducer/hook care about.
 const climb = (climbUuid: string, seq: number, overrides: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb => ({
@@ -1067,4 +1070,138 @@ describe('BoardPresenceProvider — split contexts', () => {
     await waitFor(() => expect(wallClimbSnapshots.at(-1)?.climbUuid).toBe('wall-2'));
     expect(wallClimbRenderCount).toBeGreaterThan(rendersAfterClimb);
   });
+});
+
+it('withdraws same-channel state and rejects old seeds/events after the held UUID is removed', async () => {
+  const harness = makeClient();
+  const { result, rerender } = renderHook(
+    ({ boardUuid }) => useBoardPresence(9, harness.client, undefined, boardUuid),
+    { initialProps: { boardUuid: 'held-link' as string | null } },
+  );
+  expect(harness.fetchRecentClimbs).toHaveBeenLastCalledWith(9, 'held-link');
+  expect(harness.fetchStats).toHaveBeenLastCalledWith(9, 'held-link');
+  const retiredEvent = harness.subscribeNowPlaying.mock.calls[0][1];
+  act(() => harness.emit(setEvent(climb('linked-current', 5))));
+  expect(result.current.currentClimb?.climbUuid).toBe('linked-current');
+  rerender({ boardUuid: null });
+  expect(result.current.currentClimb).toBeNull();
+  expect(result.current.history).toEqual([]);
+  expect(result.current.holder).toBeNull();
+  expect(harness.fetchRecentClimbs).toHaveBeenLastCalledWith(9);
+  await act(async () => {
+    retiredEvent(setEvent(climb('retired-event', 6)));
+    await harness.resolveRecent(9, [climb('retired-seed', 7)]);
+    await harness.resolveConnection(9, holder());
+  });
+  expect(result.current.currentClimb).toBeNull();
+  expect(result.current.history).toEqual([]);
+  expect(result.current.holder).toBeNull();
+  await act(async () => {
+    await harness.resolveRecent(9, [climb('current-public', 1)]);
+  });
+  expect(result.current.history.map((entry) => entry.climbUuid)).toEqual(['current-public']);
+});
+
+it.each(['complete', 'error'] as const)(
+  'retires loaded and pending wall caches on terminal subscription %s',
+  async (terminal) => {
+    const harness = makeClient();
+    const pendingPage = deferred<BoardPresenceClimb[]>();
+    const fetchHistory = vi
+      .fn()
+      .mockResolvedValueOnce([climb('private-page', 1)])
+      .mockReturnValueOnce(pendingPage.promise);
+    const client: BoardPresenceClient = {
+      ...harness.client,
+      fetchHistory,
+      fetchClimbRecentSenders: vi.fn(async () => [
+        { userId: 'private-user', displayName: 'Private Name', avatarUrl: null, lastSentAt: '2026-10-12T00:00:00Z' },
+      ]),
+    };
+    const snapshot: {
+      page: ReturnType<typeof useBoardHistoryPagination> | null;
+      senders: ReturnType<typeof useBoardClimbRecentSenders> | null;
+      feed: ReturnType<typeof useBoardPresenceFeed> | null;
+      current: ReturnType<typeof useBoardPresenceCurrent> | null;
+      reader: ReturnType<typeof useBoardPresenceClient> | null;
+    } = { page: null, senders: null, feed: null, current: null, reader: null };
+    function PrivateWallSurface() {
+      snapshot.page = useBoardHistoryPagination(1);
+      snapshot.senders = useBoardClimbRecentSenders({ climbUuid: 'private-climb', angle: 40 });
+      snapshot.feed = useBoardPresenceFeed();
+      snapshot.current = useBoardPresenceCurrent();
+      snapshot.reader = useBoardPresenceClient();
+      return null;
+    }
+    render(
+      <BoardPresenceProvider boardId={9} boardUuid="held-link" client={client}>
+        <PrivateWallSurface />
+      </BoardPresenceProvider>,
+    );
+    await act(async () => {
+      harness.emit(setEvent(climb('private-current', 3)));
+      await harness.resolveRecent(9, [climb('private-backfill', 2)]);
+    });
+    act(() => snapshot.page?.loadOlder());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(snapshot.page?.olderHistory).toHaveLength(1);
+    expect(snapshot.senders?.senders[0]?.displayName).toBe('Private Name');
+    act(() => snapshot.page?.loadOlder());
+    expect(fetchHistory).toHaveBeenCalledTimes(2);
+    act(() => {
+      if (terminal === 'complete') harness.emitComplete();
+      else harness.emitError(new Error('Board not found'));
+    });
+    expect(snapshot.current?.currentClimb).toBeNull();
+    expect(snapshot.feed?.history).toEqual([]);
+    expect(snapshot.page?.olderHistory).toEqual([]);
+    expect(snapshot.senders?.senders).toEqual([]);
+    expect(snapshot.reader?.client).toBeNull();
+    await act(async () => {
+      pendingPage.resolve([climb('retired-page', 0)]);
+      await pendingPage.promise;
+      await harness.resolveConnection(9, holder());
+      await harness.resolveStats(9, emptyStats);
+      harness.emit(setEvent(climb('retired-event', 4)));
+    });
+    expect(snapshot.current?.currentClimb).toBeNull();
+    expect(snapshot.current?.holder).toBeNull();
+    expect(snapshot.feed?.stats).toBeNull();
+    expect(snapshot.page?.olderHistory).toEqual([]);
+  },
+);
+
+it('keeps the live reader and loaded wall data through an ordinary transport reconnect', async () => {
+  const harness = makeClient();
+  const snapshot: {
+    current: ReturnType<typeof useBoardPresenceCurrent> | null;
+    reader: ReturnType<typeof useBoardPresenceClient> | null;
+  } = { current: null, reader: null };
+  function WallSurface() {
+    snapshot.current = useBoardPresenceCurrent();
+    snapshot.reader = useBoardPresenceClient();
+    return null;
+  }
+  render(
+    <BoardPresenceProvider boardId={9} boardUuid="held-link" client={harness.client}>
+      <WallSurface />
+    </BoardPresenceProvider>,
+  );
+  act(() => harness.emit(setEvent(climb('still-on-wall', 1))));
+  const readerBeforeReconnect = snapshot.reader?.client;
+  act(() => harness.triggerReconnect());
+  expect(snapshot.current?.isLive).toBe(true);
+  expect(snapshot.current?.currentClimb?.climbUuid).toBe('still-on-wall');
+  expect(snapshot.reader?.client).toBe(readerBeforeReconnect);
+  expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await harness.resolveRecent(9, [climb('still-on-wall', 1)]);
+    await harness.resolveRecent(9, [climb('after-reconnect', 2)]);
+  });
+  expect(snapshot.current?.currentClimb?.climbUuid).toBe('still-on-wall');
+  act(() => harness.emit(setEvent(climb('after-reconnect', 2))));
+  expect(snapshot.current?.currentClimb?.climbUuid).toBe('after-reconnect');
+  expect(snapshot.current?.isLive).toBe(true);
 });

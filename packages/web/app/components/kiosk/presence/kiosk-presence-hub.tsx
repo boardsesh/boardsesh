@@ -39,7 +39,12 @@ import {
   type KioskConnectionStatus,
 } from './use-kiosk-board-presence';
 
-export type KioskPresenceHubProps = { boardIds: number[]; children: ReactNode };
+export type KioskPresenceHubProps = {
+  boardIds: number[];
+  /** UUIDs actually held by the selected kiosk slots, paired with their resolved channel. */
+  boardUuids?: Readonly<Record<number, string>>;
+  children: ReactNode;
+};
 
 export type KioskPresenceHubInnerProps = KioskPresenceHubProps & {
   /** Token for the ws connection. `null` connects anonymously. */
@@ -62,6 +67,7 @@ export type KioskPresenceHubInnerProps = KioskPresenceHubProps & {
 
 export function KioskPresenceHubInner({
   boardIds,
+  boardUuids,
   authToken,
   isAuthResolving,
   createPresenceClient,
@@ -71,11 +77,13 @@ export function KioskPresenceHubInner({
 
   const [activeWsClient, setActiveWsClient] = useState<Client | null>(null);
   const clientRef = useRef<Client | null>(null);
+  const activeAuthTokenRef = useRef<string | null | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<KioskConnectionStatus>('connecting');
   // The presence store lives outside React's render tree so a single board's
   // event notifies only its own subscribers — one wall going live doesn't
-  // re-render every other board's art. Created once for the hub's lifetime.
-  const [store] = useState(createKioskPresenceStore);
+  // re-render every other board's art. Replace it when a held capability or viewer changes.
+  const boardScopeKey = JSON.stringify(boardIds.map((boardId) => [boardId, boardUuids?.[boardId] ?? null]));
+  const store = useMemo(() => createKioskPresenceStore(), [boardScopeKey, authToken, isAuthResolving]);
 
   useEffect(() => {
     if (!hasBoards) return;
@@ -90,6 +98,7 @@ export function KioskPresenceHubInner({
     const offClosed = client.on('closed', () => setConnectionStatus('reconnecting'));
 
     clientRef.current = client;
+    activeAuthTokenRef.current = authToken;
     setActiveWsClient(client);
 
     return () => {
@@ -106,15 +115,15 @@ export function KioskPresenceHubInner({
   }, [authToken, hasBoards, isAuthResolving]);
 
   const presenceClient = useMemo<WebBoardPresenceClient | null>(() => {
-    if (activeWsClient === null) return null;
+    if (activeWsClient === null || isAuthResolving || activeAuthTokenRef.current !== authToken) return null;
     return createPresenceClient(() => {
       const client = clientRef.current;
-      if (!client) {
+      if (!client || client !== activeWsClient) {
         throw new Error('Kiosk presence WS client is not connected yet');
       }
       return client;
     });
-  }, [activeWsClient, createPresenceClient]);
+  }, [activeWsClient, authToken, isAuthResolving, createPresenceClient]);
 
   const publishSnapshot = useCallback(
     (boardId: number, snapshot: KioskBoardSnapshot) => {
@@ -130,6 +139,7 @@ export function KioskPresenceHubInner({
           <BoardPresenceProvider
             key={boardId}
             boardId={presenceClient === null ? null : boardId}
+            boardUuid={boardUuids?.[boardId] ?? null}
             client={presenceClient}
           >
             <KioskBoardFeedBridge boardId={boardId} onSnapshot={publishSnapshot} />
@@ -145,10 +155,11 @@ export function KioskPresenceHubInner({
  * The login-less hub the public display routes mount. No session, no
  * `/api/internal/ws-auth` round trip, and a read-only presence client.
  */
-export default function KioskPresenceHub({ boardIds, children }: KioskPresenceHubProps) {
+export default function KioskPresenceHub({ boardIds, boardUuids, children }: KioskPresenceHubProps) {
   return (
     <KioskPresenceHubInner
       boardIds={boardIds}
+      boardUuids={boardUuids}
       authToken={null}
       isAuthResolving={false}
       createPresenceClient={createReadOnlyWebBoardPresenceClient}

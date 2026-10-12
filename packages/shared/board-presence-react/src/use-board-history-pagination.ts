@@ -49,9 +49,13 @@ export function useBoardHistoryPagination(
   pageSize = DEFAULT_PAGE_SIZE,
   onPageLoaded?: (info: BoardHistoryPageLoadedInfo) => void,
 ): BoardHistoryPagination {
-  const { boardId, client } = useBoardPresenceClient();
+  const { boardId, boardUuid = null, client } = useBoardPresenceClient();
   const { history: liveHistory } = useBoardPresenceFeed();
 
+  const [snapshotScope, setSnapshotScope] = useState({ boardId, boardUuid, client });
+  const scopeMatches =
+    snapshotScope.boardId === boardId && snapshotScope.boardUuid === boardUuid && snapshotScope.client === client;
+  const appliedScopeRef = useRef(snapshotScope);
   const [loadError, setLoadError] = useState(false);
   const nextCursorRef = useRef<string | undefined>(undefined);
   const legacyCursorRef = useRef<ReturnType<typeof boardHistoryCursor> | undefined>(undefined);
@@ -66,12 +70,14 @@ export function useBoardHistoryPagination(
   // async continuations can validate they're still relevant.
   const boardIdRef = useRef(boardId);
   boardIdRef.current = boardId;
+  const boardUuidRef = useRef(boardUuid);
+  boardUuidRef.current = boardUuid;
   const clientRef = useRef(client);
   clientRef.current = client;
   const liveHistoryRef = useRef(liveHistory);
   liveHistoryRef.current = liveHistory;
   const olderHistoryRef = useRef(olderHistory);
-  olderHistoryRef.current = olderHistory;
+  olderHistoryRef.current = scopeMatches ? olderHistory : [];
   const isLoadingRef = useRef(false);
   const hasMoreRef = useRef(true);
   const onPageLoadedRef = useRef(onPageLoaded);
@@ -87,6 +93,9 @@ export function useBoardHistoryPagination(
   // board's durable history is a different cursor space entirely) — mirrors
   // `use-board-presence`'s per-board RESET.
   useEffect(() => {
+    const nextScope = { boardId, boardUuid, client };
+    appliedScopeRef.current = nextScope;
+    setSnapshotScope(nextScope);
     isActiveRef.current = true;
     nextCursorRef.current = undefined;
     legacyCursorRef.current = undefined;
@@ -101,11 +110,19 @@ export function useBoardHistoryPagination(
     return () => {
       isActiveRef.current = false;
     };
-  }, [boardId, client]);
+  }, [boardId, boardUuid, client]);
 
   const loadOlder = useCallback(() => {
     const activeBoardId = boardIdRef.current;
     const activeClient = clientRef.current;
+    const activeBoardUuid = boardUuidRef.current;
+    const appliedScope = appliedScopeRef.current;
+    if (
+      appliedScope.boardId !== activeBoardId ||
+      appliedScope.boardUuid !== activeBoardUuid ||
+      appliedScope.client !== activeClient
+    )
+      return;
     if (
       activeBoardId === null ||
       activeClient === null ||
@@ -122,19 +139,28 @@ export function useBoardHistoryPagination(
     const cursor = legacyCursorRef.current ?? (minSeq === null ? undefined : boardHistoryCursor(minSeq));
 
     const requestGeneration = generationRef.current;
+    const isCurrent = () =>
+      isActiveRef.current &&
+      generationRef.current === requestGeneration &&
+      boardIdRef.current === activeBoardId &&
+      boardUuidRef.current === activeBoardUuid &&
+      clientRef.current === activeClient;
+    const capability = activeBoardUuid ? { boardUuid: activeBoardUuid } : {};
     isLoadingRef.current = true;
     setIsLoadingOlder(true);
     setLoadError(false);
 
     const request = activeClient.fetchHistoryPage
-      ? activeClient.fetchHistoryPage(activeBoardId, { limit: pageSize, before: nextCursorRef.current })
-      : activeClient.fetchHistory!(activeBoardId, { limit: pageSize, before: cursor }).then((entries) => ({
-          entries,
-          nextCursor: entries.length === pageSize ? String(entries.at(-1)!.seq) : null,
-        }));
+      ? activeClient.fetchHistoryPage(activeBoardId, { limit: pageSize, before: nextCursorRef.current, ...capability })
+      : activeClient.fetchHistory!(activeBoardId, { limit: pageSize, before: cursor, ...capability }).then(
+          (entries) => ({
+            entries,
+            nextCursor: entries.length === pageSize ? String(entries.at(-1)!.seq) : null,
+          }),
+        );
     void request
       .then(({ entries: page, nextCursor }) => {
-        if (!isActiveRef.current || generationRef.current !== requestGeneration) {
+        if (!isCurrent()) {
           return;
         }
         const knownKeys = new Set(
@@ -161,14 +187,14 @@ export function useBoardHistoryPagination(
         onPageLoadedRef.current?.({ pageSize, returnedCount: page.length });
       })
       .catch(() => {
-        if (!isActiveRef.current || generationRef.current !== requestGeneration) {
+        if (!isCurrent()) {
           return;
         }
         // A failed page is retryable; it is not evidence that history ended.
         setLoadError(true);
       })
       .finally(() => {
-        if (!isActiveRef.current || generationRef.current !== requestGeneration) {
+        if (!isCurrent()) {
           return;
         }
         isLoadingRef.current = false;
@@ -190,10 +216,21 @@ export function useBoardHistoryPagination(
     // One initial page per mounted panel/board, never an automatic page drain.
     if (client?.fetchHistoryPage && boardId !== null) loadOlder();
     return client?.onReconnect?.(() => refreshHistory());
-  }, [boardId, client, loadOlder, refreshHistory]);
+  }, [boardId, boardUuid, client, loadOlder, refreshHistory]);
 
+  const visibleHistory = scopeMatches ? olderHistory : [];
+  const visibleLoading = scopeMatches && isLoadingOlder;
+  const visibleHasMore = !scopeMatches || hasMore;
+  const visibleError = scopeMatches && loadError;
   return useMemo<BoardHistoryPagination>(
-    () => ({ olderHistory, isLoadingOlder, hasMore, loadOlder, refreshHistory, loadError }),
-    [olderHistory, isLoadingOlder, hasMore, loadOlder, refreshHistory, loadError],
+    () => ({
+      olderHistory: visibleHistory,
+      isLoadingOlder: visibleLoading,
+      hasMore: visibleHasMore,
+      loadOlder,
+      refreshHistory,
+      loadError: visibleError,
+    }),
+    [visibleHistory, visibleLoading, visibleHasMore, loadOlder, refreshHistory, visibleError],
   );
 }

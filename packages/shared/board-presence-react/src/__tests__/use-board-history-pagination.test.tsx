@@ -72,6 +72,7 @@ function ResultReader({
 
 function TestHarness({
   boardId,
+  boardUuid = null,
   client,
   history,
   pageSize,
@@ -79,6 +80,7 @@ function TestHarness({
   resultBox,
 }: {
   boardId: number | null;
+  boardUuid?: string | null;
   client: BoardPresenceClient | null;
   history: BoardPresenceClimb[];
   pageSize?: number;
@@ -86,7 +88,7 @@ function TestHarness({
   resultBox: ResultBox;
 }) {
   return (
-    <BoardPresenceClientContext.Provider value={{ boardId, client }}>
+    <BoardPresenceClientContext.Provider value={{ boardId, boardUuid, client }}>
       <BoardPresenceFeedContext.Provider value={{ history, stats: null }}>
         <ResultReader pageSize={pageSize} onPageLoaded={onPageLoaded} resultBox={resultBox} />
       </BoardPresenceFeedContext.Provider>
@@ -436,4 +438,28 @@ describe('durable chronological pages', () => {
     expect(resultBox.current?.olderHistory.map((entry) => entry.seq)).toEqual([2, 1]);
     expect(resultBox.current?.loadError).toBe(false);
   });
+});
+
+it('starts a new cursor space and rejects a pending page when the same channel loses its held UUID', async () => {
+  const firstPage = deferred<BoardPresenceClimb[]>();
+  const { client, fetchHistory } = makeClient();
+  fetchHistory.mockReturnValueOnce(firstPage.promise).mockResolvedValueOnce([climb('public-page', 2)]);
+  const resultBox: ResultBox = { current: null };
+  const { rerender } = render(
+    <TestHarness boardId={9} boardUuid="held-link" client={client} history={[]} resultBox={resultBox} />,
+  );
+  act(() => resultBox.current?.loadOlder());
+  expect(fetchHistory).toHaveBeenLastCalledWith(9, { limit: 50, before: undefined, boardUuid: 'held-link' });
+  rerender(<TestHarness boardId={9} boardUuid={null} client={client} history={[]} resultBox={resultBox} />);
+  await act(async () => {
+    firstPage.resolve([climb('retired-private-page', 5)]);
+    await firstPage.promise;
+  });
+  expect(resultBox.current?.olderHistory).toEqual([]);
+  act(() => resultBox.current?.loadOlder());
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(fetchHistory).toHaveBeenLastCalledWith(9, { limit: 50, before: undefined });
+  expect(resultBox.current?.olderHistory.map((entry) => entry.climbUuid)).toEqual(['public-page']);
 });

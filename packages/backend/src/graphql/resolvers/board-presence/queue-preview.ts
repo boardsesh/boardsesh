@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext, BoardQueuePreview } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
+import { db } from '../../../db/client';
 import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
@@ -41,7 +42,7 @@ export const boardQueuePreviewQueries = {
     // One row read: the anon gate plus a spray wall's own rule (private and
     // hidden = owner only).
     const { anonReadableVerified } = await requireReadablePresenceBoard(boardId, ctx.userId, boardUuid);
-    return getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified });
+    return getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified, boardUuid });
   },
 };
 
@@ -73,7 +74,7 @@ export const boardQueuePreviewSubscriptions = {
       // Re-checked per event, like `boardNowPlaying`: a wall going private or
       // hidden mid-stream has to end a stream that is already open. Null (no
       // cost) for every board that is not a spray wall.
-      const gate = sprayStreamGate(board?.boardType, board?.layoutId, ctx.userId);
+      const gate = sprayStreamGate(board?.boardType, board?.layoutId, ctx.userId, boardUuid, db);
 
       const boardKey = String(boardId);
 
@@ -88,7 +89,7 @@ export const boardQueuePreviewSubscriptions = {
       const eagerIterator = asyncIterable[Symbol.asyncIterator]();
 
       try {
-        const seed = await getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified });
+        const seed = await getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified, boardUuid });
         // The seed lookup is async, so the wall can go private or hidden while it
         // runs: re-check before yielding it, exactly as for every live event.
         if (seed && gate && !(await gate())) return;
@@ -115,7 +116,7 @@ export const boardQueuePreviewSubscriptions = {
           // A buffered event may predate a restriction or board hand-off.
           // Treat it as a wake-up, never as permission to deliver its copy.
           // Empty snapshots also clear older clients when a session is withdrawn.
-          const refreshed = await getBoardQueuePreviewSnapshot(boardId);
+          const refreshed = await getBoardQueuePreviewSnapshot(boardId, { boardUuid });
           yield { boardQueuePreview: refreshed ?? buildEmptyBoardQueuePreview(boardId) };
         }
       } finally {

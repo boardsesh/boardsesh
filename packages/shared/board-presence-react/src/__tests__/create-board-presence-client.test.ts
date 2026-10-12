@@ -403,3 +403,32 @@ describe('createBoardPresenceClient — onReconnect', () => {
     expect(callback).toHaveBeenCalledTimes(1);
   });
 });
+
+it('forwards the held UUID to every presence read and the subscription', async () => {
+  const harness = makeTransport();
+  harness.setExecuteResult({
+    boardRecentHistory: [],
+    boardRecentClimbs: [],
+    boardHistory: [],
+    boardHistoryPage: { entries: [], nextCursor: null },
+    boardPresenceStats: null,
+    boardConnection: null,
+    boardClimbRecentSenders: [],
+  });
+  const client = createBoardPresenceClient(harness.transport);
+  const boardUuid = 'held-wall-uuid';
+  client.subscribeNowPlaying(42, vi.fn(), undefined, undefined, boardUuid);
+  await client.fetchRecentHistory(42, boardUuid);
+  await client.fetchRecentClimbs(42, boardUuid);
+  await client.fetchStats(42, boardUuid);
+  await client.fetchConnection(42, boardUuid);
+  await client.fetchHistory(42, { boardUuid });
+  await client.fetchHistoryPage(42, { boardUuid });
+  await client.fetchClimbRecentSenders(42, 'climb-uuid', 40, boardUuid);
+  for (const operation of [...harness.executeCalls, ...harness.subscribeCalls]) {
+    expect(operation.variables).toMatchObject({ boardId: 42, boardUuid });
+    expect(operation.query).toContain('$boardUuid: ID');
+    expect(operation.query).toContain('boardUuid: $boardUuid');
+  }
+  expect(harness.executeCalls).toHaveLength(7);
+});

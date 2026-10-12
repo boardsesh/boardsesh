@@ -135,6 +135,10 @@ export type FullBoardPresenceClient = Required<BoardPresenceClient> & {
  * `execute`/`subscribe`/`onConnected` bound to their own graphql-ws `Client` —
  * see the header comment for why this factory exists.
  */
+function boardReadVariables(boardId: number, boardUuid?: string | null): { boardId: number; boardUuid?: string } {
+  return { boardId, ...(boardUuid ? { boardUuid } : {}) };
+}
+
 export function createBoardPresenceClient(transport: BoardPresenceTransport): FullBoardPresenceClient {
   // Whether ANY `onReconnect` registration made through this factory instance
   // has observed a `connected` event. Factory-level, NOT per-registration, on
@@ -150,10 +154,10 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
   // catch-up is safe — the hook's runCatchUp coalesces in-flight requests.
   let everConnected = false;
   return {
-    async fetchRecentHistory(boardId) {
+    async fetchRecentHistory(boardId, boardUuid) {
       const response = await transport.execute<{ boardRecentHistory: BoardPresenceClimb[] }>({
         query: BOARD_RECENT_HISTORY,
-        variables: { boardId },
+        variables: boardReadVariables(boardId, boardUuid),
       });
       return response.boardRecentHistory;
     },
@@ -164,9 +168,9 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
       });
       return response.boardHistoryPage;
     },
-    subscribeNowPlaying(boardId, onEvent, onError, onComplete) {
+    subscribeNowPlaying(boardId, onEvent, onError, onComplete, boardUuid) {
       return transport.subscribe<BoardNowPlayingData>(
-        { query: BOARD_NOW_PLAYING, variables: { boardId } },
+        { query: BOARD_NOW_PLAYING, variables: boardReadVariables(boardId, boardUuid) },
         {
           next: (data) => {
             if (data?.boardNowPlaying) {
@@ -197,10 +201,10 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
       });
     },
 
-    async fetchRecentClimbs(boardId) {
+    async fetchRecentClimbs(boardId, boardUuid) {
       const data = await transport.execute<BoardRecentClimbsData>({
         query: BOARD_RECENT_CLIMBS,
-        variables: { boardId },
+        variables: boardReadVariables(boardId, boardUuid),
       });
       return data.boardRecentClimbs ?? [];
     },
@@ -208,23 +212,27 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
     async fetchHistory(boardId, opts) {
       const data = await transport.execute<BoardHistoryData>({
         query: BOARD_HISTORY,
-        variables: { boardId, limit: opts?.limit ?? null, before: opts?.before ?? null },
+        variables: {
+          ...boardReadVariables(boardId, opts?.boardUuid),
+          limit: opts?.limit ?? null,
+          before: opts?.before ?? null,
+        },
       });
       return data.boardHistory ?? [];
     },
 
-    async fetchClimbRecentSenders(boardId, climbUuid, angle) {
+    async fetchClimbRecentSenders(boardId, climbUuid, angle, boardUuid) {
       const data = await transport.execute<BoardClimbRecentSendersData>({
         query: BOARD_CLIMB_RECENT_SENDERS,
-        variables: { boardId, climbUuid, angle },
+        variables: { ...boardReadVariables(boardId, boardUuid), climbUuid, angle },
       });
       return data.boardClimbRecentSenders ?? [];
     },
 
-    async fetchStats(boardId) {
+    async fetchStats(boardId, boardUuid) {
       const data = await transport.execute<BoardPresenceStatsData>({
         query: BOARD_PRESENCE_STATS,
-        variables: { boardId },
+        variables: boardReadVariables(boardId, boardUuid),
       });
       return data.boardPresenceStats;
     },
@@ -237,10 +245,10 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
       return data.reportBoardClimb === true;
     },
 
-    async fetchConnection(boardId) {
+    async fetchConnection(boardId, boardUuid) {
       const data = await transport.execute<BoardConnectionData>({
         query: BOARD_CONNECTION,
-        variables: { boardId },
+        variables: boardReadVariables(boardId, boardUuid),
       });
       return data.boardConnection ?? null;
     },

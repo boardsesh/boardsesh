@@ -64,8 +64,8 @@ export const FOLLOWED_LIVE_SESSIONS = gql`
 `;
 
 export const BOARD_LIVE_SESSIONS = gql`
-  query BoardLiveSessions($boardId: Int!) {
-    boardLiveSessions(boardId: $boardId) {
+  query BoardLiveSessions($boardId: Int!, $boardUuid: ID) {
+    boardLiveSessions(boardId: $boardId, boardUuid: $boardUuid) {
       ...LiveSessionFields
     }
   }
@@ -87,6 +87,7 @@ export type FollowedLiveSessionsResponse = {
 
 export type BoardLiveSessionsVariables = {
   boardId: number;
+  boardUuid?: string | null;
 };
 
 export type BoardLiveSessionsResponse = {

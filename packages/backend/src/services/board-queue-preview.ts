@@ -157,17 +157,20 @@ export async function resolvePublicPreviewSessionForBoard(
  * previewable session is bound. Shared by the `boardQueuePreview` query and
  * the subscription's seed yield. `options` is forwarded to
  * `resolvePublicPreviewSessionForBoard` (see its gate-1 skip contract).
+ * A resolver may supply its already-verified matching boardUuid so public
+ * climb details on that Unlisted spray layout remain visible to its holder.
+ * Producers omit it; their copied payload only wakes authorized subscribers.
  */
 export async function getBoardQueuePreviewSnapshot(
   boardId: number,
-  options: { anonReadableVerified?: boolean } = {},
+  options: { anonReadableVerified?: boolean; boardUuid?: string | null } = {},
 ): Promise<BoardQueuePreview | null> {
   const sessionId = await resolvePublicPreviewSessionForBoard(boardId, options);
   if (!sessionId) return null;
   const queueState = await roomManager.getQueueState(sessionId);
   const preview = buildBoardQueuePreview(boardId, queueState);
   const redact = async (item: BoardQueuePreviewItem): Promise<BoardQueuePreviewItem> =>
-    (await canReadClimbContent(item.climbUuid, null))
+    (await canReadClimbContent(item.climbUuid, null, options.boardUuid))
       ? item
       : {
           queueItemUuid: item.queueItemUuid,

@@ -277,7 +277,7 @@ function NowOnTheWallPanelComponent(
   const holderUserId = holder?.userId ?? null;
   const { history, stats } = useBoardPresenceFeed();
   const { refresh } = useBoardPresenceActions();
-  const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
+  const { boardId: boardPresenceBoardId, boardUuid: boardPresenceBoardUuid } = useBoardPresenceControls();
   const { data: currentActiveBoard } = useCppActiveBoard();
   const cppWallHeroTestID = screenshotCppWallHeroTestId({
     captureEnabled: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL,
@@ -708,6 +708,7 @@ function NowOnTheWallPanelComponent(
         {variant === 'sheet' ? (
           <BoardLiveSessionsBlock
             boardId={boardPresenceBoardId}
+            boardUuid={boardPresenceBoardUuid}
             holderName={holderName}
             holderUserId={holderUserId}
             onBeforeNavigate={leaveSheet}
@@ -801,6 +802,7 @@ function NowOnTheWallPanelComponent(
     canSwitchGymWall,
     gymWallsExpanded,
     boardPresenceBoardId,
+    boardPresenceBoardUuid,
     holderName,
     holderUserId,
     leaveSheet,

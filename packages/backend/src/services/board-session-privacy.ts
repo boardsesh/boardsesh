@@ -182,7 +182,11 @@ async function holdsDeletedBoard(
   return !!grant;
 }
 
-export async function canReadClimbContent(climbUuid: string, viewerId: string | null | undefined): Promise<boolean> {
+export async function canReadClimbContent(
+  climbUuid: string,
+  viewerId: string | null | undefined,
+  wallUuid?: string | null,
+): Promise<boolean> {
   const [climb] = await db
     .select({ uuid: boardClimbs.uuid })
     .from(boardClimbs)
@@ -190,7 +194,11 @@ export async function canReadClimbContent(climbUuid: string, viewerId: string | 
       and(
         eq(boardClimbs.uuid, climbUuid),
         contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, viewerId),
-        sprayClimbVisibilityCondition({ boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId }, viewerId),
+        sprayClimbVisibilityCondition(
+          { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
+          viewerId,
+          wallUuid,
+        ),
         or(
           viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
           and(eq(boardClimbs.isDraft, false), eq(boardClimbs.isListed, true)),
@@ -236,10 +244,15 @@ export async function redactQueueItem(
   };
 }
 
-/** Keep climb chronology intact; only attribution is viewer-dependent. */
+/**
+ * Preserve chronology while checking current item and author privacy.
+ * A verified presence link opens only its own spray layout; other callers
+ * retain the no-link reading by omitting wallUuid.
+ */
 export async function redactBoardClimbs(
   climbs: readonly BoardPresenceClimb[],
   viewerId: string | null | undefined,
+  wallUuid?: string | null,
 ): Promise<BoardPresenceClimb[]> {
   const climbUuids = [...new Set(climbs.map((climb) => climb.climbUuid))];
   const readableClimbs =
@@ -255,6 +268,7 @@ export async function redactBoardClimbs(
               sprayClimbVisibilityCondition(
                 { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
                 viewerId,
+                wallUuid,
               ),
               or(
                 viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
@@ -285,6 +299,7 @@ export async function redactBoardClimbs(
 export async function redactBoardStats(
   stats: BoardPresenceStats,
   viewerId: string | null | undefined,
+  wallUuid?: string | null,
 ): Promise<BoardPresenceStats> {
   const hardest = stats.hardestSend;
   if (!hardest) return stats;
@@ -293,6 +308,20 @@ export async function redactBoardStats(
   if (!(await canViewContent(viewerId, 'climb', hardest.climbUuid, hardest.climbOwnerId ?? null))) {
     return { ...stats, hardestSend: null };
   }
+  // Cached metadata may predate a draft, audience or wall-policy change.
+  // Known catalog rows must pass the same current item/layout gate as history.
+  const [catalogClimb] = await db
+    .select({ uuid: boardClimbs.uuid })
+    .from(boardClimbs)
+    .where(eq(boardClimbs.uuid, hardest.climbUuid))
+    .limit(1);
+  if (catalogClimb && !(await canReadClimbContent(hardest.climbUuid, viewerId, wallUuid))) {
+    return { ...stats, hardestSend: null };
+  }
+  // Preserve the missing-catalog grade/Unknown fallback, without replaying a
+  // copied name after its row disappears.
+  const visibleHardest = catalogClimb ? hardest : { ...hardest, name: null };
+  const projectedStats = visibleHardest === hardest ? stats : { ...stats, hardestSend: visibleHardest };
   const showIdentity =
     hardest.sentByUserId &&
     (hardest.sentByUserId === viewerId ||
@@ -302,8 +331,11 @@ export async function redactBoardStats(
           entityId: hardest.tickUuid,
         }))));
   return showIdentity
-    ? stats
-    : { ...stats, hardestSend: { ...hardest, sentByUserId: null, sentByDisplayName: null, sentByAvatarUrl: null } };
+    ? projectedStats
+    : {
+        ...projectedStats,
+        hardestSend: { ...visibleHardest, sentByUserId: null, sentByDisplayName: null, sentByAvatarUrl: null },
+      };
 }
 
 /** The Bluetooth holder is named by their own account privacy, session or not. */
@@ -319,14 +351,15 @@ export async function redactBoardHolder(
 export async function redactBoardEvent(
   event: BoardPresenceEvent,
   viewerId: string | null | undefined,
+  wallUuid?: string | null,
 ): Promise<BoardPresenceEvent> {
   switch (event.__typename) {
     case 'BoardClimbSet':
-      return { ...event, climb: (await redactBoardClimbs([event.climb], viewerId))[0] };
+      return { ...event, climb: (await redactBoardClimbs([event.climb], viewerId, wallUuid))[0] };
     case 'BoardHistoryUpdated':
-      return { ...event, climbs: await redactBoardClimbs(event.climbs, viewerId) };
+      return { ...event, climbs: await redactBoardClimbs(event.climbs, viewerId, wallUuid) };
     case 'BoardStatsUpdated':
-      return { ...event, stats: await redactBoardStats(event.stats, viewerId) };
+      return { ...event, stats: await redactBoardStats(event.stats, viewerId, wallUuid) };
     case 'BoardConnectionChanged': {
       return { ...event, holder: await redactBoardHolder(event.holder, viewerId) };
     }

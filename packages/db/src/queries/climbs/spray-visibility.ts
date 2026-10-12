@@ -225,7 +225,11 @@ export function sprayReferenceClimbExistsCondition(
  * behaviour: **not an error, and not a different shape**, so a private wall's
  * existence is not observable.
  */
-export function sprayLayoutVisibilitySql(layoutId: number, userId: string | null | undefined): SQL {
+export function sprayLayoutVisibilitySql(
+  layoutId: number,
+  userId: string | null | undefined,
+  wallUuid?: string | null,
+): SQL {
   const viewer = userId ?? null;
   return sql`SELECT EXISTS (
     SELECT 1
@@ -235,6 +239,6 @@ export function sprayLayoutVisibilitySql(layoutId: number, userId: string | null
       AND sw.deleted_at IS NULL
       AND ub.deleted_at IS NULL
       AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
-      AND ${sprayResourceVisibility(viewer)}
+      AND ${sprayResourceVisibility(viewer, wallUuid)}
   ) AS visible`;
 }

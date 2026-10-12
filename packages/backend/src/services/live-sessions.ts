@@ -453,14 +453,21 @@ async function loadBoardRows(
  *   the link reading. Any other board, including one named only by a session
  *   or by the numeric id the sheet was asked for, gets the no-link reading: an
  *   Unlisted board is named only to people who already hold it;
- * - a spray wall additionally needs the wall's own enumerable rule, since a
- *   public-flagged wall can still be admin-hidden or scoped to a gym.
+ * - a spray wall additionally needs its current wall rule; a held UUID permits
+ *   Unlisted access, while an admin hide still withdraws it from non-owners.
  */
-async function toVisibleBoard(row: BoardRow | undefined, viewerId: string | null): Promise<LiveSessionBoard | null> {
+async function toVisibleBoard(
+  row: BoardRow | undefined,
+  viewerId: string | null,
+  linkHeld: boolean,
+): Promise<LiveSessionBoard | null> {
   if (!row || row.deletedAt || !row.identityVisible) return null;
   const isOwner = viewerId !== null && row.ownerId === viewerId;
   if (!isOwner) {
-    if (isSprayBoardType(row.boardType) && !(await sprayBoardRowIsReadable(row, viewerId, 'enumerable'))) {
+    if (
+      isSprayBoardType(row.boardType) &&
+      !(await sprayBoardRowIsReadable(row, viewerId, linkHeld ? 'capability' : 'enumerable', db))
+    ) {
       return null;
     }
   }
@@ -478,8 +485,8 @@ async function toVisibleBoard(row: BoardRow | undefined, viewerId: string | null
  * Whether a board may drive the board arm for this viewer. A spray wall that
  * went private, lost the viewer's gym membership or was hidden by an admin
  * stops listing its sessions even though the follow row survives. Uses the
- * enumerable rule for every spray wall: the capability form's unlisted
- * exemption does not check the admin-hidden flag.
+ * enumerable rule for discovery arms; a remembered numeric association is
+ * not a presented Unlisted link. Sheet projections separately retain a held UUID.
  */
 async function viewerMayUseBoardArm(
   row: { boardType: string; layoutId: number; ownerId: string },
@@ -933,7 +940,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
       const creatorId =
         candidate.createdByUserId && visibleUserIds.has(candidate.createdByUserId) ? candidate.createdByUserId : null;
       const [board, currentClimb] = await Promise.all([
-        toVisibleBoard(boardRow, viewerId),
+        toVisibleBoard(boardRow, viewerId, entry.boardId !== undefined && heldBoardIds.has(entry.boardId)),
         // Public sessions only, and only when the board type is known and is
         // not a spray wall: a spray wall's climbs stay private to the wall even
         // when the session is public, and an unknown type could be one.

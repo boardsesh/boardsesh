@@ -44,6 +44,7 @@ const ACTION_HEIGHT = 44;
 export type BoardLiveSessionsBlockProps = {
   /** The board-presence board id; null renders nothing. */
   boardId: number | null;
+  boardUuid?: string | null;
   /** Who is connected to the board right now, when the sheet knows. */
   holderName: string | null;
   holderUserId: string | null;
@@ -142,6 +143,7 @@ const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
 
 function BoardLiveSessionsBlockComponent({
   boardId,
+  boardUuid = null,
   holderName,
   holderUserId,
   onBeforeNavigate,
@@ -156,7 +158,7 @@ function BoardLiveSessionsBlockComponent({
   const queueSessionIdRef = useRef(queueSessionId);
   queueSessionIdRef.current = queueSessionId;
 
-  const query = useBoardLiveSessions(boardId, boardId != null);
+  const query = useBoardLiveSessions(boardId, boardId != null, boardUuid);
   const offline = useOfflineQueryState(query);
   const cards = query.data ?? EMPTY_CARDS;
   const hasRows = cards.length > 0;

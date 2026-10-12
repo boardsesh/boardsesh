@@ -1480,3 +1480,47 @@ describe('findUnpseudonymisedPersonFields', () => {
     expect(findUnpseudonymisedPersonFields(response, { ownUserId: OWN_USER_ID })).toEqual([]);
   });
 });
+
+describe('legacy numeric-only presence recording compatibility', () => {
+  const legacy = 'query BoardLiveSessions($boardId: Int!) { boardLiveSessions(boardId: $boardId) { sessionId } }';
+  const current =
+    'query BoardLiveSessions($boardId: Int!, $boardUuid: ID) { boardLiveSessions(boardId: $boardId, boardUuid: $boardUuid) { sessionId } }';
+  const recorded: GraphqlFixtureFile = {
+    formatVersion: 1,
+    operationName: 'BoardLiveSessions',
+    documentHash: 'original',
+    variablesHash: 'original-vars',
+    query: legacy,
+    variables: { boardId: 42 },
+    response: { data: { boardLiveSessions: [] } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  };
+  it('keeps selections and recording bytes unchanged for exactly the optional argument addition', () => {
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({ response: recorded.response });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+    expect(replayCompatibleFixtureResponse(current.replace('sessionId', 'sessionId name'), recorded)).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current.replace('$boardUuid: ID)', '$boardUuid: ID!)'), recorded),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current.replace('BoardLiveSessions', 'OtherRead'), {
+        ...recorded,
+        operationName: 'OtherRead',
+      }),
+    ).toBeNull();
+  });
+  it('keeps a supplied UUID in the variables hash so it cannot match a numeric-only recording', () => {
+    const numeric = graphqlFixtureKey(
+      { operationName: 'BoardLiveSessions', query: current, variables: { boardId: 42 } },
+      sha256Hex,
+    );
+    const linked = graphqlFixtureKey(
+      { operationName: 'BoardLiveSessions', query: current, variables: { boardId: 42, boardUuid: 'held-link' } },
+      sha256Hex,
+    );
+    expect(numeric.variablesHash).not.toBe(linked.variablesHash);
+  });
+});

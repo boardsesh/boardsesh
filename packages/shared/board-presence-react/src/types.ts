@@ -44,6 +44,7 @@ export interface BoardPresenceClient {
     onEvent: (event: BoardPresenceEvent) => void,
     onError?: (err: unknown) => void,
     onComplete?: () => void,
+    boardUuid?: string | null,
   ): () => void;
 
   /**
@@ -58,9 +59,12 @@ export interface BoardPresenceClient {
   onReconnect?(callback: () => void): () => void;
 
   /** Newest-first recent climbs, used to backfill history for a late joiner. */
-  fetchRecentClimbs(boardId: number): Promise<BoardPresenceClimb[]>;
-  fetchRecentHistory?(boardId: number): Promise<BoardPresenceClimb[]>;
-  fetchHistoryPage?(boardId: number, opts?: { limit?: number; before?: string }): Promise<BoardHistoryPage>;
+  fetchRecentClimbs(boardId: number, boardUuid?: string | null): Promise<BoardPresenceClimb[]>;
+  fetchRecentHistory?(boardId: number, boardUuid?: string | null): Promise<BoardPresenceClimb[]>;
+  fetchHistoryPage?(
+    boardId: number,
+    opts?: { limit?: number; before?: string; boardUuid?: string | null },
+  ): Promise<BoardHistoryPage>;
 
   /**
    * Durable, keyset-paged history of what was lit on the board, from the
@@ -70,16 +74,24 @@ export interface BoardPresenceClient {
    * size. Optional so read-only / web clients that only need the live feed plus
    * recent backfill still satisfy the interface.
    */
-  fetchHistory?(boardId: number, opts?: { limit?: number; before?: BoardHistoryCursor }): Promise<BoardPresenceClimb[]>;
+  fetchHistory?(
+    boardId: number,
+    opts?: { limit?: number; before?: BoardHistoryCursor; boardUuid?: string | null },
+  ): Promise<BoardPresenceClimb[]>;
 
   /**
    * Up to five distinct recent senders for one climb + angle on this physical
    * board. Optional so existing read-only/fake clients degrade to no byline.
    */
-  fetchClimbRecentSenders?(boardId: number, climbUuid: string, angle: number): Promise<BoardClimbRecentSender[]>;
+  fetchClimbRecentSenders?(
+    boardId: number,
+    climbUuid: string,
+    angle: number,
+    boardUuid?: string | null,
+  ): Promise<BoardClimbRecentSender[]>;
 
   /** Durable + live stats for the board's wall feed. */
-  fetchStats(boardId: number): Promise<BoardPresenceStats>;
+  fetchStats(boardId: number, boardUuid?: string | null): Promise<BoardPresenceStats>;
 
   /**
    * Current connection holder for the board, used to seed a late joiner before
@@ -87,7 +99,7 @@ export interface BoardPresenceClient {
    * board is free. Optional so a client that doesn't track holders still
    * satisfies the interface.
    */
-  fetchConnection?(boardId: number): Promise<BoardConnectionHolder | null>;
+  fetchConnection?(boardId: number, boardUuid?: string | null): Promise<BoardConnectionHolder | null>;
 
   /**
    * Release this client's hold on the board (e.g. on BLE disconnect). Resolves

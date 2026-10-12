@@ -23,6 +23,7 @@ import { assertBoardCapNotReached } from '../social/board-limits';
 import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite } from '../board-serial-write-lock';
 import { logger } from '../../../utils/logger';
+import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
 import { isApnsConfigured, sendLiveActivityUpdate } from '../../../services/apns';
@@ -44,7 +45,7 @@ import {
   lastSentAtByBoardIds,
   rememberBoardForSerial,
   reserveBoardPresenceSeq,
-  requireActiveBoardById,
+  requireActiveBoardWithVisibilityById,
   resolveSharedBoardForConfig,
   serialAlreadyBoundError,
   throwIfDuplicateBoardSerial,
@@ -809,7 +810,7 @@ export const boardPresenceMutations = {
     // first-seen for the durable dwell gate, and the A2 dedup marker) — one
     // Redis pipeline instead of the old separate hasBoardMembership call.
     const [board, gate] = await Promise.all([
-      requireActiveBoardById(boardId),
+      requireActiveBoardWithVisibilityById(boardId),
       pubsub.getBoardReportGate(String(boardId), emitterId),
     ]);
 
@@ -820,6 +821,10 @@ export const boardPresenceMutations = {
     if (!gate.isMember) {
       throw new GraphQLError('Not connected to this board');
     }
+    // A previously stamped membership cannot outlive an admin hide or current
+    // spray-wall restriction. The membership proves this channel's held link;
+    // check that link against current primary policy before any report side effect.
+    await assertSprayBoardIsReadable(board, ctx.userId, board.uuid, db);
 
     const validatedClimb = validateInput(ReportBoardClimbInputSchema, climb, 'climb');
     const validatedAngle = validateInput(BoardPresenceAngleSchema, angle, 'angle');

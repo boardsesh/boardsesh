@@ -32,7 +32,14 @@ export type BoardClimbRecentSendersState = {
   isLoading: boolean;
 };
 
+type RecentSendersReaderScope = {
+  boardId: number | null;
+  boardUuid: string | null;
+  client: BoardPresenceClient | null;
+};
+
 type RecentSendersSnapshot = BoardClimbRecentSendersState & {
+  readerScope: RecentSendersReaderScope | null;
   cacheKey: string | null;
   client: BoardPresenceClient | null;
 };
@@ -45,11 +52,12 @@ type RecentSendersRequestIdentity = {
 const EMPTY_RECENT_SENDERS_SNAPSHOT: RecentSendersSnapshot = {
   cacheKey: null,
   client: null,
+  readerScope: null,
   ...EMPTY_RECENT_SENDERS_STATE,
 };
 
-function senderCacheKey(boardId: number, climbUuid: string, angle: number): string {
-  return `${boardId}:${climbUuid}:${angle}`;
+function senderCacheKey(boardId: number, climbUuid: string, angle: number, boardUuid: string | null): string {
+  return JSON.stringify([boardId, climbUuid, angle, boardUuid]);
 }
 
 /**
@@ -63,7 +71,7 @@ export function useBoardClimbRecentSenders({
   angle,
   enabled = true,
 }: BoardClimbRecentSendersOptions): BoardClimbRecentSendersState {
-  const { boardId, client } = useBoardPresenceClient();
+  const { boardId, boardUuid = null, client } = useBoardPresenceClient();
   const { stats } = useBoardPresenceFeed();
   const normalizedClimbUuid = climbUuid?.trim() ?? '';
   const canFetch =
@@ -82,13 +90,25 @@ export function useBoardClimbRecentSenders({
     // the same empty-byline path as any other failure below.
     angle >= -5 &&
     angle <= 90;
-  const currentCacheKey = canFetch ? senderCacheKey(boardId, normalizedClimbUuid, angle) : null;
+  const currentCacheKey = canFetch ? senderCacheKey(boardId, normalizedClimbUuid, angle, boardUuid) : null;
   const [snapshot, setSnapshot] = useState<RecentSendersSnapshot>(EMPTY_RECENT_SENDERS_SNAPSHOT);
   const cacheRef = useRef(new Map<string, BoardClimbRecentSender[]>());
+  const readerScopeRef = useRef<RecentSendersReaderScope>({ boardId, boardUuid, client });
+  if (
+    readerScopeRef.current.boardId !== boardId ||
+    readerScopeRef.current.boardUuid !== boardUuid ||
+    readerScopeRef.current.client !== client
+  ) {
+    readerScopeRef.current = { boardId, boardUuid, client };
+    cacheRef.current.clear();
+  }
+  const readerScope = readerScopeRef.current;
   const generationRef = useRef(0);
   const requestIdentityRef = useRef<RecentSendersRequestIdentity | null>(null);
   const lastRequestAtRef = useRef(0);
   const mountedRef = useRef(true);
+  const currentScopeRef = useRef({ cacheKey: currentCacheKey, client });
+  currentScopeRef.current = { cacheKey: currentCacheKey, client };
 
   // The re-seed is not redundant with `useRef(true)`: StrictMode runs this
   // effect, tears it down, and runs it again on the same instance, so without
@@ -118,16 +138,23 @@ export function useBoardClimbRecentSenders({
       return;
     }
 
-    const fetchClimbRecentSenders = client.fetchClimbRecentSenders;
+    const fetchClimbRecentSenders = client.fetchClimbRecentSenders.bind(client);
     const startRequest = () => {
       generationRef.current += 1;
       const requestGeneration = generationRef.current;
+      const requestReaderScope = readerScope;
       lastRequestAtRef.current = Date.now();
       const cachedSenders = cacheRef.current.get(currentCacheKey);
 
-      void fetchClimbRecentSenders(boardId, normalizedClimbUuid, angle)
+      const isCurrent = () =>
+        mountedRef.current &&
+        readerScopeRef.current === requestReaderScope &&
+        generationRef.current === requestGeneration &&
+        currentScopeRef.current.cacheKey === currentCacheKey &&
+        currentScopeRef.current.client === client;
+      void fetchClimbRecentSenders(boardId, normalizedClimbUuid, angle, ...(boardUuid ? [boardUuid] : []))
         .then((nextSenders) => {
-          if (!mountedRef.current || generationRef.current !== requestGeneration) return;
+          if (!isCurrent()) return;
           // Refresh insertion order so the fixed-size map behaves as an LRU for
           // history scrubbing instead of growing for the lifetime of the kiosk.
           cacheRef.current.delete(currentCacheKey);
@@ -136,16 +163,17 @@ export function useBoardClimbRecentSenders({
             const oldestKey = cacheRef.current.keys().next().value;
             if (oldestKey !== undefined) cacheRef.current.delete(oldestKey);
           }
-          setSnapshot({ cacheKey: currentCacheKey, client, senders: nextSenders, isLoading: false });
+          setSnapshot({ cacheKey: currentCacheKey, client, readerScope, senders: nextSenders, isLoading: false });
         })
         .catch(() => {
-          if (!mountedRef.current || generationRef.current !== requestGeneration) return;
+          if (!isCurrent()) return;
           // No dedicated error chrome: a cached row remains useful during a
           // transient failure, while a first-load failure degrades to no byline.
           if (cachedSenders === undefined) {
             setSnapshot({
               cacheKey: currentCacheKey,
               client,
+              readerScope,
               senders: EMPTY_RECENT_SENDERS,
               isLoading: false,
             });
@@ -164,6 +192,7 @@ export function useBoardClimbRecentSenders({
       setSnapshot({
         cacheKey: currentCacheKey,
         client,
+        readerScope,
         senders: cachedSenders ?? EMPTY_RECENT_SENDERS,
         isLoading: cachedSenders === undefined,
       });
@@ -187,11 +216,12 @@ export function useBoardClimbRecentSenders({
     // The stats object is intentionally a dependency: the provider replaces it
     // for every BoardStatsUpdated event, including edits and deletes where a
     // scalar such as lastSentAt may stay unchanged.
-  }, [angle, boardId, client, currentCacheKey, normalizedClimbUuid, stats]);
+  }, [angle, boardId, boardUuid, client, currentCacheKey, normalizedClimbUuid, readerScope, stats]);
 
   return useMemo(() => {
     if (currentCacheKey === null) return EMPTY_RECENT_SENDERS_STATE;
-    if (snapshot.cacheKey !== currentCacheKey || snapshot.client !== client) return LOADING_RECENT_SENDERS_STATE;
+    if (snapshot.cacheKey !== currentCacheKey || snapshot.client !== client || snapshot.readerScope !== readerScope)
+      return LOADING_RECENT_SENDERS_STATE;
     return { senders: snapshot.senders, isLoading: snapshot.isLoading };
-  }, [client, currentCacheKey, snapshot]);
+  }, [client, currentCacheKey, readerScope, snapshot]);
 }

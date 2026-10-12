@@ -175,7 +175,10 @@ export default async function KioskPageRenderer({ gymSlug, kioskSlug }: { gymSlu
           gymUuid={kiosk.gym.uuid}
           initialUpdatedAt={kiosk.updatedAt}
         />
-        <KioskPresenceHub boardIds={distinctBoardIds}>
+        <KioskPresenceHub
+          boardIds={distinctBoardIds}
+          boardUuids={Object.fromEntries(renderedBoards.map((board) => [board.boardId, board.boardUuid]))}
+        >
           <div className={layoutStyles.root}>
             <KioskHeader
               gymName={kiosk.gym.name}

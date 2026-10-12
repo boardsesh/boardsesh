@@ -150,21 +150,38 @@ export function useBoardPresence(
   boardId: number | null,
   client: BoardPresenceClient | null,
   onCatchUp?: (info: BoardPresenceCatchUpInfo) => void,
+  boardUuid: string | null = null,
 ): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
   const [undoTarget, setUndoTarget] = useState<BoardPresenceClimb | null>(null);
+  const [snapshotScope, setSnapshotScope] = useState({ boardId, boardUuid, client });
+  const scopeMatches =
+    snapshotScope.boardId === boardId && snapshotScope.boardUuid === boardUuid && snapshotScope.client === client;
+  const visibleState = scopeMatches ? state : initialBoardPresenceState;
+  const visibleUndoTarget = scopeMatches ? undoTarget : null;
+  const visibleIsLive = scopeMatches && isLive;
 
   // Live refs so the action callbacks stay identity-stable while still reading
   // the current board, client, and restore target.
   const boardIdRef = useRef(boardId);
   boardIdRef.current = boardId;
+  const boardUuidRef = useRef(boardUuid);
+  boardUuidRef.current = boardUuid;
   const clientRef = useRef(client);
   clientRef.current = client;
-  const currentClimbRef = useRef<BoardPresenceClimb | null>(state.currentClimb);
-  currentClimbRef.current = state.currentClimb;
-  const undoTargetRef = useRef<BoardPresenceClimb | null>(undoTarget);
-  undoTargetRef.current = undoTarget;
+  const actionScopeRef = useRef({ boardId, boardUuid, client });
+  if (
+    actionScopeRef.current.boardId !== boardId ||
+    actionScopeRef.current.boardUuid !== boardUuid ||
+    actionScopeRef.current.client !== client
+  ) {
+    actionScopeRef.current = { boardId, boardUuid, client };
+  }
+  const currentClimbRef = useRef<BoardPresenceClimb | null>(visibleState.currentClimb);
+  currentClimbRef.current = visibleState.currentClimb;
+  const undoTargetRef = useRef<BoardPresenceClimb | null>(visibleUndoTarget);
+  undoTargetRef.current = visibleUndoTarget;
   const observedSeqRef = useRef(0);
   // Keep the telemetry callback in a ref so it can change without forcing the
   // subscription effect (keyed on [boardId, client]) to tear down and re-attach.
@@ -176,6 +193,7 @@ export function useBoardPresence(
   const catchUpRef = useRef<((reason: BoardPresenceCatchUpReason) => void) | null>(null);
 
   useEffect(() => {
+    setSnapshotScope({ boardId, boardUuid, client });
     // No board or no transport: collapse to the initial state and stay inert.
     // RESET clears stats too (they live in the reducer now).
     if (boardId === null || client === null) {
@@ -206,9 +224,25 @@ export function useBoardPresence(
     // Identifies this effect run; late async results for a superseded board are
     // ignored by comparing against the ref, which the cleanup flips off.
     const subscribedBoardId = boardId;
+    const capabilityArgs: [] | [string] = boardUuid ? [boardUuid] : [];
+    const isCurrent = () =>
+      isActive &&
+      boardIdRef.current === subscribedBoardId &&
+      boardUuidRef.current === boardUuid &&
+      clientRef.current === client;
+
+    const retireReader = () => {
+      if (!isCurrent()) return;
+      isActive = false;
+      catchUpRef.current = null;
+      observedSeqRef.current = 0;
+      dispatch({ type: 'RESET' });
+      setUndoTarget(null);
+      setIsLive(false);
+    };
 
     const runCatchUp = (reason: BoardPresenceCatchUpReason) => {
-      if (!isActive || boardIdRef.current !== subscribedBoardId) {
+      if (!isCurrent()) {
         return;
       }
       if (catchUpInFlight) {
@@ -219,20 +253,20 @@ export function useBoardPresence(
 
       catchUpInFlight = true;
       const startedAtSeq = observedSeqRef.current;
-      const connectionFetch = client.fetchConnection;
+      const connectionFetch = client.fetchConnection?.bind(client);
       const connectionPromise =
         connectionFetch === undefined
           ? Promise.resolve<BoardConnectionHolder | null | undefined>(undefined)
-          : connectionFetch(boardId);
+          : connectionFetch(boardId, ...capabilityArgs);
 
       void Promise.allSettled([
-        client.fetchRecentClimbs(boardId),
-        client.fetchStats(boardId),
+        client.fetchRecentClimbs(boardId, ...capabilityArgs),
+        client.fetchStats(boardId, ...capabilityArgs),
         connectionPromise,
-        client.fetchRecentHistory?.(boardId) ?? Promise.resolve([]),
+        client.fetchRecentHistory?.(boardId, ...capabilityArgs) ?? Promise.resolve([]),
       ] as const)
         .then(([recentResult, statsResult, connectionResult, historyResult]) => {
-          if (!isActive || boardIdRef.current !== subscribedBoardId) {
+          if (!isCurrent()) {
             return;
           }
 
@@ -270,7 +304,7 @@ export function useBoardPresence(
           onCatchUpRef.current?.({ reason, recoveredThroughSeqDelta });
         })
         .finally(() => {
-          if (!isActive) {
+          if (!isCurrent()) {
             return;
           }
           catchUpInFlight = false;
@@ -288,7 +322,7 @@ export function useBoardPresence(
     const unsubscribe = client.subscribeNowPlaying(
       boardId,
       (event) => {
-        if (!isActive) {
+        if (!isCurrent()) {
           return;
         }
         const eventSeq = boardPresenceEventSeq(event);
@@ -305,18 +339,12 @@ export function useBoardPresence(
           dispatch(action);
         }
       },
-      () => {
-        if (isActive) {
-          setIsLive(false);
-        }
-      },
-      () => {
-        if (isActive) {
-          setIsLive(false);
-        }
-      },
+      retireReader,
+      retireReader,
+      ...capabilityArgs,
     );
-    setIsLive(true);
+    setIsLive(isCurrent());
+    if (!isCurrent()) return unsubscribe;
 
     // 1b) Catch up on every reconnect. graphql-ws transparently re-subscribes
     //     after a dropped socket, but the live feed rides Redis pub/sub (no
@@ -328,9 +356,9 @@ export function useBoardPresence(
     const unsubscribeReconnect = client.onReconnect?.(() => runCatchUp('reconnect'));
 
     void client
-      .fetchRecentHistory?.(boardId)
+      .fetchRecentHistory?.(boardId, ...capabilityArgs)
       .then((history) => {
-        if (isActive && boardIdRef.current === subscribedBoardId) {
+        if (isCurrent()) {
           dispatch({ type: 'MERGE_HISTORY', payload: history });
           observedSeqRef.current = Math.max(observedSeqRef.current, highestClimbSeq(history));
         }
@@ -347,9 +375,9 @@ export function useBoardPresence(
     //    reducer), so the tiles update live without re-fetching. SEED_STATS is a
     //    no-op once any live push has landed, so it can't clobber fresher data.
     void client
-      .fetchRecentClimbs(boardId)
+      .fetchRecentClimbs(boardId, ...capabilityArgs)
       .then((recentClimbs) => {
-        if (isActive && boardIdRef.current === subscribedBoardId) {
+        if (isCurrent()) {
           observedSeqRef.current = Math.max(observedSeqRef.current, highestClimbSeq(recentClimbs));
           hasSequenceBaseline = true;
           dispatch({ type: 'BACKFILL_HISTORY', payload: recentClimbs });
@@ -361,9 +389,9 @@ export function useBoardPresence(
       });
 
     void client
-      .fetchStats(boardId)
+      .fetchStats(boardId, ...capabilityArgs)
       .then((nextStats) => {
-        if (isActive && boardIdRef.current === subscribedBoardId) {
+        if (isCurrent()) {
           dispatch({ type: 'SEED_STATS', payload: nextStats });
         }
       })
@@ -377,9 +405,9 @@ export function useBoardPresence(
     //    SEED_CONNECTION is a no-op once any live BoardConnectionChanged has
     //    landed, so it can't clobber a fresher holder.
     void client
-      .fetchConnection?.(boardId)
+      .fetchConnection?.(boardId, ...capabilityArgs)
       .then((holder) => {
-        if (isActive && boardIdRef.current === subscribedBoardId) {
+        if (isCurrent()) {
           dispatch({ type: 'SEED_CONNECTION', payload: holder });
         }
       })
@@ -394,7 +422,7 @@ export function useBoardPresence(
       unsubscribeReconnect?.();
       unsubscribe();
     };
-  }, [boardId, client]);
+  }, [boardId, boardUuid, client]);
 
   // Stable manual catch-up trigger. Defaults to `manual` (pull-to-refresh);
   // callers pass `foreground` for app-resume recovery. Reads the live
@@ -407,13 +435,19 @@ export function useBoardPresence(
     async (climb: ClimbQueueItemInput, angle: number | null): Promise<BoardPresenceReportResult> => {
       const activeBoardId = boardIdRef.current;
       const activeClient = clientRef.current;
+      const requestScope = actionScopeRef.current;
       if (activeBoardId === null || activeClient === null) {
         return { accepted: false, undoTarget: null };
       }
 
       const capturedUndoTarget = currentClimbRef.current;
       const accepted = await activeClient.reportClimb(activeBoardId, climb, angle);
-      if (!accepted) {
+      if (
+        !accepted ||
+        boardIdRef.current !== activeBoardId ||
+        actionScopeRef.current !== requestScope ||
+        clientRef.current !== activeClient
+      ) {
         return { accepted: false, undoTarget: null };
       }
 
@@ -445,14 +479,14 @@ export function useBoardPresence(
 
   return useMemo<UseBoardPresenceResult>(
     () => ({
-      currentClimb: state.currentClimb,
-      previousClimb: state.previousClimb,
-      undoTarget,
-      holder: state.holder,
-      lastConnectionSeq: state.lastConnectionSeq,
-      history: state.history,
-      stats: state.stats,
-      isLive,
+      currentClimb: visibleState.currentClimb,
+      previousClimb: visibleState.previousClimb,
+      undoTarget: visibleUndoTarget,
+      holder: visibleState.holder,
+      lastConnectionSeq: visibleState.lastConnectionSeq,
+      history: visibleState.history,
+      stats: visibleState.stats,
+      isLive: visibleIsLive,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
@@ -460,14 +494,14 @@ export function useBoardPresence(
       refresh,
     }),
     [
-      state.currentClimb,
-      state.previousClimb,
-      undoTarget,
-      state.holder,
-      state.lastConnectionSeq,
-      state.history,
-      state.stats,
-      isLive,
+      visibleState.currentClimb,
+      visibleState.previousClimb,
+      visibleUndoTarget,
+      visibleState.holder,
+      visibleState.lastConnectionSeq,
+      visibleState.history,
+      visibleState.stats,
+      visibleIsLive,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,

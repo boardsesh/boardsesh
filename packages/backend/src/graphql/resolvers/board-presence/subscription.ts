@@ -58,7 +58,7 @@ export const boardPresenceSubscriptions = {
         .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
         .limit(1);
       if (presenceBoard) {
-        await assertSprayBoardIsReadable(presenceBoard, ctx.userId);
+        await assertSprayBoardIsReadable(presenceBoard, ctx.userId, boardUuid, db);
       }
 
       const boardKey = String(boardId);
@@ -83,11 +83,11 @@ export const boardPresenceSubscriptions = {
       // it: a wall going private, or a revoked gym membership, has to end a stream
       // that is already running. Ending the iterator is the subscription's empty
       // page — no error naming a wall the caller may no longer see.
-      const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId);
+      const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId, boardUuid, db);
       for await (const event of asyncIterator) {
         await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
         if (gate && !(await gate())) return;
-        if (event !== null) yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId) };
+        if (event !== null) yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardUuid) };
       }
     }),
   },

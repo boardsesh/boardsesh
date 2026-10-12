@@ -90,7 +90,7 @@ export function useFollowedLiveSessions(boardUuid: string | null, enabled: boole
  * navigator (no focus to read), but it unmounts its content when dismissed, so
  * "mounted and enabled" is already "visible".
  */
-export function useBoardLiveSessions(boardId: number | null, enabled: boolean) {
+export function useBoardLiveSessions(boardId: number | null, enabled: boolean, boardUuid: string | null = null) {
   const isOffline = useIsOffline();
   const selectCards = useStableCardSelect();
   const select = useCallback(
@@ -100,11 +100,12 @@ export function useBoardLiveSessions(boardId: number | null, enabled: boolean) {
   const active = enabled && boardId != null;
 
   return useQuery({
-    queryKey: boardLiveSessionsQueryKey(boardId),
+    queryKey: boardLiveSessionsQueryKey(boardId, boardUuid),
     queryFn: () => {
       if (boardId == null) throw new Error('Cannot load live sessions without a board id.');
       return getHttpClient().request<BoardLiveSessionsResponse, BoardLiveSessionsVariables>(BOARD_LIVE_SESSIONS, {
         boardId,
+        ...(boardUuid ? { boardUuid } : {}),
       });
     },
     select,

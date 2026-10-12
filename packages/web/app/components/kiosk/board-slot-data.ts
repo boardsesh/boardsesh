@@ -59,12 +59,12 @@ function resolveBoardDetails(board: BoardSlotSource): BoardDetails | null {
  * so it is the one with the least excuse to be unbounded. It already degrades
  * to `[]` (the slot paints the bare board and the live subscription fills it in
  * a moment later), which is a far better answer than a render that never ends. */
-async function fetchInitialClimbs(boardId: number): Promise<BoardPresenceClimb[]> {
+async function fetchInitialClimbs(boardId: number, boardUuid: string): Promise<BoardPresenceClimb[]> {
   try {
     const response = await fetch(getGraphQLHttpUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...webClientIdentityHeaders() },
-      body: JSON.stringify({ query: BOARD_RECENT_CLIMBS, variables: { boardId } }),
+      body: JSON.stringify({ query: BOARD_RECENT_CLIMBS, variables: { boardId, boardUuid } }),
       signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
       cache: 'no-store',
     });
@@ -85,7 +85,7 @@ export async function buildBoardSlotData(board: BoardSlotSource): Promise<BoardS
   const boardDetails = resolveBoardDetails(board);
   if (boardDetails === null) return null;
 
-  const recentClimbs = await fetchInitialClimbs(board.boardId);
+  const recentClimbs = await fetchInitialClimbs(board.boardId, board.boardUuid);
   const initialClimb = recentClimbs[0] ?? null;
   const flatFrames = toFlatFrames(initialClimb?.frames, boardDetails.board_name);
   return {

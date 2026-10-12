@@ -164,3 +164,23 @@ describe('useBoardLiveSessions', () => {
     expect(result.current.fetchStatus).toBe('idle');
   });
 });
+
+it('forwards a held UUID and separates the live-session cache when it is removed', async () => {
+  requestMock
+    .mockResolvedValueOnce({ boardLiveSessions: [session('linked')] })
+    .mockResolvedValueOnce({ boardLiveSessions: [] });
+  const { wrapper, queryClient } = makeWrapper();
+  const { result, rerender } = renderHook(({ boardUuid }) => useBoardLiveSessions(42, true, boardUuid), {
+    wrapper,
+    initialProps: { boardUuid: 'held-link' as string | null },
+  });
+  await waitFor(() => expect(result.current.data?.map((card) => card.sessionId)).toEqual(['linked']));
+  expect(requestMock).toHaveBeenLastCalledWith(BOARD_LIVE_SESSIONS, { boardId: 42, boardUuid: 'held-link' });
+  rerender({ boardUuid: null });
+  expect(result.current.data).toBeUndefined();
+  await waitFor(() => expect(result.current.data).toEqual([]));
+  expect(requestMock).toHaveBeenLastCalledWith(BOARD_LIVE_SESSIONS, { boardId: 42 });
+  expect(queryClient.getQueryData(boardLiveSessionsQueryKey(42, 'held-link'))).toMatchObject({
+    boardLiveSessions: [{ sessionId: 'linked' }],
+  });
+});

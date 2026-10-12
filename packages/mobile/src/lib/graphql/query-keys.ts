@@ -66,8 +66,8 @@ export const LIVE_SESSIONS_QUERY_KEY = ['liveSessions'] as const;
 export const FOLLOWED_LIVE_SESSIONS_QUERY_KEY = [...LIVE_SESSIONS_QUERY_KEY, 'followed'] as const;
 export const followedLiveSessionsQueryKey = (boardUuid: string | null) =>
   [...FOLLOWED_LIVE_SESSIONS_QUERY_KEY, boardUuid] as const;
-export const boardLiveSessionsQueryKey = (boardId: number | null) =>
-  [...LIVE_SESSIONS_QUERY_KEY, 'board', boardId] as const;
+export const boardLiveSessionsQueryKey = (boardId: number | null, boardUuid: string | null = null) =>
+  [...LIVE_SESSIONS_QUERY_KEY, 'board', boardId, ...(boardUuid ? [boardUuid] : [])] as const;
 
 /**
  * Logs from climbers the viewer follows, for one climb (the play drawer's

@@ -60,6 +60,10 @@ describe('buildBoardSlotData — the recent-climbs seed is deadlined', () => {
     const [, requestInit] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(requestInit.signal).toBe(timeoutSpy.mock.results[0].value);
     expect(requestInit.cache).toBe('no-store');
+    if (typeof requestInit.body !== 'string') throw new Error('Expected a JSON request body');
+    expect(JSON.parse(requestInit.body)).toMatchObject({
+      variables: { boardId: 42, boardUuid: board.boardUuid },
+    });
   });
 
   it('degrades to an empty seed when the deadline fires', async () => {

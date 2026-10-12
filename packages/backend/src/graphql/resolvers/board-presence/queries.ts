@@ -36,8 +36,8 @@ export const boardPresenceQueries = {
     await applyRateLimit(ctx, 60, 'boardRecentHistory');
     const board = await requireActiveBoardWithVisibilityById(boardId);
     await assertAnonReadableBoard(board, ctx.userId, boardUuid);
-    await assertSprayBoardIsReadable(board, ctx.userId);
-    return redactBoardClimbs(await readMergedRecentHistory(boardId), ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId, boardUuid, db);
+    return redactBoardClimbs(await readMergedRecentHistory(boardId), ctx.userId, boardUuid);
   },
   boardHistoryPage: async (
     _: unknown,
@@ -52,9 +52,9 @@ export const boardPresenceQueries = {
     await applyRateLimit(ctx, 60, 'boardHistoryPage');
     const board = await requireActiveBoardWithVisibilityById(boardId);
     await assertAnonReadableBoard(board, ctx.userId, boardUuid);
-    await assertSprayBoardIsReadable(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId, boardUuid, db);
     const page = await readBoardHistoryPage(boardId, limit ?? 50, before);
-    return { ...page, entries: await redactBoardClimbs(page.entries, ctx.userId) };
+    return { ...page, entries: await redactBoardClimbs(page.entries, ctx.userId, boardUuid) };
   },
   /**
    * Backfill the recent "now on the wall" history for a board from the Redis
@@ -79,8 +79,8 @@ export const boardPresenceQueries = {
     await assertAnonReadableBoard(visibilityBoard, ctx.userId, boardUuid);
     // The anon gate above waves every authenticated caller through; a spray wall is
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
-    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
-    return redactBoardClimbs(await pubsub.getRecentBoardClimbs(String(boardId)), ctx.userId);
+    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId, boardUuid, db);
+    return redactBoardClimbs(await pubsub.getRecentBoardClimbs(String(boardId)), ctx.userId, boardUuid);
   },
 
   /**
@@ -123,7 +123,7 @@ export const boardPresenceQueries = {
     await assertAnonReadableBoard(visibilityBoard, ctx.userId, boardUuid);
     // The anon gate above waves every authenticated caller through; a spray wall is
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
-    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
+    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId, boardUuid, db);
 
     // Parse + validate the cursor before it reaches SQL, so a malformed value
     // returns a clean error instead of a leaked Postgres parse error. Trim
@@ -188,6 +188,7 @@ export const boardPresenceQueries = {
         seq: Number(row.seq),
       })),
       ctx.userId,
+      boardUuid,
     );
   },
 
@@ -215,7 +216,7 @@ export const boardPresenceQueries = {
     await applyRateLimit(ctx, 60, 'boardClimbRecentSenders');
     const board = await requireActiveBoardWithVisibilityById(boardId);
     await assertAnonReadableBoard(board, ctx.userId, boardUuid);
-    await assertSprayBoardIsReadable(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId, boardUuid, db);
     // `boardType` comes from the bound board row, not the client: whether a
     // negative tilt exists at all is a property of the hardware, so the angle
     // bound cannot be checked without it.
@@ -315,10 +316,10 @@ export const boardPresenceQueries = {
     const board = await requireActiveBoardWithVisibilityById(boardId);
     // The id alone is the no-link reading; an Unlisted board's stats need its uuid.
     await assertAnonReadableBoard(board, ctx.userId, boardUuid);
-    await assertSprayBoardIsReadable(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId, boardUuid, db);
 
     const cached = await getCachedBoardPresenceStats(boardId);
-    if (cached) return redactBoardStats(cached, ctx.userId);
+    if (cached) return redactBoardStats(cached, ctx.userId, boardUuid);
 
     const stats = await computeBoardPresenceStats(boardId, board.boardType);
     // NX (only-if-absent): this fire-and-forget write races the debounced
@@ -326,7 +327,7 @@ export const boardPresenceQueries = {
     // and this SET — NX keeps that one instead of rolling the cache back;
     // on a true miss it populates the key as before.
     setCachedBoardPresenceStats(boardId, stats, { onlyIfAbsent: true });
-    return redactBoardStats(stats, ctx.userId);
+    return redactBoardStats(stats, ctx.userId, boardUuid);
   },
 
   /**

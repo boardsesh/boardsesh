@@ -155,7 +155,10 @@ export default function KioskPreview({ gym, kioskName, state, gymBoards }: Kiosk
       {scale > 0 && (
         <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
           <KioskThemeScope gym={gym}>
-            <ViewerKioskPresenceHub boardIds={distinctBoardIds}>
+            <ViewerKioskPresenceHub
+              boardIds={distinctBoardIds}
+              boardUuids={Object.fromEntries(viewModel.boards.map((board) => [board.boardId, board.boardUuid]))}
+            >
               <div className={styles.chrome}>
                 <KioskHeader gymName={gym.name} logoUrl={logoDisplayUrl} kioskName={kioskName} />
                 {preset === null ? (

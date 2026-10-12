@@ -17,11 +17,20 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { eq, like } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { eq, inArray, like } from 'drizzle-orm';
+import type {
+  BoardPresenceEvent,
+  BoardPresenceClimb,
+  BoardPresenceStats,
+  BoardQueuePreview,
+  ClimbQueueItemInput,
+  ConnectionContext,
+} from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { pubsub } from '../pubsub/index';
+import { roomManager } from '../services/room-manager';
+import type { QueueState } from '../services/room-manager/types';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
@@ -34,9 +43,11 @@ import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions'
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { privacyMutations } from '../graphql/resolvers/privacy';
 import { projectSessionBoardPath } from '../services/board-session-privacy';
+import { getBoardQueuePreviewSnapshot } from '../services/board-queue-preview';
 import { sessionSubscriptions } from '../graphql/resolvers/sessions/subscriptions';
 import { buildSessionPayload } from '../graphql/resolvers/sessions/helpers';
 import * as sharedHelpers from '../graphql/resolvers/shared/helpers';
+import * as presenceStats from '../graphql/resolvers/board-presence/stats';
 
 vi.mock('../graphql/resolvers/shared/helpers', async (importOriginal) => {
   const original = (await importOriginal()) as Record<string, unknown>;
@@ -208,6 +219,18 @@ async function openSubscription(
 }
 
 beforeEach(async () => {
+  await db.delete(dbSchema.contentPrivacy).where(like(dbSchema.contentPrivacy.entityId, `${PREFIX}%`));
+  await db.delete(dbSchema.boardClimbs).where(like(dbSchema.boardClimbs.uuid, `${PREFIX}%`));
+  // Spray walls restrict board deletion; retire only this suite's fixtures first.
+  await db.delete(dbSchema.sprayWalls).where(
+    inArray(
+      dbSchema.sprayWalls.boardUuid,
+      db
+        .select({ uuid: dbSchema.userBoards.uuid })
+        .from(dbSchema.userBoards)
+        .where(like(dbSchema.userBoards.ownerId, `${PREFIX}%`)),
+    ),
+  );
   await db.delete(dbSchema.users).where(like(dbSchema.users.id, `${PREFIX}%`));
   await db
     .insert(dbSchema.users)
@@ -504,4 +527,421 @@ describe('an Invite-only home board', () => {
       await read(board.id, undefined, authCtx(GRANTEE));
     }
   });
+});
+
+/** The same current/legacy Unlisted policies on an actual spray wall. */
+async function makeSprayBoard(makeBoard: (name: string) => Promise<Board>, name: string): Promise<Board> {
+  const board = await makeBoard(name);
+  const layoutId = 940_000 + counter++;
+  await db
+    .update(dbSchema.userBoards)
+    .set({ boardType: 'spray', layoutId, sizeId: layoutId, setIds: '1', hasLeds: false })
+    .where(eq(dbSchema.userBoards.id, board.id));
+  await db.insert(dbSchema.sprayWalls).values({ boardUuid: board.uuid, layoutId });
+  return board;
+}
+
+async function makeSprayClimbDisplay(board: Board): Promise<BoardPresenceClimb> {
+  const [wall] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+  const climbUuid = `${PREFIX}spray-details-${counter++}`;
+  await db.insert(dbSchema.boardClimbs).values({
+    uuid: climbUuid,
+    boardType: 'spray',
+    layoutId: wall.layoutId,
+    userId: OWNER,
+    name: 'Held wall project',
+    frames: 'p1r1',
+    isDraft: false,
+    isListed: true,
+  });
+  return { climbUuid, name: 'Held wall project', frames: 'p1r1', sentAt: new Date().toISOString(), seq: 1 };
+}
+
+const REPORT_CLIMB: ClimbQueueItemInput = {
+  uuid: 'unlisted-spray-report',
+  climb: {
+    uuid: 'unlisted-spray-catalog-climb',
+    name: 'Catalog climb',
+    frames: 'p1r1',
+    setter_username: 'setter',
+    angle: 40,
+    ascensionist_count: 0,
+    difficulty: 'V1',
+    quality_average: '3',
+    stars: 3,
+    difficulty_error: '0',
+  },
+};
+
+describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlistedBoard) => {
+  it.each(ID_KEYED_READS)('%s accepts only the held matching UUID while the wall is unhidden', async (_name, read) => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Shared Wall');
+    const elsewhere = await makeSprayBoard(makeUnlistedBoard, 'Other Spray Wall');
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      await expect(read(board.id, undefined, ctx)).rejects.toThrow('Board not found');
+      await expect(read(board.id, elsewhere.uuid, ctx)).rejects.toThrow('Board not found');
+      await read(board.id, board.uuid, ctx);
+    }
+  });
+
+  it('never stamps membership through a retained UUID after admin hiding, while its owner keeps access', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Hidden Spray Wall');
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ hiddenAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.boardUuid, board.uuid));
+    const stamp = vi.spyOn(pubsub, 'stampBoardMembership');
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      await expect(
+        boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: board.uuid }, ctx),
+      ).rejects.toThrow('Board not found');
+    }
+    expect(stamp).not.toHaveBeenCalled();
+    await expect(
+      boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: board.uuid }, authCtx(OWNER)),
+    ).resolves.toMatchObject({ boardId: board.id });
+  });
+
+  it('rejects a previously stamped member before report side effects once the spray wall is hidden', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Stale Spray Membership');
+    const ctx = authCtx(STRANGER);
+    await boardPresenceMutations.resolveBoardForUuid(undefined, { boardUuid: board.uuid }, ctx);
+    vi.spyOn(pubsub, 'getBoardReportGate').mockResolvedValue({
+      isMember: true,
+      firstSeenMs: Date.now() - 120_000,
+      lastReport: null,
+      currentWriter: null,
+    });
+    const commit = vi.spyOn(pubsub, 'commitBoardClimb');
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ hiddenAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.boardUuid, board.uuid));
+    await expect(
+      boardPresenceMutations.reportBoardClimb(undefined, { boardId: board.id, climb: REPORT_CLIMB, angle: 40 }, ctx),
+    ).rejects.toThrow('Board not found');
+    expect(commit).not.toHaveBeenCalled();
+    expect(
+      await db.select().from(dbSchema.boardClimbEvents).where(eq(dbSchema.boardClimbEvents.boardId, board.id)),
+    ).toEqual([]);
+  });
+
+  it('keeps published spray climb details for a holder of the exact wall UUID', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Climb Details');
+    const display = await makeSprayClimbDisplay(board);
+    await db.insert(dbSchema.boardClimbEvents).values({
+      boardId: board.id,
+      boardType: 'spray',
+      climbUuid: display.climbUuid,
+      name: display.name,
+      frames: display.frames,
+      angle: 40,
+      seq: display.seq,
+      confirmedAt: display.sentAt,
+    });
+    vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValue([display]);
+    for (const ctx of [anonCtx(), authCtx(STRANGER), authCtx(OWNER)]) {
+      const args = { boardId: board.id, boardUuid: board.uuid };
+      const responses = await Promise.all([
+        boardPresenceQueries.boardRecentClimbs(undefined, args, ctx),
+        boardPresenceQueries.boardRecentHistory(undefined, args, ctx),
+        boardPresenceQueries.boardHistory(undefined, args, ctx),
+        boardPresenceQueries.boardHistoryPage(undefined, args, ctx).then((page) => page.entries),
+      ]);
+      for (const returned of responses)
+        expect(returned[0]).toMatchObject({ name: display.name, frames: display.frames });
+    }
+  });
+
+  it('keeps draft, item privacy, other-wall content and private sender gates separate from the held link', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Separate Gates');
+    const elsewhere = await makeSprayBoard(makeUnlistedBoard, 'Spray Different Layout');
+    const publicClimb = await makeSprayClimbDisplay(board);
+    const privateClimb = await makeSprayClimbDisplay(board);
+    const draft = await makeSprayClimbDisplay(board);
+    const otherWall = await makeSprayClimbDisplay(elsewhere);
+    await db.insert(dbSchema.contentPrivacy).values({
+      entityType: 'climb',
+      entityId: privateClimb.climbUuid,
+      ownerId: OWNER,
+      audience: 'only_me',
+    });
+    await db.update(dbSchema.boardClimbs).set({ isDraft: true }).where(eq(dbSchema.boardClimbs.uuid, draft.climbUuid));
+    await db.insert(dbSchema.userProfiles).values({ userId: OTHER_STRANGER, isPrivate: true });
+    vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValue([
+      { ...publicClimb, sentByUserId: OTHER_STRANGER, sentByDisplayName: 'Private Sender' },
+      privateClimb,
+      draft,
+      otherWall,
+    ]);
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      const [visible, ...concealed] = await boardPresenceQueries.boardRecentClimbs(
+        undefined,
+        { boardId: board.id, boardUuid: board.uuid },
+        ctx,
+      );
+      expect(visible).toMatchObject({ name: publicClimb.name, frames: publicClimb.frames, sentByDisplayName: null });
+      for (const returned of concealed) expect(returned).toMatchObject({ name: null, frames: null });
+    }
+  });
+
+  it.each(['BoardClimbSet', 'BoardHistoryUpdated'] as const)(
+    'keeps authorized spray details through a populated %s event',
+    async (kind) => {
+      const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Live Details');
+      const display = await makeSprayClimbDisplay(board);
+      let emit: ((event: BoardPresenceEvent) => void) | undefined;
+      vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_boardId, listener) => {
+        emit = listener;
+        return () => {};
+      });
+      const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(
+        undefined,
+        { boardId: board.id, boardUuid: board.uuid },
+        anonCtx(),
+      );
+      try {
+        const pending = iterator.next();
+        await vi.waitFor(() => expect(emit).toBeDefined());
+        emit?.(
+          kind === 'BoardClimbSet'
+            ? { __typename: kind, climb: display }
+            : { __typename: kind, climbs: [display], seq: display.seq },
+        );
+        const event = (await pending).value?.boardNowPlaying;
+        const returned =
+          event?.__typename === 'BoardClimbSet'
+            ? event.climb
+            : event?.__typename === 'BoardHistoryUpdated'
+              ? event.climbs[0]
+              : null;
+        expect(returned).toMatchObject({ name: display.name, frames: display.frames });
+      } finally {
+        await iterator.return(undefined);
+      }
+    },
+  );
+
+  it('rebuilds populated queue seeds and wake-ups for the holder without publishing capability-derived details', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Queue Details');
+    const display = await makeSprayClimbDisplay(board);
+    const sessionId = uuidv4();
+    await db.insert(dbSchema.boardSessions).values({
+      id: sessionId,
+      boardId: board.id,
+      boardPath: `/b/${board.slug}/40`,
+      createdByUserId: OWNER,
+      isPublic: true,
+      status: 'active',
+      lastActivity: new Date(),
+    });
+    const current = {
+      uuid: `${PREFIX}queue-current`,
+      climb: { ...REPORT_CLIMB.climb, uuid: display.climbUuid, benchmark_difficulty: null },
+    };
+    const queueState: QueueState = {
+      version: 1,
+      sequence: 1,
+      stateHash: 'test',
+      stateHashOrdered: 'test',
+      queue: [current],
+      currentClimbQueueItem: current,
+    };
+    vi.spyOn(pubsub, 'getBoardSession').mockResolvedValue(sessionId);
+    vi.spyOn(roomManager, 'getQueueState').mockResolvedValue(queueState);
+    let emit: ((preview: BoardQueuePreview) => void) | undefined;
+    vi.spyOn(pubsub, 'subscribeBoardQueuePreview').mockImplementation(async (_boardId, listener) => {
+      emit = listener;
+      return () => {};
+    });
+    const args = { boardId: board.id, boardUuid: board.uuid };
+    const fromQuery = await boardQueuePreviewQueries.boardQueuePreview(undefined, args, anonCtx());
+    expect(fromQuery?.current).toMatchObject({ name: current.climb.name, frames: display.frames });
+    expect((await getBoardQueuePreviewSnapshot(board.id))?.current).toMatchObject({ name: null, frames: null });
+    const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, args, anonCtx());
+    try {
+      expect((await iterator.next()).value?.boardQueuePreview.current).toMatchObject({
+        name: current.climb.name,
+        frames: display.frames,
+      });
+      const pending = iterator.next();
+      emit?.({ boardId: board.id, current: null, upNext: [], queueLength: 0, updatedAt: display.sentAt });
+      expect((await pending).value?.boardQueuePreview.current).toMatchObject({
+        name: current.climb.name,
+        frames: display.frames,
+      });
+      await db.insert(dbSchema.contentPrivacy).values({
+        entityType: 'climb',
+        entityId: display.climbUuid,
+        ownerId: OWNER,
+        audience: 'only_me',
+      });
+      const restricted = iterator.next();
+      emit?.(fromQuery!);
+      expect((await restricted).value?.boardQueuePreview.current).toMatchObject({ name: null, frames: null });
+    } finally {
+      await iterator.return(undefined);
+    }
+  });
+
+  it.each(['cached query', 'live event'] as const)(
+    'removes a now-draft hardest-send name from the %s without changing aggregate grades',
+    async (kind) => {
+      const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Cached Hardest');
+      const display = await makeSprayClimbDisplay(board);
+      const cached: BoardPresenceStats = {
+        climbsSentCount: 3,
+        distinctClimbersCount: 2,
+        hardestGrade: 'V2',
+        hardestSend: {
+          climbUuid: display.climbUuid,
+          climbOwnerId: OWNER,
+          name: display.name,
+          grade: 'V2',
+          sentByUserId: null,
+          sentAt: display.sentAt,
+        },
+      };
+      vi.spyOn(presenceStats, 'getCachedBoardPresenceStats').mockResolvedValue(cached);
+      const args = { boardId: board.id, boardUuid: board.uuid };
+      expect((await boardPresenceQueries.boardPresenceStats(undefined, args, anonCtx())).hardestSend?.name).toBe(
+        display.name,
+      );
+      await db
+        .update(dbSchema.boardClimbs)
+        .set({ isDraft: true })
+        .where(eq(dbSchema.boardClimbs.uuid, display.climbUuid));
+      let projected: BoardPresenceStats | undefined;
+      if (kind === 'cached query') {
+        projected = await boardPresenceQueries.boardPresenceStats(undefined, args, anonCtx());
+      } else {
+        let emit: ((event: BoardPresenceEvent) => void) | undefined;
+        vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_boardId, listener) => {
+          emit = listener;
+          return () => {};
+        });
+        const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, args, anonCtx());
+        try {
+          const pending = iterator.next();
+          await vi.waitFor(() => expect(emit).toBeDefined());
+          emit?.({ __typename: 'BoardStatsUpdated', stats: cached, seq: 2 });
+          const event = (await pending).value?.boardNowPlaying;
+          if (event?.__typename === 'BoardStatsUpdated') projected = event.stats;
+        } finally {
+          await iterator.return(undefined);
+        }
+      }
+      expect(projected).toMatchObject({
+        climbsSentCount: 3,
+        distinctClimbersCount: 2,
+        hardestGrade: 'V2',
+        hardestSend: null,
+      });
+    },
+  );
+
+  it('preserves missing-catalog aggregate grades without replaying a cached hardest-send name', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Unknown Hardest');
+    const cached: BoardPresenceStats = {
+      climbsSentCount: 3,
+      distinctClimbersCount: 2,
+      hardestGrade: 'V2',
+      hardestSend: {
+        climbUuid: `${PREFIX}missing-climb`,
+        name: 'Stale copied name',
+        grade: 'V2',
+        sentByUserId: null,
+        sentAt: new Date().toISOString(),
+      },
+    };
+    vi.spyOn(presenceStats, 'getCachedBoardPresenceStats').mockResolvedValue(cached);
+    expect(
+      await boardPresenceQueries.boardPresenceStats(undefined, { boardId: board.id, boardUuid: board.uuid }, anonCtx()),
+    ).toMatchObject({
+      climbsSentCount: 3,
+      distinctClimbersCount: 2,
+      hardestGrade: 'V2',
+      hardestSend: { climbUuid: cached.hardestSend?.climbUuid, grade: 'V2', name: null },
+    });
+  });
+
+  it('names the current spray wall on its live sessions only for the matching UUID holder', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Live Wall');
+    const sessionId = uuidv4();
+    await db.insert(dbSchema.boardSessions).values({
+      id: sessionId,
+      boardId: board.id,
+      boardPath: `/b/${board.slug}/40`,
+      createdByUserId: OWNER,
+      isPublic: true,
+      status: 'active',
+      lastActivity: new Date(),
+    });
+    vi.spyOn(roomManager, 'getSessionConnectionLiveness').mockResolvedValue(
+      new Map([[sessionId, { liveConnectionCount: 1, redisKeyExists: true }]]),
+    );
+    vi.spyOn(pubsub, 'getBoardSession').mockResolvedValue(null);
+    vi.spyOn(pubsub, 'getSessionBoard').mockResolvedValue(null);
+    vi.spyOn(roomManager, 'getSessionUsers').mockResolvedValue([]);
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      const sessions = await liveSessionQueries.boardLiveSessions(
+        undefined,
+        { boardId: board.id, boardUuid: board.uuid },
+        ctx,
+      );
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].board).toMatchObject({ uuid: board.uuid, name: board.name });
+    }
+  });
+
+  it.each(['now-playing', 'queue-preview'] as const)(
+    'withdraws an open %s stream when the held spray wall is hidden',
+    async (kind) => {
+      const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Stream Wall');
+      let emitPresence: ((event: BoardPresenceEvent) => void) | undefined;
+      let emitPreview: ((event: BoardQueuePreview) => void) | undefined;
+      vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_boardId, listener) => {
+        emitPresence = listener;
+        return () => {};
+      });
+      vi.spyOn(pubsub, 'subscribeBoardQueuePreview').mockImplementation(async (_boardId, listener) => {
+        emitPreview = listener;
+        return () => {};
+      });
+      const ctx = anonCtx();
+      const args = { boardId: board.id, boardUuid: board.uuid };
+      const iterator =
+        kind === 'now-playing'
+          ? boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, args, ctx)
+          : boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, args, ctx);
+      try {
+        const pending = iterator.next();
+        await vi.waitFor(() => expect(kind === 'now-playing' ? emitPresence : emitPreview).toBeDefined());
+        await db
+          .update(dbSchema.sprayWalls)
+          .set({ hiddenAt: new Date() })
+          .where(eq(dbSchema.sprayWalls.boardUuid, board.uuid));
+        const emptyPreview = {
+          boardId: board.id,
+          current: null,
+          upNext: [],
+          queueLength: 0,
+          updatedAt: new Date().toISOString(),
+        };
+        if (kind === 'now-playing')
+          emitPresence?.({ __typename: 'BoardClimbCleared', clearedAt: new Date().toISOString(), seq: 1 });
+        else emitPreview?.(emptyPreview);
+        const result = await pending;
+        if (kind === 'now-playing') expect(result.done).toBe(true);
+        else {
+          expect(result.value).toMatchObject({
+            boardQueuePreview: { boardId: board.id, current: null, upNext: [], queueLength: 0 },
+          });
+          expect((await iterator.next()).done).toBe(true);
+        }
+      } finally {
+        await iterator.return(undefined);
+      }
+    },
+  );
 });

@@ -9,6 +9,7 @@ import {
 } from '../../../services/live-sessions';
 import { assertAnonReadableBoard, requireActiveBoardWithVisibilityById } from '../board-presence/shared';
 import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
+import { db } from '../../../db/client';
 
 export const liveSessionQueries = {
   /**
@@ -49,7 +50,7 @@ export const liveSessionQueries = {
     await applyRateLimit(ctx, 60, 'boardLiveSessions');
     const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
     await assertAnonReadableBoard(visibilityBoard, ctx.userId, boardUuid);
-    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
+    await assertSprayBoardIsReadable(visibilityBoard, ctx.userId, boardUuid, db);
     return findBoardLiveSessions(boardId, ctx.userId ?? null, {
       linkHeld: typeof boardUuid === 'string' && boardUuid === visibilityBoard.uuid,
     });

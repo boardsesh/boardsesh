@@ -24,6 +24,7 @@ const h = vi.hoisted(() => {
   });
   return {
     mk,
+    boardUuid: 'wall-link' as string | null,
     current: null as Climb | null,
     liveHistory: [] as Climb[],
     olderHistory: [] as Climb[],
@@ -40,6 +41,7 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock('@boardsesh/board-presence-react', () => ({
+  useBoardPresenceClient: () => ({ boardId: 9, boardUuid: h.boardUuid, client: null }),
   useBoardPresenceCurrent: () => ({ currentClimb: h.current }),
   useBoardPresenceFeed: () => ({ history: h.liveHistory, stats: null }),
   useBoardHistoryPagination: () => ({
@@ -65,6 +67,7 @@ import { useWallPreview } from '../useWallPreview';
 
 describe('useWallPreview', () => {
   beforeEach(() => {
+    h.boardUuid = 'wall-link';
     h.current = h.mk('c3', 3);
     h.liveHistory = [h.mk('c3', 3), h.mk('c2', 2), h.mk('c1', 1)];
     h.olderHistory = [];
@@ -291,5 +294,34 @@ describe('useWallPreview', () => {
     });
     expect(h.relight).toHaveBeenCalledTimes(1);
     expect(h.relight.mock.calls[0]?.[0]?.climbUuid).toBe('c2');
+  });
+  it('clears an old preview and ignores its late lighting result when the held link is removed', async () => {
+    h.boardUuid = 'held-link';
+    h.current = h.mk('c3', 3);
+    h.liveHistory = [h.mk('c3', 3), h.mk('c2', 2)];
+    h.olderHistory = [];
+    h.canDriveWall = true;
+    let finishLighting!: (accepted: boolean) => void;
+    h.relight.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishLighting = resolve;
+        }),
+    );
+    const { result, rerender } = renderHook(() => useWallPreview());
+    act(() => result.current.step('older'));
+    act(() => result.current.lightThis());
+    expect(result.current.isLighting).toBe(true);
+    h.boardUuid = null;
+    h.current = null;
+    h.liveHistory = [];
+    rerender();
+    expect(result.current.displayedClimb).toBeNull();
+    expect(result.current.pendingOverride).toBe(false);
+    await act(async () => {
+      finishLighting(false);
+      await Promise.resolve();
+    });
+    expect(result.current.lightError).toBe(false);
   });
 });

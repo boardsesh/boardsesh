@@ -1,6 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import * as dbSchema from '@boardsesh/db/schema';
+import { sql } from 'drizzle-orm';
 import {
   sprayLayoutVisibilitySql,
   sprayReferenceClimbExistsCondition,
@@ -91,9 +90,14 @@ export async function sprayLayoutIsReadable(
 export async function assertSprayBoardIsReadable(
   board: { boardType: string; layoutId: number | string },
   viewerUserId: string | null | undefined,
+  wallUuid?: string | null,
+  executor: Pick<typeof dbRead, 'execute'> = dbRead,
 ): Promise<void> {
   if (!isSprayBoardType(board.boardType)) return;
-  if (await sprayLayoutIsReadable(board.boardType, Number(board.layoutId), viewerUserId)) return;
+  if (
+    await sprayLayoutIsReadableWithCapability(board.boardType, Number(board.layoutId), viewerUserId, wallUuid, executor)
+  )
+    return;
   throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
 }
 
@@ -108,10 +112,9 @@ export async function assertSprayBoardIsReadable(
  * their own climb did not come back from `searchClimbs`, and there was no way in
  * the API to see what was on the wall.
  *
- * The uuid has to name THIS layout, and the unlisted exemption is
- * `sprayBoardRowIsReadable`'s `'capability'` half rather than a second copy of the
- * rule — a PRIVATE wall still does not open for a uuid, which is the difference
- * between unlisted and private.
+ * The uuid has to name THIS layout. The shared SQL visibility predicate reads
+ * the current resource policy and wall state, so a PRIVATE or admin-hidden wall
+ * does not open merely because a caller still holds its UUID.
  *
  * Falls through to the plain by-layout answer whenever no uuid is presented, so a
  * caller can pass the field through unconditionally.
@@ -121,36 +124,18 @@ export async function sprayLayoutIsReadableWithCapability(
   layoutId: number | null | undefined,
   userId: string | null | undefined,
   wallUuid: string | null | undefined,
+  executor: Pick<typeof dbRead, 'execute'> = dbRead,
 ): Promise<boolean> {
   if (!isSprayBoardType(boardType)) return true;
-  if (await sprayLayoutIsReadable(boardType, layoutId, userId)) return true;
-  if (!wallUuid) return false;
+  if (layoutId == null || !Number.isFinite(layoutId)) return false;
 
-  const [row] = await dbRead
-    .select({
-      boardType: dbSchema.userBoards.boardType,
-      layoutId: dbSchema.sprayWalls.layoutId,
-      isUnlisted: dbSchema.userBoards.isUnlisted,
-    })
-    .from(dbSchema.sprayWalls)
-    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
-    .where(
-      and(
-        eq(dbSchema.userBoards.uuid, wallUuid),
-        isNull(dbSchema.sprayWalls.deletedAt),
-        isNull(dbSchema.userBoards.deletedAt),
-      ),
-    )
-    .limit(1);
-
-  // A uuid naming a different wall than the layout under search is not a
-  // capability for this one.
-  if (!row || Number(row.layoutId) !== Number(layoutId)) return false;
-  return sprayBoardRowIsReadable(
-    { boardType: row.boardType, layoutId: Number(row.layoutId), isUnlisted: row.isUnlisted },
-    userId,
-    'capability',
+  // One current-policy query binds a presented UUID to this layout and still
+  // checks hidden/deleted walls, revoked grants, and modern Unlisted settings.
+  // Numeric layout IDs and absent UUIDs retain the no-link reading.
+  const rows = rowsFromResult<{ visible: boolean }>(
+    await executor.execute(sprayLayoutVisibilitySql(Number(layoutId), userId ?? null, wallUuid)),
   );
+  return rows[0]?.visible === true;
 }
 
 /**
@@ -177,9 +162,11 @@ export function sprayStreamGate(
   boardType: string | null | undefined,
   layoutId: number | null | undefined,
   userId: string | null | undefined,
+  wallUuid?: string | null,
+  executor: Pick<typeof dbRead, 'execute'> = dbRead,
 ): (() => Promise<boolean>) | null {
   if (!isSprayBoardType(boardType)) return null;
-  return () => sprayLayoutIsReadable(boardType, layoutId, userId);
+  return () => sprayLayoutIsReadableWithCapability(boardType, layoutId, userId, wallUuid, executor);
 }
 
 /**
@@ -208,35 +195,18 @@ export function sprayStreamGate(
  * error of its own — otherwise the response is an oracle.
  */
 export async function sprayBoardRowIsReadable(
-  board: { boardType: string; layoutId: number | null; isUnlisted?: boolean | null },
+  board: { boardType: string; layoutId: number | null; isUnlisted?: boolean | null; uuid?: string },
   viewerUserId: string | null | undefined,
   lookupKey: 'capability' | 'enumerable',
+  executor: Pick<typeof dbRead, 'execute'> = dbRead,
 ): Promise<boolean> {
-  if (!isSprayBoardType(board.boardType)) return true;
-  // A hidden wall hands out no capability, the same rule `viewerCanSeeSprayWall`
-  // and `viewerCanWriteSprayClimbs` apply: the share link an owner sent before an
-  // admin acted stops opening the wall, or hiding it would not take it off the
-  // internet. A hidden wall falls through to the by-layout rule, which keeps it
-  // for its owner and nobody else.
-  if (lookupKey === 'capability' && board.isUnlisted === true && (await sprayWallIsUnhidden(board.layoutId))) {
-    return true;
-  }
-  return sprayLayoutIsReadable(board.boardType, board.layoutId, viewerUserId);
-}
-
-/**
- * Whether the wall at this layout exists and is NOT admin-hidden. Only asked on
- * the unlisted capability path, so an ordinary read pays nothing for it. A missing
- * row answers false: no wall, no capability.
- */
-async function sprayWallIsUnhidden(layoutId: number | null): Promise<boolean> {
-  if (layoutId == null || !Number.isFinite(layoutId)) return false;
-  const [row] = await dbRead
-    .select({ hiddenAt: dbSchema.sprayWalls.hiddenAt })
-    .from(dbSchema.sprayWalls)
-    .where(eq(dbSchema.sprayWalls.layoutId, Number(layoutId)))
-    .limit(1);
-  return row !== undefined && row.hiddenAt === null;
+  return sprayLayoutIsReadableWithCapability(
+    board.boardType,
+    board.layoutId,
+    viewerUserId,
+    lookupKey === 'capability' ? board.uuid : null,
+    executor,
+  );
 }
 
 /**

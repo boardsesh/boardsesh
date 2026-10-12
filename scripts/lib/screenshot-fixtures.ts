@@ -132,6 +132,21 @@ export function normalizeDocument(query: string): string {
  */
 const DISCOVER_PLAYLISTS_GRADE_SELECTION = 'gradeSummary { gradedClimbCount p10Difficulty p90Difficulty }';
 
+/** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
+const PRESENCE_CAPABILITY_OPERATIONS = new Set([
+  'BoardNowPlaying',
+  'BoardRecentHistory',
+  'BoardHistoryPage',
+  'BoardRecentClimbs',
+  'BoardHistory',
+  'BoardClimbRecentSenders',
+  'BoardPresenceStats',
+  'BoardConnection',
+  'BoardQueuePreview',
+  'BoardQueuePreviewUpdates',
+  'BoardLiveSessions',
+]);
+
 /**
  * Pinned recordings that predate a nullable field the current document now
  * selects. Adapt those responses in memory; never rewrite their bytes or hashes.
@@ -147,6 +162,17 @@ export function replayCompatibleFixtureResponse(
 ): { response: unknown } | null {
   const operationName = resolveOperationName({ query: requestQuery });
   if (operationName !== fixture.operationName) return null;
+  if (PRESENCE_CAPABILITY_OPERATIONS.has(operationName ?? '')) {
+    const normalized = normalizeDocument(requestQuery);
+    const declaration = ', $boardUuid: ID';
+    const argument = ', boardUuid: $boardUuid';
+    if (normalized.split(declaration).length !== 2 || normalized.split(argument).length !== 2) return null;
+    const withoutCapability = normalized.replace(declaration, '').replace(argument, '');
+    if (withoutCapability !== normalizeDocument(fixture.query)) return null;
+    // The replay backend selects an entry by the unchanged variables hash first.
+    // Supplying a UUID therefore needs its own recording, never this old no-link response.
+    return { response: fixture.response };
+  }
   if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
   if (!['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) return null;
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';

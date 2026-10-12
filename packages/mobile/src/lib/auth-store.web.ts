@@ -281,6 +281,11 @@ async function fetchWithAbort(input: string, init: RequestInit, signal: AbortSig
   return Promise.race([fetch(input, { ...init, signal }), aborted(signal)]);
 }
 
+/** Match the native generation subscription using the browser's existing invalidation stream. */
+export function subscribeAuthCredentialGenerationChanges(listener: (generation: number) => void): () => void {
+  return subscribeAuthTokenChanges(() => listener(sessionGeneration));
+}
+
 export function captureAuthCredentialGeneration(): number {
   return sessionGeneration;
 }

@@ -36,11 +36,12 @@ const BoardPresenceWallClimbContext = createContext<BoardPresenceClimb | null | 
 /** The board + client pair a consumer needs to drive its own platform I/O
  * against — currently just `use-board-history-pagination`'s `fetchHistory`
  * paging, which lives outside the reducer/feed context on purpose (see that
- * hook's docstring). Memoized on `[boardId, client]` only, so it changes
- * exactly when the bound board or transport itself changes, never on a wall
+ * hook's docstring). Memoized on `[boardId, boardUuid, client]` only, so it changes
+ * exactly when the bound board, held link, or transport itself changes, never on a wall
  * event. */
 export type BoardPresenceClientValue = {
   boardId: number | null;
+  boardUuid?: string | null;
   client: BoardPresenceClient | null;
 };
 
@@ -48,11 +49,13 @@ const BoardPresenceClientContext = createContext<BoardPresenceClientValue | unde
 
 export function BoardPresenceProvider({
   boardId,
+  boardUuid = null,
   client,
   onCatchUp,
   children,
 }: {
   boardId: number | null;
+  boardUuid?: string | null;
   client: BoardPresenceClient | null;
   /**
    * Optional telemetry hook fired after a catch-up (reconnect / foreground /
@@ -63,7 +66,7 @@ export function BoardPresenceProvider({
   onCatchUp?: (info: BoardPresenceCatchUpInfo) => void;
   children: ReactNode;
 }) {
-  const value = useBoardPresence(boardId, client, onCatchUp);
+  const value = useBoardPresence(boardId, client, onCatchUp, boardUuid);
   const actions = useMemo<BoardPresenceActions>(
     () => ({
       reportClimb: value.reportClimb,
@@ -100,10 +103,12 @@ export function BoardPresenceProvider({
   // when live (or the stable `null` literal otherwise), so there is nothing to
   // memoize: the reference only changes when `currentClimb` itself does.
   const wallClimb = value.isLive ? value.currentClimb : null;
-  // Changes only on a board switch or client rebuild (props identity), never
-  // on a wall event — safe for a hook like `use-board-history-pagination` to
-  // key an effect on without re-running per climb.
-  const clientValue = useMemo<BoardPresenceClientValue>(() => ({ boardId, client }), [boardId, client]);
+  // Retire all independent paging/byline caches when this reader terminates.
+  // Ordinary climb pushes keep this scope stable.
+  const clientValue = useMemo<BoardPresenceClientValue>(
+    () => ({ boardId, boardUuid, client: value.isLive ? client : null }),
+    [boardId, boardUuid, client, value.isLive],
+  );
 
   return (
     <BoardPresenceContext.Provider value={value}>

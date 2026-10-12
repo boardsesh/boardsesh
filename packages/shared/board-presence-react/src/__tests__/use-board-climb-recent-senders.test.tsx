@@ -73,6 +73,7 @@ function ResultReader({
 
 function TestHarness({
   boardId,
+  boardUuid = null,
   client,
   feedStats,
   options,
@@ -80,6 +81,7 @@ function TestHarness({
   onCommit,
 }: {
   boardId: number | null;
+  boardUuid?: string | null;
   client: BoardPresenceClient | null;
   feedStats: BoardPresenceStats | null;
   options: BoardClimbRecentSendersOptions;
@@ -87,7 +89,7 @@ function TestHarness({
   onCommit?: (options: BoardClimbRecentSendersOptions, state: BoardClimbRecentSendersState) => void;
 }) {
   return (
-    <BoardPresenceClientContext.Provider value={{ boardId, client }}>
+    <BoardPresenceClientContext.Provider value={{ boardId, boardUuid, client }}>
       <BoardPresenceFeedContext.Provider value={{ history: [], stats: feedStats }}>
         <ResultReader options={options} resultBox={resultBox} onCommit={onCommit} />
       </BoardPresenceFeedContext.Provider>
@@ -471,3 +473,95 @@ describe('useBoardClimbRecentSenders', () => {
     expect(resultBox.current).toEqual({ senders: [], isLoading: false });
   });
 });
+
+it('keys sender bylines by held UUID and rejects a pending response after its removal', async () => {
+  const pending = deferred<BoardClimbRecentSender[]>();
+  const { client, fetchClimbRecentSenders } = makeClient();
+  fetchClimbRecentSenders.mockReturnValueOnce(pending.promise).mockResolvedValueOnce([sender('public')]);
+  const resultBox: ResultBox = { current: null };
+  const options = { climbUuid: 'climb', angle: 40 };
+  const { rerender } = render(
+    <TestHarness
+      boardId={9}
+      boardUuid="held-link"
+      client={client}
+      feedStats={null}
+      options={options}
+      resultBox={resultBox}
+    />,
+  );
+  expect(fetchClimbRecentSenders).toHaveBeenLastCalledWith(9, 'climb', 40, 'held-link');
+  rerender(
+    <TestHarness
+      boardId={9}
+      boardUuid={null}
+      client={client}
+      feedStats={null}
+      options={options}
+      resultBox={resultBox}
+    />,
+  );
+  await act(async () => {
+    pending.resolve([sender('retired-private')]);
+    await pending.promise;
+  });
+  expect(fetchClimbRecentSenders).toHaveBeenLastCalledWith(9, 'climb', 40);
+  expect(resultBox.current?.senders.map((entry) => entry.userId)).toEqual(['public']);
+});
+
+it.each(['capability', 'client'] as const)(
+  'does not reuse resolved private sender cache after its %s retires',
+  async (retiredScope) => {
+    const first = makeClient();
+    first.fetchClimbRecentSenders.mockResolvedValueOnce([sender('account-A-only')]).mockResolvedValueOnce([]);
+    const next = makeClient();
+    const pending = deferred<BoardClimbRecentSender[]>();
+    next.fetchClimbRecentSenders.mockReturnValueOnce(pending.promise);
+    const resultBox: ResultBox = { current: null };
+    const options = { climbUuid: 'climb', angle: 40 };
+    const { rerender } = render(
+      <TestHarness
+        boardId={9}
+        boardUuid="held-link"
+        client={first.client}
+        feedStats={null}
+        options={options}
+        resultBox={resultBox}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resultBox.current?.senders.map((entry) => entry.userId)).toEqual(['account-A-only']);
+    if (retiredScope === 'capability') {
+      rerender(
+        <TestHarness
+          boardId={9}
+          boardUuid={null}
+          client={first.client}
+          feedStats={null}
+          options={options}
+          resultBox={resultBox}
+        />,
+      );
+      first.fetchClimbRecentSenders.mockReturnValueOnce(pending.promise);
+    }
+    rerender(
+      <TestHarness
+        boardId={9}
+        boardUuid="held-link"
+        client={retiredScope === 'capability' ? first.client : next.client}
+        feedStats={null}
+        options={options}
+        resultBox={resultBox}
+      />,
+    );
+    expect(resultBox.current?.senders).toEqual([]);
+    expect(resultBox.current?.isLoading).toBe(true);
+    await act(async () => {
+      pending.resolve([sender('current-B')]);
+      await pending.promise;
+    });
+    expect(resultBox.current?.senders.map((entry) => entry.userId)).toEqual(['current-B']);
+  },
+);

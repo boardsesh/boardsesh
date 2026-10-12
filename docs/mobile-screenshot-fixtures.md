@@ -47,6 +47,11 @@ or hashes. Spray boards, unknown board types, non-null import state and every
 other document change still fail the drift check; selection coverage checks the
 same adapted response the replay server sends.
 
+Presence recordings also accept the exact addition of the optional `boardUuid`
+declaration and argument, with unchanged response selections. Replay still requires
+an exact variables hash: a request presenting a UUID needs its own recording and
+cannot reuse a recorded numeric-only read. Other document changes remain drift errors.
+
 Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
 `--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
 recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,

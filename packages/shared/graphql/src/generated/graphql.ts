@@ -12714,6 +12714,7 @@ export type FollowedLiveSessionsQuery = {
 
 export type BoardLiveSessionsQueryVariables = Exact<{
   boardId: Scalars['Int']['input'];
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
 }>;
 
 export type BoardLiveSessionsQuery = {
@@ -19056,6 +19057,11 @@ export const BoardLiveSessionsDocument = {
           variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardId' } },
           type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
         },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } },
+        },
       ],
       selectionSet: {
         kind: 'SelectionSet',
@@ -19068,6 +19074,11 @@ export const BoardLiveSessionsDocument = {
                 kind: 'Argument',
                 name: { kind: 'Name', value: 'boardId' },
                 value: { kind: 'Variable', name: { kind: 'Name', value: 'boardId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
               },
             ],
             selectionSet: {

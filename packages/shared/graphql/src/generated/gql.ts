@@ -62,7 +62,7 @@ type Documents = {
   '\n  query HoldHeatmap($input: ClimbSearchInput!) {\n    holdHeatmap(input: $input) {\n      holdId\n      totalUses\n      startingUses\n      handUses\n      footUses\n      finishUses\n      totalAscents\n      averageDifficulty\n    }\n  }\n': typeof types.HoldHeatmapDocument;
   '\n  fragment LiveSessionFields on LiveSession {\n    sessionId\n    name\n    goal\n    color\n    startedAt\n    lastActivity\n    host {\n      userId\n      displayName\n      avatarUrl\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n    }\n    participantCount\n    followedParticipantIds\n    viewerIsMember\n    isPublic\n    board {\n      uuid\n      name\n      slug\n      boardType\n      gymName\n    }\n    boardType\n    angle\n    sendCount\n    flashCount\n    hardestSendGrade\n    currentClimb {\n      name\n      grade\n    }\n    reasons\n  }\n': typeof types.LiveSessionFieldsFragmentDoc;
   '\n  query FollowedLiveSessions($boardUuid: ID, $limit: Int) {\n    followedLiveSessions(boardUuid: $boardUuid, limit: $limit) {\n      ...LiveSessionFields\n    }\n  }\n  \n': typeof types.FollowedLiveSessionsDocument;
-  '\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n': typeof types.BoardLiveSessionsDocument;
+  '\n  query BoardLiveSessions($boardId: Int!, $boardUuid: ID) {\n    boardLiveSessions(boardId: $boardId, boardUuid: $boardUuid) {\n      ...LiveSessionFields\n    }\n  }\n  \n': typeof types.BoardLiveSessionsDocument;
   '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.FrozenLocationSyncEntitiesDocument;
   '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n': typeof types.ClearLocationSyncFreezeDocument;
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetNewClimbFeedDocument;
@@ -290,7 +290,7 @@ const documents: Documents = {
     types.LiveSessionFieldsFragmentDoc,
   '\n  query FollowedLiveSessions($boardUuid: ID, $limit: Int) {\n    followedLiveSessions(boardUuid: $boardUuid, limit: $limit) {\n      ...LiveSessionFields\n    }\n  }\n  \n':
     types.FollowedLiveSessionsDocument,
-  '\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n':
+  '\n  query BoardLiveSessions($boardId: Int!, $boardUuid: ID) {\n    boardLiveSessions(boardId: $boardId, boardUuid: $boardUuid) {\n      ...LiveSessionFields\n    }\n  }\n  \n':
     types.BoardLiveSessionsDocument,
   '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.FrozenLocationSyncEntitiesDocument,
@@ -856,8 +856,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n',
-): (typeof documents)['\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n'];
+  source: '\n  query BoardLiveSessions($boardId: Int!, $boardUuid: ID) {\n    boardLiveSessions(boardId: $boardId, boardUuid: $boardUuid) {\n      ...LiveSessionFields\n    }\n  }\n  \n',
+): (typeof documents)['\n  query BoardLiveSessions($boardId: Int!, $boardUuid: ID) {\n    boardLiveSessions(boardId: $boardId, boardUuid: $boardUuid) {\n      ...LiveSessionFields\n    }\n  }\n  \n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

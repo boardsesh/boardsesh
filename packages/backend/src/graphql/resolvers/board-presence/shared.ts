@@ -15,7 +15,11 @@ import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '../board-serial-write-lock';
-import { assertSprayBoardIsReadable, sprayLayoutIsReadable } from '../climbs/spray-read-access';
+import {
+  assertSprayBoardIsReadable,
+  sprayLayoutIsReadable,
+  sprayLayoutIsReadableWithCapability,
+} from '../climbs/spray-read-access';
 
 /**
  * Validate the `boardId` argument is a positive integer. The SDL types it as
@@ -640,6 +644,11 @@ export async function findReachableActiveBoardByUuid(
   // holds both boards; otherwise the survivor gets the no-link reading.
   const presentedLink = !requested.deletedAt || requested.ownerId === canonical.ownerId ? canonical.uuid : null;
   if (!(await canAccessBoard(canonical.uuid, userId, presentedLink))) return undefined;
+  if (
+    canonical.boardType === 'spray' &&
+    !(await sprayLayoutIsReadableWithCapability('spray', canonical.layoutId, userId, presentedLink, db))
+  )
+    return undefined;
 
   return toActivePresenceBoard(canonical);
 }
@@ -781,8 +790,8 @@ export async function requireAnonReadableBoard(
  * Behaviour is exactly the two gates in sequence:
  *  - a missing or deleted board, or one the viewer may not read by id (no-link
  *    reading, unless `presentedBoardUuid` is this row's uuid), is NOT_FOUND;
- *  - any found spray wall then takes `assertSprayBoardIsReadable` (private and
- *    hidden = its principals / owner only). Every other board type returns
+ *  - a found spray wall rechecks its current policy with the same presented
+ *    UUID; hidden walls remain owner-only. Every other board type returns
  *    before that helper issues a query.
  *
  * Returns `anonReadableVerified` (true for a signed-out viewer, whose passing
@@ -824,7 +833,12 @@ export async function requireReadablePresenceBoard(
     }
     return { anonReadableVerified: !viewerUserId, board: null };
   }
-  await assertSprayBoardIsReadable({ boardType: row.boardType, layoutId: row.layoutId }, viewerUserId);
+  await assertSprayBoardIsReadable(
+    { boardType: row.boardType, layoutId: row.layoutId },
+    viewerUserId,
+    presentedBoardUuid,
+    db,
+  );
   return { anonReadableVerified: !viewerUserId, board: { boardType: row.boardType, layoutId: row.layoutId } };
 }
 
