@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
+import { retryFixtureReset } from './helpers/retry-fixture-reset';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 /**
@@ -290,7 +291,8 @@ const saveTickInput = (overrides: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(async () => {
-  await db.execute(sql`
+  await retryFixtureReset(async () =>
+    db.execute(sql`
     TRUNCATE TABLE "spray_walls", "user_boards", "gym_members", "gyms",
                    "board_climbs", "board_climb_holds", "board_climb_stats",
                    "board_layouts", "board_product_sizes", "board_product_sizes_layouts_sets",
@@ -299,7 +301,8 @@ beforeEach(async () => {
                    "climb_proposals", "proposal_votes", "comments", "feed_items",
                    "community_settings"
     RESTART IDENTITY CASCADE
-  `);
+  `),
+  );
   await db.execute(sql`ALTER SEQUENCE spray_wall_catalog_id_seq RESTART WITH 1`);
   await db.execute(sql`ALTER SEQUENCE spray_hold_catalog_id_seq RESTART WITH 1`);
 
