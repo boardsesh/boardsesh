@@ -52,6 +52,46 @@ describe('GET /api/auth/native/callback', () => {
     vi.unstubAllEnvs();
   });
 
+  it('returns to Dev only with the signed matching browser attempt', async () => {
+    const attemptId = 'b'.repeat(32);
+    const marker = issueNativeOAuthAttempt({ attemptId, provider: 'google', appVariant: 'dev' });
+    mockedGetServerSession.mockResolvedValue({ user: { id: 'user-123' }, expires: '2026-10-11' });
+    mockedIssueToken.mockReturnValue('signed-transfer');
+    const request = new NextRequest(
+      `http://localhost:3000/api/auth/native/callback?appVariant=dev&attemptId=${attemptId}`,
+      { headers: { Cookie: `${NATIVE_OAUTH_ATTEMPT_COOKIE}=${marker}` } },
+    );
+    expect(await extractDeepLink(await GET(request))).toContain('com.boardsesh.app.dev://auth/callback?');
+  });
+
+  it('keeps Dev routing after two minutes without attaching stale creation proof', async () => {
+    const attemptId = 'b'.repeat(32);
+    const marker = issueNativeOAuthAttempt({ attemptId, provider: 'google', appVariant: 'dev' });
+    vi.advanceTimersByTime(180_000);
+    mockedGetServerSession.mockResolvedValue({ user: { id: 'user-123' }, expires: '2026-10-11' });
+    mockedIssueToken.mockReturnValue('signed-transfer');
+    const request = new NextRequest(
+      `http://localhost:3000/api/auth/native/callback?appVariant=dev&attemptId=${attemptId}`,
+      { headers: { Cookie: `${NATIVE_OAUTH_ATTEMPT_COOKIE}=${marker}` } },
+    );
+    expect(await extractDeepLink(await GET(request))).toContain('com.boardsesh.app.dev://auth/callback?');
+    expect(mockedIssueToken).toHaveBeenCalledWith({ userId: 'user-123', nextPath: '/' });
+  });
+
+  it.each(['dev', 'unknown', 'arbitrary://destination'])('rejects unverified destination %s', async (appVariant) => {
+    const response = await GET(createRequest(`/api/auth/native/callback?appVariant=${encodeURIComponent(appVariant)}`));
+    expect(response.status).toBe(400);
+    expect(mockedIssueToken).not.toHaveBeenCalled();
+  });
+
+  it('rejects changing a signed Dev attempt into production', async () => {
+    const marker = issueNativeOAuthAttempt({ attemptId: 'b'.repeat(32), provider: 'google', appVariant: 'dev' });
+    const request = new NextRequest('http://localhost:3000/api/auth/native/callback', {
+      headers: { Cookie: `${NATIVE_OAUTH_ATTEMPT_COOKIE}=${marker}` },
+    });
+    expect((await GET(request)).status).toBe(400);
+  });
+
   it('signs the exact receipt only for a matching fresh browser attempt and auth session', async () => {
     const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
     const attemptId = 'a'.repeat(32);

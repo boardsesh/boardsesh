@@ -196,6 +196,7 @@ export const schemaSQL = `
   DROP TABLE IF EXISTS "activity_push_tokens" CASCADE;
   CREATE TABLE IF NOT EXISTS "activity_push_tokens" (
     "token" text PRIMARY KEY NOT NULL,
+    "bundle_id" text DEFAULT 'com.boardsesh.app' NOT NULL,
     "session_id" text NOT NULL REFERENCES "board_sessions"("id") ON DELETE CASCADE,
     "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,

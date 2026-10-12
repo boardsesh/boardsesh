@@ -527,13 +527,13 @@ public class LiveActivityModule: Module {
         }
 
         let query = """
-        mutation RegisterToken($sessionId: ID!, $token: String!) {
-          registerActivityPushToken(sessionId: $sessionId, token: $token)
+        mutation RegisterToken($sessionId: ID!, $token: String!, $bundleId: String) {
+          registerActivityPushToken(sessionId: $sessionId, token: $token, bundleId: $bundleId)
         }
         """
         let body: [String: Any] = [
             "query": query,
-            "variables": ["sessionId": sessionId, "token": token]
+            "variables": ["sessionId": sessionId, "token": token, "bundleId": Bundle.main.bundleIdentifier ?? SharedConstants.hostBundleId]
         ]
         guard let url = URL(string: graphqlUrl),
               let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }

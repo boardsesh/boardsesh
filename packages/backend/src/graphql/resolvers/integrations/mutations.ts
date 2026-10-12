@@ -1,3 +1,4 @@
+import type { NativeAppVariant } from '@boardsesh/shared-schema/native-app-identity';
 import { and, eq, exists } from 'drizzle-orm';
 import type { ConnectionContext, IntegrationStatus, IntegrationExportResult } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -53,13 +54,13 @@ export const integrationMutations = {
    */
   createIntegrationOAuthHandoff: async (
     _: unknown,
-    args: { provider: IntegrationStatus['provider'] },
+    args: { provider: IntegrationStatus['provider']; appVariant?: NativeAppVariant },
     ctx: ConnectionContext,
   ): Promise<string> => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'createIntegrationOAuthHandoff');
-    const { provider } = validateInput(IntegrationProviderArgsSchema, args, 'args');
-    return signIntegrationHandoff({ userId: ctx.userId!, provider: providerEnumToDb(provider) });
+    const { provider, appVariant } = validateInput(IntegrationProviderArgsSchema, args, 'args');
+    return signIntegrationHandoff({ userId: ctx.userId!, provider: providerEnumToDb(provider), appVariant });
   },
 
   /**

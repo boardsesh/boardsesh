@@ -1,3 +1,4 @@
+import { parseNativeAppVariant, type NativeAppVariant } from '@boardsesh/shared-schema/native-app-identity';
 import crypto from 'crypto';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
 
@@ -132,7 +133,12 @@ export const verifyNativeOAuthTransferToken = (
 };
 
 export const NATIVE_OAUTH_ATTEMPT_COOKIE = 'boardsesh-native-oauth-attempt';
-export type NativeOAuthAttempt = { attemptId: string; provider: 'apple' | 'google'; startedAt: number };
+export type NativeOAuthAttempt = {
+  attemptId: string;
+  provider: 'apple' | 'google';
+  startedAt: number;
+  appVariant?: NativeAppVariant;
+};
 
 /** Functional OAuth correlation only; this marker carries no account or campaign identity. */
 export function issueNativeOAuthAttempt(attempt: Omit<NativeOAuthAttempt, 'startedAt'>): string {
@@ -164,10 +170,17 @@ export function verifyNativeOAuthAttempt(token: string | undefined): NativeOAuth
       typeof attempt.startedAt !== 'number' ||
       !Number.isSafeInteger(attempt.startedAt) ||
       attempt.startedAt > Date.now() ||
-      Date.now() - attempt.startedAt > NATIVE_OAUTH_TRANSFER_TTL_SECONDS * 1000
+      Date.now() - attempt.startedAt > (attempt.appVariant === 'dev' ? 600 : NATIVE_OAUTH_TRANSFER_TTL_SECONDS) * 1000
     )
       return null;
-    return { attemptId: attempt.attemptId, provider: attempt.provider, startedAt: attempt.startedAt };
+    const appVariant = parseNativeAppVariant(attempt.appVariant);
+    if (!appVariant) return null;
+    return {
+      attemptId: attempt.attemptId,
+      provider: attempt.provider,
+      startedAt: attempt.startedAt,
+      ...(attempt.appVariant ? { appVariant } : {}),
+    };
   } catch {
     return null;
   }

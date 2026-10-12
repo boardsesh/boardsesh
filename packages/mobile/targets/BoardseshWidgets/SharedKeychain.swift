@@ -27,7 +27,7 @@ enum SharedKeychain {
 
     /// Keychain access group suffix declared in both `App.entitlements` and
     /// `BoardseshWidgets.entitlements`.
-    private static let accessGroupSuffix = "group.com.boardsesh.app"
+    private static let accessGroupSuffix = ".\(SharedConstants.appGroupId)"
 
     /// Resolved keychain access group. Keychain queries need the fully
     /// expanded entitlement value, including the app identifier prefix. The

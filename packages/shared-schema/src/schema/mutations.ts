@@ -978,7 +978,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Caller must be authenticated and be a participant in the session.
     Upserts: if the token already exists, updates the associated session.
     """
-    registerActivityPushToken(sessionId: ID!, token: String!): Boolean!
+    registerActivityPushToken(sessionId: ID!, token: String!, bundleId: String): Boolean!
 
     """
     Unregister an APNs device token for Live Activity push updates.
@@ -1043,7 +1043,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     the session token out of URLs, where it would persist in logs and browser
     history. Requires authentication.
     """
-    createIntegrationOAuthHandoff(provider: IntegrationProvider!): String!
+    createIntegrationOAuthHandoff(provider: IntegrationProvider!, appVariant: NativeAppVariant): String!
 
     """
     Unlink an external platform integration. Revokes the token on the

@@ -1,3 +1,4 @@
+import { parseNativeAppVariant, type NativeAppVariant } from '@boardsesh/shared-schema/native-app-identity';
 import crypto from 'crypto';
 import { KILTER_BOARD_TYPE } from '@boardsesh/kilter-sync/api';
 import { logger } from '../utils/logger';
@@ -19,6 +20,7 @@ type SignedPayload = {
   userId: string;
   provider: BoardCredentialProvider;
   nonce: string;
+  appVariant?: NativeAppVariant;
   returnUrl?: string;
   encryptedRefreshToken?: string;
   kilterUserId?: string;
@@ -31,6 +33,7 @@ export type VerifiedBoardCredentialToken = {
   userId: string;
   provider: BoardCredentialProvider;
   nonce: string;
+  appVariant?: NativeAppVariant;
   returnUrl?: string;
 };
 
@@ -60,6 +63,7 @@ function signPayload(
   input: {
     userId: string;
     provider: BoardCredentialProvider;
+    appVariant?: NativeAppVariant;
     returnUrl?: string;
     encryptedRefreshToken?: string;
     kilterUserId?: string;
@@ -76,6 +80,7 @@ function signPayload(
   const now = Math.floor(Date.now() / 1000);
   const payload: SignedPayload = {
     purpose,
+    ...(input.appVariant ? { appVariant: input.appVariant } : {}),
     userId: input.userId,
     provider: input.provider,
     nonce: crypto.randomBytes(16).toString('base64url'),
@@ -146,11 +151,13 @@ function verifyPayload(token: string, expectedPurpose: TokenPurpose, lifetimeSec
     return null;
   }
 
+  if (!parseNativeAppVariant(payload.appVariant)) return null;
   return payload;
 }
 
 function basicVerifiedToken(payload: SignedPayload): VerifiedBoardCredentialToken {
   const verifiedToken: VerifiedBoardCredentialToken = {
+    ...(payload.appVariant ? { appVariant: payload.appVariant } : {}),
     userId: payload.userId,
     provider: payload.provider,
     nonce: payload.nonce,
@@ -171,6 +178,7 @@ function verifySignedPayload(
 export function signBoardCredentialState(input: {
   userId: string;
   provider: BoardCredentialProvider;
+  appVariant?: NativeAppVariant;
   returnUrl?: string;
 }): string {
   return signPayload(input, 'board-credential-oauth-state', STATE_LIFETIME_SECONDS);
@@ -183,6 +191,7 @@ export function verifyBoardCredentialState(state: string): VerifiedBoardCredenti
 export function signBoardCredentialHandoff(input: {
   userId: string;
   provider: BoardCredentialProvider;
+  appVariant?: NativeAppVariant;
   returnUrl?: string;
 }): string {
   return signPayload(input, 'board-credential-oauth-handoff', HANDOFF_LIFETIME_SECONDS);

@@ -1,5 +1,8 @@
 # Mobile store release runbook
 
+For the separate Metro-enabled iOS app, see
+[Boardsesh Dev through TestFlight](./ios-dev-client-testflight.md).
+
 Both `main` and `release/next` automatically build TestFlight and Play-internal
 candidates when the native fingerprint changes. Use either branch for a release;
 the screenshot and store-draft follow-ups use the branch that produced the binary.

@@ -30,6 +30,28 @@ describe('integration state token', () => {
     vi.useRealTimers();
   });
 
+  it('binds the dev destination through handoff and state', () => {
+    const handoff = verifyIntegrationHandoff(
+      signIntegrationHandoff({ userId: 'user-42', provider: 'strava', appVariant: 'dev' }),
+    );
+    expect(handoff?.appVariant).toBe('dev');
+    const state = signIntegrationState({
+      userId: handoff!.userId,
+      provider: handoff!.provider,
+      appVariant: handoff!.appVariant,
+    });
+    expect(verifyIntegrationState(state)?.appVariant).toBe('dev');
+  });
+
+  it('rejects a signed unknown app variant', () => {
+    const state = signIntegrationState({ userId: 'user-42', provider: 'strava' });
+    const payload = JSON.parse(Buffer.from(state.split('.')[0], 'base64url').toString('utf8'));
+    payload.appVariant = 'arbitrary://destination';
+    const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const signature = crypto.createHmac('sha256', DERIVED_KEY).update(encoded).digest('base64url');
+    expect(verifyIntegrationState(`${encoded}.${signature}`)).toBeNull();
+  });
+
   it('roundtrips a userId + provider', () => {
     const state = signIntegrationState({ userId: 'user-42', provider: 'strava' });
     const verified = verifyIntegrationState(state);

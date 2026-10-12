@@ -1,3 +1,4 @@
+vi.mock('expo-application', () => ({ applicationId: 'com.boardsesh.app' }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // auth.ts pulls in several native modules at import time. Mock them so the

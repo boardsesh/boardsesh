@@ -55,6 +55,12 @@ describe('redirectSystemPath', () => {
   // The browser-OAuth fallback (src/lib/auth.ts raceBrowserSignIn) owns the
   // auth/callback deep link via its own Linking listener; redirectSystemPath must
   // return '' so Expo Router doesn't flash +not-found on the non-existent route.
+  it('leaves Dev OAuth callbacks to the browser listener', () => {
+    expect(
+      redirectSystemPath({ path: 'com.boardsesh.app.dev://auth/callback?transferToken=tok', initial: false }),
+    ).toBe('');
+  });
+
   const CALLBACK = 'com.boardsesh.app://auth/callback?transferToken=tok-1&next=%2F';
 
   it('skips navigation for the OAuth callback deep link on cold start', () => {

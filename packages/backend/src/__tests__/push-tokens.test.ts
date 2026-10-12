@@ -215,6 +215,34 @@ describe('registerActivityPushToken', () => {
     ).rejects.toThrow('not a participant');
   });
 
+  it('rejects unknown app identities before persisting a token', async () => {
+    await expect(
+      pushTokenMutations.registerActivityPushToken(
+        undefined,
+        { sessionId: SESSION_ID, token: VALID_TOKEN, bundleId: 'com.other.app' },
+        authedCtx(),
+      ),
+    ).rejects.toThrow('Invalid Live Activity bundle identifier');
+    expect(insertReturn.values).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, null, 'com.boardsesh.app', 'com.boardsesh.app.dev'])(
+    'persists the registered identity %s with a production fallback',
+    async (bundleId) => {
+      await pushTokenMutations.registerActivityPushToken(
+        undefined,
+        { sessionId: SESSION_ID, token: VALID_TOKEN, bundleId },
+        authedCtx(),
+      );
+      expect(insertReturn.values).toHaveBeenCalledWith(
+        expect.objectContaining({ bundleId: bundleId ?? 'com.boardsesh.app' }),
+      );
+      expect(insertOnConflictDoUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ set: expect.objectContaining({ bundleId: bundleId ?? 'com.boardsesh.app' }) }),
+      );
+    },
+  );
+
   it('rejects bad token format', async () => {
     await expect(
       pushTokenMutations.registerActivityPushToken(
@@ -374,7 +402,7 @@ describe('registerActivityPushToken', () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(sendLiveActivityUpdateToTokensMock).toHaveBeenCalledWith(
       SESSION_ID,
-      [{ token: VALID_TOKEN, userId: USER_ID }],
+      [{ token: VALID_TOKEN, userId: USER_ID, bundleId: 'com.boardsesh.app' }],
       expect.objectContaining({ climbUuid: 'c1' }),
       { source: 'registration' },
     );

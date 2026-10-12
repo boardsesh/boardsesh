@@ -1,0 +1,1 @@
+ALTER TABLE "activity_push_tokens" ADD COLUMN "bundle_id" text DEFAULT 'com.boardsesh.app' NOT NULL;

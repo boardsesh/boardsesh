@@ -397,6 +397,9 @@ For production later, promote from internal and use Play's staged rollout (set
 
 ## Dev-client APK ("Boardsesh Dev")
 
+The iOS equivalent installs through TestFlight Internal Only. See
+[Boardsesh Dev on iOS](./ios-dev-client-testflight.md) for signing, setup and Metro access.
+
 `.github/workflows/android-apk-dev-client.yml` is a separate build for testers
 who need to run local JS without compiling the app themselves. It produces a
 **debug / dev-client** APK: `./gradlew assembleDebug` of the prebuilt project

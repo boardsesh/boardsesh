@@ -1598,12 +1598,13 @@ export type SyncDeletionsQueryResponse = {
 // ============================================
 
 export const REGISTER_ACTIVITY_PUSH_TOKEN = gql`
-  mutation RegisterActivityPushToken($sessionId: ID!, $token: String!) {
-    registerActivityPushToken(sessionId: $sessionId, token: $token)
+  mutation RegisterActivityPushToken($sessionId: ID!, $token: String!, $bundleId: String) {
+    registerActivityPushToken(sessionId: $sessionId, token: $token, bundleId: $bundleId)
   }
 `;
 
 export type RegisterActivityPushTokenMutationVariables = {
+  bundleId?: string | null;
   sessionId: string;
   token: string;
 };

@@ -11,21 +11,20 @@
 /// intentional copies. Each Xcode target compiles its own binary — there's no shared module — so the
 /// duplicates must stay byte-identical or the JSON encoded into shared
 /// UserDefaults will mismatch between processes.
+const hostBundleIdentifier =
+  process.env.BOARDSESH_IOS_APP_VARIANT === 'dev' ? 'com.boardsesh.app.dev' : 'com.boardsesh.app';
+const appGroupIdentifier = `group.${hostBundleIdentifier}`;
+
 /** @type {import('@bacons/apple-targets/app.plugin').Config} */
 module.exports = {
   type: 'widget',
   name: 'BoardseshWidgets',
-  bundleIdentifier: 'com.boardsesh.app.widgets',
+  bundleIdentifier: `${hostBundleIdentifier}.widgets`,
   deploymentTarget: '17.0',
   frameworks: ['ActivityKit', 'WidgetKit', 'AppIntents', 'SwiftUI'],
   entitlements: {
-    'com.apple.security.application-groups': ['group.com.boardsesh.app'],
-    'keychain-access-groups': ['$(AppIdentifierPrefix)group.com.boardsesh.app'],
+    'com.apple.security.application-groups': [appGroupIdentifier],
+    'keychain-access-groups': [`$(AppIdentifierPrefix)${appGroupIdentifier}`],
   },
-  // BoardseshKeychainAccessGroup is read by SharedKeychain.swift to derive
-  // the keychain access group. Must match the value in the widget's
-  // keychain-access-groups entitlement.
-  infoPlist: {
-    BoardseshKeychainAccessGroup: '$(AppIdentifierPrefix)group.com.boardsesh.app',
-  },
+  // Custom identity plist keys are injected by with-boardsesh-widget-build-settings.
 };

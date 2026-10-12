@@ -20,7 +20,11 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   // `path` is the full deep-link URL (scheme + host); the bare-path form is a
   // defensive fallback. Checked before the share-intent branch — pure string ops
   // that can't throw — so a getShareExtensionKey() throw can't bypass it.
-  if (path.startsWith('com.boardsesh.app://auth/callback') || path.startsWith('/auth/callback')) {
+  if (
+    path.startsWith('com.boardsesh.app://auth/callback') ||
+    path.startsWith('com.boardsesh.app.dev://auth/callback') ||
+    path.startsWith('/auth/callback')
+  ) {
     return '';
   }
   // The retired custom OTA picker emitted /preview/pr-N links in PR comments.

@@ -1,3 +1,4 @@
+import { parseNativeAppVariant } from '@boardsesh/shared-schema/native-app-identity';
 import { NextRequest, NextResponse } from 'next/server';
 import { issueNativeOAuthAttempt, NATIVE_OAUTH_ATTEMPT_COOKIE } from '@/app/lib/auth/native-oauth-transfer';
 
@@ -12,20 +13,22 @@ export async function POST(request: NextRequest) {
     return new NextResponse(null, { status: 400 });
   }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return new NextResponse(null, { status: 400 });
-  const { attemptId, provider } = body as Record<string, unknown>;
+  const { attemptId, provider, appVariant: requestedVariant } = body as Record<string, unknown>;
+  const appVariant = parseNativeAppVariant(requestedVariant);
   if (
+    !appVariant ||
     typeof attemptId !== 'string' ||
     !/^[0-9a-f]{32}$/.test(attemptId) ||
     (provider !== 'apple' && provider !== 'google')
   )
     return new NextResponse(null, { status: 400 });
   const response = new NextResponse(null, { status: 204 });
-  response.cookies.set(NATIVE_OAUTH_ATTEMPT_COOKIE, issueNativeOAuthAttempt({ attemptId, provider }), {
+  response.cookies.set(NATIVE_OAUTH_ATTEMPT_COOKIE, issueNativeOAuthAttempt({ attemptId, provider, appVariant }), {
     httpOnly: true,
     secure: request.nextUrl.protocol === 'https:',
     sameSite: 'lax',
     path: '/api/auth/native',
-    maxAge: 120,
+    maxAge: appVariant === 'dev' ? 600 : 120,
   });
   response.headers.set('Cache-Control', 'no-store');
   return response;

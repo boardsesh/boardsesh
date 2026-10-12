@@ -1,3 +1,4 @@
+import { nativeAppVariant, nativeIdentity } from './native-app-identity';
 import * as WebBrowser from 'expo-web-browser';
 import { type AuroraBoardName } from '@boardsesh/shared-schema';
 import type { CircuitPlaylistSyncErrorReason } from '@boardsesh/shared-schema/sync-error-codes';
@@ -7,7 +8,7 @@ import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL } from './env';
 
 const CHUNK_SIZE = 500;
-const KILTER_REDIRECT_URL = 'com.boardsesh.app://board-credentials/kilter';
+const KILTER_REDIRECT_URL = `${nativeIdentity.scheme}://board-credentials/kilter`;
 
 export type AuroraCredentialStatus = {
   boardType: string;
@@ -180,6 +181,7 @@ export async function saveKilterCredentialViaPassword(input: { username: string;
 async function createKilterHandoffStartUrl(): Promise<string> {
   const response = await requestJson<{ startUrl: string }>('/api/board-credentials/kilter/handoff', {
     method: 'POST',
+    body: JSON.stringify({ appVariant: nativeAppVariant }),
   });
   return response.startUrl;
 }

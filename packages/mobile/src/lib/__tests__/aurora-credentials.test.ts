@@ -1,3 +1,7 @@
+vi.mock('../native-app-identity', () => ({
+  nativeAppVariant: 'production',
+  nativeIdentity: { scheme: 'com.boardsesh.app' },
+}));
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ImportProgressEvent, ImportResult, StrippedAuroraExportData } from '@boardsesh/shared-schema';
 

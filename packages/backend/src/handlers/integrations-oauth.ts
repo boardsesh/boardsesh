@@ -1,3 +1,4 @@
+import { nativeAppIdentity, type NativeAppVariant } from '@boardsesh/shared-schema/native-app-identity';
 // Browser-navigation OAuth endpoints for external-platform integrations.
 //
 //   GET /integrations/:provider/start?handoff=<code>  → 302 to the provider
@@ -58,16 +59,21 @@ function redirectTo(res: ServerResponse, location: string): void {
   res.end();
 }
 
-function deepLinkBase(provider: ProviderName): string {
-  return `com.boardsesh.app://integrations/${provider}`;
+function deepLinkBase(provider: ProviderName, appVariant: NativeAppVariant = 'production'): string {
+  return `${nativeAppIdentity(appVariant).scheme}://integrations/${provider}`;
 }
 
-function redirectSuccess(res: ServerResponse, provider: ProviderName): void {
-  redirectTo(res, `${deepLinkBase(provider)}?status=connected`);
+function redirectSuccess(res: ServerResponse, provider: ProviderName, appVariant?: NativeAppVariant): void {
+  redirectTo(res, `${deepLinkBase(provider, appVariant)}?status=connected`);
 }
 
-function redirectError(res: ServerResponse, provider: ProviderName, reason: string): void {
-  redirectTo(res, `${deepLinkBase(provider)}?status=error&reason=${encodeURIComponent(reason)}`);
+function redirectError(
+  res: ServerResponse,
+  provider: ProviderName,
+  reason: string,
+  appVariant?: NativeAppVariant,
+): void {
+  redirectTo(res, `${deepLinkBase(provider, appVariant)}?status=error&reason=${encodeURIComponent(reason)}`);
 }
 
 /** Public backend origin used to build provider redirect URIs (no trailing slash). */
@@ -148,7 +154,11 @@ export async function handleIntegrationOAuthStart(
   let authorizeUrl: string;
   try {
     const redirectUri = `${backendPublicUrl}/integrations/${providerName}/callback`;
-    const state = signIntegrationState({ userId: verifiedHandoff.userId, provider: providerName });
+    const state = signIntegrationState({
+      userId: verifiedHandoff.userId,
+      provider: providerName,
+      appVariant: verifiedHandoff.appVariant,
+    });
     authorizeUrl = provider.buildAuthorizeUrl(state, redirectUri);
   } catch (error) {
     logger.error('[Integrations] Failed to build authorize URL:', error);
@@ -183,22 +193,23 @@ export async function handleIntegrationOAuthCallback(
   const providerDbName: ProviderName = providerName;
 
   // Provider-reported error (e.g. the user declined authorization).
+  const state = url.searchParams.get('state');
+  const verifiedState = state ? verifyIntegrationState(state) : null;
+  const appVariant = verifiedState?.provider === providerDbName ? verifiedState.appVariant : undefined;
   const providerError = url.searchParams.get('error');
   if (providerError) {
-    redirectError(res, providerDbName, safeOauthErrorReason(providerError));
+    redirectError(res, providerDbName, safeOauthErrorReason(providerError), appVariant);
     return;
   }
 
-  const state = url.searchParams.get('state');
-  const verifiedState = state ? verifyIntegrationState(state) : null;
   if (!verifiedState || verifiedState.provider !== providerDbName) {
-    redirectError(res, providerDbName, 'state_invalid' satisfies CallbackReason);
+    redirectError(res, providerDbName, 'state_invalid' satisfies CallbackReason, appVariant);
     return;
   }
 
   const code = url.searchParams.get('code');
   if (!code) {
-    redirectError(res, providerDbName, 'missing_params' satisfies CallbackReason);
+    redirectError(res, providerDbName, 'missing_params' satisfies CallbackReason, appVariant);
     return;
   }
 
@@ -208,7 +219,7 @@ export async function handleIntegrationOAuthCallback(
   // form (space after comma) must not read as a missing grant.
   const grantedScopes = (url.searchParams.get('scope') ?? '').split(',').map((scopeEntry) => scopeEntry.trim());
   if (!grantedScopes.includes('activity:write')) {
-    redirectError(res, providerDbName, 'missing_scope' satisfies CallbackReason);
+    redirectError(res, providerDbName, 'missing_scope' satisfies CallbackReason, appVariant);
     return;
   }
 
@@ -219,7 +230,7 @@ export async function handleIntegrationOAuthCallback(
   const backendPublicUrl = getBackendPublicUrl();
   if (!backendPublicUrl) {
     logger.error('[Integrations] BACKEND_PUBLIC_URL is not configured; cannot complete code exchange');
-    redirectError(res, providerDbName, 'server_error' satisfies CallbackReason);
+    redirectError(res, providerDbName, 'server_error' satisfies CallbackReason, appVariant);
     return;
   }
   const redirectUri = `${backendPublicUrl}/integrations/${providerName}/callback`;
@@ -229,7 +240,7 @@ export async function handleIntegrationOAuthCallback(
     tokens = await provider.exchangeCode(code, redirectUri);
   } catch (error) {
     logger.error('[Integrations] Code exchange failed:', error);
-    redirectError(res, providerDbName, 'exchange_failed' satisfies CallbackReason);
+    redirectError(res, providerDbName, 'exchange_failed' satisfies CallbackReason, appVariant);
     return;
   }
 
@@ -237,9 +248,9 @@ export async function handleIntegrationOAuthCallback(
     await upsertCredential(verifiedState.userId, providerDbName, tokens);
   } catch (error) {
     logger.error('[Integrations] Credential persistence failed:', error);
-    redirectError(res, providerDbName, 'persist_failed' satisfies CallbackReason);
+    redirectError(res, providerDbName, 'persist_failed' satisfies CallbackReason, appVariant);
     return;
   }
 
-  redirectSuccess(res, providerDbName);
+  redirectSuccess(res, providerDbName, appVariant);
 }

@@ -19,7 +19,7 @@ function isBoardseshWidgetsTarget(candidateTarget) {
   );
 }
 
-function configureBoardseshWidgetTarget(project) {
+function configureBoardseshWidgetTarget(project, hostBundleIdentifier = 'com.boardsesh.app') {
   const boardseshWidgetsTarget = getProjectTargets(project).find(
     (candidateTarget) => isNativeTarget(candidateTarget) && isBoardseshWidgetsTarget(candidateTarget),
   );
@@ -34,11 +34,14 @@ function configureBoardseshWidgetTarget(project) {
 
   boardseshWidgetsTarget.setBuildSetting('OTHER_SWIFT_FLAGS', WIDGET_SWIFT_FLAGS);
   boardseshWidgetsTarget.setBuildSetting('IPHONEOS_DEPLOYMENT_TARGET', WIDGET_DEPLOYMENT_TARGET);
+  // The committed widget plist expands these settings for its installed identity.
+  boardseshWidgetsTarget.setBuildSetting('BOARDSESH_HOST_BUNDLE_IDENTIFIER', hostBundleIdentifier);
+  boardseshWidgetsTarget.setBuildSetting('BOARDSESH_APP_GROUP_IDENTIFIER', `group.${hostBundleIdentifier}`);
 }
 
 function withBoardseshWidgetBuildSettings(config) {
   return withXcodeProjectBeta(config, async (modConfig) => {
-    configureBoardseshWidgetTarget(modConfig.modResults);
+    configureBoardseshWidgetTarget(modConfig.modResults, config.ios?.bundleIdentifier ?? 'com.boardsesh.app');
     return modConfig;
   });
 }

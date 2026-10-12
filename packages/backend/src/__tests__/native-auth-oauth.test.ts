@@ -209,6 +209,48 @@ describe('handleNativeAuthOAuth', () => {
     updateCalls.length = 0;
   });
 
+  it('adds configured Dev Apple audience while keeping signature verification', async () => {
+    vi.stubEnv('APPLE_DEV_BUNDLE_ID', 'com.boardsesh.app.dev');
+    jwtVerify.mockRejectedValueOnce(new Error('invalid signature'));
+    const res = makeResponse();
+    try {
+      await callHandler(makeRequest({ method: 'POST', body: { provider: 'apple', identityToken: 'bad' } }), res);
+      expect(jwtVerify).toHaveBeenCalledWith(
+        'bad',
+        expect.anything(),
+        expect.objectContaining({
+          audience: ['com.boardsesh.app', 'com.boardsesh.app.dev'],
+          algorithms: ['RS256'],
+        }),
+      );
+      expect(res.statusCode).toBe(401);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('adds the configured Dev Google audience to the existing clients', async () => {
+    vi.stubEnv('GOOGLE_IOS_DEV_CLIENT_ID', 'dev-ios.apps.googleusercontent.com');
+    jwtVerify.mockRejectedValueOnce(new Error('invalid signature'));
+    const res = makeResponse();
+    try {
+      await callHandler(makeRequest({ method: 'POST', body: { provider: 'google', identityToken: 'bad' } }), res);
+      expect(jwtVerify).toHaveBeenCalledWith(
+        'bad',
+        expect.anything(),
+        expect.objectContaining({
+          audience: expect.arrayContaining([
+            'dev-ios.apps.googleusercontent.com',
+            'web-client.apps.googleusercontent.com',
+          ]),
+        }),
+      );
+      expect(res.statusCode).toBe(401);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each(['0', '1'])('gates OAuth account defaults with controls enabled=%s', async (flag) => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
     jwtVerify.mockResolvedValueOnce({

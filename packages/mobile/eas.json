@@ -29,6 +29,18 @@
     },
     "production": {
       "channel": "production"
+    },
+    "development-testflight": {
+      "developmentClient": true,
+      "distribution": "store",
+      "channel": "development-testflight",
+      "env": {
+        "BOARDSESH_IOS_APP_VARIANT": "dev"
+      },
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Debug"
+      }
     }
   }
 }

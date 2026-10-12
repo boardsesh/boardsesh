@@ -3,7 +3,8 @@ import Foundation
 // MARK: - App Group & Shared Defaults
 
 enum SharedConstants {
-    static let appGroupId = "group.com.boardsesh.app"
+    static let hostBundleId = Bundle.main.object(forInfoDictionaryKey: "BoardseshHostBundleIdentifier") as? String ?? "com.boardsesh.app"
+    static let appGroupId = Bundle.main.object(forInfoDictionaryKey: "BoardseshAppGroupIdentifier") as? String ?? "group.com.boardsesh.app"
 
     // MARK: UserDefaults Keys
 
@@ -108,17 +109,17 @@ enum SharedConstants {
 
     // MARK: Darwin Notification
 
-    static let queueNavigateNotification = "com.boardsesh.app.queueNavigate"
+    static let queueNavigateNotification = "\(hostBundleId).queueNavigate"
 
     /// Fired by the widget extension when `/api/widget/navigate` responds 410
     /// Gone, signaling that the cached APNs push token is bound to a different
     /// session and the main app should re-register.
-    static let pushRegistrationStaleNotification = "com.boardsesh.app.pushRegistrationStale"
+    static let pushRegistrationStaleNotification = "\(hostBundleId).pushRegistrationStale"
 
     /// Fallback for the Live Activity lightbulb's ReconnectBoardIntent: if iOS
     /// runs that intent in the widget extension (which can't link BoardBleManager),
     /// it posts this so the live main app reconnects BLE to the last known board.
-    static let bleReconnectNotification = "com.boardsesh.app.bleReconnect"
+    static let bleReconnectNotification = "\(hostBundleId).bleReconnect"
 
     // MARK: Live Activity
 
