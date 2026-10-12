@@ -2036,6 +2036,22 @@ export function renderCppMaestroFlow(
         '- extendedWaitUntil:\n    visible: "Next climb"\n    timeout: 15000',
       );
     commands.push(`- takeScreenshot: ${scene.filename}`);
+    if (scene.command === 'search') {
+      // Filters has Reset/Show-results actions rather than the player's Close
+      // label. Apply through its real top-bar control before changing routes;
+      // native dismissal commits the draft and removes the modal obstruction.
+      const applyFilters =
+        '- tapOn:\n    id: sheet-top-bar-trailing\n- extendedWaitUntil:\n    notVisible:\n      id: climb-filter-column\n    timeout: 60000\n- waitForAnimationToEnd:\n    timeout: 30000';
+      // A static iPad filter column has no native sheet action to dismiss.
+      commands.push(
+        ipad
+          ? `- runFlow:\n    when:\n      visible:\n        id: sheet-top-bar-trailing\n    commands:\n${applyFilters
+              .split('\n')
+              .map((line) => `      ${line}`)
+              .join('\n')}`
+          : applyFilters,
+      );
+    }
   }
   return readFileSync(join(MAESTRO_DIR, 'app-store-cpp.yaml'), 'utf8').replace(/^CPP_COMMANDS$/m, commands.join('\n'));
 }

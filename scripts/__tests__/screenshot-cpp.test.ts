@@ -176,6 +176,40 @@ describe('custom product page captures', () => {
       }
     }
   });
+  it('applies the real filter sheet after capturing search and before navigating to Logbook', () => {
+    const expectedDismissal = [
+      { tapOn: { id: 'sheet-top-bar-trailing' } },
+      { extendedWaitUntil: { notVisible: { id: 'climb-filter-column' }, timeout: 60000 } },
+      { waitForAnimationToEnd: { timeout: 30000 } },
+    ];
+    for (const target of CPP_TARGETS) {
+      const { coverage } = scenario(target);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+          const documents = parseAllDocuments(renderCppMaestroFlow(target, device, coverage, locale));
+          expect(documents.flatMap((document) => document.errors)).toEqual([]);
+          const steps = documents[1].toJS() as Record<string, unknown>[];
+          const searchCapture = steps.findIndex((step) => step.takeScreenshot === '02-search');
+          const logbookNavigation = steps.findIndex(
+            (step) => typeof step.evalScript === 'string' && step.evalScript.includes('/set?scene=logbook'),
+          );
+          expect(searchCapture).toBeGreaterThan(0);
+          if (device.name.startsWith('iPad')) {
+            expect(steps[searchCapture + 1]).toEqual({
+              runFlow: {
+                when: { visible: { id: 'sheet-top-bar-trailing' } },
+                commands: expectedDismissal,
+              },
+            });
+            expect(searchCapture + 1).toBeLessThan(logbookNavigation);
+          } else {
+            expect(steps.slice(searchCapture + 1, searchCapture + 4)).toEqual(expectedDismissal);
+            expect(searchCapture + 3).toBeLessThan(logbookNavigation);
+          }
+        }
+      }
+    }
+  });
   it('waits for real roster responses after home rather than failing on an in-flight recording', () => {
     const { page, boards, coverage, fixturesDir } = scenario('kilter');
     const observed: CppRecordedBoard[][] = [[], boards.slice(0, 2), [...boards, ...boards]];
