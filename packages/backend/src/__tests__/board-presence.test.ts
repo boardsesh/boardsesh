@@ -2976,11 +2976,13 @@ describe('board-presence resolvers', () => {
     it('keeps the serial-cluster lock lookup eligible for the active-row partial indexes', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
       const planRows = await db.transaction(async (transaction) => {
-        // Tiny test tables naturally favor a sequential scan. Disabling it
-        // makes this a predicate-eligibility assertion: PostgreSQL can only use
-        // a partial index when the production query explicitly preserves that
-        // index's conditions.
+        // Tiny test tables can favor a sorted primary-key scan even when a
+        // partial index is eligible. Disable the competing scan/join plans so
+        // this tests predicate eligibility rather than fixture-dependent costs.
+        // PostgreSQL still requires the production query's partial predicates.
         await transaction.execute(sql`SET LOCAL enable_seqscan = off`);
+        await transaction.execute(sql`SET LOCAL enable_mergejoin = off`);
+        await transaction.execute(sql`SET LOCAL enable_hashjoin = off`);
         return transaction.execute(sql`EXPLAIN (FORMAT TEXT, COSTS OFF) ${buildTickBoardLockQuery(sharedBoardId)}`);
       });
       const plan = planRows.map((row) => String((row as { 'QUERY PLAN': string })['QUERY PLAN'])).join('\n');
