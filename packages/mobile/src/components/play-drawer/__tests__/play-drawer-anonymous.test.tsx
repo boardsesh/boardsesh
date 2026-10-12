@@ -322,8 +322,23 @@ vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => 
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));
 vi.mock('../../ChromeIconButton', () => ({
-  ChromeIconButton: ({ onPress, accessibilityLabel }: { onPress: () => void; accessibilityLabel: string }) =>
-    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }),
+  ChromeIconButton: ({
+    onPress,
+    accessibilityLabel,
+    icon,
+    testID,
+  }: {
+    onPress: () => void;
+    accessibilityLabel: string;
+    icon: string;
+    testID?: string;
+  }) =>
+    createElement('button', {
+      onClick: onPress,
+      'aria-label': accessibilityLabel,
+      'data-icon': icon,
+      'data-testid': testID,
+    }),
   useChromeIconButtonSize: () => 44,
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
@@ -1405,8 +1420,9 @@ describe('PlayDrawer — the anonymous joins', () => {
   });
 
   // A signed-out reader has no ⋯ and no Settings, so after Hide all the bar's
-  // eye is the only way back to the sections. While they show, it stays away.
-  it('hands a signed-out reader the eye only once every section is hidden', () => {
+  // eye is the only way back to the sections. While something they could see is
+  // switched on, it stays away.
+  it('hands a signed-out reader the eye only once nothing they could see is switched on', () => {
     const shown = renderDrawer('anonymous');
     expect(lastActionBarProps().onEditSections).toBeUndefined();
     shown.unmount();
@@ -1420,6 +1436,12 @@ describe('PlayDrawer — the anonymous joins', () => {
       community: false,
       similarClimbs: false,
     };
+    const allOff = renderDrawer('anonymous');
+    expect(lastActionBarProps().onEditSections).toBeTypeOf('function');
+    allOff.unmount();
+
+    // Climber logs need an account, so for this reader that is still nothing.
+    drawerSections.sections = { ...drawerSections.sections, climberLogs: true };
     renderDrawer('anonymous');
     expect(lastActionBarProps().onEditSections).toBeTypeOf('function');
   });
@@ -1487,6 +1509,33 @@ describe('PlayDrawer — the anonymous joins', () => {
     // No BLE link, no session, no known lit climb — the button must not promise
     // a lighting it cannot do.
     expect(props.commitLabel).toBe('setActive');
+  });
+
+  // #6397: the commit bar takes the whole second row, ⋯ included, and the eye
+  // that used to sit beside the rest timer is gone. Settings → Climb view is
+  // the way in until the climber is back to live.
+  it('shows no section-settings button anywhere while the commit row is up', () => {
+    drawerSections.sections = {
+      logbook: false,
+      climberLogs: false,
+      setterNotes: false,
+      betaVideos: false,
+      boardseshGrade: false,
+      community: false,
+      similarClimbs: false,
+    };
+    setSetting('lightOnSwipe', false);
+    const { container } = renderDrawer('member');
+
+    // The bar is in commit mode with both commit handlers, which is the bar's
+    // own rule for dropping its eye (play-drawer-action-bar.test.tsx).
+    const props = lastActionBarProps();
+    expect(props.secondaryMode).toBe('commit');
+    expect(props.onBackToLive).toBeTypeOf('function');
+    expect(props.onCommit).toBeTypeOf('function');
+    // And nothing in the player's own chrome stands in for it.
+    expect(container.querySelector('[data-testid="play-drawer-section-settings"]')).toBeNull();
+    expect(container.querySelector('[data-icon="visibility"]')).toBeNull();
   });
 
   // The chrome's whole premise is that it never claims more than it can keep.

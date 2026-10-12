@@ -76,7 +76,7 @@ import {
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
 import { useDeliberateScrollGesture } from './use-deliberate-scroll-gesture';
 import { usePlayDrawerSectionsPreference } from '../../lib/play-drawer-sections-preference';
-import { visiblePlayDrawerSections } from './play-drawer-sections';
+import { hasSwitchedOnPlayDrawerSection, visiblePlayDrawerSections } from './play-drawer-sections';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
@@ -375,6 +375,17 @@ export function PlayCore({
         screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       }),
     [sections, isAuthenticated, drawerGradeSectionEnabled, displayedClimb?.description],
+  );
+  // The climber's saved choices alone, so it holds still across a swipe between
+  // a climb with setter notes and one without.
+  const hasSwitchedOnSection = useMemo(
+    () =>
+      hasSwitchedOnPlayDrawerSection({
+        sections,
+        isAuthenticated,
+        screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+      }),
+    [sections, isAuthenticated],
   );
   const firstSectionId = visibleSectionIds[0];
   const hasVisibleSections = sectionsReady && visibleSectionIds.length > 0;
@@ -1711,11 +1722,13 @@ export function PlayCore({
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
                             // Section choices live in ••• → View options. The bar's
-                            // own eye comes back only once no section is left to show:
-                            // it is the way back after Hide all for a signed-out web
-                            // reader, who has no ••• and no Settings.
+                            // own eye comes back only once nothing this climber could
+                            // see is switched on: it is the way back after Hide all for
+                            // a signed-out web reader, who has no ••• and no Settings.
+                            // It follows their choices, not the climb, so it never
+                            // blinks in and out (shifting the row) during a swipe.
                             onEditSections={
-                              sectionsReady && !hasVisibleSections ? handleOpenSectionsSettings : undefined
+                              sectionsReady && !hasSwitchedOnSection ? handleOpenSectionsSettings : undefined
                             }
                             onOpenQueue={onOpenQueue}
                             onShare={displayedClimbIsDraft ? undefined : handleShare}
@@ -1895,9 +1908,7 @@ const styles = StyleSheet.create({
     right: spacing[2],
     height: 44,
     zIndex: 2,
-    flexDirection: 'row',
-    gap: spacing[2],
-    alignItems: 'center',
+    justifyContent: 'center',
   },
   closeButton: {
     position: 'absolute',

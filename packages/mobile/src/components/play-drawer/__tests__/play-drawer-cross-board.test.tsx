@@ -47,6 +47,8 @@ const recorded = vi.hoisted(() => ({
   boardLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
 const viewport = vi.hoisted(() => ({ width: 390, height: 844, fontScale: 1 }));
+// Web unless a case says otherwise: ⋯ opens the reaction menu only on iOS.
+const platform = vi.hoisted(() => ({ OS: 'web' as 'web' | 'ios' }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
 const toggleFavorite = vi.hoisted(() => vi.fn());
 const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
@@ -140,7 +142,12 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFillObject: {} },
-  Platform: { OS: 'web', select: (spec: Record<string, unknown>) => spec.web ?? spec.default },
+  Platform: {
+    get OS() {
+      return platform.OS;
+    },
+    select: (spec: Record<string, unknown>) => spec[platform.OS] ?? spec.default,
+  },
   PixelRatio: { get: () => 3 },
   useWindowDimensions: () => viewport,
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
@@ -162,6 +169,8 @@ vi.mock('react-native-gesture-handler', () => ({
     return createElement('div', null, children);
   },
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  // Native platforms compose the dismiss and scroll-intent gestures.
+  Gesture: { Simultaneous: (...gestures: unknown[]) => ({ gestures }) },
 }));
 vi.mock('react-native-reanimated', () => ({
   default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
@@ -468,6 +477,7 @@ beforeEach(() => {
   recorded.firstScreen = [];
   recorded.sectionsSheet = [];
   recorded.actionsSheet = [];
+  platform.OS = 'web';
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
   queueState.queue = [];
@@ -974,8 +984,8 @@ describe('PlayDrawer configurable sections', () => {
   });
 
   // #6397: section choices live in ⋯ → View options. The bar's eye is only the
-  // way back once nothing is left below the board.
-  it('offers the action-bar eye only while every section is hidden', () => {
+  // way back once nothing the climber could see is switched on.
+  it('offers the action-bar eye only while every section is switched off', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const rendered = renderDrawer();
     const rerender = () =>
@@ -998,6 +1008,40 @@ describe('PlayDrawer configurable sections', () => {
     expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
   });
 
+  // The eye follows the climber's choices, not the climb: with only Setter notes
+  // on, a climb without notes shows nothing below the board, yet a swipe to it
+  // must not slide the eye into the row and shift every button beside it.
+  it('keeps the eye away across climbs with and without setter notes', () => {
+    drawerSections.sections = {
+      logbook: false,
+      climberLogs: false,
+      setterNotes: true,
+      betaVideos: false,
+      boardseshGrade: false,
+      community: false,
+      similarClimbs: false,
+    };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const rendered = renderDrawer();
+    expect(recorded.deferredSections).toHaveLength(0);
+    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
+
+    queueState.currentClimbQueueItem = queueItem(
+      { ...TWELVE_CLIMB, description: 'Match the start, then cut loose.' } as Climb,
+      'queue-twelve',
+    );
+    rendered.rerender(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        onOpenQueue: vi.fn(),
+        openTarget: null,
+      }),
+    );
+    expect(recorded.deferredSections.at(-1)?.sections).toEqual(drawerSections.sections);
+    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
+  });
+
   it('offers no eye while the section choices are still loading', () => {
     hideEverySection();
     drawerSections.ready = false;
@@ -1017,6 +1061,35 @@ describe('PlayDrawer configurable sections', () => {
     expect(recorded.sectionsSheet).toHaveLength(0);
 
     const openViewOptions = recorded.actionsSheet.at(-1)?.onOpenViewOptions as () => void;
+    act(openViewOptions);
+    expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
+  });
+
+  // On iOS ⋯ opens the reaction menu at the app root instead. Its View options
+  // row must still open the sections sheet mounted here, which presents above
+  // `/play`; a root-level sheet would land under it.
+  it("hands the iOS reaction menu the player's own sections opener", () => {
+    platform.OS = 'ios';
+    const onOpenClimbActions =
+      vi.fn<(climb: Climb, boardConfig?: unknown, options?: { onOpenViewOptions?: () => void }) => void>();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: null,
+        onOpenQueue: vi.fn(),
+        onOpenClimbActions,
+      }),
+    );
+    const openActions = recorded.actionBar.at(-1)?.onOpenActions as () => void;
+    act(openActions);
+    expect(onOpenClimbActions).toHaveBeenCalledTimes(1);
+    expect(recorded.actionsSheet).toHaveLength(0);
+    expect(recorded.sectionsSheet).toHaveLength(0);
+
+    const openViewOptions = onOpenClimbActions.mock.calls[0]?.[2]?.onOpenViewOptions;
+    if (!openViewOptions) throw new Error('The reaction menu got no View options opener');
     act(openViewOptions);
     expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
   });

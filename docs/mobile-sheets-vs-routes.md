@@ -245,7 +245,9 @@ work and native QA before claiming that contract works on Android.
 Settings → Climb view and the player's ••• → View options use the same seven visibility
 switches. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`: on iOS from the
-reaction menu, on Android and web once the actions sheet has gone. Its bulk actions
+reaction menu, on Android and web once the actions sheet has gone. ••• lives in the
+second row, which the commit bar replaces while browsing in commit mode, so there the
+way in is Settings → Climb view until the climber is back to live. Its bulk actions
 remain outside the list scroll. On iOS with the Apple variant, the header controls and
 list leave their backgrounds unset so the native sheet material stays visible around
 the inset switch group. Only the grouped rows use an opaque semantic content surface;
@@ -253,10 +255,12 @@ Material, Reduce Transparency, Android and web keep their grouped content backgr
 Show all and Hide all
 stay together above the grouped switches, with 44-point targets and disabled states
 when every section already matches the action. Choices apply immediately; the close
-button dismisses the sheet without a save step. Once no section is left to show, an eye
-button appears in the player's second row and opens the same sheet. It is the way back
-after Hide all for a signed-out web reader, who has no ••• and no Settings, and it
-leaves the row again when a section returns. These device-local choices use AsyncStorage (IndexedDB
+button dismisses the sheet without a save step. The player's second row shows an eye
+button, which opens the same sheet, only when nothing you can see is switched on
+(`hasSwitchedOnPlayDrawerSection`; Climber logs count only when signed in). It reads
+your choices, not the climb, so a swipe between a climb with setter notes and one
+without never slides it into the row. It is the way back after Hide all for a
+signed-out web reader, who has no ••• and no Settings. These device-local choices use AsyncStorage (IndexedDB
 in the browser) and keep each section's existing expansion preference and order.
 
 The first eligible visible section supplies the header preview at the fold; its header
