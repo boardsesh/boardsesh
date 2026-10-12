@@ -195,14 +195,22 @@ function readPrivateApiConfig(): PosthogPrivateApiConfig | null {
 
 /**
  * The documented 2xx body of `bulk_delete` (PostHog's OpenAPI
- * `PersonBulkDeleteResponse`): the two counts are required, and
- * `deletion_errors`, optional in that schema, must be a list when present.
- * Anything else (truncated, not JSON, a proxy's HTML page) is no proof that
- * anything was deleted, so the job retries.
+ * `PersonBulkDeleteResponse`): `persons_found` and
+ * `persons_queued_for_deletion` are required counts, `persons_deleted` a count
+ * when present (0 when absent), and `deletion_errors`, optional in that schema,
+ * a list when present. Anything else (truncated, not JSON, a proxy's HTML page)
+ * is no proof that anything was deleted, so the job retries.
+ *
+ * PostHog answers in one of two modes (`PERSON_BULK_DELETE_ASYNC`): queued,
+ * which PostHog Cloud documents (`persons_queued_for_deletion` equals
+ * `persons_found`, `persons_deleted` is 0), or synchronous (`persons_deleted`
+ * is what went, nothing is queued). Either way, a person is accounted for once
+ * it is deleted or queued.
  */
 const bulkDeleteResponseSchema = z
   .object({
     persons_found: z.number().int().nonnegative(),
+    persons_deleted: z.number().int().nonnegative().optional(),
     persons_queued_for_deletion: z.number().int().nonnegative(),
     deletion_errors: z.array(z.record(z.string(), z.unknown())).optional(),
   })
@@ -501,10 +509,11 @@ function rawDistinctId(payload: unknown): string | undefined {
  * always sent. A job whose `distinctId`, `reason`, `pass` or `stage` fails the
  * schema is `rejected`, logged with its job id and distinct id for a replay.
  *
- * - 2xx with the documented body: done (no matching person is a 202 with
- *   `persons_found: 0`, with zero queued). Matched and queued counts must agree.
- *   A non-empty `deletion_errors`, a count mismatch, or a 2xx body that is
- *   not the documented shape, throws so the job retries.
+ * - 2xx with the documented body: done when `deletion_errors` is empty and
+ *   `persons_deleted + persons_queued_for_deletion >= persons_found` (no
+ *   matching person is a 202 with every count zero, still done). A non-empty
+ *   `deletion_errors`, fewer persons deleted or queued than matched, or a 2xx
+ *   body that is not the documented shape, throws so the job retries.
  * - 401, 403, 404, 408, 429, 5xx, a timeout or a network error, on either
  *   call: throws. A key, a project id or a host can be fixed and an outage
  *   ends, so pg-boss retries. 401/403/404 log at error with the URL.
@@ -615,16 +624,18 @@ export async function deletePosthogPerson(
     });
     throw new PosthogPersonDeletionRetryableError('PostHog reported deletion_errors', status);
   }
-  if (result.persons_queued_for_deletion !== result.persons_found) {
-    logger.warn('[PostHogErasure] PostHog did not queue every matched person; will retry', {
+  const personsDeleted = result.persons_deleted ?? 0;
+  if (personsDeleted + result.persons_queued_for_deletion < result.persons_found) {
+    logger.warn('[PostHogErasure] PostHog neither deleted nor queued every matched person; will retry', {
       event: 'posthog_person_deletion_retry',
       reason,
       pass,
       status,
       personsFound: result.persons_found,
+      personsDeleted,
       personsQueuedForDeletion: result.persons_queued_for_deletion,
     });
-    throw new PosthogPersonDeletionRetryableError('PostHog matched/queued deletion counts differ', status);
+    throw new PosthogPersonDeletionRetryableError('PostHog accounted for fewer persons than it matched', status);
   }
   logger.info('[PostHogErasure] PostHog person deletion accepted', {
     event: 'posthog_person_deletion_accepted',
@@ -633,6 +644,7 @@ export async function deletePosthogPerson(
     status,
     anonymousIds: anonymousIds.length,
     personsFound: result.persons_found,
+    personsDeleted,
     personsQueuedForDeletion: result.persons_queued_for_deletion,
   });
   return 'deleted';

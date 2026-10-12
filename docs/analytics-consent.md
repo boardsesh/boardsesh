@@ -368,7 +368,8 @@ anything is deleted.
    looks up again; its retries reuse the same ids. What happens next is
    PostHog's:
    - The person records and their distinct ids are removed in the background
-     shortly after the request (`persons_queued_for_deletion` in the response).
+     shortly after the request (`persons_queued_for_deletion` in the response),
+     or during it if PostHog runs in synchronous mode (`persons_deleted`).
    - Events and recordings are deleted by a later PostHog batch, which can take
      days. `GET /api/projects/<id>/persons/deletion_status/` lists what is
      still pending.
@@ -376,12 +377,18 @@ anything is deleted.
 Responses:
 
 - **Done** only on a 2xx from the delete whose body is the documented
-  `PersonBulkDeleteResponse`: `persons_found` and `persons_queued_for_deletion`
-  as equal counts, and `deletion_errors`, when present, a list. No matching person
-  is a 202 with both counts zero, still done.
+  `PersonBulkDeleteResponse` (`persons_found` and `persons_queued_for_deletion`
+  as counts, `persons_deleted` a count when present, `deletion_errors` a list
+  when present), with no `deletion_errors` and every matched person accounted
+  for: `persons_deleted + persons_queued_for_deletion >= persons_found`, an
+  absent `persons_deleted` read as 0. PostHog answers in one of two modes
+  (`PERSON_BULK_DELETE_ASYNC`). Queued, which PostHog Cloud documents, reports
+  every match in `persons_queued_for_deletion` with `persons_deleted` 0;
+  synchronous reports what went in `persons_deleted` with nothing queued. Both
+  count as done. No matching person is a 202 with every count zero, still done.
 - **Retry** on a 2xx without that body (no body, not JSON, truncated, a proxy's
-  page: none of them prove a deletion), on a non-empty `deletion_errors`, on
-  unequal matched/queued counts, and,
+  page: none of them prove a deletion), on a non-empty `deletion_errors`, when
+  fewer persons were deleted or queued than matched, and,
   on either call, on 401, 403, 404, 408, 429, 5xx, a timeout or a network
   error. A 404 is not "nothing to delete": PostHog never answers that way, so
   it means `POSTHOG_PROJECT_ID` or `POSTHOG_API_HOST` is wrong. 401, 403 and

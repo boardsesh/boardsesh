@@ -293,17 +293,38 @@ describe('deletePosthogPerson, delete step', () => {
     await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('deleted');
   });
 
+  /** PostHog's synchronous mode (`PERSON_BULK_DELETE_ASYNC` off): deleted in the request, nothing queued. */
+  const deletedNow = (personsFound = 1) => ({
+    ...queuedDeletion(personsFound),
+    persons_deleted: personsFound,
+    persons_queued_for_deletion: 0,
+  });
+
+  it.each([
+    ['queued (PostHog Cloud)', queuedDeletion(1)],
+    ['deleted in the request (synchronous mode)', deletedNow(1)],
+    ['partly deleted, the rest queued', { ...queuedDeletion(3), persons_deleted: 1, persons_queued_for_deletion: 2 }],
+    ['without persons_deleted, all queued', (({ persons_deleted: _omitted, ...rest }) => rest)(queuedDeletion(2))],
+  ])('accepts every matched person %s as done', async (_label, body) => {
+    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(202, body) });
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('deleted');
+  });
+
   it.each(['first', 'late'] as const)(
-    'retries the %s pass when matched persons were not all queued despite empty errors',
+    'retries the %s pass when PostHog neither deleted nor queued every matched person',
     async (pass) => {
-      for (const [personsFound, personsQueued] of [
-        [1, 0],
-        [3, 2],
-        [0, 1],
+      for (const [personsFound, personsDeleted, personsQueued] of [
+        [1, 0, 0],
+        [3, 0, 2],
+        [3, 1, 1],
       ]) {
         const fetchImpl = mockPosthog({
           deletion: () =>
-            jsonResponse(202, { ...queuedDeletion(personsFound), persons_queued_for_deletion: personsQueued }),
+            jsonResponse(202, {
+              ...queuedDeletion(personsFound),
+              persons_deleted: personsDeleted,
+              persons_queued_for_deletion: personsQueued,
+            }),
         });
         await expect(deletePosthogPerson({ ...deleteJob, pass }, { fetchImpl })).rejects.toBeInstanceOf(
           PosthogPersonDeletionRetryableError,
@@ -326,6 +347,7 @@ describe('deletePosthogPerson, delete step', () => {
     ['no persons_queued_for_deletion', () => jsonResponse(202, { persons_found: 1, persons_deleted: 1 })],
     ['deletion_errors that is not a list', () => jsonResponse(202, { ...queuedDeletion(), deletion_errors: 'boom' })],
     ['counts that are not counts', () => jsonResponse(202, { ...queuedDeletion(), persons_found: '1' })],
+    ['a persons_deleted that is not a count', () => jsonResponse(202, { ...deletedNow(), persons_deleted: -1 })],
   ])('retries a 2xx with %s: it proves nothing was deleted', async (_label, deletion) => {
     const fetchImpl = mockPosthog({ deletion });
     await expect(deletePosthogPerson(deleteJob, { fetchImpl })).rejects.toBeInstanceOf(
@@ -437,9 +459,9 @@ describe('deletePosthogPerson, either step', () => {
     const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
     const fetchImpl = mockPosthog();
 
-    await expect(
-      deletePosthogPerson({ ...deleteJob, reason: 'nope' }, { fetchImpl, jobId: 'job-1234' }),
-    ).resolves.toBe('rejected');
+    await expect(deletePosthogPerson({ ...deleteJob, reason: 'nope' }, { fetchImpl, jobId: 'job-1234' })).resolves.toBe(
+      'rejected',
+    );
 
     expect(errorLog).toHaveBeenCalledWith(
       expect.any(String),

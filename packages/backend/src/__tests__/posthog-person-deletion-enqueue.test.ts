@@ -284,12 +284,14 @@ describe('the erasure worker', () => {
     anonymousIds: string[];
     deletion: number;
     personsFound: number;
+    personsDeleted: number;
     personsQueued: number;
   } = {
     lookup: 200,
     anonymousIds: [],
     deletion: 202,
     personsFound: 1,
+    personsDeleted: 0,
     personsQueued: 1,
   };
   /** The distinct_ids of every bulk_delete PostHog received, per account. */
@@ -312,7 +314,7 @@ describe('the erasure worker', () => {
     return new Response(
       JSON.stringify({
         persons_found: replies.personsFound,
-        persons_deleted: 0,
+        persons_deleted: replies.personsDeleted,
         persons_queued_for_deletion: replies.personsQueued,
         events_queued_for_deletion: true,
         recordings_queued_for_deletion: true,
@@ -338,6 +340,7 @@ describe('the erasure worker', () => {
     replies.anonymousIds = [];
     replies.deletion = 202;
     replies.personsFound = 1;
+    replies.personsDeleted = 0;
     replies.personsQueued = 1;
   });
 
@@ -354,8 +357,15 @@ describe('the erasure worker', () => {
     expect(state).toMatchObject({ state: 'completed', retry_count: 0, output: { outcome: 'deleted' } });
   });
 
+  it('completes a delete step PostHog deleted in the request (synchronous mode)', async () => {
+    replies.personsDeleted = 1;
+    replies.personsQueued = 0;
+    const state = await workOne(deleteStep(randomUUID()));
+    expect(state).toMatchObject({ state: 'completed', retry_count: 0, output: { outcome: 'deleted' } });
+  });
+
   it.each(['first', 'late'] as const)(
-    'keeps the %s delete pass retryable when a matched person was not queued',
+    'keeps the %s delete pass retryable when a matched person was neither deleted nor queued',
     async (pass) => {
       replies.personsFound = 1;
       replies.personsQueued = 0;

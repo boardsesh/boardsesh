@@ -136,7 +136,6 @@ function nextDecidedAt(userId: string) {
  * signed-in climber with the account id and their email, so an account whose
  * first answer is No thanks can still have a person. A repeated denial queues
  * nothing: the first one already did, and nothing was captured since.
-
  */
 export async function setAnalyticsConsentForUser(
   userId: string,
