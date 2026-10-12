@@ -61,8 +61,9 @@ describe('HomeBoardShareSheet', () => {
       shareUrl: 'https://www.boardsesh.com/b/the-garage',
       visibility: 'unlisted',
       subject: 'board',
-      onResetLink: undefined,
     });
+    // A plain link grants nothing, so there is nothing to reset.
+    expect(captured.props?.onResetLink).toBeUndefined();
     expect(linkEnabled).not.toHaveBeenCalled();
   });
 

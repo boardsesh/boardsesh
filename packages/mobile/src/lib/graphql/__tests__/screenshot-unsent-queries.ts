@@ -27,6 +27,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'BoardPresenceStats',
   'BoardRecentClimbs',
   'BoardRecentHistory',
+  // The owner's invite link: only the Share sheet of a Followers or Invite-only board asks.
+  'BoardShareLink',
   'BoardseshGrade',
   'BoardseshGradesForAngles',
   'BrowseProposals',

@@ -17,11 +17,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 const mocks = vi.hoisted(() => ({
   init: vi.fn(),
   captureRouterTransitionStart: vi.fn(),
+  addEventProcessor: vi.fn(),
 }));
 
 vi.mock('@sentry/nextjs', () => ({
   init: mocks.init,
   captureRouterTransitionStart: mocks.captureRouterTransitionStart,
+  addEventProcessor: mocks.addEventProcessor,
 }));
 
 const originalLocation = window.location;
@@ -77,6 +79,15 @@ describe('Sentry client gate', () => {
   ])('never initialises for %s, even on a production host', async (_label, userAgent) => {
     setUserAgent(userAgent);
     expect((await initOptions()).enabled).toBe(false);
+  });
+
+  it("installs the processor that redacts a board share link's token", async () => {
+    await initOptions();
+    expect(mocks.addEventProcessor).toHaveBeenCalledTimes(1);
+    const [processor] = mocks.addEventProcessor.mock.calls[0] as [(event: unknown) => unknown];
+    const token = 'Ab3_dE-fGhIjKlMnOpQrSt';
+    const scrubbed = processor({ request: { url: `https://www.boardsesh.com/b/garage?invite=${token}` } });
+    expect(JSON.stringify(scrubbed)).not.toContain(token);
   });
 
   it('still refuses a non-production host', async () => {
