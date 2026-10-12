@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -54,6 +54,76 @@ function compute(overrides: NodeJS.ProcessEnv = {}) {
 }
 
 describe('CPP workflow isolation and matrix', () => {
+  it.each([4, 3, 0, 5])('discovers exactly four genuine shard manifests without rg (downloaded: %i)', (count) => {
+    const directory = mkdtempSync(join(tmpdir(), 'cpp-manifest-discovery-'));
+    directories.push(directory);
+    const binaries = join(directory, 'bin');
+    const recordings = join(directory, 'cpp-recordings');
+    mkdirSync(binaries);
+    mkdirSync(recordings);
+    for (const name of ['find', 'sort', 'jq', 'mkdir']) {
+      const binary = spawnSync('/bin/bash', ['-c', `command -v ${name}`], { encoding: 'utf8' });
+      if (binary.status !== 0) throw new Error(`Required discovery test dependency missing: ${name}`);
+      symlinkSync(binary.stdout.trim(), join(binaries, name));
+    }
+    const callsFile = join(directory, 'producer-calls');
+    // Only downstream producers are mocked. Discovery, ordering, jq's matrix
+    // count and the guard execute the exact checked-in workflow shell script.
+    writeFileSync(join(binaries, 'vp'), '#!/bin/bash\nprintf "%s\\0" __CPP_CALL__ "$@" >> "$CPP_TEST_CALLS"\n', {
+      mode: 0o755,
+    });
+    const shardNames = ['z-phone', 'a tablet', 'b tablet\n', '.hidden-shard', 'extra-shard'];
+    const expectedDirectories = shardNames.slice(0, count).map((name) => join(recordings, name));
+    for (const shard of expectedDirectories) {
+      mkdirSync(shard);
+      writeFileSync(join(shard, 'manifest.json'), '{}');
+      writeFileSync(join(shard, 'other-file.json'), '{}');
+      mkdirSync(join(shard, 'nested'));
+      // A directory with this name must never count as a recorded manifest.
+      mkdirSync(join(shard, 'nested', 'manifest.json'));
+    }
+    const script = workflow.jobs['cpp-prepare-record'].steps.find(
+      ({ name }) => name === 'Merge and prepare immutable CPP candidate',
+    )?.run;
+    if (!script) throw new Error('CPP preparation step missing');
+    const env = {
+      ...process.env,
+      PATH: binaries,
+      RUNNER_TEMP: directory,
+      CPP_TARGET: 'kilter',
+      CPP_MATRIX: JSON.stringify({ include: Array.from({ length: 4 }, (_, index) => ({ device: index })) }),
+      GITHUB_STEP_SUMMARY: join(directory, 'summary'),
+      CPP_TEST_CALLS: callsFile,
+    };
+    expect(spawnSync('/bin/bash', ['-c', 'command -v rg'], { env }).status).toBe(1);
+    const result = spawnSync('/bin/bash', ['-c', script], { encoding: 'utf8', env });
+    if (count !== 4) {
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toContain('Recorded CPP artifacts do not cover every requested shard.');
+      expect(() => readFileSync(callsFile)).toThrow();
+      return;
+    }
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const calls = readFileSync(callsFile, 'utf8')
+      .split('__CPP_CALL__\0')
+      .slice(1)
+      .map((call) => call.split('\0').slice(0, -1));
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toEqual([
+      'run',
+      'mobile:screenshot-fixtures-merge',
+      '--',
+      '--out',
+      join(directory, 'cpp-merged'),
+      '--on-conflict',
+      'newest',
+      ...expectedDirectories.sort(),
+    ]);
+    expect(calls[1]).toContain('--cpp');
+    expect(calls[1]).toContain('--refresh-photo-urls');
+    expect(calls[3]).toContain('--archive');
+    expect(result.stderr).not.toContain('command not found');
+  });
   it('expands four targets, four app locales, and four devices into 64 unique capture shards', () => {
     const result = compute();
     expect(result.status, result.stdout + result.stderr).toBe(0);

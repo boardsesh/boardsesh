@@ -1206,14 +1206,14 @@ jobs:
           SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
         run: |
           set -euo pipefail
-          mapfile -t manifests < <(rg --files --hidden "$RUNNER_TEMP/cpp-recordings" -g manifest.json | sort)
+          mapfile -d '' -t manifests < <(find "$RUNNER_TEMP/cpp-recordings" -type f -name manifest.json -print0 | LC_ALL=C sort -z)
           expected=$(printf '%s' "$CPP_MATRIX" | jq -r '.include | length')
           if [ "${#manifests[@]}" -ne "$expected" ]; then
             echo '::error::Recorded CPP artifacts do not cover every requested shard.'
             exit 1
           fi
           directories=()
-          for manifest in "${manifests[@]}"; do directories+=("$(dirname "$manifest")"); done
+          for manifest in "${manifests[@]}"; do directories+=("${manifest%/manifest.json}"); done
           # The signatures/timestamps differ naturally between genuine shards.
           # Keep the newest actual response and retain the merger's conflict log.
           vp run mobile:screenshot-fixtures-merge -- --out "$RUNNER_TEMP/cpp-merged" --on-conflict newest "${directories[@]}"
