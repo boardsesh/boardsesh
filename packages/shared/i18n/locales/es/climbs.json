@@ -603,7 +603,7 @@
       "any": "Cualquiera",
       "setFilterAria": "Filtrar por ángulo de {{angle}} grados",
       "selectedFilterAria": "Filtro de ángulo de {{angle}} grados seleccionado",
-      "rangeFilterAria": "{{angle}} grados está en el rango de ángulos seleccionado",
+      "rangeFilterAria": "El ángulo de {{angle}} grados está en el rango seleccionado",
       "anyAngleAria": "Cualquier ángulo seleccionado",
       "clearFilterAria": "Borrar filtro de ángulo",
       "rangeHoldHint": "Mantén pulsado para crear un rango con el ángulo seleccionado"

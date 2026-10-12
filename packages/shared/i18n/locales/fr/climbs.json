@@ -603,7 +603,7 @@
       "any": "Toutes",
       "setFilterAria": "Filtrer par inclinaison de {{angle}} degrés",
       "selectedFilterAria": "Filtre d'inclinaison de {{angle}} degrés sélectionné",
-      "rangeFilterAria": "{{angle}} degrés est dans la plage d'inclinaisons sélectionnée",
+      "rangeFilterAria": "L'inclinaison de {{angle}} degrés est dans la plage sélectionnée",
       "anyAngleAria": "Toutes les inclinaisons sélectionnées",
       "clearFilterAria": "Effacer le filtre d'inclinaison",
       "rangeHoldHint": "Appuie longuement pour créer une plage avec l'inclinaison sélectionnée"

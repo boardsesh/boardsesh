@@ -325,6 +325,18 @@ vi.mock('../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: authMock.isAuthenticated }),
 }));
 
+// The climbs pin store, reduced to one pinned kind and a toggle spy, so a test
+// can tell which control's pin is which: only the pinned kind's pin reads "Unpin".
+const pinStore = vi.hoisted(() => ({ pinnedKind: null as string | null, togglePin: vi.fn() }));
+vi.mock('../../lib/pinned-chips-store', () => ({
+  usePinnedChips: () => ({
+    pinned: pinStore.pinnedKind ? [pinStore.pinnedKind] : [],
+    loaded: true,
+    isPinned: (kind: string) => kind === pinStore.pinnedKind,
+    togglePin: pinStore.togglePin,
+  }),
+}));
+
 vi.mock('../../lib/create-board-holds', () => ({
   parseSetIdsParam: createBoardHoldsMocks.parseSetIdsParam,
   prewarmCreateBoardHolds: createBoardHoldsMocks.prewarmCreateBoardHolds,
@@ -552,6 +564,7 @@ beforeEach(() => {
   managedSheetProps.latest = null;
   focusEffectHolder.cb = null;
   authMock.isAuthenticated = true;
+  pinStore.pinnedKind = null;
 });
 
 describe('ClimbFilterSheet live selections and dismissal', () => {
@@ -1732,5 +1745,35 @@ describe('ClimbFilterSheet on a spray wall', () => {
     });
 
     expect(getByTestId('segment-benchmarks').getAttribute('data-selected')).toBe('true');
+  });
+});
+
+// Each sheet pin is wired to its own chip: the pinned state it shows and the
+// chip it toggles must both be that control's, never a neighbour's.
+describe('ClimbFilterSheet pins', () => {
+  // Kilter Homewall 10x12, where Tall and Wide both apply.
+  const homewall = { ...boardConfig, layoutId: 8, sizeId: 25 };
+
+  it.each([
+    'grade',
+    'accuracy',
+    'progress',
+    'collection',
+    'rating',
+    'popularity',
+    'climbType',
+    'tall',
+    'wide',
+    'beta',
+    'sort',
+  ])('shows the %s chip as pinned on its own control, and toggles that chip', (kind) => {
+    pinStore.pinnedKind = kind;
+    const { getByLabelText, getAllByLabelText } = renderFilterSheet({ boardConfig: homewall });
+
+    // Exactly one pin reads pinned: the one on this control.
+    fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
+    expect(pinStore.togglePin.mock.calls).toEqual([[kind]]);
+    // Every other control still offers its own pin.
+    expect(getAllByLabelText('mobile.filter.pinChip')).toHaveLength(10);
   });
 });

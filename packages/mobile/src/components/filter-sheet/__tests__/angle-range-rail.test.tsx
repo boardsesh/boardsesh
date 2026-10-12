@@ -217,6 +217,30 @@ describe('AngleRangeRail', () => {
       expect(onChange.mock.calls).toEqual([[[40, 40], { gesture: 'tap' }]]);
     });
 
+    // 0 is an angle, not "no angle": it must come back as a selection, never Any.
+    it('reports 0° as an angle of its own', () => {
+      const { getByText, onChange } = renderRail(null);
+      fireEvent.click(getByText('0°'));
+      expect(onChange.mock.calls).toEqual([[[0, 0], { gesture: 'tap' }]]);
+    });
+
+    it('makes a range that ends on 0°, from −5°', () => {
+      const { getByText, onChange, show } = renderRail(null);
+      fireEvent.click(getByText('\u22125°'));
+      show([-5, -5]);
+      vi.setSystemTime(SESSION_START + 500);
+      fireEvent.click(getByText('0°'));
+      expect(onChange.mock.calls).toEqual([
+        [[-5, -5], { gesture: 'tap' }],
+        [[-5, 0], { gesture: 'tap', withinRangeWindow: true }],
+      ]);
+    });
+
+    it('paints a 0° selection as selected', () => {
+      const { container } = renderRail([0, 0]);
+      expect(chipAttribute(container, 'data-tone')).toMatchObject({ [ANY_LABEL]: 'neutral', '0°': 'selected' });
+    });
+
     it('makes a range from a second tap inside the window', () => {
       const { getByText, onChange, show } = renderRail(null);
       fireEvent.click(getByText('40°'));

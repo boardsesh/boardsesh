@@ -42,10 +42,14 @@ export const FilterLabelRow = memo(function FilterLabelRow({
       ) : (
         labelText
       )}
+      {/* The description tucks up under the label, into the bottom of the pin's
+          44pt target; it takes no touches, so a tap there still reaches the pin. */}
       {description ? (
-        <Text variant="footnote" style={styles.description}>
-          {description}
-        </Text>
+        <View pointerEvents="none" style={styles.description}>
+          <Text variant="footnote" style={styles.descriptionText}>
+            {description}
+          </Text>
+        </View>
       ) : null}
     </>
   );
@@ -59,9 +63,11 @@ const styles = StyleSheet.create({
   },
   // Sits tight under the label (cancels its marginBottom) and more muted than it.
   description: {
-    opacity: 0.4,
     marginTop: -spacing[2],
     marginBottom: spacing[1],
+  },
+  descriptionText: {
+    opacity: 0.4,
   },
   // A control's label line with a trailing pin toggle (pin the control to the chip row).
   pinnableRow: {

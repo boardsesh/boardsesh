@@ -67,9 +67,16 @@ function FilterChipComponent<Value>({ label, selected, value, onPress, accessibi
  */
 export const FilterChip = memo(FilterChipComponent) as typeof FilterChipComponent;
 
-/** The wrapping row a group of `FilterChip`s sits in. */
+/**
+ * The wrapping row a group of `FilterChip`s sits in. Only its chips take
+ * touches, so a pin target overhanging the row from the label above still works.
+ */
 export function FilterChipGroup({ children }: { children?: ReactNode }) {
-  return <View style={styles.group}>{children}</View>;
+  return (
+    <View pointerEvents="box-none" style={styles.group}>
+      {children}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

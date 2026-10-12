@@ -59,6 +59,9 @@ const styles = StyleSheet.create({
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     margin: -TARGET_OVERHANG,
+    // Round, so the Android ripple is a circle round the glyph rather than a
+    // square over the label beside it.
+    borderRadius: MIN_TOUCH_TARGET / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },

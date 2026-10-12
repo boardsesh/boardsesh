@@ -244,6 +244,7 @@ vi.mock('../../../../src/components/SegmentedControl', () => ({
 }));
 
 import SettersFilterScreen from '../setters';
+import { SetterPickerList } from '../../../../src/components/filter-sheet/SetterPickerList';
 
 // The sheet's count input for its draft, as the filter sheet serializes it.
 const sheetCountInput = {
@@ -429,6 +430,25 @@ describe('SettersFilterScreen', () => {
     expect((getByText('authors.follow').closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('searches setters with the text typed, once the typing settles', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByPlaceholderText } = render(<SettersFilterScreen />);
+      const input = getByPlaceholderText('mobile.filter.searchSetters');
+      fireEvent.change(input, { target: { value: 'al' } });
+      fireEvent.change(input, { target: { value: 'ali' } });
+      expect(setterStats.inputs.at(-1)).not.toHaveProperty('search');
+
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      expect(setterStats.inputs.at(-1)?.search).toBe('ali');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('seeds the selection from the route param', () => {
     params.value.setters = JSON.stringify(['bob']);
     render(<SettersFilterScreen />);
@@ -579,5 +599,56 @@ describe('SettersFilterScreen', () => {
 
       expect(setterStats.inputs.at(-1)).not.toHaveProperty('crossAngleStats');
     });
+  });
+});
+
+// The list on its own, fed the way the Logbook's picker will feed it.
+describe('SetterPickerList', () => {
+  function renderList(overrides: Partial<Parameters<typeof SetterPickerList>[0]> = {}) {
+    const props: Parameters<typeof SetterPickerList>[0] = {
+      setters: [{ setterUsername: 'cara', count: 2 }],
+      isLoading: false,
+      onSearchChange: vi.fn(),
+      searchPlaceholder: 'Search setters',
+      formatCount: (count) => `${count} logged`,
+      selected: [],
+      onToggle: vi.fn(),
+      onClearAll: vi.fn(),
+      emptyLabel: 'No setters yet',
+      ...overrides,
+    };
+    return { ...render(<SetterPickerList {...props} />), props };
+  }
+
+  it('hands the search back once, after the typing settles', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByPlaceholderText, getByText, props } = renderList({ setters: [] });
+      expect(getByText('No setters yet')).not.toBeNull();
+      const input = getByPlaceholderText('Search setters');
+      fireEvent.change(input, { target: { value: 'c' } });
+      fireEvent.change(input, { target: { value: 'cr' } });
+
+      act(() => {
+        vi.advanceTimersByTime(249);
+      });
+      expect(props.onSearchChange).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(vi.mocked(props.onSearchChange).mock.calls).toEqual([['cr']]);
+      // With a search typed, an empty list reads as no matches.
+      expect(getByText('mobile.emptyState.noMatches.title')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('names each count with the caller\u2019s wording, and toggles from the name when there is no page to open', () => {
+    const { getByText, props } = renderList();
+    expect(getByText('2 logged')).not.toBeNull();
+    fireEvent.click(getByText('cara'));
+    expect(props.onToggle).toHaveBeenCalledWith('cara');
   });
 });
