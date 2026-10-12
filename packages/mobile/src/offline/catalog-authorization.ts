@@ -8,10 +8,12 @@ import { getDatabaseHandle, subscribeDatabaseHandle } from '../db/connection';
 import { getSetting } from '../settings';
 import {
   PrivacyRevalidationDeferredError,
+  reopenHeldCatalog,
   requirePrivacyRevalidation,
   revalidatePrivateCatalog,
 } from './privacy-revalidation';
-import { canReadPrivateCatalog, isCatalogViewerUnstamped, subscribeCatalogCredentialMismatch } from './catalog-access';
+import { canReadPrivateCatalog, readCatalogStamp, subscribeCatalogCredentialMismatch } from './catalog-access';
+import { subscribeMutationDelivery } from './offline-sync-adapter';
 
 type OfflineDatabaseHandle = NonNullable<ReturnType<typeof getDatabaseHandle>>;
 
@@ -34,6 +36,12 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
  *   when a database handle is published.
  * - a local read finds a marker for an older credential: another account, or a
  *   refreshed token. Reported through `subscribeCatalogCredentialMismatch`.
+ *
+ * A revalidation that had to keep another account's rows (possible unsynced
+ * work, or a climb a queued write names) leaves a held record instead of the
+ * marker. That is not a reason to withdraw again: at start, and whenever a
+ * queued write is delivered or dead-lettered, `reopenHeldCatalog` counts only
+ * those rows and stamps the marker once none are left.
  */
 export function startCatalogAuthorization(viewerId: string, isViewerCurrent: () => boolean): () => void {
   let disposed = false;
@@ -96,11 +104,37 @@ export function startCatalogAuthorization(viewerId: string, isViewerCurrent: () 
     clearRetry();
     void repair(true);
   };
+  let reopening = false;
+  let reopenAgain = false;
+  const reopen = async (database: OfflineDatabaseHandle): Promise<void> => {
+    if (reopening) {
+      reopenAgain = true;
+      return;
+    }
+    reopening = true;
+    try {
+      do {
+        reopenAgain = false;
+        // A repair in progress or waiting to run owns the catalogue.
+        if (running || dirty || !currentViewer() || getDatabaseHandle() !== database) return;
+        await reopenHeldCatalog(database, viewerId, () => currentViewer() && getDatabaseHandle() === database);
+      } while (reopenAgain);
+    } catch (error) {
+      reportHandledError(error, { tags: { source: 'privacy-revalidation', step: 'reopen-held' } });
+    } finally {
+      reopening = false;
+    }
+  };
   const probe = async (database: OfflineDatabaseHandle): Promise<void> => {
-    if (await isCatalogViewerUnstamped(database)) {
+    const stamp = await readCatalogStamp(database, viewerId);
+    if (stamp === 'unstamped') {
       // A repair already requested deletes the marker first; that is not a
       // second reason to start over.
       if (revision === 0 && getDatabaseHandle() === database) requestRepair();
+      return;
+    }
+    if (stamp === 'held') {
+      await reopen(database);
       return;
     }
     // Local reads may beat profile readiness. A marker for an older credential
@@ -136,6 +170,15 @@ export function startCatalogAuthorization(viewerId: string, isViewerCurrent: () 
     if (state === 'active') resume();
   });
   const stopCredentialMismatch = subscribeCatalogCredentialMismatch(requestRepair);
+  // A delivered or dead-lettered write may have been the last thing keeping a
+  // row, so reads can reopen in this launch rather than the next.
+  const stopDelivery = subscribeMutationDelivery(() => {
+    const database = getDatabaseHandle();
+    if (!database || !currentViewer() || running || dirty) return;
+    void readCatalogStamp(database, viewerId).then((stamp) => {
+      if (stamp === 'held') void reopen(database);
+    });
+  });
   const database = getDatabaseHandle();
   if (database) void probe(database);
   return () => {
@@ -143,6 +186,7 @@ export function startCatalogAuthorization(viewerId: string, isViewerCurrent: () 
     clearRetry();
     stopDatabase();
     stopCredentialMismatch();
+    stopDelivery();
     stopOnline();
     foreground.remove();
   };

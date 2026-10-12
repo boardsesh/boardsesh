@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   state: 'active',
   credential: 0,
   mismatch: false,
-  unstamped: false as boolean | Promise<boolean>,
+  stamp: 'stamped' as 'stamped' | 'held' | 'unstamped' | Promise<'stamped' | 'held' | 'unstamped'>,
+  deliveryListener: undefined as (() => void) | undefined,
+  reopen: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
   mismatchListener: undefined as (() => void) | undefined,
   databaseListener: undefined as (() => void) | undefined,
   onlineListener: undefined as ((online: boolean) => void) | undefined,
@@ -59,7 +61,16 @@ vi.mock('../../../lib/spray/spray-photo-store', () => ({ clearStoredSprayPhotos:
 vi.mock('../../../offline/privacy-revalidation', () => ({
   PrivacyRevalidationDeferredError: class extends Error {},
   revalidatePrivateCatalog: mocks.revalidate,
+  reopenHeldCatalog: mocks.reopen,
   requirePrivacyRevalidation: mocks.require,
+}));
+vi.mock('../../../offline/offline-sync-adapter', () => ({
+  subscribeMutationDelivery: (listener: () => void) => {
+    mocks.deliveryListener = listener;
+    return () => {
+      mocks.deliveryListener = undefined;
+    };
+  },
 }));
 vi.mock('../../../db/connection', () => ({
   getDatabaseHandle: () => mocks.database,
@@ -75,7 +86,7 @@ vi.mock('../../../offline/catalog-access', () => ({
     if (mocks.mismatch) mocks.mismatchListener?.();
     return !mocks.mismatch;
   },
-  isCatalogViewerUnstamped: async () => mocks.unstamped,
+  readCatalogStamp: async () => mocks.stamp,
   subscribeCatalogCredentialMismatch: (listener: () => void) => {
     mocks.mismatchListener = listener;
     return () => {
@@ -102,8 +113,9 @@ beforeEach(() => {
   mocks.state = 'active';
   mocks.credential = 0;
   mocks.mismatch = false;
-  mocks.unstamped = false;
+  mocks.stamp = 'stamped';
   mocks.revalidate.mockReset().mockResolvedValue();
+  mocks.reopen.mockReset().mockResolvedValue(false);
 });
 afterEach(() => {
   cleanup();
@@ -112,7 +124,7 @@ afterEach(() => {
 
 describe('catalogue authorization without privacyChanged', () => {
   it('never opens a realtime subscription', async () => {
-    mocks.unstamped = true;
+    mocks.stamp = 'unstamped';
     await act(async () => {
       render(<PrivacySyncBridge />);
     });
@@ -121,7 +133,7 @@ describe('catalogue authorization without privacyChanged', () => {
   });
 
   it('stamps a catalogue with no marker once the signed-in session is known', async () => {
-    mocks.unstamped = true;
+    mocks.stamp = 'unstamped';
     mocks.viewer = undefined;
     const view = render(<PrivacySyncBridge />);
     await act(async () => {});
@@ -145,7 +157,7 @@ describe('catalogue authorization without privacyChanged', () => {
 
   it('checks a database handle published after the session started', async () => {
     mocks.database = null;
-    mocks.unstamped = true;
+    mocks.stamp = 'unstamped';
     await act(async () => {
       render(<PrivacySyncBridge />);
     });
@@ -157,16 +169,55 @@ describe('catalogue authorization without privacyChanged', () => {
   });
 
   it('does not restart a repair because its own withdrawal deleted the marker', async () => {
-    let answerUnstamped!: (unstamped: boolean) => void;
-    mocks.unstamped = new Promise<boolean>((resolve) => {
-      answerUnstamped = resolve;
+    let answerStamp!: (stamp: 'unstamped') => void;
+    mocks.stamp = new Promise<'unstamped'>((resolve) => {
+      answerStamp = resolve;
     });
     render(<PrivacySyncBridge />);
     await act(async () => reportMismatch());
     expect(mocks.revalidate).toHaveBeenCalledOnce();
-    await act(async () => answerUnstamped(true));
+    await act(async () => answerStamp('unstamped'));
     expect(mocks.require).toHaveBeenCalledOnce();
     expect(mocks.revalidate).toHaveBeenCalledOnce();
+  });
+
+  it('reopens a held catalogue without withdrawing anything again', async () => {
+    mocks.stamp = 'held';
+    await act(async () => {
+      render(<PrivacySyncBridge />);
+    });
+    expect(mocks.reopen).toHaveBeenCalledOnce();
+    expect(mocks.reopen.mock.calls[0][1]).toBe('viewer');
+    expect(mocks.require).not.toHaveBeenCalled();
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('checks a held catalogue again when a queued write is delivered', async () => {
+    await act(async () => {
+      render(<PrivacySyncBridge />);
+    });
+    await act(async () => mocks.deliveryListener?.());
+    expect(mocks.reopen).not.toHaveBeenCalled();
+    mocks.stamp = 'held';
+    await act(async () => mocks.deliveryListener?.());
+    expect(mocks.reopen).toHaveBeenCalledOnce();
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('leaves the catalogue to a repair that is still running when a write is delivered', async () => {
+    let finish!: () => void;
+    mocks.revalidate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<PrivacySyncBridge />);
+    await act(async () => reportMismatch());
+    mocks.stamp = 'held';
+    await act(async () => mocks.deliveryListener?.());
+    expect(mocks.reopen).not.toHaveBeenCalled();
+    await act(async () => finish());
   });
 
   it('repairs a marker for an older credential observed during startup', async () => {
@@ -277,6 +328,7 @@ describe('catalogue authorization without privacyChanged', () => {
     expect(mocks.revalidate).toHaveBeenCalledOnce();
     expect(mocks.databaseListener).toBeUndefined();
     expect(mocks.mismatchListener).toBeUndefined();
+    expect(mocks.deliveryListener).toBeUndefined();
   });
 
   it('defers a timer retry in the background until the next foreground', async () => {

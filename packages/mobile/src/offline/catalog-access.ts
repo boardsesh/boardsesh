@@ -3,6 +3,13 @@ let authGenerationIsCurrent: ((generation: number) => boolean) | null = null;
 let observedCredentialGeneration: number | null = null;
 
 export const CATALOG_VIEWER_KEY = 'privacy:catalog-viewer:v1';
+/**
+ * Written instead of the viewer marker when a revalidation for this credential
+ * had to keep another account's rows (possible unsynced work, or rows a queued
+ * write names). Reads stay closed; a later check counts only those rows and
+ * stamps the marker once none are left, without withdrawing anything again.
+ */
+export const CATALOG_HELD_KEY = 'privacy:catalog-held:v1';
 type CatalogCredential = { generation: number; digest: string };
 let catalogEpoch = 0;
 let catalogBlocked = false;
@@ -48,21 +55,56 @@ export function isCatalogCredentialCurrent(credential: CatalogCredential | null)
   return credential !== null && authGenerationIsCurrent?.(credential.generation) === true;
 }
 
-export async function stampCatalogViewer(
+async function writeCatalogViewerRecord(
   db: SqlExecutor,
+  key: typeof CATALOG_VIEWER_KEY | typeof CATALOG_HELD_KEY,
   viewerId: string,
   credential: CatalogCredential | null,
 ): Promise<void> {
   if (!isCatalogCredentialCurrent(credential) || (await captureCatalogCredential())?.digest !== credential?.digest) {
     throw new Error('Account changed during catalogue revalidation');
   }
+  const otherKey = key === CATALOG_VIEWER_KEY ? CATALOG_HELD_KEY : CATALOG_VIEWER_KEY;
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [otherKey]);
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-    CATALOG_VIEWER_KEY,
+    key,
     JSON.stringify({ viewerId, credentialDigest: credential!.digest }),
   ]);
   if (!isCatalogCredentialCurrent(credential) || (await captureCatalogCredential())?.digest !== credential?.digest) {
     throw new Error('Account changed during catalogue revalidation');
   }
+}
+
+/** Open local catalogue reads for this credential. */
+export function stampCatalogViewer(
+  db: SqlExecutor,
+  viewerId: string,
+  credential: CatalogCredential | null,
+): Promise<void> {
+  return writeCatalogViewerRecord(db, CATALOG_VIEWER_KEY, viewerId, credential);
+}
+
+/** Keep local catalogue reads closed for this credential only while kept rows remain. */
+export function holdCatalogViewer(
+  db: SqlExecutor,
+  viewerId: string,
+  credential: CatalogCredential | null,
+): Promise<void> {
+  return writeCatalogViewerRecord(db, CATALOG_HELD_KEY, viewerId, credential);
+}
+
+/** The held record, when it names this viewer and the exact credential being checked. */
+export async function isCatalogHeldFor(
+  db: SqlExecutor,
+  viewerId: string,
+  credential: CatalogCredential,
+): Promise<boolean> {
+  const record = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    CATALOG_HELD_KEY,
+  ]);
+  if (!record) return false;
+  const parsed = JSON.parse(record.value) as { viewerId?: unknown; credentialDigest?: unknown };
+  return parsed.viewerId === viewerId && parsed.credentialDigest === credential.digest;
 }
 
 /** Resolve only an identity already checked by the server for this exact credential. */
@@ -107,21 +149,33 @@ export async function canReadPrivateCatalog(db: SqlExecutor): Promise<boolean> {
 }
 
 /**
- * True when a signed-in credential finds no viewer marker at all: a new install,
- * a catalogue wiped at sign-out, a bundle that never stamped one, or a
- * withdrawal that deleted the marker and never finished. A marker for another
- * credential is not this case; reads report that through
- * `subscribeCatalogCredentialMismatch`.
+ * Where the signed-in credential stands with the downloaded catalogue:
+ *
+ * - `stamped`: a viewer marker exists. It may name an older credential; a read
+ *   reports that through `subscribeCatalogCredentialMismatch`.
+ * - `held`: a revalidation for this viewer and credential left reads closed only
+ *   for the rows it had to keep.
+ * - `unstamped`: nothing covers this credential: a new install, a catalogue
+ *   wiped at sign-out, a bundle that never stamped one, a withdrawal that never
+ *   finished, or a held record for another account or token.
+ *
+ * Null when no credential can be read.
  */
-export async function isCatalogViewerUnstamped(db: SqlExecutor): Promise<boolean> {
+export async function readCatalogStamp(
+  db: SqlExecutor,
+  viewerId: string,
+): Promise<'stamped' | 'held' | 'unstamped' | null> {
   try {
     const credential = await captureCatalogCredential();
-    if (!credential) return false;
+    if (!credential) return null;
     const marker = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
       CATALOG_VIEWER_KEY,
     ]);
-    return !marker && isCatalogCredentialCurrent(credential);
+    if (marker) return 'stamped';
+    const held = await isCatalogHeldFor(db, viewerId, credential);
+    if (!isCatalogCredentialCurrent(credential)) return null;
+    return held ? 'held' : 'unstamped';
   } catch {
-    return false;
+    return null;
   }
 }

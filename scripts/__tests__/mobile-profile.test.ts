@@ -706,14 +706,6 @@ describe('native mobile profiling protocol', () => {
 });
 
 function fixtures(directory: string): void {
-  const privacy = {
-    operationName: 'PrivacyChanged',
-    documentHash: 'privacy-doc',
-    variablesHash: 'privacy-vars',
-    status: 200,
-    query: 'subscription PrivacyChanged { privacyChanged }',
-    response: { data: { privacyChanged: true } },
-  };
   const deletions = {
     operationName: 'SyncDeletions',
     documentHash: 'deletions-doc',
@@ -723,32 +715,34 @@ function fixtures(directory: string): void {
       data: { syncDeletions: { deletions: [], hasMore: false, cursor: { updatedAt: '2026-01-01', syncSeq: '0' } } },
     },
   };
-  writeFileSync(join(directory, 'privacy.json'), JSON.stringify(privacy));
   writeFileSync(join(directory, 'deletions.json'), JSON.stringify(deletions));
   writeFileSync(
     join(directory, 'manifest.json'),
     JSON.stringify({
       accountEmail: 'fixture@example.invalid',
       frozenNow: '2026-10-09T00:00:00Z',
-      graphql: [
-        { ...privacy, file: 'privacy.json' },
-        { ...deletions, file: 'deletions.json' },
-      ],
+      graphql: [{ ...deletions, file: 'deletions.json' }],
     }),
   );
 }
 
 describe('mobile profile preparation and workload eligibility', () => {
-  it('requires production initial privacy signal and explicit deletion fixture', () => {
+  it('requires an explicit deletion fixture and no privacy signal', () => {
     const directory = temporaryDirectory();
     fixtures(directory);
+    // The app does not subscribe to PrivacyChanged, so a recording has none.
     expect(validateProfileFixtures(directory)).toMatch(/^[a-f0-9]{64}$/);
-    const privacy = JSON.parse(readFileSync(join(directory, 'privacy.json'), 'utf8')) as {
-      response: { data: { privacyChanged: boolean } };
+    const deletions = JSON.parse(readFileSync(join(directory, 'deletions.json'), 'utf8')) as {
+      response: { data: { syncDeletions: { hasMore: unknown } } };
     };
-    privacy.response.data.privacyChanged = false;
-    writeFileSync(join(directory, 'privacy.json'), JSON.stringify(privacy));
-    expect(() => validateProfileFixtures(directory)).toThrow('initial true');
+    deletions.response.data.syncDeletions.hasMore = 'no';
+    writeFileSync(join(directory, 'deletions.json'), JSON.stringify(deletions));
+    expect(() => validateProfileFixtures(directory)).toThrow('Invalid SyncDeletions response contract');
+    writeFileSync(
+      join(directory, 'manifest.json'),
+      JSON.stringify({ accountEmail: 'fixture@example.invalid', frozenNow: '2026-10-09T00:00:00Z', graphql: [] }),
+    );
+    expect(() => validateProfileFixtures(directory)).toThrow('Explicit SyncDeletions fixtures are required');
   });
   it('evaluates injected config through plain Node Expo loader, isolates native identity, and disables OTA', () => {
     const checkout = temporaryDirectory(),

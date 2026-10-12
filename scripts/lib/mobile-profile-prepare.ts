@@ -218,11 +218,12 @@ export function validateProfileFixtures(directory: string): string {
   const bytes = readFileSync(join(directory, 'manifest.json'));
   const manifest = objectRecord(JSON.parse(bytes.toString()) as unknown);
   if (!Array.isArray(manifest.graphql)) throw new Error('Fixture manifest GraphQL entries missing');
-  let privacy = 0,
-    deletions = 0;
+  // The app stopped subscribing to `PrivacyChanged`, so a recording made from a
+  // current bundle has no such entry; an older archive's entry is never replayed.
+  let deletions = 0;
   for (const candidate of manifest.graphql) {
     const entry = objectRecord(candidate);
-    if (entry.operationName !== 'PrivacyChanged' && entry.operationName !== 'SyncDeletions') continue;
+    if (entry.operationName !== 'SyncDeletions') continue;
     const filename = requiredString(entry.file, 'fixture filename');
     const absolute = resolve(directory, filename);
     if (!absolute.startsWith(resolve(directory) + '/')) throw new Error('Fixture path escapes its directory');
@@ -237,29 +238,18 @@ export function validateProfileFixtures(directory: string): string {
     const response = objectRecord(fixture.response);
     if ('errors' in response) throw new Error('Profiling fixture response contains errors');
     const responseData = objectRecord(response.data);
-    if (entry.operationName === 'PrivacyChanged') {
-      if (
-        responseData.privacyChanged !== true ||
-        typeof fixture.query !== 'string' ||
-        !/^\s*subscription\s+PrivacyChanged\b/.test(fixture.query)
-      )
-        throw new Error('PrivacyChanged must contain the production initial true subscription snapshot');
-      privacy += 1;
-    } else {
-      const result = objectRecord(responseData.syncDeletions);
-      const cursor = objectRecord(result.cursor);
-      if (
-        !Array.isArray(result.deletions) ||
-        typeof result.hasMore !== 'boolean' ||
-        typeof cursor.updatedAt !== 'string' ||
-        typeof cursor.syncSeq !== 'string'
-      )
-        throw new Error('Invalid SyncDeletions response contract');
-      deletions += 1;
-    }
+    const result = objectRecord(responseData.syncDeletions);
+    const cursor = objectRecord(result.cursor);
+    if (
+      !Array.isArray(result.deletions) ||
+      typeof result.hasMore !== 'boolean' ||
+      typeof cursor.updatedAt !== 'string' ||
+      typeof cursor.syncSeq !== 'string'
+    )
+      throw new Error('Invalid SyncDeletions response contract');
+    deletions += 1;
   }
-  if (privacy === 0 || deletions === 0)
-    throw new Error('Explicit PrivacyChanged initial signal and SyncDeletions fixtures are required');
+  if (deletions === 0) throw new Error('Explicit SyncDeletions fixtures are required');
   return sha256(bytes);
 }
 

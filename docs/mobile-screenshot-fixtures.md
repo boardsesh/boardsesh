@@ -194,12 +194,8 @@ board presence updates) may remain silent when their operation has no fixture in
 the manifest. Once an operation has a fixture, a changed document or variables
 is a miss, including for passive subscriptions.
 
-Only the exact `subscription PrivacyChanged { privacyChanged }` document with
-empty variables stays open without emitting when it has no fixture. Changed
-documents or variables remain replay misses. This omits the initial privacy
-invalidation signal sent by the production backend.
-Captures that exercise cache revalidation must supply its initial snapshot in
-the fixture bundle; silent replay is only a no-event control for that path.
+The app does not subscribe to `PrivacyChanged`, so the replay backend gives it
+no special case: like any other subscription without a fixture, it is a miss.
 
 Ordinary record mode, including default-listing and Android recordings, only
 acknowledges connections and pings over WebSocket. Its initial subscription

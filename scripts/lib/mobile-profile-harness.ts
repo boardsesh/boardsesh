@@ -704,8 +704,7 @@ export async function captureProfile(options: ProfileOptions, hooks?: ProfileCap
           identity: expected,
           runtime: control.hello,
           runtimeObserved: control.observedHello,
-          fixtureScope:
-            'Production initial PrivacyChanged true next remains open; explicit recorded SyncDeletions fixtures. No live API.',
+          fixtureScope: 'Explicit recorded SyncDeletions fixtures. No live API.',
           flow: validatedFlow,
           warmups: options.warmups,
           measuredCycles: options.cycles,

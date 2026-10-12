@@ -89,7 +89,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
     let lockFailure: unknown;
     let withdrawalAttempts = 0;
     vi.spyOn(database, 'runAsync').mockImplementation(async (query, ...params) => {
-      if (query === 'DELETE FROM sync_meta WHERE key = ?') withdrawalAttempts += 1;
+      if (query === 'DELETE FROM sync_meta WHERE key IN (?, ?)') withdrawalAttempts += 1;
       try {
         return await run(query, ...params);
       } catch (error) {
@@ -189,7 +189,7 @@ describe('privacy revalidation under real SQLite WAL contention', () => {
     const run = database.runAsync.bind(database);
     let withdrawalAttempts = 0;
     vi.spyOn(database, 'runAsync').mockImplementation(async (query, ...params) => {
-      if (query === 'DELETE FROM sync_meta WHERE key = ?') {
+      if (query === 'DELETE FROM sync_meta WHERE key IN (?, ?)') {
         withdrawalAttempts += 1;
         throw failure;
       }

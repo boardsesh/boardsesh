@@ -87,10 +87,10 @@ correct `extra.eas.observe` endpoint must point to the private replay origin
 as a fallback, never a production default. Retire artifacts that fail any
 isolation gate and preserve their captures as diagnostic evidence only.
 
-The fixture manifest must explicitly include the initial `PrivacyChanged: true`
-subscription snapshot and valid `SyncDeletions` pages. Preserve recorded sync
-work and terminal cursors. Do not substitute a quiet subscription or suppress
-privacy invalidation. The replay backend keeps subscription streams open.
+The fixture manifest must include valid `SyncDeletions` pages. Preserve
+recorded sync work and terminal cursors. The app does not subscribe to
+`PrivacyChanged`, so a manifest needs no entry for it. The replay backend keeps
+subscription streams open.
 Document synthetic scenario responses separately from recorded upstream data.
 
 ## Connect and capture

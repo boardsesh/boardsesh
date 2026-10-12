@@ -19,6 +19,8 @@ import {
   captureCatalogReadEpoch,
   isCatalogReadCurrent,
   CATALOG_VIEWER_KEY,
+  CATALOG_HELD_KEY,
+  readCatalogStamp,
   subscribeCatalogCredentialMismatch,
   beginCatalogInvalidation,
 } from '../catalog-access';
@@ -33,6 +35,7 @@ import {
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import {
   revalidatePrivateCatalog,
+  reopenHeldCatalog,
   waitForPrivacyRevalidation,
   subscribePrivacyRevalidation,
   PrivacyRevalidationDeferredError,
@@ -329,6 +332,91 @@ describe('downloaded catalogue privacy', () => {
     expect(await database.getAllAsync('SELECT idempotency_key FROM pending_mutations')).toEqual([
       { idempotency_key: 'unsynced' },
     ]);
+    expect(await canReadPrivateCatalog(database)).toBe(false);
+  });
+
+  it('keeps checkpoints, completion markers and the holds index when a pass removes nothing', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, user_id) VALUES ('manufacturer', 'kilter', 1, NULL), ('own-climb', 'kilter', 1, 'viewer')",
+    );
+    await database.runAsync(
+      "INSERT INTO board_climb_stats (board_type, climb_uuid, angle, fa_username) VALUES ('kilter', 'manufacturer', 40, NULL)",
+    );
+    const scopeKey = 'kilter:1:1';
+    await markScopeDownloadComplete(database, scopeKey);
+    const checkpointKey = getCheckpointKey('board_climbs', scopeKey);
+    await setCheckpoint(database, checkpointKey, { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '10' });
+    const holdIndexState = () =>
+      database.getAllAsync("SELECT key, value FROM sync_meta WHERE key LIKE 'holds-index%' ORDER BY key");
+    const holdIndexBefore = await holdIndexState();
+
+    await revalidatePrivateCatalog(database, 'viewer', [scopeKey]);
+
+    expect(await getCheckpoint(database, checkpointKey)).not.toBeNull();
+    expect(await isScopeDownloadComplete(database, scopeKey)).toBe(true);
+    expect(await holdIndexState()).toEqual(holdIndexBefore);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
+  it('does not let a dead-lettered write keep a climb', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, user_id, sync_seq) VALUES ('dead-lettered-climb', 'kilter', 'other', 5)",
+    );
+    await database.runAsync(
+      "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key, status) VALUES ('boardsesh_ticks', 'create', ?, 'dead', 'dead_letter')",
+      [JSON.stringify({ climbUuid: 'dead-lettered-climb' })],
+    );
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+    expect(await database.getAllAsync('SELECT idempotency_key FROM pending_mutations')).toEqual([
+      { idempotency_key: 'dead' },
+    ]);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
+  it('holds a catalogue it had to keep rows in, and reopens it without withdrawing once they are gone', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, user_id, sync_seq) VALUES ('queued-reference', 'kilter', 'other', 5)",
+    );
+    await database.runAsync(
+      "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'create', ?, 'unsent')",
+      [JSON.stringify({ climbUuid: 'queued-reference' })],
+    );
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    expect(await readCatalogStamp(database, 'viewer')).toBe('held');
+    expect(await readCatalogStamp(database, 'someone-else')).toBe('unstamped');
+    expect(await canReadPrivateCatalog(database)).toBe(false);
+    request.mockClear();
+
+    expect(await reopenHeldCatalog(database, 'viewer')).toBe(false);
+    expect(await canReadPrivateCatalog(database)).toBe(false);
+
+    await database.runAsync("DELETE FROM pending_mutations WHERE idempotency_key = 'unsent'");
+    expect(await reopenHeldCatalog(database, 'viewer')).toBe(true);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+    expect(await database.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', [CATALOG_HELD_KEY])).toBeNull();
+    // Counted again, not withdrawn: the row stays and nothing asked the server.
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'queued-reference' }]);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('does not reopen a held catalogue for a refreshed token', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, sync_seq) VALUES ('older-account-draft', 'kilter', 'other', 1, NULL)",
+    );
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    await database.runAsync("DELETE FROM board_climbs WHERE uuid = 'older-account-draft'");
+    auth.token = 'refreshed-token';
+    expect(await readCatalogStamp(database, 'viewer')).toBe('unstamped');
+    expect(await reopenHeldCatalog(database, 'viewer')).toBe(false);
     expect(await canReadPrivateCatalog(database)).toBe(false);
   });
 });

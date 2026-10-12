@@ -1,7 +1,10 @@
 import {
   captureCatalogCredential,
   stampCatalogViewer,
+  holdCatalogViewer,
+  isCatalogHeldFor,
   CATALOG_VIEWER_KEY,
+  CATALOG_HELD_KEY,
   beginCatalogInvalidation,
   finishCatalogInvalidation,
   isCatalogCredentialCurrent,
@@ -22,6 +25,25 @@ import {
   type OfflineDatabase,
 } from '@boardsesh/offline-sync';
 import { reportHandledError } from '../lib/error-reporting';
+
+// Another Boardsesh account's catalogue rows, which a new credential has not yet
+// had re-authorized. NULL author ids are manufacturer catalogue data, except on
+// spray walls.
+const WITHDRAWN = `((user_id IS NOT NULL AND user_id <> ?) OR (board_type = 'spray' AND user_id IS NULL))`;
+// Withdrawn rows that stay anyway. `is_draft` also arrives from server
+// downloads, so only a draft without a positive server sequence may be unsynced
+// work from an older account. A write still waiting to send keeps the climb it
+// names. A dead letter does not: it only sends again if someone revives it, its
+// replay carries its own payload, and the bin can hold it indefinitely, which
+// would keep every downloaded board closed for as long.
+const KEPT = `((COALESCE(is_draft, 0) = 1 AND COALESCE(sync_seq, 0) <= 0) OR EXISTS (
+      SELECT 1 FROM pending_mutations mutation WHERE mutation.status <> 'dead_letter' AND json_valid(mutation.payload) AND (
+        json_extract(mutation.payload, '$.climbUuid') = board_climbs.uuid OR
+        json_extract(mutation.payload, '$.uuid') = board_climbs.uuid
+      )
+    ))`;
+const REPLACEABLE = `${WITHDRAWN} AND NOT ${KEPT}`;
+const HELD = `${WITHDRAWN} AND ${KEPT}`;
 
 export class PrivacyRevalidationDeferredError extends Error {
   constructor() {
@@ -90,7 +112,7 @@ export function revalidatePrivateCatalog(
     // Persist withdrawal before contacting the server: an offline/crashed
     // revalidation cannot reopen the previous marker on the next launch.
     await runLocalWriteWithRetry(
-      () => db.runAsync('DELETE FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY]),
+      () => db.runAsync('DELETE FROM sync_meta WHERE key IN (?, ?)', [CATALOG_VIEWER_KEY, CATALOG_HELD_KEY]),
       backgroundWriteRetry,
     );
     assertCurrent();
@@ -126,55 +148,61 @@ export function revalidatePrivateCatalog(
           assertCurrent();
           await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
           assertCurrent();
-          const layouts = await transaction.getAllAsync<{ board_type: string; layout_id: number }>(
-            'SELECT DISTINCT board_type, layout_id FROM board_climbs WHERE layout_id IS NOT NULL',
+          // The write lock is held, so what these find is exactly what the deletes
+          // below remove. A pass that removes nothing has nothing to fetch again:
+          // it keeps every checkpoint, completion marker and the holds index.
+          const climbsToRemove = await transaction.getFirstAsync<{ found: number }>(
+            `SELECT EXISTS (SELECT 1 FROM board_climbs WHERE ${REPLACEABLE}) AS found`,
+            [viewerId],
           );
-          for (const layout of layouts) {
-            await clearLayoutHoldIndex(transaction, layout.board_type, layout.layout_id);
+          const sprayWallsToRemove = await transaction.getFirstAsync<{ found: number }>(
+            'SELECT EXISTS (SELECT 1 FROM spray_walls) AS found',
+          );
+          const removesRows = Boolean(climbsToRemove?.found) || Boolean(sprayWallsToRemove?.found);
+          if (removesRows) {
+            // Cleared before the climbs go: the index finds a layout's hold sets
+            // through their climb rows.
+            const layouts = await transaction.getAllAsync<{ board_type: string; layout_id: number }>(
+              'SELECT DISTINCT board_type, layout_id FROM board_climbs WHERE layout_id IS NOT NULL',
+            );
+            for (const layout of layouts) {
+              await clearLayoutHoldIndex(transaction, layout.board_type, layout.layout_id);
+            }
           }
           // Stats/grades are keyed by climb rather than user, so remove them before
-          // their author row. NULL author ids remain valid manufacturer catalogue data.
-          const withdrawn = `((user_id IS NOT NULL AND user_id <> ?) OR (board_type = 'spray' AND user_id IS NULL))`;
-          // is_draft also arrives from server downloads. A positive sync_seq proves
-          // that copy is replaceable cache, unless a queued write still references
-          // it. Keep drafts without a server version as possible unsynced work from
-          // an older account, and keep access closed while those protected rows remain.
-          // The viewer's own rows are already excluded by `withdrawn` above.
-          const replaceable = `${withdrawn} AND (COALESCE(is_draft, 0) <> 1 OR COALESCE(sync_seq, 0) > 0) AND NOT EXISTS (
-      SELECT 1 FROM pending_mutations mutation WHERE json_valid(mutation.payload) AND (
-        json_extract(mutation.payload, '$.climbUuid') = board_climbs.uuid OR
-        json_extract(mutation.payload, '$.uuid') = board_climbs.uuid
-      )
-    )`;
+          // their author row. The viewer's own rows never match WITHDRAWN.
           for (const table of ['board_climb_stats', 'board_climb_grades']) {
             await transaction.runAsync(
-              `DELETE FROM ${table} WHERE climb_uuid IN (SELECT uuid FROM board_climbs WHERE ${replaceable})`,
+              `DELETE FROM ${table} WHERE climb_uuid IN (SELECT uuid FROM board_climbs WHERE ${REPLACEABLE})`,
               [viewerId],
             );
           }
-          await transaction.runAsync(`DELETE FROM board_climbs WHERE ${replaceable}`, [viewerId]);
-          await transaction.runAsync('UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL');
+          await transaction.runAsync(`DELETE FROM board_climbs WHERE ${REPLACEABLE}`, [viewerId]);
           await transaction.runAsync('DELETE FROM spray_walls');
-          await transaction.runAsync('DELETE FROM followed_author_snapshots');
-          // A retained high-water mark would skip the removed rows forever. Keep the
-          // artifact marker: an authenticated replay must not reinstall an old file.
-          for (const table of BOARD_DATA_TABLES) {
-            await transaction.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`checkpoint:${table}:%`]);
-          }
-          await transaction.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', ['scope-complete:%']);
           await transaction.runAsync(
-            'DELETE FROM holds_index_climbs WHERE uuid NOT IN (SELECT uuid FROM board_climbs)',
+            'UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL WHERE fa_username IS NOT NULL OR fa_at IS NOT NULL',
           );
-          const preserved = await transaction.getFirstAsync<{ count: number }>(
-            `SELECT count(*) AS count FROM board_climbs WHERE ${withdrawn}`,
+          await transaction.runAsync('DELETE FROM followed_author_snapshots');
+          if (removesRows) {
+            // A retained high-water mark would skip the removed rows forever. Keep
+            // the artifact marker: an authenticated replay must not reinstall an old file.
+            for (const table of BOARD_DATA_TABLES) {
+              await transaction.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`checkpoint:${table}:%`]);
+            }
+            await transaction.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', ['scope-complete:%']);
+            await transaction.runAsync(
+              'DELETE FROM holds_index_climbs WHERE uuid NOT IN (SELECT uuid FROM board_climbs)',
+            );
+          }
+          const held = await transaction.getFirstAsync<{ count: number }>(
+            `SELECT count(*) AS count FROM board_climbs WHERE ${HELD}`,
             [viewerId],
           );
-          if (preserved?.count) {
-            await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [CATALOG_VIEWER_KEY]);
-          } else {
-            assertCurrent();
-            await stampCatalogViewer(transaction, viewerId, credential);
-          }
+          assertCurrent();
+          // Rows that had to stay keep reads closed. The held record lets a later
+          // check reopen them once those rows are gone, without withdrawing again.
+          if (held?.count) await holdCatalogViewer(transaction, viewerId, credential);
+          else await stampCatalogViewer(transaction, viewerId, credential);
           assertCurrent();
           if (!isCatalogCredentialCurrent(credential)) throw new Error('Account changed during catalogue revalidation');
         }),
@@ -209,4 +237,42 @@ export function revalidatePrivateCatalog(
     });
   pendingRevalidation = completion;
   return completion;
+}
+
+/**
+ * Reopen a catalogue that a revalidation for this viewer and credential left
+ * closed only for the rows it had to keep. Withdraws nothing, aborts nothing and
+ * makes no request: it counts those rows again and stamps the marker once none
+ * are left. Resolves true when it stamped.
+ */
+export async function reopenHeldCatalog(
+  db: OfflineDatabase,
+  viewerId: string,
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
+  const generation = revalidationGeneration;
+  const isStillCurrent = () => generation === revalidationGeneration && isCurrent();
+  await pendingRevalidation?.catch(() => {});
+  if (!isStillCurrent()) return false;
+  const credential = await captureCatalogCredential();
+  if (!credential || !isStillCurrent()) return false;
+  let stamped = false;
+  await runLocalWriteWithRetry(
+    () =>
+      db.withExclusiveTransactionAsync(async (transaction) => {
+        stamped = false;
+        await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
+        // A revalidation requested since this began owns the catalogue now.
+        if (!isStillCurrent() || !(await isCatalogHeldFor(transaction, viewerId, credential))) return;
+        const held = await transaction.getFirstAsync<{ count: number }>(
+          `SELECT count(*) AS count FROM board_climbs WHERE ${HELD}`,
+          [viewerId],
+        );
+        if (held?.count || !isStillCurrent()) return;
+        await stampCatalogViewer(transaction, viewerId, credential);
+        stamped = true;
+      }),
+    backgroundWriteRetry,
+  );
+  return stamped && isStillCurrent();
 }

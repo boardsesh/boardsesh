@@ -1215,13 +1215,10 @@ describe('screenshot backend', () => {
       expect(backend?.stats().processInstanceId).not.toBe(originalIdentity);
     });
 
-    it.each(['ClimbStatsUpdated', 'PrivacyChanged'])(
+    it.each(['ClimbStatsUpdated'])(
       'acks a graphql-ws handshake, pongs a ping, and stays silent on %s',
       async (operationName) => {
-        const subscriptionQuery =
-          operationName === 'PrivacyChanged'
-            ? 'subscription PrivacyChanged { privacyChanged }'
-            : 'subscription ClimbStatsUpdated { ok }';
+        const subscriptionQuery = `subscription ${operationName} { ok }`;
         const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/graphql`, 'graphql-transport-ws');
         const received: Array<Record<string, unknown>> = [];
         await new Promise<void>((resolve, reject) => {
@@ -1438,28 +1435,17 @@ describe('screenshot backend', () => {
 
       const privacyRequest = { query: 'subscription PrivacyChanged { privacyChanged }', variables: {} };
 
-      it.each([undefined, null, {}])(
-        'keeps an unrecorded exact privacy-change notification stream open with empty variables %j',
-        async (variables) => {
-          const requestsBefore = upstream.graphqlRequests.length;
-          const client = await openGraphqlSocket();
-          expect(
-            await client.exchange({ id: 'privacy', type: 'subscribe', payload: { ...privacyRequest, variables } }),
-          ).toEqual([]);
-          expect(client.socket.readyState).toBe(WebSocket.OPEN);
-          expect(backend?.stats()).toMatchObject({ hits: 0, misses: 0 });
-          expect(upstream.graphqlRequests).toHaveLength(requestsBefore);
-          await client.close();
-        },
-      );
-
+      // The app no longer subscribes to PrivacyChanged, so even the exact document
+      // gets no special treatment when it has no recording.
       it.each([
+        privacyRequest,
+        { ...privacyRequest, variables: undefined },
         { ...privacyRequest, query: 'query PrivacyChanged { privacyChanged }' },
         { ...privacyRequest, query: 'subscription PrivacyChanged { changed: privacyChanged }' },
         { ...privacyRequest, query: 'subscription PrivacyChanged { privacyChanged otherField }' },
         { ...privacyRequest, variables: { changed: true } },
         { ...queueRequest, operationName: 'PrivacyChanged' },
-      ])('rejects an unrecorded privacy stream with a changed contract: %j', async (payload) => {
+      ])('treats an unrecorded privacy stream as a fixture miss: %j', async (payload) => {
         const client = await openGraphqlSocket();
         expect((await client.exchange({ id: 'privacy-drift', type: 'subscribe', payload }))[0]).toMatchObject({
           type: 'next',
