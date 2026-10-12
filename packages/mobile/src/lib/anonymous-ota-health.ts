@@ -9,7 +9,7 @@ import {
 } from './ota-telemetry';
 import { anonymousOtaStatusProperties, anonymousOtaLaunchProperties } from './anonymous-ota-health-properties';
 import { isDevBuild } from './is-dev-build';
-import { getAnonymousInstallId } from './anonymous-install-id';
+import { getPersistentAnonymousInstallId } from './anonymous-install-id';
 
 /**
  * An anonymous launch report through the proxy that strips IP and HTTP
@@ -23,8 +23,9 @@ async function reportAnonymousHealth(
 ): Promise<void> {
   const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
   if (isDevBuild() || !apiKey || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
-  const installId = await getAnonymousInstallId();
-  // No secure random source: send nothing rather than a guessable id.
+  const installId = await getPersistentAnonymousInstallId();
+  // Missing secure randomness or persistence: a launch-only fallback would
+  // inflate install adoption, so skip this health report.
   if (!installId) return;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);

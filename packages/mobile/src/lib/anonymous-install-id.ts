@@ -149,6 +149,12 @@ export function getAnonymousInstallId(): Promise<string | null> {
   return pending;
 }
 
+/** Install-level telemetry requires persistence; a launch fallback is never an install. */
+export async function getPersistentAnonymousInstallId(): Promise<string | null> {
+  await getAnonymousInstallId();
+  return storedId;
+}
+
 /** The distinct id a signed-out flag request uses, or null (see getAnonymousInstallId). */
 export async function getFlagsInstallDistinctId(): Promise<string | null> {
   const id = await getAnonymousInstallId();

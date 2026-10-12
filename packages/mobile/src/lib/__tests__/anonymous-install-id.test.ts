@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const storage = vi.hoisted(() => ({
   values: new Map<string, string>(),
   failReads: false,
+  failWrites: false,
 }));
 vi.mock('../preference-store', () => ({
   getPreference: async (key: string) => {
@@ -11,6 +12,7 @@ vi.mock('../preference-store', () => ({
     return raw === undefined ? null : JSON.parse(raw);
   },
   setPreference: async (key: string, value: unknown) => {
+    if (storage.failWrites) throw new Error('storage write unavailable');
     storage.values.set(key, JSON.stringify(value));
   },
 }));
@@ -48,6 +50,7 @@ async function loadModule() {
 beforeEach(() => {
   storage.values.clear();
   storage.failReads = false;
+  storage.failWrites = false;
   expoCrypto.available = true;
   expoCrypto.calls = 0;
   application.installedAt = Date.UTC(2026, 9, 1, 8, 30);
@@ -153,6 +156,27 @@ describe('getAnonymousInstallId', () => {
     expect(stored).toMatch(UUID);
     expect(storedRecord()?.id).toBe(stored);
   });
+
+  it.each(['failReads', 'failWrites'] as const)(
+    'requires persistence for install-level health while %s keeps flag fallback usable',
+    async (failure) => {
+      storage[failure] = true;
+      const launch = await loadModule();
+      const [flags, health] = await Promise.all([
+        launch.getFlagsInstallDistinctId(),
+        launch.getPersistentAnonymousInstallId(),
+      ]);
+      expect(flags).toMatch(/^flags-install:[0-9a-f-]{36}$/);
+      expect(health).toBeNull();
+      expect(storage.values.size).toBe(0);
+      storage[failure] = false;
+      const persisted = await launch.getPersistentAnonymousInstallId();
+      expect(persisted).toMatch(UUID);
+      expect(storedRecord()?.id).toBe(persisted);
+      expect(await launch.getFlagsInstallDistinctId()).toBe(`flags-install:${persisted}`);
+      expect(await (await loadModule()).getPersistentAnonymousInstallId()).toBe(persisted);
+    },
+  );
 
   it('prefixes the flags distinct id', async () => {
     const launch = await loadModule();

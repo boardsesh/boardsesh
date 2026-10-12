@@ -279,10 +279,18 @@ describe('the erasure worker', () => {
     return Array.from(rows);
   }
 
-  const replies: { lookup: number; anonymousIds: string[]; deletion: number } = {
+  const replies: {
+    lookup: number;
+    anonymousIds: string[];
+    deletion: number;
+    personsFound: number;
+    personsQueued: number;
+  } = {
     lookup: 200,
     anonymousIds: [],
     deletion: 202,
+    personsFound: 1,
+    personsQueued: 1,
   };
   /** The distinct_ids of every bulk_delete PostHog received, per account. */
   const deletedIds = new Map<string, string[][]>();
@@ -303,9 +311,9 @@ describe('the erasure worker', () => {
     deletedIds.set(accountId, [...(deletedIds.get(accountId) ?? []), [accountId, ...rest]]);
     return new Response(
       JSON.stringify({
-        persons_found: 1,
+        persons_found: replies.personsFound,
         persons_deleted: 0,
-        persons_queued_for_deletion: 1,
+        persons_queued_for_deletion: replies.personsQueued,
         events_queued_for_deletion: true,
         recordings_queued_for_deletion: true,
         deletion_errors: [],
@@ -329,6 +337,8 @@ describe('the erasure worker', () => {
     replies.lookup = 200;
     replies.anonymousIds = [];
     replies.deletion = 202;
+    replies.personsFound = 1;
+    replies.personsQueued = 1;
   });
 
   const deleteStep = (distinctId: string): PosthogPersonDeletionJob => ({
@@ -343,6 +353,18 @@ describe('the erasure worker', () => {
     const state = await workOne(deleteStep(randomUUID()));
     expect(state).toMatchObject({ state: 'completed', retry_count: 0, output: { outcome: 'deleted' } });
   });
+
+  it.each(['first', 'late'] as const)(
+    'keeps the %s delete pass retryable when a matched person was not queued',
+    async (pass) => {
+      replies.personsFound = 1;
+      replies.personsQueued = 0;
+      const state = await workOne({ ...deleteStep(randomUUID()), pass });
+      expect(state).toMatchObject({ state: 'retry', retry_count: 0 });
+      expect(state.output).not.toMatchObject({ outcome: 'deleted' });
+      expect(state.retry_in_seconds).toBeGreaterThanOrEqual(55);
+    },
+  );
 
   it('puts a delete step PostHog could not take yet back for a retry 60 to 120 s out', async () => {
     replies.deletion = 503;

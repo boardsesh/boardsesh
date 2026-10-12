@@ -3,12 +3,15 @@ import { anonymousOtaStatusProperties } from '../anonymous-ota-health-properties
 vi.mock('../is-dev-build', () => ({ isDevBuild: () => false }));
 // Device storage that outlives a JS runtime restart (vi.resetModules), as AsyncStorage does.
 const deviceStorage = vi.hoisted(() => new Map<string, string>());
+const persistence = vi.hoisted(() => ({ failReads: false, failWrites: false }));
 vi.mock('../preference-store', () => ({
   getPreference: async (key: string) => {
+    if (persistence.failReads) throw new Error('storage unavailable');
     const raw = deviceStorage.get(key);
     return raw === undefined ? null : JSON.parse(raw);
   },
   setPreference: async (key: string, value: unknown) => {
+    if (persistence.failWrites) throw new Error('storage write unavailable');
     deviceStorage.set(key, JSON.stringify(value));
   },
 }));
@@ -27,6 +30,8 @@ const status = {
 beforeEach(() => {
   vi.resetModules();
   deviceStorage.clear();
+  persistence.failReads = false;
+  persistence.failWrites = false;
   vi.stubEnv('EXPO_PUBLIC_POSTHOG_KEY', 'phc_health');
 });
 afterEach(() => {
@@ -68,3 +73,25 @@ it('health uses one anonymous identity per install and first-party transport wit
   await reinstall.reportAnonymousOtaStatus(status);
   expect(JSON.parse(fetch.mock.calls[3][1].body).batch[0].distinct_id).not.toBe(event.distinct_id);
 });
+
+it.each(['failReads', 'failWrites'] as const)(
+  'skips install health across launches when %s prevents persistence, then resumes with the stored id',
+  async (failure) => {
+    const fetch = vi.fn(async (_url: string, _request: RequestInit & { body: string }) => ({ status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    persistence[failure] = true;
+    const install = await import('../anonymous-install-id');
+    expect(await install.getFlagsInstallDistinctId()).toMatch(/^flags-install:[0-9a-f-]{36}$/);
+    const health = await import('../anonymous-ota-health');
+    await health.reportAnonymousOtaStatus(status);
+    vi.resetModules();
+    const nextLaunch = await import('../anonymous-ota-health');
+    await nextLaunch.reportAnonymousOtaStatus(status);
+    expect(fetch).not.toHaveBeenCalled();
+    persistence[failure] = false;
+    await nextLaunch.reportAnonymousOtaStatus(status);
+    expect(fetch).toHaveBeenCalledOnce();
+    const record = JSON.parse(deviceStorage.get('anonymousInstallId')!);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).batch[0].distinct_id).toBe(`ota-install:${record.id}`);
+  },
+);

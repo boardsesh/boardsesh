@@ -251,6 +251,25 @@ describe('deletePosthogPerson, delete step', () => {
     await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('deleted');
   });
 
+  it.each(['first', 'late'] as const)(
+    'retries the %s pass when matched persons were not all queued despite empty errors',
+    async (pass) => {
+      for (const [personsFound, personsQueued] of [
+        [1, 0],
+        [3, 2],
+        [0, 1],
+      ]) {
+        const fetchImpl = mockPosthog({
+          deletion: () =>
+            jsonResponse(202, { ...queuedDeletion(personsFound), persons_queued_for_deletion: personsQueued }),
+        });
+        await expect(deletePosthogPerson({ ...deleteJob, pass }, { fetchImpl })).rejects.toBeInstanceOf(
+          PosthogPersonDeletionRetryableError,
+        );
+      }
+    },
+  );
+
   it('accepts a documented body that leaves out the optional deletion_errors', async () => {
     const { deletion_errors: _omitted, ...withoutErrors } = queuedDeletion();
     const fetchImpl = mockPosthog({ deletion: () => jsonResponse(202, withoutErrors) });

@@ -261,7 +261,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
-| OTA health ping | Legitimate interest | Anonymous: one random id per install (`ota-install:<uuid>`, the same id that buckets signed-out flags, with the same 13-month lifetime), no account, no person profile, no GeoIP. Per install so adoption and emergency rates can count phones, not launches. |
+| OTA health ping | Legitimate interest | Anonymous: one random id per install (`ota-install:<uuid>`, the same id that buckets signed-out flags, with the same 13-month lifetime), no account, no person profile, no GeoIP. Per install so adoption and emergency rates can count phones, not launches. If the app cannot read or persist its install id, install-level health is skipped until storage recovers; the launch-only signed-out flag fallback does not enter these counts. |
 
 ## Backend PostHog events are non-personal
 
@@ -373,10 +373,11 @@ Responses:
 
 - **Done** only on a 2xx from the delete whose body is the documented
   `PersonBulkDeleteResponse`: `persons_found` and `persons_queued_for_deletion`
-  as counts, and `deletion_errors`, when present, a list. No matching person is
-  a 202 with `persons_found: 0`, still done.
+  as equal counts, and `deletion_errors`, when present, a list. No matching person
+  is a 202 with both counts zero, still done.
 - **Retry** on a 2xx without that body (no body, not JSON, truncated, a proxy's
-  page: none of them prove a deletion), on a non-empty `deletion_errors`, and,
+  page: none of them prove a deletion), on a non-empty `deletion_errors`, on
+  unequal matched/queued counts, and,
   on either call, on 401, 403, 404, 408, 429, 5xx, a timeout or a network
   error. A 404 is not "nothing to delete": PostHog never answers that way, so
   it means `POSTHOG_PROJECT_ID` or `POSTHOG_API_HOST` is wrong. 401, 403 and

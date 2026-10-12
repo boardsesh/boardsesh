@@ -431,7 +431,8 @@ function mergeAnonymousIds(persisted: string[] | undefined, discovered: string[]
  *   recordings included.
  *
  * - 2xx with the documented body: done (no matching person is a 202 with
- *   `persons_found: 0`). A non-empty `deletion_errors`, or a 2xx body that is
+ *   `persons_found: 0`, with zero queued). Matched and queued counts must agree.
+ *   A non-empty `deletion_errors`, a count mismatch, or a 2xx body that is
  *   not the documented shape, throws so the job retries.
  * - 401, 403, 404, 408, 429, 5xx, a timeout or a network error, on either
  *   call: throws. A key, a project id or a host can be fixed and an outage
@@ -534,6 +535,17 @@ export async function deletePosthogPerson(
       deletionErrors: result.deletion_errors.length,
     });
     throw new PosthogPersonDeletionRetryableError('PostHog reported deletion_errors', status);
+  }
+  if (result.persons_queued_for_deletion !== result.persons_found) {
+    logger.warn('[PostHogErasure] PostHog did not queue every matched person; will retry', {
+      event: 'posthog_person_deletion_retry',
+      reason,
+      pass,
+      status,
+      personsFound: result.persons_found,
+      personsQueuedForDeletion: result.persons_queued_for_deletion,
+    });
+    throw new PosthogPersonDeletionRetryableError('PostHog matched/queued deletion counts differ', status);
   }
   logger.info('[PostHogErasure] PostHog person deletion accepted', {
     event: 'posthog_person_deletion_accepted',
