@@ -83,11 +83,9 @@ export const tickBoardQueries = {
       .limit(1);
     if (!tick) throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
 
-    // The tick is the viewer's own: logging it on this board means they held the
-    // board's link, so its current board takes the link reading (an Unlisted
-    // board they opened by its link stays named). A board that has since gone
-    // Invite-only, Only me or revoked them still reads as gone. The candidate
-    // list below is a listing, so it keeps the no-link reading.
+    // A stored numeric attribution does not prove the climber presented a link:
+    // older saves also accepted numeric IDs and another participant's session wall.
+    // Neither the current selection nor the picker list may mint an Unlisted UUID.
     const [currentBoard] =
       tick.boardId == null
         ? []
@@ -97,7 +95,7 @@ export const tickBoardQueries = {
             .where(
               and(
                 eq(schema.userBoards.id, tick.boardId),
-                resourceAccessCondition('board', schema.userBoards.uuid, userId),
+                resourceAccessCondition('board', schema.userBoards.uuid, userId, { allowUnlistedLink: false }),
                 isNull(schema.userBoards.deletedAt),
                 listableSprayWallCondition(userId),
               ),

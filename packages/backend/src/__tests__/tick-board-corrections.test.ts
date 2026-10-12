@@ -315,7 +315,7 @@ describe('tick board corrections', () => {
     },
   );
 
-  it('keeps naming an Unlisted board the climber logged on by its link, outside the picker list', async () => {
+  it('names an Unlisted board only when this edit explicitly presents its UUID, outside the picker list', async () => {
     const [board] = await db
       .insert(schema.userBoards)
       .values({
@@ -340,18 +340,87 @@ describe('tick board corrections', () => {
       expect((await readTick(uuid)).boardId).toBe(board.id);
 
       const options = await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, ctx);
-      expect(options.currentBoard?.name).toBe('Link only compatible wall');
+      expect(options.currentBoard).toBeNull();
+      expect(JSON.stringify(options)).not.toContain(board.uuid);
       // The picker list is a listing: the board is not offered there.
       expect(options.boards.some((choice) => choice.uuid === board.uuid)).toBe(false);
 
       const edited = await tickMutations.updateTick(undefined, { uuid, input: { comment: 'Linked recap' } }, ctx);
-      expect(edited).toMatchObject({ comment: 'Linked recap', boardDisplayName: 'Link only compatible wall' });
+      expect(edited).toMatchObject({ comment: 'Linked recap', boardDisplayName: null });
+      const selected = await tickMutations.updateTick(undefined, { uuid, input: { boardUuid: board.uuid } }, ctx);
+      expect(selected).toMatchObject({ boardDisplayName: 'Link only compatible wall' });
+      // A later tick-only lookup still has no persisted link provenance.
+      expect((await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, ctx)).currentBoard).toBeNull();
+      await db
+        .insert(schema.resourceGrants)
+        .values({ kind: 'board', resourceId: board.uuid, userId, status: 'approved' });
+      expect((await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, ctx)).currentBoard?.uuid).toBe(
+        board.uuid,
+      );
+      expect(
+        await tickMutations.updateTick(undefined, { uuid, input: { comment: 'Approved recap' } }, ctx),
+      ).toMatchObject({ boardDisplayName: board.name });
     } finally {
       await db.delete(schema.boardseshTicks).where(eq(schema.boardseshTicks.boardId, board.id));
       await db.delete(schema.resourcePrivacy).where(eq(schema.resourcePrivacy.resourceId, board.uuid));
+      await db.delete(schema.resourceGrants).where(eq(schema.resourceGrants.resourceId, board.uuid));
       await db.delete(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
     }
   });
+
+  it.each(['numeric', 'session'] as const)(
+    'does not mint a link from historical %s tick attribution',
+    async (source) => {
+      const [board] = await db
+        .insert(schema.userBoards)
+        .values({
+          uuid: uuidv4(),
+          slug: uuidv4(),
+          ownerId: otherUser,
+          name: 'Never presented wall',
+          isPublic: false,
+          isUnlisted: true,
+          boardType: 'kilter',
+          layoutId: 8,
+          sizeId: 25,
+          setIds: '26,27',
+        })
+        .returning();
+      await db
+        .insert(schema.resourcePrivacy)
+        .values({ kind: 'board', resourceId: board.uuid, ownerId: otherUser, audience: 'unlisted' });
+      const sessionId = source === 'session' ? uuidv4() : null;
+      if (sessionId)
+        await db.insert(schema.boardSessions).values({
+          id: sessionId,
+          createdByUserId: otherUser,
+          boardId: board.id,
+          boardPath: '/kilter/8/25/26,27/35',
+          isPublic: true,
+        });
+      try {
+        const overrides = sessionId ? { sessionId } : { boardId: board.id };
+        const uuid = await save(board, overrides);
+        // Current saves reject this no-link association. Older records have only
+        // a numeric board ID; reconstruct one without ever presenting its UUID.
+        expect((await readTick(uuid)).boardId).toBeNull();
+        await db.update(schema.boardseshTicks).set({ boardId: board.id }).where(eq(schema.boardseshTicks.uuid, uuid));
+        const options = await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid }, ctx);
+        expect(options.currentBoard).toBeNull();
+        expect(JSON.stringify(options)).not.toContain(board.uuid);
+        expect(JSON.stringify(options)).not.toContain(board.name);
+        expect(options.boards.some((choice) => choice.uuid === board.uuid)).toBe(false);
+        const edited = await tickMutations.updateTick(undefined, { uuid, input: { comment: 'My own notes' } }, ctx);
+        expect(edited).toMatchObject({ comment: 'My own notes', boardDisplayName: null });
+        expect((await readTick(uuid)).boardId).toBe(board.id);
+      } finally {
+        await db.delete(schema.boardseshTicks).where(eq(schema.boardseshTicks.boardId, board.id));
+        if (sessionId) await db.delete(schema.boardSessions).where(eq(schema.boardSessions.id, sessionId));
+        await db.delete(schema.resourcePrivacy).where(eq(schema.resourcePrivacy.resourceId, board.uuid));
+        await db.delete(schema.userBoards).where(eq(schema.userBoards.uuid, board.uuid));
+      }
+    },
+  );
 
   it.each(['deleted', 'hidden_spray'] as const)(
     'does not expose a historical %s board through an ordinary tick edit',

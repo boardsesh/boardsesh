@@ -1834,11 +1834,9 @@ export const tickMutations = {
           if (reconciled?.narrowedAccess) narrowedAccess = true;
         }
 
-        // Only the tick's author reaches here, and the tick sits on this board
-        // because they held its link (they logged it there, or picked it by uuid
-        // just now), so the name takes the link reading, the same as
-        // `tickBoardOptions.currentBoard`: an Unlisted board stays named, one that
-        // has since gone Invite-only, Only me or revoked them does not.
+        // Numeric historical attribution is not proof of a held board link.
+        // Only an explicit UUID verified for this edit can use link access;
+        // ordinary edits keep the current owner/grant/follower policy reading.
         const [attributedBoard] =
           updatedTarget.boardId == null
             ? []
@@ -1848,7 +1846,9 @@ export const tickMutations = {
                 .where(
                   and(
                     eq(dbSchema.userBoards.id, updatedTarget.boardId),
-                    resourceAccessCondition('board', dbSchema.userBoards.uuid, userId),
+                    resourceAccessCondition('board', dbSchema.userBoards.uuid, userId, {
+                      allowUnlistedLink: selectedBoard?.id === updatedTarget.boardId,
+                    }),
                     listableSprayWallCondition(userId),
                   ),
                 )
