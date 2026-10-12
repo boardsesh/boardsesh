@@ -9,6 +9,12 @@ import type {
 } from '@boardsesh/shared-schema';
 import { canViewActivityIdentity, canViewResourceLocation, visibleActivityUserIds } from '../../../services/privacy';
 import {
+  boardGymId,
+  loadProjectionGym,
+  projectBoardLocation,
+  type ProjectedBoardLocation,
+} from '../../../services/board-location-projection';
+import {
   batchedSessionVisibleUserIds,
   canViewBoardHardestSendIdentity,
   hardestSendSourceBoardId,
@@ -103,6 +109,45 @@ function visibleHardestSend(send: BoardPresenceHardestSend, ctx: ConnectionConte
   return visibility;
 }
 
+type BoardLocationField = ProjectedBoardLocation & { distanceMeters: number | null };
+const boardLocationFields = new WeakMap<UserBoard, Promise<BoardLocationField>>();
+
+/**
+ * The place a UserBoard shows this viewer, from `projectBoardLocation`, decided
+ * once per board object for all of its location fields. This is the last line
+ * for every producer of a UserBoard (queries, mutation payloads, events): a
+ * viewer the owner hid the board's place from gets its public gym's listed
+ * place, read from the gym row itself, never from the object, which a
+ * producer may have filled with the board's own place.
+ */
+function boardLocationField(board: UserBoard, ctx: ConnectionContext): Promise<BoardLocationField> {
+  const cached = boardLocationFields.get(board);
+  if (cached) return cached;
+  const decided = (async (): Promise<BoardLocationField> => {
+    if (await canViewResourceLocation(board.uuid, ctx.userId)) {
+      return {
+        locationName: board.locationName ?? null,
+        latitude: board.latitude ?? null,
+        longitude: board.longitude ?? null,
+        gymId: board.gymId ?? null,
+        gymUuid: board.gymUuid ?? null,
+        gymName: board.gymName ?? null,
+        source: 'own',
+        distanceMeters: board.distanceMeters ?? null,
+      };
+    }
+    const gymId = await boardGymId(board.uuid);
+    const location = projectBoardLocation(
+      { locationName: null, latitude: null, longitude: null, gymId },
+      await loadProjectionGym(gymId),
+      false,
+    );
+    return { ...location, distanceMeters: null };
+  })();
+  boardLocationFields.set(board, decided);
+  return decided;
+}
+
 export const boardSessionPrivacyResolvers = {
   UserBoard: {
     ownerId: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
@@ -112,19 +157,18 @@ export const boardSessionPrivacyResolvers = {
     ownerAvatarUrl: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
       (await visibleIdentity(board.ownerId, ctx)) ? board.ownerAvatarUrl : null,
     latitude: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
-      (await canViewResourceLocation(board.uuid, ctx.userId)) ? board.latitude : null,
+      (await boardLocationField(board, ctx)).latitude,
     longitude: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
-      (await canViewResourceLocation(board.uuid, ctx.userId)) ? board.longitude : null,
+      (await boardLocationField(board, ctx)).longitude,
     locationName: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
-      (await canViewResourceLocation(board.uuid, ctx.userId)) ? board.locationName : null,
+      (await boardLocationField(board, ctx)).locationName,
     gymName: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
-      (await canViewResourceLocation(board.uuid, ctx.userId)) ? board.gymName : null,
+      (await boardLocationField(board, ctx)).gymName,
     gymUuid: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
-      (await canViewResourceLocation(board.uuid, ctx.userId)) ? board.gymUuid : null,
-    gymId: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
-      (await canViewResourceLocation(board.uuid, ctx.userId)) ? board.gymId : null,
+      (await boardLocationField(board, ctx)).gymUuid,
+    gymId: async (board: UserBoard, _: unknown, ctx: ConnectionContext) => (await boardLocationField(board, ctx)).gymId,
     distanceMeters: async (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
-      (await canViewResourceLocation(board.uuid, ctx.userId)) ? board.distanceMeters : null,
+      (await boardLocationField(board, ctx)).distanceMeters,
     serialNumber: (board: UserBoard, _: unknown, ctx: ConnectionContext) =>
       board.ownerId === ctx.userId ? board.serialNumber : null,
     timerName: (board: UserBoard, _: unknown, ctx: ConnectionContext) =>

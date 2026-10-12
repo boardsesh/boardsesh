@@ -41,11 +41,10 @@ import {
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
 import {
-  decideGymBoardLocation,
-  gymSharesBoardLocation,
-  hideBoardLocationLeavingGym,
-  shareGymBoardLocation,
-} from './gym-board-location';
+  loadProjectionGym,
+  loadProjectionGyms,
+  projectBoardLocation,
+} from '../../../services/board-location-projection';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
@@ -498,14 +497,9 @@ async function enrichBoard(
           )
       : Promise.resolve([]),
 
-    // Get gym info if board is linked to a gym
-    board.gymId
-      ? db
-          .select({ uuid: dbSchema.gyms.uuid, name: dbSchema.gyms.name })
-          .from(dbSchema.gyms)
-          .where(and(eq(dbSchema.gyms.id, board.gymId), isNull(dbSchema.gyms.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
+    // The board's gym: its link, and the place a viewer the board's own
+    // location is hidden from sees instead when the gym is public.
+    loadProjectionGym(board.gymId),
 
     // Whether the viewer is a community admin/leader for this board type
     authenticatedUserId ? hasAdminOrLeader(authenticatedUserId, board.boardType) : Promise.resolve(false),
@@ -540,7 +534,7 @@ async function enrichBoard(
   const followerStats = followerStatsResult[0];
   const commentStats = commentStatsResult[0];
   const isFollowedByMe = Number(followCheckResult[0]?.count || 0) > 0;
-  const gymInfo = (gymInfoResult as Array<{ uuid: string; name: string }>)[0];
+  const location = projectBoardLocation(board, gymInfoResult, showLocation);
   const canEdit = authenticatedUserId
     ? board.ownerId === authenticatedUserId || (canEditByRole && boardIsRoleEditable(board)) || canEditByGym
     : false;
@@ -563,9 +557,9 @@ async function enrichBoard(
     setIds: board.setIds,
     name: board.name,
     description: board.description,
-    locationName: showLocation ? (board.locationName ?? null) : null,
-    latitude: showLocation ? (board.latitude ?? null) : null,
-    longitude: showLocation ? (board.longitude ?? null) : null,
+    locationName: location.locationName,
+    latitude: location.latitude,
+    longitude: location.longitude,
     isPublic: board.isPublic,
     isUnlisted: board.isUnlisted,
     hideLocation: board.hideLocation,
@@ -584,12 +578,14 @@ async function enrichBoard(
     followerCount: Number(followerStats?.count || 0),
     commentCount: Number(commentStats?.count || 0),
     isFollowedByMe,
-    gymId: showLocation ? (board.gymId ?? null) : null,
+    gymId: location.gymId,
     // Every caller gated this row on `canAccessResource` before enriching it.
     boardId: boardPresenceChannelId(board, true, canEdit),
-    gymUuid: showLocation ? (gymInfo?.uuid ?? null) : null,
-    gymName: showLocation ? (gymInfo?.name ?? null) : null,
-    distanceMeters: showLocation ? (distanceMeters ?? null) : null,
+    gymUuid: location.gymUuid,
+    gymName: location.gymName,
+    // A distance is measured from the board's own coordinates, so it goes only
+    // where those may.
+    distanceMeters: location.source === 'own' ? (distanceMeters ?? null) : null,
     serialNumber: board.serialNumber ?? null,
     timerName: board.timerName ?? null,
     canEdit,
@@ -699,13 +695,8 @@ export async function enrichBoards(
           )
       : Promise.resolve([]),
 
-    // Batch gym info
-    gymIds.length > 0
-      ? db
-          .select({ id: dbSchema.gyms.id, uuid: dbSchema.gyms.uuid, name: dbSchema.gyms.name })
-          .from(dbSchema.gyms)
-          .where(and(inArray(dbSchema.gyms.id, gymIds), isNull(dbSchema.gyms.deletedAt)))
-      : Promise.resolve([]),
+    // Batch gym info: the link, and the place shown instead of a hidden one.
+    loadProjectionGyms(gymIds),
 
     // Viewer's community roles — fetched once, applied per board by board type
     authenticatedUserId ? getUserCommunityRoles(authenticatedUserId) : Promise.resolve([]),
@@ -764,7 +755,7 @@ export async function enrichBoards(
   const commentMap = new Map(commentRows.map((r) => [r.entityId, Number(r.count)]));
   const followedSet = new Set(followRows.map((r) => r.boardUuid));
   const pinnedSet = new Set(pinRows.map((r) => r.boardUuid));
-  const gymMap = new Map(gymRows.map((r) => [r.id, r]));
+  const gymMap = gymRows;
   // Gym ids the viewer can edit boards through (owns the gym OR is an admin member)
   const editableGymIds = new Set<number>([
     ...(ownedGymRows as Array<{ id: number }>).map((row) => row.id),
@@ -794,7 +785,7 @@ export async function enrichBoards(
       ]);
       const owner = ownerMap.get(board.ownerId);
       const ticks = tickMap.get(board.id);
-      const gym = board.gymId ? gymMap.get(board.gymId) : undefined;
+      const location = projectBoardLocation(board, board.gymId ? gymMap.get(board.gymId) : null, showLocation);
       const canEdit = authenticatedUserId
         ? board.ownerId === authenticatedUserId ||
           (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
@@ -814,9 +805,9 @@ export async function enrichBoards(
         setIds: board.setIds,
         name: board.name,
         description: board.description,
-        locationName: showLocation ? (board.locationName ?? null) : null,
-        latitude: showLocation ? (board.latitude ?? null) : null,
-        longitude: showLocation ? (board.longitude ?? null) : null,
+        locationName: location.locationName,
+        latitude: location.latitude,
+        longitude: location.longitude,
         isPublic: board.isPublic,
         isUnlisted: board.isUnlisted,
         hideLocation: board.hideLocation,
@@ -834,12 +825,13 @@ export async function enrichBoards(
         followerCount: followerMap.get(board.uuid) || 0,
         commentCount: commentMap.get(board.uuid) || 0,
         isFollowedByMe: followedSet.has(board.uuid),
-        gymId: showLocation ? (board.gymId ?? null) : null,
+        gymId: location.gymId,
         // `boards` was filtered on `canAccessResource` at the top of this function.
         boardId: boardPresenceChannelId(board, true, canEdit),
-        gymUuid: showLocation ? (gym?.uuid ?? null) : null,
-        gymName: showLocation ? (gym?.name ?? null) : null,
-        distanceMeters: showLocation ? (distanceMeters ?? null) : null,
+        gymUuid: location.gymUuid,
+        gymName: location.gymName,
+        // Measured from the board's own coordinates: only where those may go.
+        distanceMeters: location.source === 'own' ? (distanceMeters ?? null) : null,
         serialNumber: board.serialNumber ?? null,
         timerName: board.timerName ?? null,
         canEdit,
@@ -1082,6 +1074,7 @@ export const socialBoardQueries = {
           nameable[boardIndex] ? canViewResourceLocation(board.uuid, null) : false,
         ),
       );
+      const projectionGyms = await loadProjectionGyms(boards.map((board) => board.gymId));
       return boards.map((board, boardIndex) => {
         const canName = nameable[boardIndex];
         return {
@@ -1097,7 +1090,14 @@ export const socialBoardQueries = {
           setIds: board.setIds,
           name: canName ? board.name : board.boardType,
           description: canName ? board.description : null,
-          locationName: canName && locationVisible[boardIndex] ? board.locationName : null,
+          // The board's own name when its location is shown, else a public gym's.
+          locationName: canName
+            ? projectBoardLocation(
+                board,
+                board.gymId ? projectionGyms.get(board.gymId) : null,
+                locationVisible[boardIndex],
+              ).locationName
+            : null,
           latitude: null,
           longitude: null,
           isPublic: board.isPublic,
@@ -2049,24 +2049,13 @@ export const socialBoardMutations = {
     // legacy booleans, and a create with none of them lands public with its
     // location hidden and no policy row (see hasPrivacyInput below). An explicit
     // isPublic: false wins over isUnlisted, as it did on the old two-switch form.
+    // A gym never changes the board's own location choice: a viewer the owner
+    // hid it from sees a public gym's listed place instead (boardLocationFor).
     const audience =
       validatedInput.audience ??
       (validatedInput.isPublic === false ? 'only_me' : validatedInput.isUnlisted ? 'unlisted' : 'public');
-    // A board joining a public gym at exactly the place the gym lists (the
-    // builder stamps the gym's name and coordinates when a climber picks it)
-    // shows where it is, whatever the builder sent: see boardSitsAtGym. A board
-    // the server matched to a gym from the climber's own GPS fix or typed place
-    // keeps the requested location, so a home wall near a gym stays hidden. A
-    // gym minted below is not one yet, so a minted board keeps the requested
-    // location and the gym follows it.
-    const sharesGymLocation = await gymSharesBoardLocation(db, {
-      gymId,
-      boardType: validatedInput.boardType,
-      ...incomingLocation,
-    });
-    const locationAudience = sharesGymLocation
-      ? 'public'
-      : (validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me'));
+    const locationAudience =
+      validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me');
     const privacyValues = { kind: 'board' as const, resourceId: uuid, ownerId: userId, audience, locationAudience };
     // A policy row records a choice made with the modern privacy controls.
     // Legacy booleans keep their original roundtrip until the owner makes one.
@@ -2275,19 +2264,6 @@ export const socialBoardMutations = {
     if (validatedInput.locationName !== undefined) updateValues.locationName = validatedInput.locationName;
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
     if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
-    // A board sitting at its public gym's own place always shows its location
-    // (boardSitsAtGym), so its hideLocation input is ignored and the location is
-    // shared below on every save, whoever makes it: it is the server's rule, not
-    // the editor's privacy choice. Clients resend hideLocation: true with a
-    // rename. A board moved off that place goes back to hidden whatever the
-    // request says (decideGymBoardLocation). This first decision, from the row
-    // read above, only gates the owner-only check; the transaction decides again
-    // from the row it locks, so a concurrent move cannot be undone by a stale read.
-    const preliminaryGymLocation = await decideGymBoardLocation(db, board, validatedInput);
-    const requestedHideLocation =
-      preliminaryGymLocation.sharesGymLocation || preliminaryGymLocation.leavesGymPlace
-        ? undefined
-        : validatedInput.hideLocation;
     // A spray wall's visibility is not an ordinary board flag: flipping it public
     // copies the wall photo into the world-readable bucket, and flipping it back
     // deletes that copy and retracts the climbs already fanned out to feeds
@@ -2301,7 +2277,7 @@ export const socialBoardMutations = {
     if (
       ((validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
         (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted) ||
-        (requestedHideLocation !== undefined && requestedHideLocation !== board.hideLocation)) &&
+        (validatedInput.hideLocation !== undefined && validatedInput.hideLocation !== board.hideLocation)) &&
       board.ownerId !== userId
     ) {
       throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
@@ -2336,7 +2312,7 @@ export const socialBoardMutations = {
 
     if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
     if (validatedInput.isUnlisted !== undefined) updateValues.isUnlisted = validatedInput.isUnlisted;
-    if (requestedHideLocation !== undefined) updateValues.hideLocation = requestedHideLocation;
+    if (validatedInput.hideLocation !== undefined) updateValues.hideLocation = validatedInput.hideLocation;
     if (validatedInput.isOwned !== undefined) updateValues.isOwned = validatedInput.isOwned;
     if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
     if (validatedInput.isAngleAdjustable !== undefined)
@@ -2461,10 +2437,6 @@ export const socialBoardMutations = {
           isPublic: boolean;
           isUnlisted: boolean;
           hideLocation: boolean;
-          gymId: number | string | null;
-          latitude: number | string | null;
-          longitude: number | string | null;
-          locationName: string | null;
         }>(
           await tx.execute(sql`
             SELECT serial_number AS "serialNumber",
@@ -2476,11 +2448,7 @@ export const socialBoardMutations = {
                    deleted_at AS "deletedAt",
                    is_public AS "isPublic",
                    is_unlisted AS "isUnlisted",
-                   hide_location AS "hideLocation",
-                   gym_id AS "gymId",
-                   latitude,
-                   longitude,
-                   location_name AS "locationName"
+                   hide_location AS "hideLocation"
               FROM user_boards
              WHERE id = ${board.id}
              FOR UPDATE
@@ -2489,24 +2457,6 @@ export const socialBoardMutations = {
         if (!lockedBoard) {
           throw new Error('Board not found');
         }
-        // The gym rule, decided from the locked row: a rename that read the board
-        // before the owner's move home committed must not show the home.
-        const toNumber = (value: number | string | null) => (value == null ? null : Number(value));
-        const gymLocation = await decideGymBoardLocation(
-          tx,
-          {
-            gymId: toNumber(lockedBoard.gymId),
-            boardType: lockedBoard.boardType,
-            latitude: toNumber(lockedBoard.latitude),
-            longitude: toNumber(lockedBoard.longitude),
-            locationName: lockedBoard.locationName,
-          },
-          validatedInput,
-        );
-        const lockedHideLocation =
-          gymLocation.sharesGymLocation || gymLocation.leavesGymPlace ? undefined : validatedInput.hideLocation;
-        if (lockedHideLocation === undefined) delete updateValues.hideLocation;
-        else updateValues.hideLocation = lockedHideLocation;
         // A staged edit must not restore or repopulate an account-deletion
         // tombstone after its owner has been detached.
         if (
@@ -2551,7 +2501,7 @@ export const socialBoardMutations = {
           );
         }
         const hasVisibility = validatedInput.isPublic !== undefined || validatedInput.isUnlisted !== undefined;
-        if (hasVisibility || lockedHideLocation !== undefined) {
+        if (hasVisibility || validatedInput.hideLocation !== undefined) {
           const policyCondition = and(
             eq(dbSchema.resourcePrivacy.kind, 'board'),
             eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
@@ -2577,9 +2527,9 @@ export const socialBoardMutations = {
               if (audience !== policy.audience) privacyUpdates.audience = audience;
             }
           }
-          if (policy && lockedHideLocation !== undefined) {
+          if (policy && validatedInput.hideLocation !== undefined) {
             const locationAudience =
-              lockedHideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
+              validatedInput.hideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
             updateValues.hideLocation = locationAudience !== 'public';
             if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
           }
@@ -2601,13 +2551,6 @@ export const socialBoardMutations = {
               })
               .where(policyCondition);
           }
-        }
-        if (gymLocation.sharesGymLocation) {
-          await shareGymBoardLocation(tx, board);
-          updateValues.hideLocation = false;
-        } else if (gymLocation.leavesGymPlace) {
-          await hideBoardLocationLeavingGym(tx, board);
-          updateValues.hideLocation = true;
         }
         return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
       });

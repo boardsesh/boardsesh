@@ -107,6 +107,7 @@ type BoardRow = {
   identityVisible: boolean;
   deletedAt: Date | null;
   gymName: string | null;
+  gymIsPublic: boolean | null;
 };
 
 /** A board that can put sessions in the board arm, with what every resolution step matches on. */
@@ -142,6 +143,7 @@ async function loadBoardRows(
       })}`,
       deletedAt: dbSchema.userBoards.deletedAt,
       gymName: dbSchema.gyms.name,
+      gymIsPublic: dbSchema.gyms.isPublic,
     })
     .from(dbSchema.userBoards)
     .leftJoin(dbSchema.gyms, and(eq(dbSchema.gyms.id, dbSchema.userBoards.gymId), isNull(dbSchema.gyms.deletedAt)))
@@ -185,8 +187,10 @@ async function toVisibleBoard(
     name: row.name,
     slug: row.slug,
     boardType: row.boardType,
-    // The gym is the board's place: its location policy decides, not the name.
-    gymName: isOwner || (await canViewResourceLocation(row.uuid, viewerId)) ? row.gymName : null,
+    // The gym is the board's place: its location policy decides, except that a
+    // public gym's name is shown to everyone (projectBoardLocation).
+    gymName:
+      row.gymIsPublic === true || isOwner || (await canViewResourceLocation(row.uuid, viewerId)) ? row.gymName : null,
   };
 }
 

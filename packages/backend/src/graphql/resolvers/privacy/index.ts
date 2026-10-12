@@ -22,7 +22,6 @@ import { publishSocialEvent } from '../../../events';
 import { isShareLinkAudience, revokeBoardShareLinks } from '../../../services/board-share-links';
 import { deleteFollowRequestNotifications, lockFollowRequestPair } from '../../../events/follow-request-notifications';
 import { logger } from '../../../utils/logger';
-import { boardLocationSharedByGym } from '../social/gym-board-location';
 
 const resourceAudience = z.enum(['public', 'unlisted', 'followers', 'invite_only', 'only_me']);
 // `followers` stays accepted for older clients but is stored as `members`: on a
@@ -709,18 +708,10 @@ export const privacyMutations = {
             )
             .onConflictDoNothing();
       }
-      // A board sitting at its public gym's own place always shows it (see
-      // boardSitsAtGym). Store and answer `public` rather than accept a
-      // narrower choice that the next edit of the board would quietly widen:
-      // the owner sees the rule when they choose.
-      const locationSharedByGym =
-        update.kind === 'board' && (await boardLocationSharedByGym(transaction, update.resourceId));
       const settings = {
         ownerId: userId,
         audience: update.audience,
-        locationAudience: locationSharedByGym
-          ? ('public' as const)
-          : (update.locationAudience ?? lockedOverride?.locationAudience ?? current.locationAudience),
+        locationAudience: update.locationAudience ?? lockedOverride?.locationAudience ?? current.locationAudience,
         inheritFollowers: update.inheritFollowers ?? lockedOverride?.inheritFollowers ?? current.inheritFollowers,
         updatedAt: new Date(),
       };
@@ -860,15 +851,6 @@ export const privacyMutations = {
  */
 export const privacySettingsFields = {
   privacyOnboardingVersion: () => 1,
-};
-
-/**
- * `locationSharedByGym` tells the owner's location control to lock: the board
- * sits at a public gym's own place, so `updateResourcePrivacy` keeps it shown.
- */
-export const resourcePrivacySettingsFields = {
-  locationSharedByGym: (resource: { kind: PrivacyResourceKind; resourceId: string }) =>
-    resource.kind === 'board' ? boardLocationSharedByGym(db, resource.resourceId) : false,
 };
 
 export const privacyProfileFields = {

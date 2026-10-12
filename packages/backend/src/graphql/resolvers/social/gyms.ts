@@ -26,7 +26,6 @@ import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
-import { moveBoardToGym } from './gym-board-location';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 
@@ -1157,7 +1156,7 @@ export const socialGymMutations = {
         .limit(1);
 
       if (board && board.ownerId === userId) {
-        await moveBoardToGym(db, board.id, gym.id);
+        await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
       }
     }
 
@@ -1548,13 +1547,10 @@ export const socialGymMutations = {
         boardLongitude: board.longitude,
       });
 
-      await moveBoardToGym(db, board.id, gym.id);
+      await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
     } else {
-      // Unlink from gym — always the board owner's own call. A board that sat at
-      // its public gym's own place goes back to hidden (moveBoardToGym): the gym
-      // showed it, and whatever place the next edit sends is the climber's own.
-      // Any other board keeps its location as it is.
-      await moveBoardToGym(db, board.id, null);
+      // Unlink from gym — always the board owner's own call.
+      await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.id, board.id));
     }
 
     return true;

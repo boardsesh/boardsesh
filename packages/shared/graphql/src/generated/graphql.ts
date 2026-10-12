@@ -8512,8 +8512,6 @@ export type ResourcePrivacySettings = {
   inheritFollowers: Scalars['Boolean']['output'];
   kind: PrivacyResourceKind;
   locationAudience: PrivacyLocationAudience;
-  /** True when the board sits at a public gym's own listed place, so its location is always shown and the location choice is locked. Always false for a session. */
-  locationSharedByGym?: Maybe<Scalars['Boolean']['output']>;
   ownerId?: Maybe<Scalars['ID']['output']>;
   resourceId: Scalars['ID']['output'];
   revision: Scalars['Int']['output'];
@@ -13826,7 +13824,6 @@ export type ResourcePrivacyQuery = {
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
     revision: number;
-    locationSharedByGym?: boolean | null;
   } | null;
 };
 
@@ -13845,7 +13842,6 @@ export type UpdateResourcePrivacyMutation = {
     locationAudience: PrivacyLocationAudience;
     inheritFollowers: boolean;
     revision: number;
-    locationSharedByGym?: boolean | null;
   };
 };
 
@@ -22081,7 +22077,6 @@ export const ResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'locationSharedByGym' } },
               ],
             },
           },
@@ -22130,7 +22125,6 @@ export const UpdateResourcePrivacyDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'locationSharedByGym' } },
               ],
             },
           },

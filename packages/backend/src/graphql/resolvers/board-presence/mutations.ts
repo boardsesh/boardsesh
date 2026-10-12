@@ -144,7 +144,9 @@ type BoardPresenceCommandDb = Pick<typeof db, 'select' | 'update' | 'insert'>;
  * an approved grant, follower inheritance, or a Public board. Everyone else gets
  * the board's geometry with an empty uuid, the projection anonymous
  * `boardsBySerialNumbers` uses; `chooseBoardForSerial` takes the numeric id.
- * Location and gym follow the board's location audience on top of that.
+ * Location and gym follow the board's location audience on top of that; a
+ * viewer the board's own place is hidden from sees its public gym's name
+ * instead (projectBoardLocation), never the board's own.
  */
 async function toBoardCandidate(
   candidate: SerialCandidateBoard,
@@ -162,8 +164,8 @@ async function toBoardCandidate(
     layoutId: candidate.layoutId,
     sizeId: candidate.sizeId,
     setIds: candidate.setIds,
-    locationName: showLocation ? candidate.locationName : null,
-    gymName: showLocation ? candidate.gymName : null,
+    locationName: showLocation ? candidate.locationName : showIdentity ? candidate.publicGymName : null,
+    gymName: showLocation ? candidate.gymName : showIdentity ? candidate.publicGymName : null,
     isOwnedByMe,
     isPublic: candidate.isPublic,
     lastSentAt,

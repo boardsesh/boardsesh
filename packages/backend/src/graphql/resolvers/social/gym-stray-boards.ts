@@ -11,6 +11,7 @@ import { executeRows } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
+import { canViewResourceLocation } from '../../../services/privacy';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { AttachBoardToGymInputSchema, DetachBoardFromGymInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
@@ -198,15 +199,19 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
         .limit(STRAY_BOARD_LIMIT * 2)
     : [];
 
+  // A twin's board is listed whatever its visibility, but a distance is
+  // measured from the board's own coordinates, so it goes only to an editor
+  // the board's location is shown to (projectBoardLocation's rule).
+  const twinLocationVisible = await Promise.all(twinRows.map((row) => canViewResourceLocation(row.uuid, viewerUserId)));
   const twinCandidates: StrayBoardCandidate[] = twinRows
-    .map((row) => ({
+    .map((row, rowIndex) => ({
       boardId: row.boardId,
       currentGymId: row.currentGymId ?? null,
       uuid: row.uuid,
       name: row.name,
       currentGymUuid: row.currentGymUuid ?? null,
       currentGymName: row.currentGymName ?? null,
-      distanceMeters: distanceFromGym(gym, row),
+      distanceMeters: twinLocationVisible[rowIndex] ? distanceFromGym(gym, row) : null,
       reason: 'MERGED_TWIN' as const,
       isLastBoardAtCurrentGym: false,
     }))

@@ -80,6 +80,8 @@ export type SerialCandidateBoard = {
   isPublic: boolean;
   locationName: string | null;
   gymName: string | null;
+  /** The board's gym name when the gym is public and live: the place shown to a viewer its own is hidden from. */
+  publicGymName: string | null;
 };
 
 export function candidateToActiveBoard(candidate: SerialCandidateBoard): ActivePresenceBoard {
@@ -138,6 +140,7 @@ export async function findActiveBoardsBySerial(
       locationName: dbSchema.userBoards.locationName,
       hideLocation: dbSchema.userBoards.hideLocation,
       gymName: dbSchema.gyms.name,
+      gymIsPublic: dbSchema.gyms.isPublic,
     })
     .from(dbSchema.userBoards)
     .leftJoin(dbSchema.gyms, and(eq(dbSchema.gyms.id, dbSchema.userBoards.gymId), isNull(dbSchema.gyms.deletedAt)))
@@ -166,6 +169,7 @@ export async function findActiveBoardsBySerial(
     // even when the board itself is public.
     locationName: row.hideLocation ? null : row.locationName,
     gymName: row.hideLocation ? null : (row.gymName ?? null),
+    publicGymName: row.gymIsPublic === true ? (row.gymName ?? null) : null,
   }));
 }
 

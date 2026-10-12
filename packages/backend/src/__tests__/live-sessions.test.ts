@@ -131,10 +131,10 @@ async function makeSprayWall(
   return { ...board, layoutId, path: `spray/${layoutId}/${layoutId}/1/40` };
 }
 
-async function makeGym(name: string): Promise<number> {
+async function makeGym(name: string, { isPublic = true }: { isPublic?: boolean } = {}): Promise<number> {
   const [row] = await db
     .insert(dbSchema.gyms)
-    .values({ uuid: uuidv4(), name, ownerId: BOARD_OWNER })
+    .values({ uuid: uuidv4(), name, ownerId: BOARD_OWNER, isPublic })
     .returning({ id: dbSchema.gyms.id });
   return Number(row.id);
 }
@@ -940,14 +940,18 @@ describe('followedLiveSessions — board privacy and ordering', () => {
     expect(preview?.boardPath.startsWith('/kilter/1/10/')).toBe(true);
   });
 
-  it('hides a gym name behind hideLocation from everyone but the board owner', async () => {
+  it("hides a private gym's name behind hideLocation from everyone but the board owner; a public gym's shows", async () => {
     await follow(VIEWER, FRIEND);
     await follow(BOARD_OWNER, FRIEND);
     const gymId = await makeGym('Crag Cave Gym');
-    const privateLocation = await makeBoard({ gymId, hideLocation: true, name: 'Quiet Location Wall' });
+    const homeGymId = await makeGym('Back Shed', { isPublic: false });
+    const privateLocation = await makeBoard({ gymId: homeGymId, hideLocation: true, name: 'Quiet Location Wall' });
+    // A public gym lists its own name to everyone, so a hidden board there shows
+    // the gym (projectBoardLocation), never anything of its own.
+    const hiddenAtPublicGym = await makeBoard({ gymId, hideLocation: true, name: 'Hidden Gym Wall' });
     const openLocation = await makeBoard({ gymId, name: 'Open Location Wall' });
 
-    for (const board of [privateLocation, openLocation]) {
+    for (const board of [privateLocation, hiddenAtPublicGym, openLocation]) {
       const sessionId = await makeSession({ createdBy: FRIEND });
       await goLive(sessionId, FRIEND);
       await addTick({ sessionId, userId: FRIEND, boardId: board.id });
@@ -958,10 +962,11 @@ describe('followedLiveSessions — board privacy and ordering', () => {
 
     const forViewer = gymNameByBoard(await followedLiveSessions(VIEWER));
     expect(forViewer.get('Quiet Location Wall')).toBeNull();
+    expect(forViewer.get('Hidden Gym Wall')).toBe('Crag Cave Gym');
     expect(forViewer.get('Open Location Wall')).toBe('Crag Cave Gym');
 
     const forOwner = gymNameByBoard(await followedLiveSessions(BOARD_OWNER));
-    expect(forOwner.get('Quiet Location Wall')).toBe('Crag Cave Gym');
+    expect(forOwner.get('Quiet Location Wall')).toBe('Back Shed');
   });
 
   it('keeps followed climbers’ old participant rows from crowding the candidate cap', async () => {
