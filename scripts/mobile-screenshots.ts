@@ -2022,7 +2022,7 @@ export function renderCppMaestroFlow(
       );
     commands.push(`- takeScreenshot: ${scene.filename}`);
   }
-  return readFileSync(join(MAESTRO_DIR, 'app-store-cpp.yaml'), 'utf8').replace('CPP_COMMANDS', commands.join('\n'));
+  return readFileSync(join(MAESTRO_DIR, 'app-store-cpp.yaml'), 'utf8').replace(/^CPP_COMMANDS$/m, commands.join('\n'));
 }
 
 export function rotationDegreesForIosOrientation(orientation: IosDeviceOrientation): number | null {

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { getOperationAST, parse } from 'graphql';
 import WebSocket from 'ws';
-import { CREATE_BOARD, GET_MY_BOARDS } from '../packages/shared/graphql/src/operations/boards';
+import { CREATE_BOARD, GET_MY_BOARDS, UPDATE_BOARD } from '../packages/shared/graphql/src/operations/boards';
 import { SEARCH_CLIMBS } from '../packages/shared/graphql/src/operations/climb-search';
 import { GET_USER_ASCENTS_FEED, SAVE_TICK } from '../packages/shared/graphql/src/operations/ticks';
 import { BOARD_LIVE_SESSIONS } from '../packages/shared/graphql/src/operations/live-sessions';
@@ -21,6 +21,7 @@ import {
   GET_SPRAY_WALL_DRAFT_RENDER_DATA,
   PUBLISH_SPRAY_WALL_VERSION,
   UPSERT_SPRAY_WALL_HOLDS,
+  UPDATE_SPRAY_WALL,
 } from '../packages/shared/graphql/src/operations/spray-walls';
 import {
   GET_SPRAY_DETECTION,
@@ -53,6 +54,9 @@ export interface BootstrapBoard {
   sizeId: number;
   setIds: string;
   angle: number;
+  isPublic?: boolean;
+  layoutName?: string;
+  sizeName?: string;
 }
 interface WallVersion {
   id: string;
@@ -307,6 +311,116 @@ export async function ensureSprayPhoto(
   return null;
 }
 
+/** Verify the supplied wall before applying the user-approved, name-only metadata change. */
+export async function ensureSprayBoardName(
+  options: BootstrapOptions,
+  variant: CppBoard,
+  board: BootstrapBoard,
+  initialWall: Wall,
+  actions: string[],
+): Promise<{ board: BootstrapBoard; problem: string | null }> {
+  const photoProblem = await ensureSprayPhoto(options, variant, initialWall, actions);
+  if (photoProblem) return { board, problem: photoProblem };
+  const before = (
+    await options.transport.request<{ sprayWall: Wall | null }>(GET_SPRAY_WALL_WITH_VERSIONS, { uuid: board.uuid })
+  ).sprayWall;
+  if (
+    !before ||
+    before.uuid !== board.uuid ||
+    before.board.uuid !== board.uuid ||
+    before.board.ownerId !== options.accountUserId
+  )
+    return { board, problem: `${variant.id}: spray-wall ownership changed before name verification` };
+  if (
+    before.board.name === variant.selector &&
+    board.name === variant.selector &&
+    board.layoutName === variant.selector &&
+    board.sizeName === variant.selector
+  )
+    return { board, problem: null };
+  if (
+    board.uuid !== initialWall.uuid ||
+    board.ownerId !== options.accountUserId ||
+    board.isPublic !== false ||
+    !board.canEdit ||
+    before.board.isPublic !== false ||
+    !before.board.canEdit
+  )
+    return { board, problem: `${variant.id}: renaming requires an owned, editable private spray wall` };
+  actions.push(`${variant.id}: rename verified private wall to ${variant.selector}`);
+  if (!options.apply) return { board, problem: `${variant.id}: wall-name update requires --apply` };
+
+  // Publishing a newly imported wall leaves the original checkpoint at the draft stage.
+  // Reverify its actual published bytes before any metadata update, as for existing walls.
+  const publishedProblem = await ensureSprayPhoto(options, variant, before, actions);
+  if (publishedProblem) return { board, problem: publishedProblem };
+  const verified = options.checkpoint.boards[variant.id];
+  if (
+    before.currentVersion?.status !== 'PUBLISHED' ||
+    !before.currentVersion.photo ||
+    before.holdCount <= 0 ||
+    verified?.uuid !== board.uuid ||
+    verified.versionId !== before.currentVersion.id ||
+    !verified.storedPhotoSha256 ||
+    createHash('sha256')
+      .update(await options.transport.bytes(before.currentVersion.photo.url))
+      .digest('hex') !== verified.storedPhotoSha256
+  )
+    return { board, problem: `${variant.id}: published photo or version changed before renaming` };
+
+  await options.transport.request(UPDATE_SPRAY_WALL, { input: { uuid: board.uuid, name: variant.selector } });
+  let renamed = (await listOwnedBoards(options)).find((candidate) => candidate.uuid === board.uuid);
+  // Older backend deployments may leave the social-board label stale. Both
+  // labels must agree before native capture; UUID/configuration remain fixed.
+  if (
+    renamed?.ownerId === options.accountUserId &&
+    renamed.isPublic === false &&
+    renamed.canEdit &&
+    renamed.name !== variant.selector
+  ) {
+    await options.transport.request(UPDATE_BOARD, { input: { boardUuid: board.uuid, name: variant.selector } });
+    renamed = (await listOwnedBoards(options)).find((candidate) => candidate.uuid === board.uuid);
+  }
+  const after = (
+    await options.transport.request<{ sprayWall: Wall | null }>(GET_SPRAY_WALL_WITH_VERSIONS, { uuid: board.uuid })
+  ).sprayWall;
+  const geometry = (candidate: BootstrapBoard) => [
+    candidate.boardType,
+    candidate.layoutId,
+    candidate.sizeId,
+    candidate.setIds,
+    candidate.angle,
+  ];
+  if (
+    !renamed ||
+    !after ||
+    after.uuid !== board.uuid ||
+    after.board.uuid !== board.uuid ||
+    renamed.ownerId !== options.accountUserId ||
+    after.board.ownerId !== options.accountUserId ||
+    renamed.isPublic !== false ||
+    after.board.isPublic !== false ||
+    renamed.name !== variant.selector ||
+    renamed.layoutName !== variant.selector ||
+    renamed.sizeName !== variant.selector ||
+    after.board.name !== variant.selector ||
+    JSON.stringify(geometry(renamed)) !== JSON.stringify(geometry(board)) ||
+    JSON.stringify(geometry(after.board)) !== JSON.stringify(geometry(before.board)) ||
+    after.holdCount !== before.holdCount ||
+    after.currentVersion?.id !== before.currentVersion.id ||
+    after.currentVersion.status !== before.currentVersion.status ||
+    JSON.stringify(after.currentVersion.homography) !== JSON.stringify(before.currentVersion.homography) ||
+    after.currentVersion.photo?.width !== before.currentVersion.photo.width ||
+    after.currentVersion.photo?.height !== before.currentVersion.photo.height ||
+    !after.currentVersion.photo ||
+    createHash('sha256')
+      .update(await options.transport.bytes(after.currentVersion.photo.url))
+      .digest('hex') !== verified.storedPhotoSha256
+  )
+    return { board, problem: `${variant.id}: name update failed catalogue or unchanged photo/geometry verification` };
+  return { board: renamed, problem: null };
+}
+
 export async function bootstrapCppScenario(options: BootstrapOptions): Promise<BootstrapResult> {
   if (
     options.checkpoint.version !== 1 ||
@@ -414,7 +528,6 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
         throw new Error(`${variant.id}: created board failed ownership/configuration verification`);
       walls = (await options.transport.request<{ mySprayWalls: Wall[] }>(GET_MY_SPRAY_WALLS)).mySprayWalls;
     }
-    selected.set(variant.id, board);
     if (variant.family === 'spray') {
       const wall = walls.find(
         (candidate) => candidate.uuid === board.uuid && candidate.board.ownerId === options.accountUserId,
@@ -423,15 +536,17 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
         blockers.push(`${variant.id}: owned spray-wall entity not found`);
         continue;
       }
-      const problem = await ensureSprayPhoto(options, variant, wall, actions);
-      if (problem) {
-        blockers.push(problem);
+      const verified = await ensureSprayBoardName(options, variant, board, wall, actions);
+      if (verified.problem) {
+        blockers.push(verified.problem);
         continue;
       }
+      board = verified.board;
       boardPhotoSha256[variant.id] = createHash('sha256')
         .update(readFileSync(resolve(ROOT, variant.photo!)))
         .digest('hex');
     }
+    selected.set(variant.id, board);
     const result = await options.transport.request<{ searchClimbs: { climbs: ClimbInput[] } }>(SEARCH_CLIMBS, {
       input: {
         boardName: board.boardType,

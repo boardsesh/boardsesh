@@ -213,6 +213,7 @@
     "__tests__/screenshot-cpp.test.ts",
     "native-runtime.d.ts",
     "lib/cpp-photo-refresh.ts",
-    "__tests__/cpp-photo-refresh.test.ts"
+    "__tests__/cpp-photo-refresh.test.ts",
+    "__tests__/cpp-ws-recording.test.ts"
   ]
 }

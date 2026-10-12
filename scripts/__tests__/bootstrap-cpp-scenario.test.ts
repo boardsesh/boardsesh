@@ -8,6 +8,7 @@ import {
   bootstrapCppScenario,
   photosMatch,
   ensureSprayPhoto,
+  ensureSprayBoardName,
   queueClimb,
   resolveBootstrapUpstream,
   classifyBootstrapGraphqlError,
@@ -22,7 +23,11 @@ import { readCppPage } from '../lib/screenshot-cpp';
 import { typeDefs } from '../../packages/shared-schema/src/schema';
 import type { ClimbInput } from '../../packages/shared-schema/src/generated/types';
 import { BACKEND_URL } from '../../packages/mobile/src/lib/env';
-import { MyBoardsInputSchema, CreateBoardInputSchema } from '../../packages/backend/src/validation/schemas/boards';
+import {
+  MyBoardsInputSchema,
+  CreateBoardInputSchema,
+  UpdateBoardInputSchema,
+} from '../../packages/backend/src/validation/schemas/boards';
 import { AscentFeedInputSchema, SaveTickInputSchema } from '../../packages/backend/src/validation/schemas/ticks';
 import { CreateSessionInputSchema } from '../../packages/backend/src/validation/schemas/sessions';
 import { GetSmartPlaylistInputSchema } from '../../packages/backend/src/validation/schemas/playlists';
@@ -31,6 +36,7 @@ import {
   CreateSprayWallVersionInputSchema,
   UpsertSprayWallHoldsInputSchema,
   PublishSprayWallVersionInputSchema,
+  UpdateSprayWallInputSchema,
 } from '../../packages/backend/src/validation/schemas/spray-walls';
 
 const ACCOUNT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -44,6 +50,7 @@ const API_SCHEMA = buildSchema(typeDefs.join('\n'));
 const INPUT_SCHEMAS = {
   GetMyBoards: MyBoardsInputSchema,
   CreateBoard: CreateBoardInputSchema,
+  UpdateBoard: UpdateBoardInputSchema,
   SearchClimbs: ClimbSearchInputSchema,
   GetUserAscentsFeed: AscentFeedInputSchema,
   SaveTick: SaveTickInputSchema,
@@ -53,6 +60,7 @@ const INPUT_SCHEMAS = {
   CreateSprayWallVersion: CreateSprayWallVersionInputSchema,
   UpsertSprayWallHolds: UpsertSprayWallHoldsInputSchema,
   PublishSprayWallVersion: PublishSprayWallVersionInputSchema,
+  UpdateSprayWall: UpdateSprayWallInputSchema,
 };
 function validateActualInput(name: string, variables: Record<string, unknown>): void {
   const schema = INPUT_SCHEMAS[name as keyof typeof INPUT_SCHEMAS];
@@ -221,6 +229,238 @@ function manufacturerHarness(): {
   return { options, owned, operations, join, save };
 }
 
+function sprayRenameHarness(variantIndex = 0) {
+  const harness = manufacturerHarness();
+  const variant = readCppPage('spray').heroBoards[variantIndex];
+  const source = readFileSync(variant.photo!);
+  let board: BootstrapBoard = {
+    ...harness.owned[0],
+    uuid: testUuid(700 + variantIndex),
+    boardType: 'spray',
+    layoutId: 47 + variantIndex,
+    sizeId: 47 + variantIndex,
+    setIds: '1',
+    angle: 40,
+    name: ['Home Spray Wall', 'Cherry', 'Bowlo'][variantIndex],
+    isPublic: false,
+    layoutName: 'Old catalogue label',
+    sizeName: 'Old catalogue label',
+  };
+  let wall = {
+    uuid: board.uuid,
+    board,
+    holdCount: 4,
+    currentVersion: {
+      id: '47',
+      number: 1,
+      status: 'PUBLISHED',
+      homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      photo: { url: 'https://photo.example.test/permitted', width: 100, height: 200 },
+    },
+  };
+  const originalBoard = board;
+  const originalWall = wall;
+  const calls: Array<{ name: string; variables: Record<string, unknown> }> = [];
+  const behavior = {
+    staleSocialName: false,
+    staleCatalogue: false,
+    changedGeometry: false,
+    failAfterSprayRename: false,
+  };
+  harness.options.apply = true;
+  harness.options.bindings = { [variant.id]: board.uuid };
+  harness.options.checkpoint.boards[variant.id] = {
+    uuid: board.uuid,
+    sourceSha256: createHash('sha256').update(source).digest('hex'),
+  };
+  harness.options.transport.bytes = vi.fn(async () => source);
+  harness.options.transport.request = async <T>(query: string, variables: Record<string, unknown> = {}): Promise<T> => {
+    expect(validate(API_SCHEMA, parse(query))).toEqual([]);
+    const name = getOperationAST(parse(query))?.name?.value ?? '';
+    validateActualInput(name, variables);
+    calls.push({ name, variables });
+    if (name === 'GetSprayWallWithVersions') return { sprayWall: wall } as T;
+    if (name === 'GetMyBoards') {
+      if (behavior.failAfterSprayRename) {
+        behavior.failAfterSprayRename = false;
+        throw new Error('Interrupted after spray rename');
+      }
+      return { myBoards: { boards: [board], hasMore: false } } as T;
+    }
+    if (name === 'UpdateSprayWall') {
+      board = {
+        ...board,
+        name: behavior.staleSocialName ? board.name : variant.selector,
+        layoutName: behavior.staleCatalogue ? board.layoutName : variant.selector,
+        sizeName: behavior.staleCatalogue ? board.sizeName : variant.selector,
+      };
+      wall = {
+        ...wall,
+        board: { ...board, name: variant.selector },
+        currentVersion: {
+          ...wall.currentVersion,
+          homography: behavior.changedGeometry ? [2, 0, 0, 0, 1, 0, 0, 0, 1] : wall.currentVersion.homography,
+        },
+      };
+      return { updateSprayWall: wall } as T;
+    }
+    if (name === 'UpdateBoard') {
+      board = { ...board, name: variant.selector };
+      wall = { ...wall, board };
+      return { updateBoard: board } as T;
+    }
+    throw new Error(`Unexpected operation ${name}`);
+  };
+  return { ...harness, variant, originalBoard, originalWall, calls, behavior, currentBoard: () => board };
+}
+
+describe('verified spray wall names', () => {
+  it.each([0, 1, 2])('applies only the requested name to verified owned variant %s', async (variantIndex) => {
+    const harness = sprayRenameHarness(variantIndex);
+    const checkpointIdentity = harness.options.checkpoint.boards[harness.variant.id];
+    const result = await ensureSprayBoardName(
+      harness.options,
+      harness.variant,
+      harness.originalBoard,
+      harness.originalWall,
+      [],
+    );
+    expect(result.problem).toBeNull();
+    expect(result.board).toMatchObject({
+      uuid: checkpointIdentity.uuid,
+      name: harness.variant.selector,
+      layoutName: harness.variant.selector,
+      sizeName: harness.variant.selector,
+    });
+    const mutations = harness.calls.filter((call) => !call.name.startsWith('Get'));
+    expect(mutations).toEqual([
+      {
+        name: 'UpdateSprayWall',
+        variables: { input: { uuid: checkpointIdentity.uuid, name: harness.variant.selector } },
+      },
+    ]);
+    expect(harness.options.checkpoint.boards[harness.variant.id]).toMatchObject(checkpointIdentity);
+    expect(harness.options.transport.upload).not.toHaveBeenCalled();
+    const mutationIndex = harness.calls.findIndex((call) => call.name === 'UpdateSprayWall');
+    expect(mutationIndex).toBeGreaterThan(0);
+    expect(harness.calls.slice(0, mutationIndex).every((call) => call.name.startsWith('Get'))).toBe(true);
+    expect(harness.options.transport.bytes).toHaveBeenCalled();
+    expect(
+      (await ensureSprayBoardName(harness.options, harness.variant, result.board, harness.originalWall, [])).problem,
+    ).toBeNull();
+    expect(harness.calls.filter((call) => call.name === 'UpdateSprayWall')).toHaveLength(1);
+  });
+
+  it('aligns the social name with a name-only owner update when production leaves it stale', async () => {
+    const harness = sprayRenameHarness();
+    harness.behavior.staleSocialName = true;
+    const result = await ensureSprayBoardName(
+      harness.options,
+      harness.variant,
+      harness.originalBoard,
+      harness.originalWall,
+      [],
+    );
+    expect(result.problem).toBeNull();
+    expect(harness.calls.filter((call) => call.name === 'UpdateBoard')).toEqual([
+      {
+        name: 'UpdateBoard',
+        variables: { input: { boardUuid: harness.originalBoard.uuid, name: harness.variant.selector } },
+      },
+    ]);
+    expect(result.board.name).toBe("Liz's Wall");
+  });
+
+  it('resumes an interrupted partial rename using the same checkpoint UUID and source', async () => {
+    const harness = sprayRenameHarness(1);
+    harness.behavior.staleSocialName = true;
+    harness.behavior.failAfterSprayRename = true;
+    await expect(
+      ensureSprayBoardName(harness.options, harness.variant, harness.originalBoard, harness.originalWall, []),
+    ).rejects.toThrow('Interrupted');
+    const result = await ensureSprayBoardName(
+      harness.options,
+      harness.variant,
+      harness.currentBoard(),
+      harness.originalWall,
+      [],
+    );
+    expect(result.problem).toBeNull();
+    expect(result.board.uuid).toBe(harness.originalBoard.uuid);
+    expect(harness.options.checkpoint.boards[harness.variant.id]).toMatchObject({
+      uuid: harness.originalBoard.uuid,
+      sourceSha256: createHash('sha256').update(readFileSync(harness.variant.photo!)).digest('hex'),
+    });
+  });
+
+  it('plans the exact name update without changing metadata in read-only mode', async () => {
+    const harness = sprayRenameHarness();
+    harness.options.apply = false;
+    const actions: string[] = [];
+    const result = await ensureSprayBoardName(
+      harness.options,
+      harness.variant,
+      harness.originalBoard,
+      harness.originalWall,
+      actions,
+    );
+    expect(result.problem).toContain('requires --apply');
+    expect(actions).toEqual(["spray-liz: rename verified private wall to Liz's Wall"]);
+    expect(harness.calls.every((call) => call.name.startsWith('Get'))).toBe(true);
+    expect(harness.save).not.toHaveBeenCalled();
+  });
+
+  it('never renames an unverified photo', async () => {
+    const harness = sprayRenameHarness();
+    harness.options.transport.bytes = async () => readFileSync(readCppPage('spray').heroBoards[1].photo!);
+    const result = await ensureSprayBoardName(
+      harness.options,
+      harness.variant,
+      harness.originalBoard,
+      harness.originalWall,
+      [],
+    );
+    expect(result.problem).toContain('visually verify');
+    expect(harness.calls.every((call) => call.name.startsWith('Get'))).toBe(true);
+    expect(harness.save).not.toHaveBeenCalled();
+  });
+
+  it.each(['owner', 'public', 'holds'] as const)(
+    'refuses metadata writes when %s verification fails',
+    async (failure) => {
+      const harness = sprayRenameHarness();
+      if (failure === 'owner') harness.originalWall.board.ownerId = testUuid(900);
+      if (failure === 'public') harness.originalWall.board.isPublic = true;
+      if (failure === 'holds') harness.originalWall.holdCount = 0;
+      const result = await ensureSprayBoardName(
+        harness.options,
+        harness.variant,
+        harness.originalBoard,
+        harness.originalWall,
+        [],
+      );
+      expect(result.problem).not.toBeNull();
+      expect(harness.calls.every((call) => call.name.startsWith('Get'))).toBe(true);
+    },
+  );
+
+  it.each(['staleCatalogue', 'changedGeometry'] as const)(
+    'blocks capture when the real reread reports %s',
+    async (failure) => {
+      const harness = sprayRenameHarness();
+      harness.behavior[failure] = true;
+      const result = await ensureSprayBoardName(
+        harness.options,
+        harness.variant,
+        harness.originalBoard,
+        harness.originalWall,
+        [],
+      );
+      expect(result.problem).toContain('unchanged photo/geometry verification');
+    },
+  );
+});
+
 describe('CPP account/bootstrap safety', () => {
   it('stops an entire spray trio before any writes when current capacity cannot fit both new walls', async () => {
     const harness = manufacturerHarness();
@@ -260,7 +500,7 @@ describe('CPP account/bootstrap safety', () => {
     };
     const result = await bootstrapCppScenario(harness.options);
     expect(result.blockers).toContainEqual(
-      expect.stringContaining('9 active walls; 2 additional walls (Cherry, Bowlo) would require 11 slots'),
+      expect.stringContaining("9 active walls; 2 additional walls (Cherry's Wall, The Bowlo) would require 11 slots"),
     );
     expect(result.scenario).toBeUndefined();
     expect(calls).toEqual(['GetMyBoards', 'GetMySprayWalls', 'GetMySprayWallLifecycle']);

@@ -3,6 +3,7 @@ import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parseAllDocuments } from 'yaml';
 import {
   CPP_MANIFEST_PATH,
   CPP_TARGETS,
@@ -18,6 +19,8 @@ import {
 import {
   parseArgs,
   renderCppMaestroFlow,
+  renderMaestroFlowForIosDevice,
+  deviceSlug,
   IOS_SCREENSHOT_DEVICES,
   screenshotFixtureReference,
   waitForCppRecordedRoster,
@@ -76,6 +79,31 @@ function scenario(target: (typeof CPP_TARGETS)[number]) {
 }
 
 describe('custom product page captures', () => {
+  it('generates a valid Maestro command document rather than expanding the marker inside a comment', () => {
+    for (const target of CPP_TARGETS) {
+      const { coverage, page } = scenario(target);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        const source = renderMaestroFlowForIosDevice(renderCppMaestroFlow(target, device, coverage), device);
+        const documents = parseAllDocuments(source);
+        expect(documents.flatMap((document) => document.errors)).toEqual([]);
+        expect(documents).toHaveLength(2);
+        expect(documents[0].toJS()).toMatchObject({ appId: 'com.boardsesh.app' });
+        const commands: unknown = documents[1].toJS();
+        expect(Array.isArray(commands)).toBe(true);
+        if (!Array.isArray(commands)) throw new Error('Maestro commands must be a YAML sequence');
+        expect(commands[0]).toHaveProperty('setOrientation', device.orientation);
+        const captures = commands
+          .filter(
+            (command): command is { takeScreenshot: string } =>
+              typeof command === 'object' && command !== null && typeof command.takeScreenshot === 'string',
+          )
+          .map((command) => `${command.takeScreenshot}.png`);
+        expect(captures.sort()).toEqual(cppCaptureNames(page, deviceSlug(device.name)));
+        expect(source).toContain('# The orchestrator expands CPP_COMMANDS');
+        expect(source).not.toMatch(/^CPP_COMMANDS$/m);
+      }
+    }
+  });
   it('waits for real roster responses after home rather than failing on an in-flight recording', () => {
     const { page, boards, coverage, fixturesDir } = scenario('kilter');
     const observed: CppRecordedBoard[][] = [[], boards.slice(0, 2), [...boards, ...boards]];

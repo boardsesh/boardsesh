@@ -18,7 +18,7 @@ shows three boards from other families. Both headlines are localized.
 | Kilter | Original 12×12, Homewall 7×10, Homewall 10×10 | Tension 2 Mirror, MoonBoard 2024, Woods 12×12 |
 | Tension | Original, Tension 2 Mirror, Tension 2 Spray | Kilter Original 12×12, MoonBoard 2024, Woods 12×12 |
 | MoonBoard | 2016, Masters 2019, 2024 | Kilter Original 12×12, Tension 2 Mirror, Woods 12×12 |
-| Spray wall | Liz, Cherry, Bowlo | Kilter Original 12×12, Tension 2 Mirror, MoonBoard 2024 |
+| Spray wall | Liz's Wall, Cherry's Wall, The Bowlo | Kilter Original 12×12, Tension 2 Mirror, MoonBoard 2024 |
 
 Images three through nine show search/filtering, logbook, LED control, shared
 queue, workouts, wall status, and Dynamic Island. For iPad, the ninth image uses
@@ -46,6 +46,19 @@ status/playlist, and Island/kiosk/hold editor. Scene board IDs identify the targ
 board; the queue also supplies its actual recorded session ID. Readiness text
 must identify real captured content. Do not invent records or readiness labels.
 
+CPP recording verifies the authenticated owner, private session, and primary board
+configuration before maintaining real upstream session membership. This makes a
+dormant permanent session available to its native join preview. The recorder
+relays only the known native join, queue, and roster documents for that verified
+session. Tokens stay in memory. Full React Native replies supply the recorded
+initial snapshots; smaller ActivityKit replies are relayed and later replayed
+through strict projections of fields actually recorded in the full replies.
+The existing default-listing recorder retains its inert WebSocket behavior.
+
+Generated flows retain a separate Maestro command document. All 64 combinations
+of target, app language, and device were validated with the pinned Maestro 2.6.1
+parser before the native capture rerun.
+
 The original real spray-wall photographs are committed at
 `app-stores/apple/cpp-source-photos/`: `lizfinal.JPG`, `cherry4.JPG`, and
 `bowlo.jpg`. The CPP manifest records each original filename, byte count, and
@@ -72,7 +85,13 @@ and Bowlo can appear in the real new-climb editor before either wall has climbs.
 The checkpoint is bound to the authenticated account and backend and cached for
 resuming interrupted recognition or queue setup.
 
-Liz reuses the existing owned Home Spray Wall. The committed seed binding and
+Liz's Wall reuses the existing owned Home Spray Wall with its UUID unchanged.
+After ownership, private visibility, published photo provenance, and real holds
+are verified, bootstrap applies the user-approved name-only rename to Liz's Wall.
+It rereads the wall and catalogue labels and verifies unchanged published photo,
+version, hold count, homography, and board configuration. Checkpoint-bound Cherry
+and Bowlo walls from earlier runs receive the same verified rename to Cherry's Wall
+and The Bowlo; newly created walls use those names directly. The committed seed binding and
 approved stored-photo SHA are checked against the live owner and downloaded bytes;
 a changed photo stops the run. The original input hash remains separate from the
 stored processed photo hash. Missing Cherry and Bowlo walls are added only after

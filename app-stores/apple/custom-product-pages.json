@@ -675,7 +675,7 @@
       "primaryBoard": {
         "id": "spray-liz",
         "family": "spray",
-        "selector": "Liz",
+        "selector": "Liz's Wall",
         "boardType": "spray",
         "photo": "app-stores/apple/cpp-source-photos/lizfinal.JPG"
       },
@@ -683,21 +683,21 @@
         {
           "id": "spray-liz",
           "family": "spray",
-          "selector": "Liz",
+          "selector": "Liz's Wall",
           "boardType": "spray",
           "photo": "app-stores/apple/cpp-source-photos/lizfinal.JPG"
         },
         {
           "id": "spray-cherry",
           "family": "spray",
-          "selector": "Cherry",
+          "selector": "Cherry's Wall",
           "boardType": "spray",
           "photo": "app-stores/apple/cpp-source-photos/cherry4.JPG"
         },
         {
           "id": "spray-bowlo",
           "family": "spray",
-          "selector": "Bowlo",
+          "selector": "The Bowlo",
           "boardType": "spray",
           "photo": "app-stores/apple/cpp-source-photos/bowlo.jpg"
         }
