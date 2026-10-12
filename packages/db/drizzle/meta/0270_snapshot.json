@@ -1,6 +1,6 @@
 {
-  "id": "3bdc40f7-9d91-405f-b7df-7004820d40dc",
-  "prevId": "be9ff25b-946b-4acc-b21d-77135a48bdee",
+  "id": "3e0670ea-dce8-48ff-a115-042429dfda43",
+  "prevId": "aced856a-6f25-4401-b051-acc7defe34d9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17149,7 +17149,8 @@
         "new_climbs_synced",
         "gym_claim_approved",
         "proposal_on_your_climb",
-        "spray_wall_detection_completed"
+        "spray_wall_detection_completed",
+        "follow_request"
       ]
     },
     "public.feed_item_type": {
