@@ -496,10 +496,8 @@
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
       "close": "Fermer les filtres",
-      "automaticChanges": "Les modifications s’appliquent automatiquement",
-      "matchingCount_one": "{{count}} bloc",
-      "matchingCount_other": "{{count}} blocs",
-      "countNote": "Chaque bloc compte une fois, pas une fois par angle.",
+      "matchingCount_one": "{{count, number}} bloc",
+      "matchingCount_other": "{{count, number}} blocs",
       "sort": {
         "ascents": "Ascensions",
         "quality": "Qualité",

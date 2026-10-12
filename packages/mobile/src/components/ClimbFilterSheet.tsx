@@ -230,8 +230,6 @@ export function ClimbFilterSheet({
   onDismissRef.current = onDismiss;
   const boardName = boardConfig?.boardName ?? '';
   const { data: grades } = useGrades(boardName);
-  // Kilter's app counts one row per (climb, angle); see docs/kilter-sync.md.
-  const showCountNote = boardName === 'kilter';
   // A spray wall has no benchmarks and no routes: every climb on it is a
   // one-frame problem set by a climber (#5960). The two controls stay only while
   // they carry a non-default answer, so a filter picked on another board can
@@ -874,6 +872,7 @@ export function ClimbFilterSheet({
       >
         <SheetTopBar
           title={t('mobile.filter.title')}
+          subtitle={previewCount != null ? t('mobile.filter.matchingCount', { count: previewCount }) : undefined}
           leading={{ kind: 'close', onPress: handleClose, accessibilityLabel: t('mobile.filter.close') }}
           trailing={{ kind: 'forward', label: t('mobile.filter.reset'), onPress: handleReset, disabled: !anyActive }}
         />
@@ -895,20 +894,6 @@ export function ClimbFilterSheet({
           {/* Flat, labeled sections — no accordions. The scroll body is one column
               child (styles.body) so the native sheet scrolls. */}
           <View style={styles.body}>
-            {previewCount != null ? (
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.countNote}>
-                {t('mobile.filter.matchingCount', { count: previewCount })}
-              </Text>
-            ) : null}
-            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.countNote}>
-              {t('mobile.filter.automaticChanges')}
-            </Text>
-            {showCountNote ? (
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.countNote}>
-                {t('mobile.filter.countNote')}
-              </Text>
-            ) : null}
-
             {/* 1 · NAME — climb-name search term, first row so Reset has something
                 visible to reset (#3606). Committed live via onNameChange/onClearName,
                 same as the top-bar search field. */}
@@ -1462,9 +1447,5 @@ const createStyles = (textStyles: TypographyScale) =>
     inlineGradeRail: {
       marginTop: spacing[2],
       marginHorizontal: -spacing[4],
-    },
-    countNote: {
-      paddingTop: spacing[3],
-      textAlign: 'center',
     },
   });

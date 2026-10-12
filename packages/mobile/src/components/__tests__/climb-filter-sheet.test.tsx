@@ -314,9 +314,10 @@ vi.mock('@boardsesh/climb-filters', async (importOriginal) => {
   };
 });
 
+const countPreviewMock = vi.hoisted(() => ({ count: 12 as number | undefined }));
 vi.mock('../../lib/graphql/hooks', () => ({
   useGrades: () => ({ data: [] }),
-  useSearchClimbsCount: () => ({ data: 12 }),
+  useSearchClimbsCount: () => ({ data: countPreviewMock.count }),
 }));
 
 const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
@@ -437,21 +438,24 @@ vi.mock('../use-sheet-column-style', async (importOriginal) => ({
   useSheetColumnStyle: () => DETENT_COLUMN,
 }));
 // Model the header action targets without native UI. A disabled Reset ignores
-// taps, and the matching count remains ordinary text in the scroll body.
+// taps, and the matching count is a noninteractive header subtitle.
 type TopBarActionMock = { label?: string; kind?: string; onPress: () => void; disabled?: boolean; prominent?: boolean };
 vi.mock('../SheetTopBar', () => ({
   SheetTopBar: ({
     title,
+    subtitle,
     leading,
     trailing,
   }: {
     title: string;
+    subtitle?: string;
     leading?: TopBarActionMock;
     trailing?: TopBarActionMock;
   }) =>
     createElement(
       'div',
       { 'data-top-bar': title },
+      subtitle ? createElement('span', { 'data-subtitle': true }, subtitle) : null,
       [leading, trailing].map((action, index) =>
         action
           ? createElement(
@@ -537,6 +541,7 @@ function closeAndFinish(closeButton: HTMLElement) {
 }
 
 beforeEach(() => {
+  countPreviewMock.count = 12;
   vi.clearAllMocks();
   filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => false);
   filterActivityMocks.hasActiveBoardFilters.mockImplementation(() => false);
@@ -556,8 +561,11 @@ describe('ClimbFilterSheet live selections and dismissal', () => {
     expect(getByText('close').getAttribute('data-slot')).toBe('leading');
     expect(getByText('mobile.filter.reset').getAttribute('data-slot')).toBe('trailing');
     expect(getByText('mobile.filter.reset').getAttribute('data-prominent')).toBe('false');
-    expect(getByText('mobile.filter.matchingCount12').closest('button')).toBeNull();
-    expect(getByText('mobile.filter.automaticChanges')).toBeDefined();
+    const countSubtitle = getByText('mobile.filter.matchingCount12');
+    expect(countSubtitle.closest('[data-top-bar="mobile.filter.title"]')).not.toBeNull();
+    expect(countSubtitle.closest('button')).toBeNull();
+    expect(queryByText('mobile.filter.automaticChanges')).toBeNull();
+    expect(queryByText('mobile.filter.countNote')).toBeNull();
     expect(queryByText('mobile.filter.showCount12')).toBeNull();
   });
 
@@ -1248,25 +1256,30 @@ describe('ClimbFilterSheet Other angles switch', () => {
   });
 });
 
-// Kilter's app counts a climb once per angle, so its totals run about double
-// ours. The note under Show explains that, and only where the comparison exists.
-describe('ClimbFilterSheet climb-count note', () => {
-  it('shows the explanation beneath the matching count on a Kilter board', () => {
-    const { queryByText } = renderFilterSheet();
-
-    expect(queryByText('mobile.filter.countNote')).not.toBeNull();
+describe('ClimbFilterSheet count subtitle', () => {
+  it('updates the header count without duplicating it in the filter body', () => {
+    const { container, getByText, queryByText, props, rerender } = renderFilterSheet();
+    expect(getByText('mobile.filter.matchingCount12')).toBeDefined();
+    countPreviewMock.count = 181054;
+    rerender(<ClimbFilterSheet {...props} />);
+    expect(queryByText('mobile.filter.matchingCount12')).toBeNull();
+    expect(getByText('mobile.filter.matchingCount181054').closest('[data-top-bar]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-subtitle="true"]')).toHaveLength(1);
   });
 
-  it('hides the note on a Tension board', () => {
-    const { queryByText } = renderFilterSheet({ boardConfig: { ...boardConfig, boardName: 'tension' } });
-
-    expect(queryByText('mobile.filter.countNote')).toBeNull();
+  it('keeps zero results visible without hiding the filter controls', () => {
+    countPreviewMock.count = 0;
+    const { getByText } = renderFilterSheet();
+    expect(getByText('mobile.filter.matchingCount0').closest('[data-top-bar]')).not.toBeNull();
+    expect(getByText('mobile.filter.section.name')).toBeDefined();
+    expect(getByText('close')).toBeDefined();
   });
 
-  it('hides the note when there is no board config', () => {
-    const { queryByText } = renderFilterSheet({ boardConfig: null });
-
-    expect(queryByText('mobile.filter.countNote')).toBeNull();
+  it('omits the subtitle while the result count is unavailable', () => {
+    countPreviewMock.count = undefined;
+    const { container, getByText } = renderFilterSheet();
+    expect(container.querySelector('[data-subtitle="true"]')).toBeNull();
+    expect(getByText('mobile.filter.section.name')).toBeDefined();
   });
 });
 

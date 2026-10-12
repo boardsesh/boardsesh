@@ -496,10 +496,8 @@
       "showCount_one": "{{count}} Boulder zeigen",
       "showCount_other": "{{count}} Boulder zeigen",
       "close": "Filter schließen",
-      "automaticChanges": "Änderungen werden automatisch angewendet",
-      "matchingCount_one": "{{count}} Boulder",
-      "matchingCount_other": "{{count}} Boulder",
-      "countNote": "Jeder Boulder zählt nur einmal, nicht je Winkel.",
+      "matchingCount_one": "{{count, number}} Boulder",
+      "matchingCount_other": "{{count, number}} Boulder",
       "sort": {
         "ascents": "Begehungen",
         "quality": "Qualität",

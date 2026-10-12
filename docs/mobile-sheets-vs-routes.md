@@ -416,9 +416,10 @@ new sheet footer appears.
 **Climb filters apply live.** `ClimbFilterSheet` commits filter selections as controls change,
 including Reset and returned setter, hold and zone selections. Its pinned header is X / Filters /
 Reset: the short secondary Reset stays trailing, with no confirm action. X, swipe and other dismiss
-paths only close the sheet; they keep the latest selections. The matching climb count is
-informational, wrapping text in the scroll body alongside the automatic-apply explanation and
-the Kilter count note. No Search, Show or Done button is needed to commit the filters.
+paths only close the sheet; they keep the latest selections. The matching climb count is a
+single secondary subtitle in the existing `SheetTopBar`, not an action or a separate body row.
+The body starts with Climb name, without an introductory explanation block. No Search, Show or
+Done button is needed to commit the filters.
 
 - **Sheets.** Pass `<SheetTopBar>` (`src/components/SheetTopBar.tsx`) through the `header` prop of
   `ModalSheet` / `Sheet`. The header sits above the body and outside its scroll. Trailing is the

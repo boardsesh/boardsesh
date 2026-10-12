@@ -496,10 +496,8 @@
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
       "close": "Close filters",
-      "automaticChanges": "Changes apply automatically",
-      "matchingCount_one": "{{count}} climb",
-      "matchingCount_other": "{{count}} climbs",
-      "countNote": "Each climb counts once, not once per angle.",
+      "matchingCount_one": "{{count, number}} climb",
+      "matchingCount_other": "{{count, number}} climbs",
       "sort": {
         "ascents": "Ascents",
         "quality": "Quality",
