@@ -73,7 +73,7 @@
   },
   "storeBoards": {
     "headline": "One app for all your boards",
-    "description": "All your logbooks in one place."
+    "description": "One logbook for every board."
   },
   "storeCrew": {
     "headline": "Your crew.\nOne queue.",
@@ -95,68 +95,108 @@
     "description": "Change the climb without opening the app.",
     "emphasis": "Dynamic Island."
   },
-  "cppKilterBoards": {
-    "headline": "Supports Kilter",
-    "description": "Import your existing logbook."
-  },
-  "cppTensionBoards": {
-    "headline": "Supports Tension",
-    "description": "Import your existing logbook."
-  },
-  "cppMoonboardBoards": {
-    "headline": "Supports MoonBoard",
-    "description": "Import your existing logbook."
-  },
-  "cppSprayBoards": {
-    "headline": "Supports spray walls",
-    "description": "Set climbs on your wall photos."
-  },
   "cppOtherBoards": {
-    "headline": "One app for all your boards",
-    "description": "All your logbooks in one place."
+    "headline": "Two boards?\nOne logbook",
+    "description": "Works with 8 board brands.",
+    "emphasis": "One logbook"
   },
   "cppSearch": {
-    "headline": "Find your next project",
-    "description": "Filter climbs by grade, angle, and more."
+    "headline": "Find your\nnext project",
+    "description": "Filter by grade and hide your sends."
   },
   "cppLogbook": {
-    "headline": "Remember every send",
-    "description": "Keep your sessions, sends, and attempts in one logbook."
-  },
-  "cppLed": {
-    "headline": "Light up your climb",
-    "description": "Connect to your board and light the holds."
-  },
-  "cppSetting": {
-    "headline": "Set climbs on your wall",
-    "description": "Choose holds on your real wall photo."
+    "headline": "Track every\nsend and try",
+    "description": "Grouped by day, with your top grade."
   },
   "cppQueue": {
-    "headline": "Your crew. One queue.",
-    "description": "Add climbs together and pick what’s next."
+    "headline": "Friends pick\nwhat’s next",
+    "description": "Everyone queues from their own phone."
   },
   "cppWorkout": {
-    "headline": "Give your session a plan",
-    "description": "Build a workout around your board and climbing level."
+    "headline": "Train with\na plan",
+    "description": "Climbs picked for your target grade."
   },
   "cppStatus": {
-    "headline": "See what’s on the wall",
-    "description": "Know which climb is lit while you browse the next one."
-  },
-  "cppPlaylist": {
-    "headline": "Keep your projects together",
-    "description": "Save climbs to playlists for your next session."
+    "headline": "Know what’s\nlit right now",
+    "description": "Shows any climb lit through Boardsesh."
   },
   "cppIsland": {
-    "headline": "Next climb. From Dynamic Island.",
-    "description": "Change the climb without opening the app."
-  },
-  "cppHolds": {
-    "headline": "Make your wall yours",
-    "description": "Edit the holds on your wall photo."
+    "headline": "Next climb\nfrom any app",
+    "description": "Right in the Dynamic Island."
   },
   "cppKiosk": {
-    "headline": "Leave it by the board",
-    "description": "The lit climb, big enough to read from the mat."
+    "headline": "Leave it by\nthe board",
+    "description": "Shows the lit climb and stays awake."
+  },
+  "cppKilterGrade": {
+    "headline": "Kilter climbs\nat your grade",
+    "description": "Pick a grade and angle, then light it."
+  },
+  "cppKilterLayouts": {
+    "headline": "Original\nor Homewall",
+    "description": "Works with your Kilter, home or gym."
+  },
+  "cppKilterLogbookImport": {
+    "headline": "Bring your\nKilter logbook",
+    "description": "Your past sends and attempts come too."
+  },
+  "cppMoonboardGrade": {
+    "headline": "MoonBoard climbs\nat your grade",
+    "description": "Pick a grade, then light your climb."
+  },
+  "cppMoonboardLogbook": {
+    "headline": "Track every\nsend and try",
+    "description": "Bring your log in from a CSV export."
+  },
+  "cppMoonboardSets": {
+    "headline": "2016, 2024\nor Masters",
+    "description": "Masters 2017 and 2019, plus 2010."
+  },
+  "cppSprayHolds": {
+    "headline": "Holds suggested\nfrom a photo",
+    "description": "You fix the rest, right on the photo."
+  },
+  "cppSprayOtherBoards": {
+    "headline": "Gym boards,\nsame logbook",
+    "description": "Kilter, Tension and MoonBoard sends too.",
+    "emphasis": "same logbook"
+  },
+  "cppSprayProjects": {
+    "headline": "Back to your\nprojects",
+    "description": "Climbs you’ve worked but not sent."
+  },
+  "cppSpraySetting": {
+    "headline": "Set on your\nspray wall",
+    "description": "Tap holds on a photo of your wall.",
+    "emphasis": "spray wall"
+  },
+  "cppSprayWalls": {
+    "headline": "Home wall,\ngym wall",
+    "description": "Set up each one from its photo."
+  },
+  "cppSprayWorkout": {
+    "headline": "Train with\na plan",
+    "description": "Once your wall has graded climbs."
+  },
+  "cppTensionLayouts": {
+    "headline": "Original, Mirror\nor Spray",
+    "description": "Works with Tension Board 1 and 2."
+  },
+  "cppTensionLogbookImport": {
+    "headline": "Bring your\nTension logbook",
+    "description": "Your past sends land in one logbook."
+  },
+  "cppTensionMirrorBoard": {
+    "headline": "Climb on\nTension 2 Mirror",
+    "description": "Works with your mirrored board."
+  },
+  "cppTensionQueue": {
+    "headline": "Climb Tension\nwith friends",
+    "description": "Everyone queues from their own phone.",
+    "emphasis": "friends"
+  },
+  "cppTensionSearch": {
+    "headline": "Straight to\nyour grade",
+    "description": "Then hide the ones you’ve sent."
   }
 }

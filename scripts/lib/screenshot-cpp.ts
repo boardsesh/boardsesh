@@ -146,10 +146,14 @@ export function readCppPage(target: CppTarget, manifestPath = CPP_MANIFEST_PATH)
     throw new Error(`${target} trios include the wrong board family`);
   if (
     !isRecord(page.primaryBoard) ||
+    page.primaryBoard.family !== target ||
     !page.heroBoards.some((board: CppBoard) => board.id === (page.primaryBoard as Record<string, unknown>).id)
   )
     throw new Error(`${target} primary board must be in its hero trio`);
   for (const device of ['phone', 'ipad']) {
+    const captureNames = new Set(
+      cppCaptureNames(page as unknown as CppPage, device === 'ipad' ? 'ipad-cpp' : 'phone-cpp'),
+    );
     const recipes = page.recipes[device];
     if (!Array.isArray(recipes) || recipes.length !== 9) throw new Error(`${target}/${device} requires nine recipes`);
     if (new Set(recipes.map((recipe) => (recipe as ScreenshotRecipe).output)).size !== 9)
@@ -160,12 +164,12 @@ export function readCppPage(target: CppTarget, manifestPath = CPP_MANIFEST_PATH)
         typeof recipe.output !== 'string' ||
         !/^[\w-]+\.png$/.test(recipe.output) ||
         !CAPTION_IDS.some((caption) => caption === recipe.caption) ||
-        !['screen', 'store-boards', 'store-wall', 'store-queue', 'store-island', 'store-spray'].includes(
+        !['screen', 'store-hero', 'store-boards', 'store-wall', 'store-queue', 'store-island', 'store-spray'].includes(
           String(recipe.layout),
         ) ||
         !Array.isArray(recipe.sources) ||
         recipe.sources.length === 0 ||
-        recipe.sources.some((source) => typeof source !== 'string' || !/^[\w-]+\.png$/.test(source))
+        recipe.sources.some((source) => typeof source !== 'string' || !captureNames.has(source))
       )
         throw new Error(`Invalid CPP recipe for ${target}/${device}`);
     }
@@ -173,8 +177,23 @@ export function readCppPage(target: CppTarget, manifestPath = CPP_MANIFEST_PATH)
   return page as unknown as CppPage;
 }
 export function cppCaptureNames(page: CppPage, device: string): string[] {
+  const spray = page.primaryBoard.family === 'spray';
+  // Capture all genuine native scenes even when a presentation recipe omits
+  // one. Changing a layout must never reduce the recorded source contract.
   return [
-    ...new Set(page.recipes[device.startsWith('ipad-') ? 'ipad' : 'phone'].flatMap((recipe) => recipe.sources)),
+    'hero-1.png',
+    'hero-2.png',
+    'hero-3.png',
+    'other-1.png',
+    'other-2.png',
+    'other-3.png',
+    '02-search.png',
+    '03-logbook.png',
+    spray ? '04-setting.png' : '04-led.png',
+    '05-queue.png',
+    '06-workout.png',
+    spray ? '07-playlist.png' : '07-status.png',
+    spray ? '08-holds.png' : device.startsWith('ipad-') ? '08-kiosk.png' : '08-island.png',
   ].sort();
 }
 export function resolveCppRecipes(

@@ -72,8 +72,8 @@
     "description": "Deine Begehungen und Sessions von allen Boards an einem Ort."
   },
   "storeBoards": {
-    "headline": "Eine App für alle deine Boards",
-    "description": "Alle deine Routenbücher an einem Ort."
+    "headline": "Eine App für\nalle deine Boards",
+    "description": "Ein Routenbuch für jedes Board."
   },
   "storeCrew": {
     "headline": "Deine Crew.\nEine Warteschlange.",
@@ -95,68 +95,108 @@
     "description": "Wechsle den Boulder, ohne die App zu öffnen.",
     "emphasis": "Dynamic Island."
   },
-  "cppKilterBoards": {
-    "headline": "Unterstützt Kilter",
-    "description": "Importiere dein bisheriges Routenbuch."
-  },
-  "cppTensionBoards": {
-    "headline": "Unterstützt Tension",
-    "description": "Importiere dein bisheriges Routenbuch."
-  },
-  "cppMoonboardBoards": {
-    "headline": "Unterstützt MoonBoard",
-    "description": "Importiere dein bisheriges Routenbuch."
-  },
-  "cppSprayBoards": {
-    "headline": "Unterstützt Spraywalls",
-    "description": "Setze Boulder auf den Fotos deiner Wand."
-  },
   "cppOtherBoards": {
-    "headline": "Eine App für alle deine Boards",
-    "description": "Alle deine Routenbücher an einem Ort."
+    "headline": "Zwei Boards?\nEin Routenbuch",
+    "description": "Funktioniert mit 8 Board-Marken.",
+    "emphasis": "Ein Routenbuch"
   },
   "cppSearch": {
-    "headline": "Finde dein nächstes Projekt",
-    "description": "Filtere Boulder nach Grad, Winkel und mehr."
+    "headline": "Finde dein\nnächstes Projekt",
+    "description": "Filtere nach Grad und blende Begehungen aus."
   },
   "cppLogbook": {
-    "headline": "Erinnere dich an jede Begehung",
-    "description": "Deine Sessions, Begehungen und Versuche in einem Routenbuch."
-  },
-  "cppLed": {
-    "headline": "Beleuchte deinen Boulder",
-    "description": "Verbinde dein Board und beleuchte die Griffe."
-  },
-  "cppSetting": {
-    "headline": "Schraub Boulder an deiner Wand",
-    "description": "Wähle Griffe auf deinem Wandfoto."
+    "headline": "Jede Begehung,\njeder Versuch",
+    "description": "Nach Tagen gruppiert, mit deinem Topgrad."
   },
   "cppQueue": {
-    "headline": "Deine Crew. Eine Warteschlange.",
-    "description": "Fügt gemeinsam Boulder hinzu und wählt den nächsten."
+    "headline": "Freunde wählen\nden nächsten",
+    "description": "Alle reihen vom eigenen Handy ein."
   },
   "cppWorkout": {
-    "headline": "Gib deiner Session einen Plan",
-    "description": "Erstelle ein Training für dein Board und dein Niveau."
+    "headline": "Trainiere mit\neinem Plan",
+    "description": "Boulder passend zu deinem Zielgrad."
   },
   "cppStatus": {
-    "headline": "Sieh, was gerade leuchtet",
-    "description": "Sieh den beleuchteten Boulder, während du den nächsten suchst."
-  },
-  "cppPlaylist": {
-    "headline": "Sammle deine Projekte",
-    "description": "Speichere Boulder in Playlists für deine nächste Session."
+    "headline": "Sieh, was gerade\nleuchtet",
+    "description": "Zeigt jeden über Boardsesh beleuchteten Boulder."
   },
   "cppIsland": {
-    "headline": "Boulder wechseln. Mit Dynamic Island.",
-    "description": "Wechsle den Boulder, ohne die App zu öffnen."
-  },
-  "cppHolds": {
-    "headline": "Deine Wand nach deinem Geschmack",
-    "description": "Bearbeite die Griffe auf deinem Wandfoto."
+    "headline": "Nächster Boulder\naus jeder App",
+    "description": "Direkt in der Dynamic Island."
   },
   "cppKiosk": {
-    "headline": "Stell es neben das Board",
-    "description": "Der beleuchtete Boulder, lesbar von der Matte."
+    "headline": "Lass es am\nBoard liegen",
+    "description": "Zeigt den beleuchteten Boulder, Display bleibt an."
+  },
+  "cppKilterGrade": {
+    "headline": "Kilter-Boulder\nin deinem Grad",
+    "description": "Wähle Grad und Winkel, dann beleuchte ihn."
+  },
+  "cppKilterLayouts": {
+    "headline": "Original\noder Homewall",
+    "description": "Für dein Kilter, zuhause oder in der Halle."
+  },
+  "cppKilterLogbookImport": {
+    "headline": "Kilter-Verlauf\nimportieren",
+    "description": "Auch deine alten Begehungen und Versuche."
+  },
+  "cppMoonboardGrade": {
+    "headline": "MoonBoard\nin deinem Grad",
+    "description": "Wähle den Grad, beleuchte den Boulder."
+  },
+  "cppMoonboardLogbook": {
+    "headline": "Jede Begehung,\njeder Versuch",
+    "description": "Hol dein Routenbuch per CSV-Export rein."
+  },
+  "cppMoonboardSets": {
+    "headline": "2016, 2024\noder Masters",
+    "description": "Masters 2017 und 2019, dazu 2010."
+  },
+  "cppSprayHolds": {
+    "headline": "Griffe vom Foto\nvorgeschlagen",
+    "description": "Den Rest korrigierst du direkt im Foto."
+  },
+  "cppSprayOtherBoards": {
+    "headline": "Hallen-Boards,\nein Routenbuch",
+    "description": "Auch Begehungen von Kilter, Tension und MoonBoard.",
+    "emphasis": "ein Routenbuch"
+  },
+  "cppSprayProjects": {
+    "headline": "Zurück zu\ndeinen Projekten",
+    "description": "Boulder, an denen du dran bist, noch nicht getoppt."
+  },
+  "cppSpraySetting": {
+    "headline": "Setz an deiner\nSpraywall",
+    "description": "Tippe Griffe auf dem Foto deiner Wand an.",
+    "emphasis": "Spraywall"
+  },
+  "cppSprayWalls": {
+    "headline": "Heimwand,\nHallenwand",
+    "description": "Richte jede mit ihrem Foto ein."
+  },
+  "cppSprayWorkout": {
+    "headline": "Trainiere mit\neinem Plan",
+    "description": "Sobald deine Wand Boulder mit Grad hat."
+  },
+  "cppTensionLayouts": {
+    "headline": "Original, Mirror\noder Spray",
+    "description": "Für Tension Board 1 und 2."
+  },
+  "cppTensionLogbookImport": {
+    "headline": "Tension-Verlauf\nimportieren",
+    "description": "Deine bisherigen Begehungen an einem Ort."
+  },
+  "cppTensionMirrorBoard": {
+    "headline": "Boulder am\nTension 2 Mirror",
+    "description": "Für dein symmetrisches Board."
+  },
+  "cppTensionQueue": {
+    "headline": "Tension klettern\nmit Freunden",
+    "description": "Alle reihen vom eigenen Handy ein.",
+    "emphasis": "Freunden"
+  },
+  "cppTensionSearch": {
+    "headline": "Direkt zu\ndeinem Grad",
+    "description": "Dann blende getoppte Boulder aus."
   }
 }

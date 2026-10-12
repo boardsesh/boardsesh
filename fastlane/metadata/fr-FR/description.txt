@@ -4,7 +4,7 @@ TES BOARDS. UNE APPLI.
 Boardsesh est compatible avec Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper et So iLL. Change de board et garde ton historique d'escalade au même endroit.
 
 TON MUR DE SPRAY AUSSI
-Un mur chez toi, ou un mur de spray dans ta salle ? Prends-le en photo et Boardsesh trouve les prises. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le mur par lien et ton crew peut y ouvrir des blocs aussi. Mur reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien mur est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé, prêt à être remixé.
+Un mur chez toi, ou un mur de spray dans ta salle ? Prends-le en photo et Boardsesh suggère des prises à partir de la photo. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le mur par lien et ton crew peut y ouvrir des blocs aussi. Mur reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien mur est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé.
 
 L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
 Partage une board et tu perds vite le fil du dernier bloc, et quelqu'un finit toujours par l'effacer par accident.

@@ -179,7 +179,8 @@ describe('CPP screenshot upload integrity', () => {
   it('rejects a composite without every original source hash', () => {
     const root = createTree();
     mutatePresentation(root, (presentation) => {
-      const hero = presentation.files[readCppPage('kilter').recipes.phone[0].output];
+      const hero =
+        presentation.files[readCppPage('kilter').recipes.phone.find((recipe) => recipe.sources.length > 1)!.output];
       delete hero.sources?.['hero-3.png'];
     });
     expect(() => assertCppScreenshots('kilter', root)).toThrow('missing composite source provenance');

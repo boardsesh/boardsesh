@@ -2079,7 +2079,7 @@ export function renderCppMaestroFlow(
       variant: undefined,
     })),
   ];
-  const commands: string[] = ipad ? ['- tapOn:\n    text: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}\n    optional: true'] : [];
+  const commands: string[] = [];
   const dismiss = `- repeat:\n    times: 2\n    commands:\n      - runFlow:\n          when:\n            visible: \${SCREENSHOT_CLOSE_LABEL}\n          commands:\n            - tapOn: \${SCREENSHOT_CLOSE_LABEL}\n            - waitForAnimationToEnd`;
   for (const scene of scenes) {
     const sceneCommands =
@@ -2186,6 +2186,26 @@ export function renderCppMaestroFlow(
         '- longPressOn:\n    point: "50%,3%"',
         '- extendedWaitUntil:\n    visible: "Next climb"\n    timeout: 15000',
       );
+    if (ipad) {
+      // UIKit can reopen its floating sidebar after navigation. Only its real
+      // open-state control may be tapped; the same ID also toggles a hidden
+      // sidebar open, so matching the Hide label is required on every capture.
+      const openSidebar = 'id: "^ToggleSidebar$"\ntext: "^${SCREENSHOT_SIDEBAR_HIDE_LABEL}$"';
+      commands.push(
+        `- runFlow:\n    when:\n      visible:\n${openSidebar
+          .split('\n')
+          .map((line) => `        ${line}`)
+          .join('\n')}\n    commands:\n      - tapOn:\n${openSidebar
+          .split('\n')
+          .map((line) => `          ${line}`)
+          .join('\n')}`,
+        `- extendedWaitUntil:\n    notVisible:\n${openSidebar
+          .split('\n')
+          .map((line) => `      ${line}`)
+          .join('\n')}\n    timeout: 15000`,
+        '- waitForAnimationToEnd:\n    timeout: 30000',
+      );
+    }
     commands.push(`- takeScreenshot: ${scene.filename}`);
     if (scene.command === 'search') {
       // Filters has Reset/Show-results actions rather than the player's Close

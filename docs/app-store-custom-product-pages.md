@@ -9,33 +9,43 @@ Caption copy lives in `app-stores/presentation/{en-US,es,fr,de}.json`.
 
 ## The nine-image story
 
-The first image names compatibility: **Supports Kilter**, **Supports Tension**,
-**Supports MoonBoard**, or **Supports spray walls**, showing three distinct boards
-from that target family. Kilter Original is the centre phone in its opening trio.
-The manufacturer pages add **Import your existing logbook.** Spray walls instead
-say **Set climbs on your wall photos.**
+Each page leads with one large native capture and a board-specific reason to install.
+The `store-hero` layout uses the showcase headline size and dark palette. The first
+three images carry distinct benefits, since they also appear in search ads.
 
-The second image says **One app for all your boards** and **All your logbooks in
-one place.**, showing three boards from other families. The regular Apple product
-page also opens with **One app for all your boards**, using its existing mixed-board
-phone trio and iPad first-screen layout. All captions are localized.
-
-| Target | First-image trio | Second-image trio |
+| Target | First three images | Later target trio |
 | --- | --- | --- |
-| Kilter | Homewall 7×10, Original 12×12 (centre), Homewall 10×10 | Tension 2 Mirror, MoonBoard 2024, Woods 12×12 |
-| Tension | Original, Tension 2 Mirror, Tension 2 Spray | Kilter Original 12×12, MoonBoard 2024, Woods 12×12 |
-| MoonBoard | 2016, Masters 2019, 2024 | Kilter Original 12×12, Tension 2 Mirror, Woods 12×12 |
-| Spray wall | Liz's Wall, Cherry's Wall, The Bowlo | Kilter Original 12×12, Tension 2 Mirror, MoonBoard 2024 |
+| Kilter | Climbs at your grade, Dynamic Island (iPad kiosk), friends queue | Homewall 7×10, Original 12×12 (centre), Homewall 10×10 |
+| Tension | Friends queue, Tension logbook import, Dynamic Island (iPad kiosk) | Original, Tension 2 Mirror, Tension 2 Spray |
+| MoonBoard | Climbs at your grade, friends queue, supported sets | 2016, Masters 2019, 2024 |
+| Spray wall | Set on your wall photo, friends queue, gym boards in one logbook | Liz's Wall, Cherry's Wall, The Bowlo |
 
-Images three through nine show search/filtering, logbook, LED control, shared
-queue, workouts, wall status, and Dynamic Island. For iPad, the ninth image uses
-the wall kiosk. Spray walls instead show setting on the photo, saved playlists,
-and hold editing in the LED, wall-status, and ninth slots; they have no LED claim.
-The standalone **See your next move** image is absent from CPP recipes.
+Kilter uses the conservative fallback: its logbook image says **Track every send
+and try**. The new Kilter account-linking path is rollout-gated, although legacy
+Aurora export import remains available. An import-led story requires verifying
+the intended production path. Tension's import is available without that flag;
+MoonBoard copy specifically describes a CSV export. Spray walls never promise
+logbook imports. The regular Apple page retains **One app for all your boards**
+and now says **One logbook for every board**.
 
-These pages make the alternative clear: keep projects, a crew queue, sessions,
-and a logbook together when you climb on several boards. Copy describes
-compatibility with manufacturers, without implying affiliation or endorsement.
+Trio images remain later in the story, and Kilter Original remains the centre
+phone. Cross-board copy says **Two boards? One logbook**. Pricing appears only in
+promotional text: free, no ads, no paid upgrades. Screenshot descriptions mention
+suggested holds for review, rather than guaranteed recognition. Workout copy
+promises a plan, not automatic timer advancement.
+
+All nine outputs and promotional text are localized. Raw capture remains the
+same complete 13-scene contract even when a presentation omits a source. Changed
+order never reduces data or native content checks. The standalone **See your next
+move** image is absent from CPP recipes.
+
+Benchmark-specific MoonBoard headlines, a mirrored Tension climb, Lock Screen,
+spray sharing and reset screenshots require new genuine captures. Until those
+exist, MoonBoard says **MoonBoard climbs at your grade** and the Tension image
+names the actual **Tension 2 Mirror** board. No screenshot may pretend an
+uncaptured state has been verified. Spray hold suggestions stay below the first
+three images. Existing public metadata describes compatibility without implying
+manufacturer affiliation or endorsement.
 
 ## Genuine capture data comes first
 
@@ -74,7 +84,19 @@ selected climb. The manufacturer status gate checks the phone capsule's complete
 localized accessibility label, or the iPad's dedicated wall-status panel, on the
 Climbs screen; an ordinary climb-list row cannot satisfy it. Queue capture then
 precedes logbook and LED capture so their selected climb belongs to the target
-board. Exported filenames and the nine-image story remain unchanged.
+board. The exported recipe order is independent of this navigation order.
+
+Before each tablet capture, the flow closes UIKit's floating sidebar only when
+its exact `ToggleSidebar` control says `Hide Sidebar`. It waits for that open
+state to disappear and for animations to settle; a hidden sidebar is never
+toggled open. Fresh replay images must verify the final pane layout.
+
+Capture-only route acknowledgment diagnostics retain the exact pathname and
+requested-parameter checks. Logs include sequence, fixed/redacted path names,
+known mismatched capture-key names, HTTP status, and fixed request-error
+categories. They never include parameter values, dynamic identifiers, URLs,
+tokens, or arbitrary exception details. A visible destination alone cannot
+replace a successful route acknowledgment.
 
 CPP recording verifies the authenticated owner, private session, and primary board
 configuration before maintaining real upstream session membership. This makes a

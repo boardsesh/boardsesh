@@ -29,6 +29,35 @@ const WALL_SEED_SEARCH_DISABLED_INPUT: ClimbSearchInput = {
   pageSize: 0,
 };
 
+const CPP_CAPTURE_PARAM_KEYS = new Set([
+  'screenshotCppScene',
+  'screenshotBoardIndex',
+  'screenshotOpenFirst',
+  'screenshotOpenFilters',
+  'screenshotOpenWallPreview',
+  'screenshotTab',
+  'screenshotBoardType',
+  'wallUuid',
+]);
+
+/** Diagnostic paths omit dynamic identifiers and unrecognized routes. */
+function cppDiagnosticPathname(pathname: string): string {
+  if (/^\/join\/[^/]+$/.test(pathname)) return '/join/[sessionId]';
+  return [
+    '/',
+    '/home',
+    '/climbs',
+    '/climbs/create',
+    '/profile',
+    '/record',
+    '/wall',
+    '/discover/smart/PROJECTS',
+    '/boards/spray/holds',
+  ].includes(pathname)
+    ? pathname
+    : '[other route]';
+}
+
 /**
  * Screenshot builds only: make the board named by `SCREENSHOT_BOARDS[0]` active
  * so the board-backed screens (Climbs, Board View) render real content instead of
@@ -66,16 +95,46 @@ export function ScreenshotBoardAutoActivator(): null {
   const pathname = usePathname();
   const routeParams = useGlobalSearchParams();
   const [cppPending, setCppPending] = useState<{ sequence: number; route: string } | null>(null);
+  const cppAckDiagnostic = useRef<string | null>(null);
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !cppPending || !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL)
       return;
     const destination = new URL(cppPending.route, 'http://localhost');
-    if (
-      pathname !== destination.pathname ||
-      [...destination.searchParams.entries()].some(([key, expected]) => routeParams[key] !== expected)
-    )
-      return;
-    void fetch(`${process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL}/ack?sequence=${cppPending.sequence}`);
+    const mismatchedKeys = [...destination.searchParams.entries()]
+      .filter(([key, expected]) => routeParams[key] !== expected)
+      .map(([key]) => key);
+    const pathnameMatches = pathname === destination.pathname;
+    const diagnostic = JSON.stringify({
+      sequence: cppPending.sequence,
+      intendedPathname: cppDiagnosticPathname(destination.pathname),
+      actualPathname: cppDiagnosticPathname(pathname),
+      pathnameMatches,
+      requestedParamsMatch: mismatchedKeys.length === 0,
+      mismatchedCaptureParamKeys: mismatchedKeys.filter((key) => CPP_CAPTURE_PARAM_KEYS.has(key)),
+    });
+    if (cppAckDiagnostic.current !== diagnostic) {
+      cppAckDiagnostic.current = diagnostic;
+      console.log(`[screenshot] CPP ACK route ${diagnostic}`);
+    }
+    if (!pathnameMatches || mismatchedKeys.length > 0) return;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL}/ack?sequence=${cppPending.sequence}`,
+        );
+        console.log(
+          `[screenshot] CPP ACK response ${JSON.stringify({ sequence: cppPending.sequence, status: response.status })}`,
+        );
+      } catch (error) {
+        const errorKind =
+          error instanceof Error && error.name === 'AbortError'
+            ? 'aborted'
+            : error instanceof TypeError
+              ? 'network'
+              : 'request';
+        console.log(`[screenshot] CPP ACK request ${JSON.stringify({ sequence: cppPending.sequence, errorKind })}`);
+      }
+    })();
   }, [cppPending, pathname, routeParams]);
 
   // CPP commands carry navigation only. The real roster, search queries and native

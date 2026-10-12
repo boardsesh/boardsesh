@@ -116,22 +116,22 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppKilterBoards",
-            "layout": "store-boards",
-            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"]
+            "output": "00-grade.png",
+            "caption": "cppKilterGrade",
+            "layout": "store-hero",
+            "sources": ["hero-1.png"]
           },
           {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+            "output": "01-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
           },
           {
-            "output": "02-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
+            "output": "02-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
           },
           {
             "output": "03-logbook.png",
@@ -140,54 +140,54 @@
             "sources": ["03-logbook.png"]
           },
           {
-            "output": "04-led.png",
-            "caption": "cppLed",
-            "layout": "store-wall",
-            "sources": ["04-led.png"]
+            "output": "04-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
           },
           {
-            "output": "05-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
+            "output": "05-kilter-boards.png",
+            "caption": "cppKilterLayouts",
+            "layout": "store-boards",
+            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"]
           },
           {
-            "output": "06-workout.png",
+            "output": "06-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "07-workout.png",
             "caption": "cppWorkout",
             "layout": "screen",
             "sources": ["06-workout.png"]
           },
           {
-            "output": "07-status.png",
+            "output": "08-status.png",
             "caption": "cppStatus",
             "layout": "store-wall",
             "sources": ["07-status.png"]
-          },
-          {
-            "output": "08-island.png",
-            "caption": "cppIsland",
-            "layout": "store-island",
-            "sources": ["08-island.png"]
           }
         ],
         "ipad": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppKilterBoards",
-            "layout": "store-boards",
-            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"]
+            "output": "00-grade.png",
+            "caption": "cppKilterGrade",
+            "layout": "store-hero",
+            "sources": ["hero-1.png"]
           },
           {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
-          },
-          {
-            "output": "02-search.png",
-            "caption": "cppSearch",
+            "output": "01-kiosk.png",
+            "caption": "cppKiosk",
             "layout": "screen",
-            "sources": ["02-search.png"]
+            "sources": ["08-kiosk.png"]
+          },
+          {
+            "output": "02-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
           },
           {
             "output": "03-logbook.png",
@@ -196,52 +196,52 @@
             "sources": ["03-logbook.png"]
           },
           {
-            "output": "04-led.png",
-            "caption": "cppLed",
-            "layout": "store-wall",
-            "sources": ["04-led.png"]
+            "output": "04-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
           },
           {
-            "output": "05-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
+            "output": "05-kilter-boards.png",
+            "caption": "cppKilterLayouts",
+            "layout": "store-boards",
+            "sources": ["hero-2.png", "hero-1.png", "hero-3.png"]
           },
           {
-            "output": "06-workout.png",
+            "output": "06-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "07-workout.png",
             "caption": "cppWorkout",
             "layout": "screen",
             "sources": ["06-workout.png"]
           },
           {
-            "output": "07-status.png",
+            "output": "08-status.png",
             "caption": "cppStatus",
             "layout": "store-wall",
             "sources": ["07-status.png"]
-          },
-          {
-            "output": "08-kiosk.png",
-            "caption": "cppKiosk",
-            "layout": "screen",
-            "sources": ["08-kiosk.png"]
           }
         ]
       },
       "localizations": {
         "en-US": {
-          "promotionalText": "Works with Kilter. Find climbs, filter your next project, light the holds, and keep your sends with your other boards in one logbook.",
+          "promotionalText": "Works with Kilter. Filter climbs by grade and angle, and let friends queue the next one from their phones. Free, with no ads and no paid upgrades.",
           "keywords": ["Kilter", "kilterboard"]
         },
         "es": {
-          "promotionalText": "Compatible con Kilter. Busca bloques, filtra tu próximo proyecto, ilumina las presas y guarda tus encadenes junto a tus demás plafones en un logbook.",
+          "promotionalText": "Compatible con Kilter. Filtra bloques por grado y ángulo, y deja que tus amigos añadan el siguiente a la cola desde su móvil. Gratis, sin anuncios.",
           "keywords": ["Kilter", "kilterboard"]
         },
         "fr": {
-          "promotionalText": "Compatible avec Kilter. Trouve des blocs, filtre tes projets, allume les prises et garde tes croix avec tes autres boards dans un seul carnet.",
+          "promotionalText": "Compatible Kilter. Filtre les blocs par cotation et inclinaison, et laisse tes potes ajouter le suivant à la file depuis leur téléphone. Gratuit, sans pub.",
           "keywords": ["Kilter", "kilterboard"]
         },
         "de": {
-          "promotionalText": "Kompatibel mit Kilter. Finde Boulder, filtere deine Projekte, beleuchte die Griffe und sammle Begehungen von allen Boards in einem Routenbuch.",
+          "promotionalText": "Kompatibel mit Kilter. Filtere Boulder nach Grad und Winkel, und lass Freunde den nächsten vom Handy einreihen. Kostenlos, ohne Werbung, ohne kostenpflichtige Extras.",
           "keywords": ["Kilter", "kilterboard"]
         }
       },
@@ -327,40 +327,40 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppTensionBoards",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "output": "00-queue.png",
+            "caption": "cppTensionQueue",
+            "layout": "store-hero",
+            "sources": ["05-queue.png"]
           },
           {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
-          },
-          {
-            "output": "02-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
+            "output": "01-logbook.png",
+            "caption": "cppTensionLogbookImport",
             "layout": "screen",
             "sources": ["03-logbook.png"]
           },
           {
-            "output": "04-led.png",
-            "caption": "cppLed",
-            "layout": "store-wall",
-            "sources": ["04-led.png"]
+            "output": "02-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
           },
           {
-            "output": "05-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
+            "output": "03-search.png",
+            "caption": "cppTensionSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "04-mirror.png",
+            "caption": "cppTensionMirrorBoard",
+            "layout": "screen",
+            "sources": ["hero-2.png"]
+          },
+          {
+            "output": "05-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
           },
           {
             "output": "06-workout.png",
@@ -375,48 +375,48 @@
             "sources": ["07-status.png"]
           },
           {
-            "output": "08-island.png",
-            "caption": "cppIsland",
-            "layout": "store-island",
-            "sources": ["08-island.png"]
+            "output": "08-tension-boards.png",
+            "caption": "cppTensionLayouts",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
           }
         ],
         "ipad": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppTensionBoards",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "output": "00-queue.png",
+            "caption": "cppTensionQueue",
+            "layout": "store-hero",
+            "sources": ["05-queue.png"]
           },
           {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
-          },
-          {
-            "output": "02-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
+            "output": "01-logbook.png",
+            "caption": "cppTensionLogbookImport",
             "layout": "screen",
             "sources": ["03-logbook.png"]
           },
           {
-            "output": "04-led.png",
-            "caption": "cppLed",
-            "layout": "store-wall",
-            "sources": ["04-led.png"]
+            "output": "02-kiosk.png",
+            "caption": "cppKiosk",
+            "layout": "screen",
+            "sources": ["08-kiosk.png"]
           },
           {
-            "output": "05-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
+            "output": "03-search.png",
+            "caption": "cppTensionSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "04-mirror.png",
+            "caption": "cppTensionMirrorBoard",
+            "layout": "screen",
+            "sources": ["hero-2.png"]
+          },
+          {
+            "output": "05-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
           },
           {
             "output": "06-workout.png",
@@ -431,28 +431,28 @@
             "sources": ["07-status.png"]
           },
           {
-            "output": "08-kiosk.png",
-            "caption": "cppKiosk",
-            "layout": "screen",
-            "sources": ["08-kiosk.png"]
+            "output": "08-tension-boards.png",
+            "caption": "cppTensionLayouts",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
           }
         ]
       },
       "localizations": {
         "en-US": {
-          "promotionalText": "Works with Tension. Find climbs, filter your next project, light the holds, and keep your sends with your other boards in one logbook.",
+          "promotionalText": "Works with Tension. Link your logbook to keep it next to your other boards, and let friends queue climbs. Free, with no ads and no paid upgrades.",
           "keywords": ["Tension"]
         },
         "es": {
-          "promotionalText": "Compatible con Tension. Busca bloques, filtra tu próximo proyecto, ilumina las presas y guarda tus encadenes junto a tus demás plafones en un logbook.",
+          "promotionalText": "Compatible con Tension. Enlaza tu logbook para tenerlo junto a tus otros plafones y deja que tus amigos añadan bloques a la cola. Gratis, sin anuncios.",
           "keywords": ["Tension"]
         },
         "fr": {
-          "promotionalText": "Compatible avec Tension. Trouve des blocs, filtre tes projets, allume les prises et garde tes croix avec tes autres boards dans un seul carnet.",
+          "promotionalText": "Compatible Tension. Lie ton carnet pour le garder avec tes autres boards, et laisse tes potes ajouter des blocs à la file. Gratuit, sans pub.",
           "keywords": ["Tension"]
         },
         "de": {
-          "promotionalText": "Kompatibel mit Tension. Finde Boulder, filtere deine Projekte, beleuchte die Griffe und sammle Begehungen von allen Boards in einem Routenbuch.",
+          "promotionalText": "Kompatibel mit Tension. Verknüpfe dein Routenbuch mit deinen anderen Boards und lass Freunde Boulder einreihen. Kostenlos, ohne Werbung, ohne kostenpflichtige Extras.",
           "keywords": ["Tension"]
         }
       },
@@ -538,132 +538,132 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppMoonboardBoards",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "output": "00-grade.png",
+            "caption": "cppMoonboardGrade",
+            "layout": "store-hero",
+            "sources": ["hero-3.png"]
           },
           {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
-          },
-          {
-            "output": "02-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
-            "layout": "screen",
-            "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "04-led.png",
-            "caption": "cppLed",
-            "layout": "store-wall",
-            "sources": ["04-led.png"]
-          },
-          {
-            "output": "05-queue.png",
+            "output": "01-queue.png",
             "caption": "cppQueue",
             "layout": "store-queue",
             "sources": ["05-queue.png"]
           },
           {
-            "output": "06-workout.png",
+            "output": "02-sets.png",
+            "caption": "cppMoonboardSets",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "03-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
+          },
+          {
+            "output": "04-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "05-logbook.png",
+            "caption": "cppMoonboardLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "06-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "07-workout.png",
             "caption": "cppWorkout",
             "layout": "screen",
             "sources": ["06-workout.png"]
           },
           {
-            "output": "07-status.png",
+            "output": "08-status.png",
             "caption": "cppStatus",
             "layout": "store-wall",
             "sources": ["07-status.png"]
-          },
-          {
-            "output": "08-island.png",
-            "caption": "cppIsland",
-            "layout": "store-island",
-            "sources": ["08-island.png"]
           }
         ],
         "ipad": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppMoonboardBoards",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+            "output": "00-grade.png",
+            "caption": "cppMoonboardGrade",
+            "layout": "store-hero",
+            "sources": ["hero-3.png"]
           },
           {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
-          },
-          {
-            "output": "02-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
-            "layout": "screen",
-            "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "04-led.png",
-            "caption": "cppLed",
-            "layout": "store-wall",
-            "sources": ["04-led.png"]
-          },
-          {
-            "output": "05-queue.png",
+            "output": "01-queue.png",
             "caption": "cppQueue",
             "layout": "store-queue",
             "sources": ["05-queue.png"]
           },
           {
-            "output": "06-workout.png",
+            "output": "02-sets.png",
+            "caption": "cppMoonboardSets",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "03-kiosk.png",
+            "caption": "cppKiosk",
+            "layout": "screen",
+            "sources": ["08-kiosk.png"]
+          },
+          {
+            "output": "04-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "05-logbook.png",
+            "caption": "cppMoonboardLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "06-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
+          },
+          {
+            "output": "07-workout.png",
             "caption": "cppWorkout",
             "layout": "screen",
             "sources": ["06-workout.png"]
           },
           {
-            "output": "07-status.png",
+            "output": "08-status.png",
             "caption": "cppStatus",
             "layout": "store-wall",
             "sources": ["07-status.png"]
-          },
-          {
-            "output": "08-kiosk.png",
-            "caption": "cppKiosk",
-            "layout": "screen",
-            "sources": ["08-kiosk.png"]
           }
         ]
       },
       "localizations": {
         "en-US": {
-          "promotionalText": "Works with MoonBoard. Find climbs, filter your next project, light the holds, and keep your sends with your other boards in one logbook.",
+          "promotionalText": "Works with MoonBoard. Filter climbs at your grade and let friends queue the next problem. Free, with no ads and no paid upgrades.",
           "keywords": ["MoonBoard", "moon"]
         },
         "es": {
-          "promotionalText": "Compatible con MoonBoard. Busca bloques, filtra tu próximo proyecto, ilumina las presas y guarda tus encadenes junto a tus demás plafones en un logbook.",
+          "promotionalText": "Compatible con MoonBoard. Filtra bloques de tu grado y deja que tus amigos pongan el siguiente bloque en la cola. Gratis, sin anuncios.",
           "keywords": ["MoonBoard"]
         },
         "fr": {
-          "promotionalText": "Compatible avec MoonBoard. Trouve des blocs, filtre tes projets, allume les prises et garde tes croix avec tes autres boards dans un seul carnet.",
+          "promotionalText": "Compatible MoonBoard. Filtre les blocs à ta cotation et laisse tes potes mettre le bloc suivant dans la file. Gratuit, sans pub.",
           "keywords": ["MoonBoard", "moon"]
         },
         "de": {
-          "promotionalText": "Kompatibel mit MoonBoard. Finde Boulder, filtere deine Projekte, beleuchte die Griffe und sammle Begehungen von allen Boards in einem Routenbuch.",
+          "promotionalText": "Kompatibel mit MoonBoard. Filtere Boulder in deinem Grad und lass Freunde den nächsten Boulder einreihen. Kostenlos, ohne Werbung, ohne kostenpflichtige Extras.",
           "keywords": ["MoonBoard"]
         }
       },
@@ -737,132 +737,132 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppSprayBoards",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
-          },
-          {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
-          },
-          {
-            "output": "02-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
-            "layout": "screen",
-            "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "04-setting.png",
-            "caption": "cppSetting",
-            "layout": "store-spray",
+            "output": "00-set-climbs.png",
+            "caption": "cppSpraySetting",
+            "layout": "store-hero",
             "sources": ["04-setting.png"]
           },
           {
-            "output": "05-queue.png",
+            "output": "01-queue.png",
             "caption": "cppQueue",
             "layout": "store-queue",
             "sources": ["05-queue.png"]
           },
           {
-            "output": "06-workout.png",
-            "caption": "cppWorkout",
-            "layout": "screen",
-            "sources": ["06-workout.png"]
+            "output": "02-gym-boards.png",
+            "caption": "cppSprayOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
           },
           {
-            "output": "07-playlist.png",
-            "caption": "cppPlaylist",
+            "output": "03-projects.png",
+            "caption": "cppSprayProjects",
             "layout": "screen",
             "sources": ["07-playlist.png"]
           },
           {
-            "output": "08-holds.png",
-            "caption": "cppHolds",
+            "output": "04-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "05-walls.png",
+            "caption": "cppSprayWalls",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "06-holds.png",
+            "caption": "cppSprayHolds",
             "layout": "screen",
             "sources": ["08-holds.png"]
+          },
+          {
+            "output": "07-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "08-workout.png",
+            "caption": "cppSprayWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
           }
         ],
         "ipad": [
           {
-            "output": "00-target-boards.png",
-            "caption": "cppSprayBoards",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
-          },
-          {
-            "output": "01-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"]
-          },
-          {
-            "output": "02-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "03-logbook.png",
-            "caption": "cppLogbook",
-            "layout": "screen",
-            "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "04-setting.png",
-            "caption": "cppSetting",
-            "layout": "store-spray",
+            "output": "00-set-climbs.png",
+            "caption": "cppSpraySetting",
+            "layout": "store-hero",
             "sources": ["04-setting.png"]
           },
           {
-            "output": "05-queue.png",
+            "output": "01-queue.png",
             "caption": "cppQueue",
             "layout": "store-queue",
             "sources": ["05-queue.png"]
           },
           {
-            "output": "06-workout.png",
-            "caption": "cppWorkout",
-            "layout": "screen",
-            "sources": ["06-workout.png"]
+            "output": "02-gym-boards.png",
+            "caption": "cppSprayOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"]
           },
           {
-            "output": "07-playlist.png",
-            "caption": "cppPlaylist",
+            "output": "03-projects.png",
+            "caption": "cppSprayProjects",
             "layout": "screen",
             "sources": ["07-playlist.png"]
           },
           {
-            "output": "08-holds.png",
-            "caption": "cppHolds",
+            "output": "04-logbook.png",
+            "caption": "cppLogbook",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "05-walls.png",
+            "caption": "cppSprayWalls",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"]
+          },
+          {
+            "output": "06-holds.png",
+            "caption": "cppSprayHolds",
             "layout": "screen",
             "sources": ["08-holds.png"]
+          },
+          {
+            "output": "07-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
+          },
+          {
+            "output": "08-workout.png",
+            "caption": "cppSprayWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
           }
         ]
       },
       "localizations": {
         "en-US": {
-          "promotionalText": "Set climbs on your wall photo, save your projects, share a queue with your crew, and keep your sends with your other boards in one logbook.",
+          "promotionalText": "Set climbs on a photo of your spray wall. Reset it with a new photo and your old climbs and sends stay. No fee per wall or reset, and no ads.",
           "keywords": ["spray", "wall"]
         },
         "es": {
-          "promotionalText": "Monta bloques sobre la foto de tu muro, guarda tus proyectos, comparte la cola con tu grupo y reúne tus encadenes en un solo logbook.",
+          "promotionalText": "Monta bloques sobre la foto de tu muro de spray. Reinícialo con una foto nueva y tus bloques y encadenes antiguos se quedan. Sin cuota por muro ni reinicio, sin anuncios.",
           "keywords": ["spray", "wall"]
         },
         "fr": {
-          "promotionalText": "Ouvre des blocs sur la photo de ton mur, garde tes projets, partage une file avec ton crew et rassemble tes croix dans un seul carnet.",
+          "promotionalText": "Ouvre des blocs sur la photo de ton mur de spray. Refais-le avec une nouvelle photo : tes anciens blocs et croix restent. Pas de frais par mur ni par reset, pas de pub.",
           "keywords": ["spray", "wall"]
         },
         "de": {
-          "promotionalText": "Schraub Boulder auf deinem Wandfoto, speichere Projekte, teile eine Warteschlange mit deiner Crew und sammle Begehungen in einem Routenbuch.",
+          "promotionalText": "Setz Boulder auf einem Foto deiner Spraywall. Setz sie mit neuem Foto zurück: deine alten Boulder und Begehungen bleiben. Keine Gebühr pro Wand oder Reset, keine Werbung.",
           "keywords": ["Spraywall", "Spraywand"]
         }
       },

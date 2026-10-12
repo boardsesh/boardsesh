@@ -153,6 +153,56 @@ function readinessCommandTransport() {
 }
 
 describe('custom product page captures', () => {
+  it('closes the real open-state UIKit sidebar before every tablet capture without toggling a hidden sidebar', () => {
+    const selector = { id: '^ToggleSidebar$', text: '^${SCREENSHOT_SIDEBAR_HIDE_LABEL}$' };
+    const actualControls = [
+      { id: 'ToggleSidebar', text: 'Hide Sidebar', matches: true },
+      { id: 'ToggleSidebar', text: 'Toggle sidebar', matches: false },
+      { id: 'UnrelatedControl', text: 'Hide Sidebar', matches: false },
+      { id: 'ToggleSidebarExtra', text: 'Hide Sidebar', matches: false },
+      { id: 'ToggleSidebar', text: 'Hide Sidebar elsewhere', matches: false },
+    ];
+    for (const target of CPP_TARGETS) {
+      const { coverage } = scenario(target);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+          const source = renderCppMaestroFlow(target, device, coverage, locale);
+          const steps = parseAllDocuments(source)[1].toJS() as (Record<string, unknown> | string)[];
+          if (!device.name.startsWith('iPad')) {
+            expect(source).not.toContain('ToggleSidebar');
+            expect(source).not.toContain('SCREENSHOT_SIDEBAR_HIDE_LABEL');
+            continue;
+          }
+          const captures = steps.flatMap((step, index) =>
+            typeof step !== 'string' && typeof step.takeScreenshot === 'string' ? [index] : [],
+          );
+          expect(captures).toHaveLength(13);
+          for (const index of captures) {
+            const preceding = steps.slice(index - 3, index);
+            expect(preceding).toEqual([
+              { runFlow: { when: { visible: selector }, commands: [{ tapOn: selector }] } },
+              { extendedWaitUntil: { notVisible: selector, timeout: 15000 } },
+              { waitForAnimationToEnd: { timeout: 30000 } },
+            ]);
+            const lastAck = steps
+              .slice(0, index)
+              .reduce((last, step, position) => (typeof step !== 'string' && 'retry' in step ? position : last), -1);
+            expect(lastAck).toBeLessThan(index - 3);
+            // Actual SDK control identity and open/closed labels were observed
+            // in the native hierarchy. The conjunction prevents opening it.
+            for (const control of actualControls) {
+              const matches =
+                new RegExp(selector.id).test(control.id) &&
+                new RegExp(selector.text.replace('${SCREENSHOT_SIDEBAR_HIDE_LABEL}', 'Hide Sidebar')).test(
+                  control.text,
+                );
+              expect(matches).toBe(control.matches);
+            }
+          }
+        }
+      }
+    }
+  });
   it('admits only native localized multiframe badge prefixes and queue suffixes in their real order', () => {
     const labels = {
       'en-US': { frames: 'frames', position: 'position 1', attribution: 'Added by Doe, Jane' },
@@ -777,17 +827,42 @@ describe('custom product page captures', () => {
         const names = cppCaptureNames(page, device);
         const recipes = resolveCppRecipes(page, device, names);
         expect(recipes).toHaveLength(9);
-        expect(recipes[0].sources).toEqual(
+        expect(recipes[0].layout).toBe('store-hero');
+        expect(recipes[0].sources).toHaveLength(1);
+        const targetTrio = recipes.find(
+          (recipe) => recipe.layout === 'store-boards' && recipe.sources.includes('hero-3.png'),
+        )!;
+        expect(targetTrio.layout).toBe('store-boards');
+        expect(targetTrio.sources).toEqual(
           target === 'kilter' ? ['hero-2.png', 'hero-1.png', 'hero-3.png'] : ['hero-1.png', 'hero-2.png', 'hero-3.png'],
         );
         if (target === 'kilter') {
-          const centerVariant = page.heroBoards[Number(recipes[0].sources[1].match(/hero-(\d+)/)?.[1]) - 1];
+          const centerVariant = page.heroBoards[Number(targetTrio.sources[1].match(/hero-(\d+)/)?.[1]) - 1];
           expect(centerVariant.id).toBe('kilter-original-12x12');
+          expect(recipes[1].caption).toBe(device.startsWith('ipad-') ? 'cppKiosk' : 'cppIsland');
+          expect(recipes.some((recipe) => recipe.caption === 'cppKilterLogbookImport')).toBe(false);
         }
-        expect(recipes[1].sources).toEqual(['other-1.png', 'other-2.png', 'other-3.png']);
+        expect(recipes.find((recipe) => recipe.sources.includes('other-1.png'))!.sources).toEqual([
+          'other-1.png',
+          'other-2.png',
+          'other-3.png',
+        ]);
+        expect(names).toHaveLength(13);
+        expect(cppCaptureNames({ ...page, recipes: { phone: [], ipad: [] } }, device)).toEqual(names);
         expect(() => resolveCppRecipes(page, device, names.slice(1))).toThrow('Incomplete CPP capture');
         expect(() => resolveCppRecipes(page, device, [...names, names[0]])).toThrow('Incomplete CPP capture');
       }
+    }
+  });
+  it('rejects recipe sources outside the genuine target and device capture contract', () => {
+    const manifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8'));
+    const directory = mkdtempSync(join(tmpdir(), 'cpp-invalid-recipe-'));
+    directories.push(directory);
+    const manifestPath = join(directory, 'manifest.json');
+    for (const sources of [['invented.png'], ['08-kiosk.png'], ['04-setting.png']]) {
+      manifest.targets.kilter.recipes.phone[0].sources = sources;
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      expect(() => readCppPage('kilter', manifestPath)).toThrow('Invalid CPP recipe');
     }
   });
   it('verifies board geometry, target-specific scenes and distinct real source photos', () => {

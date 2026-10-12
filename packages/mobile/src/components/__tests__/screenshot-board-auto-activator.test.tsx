@@ -50,6 +50,132 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe('ScreenshotBoardAutoActivator', () => {
+  it('logs only safe route identity and fixed mismatched key names while preserving all exact guards', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
+    const route = '/climbs?screenshotBoardIndex=0&screenshotCppScene=queue&unknownSensitiveKey=private-value';
+    vi.stubEnv(
+      'EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS',
+      JSON.stringify({
+        queue: {
+          selector: 'Primary Wall',
+          identity: { uuid: 'primary', boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: [26], angle: 35 },
+          route,
+        },
+      }),
+    );
+    const fetchCommand = vi.fn(async (_endpoint: string) => ({
+      status: 200,
+      json: async () => ({ sequence: 13, scene: 'queue' }),
+    }));
+    vi.stubGlobal('fetch', fetchCommand);
+    const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+    boards.route = '/auth/callback/private-path-token';
+    boards.params = { screenshotBoardIndex: 'private-param-token', screenshotCppScene: 'another-private-value' };
+    const { rerender, unmount } = renderHook(() => ScreenshotBoardAutoActivator());
+    await waitFor(() => expect(boards.replace).toHaveBeenCalledWith(route));
+    await waitFor(() => expect(logs).toHaveBeenCalledWith(expect.stringContaining('CPP ACK route')));
+    const diagnostics = () =>
+      logs.mock.calls
+        .flat()
+        .filter((line): line is string => typeof line === 'string' && line.includes('CPP ACK route'));
+    expect(JSON.parse(diagnostics()[0].split('CPP ACK route ')[1])).toEqual({
+      sequence: 13,
+      intendedPathname: '/climbs',
+      actualPathname: '[other route]',
+      pathnameMatches: false,
+      requestedParamsMatch: false,
+      mismatchedCaptureParamKeys: ['screenshotBoardIndex', 'screenshotCppScene'],
+    });
+    const initialLogCount = diagnostics().length;
+    boards.params = { ...boards.params };
+    rerender();
+    expect(diagnostics()).toHaveLength(initialLogCount);
+    boards.route = '/climbs';
+    boards.params = { screenshotBoardIndex: '0', screenshotCppScene: 'queue' };
+    rerender();
+    expect(JSON.parse(diagnostics().at(-1)!.split('CPP ACK route ')[1])).toMatchObject({
+      pathnameMatches: true,
+      requestedParamsMatch: false,
+      mismatchedCaptureParamKeys: [],
+    });
+    expect(fetchCommand.mock.calls.some(([endpoint]) => endpoint.includes('/ack'))).toBe(false);
+    boards.params = { ...boards.params, unknownSensitiveKey: 'private-value' };
+    rerender();
+    await waitFor(() => expect(fetchCommand).toHaveBeenCalledWith('http://localhost:19870/cpp/ack?sequence=13'));
+    await waitFor(() =>
+      expect(logs).toHaveBeenCalledWith('[screenshot] CPP ACK response {"sequence":13,"status":200}'),
+    );
+    const logged = logs.mock.calls.flat().join('\n');
+    for (const sensitive of [
+      'private-path-token',
+      'private-param-token',
+      'another-private-value',
+      'unknownSensitiveKey',
+      'private-value',
+      'http://localhost',
+    ])
+      expect(logged).not.toContain(sensitive);
+    unmount();
+  });
+  it.each([
+    { status: 503, error: null, expected: 'CPP ACK response {"sequence":13,"status":503}' },
+    {
+      status: 0,
+      error: new TypeError('sensitive transport URL and bearer token'),
+      expected: 'CPP ACK request {"sequence":13,"errorKind":"network"}',
+    },
+    {
+      status: 0,
+      error: Object.assign(new Error('sensitive abort URL'), { name: 'AbortError' }),
+      expected: 'CPP ACK request {"sequence":13,"errorKind":"aborted"}',
+    },
+    {
+      status: 0,
+      error: Object.assign(new Error('sensitive payload'), { name: 'sensitive-name' }),
+      expected: 'CPP ACK request {"sequence":13,"errorKind":"request"}',
+    },
+  ])(
+    'records genuine ACK delivery outcomes without logging payloads or retrying: $expected',
+    async ({ status, error, expected }) => {
+      vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+      vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
+      vi.stubEnv(
+        'EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS',
+        JSON.stringify({
+          queue: {
+            selector: 'Primary Wall',
+            identity: { uuid: 'primary', boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: [26], angle: 35 },
+            route: '/climbs?screenshotCppScene=queue',
+          },
+        }),
+      );
+      const fetchCommand = vi.fn(async (endpoint: string) => {
+        if (endpoint.includes('/ack') && error) throw error;
+        return { status, json: async () => ({ sequence: 13, scene: 'queue' }) };
+      });
+      vi.stubGlobal('fetch', fetchCommand);
+      const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+      boards.route = '/climbs';
+      boards.params = { screenshotCppScene: 'queue' };
+      const { unmount } = renderHook(() => ScreenshotBoardAutoActivator());
+      await waitFor(() => expect(logs).toHaveBeenCalledWith(`[screenshot] ${expected}`));
+      expect(fetchCommand.mock.calls.filter(([endpoint]) => endpoint.includes('/ack'))).toHaveLength(1);
+      expect(logs.mock.calls.flat().join('\n')).not.toContain('sensitive');
+      unmount();
+    },
+  );
+  it('does not poll or produce ACK diagnostics outside screenshot mode', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
+    const fetchCommand = vi.fn();
+    vi.stubGlobal('fetch', fetchCommand);
+    const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { unmount } = renderHook(() => ScreenshotBoardAutoActivator());
+    expect(fetchCommand).not.toHaveBeenCalled();
+    expect(logs.mock.calls.flat().join('\n')).not.toContain('CPP ACK');
+    unmount();
+  });
   it('replaces a restored board once, then permits later capture slots', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const restored = boards.active;

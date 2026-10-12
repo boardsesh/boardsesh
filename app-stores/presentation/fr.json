@@ -72,8 +72,8 @@
     "description": "Tes croix et tes séances réunies, sur toutes tes boards."
   },
   "storeBoards": {
-    "headline": "Une app pour toutes tes boards",
-    "description": "Tous tes carnets au même endroit."
+    "headline": "Une app pour\ntoutes tes boards",
+    "description": "Un carnet pour toutes tes boards."
   },
   "storeCrew": {
     "headline": "Ton crew.\nUne file.",
@@ -95,68 +95,108 @@
     "description": "Change de bloc sans ouvrir l’appli.",
     "emphasis": "Dynamic Island."
   },
-  "cppKilterBoards": {
-    "headline": "Compatible avec Kilter",
-    "description": "Importe ton carnet existant."
-  },
-  "cppTensionBoards": {
-    "headline": "Compatible avec Tension",
-    "description": "Importe ton carnet existant."
-  },
-  "cppMoonboardBoards": {
-    "headline": "Compatible avec MoonBoard",
-    "description": "Importe ton carnet existant."
-  },
-  "cppSprayBoards": {
-    "headline": "Compatible avec les murs spray",
-    "description": "Crée des blocs sur les photos de ton mur."
-  },
   "cppOtherBoards": {
-    "headline": "Une app pour toutes tes boards",
-    "description": "Tous tes carnets au même endroit."
+    "headline": "Deux boards ?\nUn seul carnet",
+    "description": "Compatible avec 8 marques de boards.",
+    "emphasis": "Un seul carnet"
   },
   "cppSearch": {
-    "headline": "Trouve ton prochain projet",
-    "description": "Filtre les blocs par cotation, inclinaison et plus."
+    "headline": "Trouve ton\nprochain projet",
+    "description": "Filtre par cotation, masque tes croix."
   },
   "cppLogbook": {
-    "headline": "Garde chaque croix en mémoire",
-    "description": "Tes séances, tes croix et tes essais dans un seul carnet."
-  },
-  "cppLed": {
-    "headline": "Allume ton bloc",
-    "description": "Connecte ta board et allume les prises."
-  },
-  "cppSetting": {
-    "headline": "Ouvre des blocs sur ton mur",
-    "description": "Choisis les prises sur la photo de ton mur."
+    "headline": "Chaque croix\net chaque essai",
+    "description": "Classé par jour, avec ta meilleure cotation."
   },
   "cppQueue": {
-    "headline": "Ton crew. Une file.",
-    "description": "Ajoutez des blocs ensemble et choisissez le suivant."
+    "headline": "Ton crew choisit\nla suite",
+    "description": "Chacun ajoute à la file depuis son téléphone."
   },
   "cppWorkout": {
-    "headline": "Prépare ta séance",
-    "description": "Crée un entraînement adapté à ta board et à ton niveau."
+    "headline": "Entraîne-toi\navec un plan",
+    "description": "Des blocs choisis pour ta cotation visée."
   },
   "cppStatus": {
-    "headline": "Vois ce qui est au mur",
-    "description": "Vois le bloc allumé pendant que tu cherches le suivant."
-  },
-  "cppPlaylist": {
-    "headline": "Rassemble tes projets",
-    "description": "Garde des blocs dans des playlists pour ta prochaine séance."
+    "headline": "Vois ce qui est\nallumé",
+    "description": "Affiche tout bloc allumé via Boardsesh."
   },
   "cppIsland": {
-    "headline": "Le bloc suivant, depuis Dynamic Island",
-    "description": "Change de bloc sans ouvrir l’app."
-  },
-  "cppHolds": {
-    "headline": "Un mur à ton image",
-    "description": "Modifie les prises sur la photo de ton mur."
+    "headline": "Le bloc suivant,\nde toute appli",
+    "description": "Directement dans la Dynamic Island."
   },
   "cppKiosk": {
-    "headline": "Pose-le près de la board",
-    "description": "Le bloc allumé, lisible depuis le tapis."
+    "headline": "Laisse-le près\nde la board",
+    "description": "Affiche le bloc allumé, écran toujours actif."
+  },
+  "cppKilterGrade": {
+    "headline": "Blocs Kilter\nà ta cotation",
+    "description": "Choisis cotation et inclinaison, puis allume."
+  },
+  "cppKilterLayouts": {
+    "headline": "Original\nou Homewall",
+    "description": "Pour ta Kilter, chez toi ou en salle."
+  },
+  "cppKilterLogbookImport": {
+    "headline": "Importe ton\ncarnet Kilter",
+    "description": "Tes croix et essais passés suivent."
+  },
+  "cppMoonboardGrade": {
+    "headline": "Blocs MoonBoard\nà ta cotation",
+    "description": "Choisis une cotation, allume ton bloc."
+  },
+  "cppMoonboardLogbook": {
+    "headline": "Chaque croix\net chaque essai",
+    "description": "Importe ton carnet depuis un export CSV."
+  },
+  "cppMoonboardSets": {
+    "headline": "2016, 2024\nou Masters",
+    "description": "Masters 2017 et 2019, plus 2010."
+  },
+  "cppSprayHolds": {
+    "headline": "Prises suggérées\npar la photo",
+    "description": "Tu corriges le reste, sur la photo."
+  },
+  "cppSprayOtherBoards": {
+    "headline": "Boards de salle,\nmême carnet",
+    "description": "Tes croix Kilter, Tension et MoonBoard aussi.",
+    "emphasis": "même carnet"
+  },
+  "cppSprayProjects": {
+    "headline": "Retrouve tes\nprojets",
+    "description": "Les blocs travaillés, pas encore enchaînés."
+  },
+  "cppSpraySetting": {
+    "headline": "Ouvre sur ton\nmur de spray",
+    "description": "Touche les prises sur la photo de ton mur.",
+    "emphasis": "mur de spray"
+  },
+  "cppSprayWalls": {
+    "headline": "Mur perso,\nmur de salle",
+    "description": "Configure chacun depuis sa photo."
+  },
+  "cppSprayWorkout": {
+    "headline": "Entraîne-toi\navec un plan",
+    "description": "Dès que ton mur a des blocs cotés."
+  },
+  "cppTensionLayouts": {
+    "headline": "Original, Mirror\nou Spray",
+    "description": "Compatible Tension Board 1 et 2."
+  },
+  "cppTensionLogbookImport": {
+    "headline": "Importe ton\ncarnet Tension",
+    "description": "Tes croix passées, dans un seul carnet."
+  },
+  "cppTensionMirrorBoard": {
+    "headline": "Grimpe sur\nTension 2 Mirror",
+    "description": "Compatible avec ta board symétrique."
+  },
+  "cppTensionQueue": {
+    "headline": "Grimpe Tension\navec ton crew",
+    "description": "Chacun ajoute à la file depuis son téléphone.",
+    "emphasis": "crew"
+  },
+  "cppTensionSearch": {
+    "headline": "Direct à\nta cotation",
+    "description": "Puis masque les blocs déjà enchaînés."
   }
 }

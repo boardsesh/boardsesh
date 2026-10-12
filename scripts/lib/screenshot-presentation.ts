@@ -31,22 +31,31 @@ export const CAPTION_IDS = [
   'storeSpray',
   'storeMoreBoards',
   'storeIsland',
-  'cppKilterBoards',
-  'cppTensionBoards',
-  'cppMoonboardBoards',
-  'cppSprayBoards',
-  'cppOtherBoards',
-  'cppSearch',
-  'cppLogbook',
-  'cppLed',
-  'cppSetting',
-  'cppQueue',
-  'cppWorkout',
-  'cppStatus',
-  'cppPlaylist',
   'cppIsland',
-  'cppHolds',
+  'cppKilterGrade',
+  'cppKilterLayouts',
+  'cppKilterLogbookImport',
   'cppKiosk',
+  'cppLogbook',
+  'cppMoonboardGrade',
+  'cppMoonboardLogbook',
+  'cppMoonboardSets',
+  'cppOtherBoards',
+  'cppQueue',
+  'cppSearch',
+  'cppSprayHolds',
+  'cppSprayOtherBoards',
+  'cppSprayProjects',
+  'cppSpraySetting',
+  'cppSprayWalls',
+  'cppSprayWorkout',
+  'cppStatus',
+  'cppTensionLayouts',
+  'cppTensionLogbookImport',
+  'cppTensionMirrorBoard',
+  'cppTensionQueue',
+  'cppTensionSearch',
+  'cppWorkout',
 ] as const;
 export type CaptionId = (typeof CAPTION_IDS)[number];
 export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
@@ -120,6 +129,7 @@ export type ScreenshotLayout =
   | 'wall-status'
   | 'wall-column'
   | 'cross-board-logbook'
+  | 'store-hero'
   | 'store-boards'
   | 'store-spray'
   | 'store-queue'
