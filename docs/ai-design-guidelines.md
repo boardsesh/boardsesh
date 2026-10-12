@@ -517,6 +517,47 @@ still reports the controls alone and the list's `paddingTop`, scroll-indicator i
 `useListTopOffset` are unchanged. The Climbs list also draws its pull-to-refresh spinner below the
 block (`progressViewOffset`).
 
+### Quick filter capsules
+
+The small filter row under a list's title is one component, `CapsuleRow`
+(`src/components/filter-capsules/`). A surface describes each capsule as a plain object and the row
+draws it natively: SwiftUI glass buttons and menus with `controlSize('small')` on iOS, 32dp M3
+`FilterChip`s on Android, Paper chips on the web. The row holds no filter state and no copy; the
+surface passes final, localised labels and bound handlers. Five kinds (`CapsuleRow.types.ts`):
+
+| Kind         | What a tap does                                          | Example              |
+| ------------ | -------------------------------------------------------- | -------------------- |
+| `sheet`      | Opens a sheet or picker the screen presents              | Filters · 2, Angle   |
+| `rail`       | Shows or hides an inline rail under the row              | Grade                |
+| `menu`       | Single-select menu; extra commands after a divider       | Popularity, Recent   |
+| `toggle`     | Flips an on/off filter                                   | Beta videos          |
+| `toggleMenu` | Flips a filter; iOS long-press opens extra commands      | Tall / Wide (lock)   |
+
+- **One active style.** An active capsule is filled with `primaryFill` and labelled in `onPrimary`
+  on every platform. Never the text brand colour: in dark mode it is a light lavender that white
+  text can't sit on (see "Brand colours").
+- **The rail chevron is iOS-only.** It points up while the rail is shown. On regular-width iPad a
+  `rail` can carry a `popover` instead of the inline row.
+- **Android and the web are tap-only.** A Compose `FilterChip` eats the long-press (#3319, #3322),
+  so a `toggleMenu` draws a plain toggle there and its commands are unreachable. Keep anything a
+  climber needs on those platforms in the sheet.
+- **Order is the surface's call**, and it is fixed: a capsule never moves because it was pinned
+  later.
+
+**Pins.** Which capsules show is the climber's choice, saved per surface by a store from
+`createPinnedChipsStore({ storageKey, catalog, defaults, normalize?, toStored? })`
+(`src/lib/pinned-chips-store.ts`). Each store has its own key, state and listeners, and its hook
+returns `{ pinned, loaded, isPinned, togglePin }`. Climbs uses the key `pinnedFilterChips` and its
+catalog in `src/lib/pinnable-chips.ts`; `normalize` is where a retired kind migrates (a stored
+`shape` pin becomes Tall + Wide). An active filter whose capsule isn't pinned still shows as a
+removable token under the row, so a filtered list always says why.
+
+**A new surface adds three things:** a catalog (the pinnable kinds, their order and the default
+pins), a store on its own storage key, and a pure builder that turns its filter state into
+`Capsule[]` (the climbs one is `src/components/search/climb-capsules.ts`, locked by
+`climb-capsules.test.ts`). It renders `<CapsuleRow capsules={…} />` with the builder's output in a
+`useMemo`, and never imports `@expo/ui` itself.
+
 ### Inline facet rows
 
 A filter control that lives in place is a plain row. The reference is the grade picker,

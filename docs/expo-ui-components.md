@@ -7,8 +7,8 @@ SwiftUI on iOS (`@expo/ui/swift-ui`), Jetpack Compose on Android
 own look, motion, haptics, and accessibility for free — no re-skinning per OS.
 
 This is the canonical pattern. The reference primitives are **`SwitchRow`**
-(`src/components/SwitchRow.*`) and **`FilterChipRow`**
-(`src/components/search/FilterChipRow.*`). Copy them.
+(`src/components/SwitchRow.*`) and **`CapsuleRow`**
+(`src/components/filter-capsules/CapsuleRow.*`). Copy them.
 
 ## The platform-split file convention
 
@@ -138,11 +138,17 @@ test/switch-row-stub.tsx              # passthrough stub (RN Pressable + Switch)
 - Both call `makeToggleHandler(onValueChange, disabled)` so the haptic + disabled
   behaviour can't drift between platforms.
 
-`FilterChipRow` is the second example — both sides are now built (SwiftUI menus on
-iOS, Jetpack Compose `FilterChip`s + `DropdownMenu`s on Android), showing the same
-split with a richer tree (menus, pickers / dropdowns) and the shared
-`FilterChipRow.logic` label helpers. On Android the chip row is the climbs filtering
-surface (it replaces the Material top-chrome filter button + grade control + summary).
+`CapsuleRow` is the second example, the quick-filter capsule row: SwiftUI glass
+buttons and menus on iOS, Jetpack Compose `FilterChip`s + `DropdownMenu`s on Android,
+Paper chips on the web (`CapsuleRow.web.tsx`). It shows the same split with a richer
+tree (menus, pickers / dropdowns, an iPad popover) driven by plain descriptors from
+`CapsuleRow.types.ts`, so a surface never touches native code: the climbs list's
+`FilterChipRow` is a builder (`search/climb-capsules.ts`) that hands its capsules to
+the row. The shared pieces sit beside it, one file each: `capsule-style.ios.ts` (the
+glass modifiers), `CapsuleChips.android.tsx` (action chip, menu chip, menu row) and
+`CapsuleMenuChip.web.tsx`. On Android the climbs row is the climbs filtering surface
+(it replaces the Material top-chrome filter button + grade control + summary). See
+"Quick filter capsules" in `docs/ai-design-guidelines.md`.
 
 `RadioGroup` (`src/components/RadioGroup.*`) is a third, two-platform example —
 single-choice selection. iOS is a SwiftUI `Picker` with `pickerStyle('inline')` (each
@@ -182,7 +188,7 @@ tree we already own, use the platform's native button:
   default style reads as a Settings row (`MoreForm.ios.tsx`,
   `FeatureFlagsForm.ios.tsx`); a standalone capsule uses
   `buttonStyle('glass' | 'glassProminent')` (Liquid Glass, iOS 26+ —
-  `FilterChipRow.ios.tsx`).
+  `filter-capsules/capsule-style.ios.ts`).
 - **Android** (`@expo/ui/jetpack-compose`): the Material button family —
   `Button` / `FilledTonalButton` / `OutlinedButton` / `TextButton`
   (`MoreForm.android.tsx`, `FeatureFlagsForm.android.tsx`).
