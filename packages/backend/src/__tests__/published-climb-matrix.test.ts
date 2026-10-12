@@ -1,8 +1,16 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { createRequire } from 'node:module';
+import type * as GraphQLModule from 'graphql';
 import { and, eq, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { BoardPresenceStats, ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { schema as graphqlSchema } from '../graphql/index';
+import { searchCache } from '../services/search-cache';
+import { redactBoardStats } from '../services/board-session-privacy';
+import { computeBoardPresenceStats } from '../graphql/resolvers/board-presence/stats';
+import { playlistClimbs } from '../graphql/resolvers/playlists/queries/playlist-climbs';
+import { smartPlaylist } from '../graphql/resolvers/playlists/queries/smart-playlists';
 import { climbQueries } from '../graphql/resolvers/climbs/queries';
 import { setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
 import {
@@ -54,6 +62,16 @@ const UNLISTED = 'matrix-unlisted';
 /** The deleted author's draft: ownerless once the account is gone, so nobody's. */
 const DELETED_DRAFT = 'matrix-deleted-draft';
 const ALL_CLIMBS = [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY, DELETED_PUBLISHED, DRAFT, UNLISTED];
+/** Published and listed, then hidden by the community: moderation, not privacy. */
+const HIDDEN = 'matrix-hidden';
+/** A public account's climbs, one of them hidden by the community. */
+const PUBLIC_SHOWN = 'matrix-public-shown';
+const PUBLIC_HIDDEN = 'matrix-public-hidden';
+
+// `graphql` resolves to two module instances under the test transform. The
+// schema was built with the CJS copy, so `execute` has to come from the same
+// one. See spray-visibility-sweep.test.ts for the long version.
+const { execute, parse } = createRequire(import.meta.url)('graphql') as typeof GraphQLModule;
 
 const ctxFor = (userId: string): ConnectionContext =>
   ({ userId, isAuthenticated: true, connectionId: `matrix-${userId}` }) as ConnectionContext;
@@ -61,6 +79,8 @@ const anonymous = { isAuthenticated: false, userId: undefined, connectionId: 'ma
 const boardInput = { boardName: BOARD, layoutId: LAYOUT_ID, sizeId: 1, setIds: '1', angle: ANGLE };
 
 async function removeFixtures(): Promise<void> {
+  await db.execute(sql`DELETE FROM user_favorites WHERE climb_uuid LIKE 'matrix-%'`);
+  await db.execute(sql`DELETE FROM playlists WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM comments WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM climb_proposals WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM notifications WHERE uuid LIKE 'matrix-%'`);
@@ -68,13 +88,14 @@ async function removeFixtures(): Promise<void> {
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE climb_uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE 'matrix-%'`);
+  await db.execute(sql`DELETE FROM user_boards WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM users WHERE id IN (${sql.join(USERS, sql`, `)})`);
 }
 
 async function insertClimb(
   uuid: string,
   userId: string | null,
-  options: { isDraft?: boolean; isListed?: boolean; setterUsername?: string },
+  options: { isDraft?: boolean; isListed?: boolean; isHidden?: boolean; setterUsername?: string },
 ) {
   await db.insert(schema.boardClimbs).values({
     uuid,
@@ -87,6 +108,7 @@ async function insertClimb(
     framesCount: 1,
     isDraft: options.isDraft ?? false,
     isListed: options.isListed ?? true,
+    isHidden: options.isHidden ?? false,
     compatibleSizeIds: [1],
     requiredSetIds: [1],
   });
@@ -97,6 +119,9 @@ async function insertClimb(
     displayDifficulty: 20,
     ascensionistCount: 2,
     faUsername: 'Stored first ascensionist',
+    // What recompute stores: the earliest send of ANY visibility, here the
+    // private sender's followers-only flash.
+    faAt: '2026-01-01T10:00:00Z',
   });
 }
 
@@ -125,6 +150,9 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     await insertClimb(DELETED_PUBLISHED, DELETED_AUTHOR, { setterUsername: 'matrix-deleted-setter' });
     await insertClimb(DRAFT, PRIVATE_AUTHOR, { isDraft: true, isListed: false });
     await insertClimb(UNLISTED, PRIVATE_AUTHOR, { isListed: false });
+    await insertClimb(HIDDEN, PRIVATE_AUTHOR, { isHidden: true });
+    await insertClimb(PUBLIC_HIDDEN, PUBLIC_SENDER, { isHidden: true, setterUsername: 'matrix-public-setter' });
+    await insertClimb(PUBLIC_SHOWN, PUBLIC_SENDER, { setterUsername: 'matrix-public-setter' });
     await insertClimb(DELETED_DRAFT, DELETED_AUTHOR, {
       isDraft: true,
       isListed: false,
@@ -231,15 +259,19 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(followerView?.linkedUserId).toBe(PRIVATE_AUTHOR);
   });
 
-  it("lists a private account's own published climbs to a stranger, but not its linked or unlisted ones", async () => {
-    const forStranger = await setterFollowQueries.userClimbs(
-      undefined,
-      { input: { userId: PRIVATE_AUTHOR } },
-      ctxFor(STRANGER),
-    );
-    expect(forStranger.climbs.map((climb) => climb.uuid).sort()).toEqual([PRIVATE_PUBLISHED, TICKED_PUBLISHED].sort());
-    expect(forStranger.totalCount).toBe(2);
+  it("lists a private account's climbs under it to followers and the owner only, never to a stranger", async () => {
+    // The climbs are public everywhere else; this list is the link from them to
+    // the private account, so a stranger gets what an account with none gets.
+    for (const ctx of [ctxFor(STRANGER), anonymous]) {
+      expect(await setterFollowQueries.userClimbs(undefined, { input: { userId: PRIVATE_AUTHOR } }, ctx)).toEqual({
+        climbs: [],
+        totalCount: 0,
+        hasMore: false,
+      });
+    }
 
+    // A follower gets the published, listed ones, its linked setter name's
+    // included, and not the one the community hid.
     const forFollower = await setterFollowQueries.userClimbs(
       undefined,
       { input: { userId: PRIVATE_AUTHOR } },
@@ -248,15 +280,27 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(forFollower.climbs.map((climb) => climb.uuid).sort()).toEqual(
       [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY].sort(),
     );
+    expect(forFollower.totalCount).toBe(3);
 
+    // The owner also sees their unlisted climb, and the hidden one flagged.
     const forOwner = await setterFollowQueries.userClimbs(
       undefined,
       { input: { userId: PRIVATE_AUTHOR } },
       ctxFor(PRIVATE_AUTHOR),
     );
     expect(forOwner.climbs.map((climb) => climb.uuid).sort()).toEqual(
-      [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY, UNLISTED].sort(),
+      [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY, UNLISTED, HIDDEN].sort(),
     );
+    expect(forOwner.climbs.find((climb) => climb.uuid === HIDDEN)?.is_hidden).toBe(true);
+  });
+
+  it("keeps a public account's community-hidden climb out of its list for anyone but the owner", async () => {
+    const listed = async (ctx: ConnectionContext) =>
+      (await setterFollowQueries.userClimbs(undefined, { input: { userId: PUBLIC_SENDER } }, ctx)).climbs
+        .map((climb) => climb.uuid)
+        .sort();
+    expect(await listed(ctxFor(STRANGER))).toEqual([PUBLIC_SHOWN]);
+    expect(await listed(ctxFor(PUBLIC_SENDER))).toEqual([PUBLIC_HIDDEN, PUBLIC_SHOWN]);
   });
 
   it('opens the draft to its owner alone', async () => {
@@ -275,15 +319,21 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     }
   });
 
-  it('credits the first ascent to the earliest send the viewer may read', async () => {
-    const firstAscent = async (ctx: ConnectionContext) =>
-      (await climbQueries.climbStatsForAngles(undefined, { boardName: BOARD, climbUuid: TICKED_PUBLISHED }, ctx))[0]
-        ?.faUsername;
-    // The first send is hidden from a stranger, so the credit falls to the next visible one.
-    expect(await firstAscent(ctxFor(STRANGER))).toBe('Public sender');
-    expect(await firstAscent(anonymous)).toBe('Public sender');
-    // A follower of the first sender sees them credited.
-    expect(await firstAscent(ctxFor(FOLLOWER))).toBe(`Name ${PRIVATE_SENDER}`);
+  it('credits the first ascent to the earliest send the viewer may read, and dates that send', async () => {
+    const firstAscent = async (ctx: ConnectionContext) => {
+      const [row] = await climbQueries.climbStatsForAngles(
+        undefined,
+        { boardName: BOARD, climbUuid: TICKED_PUBLISHED },
+        ctx,
+      );
+      return { name: row?.faUsername, at: String(row?.faAt).slice(0, 10) };
+    };
+    // The first send is hidden from a stranger, so the credit falls to the next
+    // visible one, with ITS date: never the stored date of the hidden send.
+    expect(await firstAscent(ctxFor(STRANGER))).toEqual({ name: 'Public sender', at: '2026-01-02' });
+    expect(await firstAscent(anonymous)).toEqual({ name: 'Public sender', at: '2026-01-02' });
+    // A follower of the first sender sees them credited, on their date.
+    expect(await firstAscent(ctxFor(FOLLOWER))).toEqual({ name: `Name ${PRIVATE_SENDER}`, at: '2026-01-01' });
   });
 
   it('names a climb’s author on a notification about it, and keeps any other private actor hidden', async () => {
@@ -518,6 +568,258 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       // The climb itself still opens for them by its link.
       expect(await canReadSocialEntity('climb', UNLISTED, FOLLOWER)).toBe(true);
       expect(await canReadSocialEntity('climb', UNLISTED, FOLLOWER, 'listed')).toBe(false);
+    });
+  });
+
+  describe('search, count and a climb by uuid, through the schema', () => {
+    const SEARCH = /* GraphQL */ `
+      query ($input: ClimbSearchInput!) {
+        searchClimbs(input: $input) {
+          totalCount
+          climbs {
+            uuid
+            userId
+          }
+        }
+      }
+    `;
+    const CLIMB = /* GraphQL */ `
+      query ($boardName: String!, $layoutId: Int!, $sizeId: Int!, $setIds: String!, $angle: Int!, $climbUuid: ID!) {
+        climb(
+          boardName: $boardName
+          layoutId: $layoutId
+          sizeId: $sizeId
+          setIds: $setIds
+          angle: $angle
+          climbUuid: $climbUuid
+        ) {
+          uuid
+          userId
+        }
+      }
+    `;
+    const searchInput = { boardName: BOARD, layoutId: LAYOUT_ID, sizeId: 1, setIds: '1', angle: ANGLE, pageSize: 50 };
+    /** Published, listed and not hidden, whoever set them: what every viewer's search returns. */
+    const SEARCHABLE = [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY, DELETED_PUBLISHED, PUBLIC_SHOWN].sort();
+    type SearchAnswer = {
+      searchClimbs: { totalCount: number; climbs: Array<{ uuid: string; userId: string | null }> };
+    };
+
+    async function run<T>(source: string, variables: Record<string, unknown>, ctx: ConnectionContext): Promise<T> {
+      const result = await execute({
+        schema: graphqlSchema,
+        document: parse(source),
+        variableValues: variables,
+        contextValue: ctx,
+      });
+      expect((result.errors ?? []).map((error) => error.message)).toEqual([]);
+      return result.data as T;
+    }
+
+    describe.each([
+      ['with no search cache', false],
+      ['through the shared search cache', true],
+    ])('%s', (_label, cached) => {
+      const store = new Map<string, unknown>();
+      let hits = 0;
+      beforeEach(() => {
+        store.clear();
+        hits = 0;
+        vi.spyOn(searchCache, 'getCachedResult').mockImplementation(async <T>(key: string): Promise<T | null> => {
+          if (!cached || !store.has(key)) return null;
+          hits += 1;
+          return store.get(key) as T;
+        });
+        vi.spyOn(searchCache, 'setCachedResult').mockImplementation((key: string, data: unknown) => {
+          if (cached) store.set(key, data);
+        });
+      });
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('returns and counts the same climbs to every viewer, and the author id only to those allowed', async () => {
+        // The owner first: on the cached run every later viewer is served the
+        // page the owner's search stored, so a viewer-dependent field in the
+        // cached rows would leak here.
+        const viewers: Array<[ConnectionContext, string | null]> = [
+          [ctxFor(PRIVATE_AUTHOR), PRIVATE_AUTHOR],
+          [ctxFor(STRANGER), null],
+          [anonymous, null],
+          [ctxFor(FOLLOWER), PRIVATE_AUTHOR],
+        ];
+        for (const [ctx, expectedAuthor] of viewers) {
+          const { searchClimbs } = await run<SearchAnswer>(SEARCH, { input: searchInput }, ctx);
+          // Drafts, the unlisted climb and the hidden ones are out for everyone.
+          expect(searchClimbs.climbs.map((climb) => climb.uuid).sort()).toEqual(SEARCHABLE);
+          expect(searchClimbs.totalCount).toBe(SEARCHABLE.length);
+          const authorOf = (uuid: string) => searchClimbs.climbs.find((climb) => climb.uuid === uuid)?.userId ?? null;
+          // The private account's id goes to its follower and itself only.
+          expect(authorOf(PRIVATE_PUBLISHED)).toBe(expectedAuthor);
+          expect(authorOf(TICKED_PUBLISHED)).toBe(expectedAuthor);
+          // A public account's id is public with its climbs; a deleted one has none.
+          expect(authorOf(PUBLIC_SHOWN)).toBe(PUBLIC_SENDER);
+          expect(authorOf(DELETED_PUBLISHED)).toBeNull();
+        }
+        // Three later viewers, each served the climbs and the count from the cache.
+        expect(hits).toBe(cached ? 6 : 0);
+      });
+    });
+
+    it('names the author of a climb opened by uuid only to viewers allowed to see that account', async () => {
+      const variables = {
+        boardName: BOARD,
+        layoutId: LAYOUT_ID,
+        sizeId: 1,
+        setIds: '1',
+        angle: ANGLE,
+        climbUuid: PRIVATE_PUBLISHED,
+      };
+      for (const [ctx, expectedAuthor] of [
+        [ctxFor(STRANGER), null],
+        [anonymous, null],
+        [ctxFor(FOLLOWER), PRIVATE_AUTHOR],
+        [ctxFor(PRIVATE_AUTHOR), PRIVATE_AUTHOR],
+      ] as const) {
+        const { climb } = await run<{ climb: { uuid: string; userId: string | null } | null }>(CLIMB, variables, ctx);
+        expect(climb).toEqual({ uuid: PRIVATE_PUBLISHED, userId: expectedAuthor });
+      }
+    });
+  });
+
+  describe('an unlisted climb in a list someone else made', () => {
+    const PLAYLIST = 'matrix-playlist';
+
+    beforeAll(async () => {
+      // A public account's public playlist and liked list, both holding the
+      // private author's published climb and its unlisted one.
+      const [playlist] = await db
+        .insert(schema.playlists)
+        .values({ uuid: PLAYLIST, boardType: BOARD, layoutId: LAYOUT_ID, name: 'Matrix playlist', isPublic: true })
+        .returning({ id: schema.playlists.id });
+      await db
+        .insert(schema.playlistOwnership)
+        .values({ playlistId: playlist.id, userId: PUBLIC_SENDER, role: 'owner' });
+      await db.insert(schema.playlistClimbs).values([
+        { playlistId: playlist.id, climbUuid: PRIVATE_PUBLISHED, angle: ANGLE, position: 0 },
+        { playlistId: playlist.id, climbUuid: UNLISTED, angle: ANGLE, position: 1 },
+      ]);
+      await db.insert(schema.userFavorites).values([
+        { userId: PUBLIC_SENDER, boardName: BOARD, climbUuid: PRIVATE_PUBLISHED, angle: ANGLE },
+        { userId: PUBLIC_SENDER, boardName: BOARD, climbUuid: UNLISTED, angle: ANGLE },
+      ]);
+    });
+
+    const inPlaylist = async (ctx: ConnectionContext, boardScoped: boolean) => {
+      const page = await playlistClimbs(
+        undefined,
+        {
+          input: boardScoped
+            ? { playlistId: PLAYLIST, boardName: BOARD, layoutId: LAYOUT_ID }
+            : { playlistId: PLAYLIST },
+        },
+        ctx,
+      );
+      return { uuids: page.climbs.map((climb) => climb.uuid).sort(), totalCount: page.totalCount };
+    };
+
+    it.each([
+      ['board-scoped', true],
+      ['all-boards', false],
+    ])(
+      'keeps it out of a %s public playlist for everyone but its curator and its owner',
+      async (_label, boardScoped) => {
+        for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
+          expect(await inPlaylist(ctx, boardScoped)).toEqual({ uuids: [PRIVATE_PUBLISHED], totalCount: 1 });
+        }
+        const both = { uuids: [PRIVATE_PUBLISHED, UNLISTED].sort(), totalCount: 2 };
+        // The playlist's owner saved it, so it stays in their list by reference…
+        expect(await inPlaylist(ctxFor(PUBLIC_SENDER), boardScoped)).toEqual(both);
+        // …and the climb's own owner sees their own climb.
+        expect(await inPlaylist(ctxFor(PRIVATE_AUTHOR), boardScoped)).toEqual(both);
+      },
+    );
+
+    it("keeps it out of another climber's liked list, and in the liker's own", async () => {
+      const liked = async (ctx: ConnectionContext) => {
+        const page = await smartPlaylist(undefined, { input: { type: 'LIKED_CLIMBS', userId: PUBLIC_SENDER } }, ctx);
+        return { uuids: page.climbs.map((climb) => climb.uuid).sort(), totalCount: page.totalCount };
+      };
+      for (const ctx of [ctxFor(STRANGER), anonymous]) {
+        expect(await liked(ctx)).toEqual({ uuids: [PRIVATE_PUBLISHED], totalCount: 1 });
+      }
+      expect(await liked(ctxFor(PUBLIC_SENDER))).toEqual({
+        uuids: [PRIVATE_PUBLISHED, UNLISTED].sort(),
+        totalCount: 2,
+      });
+    });
+  });
+
+  describe("a board's hardest send", () => {
+    const BOARD_UUID = 'matrix-board';
+
+    const statsWithHardest = (climbUuid: string): BoardPresenceStats => ({
+      climbsSentCount: 3,
+      distinctClimbersCount: 2,
+      hardestGrade: 'V8',
+      hardestSend: {
+        climbUuid,
+        grade: 'V8',
+        climbOwnerId: PRIVATE_AUTHOR,
+        sentByUserId: null,
+        sentAt: '2026-05-01T00:00:00.000Z',
+      },
+    });
+
+    it('never features an unlisted climb to anyone but its owner, and keeps every aggregate', async () => {
+      for (const ctx of [STRANGER, FOLLOWER, null]) {
+        const redacted = await redactBoardStats(statsWithHardest(UNLISTED), ctx);
+        expect(redacted.hardestSend ?? null).toBeNull();
+        expect(redacted).toMatchObject({ climbsSentCount: 3, distinctClimbersCount: 2, hardestGrade: 'V8' });
+      }
+      expect((await redactBoardStats(statsWithHardest(UNLISTED), PRIVATE_AUTHOR)).hardestSend?.climbUuid).toBe(
+        UNLISTED,
+      );
+      expect((await redactBoardStats(statsWithHardest(PRIVATE_PUBLISHED), STRANGER)).hardestSend?.climbUuid).toBe(
+        PRIVATE_PUBLISHED,
+      );
+    });
+
+    it('never picks a climb the community hid', async () => {
+      const [board] = await db
+        .insert(schema.userBoards)
+        .values({
+          uuid: BOARD_UUID,
+          slug: 'matrix-board',
+          ownerId: PUBLIC_SENDER,
+          boardType: BOARD,
+          layoutId: LAYOUT_ID,
+          sizeId: 1,
+          setIds: '1',
+          name: 'Matrix board',
+        })
+        .returning({ id: schema.userBoards.id });
+      // The hidden climb's send is the hardest by a wide margin.
+      await db.insert(schema.boardseshTicks).values(
+        [
+          ['matrix-board-hidden-send', HIDDEN, 28],
+          ['matrix-board-listed-send', PRIVATE_PUBLISHED, 20],
+        ].map(([uuid, climbUuid, difficulty]) => ({
+          uuid: String(uuid),
+          userId: PUBLIC_SENDER,
+          boardType: BOARD,
+          boardId: board.id,
+          climbUuid: String(climbUuid),
+          angle: ANGLE,
+          status: 'send' as const,
+          difficulty: Number(difficulty),
+          climbedAt: '2026-03-01T10:00:00Z',
+        })),
+      );
+      const stats = await computeBoardPresenceStats(board.id, BOARD);
+      expect(stats.hardestSend?.climbUuid).toBe(PRIVATE_PUBLISHED);
+      // The wall's own numbers still count the hidden climb's send.
+      expect(stats.climbsSentCount).toBe(2);
     });
   });
 });
