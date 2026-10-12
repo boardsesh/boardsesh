@@ -289,7 +289,7 @@ function ClimbTopChromeComponent({
             {showPersistentChips ? filterChrome : null}
 
             {/* The angle now rides as the first chip in the persistent chip row above
-                (FilterChipRow.android); the quick row only carries the condensed filter
+                (FilterChipRow on Android); the quick row only carries the condensed filter
                 summary, which shows only when the top-chrome filters are active (i.e.
                 the persistent chip row is off). */}
             {visibleFilterSummary ? (

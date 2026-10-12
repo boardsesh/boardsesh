@@ -603,7 +603,7 @@ describe('ClimbTopChrome', () => {
   });
 
   // The Material angle control moved out of ClimbTopChrome into the persistent filter
-  // chip row (FilterChipRow.android), which this component test doesn't render — the
+  // chip row (FilterChipRow on Android), which this component test doesn't render — the
   // angle chip is covered by the Android screenshot QA, not here.
 
   // Regression guard for the Android tap-passthrough fix: the Material band must

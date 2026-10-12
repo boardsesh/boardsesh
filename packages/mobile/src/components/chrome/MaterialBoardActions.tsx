@@ -7,7 +7,7 @@
 // nothing when it doesn't apply (no adjustable board / no bluetooth).
 //
 // The Climbs angle lives as the first chip in the native filter chip row
-// (`FilterChipRow.android`), not here — the app bar keeps only the create action.
+// (`FilterChipRow`, Android and web), not here — the app bar keeps only the create action.
 // `MaterialAngleAction` remains for Discover's `CollapsingTopChrome`.
 
 import { useCallback, useMemo } from 'react';

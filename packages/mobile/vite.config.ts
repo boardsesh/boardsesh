@@ -154,14 +154,25 @@ export default defineConfig({
         find: /^.*\.(png|jpe?g|gif|webp|svg)$/,
         replacement: fileURLToPath(new URL('./test/asset-stub.ts', import.meta.url)),
       },
-      // FilterChipRow is platform-split (FilterChipRow.ios.tsx renders native
-      // @expo/ui SwiftUI menus; FilterChipRow.android.tsx is a placeholder).
-      // Vitest doesn't resolve `.ios`/`.android` extensions and can't mount the
-      // SwiftUI host, so redirect the extensionless import to a null stub. Suites
-      // that assert chip behaviour register their own vi.mock (takes precedence).
+      // FilterChipRow (the climbs filter row) renders the native CapsuleRow and
+      // reads the active board for its Android angle chip, so screen suites that
+      // import it get a null stub instead. Suites that assert the climbs capsules
+      // test buildClimbCapsules (search/climb-capsules.ts) or register their own
+      // vi.mock (takes precedence).
       {
         find: /^(.*\/)?search\/FilterChipRow$/,
         replacement: fileURLToPath(new URL('./test/filter-chip-row-stub.tsx', import.meta.url)),
+      },
+      // CapsuleRow is platform-split (CapsuleRow.ios.tsx renders native @expo/ui
+      // SwiftUI glass buttons + menus; CapsuleRow.android.tsx Compose FilterChips;
+      // CapsuleRow.web.tsx Paper chips). Vitest doesn't resolve `.ios`/`.android`
+      // extensions and can't mount either native tree, so redirect the
+      // extensionless import to a null stub. Suites that assert the row import a
+      // platform file explicitly (filter-capsules/__tests__) or register their
+      // own vi.mock (takes precedence).
+      {
+        find: /^(.*\/)?filter-capsules\/CapsuleRow$/,
+        replacement: fileURLToPath(new URL('./test/capsule-row-stub.tsx', import.meta.url)),
       },
       // SwitchRow is platform-split (SwitchRow.ios.tsx renders a native @expo/ui
       // SwiftUI Toggle; SwitchRow.android.tsx a native Compose Switch). Vitest

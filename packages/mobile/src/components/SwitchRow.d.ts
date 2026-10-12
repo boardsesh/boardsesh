@@ -2,7 +2,7 @@
 // extensionless `./SwitchRow` import to this declaration, while Metro picks the
 // matching SwitchRow.ios.tsx / SwitchRow.android.tsx at bundle time. Both
 // implementations are still compiled and type-checked on their own. Mirrors the
-// FilterChipRow.d.ts mechanism.
+// CapsuleRow.d.ts mechanism.
 
 import type { FC } from 'react';
 import type { SwitchRowProps } from './SwitchRow.types';

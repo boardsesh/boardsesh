@@ -1,9 +1,7 @@
-// Shared props for the persistent filter-chip row. The implementation is
-// platform-split: FilterChipRow.ios.tsx renders native @expo/ui SwiftUI menus,
-// FilterChipRow.android.tsx renders native @expo/ui Jetpack Compose FilterChips +
-// DropdownMenus. The split keeps each platform's @expo/ui import (swift-ui /
-// jetpack-compose) — whose components resolve native views at module load — off the
-// other platform's bundle path.
+// Props for the climbs list's persistent filter row (FilterChipRow.tsx). The row
+// builds capsule descriptors from them (climb-capsules.ts) and hands them to the
+// shared, platform-split CapsuleRow (filter-capsules/), so these props carry no
+// native types.
 
 import type { ReactElement } from 'react';
 import type { ProgressFilter, SortOption, GradeAccuracyValue } from '@boardsesh/climb-filters';

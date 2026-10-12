@@ -1,13 +1,10 @@
-// Pure label builders for the persistent filter-chip row, shared by both
-// implementations (FilterChipRow.ios.tsx SwiftUI menus, FilterChipRow.android.tsx
-// Jetpack Compose dropdowns). The chip wording is sourced once here so the two
-// platforms can't word the same filter differently, and so the popularity/rating
-// bucket → label mapping stays unit-testable without a native host (the
-// FilterChipRow vite alias swaps the COMPONENT for a null stub under Vitest, but
-// this `.logic` module is not aliased, so its functions run for real).
+// Pure label builders for the climbs filter row, used by buildClimbCapsules
+// (climb-capsules.ts), which every platform's capsule row renders. The chip
+// wording is sourced once here so a filter is never worded two ways, and so the
+// popularity/rating bucket → label mapping stays unit-testable without a native
+// host.
 //
-// The native JSX lives in the platform files; only the `t(...)`-bound wording lives
-// here. Keep using the shared POPULARITY_BUCKETS / RATING_BUCKETS from
+// Keep using the shared POPULARITY_BUCKETS / RATING_BUCKETS from
 // `filter-chip-menus.ts` at the call sites so the chip and the sheet never diverge.
 
 import type { TFunction } from 'i18next';
