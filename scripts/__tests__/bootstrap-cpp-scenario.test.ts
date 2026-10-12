@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
 import {
   boardMatchesConfig,
+  sessionPathMatchesBoard,
   bootstrapCppScenario,
   photosMatch,
   ensureSprayPhoto,
@@ -93,6 +94,18 @@ function manufacturerHarness(): {
   operations: Array<{ name: string; variables: Record<string, unknown> }>;
   join: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
+  session: {
+    id: string;
+    boardPath: string;
+    createdByUserId: string;
+    isActive: boolean;
+    isPublic: boolean;
+    isPermanent: boolean;
+    status: string | null;
+    listed: boolean;
+    createId: string;
+    persistPermanent: boolean;
+  };
 } {
   const page = readCppPage('kilter');
   const owned = [...page.heroBoards, ...page.otherBoards].map((variant, index): BootstrapBoard => ({
@@ -108,6 +121,18 @@ function manufacturerHarness(): {
     angle: variant.angle!,
   }));
   const operations: Array<{ name: string; variables: Record<string, unknown> }> = [];
+  const session = {
+    id: SESSION,
+    boardPath: '/kilter/1/10/1,20/40',
+    createdByUserId: ACCOUNT,
+    isActive: true,
+    isPublic: false,
+    isPermanent: true,
+    status: 'active' as string | null,
+    listed: true,
+    createId: SESSION,
+    persistPermanent: true,
+  };
   let recordedAscent = true;
   const join = vi.fn(async () => ({
     queue: [{ uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', climb: genuineClimb(owned[0]) }],
@@ -158,10 +183,20 @@ function manufacturerHarness(): {
           response = { boardLiveSessions: [{ sessionId: SESSION, host: { userId: ACCOUNT } }] };
           break;
         case 'CppBootstrapSessionStatus':
-          response = { sessionStatus: 'active' };
+          response = { sessionStatus: session.status };
           break;
         case 'CreateSession':
-          response = { createSession: { id: SESSION } };
+          Object.assign(session, {
+            id: session.createId,
+            boardPath: (variables.input as { boardPath: string }).boardPath,
+            createdByUserId: ACCOUNT,
+            isActive: false,
+            isPublic: false,
+            isPermanent: session.persistPermanent,
+            status: 'active',
+            listed: true,
+          });
+          response = { createSession: { id: session.id } };
           break;
         case 'CreateBoard': {
           const input = variables.input as {
@@ -185,7 +220,7 @@ function manufacturerHarness(): {
         }
         case 'CppBootstrapOwnedSessions':
           response = {
-            mySessions: [{ id: SESSION, boardPath: '/kilter/1/10/1,20/40', createdByUserId: ACCOUNT, isActive: true }],
+            mySessions: session.listed ? [session] : [],
           };
           break;
         case 'PrivacySettings':
@@ -226,7 +261,7 @@ function manufacturerHarness(): {
       recordedAscent = enabled;
     },
   });
-  return { options, owned, operations, join, save };
+  return { options, owned, operations, join, save, session };
 }
 
 function sprayRenameHarness(variantIndex = 0) {
@@ -664,7 +699,8 @@ describe('CPP account/bootstrap safety', () => {
     expect(harness.operations.find((entry) => entry.name === 'CreateSession')?.variables.input).toMatchObject({
       audience: 'invite_only',
       isPublic: false,
-      discoverable: false,
+      discoverable: true,
+      isPermanent: true,
     });
   });
 
@@ -776,6 +812,137 @@ describe('CPP account/bootstrap safety', () => {
     expect(result.scenario?.cpp?.scenes.queue.sessionId).toBe(SESSION);
     expect(result.scenario?.cpp?.scenes.search.readyTextByLocale?.fr).toBeTruthy();
     expect(harness.join).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION, initializeEmpty: true }));
+  });
+
+  it.each(['/kilter/1/10/1,20/40', 'kilter/1/10/20,1/40', '/b/owned-primary/40'])(
+    'reuses a dormant private permanent session with equivalent actual path %s',
+    async (boardPath) => {
+      const harness = manufacturerHarness();
+      harness.options.apply = true;
+      harness.owned[0].slug = 'owned-primary';
+      Object.assign(harness.session, { boardPath, isActive: false, isPermanent: true, status: 'active' });
+      const result = await bootstrapCppScenario(harness.options);
+      expect(result.blockers).toEqual([]);
+      expect(result.scenario?.sharedSessionId).toBe(SESSION);
+      expect(harness.operations.some((operation) => operation.name === 'CreateSession')).toBe(false);
+      expect(harness.join).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION, initializeEmpty: true }));
+    },
+  );
+
+  it.each(['ended', 'nonpermanent'] as const)(
+    'replaces only the verified checkpoint-owned %s session and preserves its record',
+    async (reason) => {
+      const harness = manufacturerHarness();
+      harness.options.apply = true;
+      const replacementId = testUuid(990);
+      Object.assign(harness.session, {
+        createId: replacementId,
+        isActive: false,
+        status: reason === 'ended' ? 'ended' : 'active',
+        isPermanent: reason !== 'nonpermanent',
+      });
+      const result = await bootstrapCppScenario(harness.options);
+      expect(result.blockers).toEqual([]);
+      expect(result.scenario?.sharedSessionId).toBe(replacementId);
+      expect(harness.options.checkpoint.sessionReplacements).toEqual([
+        {
+          target: 'kilter',
+          previousSessionId: SESSION,
+          newSessionId: replacementId,
+          reason: reason === 'ended' ? 'ended-checkpoint' : reason,
+        },
+      ]);
+      expect(result.actions).toContainEqual(expect.stringContaining(`previous record unchanged`));
+      expect(harness.operations.filter((operation) => operation.name === 'CreateSession')).toHaveLength(1);
+      expect(harness.operations.every((operation) => !['EndSession', 'DeleteSession'].includes(operation.name))).toBe(
+        true,
+      );
+      expect(harness.join).toHaveBeenCalledWith(expect.objectContaining({ sessionId: replacementId }));
+      const second = await bootstrapCppScenario(harness.options);
+      expect(second.blockers).toEqual([]);
+      expect(harness.operations.filter((operation) => operation.name === 'CreateSession')).toHaveLength(1);
+    },
+  );
+
+  it.each(['missing', 'foreign', 'configuration', 'public', 'unavailable'] as const)(
+    'diagnoses a %s saved binding without creating a replacement',
+    async (failure) => {
+      const harness = manufacturerHarness();
+      harness.options.apply = true;
+      if (failure === 'missing') harness.session.listed = false;
+      if (failure === 'foreign') harness.session.createdByUserId = testUuid(900);
+      if (failure === 'configuration') harness.session.boardPath = '/kilter/1/10/1,20/0';
+      if (failure === 'public') harness.session.isPublic = true;
+      if (failure === 'unavailable') harness.session.status = null;
+      const result = await bootstrapCppScenario(harness.options);
+      expect(result.scenario).toBeUndefined();
+      expect(result.blockers).toContainEqual(expect.stringContaining('saved session binding rejected (reason='));
+      expect(result.blockers).toContainEqual(
+        expect.stringContaining('checkpoint retained and no replacement session created'),
+      );
+      expect(harness.operations.some((operation) => operation.name === 'CppBootstrapSessionStatus')).toBe(true);
+      expect(harness.operations.some((operation) => operation.name === 'CreateSession')).toBe(false);
+      expect(harness.options.checkpoint.sessions.kilter).toBe(SESSION);
+      expect(harness.join).not.toHaveBeenCalled();
+    },
+  );
+
+  it('creates a fresh permanent session for an ended checkpoint absent from the recent listing without claiming old ownership', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    Object.assign(harness.session, { listed: false, status: 'ended', createId: testUuid(990) });
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toEqual([]);
+    expect(result.scenario?.sharedSessionId).toBe(testUuid(990));
+    expect(harness.options.checkpoint.sessionReplacements).toEqual([
+      { target: 'kilter', previousSessionId: SESSION, newSessionId: testUuid(990), reason: 'ended-checkpoint' },
+    ]);
+    expect(harness.operations.filter((operation) => operation.name === 'CreateSession')).toHaveLength(1);
+    expect(harness.operations.every((operation) => !['EndSession', 'DeleteSession'].includes(operation.name))).toBe(
+      true,
+    );
+  });
+
+  it('never replaces an unrelated live nonpermanent session', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    harness.options.checkpoint.sessions = {};
+    harness.session.isPermanent = false;
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('reason=SESSION_NOT_PERMANENT'));
+    expect(harness.operations.some((operation) => operation.name === 'CreateSession')).toBe(false);
+    expect(harness.join).not.toHaveBeenCalled();
+  });
+
+  it('rereads actual permanence after creation and leaves queue untouched when HTTP only echoed it', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    harness.session.status = 'ended';
+    harness.session.createId = testUuid(990);
+    harness.session.persistPermanent = false;
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(
+      expect.stringContaining('created session failed persisted verification (reason=SESSION_NOT_PERMANENT'),
+    );
+    expect(harness.options.checkpoint.sessions.kilter).toBe(testUuid(990));
+    expect(result.scenario).toBeUndefined();
+    expect(harness.join).not.toHaveBeenCalled();
+  });
+
+  it('requires the exact verified board geometry for both tuple and named session paths', () => {
+    const harness = manufacturerHarness();
+    const board = { ...harness.owned[0], slug: 'owned-primary' };
+    for (const path of [
+      '/kilter/1/17/1,20/40',
+      '/kilter/1/10/1,20/0',
+      '/tension/1/10/1,20/40',
+      '/b/someone-elses-board/40',
+      '/b/owned-primary/0',
+      '/b/owned-primary',
+      '/kilter/1/10/1,20/40/arbitrary',
+    ]) {
+      expect(sessionPathMatchesBoard(path, board)).toBe(false);
+    }
   });
 
   it('resumes checkpoint-owned session initialization after a failed queue join', async () => {

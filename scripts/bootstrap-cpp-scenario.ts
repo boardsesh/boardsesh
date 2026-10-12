@@ -32,6 +32,7 @@ import { GET_SMART_PLAYLIST } from '../packages/shared/graphql/src/operations/pl
 import { mapPhotoHoldToCanonical } from '../packages/mobile/src/lib/spray/spray-hold-canonical';
 import { BACKEND_URL } from '../packages/mobile/src/lib/env';
 import { MAX_SPRAY_WALLS_PER_USER } from '../packages/shared/board-config/src/spray-config';
+import { parseBoardPath, parseNamedBoardPath } from '../packages/shared/board-config/src/board-path';
 import type { SprayDetectionView } from '../packages/shared-schema/src/spray-detection';
 import type { ClimbInput, ClimbQueueItemInput } from '../packages/shared-schema/src/generated/types';
 import type { ScreenshotCaptureScenario } from './lib/screenshot-fixtures';
@@ -41,7 +42,7 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
 export const CPP_BOOTSTRAP_PROFILE_QUERY = 'query CppBootstrapProfile { profile { id } }';
 const SESSION_STATUS_QUERY = `query CppBootstrapSessionStatus($sessionId: ID!) { sessionStatus(sessionId: $sessionId) }`;
-const OWNED_SESSIONS_QUERY = `query CppBootstrapOwnedSessions { mySessions { id boardPath createdByUserId isActive } }`;
+const OWNED_SESSIONS_QUERY = `query CppBootstrapOwnedSessions { mySessions { id boardPath createdByUserId isActive isPublic isPermanent } }`;
 
 export interface BootstrapBoard {
   uuid: string;
@@ -57,6 +58,7 @@ export interface BootstrapBoard {
   isPublic?: boolean;
   layoutName?: string;
   sizeName?: string;
+  slug?: string;
 }
 interface WallVersion {
   id: string;
@@ -71,6 +73,14 @@ interface Wall {
   currentVersion: WallVersion | null;
   versions?: WallVersion[];
   holdCount: number;
+}
+interface BootstrapSession {
+  id: string;
+  boardPath: string;
+  createdByUserId: string;
+  isActive: boolean;
+  isPublic: boolean;
+  isPermanent: boolean;
 }
 export interface BootstrapCheckpoint {
   version: 1;
@@ -88,6 +98,12 @@ export interface BootstrapCheckpoint {
     }
   >;
   sessions: Partial<Record<CppTarget, string>>;
+  sessionReplacements?: Array<{
+    target: CppTarget;
+    previousSessionId: string;
+    newSessionId: string;
+    reason: 'ended-checkpoint' | 'nonpermanent';
+  }>;
   demoTicks?: Partial<Record<CppTarget, string>>;
 }
 export interface BootstrapTransport {
@@ -138,6 +154,76 @@ export function boardMatchesConfig(board: BootstrapBoard, variant: CppBoard): bo
         sortedSets(board.setIds.split(',').map(Number)) === sortedSets(variant.setIds ?? []) &&
         board.angle === variant.angle))
   );
+}
+
+/** Compare the actual owned board, allowing only equivalent set ordering/path spelling. */
+export function sessionPathMatchesBoard(path: string, board: BootstrapBoard): boolean {
+  const segments = path.split('/').filter(Boolean);
+  const named = parseNamedBoardPath(path);
+  if (named) return segments.length === 3 && named.slug === board.slug && named.angle === board.angle;
+  const tuple = parseBoardPath(path);
+  const sortedSets = (sets: string) =>
+    sets
+      .split(',')
+      .map(Number)
+      .sort((left, right) => left - right)
+      .join(',');
+  return (
+    !!tuple &&
+    segments.length === 5 &&
+    tuple.boardName === board.boardType &&
+    tuple.layoutId === board.layoutId &&
+    tuple.sizeId === board.sizeId &&
+    sortedSets(tuple.setIds) === sortedSets(board.setIds) &&
+    tuple.angle === board.angle
+  );
+}
+
+function diagnosticSessionPath(path: string | undefined): string {
+  if (!path) return 'not_returned';
+  const named = parseNamedBoardPath(path);
+  if (named) return `named_board/angle=${named.angle ?? 'missing'}`;
+  const tuple = parseBoardPath(path);
+  if (
+    !tuple ||
+    !['kilter', 'tension', 'moonboard', 'spray', 'woods'].includes(tuple.boardName) ||
+    !/^\d+(,\d+)*$/.test(tuple.setIds)
+  )
+    return 'unsupported_path';
+  return `${tuple.boardName}/${tuple.layoutId}/${tuple.sizeId}/${tuple.setIds}/${tuple.angle ?? 'missing'}`;
+}
+
+async function readSessionBinding(options: BootstrapOptions, sessionId: string) {
+  const owned = await options.transport.request<{ mySessions: BootstrapSession[] }>(OWNED_SESSIONS_QUERY);
+  // The recent owned listing and live presence are separate from durable lifecycle.
+  const status = await options.transport.request<{ sessionStatus: string | null }>(SESSION_STATUS_QUERY, { sessionId });
+  return { session: owned.mySessions.find((entry) => entry.id === sessionId), status: status.sessionStatus };
+}
+
+function sessionBindingProblem(
+  session: BootstrapSession | undefined,
+  status: string | null,
+  options: BootstrapOptions,
+  board: BootstrapBoard,
+): string | null {
+  if (!session) return 'NOT_IN_OWNED_LIST';
+  if (session.createdByUserId !== options.accountUserId) return 'OWNER_MISMATCH';
+  if (!sessionPathMatchesBoard(session.boardPath, board)) return 'BOARD_CONFIGURATION_MISMATCH';
+  if (session.isPublic !== false) return 'SESSION_NOT_PRIVATE';
+  if (status === 'ended') return 'SESSION_ENDED';
+  if (status !== 'active') return 'SESSION_UNAVAILABLE';
+  if (session.isPermanent !== true) return 'SESSION_NOT_PERMANENT';
+  return null;
+}
+
+function describeSessionBinding(
+  session: BootstrapSession | undefined,
+  status: string | null,
+  expected: string,
+  reason: string,
+): string {
+  const lifecycle = status === 'active' || status === 'ended' ? status : status === null ? 'missing' : 'unknown';
+  return `reason=${reason}, lifecycle=${lifecycle}, permanent=${session ? String(session.isPermanent === true) : 'not_returned'}, expected=${diagnosticSessionPath(expected)}, actual=${diagnosticSessionPath(session?.boardPath)}`;
 }
 
 /** JPEG generations differ; compare oriented, downsized real pixels rather than pretending byte hashes match. */
@@ -669,6 +755,8 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       );
     const boardPath = `/${primary.boardType}/${primary.layoutId}/${primary.sizeId}/${primary.setIds}/${primary.angle}`;
     let sessionId = options.checkpoint.sessions[options.target];
+    let rejectedSession = false;
+    let replacement: { sessionId: string; reason: 'ended-checkpoint' | 'nonpermanent' } | undefined;
     if (!sessionId) {
       const live = await options.transport.request<{
         boardLiveSessions: Array<{ sessionId: string; host: { userId: string } }>;
@@ -676,26 +764,27 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       sessionId = live.boardLiveSessions.find((session) => session.host.userId === options.accountUserId)?.sessionId;
     }
     if (sessionId) {
-      const ownedSessions = await options.transport.request<{
-        mySessions: Array<{ id: string; boardPath: string; createdByUserId: string; isActive: boolean }>;
-      }>(OWNED_SESSIONS_QUERY);
-      const existing = ownedSessions.mySessions.find(
-        (session) =>
-          session.id === sessionId &&
-          session.createdByUserId === options.accountUserId &&
-          session.boardPath === boardPath,
-      );
-      const status = existing
-        ? await options.transport.request<{ sessionStatus: string | null }>(SESSION_STATUS_QUERY, { sessionId })
-        : null;
-      if (!existing || status?.sessionStatus !== 'active') {
-        blockers.push(
-          `${options.target}: saved session is unavailable, ended, or belongs to another account/configuration`,
-        );
+      const binding = await readSessionBinding(options, sessionId);
+      const reason = sessionBindingProblem(binding.session, binding.status, options, primary);
+      if (reason) {
+        const checkpointOwned = options.checkpoint.sessions[options.target] === sessionId;
+        const endedCheckpoint =
+          binding.status === 'ended' && (reason === 'SESSION_ENDED' || reason === 'NOT_IN_OWNED_LIST');
+        if (checkpointOwned && options.apply && (endedCheckpoint || reason === 'SESSION_NOT_PERMANENT')) {
+          // An absent ended row cannot prove its old ownership or geometry.
+          // The account/backend-bound checkpoint authorizes a fresh private
+          // session; no operation touches or claims ownership of that old row.
+          replacement = { sessionId, reason: endedCheckpoint ? 'ended-checkpoint' : 'nonpermanent' };
+        } else {
+          blockers.push(
+            `${options.target}: saved session binding rejected (${describeSessionBinding(binding.session, binding.status, boardPath, reason)}); checkpoint retained and no replacement session created`,
+          );
+          rejectedSession = true;
+        }
         sessionId = undefined;
       }
     }
-    if (!sessionId && options.apply) {
+    if (!sessionId && options.apply && !rejectedSession) {
       const created = await options.transport.request<{ createSession: { id: string } }>(CREATE_SESSION, {
         input: {
           boardPath,
@@ -705,14 +794,39 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
           name: `${{ kilter: 'Kilter', tension: 'Tension', moonboard: 'MoonBoard', spray: 'Spray wall' }[options.target]} crew`,
           audience: 'invite_only',
           isPublic: false,
-          discoverable: false,
+          // This backend path persists permanence. Resource audience and board
+          // access predicates keep discovery private; GPS coordinates are synthetic.
+          discoverable: true,
           isPermanent: true,
         },
       });
       sessionId = created.createSession.id;
       options.checkpoint.sessions[options.target] = sessionId;
+      if (replacement) {
+        options.checkpoint.sessionReplacements = [
+          ...(options.checkpoint.sessionReplacements ?? []),
+          {
+            target: options.target,
+            previousSessionId: replacement.sessionId,
+            newSessionId: sessionId,
+            reason: replacement.reason,
+          },
+        ];
+        actions.push(
+          `${options.target}: replaced checkpoint ${replacement.reason} session ${replacement.sessionId} with private permanent session ${sessionId}; previous record unchanged`,
+        );
+      } else actions.push(`${options.target}: created a real private permanent session ${sessionId}`);
       options.saveCheckpoint(options.checkpoint);
-      actions.push(`${options.target}: created a real private session`);
+      // The HTTP create response echoes inputs; verify persisted values instead.
+      const binding = await readSessionBinding(options, sessionId);
+      const reason = sessionBindingProblem(binding.session, binding.status, options, primary);
+      if (reason) {
+        blockers.push(
+          `${options.target}: created session failed persisted verification (${describeSessionBinding(binding.session, binding.status, boardPath, reason)}); checkpoint retained and queue untouched`,
+        );
+        rejectedSession = true;
+        sessionId = undefined;
+      }
     }
     let queueClimbName: string | undefined;
     if (sessionId && options.apply) {
@@ -740,7 +854,8 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       blockers.push(
         `${options.target}: persistent WebSocket queue verification requires --apply; read-only discovery does not change session membership`,
       );
-    if (!sessionId) blockers.push(`${options.target}: no self-hosted primary-board session; creation requires --apply`);
+    if (!sessionId && !rejectedSession)
+      blockers.push(`${options.target}: no self-hosted primary-board session; creation requires --apply`);
     const firstClimb = climbs[0].name;
     const makeScene = (
       readyText: string,

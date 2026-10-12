@@ -79,7 +79,18 @@ The workflow can prepare the dedicated screenshot account automatically: choose
 one `cpp_target`, `cpp_action=capture`, and `fixtures=record`, leaving `cpp_scenario`
 empty. A single bootstrap runs before the native matrix. It uses real API calls
 for private boards, original-photo uploads, hold recognition/publishing, and a
-private crew queue. Existing logbook entries are reused; a missing entry can be
+private permanent crew queue. Session creation uses `invite_only`,
+`isPublic: false`, `discoverable: true`, and `isPermanent: true`: the current backend
+stores permanence only through its discoverable-session path. The invite-only
+resource policy and board-access checks keep this queue out of other users'
+discovery. Bootstrap verifies the persisted owner, board configuration, private
+visibility, permanence, and durable lifecycle before joining; live presence alone
+does not determine whether a saved session is reusable. An account/backend-bound checkpoint whose durable lifecycle is ended may receive
+a fresh permanent replacement even when the old row is absent from recent
+sessions; this does not claim ownership of that inaccessible row. An owned,
+private, matching nonpermanent checkpoint session may also receive a permanent
+replacement. Both IDs are tracked and the old record remains unchanged. Missing
+active, foreign, public, or mismatched bindings stop before creating a replacement. Existing logbook entries are reused; a missing entry can be
 seeded as one explicitly private example attempt. No send is invented. Cherry
 and Bowlo can appear in the real new-climb editor before either wall has climbs.
 The checkpoint is bound to the authenticated account and backend and cached for
