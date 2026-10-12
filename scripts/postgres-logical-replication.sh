@@ -38,6 +38,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/postgres-credentials.sh"
 # shellcheck source=scripts/lib/postgres-spatial-capability.sh
 source "$SCRIPT_DIR/lib/postgres-spatial-capability.sh"
+# shellcheck source=scripts/lib/postgres-sync-cutoff.sh
+source "$SCRIPT_DIR/lib/postgres-sync-cutoff.sh"
 NEON_DATABASE_URL="${NEON_DATABASE_URL:-${SOURCE_DATABASE_URL:-}}"
 RAILWAY_DATABASE_URL="${RAILWAY_DATABASE_URL:-${TARGET_DATABASE_URL:-}}"
 NEON_REPLICATION_DATABASE_URL="${NEON_REPLICATION_DATABASE_URL:-${SOURCE_REPLICATION_DATABASE_URL:-}}"
@@ -1045,6 +1047,9 @@ apply_target_routine_ownership_policy() {
   local include_clause exclude_clause
   include_clause="$(schema_include_clause 'namespace.nspname')"
   exclude_clause="$(schema_exclude_clause 'namespace.nspname')"
+  local cutoff_contract
+  cutoff_contract="$(psql_railway -X -Atq -c "$(boardsesh_sync_cutoff_contract_sql "$TARGET_RUNTIME_ROLE")")"
+  [[ "$cutoff_contract" == 't' ]] || fail "deletion cutoff helper requires the reviewed admin bootstrap before ownership reconciliation"
 
   # pg_restore --role owns explicit dumped routines correctly, but routines
   # synthesized while restoring a range/multirange type can retain the restore
@@ -1061,6 +1066,7 @@ FROM pg_proc AS procedure
 JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
 WHERE true ${include_clause} ${exclude_clause}
   AND pg_get_userbyid(procedure.proowner) <> '${TARGET_OWNER_ROLE}'
+  AND procedure.oid <> coalesce(to_regprocedure('public.sync_deletions_safe_cutoff(double precision)'), 0::oid)
   AND NOT EXISTS (
     SELECT 1 FROM pg_depend AS extension_dependency
     WHERE extension_dependency.classid = 'pg_proc'::regclass
@@ -1235,6 +1241,7 @@ SELECT format('REVOKE ALL PRIVILEGES ON ROUTINE %s FROM PUBLIC, %I;',
 FROM pg_proc AS procedure
 JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
 WHERE true ${include_clause} ${exclude_clause}
+  AND procedure.oid <> coalesce(to_regprocedure('public.sync_deletions_safe_cutoff(double precision)'), 0::oid)
   AND NOT EXISTS (
     SELECT 1 FROM pg_depend AS extension_dependency
     WHERE extension_dependency.classid = 'pg_proc'::regclass
@@ -1249,6 +1256,7 @@ SELECT format('GRANT EXECUTE ON ROUTINE %s TO %I;',
 FROM pg_proc AS procedure
 JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
 WHERE true ${runtime_include_clause} ${exclude_clause}
+  AND procedure.oid <> coalesce(to_regprocedure('public.sync_deletions_safe_cutoff(double precision)'), 0::oid)
   AND NOT EXISTS (
     SELECT 1 FROM pg_depend AS extension_dependency
     WHERE extension_dependency.classid = 'pg_proc'::regclass
@@ -1955,7 +1963,18 @@ SQL
     # below because public already contains extension members. Filter those
     # entries, including COMMENT commands which cannot run as the app owner.
     boardsesh_run_libpq_connection TARGET pg_restore --list "$dump_file" >"$restore_list"
-    awk '$0 !~ / SCHEMA - / && $0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / && $0 !~ / OPERATOR FAMILY / && $0 !~ / OPERATOR CLASS / { print }' \
+    # The timestamp helper is installed by the target admin under its dedicated
+    # owner before restore, just as privileged extension objects are pre-created.
+    # Restore cannot replace/re-own it as the ordinary DDL owner.
+    local source_cutoff_exists target_cutoff_exists
+    source_cutoff_exists="$(psql_neon -X -Atq -c "SELECT to_regprocedure('public.sync_deletions_safe_cutoff(double precision)') IS NOT NULL")"
+    if [[ "$source_cutoff_exists" == 't' ]]; then
+      target_cutoff_exists="$(psql_railway -X -Atq -c "SELECT to_regprocedure('public.sync_deletions_safe_cutoff(double precision)') IS NOT NULL")"
+      [[ "$target_cutoff_exists" == 't' ]] || fail "run the reviewed deletion cutoff admin bootstrap on the target before schema restore"
+      [[ "$(psql_railway -X -Atq -c "$(boardsesh_sync_cutoff_contract_sql "$TARGET_RUNTIME_ROLE")")" == 't' ]] ||
+        fail "target deletion cutoff helper has an unsafe owner/body/ACL contract"
+    fi
+    awk '$0 !~ / SCHEMA - / && $0 !~ / EXTENSION - / && $0 !~ / COMMENT - EXTENSION / && $0 !~ / OPERATOR FAMILY / && $0 !~ / OPERATOR CLASS / && $0 !~ / public .*sync_deletions_safe_cutoff\(double precision\)/ { print }' \
       "$restore_list" >"$filtered_restore_list"
 
     for schema in $INCLUDE_SCHEMAS; do

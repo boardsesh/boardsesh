@@ -1000,6 +1000,11 @@ jobs:
         env:
           MIGRATION_JOURNAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: vp run test:db:migration-journal
+      - name: Verify the isolated deletion cutoff bootstrap boundary
+        working-directory: packages/db
+        env:
+          SYNC_CUTOFF_TEST_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: vp exec tsx --test scripts/bootstrap-sync-deletions-cutoff.integration.test.ts
       # These node:test files are outside Vitest's module graph. In particular,
       # the report's projection must keep agreeing with the immutable SQL.
       - name: Replay MoonBoard reconciliation and verify report projections
@@ -1453,6 +1458,11 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
+      - name: Bootstrap the isolated deletion cutoff helper
+        env:
+          SYNC_CUTOFF_ADMIN_DATABASE_URL: postgres://postgres:password@localhost:5432/main
+          SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP: 'true'
+        run: vp exec tsx packages/db/scripts/bootstrap-sync-deletions-cutoff-development.ts --apply
       - name: Apply the full migration journal
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main

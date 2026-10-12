@@ -373,6 +373,12 @@ jobs:
           tar -xf built-packages.tar
           rm built-packages.tar
 
+      - name: Bootstrap the isolated deletion cutoff helper
+        env:
+          SYNC_CUTOFF_ADMIN_DATABASE_URL: postgresql://postgres:password@postgres:5432/main
+          SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP: 'true'
+        run: vp exec tsx packages/db/scripts/bootstrap-sync-deletions-cutoff-development.ts --apply
+
       - name: Run database migrations
         run: vp exec drizzle-kit migrate
         working-directory: packages/db
@@ -685,6 +691,12 @@ jobs:
         run: |
           tar -xf built-packages.tar
           rm built-packages.tar
+
+      - name: Bootstrap the isolated deletion cutoff helper
+        env:
+          SYNC_CUTOFF_ADMIN_DATABASE_URL: postgresql://postgres:password@postgres:5432/main
+          SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP: 'true'
+        run: vp exec tsx packages/db/scripts/bootstrap-sync-deletions-cutoff-development.ts --apply
 
       - name: Run database migrations
         run: vp exec drizzle-kit migrate

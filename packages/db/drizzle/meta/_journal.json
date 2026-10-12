@@ -1863,6 +1863,20 @@
       "when": 1791752677882,
       "tag": "0265_climb_reference_membership",
       "breakpoints": true
+    },
+    {
+      "idx": 266,
+      "version": "7",
+      "when": 1791771976359,
+      "tag": "0266_sync_deletions_stream",
+      "breakpoints": true
+    },
+    {
+      "idx": 267,
+      "version": "7",
+      "when": 1791772010533,
+      "tag": "0267_sync_deletions_cutoff_guard",
+      "breakpoints": true
     }
   ]
 }

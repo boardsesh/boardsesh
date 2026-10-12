@@ -63,7 +63,7 @@ const EPOCH_SEQ = '0';
 // A non-numeric env value falls back to the default rather than poisoning
 // every sync query with a NaN interval.
 const parsedStabilityWindow = Number(process.env.SYNC_STABILITY_WINDOW_SECONDS ?? 30);
-const STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsedStabilityWindow : 30;
+const STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? Math.max(0, parsedStabilityWindow) : 30;
 
 /**
  * Resolve the incoming cursor into the two bound comparison values. Null/absent
@@ -996,7 +996,8 @@ export const syncQueries = {
   /**
    * Pull hard deletions for the client to apply locally. Scoped to the user's own
    * deletions plus reference-data deletions (user_id IS NULL). Cursor on
-   * (deleted_at, id).
+   * (COALESCE(stream_at, deleted_at), id). deleted_at remains the client's
+   * resurrection guard, while the DB-owned stream timestamp orders new markers.
    */
   syncDeletions: async (
     _: unknown,
@@ -1006,13 +1007,36 @@ export const syncQueries = {
     const { userId, limit: lim } = prepareUserSync(ctx, cursor, limit);
     const { ts, seq } = cursorBounds(cursor);
 
+    let safeCutoff: string | null = null;
+    try {
+      // This MUST be a separate primary query before the page query. The page
+      // then gets a fresh READ COMMITTED snapshot after the activity sample:
+      // a writer committing between the two is visible, and an older remaining
+      // writer caps the cursor below its DB-stamped marker. Sampling inside the
+      // page statement could miss a commit after that statement's snapshot.
+      const [cutoffRow] = rowsFromResult<{ safe_cutoff: string | null }>(
+        await db.execute(sql`
+          SELECT public.sync_deletions_safe_cutoff(${STABILITY_WINDOW_SECONDS}::double precision)::text AS safe_cutoff
+        `),
+      );
+      safeCutoff = cutoffRow?.safe_cutoff ?? null;
+    } catch {
+      safeCutoff = null;
+    }
+    // Prepared writers, unknown stats visibility, and missing helper privilege
+    // all pause this poll without advancing the installed client's cursor.
+    if (safeCutoff === null) {
+      logger.warn('Deletion sync paused: transaction metadata could not establish a safe cutoff');
+      return { deletions: [], cursor: { updatedAt: ts, syncSeq: seq }, hasMore: false };
+    }
+
     const result = await db.execute(sql`
-      SELECT table_name, record_id, deleted_at, id AS __seq
+      SELECT table_name, record_id, deleted_at, COALESCE(stream_at, deleted_at) AS __stream_at, id AS __seq
       FROM sync_deletions
       WHERE (user_id = ${userId} OR user_id IS NULL)
-        AND (deleted_at, id) > (${ts}::timestamp, ${seq}::bigint)
-        AND deleted_at < now() - make_interval(secs => ${STABILITY_WINDOW_SECONDS})
-      ORDER BY deleted_at ASC, id ASC
+        AND (COALESCE(stream_at, deleted_at), id) > (${ts}::timestamp, ${seq}::bigint)
+        AND COALESCE(stream_at, deleted_at) < ${safeCutoff}::timestamp
+      ORDER BY COALESCE(stream_at, deleted_at) ASC, id ASC
       LIMIT ${lim}
     `);
 
@@ -1026,7 +1050,7 @@ export const syncQueries = {
 
     const lastRow = rows[rows.length - 1];
     const nextCursor = lastRow
-      ? { updatedAt: toIso(lastRow.deleted_at), syncSeq: String(lastRow.__seq) }
+      ? { updatedAt: toIso(lastRow.__stream_at), syncSeq: String(lastRow.__seq) }
       : { updatedAt: ts, syncSeq: seq };
 
     return {

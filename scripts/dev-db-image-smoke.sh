@@ -71,6 +71,17 @@ wait_for_postgres
 [[ "$(docker exec "$CONTAINER_NAME" printenv PGDATA)" == '/var/lib/postgresql/18/docker' ]]
 docker exec "$CONTAINER_NAME" test -f /var/lib/postgresql/18/docker/.boardsesh-dev-db-ready
 
+# The seeded image must include the same narrow helper prerequisite as live
+# migrations, without handing the runtime login broad statistics visibility.
+# shellcheck source=scripts/lib/postgres-sync-cutoff.sh
+source "$REPOSITORY_ROOT/scripts/lib/postgres-sync-cutoff.sh"
+cutoff_contract="$(boardsesh_sync_cutoff_contract_sql boardsesh_runtime | \
+  docker exec -i "$CONTAINER_NAME" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d main)"
+[[ "$cutoff_contract" == 't' ]] || {
+  printf 'Seeded deletion cutoff helper has an unsafe owner/body/ACL contract\n' >&2
+  exit 1
+}
+
 docker exec -i "$CONTAINER_NAME" psql -X -v ON_ERROR_STOP=1 -U postgres -d main \
   -v expected_migration_count="$EXPECTED_MIGRATION_COUNT" \
   -v expected_postgis_version="$EXPECTED_POSTGIS_VERSION" <<'SQL'

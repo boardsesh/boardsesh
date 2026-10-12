@@ -215,6 +215,9 @@ if [[ "$sql" == *'DROP SUBSCRIPTION'* ]]; then
 fi
 
 case "$sql" in
+  *'WITH helper AS ('*'sync_deletions_safe_cutoff'*) printf '%s\n' "${FAKE_SYNC_CUTOFF_CONTRACT:-t}" ;;
+  *"SELECT to_regprocedure('public.sync_deletions_safe_cutoff(double precision)') IS NOT NULL"*)
+    printf '%s\n' "${FAKE_SYNC_CUTOFF_EXISTS:-f}" ;;
   *'SHOW wal_level'*) printf 'logical\n' ;;
   *'SELECT current_database()'*) printf 'main\n' ;;
   *'SELECT session_user, current_user'*) printf '%s\n' "${FAKE_PUBLISHER_IDENTITY:-publisher|publisher}" ;;
@@ -489,6 +492,28 @@ grep -Fq 'psql <-X>' "$ARGUMENT_LOG"
 grep -Fq 'pg_dump' "$ARGUMENT_LOG"
 grep -Fq 'pg_restore' "$ARGUMENT_LOG"
 [[ ! -e "$(<"$CLEANUP_PATH_LOG")" ]]
+
+# The exact separately owned helper is exempt from ownership/ACL sweeps only
+# after its full contract passes. An unsafe helper must stop restore first.
+: >"$ARGUMENT_LOG"
+rm -f "$SUBSCRIPTION_FILE_CHECK" "$HYPOPG_CREATE_MARKER"
+if PATH="$FAKE_BIN:$PATH" \
+  FAKE_SYNC_CUTOFF_EXISTS=t FAKE_SYNC_CUTOFF_CONTRACT=f \
+  NEON_DATABASE_URL='postgresql://source%3Auser:source%3Asec%5Cret@[2001:db8::1]/main%3Adb?sslmode=verify-full&application_name=argv-test' \
+  RAILWAY_DATABASE_URL='postgresql://target:target-secret@target.example:5432/main?sslmode=verify-full&application_name=argv-test' \
+  NEON_REPLICATION_DATABASE_URL='postgresql://publisher:publisher-secret@source.example:5432/main?sslmode=verify-full&application_name=boardsesh_pg18_sub' \
+  TARGET_OWNER_ROLE=boardsesh_owner TARGET_MIGRATOR_ROLE=boardsesh_migrator \
+  TARGET_SUBSCRIBER_ROLE=boardsesh_pg18_subscriber TARGET_RUNTIME_ROLE=boardsesh_runtime \
+  TARGET_RUNTIME_SCHEMAS=public SOURCE_DATABASE_NAME=main TARGET_DATABASE_NAME=main \
+    bash "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
+  printf 'Expected an unsafe deletion cutoff helper to stop restricted restore.\n' >&2
+  exit 1
+fi
+grep -Fq 'target deletion cutoff helper has an unsafe owner/body/ACL contract' "$ERROR_LOG"
+if grep -Fq 'pg_restore <--exit-on-error>' "$ARGUMENT_LOG"; then
+  printf 'Cutoff helper rejection occurred after schema restore started.\n' >&2
+  exit 1
+fi
 
 rm -f "$SUBSCRIPTION_FILE_CHECK" "$HYPOPG_CREATE_MARKER"
 PATH="$FAKE_BIN:$PATH" \

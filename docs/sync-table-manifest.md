@@ -168,13 +168,24 @@ Returned `cursor.syncSeq` is that value **stringified**. First call: `cursor` is
 `('1970-01-01T00:00:00.000Z', 0)` (a value the cursor validator accepts back — `'epoch'` would be rejected on replay).
 `hasMore = (rows.length === limit)`. The cursor `updatedAt` is the last row's `updated_at` ISO string.
 
-Every page additionally excludes rows younger than the **stability window**
+Document pages additionally exclude rows younger than the **stability window**
 (`updated_at < now() - 30s`, `SYNC_STABILITY_WINDOW_SECONDS`, tests set it to 0): `updated_at` is stamped at
 transaction start, so a long write transaction can commit a row _behind_ an already-advanced cursor — skips are
 permanent, a deferred row is just picked up next pull. Client-side, the pull applies **deletions first, then table
 upserts**, and a tombstone only deletes local rows with `updated_at <= deletedAt` (resurrection guard) — together
 these make server-side delete-then-recreate converge. Bulk board re-imports suppress the deletion triggers entirely
 via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`).
+
+`syncDeletions` additionally fences active writer transactions. A DB-owned
+`stream_at` insertion timestamp orders new markers; historical NULLs use
+`COALESCE(stream_at, deleted_at)` so installed cursors replay unchanged. The wire
+`deletedAt` still carries the original resurrection guard (including backdated
+publication markers), never `stream_at`. The resolver first reads a safe cutoff
+from a narrow primary helper, then runs a separate fresh READ COMMITTED page
+below it. The oldest active writer bounds the cutoff even with a zero-second
+stability window. Prepared writers, unavailable metadata, or missing helper
+privileges pause the poll with an unchanged cursor. See
+[deployment prerequisite and restore contract](sync-deletions-cutoff.md).
 
 ## Idempotency contract
 

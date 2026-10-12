@@ -46,6 +46,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/postgres-credentials.sh"
 # shellcheck source=scripts/lib/postgres-spatial-capability.sh
 source "$SCRIPT_DIR/lib/postgres-spatial-capability.sh"
+# shellcheck source=scripts/lib/postgres-sync-cutoff.sh
+source "$SCRIPT_DIR/lib/postgres-sync-cutoff.sh"
 
 blocker_count=0
 
@@ -2832,6 +2834,10 @@ WHERE namespace.nspname IN (${included_schemas_sql})
     [[ "$wrongly_owned_schemas" == '0' ]] ||
       blocker "$wrongly_owned_schemas target application schema(s) are not owned by $MIGRATION_OWNER_ROLE"
 
+    sync_cutoff_contract="$(scalar "$TARGET_DATABASE_URL" "$(boardsesh_sync_cutoff_contract_sql "$MIGRATION_RUNTIME_ROLE")")"
+    [[ "$sync_cutoff_contract" == 't' ]] ||
+      blocker "deletion cutoff helper must match its exact body, NOLOGIN stats owner, membership, and runtime-only EXECUTE contract"
+
     wrongly_owned_functions="$(scalar "$TARGET_DATABASE_URL" "
 SELECT count(*)
 FROM pg_catalog.pg_proc AS procedure
@@ -2841,7 +2847,8 @@ WHERE namespace.nspname IN (${included_schemas_sql})
   AND pg_catalog.pg_get_userbyid(procedure.proowner) <> '${MIGRATION_OWNER_ROLE}'
   AND procedure.oid NOT IN (
     coalesce(pg_catalog.to_regprocedure('ops.board_snapshot_cluster_identity()'), 0::pg_catalog.oid),
-    coalesce(pg_catalog.to_regprocedure('ops.acquire_board_snapshot_fence(integer)'), 0::pg_catalog.oid)
+    coalesce(pg_catalog.to_regprocedure('ops.acquire_board_snapshot_fence(integer)'), 0::pg_catalog.oid),
+    coalesce(pg_catalog.to_regprocedure('public.sync_deletions_safe_cutoff(double precision)'), 0::pg_catalog.oid)
   )
   AND NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_depend AS extension_dependency
@@ -2893,6 +2900,9 @@ WHERE namespace.nspname IN (${included_schemas_sql})
           coalesce(pg_catalog.to_regprocedure('ops.board_snapshot_cluster_identity()'), 0::pg_catalog.oid),
           coalesce(pg_catalog.to_regprocedure('ops.acquire_board_snapshot_fence(integer)'), 0::pg_catalog.oid)
         ) THEN '${MIGRATION_SNAPSHOT_FENCE_OWNER_ROLE}'
+        WHEN procedure.oid = coalesce(
+          pg_catalog.to_regprocedure('public.sync_deletions_safe_cutoff(double precision)'), 0::pg_catalog.oid
+        ) THEN 'boardsesh_sync_cutoff_owner'
         ELSE '${MIGRATION_OWNER_ROLE}'
       END
   )
