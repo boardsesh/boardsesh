@@ -14,8 +14,15 @@ const privacy = vi.hoisted(() => ({
 }));
 /** The board every session resolves to; null leaves it unplaced. */
 const sessionBoard = vi.hoisted(() => ({ boardId: 12 as number | null, resolve: vi.fn() }));
+type ClimbRow = { uuid: string; userId: string | null; isListed: boolean; isDraft: boolean };
 const readable = vi.hoisted(() => ({
-  climbs: [] as { uuid: string; userId: string | null; isListed: boolean; isDraft: boolean }[],
+  climbs: [] as ClimbRow[],
+  /**
+   * What the next single-row lookup finds when it differs from what the
+   * readability predicate keeps: the hardest-send catalog lookup sees a row
+   * that the predicate then drops. Consumed by that one lookup.
+   */
+  nextLookup: null as ClimbRow[] | null,
 }));
 vi.mock('../services/privacy', () => privacy);
 vi.mock('../services/session-board', () => ({
@@ -34,7 +41,14 @@ vi.mock('../db/client', async () => {
               table === boardSessions
                 ? [{ id: 'session-1', boardId: null, boardPath: 'kilter/1/10/1/40', createdByUserId: null }]
                 : readable.climbs;
-            return Object.assign(Promise.resolve(rows), { limit: async () => rows });
+            return Object.assign(Promise.resolve(rows), {
+              limit: async (count?: number) => {
+                if (table === boardSessions) return rows;
+                const lookup = readable.nextLookup ?? rows;
+                readable.nextLookup = null;
+                return lookup.slice(0, count);
+              },
+            });
           },
         }),
       }),
@@ -85,6 +99,7 @@ beforeEach(() => {
       new Map(sessionBoard.boardId === null ? [] : sessions.map((session) => [session.id, sessionBoard.boardId])),
   );
   readable.climbs = [{ uuid: display.climbUuid, userId: null, isListed: true, isDraft: false }];
+  readable.nextLookup = null;
   privacy.canViewContent.mockResolvedValue(true);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -191,19 +206,29 @@ describe('board history identity', () => {
         sentAt: display.sentAt,
       },
     };
-    // The account audience says yes (a public account), and it is still a draft.
-    // The primary SQL predicate excludes foreign drafts; the real-DB matrix verifies that predicate.
+    // The catalog has the draft; the primary SQL predicate drops it for anyone
+    // but its owner. The real-DB matrix verifies that predicate.
+    const draftRow = { uuid: 'climb-1', userId: 'setter', isListed: false, isDraft: true };
     readable.climbs = [];
+    readable.nextLookup = [draftRow];
     expect(await redactBoardStats(stats, 'viewer', BOARD_ID)).toEqual({ ...stats, hardestSend: null });
+    readable.nextLookup = [draftRow];
     expect(await redactBoardStats(stats, null, BOARD_ID)).toEqual({ ...stats, hardestSend: null });
-    readable.climbs = [{ uuid: 'climb-1', userId: 'setter', isListed: false, isDraft: true }];
+    readable.climbs = [draftRow];
     expect((await redactBoardStats(stats, 'setter', BOARD_ID)).hardestSend?.climbUuid).toBe('climb-1');
 
     // A draft nobody owns is nobody's, an anonymous viewer included.
     readable.climbs = [];
+    readable.nextLookup = [{ ...draftRow, userId: null }];
     expect(
       await redactBoardStats({ ...stats, hardestSend: { ...stats.hardestSend!, climbOwnerId: null } }, null, BOARD_ID),
     ).toMatchObject({ climbsSentCount: 20, distinctClimbersCount: 4, hardestGrade: 'V8', hardestSend: null });
+
+    // A climb missing from the catalog keeps its grade under no name.
+    readable.climbs = [];
+    expect(await redactBoardStats(stats, 'viewer', BOARD_ID)).toMatchObject({
+      hardestSend: { climbUuid: 'climb-1', grade: 'V8', name: null },
+    });
   });
   it("names a published climb as the hardest send whoever set it, a deleted author's included", async () => {
     const stats: BoardPresenceStats = {
