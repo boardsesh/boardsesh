@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { ReadyBoardArtSource } from '../../lib/board-render/ready-board-art';
 
 // The guard for the configurable-row work: a climber who has touched nothing
 // must get exactly the row they had. Every assertion spells out what is expected
@@ -256,7 +257,16 @@ describe('the default climb row', () => {
     render(<ClimbListItemContent climb={climb} {...board} />);
 
     expect(live.thumbnailProps).toEqual([
-      { frames: 'p1r12p2r13', boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', mirrored: false },
+      {
+        climbUuid: climb.uuid,
+        readyBoardArtRef: undefined,
+        frames: 'p1r12p2r13',
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+        mirrored: false,
+      },
     ]);
   });
 
@@ -605,6 +615,46 @@ describe('staged leaves, for the settings preview', () => {
     Favorite: () => <ClimbFavoriteView />,
     PlaylistChips: () => <div data-testid="sample-chips" />,
   };
+
+  it.each(['default', 'injected'] as const)(
+    'forwards the same ready-art ref and current climb identity to the %s thumbnail',
+    (thumbnailKind) => {
+      const read = vi.fn(() => undefined);
+      const readyBoardArtRef: { current: ReadyBoardArtSource | null } = { current: { read } };
+      const source = readyBoardArtRef.current;
+      const leaves: ClimbRowLeaves =
+        thumbnailKind === 'default'
+          ? sampleLeaves
+          : {
+              ...sampleLeaves,
+              Thumbnail: (props) => {
+                live.thumbnailProps.push(props);
+                return <i data-thumbnail="injected" />;
+              },
+            };
+      const view = render(
+        <ClimbListItemContent climb={climb} {...board} leaves={leaves} readyBoardArtRef={readyBoardArtRef} />,
+      );
+      expect(live.thumbnailProps).toHaveLength(1);
+      expect(live.thumbnailProps[0].climbUuid).toBe(climb.uuid);
+      expect(live.thumbnailProps[0].readyBoardArtRef).toBe(readyBoardArtRef);
+      expect(view.container.querySelector('[data-thumbnail]')?.getAttribute('data-thumbnail')).toBe(
+        thumbnailKind === 'default' ? 'true' : 'injected',
+      );
+
+      const recycledClimb = { ...climb, uuid: 'recycled-climb', frames: 'p3r12' };
+      view.rerender(
+        <ClimbListItemContent climb={recycledClimb} {...board} leaves={leaves} readyBoardArtRef={readyBoardArtRef} />,
+      );
+      expect(live.thumbnailProps.at(-1)?.climbUuid).toBe(recycledClimb.uuid);
+      expect(live.thumbnailProps.at(-1)?.frames).toBe(recycledClimb.frames);
+      expect(live.thumbnailProps.at(-1)?.readyBoardArtRef).toBe(readyBoardArtRef);
+      expect(readyBoardArtRef.current).toBe(source);
+      expect(read).not.toHaveBeenCalled();
+      expect(live.statsCalls).toBe(0);
+      expect(live.myGradeCalls).toBe(0);
+    },
+  );
 
   it('draws the row from the views, without running one live hook', () => {
     const { container } = render(
