@@ -20,7 +20,12 @@ export {
   type ConsentSource,
   type DeviceConsentRecord,
 } from './consent-record';
-export { CONSENT_PROMPT_COUNTRIES, consentPromptRequired, normalizeConsentCountry } from './consent-region';
+export {
+  CONSENT_REGION_EDGE_HEADER_NAME,
+  CONSENT_PROMPT_COUNTRIES,
+  consentPromptRequired,
+  normalizeConsentCountry,
+} from './consent-region';
 export {
   ANALYTICS_CAPTURE_PATH,
   ANALYTICS_CONSENT_HEADER,

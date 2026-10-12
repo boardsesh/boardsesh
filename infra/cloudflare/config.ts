@@ -1,5 +1,7 @@
 /// <reference types="node" />
 
+import { CONSENT_REGION_EDGE_HEADER_NAME } from '../../packages/shared/consent/src/consent-region';
+
 import {
   AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES,
   AUTOMATION_DEFAULT_DENY_EXEMPT_PATHS,
@@ -986,6 +988,11 @@ export const OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION =
 export const OBSERVE_COUNTRY_HEADER_EXPRESSION = `http.host eq "${UPDATES_HOSTNAME}"`;
 export const OBSERVE_COUNTRY_HEADER_NAME = 'X-Geo-Country';
 
+/** Quebec detection: one coarse province header, no city or coordinates. */
+export const CONSENT_REGION_HEADER_RULE_DESCRIPTION =
+  'boardsesh:consent-region-header (managed by scripts/cloudflare-apply.ts)';
+export const CONSENT_REGION_HEADER_EXPRESSION = `http.host eq "${WS_HOSTNAME}" and http.request.uri.path eq "/graphql" and ip.src.country eq "CA"`;
+
 /**
  * CORS for public, immutable objects fetched directly by clients.
  *
@@ -1357,6 +1364,19 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     },
   ],
   requestHeaderRules: [
+    {
+      description: CONSENT_REGION_HEADER_RULE_DESCRIPTION,
+      expression: CONSENT_REGION_HEADER_EXPRESSION,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          // Cloudflare removes the header when the expression is empty/undefined.
+          // This overwrites or removes caller input on every Canadian GraphQL request.
+          [CONSENT_REGION_EDGE_HEADER_NAME]: { operation: 'set', expression: 'ip.src.region_code' },
+        },
+      },
+      enabled: true,
+    },
     {
       description: OBSERVE_COUNTRY_HEADER_RULE_DESCRIPTION,
       expression: OBSERVE_COUNTRY_HEADER_EXPRESSION,

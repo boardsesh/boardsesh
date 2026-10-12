@@ -8,6 +8,9 @@
  * when in doubt, prompt. See docs/analytics-consent.md.
  */
 
+/** Narrow origin header overwritten by the configured Cloudflare edge rule. */
+export const CONSENT_REGION_EDGE_HEADER_NAME = 'x-boardsesh-region-code';
+
 /** The 27 EU member states. */
 const EU_MEMBER_STATES = [
   'AT',
@@ -61,10 +64,28 @@ const GDPR_EQUIVALENT = ['CH', 'GB', 'GG', 'GI', 'IM', 'JE'] as const;
  * Privacy laws built on consent rather than GDPR: China's PIPL has no
  * legitimate-interest basis, and South Korea's PIPA asks for consent to
  * collect personal information. Also a policy choice, kept apart so it can be
- * dropped. Quebec's Law 25 is not here: Cloudflare reports Quebec as CA, and
- * asking all of Canada for one province is not the trade we chose.
+ * dropped. Quebec is handled by its trusted province code below.
  */
 const CONSENT_BASED_LAWS = ['CN', 'KR'] as const;
+/** Additional prompt jurisdictions selected by the owner. */
+const ADDITIONAL_PROMPT_COUNTRIES = ['AD', 'MC', 'SM', 'VA', 'FO'] as const;
+
+/** Canada's provinces and territories; unknown subdivisions fail closed. */
+const CANADIAN_REGIONS: ReadonlySet<string> = new Set([
+  'AB',
+  'BC',
+  'MB',
+  'NB',
+  'NL',
+  'NS',
+  'NT',
+  'NU',
+  'ON',
+  'PE',
+  'QC',
+  'SK',
+  'YT',
+]);
 
 /** Every ISO 3166-1 alpha-2 code whose visitors are asked before analytics runs. */
 export const CONSENT_PROMPT_COUNTRIES: readonly string[] = [
@@ -73,6 +94,7 @@ export const CONSENT_PROMPT_COUNTRIES: readonly string[] = [
   ...EEA_NON_EU,
   ...GDPR_EQUIVALENT,
   ...CONSENT_BASED_LAWS,
+  ...ADDITIONAL_PROMPT_COUNTRIES,
 ];
 
 const PROMPT_COUNTRY_SET: ReadonlySet<string> = new Set(CONSENT_PROMPT_COUNTRIES);
@@ -104,9 +126,13 @@ export function normalizeConsentCountry(countryCode: string | null | undefined):
  * True when a visitor from this country has to be asked before analytics runs:
  * every code in {@link CONSENT_PROMPT_COUNTRIES}, and every code that does not
  * name one known country (null, `XX`, `ZZ`, `T1`, `EU`, lowercase, ...).
- * Only a recognised country outside the list skips the prompt.
+ * Recognised countries outside the list skip the prompt, except Canada:
+ * it also requires a recognised province other than Quebec.
  */
-export function consentPromptRequired(countryCode: string | null | undefined): boolean {
+export function consentPromptRequired(countryCode: string | null | undefined, regionCode?: string | null): boolean {
   const country = normalizeConsentCountry(countryCode);
+  // Quebec asks. A missing or unknown Canadian province cannot rule it out.
+  // The backend supplies this code only after trusting the Cloudflare edge.
+  if (country === 'CA') return regionCode === 'QC' || !CANADIAN_REGIONS.has(regionCode ?? '');
   return country === null || PROMPT_COUNTRY_SET.has(country);
 }

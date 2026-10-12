@@ -173,17 +173,17 @@ export async function readAnalyticsConsentForUser(userId: string): Promise<Analy
 /**
  * Whether the analytics prompt is shown for this request. Signed out is fine:
  * the decision is needed before anyone has an account. Only the coarse country
- * from a trusted Cloudflare hop is read (see `resolveFlagCountry`); the IP is
+ * and Canadian subdivision from a trusted Cloudflare hop are used; the IP is
  * never read, logged or stored here. An unknown or untrusted country, and every
  * WebSocket request, resolves to "ask".
  */
 export function resolveConsentRegion(
-  ctx: Pick<ConnectionContext, 'edgeCountry' | 'globalPrivacyControl'>,
+  ctx: Pick<ConnectionContext, 'edgeCountry' | 'edgeRegionCode' | 'globalPrivacyControl'>,
 ): ConsentRegion {
   const countryCode = normalizeConsentCountry(ctx.edgeCountry);
   return {
     countryCode,
-    promptRequired: consentPromptRequired(countryCode),
+    promptRequired: consentPromptRequired(countryCode, ctx.edgeRegionCode),
     globalPrivacyControl: ctx.globalPrivacyControl === true,
   };
 }

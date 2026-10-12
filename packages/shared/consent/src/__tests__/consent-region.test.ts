@@ -61,13 +61,42 @@ describe('consentPromptRequired', () => {
     ['AX', 'Åland, Finland'],
     ['CN', 'China, PIPL'],
     ['KR', 'South Korea, PIPA'],
+    ['AD', 'Andorra'],
+    ['MC', 'Monaco'],
+    ['SM', 'San Marino'],
+    ['VA', 'Vatican City'],
+    ['FO', 'Faroe Islands'],
   ])('asks in %s (%s)', (country) => {
     expect(consentPromptRequired(country)).toBe(true);
   });
 
-  // CA includes Quebec: Cloudflare reports no province, and Law 25 is left out on purpose.
-  it.each(['US', 'AU', 'BR', 'CA', 'NZ', 'JP', 'ZA', 'MX', 'IN', 'HK', 'TW', 'SG'])('does not ask in %s', (country) => {
+  it.each(['US', 'AU', 'BR', 'NZ', 'JP', 'ZA', 'MX', 'IN', 'HK', 'TW', 'SG'])('does not ask in %s', (country) => {
     expect(consentPromptRequired(country)).toBe(false);
+  });
+
+  it.each([
+    ['QC', true],
+    ['ON', false],
+    ['BC', false],
+    ['AB', false],
+    ['MB', false],
+    ['NB', false],
+    ['NL', false],
+    ['NS', false],
+    ['NT', false],
+    ['NU', false],
+    ['PE', false],
+    ['SK', false],
+    ['YT', false],
+    [undefined, true],
+    [null, true],
+    ['', true],
+    ['qc', true],
+    ['CA-QC', true],
+    ['ZZ', true],
+    ['QZ', true],
+  ])('Canadian subdivision %j prompts: %s', (regionCode, expected) => {
+    expect(consentPromptRequired('CA', regionCode)).toBe(expected);
   });
 
   it.each([

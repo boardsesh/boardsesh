@@ -41,7 +41,7 @@ type ConsentRecord = {
 
 ## Who is asked
 
-`consentPromptRequired(countryCode)` in `@boardsesh/consent`
+`consentPromptRequired(countryCode, regionCode)` in `@boardsesh/consent`
 (`packages/shared/consent/src/consent-region.ts`) decides. It is true for:
 
 - The 27 EU member states, plus EU territory that geolocation reports under its
@@ -57,20 +57,23 @@ type ConsentRecord = {
   `T1`, the other user-assigned codes (`AA`, `QM`-`QZ`, `X*`), the reserved
   `EU` and `UK`, lowercase or malformed values. When in doubt, ask.
 
-Not on the list, on purpose: Quebec. Law 25 wants identifying or profiling
-technology off by default, but Cloudflare's country header says `CA` for all of
-Canada, and asking every Canadian for one province is not the trade we chose.
-Andorra, Monaco, San Marino, the Vatican and the Faroe Islands (laws modelled on
-GDPR) are not on it either; adding any of them is one line in
-`consent-region.ts`.
+The owner also selected Andorra `AD`, Monaco `MC`, San Marino `SM`,
+Vatican City `VA`, the Faroe Islands `FO` and Quebec (`CA` plus trusted
+province `QC`). Other known Canadian provinces skip the prompt. A missing,
+malformed or unknown Canadian province prompts: without it we cannot exclude
+Quebec. There is no VPN/device-locale fallback.
 
 **Where the country comes from.** The unauthenticated GraphQL query
 `consentRegion { countryCode promptRequired globalPrivacyControl }`. The backend reads Cloudflare's
 `CF-IPCountry` through `resolveFlagCountry` (`packages/backend/src/utils/flag-country.ts`),
 the same trusted-hop check the PostHog proxy uses (see `docs/cloudflare.md`):
 a forged header from a direct-origin caller resolves as `XX` and asks. The HTTP
-context carries only that coarse country (`ConnectionContext.edgeCountry`); the
-IP is not read, logged or stored for this. WebSocket operations have no edge
+context carries that coarse country (`ConnectionContext.edgeCountry`) and the
+trusted subdivision (`edgeRegionCode`), which the backend uses only for Canada.
+It prefers native `CF-Region-Code`. The narrow `X-Boardsesh-Region-Code` header
+is ignored until the edge overwrite/remove rule has been applied and
+`BOARDSESH_TRUST_EDGE_REGION_HEADER=true` is set; see
+[Cloudflare deployment order](./cloudflare.md#consent-province-header). Neither is stored; the IP is not read, logged or stored for this. WebSocket operations have no edge
 country and always ask. `myAnalyticsConsent` does not carry `promptRequired`:
 it is signed-in only and null exactly when the region is needed.
 

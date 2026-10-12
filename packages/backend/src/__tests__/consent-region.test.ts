@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { CONSENT_REGION_EDGE_HEADER_NAME } from '@boardsesh/consent';
 import type { IncomingMessage } from 'node:http';
 import { createRequire } from 'node:module';
 import type * as GraphQLModule from 'graphql';
@@ -22,7 +23,7 @@ const RAILWAY_INGRESS_PEER = '10.0.0.5';
 const PUBLIC_PEER = '203.0.113.7';
 
 function nodeRequest(remoteAddress: string, headers: Record<string, string>): IncomingMessage {
-  return { headers, socket: { remoteAddress } } as unknown as IncomingMessage;
+  return { headers, url: '/graphql', socket: { remoteAddress } } as unknown as IncomingMessage;
 }
 
 async function askRegion(remoteAddress: string | null, headers: Record<string, string>) {
@@ -40,6 +41,68 @@ async function askRegion(remoteAddress: string | null, headers: Record<string, s
 }
 
 describe('consentRegion', () => {
+  beforeEach(() => vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', 'false'));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('ignores caller-written custom province before the edge rule is enabled', async () => {
+    await expect(
+      askRegion(CLOUDFLARE_PEER, {
+        host: 'ws.boardsesh.com',
+        'cf-ipcountry': 'CA',
+        [CONSENT_REGION_EDGE_HEADER_NAME]: 'ON',
+      }),
+    ).resolves.toEqual({ countryCode: 'CA', promptRequired: true });
+  });
+
+  it.each([
+    [CLOUDFLARE_PEER, 'ws.boardsesh.com', 'ON', 'CA', false],
+    [CLOUDFLARE_PEER, 'ws.boardsesh.com', 'QC', 'CA', true],
+    [CLOUDFLARE_PEER, 'ws.boardsesh.com', '', 'CA', true],
+    [CLOUDFLARE_PEER, 'other.example.com', 'ON', 'CA', true],
+    [PUBLIC_PEER, 'ws.boardsesh.com', 'ON', null, true],
+  ])(
+    'uses the configured custom header only on the trusted GraphQL host (%s, %s, %s)',
+    async (peer, host, regionCode, countryCode, promptRequired) => {
+      vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', 'true');
+      await expect(
+        askRegion(peer, {
+          host,
+          'cf-ipcountry': 'CA',
+          [CONSENT_REGION_EDGE_HEADER_NAME]: regionCode,
+        }),
+      ).resolves.toEqual({ countryCode, promptRequired });
+    },
+  );
+
+  it('ignores the configured custom header outside the exact GraphQL route', async () => {
+    vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', 'true');
+    const headers = {
+      host: 'ws.boardsesh.com',
+      'cf-ipcountry': 'CA',
+      [CONSENT_REGION_EDGE_HEADER_NAME]: 'ON',
+    };
+    const request = nodeRequest(CLOUDFLARE_PEER, headers);
+    request.url = '/flags/';
+    const context = await buildHttpConnectionContext({
+      request: new Request('http://backend.test/flags/', { method: 'POST', headers }),
+      req: request,
+    });
+    expect(context.edgeRegionCode).toBeUndefined();
+    expect(resolveConsentRegion(context).promptRequired).toBe(true);
+  });
+
+  it('prefers the native Cloudflare province over the custom header', async () => {
+    vi.stubEnv('BOARDSESH_TRUST_EDGE_REGION_HEADER', 'true');
+    await expect(
+      askRegion(CLOUDFLARE_PEER, {
+        host: 'ws.boardsesh.com',
+        'cf-ipcountry': 'CA',
+        'cf-region-code': 'QC',
+        [CONSENT_REGION_EDGE_HEADER_NAME]: 'ON',
+      }),
+    ).resolves.toEqual({ countryCode: 'CA', promptRequired: true });
+  });
+
   it('skips the prompt for a US visitor arriving through Cloudflare, signed out', async () => {
     await expect(askRegion(CLOUDFLARE_PEER, { 'cf-ipcountry': 'US' })).resolves.toEqual({
       countryCode: 'US',
@@ -50,6 +113,63 @@ describe('consentRegion', () => {
   it('asks a German visitor arriving through Cloudflare', async () => {
     await expect(askRegion(CLOUDFLARE_PEER, { 'cf-ipcountry': 'DE' })).resolves.toEqual({
       countryCode: 'DE',
+      promptRequired: true,
+    });
+  });
+
+  it.each([
+    ['QC', true],
+    ['ON', false],
+    ['BC', false],
+    ['', true],
+    ['qc', true],
+    ['ZZ', true],
+  ])('uses a trusted Canadian province %j to decide the prompt: %s', async (regionCode, promptRequired) => {
+    await expect(
+      askRegion(CLOUDFLARE_PEER, {
+        'cf-ipcountry': 'CA',
+        'cf-region-code': regionCode,
+      }),
+    ).resolves.toEqual({ countryCode: 'CA', promptRequired });
+  });
+
+  it('asks Canadian visitors when the trusted province is missing', async () => {
+    await expect(askRegion(CLOUDFLARE_PEER, { 'cf-ipcountry': 'CA' })).resolves.toEqual({
+      countryCode: 'CA',
+      promptRequired: true,
+    });
+  });
+
+  it('accepts Quebec only behind the same trusted private ingress as the country', async () => {
+    await expect(
+      askRegion(RAILWAY_INGRESS_PEER, {
+        'cf-ipcountry': 'CA',
+        'cf-region-code': 'QC',
+        'x-forwarded-for': `198.51.100.4, ${CLOUDFLARE_PEER}`,
+      }),
+    ).resolves.toEqual({ countryCode: 'CA', promptRequired: true });
+  });
+
+  it.each([
+    [PUBLIC_PEER, {}],
+    [RAILWAY_INGRESS_PEER, { 'x-forwarded-for': `${CLOUDFLARE_PEER}, ${PUBLIC_PEER}` }],
+  ])('does not trust a caller-authored Canadian province through %s', async (peer, forwarded) => {
+    const headers = { 'cf-ipcountry': 'CA', 'cf-region-code': 'ON', ...forwarded };
+    const context = await buildHttpConnectionContext({
+      request: new Request('http://backend.test/graphql', { method: 'POST', headers }),
+      req: nodeRequest(peer, headers),
+    });
+    expect(context.edgeRegionCode).toBeUndefined();
+    expect(resolveConsentRegion(context)).toEqual({
+      countryCode: null,
+      promptRequired: true,
+      globalPrivacyControl: false,
+    });
+  });
+
+  it.each(['AD', 'MC', 'SM', 'VA', 'FO'])('asks in added jurisdiction %s', async (country) => {
+    await expect(askRegion(CLOUDFLARE_PEER, { 'cf-ipcountry': country })).resolves.toEqual({
+      countryCode: country,
       promptRequired: true,
     });
   });

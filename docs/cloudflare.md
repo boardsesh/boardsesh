@@ -142,6 +142,27 @@ Capture and replay bytes are unchanged. The static edge ranges in
 until this list is updated. This preserves coarse region targeting, rather than
 making IP geolocation an exact location guarantee.
 
+### Consent province header
+
+Quebec consent prompting uses a trusted coarse province code. The declared
+`boardsesh:consent-region-header` request transform matches only Canadian
+`/graphql` requests on `ws.boardsesh.com` and sets
+`X-Boardsesh-Region-Code` from Cloudflare's
+[`ip.src.region_code`](https://developers.cloudflare.com/ruleset-engine/rules-language/fields/reference/ip.src.region_code/).
+An empty/undefined expression removes the header, clearing caller input too.
+
+Cloudflare [forbids setting `cf-*` headers in request transforms](https://developers.cloudflare.com/rules/transform/request-header-modification/#important-remarks),
+so the narrow custom header avoids enabling the broader city/coordinate managed
+transform. The backend prefers native `CF-Region-Code` if already available.
+It ignores the custom header unless the trusted CF hop, exact GraphQL route/host,
+and `BOARDSESH_TRUST_EDGE_REGION_HEADER=true` are all present.
+
+Deploy order: apply and verify the edge overwrite/remove rule first, then enable
+`BOARDSESH_TRUST_EDGE_REGION_HEADER=true` on the backend. Leave it unset/false
+until the rule is live; changing the backend first would trust caller input.
+Before that, missing or unknown Canadian province prompts, so Quebec stays
+covered. The decision reads no city or coordinates and stores neither code.
+
 ### Observe telemetry
 
 The `http_request_late_transform` phase carries one host-scoped rule for

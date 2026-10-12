@@ -1,5 +1,6 @@
 import { BlockList, isIP } from 'node:net';
 import type { IncomingMessage } from 'node:http';
+import { CONSENT_REGION_EDGE_HEADER_NAME } from '@boardsesh/consent';
 
 // https://www.cloudflare.com/ips-v4/ and /ips-v6/, checked 2026-10-08.
 // An outdated list fails closed for newly introduced edge ranges.
@@ -113,4 +114,24 @@ export function resolveFlagCountry(req: IncomingMessage): string {
     country !== 'ZZ'
     ? country
     : 'XX';
+}
+
+/**
+ * Cloudflare's coarse subdivision from the same trusted edge as country.
+ * Prefer its native header. The narrow custom header is trusted only after an
+ * operator has applied the overwrite/remove rule on our GraphQL edge route
+ * and enabled BOARDSESH_TRUST_EDGE_REGION_HEADER. Before that it is caller input.
+ */
+export function resolveEdgeRegionCode(req: IncomingMessage): string | undefined {
+  if (!isTrustedCloudflareEdge(req)) return undefined;
+  const nativeRegion = req.headers['cf-region-code'];
+  if (typeof nativeRegion === 'string' && /^[A-Z0-9]{1,3}$/.test(nativeRegion)) return nativeRegion;
+  if (
+    process.env.BOARDSESH_TRUST_EDGE_REGION_HEADER !== 'true' ||
+    req.headers.host !== 'ws.boardsesh.com' ||
+    req.url?.split('?')[0] !== '/graphql'
+  )
+    return undefined;
+  const regionCode = req.headers[CONSENT_REGION_EDGE_HEADER_NAME];
+  return typeof regionCode === 'string' && /^[A-Z0-9]{1,3}$/.test(regionCode) ? regionCode : undefined;
 }
