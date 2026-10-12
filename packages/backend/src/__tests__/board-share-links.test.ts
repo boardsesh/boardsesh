@@ -185,10 +185,12 @@ describe('opening a share link', () => {
     ).rejects.toThrow('Board not found');
     await expect(resolveSessionBoardId(sessionPath, member)).rejects.toThrow('Board not found');
 
+    // A join only adds access: nothing for other clients to drop, so no
+    // privacyChanged (the app no longer listens for it, #6411).
     const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
     const redemption = await redeem(link!.token, member);
     expect(redemption).toEqual({ boardUuid: board.uuid, slug: board.slug });
-    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).not.toHaveBeenCalled();
 
     const [grant] = await grantRows(board.uuid, member);
     expect(grant).toMatchObject({ status: 'approved', invitedBy: owner });
@@ -204,15 +206,13 @@ describe('opening a share link', () => {
     expect(await resolveSessionBoardId(sessionPath, member)).toBe(board.id);
   });
 
-  it('is idempotent: a second open writes nothing and publishes nothing', async () => {
+  it('is idempotent: a second open writes nothing', async () => {
     const board = await seedBoard(owner, 'followers');
     const link = await shareLink(board.uuid);
     await redeem(link!.token, member);
     const [before] = await grantRows(board.uuid, member);
 
-    const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
     await expect(redeem(link!.token, member)).resolves.toEqual({ boardUuid: board.uuid, slug: board.slug });
-    expect(publish).not.toHaveBeenCalled();
     const after = await grantRows(board.uuid, member);
     expect(after).toHaveLength(1);
     expect(after[0].updatedAt.getTime()).toBe(before.updatedAt.getTime());
@@ -236,12 +236,10 @@ describe('opening a share link', () => {
     expect(await grantRows(other.uuid, second)).toEqual([]);
   });
 
-  it('answers NOT_FOUND for an unknown or malformed token and writes nothing', async () => {
-    const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
+  it('answers NOT_FOUND for an unknown or malformed token', async () => {
     for (const token of ['AAAAAAAAAAAAAAAAAAAAAA', 'not-a-token', '', 'x'.repeat(5000)]) {
       await expect(redeem(token, stranger)).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
     }
-    expect(publish).not.toHaveBeenCalled();
   });
 
   it('never echoes the token in the error a dead link answers with', async () => {
@@ -255,13 +253,11 @@ describe('opening a share link', () => {
 
   it('lets the owner open their own link without writing a grant', async () => {
     const board = await seedBoard(owner, 'invite_only');
-    const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
     await expect(redeem((await shareLink(board.uuid))!.token, owner)).resolves.toEqual({
       boardUuid: board.uuid,
       slug: board.slug,
     });
     expect(await grantRows(board.uuid, owner)).toEqual([]);
-    expect(publish).not.toHaveBeenCalled();
   });
 
   it('keeps a climber the owner removed out, whatever link they hold', async () => {

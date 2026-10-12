@@ -1,6 +1,5 @@
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { z } from 'zod';
-import { pubsub } from '../../../pubsub';
 import { logger } from '../../../utils/logger';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { privacyControlsEnabled, requirePrivacyControls } from '../../../services/privacy';
@@ -14,11 +13,9 @@ import {
 /**
  * A home board's share link. The rules live in `services/board-share-links.ts`.
  *
- * Mounted beside, not inside, `notifyingPrivacyMutations`: that wrapper
- * publishes `privacyChanged` after every call, and that event makes every
- * signed-in client clear its protected caches and refetch. A redemption
- * publishes it once, and only when it actually granted access; a repeat
- * redemption and a reset change nobody's access, so they publish nothing.
+ * None of these publishes `privacyChanged`. A join only adds access, the
+ * joiner's own app refreshes after its own mutation, and the server checks
+ * access on every read, so no other client has anything to drop.
  *
  * The token is an argument here and nowhere else: none of these resolvers logs
  * it, and the errors they throw never carry it.
@@ -65,15 +62,14 @@ export const boardShareLinkMutations = {
     await applyRateLimit(ctx, 30, 'privacyMutation');
     const redemption = await redeemBoardShareLink(token, userId);
     if (redemption.granted) {
-      // Same follow-up as an owner's name invite. The grant is committed, so a
-      // failed kiosk republish must not turn the join into an error.
+      // Same preview refresh as an owner's name invite. The grant is committed,
+      // so a failed kiosk republish must not turn the join into an error.
       try {
         const { notifyResourcePrivacyChanged } = await import('../../../services/board-session-privacy');
         await notifyResourcePrivacyChanged('board', redemption.boardUuid);
       } catch (error) {
         logger.warn('[BoardShareLink] board preview republish failed after a link join', { error });
       }
-      pubsub.publishPrivacyChanged();
     }
     return { boardUuid: redemption.boardUuid, slug: redemption.slug };
   },
