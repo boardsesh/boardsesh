@@ -1538,26 +1538,30 @@ export function PlayCore({
                             gate bounces most of their targets to login. Mounted a frame
                             after the board, like the rest of the drawer's reads; the
                             placeholder holds its place so the timer never jumps. */}
-                          {isAnonymous ? null : enhancementsReady ? (
-                            <PlayDrawerActionsMenu
-                              climb={displayedClimb}
-                              boardConfig={renderBoardConfig}
-                              currentUserId={currentUserId}
-                              isAuthenticated={isAuthenticated}
-                              hidden={actionBarLayout.hidden}
-                              boardMismatch={showBoardMismatch}
-                              isFavorited={isFavorited}
-                              onToggleFavorite={handleToggleFavoriteFromMenu}
-                              onTick={handleOpenTickForClimb}
-                              onAddBetaVideo={handleOpenAddBetaVideoForClimb}
-                              onReportClimb={handleOpenReportClimbForClimb}
-                              onSelectPlaylist={handleOpenAddToPlaylistForClimb}
-                              onOpenQueue={onOpenQueue}
-                              onOpenViewOptions={handleOpenSectionsSettings}
-                              dismissPlayerAndWait={dismissPlayerAndWait}
-                            />
-                          ) : (
-                            <View style={styles.menuPlaceholder} />
+                          {isAnonymous ? null : (
+                            <View style={styles.menuSlot}>
+                              {enhancementsReady ? (
+                                <PlayDrawerActionsMenu
+                                  climb={displayedClimb}
+                                  boardConfig={renderBoardConfig}
+                                  currentUserId={currentUserId}
+                                  isAuthenticated={isAuthenticated}
+                                  hidden={actionBarLayout.hidden}
+                                  boardMismatch={showBoardMismatch}
+                                  isFavorited={isFavorited}
+                                  onToggleFavorite={handleToggleFavoriteFromMenu}
+                                  onTick={handleOpenTickForClimb}
+                                  onAddBetaVideo={handleOpenAddBetaVideoForClimb}
+                                  onReportClimb={handleOpenReportClimbForClimb}
+                                  onSelectPlaylist={handleOpenAddToPlaylistForClimb}
+                                  onOpenQueue={onOpenQueue}
+                                  onOpenViewOptions={handleOpenSectionsSettings}
+                                  dismissPlayerAndWait={dismissPlayerAndWait}
+                                />
+                              ) : (
+                                <View style={styles.menuPlaceholder} />
+                              )}
+                            </View>
                           )}
                         </View>
                       </View>
@@ -1955,11 +1959,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: spacing[2],
   },
+  // Collapses to nothing while no timer is armed, so ⋯ keeps the chevron's inset.
   restTimerSlot: {
     flexShrink: 1,
     minWidth: 0,
+  },
+  // The gap sits on ⋯'s side, not the cluster's: a `gap` would still space out
+  // the empty timer slot and push ⋯ in from the edge.
+  menuSlot: {
+    marginLeft: spacing[2],
   },
   // ⋯'s 44pt circle, held while the menu waits for its first frame.
   menuPlaceholder: {
