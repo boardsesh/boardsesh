@@ -153,6 +153,8 @@ If neither the tick nor `board_climb_stats` has a difficulty (e.g. a brand-new u
 
 Same rules as difficulty, with one simplification: there's no community-wide "consensus star rating" to fall back to (`board_climb_stats.qualityAverage` exists but isn't used as a substitute for the user's rating). A null quality on an ascent simply means "user didn't rate this one". Attempts always have null quality by convention.
 
+The one fallback is the climber's OWN synced rating: a Kilter tick carries no per-tick stars, but kilter-sync writes the climber's rating for that (climb, angle) to `board_climb_ratings`. Read paths expose `effectiveQuality = COALESCE(quality, rating)` (`effectiveQualityExpr`, joined through `boardClimbRatingsJoinCondition`, detached ratings excluded) and leave `quality` raw for edit flows. The logbook's minimum-stars filter (`AscentFeedInput.minQuality`) compares that same effective value through `effectiveQualityAtLeastCondition`, an EXISTS on the same match, so the count queries apply it without joining `board_climb_ratings`.
+
 ---
 
 ## Write Paths

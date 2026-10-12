@@ -610,6 +610,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.favorites': 'answers which of the uuids the CALLER sent they have favourited; nothing else',
   'Query.userTickCountsByBoard': "one count per board type, and the count is the climber's own",
   'Query.userClimbPercentile': 'a percentile over one climber; no climb is named',
+  'Query.userLoggedSetters':
+    "setter usernames and tick counts over the climber's own logbook, never a climb name, frames or layout; it filters with the userAscentsFeed builders, and tick-queries.test.ts pins the private-climb and private-tick cases",
   'Query.userAscentCaptionMatches': "matches a caption against the climber's own ascents, and the sweep sends none",
   'Query.followers': 'the follow graph, users only',
   'Query.following': 'the follow graph, users only',

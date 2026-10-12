@@ -1989,9 +1989,9 @@ input AscentFeedInput {
   secondarySortBy: String
   "Optional secondary sort order"
   secondarySortOrder: String
-  "Optional start date filter (ISO date string, inclusive)"
+  "Optional start of the date range, inclusive. Either a calendar day (YYYY-MM-DD, from that UTC day's midnight) or an ISO 8601 instant with Z or an offset (from exactly that instant)."
   fromDate: String
-  "Optional end date filter (ISO date string, inclusive)"
+  "Optional end of the date range. Either a calendar day (YYYY-MM-DD, through the end of that UTC day, inclusive) or an ISO 8601 instant with Z or an offset (EXCLUSIVE: send the start of the day after the last local day you want)."
   toDate: String
 }
 

@@ -1251,7 +1251,7 @@ is the reference condition above keyed on the tick, with the author exemption
 
 | Reader | A log on a hard-deleted spray climb |
 | --- | --- |
-| `userTicks`, `userAscentsFeed`, `userGroupedAscentsFeed` | the climber who logged it only; rows, totals and groups |
+| `userTicks`, `userAscentsFeed`, `userGroupedAscentsFeed`, `userLoggedSetters` | the climber who logged it only; rows, totals, groups and setter counts |
 | `globalAscentsFeed` | the climber who logged it only |
 | `followingAscentsFeed` | nobody: the feed lists the people a viewer follows, never the viewer |
 | `sessionDetail` | the climber who logged it only; a session of nothing else answers null to everybody else |

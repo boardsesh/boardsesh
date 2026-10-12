@@ -1,8 +1,27 @@
-import { eq, ne, and, or, desc, inArray, isNull, sql, count, ilike, gte, lte } from 'drizzle-orm';
+import {
+  eq,
+  ne,
+  and,
+  or,
+  asc,
+  desc,
+  inArray,
+  isNull,
+  isNotNull,
+  sql,
+  count,
+  ilike,
+  gte,
+  lt,
+  lte,
+  type SQL,
+} from 'drizzle-orm';
 import {
   type ConnectionContext,
   type BoardName,
+  type LoggedSetter,
   type RenderBoardConfig,
+  type UserLoggedSettersInput,
   SUPPORTED_BOARDS,
   matchClimbsToCaption,
   extractQuotedClimbNames,
@@ -37,6 +56,7 @@ import {
   boardseshGradeTickJoin,
   boardClimbRatingsJoinCondition,
   effectiveQualityExpr,
+  effectiveQualityAtLeastCondition,
 } from '../shared/sql-expressions';
 
 // The `board_climb_grades` join shape lives in ONE place (boardseshGradeTickJoin).
@@ -47,7 +67,14 @@ const BOARDSESH_GRADE_TICK_JOIN = boardseshGradeTickJoin({
   aliases: 'board_climb_aliases',
 });
 import type { z } from 'zod';
-import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
+import {
+  GetTicksInputSchema,
+  BoardNameSchema,
+  AscentFeedInputSchema,
+  UserLoggedSettersInputSchema,
+  isCalendarDayBound,
+} from '../../../validation/schemas';
+import { escapeLikePattern } from '../../../utils/like-pattern';
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { extractInstagramHandle } from '../beta-videos/queries';
 import { selectedFieldNames, isFieldSelected } from '../shared/selected-fields';
@@ -67,6 +94,28 @@ END`;
 // in range. See docs/ascents-and-attempts.md.
 const effectiveDifficultyExpr = sql<number>`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`;
 
+// climbed_at holds UTC wall-clock time with no zone. Casting an instant's text
+// straight to `timestamp` would silently drop its offset, so it goes through
+// timestamptz and back to UTC wall-clock time.
+const utcWallClock = (instant: string) => sql`((${instant})::timestamptz AT TIME ZONE 'UTC')`;
+
+// fromDate is inclusive either way: a calendar day from its UTC midnight, an
+// instant from that instant.
+function climbedAtFromCondition(fromDate: string): SQL {
+  return isCalendarDayBound(fromDate)
+    ? gte(dbSchema.boardseshTicks.climbedAt, fromDate)
+    : gte(dbSchema.boardseshTicks.climbedAt, utcWallClock(fromDate));
+}
+
+// A calendar-day toDate takes in that whole UTC day, unchanged for older
+// clients. An instant is the EXCLUSIVE end: the start of the day after the last
+// local day the client wants.
+function climbedAtToCondition(toDate: string): SQL {
+  return isCalendarDayBound(toDate)
+    ? lte(dbSchema.boardseshTicks.climbedAt, toDate + 'T23:59:59.999Z')
+    : lt(dbSchema.boardseshTicks.climbedAt, utcWallClock(toDate));
+}
+
 // The validated AscentFeedInput both feeds filter on — inferred from the zod
 // schema so a new filter field can't silently diverge from validation.
 type AscentFeedFilterInput = z.infer<typeof AscentFeedInputSchema>;
@@ -74,7 +123,9 @@ type AscentFeedFilterInput = z.infer<typeof AscentFeedInputSchema>;
 /**
  * WHERE conditions over the ticks table (+ stats/consensus joins for grade and
  * benchmark filters) shared by userAscentsFeed and userGroupedAscentsFeed so
- * the two feeds can never disagree about what a filter means.
+ * the two feeds can never disagree about what a filter means. The stars filter
+ * needs no join of its own (see effectiveQualityAtLeastCondition), so the count
+ * queries, which never join board_climb_ratings, apply it unchanged.
  */
 function buildAscentTickConditions(validated: AscentFeedFilterInput, userId: string) {
   const legacyStatus = validated.status;
@@ -102,8 +153,11 @@ function buildAscentTickConditions(validated: AscentFeedFilterInput, userId: str
     ...(validated.maxDifficulty !== undefined ? [lte(effectiveDifficultyExpr, validated.maxDifficulty)] : []),
     ...(validated.minAngle !== undefined ? [gte(dbSchema.boardseshTicks.angle, validated.minAngle)] : []),
     ...(validated.maxAngle !== undefined ? [lte(dbSchema.boardseshTicks.angle, validated.maxAngle)] : []),
-    ...(validated.fromDate ? [gte(dbSchema.boardseshTicks.climbedAt, validated.fromDate)] : []),
-    ...(validated.toDate ? [lte(dbSchema.boardseshTicks.climbedAt, validated.toDate + 'T23:59:59.999Z')] : []),
+    ...(validated.fromDate ? [climbedAtFromCondition(validated.fromDate)] : []),
+    ...(validated.toDate ? [climbedAtToCondition(validated.toDate)] : []),
+    // The stars the row shows as `effectiveQuality`: the tick's own, else the
+    // climber's synced rating.
+    ...(validated.minQuality !== undefined ? [effectiveQualityAtLeastCondition(validated.minQuality)] : []),
   ];
 
   if (statusMode === 'attempt') {
@@ -142,6 +196,10 @@ function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUser
     sprayTickClimbExistsCondition(viewerUserId),
     ...(validated.layoutIds && validated.layoutIds.length > 0
       ? [inArray(dbSchema.boardClimbs.layoutId, validated.layoutIds)]
+      : []),
+    // The canonical climb's setter, the same column the row shows as setterUsername.
+    ...(validated.setterUsernames && validated.setterUsernames.length > 0
+      ? [inArray(dbSchema.boardClimbs.setterUsername, validated.setterUsernames)]
       : []),
     // The same pattern climb search uses, so a name that finds a climb also finds
     // it in the logbook: apostrophe/quote and dash variants fold, the user's own
@@ -603,6 +661,8 @@ export const tickQueries = {
         minAngle?: number;
         maxAngle?: number;
         benchmarkOnly?: boolean;
+        minQuality?: number;
+        setterUsernames?: string[];
         fromDate?: string;
         toDate?: string;
       };
@@ -903,6 +963,69 @@ export const tickQueries = {
       totalCount,
       hasMore: offset + items.length < totalCount,
     };
+  },
+
+  /**
+   * Setters of the climbs a user has logged, most-logged first: the logbook's
+   * setter filter picker. Public, like userAscentsFeed, and filtered by the
+   * feed's own condition builders over the same board scope, so a setter is
+   * listed only when the viewer could find one of their climbs in the feed. A
+   * private tick, a draft or unlisted climb, or a private spray wall names no
+   * setter to a viewer who cannot see it, and the counts match the feed's
+   * totalCount for that setter (attempts included, Aurora twins counted once).
+   */
+  userLoggedSetters: async (
+    _: unknown,
+    { userId, input }: { userId: string; input?: UserLoggedSettersInput },
+    ctx?: ConnectionContext,
+  ): Promise<LoggedSetter[]> => {
+    const validatedInput = validateInput(UserLoggedSettersInputSchema, input || {}, 'input');
+    // Every other feed filter stays at its default (both statuses, no grade,
+    // date or stars), so these are the feed's unfiltered conditions for the scope.
+    const feedScope = AscentFeedInputSchema.parse({
+      boardTypes: validatedInput.boardTypes,
+      layoutIds: validatedInput.layoutIds,
+    });
+    const setterUsername = dbSchema.boardClimbs.setterUsername;
+    const tickCount = count();
+    const search = validatedInput.search;
+
+    const rows = await db
+      .select({ setterUsername, tickCount })
+      .from(dbSchema.boardseshTicks)
+      // The feed's alias resolution, so a tick on a deduped-away uuid counts for
+      // the canonical climb's setter, as its row shows. An inner join: a tick
+      // with no climb row has no setter to list.
+      .leftJoin(
+        dbSchema.boardClimbAliases,
+        and(
+          eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
+          eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbAliases.boardType),
+        ),
+      )
+      .innerJoin(
+        dbSchema.boardClimbs,
+        and(
+          sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
+          eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
+        ),
+      )
+      .where(
+        and(
+          ...buildAscentTickConditions(feedScope, userId),
+          ...buildAscentClimbConditions(feedScope, ctx?.userId),
+          isNotNull(setterUsername),
+          ne(setterUsername, ''),
+          search ? ilike(setterUsername, `%${escapeLikePattern(search)}%`) : undefined,
+        ),
+      )
+      .groupBy(setterUsername)
+      .orderBy(desc(tickCount), asc(setterUsername))
+      .limit(validatedInput.limit);
+
+    return rows.flatMap((row) =>
+      row.setterUsername ? [{ setterUsername: row.setterUsername, tickCount: Number(row.tickCount) }] : [],
+    );
   },
 
   /**

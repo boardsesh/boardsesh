@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { tickQueries } from '../graphql/resolvers/ticks/queries';
 import { parse, type FieldNode, type GraphQLResolveInfo, type OperationDefinitionNode } from 'graphql';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 /**
  * Integration tests for the tick query resolvers, covering the three behavior
@@ -66,6 +67,25 @@ const callUserAscentsFeed = (userId: string, input: Record<string, unknown>) =>
 
 const callUserGroupedAscentsFeed = (userId: string, input: Record<string, unknown>) =>
   tickQueries.userGroupedAscentsFeed(undefined, { userId, input }) as Promise<GroupedResult>;
+
+// A signed-in reader, or none (null) for an anonymous one.
+const viewerContext = (viewerId: string | null): ConnectionContext | undefined =>
+  viewerId
+    ? {
+        connectionId: 'tick-queries-test-conn',
+        isAuthenticated: true,
+        userId: viewerId,
+        sessionId: undefined,
+        controllerId: undefined,
+        controllerApiKey: undefined,
+      }
+    : undefined;
+
+const callUserAscentsFeedAs = (userId: string, input: Record<string, unknown>, viewerId: string | null) =>
+  tickQueries.userAscentsFeed(undefined, { userId, input }, viewerContext(viewerId)) as Promise<FeedResult>;
+
+const callUserLoggedSetters = (userId: string, input: Record<string, unknown> = {}, viewerId: string | null = null) =>
+  tickQueries.userLoggedSetters(undefined, { userId, input }, viewerContext(viewerId));
 
 const callUserAscentCaptionMatches = (userId: string, caption: string) =>
   tickQueries.userAscentCaptionMatches(undefined, { userId, caption }) as Promise<
@@ -148,12 +168,23 @@ const insertUser = async (id: string) => {
   `);
 };
 
-const insertClimb = async (uuid: string, name: string, options: { boardType?: string; layoutId?: number } = {}) => {
+const insertClimb = async (
+  uuid: string,
+  name: string,
+  options: {
+    boardType?: string;
+    layoutId?: number;
+    setterUsername?: string | null;
+    isDraft?: boolean;
+    authorId?: string;
+  } = {},
+) => {
   const boardType = options.boardType ?? 'kilter';
   const layoutId = options.layoutId ?? 1;
+  const setterUsername = options.setterUsername === undefined ? 'test-setter' : options.setterUsername;
   await db.execute(sql`
-    INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at)
-    VALUES (${uuid}, ${boardType}, ${layoutId}, 'test-setter', ${name}, 'p1r1', 1, false, true, 0, 100, 0, 150, '2024-01-01')
+    INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, user_id, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at)
+    VALUES (${uuid}, ${boardType}, ${layoutId}, ${setterUsername}, ${options.authorId ?? null}, ${name}, 'p1r1', 1, ${options.isDraft ?? false}, true, 0, 100, 0, 150, '2024-01-01')
     ON CONFLICT (uuid) DO NOTHING
   `);
 };
@@ -169,14 +200,15 @@ const insertTick = async (params: {
   difficulty?: number;
   angle?: number;
   boardId?: number;
+  quality?: number;
 }) => {
   const userId = params.userId ?? TEST_USER_ID;
   const attemptCount = params.attemptCount ?? 1;
   const boardType = params.boardType ?? 'kilter';
   const angle = params.angle ?? 40;
   await db.execute(sql`
-    INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, difficulty, climbed_at, board_id)
-    VALUES (${params.uuid}, ${userId}, ${boardType}, ${params.climbUuid}, ${angle}, ${params.status}, ${attemptCount}, ${params.difficulty ?? null}, ${params.climbedAt}, ${params.boardId ?? null})
+    INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, difficulty, quality, climbed_at, board_id)
+    VALUES (${params.uuid}, ${userId}, ${boardType}, ${params.climbUuid}, ${angle}, ${params.status}, ${attemptCount}, ${params.difficulty ?? null}, ${params.quality ?? null}, ${params.climbedAt}, ${params.boardId ?? null})
   `);
 };
 
@@ -290,6 +322,7 @@ const insertClimbRating = async (params: {
 
 const cleanup = async () => {
   await db.execute(sql`DELETE FROM user_climb_percentiles WHERE user_id IN (${TEST_USER_ID}, ${OTHER_USER_ID})`);
+  await db.execute(sql`DELETE FROM content_privacy WHERE owner_id IN (${TEST_USER_ID}, ${OTHER_USER_ID})`);
   await db.execute(sql`DELETE FROM board_climb_ratings WHERE user_id IN (${TEST_USER_ID}, ${OTHER_USER_ID})`);
   await db.execute(sql`DELETE FROM board_beta_links WHERE climb_uuid LIKE ${CLIMB_PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id IN (${TEST_USER_ID}, ${OTHER_USER_ID})`);
@@ -1903,6 +1936,391 @@ describe('tickQueries — behavior fixes', () => {
         | (Group & { bestQuality: number | null })
         | undefined;
       expect(group?.bestQuality).toBe(3);
+    });
+  });
+  // The logbook's stars and setter filters (#6363). Both are built once in
+  // buildAscentTickConditions / buildAscentClimbConditions, so the flat feed, its
+  // totalCount, the grouped feed and its totalCount must all agree.
+  describe('logbook stars and setter filters', () => {
+    type FilteredRow = { uuid: string; setterUsername: string | null; effectiveQuality: number | null };
+    const flatRows = (result: FeedResult) => result.items as unknown as FilteredRow[];
+    const groupedTickUuids = (result: GroupedResult) =>
+      result.groups.flatMap((group) => group.items.map((item) => item.uuid)).sort();
+
+    const seedStars = async () => {
+      const climbs = ['own5', 'own2', 'rated4', 'rated3', 'detached', 'unrated'].map(
+        (key) => `${CLIMB_PREFIX}stars-${key}`,
+      );
+      for (const climbUuid of climbs) await insertClimb(climbUuid, `Stars ${climbUuid}`);
+      const [own5, own2, rated4, rated3, detached, unrated] = climbs;
+      // Each on its own day, so every tick is its own group in the grouped feed.
+      await insertTick({
+        uuid: 'stars-own5',
+        climbUuid: own5,
+        climbedAt: '2026-04-01 10:00:00',
+        status: 'send',
+        quality: 5,
+      });
+      // Own stars win over a higher synced rating, as the row shows them.
+      await insertTick({
+        uuid: 'stars-own2',
+        climbUuid: own2,
+        climbedAt: '2026-04-02 10:00:00',
+        status: 'send',
+        quality: 2,
+      });
+      await insertClimbRating({ climbUuid: own2, rating: 5 });
+      await insertTick({ uuid: 'stars-rated4', climbUuid: rated4, climbedAt: '2026-04-03 10:00:00', status: 'send' });
+      await insertClimbRating({ climbUuid: rated4, rating: 4 });
+      await insertTick({ uuid: 'stars-rated3', climbUuid: rated3, climbedAt: '2026-04-04 10:00:00', status: 'send' });
+      await insertClimbRating({ climbUuid: rated3, rating: 3 });
+      // A rating deleted on Kilter stops counting, as it stops showing.
+      await insertTick({
+        uuid: 'stars-detached',
+        climbUuid: detached,
+        climbedAt: '2026-04-05 10:00:00',
+        status: 'send',
+      });
+      await insertClimbRating({ climbUuid: detached, rating: 5 });
+      await db.execute(sql`
+        UPDATE board_climb_ratings SET kilter_id = NULL, kilter_detached_at = now()
+        WHERE user_id = ${TEST_USER_ID} AND climb_uuid = ${detached}
+      `);
+      await insertTick({ uuid: 'stars-unrated', climbUuid: unrated, climbedAt: '2026-04-06 10:00:00', status: 'send' });
+      // Another climber's 5 on the same climb is not this climber's rating.
+      await insertClimbRating({ climbUuid: unrated, rating: 5, userId: OTHER_USER_ID });
+    };
+
+    it('minQuality keeps exactly the rows whose shown stars reach it, in both feeds and their totals', async () => {
+      await seedStars();
+
+      const unfiltered = flatRows(await callUserAscentsFeed(TEST_USER_ID, { limit: 50 }));
+      for (const minQuality of [1, 3, 4, 5]) {
+        // The oracle is the value the row displays, not a re-derivation of it.
+        const expected = unfiltered
+          .filter((row) => row.effectiveQuality !== null && row.effectiveQuality >= minQuality)
+          .map((row) => row.uuid)
+          .sort();
+        const flat = await callUserAscentsFeed(TEST_USER_ID, { limit: 50, minQuality });
+        const grouped = await callUserGroupedAscentsFeed(TEST_USER_ID, { limit: 50, minQuality });
+        expect(
+          flatRows(flat)
+            .map((row) => row.uuid)
+            .sort(),
+          `flat ≥${minQuality}`,
+        ).toEqual(expected);
+        expect(flat.totalCount, `flat total ≥${minQuality}`).toBe(expected.length);
+        expect(groupedTickUuids(grouped), `grouped ≥${minQuality}`).toEqual(expected);
+        expect(grouped.totalCount, `grouped total ≥${minQuality}`).toBe(expected.length);
+      }
+
+      const fourPlus = await callUserAscentsFeed(TEST_USER_ID, { limit: 50, minQuality: 4 });
+      expect(
+        flatRows(fourPlus)
+          .map((row) => row.uuid)
+          .sort(),
+      ).toEqual(['stars-own5', 'stars-rated4']);
+      const three = await callUserAscentsFeed(TEST_USER_ID, { limit: 50, minQuality: 3 });
+      expect(
+        flatRows(three)
+          .map((row) => row.uuid)
+          .sort(),
+      ).toEqual(['stars-own5', 'stars-rated3', 'stars-rated4']);
+    });
+
+    const seedSetters = async () => {
+      const alice1 = `${CLIMB_PREFIX}setter-alice-1`;
+      const alice2 = `${CLIMB_PREFIX}setter-alice-2`;
+      const bob = `${CLIMB_PREFIX}setter-bob`;
+      const carol = `${CLIMB_PREFIX}setter-carol`;
+      const nobody = `${CLIMB_PREFIX}setter-null`;
+      const blank = `${CLIMB_PREFIX}setter-blank`;
+      const aliasOfAlice = `${CLIMB_PREFIX}setter-alice-merged-away`;
+      await insertClimb(alice1, 'Alice One', { setterUsername: 'alice' });
+      await insertClimb(alice2, 'Alice Two', { setterUsername: 'alice' });
+      await insertClimb(bob, 'Bob One', { setterUsername: 'bob' });
+      await insertClimb(carol, 'Carol One', { setterUsername: 'carol' });
+      await insertClimb(nobody, 'No Setter', { setterUsername: null });
+      await insertClimb(blank, 'Blank Setter', { setterUsername: '' });
+      // A tick on a deduped-away uuid belongs to its canonical climb's setter.
+      await insertAlias({ aliasUuid: aliasOfAlice, canonicalUuid: alice1 });
+      await insertTick({ uuid: 'setter-a1', climbUuid: alice1, climbedAt: '2026-03-01 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'setter-a2', climbUuid: alice2, climbedAt: '2026-03-02 10:00:00', status: 'attempt' });
+      await insertTick({
+        uuid: 'setter-a3',
+        climbUuid: aliasOfAlice,
+        climbedAt: '2026-03-03 10:00:00',
+        status: 'flash',
+      });
+      await insertTick({ uuid: 'setter-b1', climbUuid: bob, climbedAt: '2026-03-04 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'setter-b2', climbUuid: bob, climbedAt: '2026-03-05 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'setter-b3', climbUuid: bob, climbedAt: '2026-03-06 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'setter-c1', climbUuid: carol, climbedAt: '2026-03-07 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'setter-n1', climbUuid: nobody, climbedAt: '2026-03-08 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'setter-e1', climbUuid: blank, climbedAt: '2026-03-09 10:00:00', status: 'send' });
+      // Another climber's ascent of Carol's climb is not in this logbook.
+      await insertTick({
+        uuid: 'setter-other',
+        userId: OTHER_USER_ID,
+        climbUuid: carol,
+        climbedAt: '2026-03-10 10:00:00',
+        status: 'send',
+      });
+    };
+
+    it('setterUsernames narrows to those setters, single and multiple, in both feeds and their totals', async () => {
+      await seedSetters();
+
+      const cases: Array<{ setterUsernames: string[]; expected: string[] }> = [
+        { setterUsernames: ['alice'], expected: ['setter-a1', 'setter-a2', 'setter-a3'] },
+        {
+          setterUsernames: ['alice', 'carol'],
+          expected: ['setter-a1', 'setter-a2', 'setter-a3', 'setter-c1'],
+        },
+        // Exact usernames: no partial or case-folded match.
+        { setterUsernames: ['ali', 'Bob'], expected: [] },
+      ];
+      for (const { setterUsernames, expected } of cases) {
+        const label = setterUsernames.join(',');
+        const flat = await callUserAscentsFeed(TEST_USER_ID, { limit: 50, setterUsernames });
+        const grouped = await callUserGroupedAscentsFeed(TEST_USER_ID, { limit: 50, setterUsernames });
+        expect(
+          flatRows(flat)
+            .map((row) => row.uuid)
+            .sort(),
+          label,
+        ).toEqual(expected);
+        expect(flat.totalCount, label).toBe(expected.length);
+        for (const row of flatRows(flat)) expect(setterUsernames, label).toContain(row.setterUsername);
+        expect(groupedTickUuids(grouped), label).toEqual(expected);
+        expect(grouped.totalCount, label).toBe(expected.length);
+      }
+
+      // An empty list is no filter, like layoutIds.
+      const unfiltered = await callUserAscentsFeed(TEST_USER_ID, { limit: 50, setterUsernames: [] });
+      expect(unfiltered.totalCount).toBe(9);
+    });
+
+    it('rejects out-of-range stars and oversized setter lists', async () => {
+      await expect(callUserAscentsFeed(TEST_USER_ID, { minQuality: 0 })).rejects.toThrow();
+      await expect(callUserAscentsFeed(TEST_USER_ID, { minQuality: 6 })).rejects.toThrow();
+      await expect(callUserAscentsFeed(TEST_USER_ID, { setterUsernames: [''] })).rejects.toThrow();
+      await expect(
+        callUserAscentsFeed(TEST_USER_ID, { setterUsernames: Array.from({ length: 21 }, (_, index) => `s${index}`) }),
+      ).rejects.toThrow();
+      await expect(callUserLoggedSetters(TEST_USER_ID, { limit: 201 })).rejects.toThrow();
+      await expect(callUserLoggedSetters(TEST_USER_ID, { search: 'x'.repeat(101) })).rejects.toThrow();
+    });
+
+    it('userLoggedSetters lists setters most-logged first, name breaking ties, without blank setters', async () => {
+      await seedSetters();
+
+      // bob 3, alice 3 (one through an alias), carol 1. The null and '' setters are left out.
+      const setters = await callUserLoggedSetters(TEST_USER_ID);
+      expect(setters).toEqual([
+        { setterUsername: 'alice', tickCount: 3 },
+        { setterUsername: 'bob', tickCount: 3 },
+        { setterUsername: 'carol', tickCount: 1 },
+      ]);
+
+      // Each count is the feed's own total for that setter.
+      for (const { setterUsername, tickCount } of setters) {
+        const feed = await callUserAscentsFeed(TEST_USER_ID, { limit: 50, setterUsernames: [setterUsername] });
+        expect(feed.totalCount, setterUsername).toBe(tickCount);
+      }
+
+      expect(await callUserLoggedSetters(TEST_USER_ID, { limit: 1 })).toEqual([
+        { setterUsername: 'alice', tickCount: 3 },
+      ]);
+      // Case-insensitive partial match, trimmed.
+      expect((await callUserLoggedSetters(TEST_USER_ID, { search: '  AR ' })).map((row) => row.setterUsername)).toEqual(
+        ['carol'],
+      );
+      expect(await callUserLoggedSetters(TEST_USER_ID, { search: 'zz' })).toEqual([]);
+      expect(await callUserLoggedSetters(OTHER_USER_ID)).toEqual([{ setterUsername: 'carol', tickCount: 1 }]);
+    });
+
+    it('userLoggedSetters treats % and _ in the search as literal characters', async () => {
+      const underscored = `${CLIMB_PREFIX}setter-underscore`;
+      const lookalike = `${CLIMB_PREFIX}setter-lookalike`;
+      await insertClimb(underscored, 'Underscored', { setterUsername: 'a_b' });
+      await insertClimb(lookalike, 'Lookalike', { setterUsername: 'axb' });
+      await insertTick({ uuid: 'setter-u1', climbUuid: underscored, climbedAt: '2026-03-11 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'setter-l1', climbUuid: lookalike, climbedAt: '2026-03-12 10:00:00', status: 'send' });
+
+      expect((await callUserLoggedSetters(TEST_USER_ID, { search: 'a_b' })).map((row) => row.setterUsername)).toEqual([
+        'a_b',
+      ]);
+      expect(await callUserLoggedSetters(TEST_USER_ID, { search: '%' })).toEqual([]);
+    });
+
+    it('userLoggedSetters keeps to the board scope it is given', async () => {
+      const kilterLayout1 = `${CLIMB_PREFIX}setter-scope-k1`;
+      const kilterLayout8 = `${CLIMB_PREFIX}setter-scope-k8`;
+      const tension = `${CLIMB_PREFIX}setter-scope-tension`;
+      await insertClimb(kilterLayout1, 'Scope K1', { setterUsername: 'kilter-one' });
+      await insertClimb(kilterLayout8, 'Scope K8', { setterUsername: 'kilter-eight', layoutId: 8 });
+      await insertClimb(tension, 'Scope T', { setterUsername: 'tension-setter', boardType: 'tension', layoutId: 9 });
+      await insertTick({
+        uuid: 'scope-k1',
+        climbUuid: kilterLayout1,
+        climbedAt: '2026-03-13 10:00:00',
+        status: 'send',
+      });
+      await insertTick({
+        uuid: 'scope-k8',
+        climbUuid: kilterLayout8,
+        climbedAt: '2026-03-14 10:00:00',
+        status: 'send',
+      });
+      await insertTick({
+        uuid: 'scope-t',
+        climbUuid: tension,
+        climbedAt: '2026-03-15 10:00:00',
+        status: 'send',
+        boardType: 'tension',
+      });
+
+      const names = async (input: Record<string, unknown>) =>
+        (await callUserLoggedSetters(TEST_USER_ID, input)).map((row) => row.setterUsername);
+      expect(await names({ boardTypes: ['tension'] })).toEqual(['tension-setter']);
+      expect(await names({ boardTypes: ['kilter'] })).toEqual(['kilter-eight', 'kilter-one']);
+      expect(await names({ boardTypes: ['kilter'], layoutIds: [8] })).toEqual(['kilter-eight']);
+    });
+
+    it("userLoggedSetters never names the setter of a log or climb the viewer can't see", async () => {
+      const draft = `${CLIMB_PREFIX}setter-draft`;
+      const hiddenLog = `${CLIMB_PREFIX}setter-hidden-log`;
+      const open = `${CLIMB_PREFIX}setter-open`;
+      // The climber's own draft: their logbook keeps it, nobody else sees it.
+      await insertClimb(draft, 'Draft Climb', { setterUsername: 'drafty', isDraft: true, authorId: TEST_USER_ID });
+      await insertClimb(hiddenLog, 'Hidden Log Climb', { setterUsername: 'secretive' });
+      await insertClimb(open, 'Open Climb', { setterUsername: 'open-setter' });
+      await insertTick({ uuid: 'vis-draft', climbUuid: draft, climbedAt: '2026-03-16 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'vis-hidden', climbUuid: hiddenLog, climbedAt: '2026-03-17 10:00:00', status: 'send' });
+      await insertTick({ uuid: 'vis-open', climbUuid: open, climbedAt: '2026-03-18 10:00:00', status: 'send' });
+      // A log the climber kept to themselves.
+      await db.execute(sql`
+        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+        VALUES ('tick', 'vis-hidden', ${TEST_USER_ID}, 'only_me')
+      `);
+
+      const asOwner = await callUserLoggedSetters(TEST_USER_ID, {}, TEST_USER_ID);
+      expect(asOwner.map((row) => row.setterUsername).sort()).toEqual(['drafty', 'open-setter', 'secretive']);
+
+      for (const viewer of [OTHER_USER_ID, null]) {
+        const setters = await callUserLoggedSetters(TEST_USER_ID, {}, viewer);
+        expect(setters, `viewer ${viewer}`).toEqual([{ setterUsername: 'open-setter', tickCount: 1 }]);
+        // The feed agrees: what the list leaves out, the feed hides too.
+        const feed = await callUserAscentsFeedAs(TEST_USER_ID, { limit: 50 }, viewer);
+        expect(
+          feed.items.map((item) => item.uuid),
+          `viewer ${viewer}`,
+        ).toEqual(['vis-open']);
+      }
+    });
+  });
+  // fromDate / toDate take a UTC calendar day (the original contract) or an exact
+  // instant with a zone, so the app can filter by the climber's LOCAL day.
+  // climbed_at holds UTC wall-clock time with no zone.
+  describe('date bounds: calendar days and local-day instants', () => {
+    // UTC wall-clock times. Auckland is +13 (NZDT) and Los Angeles -7 (PDT)
+    // throughout October 2026.
+    const DATE_TICKS: Array<[string, string]> = [
+      ['date-sep30-1059', '2026-09-30 10:59:59'], // Sep 30 23:59:59 Auckland
+      ['date-sep30-1100', '2026-09-30 11:00:00'], // Oct 1 00:00 Auckland
+      ['date-sep30-1115', '2026-09-30 11:15:00'], // Oct 1 00:15 Auckland
+      ['date-oct01-0000', '2026-10-01 00:00:00'],
+      ['date-oct01-0659', '2026-10-01 06:59:59'], // Sep 30 23:59:59 Los Angeles
+      ['date-oct01-0700', '2026-10-01 07:00:00'], // Oct 1 00:00 Los Angeles
+      ['date-oct31-1059', '2026-10-31 10:59:59'], // Oct 31 23:59:59 Auckland
+      ['date-oct31-1100', '2026-10-31 11:00:00'], // Nov 1 00:00 Auckland
+    ];
+    const seedDateTicks = async () => {
+      // One climb per tick, so every tick is its own group in the grouped feed.
+      for (const [uuid, climbedAt] of DATE_TICKS) {
+        const climbUuid = `${CLIMB_PREFIX}${uuid}`;
+        await insertClimb(climbUuid, `Climb ${uuid}`);
+        await insertTick({ uuid, climbUuid, climbedAt, status: 'send' });
+      }
+    };
+
+    // Both feeds and both totals must name the same ticks.
+    const expectRange = async (input: Record<string, unknown>, expected: string[]) => {
+      const label = JSON.stringify(input);
+      const flat = await callUserAscentsFeed(TEST_USER_ID, { limit: 50, ...input });
+      const grouped = await callUserGroupedAscentsFeed(TEST_USER_ID, { limit: 50, ...input });
+      const sortedExpected = [...expected].sort();
+      expect(flat.items.map((item) => item.uuid).sort(), `flat ${label}`).toEqual(sortedExpected);
+      expect(flat.totalCount, `flat total ${label}`).toBe(expected.length);
+      expect(
+        grouped.groups.flatMap((group) => group.items.map((item) => item.uuid)).sort(),
+        `grouped ${label}`,
+      ).toEqual(sortedExpected);
+      expect(grouped.totalCount, `grouped total ${label}`).toBe(expected.length);
+    };
+
+    it('reads calendar days as whole UTC days, both ends inclusive, as before', async () => {
+      await seedDateTicks();
+      await expectRange({ fromDate: '2026-10-01', toDate: '2026-10-31' }, [
+        'date-oct01-0000',
+        'date-oct01-0659',
+        'date-oct01-0700',
+        'date-oct31-1059',
+        'date-oct31-1100',
+      ]);
+      await expectRange({ toDate: '2026-09-30' }, ['date-sep30-1059', 'date-sep30-1100', 'date-sep30-1115']);
+      await expectRange({ fromDate: '2026-09-30', toDate: '2026-09-30' }, [
+        'date-sep30-1059',
+        'date-sep30-1100',
+        'date-sep30-1115',
+      ]);
+    });
+
+    it("takes Auckland's October from local midnight to the next local midnight, either zone form", async () => {
+      await seedDateTicks();
+      const octoberInAuckland = [
+        'date-sep30-1100',
+        'date-sep30-1115',
+        'date-oct01-0000',
+        'date-oct01-0659',
+        'date-oct01-0700',
+        'date-oct31-1059',
+      ];
+      await expectRange(
+        { fromDate: '2026-10-01T00:00:00+13:00', toDate: '2026-11-01T00:00:00+13:00' },
+        octoberInAuckland,
+      );
+      await expectRange(
+        { fromDate: '2026-09-30T11:00:00.000Z', toDate: '2026-10-31T11:00:00.000Z' },
+        octoberInAuckland,
+      );
+    });
+
+    it("keeps Los Angeles' Sep 30 evening out of its October", async () => {
+      await seedDateTicks();
+      await expectRange({ fromDate: '2026-10-01T00:00:00-07:00', toDate: '2026-11-01T00:00:00-07:00' }, [
+        'date-oct01-0700',
+        'date-oct31-1059',
+        'date-oct31-1100',
+      ]);
+    });
+
+    it('treats an instant fromDate as inclusive and an instant toDate as exclusive', async () => {
+      await seedDateTicks();
+      await expectRange({ fromDate: '2026-09-30T11:00:00Z', toDate: '2026-09-30T11:15:00Z' }, ['date-sep30-1100']);
+      // Microsecond bounds are exact: one microsecond either side moves the edge.
+      await expectRange({ fromDate: '2026-09-30T11:00:00.000001Z', toDate: '2026-09-30T11:15:00.000001Z' }, [
+        'date-sep30-1115',
+      ]);
+      // A calendar day and an instant mix.
+      await expectRange({ fromDate: '2026-10-31', toDate: '2026-10-31T11:00:00Z' }, ['date-oct31-1059']);
+    });
+
+    it('refuses a zone-less date-time, an over-precise fraction, and free text', async () => {
+      await expect(callUserAscentsFeed(TEST_USER_ID, { fromDate: '2026-09-30T11:00:00' })).rejects.toThrow();
+      await expect(callUserAscentsFeed(TEST_USER_ID, { toDate: '2026-09-30T11:00:00.1234567Z' })).rejects.toThrow();
+      await expect(callUserGroupedAscentsFeed(TEST_USER_ID, { toDate: 'yesterday' })).rejects.toThrow();
     });
   });
 });

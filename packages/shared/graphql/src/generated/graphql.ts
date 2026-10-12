@@ -370,7 +370,7 @@ export type AscentFeedInput = {
   climbName?: InputMaybe<Scalars['String']['input']>;
   /** When true, only include flashes within the selected status mode */
   flashOnly?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Optional start date filter (ISO date string, inclusive) */
+  /** Optional start of the date range, inclusive. Either a calendar day (YYYY-MM-DD, from that UTC day's midnight) or an ISO 8601 instant with Z or an offset (from exactly that instant). */
   fromDate?: InputMaybe<Scalars['String']['input']>;
   /** Optional layout filters within the selected board type */
   layoutIds?: InputMaybe<Array<Scalars['Int']['input']>>;
@@ -402,7 +402,7 @@ export type AscentFeedInput = {
   status?: InputMaybe<Scalars['String']['input']>;
   /** Status mode filter: both, send, attempt */
   statusMode?: InputMaybe<Scalars['String']['input']>;
-  /** Optional end date filter (ISO date string, inclusive) */
+  /** Optional end of the date range. Either a calendar day (YYYY-MM-DD, through the end of that UTC day, inclusive) or an ISO 8601 instant with Z or an offset (EXCLUSIVE: send the start of the day after the last local day you want). */
   toDate?: InputMaybe<Scalars['String']['input']>;
 };
 

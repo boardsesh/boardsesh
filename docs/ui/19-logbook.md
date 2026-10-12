@@ -97,7 +97,8 @@ Swipeable cards with:
 **Data operations:**
 
 - `ticks` / `userTicks` -- User's tick/ascent data (used by `BoardProvider`).
-- `userAscentsFeed` / `GET_USER_ASCENTS_FEED` -- Paginated ascent feed with filters (board, grade range, status, date range, angle range, sort).
+- `userAscentsFeed` / `GET_USER_ASCENTS_FEED` -- Paginated ascent feed with filters (board, grade range, status, date range, angle range, minimum stars, setters, sort). `minQuality` (1-5) compares the stars the row shows (`effectiveQuality`: the tick's own, else the climber's synced rating); `setterUsernames` takes exact usernames, up to 20. `userGroupedAscentsFeed` takes the same filters.
+- `userLoggedSetters` / `GET_USER_LOGGED_SETTERS` -- Setters of the climbs in a user's logbook, most-logged first (`setterUsername`, `tickCount`), for the setter filter. Scoped by `boardTypes` / `layoutIds`, optional case-insensitive `search`, `limit` 1-200 (default 50). Same visibility as the feed, and each `tickCount` equals the feed's `totalCount` for that setter. Public.
 - `saveTick` -- Creates a new tick/ascent.
 - `updateTick` / `useUpdateTick` -- Updates an existing tick (quality, grade, attempts, comment).
 - `deleteTick` / `DELETE_TICK` -- Deletes a tick.

@@ -1,5 +1,6 @@
-import { sql, eq, and, isNull, type SQL } from 'drizzle-orm';
+import { sql, eq, and, or, gte, exists, isNull, type SQL } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm/alias';
+import { QueryBuilder } from 'drizzle-orm/pg-core';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 
@@ -175,17 +176,51 @@ export const boardseshConfidenceExpr = dbSchema.boardClimbGrades.confidence;
 // kilter-sync is the only writer of this table. The day an Aurora writer
 // lands, revisit it — an Aurora-origin row that adopted a kilter_id and then
 // took a Kilter REMOVE would be hidden even though its Aurora rating is live.
-export const boardClimbRatingsJoinCondition = and(
-  eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbRatings.boardType),
-  eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbRatings.climbUuid),
-  eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbRatings.angle),
-  eq(dbSchema.boardseshTicks.userId, dbSchema.boardClimbRatings.userId),
-  isNull(dbSchema.boardClimbRatings.kilterDetachedAt),
-);
+function tickRatingMatch(ratings: typeof dbSchema.boardClimbRatings): SQL {
+  return and(
+    eq(dbSchema.boardseshTicks.boardType, ratings.boardType),
+    eq(dbSchema.boardseshTicks.climbUuid, ratings.climbUuid),
+    eq(dbSchema.boardseshTicks.angle, ratings.angle),
+    eq(dbSchema.boardseshTicks.userId, ratings.userId),
+    isNull(ratings.kilterDetachedAt),
+  )!;
+}
+
+export const boardClimbRatingsJoinCondition = tickRatingMatch(dbSchema.boardClimbRatings);
 
 export const effectiveQualityExpr = sql<
   number | null
 >`COALESCE(${dbSchema.boardseshTicks.quality}, ${dbSchema.boardClimbRatings.rating})`;
+
+// Predicate construction must not depend on a database connection or its mocks.
+const predicateBuilder = new QueryBuilder();
+const minQualityRatings = aliasedTable(dbSchema.boardClimbRatings, 'min_quality_rating');
+
+/**
+ * `effectiveQualityExpr >= minQuality` as a WHERE condition that needs no
+ * ratings join, so a count query or a grouped base that never joins
+ * `board_climb_ratings` can apply it unchanged.
+ *
+ * The tick's own stars win when set; otherwise the climber's synced rating for
+ * the same (board, climb, angle) decides, through the same match as
+ * {@link boardClimbRatingsJoinCondition} (detached ratings excluded). The unique
+ * index on that key means at most one rating row, so the EXISTS is exactly the
+ * COALESCE, and it costs one probe of that index per tick without its own stars.
+ */
+export function effectiveQualityAtLeastCondition(minQuality: number): SQL {
+  return or(
+    gte(dbSchema.boardseshTicks.quality, minQuality),
+    and(
+      isNull(dbSchema.boardseshTicks.quality),
+      exists(
+        predicateBuilder
+          .select({ rating: minQualityRatings.rating })
+          .from(minQualityRatings)
+          .where(and(tickRatingMatch(minQualityRatings), gte(minQualityRatings.rating, minQuality))),
+      ),
+    ),
+  )!;
+}
 
 /**
  * Number of non-deleted comments targeting each tick, as a correlated
