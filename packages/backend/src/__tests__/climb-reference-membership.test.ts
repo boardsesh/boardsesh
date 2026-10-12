@@ -6,7 +6,7 @@
 // everyone has to get it back, with its stats and grades.
 //
 // The first half reads what `trg_board_climbs_reference_membership` (migration
-// 0268_climb_reference_membership) writes. The second half runs the offline engine's real `pullSync`
+// 0270_climb_reference_membership) writes. The second half runs the offline engine's real `pullSync`
 // against the real resolvers, one SQLite database per device, and reads what
 // each device ends up holding.
 

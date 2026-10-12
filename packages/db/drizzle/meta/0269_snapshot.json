@@ -1,5 +1,5 @@
 {
-  "id": "8a46d4e3-e9a3-44d5-836c-d5e342e4d260",
+  "id": "aced856a-6f25-4401-b051-acc7defe34d9",
   "prevId": "be9ff25b-946b-4acc-b21d-77135a48bdee",
   "version": "7",
   "dialect": "postgresql",
@@ -13931,19 +13931,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "stream_at": {
-          "name": "stream_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_membership_withdrawal": {
-          "name": "is_membership_withdrawal",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -13981,55 +13968,6 @@
               "expression": "deleted_at",
               "isExpression": false,
               "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"sync_deletions\".\"user_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sync_deletions_user_stream_idx": {
-          "name": "sync_deletions_user_stream_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(\"stream_at\", \"deleted_at\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sync_deletions_null_stream_idx": {
-          "name": "sync_deletions_null_stream_idx",
-          "columns": [
-            {
-              "expression": "COALESCE(\"stream_at\", \"deleted_at\")",
-              "asc": true,
-              "isExpression": true,
               "nulls": "last"
             },
             {
@@ -17046,7 +16984,8 @@
         "new_climbs_synced",
         "gym_claim_approved",
         "proposal_on_your_climb",
-        "spray_wall_detection_completed"
+        "spray_wall_detection_completed",
+        "follow_request"
       ]
     },
     "public.feed_item_type": {

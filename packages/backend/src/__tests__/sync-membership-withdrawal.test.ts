@@ -82,7 +82,7 @@ describe('membership withdrawals retain only rows this viewer can currently sync
   // the trigger that flags a withdrawal comes one release later, once every
   // backend serving sync filters flagged markers. Until then a withdrawal is an
   // ordinary marker, stamped one second before the new row
-  // (0268_climb_reference_membership),
+  // (0270_climb_reference_membership),
   // which an older backend delivers safely.
   it('leaves the real membership trigger and a later hard delete both unflagged in this release', async () => {
     await climb('withdrawal-classification', OTHER);
