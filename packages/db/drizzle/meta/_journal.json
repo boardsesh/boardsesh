@@ -1863,6 +1863,13 @@
       "when": 1791752629828,
       "tag": "0265_privacy_reconcile_tick_tombstones",
       "breakpoints": true
+    },
+    {
+      "idx": 266,
+      "version": "7",
+      "when": 1791787434206,
+      "tag": "0266_protected_sync_index",
+      "breakpoints": true
     }
   ]
 }

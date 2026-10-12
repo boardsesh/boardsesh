@@ -81,7 +81,7 @@ const privacySchema = readFileSync(
 // migration so the plan tests run against the predicate production has. It
 // names `is_boardsesh_authored`, so it installs after the privacy schema.
 const protectedSyncIndexSchema = readFileSync(
-  new URL('../../../db/drizzle/0265_protected_sync_index.sql', import.meta.url),
+  new URL('../../../db/drizzle/0266_protected_sync_index.sql', import.meta.url),
   'utf8',
 );
 
