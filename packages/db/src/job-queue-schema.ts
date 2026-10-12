@@ -91,9 +91,10 @@ export const POSTHOG_PERSON_DELETION_QUEUE = 'posthog-person-deletion';
  * before retry n, so 60 to 120 s, then 2 to 4 min, ... then 6 h. All twelve
  * take 26.5 to 32.5 hours.
  *
- * A job (the account id, a reason and a pass, nothing else) waits up to 14
- * days past its start time while queued or between retries (`retentionSeconds`,
- * stated here). The backend registers no worker until it holds the erasure
+ * A job (the account id, a reason, a pass and the anonymous ids discovered for
+ * it, nothing else) waits up to 14 days past its start time while queued or
+ * between retries (`retentionSeconds`, stated here). Each pass is two jobs: a
+ * discovery and the delete step it queues. The backend registers no worker until it holds the erasure
  * key, so 14 days is how long a missing key can go unnoticed before jobs are
  * lost. A job is kept 7 days after it completes or fails (`deleteAfterSeconds`)
  * so an operator can retry a failed erasure by hand.

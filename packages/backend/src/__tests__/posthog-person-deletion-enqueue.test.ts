@@ -15,6 +15,7 @@ import { getJobQueue, requireJobQueue, startJobQueue, stopJobQueue, stopJobQueue
 import {
   FIRST_PASS_DELAY_SECONDS,
   LATE_PASS_DELAY_SECONDS,
+  type PosthogPersonDeletionJob,
   enqueuePosthogPersonDeletion,
   startPosthogPersonDeletion,
 } from '../services/analytics/posthog-person-deletion';
@@ -234,38 +235,69 @@ describe('the erasure worker', () => {
     return row;
   }
 
-  /** Send one job due now and wait until the worker has settled it. */
-  async function workOne(distinctId: string): Promise<JobState> {
-    const jobId = await requireJobQueue().send(POSTHOG_PERSON_DELETION_QUEUE, {
-      distinctId,
-      reason: 'account_deleted',
-      pass: 'first',
-    });
-    if (!jobId) throw new Error('job not queued');
+  async function waitUntil<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
     const deadline = Date.now() + 20_000;
     for (;;) {
-      const current = await jobState(jobId);
-      if (current.state !== 'created' && current.state !== 'active') return current;
-      if (Date.now() > deadline) throw new Error(`job still ${current.state}`);
+      const value = await read();
+      if (done(value)) return value;
+      if (Date.now() > deadline) throw new Error(`still waiting: ${JSON.stringify(value)}`);
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
 
-  const replies = { deletion: 202 };
-  const fetchImpl: typeof fetch = async (input) =>
-    (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith('/query/')
-      ? new Response(JSON.stringify({ results: [] }), { status: 200 })
-      : new Response(
-          JSON.stringify({
-            persons_found: 1,
-            persons_deleted: 0,
-            persons_queued_for_deletion: 1,
-            events_queued_for_deletion: true,
-            recordings_queued_for_deletion: true,
-            deletion_errors: [],
-          }),
-          { status: replies.deletion },
-        );
+  const settled = (state: JobState) => state.state !== 'created' && state.state !== 'active';
+
+  /** Send one job due now and wait until the worker has settled it. */
+  async function workOne(data: PosthogPersonDeletionJob, options: { startAfter?: number } = {}): Promise<JobState> {
+    const jobId = await requireJobQueue().send(POSTHOG_PERSON_DELETION_QUEUE, data, options);
+    if (!jobId) throw new Error('job not queued');
+    return waitUntil(() => jobState(jobId), settled);
+  }
+
+  type ErasureRow = { id: string; state: string; data: PosthogPersonDeletionJob };
+  async function erasureRows(distinctId: string): Promise<ErasureRow[]> {
+    const rows = await db.execute<ErasureRow>(
+      sql`SELECT id, state::text AS state, data FROM pgboss.job
+          WHERE name = ${POSTHOG_PERSON_DELETION_QUEUE} AND data->>'distinctId' = ${distinctId}
+          ORDER BY created_on`,
+    );
+    return Array.from(rows);
+  }
+
+  const replies: { lookup: number; anonymousIds: string[]; deletion: number } = {
+    lookup: 200,
+    anonymousIds: [],
+    deletion: 202,
+  };
+  /** The distinct_ids of every bulk_delete PostHog received, per account. */
+  const deletedIds = new Map<string, string[][]>();
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+      query?: { values?: { account_id?: string } };
+      distinct_ids?: string[];
+    };
+    if (url.endsWith('/query/')) {
+      const accountId = body.query?.values?.account_id ?? '';
+      return new Response(
+        JSON.stringify({ results: replies.anonymousIds.map((anonymousId) => [anonymousId, [accountId]]) }),
+        { status: replies.lookup },
+      );
+    }
+    const [accountId = '', ...rest] = body.distinct_ids ?? [];
+    deletedIds.set(accountId, [...(deletedIds.get(accountId) ?? []), [accountId, ...rest]]);
+    return new Response(
+      JSON.stringify({
+        persons_found: 1,
+        persons_deleted: 0,
+        persons_queued_for_deletion: 1,
+        events_queued_for_deletion: true,
+        recordings_queued_for_deletion: true,
+        deletion_errors: [],
+      }),
+      { status: replies.deletion },
+    );
+  };
 
   beforeAll(async () => {
     vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
@@ -279,27 +311,92 @@ describe('the erasure worker', () => {
     vi.unstubAllEnvs();
   });
   afterEach(() => {
+    replies.lookup = 200;
+    replies.anonymousIds = [];
     replies.deletion = 202;
   });
 
-  it('completes a job PostHog accepted', async () => {
-    const settled = await workOne(randomUUID());
-    expect(settled).toMatchObject({ state: 'completed', retry_count: 0, output: { outcome: 'deleted' } });
+  const deleteStep = (distinctId: string): PosthogPersonDeletionJob => ({
+    distinctId,
+    reason: 'account_deleted',
+    pass: 'first',
+    anonymousIds: [],
+    stage: 'delete',
   });
 
-  it('puts a job PostHog could not take yet back for a retry 60 to 120 s out', async () => {
+  it('completes a delete step PostHog accepted', async () => {
+    const state = await workOne(deleteStep(randomUUID()));
+    expect(state).toMatchObject({ state: 'completed', retry_count: 0, output: { outcome: 'deleted' } });
+  });
+
+  it('puts a delete step PostHog could not take yet back for a retry 60 to 120 s out', async () => {
     replies.deletion = 503;
-    const settled = await workOne(randomUUID());
+    const state = await workOne(deleteStep(randomUUID()));
     // pg-boss counts the retry when it starts it, so none is spent yet.
-    expect(settled).toMatchObject({ state: 'retry', retry_count: 0 });
-    expect(settled.retry_in_seconds).toBeGreaterThanOrEqual(55);
-    expect(settled.retry_in_seconds).toBeLessThanOrEqual(120);
+    expect(state).toMatchObject({ state: 'retry', retry_count: 0 });
+    expect(state.retry_in_seconds).toBeGreaterThanOrEqual(55);
+    expect(state.retry_in_seconds).toBeLessThanOrEqual(120);
   });
 
-  it('fails a job PostHog rejected outright, without spending the retries', async () => {
+  it('fails a delete step PostHog rejected outright, without spending the retries', async () => {
     replies.deletion = 400;
-    const settled = await workOne(randomUUID());
-    expect(settled).toMatchObject({ state: 'failed', retry_count: 0, output: { outcome: 'rejected' } });
+    const state = await workOne(deleteStep(randomUUID()));
+    expect(state).toMatchObject({ state: 'failed', retry_count: 0, output: { outcome: 'rejected' } });
+  });
+
+  it('deletes nothing and retries when the lookup fails, so a fixed query can still find split persons', async () => {
+    const distinctId = randomUUID();
+    replies.lookup = 400;
+
+    const state = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
+
+    expect(state).toMatchObject({ state: 'retry', retry_count: 0 });
+    expect(deletedIds.get(distinctId)).toBeUndefined();
+    expect((await erasureRows(distinctId)).map((row) => row.data.stage)).toEqual([undefined]);
+  });
+
+  it('persists the ids before deleting, and the late pass deletes them after their $identify events are gone', async () => {
+    const distinctId = randomUUID();
+    const boss = requireJobQueue();
+    const lateId = await boss.send(
+      POSTHOG_PERSON_DELETION_QUEUE,
+      { distinctId, reason: 'consent_withdrawn', pass: 'late' },
+      { startAfter: LATE_PASS_DELAY_SECONDS },
+    );
+    if (!lateId) throw new Error('late pass not queued');
+
+    // First pass: the lookup finds a split person.
+    replies.anonymousIds = ['sdk-anon-split'];
+    const first = await workOne({ distinctId, reason: 'consent_withdrawn', pass: 'first' });
+    expect(first).toMatchObject({ state: 'completed', output: { outcome: 'discovered' } });
+
+    // The ids are on the late pass, written before any delete ran.
+    const late = (await erasureRows(distinctId)).find((row) => row.id === lateId);
+    expect(late?.data).toEqual({
+      distinctId,
+      reason: 'consent_withdrawn',
+      pass: 'late',
+      anonymousIds: ['sdk-anon-split'],
+    });
+    // The first pass's delete step carries them and erases both.
+    await waitUntil(
+      () => erasureRows(distinctId),
+      (rows) => rows.some((row) => row.data.stage === 'delete' && row.state === 'completed'),
+    );
+    expect(deletedIds.get(distinctId)).toEqual([[distinctId, 'sdk-anon-split']]);
+
+    // Seven days on, PostHog has deleted the $identify events: the lookup finds nothing.
+    replies.anonymousIds = [];
+    await boss.update(POSTHOG_PERSON_DELETION_QUEUE, undefined, { id: lateId, startAfter: new Date() });
+    await waitUntil(
+      () => jobState(lateId),
+      (state) => state.state === 'completed',
+    );
+    await waitUntil(
+      () => Promise.resolve(deletedIds.get(distinctId) ?? []),
+      (calls) => calls.length === 2,
+    );
+    expect(deletedIds.get(distinctId)?.[1]).toEqual([distinctId, 'sdk-anon-split']);
   });
 });
 

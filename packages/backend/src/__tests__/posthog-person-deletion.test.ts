@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 import type { PgBoss } from 'pg-boss';
 import { POSTHOG_PERSON_DELETION_QUEUE } from '@boardsesh/db/job-queue-schema';
 import {
+  type PersistDiscoveredIds,
   PosthogPersonDeletionRetryableError,
   SPLIT_PERSON_QUERY,
   deletePosthogPerson,
@@ -21,7 +22,10 @@ import {
  */
 
 const DISTINCT_ID = '6f7f2f39-6c4c-4d4e-9a49-3b3f6a1c2d10';
-const job = { distinctId: DISTINCT_ID, reason: 'account_deleted' as const, pass: 'first' as const };
+/** A pass as enqueued: it discovers first. */
+const discoverJob = { distinctId: DISTINCT_ID, reason: 'account_deleted' as const, pass: 'first' as const };
+/** The delete step a discovery queues, carrying the persisted ids. */
+const deleteJob = { ...discoverJob, anonymousIds: ['sdk-anon-a'], stage: 'delete' as const };
 
 function jsonResponse(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -73,45 +77,28 @@ async function createAccount(): Promise<string> {
   return userId;
 }
 
-describe('deletePosthogPerson', () => {
-  beforeEach(() => {
-    vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
-    vi.stubEnv('POSTHOG_ERASURE_API_KEY', 'phx_test_key');
-    vi.stubEnv('POSTHOG_PROJECT_ID', '999');
-    vi.stubEnv('POSTHOG_API_HOST', 'https://eu.posthog.com/');
-  });
+function productionEnv() {
+  vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
+  vi.stubEnv('POSTHOG_ERASURE_API_KEY', 'phx_test_key');
+  vi.stubEnv('POSTHOG_PROJECT_ID', '999');
+  vi.stubEnv('POSTHOG_API_HOST', 'https://eu.posthog.com/');
+}
+
+describe('deletePosthogPerson, discovery step', () => {
+  beforeEach(productionEnv);
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it('asks PostHog to delete the person, its events and its recordings by distinct id', async () => {
-    const fetchImpl = mockPosthog();
-
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
-
-    const deletion = callTo(fetchImpl, '/persons/bulk_delete/');
-    expect(deletion.url).toBe('https://eu.posthog.com/api/projects/999/persons/bulk_delete/');
-    expect(deletion.init?.method).toBe('POST');
-    expect(deletion.init?.headers).toMatchObject({
-      Authorization: 'Bearer phx_test_key',
-      'Content-Type': 'application/json',
-    });
-    expect(deletion.body).toEqual({ distinct_ids: [DISTINCT_ID], delete_events: true, delete_recordings: true });
-  });
-
-  it('reads the dedicated erasure key, never the shared read-only personal key', async () => {
-    vi.stubEnv('POSTHOG_ERASURE_API_KEY', '');
-    vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_read_only');
-    const fetchImpl = mockPosthog();
-
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
+  function discover(fetchImpl: ReturnType<typeof mockPosthog>, job: object = discoverJob) {
+    const persistDiscovery = vi.fn<PersistDiscoveredIds>(async () => {});
+    return { persistDiscovery, run: deletePosthogPerson(job, { fetchImpl, persistDiscovery }) };
+  }
 
   it('looks up the anonymous ids the account signed in from with one HogQL query', async () => {
     const fetchImpl = mockPosthog();
 
-    await deletePosthogPerson(job, { fetchImpl });
+    await discover(fetchImpl).run;
 
     const lookup = callTo(fetchImpl, '/query/');
     expect(lookup.url).toBe('https://eu.posthog.com/api/projects/999/query/');
@@ -122,11 +109,9 @@ describe('deletePosthogPerson', () => {
     expect(SPLIT_PERSON_QUERY).toContain("event = '$identify'");
     expect(SPLIT_PERSON_QUERY).toContain('distinct_id = {account_id}');
     expect(SPLIT_PERSON_QUERY).toContain('LIMIT 999');
-    // The lookup comes first, so the delete can include what it found.
-    expect(requestUrl(fetchImpl.mock.calls[0][0])).toMatch(/\/query\/$/);
   });
 
-  it('deletes split persons too: anonymous ids only this account (or a pre-#6078 party id) signed in from', async () => {
+  it('persists what it found and deletes nothing: the delete step does that', async () => {
     const partyUuid = randomUUID();
     const fetchImpl = mockPosthog({
       lookup: () =>
@@ -142,14 +127,23 @@ describe('deletePosthogPerson', () => {
           ],
         }),
     });
+    const { persistDiscovery, run } = discover(fetchImpl);
 
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
+    await expect(run).resolves.toBe('discovered');
 
-    expect(callTo(fetchImpl, '/persons/bulk_delete/').body.distinct_ids).toEqual([
-      DISTINCT_ID,
-      'sdk-anon-merged',
-      'sdk-anon-split',
-    ]);
+    expect(persistDiscovery).toHaveBeenCalledWith(discoverJob, ['sdk-anon-merged', 'sdk-anon-split']);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(() => callTo(fetchImpl, '/persons/bulk_delete/')).toThrow('no call');
+  });
+
+  it('keeps ids an earlier pass persisted when the $identify events are gone', async () => {
+    const fetchImpl = mockPosthog({ lookup: () => jsonResponse(200, { results: [['sdk-anon-new', [DISTINCT_ID]]] }) });
+    const latePass = { ...discoverJob, pass: 'late' as const, anonymousIds: ['sdk-anon-split'] };
+    const { persistDiscovery, run } = discover(fetchImpl, latePass);
+
+    await expect(run).resolves.toBe('discovered');
+
+    expect(persistDiscovery).toHaveBeenCalledWith(latePass, ['sdk-anon-split', 'sdk-anon-new']);
   });
 
   it('skips an anonymous id another account also signed in from (a shared phone)', async () => {
@@ -166,26 +160,101 @@ describe('deletePosthogPerson', () => {
           ],
         }),
     });
+    const { persistDiscovery, run } = discover(fetchImpl);
 
-    await deletePosthogPerson(job, { fetchImpl });
+    await run;
 
-    expect(callTo(fetchImpl, '/persons/bulk_delete/').body.distinct_ids).toEqual([DISTINCT_ID, 'sdk-anon-own']);
+    expect(persistDiscovery).toHaveBeenCalledWith(discoverJob, ['sdk-anon-own']);
+  });
+
+  it.each([
+    ['a 500', () => jsonResponse(500)],
+    ['a 429', () => jsonResponse(429)],
+    ['a 403', () => jsonResponse(403)],
+    ['a 404', () => jsonResponse(404)],
+    ['a rejected query (400)', () => jsonResponse(400, { detail: 'Unknown function' })],
+    ['an answer that is not a result set', () => jsonResponse(200, { error: 'timeout' })],
+    ['a network failure', () => new TypeError('fetch failed')],
+  ])('on %s from the lookup, deletes nothing, persists nothing, and retries', async (_label, lookup) => {
+    const fetchImpl = mockPosthog({ lookup });
+    const { persistDiscovery, run } = discover(fetchImpl);
+
+    await expect(run).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(persistDiscovery).not.toHaveBeenCalled();
+  });
+
+  it('retries when persisting fails, before anything is deleted', async () => {
+    const fetchImpl = mockPosthog();
+    const persistDiscovery = vi.fn<PersistDiscoveredIds>(async () => {
+      throw new Error('connection reset');
+    });
+
+    await expect(deletePosthogPerson(discoverJob, { fetchImpl, persistDiscovery })).rejects.toThrow('connection reset');
+    expect(() => callTo(fetchImpl, '/persons/bulk_delete/')).toThrow('no call');
+  });
+
+  it('accepts a job replayed by hand without a pass', async () => {
+    const fetchImpl = mockPosthog();
+    const persistDiscovery = vi.fn<PersistDiscoveredIds>(async () => {});
+    await expect(
+      deletePosthogPerson({ distinctId: DISTINCT_ID, reason: 'consent_withdrawn' }, { fetchImpl, persistDiscovery }),
+    ).resolves.toBe('discovered');
+  });
+});
+
+describe('deletePosthogPerson, delete step', () => {
+  beforeEach(productionEnv);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('deletes the account id and the persisted ids, with events and recordings, and never looks up again', async () => {
+    const fetchImpl = mockPosthog();
+
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('deleted');
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const deletion = callTo(fetchImpl, '/persons/bulk_delete/');
+    expect(deletion.url).toBe('https://eu.posthog.com/api/projects/999/persons/bulk_delete/');
+    expect(deletion.init?.method).toBe('POST');
+    expect(deletion.init?.headers).toMatchObject({
+      Authorization: 'Bearer phx_test_key',
+      'Content-Type': 'application/json',
+    });
+    expect(deletion.body).toEqual({
+      distinct_ids: [DISTINCT_ID, 'sdk-anon-a'],
+      delete_events: true,
+      delete_recordings: true,
+    });
+  });
+
+  it('reads the dedicated erasure key, never the shared read-only personal key', async () => {
+    vi.stubEnv('POSTHOG_ERASURE_API_KEY', '');
+    vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_read_only');
+    const fetchImpl = mockPosthog();
+
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).rejects.toBeInstanceOf(
+      PosthogPersonDeletionRetryableError,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it.each([200, 202])('accepts a %i with the documented body as done', async (status) => {
     const fetchImpl = mockPosthog({ deletion: () => jsonResponse(status, queuedDeletion()) });
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('deleted');
   });
 
   it('accepts no matching person (a 202 with persons_found 0) as done', async () => {
     const fetchImpl = mockPosthog({ deletion: () => jsonResponse(202, queuedDeletion(0)) });
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('deleted');
   });
 
   it('accepts a documented body that leaves out the optional deletion_errors', async () => {
     const { deletion_errors: _omitted, ...withoutErrors } = queuedDeletion();
     const fetchImpl = mockPosthog({ deletion: () => jsonResponse(202, withoutErrors) });
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('deleted');
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('deleted');
   });
 
   it.each([
@@ -198,7 +267,9 @@ describe('deletePosthogPerson', () => {
     ['counts that are not counts', () => jsonResponse(202, { ...queuedDeletion(), persons_found: '1' })],
   ])('retries a 2xx with %s: it proves nothing was deleted', async (_label, deletion) => {
     const fetchImpl = mockPosthog({ deletion });
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).rejects.toBeInstanceOf(
+      PosthogPersonDeletionRetryableError,
+    );
   });
 
   it('defaults to the US private API host and the Boardsesh project', async () => {
@@ -206,19 +277,20 @@ describe('deletePosthogPerson', () => {
     vi.stubEnv('POSTHOG_API_HOST', '');
     const fetchImpl = mockPosthog();
 
-    await deletePosthogPerson(job, { fetchImpl });
+    await deletePosthogPerson(deleteJob, { fetchImpl });
 
     expect(callTo(fetchImpl, '/persons/bulk_delete/').url).toBe(
       'https://us.posthog.com/api/projects/412845/persons/bulk_delete/',
     );
-    expect(callTo(fetchImpl, '/query/').url).toBe('https://us.posthog.com/api/projects/412845/query/');
   });
 
-  it('retries a 404 from the delete and logs the URL at error: the project id or host is wrong', async () => {
+  it('retries a 404 and logs the URL at error: the project id or host is wrong', async () => {
     const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
     const fetchImpl = mockPosthog({ deletion: () => jsonResponse(404, { detail: 'Not found.' }) });
 
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).rejects.toBeInstanceOf(
+      PosthogPersonDeletionRetryableError,
+    );
 
     expect(errorLog).toHaveBeenCalledWith(
       expect.stringContaining('will retry'),
@@ -231,28 +303,18 @@ describe('deletePosthogPerson', () => {
     errorLog.mockRestore();
   });
 
-  it.each([500, 502, 503, 429, 408, 401, 403, 404])(
-    'throws on a %i from the delete so pg-boss retries',
-    async (status) => {
-      const fetchImpl = mockPosthog({ deletion: () => jsonResponse(status) });
-      await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
-    },
-  );
-
-  it.each([500, 429, 403, 404])('throws on a %i from the lookup, before deleting anything', async (status) => {
-    const fetchImpl = mockPosthog({ lookup: () => jsonResponse(status) });
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
-    expect(fetchImpl).toHaveBeenCalledOnce();
+  it.each([500, 502, 503, 429, 408, 401, 403, 404])('throws on a %i so pg-boss retries', async (status) => {
+    const fetchImpl = mockPosthog({ deletion: () => jsonResponse(status) });
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).rejects.toBeInstanceOf(
+      PosthogPersonDeletionRetryableError,
+    );
   });
 
   it('throws on a network failure so pg-boss retries', async () => {
     const fetchImpl = mockPosthog({ deletion: () => new TypeError('fetch failed') });
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
-  });
-
-  it('retries when the lookup answer is not a result set', async () => {
-    const fetchImpl = mockPosthog({ lookup: () => jsonResponse(200, { error: 'timeout' }) });
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).rejects.toBeInstanceOf(
+      PosthogPersonDeletionRetryableError,
+    );
   });
 
   it('retries when PostHog reports a partial deletion', async () => {
@@ -260,31 +322,36 @@ describe('deletePosthogPerson', () => {
       deletion: () =>
         jsonResponse(202, { ...queuedDeletion(), deletion_errors: [{ person_uuid: 'x', step: 'events' }] }),
     });
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).rejects.toBeInstanceOf(
+      PosthogPersonDeletionRetryableError,
+    );
   });
 
   it('does not retry a delete PostHog rejects as malformed', async () => {
     const fetchImpl = mockPosthog({ deletion: () => jsonResponse(400) });
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('rejected');
+    await expect(deletePosthogPerson(deleteJob, { fetchImpl })).resolves.toBe('rejected');
+  });
+});
+
+describe('deletePosthogPerson, either step', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
-  it('still deletes the account id when the lookup is rejected, then reports the job rejected', async () => {
-    const fetchImpl = mockPosthog({ lookup: () => jsonResponse(400, { detail: 'Unknown function' }) });
+  it.each([discoverJob, deleteJob])(
+    'throws without the erasure key, so a key set later still erases the person',
+    async (job) => {
+      productionEnv();
+      vi.stubEnv('POSTHOG_ERASURE_API_KEY', '');
+      const fetchImpl = mockPosthog();
 
-    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('rejected');
+      await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
 
-    expect(callTo(fetchImpl, '/persons/bulk_delete/').body.distinct_ids).toEqual([DISTINCT_ID]);
-  });
-
-  it('throws without the erasure key, so a key set later still erases the person', async () => {
-    vi.stubEnv('POSTHOG_ERASURE_API_KEY', '');
-    const fetchImpl = mockPosthog();
-
-    await expect(deletePosthogPerson(job, { fetchImpl })).rejects.toBeInstanceOf(PosthogPersonDeletionRetryableError);
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it('never calls PostHog outside production', async () => {
+  it.each([discoverJob, deleteJob])('never calls PostHog outside production', async (job) => {
+    productionEnv();
     vi.stubEnv('POSTHOG_ENVIRONMENT', 'preview');
     const fetchImpl = mockPosthog();
 
@@ -292,17 +359,15 @@ describe('deletePosthogPerson', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('accepts a job replayed by hand without a pass', async () => {
-    const fetchImpl = mockPosthog();
-    await expect(
-      deletePosthogPerson({ distinctId: DISTINCT_ID, reason: 'consent_withdrawn' }, { fetchImpl }),
-    ).resolves.toBe('deleted');
-  });
-
-  it('drops a malformed job without calling PostHog', async () => {
+  it.each([
+    { distinctId: '', reason: 'nope' },
+    { ...deleteJob, stage: 'purge' },
+    { ...deleteJob, anonymousIds: 'sdk-anon-a' },
+  ])('drops a malformed job without calling PostHog', async (job) => {
+    productionEnv();
     const fetchImpl = mockPosthog();
 
-    await expect(deletePosthogPerson({ distinctId: '', reason: 'nope' }, { fetchImpl })).resolves.toBe('rejected');
+    await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('rejected');
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

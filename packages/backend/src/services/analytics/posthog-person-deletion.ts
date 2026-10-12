@@ -4,7 +4,7 @@ import { z } from 'zod';
 import * as dbSchema from '@boardsesh/db/schema';
 import { POSTHOG_PERSON_DELETION_QUEUE } from '@boardsesh/db/job-queue-schema';
 import { db, type Database } from '../../db/client';
-import { enqueueOn, getJobQueue } from '../job-queue';
+import { enqueueOn, getJobQueue, requireJobQueue } from '../job-queue';
 import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from '../job-queue-client';
 import { logger } from '../../utils/logger';
 import { getAnalyticsEnvironment } from './posthog';
@@ -21,7 +21,17 @@ import { getAnalyticsEnvironment } from './posthog';
  * docs/growth-metrics.md, "Identity-split pitfall"), the pre-sign-in person is
  * found through the account's `$identify` events and deleted with it.
  *
- * The request runs in a pg-boss job, never inside the transaction that deletes
+ * Each pass runs in two steps, because the delete erases the `$identify`
+ * events the lookup reads:
+ *
+ * 1. **Discover** (a job without `stage`): look up the anonymous ids, then, in
+ *    one transaction, write them into every erasure of this account still
+ *    waiting (the late pass) and queue this pass's `delete` step carrying them.
+ *    A failed lookup deletes nothing and retries.
+ * 2. **Delete** (`stage: 'delete'`): `bulk_delete` the account id and the
+ *    persisted ids. Its retries reuse them.
+ *
+ * The requests run in pg-boss jobs, never inside the transaction that deletes
  * the account or records the withdrawal: the job rows commit with that
  * transaction, and the HTTP calls happen afterwards, with retries.
  */
@@ -41,6 +51,14 @@ export type PosthogPersonDeletionJob = {
   distinctId: string;
   reason: PosthogPersonDeletionReason;
   pass?: PosthogPersonDeletionPass;
+  /**
+   * Anonymous ids already discovered for this account (shared-phone ids
+   * excluded), persisted before any delete so a later step or pass can still
+   * erase them once their `$identify` events are gone.
+   */
+  anonymousIds?: string[];
+  /** `delete`: discovery is done, delete `distinctId` and `anonymousIds`. Absent: discover first. */
+  stage?: 'delete';
 };
 
 /**
@@ -61,10 +79,15 @@ const PASSES: ReadonlyArray<readonly [PosthogPersonDeletionPass, number]> = [
   ['late', LATE_PASS_DELAY_SECONDS],
 ];
 
+/** `bulk_delete` takes at most 1000 distinct ids; one is the account's. */
+const MAX_ANONYMOUS_IDS = 999;
+
 const jobSchema = z.object({
   distinctId: z.string().min(1).max(200),
   reason: z.enum(['account_deleted', 'consent_withdrawn']),
   pass: z.enum(['first', 'late']).optional(),
+  anonymousIds: z.array(z.string().min(1).max(200)).max(MAX_ANONYMOUS_IDS).optional(),
+  stage: z.literal('delete').optional(),
 });
 
 /** A drizzle transaction on the backend's primary pool. */
@@ -120,8 +143,6 @@ const DEFAULT_POSTHOG_PROJECT_ID = '412845';
 const DEFAULT_POSTHOG_API_HOST = 'https://us.posthog.com';
 const DELETE_REQUEST_TIMEOUT_MS = 30_000;
 const LOOKUP_REQUEST_TIMEOUT_MS = 45_000;
-/** `bulk_delete` takes at most 1000 distinct ids; one is the account's. */
-const MAX_ANONYMOUS_IDS = 999;
 
 /**
  * A dedicated key, not `POSTHOG_PERSONAL_API_KEY`: that one is read-scoped and
@@ -175,12 +196,17 @@ export class PosthogPersonDeletionRetryableError extends Error {
   }
 }
 
-export type PosthogPersonDeletionOutcome = 'deleted' | 'skipped_non_production' | 'rejected';
+export type PosthogPersonDeletionOutcome = 'discovered' | 'deleted' | 'skipped_non_production' | 'rejected';
+
+/** Writes a discovery's ids where later steps and passes read them. */
+export type PersistDiscoveredIds = (job: PosthogPersonDeletionJob, anonymousIds: string[]) => Promise<void>;
 
 export type DeletePosthogPersonOptions = {
   fetchImpl?: typeof fetch;
   /** Where "is this id another account?" is answered. */
   database?: Database;
+  /** Defaults to {@link persistDiscoveredIds} on the running queue. */
+  persistDiscovery?: PersistDiscoveredIds;
 };
 
 /**
@@ -273,13 +299,7 @@ export const SPLIT_PERSON_QUERY = `
   LIMIT ${MAX_ANONYMOUS_IDS}
 `;
 
-type LookupResult = { anonymousIds: string[]; rejected: boolean };
-
-async function findAnonymousIds(
-  context: RequestContext,
-  distinctId: string,
-  database: Database,
-): Promise<LookupResult> {
+async function findAnonymousIds(context: RequestContext, distinctId: string, database: Database): Promise<string[]> {
   const path = 'query/';
   const response = await postToPosthog(
     context,
@@ -289,15 +309,18 @@ async function findAnonymousIds(
   );
   if (!response.ok) {
     if (isRetryableStatus(response.status)) throwRetryable(context, path, response.status);
-    // Our query is wrong. The account id is still deleted; the job then fails
-    // so the lookup can be fixed and the job replayed.
-    logger.error('[PostHogErasure] PostHog rejected the anonymous id lookup; deleting the account id alone', {
+    // Our query is wrong. Delete nothing: the delete would erase the `$identify`
+    // events this lookup reads, and a fixed query could then never find the
+    // split persons. Retry, then fail visibly, so the job can be replayed once
+    // the query is fixed.
+    logger.error('[PostHogErasure] PostHog rejected the anonymous id lookup; deleting nothing, will retry', {
       event: 'posthog_person_deletion_lookup_rejected',
       reason: context.reason,
       pass: context.pass,
+      url: privateApiUrl(context.config, path),
       status: response.status,
     });
-    return { anonymousIds: [], rejected: true };
+    throw new PosthogPersonDeletionRetryableError(`PostHog ${path} returned ${response.status}`, response.status);
   }
 
   const parsed = queryResponseSchema.safeParse(await response.json().catch(() => null));
@@ -311,7 +334,7 @@ async function findAnonymousIds(
       : [];
     candidates.set(anonId, others);
   }
-  if (candidates.size === 0) return { anonymousIds: [], rejected: false };
+  if (candidates.size === 0) return [];
 
   // "Another account" is a live `users` row. The account being erased is never
   // in the set (its id is filtered out above, and on deletion its row is gone).
@@ -341,15 +364,71 @@ async function findAnonymousIds(
       shared,
     });
   }
-  return { anonymousIds, rejected: false };
+  return anonymousIds;
 }
 
 /**
- * One erasure attempt:
+ * Persist a discovery before anything is deleted, in one transaction:
  *
- * 1. HogQL (`query:read`): the anonymous ids the account signed in from.
- * 2. `POST /api/projects/:id/persons/bulk_delete/` (`person:write`) with the
- *    account id and those ids, events and recordings included.
+ * 1. every erasure of this account still waiting (the late pass, another
+ *    trigger's first pass) gets the ids added, so it can erase them after this
+ *    pass has deleted the `$identify` events they came from;
+ * 2. this pass continues as a `delete` job carrying them, so its retries reuse
+ *    them.
+ *
+ * A crash between this and the discovery job completing runs the discovery
+ * again and queues a second delete, which is harmless.
+ */
+export async function persistDiscoveredIds(
+  boss: PgBoss,
+  job: PosthogPersonDeletionJob,
+  anonymousIds: string[],
+): Promise<void> {
+  await db.transaction(async (transaction) => {
+    const queueDb = enqueueOn(transaction);
+    const waiting = await boss.findJobs<PosthogPersonDeletionJob>(POSTHOG_PERSON_DELETION_QUEUE, {
+      data: { distinctId: job.distinctId },
+      queued: true,
+      db: queueDb,
+    });
+    for (const pending of waiting) {
+      const merged = mergeAnonymousIds(pending.data.anonymousIds, anonymousIds);
+      await boss.update(
+        POSTHOG_PERSON_DELETION_QUEUE,
+        { ...pending.data, anonymousIds: merged },
+        {
+          id: pending.id,
+          db: queueDb,
+        },
+      );
+    }
+    const deleteStep: PosthogPersonDeletionJob = {
+      distinctId: job.distinctId,
+      reason: job.reason,
+      pass: job.pass,
+      anonymousIds,
+      stage: 'delete',
+    };
+    const jobId = await boss.send(POSTHOG_PERSON_DELETION_QUEUE, deleteStep, { db: queueDb });
+    if (!jobId) throw new Error('POSTHOG_PERSON_DELETION_DELETE_STEP_NOT_QUEUED');
+  });
+}
+
+/** Union, first-seen order, capped at what one `bulk_delete` takes beside the account id. */
+function mergeAnonymousIds(persisted: string[] | undefined, discovered: string[]): string[] {
+  return [...new Set([...(persisted ?? []), ...discovered])].slice(0, MAX_ANONYMOUS_IDS);
+}
+
+/**
+ * One step of an erasure:
+ *
+ * - **Discover** (no `stage`): HogQL (`query:read`) for the anonymous ids the
+ *   account signed in from, merged with any the job already carries, then
+ *   persisted ({@link persistDiscoveredIds}). Returns `discovered`. Any lookup
+ *   failure, a rejected query included, throws before anything is deleted.
+ * - **Delete** (`stage: 'delete'`): `POST /api/projects/:id/persons/bulk_delete/`
+ *   (`person:write`) with the account id and the persisted ids, events and
+ *   recordings included.
  *
  * - 2xx with the documented body: done (no matching person is a 202 with
  *   `persons_found: 0`). A non-empty `deletion_errors`, or a 2xx body that is
@@ -357,16 +436,20 @@ async function findAnonymousIds(
  * - 401, 403, 404, 408, 429, 5xx, a timeout or a network error, on either
  *   call: throws. A key, a project id or a host can be fixed and an outage
  *   ends, so pg-boss retries. 401/403/404 log at error with the URL.
- * - Any other 4xx: the request itself is wrong and a retry would send it
- *   again. Logged as an error and returned as `rejected`, which the worker
- *   turns into a failed job. A rejected lookup still deletes the account id.
+ * - Any other 4xx from the delete: the request itself is wrong and a retry
+ *   would send it again. Logged as an error and returned as `rejected`, which
+ *   the worker turns into a failed job.
  *
  * Only production calls PostHog, the same gate as backend capture: a dev or
  * preview backend must never delete a person in the production project.
  */
 export async function deletePosthogPerson(
   payload: unknown,
-  { fetchImpl = fetch, database = db }: DeletePosthogPersonOptions = {},
+  {
+    fetchImpl = fetch,
+    database = db,
+    persistDiscovery = (job, anonymousIds) => persistDiscoveredIds(requireJobQueue(), job, anonymousIds),
+  }: DeletePosthogPersonOptions = {},
 ): Promise<PosthogPersonDeletionOutcome> {
   const parsed = jobSchema.safeParse(payload);
   if (!parsed.success) {
@@ -375,7 +458,8 @@ export async function deletePosthogPerson(
     });
     return 'rejected';
   }
-  const { distinctId, reason, pass } = parsed.data;
+  const job = parsed.data;
+  const { distinctId, reason, pass } = job;
 
   const environment = getAnalyticsEnvironment();
   if (environment !== 'production') {
@@ -399,13 +483,28 @@ export async function deletePosthogPerson(
   }
   const context: RequestContext = { config, fetchImpl, reason, pass };
 
-  const lookup = await findAnonymousIds(context, distinctId, database);
+  if (job.stage !== 'delete') {
+    // Step 1. Any lookup failure throws before anything is deleted.
+    const discovered = await findAnonymousIds(context, distinctId, database);
+    const anonymousIds = mergeAnonymousIds(job.anonymousIds, discovered);
+    await persistDiscovery(job, anonymousIds);
+    logger.info('[PostHogErasure] Anonymous ids discovered and persisted; delete step queued', {
+      event: 'posthog_person_deletion_discovered',
+      reason,
+      pass,
+      discovered: discovered.length,
+      anonymousIds: anonymousIds.length,
+    });
+    return 'discovered';
+  }
 
+  // Step 2. The ids come from the job, never from a new lookup.
+  const anonymousIds = job.anonymousIds ?? [];
   const path = 'persons/bulk_delete/';
   const response = await postToPosthog(
     context,
     path,
-    { distinct_ids: [distinctId, ...lookup.anonymousIds], delete_events: true, delete_recordings: true },
+    { distinct_ids: [distinctId, ...anonymousIds], delete_events: true, delete_recordings: true },
     DELETE_REQUEST_TIMEOUT_MS,
   );
 
@@ -441,11 +540,11 @@ export async function deletePosthogPerson(
     reason,
     pass,
     status,
-    anonymousIds: lookup.anonymousIds.length,
+    anonymousIds: anonymousIds.length,
     personsFound: result.persons_found,
     personsQueuedForDeletion: result.persons_queued_for_deletion,
   });
-  return lookup.rejected ? 'rejected' : 'deleted';
+  return 'deleted';
 }
 
 export type StartPosthogPersonDeletionOptions = {
@@ -458,11 +557,15 @@ type ErasureJobOutput = { outcome: PosthogPersonDeletionOutcome } | { error: str
 
 /** One job's pg-boss disposition: completed, failed (retried), or failed for good. */
 async function settleErasureJob(
+  boss: PgBoss,
   job: JobWithMetadata<PosthogPersonDeletionJob>,
   fetchImpl: typeof fetch | undefined,
 ): Promise<JobResult<ErasureJobOutput>> {
   try {
-    const outcome = await deletePosthogPerson(job.data, { fetchImpl });
+    const outcome = await deletePosthogPerson(job.data, {
+      fetchImpl,
+      persistDiscovery: (data, anonymousIds) => persistDiscoveredIds(boss, data, anonymousIds),
+    });
     // `deadletter` with no dead letter queue fails the job at once, skipping
     // retries a broken request would only repeat. It stays in `pgboss.job`
     // as `failed` for an operator, not `completed`.
@@ -509,7 +612,7 @@ export async function startPosthogPersonDeletion(
     POSTHOG_PERSON_DELETION_QUEUE,
     { localConcurrency: 1, batchSize: 1, pollingIntervalSeconds, includeMetadata: true, perJobResults: true },
     async (jobs: JobWithMetadata<PosthogPersonDeletionJob>[]) =>
-      Promise.all(jobs.map((job) => settleErasureJob(job, fetchImpl))),
+      Promise.all(jobs.map((job) => settleErasureJob(boss, job, fetchImpl))),
   );
   return true;
 }

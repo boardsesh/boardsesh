@@ -328,26 +328,40 @@ or withdrawal commits. The PostHog calls never run inside that transaction.
 | `first` | 15 minutes after the commit | PostHog deletes only events captured before the request. The wait lets the app's on-disk event queue flush on its next foreground and ingestion catch up. |
 | `late` | 7 days after the commit | Catches what still arrived: another signed-in device that had not yet re-read the denial (rule 2 reaches it on its next sync) or had not yet hit a 401 after deletion, and a phone that sat offline with events queued. A deletion PostHog already has queued is not duplicated, so the second call is cheap. |
 
-Each job is the account id, a reason and a pass, nothing else.
+Each job is the account id, a reason, a pass and, once discovered, the
+anonymous ids to erase with it; nothing else.
 
-### What one job does
+### What one pass does
 
-1. **Finds split persons** with one HogQL query (`query:read`): every
-   `$identify` the account sent names the anonymous id it switched away from as
-   `$anon_distinct_id`. Where PostHog merged that id into the account's person,
-   deleting it again is a no-op. Where it refused (the split persons in
-   [growth-metrics.md](./growth-metrics.md#identity-split-pitfall), 161 measured
-   from 2026-09-08 to 10-01), it is the only way to reach the pre-sign-in
-   person, which holds that session's `Login Succeeded` and `$screen` events.
-   The query also returns every distinct id that identified from each
-   anonymous id. An anonymous id that another live account also signed in from
-   (a shared phone) is skipped, so erasing one climber never erases another.
-   Ids that are not accounts, such as the party UUID a signed-out install
-   identified as before #6078, belong to the same install and go with it. At
-   most 999 anonymous ids, the `bulk_delete` limit less the account id.
-2. **Deletes** with `POST /api/projects/<id>/persons/bulk_delete/`
-   (`person:write`): `distinct_ids` is the account id plus those anonymous ids,
-   `delete_events: true`, `delete_recordings: true`. What happens next is
+Each pass runs in two steps, because the delete erases the very `$identify`
+events the lookup reads. Whatever a lookup found is written down before
+anything is deleted.
+
+1. **Discover** (the job as queued, no `stage`). One HogQL query
+   (`query:read`): every `$identify` the account sent names the anonymous id it
+   switched away from as `$anon_distinct_id`. Where PostHog merged that id into
+   the account's person, deleting it again is a no-op. Where it refused (the
+   split persons in [growth-metrics.md](./growth-metrics.md#identity-split-pitfall),
+   161 measured from 2026-09-08 to 10-01), it is the only way to reach the
+   pre-sign-in person, which holds that session's `Login Succeeded` and
+   `$screen` events. The query also returns every distinct id that identified
+   from each anonymous id. An anonymous id that another live account also
+   signed in from (a shared phone) is skipped, so erasing one climber never
+   erases another. Ids that are not accounts, such as the party UUID a
+   signed-out install identified as before #6078, belong to the same install
+   and go with it. At most 999 anonymous ids, the `bulk_delete` limit less the
+   account id.
+
+   The ids found, plus any the job already carried, are then written, in one
+   transaction, into `anonymousIds` on every erasure of this account still
+   waiting (so the late pass has them after their `$identify` events are
+   gone), and into a new `stage: 'delete'` job for this pass. **If the lookup
+   fails in any way, a rejected query included, nothing is deleted and the job
+   retries**: deleting first would erase the history a fixed query needs.
+2. **Delete** (`stage: 'delete'`). `POST /api/projects/<id>/persons/bulk_delete/`
+   (`person:write`): `distinct_ids` is the account id plus the persisted
+   anonymous ids, `delete_events: true`, `delete_recordings: true`. It never
+   looks up again; its retries reuse the same ids. What happens next is
    PostHog's:
    - The person records and their distinct ids are removed in the background
      shortly after the request (`persons_queued_for_deletion` in the response).
@@ -368,9 +382,11 @@ Responses:
   it means `POSTHOG_PROJECT_ID` or `POSTHOG_API_HOST` is wrong. 401, 403 and
   404 log at error with the URL (host and path; the key travels in a header and
   is never logged).
-- **Failed at once**, without spending retries, on any other 4xx: our request
-  is wrong. Logged as an error. A lookup rejected that way still deletes the
-  account id before the job fails.
+- **Failed at once**, without spending retries, on any other 4xx from the
+  delete: our request is wrong. Logged as an error. Any other 4xx from the
+  lookup retries instead (above), so a broken query blocks erasures, visibly,
+  until it is fixed and the failed jobs are replayed, rather than deleting the
+  history it needs.
 
 Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
 26.5 to 32.5 hours in all; a job that runs out is `failed` and logs
@@ -415,7 +431,8 @@ await boss.send('posthog-person-deletion', { distinctId, reason: 'account_delete
 Use `reason: 'consent_withdrawn'` for a withdrawal. A `failed` job (`SELECT
 id, data FROM pgboss.job WHERE name = 'posthog-person-deletion' AND state =
 'failed'`, kept 7 days) is replayed with `boss.retry('posthog-person-deletion',
-id)`.
+id)`. A failed discovery job deleted nothing, so its replay still finds the
+split persons; a failed `delete` job carries its ids.
 
 ### Not covered
 
