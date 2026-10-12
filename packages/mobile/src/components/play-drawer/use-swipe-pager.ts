@@ -47,11 +47,10 @@ import {
  *
  * Everything a step needs lives here, with the drawer, and not in the carousel:
  * the offset, the step a fling is carrying, and the callbacks that change the
- * climb. The carousel is unmounted while the drawer measures itself again, and
- * a fling or a step in progress has to survive that. The boards do not: in the
- * section layouts where a climb change sets off that measuring (Logbook
- * hidden, and Climber logs hidden or signed out), they are mounted again
- * after the swipe (#6373).
+ * climb. The board/carousel host stays mounted through geometry refinement
+ * (#6383), including section-header changes (#6373). A fling or a step in
+ * progress must still survive any carousel teardown, so its pending step and
+ * callbacks belong to the pager.
  */
 
 /** What the JS thread has rendered. One object, so the UI thread never reads half an update. */
