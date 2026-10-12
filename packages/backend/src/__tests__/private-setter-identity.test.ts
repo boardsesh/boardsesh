@@ -5,11 +5,12 @@
  * only to viewers who may see that account's activity: the account itself and
  * its approved followers. Everyone else sees the climb under its setter name.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { ConnectionContext, SocialEvent } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { pubsub } from '../pubsub/index';
 import type { EventBroker } from '../events/event-broker';
 import { NotificationWorker } from '../events/notification-worker';
 import { publishSocialEvent } from '../events/index';
@@ -233,9 +234,38 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
       [STRANGER]: { type: 'new_climb_global', actorId: null },
     };
 
+    afterEach(() => vi.restoreAllMocks());
+
+    /** Spy on the live push and return, per recipient, the notification it carried. */
+    const capturePushes = () => {
+      const pushed = new Map<string, Record<string, unknown>>();
+      vi.spyOn(pubsub, 'publishNotificationEvent').mockImplementation((recipientId, event) => {
+        pushed.set(recipientId, event.notification as unknown as Record<string, unknown>);
+      });
+      return pushed;
+    };
+
+    /** The live push names the account to its follower and only the setter name to the stranger. */
+    const expectPushes = (pushed: Map<string, Record<string, unknown>>) => {
+      expect(pushed.get(FOLLOWER)).toMatchObject({
+        actorId: PRIVATE_AUTHOR,
+        actorDisplayName: PRIVATE_DISPLAY,
+        actorAvatarUrl: PRIVATE_AVATAR,
+      });
+      const toStranger = pushed.get(STRANGER);
+      expect(toStranger).toMatchObject({
+        type: 'new_climb_global',
+        actorId: null,
+        actorDisplayName: PRIVATE_SETTER_NAME,
+      });
+      expect(toStranger?.actorAvatarUrl ?? null).toBeNull();
+    };
+
     it('reach the stranger watching the layout under the setter name (notification worker)', async () => {
+      const pushed = capturePushes();
       await captureWorkerHandler()(climbCreated(PRIVATE_CLIMB));
       expect(await notifiedAbout(PRIVATE_CLIMB)).toEqual(expected);
+      expectPushes(pushed);
       expect(await strangerInboxGroup(PRIVATE_CLIMB)).toMatchObject({
         type: 'new_climb_global',
         actorCount: 0,
@@ -245,8 +275,10 @@ describeWithDatabase("a private account's identity on the new-climb surfaces (re
     });
 
     it('reach the stranger watching the layout under the setter name (inline, no Redis)', async () => {
+      const pushed = capturePushes();
       await publishSocialEvent(climbCreated(PRIVATE_CLIMB_INLINE));
       expect(await notifiedAbout(PRIVATE_CLIMB_INLINE)).toEqual(expected);
+      expectPushes(pushed);
       expect(await strangerInboxGroup(PRIVATE_CLIMB_INLINE)).toMatchObject({
         actors: [],
         setterUsername: PRIVATE_SETTER_NAME,
