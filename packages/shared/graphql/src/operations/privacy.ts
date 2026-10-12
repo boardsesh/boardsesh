@@ -124,6 +124,8 @@ export type ResourcePrivacySettings = {
   locationAudience: PrivacyLocationAudience;
   inheritFollowers: boolean;
   revision: number;
+  /** The board sits at a public gym's own place, so its location is always shown. */
+  locationSharedByGym?: boolean | null;
 };
 export type PrivacyPublicationInput = { audience: PrivacyAudience; privacyRevision: number };
 export const GET_CONTENT_AUDIENCE = gql`
@@ -145,6 +147,7 @@ export const GET_RESOURCE_PRIVACY = gql`
       locationAudience
       inheritFollowers
       revision
+      locationSharedByGym
     }
   }
 `;
@@ -158,6 +161,7 @@ export const UPDATE_RESOURCE_PRIVACY = gql`
       locationAudience
       inheritFollowers
       revision
+      locationSharedByGym
     }
   }
 `;

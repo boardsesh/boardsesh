@@ -2,14 +2,18 @@ import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 
+/** The place a public gym already lists: its name and coordinates. */
+export type PublicGymPlace = { name: string; latitude: number | null; longitude: number | null };
+
+/** Where a board says it is. */
+export type BoardPlace = { latitude: number | null; longitude: number | null; locationName: string | null };
+
 /**
- * A board at a public gym always shows where it is.
+ * The public gym a board in `gymId` takes its location rule from, or null.
  *
  * The hidden-location default protects home walls. A public gym already lists
- * its name and coordinates, so hiding the location of a board inside it hides
- * nothing and only takes the board off the gym's page and the map. The
- * post-#6254 builder sends `hideLocation: true` on every create, so the server
- * cannot read that flag as a choice at a gym and decides it here instead.
+ * its name and coordinates, so hiding a board that sits at exactly that place
+ * hides nothing and only takes the board off the gym's page and the map.
  *
  * A private gym does not count. Private gyms are home walls in practice (the
  * auto-gym path mints one from a home board's typed location when its location
@@ -17,25 +21,59 @@ import { db } from '../../../db/client';
  * board linked to one keeps the location its owner chose. Spray walls keep
  * their own rules too: their visibility only changes through the wall itself.
  */
-export async function gymSharesBoardLocation(
+export async function publicGymPlace(
   executor: Pick<typeof db, 'select'>,
   gymId: number | null,
   boardType: string,
-): Promise<boolean> {
-  if (gymId === null || boardType === 'spray') return false;
+): Promise<PublicGymPlace | null> {
+  if (gymId === null || boardType === 'spray') return null;
   const [gym] = await executor
-    .select({ isPublic: dbSchema.gyms.isPublic })
+    .select({
+      isPublic: dbSchema.gyms.isPublic,
+      name: dbSchema.gyms.name,
+      latitude: dbSchema.gyms.latitude,
+      longitude: dbSchema.gyms.longitude,
+    })
     .from(dbSchema.gyms)
     .where(and(eq(dbSchema.gyms.id, gymId), isNull(dbSchema.gyms.deletedAt)))
     .limit(1);
-  return gym?.isPublic === true;
+  return gym?.isPublic === true ? { name: gym.name, latitude: gym.latitude, longitude: gym.longitude } : null;
+}
+
+/**
+ * Whether a board's place is nothing more than its gym's own listing: no
+ * coordinates or exactly the gym's, and no location name or exactly the gym's.
+ * The board builder stamps both from the gym when a climber picks it.
+ *
+ * Only then does the gym rule show the location. A board in a public gym that
+ * carries anything else (a GPS fix the server matched to a nearby gym, a home
+ * the climber moved it to, a typed address) keeps its owner's choice, so the
+ * rule can never publish a place the gym does not already list.
+ */
+export function boardSitsAtGym(board: BoardPlace, gym: PublicGymPlace): boolean {
+  const noCoordinates = board.latitude == null && board.longitude == null;
+  const gymCoordinates = board.latitude === gym.latitude && board.longitude === gym.longitude;
+  const locationName = board.locationName?.trim() ?? '';
+  return (noCoordinates || gymCoordinates) && (locationName === '' || locationName === gym.name.trim());
+}
+
+/**
+ * Whether the gym rule shows this board's location: it is in a public gym and
+ * sits at exactly the place the gym lists.
+ */
+export async function gymSharesBoardLocation(
+  executor: Pick<typeof db, 'select'>,
+  board: BoardPlace & { gymId: number | null; boardType: string },
+): Promise<boolean> {
+  const gym = await publicGymPlace(executor, board.gymId, board.boardType);
+  return gym !== null && boardSitsAtGym(board, gym);
 }
 
 /**
  * Show a gym board's location: clear `hide_location` and widen a stored policy
- * to `public`. Run when a board is linked to a public gym after it was created,
- * or edited while it is in one. Widening only, so it never needs a
- * privacyChanged publish.
+ * to `public`. Run only for a board that sits at its public gym's own place
+ * (`boardSitsAtGym`), when it joins the gym or is edited while there. Widening
+ * only, and to a place the gym already lists.
  */
 export async function shareGymBoardLocation(
   executor: Pick<typeof db, 'update'>,
@@ -59,4 +97,54 @@ export async function shareGymBoardLocation(
         ne(dbSchema.resourcePrivacy.locationAudience, 'public'),
       ),
     );
+}
+
+/**
+ * Hide a board's location again because it left its public gym's place. The
+ * gym rule showed it only while it sat there, and whatever it says now (a home,
+ * a typed address) is the climber's own: it goes back to the home-wall
+ * default, Only me, until the owner chooses to show it. Narrowing only: a
+ * stored policy that is already narrower than public is the owner's and stays.
+ * The caller sets `hide_location` on the row it is writing.
+ */
+export async function hideBoardLocationLeavingGym(
+  executor: Pick<typeof db, 'update'>,
+  board: { uuid: string },
+): Promise<void> {
+  await executor
+    .update(dbSchema.resourcePrivacy)
+    .set({
+      locationAudience: 'only_me',
+      updatedAt: new Date(),
+      revision: sql`${dbSchema.resourcePrivacy.revision} + 1`,
+    })
+    .where(
+      and(
+        eq(dbSchema.resourcePrivacy.kind, 'board'),
+        eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
+        eq(dbSchema.resourcePrivacy.locationAudience, 'public'),
+      ),
+    );
+}
+
+/**
+ * Whether the live board `boardUuid` sits at its public gym's own place, so its
+ * location is always shown and its owner's location choice is locked.
+ */
+export async function boardLocationSharedByGym(
+  executor: Pick<typeof db, 'select'>,
+  boardUuid: string,
+): Promise<boolean> {
+  const [board] = await executor
+    .select({
+      gymId: dbSchema.userBoards.gymId,
+      boardType: dbSchema.userBoards.boardType,
+      latitude: dbSchema.userBoards.latitude,
+      longitude: dbSchema.userBoards.longitude,
+      locationName: dbSchema.userBoards.locationName,
+    })
+    .from(dbSchema.userBoards)
+    .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+    .limit(1);
+  return board ? gymSharesBoardLocation(executor, board) : false;
 }

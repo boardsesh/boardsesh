@@ -8515,6 +8515,8 @@ export type ResourcePrivacySettings = {
   inheritFollowers: Scalars['Boolean']['output'];
   kind: PrivacyResourceKind;
   locationAudience: PrivacyLocationAudience;
+  /** True when the board sits at a public gym's own listed place, so its location is always shown and the location choice is locked. Always false for a session. */
+  locationSharedByGym?: Maybe<Scalars['Boolean']['output']>;
   ownerId?: Maybe<Scalars['ID']['output']>;
   resourceId: Scalars['ID']['output'];
   revision: Scalars['Int']['output'];
@@ -17036,6 +17038,7 @@ export type ResourcePrivacySettingsResolvers<
   inheritFollowers?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   kind?: Resolver<ResolversTypes['PrivacyResourceKind'], ParentType, ContextType>;
   locationAudience?: Resolver<ResolversTypes['PrivacyLocationAudience'], ParentType, ContextType>;
+  locationSharedByGym?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   ownerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   resourceId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   revision?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;

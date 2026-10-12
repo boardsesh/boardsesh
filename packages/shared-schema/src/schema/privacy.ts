@@ -89,6 +89,8 @@ export const privacyTypeDefs = /* GraphQL */ `
     locationAudience: PrivacyLocationAudience!
     inheritFollowers: Boolean!
     revision: Int!
+    "True when the board sits at a public gym's own listed place, so its location is always shown and the location choice is locked. Always false for a session."
+    locationSharedByGym: Boolean
   }
   input UpdateResourcePrivacyInput {
     kind: PrivacyResourceKind!

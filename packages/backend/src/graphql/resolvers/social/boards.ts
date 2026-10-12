@@ -40,7 +40,13 @@ import {
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
-import { gymSharesBoardLocation, shareGymBoardLocation } from './gym-board-location';
+import {
+  boardSitsAtGym,
+  gymSharesBoardLocation,
+  hideBoardLocationLeavingGym,
+  publicGymPlace,
+  shareGymBoardLocation,
+} from './gym-board-location';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
@@ -2047,11 +2053,18 @@ export const socialBoardMutations = {
     const audience =
       validatedInput.audience ??
       (validatedInput.isPublic === false ? 'only_me' : validatedInput.isUnlisted ? 'unlisted' : 'public');
-    // A board joining a public gym (named, or matched by its location) shows
-    // where it is, whatever the builder sent: see gymSharesBoardLocation. A gym
-    // minted below is not one yet, so a minted board keeps the requested
+    // A board joining a public gym at exactly the place the gym lists (the
+    // builder stamps the gym's name and coordinates when a climber picks it)
+    // shows where it is, whatever the builder sent: see boardSitsAtGym. A board
+    // the server matched to a gym from the climber's own GPS fix or typed place
+    // keeps the requested location, so a home wall near a gym stays hidden. A
+    // gym minted below is not one yet, so a minted board keeps the requested
     // location and the gym follows it.
-    const sharesGymLocation = await gymSharesBoardLocation(db, gymId, validatedInput.boardType);
+    const sharesGymLocation = await gymSharesBoardLocation(db, {
+      gymId,
+      boardType: validatedInput.boardType,
+      ...incomingLocation,
+    });
     const locationAudience = sharesGymLocation
       ? 'public'
       : (validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me'));
@@ -2263,12 +2276,27 @@ export const socialBoardMutations = {
     if (validatedInput.locationName !== undefined) updateValues.locationName = validatedInput.locationName;
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
     if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
-    // A board in a public gym always shows its location (gymSharesBoardLocation),
-    // so its hideLocation input is ignored and the location is shared below on
-    // every save, whoever makes it: it is the server's rule, not the editor's
-    // privacy choice. Clients resend hideLocation: true with a rename.
-    const sharesGymLocation = await gymSharesBoardLocation(db, board.gymId, board.boardType);
-    const requestedHideLocation = sharesGymLocation ? undefined : validatedInput.hideLocation;
+    // A board sitting at its public gym's own place always shows its location
+    // (boardSitsAtGym), so its hideLocation input is ignored and the location is
+    // shared below on every save, whoever makes it: it is the server's rule, not
+    // the editor's privacy choice. Clients resend hideLocation: true with a
+    // rename. The rule is judged on the place the board will have AFTER this
+    // edit, so it can never show a place the request itself sent.
+    //
+    // A board that sat at the gym's place and is moved off it (a home, a typed
+    // address) goes back to the home default, hidden, whatever the request says:
+    // its location was shown only by the rule, an installed client edits before
+    // it unlinks the gym, and the edit screen with privacy controls on sends no
+    // hideLocation at all. Showing the new place is a separate choice.
+    const gymPlace = await publicGymPlace(db, board.gymId, board.boardType);
+    const nextPlace = {
+      latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
+      longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
+      locationName: validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
+    };
+    const sharesGymLocation = gymPlace !== null && boardSitsAtGym(nextPlace, gymPlace);
+    const leavesGymPlace = gymPlace !== null && !sharesGymLocation && boardSitsAtGym(board, gymPlace);
+    const requestedHideLocation = sharesGymLocation || leavesGymPlace ? undefined : validatedInput.hideLocation;
     // A spray wall's visibility is not an ordinary board flag: flipping it public
     // copies the wall photo into the world-readable bucket, and flipping it back
     // deletes that copy and retracts the climbs already fanned out to feeds
@@ -2560,6 +2588,9 @@ export const socialBoardMutations = {
         if (sharesGymLocation) {
           await shareGymBoardLocation(tx, board);
           updateValues.hideLocation = false;
+        } else if (leavesGymPlace) {
+          await hideBoardLocationLeavingGym(tx, board);
+          updateValues.hideLocation = true;
         }
         return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
       });

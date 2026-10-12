@@ -368,6 +368,55 @@ describe('privacy public-defaults backfill', () => {
     expect((await boardRow(atGym.uuid)).hideLocation).toBe(true);
   });
 
+  it("shows a gym board's location only when it sits at the gym's own place, never a place the climber sent", async () => {
+    const [gym] = await db
+      .insert(schema.gyms)
+      .values({
+        uuid: 'backfill-place-gym',
+        slug: 'backfill-place-gym',
+        ownerId: SYSTEM_OWNER,
+        name: 'Boulder Central',
+        isPublic: true,
+        latitude: 47,
+        longitude: 8,
+      })
+      .returning({ id: schema.gyms.id });
+
+    // Picked in the builder: the gym's own coordinates and name.
+    const pickedGym = await insertBoard({ gymId: gym.id, latitude: 47, longitude: 8, locationName: 'Boulder Central' });
+    // Attached by the server from the climber's GPS fix 120 m away.
+    const gpsFix = await insertBoard({ gymId: gym.id, latitude: 47.00108, longitude: 8 });
+    // The gym's coordinates, but a typed home address.
+    const typedAddress = await insertBoard({
+      gymId: gym.id,
+      latitude: 47,
+      longitude: 8,
+      locationName: '12 Elm Street',
+    });
+    // A policy row on a board with the climber's own coordinates stays narrow too.
+    const gpsFixWithPolicy = await insertBoard({
+      gymId: gym.id,
+      ownerId: otherOwner,
+      latitude: 47.00108,
+      longitude: 8,
+    });
+    await db.insert(schema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: gpsFixWithPolicy.uuid,
+      ownerId: otherOwner,
+      audience: 'public',
+      locationAudience: 'only_me',
+    });
+
+    await runBackfill();
+
+    expect((await boardRow(pickedGym.uuid)).hideLocation).toBe(false);
+    for (const kept of [gpsFix, typedAddress, gpsFixWithPolicy]) {
+      expect((await boardRow(kept.uuid)).hideLocation, kept.uuid).toBe(true);
+    }
+    expect(await boardPolicy(gpsFixWithPolicy.uuid)).toMatchObject({ locationAudience: 'only_me' });
+  });
+
   it('runs once: a board made private after the backfill stays private on a second run', async () => {
     const board = await insertBoard();
     await runBackfill();

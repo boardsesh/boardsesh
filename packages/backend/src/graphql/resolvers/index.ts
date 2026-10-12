@@ -4,6 +4,7 @@ import {
   privacyMutations,
   privacyProfileFields,
   privacySettingsFields,
+  resourcePrivacySettingsFields,
   privacySubscriptions,
 } from './privacy';
 import { boardShareLinkMutations, boardShareLinkQueries } from './privacy/board-share-links';
@@ -226,6 +227,7 @@ export const resolvers = {
   ...boardSessionPrivacyResolvers,
   PublicUserProfile: privacyProfileFields,
   PrivacySettings: privacySettingsFields,
+  ResourcePrivacySettings: resourcePrivacySettingsFields,
 
   // Field-level resolvers
   ClimbSearchResult: climbFieldResolvers,

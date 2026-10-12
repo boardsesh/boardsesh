@@ -42,12 +42,17 @@
 -- same as one they never touched. Such boards go public unless the owner-intent
 -- guard above catches them. The first two dry-run counts are those boards.
 --
--- Gym boards (second block, own guard): a board in a public gym always shows
--- its location, because the gym already lists its name and coordinates. The
--- #6254 builder sent hideLocation: true on every create, so boards created in a
--- public gym since the cutoff with the location hidden show it again, and a
--- stored policy location widens to public. Boards in a private gym (in practice
--- a home wall whose typed location minted one) and spray walls are left alone.
+-- Gym boards (second block, own guard): a board sitting at a public gym's own
+-- place always shows its location, because the gym already lists its name and
+-- coordinates. The #6254 builder sent hideLocation: true on every create, so
+-- boards created in a public gym since the cutoff with the location hidden show
+-- it again, and a stored policy location widens to public. "At the gym's own
+-- place" means no coordinates or exactly the gym's, and no location name or
+-- exactly the gym's: the builder stamps both when a climber picks the gym. A
+-- board the server attached to a gym from the climber's own GPS fix or typed
+-- place carries its own coordinates or name, and is left alone, as are boards
+-- in a private gym (in practice a home wall whose typed location minted one)
+-- and spray walls.
 --
 -- A board a climber makes private after this runs can look the same as a
 -- default one, so a second run could undo their choice. The guard row below
@@ -102,7 +107,10 @@
 --   SELECT count(*) FROM user_boards b
 --     JOIN gyms g ON g.id = b.gym_id AND g.is_public AND g.deleted_at IS NULL
 --    WHERE b.deleted_at IS NULL AND b.created_at >= '2026-10-08 21:27:51'
---      AND b.hide_location = true AND b.board_type <> 'spray';
+--      AND b.hide_location = true AND b.board_type <> 'spray'
+--      AND ((b.latitude IS NULL AND b.longitude IS NULL)
+--           OR (b.latitude = g.latitude AND b.longitude = g.longitude))
+--      AND (btrim(coalesce(b.location_name, '')) = '' OR btrim(b.location_name) = btrim(g.name));
 --
 --   -- accounts
 --   SELECT count(*) FROM user_profiles
@@ -247,7 +255,11 @@ BEGIN
      AND b.hide_location = true
      AND b.board_type <> 'spray'
      AND g.is_public
-     AND g.deleted_at IS NULL;
+     AND g.deleted_at IS NULL
+     -- Only a board at the gym's own listed place: never a place the climber sent.
+     AND ((b.latitude IS NULL AND b.longitude IS NULL)
+          OR (b.latitude = g.latitude AND b.longitude = g.longitude))
+     AND (btrim(coalesce(b.location_name, '')) = '' OR btrim(b.location_name) = btrim(g.name));
   GET DIAGNOSTICS v_gym_policies = ROW_COUNT;
 
   UPDATE user_boards b
@@ -259,7 +271,11 @@ BEGIN
      AND b.hide_location = true
      AND b.board_type <> 'spray'
      AND g.is_public
-     AND g.deleted_at IS NULL;
+     AND g.deleted_at IS NULL
+     -- Only a board at the gym's own listed place: never a place the climber sent.
+     AND ((b.latitude IS NULL AND b.longitude IS NULL)
+          OR (b.latitude = g.latitude AND b.longitude = g.longitude))
+     AND (btrim(coalesce(b.location_name, '')) = '' OR btrim(b.location_name) = btrim(g.name));
   GET DIAGNOSTICS v_gym_boards = ROW_COUNT;
 
   INSERT INTO _bs_migration_guards (tag) VALUES ('privacy_gym_board_location_backfill_b1');
