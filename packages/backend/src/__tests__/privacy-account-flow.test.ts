@@ -329,7 +329,7 @@ describe('privacy controls against Postgres', () => {
     ).toEqual([]);
   });
 
-  it('lets a climber the owner invites to an Invite-only board read it, its presence and its sessions at once', async () => {
+  it('grants immediate board and presence access independently of a public session', async () => {
     const boardOwner = 'privacy-flow-invite-owner';
     const friend = 'privacy-flow-invite-friend';
     const stranger = 'privacy-flow-invite-stranger';
@@ -381,7 +381,8 @@ describe('privacy controls against Postgres', () => {
       ),
       session: (await sessionFeedQueries.sessionDetail(null, { sessionId }, context(viewer)))?.sessionId ?? null,
     });
-    const shut = { board: null, presence: 'Board not found', session: null };
+    // The merged author-decides policy keeps this Public session readable.
+    const shut = { board: null, presence: 'Board not found', session: sessionId };
     expect(await reads(friend)).toEqual(shut);
 
     // The owner adds the friend by name. That is the whole flow: no request
