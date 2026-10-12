@@ -1,4 +1,9 @@
 export const integrationsTypeDefs = /* GraphQL */ `
+  enum NativeAppVariant {
+    production
+    dev
+  }
+
   # ============================================
   # External Platform Integration Types
   # ============================================

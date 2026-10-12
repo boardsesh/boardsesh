@@ -7,5 +7,11 @@
       <key>NSExtensionPointIdentifier</key>
       <string>com.apple.widgetkit-extension</string>
     </dict>
+    <key>BoardseshHostBundleIdentifier</key>
+    <string>$(BOARDSESH_HOST_BUNDLE_IDENTIFIER)</string>
+    <key>BoardseshAppGroupIdentifier</key>
+    <string>$(BOARDSESH_APP_GROUP_IDENTIFIER)</string>
+    <key>BoardseshKeychainAccessGroup</key>
+    <string>$(AppIdentifierPrefix)$(BOARDSESH_APP_GROUP_IDENTIFIER)</string>
   </dict>
 </plist>

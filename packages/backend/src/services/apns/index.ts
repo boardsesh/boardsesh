@@ -74,6 +74,7 @@ interface DebouncedEntry {
 }
 
 export interface LiveActivityTokenRegistration {
+  bundleId?: string;
   token: string;
   userId: string | null;
 }
@@ -287,12 +288,17 @@ export async function shutdownApns(): Promise<void> {
 
 async function getTokenRegistrationsForSession(sessionId: string): Promise<LiveActivityTokenRegistration[]> {
   const rows = await db
-    .select({ token: activityPushTokens.token, userId: activityPushTokens.userId })
+    .select({
+      token: activityPushTokens.token,
+      userId: activityPushTokens.userId,
+      bundleId: activityPushTokens.bundleId,
+    })
     .from(activityPushTokens)
     .where(eq(activityPushTokens.sessionId, sessionId));
 
   return rows.map((registration) => ({
     token: registration.token,
+    bundleId: registration.bundleId,
     userId: registration.userId ?? null,
   }));
 }
@@ -413,11 +419,37 @@ async function sendNotification(
 ): Promise<{ sent: number; failed: number; stale: number }> {
   if (!provider || registrations.length === 0) return { sent: 0, failed: 0, stale: 0 };
 
+  // Split at the send boundary so every path (including end and heartbeat)
+  // addresses the app that registered each token, after privacy projection.
+  const registrationsByBundleId = new Map<string, LiveActivityTokenRegistration[]>();
+  for (const registration of registrations) {
+    const registrationBundleId = registration.bundleId ?? bundleId;
+    const group = registrationsByBundleId.get(registrationBundleId) ?? [];
+    group.push(registration);
+    registrationsByBundleId.set(registrationBundleId, group);
+  }
+  if (registrationsByBundleId.size > 1) {
+    const deliveries = await Promise.all(
+      [...registrationsByBundleId.values()].map((group) =>
+        sendNotification(sessionId, group, event, contentState, options),
+      ),
+    );
+    return deliveries.reduce(
+      (totals, delivery) => ({
+        sent: totals.sent + delivery.sent,
+        failed: totals.failed + delivery.failed,
+        stale: totals.stale + delivery.stale,
+      }),
+      { sent: 0, failed: 0, stale: 0 },
+    );
+  }
+  const topicBundleId = registrations[0].bundleId ?? bundleId;
+
   const tokens = registrations.map((registration) => registration.token);
   metrics.sendsAttempted += tokens.length;
 
   const notification = new apn.Notification();
-  notification.topic = `${bundleId}.push-type.liveactivity`;
+  notification.topic = `${topicBundleId}.push-type.liveactivity`;
   notification.pushType = 'liveactivity';
   notification.priority = 10;
 

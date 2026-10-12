@@ -166,7 +166,7 @@ export const pushTokenMutations = {
    */
   registerActivityPushToken: async (
     _: unknown,
-    { sessionId, token }: { sessionId: string; token: string },
+    { sessionId, token, bundleId }: { sessionId: string; token: string; bundleId?: string | null },
     ctx: ConnectionContext,
   ) => {
     if (!ctx.isAuthenticated || !ctx.userId) {
@@ -181,6 +181,11 @@ export const pushTokenMutations = {
         `[APNs] Rejected Live Activity token registration for session ${describeSessionForLog(sessionId)}: missing sessionId or token`,
       );
       throw new Error('sessionId and token are required');
+    }
+
+    const registrationBundleId = bundleId ?? 'com.boardsesh.app';
+    if (registrationBundleId !== 'com.boardsesh.app' && registrationBundleId !== 'com.boardsesh.app.dev') {
+      throw new Error('Invalid Live Activity bundle identifier');
     }
 
     if (!APNS_TOKEN_PATTERN.test(token)) {
@@ -278,12 +283,14 @@ export const pushTokenMutations = {
           .insert(activityPushTokens)
           .values({
             token,
+            bundleId: registrationBundleId,
             sessionId,
             userId: ctx.userId,
           })
           .onConflictDoUpdate({
             target: activityPushTokens.token,
             set: {
+              bundleId: registrationBundleId,
               sessionId,
               userId: ctx.userId,
               updatedAt: new Date(),
@@ -317,9 +324,14 @@ export const pushTokenMutations = {
         const state = await buildContentStateForSession(sessionId);
         if (!state) return;
         try {
-          await sendLiveActivityUpdateToTokens(sessionId, [{ token, userId: ctx.userId ?? null }], state, {
-            source: 'registration',
-          });
+          await sendLiveActivityUpdateToTokens(
+            sessionId,
+            [{ token, userId: ctx.userId ?? null, bundleId: registrationBundleId }],
+            state,
+            {
+              source: 'registration',
+            },
+          );
         } catch (error) {
           logger.warn(
             `[APNs] Failed initial Live Activity send for session ${sessionId} (${describeTokenForLog(token)}):`,

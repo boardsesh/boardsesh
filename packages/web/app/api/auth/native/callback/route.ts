@@ -6,7 +6,7 @@ import {
   NATIVE_OAUTH_ATTEMPT_COOKIE,
   verifyNativeOAuthAttempt,
 } from '@/app/lib/auth/native-oauth-transfer';
-import { NATIVE_OAUTH_CALLBACK_SCHEME } from '@/app/lib/auth/native-oauth-config';
+import { nativeAppIdentity, parseNativeAppVariant } from '@boardsesh/shared-schema/native-app-identity';
 
 const sanitizeNextPath = (nextPath: string | null): string => (nextPath && nextPath.startsWith('/') ? nextPath : '/');
 
@@ -49,16 +49,29 @@ const deepLinkRedirect = (url: string) => {
 };
 
 export async function GET(request: NextRequest) {
+  const appVariant = parseNativeAppVariant(request.nextUrl.searchParams.get('appVariant'));
+  if (!appVariant) return new NextResponse(null, { status: 400 });
+  const attempt = verifyNativeOAuthAttempt(request.cookies.get(NATIVE_OAUTH_ATTEMPT_COOKIE)?.value);
+  if (
+    (attempt && (attempt.appVariant ?? 'production') !== appVariant) ||
+    (appVariant === 'dev' &&
+      (!attempt ||
+        attempt.appVariant !== appVariant ||
+        attempt.attemptId !== request.nextUrl.searchParams.get('attemptId')))
+  ) {
+    return new NextResponse(null, { status: 400 });
+  }
+  const callbackScheme = `${nativeAppIdentity(appVariant).scheme}://auth/callback`;
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
+    return deepLinkRedirect(`${callbackScheme}?error=session_missing`);
   }
 
   const nextPath = sanitizeNextPath(request.nextUrl.searchParams.get('next'));
-  const attempt = verifyNativeOAuthAttempt(request.cookies.get(NATIVE_OAUTH_ATTEMPT_COOKIE)?.value);
   const proof = session.nativeOAuthCreationProof;
   const verifiedProof =
     attempt &&
+    Date.now() - attempt.startedAt <= 120_000 &&
     attempt.attemptId === request.nextUrl.searchParams.get('attemptId') &&
     attempt.provider === request.nextUrl.searchParams.get('provider') &&
     proof?.provider === attempt.provider &&
@@ -81,9 +94,9 @@ export async function GET(request: NextRequest) {
       ...verifiedProof,
     });
   } catch {
-    return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=token_issue_failed`);
+    return deepLinkRedirect(`${callbackScheme}?error=token_issue_failed`);
   }
 
-  const redirectUrl = `${NATIVE_OAUTH_CALLBACK_SCHEME}?transferToken=${encodeURIComponent(transferToken)}&next=${encodeURIComponent(nextPath)}`;
+  const redirectUrl = `${callbackScheme}?transferToken=${encodeURIComponent(transferToken)}&next=${encodeURIComponent(nextPath)}`;
   return deepLinkRedirect(redirectUrl);
 }

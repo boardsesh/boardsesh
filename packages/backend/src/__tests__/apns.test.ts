@@ -92,7 +92,7 @@ interface ApnsModule {
   invalidateApnsPrivacy: () => void;
   sendLiveActivityUpdateToTokens: (
     sessionId: string,
-    registrations: Array<{ token: string; userId: string | null }>,
+    registrations: Array<{ token: string; userId: string | null; bundleId?: string }>,
     contentState: LiveActivityContentState,
   ) => Promise<void>;
   sendLiveActivityUpdate: (sessionId: string, contentState: LiveActivityContentState) => void;
@@ -230,6 +230,51 @@ describe('APNs Live Activity service', () => {
     await apns.shutdownApns();
     apns.__resetApnsForTests();
     restoreEnv(envSnapshot);
+  });
+
+  it('splits immediate sends by app topic, retaining the configured legacy fallback', async () => {
+    const sessionId = 'apns-app-topics';
+    await insertSession(sessionId);
+    setApnsEnv();
+    apns.initializeApns();
+    await apns.sendLiveActivityUpdateToTokens(
+      sessionId,
+      [
+        { token: 'production-token', userId: null, bundleId: 'com.boardsesh.app' },
+        { token: 'dev-token', userId: null, bundleId: 'com.boardsesh.app.dev' },
+        { token: 'legacy-token', userId: null },
+      ],
+      sampleContentState,
+    );
+    expect(mockSend.mock.calls.map(([notification, tokens]) => [notification.topic, tokens])).toEqual([
+      ['com.boardsesh.app.push-type.liveactivity', ['production-token']],
+      ['com.boardsesh.app.dev.push-type.liveactivity', ['dev-token']],
+      ['com.boardsesh.test.push-type.liveactivity', ['legacy-token']],
+    ]);
+  });
+
+  it('uses stored app topics for debounced updates and session end', async () => {
+    const sessionId = 'apns-stored-app-topics';
+    await insertSession(sessionId);
+    await db.insert(activityPushTokens).values([
+      { token: 'stored-production-token', sessionId },
+      { token: 'stored-dev-token', sessionId, bundleId: 'com.boardsesh.app.dev' },
+    ]);
+    setApnsEnv();
+    apns.initializeApns();
+    apns.sendLiveActivityUpdate(sessionId, sampleContentState);
+    await waitForSettle();
+    expect(new Set(mockSend.mock.calls.map(([notification]) => notification.topic))).toEqual(
+      new Set(['com.boardsesh.app.push-type.liveactivity', 'com.boardsesh.app.dev.push-type.liveactivity']),
+    );
+    mockSend.mockClear();
+    await apns.endLiveActivity(sessionId);
+    expect(new Set(mockSend.mock.calls.map(([notification]) => notification.topic))).toEqual(
+      new Set(['com.boardsesh.app.push-type.liveactivity', 'com.boardsesh.app.dev.push-type.liveactivity']),
+    );
+    expect(mockSend.mock.calls.every(([notification]) => (notification.aps as { event: string }).event === 'end')).toBe(
+      true,
+    );
   });
 
   describe('initializeApns', () => {

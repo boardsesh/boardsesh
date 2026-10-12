@@ -25,6 +25,12 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     alias: [
+      // Binary identity is available without Expo's native runtime in tests.
+      // Suites can override this production identity with their own vi.mock.
+      {
+        find: 'expo-application',
+        replacement: fileURLToPath(new URL('./test/expo-application-stub.ts', import.meta.url)),
+      },
       // Gorhom is installed only in web-runtime so it stays outside the native
       // fingerprint graph. This resolver target lets adapter tests install a
       // hoisted module mock without making the real package visible to Vitest.

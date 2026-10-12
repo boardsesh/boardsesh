@@ -4889,6 +4889,7 @@ export type MutationCreateGymKioskArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationCreateIntegrationOAuthHandoffArgs = {
+  appVariant?: InputMaybe<NativeAppVariant>;
   provider: IntegrationProvider;
 };
 
@@ -5179,6 +5180,7 @@ export type MutationRefreshGymActivityStatsArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationRegisterActivityPushTokenArgs = {
+  bundleId?: InputMaybe<Scalars['String']['input']>;
   sessionId: Scalars['ID']['input'];
   token: Scalars['String']['input'];
 };
@@ -5696,6 +5698,8 @@ export type MyGymsInput = {
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
+
+export type NativeAppVariant = 'dev' | 'production';
 
 export type NewClimbCreatedEvent = {
   __typename?: 'NewClimbCreatedEvent';
@@ -11683,6 +11687,7 @@ export type ResolversTypes = ResolversObject<{
   MyBoardsInput: MyBoardsInput;
   MyGymClaim: ResolverTypeWrapper<MyGymClaim>;
   MyGymsInput: MyGymsInput;
+  NativeAppVariant: NativeAppVariant;
   NewClimbCreatedEvent: ResolverTypeWrapper<NewClimbCreatedEvent>;
   NewClimbFeedInput: NewClimbFeedInput;
   NewClimbFeedItem: ResolverTypeWrapper<NewClimbFeedItem>;

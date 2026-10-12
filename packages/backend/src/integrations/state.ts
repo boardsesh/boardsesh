@@ -1,3 +1,4 @@
+import { parseNativeAppVariant, type NativeAppVariant } from '@boardsesh/shared-schema/native-app-identity';
 // Signed, purpose-bound tokens for the integration OAuth handshake.
 //
 // Two token kinds share the same HMAC envelope but are never interchangeable
@@ -54,6 +55,7 @@ const CLOCK_SKEW_TOLERANCE_SECONDS = 5;
 type TokenPurpose = 'oauth-state' | 'oauth-handoff';
 
 type SignedPayload = {
+  appVariant?: NativeAppVariant;
   purpose: TokenPurpose;
   userId: string;
   provider: ProviderName;
@@ -63,13 +65,14 @@ type SignedPayload = {
 };
 
 export type VerifiedIntegrationToken = {
+  appVariant?: NativeAppVariant;
   userId: string;
   provider: ProviderName;
   nonce: string;
 };
 
 function signPayload(
-  input: { userId: string; provider: ProviderName },
+  input: { userId: string; provider: ProviderName; appVariant?: NativeAppVariant },
   purpose: TokenPurpose,
   lifetimeSeconds: number,
 ): string {
@@ -81,6 +84,7 @@ function signPayload(
   const now = Math.floor(Date.now() / 1000);
   const payload: SignedPayload = {
     purpose,
+    ...(input.appVariant ? { appVariant: input.appVariant } : {}),
     userId: input.userId,
     provider: input.provider,
     nonce: crypto.randomBytes(16).toString('base64url'),
@@ -163,10 +167,21 @@ function verifySignedPayload(
     return null;
   }
 
-  return { userId: payload.userId, provider: payload.provider, nonce: payload.nonce };
+  const appVariant = parseNativeAppVariant(payload.appVariant);
+  if (!appVariant) return null;
+  return {
+    userId: payload.userId,
+    provider: payload.provider,
+    nonce: payload.nonce,
+    ...(payload.appVariant ? { appVariant } : {}),
+  };
 }
 
-export function signIntegrationState(input: { userId: string; provider: ProviderName }): string {
+export function signIntegrationState(input: {
+  userId: string;
+  provider: ProviderName;
+  appVariant?: NativeAppVariant;
+}): string {
   return signPayload(input, 'oauth-state', STATE_LIFETIME_SECONDS);
 }
 
@@ -174,7 +189,11 @@ export function verifyIntegrationState(state: string): VerifiedIntegrationToken 
   return verifySignedPayload(state, 'oauth-state', STATE_LIFETIME_SECONDS);
 }
 
-export function signIntegrationHandoff(input: { userId: string; provider: ProviderName }): string {
+export function signIntegrationHandoff(input: {
+  userId: string;
+  provider: ProviderName;
+  appVariant?: NativeAppVariant;
+}): string {
   return signPayload(input, 'oauth-handoff', HANDOFF_LIFETIME_SECONDS);
 }
 

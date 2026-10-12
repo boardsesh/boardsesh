@@ -1,0 +1,254 @@
+name: iOS Dev Client (TestFlight)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+      - 'packages/board-constants/**'
+      - 'packages/shared-schema/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**'
+      - '.github/workflows/ios-dev-client-testflight.yml'
+      - 'scripts/mobile-ios-dev-*'
+      - 'scripts/lib/ios-dev-testflight.ts'
+      - 'fastlane/Fastfile'
+  schedule:
+    # Renew at 60 days (at most seven days later), ahead of TestFlight's 90-day expiry.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      force_native:
+        description: Rebuild even when the existing client is compatible and fresh
+        type: boolean
+        default: true
+
+concurrency:
+  group: ios-dev-client-testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BOARDSESH_IOS_APP_VARIANT: dev
+  EAS_BUILD_PROFILE: development-testflight
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_IOS_DEV_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_IOS_DEV_CLIENT_ID }}
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  EXPO_PUBLIC_USE_RN_FETCH: '1'
+
+jobs:
+  gate:
+    # Production credentials may only execute trusted main code. Opt in after setup.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.IOS_DEV_TESTFLIGHT_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 20
+    outputs:
+      should_build: ${{ steps.gate.outputs.should_build }}
+      fingerprint: ${{ steps.gate.outputs.fingerprint }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FORCE_NATIVE: ${{ inputs.force_native }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Dev setup
+        env:
+          IOS_P12_CERTIFICATE_BASE64: ${{ secrets.IOS_P12_CERTIFICATE_BASE64 }}
+          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          IOS_DEV_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_APP_PROVISIONING_PROFILE_BASE64 }}
+          IOS_DEV_WIDGETS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_WIDGETS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_DEV_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          for variable in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_API_KEY_BASE64 IOS_P12_CERTIFICATE_BASE64 IOS_P12_PASSWORD IOS_DEV_APP_PROVISIONING_PROFILE_BASE64 IOS_DEV_WIDGETS_PROVISIONING_PROFILE_BASE64 IOS_DEV_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 EXPO_PUBLIC_GOOGLE_IOS_DEV_CLIENT_ID; do
+            if [ -z "${!variable:-}" ]; then
+              echo "::error::Missing $variable. Follow docs/ios-dev-client-testflight.md before enabling this workflow."
+              exit 1
+            fi
+          done
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - run: vp exec tsx scripts/mobile-ios-dev-testflight.ts env
+      - id: gate
+        run: vp exec tsx scripts/mobile-ios-dev-testflight.ts gate
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.should_build == 'true'
+    runs-on: macos-26
+    environment: Production
+    timeout-minutes: 90
+    outputs:
+      build_number: ${{ steps.number.outputs.value }}
+      version: ${{ steps.identity.outputs.version }}
+    env:
+      ARCHIVE_PATH: ${{ github.workspace }}/packages/mobile/ios/build/BoardseshDev.xcarchive
+      EXPORT_PATH: ${{ github.workspace }}/packages/mobile/ios/build/export
+      EXPORT_OPTIONS_PLIST: ${{ runner.temp }}/ios-dev-export.plist
+      EXPO_UPDATES_FINGERPRINT_OVERRIDE: ${{ needs.gate.outputs.fingerprint }}
+      KEYCHAIN_NAME: boardsesh-dev-${{ github.run_id }}.keychain
+      KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+      BUNDLE_GEMFILE: ${{ github.workspace }}/fastlane/Gemfile
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - run: vp exec tsx scripts/mobile-ios-dev-testflight.ts env
+      - name: Generate Dev native project
+        working-directory: packages/mobile
+        run: vp exec expo prebuild --platform ios --clean --no-install
+      - uses: actions/cache@v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: ${{ runner.os }}-pods-ios-dev-${{ needs.gate.outputs.fingerprint }}
+      - name: Install CocoaPods
+        working-directory: packages/mobile/ios
+        run: pod install
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+      - name: Prepare App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          key_path="$RUNNER_TEMP/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$key_path"
+          if ! grep -q 'BEGIN PRIVATE KEY' "$key_path"; then
+            echo '::error::Invalid App Store Connect API key.'
+            exit 1
+          fi
+          echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+      - name: Install Dev signing profiles
+        env:
+          IOS_P12_CERTIFICATE_BASE64: ${{ secrets.IOS_P12_CERTIFICATE_BASE64 }}
+          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          IOS_DEV_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_APP_PROVISIONING_PROFILE_BASE64 }}
+          IOS_DEV_WIDGETS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_WIDGETS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_DEV_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
+        run: bash scripts/mobile-ios-dev-signing.sh
+      - name: Next Dev build number
+        id: number
+        working-directory: fastlane
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          BUILD_NUMBER_FALLBACK: ${{ github.run_number }}
+        run: bundle exec fastlane ios next_build_number app_identifier:com.boardsesh.app.dev strict:true
+      - name: Read generated app version
+        id: identity
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' packages/mobile/ios/BoardseshDev/Info.plist)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Set every target build number
+        working-directory: packages/mobile/ios
+        env:
+          IOS_DEV_BUILD_NUMBER: ${{ steps.number.outputs.value }}
+        run: agvtool new-version -all "$IOS_DEV_BUILD_NUMBER"
+      - name: Archive Debug development client
+        env:
+          IOS_DEV_BUILD_NUMBER: ${{ steps.number.outputs.value }}
+        run: |
+          xcodebuild archive \
+            -workspace packages/mobile/ios/BoardseshDev.xcworkspace \
+            -scheme BoardseshDev \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            CURRENT_PROJECT_VERSION="$IOS_DEV_BUILD_NUMBER" \
+            ONLY_ACTIVE_ARCH=NO ENABLE_DEBUG_DYLIB=NO DEBUG_INFORMATION_FORMAT=dwarf-with-dsym
+      - name: Check native framework ABI
+        run: vp run mobile:abi-check -- --app "$ARCHIVE_PATH/Products/Applications/BoardseshDev.app"
+      - name: Upload crash symbols
+        if: success()
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [ -n "$SENTRY_AUTH_TOKEN" ]; then
+            vp run mobile:upload-dsyms -- --archive "$ARCHIVE_PATH"
+          fi
+      - name: Upload as TestFlight Internal Only
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS_PLIST" \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-dev-${{ github.run_number }}
+          path: packages/mobile/ios/build/export/*.ipa
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN_NAME" || true
+          rm -rf "$RUNNER_TEMP/private_keys"
+
+  processed:
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      IOS_DEV_BUILD_NUMBER: ${{ needs.build.outputs.build_number }}
+      BOARDSESH_MOBILE_VERSION: ${{ needs.build.outputs.version }}
+      IOS_DEV_FINGERPRINT: ${{ needs.gate.outputs.fingerprint }}
+      IOS_DEV_METADATA_PATH: ${{ runner.temp }}/ios-dev-build.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Wait for the exact internal build
+        run: vp exec tsx scripts/mobile-ios-dev-testflight.ts wait
+      - name: Publish compatible client baseline
+        env:
+          RELEASE_TAG: rn-ios-dev-${{ github.run_number }}-${{ github.run_attempt }}
+        run: |
+          gh release create "$RELEASE_TAG" "$IOS_DEV_METADATA_PATH" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Boardsesh Dev iOS $BOARDSESH_MOBILE_VERSION ($IOS_DEV_BUILD_NUMBER)" \
+            --notes 'Install Boardsesh Dev from your internal TestFlight invitation, then connect to Metro. Setup: docs/ios-dev-client-testflight.md.'

@@ -845,6 +845,7 @@ type VerifiedOAuthIdentity = {
 function getGoogleAudiences(): string[] {
   return [
     process.env.GOOGLE_IOS_CLIENT_ID,
+    process.env.GOOGLE_IOS_DEV_CLIENT_ID,
     process.env.GOOGLE_ANDROID_CLIENT_ID,
     process.env.GOOGLE_WEB_CLIENT_ID,
   ].filter((clientId): clientId is string => typeof clientId === 'string' && clientId.length > 0);
@@ -883,7 +884,10 @@ async function verifyProviderIdentityToken(
     if (provider === 'apple') {
       const { payload } = await jwtVerify(identityToken, appleJwks, {
         issuer: APPLE_ISSUER,
-        audience: APPLE_BUNDLE_ID,
+        audience: [
+          APPLE_BUNDLE_ID,
+          ...(process.env.APPLE_DEV_BUNDLE_ID === 'com.boardsesh.app.dev' ? [process.env.APPLE_DEV_BUNDLE_ID] : []),
+        ],
         // Both providers sign id tokens with RS256; pin it so a future JWKS that
         // also advertises a weaker/asymmetric-confusable alg can't be selected.
         algorithms: ['RS256'],

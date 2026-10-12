@@ -1,3 +1,4 @@
+import { nativeAppVariant, nativeIdentity } from '../native-app-identity';
 import * as WebBrowser from 'expo-web-browser';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
@@ -12,7 +13,7 @@ import { getHttpClient } from '../graphql/client';
 
 export type StravaConnectResult = 'connected' | 'error' | 'cancelled';
 
-const STRAVA_REDIRECT_URL = 'com.boardsesh.app://integrations/strava';
+const STRAVA_REDIRECT_URL = `${nativeIdentity.scheme}://integrations/strava`;
 
 /**
  * Connect the signed-in user's Strava account. Mints a short-lived single-use
@@ -32,7 +33,7 @@ export async function connectStrava(): Promise<StravaConnectResult> {
   try {
     const response = await getHttpClient().request<CreateIntegrationOAuthHandoffResponse>(
       CREATE_INTEGRATION_OAUTH_HANDOFF,
-      { provider: 'STRAVA' },
+      { provider: 'STRAVA', appVariant: nativeAppVariant },
     );
     handoff = response.createIntegrationOAuthHandoff;
   } catch (error) {

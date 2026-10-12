@@ -283,7 +283,12 @@ function isDevBuildProfile(): boolean {
   // EAS_BUILD_PROFILE is set by `eas build` per the profile in eas.json.
   // Treat unset (local `expo prebuild` / dev runs) as a dev build too.
   const profile = process.env.EAS_BUILD_PROFILE;
-  return profile === undefined || profile === 'development' || profile === 'development-device';
+  return (
+    profile === undefined ||
+    profile === 'development' ||
+    profile === 'development-device' ||
+    profile === 'development-testflight'
+  );
 }
 
 // Native Google Sign-In registers the reversed iOS OAuth client id as a
@@ -291,10 +296,14 @@ function isDevBuildProfile(): boolean {
 // Prefer an explicit override; otherwise derive it from the iOS client id.
 // Returns null when neither is set (Apple-only dev builds) so `expo prebuild`
 // stays valid without Google credentials — the real EAS build supplies them.
-function resolveGoogleIosUrlScheme(): string | null {
-  const explicit = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME;
+function resolveGoogleIosUrlScheme(isIosDevVariant: boolean): string | null {
+  const explicit = isIosDevVariant
+    ? process.env.EXPO_PUBLIC_GOOGLE_IOS_DEV_URL_SCHEME
+    : process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME;
   if (explicit && explicit.length > 0) return explicit;
-  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+  const iosClientId = isIosDevVariant
+    ? process.env.EXPO_PUBLIC_GOOGLE_IOS_DEV_CLIENT_ID
+    : process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
   if (!iosClientId) return null;
   // 1234-abc.apps.googleusercontent.com → com.googleusercontent.apps.1234-abc
   const match = iosClientId.match(/^(.+)\.apps\.googleusercontent\.com$/);
@@ -313,27 +322,23 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
   const webPlatform = resolveWebPlatforms(process.env.BOARDSESH_WEB);
   const webHeadOrigin = resolveWebHeadOrigin(process.env.BOARDSESH_WEB, process.env.EXPO_PUBLIC_WEB_URL);
 
-  // The "Boardsesh Dev" variant (set by .github/workflows/android-apk-dev-client.yml
-  // and `expo prebuild` runs that pass BOARDSESH_APP_VARIANT=dev). It ships under a
-  // separate Android package so the dev-client APK installs side-by-side with the
-  // production app, shows a distinct name, and wears reddish hue-shifted icons
-  // (packages/mobile/dev-assets, regenerate via `vp run mobile:make-dev-icons`).
-  // Deliberately scoped to Android identity + icons: `scheme`, ios.bundleIdentifier,
-  // and the iOS entitlement/App-Group block stay on the production values (changing
-  // the scheme breaks OAuth deep-link redirects; the iOS entitlements are irrelevant
-  // to an Android-only build). See docs/android-sideload-build.md.
+  // iOS identity is opt-in separately so Android dev builds preserve their schemes.
   const isDevVariant = process.env.BOARDSESH_APP_VARIANT === 'dev';
-  const appName = isDevVariant ? 'Boardsesh Dev' : 'Boardsesh';
+  const isIosDevVariant = process.env.BOARDSESH_IOS_APP_VARIANT === 'dev';
+  const hasDevIdentity = isDevVariant || isIosDevVariant;
+  const iosBundleIdentifier = isIosDevVariant ? 'com.boardsesh.app.dev' : 'com.boardsesh.app';
+  const iosAppGroupIdentifier = `group.${iosBundleIdentifier}`;
+  const appName = hasDevIdentity ? 'Boardsesh Dev' : 'Boardsesh';
   const androidPackage = isDevVariant ? 'com.boardsesh.app.dev' : 'com.boardsesh.app';
   // EAS file environment variable for this Android package's Firebase config.
   const googleServicesFile = process.env.GOOGLE_SERVICES_JSON?.trim();
-  const iconPath = isDevVariant ? './dev-assets/icon.png' : './assets/icon.png';
-  const adaptiveIconPath = isDevVariant ? './dev-assets/adaptive-icon.png' : './assets/adaptive-icon.png';
-  const splashIconPath = isDevVariant ? './dev-assets/splash-icon.png' : './assets/splash-icon.png';
+  const iconPath = hasDevIdentity ? './dev-assets/icon.png' : './assets/icon.png';
+  const adaptiveIconPath = hasDevIdentity ? './dev-assets/adaptive-icon.png' : './assets/adaptive-icon.png';
+  const splashIconPath = hasDevIdentity ? './dev-assets/splash-icon.png' : './assets/splash-icon.png';
 
   // Only register the Google Sign-In config plugin when we can supply a valid
   // iosUrlScheme; without Google credentials the entry is omitted (Apple-only).
-  const googleIosUrlScheme = resolveGoogleIosUrlScheme();
+  const googleIosUrlScheme = resolveGoogleIosUrlScheme(isIosDevVariant);
   type PluginEntry = NonNullable<ExpoConfig['plugins']>[number];
   const googleSignInPlugin: PluginEntry[] = googleIosUrlScheme
     ? [['@react-native-google-signin/google-signin', { iosUrlScheme: googleIosUrlScheme }]]
@@ -348,7 +353,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     slug: 'boardsesh',
     owner: 'boardsesh',
     version: '2.6.0',
-    scheme: 'com.boardsesh.app',
+    scheme: iosBundleIdentifier,
     orientation: 'portrait',
     icon: iconPath,
     userInterfaceStyle: 'automatic',
@@ -431,7 +436,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         }
       : {}),
     ios: {
-      bundleIdentifier: 'com.boardsesh.app',
+      bundleIdentifier: iosBundleIdentifier,
       appStoreUrl: IOS_APP_STORE_URL,
       // Required by @bacons/apple-targets to assign the widget extension
       // target's DEVELOPMENT_TEAM build setting. Matches the existing main
@@ -443,7 +448,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // fallback. The matching apple-app-site-association is served by
       // packages/web at /.well-known/apple-app-site-association. Changing this
       // requires a native rebuild (it's baked into the entitlements).
-      associatedDomains: ['applinks:www.boardsesh.com', 'applinks:boardsesh.com'],
+      // Public links keep opening the production app; Dev uses its custom scheme.
+      associatedDomains: isIosDevVariant ? [] : ['applinks:www.boardsesh.com', 'applinks:boardsesh.com'],
       // Sign in with Apple. Expo injects the com.apple.developer.applesignin
       // entitlement; the capability must also be enabled on the com.boardsesh.app
       // App ID in the Apple Developer portal (manual, one-time). App Review
@@ -458,8 +464,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // and APNs (so ActivityKit can register Live Activity push tokens).
       // These carried over from the retired Capacitor app's App.entitlements.
       entitlements: {
-        'com.apple.security.application-groups': ['group.com.boardsesh.app'],
-        'keychain-access-groups': ['$(AppIdentifierPrefix)group.com.boardsesh.app'],
+        'com.apple.security.application-groups': [iosAppGroupIdentifier],
+        'keychain-access-groups': [`$(AppIdentifierPrefix)${iosAppGroupIdentifier}`],
         'aps-environment': 'production',
       },
       infoPlist: {
@@ -494,7 +500,9 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         // (the expanded $(AppIdentifierPrefix) is only available in Info.plist
         // build settings, not in Swift code). Must match the value in the
         // keychain-access-groups entitlement above.
-        BoardseshKeychainAccessGroup: '$(AppIdentifierPrefix)group.com.boardsesh.app',
+        BoardseshKeychainAccessGroup: `$(AppIdentifierPrefix)${iosAppGroupIdentifier}`,
+        BoardseshAppGroupIdentifier: iosAppGroupIdentifier,
+        BoardseshHostBundleIdentifier: iosBundleIdentifier,
       },
     },
     android: {
@@ -730,7 +738,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
             NSExtensionActivationSupportsText: true,
           },
           iosShareExtensionName: 'Boardsesh Beta',
-          iosAppGroupIdentifier: 'group.com.boardsesh.app',
+          iosAppGroupIdentifier,
           androidIntentFilters: ['text/*'],
         },
       ],

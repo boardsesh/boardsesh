@@ -28,12 +28,13 @@ export type GetIntegrationsResponse = {
 };
 
 export const CREATE_INTEGRATION_OAUTH_HANDOFF = gql`
-  mutation CreateIntegrationOAuthHandoff($provider: IntegrationProvider!) {
-    createIntegrationOAuthHandoff(provider: $provider)
+  mutation CreateIntegrationOAuthHandoff($provider: IntegrationProvider!, $appVariant: NativeAppVariant) {
+    createIntegrationOAuthHandoff(provider: $provider, appVariant: $appVariant)
   }
 `;
 
 export type CreateIntegrationOAuthHandoffVariables = {
+  appVariant?: 'production' | 'dev';
   provider: IntegrationProvider;
 };
 

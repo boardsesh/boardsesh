@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getCsrfToken } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,7 @@ const ALLOWED_PROVIDERS = new Set(['google', 'apple', 'facebook']);
 function NativeStartInner() {
   const { t } = useTranslation('auth');
   const params = useSearchParams();
+  const [preparationFailed, setPreparationFailed] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const submitted = useRef(false);
   const preparing = useRef(false);
@@ -20,14 +21,16 @@ function NativeStartInner() {
   const callbackUrl = params.get('callbackUrl') ?? '/';
 
   useEffect(() => {
-    if (submitted.current || preparing.current) return;
+    if (submitted.current || preparing.current || preparationFailed) return;
     if (!provider || !ALLOWED_PROVIDERS.has(provider)) return;
     preparing.current = true;
 
     const prepareAttempt = async () => {
+      let requiresAttempt = false;
       try {
         const callback = new URL(callbackUrl, window.location.origin);
         const attemptId = callback.searchParams.get('attemptId');
+        requiresAttempt = callback.searchParams.get('appVariant') === 'dev';
         if (
           callback.origin === window.location.origin &&
           callback.pathname === '/api/auth/native/callback' &&
@@ -38,18 +41,27 @@ function NativeStartInner() {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 3000);
           try {
-            await fetch('/api/auth/native/attempt', {
+            const attemptResponse = await fetch('/api/auth/native/attempt', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ attemptId, provider }),
+              body: JSON.stringify({
+                attemptId,
+                provider,
+                appVariant: callback.searchParams.get('appVariant') ?? undefined,
+              }),
               credentials: 'same-origin',
               signal: controller.signal,
             });
+            if (requiresAttempt && !attemptResponse.ok) throw new Error('Native routing proof unavailable');
           } finally {
             clearTimeout(timeout);
           }
         }
       } catch {
+        if (requiresAttempt) {
+          setPreparationFailed(true);
+          return undefined;
+        }
         // Missing attribution proof must never block the OAuth fallback.
       }
       return getCsrfToken();
@@ -66,9 +78,9 @@ function NativeStartInner() {
       .finally(() => {
         preparing.current = false;
       });
-  }, [provider, callbackUrl]);
+  }, [provider, callbackUrl, preparationFailed]);
 
-  if (!provider || !ALLOWED_PROVIDERS.has(provider)) {
+  if (preparationFailed || !provider || !ALLOWED_PROVIDERS.has(provider)) {
     return (
       <Box
         sx={{
@@ -78,7 +90,7 @@ function NativeStartInner() {
           minHeight: '100vh',
         }}
       >
-        <Typography>{t('nativeStart.invalidProvider')}</Typography>
+        <Typography>{preparationFailed ? t('nativeStart.networkError') : t('nativeStart.invalidProvider')}</Typography>
       </Box>
     );
   }

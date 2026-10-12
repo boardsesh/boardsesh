@@ -18,6 +18,13 @@ import { BACKEND_URL, WEB_BASE_URL } from './env';
 import { clientIdentityHeaders } from './client-identity';
 import { parseVerifiedAuthResult, type VerifiedAuthResult } from './verified-auth-result';
 
+import { nativeAppVariant, nativeIdentity } from './native-app-identity';
+
+const googleIosClientId =
+  nativeAppVariant === 'dev'
+    ? process.env.EXPO_PUBLIC_GOOGLE_IOS_DEV_CLIENT_ID
+    : process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+
 export type AuthProvider = 'google' | 'apple';
 
 /**
@@ -36,7 +43,7 @@ export function isGoogleSignInConfigured(): boolean {
   // ID and signIn() would throw. (EXPO_PUBLIC_* are inlined at JS-bundle build
   // time, so an OTA update must be built with the same Google config as the
   // binary it lands on.)
-  if (Platform.OS === 'ios') return Boolean(process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
+  if (Platform.OS === 'ios') return Boolean(googleIosClientId);
   return true;
 }
 
@@ -159,7 +166,7 @@ function configureGoogleSignin(): void {
   // running build's SHA-1 likely isn't registered (see docs/android-sideload-build.md).
   GoogleSignin.configure({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    iosClientId: googleIosClientId,
   });
   googleConfigured = true;
 }
@@ -211,7 +218,7 @@ export async function signInWithGoogle(): Promise<OAuthSignInResult> {
 // The browser-OAuth fallback's deep-link return URL. Matches the web app's
 // NATIVE_OAUTH_CALLBACK_SCHEME (packages/web/app/lib/auth/native-oauth-config.ts):
 // /api/auth/native/callback redirects here with `?transferToken=…` on success.
-const NATIVE_OAUTH_REDIRECT = 'com.boardsesh.app://auth/callback';
+const NATIVE_OAUTH_REDIRECT = `${nativeIdentity.scheme}://auth/callback`;
 
 /**
  * Exchange a single-use transfer token (minted by the web app's
@@ -286,7 +293,7 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
  */
 async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignInResult> {
   const attemptId = generateNonce();
-  const nativeCallbackUrl = `${WEB_BASE_URL}/api/auth/native/callback?next=${encodeURIComponent('/')}&provider=${provider}&attemptId=${attemptId}`;
+  const nativeCallbackUrl = `${WEB_BASE_URL}/api/auth/native/callback?next=${encodeURIComponent('/')}&provider=${provider}&attemptId=${attemptId}&appVariant=${nativeAppVariant}`;
   const startUrl = `${WEB_BASE_URL}/auth/native-start?provider=${provider}&callbackUrl=${encodeURIComponent(nativeCallbackUrl)}`;
 
   // Register the Linking url-listener BEFORE opening the browser (raceBrowserSignIn

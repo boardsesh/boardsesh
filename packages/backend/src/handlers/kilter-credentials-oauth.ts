@@ -1,3 +1,8 @@
+import {
+  nativeAppIdentity,
+  parseNativeAppVariant,
+  type NativeAppVariant,
+} from '@boardsesh/shared-schema/native-app-identity';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { createHash, randomBytes } from 'crypto';
 import { z } from 'zod';
@@ -78,8 +83,8 @@ function safeOauthErrorReason(raw: string): string {
   return REFLECTABLE_OAUTH_ERRORS.has(raw) ? raw : 'oauth_error';
 }
 
-function deepLinkBase(): string {
-  return 'com.boardsesh.app://board-credentials/kilter';
+function deepLinkBase(appVariant: NativeAppVariant = 'production'): string {
+  return `${nativeAppIdentity(appVariant).scheme}://board-credentials/kilter`;
 }
 
 const localConsumedNonces = new Map<string, number>();
@@ -89,9 +94,10 @@ function completionUrl(
   status: 'connected' | 'error',
   reason?: string,
   completion?: string,
+  appVariant?: NativeAppVariant,
 ): string {
   if (!returnUrl) {
-    const nativeUrl = new URL(deepLinkBase());
+    const nativeUrl = new URL(deepLinkBase(appVariant));
     nativeUrl.searchParams.set('status', status);
     if (reason) nativeUrl.searchParams.set('reason', reason);
     if (completion) nativeUrl.searchParams.set('completion', completion);
@@ -127,8 +133,9 @@ function redirectSuccess(
   returnUrl: string | undefined,
   completion: string,
   cookies: string[] = [],
+  appVariant?: NativeAppVariant,
 ): void {
-  redirectTo(res, completionUrl(returnUrl, 'connected', undefined, completion), cookies);
+  redirectTo(res, completionUrl(returnUrl, 'connected', undefined, completion, appVariant), cookies);
 }
 
 function redirectError(
@@ -136,8 +143,9 @@ function redirectError(
   returnUrl: string | undefined,
   reason: string,
   cookies: string[] = [],
+  appVariant?: NativeAppVariant,
 ): void {
-  redirectTo(res, completionUrl(returnUrl, 'error', reason), cookies);
+  redirectTo(res, completionUrl(returnUrl, 'error', reason, undefined, appVariant), cookies);
 }
 
 function sendText(res: ServerResponse, statusCode: number, message: string): void {
@@ -356,6 +364,13 @@ export async function handleKilterCredentialsHandoff(req: IncomingMessage, res: 
     return;
   }
 
+  const appVariant = parseNativeAppVariant(
+    body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>).appVariant : undefined,
+  );
+  if (!appVariant) {
+    sendJson(res, 400, { error: 'Invalid appVariant' });
+    return;
+  }
   const returnUrl = normalizeReturnUrl(
     req,
     body && typeof body === 'object' && !Array.isArray(body) ? (body as { returnUrl?: unknown }).returnUrl : undefined,
@@ -367,6 +382,7 @@ export async function handleKilterCredentialsHandoff(req: IncomingMessage, res: 
 
   const handoff = signBoardCredentialHandoff({
     userId,
+    appVariant,
     provider: KILTER_BOARD_TYPE,
     ...(returnUrl ? { returnUrl } : {}),
   });
@@ -405,6 +421,7 @@ export async function handleKilterCredentialsStart(req: IncomingMessage, res: Se
   const nonce = base64url(randomBytes(16));
   const state = signBoardCredentialState({
     userId: verifiedHandoff.userId,
+    appVariant: verifiedHandoff.appVariant,
     provider: KILTER_BOARD_TYPE,
     ...(verifiedHandoff.returnUrl ? { returnUrl: verifiedHandoff.returnUrl } : {}),
   });
@@ -445,24 +462,36 @@ export async function handleKilterCredentialsCallback(
   const state = url.searchParams.get('state');
   const verifiedStateFromUrl = state ? verifyBoardCredentialState(state) : null;
   if (providerError) {
-    redirectError(res, verifiedStateFromUrl?.returnUrl, safeOauthErrorReason(providerError), clearCookies);
+    redirectError(
+      res,
+      verifiedStateFromUrl?.returnUrl,
+      safeOauthErrorReason(providerError),
+      clearCookies,
+      verifiedStateFromUrl?.appVariant,
+    );
     return;
   }
 
   const code = url.searchParams.get('code');
   if (!code || !state) {
-    redirectError(res, verifiedStateFromUrl?.returnUrl, 'missing_params', clearCookies);
+    redirectError(
+      res,
+      verifiedStateFromUrl?.returnUrl,
+      'missing_params',
+      clearCookies,
+      verifiedStateFromUrl?.appVariant,
+    );
     return;
   }
 
   const verifiedState = verifiedStateFromUrl;
   if (!verifiedState || verifiedState.provider !== KILTER_BOARD_TYPE) {
-    redirectError(res, verifiedState?.returnUrl, 'state_invalid', clearCookies);
+    redirectError(res, verifiedState?.returnUrl, 'state_invalid', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
   if (!KILTER_OAUTH_CLIENT_ID || !KILTER_OAUTH_REDIRECT_URI) {
-    redirectError(res, verifiedState.returnUrl, 'server_error', clearCookies);
+    redirectError(res, verifiedState.returnUrl, 'server_error', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
@@ -471,7 +500,7 @@ export async function handleKilterCredentialsCallback(
   const verifier = cookies.get(VERIFIER_COOKIE_NAME);
   const nonceCookie = cookies.get(NONCE_COOKIE_NAME);
   if (!stateCookie || !verifier || !nonceCookie || stateCookie !== state) {
-    redirectError(res, verifiedState.returnUrl, 'state_invalid', clearCookies);
+    redirectError(res, verifiedState.returnUrl, 'state_invalid', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
@@ -488,17 +517,17 @@ export async function handleKilterCredentialsCallback(
     });
   } catch (error) {
     logger.warn('[BoardCredentials] Kilter OAuth code exchange failed:', error);
-    redirectError(res, verifiedState.returnUrl, 'exchange_failed', clearCookies);
+    redirectError(res, verifiedState.returnUrl, 'exchange_failed', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
   if (!tokens || typeof tokens !== 'object' || typeof tokens.access_token !== 'string') {
-    redirectError(res, verifiedState.returnUrl, 'malformed_tokens', clearCookies);
+    redirectError(res, verifiedState.returnUrl, 'malformed_tokens', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
   if (!tokens.refresh_token) {
-    redirectError(res, verifiedState.returnUrl, 'no_refresh_token', clearCookies);
+    redirectError(res, verifiedState.returnUrl, 'no_refresh_token', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
@@ -512,7 +541,7 @@ export async function handleKilterCredentialsCallback(
     }));
   } catch (error) {
     logger.warn('[BoardCredentials] Kilter id_token verification failed:', error);
-    redirectError(res, verifiedState.returnUrl, 'id_token', clearCookies);
+    redirectError(res, verifiedState.returnUrl, 'id_token', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
@@ -527,11 +556,11 @@ export async function handleKilterCredentialsCallback(
     });
   } catch (error) {
     logger.warn('[BoardCredentials] Failed to create Kilter completion token:', error);
-    redirectError(res, verifiedState.returnUrl, 'completion_failed', clearCookies);
+    redirectError(res, verifiedState.returnUrl, 'completion_failed', clearCookies, verifiedStateFromUrl?.appVariant);
     return;
   }
 
-  redirectSuccess(res, verifiedState.returnUrl, completion, clearCookies);
+  redirectSuccess(res, verifiedState.returnUrl, completion, clearCookies, verifiedStateFromUrl?.appVariant);
 }
 
 export async function handleKilterCredentialsFinalize(req: IncomingMessage, res: ServerResponse): Promise<void> {

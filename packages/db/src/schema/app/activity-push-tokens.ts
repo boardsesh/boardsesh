@@ -7,6 +7,7 @@ export const activityPushTokens = pgTable(
   'activity_push_tokens',
   {
     token: text('token').primaryKey(),
+    bundleId: text('bundle_id').notNull().default('com.boardsesh.app'),
     sessionId: text('session_id')
       .references(() => boardSessions.id, { onDelete: 'cascade' })
       .notNull(),

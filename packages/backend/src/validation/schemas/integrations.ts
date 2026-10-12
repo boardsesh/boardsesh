@@ -7,6 +7,7 @@ export const IntegrationProviderSchema = z.enum(['STRAVA']);
 /** Mutations whose only argument is the provider (disconnect, OAuth handoff). */
 export const IntegrationProviderArgsSchema = z.object({
   provider: IntegrationProviderSchema,
+  appVariant: z.enum(['production', 'dev']).optional(),
 });
 
 export const DisconnectIntegrationSchema = IntegrationProviderArgsSchema;

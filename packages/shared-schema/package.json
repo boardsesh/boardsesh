@@ -55,6 +55,11 @@
       "types": "./src/generated/types.ts",
       "import": "./src/generated/types.ts",
       "default": "./src/generated/types.ts"
+    },
+    "./native-app-identity": {
+      "types": "./src/native-app-identity.ts",
+      "import": "./src/native-app-identity.ts",
+      "default": "./src/native-app-identity.ts"
     }
   },
   "scripts": {
