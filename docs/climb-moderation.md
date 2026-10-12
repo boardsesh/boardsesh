@@ -211,7 +211,8 @@ The predicate lives in one place: `hiddenClimbCondition` in
 **Filtered** — every browse surface: climb lists and their counts, search without a name, the activity
 feed, the new-climb feed and its live push (`newClimbCreated` re-reads the climb per event, so one
 hidden after it was announced still never arrives), recommendations, similar-climb discovery, setter
-stats, the sitemap.
+stats, the setter OG card's grade bars, a board's featured hardest send, someone else's view of a
+profile's climbs (`userClimbs`), the sitemap.
 
 Three of those read `board_climbs` through their own join rather than through `hiddenClimbCondition`,
 so they carry their own copy of the rule:
