@@ -2022,7 +2022,7 @@ nothing about who gets it.
 
 #### Leaving the reference set
 
-`trg_board_climbs_reference_membership` (introduced in 0265, guarded in 0269) fires when an update changes a protected owner or moves a
+`trg_board_climbs_reference_membership` (introduced in 0266, guarded in 0270) fires when an update changes a protected owner or moves a
 climb across the line, in either direction, whichever writer made it.
 
 - **Leaving** writes one `sync_deletions` row for `board_climbs` with no user, so

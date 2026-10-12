@@ -59,7 +59,7 @@ release jobs during the bootstrap/migration window. Older runtime ACL sweeps
 try to re-grant every public routine as the ordinary DDL owner, which cannot
 control this separately owned helper. Do not preinstall it and then run an
 older migrator. The coordinated order is updated tooling, admin bootstrap,
-this release's migrations, then this release's backend. Before migration 0269
+this release's migrations, then this release's backend. Before migration 0270
 installs the membership guard, stop every older backend instance serving sync
 requests. Keep those requests unavailable until this release's filter-aware
 backend serves them. The older backend cannot interpret the new flagged
@@ -111,7 +111,7 @@ ordinary routine ownership/ACL sweeps must not re-own it. The audit checks its
 canonical body, owner, membership, and runtime-only EXECUTE privileges.
 
 Leave the stream column, trigger, classification and helper in place when
-rolling back. After migration 0269, roll back only to a backend that includes
+rolling back. After migration 0270, roll back only to a backend that includes
 the membership-withdrawal readability filter, or keep sync unavailable while
 rolling forward to that backend. Restoring the old producer function alone is
 insufficient: already-written flagged markers remain in the deletion log.

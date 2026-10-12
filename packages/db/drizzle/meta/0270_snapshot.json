@@ -1,5 +1,5 @@
 {
-  "id": "f6ad9b40-b666-41ef-8c95-f900a480958b",
+  "id": "1f6b7833-ca99-4413-a554-b95801e2dea6",
   "prevId": "b9b5e12b-59f4-42d5-bef0-e1702060047d",
   "version": "7",
   "dialect": "postgresql",
@@ -13930,6 +13930,13 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "is_membership_withdrawal": {
+          "name": "is_membership_withdrawal",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

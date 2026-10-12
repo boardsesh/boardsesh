@@ -20,7 +20,7 @@ const helperContractSql = readFileSync(
   'utf8',
 );
 const prerequisiteSql = readFileSync(
-  new URL('../../../db/drizzle/0267_sync_deletions_cutoff_guard.sql', import.meta.url),
+  new URL('../../../db/drizzle/0268_sync_deletions_cutoff_guard.sql', import.meta.url),
   'utf8',
 ).split('--> statement-breakpoint')[0];
 const clients: postgres.Sql[] = [];

@@ -192,13 +192,13 @@ describe('board history identity', () => {
       },
     };
     // The account audience says yes (a public account), and it is still a draft.
-    provenance.climbs = [{ uuid: 'climb-1', userId: 'setter', isListed: false, isDraft: true }];
+    readable.climbs = [{ uuid: 'climb-1', userId: 'setter', isListed: false, isDraft: true }];
     expect(await redactBoardStats(stats, 'viewer')).toEqual({ ...stats, hardestSend: null });
     expect(await redactBoardStats(stats, null)).toEqual({ ...stats, hardestSend: null });
     expect((await redactBoardStats(stats, 'setter')).hardestSend?.climbUuid).toBe('climb-1');
 
     // A draft nobody owns is nobody's, an anonymous viewer included.
-    provenance.climbs = [{ uuid: 'climb-1', userId: null, isListed: false, isDraft: true }];
+    readable.climbs = [{ uuid: 'climb-1', userId: null, isListed: false, isDraft: true }];
     expect(
       await redactBoardStats({ ...stats, hardestSend: { ...stats.hardestSend!, climbOwnerId: null } }, null),
     ).toMatchObject({ climbsSentCount: 20, distinctClimbersCount: 4, hardestGrade: 'V8', hardestSend: null });

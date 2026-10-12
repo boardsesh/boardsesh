@@ -323,9 +323,8 @@ describeWithDatabase('draft climbs on the read paths outside sync (real DB)', ()
         sentAt: '2026-05-01T00:00:00.000Z',
         seq: index + 1,
       }));
-      // No board holds these sequence numbers, so there is no stored
-      // provenance and no identity to show: only the climb details are at stake.
-      const redacted = await redactBoardClimbs(history, 0, STRANGER);
+      // These rows contain no sender identity: this check covers climb details.
+      const redacted = await redactBoardClimbs(history, STRANGER);
       expect(redacted.map((climb) => climb.name)).toEqual([`Name of ${NULL_DRAFT_FLAG}`, `Name of ${PUBLISHED}`, null]);
     });
   });
