@@ -1,31 +1,21 @@
-import { AccessibleTextInput as TextInput } from '../../../src/components/AccessibleTextInput';
-import { PressableSurface } from '../../../src/components/PressableSurface';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { getBoardCapabilities } from '@boardsesh/board-config';
-import { Text } from '../../../src/components/Text';
-import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
-import { Button } from '../../../src/components/Button';
 import { SegmentedControl } from '../../../src/components/SegmentedControl';
-import { Icon } from '../../../src/components/Icon';
-import { useTheme } from '../../../src/providers/theme-provider';
-import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import {
+  SetterPickerList,
+  type SetterPickerFollowControls,
+  type SetterPickerItem,
+} from '../../../src/components/filter-sheet/SetterPickerList';
 import { useHeaderActions } from '../../../src/hooks/use-header-actions';
 import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { useSearchClimbsCount, useSetterStats } from '../../../src/lib/graphql/hooks';
 import { withSetterSelection } from '../../../src/lib/climb-count-preview-input';
 import { emitSetterFilterSelection } from '../../../src/lib/setter-filter-handoff';
-import { hapticSelection } from '../../../src/lib/haptics';
-import { textStyles } from '../../../src/theme/typography';
-import { spacing, borderRadius } from '../../../src/theme/tokens';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useFollowedAuthors, useToggleAuthorFollow } from '../../../src/lib/graphql/hooks/use-followed-authors';
-
-const SEARCH_DEBOUNCE_MS = 250;
 
 // Stand-in input for the disabled count query when the route carries no usable
 // `countInput` param (the query never runs with it).
@@ -41,9 +31,6 @@ type Params = {
   /** The filter sheet's count input (JSON) for its draft at push time. */
   countInput?: string;
 };
-
-type SetterStat = { setterUsername: string; climbCount: number };
-const setterKey = (setter: SetterStat) => setter.setterUsername;
 
 // Defensive parse of the serialized selection param: a malformed value falls back
 // to an empty selection rather than crashing the route.
@@ -75,79 +62,6 @@ function parseCountInput(serialized: string | undefined): ClimbSearchInput | nul
   }
 }
 
-const SetterSeparator = memo(function SetterSeparator() {
-  const { systemColors } = useTheme();
-  return <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />;
-});
-
-type SetterRowProps = {
-  setter: SetterStat;
-  isSelected: boolean;
-  onToggle: (username: string) => void;
-  onOpen: (username: string) => void;
-  onFollow: (username: string, follow: boolean) => void;
-  following: boolean;
-  viaUserFollow: boolean;
-  canFollow: boolean;
-  followPending: boolean;
-};
-
-const SetterRow = memo(function SetterRow({
-  setter,
-  isSelected,
-  onToggle,
-  onOpen,
-  onFollow,
-  following,
-  viaUserFollow,
-  canFollow,
-  followPending,
-}: SetterRowProps) {
-  const { t } = useTranslation('climbs');
-  const { brandColors } = useTheme();
-  return (
-    <View style={styles.row}>
-      <PressableSurface
-        onPress={() => onToggle(setter.setterUsername)}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: isSelected }}
-        accessibilityLabel={setter.setterUsername}
-        accessibilityHint={t('authors.selectHint')}
-        style={styles.selectionTarget}
-      >
-        <View style={[styles.checkbox, { borderColor: brandColors.primary }]}>
-          {isSelected ? <Icon name="check.small" size={18} color={brandColors.primary} /> : null}
-        </View>
-      </PressableSurface>
-      <PressableSurface style={styles.rowText} onPress={() => onOpen(setter.setterUsername)} accessibilityRole="button">
-        <Text variant="body">{setter.setterUsername}</Text>
-        <Text variant="footnote" style={styles.count}>
-          {t('mobile.search.climbsCount', { count: setter.climbCount })}
-        </Text>
-        {viaUserFollow ? (
-          <Text variant="caption2" style={styles.count}>
-            {t('authors.viaUserFollow')}
-          </Text>
-        ) : null}
-      </PressableSurface>
-      {canFollow ? (
-        <PressableSurface
-          disabled={followPending}
-          accessibilityLabel={`${following ? t('authors.unfollow') : t('authors.follow')}: ${setter.setterUsername}`}
-          accessibilityState={{ disabled: followPending, busy: followPending }}
-          onPress={() => onFollow(setter.setterUsername, !following)}
-          accessibilityRole="button"
-          hitSlop={8}
-        >
-          <Text variant="footnote" color={brandColors.primary}>
-            {following ? t('authors.unfollow') : t('authors.follow')}
-          </Text>
-        </PressableSurface>
-      ) : null}
-    </View>
-  );
-});
-
 /**
  * Full-screen route variant for the setter search filter. The climb filter sheet
  * suspends and pushes this route. Two ways out:
@@ -170,8 +84,6 @@ export default function SettersFilterScreen() {
   const [followError, setFollowError] = useState(false);
   const [followingOnly, setFollowingOnly] = useState(false);
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
-  const bottomChrome = useBottomChromeMetrics();
 
   // A screenshot deep link (`://climbs/setters`) opens this route with none of
   // the params the filter sheet pushes, which would leave the setter query
@@ -194,15 +106,8 @@ export default function SettersFilterScreen() {
   // the blur cleanup that follows the pop doesn't hand it back a second time.
   const appliedRef = useRef(false);
 
-  const [searchInput, setSearchInput] = useState('');
+  // The list debounces the search field and hands the settled text back here.
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, []);
 
   // Only removing the picker hands its draft back. Pushing a setter playlist
   // must not re-present the underlying filter sheet over that playlist.
@@ -214,18 +119,6 @@ export default function SettersFilterScreen() {
       }),
     [navigation],
   );
-
-  const selectedSet = useMemo(() => new Set(selectedSetters), [selectedSetters]);
-  // Mirror the Set for O(1) per-row lookups without re-creating renderRow on every
-  // selection change (the FlashList re-renders via extraData instead).
-  const selectedSetRef = useRef(selectedSet);
-  selectedSetRef.current = selectedSet;
-
-  const handleSearchChange = useCallback((text: string) => {
-    setSearchInput(text);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setDebouncedSearch(text), SEARCH_DEBOUNCE_MS);
-  }, []);
 
   const baseCountInput = useMemo(() => parseCountInput(params.countInput), [params.countInput]);
 
@@ -254,7 +147,11 @@ export default function SettersFilterScreen() {
     [boardName, layoutId, sizeId, setIds, angle, debouncedSearch, followingOnly, isAuthenticated, crossAngleStats],
   );
 
-  const { data: setters, isLoading, isError, refetch } = useSetterStats(queryInput, boardName.length > 0);
+  const { data: setterStats, isLoading, isError, refetch } = useSetterStats(queryInput, boardName.length > 0);
+  const setters = useMemo<SetterPickerItem[] | undefined>(
+    () => setterStats?.map((stat) => ({ setterUsername: stat.setterUsername, count: stat.climbCount })),
+    [setterStats],
+  );
   const linkedSetterNames = useMemo(
     () =>
       new Set(
@@ -284,7 +181,6 @@ export default function SettersFilterScreen() {
       : t('mobile.filter.apply');
 
   const toggle = useCallback((username: string) => {
-    hapticSelection();
     setSelectedSetters((previous) => {
       const next = new Set(previous);
       if (next.has(username)) {
@@ -297,7 +193,6 @@ export default function SettersFilterScreen() {
   }, []);
 
   const clear = useCallback(() => {
-    hapticSelection();
     setSelectedSetters([]);
   }, []);
 
@@ -341,54 +236,40 @@ export default function SettersFilterScreen() {
     },
     [followMutation.mutateAsync],
   );
-  const renderRow = useCallback(
-    ({ item }: { item: SetterStat }) => (
-      <SetterRow
-        setter={item}
-        isSelected={selectedSetRef.current.has(item.setterUsername)}
-        onToggle={toggle}
-        onOpen={openSetter}
-        onFollow={followSetter}
-        following={follows.setterNames.has(item.setterUsername)}
-        viaUserFollow={
-          !follows.setterNames.has(item.setterUsername) && (followingOnly || linkedSetterNames.has(item.setterUsername))
-        }
-        canFollow={isAuthenticated && !!follows.data}
-        followPending={pendingSetters.has(item.setterUsername)}
-      />
-    ),
-    [
-      toggle,
-      openSetter,
-      followSetter,
-      follows.setterNames,
-      follows.data,
-      isAuthenticated,
-      pendingSetters,
-      followingOnly,
-      linkedSetterNames,
-    ],
+  const canFollow = isAuthenticated && !!follows.data;
+  const followControls = useMemo<SetterPickerFollowControls>(
+    () => ({
+      isFollowing: (username) => follows.setterNames.has(username),
+      isPending: (username) => pendingSetters.has(username),
+      isViaUserFollow: (username) => followingOnly || linkedSetterNames.has(username),
+      onFollow: canFollow ? followSetter : undefined,
+    }),
+    [follows.setterNames, pendingSetters, followingOnly, linkedSetterNames, canFollow, followSetter],
   );
+  const formatCount = useCallback((count: number) => t('mobile.search.climbsCount', { count }), [t]);
+  const hints = useMemo(
+    () => (followingOnly ? [t('authors.selectHint'), t('authors.followingHint')] : [t('authors.selectHint')]),
+    [followingOnly, t],
+  );
+  const retry = useCallback(() => {
+    if (follows.isError) void follows.refetch();
+    if (isError) void refetch();
+  }, [follows, isError, refetch]);
 
   return (
-    <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-      <View style={[styles.searchBarWrapper, { backgroundColor: systemColors.secondaryBackground }]}>
-        <Icon name="search" size={16} color={systemColors.secondaryLabel} />
-        <TextInput
-          value={searchInput}
-          onChangeText={handleSearchChange}
-          placeholder={t('mobile.filter.searchSetters')}
-          placeholderTextColor={systemColors.secondaryLabel}
-          accessibilityLabel={t('mobile.filter.searchSetters')}
-          autoCorrect={false}
-          autoCapitalize="none"
-          returnKeyType="search"
-          style={[styles.searchInput, { color: systemColors.label }]}
-        />
-      </View>
-
-      {isAuthenticated ? (
-        <View style={styles.scopeControl}>
+    <SetterPickerList
+      setters={setters}
+      isLoading={isLoading}
+      onSearchChange={setDebouncedSearch}
+      searchPlaceholder={t('mobile.filter.searchSetters')}
+      formatCount={formatCount}
+      selected={selectedSetters}
+      onToggle={toggle}
+      onClearAll={clear}
+      onOpenSetter={openSetter}
+      follow={followControls}
+      headerAccessory={
+        isAuthenticated ? (
           <SegmentedControl
             options={[
               { key: 'all', label: t('authors.allSetters') },
@@ -398,161 +279,16 @@ export default function SettersFilterScreen() {
             onSelect={(scope) => setFollowingOnly(scope === 'following')}
             accessibilityLabel={t('mobile.filter.setters')}
           />
-        </View>
-      ) : null}
-      <Text variant="footnote" style={styles.pickerHint}>
-        {t('authors.selectHint')}
-      </Text>
-      {followingOnly ? (
-        <Text variant="footnote" style={styles.pickerHint}>
-          {t('authors.followingHint')}
-        </Text>
-      ) : null}
-      {followError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
-      {isError || follows.isError ? (
-        <View>
-          <Text>{t('authors.syncNeeded')}</Text>
-          <Button
-            title={t('authors.retry')}
-            onPress={() => {
-              if (follows.isError) void follows.refetch();
-              if (isError) void refetch();
-            }}
-          />
-        </View>
-      ) : null}
-      {selectedSet.size > 0 ? (
-        <View style={styles.selectionBar}>
-          <Text variant="footnote" style={styles.selectionCount}>
-            {t('authors.selectedCount', { count: selectedSet.size })}
-          </Text>
-          <PressableSurface onPress={clear} hitSlop={8} accessibilityRole="button">
-            <Text variant="subheadline" color={brandColors.primary}>
-              {t('mobile.filter.clearAll')}
-            </Text>
-          </PressableSurface>
-        </View>
-      ) : null}
-
-      <View style={styles.body}>
-        {isLoading ? (
-          <View style={styles.loading}>
-            <ActivityIndicator size="small" />
-          </View>
-        ) : (
-          <FlashList
-            data={setters ?? []}
-            extraData={selectedSetters}
-            keyExtractor={setterKey}
-            renderItem={renderRow}
-            ItemSeparatorComponent={SetterSeparator}
-            contentInsetAdjustmentBehavior="automatic"
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            // The list runs to the screen's bottom edge: clear the tab
-            // bar, and let iOS lift the last rows above the keyboard.
-            automaticallyAdjustKeyboardInsets
-            contentContainerStyle={{ paddingBottom: bottomChrome.scrollBottomPadding + spacing[3] }}
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <Text variant="subheadline" style={styles.emptyText}>
-                  {debouncedSearch.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.filter.noSetters')}
-                </Text>
-              </View>
-            }
-          />
-        )}
-      </View>
-    </View>
+        ) : null
+      }
+      hints={hints}
+      notice={followError ? t('authors.followError') : undefined}
+      error={
+        isError || follows.isError
+          ? { message: t('authors.syncNeeded'), retryLabel: t('authors.retry'), onRetry: retry }
+          : null
+      }
+      emptyLabel={t('mobile.filter.noSetters')}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  searchBarWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    marginHorizontal: spacing[4],
-    marginTop: spacing[1],
-    marginBottom: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: borderRadius.lg,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: textStyles.callout.fontSize,
-    paddingVertical: 0,
-  },
-  body: {
-    flex: 1,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    minHeight: 48,
-    gap: spacing[3],
-  },
-  rowText: {
-    flex: 1,
-  },
-  selectionTarget: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scopeControl: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  pickerHint: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-    opacity: 0.6,
-  },
-  count: {
-    opacity: 0.6,
-    marginTop: spacing[1],
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    marginStart: spacing[4],
-  },
-  selectionBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  selectionCount: {
-    opacity: 0.6,
-  },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  empty: {
-    paddingTop: spacing[6],
-    alignItems: 'center',
-  },
-  emptyText: {
-    opacity: 0.6,
-  },
-});
