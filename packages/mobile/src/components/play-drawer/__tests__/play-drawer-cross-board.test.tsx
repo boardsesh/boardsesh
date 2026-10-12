@@ -17,7 +17,7 @@
 // the current art.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as renderInitial, act } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useEffect, useRef, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { LayoutChangeEvent } from 'react-native';
@@ -27,6 +27,8 @@ type Props = Record<string, unknown>;
 
 const recorded = vi.hoisted(() => ({
   board: [] as Props[],
+  boardMounts: 0,
+  boardUnmounts: 0,
   headers: [] as Props[],
   switchOverlay: [] as Props[],
   actionBar: [] as Props[],
@@ -164,7 +166,7 @@ vi.mock('react-native-reanimated', () => ({
   default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
   useAnimatedStyle: () => ({}),
   useAnimatedReaction: () => undefined,
-  useSharedValue: (initial: unknown) => ({ value: initial }),
+  useSharedValue: (initial: unknown) => useRef({ value: initial }).current,
   runOnJS: (fn: unknown) => fn,
 }));
 vi.mock('expo-router', () => ({ router: { dismiss: vi.fn() } }));
@@ -216,6 +218,12 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 // --- Children ----------------------------------------------------------------
 vi.mock('../DeferredBoard', () => ({
   DeferredBoard: (props: Props) => {
+    useEffect(() => {
+      recorded.boardMounts += 1;
+      return () => {
+        recorded.boardUnmounts += 1;
+      };
+    }, []);
     recorded.board.push(props);
     return createElement('div', { 'data-testid': 'board' });
   },
@@ -436,6 +444,8 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (handle: number) => openingFrames.delete(handle));
   vi.clearAllMocks();
   recorded.board = [];
+  recorded.boardMounts = 0;
+  recorded.boardUnmounts = 0;
   recorded.headers = [];
   recorded.switchOverlay = [];
   recorded.actionBar = [];
@@ -492,6 +502,61 @@ describe('PlayDrawer relay board compatibility', () => {
 });
 
 describe('PlayDrawer opening layout', () => {
+  it('keeps the interactive board mounted from the first commit through queue broadcasts and new targets', () => {
+    const initialItem = queueItem(TWELVE_CLIMB, 'preview-twelve');
+    const target = { climb: TWELVE_CLIMB, options: { previewQueueItem: initialItem }, nonce: 1 };
+    const onOpenQueue = vi.fn();
+    const element = (openTarget: typeof target) =>
+      createElement(PlayDrawer, {
+        presentation: 'pane',
+        boardConfig: TWELVE_BY_TWELVE,
+        onOpenQueue,
+        openTarget,
+      });
+    const view = renderInitial(element(target));
+    const initialBoard = view.getByTestId('board');
+    const firstBoardProps = recorded.board[0];
+    expect(firstBoardProps).toMatchObject({
+      open: true,
+      currentFrames: TWELVE_CLIMB.frames,
+      enabled: true,
+      dismissRef: dismissGestureRef,
+    });
+    expect(firstBoardProps.onSwipeNext).toBeTypeOf('function');
+    expect(firstBoardProps.onSwipePrevious).toBeTypeOf('function');
+    expect(firstBoardProps.onResetZoomReady).toBeTypeOf('function');
+    expect(firstBoardProps.pager).toBeTruthy();
+    expect(firstBoardProps.boardRenderData).toBeTruthy();
+    expect(recorded.boardMounts).toBe(1);
+    expect(recorded.favoriteStatus).toHaveLength(0);
+
+    flushOpeningFrame();
+    expect(recorded.favoriteStatus.length).toBeGreaterThan(0);
+    expect(view.getByTestId('board')).toBe(initialBoard);
+    expect(lastBoardProps().pager).toBe(firstBoardProps.pager);
+
+    queueState.queue = [queueItem(TWELVE_CLIMB, 'broadcast-twelve')];
+    view.rerender(element(target));
+    expect(lastBoardProps().pager).toBe(firstBoardProps.pager);
+    expect(view.getByTestId('board')).toBe(initialBoard);
+
+    const newClimb = { ...TWELVE_CLIMB, uuid: 'replacement-climb', frames: 'p1200r15' };
+    const replacement = {
+      climb: newClimb,
+      options: { previewQueueItem: queueItem(newClimb, 'replacement-item') },
+      nonce: 2,
+    };
+    view.rerender(element(replacement));
+    expect(lastBoardProps().currentFrames).toBe(newClimb.frames);
+    expect(lastBoardProps().pager).toBe(firstBoardProps.pager);
+    expect(view.getByTestId('board')).toBe(initialBoard);
+    expect(recorded.boardMounts).toBe(1);
+    expect(recorded.boardUnmounts).toBe(0);
+    expect(setCurrentClimb).not.toHaveBeenCalled();
+    view.unmount();
+    expect(recorded.boardUnmounts).toBe(1);
+  });
+
   it.each(['viewport-first', 'headers-first'])('keeps the board mounted through layout callbacks (%s)', (order) => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const rendered = renderInitial(

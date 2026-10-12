@@ -1,0 +1,353 @@
+import { useCallback, useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { AccessibilityInfo, Platform } from 'react-native';
+import type { TFunction } from 'i18next';
+import type { Climb } from '@boardsesh/shared-schema';
+import { reanchorPlaylistSuggestionSource, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { ActiveSubDrawer, NavigationState } from '@boardsesh/play-view';
+import type { QueueActionsContextValue } from '../../providers/queue/queue-contexts';
+import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
+import { getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
+import { shouldArmBusyWallConfirm, type WallLatchExit } from './wall-state';
+import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
+
+type PreviewSelection = {
+  drawerPreviewItem: ClimbQueueItem | null;
+  drawerPreviewSuggestionSource: PlaylistSuggestionSource | null;
+  setDrawerPreviewItem: Dispatch<SetStateAction<ClimbQueueItem | null>>;
+  setDrawerPreviewSuggestionSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null>>;
+  setDrawerPreviewIsWallClimb: Dispatch<SetStateAction<boolean>>;
+  setSharedBrowseLatched: Dispatch<SetStateAction<boolean>>;
+};
+type SelectionChrome = {
+  clearMirror: () => void;
+  resetFavoriteOverride: () => void;
+  setIsTickBarActive: Dispatch<SetStateAction<boolean>>;
+  setActiveSubDrawer: Dispatch<SetStateAction<ActiveSubDrawer>>;
+};
+type SelectionNavigation = {
+  navigationState: Pick<NavigationState, 'prevItem' | 'nextItem'>;
+  lightOnSwipe: boolean;
+  browseByDefault: boolean;
+};
+type CommitConfirmation = {
+  busyWallConfirmArmed: boolean;
+  browseLatchActive: boolean;
+  wallClimbUuid: string | null;
+  wallClimbName: string | null | undefined;
+  displayedClimbUuid: string | undefined;
+  wallUuidAtLatchStartRef: RefObject<string | null>;
+  setBusyWallConfirmArmed: Dispatch<SetStateAction<boolean>>;
+  markLatchExit: (exit: WallLatchExit) => void;
+  t: TFunction<'session'>;
+};
+type PlaySelectionInputs = {
+  openTarget: PlayDrawerOpenTarget | null;
+  viewer: NonNullable<PlayDrawerProps['viewer']>;
+  showBoardMismatch: boolean;
+  preview: PreviewSelection;
+  queue: Pick<QueueActionsContextValue, 'setCurrentClimb' | 'addToQueue' | 'previousClimb' | 'nextClimb'> & {
+    currentClimbQueueItem: ClimbQueueItem | null;
+  };
+  navigation: SelectionNavigation;
+  chrome: SelectionChrome;
+  confirmation: CommitConfirmation;
+};
+
+type SwipeSelectionInputs = Pick<
+  PreviewSelection,
+  'drawerPreviewItem' | 'drawerPreviewSuggestionSource' | 'setDrawerPreviewItem' | 'setDrawerPreviewIsWallClimb'
+> &
+  Pick<SelectionNavigation, 'lightOnSwipe' | 'browseByDefault'> & {
+    targetItem: ClimbQueueItem | null;
+    navigateQueue: () => void;
+    clearMirror: () => void;
+  };
+
+/** One swipe intent, with independent callback identities for next and previous. */
+function useSwipeSelection({
+  drawerPreviewItem,
+  drawerPreviewSuggestionSource,
+  setDrawerPreviewItem,
+  setDrawerPreviewIsWallClimb,
+  lightOnSwipe,
+  browseByDefault,
+  targetItem,
+  navigateQueue,
+  clearMirror,
+}: SwipeSelectionInputs) {
+  return useCallback(() => {
+    const previewTarget = getSwipeNavigationTarget({
+      previewItem: drawerPreviewItem,
+      previewSuggestionSource: drawerPreviewSuggestionSource,
+      targetItem,
+      lightOnSwipe,
+      inSharedSession: browseByDefault,
+    });
+    if (previewTarget.viewOnly) {
+      if (!previewTarget.targetItem) return;
+      setDrawerPreviewItem(previewTarget.targetItem);
+      // The displayed climb moved; the wall did not.
+      setDrawerPreviewIsWallClimb(false);
+      clearMirror();
+      return;
+    }
+    setDrawerPreviewItem(null);
+    setDrawerPreviewIsWallClimb(false);
+    navigateQueue();
+    clearMirror();
+  }, [
+    drawerPreviewSuggestionSource,
+    drawerPreviewItem,
+    targetItem,
+    navigateQueue,
+    lightOnSwipe,
+    browseByDefault,
+    setDrawerPreviewItem,
+  ]);
+}
+
+/**
+ * Selection intents share one preview/commit authority. Core owns the latch,
+ * angle lifecycle, mirror sync and relay installation; this hook adds only the
+ * host-target application effect at its original place in that lifecycle.
+ */
+export function usePlaySelectionController({
+  openTarget,
+  viewer,
+  showBoardMismatch,
+  preview: {
+    drawerPreviewItem,
+    drawerPreviewSuggestionSource,
+    setDrawerPreviewItem,
+    setDrawerPreviewSuggestionSource,
+    setDrawerPreviewIsWallClimb,
+    setSharedBrowseLatched,
+  },
+  queue: { currentClimbQueueItem, setCurrentClimb, addToQueue, previousClimb, nextClimb },
+  navigation: { navigationState, lightOnSwipe, browseByDefault },
+  chrome: { clearMirror, resetFavoriteOverride, setIsTickBarActive, setActiveSubDrawer },
+  confirmation: {
+    busyWallConfirmArmed,
+    browseLatchActive,
+    wallClimbUuid,
+    wallClimbName,
+    displayedClimbUuid,
+    wallUuidAtLatchStartRef,
+    setBusyWallConfirmArmed,
+    markLatchExit,
+    t,
+  },
+}: PlaySelectionInputs) {
+  const openDrawer = useCallback(
+    (selectedClimb: Climb, options?: PlayDrawerOpenOptions) => {
+      const previewItem = options?.previewQueueItem ?? null;
+      const playlistSuggestionSource = options?.playlistSuggestionSource ?? null;
+      // Fresh active open (search / list / LogbookTab / a tick in the feed / a
+      // profile climb / the accessory bar's own current climb): the climb becomes
+      // current unless it already is, so re-opening the current climb doesn't
+      // re-append it. A fresh-uuid item on a genuinely new selection is
+      // intentional (re-tapping starts a fresh pass — see queue setCurrentClimb).
+      const isFreshActiveOpen = !previewItem && !options?.committedExternally;
+      const isAlreadyCurrent = currentClimbQueueItem?.climb.uuid === selectedClimb.uuid;
+      // ...except in a crew, where the same taps are a LOOK. Tapping a peer's
+      // tick in the session feed, or a row in your own logbook, must not move the
+      // shared queue and blank the climb someone is mid-attempt on — the deep-link
+      // opener already reasons this way and passes `preview: true`. Gated here
+      // rather than at each opener because the openers are many (feed, Logbook,
+      // Sessions, session detail, profile, notifications) and every one of them
+      // is the same gesture: show me this climb.
+      //
+      // Reads the LATCH, like every other gesture gate in this file, not the live
+      // roster: a peer's phone dropping off the wifi for a moment must not turn
+      // the tap the climber is already making into a queue write.
+      const opensAsBrowse = isFreshActiveOpen && !isAlreadyCurrent && browseByDefault;
+      // A view-only preview is shown without committing; the browse chrome keys
+      // off this. Commit paths (committedExternally) and solo fresh active opens
+      // leave it null so the drawer renders the real currentClimbQueueItem.
+      const pinnedItem = previewItem ?? (opensAsBrowse ? climbToQueueItem(selectedClimb) : null);
+      setDrawerPreviewItem(pinnedItem);
+      setDrawerPreviewSuggestionSource(pinnedItem ? playlistSuggestionSource : null);
+      setDrawerPreviewIsWallClimb(pinnedItem ? (options?.previewIsWallClimb ?? false) : false);
+      // Opening a COMMITTED climb is the third latch exit: the queue-sheet tap,
+      // a playlist activation and the accessory-of-current open all deliberately
+      // put a climb up, so they land the drawer live rather than mid-browse. A
+      // preview open leaves the latch alone — the arm effect picks it up if a
+      // crew is present.
+      if (!pinnedItem) setSharedBrowseLatched(false);
+      clearMirror();
+      // Drop any stale optimistic heart so the opened climb shows its real
+      // (server) favorite status rather than a leftover from the last climb.
+      resetFavoriteOverride();
+      setIsTickBarActive(false);
+      setActiveSubDrawer('none');
+      if (isFreshActiveOpen && !isAlreadyCurrent && !opensAsBrowse) {
+        setCurrentClimb(climbToQueueItem(selectedClimb), { playlistSuggestionSource: null });
+      }
+    },
+    [currentClimbQueueItem, setCurrentClimb, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
+  );
+
+  // Apply the host's open target. A new target is a fresh object with a bumped
+  // nonce, so its identity changes on every open request — this fires on mount
+  // (first open) AND when the user re-taps a climb while the route is already up
+  // (where `router.navigate('/play')` is a no-op). Defined AFTER the `[activeAngle]`
+  // preview-clear effect so that on a board-override open (angle + target both
+  // change) the preview this sets wins over that effect's clear. The ref keeps
+  // the latest `openDrawer` without making it a dep (we key only on the target).
+  const openDrawerRef = useRef(openDrawer);
+  openDrawerRef.current = openDrawer;
+  useEffect(() => {
+    if (!openTarget) return;
+    openDrawerRef.current(openTarget.climb, openTarget.options);
+  }, [openTarget]);
+
+  const handlePrev = useSwipeSelection({
+    drawerPreviewItem,
+    drawerPreviewSuggestionSource,
+    setDrawerPreviewItem,
+    setDrawerPreviewIsWallClimb,
+    lightOnSwipe,
+    browseByDefault,
+    targetItem: navigationState.prevItem,
+    navigateQueue: previousClimb,
+    clearMirror,
+  });
+  const handleNext = useSwipeSelection({
+    drawerPreviewItem,
+    drawerPreviewSuggestionSource,
+    setDrawerPreviewItem,
+    setDrawerPreviewIsWallClimb,
+    lightOnSwipe,
+    browseByDefault,
+    targetItem: navigationState.nextItem,
+    navigateQueue: nextClimb,
+    clearMirror,
+  });
+
+  const handleSetActive = useCallback(() => {
+    if (!drawerPreviewItem) return;
+    // First tap on a wall someone else moved mid-browse: ask instead of taking
+    // it. Only under the browse latch — that is what makes
+    // `wallUuidAtLatchStartRef` mean "the wall as it was when you started
+    // looking around"; without one there is no before-and-after to compare. And
+    // only with a crew (`browseByDefault`: one is here, or was when the latch
+    // armed): "Someone just lit X" needs a someone. A solo climber with
+    // `lightOnSwipe` off is latched too, and the one way THEIR wall moves under
+    // a preview is their own lightbulb tap — asking them to confirm over their
+    // own climb would be the question asked of nobody.
+    if (
+      !busyWallConfirmArmed &&
+      browseLatchActive &&
+      browseByDefault &&
+      shouldArmBusyWallConfirm({
+        wallClimbUuid,
+        wallUuidAtLatchStart: wallUuidAtLatchStartRef.current,
+        displayedClimbUuid: displayedClimbUuid ?? null,
+      })
+    ) {
+      setBusyWallConfirmArmed(true);
+      // The bubble is untouchable, so the words have to reach a screen reader
+      // some other way. Android hears the confirm row's polite live region;
+      // saying it here as well would read it twice, so this is the other half
+      // (amendment B).
+      if (Platform.OS !== 'android') {
+        AccessibilityInfo.announceForAccessibility(
+          t('playView.wallState.commitOverride.body', { name: wallClimbName ?? '' }),
+        );
+      }
+      return;
+    }
+    markLatchExit('commit');
+    setBusyWallConfirmArmed(false);
+    // Launder the item first. Browsing a suggestion track walks onto transient
+    // `playlist-peek:<uuid>` items, and `toQueueItemWireInput` sends `item.uuid`
+    // verbatim — committing one straight would put a uuid on the wire that no
+    // peer can reconcile against their queue. Same helper `nextClimb()` uses.
+    const { item } = resolveCommittableQueueItem(drawerPreviewItem);
+    // Re-anchor the track on the climb actually going up. Browsing moves
+    // `drawerPreviewItem` swipe by swipe but never touches the source, so after a
+    // walk from A to Z the source still says the pass began at A — and committing
+    // that verbatim would aim next/previous and the remaining count at A's
+    // neighbours, several swipes behind where the climber is standing.
+    //
+    // No guard here for a climb the source does not contain. `drawerPreviewItem`
+    // is by construction on this preview's own track, and the lineage rule lives
+    // in `resolveNavigationSuggestionSource` — don't re-add a call-site check.
+    setCurrentClimb(item, {
+      playlistSuggestionSource: reanchorPlaylistSuggestionSource(drawerPreviewSuggestionSource, item.climb?.uuid),
+    });
+    setSharedBrowseLatched(false);
+    setDrawerPreviewItem(null);
+    setDrawerPreviewSuggestionSource(null);
+    setDrawerPreviewIsWallClimb(false);
+    // Mirroring is drawer-local per displayed climb and every other navigation
+    // resets it (see `handleBackToLive`). The commit has to as well: the
+    // auto-sender lights the committed item's own `climb.mirrored`, so a mirror
+    // toggled while previewing would leave the drawer showing the climb flipped
+    // and the wall showing it straight.
+    clearMirror();
+  }, [
+    drawerPreviewItem,
+    drawerPreviewSuggestionSource,
+    setDrawerPreviewItem,
+    setDrawerPreviewSuggestionSource,
+    setCurrentClimb,
+    markLatchExit,
+    busyWallConfirmArmed,
+    browseLatchActive,
+    browseByDefault,
+    wallClimbUuid,
+    wallClimbName,
+    displayedClimbUuid,
+    t,
+  ]);
+
+  const commitDisplayedToWall = useCallback(() => {
+    if (!drawerPreviewItem || showBoardMismatch) return;
+    handleSetActive();
+  }, [drawerPreviewItem, showBoardMismatch, handleSetActive]);
+
+  const handleSimilarClimbPress = useCallback(
+    async (similarClimb: Climb) => {
+      const privacyGeneration = getPrivacyRevocationGeneration();
+      const queueItem = climbToQueueItem(similarClimb);
+      // A signed-out reader swaps what the drawer is showing and writes nothing:
+      // no queue entry they cannot carry anywhere, and no `setCurrentClimb`,
+      // which is what re-arms the BLE auto-sender. Similar Climbs is the only
+      // affordance in the anonymous view that could otherwise still drive a
+      // wall, so it takes the preview path the wrong-board drawer already uses.
+      //
+      // A member in a crew takes the same path for a different reason: the member
+      // branch below writes TWICE (append to the shared queue, then take the
+      // wall), which is the loudest possible outcome for the idlest possible
+      // intent. Browsing is what the tap means there.
+      if (getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault }) === 'preview') {
+        setDrawerPreviewItem(queueItem);
+        setDrawerPreviewSuggestionSource(null);
+        // A different climb is on screen now, so it is not the lit one.
+        setDrawerPreviewIsWallClimb(false);
+        clearMirror();
+        setIsTickBarActive(false);
+        return;
+      }
+      // A similar climb can be set on another board, so this add may raise the
+      // cross-board prompt. Wait for it: backing out has to leave the drawer on
+      // the climb they were already looking at, not activate the one they just
+      // declined to queue.
+      if ((await addToQueue(queueItem)) === 'cancelled') return;
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      // Tapping a similar climb activates it (commit), so it's never a preview —
+      // clear any preview that was showing.
+      setDrawerPreviewItem(null);
+      setDrawerPreviewSuggestionSource(null);
+      clearMirror();
+      // The favorite override is cleared by the climb-change effect.
+      setIsTickBarActive(false);
+      setCurrentClimb(queueItem, { playlistSuggestionSource: null });
+    },
+    [addToQueue, setCurrentClimb, viewer, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
+  );
+
+  return { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall };
+}

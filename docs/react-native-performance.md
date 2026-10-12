@@ -520,10 +520,11 @@ reference numbers):
   it has been busy, and the queue's navigation reads state that only a render brings up to date.
 - Everything a step needs is the pager's, created in the drawer: the offset, the step a fling is
   carrying (`untoldStep`), the reaction that tells the JS thread, and the Next and Previous
-  callbacks (`useSwipeNavigation`). `DeferredBoard` takes the carousel down while the drawer
-  measures itself again, and a fling outlives it. Kept in the carousel, the step was lost with it
-  and the callbacks were those of a render that was gone. A drag gets no release when its carousel
-  goes, so the gesture's unmount returns the offset to rest.
+  callbacks (`useSwipeNavigation`). The board/carousel host now stays mounted through geometry
+  refinement, queue broadcasts, and new open targets. Keep the pager and its step bridge in the
+  drawer: a fling can outlive a carousel teardown, and keeping the pending step in the carousel
+  previously lost it with callbacks from an obsolete render. A drag gets no release when its
+  carousel goes, so the gesture's unmount returns the offset to rest.
 
 **Do not** pass anything that only the current slot should have by changing the tree. `playSurface`
 moves between mounted boards now, which is why `useNativeClimbRender` reads it through a ref when

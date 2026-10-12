@@ -100,4 +100,40 @@ describe('usePushAfterPlayerDismiss', () => {
     await act(async () => settle.resolve(DISMISSED));
     expect(push).toHaveBeenCalledTimes(1);
   });
+  it('pins the destination tapped before dismissal even if the displayed setter changes', async () => {
+    const { dismiss, settle } = deferredDismiss();
+    const push = vi.fn<(username: string) => void>();
+    const { result, rerender } = renderHook(
+      ({ username }) => {
+        const handoff = usePushAfterPlayerDismiss(dismiss, 'setter-playlist-handoff');
+        return () => handoff(() => push(username));
+      },
+      { initialProps: { username: 'first-setter' } },
+    );
+    result.current();
+    rerender({ username: 'second-setter' });
+    result.current();
+    await act(async () => settle.resolve(DISMISSED));
+    expect(push.mock.calls).toEqual([['first-setter']]);
+    result.current();
+    await act(async () => settle.resolve(ABORTED));
+    expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves setter error origin for native dismissal and immediate pane pushes', async () => {
+    const failure = new Error('setter route failed');
+    const { dismiss, settle } = deferredDismiss();
+    const { result } = renderHook(() => usePushAfterPlayerDismiss(dismiss, 'setter-playlist-handoff'));
+    result.current(() => {
+      throw failure;
+    });
+    await act(async () => settle.resolve(DISMISSED));
+    expect(reportHandledError).toHaveBeenLastCalledWith(failure, { tags: { source: 'setter-playlist-handoff' } });
+    const pane = renderHook(() => usePushAfterPlayerDismiss(undefined, 'setter-playlist-handoff'));
+    pane.result.current(() => {
+      throw failure;
+    });
+    expect(reportHandledError).toHaveBeenCalledTimes(2);
+    expect(reportHandledError).toHaveBeenLastCalledWith(failure, { tags: { source: 'setter-playlist-handoff' } });
+  });
 });

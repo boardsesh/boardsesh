@@ -1586,6 +1586,24 @@ describe('PlayDrawer — an angle change and the pinned preview', () => {
     expect(queueActions.nextClimb).toHaveBeenCalledTimes(1);
   });
 
+  it('applies a new preview after the simultaneous solo angle reset', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    session.nextItem = { uuid: 'queue-item-next', climb: CLIMB };
+    const view = render(elementAtAngle(40, trackedTargetFor(CLIMB)));
+    const replacementTarget = { ...trackedTargetFor(SIMILAR_CLIMB), nonce: 2 };
+
+    view.rerender(elementAtAngle(45, replacementTarget));
+
+    // If target application ran before the angle reset, the committed climb
+    // would win and the new tracked preview would silently lose its authority.
+    expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
+    expect(lastActionBarProps().secondaryMode).toBe('commit');
+    act(() => (lastActionBarProps().onNextClick as () => void)());
+    expect(lastDisplayedClimbUuid()).toBe(CLIMB.uuid);
+    expect(queueActions.nextClimb).not.toHaveBeenCalled();
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
   it('keeps a crew preview across an angle change', () => {
     // The other half of the rule: in a crew the preview IS where the climber is
     // living, and one tap on the angle pill must not throw away the climb they

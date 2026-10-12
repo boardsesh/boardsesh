@@ -14,13 +14,26 @@ import { useCallback, useRef } from 'react';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { reportHandledError } from '../../lib/error-reporting';
 
-export function usePushAfterPlayerDismiss(dismissPlayerAndWait: DismissSurfaceAndWait | undefined) {
+export function usePushAfterPlayerDismiss(
+  dismissPlayerAndWait: DismissSurfaceAndWait | undefined,
+  errorSource?: string,
+) {
   // One handoff at a time: a second tap during the dismiss would push twice.
   const leavingRef = useRef(false);
   return useCallback(
     (push: () => void) => {
       if (!dismissPlayerAndWait) {
-        push();
+        // Setter handoffs already report pane push failures; retain that
+        // contract without changing the default profile/search path.
+        if (errorSource) {
+          try {
+            push();
+          } catch (error) {
+            reportHandledError(error, { tags: { source: errorSource ?? 'play-drawer-route-handoff' } });
+          }
+        } else {
+          push();
+        }
         return;
       }
       if (leavingRef.current) return;
@@ -30,12 +43,12 @@ export function usePushAfterPlayerDismiss(dismissPlayerAndWait: DismissSurfaceAn
           if ((await dismissPlayerAndWait()).status === 'aborted') return;
           push();
         } catch (error) {
-          reportHandledError(error, { tags: { source: 'play-drawer-route-handoff' } });
+          reportHandledError(error, { tags: { source: errorSource ?? 'play-drawer-route-handoff' } });
         } finally {
           leavingRef.current = false;
         }
       })();
     },
-    [dismissPlayerAndWait],
+    [dismissPlayerAndWait, errorSource],
   );
 }
