@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { intersectInferredPrivacy, narrowsInferredPrivacy, type InferredPrivacy } from '../services/inferred-sessions/privacy';
+import {
+  intersectInferredPrivacy,
+  narrowsInferredPrivacy,
+  type InferredPrivacy,
+} from '../services/inferred-sessions/privacy';
 
 function policy(
   audience: InferredPrivacy['audience'],

@@ -1,4 +1,10 @@
-import { intersectInferredPrivacy, loadInferredPrivacy, narrowsInferredPrivacy, writeInferredPrivacy, type InferredPrivacy } from './privacy';
+import {
+  intersectInferredPrivacy,
+  loadInferredPrivacy,
+  narrowsInferredPrivacy,
+  writeInferredPrivacy,
+  type InferredPrivacy,
+} from './privacy';
 import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as dbSchema from '@boardsesh/db/schema';
