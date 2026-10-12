@@ -42,6 +42,7 @@ const recorded = vi.hoisted(() => ({
   firstScreen: [] as Props[],
   sectionsSheet: [] as Props[],
   actionsMenu: [] as Props[],
+  pinnedSheets: new Map<string, Props>(),
   scrollGate: [] as Props[],
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
   boardLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
@@ -312,11 +313,26 @@ vi.mock('../LostHoldsBanner', () => ({ LostHoldsBanner: () => null }));
 vi.mock('../../create-climb/use-create-climb-navigation', () => ({
   useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
 }));
-vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
-vi.mock('../../AddToPlaylistSheet', () => ({ AddToPlaylistSheet: () => null }));
+vi.mock('../../AddBetaVideoSheet', () => ({
+  AddBetaVideoSheet: (props: Props) => {
+    recorded.pinnedSheets.set('beta', props);
+    return null;
+  },
+}));
+vi.mock('../../AddToPlaylistSheet', () => ({
+  AddToPlaylistSheet: (props: Props) => {
+    recorded.pinnedSheets.set('playlist', props);
+    return null;
+  },
+}));
 vi.mock('../logbook/LogbookFullSheet', () => ({ LogbookFullSheet: () => null }));
 vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));
-vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
+vi.mock('../../report-climb/ReportClimbSheet', () => ({
+  ReportClimbSheet: (props: Props) => {
+    recorded.pinnedSheets.set('report', props);
+    return null;
+  },
+}));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));
 vi.mock('../../ChromeIconButton', () => ({
@@ -480,6 +496,7 @@ beforeEach(() => {
   recorded.firstScreen = [];
   recorded.sectionsSheet = [];
   recorded.actionsMenu = [];
+  recorded.pinnedSheets.clear();
   platform.OS = 'web';
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
@@ -1034,17 +1051,32 @@ describe('PlayDrawer ⋯ menu', () => {
 
   // Each sheet row opens the player's OWN sheet, pinned to the climb ⋯ was opened
   // for. A root opener presents under `/play` and flashes closed (#3505, #3294).
-  it('pins each sheet ⋯ opens to the climb and board it was opened for', () => {
+  it("opens each of ⋯'s sheets in the player, pinned to the climb and board it was opened for", () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     renderDrawer();
-    const menuProps = recorded.actionsMenu.at(-1);
-    const board = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
+    type PinnedOpener = (climb: Climb, boardConfig: unknown) => void;
+    const menuProps = recorded.actionsMenu.at(-1) ?? {};
+    // Pinned to the Homewall climb while the Twelve climb is on screen, so a
+    // sheet that read the displayed climb instead would show up here.
+    const pinnedBoard = { boardName: 'kilter', layoutId: 8, sizeId: 17, setIds: '26,27', angle: 30 };
+    const openTick = menuProps.onTick as PinnedOpener;
+    const openBeta = menuProps.onAddBetaVideo as PinnedOpener;
+    const openReport = menuProps.onReportClimb as PinnedOpener;
+    const openPlaylist = menuProps.onSelectPlaylist as PinnedOpener;
 
-    act(() => (menuProps?.onTick as (climb: Climb, boardConfig: unknown) => void)(TWELVE_CLIMB, board));
-    expect(recorded.logAscent.at(-1)).toMatchObject({ visible: true, climbUuid: TWELVE_CLIMB.uuid });
-    expect(typeof menuProps?.onAddBetaVideo).toBe('function');
-    expect(typeof menuProps?.onReportClimb).toBe('function');
-    expect(typeof menuProps?.onSelectPlaylist).toBe('function');
+    act(() => openTick(HOMEWALL_CLIMB, pinnedBoard));
+    expect(recorded.logAscent.at(-1)).toMatchObject({ visible: true, climbUuid: HOMEWALL_CLIMB.uuid, layoutId: 8 });
+    act(() => openBeta(HOMEWALL_CLIMB, pinnedBoard));
+    expect(recorded.pinnedSheets.get('beta')).toMatchObject({ visible: true, climb: HOMEWALL_CLIMB, layoutId: 8 });
+    act(() => openReport(HOMEWALL_CLIMB, pinnedBoard));
+    expect(recorded.pinnedSheets.get('report')).toMatchObject({ visible: true, climb: HOMEWALL_CLIMB, layoutId: 8 });
+    act(() => openPlaylist(HOMEWALL_CLIMB, pinnedBoard));
+    expect(recorded.pinnedSheets.get('playlist')).toMatchObject({
+      visible: true,
+      climb: HOMEWALL_CLIMB,
+      layoutId: 8,
+      angle: 30,
+    });
   });
 
   // The menu flips the bar heart, so the two can never disagree.
