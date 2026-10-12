@@ -1394,8 +1394,17 @@ function ClimbListInner() {
       (!searchReady || (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid))
     )
       return;
-    setShowFilters(Boolean(screenshotOpenFilters));
-  }, [screenshotCppScene, screenshotOpenFilters, searchReady, screenshotTargetBoard, activeBoard]);
+    if (screenshotOpenFilters) openFilters();
+    else hideFilters();
+  }, [
+    screenshotCppScene,
+    screenshotOpenFilters,
+    searchReady,
+    screenshotTargetBoard,
+    activeBoard,
+    openFilters,
+    hideFilters,
+  ]);
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
     if (!screenshotOpenPreview && !screenshotOpenWallPreview) return;

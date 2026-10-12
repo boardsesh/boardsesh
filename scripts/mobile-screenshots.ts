@@ -2208,19 +2208,19 @@ export function renderCppMaestroFlow(
     }
     commands.push(`- takeScreenshot: ${scene.filename}`);
     if (scene.command === 'search') {
-      // Filters has Reset/Show-results actions rather than the player's Close
-      // label. Apply through its real top-bar control before changing routes;
-      // native dismissal commits the draft and removes the modal obstruction.
-      const applyFilters =
-        "- tapOn:\n    id: sheet-top-bar-trailing\n- evalScript: ${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=search-results').body).sequence}\n- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: ${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}\n      - assertTrue: ${output.cppAcknowledged == output.cppSequence}\n- extendedWaitUntil:\n    notVisible:\n      id: climb-filter-column\n    timeout: 60000\n- waitForAnimationToEnd:\n    timeout: 30000";
+      // The current native filter sheet has leading Close and trailing Reset.
+      // Close through its real control before clearing the route opener, then
+      // require dismissal so the next scene cannot remain behind the sheet.
+      const closeFilters =
+        "- tapOn:\n    id: sheet-top-bar-leading\n- evalScript: ${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=search-results').body).sequence}\n- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: ${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}\n      - assertTrue: ${output.cppAcknowledged == output.cppSequence}\n- extendedWaitUntil:\n    notVisible:\n      id: climb-filter-column\n    timeout: 60000\n- waitForAnimationToEnd:\n    timeout: 30000";
       // A static iPad filter column has no native sheet action to dismiss.
       commands.push(
         ipad
-          ? `- runFlow:\n    when:\n      visible:\n        id: sheet-top-bar-trailing\n    commands:\n${applyFilters
+          ? `- runFlow:\n    when:\n      visible:\n        id: sheet-top-bar-leading\n    commands:\n${closeFilters
               .split('\n')
               .map((line) => `      ${line}`)
               .join('\n')}`
-          : applyFilters,
+          : closeFilters,
       );
     }
   }

@@ -686,9 +686,9 @@ describe('custom product page captures', () => {
       }
     }
   });
-  it('applies the real filter sheet after capturing search and before navigating to Logbook', () => {
+  it('closes the real filter sheet after capturing search and before navigating to Logbook', () => {
     const expectedDismissal = [
-      { tapOn: { id: 'sheet-top-bar-trailing' } },
+      { tapOn: { id: 'sheet-top-bar-leading' } },
       {
         evalScript:
           "${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=search-results').body).sequence}",
@@ -723,7 +723,7 @@ describe('custom product page captures', () => {
           if (device.name.startsWith('iPad')) {
             expect(steps[searchCapture + 1]).toEqual({
               runFlow: {
-                when: { visible: { id: 'sheet-top-bar-trailing' } },
+                when: { visible: { id: 'sheet-top-bar-leading' } },
                 commands: expectedDismissal,
               },
             });
