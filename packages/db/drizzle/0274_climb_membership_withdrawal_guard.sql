@@ -11,7 +11,8 @@
 -- rows retain false and their existing resurrection-guard behavior.
 --
 -- The definer, pinned path, suppression GUC and dependent cursor bumps retain
--- the contract established by migration 0265; no document/wire timestamp changes.
+-- the contract established by migration 0270_climb_reference_membership; no
+-- document/wire timestamp changes.
 CREATE OR REPLACE FUNCTION sync_board_climb_reference_membership() RETURNS TRIGGER AS $$
 DECLARE
   was_reference boolean := (OLD.is_draft IS NOT TRUE AND OLD.is_listed IS TRUE);
