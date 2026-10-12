@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from '@testing-library/react';
-import { createRegionDefaultConsent, type ConsentRecord, type ConsentSource } from '@boardsesh/consent';
+import {
+  createConsentRegionLookup,
+  createRegionDefaultConsent,
+  type ConsentRecord,
+  type ConsentSource,
+} from '@boardsesh/consent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getConsentSnapshot,
@@ -34,6 +39,7 @@ const region = vi.hoisted(() => ({
   lookup: vi.fn<() => Promise<boolean | null>>(),
   // True when a completed answer can be refreshed on foreground resume.
   expire: vi.fn<() => boolean>(),
+  isCurrent: vi.fn<(answer: Promise<boolean | null>) => boolean>(),
   globalPrivacyControl: false,
 }));
 const regionDefault = vi.hoisted(() => ({
@@ -81,6 +87,7 @@ vi.mock('../../../lib/consent-storage', () => ({ readLocalConsent: localConsent.
 vi.mock('../../../lib/consent-region', () => ({
   lookUpConsentRegion: region.lookup,
   expireConsentRegionLookup: region.expire,
+  isConsentRegionLookupCurrent: region.isCurrent,
   isGlobalPrivacyControlEnabled: () => region.globalPrivacyControl,
 }));
 vi.mock('../../../lib/posthog-client', () => ({
@@ -111,6 +118,7 @@ beforeEach(() => {
   coordinator.sync.mockReset().mockResolvedValue(undefined);
   region.lookup.mockReset().mockResolvedValue(true);
   region.expire.mockReset().mockReturnValue(false);
+  region.isCurrent.mockReset().mockReturnValue(true);
   region.globalPrivacyControl = false;
   resetRegionDefaultGuard();
   localConsent.read.mockReset().mockImplementation(async () => getConsentSnapshot().record);
@@ -528,6 +536,68 @@ describe('ConsentGate regions', () => {
     expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
     expect(isConsentAuthorityGranted()).toBe(false);
   });
+
+  it.each([
+    ['stored default', true, false],
+    ['no answer', false, false],
+    ['settled default answer before its UI callback', true, true],
+    ['settled first answer before its UI callback', false, true],
+  ])(
+    'holds %s through resume until the fresh location arrives',
+    async (_scenario, storedDefault, settleBeforeResume) => {
+      let oldAnswer!: (promptRequired: boolean | null) => void;
+      let freshAnswer!: (promptRequired: boolean | null) => void;
+      const request = vi
+        .fn<() => Promise<boolean | null>>()
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            oldAnswer = resolve;
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            freshAnswer = resolve;
+          }),
+        );
+      const lookup = createConsentRegionLookup(request);
+      region.lookup.mockImplementation(lookup.lookUp);
+      region.expire.mockImplementation(lookup.expire);
+      region.isCurrent.mockImplementation(lookup.isCurrent);
+      if (storedDefault) updateConsentState({ record: createRegionDefaultConsent('ios') });
+      render(<ConsentGate />);
+      await flushEffects();
+      expect(request).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        if (settleBeforeResume) {
+          oldAnswer(false);
+          // The cache settles before either gate callback consumes the answer.
+          await Promise.resolve();
+        }
+        for (const listener of appState.listeners) listener('active');
+        for (const listener of appState.listeners) listener('active');
+      });
+      expect(isConsentAuthorityGranted()).toBe(false);
+      if (!settleBeforeResume)
+        await act(async () => {
+          oldAnswer(false);
+        });
+      await flushEffects();
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(getConsentSnapshot().regionConfirmed).toBe(false);
+      expect(isConsentAuthorityGranted()).toBe(false);
+      expect(regionDefault.clear).not.toHaveBeenCalled();
+      expect(regionDefault.apply).not.toHaveBeenCalled();
+
+      await act(async () => {
+        freshAnswer(true);
+      });
+      await flushEffects();
+      expect(regionDefault.clear).toHaveBeenCalledTimes(storedDefault ? 1 : 0);
+      expect(router.push).toHaveBeenCalledExactlyOnceWith('/privacy-consent');
+      expect(isConsentAuthorityGranted()).toBe(false);
+    },
+  );
 
   it('applies the region default once per launch even when an account read drops it', async () => {
     region.lookup.mockResolvedValue(false);

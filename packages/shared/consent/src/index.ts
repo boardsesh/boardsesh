@@ -51,3 +51,5 @@ export {
   type ConsentSyncOptions,
   type ConsentSyncCoordinator,
 } from './consent-sync';
+
+export { createConsentRegionLookup } from './consent-region-lookup';

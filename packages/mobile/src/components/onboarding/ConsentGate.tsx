@@ -14,6 +14,7 @@ import {
 import {
   expireConsentRegionLookup,
   isGlobalPrivacyControlEnabled,
+  isConsentRegionLookupCurrent,
   lookUpConsentRegion,
 } from '../../lib/consent-region';
 import { getConsentSnapshot, subscribeConsent, updateConsentState } from '../../lib/consent-state';
@@ -130,8 +131,9 @@ export function ConsentGate(): null {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !consent.loaded || killed) return;
     if (!recordNeedsPrompt && !recordIsRegionDefault) return;
     let cancelled = false;
-    void lookUpConsentRegion().then((promptRequired) => {
-      if (cancelled) return;
+    const answer = lookUpConsentRegion();
+    void answer.then((promptRequired) => {
+      if (cancelled || !isConsentRegionLookupCurrent(answer)) return;
       // Global Privacy Control (browser app only) is a "no" outside the prompt regions.
       const regionDefaultAllowed = promptRequired === false && !isGlobalPrivacyControlEnabled();
       updateConsentState({ regionConfirmed: regionDefaultAllowed });
@@ -146,7 +148,13 @@ export function ConsentGate(): null {
   }, [consent.loaded, killed, recordNeedsPrompt, recordIsRegionDefault, regionCheck]);
 
   useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !consent.loaded || killed || !recordIsRegionDefault) return;
+    if (
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ||
+      !consent.loaded ||
+      killed ||
+      (!recordIsRegionDefault && !recordNeedsPrompt)
+    )
+      return;
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active' || !expireConsentRegionLookup()) return;
       // Hold capture until the fresh answer is in.
@@ -154,7 +162,7 @@ export function ConsentGate(): null {
       setRegionCheck((count) => count + 1);
     });
     return () => subscription.remove();
-  }, [consent.loaded, killed, recordIsRegionDefault]);
+  }, [consent.loaded, killed, recordIsRegionDefault, recordNeedsPrompt]);
 
   useEffect(() => {
     if (!launchReady || !consent.loaded) return;
@@ -183,8 +191,9 @@ export function ConsentGate(): null {
       }
       asked = true;
       // Capped at five seconds; an unknown region (null) asks.
-      void lookUpConsentRegion().then((promptRequired) => {
-        if (cancelled || !needsPrompt(getConsentSnapshot().record)) return;
+      const answer = lookUpConsentRegion();
+      void answer.then((promptRequired) => {
+        if (cancelled || !isConsentRegionLookupCurrent(answer) || !needsPrompt(getConsentSnapshot().record)) return;
         if (promptRequired === false) {
           const accountKey = isAuthenticated ? authenticatedUserId : null;
           if (isGlobalPrivacyControlEnabled() || regionDefaultAppliedFor.has(accountKey)) {
@@ -215,6 +224,7 @@ export function ConsentGate(): null {
     };
   }, [
     launchReady,
+    regionCheck,
     consent.loaded,
     consent.record,
     accountAnswerResolved,

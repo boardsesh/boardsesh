@@ -1,3 +1,4 @@
+import { createConsentRegionLookup } from '@boardsesh/consent';
 import { GET_CONSENT_REGION, type GetConsentRegionResponse } from '@boardsesh/graphql/operations/analytics-consent';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { isGlobalPrivacyControlEnabled } from '@/app/lib/consent';
@@ -16,8 +17,7 @@ export type ConsentRegionAnswer = {
   globalPrivacyControl: boolean;
 };
 
-let lookup: Promise<ConsentRegionAnswer> | null = null;
-let lookupPending = false;
+const lookup = createConsentRegionLookup(requestConsentRegion);
 
 /**
  * Whether this visitor's region gets the consent banner, and whether the
@@ -31,20 +31,17 @@ let lookupPending = false;
  * default.
  */
 export function lookUpConsentRegion(): Promise<ConsentRegionAnswer> {
-  if (!lookup) {
-    lookupPending = true;
-    lookup = requestConsentRegion().finally(() => {
-      lookupPending = false;
-    });
-  }
-  return lookup;
+  return lookup.lookUp();
 }
 
-/** Refresh a completed answer on resume; simultaneous focus events share an in-flight lookup. */
+/** Hold capture on resume and queue one fresh request behind an in-flight lookup. */
 export function expireConsentRegionLookup(): boolean {
-  if (!lookup || lookupPending) return false;
-  lookup = null;
-  return true;
+  return lookup.expire();
+}
+
+/** Ignore callbacks from an answer expired before its consumer ran. */
+export function isConsentRegionLookupCurrent(answer: Promise<ConsentRegionAnswer>): boolean {
+  return lookup.isCurrent(answer);
 }
 
 async function requestConsentRegion(): Promise<ConsentRegionAnswer> {

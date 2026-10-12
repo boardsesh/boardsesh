@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { createRegionDefaultConsent, isRegionDefaultConsent, needsPrompt } from '@boardsesh/consent';
 import { getWebConsentRecord, setConsentRegionConfirmed, writeWebConsent } from '@/app/lib/consent';
-import { expireConsentRegionLookup, lookUpConsentRegion } from '@/app/lib/consent-region';
+import { expireConsentRegionLookup, isConsentRegionLookupCurrent, lookUpConsentRegion } from '@/app/lib/consent-region';
 import { useConsent } from './consent-provider';
 
 /**
@@ -42,9 +42,10 @@ export function useConsentRegionPrompt(enabled: boolean): boolean {
     if (!regionCheckNeeded) return;
     let cancelled = false;
     const checkRegion = () => {
-      void lookUpConsentRegion()
+      const answer = lookUpConsentRegion();
+      void answer
         .then(({ promptRequired, globalPrivacyControl }) => {
-          if (cancelled) return;
+          if (cancelled || !isConsentRegionLookupCurrent(answer)) return;
           const current = getWebConsentRecord();
           const regionDefaultAllowed = promptRequired === false && !globalPrivacyControl;
           setConsentRegionConfirmed(regionDefaultAllowed);
@@ -64,11 +65,12 @@ export function useConsentRegionPrompt(enabled: boolean): boolean {
         })
         .catch(() => {
           // Unreachable today (the lookup never rejects), but an unknown region asks.
-          if (!cancelled) setPromptRegion(true);
+          if (!cancelled && isConsentRegionLookupCurrent(answer)) setPromptRegion(true);
         });
     };
     const refresh = () => {
-      if (document.visibilityState === 'hidden' || !isRegionDefaultConsent(getWebConsentRecord())) return;
+      const current = getWebConsentRecord();
+      if (document.visibilityState === 'hidden' || (!isRegionDefaultConsent(current) && !needsPrompt(current))) return;
       if (!expireConsentRegionLookup()) return;
       // Revoke capture synchronously, before the fresh request or React effects.
       setConsentRegionConfirmed(false);

@@ -100,7 +100,11 @@ takes `createRegionDefaultConsent(source)`: analytics granted, `basis:
   EU). The app refreshes the region on each foreground resume while it holds
   a default; the website refreshes it on focus, becoming visible or coming
   online. Both stop capture synchronously until the new answer confirms a
-  non-prompt region. Simultaneous resume events share one in-flight lookup.
+  non-prompt region. A resume during a pending request queues one fresh lookup
+  after it settles; simultaneous signals share that follow-up. The old response
+  cannot confirm the region or enable capture. This also applies to the first
+  lookup on a device with no answer. Native and web share the queue and reject
+  callbacks from a settled answer expired before its UI consumer runs.
 - Install attribution (Apple Ads, the Play install referrer) never runs on it.
   See [Legal basis per tracker](#legal-basis-per-tracker).
 

@@ -248,8 +248,60 @@ describe('consent banner by region', () => {
     expect(await view.findByTestId('consent-banner')).toBeTruthy();
     expect(consentCookie()).toBeUndefined();
     expect(hasAnalyticsConsent()).toBe(false);
-    expect(regionLookups()).toBe(2);
+    expect(regionLookups()).toBe(3);
   });
+
+  it.each([
+    ['stored default', true, false],
+    ['no answer', false, false],
+    ['settled default answer before its UI callback', true, true],
+    ['settled first answer before its UI callback', false, true],
+  ])(
+    'never confirms %s after resume until a fresh location arrives',
+    async (_scenario, storedDefault, settleBeforeResume) => {
+      if (storedDefault)
+        cookies = `boardsesh-consent=${serializeConsentCookieValue(createRegionDefaultConsent('web'))}`;
+      let oldAnswer!: (promptRequired: boolean | null) => void;
+      let freshAnswer!: (promptRequired: boolean | null) => void;
+      transport.pendingRegion = new Promise((resolve) => {
+        oldAnswer = resolve;
+      });
+      const { lookUpConsentRegion } = await import('@/app/lib/consent-region');
+      const oldLookup = lookUpConsentRegion();
+      if (settleBeforeResume) {
+        // Register before the UI: expire the settled cache before its consumers run.
+        void oldLookup.then(() => {
+          fireEvent.focus(window);
+        });
+      }
+      const view = await renderBanner();
+      await waitFor(() => expect(regionLookups()).toBe(1));
+      if (!settleBeforeResume)
+        act(() => {
+          fireEvent.focus(window);
+          fireEvent.online(window);
+        });
+      transport.pendingRegion = new Promise((resolve) => {
+        freshAnswer = resolve;
+      });
+      await act(async () => {
+        oldAnswer(false);
+      });
+      await waitFor(() => expect(regionLookups()).toBe(2));
+      expect(view.getByTestId('analytics-authorized').textContent).toBe('off');
+      expect(await sendsAnalytics()).toBe(false);
+      if (storedDefault) expect(consentCookie()).toMatch(/\.region$/);
+      else expect(consentCookie()).toBeUndefined();
+
+      await act(async () => {
+        freshAnswer(true);
+      });
+      expect(await view.findByTestId('consent-banner')).toBeTruthy();
+      expect(consentCookie()).toBeUndefined();
+      expect(await sendsAnalytics()).toBe(false);
+      expect(regionLookups()).toBe(2);
+    },
+  );
 
   it('keeps a stored default disabled when a focus refresh fails', async () => {
     cookies = `boardsesh-consent=${serializeConsentCookieValue(createRegionDefaultConsent('web'))}`;

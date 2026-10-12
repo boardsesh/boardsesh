@@ -82,18 +82,22 @@ describe('expireConsentRegionLookup', () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
-  it('retries a failed lookup on the next resume, but never one still in flight', async () => {
+  it('queues a fresh lookup after a pending request fails on resume', async () => {
     let fail!: (error: Error) => void;
-    request.mockReturnValue(
-      new Promise((_resolve, reject) => {
-        fail = reject;
-      }),
-    );
+    request
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+      )
+      .mockResolvedValueOnce({ consentRegion: { countryCode: 'DE', promptRequired: true } });
     const pending = lookUpConsentRegion();
-    expect(expireConsentRegionLookup()).toBe(false);
-    fail(new Error('offline'));
-    await expect(pending).resolves.toBeNull();
     expect(expireConsentRegionLookup()).toBe(true);
+    expect(expireConsentRegionLookup()).toBe(true);
+    expect(request).toHaveBeenCalledOnce();
+    fail(new Error('offline on old network'));
+    await expect(pending).resolves.toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });
 

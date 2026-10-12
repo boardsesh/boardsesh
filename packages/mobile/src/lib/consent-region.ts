@@ -1,46 +1,31 @@
+import { createConsentRegionLookup } from '@boardsesh/consent';
 import { GET_CONSENT_REGION, type GetConsentRegionResponse } from '@boardsesh/graphql/operations/analytics-consent';
 import { getHttpClient } from './graphql/client';
 
 /** Same cap as the signed-in account read: past it, the prompt is shown. */
 export const CONSENT_REGION_WAIT_MS = 5000;
 
-type RegionLookup = {
-  promise: Promise<boolean | null>;
-  /** Undefined until the request settles. */
-  promptRequired?: boolean | null;
-};
-
-let lookup: RegionLookup | null = null;
+let lookup = createConsentRegionLookup(requestConsentRegion);
 /** The last answer carried `Sec-GPC: 1` back (browser app only). */
 let answeredGlobalPrivacyControl = false;
 
 /**
- * Whether this launch's region gets the analytics prompt: true, false, or null
- * when the backend did not say within {@link CONSENT_REGION_WAIT_MS} (offline,
- * an error, an older backend). Null means ask. One request per launch, plus one
- * per resume once {@link expireConsentRegionLookup} says the answer is stale.
+ * True, false, or null when the backend did not answer within five seconds.
+ * A foreground resume expires the answer. If its request is still pending,
+ * callers receive only the queued fresh answer after that request settles.
  */
 export function lookUpConsentRegion(): Promise<boolean | null> {
-  if (!lookup) {
-    const started: RegionLookup = { promise: Promise.resolve(null) };
-    started.promise = requestConsentRegion().then((promptRequired) => {
-      started.promptRequired = promptRequired;
-      return promptRequired;
-    });
-    lookup = started;
-  }
-  return lookup.promise;
+  return lookup.lookUp();
 }
 
-/**
- * Forget a completed region answer on foreground resume. A traveller can cross
- * into a prompt region within the same process, so no elapsed-time threshold
- * makes that answer safe. Keep an in-flight lookup to deduplicate resume events.
- */
+/** Hold capture on resume and queue one fresh request behind an in-flight lookup. */
 export function expireConsentRegionLookup(): boolean {
-  if (!lookup || lookup.promptRequired === undefined) return false;
-  lookup = null;
-  return true;
+  return lookup.expire();
+}
+
+/** Ignore callbacks from an answer expired before its consumer ran. */
+export function isConsentRegionLookupCurrent(answer: Promise<boolean | null>): boolean {
+  return lookup.isCurrent(answer);
 }
 
 /**
@@ -85,6 +70,6 @@ async function requestConsentRegion(): Promise<boolean | null> {
 
 /** Test seam: forget this launch's answer. */
 export function resetConsentRegionLookup(): void {
-  lookup = null;
+  lookup = createConsentRegionLookup(requestConsentRegion);
   answeredGlobalPrivacyControl = false;
 }
