@@ -350,16 +350,75 @@ describe('privacy revocation subscription', () => {
     expect(mocks.revalidate).not.toHaveBeenCalled();
   });
 
-  it('bounds failed early withdrawal writes until a new handle notification', async () => {
+  it('retries an early locked withdrawal without another socket or handle event', async () => {
     mocks.privacy = undefined;
     mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
     render(<PrivacySyncBridge />);
     await act(async () => mocks.connectedListener?.());
     expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('bounds early withdrawal retries and resumes them on foreground after exhaustion', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValue(new Error('locked'));
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(4);
+    mocks.persistWithdrawal.mockResolvedValue();
+    await act(async () => mocks.foreground?.('active'));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(5);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(5);
+  });
+
+  it('defers an early withdrawal timer in the background and resumes without network on foreground', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    mocks.state = 'background';
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    mocks.online = false;
+    mocks.state = 'active';
+    await act(async () => mocks.foreground?.('active'));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it.each(['credentials', 'teardown'])('retires an early withdrawal timer after %s changes', async (change) => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    if (change === 'credentials') mocks.credential += 1;
+    else view.unmount();
     await act(async () => vi.advanceTimersByTimeAsync(60_000));
     expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
-    await act(async () => mocks.databaseListener?.());
-    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('retires an early withdrawal timer when readiness hands off authorization', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    mocks.privacy = { enabled: false };
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    expect(mocks.revalidate).toHaveBeenCalledOnce();
   });
 
   it('retries an early withdrawal on the replacement handle after the old write rejects', async () => {

@@ -25,6 +25,8 @@ import { clearStoredSprayPhotos } from '../../lib/spray/spray-photo-store';
 import { reportHandledError } from '../../lib/error-reporting';
 import { subscribeMutationDelivery } from '../../offline/offline-sync-adapter';
 
+const PRIVACY_RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
+
 /** A reconnect gets an immediate signal, covering revocations missed offline. */
 export function PrivacySyncBridge() {
   const queryClient = useQueryClient();
@@ -47,9 +49,18 @@ export function PrivacySyncBridge() {
     let withdrawalPending = pendingConnectionRef.current;
     let withdrawalRunning = false;
     let withdrawalRevision = 0;
+    let withdrawalRetryIndex = 0;
+    let withdrawalTimer: ReturnType<typeof setTimeout> | undefined;
+    const installedViewer = profile?.id;
+    const clearWithdrawalRetry = () => {
+      clearTimeout(withdrawalTimer);
+      withdrawalTimer = undefined;
+    };
+    const foregrounded = () => AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
     const persistPendingWithdrawal = () => {
       if (!pendingConnectionRef.current) {
         withdrawalPending = false;
+        clearWithdrawalRetry();
         return;
       }
       if (disposed || !withdrawalPending || withdrawalRunning) return;
@@ -58,11 +69,17 @@ export function PrivacySyncBridge() {
       const attemptRevision = withdrawalRevision;
       const credentialGeneration = getPrivacyCredentialGeneration();
       const current = () =>
-        !disposed && getDatabaseHandle() === database && getPrivacyCredentialGeneration() === credentialGeneration;
+        !disposed &&
+        viewerRef.current === installedViewer &&
+        getDatabaseHandle() === database &&
+        getPrivacyCredentialGeneration() === credentialGeneration;
       withdrawalPending = false;
       withdrawalRunning = true;
       let failed = false;
       void persistCatalogWithdrawal(database, current)
+        .then(() => {
+          if (current()) withdrawalRetryIndex = 0;
+        })
         .catch((error: unknown) => {
           if (current() && pendingConnectionRef.current && withdrawalRevision === attemptRevision) {
             failed = true;
@@ -72,16 +89,33 @@ export function PrivacySyncBridge() {
         })
         .finally(() => {
           withdrawalRunning = false;
+          if (disposed || !withdrawalPending) return;
           // A later event or replacement handle may supersede an in-flight write.
-          if (!failed && withdrawalPending && !disposed) persistPendingWithdrawal();
+          if (!failed) persistPendingWithdrawal();
+          else if (current() && foregrounded() && pendingConnectionRef.current) {
+            const delay = PRIVACY_RETRY_DELAYS_MS[withdrawalRetryIndex++];
+            if (delay !== undefined)
+              withdrawalTimer = setTimeout(() => {
+                withdrawalTimer = undefined;
+                if (current() && foregrounded() && withdrawalRevision === attemptRevision) persistPendingWithdrawal();
+              }, delay);
+          }
         });
     };
     const resumeWithdrawal = () => {
       if (!pendingConnectionRef.current || disposed) return;
       withdrawalRevision += 1;
       withdrawalPending = true;
+      withdrawalRetryIndex = 0;
+      clearWithdrawalRetry();
       persistPendingWithdrawal();
     };
+    const foreground = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || disposed || !withdrawalPending || !pendingConnectionRef.current) return;
+      withdrawalRetryIndex = 0;
+      clearWithdrawalRetry();
+      persistPendingWithdrawal();
+    });
     const stopDatabase = subscribeDatabaseHandle(resumeWithdrawal);
     const stopConnected = offlineMode
       ? undefined
@@ -90,6 +124,8 @@ export function PrivacySyncBridge() {
           pendingConnectionRef.current = true;
           if (connectionRevalidationRef.current?.()) {
             pendingConnectionRef.current = false;
+            withdrawalPending = false;
+            clearWithdrawalRetry();
             return;
           }
           clearSprayWallPrivateCaches();
@@ -97,6 +133,8 @@ export function PrivacySyncBridge() {
           requirePrivacyRevalidation();
           withdrawalRevision += 1;
           withdrawalPending = true;
+          withdrawalRetryIndex = 0;
+          clearWithdrawalRetry();
           persistPendingWithdrawal();
           void invalidatePrivacyQueries(queryClient, () => Promise.resolve()).catch((error: unknown) => {
             reportHandledError(error, { tags: { source: 'privacy-revocation' } });
@@ -105,6 +143,8 @@ export function PrivacySyncBridge() {
     persistPendingWithdrawal();
     return () => {
       disposed = true;
+      clearWithdrawalRetry();
+      foreground.remove();
       stopDatabase();
       stopConnected?.();
     };
@@ -119,7 +159,6 @@ export function PrivacySyncBridge() {
     let retryIndex = 0;
     let deliveryRevision = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const retryDelays = [1_000, 5_000, 15_000];
     const clearRetry = () => {
       clearTimeout(timer);
       timer = undefined;
@@ -153,7 +192,7 @@ export function PrivacySyncBridge() {
           if (!(error instanceof PrivacyRevalidationDeferredError)) {
             reportHandledError(error, { tags: { source: 'privacy-revalidation' } });
           }
-          const delay = canAuthorize() ? retryDelays[retryIndex++] : undefined;
+          const delay = canAuthorize() ? PRIVACY_RETRY_DELAYS_MS[retryIndex++] : undefined;
           if (delay !== undefined)
             timer = setTimeout(() => {
               timer = undefined;
