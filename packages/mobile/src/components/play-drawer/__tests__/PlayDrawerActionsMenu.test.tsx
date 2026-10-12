@@ -133,6 +133,18 @@ beforeEach(() => {
 });
 
 describe('PlayDrawerActionsMenu', () => {
+  it('moves the displayed queue slot on Play next, not the first copy of the climb', () => {
+    const { container } = render(createElement(PlayDrawerActionsMenu, makeProps({ queueItemUuid: 'slot-2' })));
+    tap(container, 'mobile.climbActions.playNext');
+    expect(queue.playNext).toHaveBeenCalledWith(expect.objectContaining({ queueItemUuid: 'slot-2' }));
+  });
+
+  it('lets Play next match by climb when the displayed climb has no queued slot', () => {
+    const { container } = render(createElement(PlayDrawerActionsMenu, makeProps()));
+    tap(container, 'mobile.climbActions.playNext');
+    expect(queue.playNext).toHaveBeenCalledWith(expect.objectContaining({ queueItemUuid: undefined }));
+  });
+
   it('is the climb-actions ⋯, named for a screen reader and the web smoke test', () => {
     const { getByLabelText } = render(createElement(PlayDrawerActionsMenu, makeProps()));
     expect(getByLabelText('playView.actionBar.climbActionsAria').getAttribute('data-icon')).toBe('more');

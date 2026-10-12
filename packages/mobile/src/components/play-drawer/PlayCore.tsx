@@ -52,6 +52,7 @@ import { SwipeableHeader } from './SwipeableHeader';
 import { useSwipeNavigation, useSwipePager, useSwipePages } from './use-swipe-pager';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
+import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
 import { resolveActionBarLayout } from './action-bar-layout';
 import { WallStatePill } from './WallStatePill';
 import { WallStateCallout } from './WallStateCallout';
@@ -387,6 +388,12 @@ export function PlayCore({
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
   const displayedClimb = displayedQueueItem?.climb;
+  // The slot ⋯ → Play next moves when the same climb is queued twice.
+  const displayedQueueItemUuid = displayedQueueItem?.uuid;
+  const displayedQueueSlotUuid = useMemo(
+    () => resolveQueuedSlotUuid(queue, displayedQueueItemUuid),
+    [queue, displayedQueueItemUuid],
+  );
   // A view-only preview is showing (not the active/wall climb). Commit paths
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
@@ -1552,6 +1559,7 @@ export function PlayCore({
                                 <PlayDrawerActionsMenu
                                   climb={displayedClimb}
                                   boardConfig={renderBoardConfig}
+                                  queueItemUuid={displayedQueueSlotUuid}
                                   isAuthenticated={isAuthenticated}
                                   hidden={actionBarLayout.hidden}
                                   boardMismatch={showBoardMismatch}

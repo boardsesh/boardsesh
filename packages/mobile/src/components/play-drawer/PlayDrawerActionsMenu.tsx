@@ -20,6 +20,13 @@ export type PlayDrawerActionsMenuProps = {
    * against its own board.
    */
   boardConfig: BoardConfig;
+  /**
+   * The queue slot on screen, when that slot is in the queue. With the same
+   * climb queued twice, Play next moves THIS copy; without it the move falls
+   * back to the first copy after the current climb. Leave it out for a preview
+   * that isn't queued: `planPlayNext` inserts a fresh copy for an unknown slot.
+   */
+  queueItemUuid?: string;
   isAuthenticated: boolean;
   /** Bar buttons ⋯ stands in for right now (`resolveActionBarLayout`). */
   hidden: PlayDrawerHiddenButtons;
@@ -59,6 +66,7 @@ export type PlayDrawerActionsMenuProps = {
 export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   climb,
   boardConfig,
+  queueItemUuid,
   isAuthenticated,
   hidden,
   boardMismatch,
@@ -94,6 +102,7 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   const items = useClimbActions({
     climb,
     boardConfig,
+    queueItemUuid,
     currentUserId,
     isAuthenticated,
     onSelectPlaylist: handleSelectPlaylist,

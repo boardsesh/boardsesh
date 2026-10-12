@@ -105,3 +105,17 @@ export function buildPlayDrawerMenuRows(
 
   return rows;
 }
+
+/**
+ * The displayed slot ⋯ → Play next should move, or `undefined` to let it match
+ * by climb. Only a slot that is really in the queue qualifies: a preview's item
+ * is not queued, and `planPlayNext` inserts a duplicate for a slot it can't find
+ * instead of moving the copy that is queued.
+ */
+export function resolveQueuedSlotUuid(
+  queue: readonly { uuid: string }[],
+  displayedQueueItemUuid: string | undefined,
+): string | undefined {
+  if (displayedQueueItemUuid === undefined) return undefined;
+  return queue.some((queueItem) => queueItem.uuid === displayedQueueItemUuid) ? displayedQueueItemUuid : undefined;
+}

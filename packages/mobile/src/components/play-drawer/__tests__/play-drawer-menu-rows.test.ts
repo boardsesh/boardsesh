@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ClimbActionId, ClimbActionItem } from '../../climb-actions/use-climb-actions';
 import type { IconName } from '../../icon-map';
-import { buildPlayDrawerMenuRows, type PlayDrawerMenuRowOptions } from '../play-drawer-menu-rows';
+import {
+  buildPlayDrawerMenuRows,
+  resolveQueuedSlotUuid,
+  type PlayDrawerMenuRowOptions,
+} from '../play-drawer-menu-rows';
 
 const ICONS: Record<ClimbActionId, IconName> = {
   preview: 'visibility',
@@ -161,5 +165,21 @@ describe('buildPlayDrawerMenuRows', () => {
     expect(row).toMatchObject({ id: 'playlist', label: 'title:playlist', systemIcon: 'folder.badge.plus' });
     row?.run();
     expect(playlist.run).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('resolveQueuedSlotUuid', () => {
+  const queuedSlots = [{ uuid: 'slot-a' }, { uuid: 'slot-b' }];
+
+  it('targets the displayed slot when it is queued, so Play next moves that copy', () => {
+    expect(resolveQueuedSlotUuid(queuedSlots, 'slot-b')).toBe('slot-b');
+  });
+
+  it('leaves an unqueued preview to match by climb rather than insert a duplicate', () => {
+    expect(resolveQueuedSlotUuid(queuedSlots, 'preview-item')).toBeUndefined();
+  });
+
+  it('has nothing to target with no displayed slot', () => {
+    expect(resolveQueuedSlotUuid(queuedSlots, undefined)).toBeUndefined();
   });
 });
