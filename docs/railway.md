@@ -369,7 +369,14 @@ xprem's ClickHouse migrations ship **no TTL on any table**. Left alone,
 The declared windows are 90 days for metrics and 30 for logs — logs carry the event
 bodies and attribute blobs that dominate the bytes, while metrics are narrow numeric
 rows worth comparing across releases months apart. Three server-side health tables
-carry 90/90/180 windows; all five are in `CLICKHOUSE_RETENTION`.
+carry 90/90/180 windows, and the two error-tracking tables xprem 3.2.6 added carry 90
+each; all seven are in `CLICKHOUSE_RETENTION`.
+
+**A new xprem version can add a table, and nothing here notices.** The plan diffs
+only the tables it declares, and the test that lists them is typed in by hand. So on
+every bump, read the new files under `internal/database/clickhouse/migrations/` at
+the release tag, then add each new table to `CLICKHOUSE_RETENTION`, to the list in
+`scripts/railway-apply.test.ts`, and set its TTL by hand (below).
 
 The check is skipped, not failed, when the script has no `CLICKHOUSE_URL` of its own
 (the same way `scripts/mobile-ota-health-check.ts` skips without a PostHog key). It
@@ -395,8 +402,10 @@ the SQL-injection boundary rather than a cosmetic naming check.
 To set or repair a TTL:
 
 ```sql
-ALTER TABLE observe_metrics MODIFY TTL toDateTime(timestamp) + INTERVAL 90 DAY;
-ALTER TABLE observe_logs    MODIFY TTL toDateTime(timestamp) + INTERVAL 30 DAY;
+ALTER TABLE observe_metrics   MODIFY TTL toDateTime(timestamp) + INTERVAL 90 DAY;
+ALTER TABLE observe_logs      MODIFY TTL toDateTime(timestamp) + INTERVAL 30 DAY;
+ALTER TABLE error_occurrences MODIFY TTL toDateTime(hour) + INTERVAL 90 DAY;
+ALTER TABLE error_groups      MODIFY TTL toDateTime(symbolicated_at) + INTERVAL 90 DAY;
 ```
 
 `toDateTime()` is required, not decoration. Both `timestamp` columns are
@@ -467,7 +476,9 @@ permits at all.
 
 ### Where each table's rows come from
 
-Two independent producers, which is why the tables filled at very different times.
+Two independent producers, which is why the tables filled at very different times. The
+two error tables are derived from `observe_logs` on the server, so they fill only as
+fast as the app reports errors.
 
 | Table | Time column | Retention | Producer |
 | --- | --- | --- | --- |
@@ -476,6 +487,8 @@ Two independent producers, which is why the tables filled at very different time
 | `device_health_events` | `occurred_at` | 180d | Server. Lowest volume and the raw record the other two summarise |
 | `observe_metrics` | `timestamp` | 90d | App. Per-screen `cold_ttr` / `warm_ttr` / `tti` |
 | `observe_logs` | `timestamp` | 30d | App. Log events and error reports |
+| `error_occurrences` | `hour` | 90d | Server, from `observe_logs`. Hourly error counts per update, filled by the `error_occurrences_mv` materialized view as logs arrive |
+| `error_groups` | `symbolicated_at` | 90d | Server. One symbolicated stack trace per update and error, written by a one-minute sweep |
 
 **The three server-side tables need nothing from the app.** Postgres triggers enqueue
 into `device_health_outbox` on every device update-state change, driven by the manifest

@@ -2061,9 +2061,11 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
         pathname: `${privateBucketPath}/domains/managed`,
         body: { enabled: false },
       });
-      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))).toBe(
-        false,
-      );
+      // Only the blocked bucket is held back: another bucket's own rule still converges.
+      const lifecyclePuts = requests
+        .filter((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))
+        .map((request) => request.pathname.split('/').at(-2));
+      expect(lifecyclePuts).toEqual(['boardsesh-ota-sourcemaps']);
       expect(
         requests.some((request) => request.method === 'POST' && request.pathname.endsWith('/domains/custom')),
       ).toBe(true);
@@ -2101,9 +2103,11 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
         pathname: '/client/v4/accounts/account-1/r2/buckets/boardsesh-user-private/domains/managed',
         body: { enabled: false },
       });
-      expect(requests.some((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))).toBe(
-        false,
-      );
+      // Only the blocked bucket is held back: another bucket's own rule still converges.
+      const lifecyclePuts = requests
+        .filter((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))
+        .map((request) => request.pathname.split('/').at(-2));
+      expect(lifecyclePuts).toEqual(['boardsesh-ota-sourcemaps']);
     },
   );
 
