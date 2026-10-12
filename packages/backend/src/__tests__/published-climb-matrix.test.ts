@@ -789,6 +789,9 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
 
   describe("a board's hardest send", () => {
     const BOARD_UUID = 'matrix-board';
+    // The stats carry no sender, so the board id only tags the projection: no
+    // board-scoped identity rule runs.
+    const STATS_BOARD_ID = 0;
 
     const statsWithHardest = (climbUuid: string): BoardPresenceStats => ({
       climbsSentCount: 3,
@@ -805,29 +808,31 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
 
     it('never features an unlisted climb to anyone but its owner, and keeps every aggregate', async () => {
       for (const ctx of [STRANGER, FOLLOWER, null]) {
-        const redacted = await redactBoardStats(statsWithHardest(UNLISTED), ctx);
+        const redacted = await redactBoardStats(statsWithHardest(UNLISTED), ctx, STATS_BOARD_ID);
         expect(redacted.hardestSend ?? null).toBeNull();
         expect(redacted).toMatchObject({ climbsSentCount: 3, distinctClimbersCount: 2, hardestGrade: 'V8' });
       }
-      expect((await redactBoardStats(statsWithHardest(UNLISTED), PRIVATE_AUTHOR)).hardestSend?.climbUuid).toBe(
-        UNLISTED,
-      );
-      expect((await redactBoardStats(statsWithHardest(PRIVATE_PUBLISHED), STRANGER)).hardestSend?.climbUuid).toBe(
-        PRIVATE_PUBLISHED,
-      );
+      expect(
+        (await redactBoardStats(statsWithHardest(UNLISTED), PRIVATE_AUTHOR, STATS_BOARD_ID)).hardestSend?.climbUuid,
+      ).toBe(UNLISTED);
+      expect(
+        (await redactBoardStats(statsWithHardest(PRIVATE_PUBLISHED), STRANGER, STATS_BOARD_ID)).hardestSend?.climbUuid,
+      ).toBe(PRIVATE_PUBLISHED);
     });
 
     it('hides foreign and ownerless drafts while retaining board aggregates', async () => {
       for (const viewer of [STRANGER, FOLLOWER, null]) {
         for (const climbUuid of [DRAFT, OWNERLESS_DRAFT]) {
-          const redacted = await redactBoardStats(statsWithHardest(climbUuid), viewer);
+          const redacted = await redactBoardStats(statsWithHardest(climbUuid), viewer, STATS_BOARD_ID);
           expect(redacted.hardestSend ?? null).toBeNull();
           expect(redacted).toMatchObject({ climbsSentCount: 3, distinctClimbersCount: 2, hardestGrade: 'V8' });
         }
       }
-      expect((await redactBoardStats(statsWithHardest(DRAFT), PRIVATE_AUTHOR)).hardestSend?.climbUuid).toBe(DRAFT);
       expect(
-        (await redactBoardStats(statsWithHardest(OWNERLESS_DRAFT), PRIVATE_AUTHOR)).hardestSend ?? null,
+        (await redactBoardStats(statsWithHardest(DRAFT), PRIVATE_AUTHOR, STATS_BOARD_ID)).hardestSend?.climbUuid,
+      ).toBe(DRAFT);
+      expect(
+        (await redactBoardStats(statsWithHardest(OWNERLESS_DRAFT), PRIVATE_AUTHOR, STATS_BOARD_ID)).hardestSend ?? null,
       ).toBeNull();
     });
 
