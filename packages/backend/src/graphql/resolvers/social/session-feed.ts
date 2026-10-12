@@ -118,6 +118,14 @@ type FeaturedBetaRow = BetaLinkRow & {
   tickUuid: string;
 };
 
+// Raw execute() bypasses Drizzle's bigint-column decoder. Convert before the
+// numeric board-id permission set is checked, for both party and daily cards.
+type RawFeaturedBetaRow = Omit<FeaturedBetaRow, 'boardId'> & { boardId: number | string | null };
+
+function normalizeFeaturedBetaRows(rows: RawFeaturedBetaRow[]): FeaturedBetaRow[] {
+  return rows.map((row) => ({ ...row, boardId: row.boardId == null ? null : Number(row.boardId) }));
+}
+
 function parseDailySessionId(sessionId: string): DailySessionId | null {
   const match = /^daily:([^:]+):(\d{4}-\d{2}-\d{2})$/.exec(sessionId);
   if (!match) return null;
@@ -1825,7 +1833,7 @@ async function fetchSessionFeaturedBetaRows(
     WHERE rank = 1
   `);
 
-  return rowsFromResult<FeaturedBetaRow>(result);
+  return normalizeFeaturedBetaRows(rowsFromResult<RawFeaturedBetaRow>(result));
 }
 
 async function fetchDailyFeaturedBetaRows(
@@ -1880,5 +1888,5 @@ async function fetchDailyFeaturedBetaRows(
     WHERE rank = 1
   `);
 
-  return rowsFromResult<FeaturedBetaRow>(result);
+  return normalizeFeaturedBetaRows(rowsFromResult<RawFeaturedBetaRow>(result));
 }

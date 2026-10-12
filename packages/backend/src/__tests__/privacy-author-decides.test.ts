@@ -7,7 +7,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext, SessionFeedItem } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { canReadSocialEntity } from '../graphql/resolvers/shared/activity-privacy';
 import { tickQueries } from '../graphql/resolvers/ticks/queries';
@@ -38,12 +38,12 @@ const viewer = (userId: string | null): ConnectionContext =>
 
 async function insertTick(
   uuid: string,
-  options: { userId?: string; sessionId?: string | null; boardId?: number; climbedAt?: string },
+  options: { userId?: string; sessionId?: string | null; boardId?: number; climbedAt?: string; climbUuid?: string },
 ) {
   await db.insert(dbSchema.boardseshTicks).values({
     uuid,
     userId: options.userId ?? CLIMBER,
-    climbUuid: CLIMB_UUID,
+    climbUuid: options.climbUuid ?? CLIMB_UUID,
     boardType: 'kilter',
     angle: 40,
     status: 'send',
@@ -480,6 +480,57 @@ describe('author decides across feeds', () => {
     expect(await recent(CLIMBER)).toMatchObject({ boardId: inviteOnlyBoardId });
     expect(await recent(GRANTEE)).toMatchObject({ boardId: inviteOnlyBoardId });
     dropRecentBetaLinksFallback();
+  });
+
+  it.each(['party', 'daily'] as const)('preserves an authorized featured-beta board on a %s card', async (kind) => {
+    const tickUuid = `author-decides-featured-${kind}`;
+    const climbUuid = `author-decides-featured-climb-${kind}`;
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: climbUuid,
+      boardType: 'kilter',
+      layoutId: 1,
+      name: 'Featured beta fixture',
+      isListed: true,
+      isDraft: false,
+      frames: 'p1r1',
+    });
+    const sessionId = kind === 'party' ? 'author-decides-featured-session' : null;
+    if (sessionId) await insertSession(sessionId, { createdBy: CLIMBER });
+    await insertTick(tickUuid, {
+      sessionId,
+      climbUuid,
+      boardId: inviteOnlyBoardId,
+      climbedAt: '2026-09-28T10:00:00Z',
+    });
+    const link = `https://www.youtube.com/watch?v=author-decides-featured-${kind}`;
+    await db.insert(dbSchema.boardBetaLinks).values({
+      boardType: 'kilter',
+      climbUuid,
+      link,
+      isListed: true,
+      createdByUserId: CLIMBER,
+      tickUuid,
+      boardId: inviteOnlyBoardId,
+    });
+    const raw = await db.execute(sql`SELECT board_id FROM board_beta_links WHERE link = ${link}`);
+    // The real driver returns bigint as text; a type assertion cannot decode it.
+    expect(typeof raw[0].board_id).toBe('string');
+    const cardFor = async (reader: string | null) => {
+      const feed = (await sessionFeedQueries.sessionGroupedFeed(
+        undefined,
+        {
+          input: { limit: 50, ...(kind === 'daily' ? { userId: CLIMBER, includeDailyHighlights: true } : {}) },
+        },
+        viewer(reader),
+      )) as { sessions: SessionFeedItem[] };
+      return feed.sessions.find((card) => card.featuredBeta?.betaLink.link === link);
+    };
+    for (const reader of [BOARD_OWNER, GRANTEE]) {
+      expect((await cardFor(reader))?.featuredBeta?.betaLink.boardId).toBe(inviteOnlyBoardId);
+    }
+    for (const reader of [null, STRANGER]) {
+      expect((await cardFor(reader))?.featuredBeta?.betaLink.boardId).toBeNull();
+    }
   });
 
   it('gives a joiner who cannot see a named board its geometry instead of its slug', async () => {

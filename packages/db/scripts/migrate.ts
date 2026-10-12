@@ -14,7 +14,12 @@ import {
 import { migrationExecutionContractFromEnvironment, reserveMigrationOwnerSession } from './migration-owner-role.js';
 import { runMigrationWithRuntimeAclContract } from './migration-runtime-acl.js';
 import { initializeJobQueueSchema } from '../src/job-queue-schema.js';
-import { scriptDatabaseConnectionOptions } from './db-connection.js';
+import { isLocalDatabaseUrl, scriptDatabaseConnectionOptions } from './db-connection.js';
+import {
+  privacyReconcileScope,
+  readPrivacyReconcilePreflight,
+  requirePrivacyReconcileCutover,
+} from './privacy-reconcile-cutover.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -99,6 +104,19 @@ async function runMigrations() {
       throw new Error('Migration journal is empty');
     }
     console.info(`📋 Found ${expectedMigrations.length} migrations in journal`);
+
+    // 0265 changes permission semantics; the preceding container cannot read
+    // Unlisted session policies safely. Fail before any migration/ACL writes.
+    // Production explicitly arms this even for a loopback/tunnel endpoint.
+    if (!isLocalDatabaseUrl(databaseUrl) || process.env.PRIVACY_RECONCILE_REQUIRE_CUTOVER === '1') {
+      const preflight = await readPrivacyReconcilePreflight(client, expectedMigrations);
+      if (preflight) console.info(`Privacy reconcile dry run: ${JSON.stringify(preflight)}`);
+      requirePrivacyReconcileCutover(
+        preflight,
+        process.env.PRIVACY_RECONCILE_CUTOVER,
+        privacyReconcileScope(process.env),
+      );
+    }
 
     if (migrationContract) {
       await runMigrationWithRuntimeAclContract(

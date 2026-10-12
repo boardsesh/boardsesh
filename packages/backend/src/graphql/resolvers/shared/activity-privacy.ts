@@ -139,7 +139,7 @@ export function listedSessionCondition(sessionId: SQLWrapper, viewerId: string |
 export type SocialEntityReadOptions = {
   /**
    * The read surfaces entities the viewer did not ask for (the global comment
-   * feed, the activity feed). A session there needs `listedSessionCondition`;
+   * feed, the activity feed). Sessions and boards there need the no-link rule;
    * a direct read (a thread, a vote, a notification addressed to the viewer)
    * keeps the unlisted link.
    */
@@ -194,7 +194,7 @@ function terminalSocialEntityPrivacyCondition(
         .where(and(eq(tick.uuid, entityId), tickPrivacyCondition(viewerId, tick))),
     )}
     WHEN ${entityType} = 'session' THEN ${discovery ? listedSessionCondition(entityId, viewerId) : resourceAccessCondition('session', entityId, viewerId)}
-    WHEN ${entityType} = 'board' THEN ${resourceAccessCondition('board', entityId, viewerId)}
+    WHEN ${entityType} = 'board' THEN ${resourceAccessCondition('board', entityId, viewerId, { allowUnlistedLink: !discovery })}
     WHEN ${entityType} = 'climb' THEN ${exists(
       queryBuilder
         .select({ uuid: climb.uuid })

@@ -12,6 +12,10 @@ the non-credential `host:port/database` of the `MIGRATOR_DATABASE_URL` secret
 with the Production-environment variable `DATABASE_DIRECT_ENDPOINT`, then runs a
 TLS `SELECT 1`. Any other endpoint, a missing variable, a failed login or a network
 error stops the deploy; there is no fallback to the runtime URL.
+Pending privacy cleanup 0265 also requires the runner's count-bound operator
+acknowledgement before any migration writes. Older session readers must remain
+paused through migration and the compatible backend rollout; see the
+[cleanup cutover and recorded counts](privacy-reconcile-cutover.md).
 `DATABASE_DIRECT_ENDPOINT` must exist before this step reaches `main`, set to the
 endpoint `MIGRATOR_DATABASE_URL` uses today. Change it deliberately if Railway
 replaces the database's TCP proxy; a password rotation does not change it.

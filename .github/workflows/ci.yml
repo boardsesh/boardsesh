@@ -416,6 +416,9 @@ jobs:
               - 'scripts/lib/migration-ledger.ts'
               - 'scripts/lib/migration-ledger.test.ts'
               - 'packages/db/scripts/migrate.ts'
+              # The pending 0265 safety gate and its real-database count parity.
+              - 'packages/db/scripts/privacy-reconcile-cutover*'
+              - '.github/workflows/production-deploy.yml'
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
               - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
@@ -1000,6 +1003,13 @@ jobs:
         env:
           MIGRATION_JOURNAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: vp run test:db:migration-journal
+      - name: Pending privacy cleanup requires counted, scoped backend cutover
+        env:
+          PRIVACY_RECONCILE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: >-
+          vp exec tsx --test
+          packages/db/scripts/privacy-reconcile-cutover.test.ts
+          packages/db/scripts/privacy-reconcile-cutover.integration.test.ts
       # These node:test files are outside Vitest's module graph. In particular,
       # the report's projection must keep agreeing with the immutable SQL.
       - name: Replay MoonBoard reconciliation and verify report projections

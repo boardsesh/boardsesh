@@ -590,6 +590,12 @@ jobs:
           MIGRATION_RUNTIME_ROLE: boardsesh_runtime
           MIGRATION_RUNTIME_SCHEMAS: public drizzle
           VERIFY_MIGRATION_JOURNAL: '1'
+          # 0265 is not expand-compatible with the preceding backend. The
+          # runner checks its exact ledger hash before any DDL/ACL writes and
+          # requires an operator's count-bound acknowledgement only if pending.
+          # Never infer a pause from the later deploy job or a zero-row count.
+          PRIVACY_RECONCILE_REQUIRE_CUTOVER: '1'
+          PRIVACY_RECONCILE_CUTOVER: ${{ vars.PRIVACY_RECONCILE_CUTOVER }}
           # `<worker-role>=<login>` list for the pg-boss worker logins
           # (docs/background-workers.md). Environment variables are not
           # exported to steps on their own; unset, the queue step grants none.
