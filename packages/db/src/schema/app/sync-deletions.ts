@@ -1,4 +1,4 @@
-import { pgTable, bigserial, text, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, bigserial, text, timestamp, index, boolean } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -32,6 +32,10 @@ export const syncDeletions = pgTable(
     // DB-owned insertion time for cursor ordering. Historical rows stay NULL;
     // deleted_at remains the client-side resurrection guard, which may be backdated.
     streamAt: timestamp('stream_at'),
+    // Internal classification only. A reference-membership withdrawal may be
+    // skipped for a viewer still entitled to the current row; hard deletes and
+    // historical markers retain their installed deletion behavior.
+    isMembershipWithdrawal: boolean('is_membership_withdrawal').default(false).notNull(),
   },
   (table) => ({
     // Composite-cursor scan for syncDeletions: filter by user scope, then walk

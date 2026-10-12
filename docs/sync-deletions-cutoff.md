@@ -6,8 +6,24 @@ this when the transaction lasts longer. `syncDeletions` now uses a DB-stamped
 stream timestamp and waits for older writer transactions before delivering a
 page. This change does not alter the document-page stability window.
 
-`deleted_at` remains the client resurrection guard. Publication changes backdate
-that guard so an owner's newer climb remains on their device. A BEFORE INSERT
+`deleted_at` remains the client resurrection guard. Membership withdrawals use
+the next whole UTC second after both the old climb version and the write clock.
+This covers an old public copy fetched through MVCC while privatization remains
+uncommitted. A fixed stability window cannot prevent that read during a long
+transaction. Whole seconds also preserve the installed SQLite text comparison:
+within a second, `.100001Z` sorts before `.1Z` even though it is numerically newer.
+
+These markers carry the internal `is_membership_withdrawal` flag. In the same
+page statement, the backend omits a flagged climb withdrawal if the current
+climb is readable to the viewer under the sync public/owner and spray-wall
+rules. Filtering precedes pagination, so a page containing only omitted markers
+cannot hide later withdrawals from installed clients that stop on an empty
+page. A later publication restriction or protected-owner transfer writes a new
+marker; a replay therefore preserves
+the current owner's or republished copy. Ordinary hard-delete markers keep
+their original behavior. No climb timestamp is moved into the future.
+
+A BEFORE INSERT
 trigger always stamps `stream_at` using UTC `clock_timestamp()`, including when
 the caller supplies a timestamp. Existing rows retain NULL and keep their old
 `deleted_at` cursor position. Cursor comparisons/indexes use
@@ -43,7 +59,12 @@ release jobs during the bootstrap/migration window. Older runtime ACL sweeps
 try to re-grant every public routine as the ordinary DDL owner, which cannot
 control this separately owned helper. Do not preinstall it and then run an
 older migrator. The coordinated order is updated tooling, admin bootstrap,
-this release's migrations, then this release's backend.
+this release's migrations, then this release's backend. Before migration 0269
+installs the membership guard, stop every older backend instance serving sync
+requests. Keep those requests unavailable until this release's filter-aware
+backend serves them. The older backend cannot interpret the new flagged
+withdrawals and could erase an owner's authorized local copy. Installed app
+versions remain compatible; this is a backend deployment constraint.
 
 1. Run `vp exec tsx packages/db/scripts/bootstrap-sync-deletions-cutoff.ts` to inspect the plan.
 2. Set `SYNC_CUTOFF_ADMIN_DATABASE_URL` and run that command with `--apply`.
@@ -89,14 +110,18 @@ The restore list excludes exactly this pre-created helper and its metadata;
 ordinary routine ownership/ACL sweeps must not re-own it. The audit checks its
 canonical body, owner, membership, and runtime-only EXECUTE privileges.
 
-Rolling back the backend leaves the new nullable column/trigger/helper in place.
-The old backend uses `deleted_at` and its existing indexes; the new backend can
-resume installed cursors later. Do not remove the helper while the new backend
-is running. Delivery stalls safely during a prepared transaction or loss of
-stats access; monitor paused polls and resolve that database condition.
+Leave the stream column, trigger, classification and helper in place when
+rolling back. After migration 0269, roll back only to a backend that includes
+the membership-withdrawal readability filter, or keep sync unavailable while
+rolling forward to that backend. Restoring the old producer function alone is
+insufficient: already-written flagged markers remain in the deletion log.
+Backend versions predating this filter are not a safe rollback target. Do not
+remove the helper while the new backend is running. Delivery stalls safely
+during a prepared transaction or loss of stats access; monitor paused polls and
+resolve that database condition.
 
 Deployed `SYNC_STABILITY_WINDOW_SECONDS` values are clamped to at least two
-seconds, above the publication marker’s one-second backdate. Invalid settings
+seconds. Invalid settings
 retain the 30-second default. Exact zero is permitted only in `NODE_ENV=test`
 for immediate real-database fixture reads. The timestamp helper still safely
 accepts any nonnegative bound; deployed pull resolvers supply the guarded one.

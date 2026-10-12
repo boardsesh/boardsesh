@@ -1,0 +1,1 @@
+ALTER TABLE "sync_deletions" ADD COLUMN "is_membership_withdrawal" boolean DEFAULT false NOT NULL;

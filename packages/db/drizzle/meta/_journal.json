@@ -1877,6 +1877,20 @@
       "when": 1791772010533,
       "tag": "0267_sync_deletions_cutoff_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 268,
+      "version": "7",
+      "when": 1791781460727,
+      "tag": "0268_climb_membership_withdrawal_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 269,
+      "version": "7",
+      "when": 1791781498661,
+      "tag": "0269_climb_membership_withdrawal_guard",
+      "breakpoints": true
     }
   ]
 }
