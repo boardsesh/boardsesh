@@ -284,6 +284,7 @@ describe('useInfiniteSearchClimbs', () => {
       rerender({ input: { ...baseInput, name: 'Zenith' } });
       await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
       expect(result.current.isPlaceholderData).toBe(true);
+      expect(result.current.authorizedPrivacyGeneration).toBeNull();
       // Still the selected shape (`pages[i].climbs`), not the raw response.
       expect(result.current.data?.pages[0]).toEqual({ climbs: [], hasMore: true });
 
@@ -397,4 +398,36 @@ describe('keepSameBoardSearchResults', () => {
     expect(keepSameBoardSearchResults(boardScope, undefined, previousKey)).toBeUndefined();
     expect(keepSameBoardSearchResults(boardScope, previousResults, ['searchClimbsCount', boardScope])).toBeUndefined();
   });
+});
+
+it('retires read authority across a query-key round trip and unmount', async () => {
+  requestMock.mockReset();
+  requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) =>
+    variables.input.name === 'Moonage'
+      ? Promise.resolve(makeResponse(0))
+      : new Promise<SearchClimbsQueryResponse>(() => {}),
+  );
+  const { result, rerender, unmount } = renderHook(
+    ({ input }: { input: ClimbSearchInput }) =>
+      useInfiniteSearchClimbs(input, true, {
+        keepPreviousResults: true,
+        staleTime: Infinity,
+      }),
+    { initialProps: { input: baseInput }, wrapper: wrapper() },
+  );
+  try {
+    await waitFor(() => expect(result.current.readAuthorization?.isCurrent()).toBe(true));
+    const previousAuthorization = result.current.readAuthorization;
+    rerender({ input: { ...baseInput, name: 'Zenith' } });
+    expect(previousAuthorization?.isCurrent()).toBe(false);
+    expect(result.current.readAuthorization).toBeNull();
+    rerender({ input: baseInput });
+    await waitFor(() => expect(result.current.readAuthorization?.isCurrent()).toBe(true));
+    expect(previousAuthorization?.isCurrent()).toBe(false);
+    const currentAuthorization = result.current.readAuthorization;
+    unmount();
+    expect(currentAuthorization?.isCurrent()).toBe(false);
+  } finally {
+    unmount();
+  }
 });

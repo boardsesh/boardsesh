@@ -792,6 +792,7 @@ function ClimbListInner() {
     hasNextPage,
     refetch,
     isPlaceholderData,
+    readAuthorization,
     // Keeps the previous search's rows up (tinted below) while a new search on
     // the same board loads, instead of swapping the list to skeleton rows.
   } = useInfiniteSearchClimbs(searchInput, searchReady, { keepPreviousResults: true });
@@ -1158,6 +1159,7 @@ function ClimbListInner() {
   const activateClimbListClimb = usePlaylistActivation({
     sourceId: 'climblist',
     allClimbs: allQueueClimbs,
+    readAuthorization,
     fetchPage: fetchSearchPage,
     // In a crew, a row tap browses instead of taking everyone's wall: the drawer
     // opens on the tapped climb with these results seeded as its swipe track, so

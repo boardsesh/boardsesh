@@ -11,6 +11,7 @@ import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-rea
 import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
 import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
 import { invalidatePrivacyQueries, invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { capturePrivacyReadScope, completePrivacyRead } from '../../privacy/privacy-read-proof';
 import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
 import { toQueueClimbs, toSchemaClimb } from '../../climb-types';
 import type { SearchClimbsQueryResponse } from '../../graphql/operations';
@@ -1944,11 +1945,14 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     return { searchClimbs: { climbs: climbs.map(toSchemaClimb), hasMore: true } };
   }
 
-  function renderLoadedSearch(rows: Climb[]) {
+  function renderLoadedSearch(rows: Climb[], hydrateProofs = false) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-    const pages = Array.from({ length: 50 }, (_, page) => response(rows.slice(page * 100, (page + 1) * 100)));
+    const pages = Array.from({ length: 50 }, (_, page) => ({
+      ...response(rows.slice(page * 100, (page + 1) * 100)),
+      privacyReadProof: completePrivacyRead(capturePrivacyReadScope()),
+    }));
     client.setQueryData(['infiniteSearchClimbs', { ...input, crossAngleStats: false }], {
-      pages,
+      pages: hydrateProofs ? JSON.parse(JSON.stringify(pages)) : pages,
       pageParams: pages.map((_page, index) => index),
     });
     const hook = renderHook(
@@ -1962,6 +1966,7 @@ describe('large climb-list query and activation privacy lifecycle', () => {
         const activation = usePlaylistActivation({
           sourceId: 'climblist',
           allClimbs,
+          readAuthorization: query.readAuthorization,
           fetchPage: vi.fn(),
           viewOnlyBoard: VIEW_ONLY_BOARD,
           refreshErrorMessage: 'query lifecycle test',
@@ -1977,7 +1982,7 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     return { ...hook, client };
   }
 
-  it('reproduces dead taps after snapshot-only withdrawal and an identical authorized refetch', async () => {
+  it('restores fresh taps after an identical authorized refetch without replacing shared row objects', async () => {
     const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
     mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
       const page = request.page ?? 0;
@@ -1989,23 +1994,29 @@ describe('large climb-list query and activation privacy lifecycle', () => {
       await act(() => result.current.activation.activate(result.current.allClimbs[0]));
       expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
       const previousProjection = result.current.allClimbs[0];
+      const oldActivate = result.current.activation.activate;
       act(() => invalidatePrivacySnapshots());
+      await act(() => result.current.activation.activate(previousProjection));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
       await act(async () => {
         await result.current.query.refetch();
       });
-      // TanStack structurally shares the authorized identical response. The
-      // activation object's first-observed epoch is still the withdrawn one.
+      // The real query still structurally shares all 50 pages' identical rows.
+      // A completed current read, rather than new object identity, restores taps.
       expect(mocks.searchRequest).toHaveBeenCalledTimes(50);
+      expect(result.current.allClimbs).toHaveLength(5000);
       expect(result.current.allClimbs[0]).toBe(previousProjection);
-      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      await act(() => oldActivate(previousProjection));
       expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
     } finally {
       unmount();
       client.clear();
     }
   });
 
-  it('restores fresh same-UUID taps after complete withdrawal while rejecting a canceled old next page', async () => {
+  it('retains 50 catalogue pages and restores fresh same-UUID taps while rejecting a canceled old next page', async () => {
     const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
     let releasePage: (page: SearchClimbsQueryResponse) => void = () => {};
     mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
@@ -2030,18 +2041,191 @@ describe('large climb-list query and activation privacy lifecycle', () => {
       await act(async () => {
         await invalidatePrivacyQueries(client);
       });
-      await waitFor(() => expect(result.current.allClimbs).toHaveLength(100));
+      await waitFor(() => expect(result.current.query.isRefetching).toBe(false));
+      expect(result.current.allClimbs).toHaveLength(5000);
+      expect(result.current.query.data?.pages).toHaveLength(50);
       await act(async () => {
         releasePage(response([makeClimb('withdrawn-next-page')]));
         await nextPagePromise;
       });
       expect(result.current.allClimbs[0].uuid).toBe(capturedProjection.uuid);
-      expect(result.current.allClimbs[0]).not.toBe(capturedProjection);
+      expect(result.current.allClimbs[0]).toBe(capturedProjection);
       expect(result.current.allClimbs.some((climb) => climb.uuid === 'withdrawn-next-page')).toBe(false);
       await act(() => capturedActivation(capturedProjection));
       expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
       await act(() => result.current.activation.activate(result.current.allClimbs[0]));
       expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('keeps retained rows blocked after a failed reauthorization read', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    mocks.searchRequest.mockRejectedValue(new Error('authorization unavailable'));
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      const retained = result.current.allClimbs[0];
+      await act(async () => {
+        await invalidatePrivacyQueries(client);
+      });
+      expect(result.current.allClimbs).toHaveLength(5000);
+      await act(() => result.current.activation.activate(retained));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('rejects a deferred read crossing another withdrawal, then accepts only its fresh replacement', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    let releaseRead: (page: SearchClimbsQueryResponse) => void = () => {};
+    mocks.searchRequest.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseRead = resolve;
+        }),
+    );
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      let invalidation: Promise<void> = Promise.resolve();
+      act(() => {
+        invalidation = invalidatePrivacyQueries(client);
+      });
+      await waitFor(() => expect(mocks.searchRequest).toHaveBeenCalledOnce());
+      const pendingActivate = result.current.activation.activate;
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      await act(async () => {
+        invalidatePrivacySnapshots();
+        releaseRead(response(rows.slice(0, 100)));
+        await invalidation;
+      });
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+        const page = request.page ?? 0;
+        return response(rows.slice(page * 100, (page + 1) * 100).map((climb) => ({ ...climb })));
+      });
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      await act(() => pendingActivate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledOnce();
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('does not let one fresh next page authorize retained pages from the previous generation', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    const fresh = makeClimb('fresh-next-page');
+    mocks.searchRequest.mockResolvedValue(response([fresh]));
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      act(() => invalidatePrivacySnapshots());
+      await act(async () => {
+        await result.current.query.fetchNextPage();
+      });
+      expect(result.current.allClimbs).toHaveLength(5001);
+      expect(result.current.query.authorizedPrivacyGeneration).toBeNull();
+      await act(() => result.current.activation.activate(fresh));
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('keeps hydrated same-generation rows blocked until a real current read completes', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+      const page = request.page ?? 0;
+      return response(rows.slice(page * 100, (page + 1) * 100));
+    });
+    const { result, client, unmount } = renderLoadedSearch(rows, true);
+    try {
+      expect(result.current.query.authorizedPrivacyGeneration).toBeNull();
+      const retained = result.current.allClimbs[0];
+      await act(() => result.current.activation.activate(retained));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      expect(result.current.allClimbs[0]).toBe(retained);
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledOnce();
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('withdraws tap authorization when a current read fails even without another privacy event', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    mocks.searchRequest.mockRejectedValue(new Error('permission denied'));
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledOnce();
+      const oldActivate = result.current.activation.activate;
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      expect(result.current.query.authorizedPrivacyGeneration).toBeNull();
+      expect(result.current.allClimbs).toHaveLength(5000);
+      await act(() => oldActivate(result.current.allClimbs[0]));
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledOnce();
+      mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+        const page = request.page ?? 0;
+        return response(rows.slice(page * 100, (page + 1) * 100));
+      });
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      await act(() => oldActivate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledOnce();
+      await act(() => result.current.activation.activate(result.current.allClimbs[0]));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      client.clear();
+    }
+  });
+
+  it('retires a captured same-generation activation when an authorized replacement removes or changes rows', async () => {
+    const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
+    const replacement = rows
+      .slice(1)
+      .map((climb, index) => (index === 0 ? { ...climb, name: 'Current authorized name' } : climb));
+    mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
+      const page = request.page ?? 0;
+      return response(replacement.slice(page * 100, (page + 1) * 100));
+    });
+    const { result, client, unmount } = renderLoadedSearch(rows);
+    try {
+      const removed = result.current.allClimbs[0];
+      const changed = result.current.allClimbs[1];
+      const oldActivate = result.current.activation.activate;
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      expect(result.current.allClimbs).toHaveLength(4999);
+      await act(() => oldActivate(removed));
+      await act(() => oldActivate(changed));
+      await act(() => result.current.activation.activate(removed));
+      expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+      // Even a retained menu's old object resolves through the current loaded row.
+      await act(() => result.current.activation.activate(changed));
+      expect(mocks.openPlayDrawer).toHaveBeenCalledOnce();
+      expect(mocks.openPlayDrawer.mock.calls[0][0].name).toBe('Current authorized name');
     } finally {
       unmount();
       client.clear();

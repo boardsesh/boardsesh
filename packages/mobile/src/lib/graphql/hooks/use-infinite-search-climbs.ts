@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef } from 'react';
+import { hashKey, useInfiniteQuery, useQueryClient, type InfiniteData, type QueryKey } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { useFeatureFlag } from '../../../providers/feature-flags-provider';
@@ -9,6 +9,13 @@ import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { screenshotModeNextPageParam } from '../../screenshot-mode';
 import { useGradeSourceSearchInput } from './search-grade-source';
+import {
+  capturePrivacyReadScope,
+  completePrivacyRead,
+  completedPrivacyReadGeneration,
+  type PrivacyReadAuthorization,
+} from '../../privacy/privacy-read-proof';
+import { createAbortError } from '../request-timeout';
 
 type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
 
@@ -26,8 +33,19 @@ export type InfiniteSearchClimbsOptions = {
 // Map the raw pages down to their `searchClimbs` payload so consumers keep
 // seeing `pages[i].climbs`. Module scope (stable identity) so React Query's
 // memoized-select fast path applies instead of re-running per render.
-function selectSearchClimbPages(rawPages: InfiniteData<SearchClimbsQueryResponse, number>) {
-  return { pages: rawPages.pages.map((page) => page.searchClimbs), pageParams: rawPages.pageParams };
+type AuthorizedSearchClimbsResponse = SearchClimbsQueryResponse & {
+  privacyReadProof: NonNullable<ReturnType<typeof completePrivacyRead>>;
+};
+
+function selectSearchClimbPages(rawPages: InfiniteData<AuthorizedSearchClimbsResponse, number>) {
+  return {
+    pages: rawPages.pages.map((page) => page.searchClimbs),
+    pageParams: rawPages.pageParams,
+    // Keep the ephemeral proofs in selected data too. Even an identical row
+    // refetch must publish a new authority while structurally sharing its rows.
+    privacyReadProofs: rawPages.pages.map((page) => page.privacyReadProof),
+    authorizedPrivacyGeneration: completedPrivacyReadGeneration(rawPages.pages.map((page) => page.privacyReadProof)),
+  };
 }
 
 function getSearchClimbsQueryKey(input: ClimbSearchInput) {
@@ -80,7 +98,7 @@ export function useInfiniteSearchClimbs(
     if (!keepPreviousResults) return undefined;
     const boardScope: SearchClimbsBoardScope = { boardName, layoutId, sizeId, setIds };
     return (
-      previousData: InfiniteData<SearchClimbsQueryResponse, number> | undefined,
+      previousData: InfiniteData<AuthorizedSearchClimbsResponse, number> | undefined,
       previousQuery: { queryKey: QueryKey } | undefined,
     ) => keepSameBoardSearchResults(boardScope, previousData, previousQuery?.queryKey);
   }, [keepPreviousResults, boardName, layoutId, sizeId, setIds]);
@@ -112,13 +130,34 @@ export function useInfiniteSearchClimbs(
   // grades" rotates the query key and refetches (issue #5643). Like the flag
   // above it stays out of the placeholder's board scope.
   const searchInput: ClimbSearchInput = useGradeSourceSearchInput({ ...input, crossAngleStats });
-  return useInfiniteQuery({
-    queryKey: [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])],
+  const queryClient = useQueryClient();
+  const queryKey = [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])];
+  const queryHash = hashKey(queryKey);
+  const readerRef = useRef({ queryHash, queryClient, active: true });
+  if (readerRef.current.queryHash !== queryHash || readerRef.current.queryClient !== queryClient) {
+    readerRef.current.active = false;
+    readerRef.current = { queryHash, queryClient, active: true };
+  }
+  const reader = readerRef.current;
+  useEffect(() => {
+    reader.active = true;
+    return () => {
+      reader.active = false;
+    };
+  }, [reader]);
+
+  const query = useInfiniteQuery({
+    queryKey,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
-      offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+    queryFn: async ({ pageParam, signal }) => {
+      const readScope = capturePrivacyReadScope();
+      const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
         input: { ...searchInput, page: pageParam },
-      }),
+      });
+      const privacyReadProof = completePrivacyRead(readScope);
+      if (signal.aborted || !privacyReadProof) throw createAbortError('Climb search read was retired');
+      return { ...response, privacyReadProof };
+    },
     // getNextPageParam receives RAW pre-select pages in React Query v5.
     getNextPageParam: (lastPage, allPages) =>
       screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),
@@ -130,4 +169,32 @@ export function useInfiniteSearchClimbs(
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
   });
+  const authorizedPrivacyGeneration =
+    query.isPlaceholderData || query.isError ? null : (query.data?.authorizedPrivacyGeneration ?? null);
+  const readAuthorization = useMemo<PrivacyReadAuthorization | null>(() => {
+    if (authorizedPrivacyGeneration === null) return null;
+    const capturedQuery = queryClient.getQueryCache().find({ queryKey, exact: true });
+    const capturedState = capturedQuery?.state;
+    if (!capturedState?.data) return null;
+    return {
+      isCurrent: () => {
+        const currentQuery = queryClient.getQueryCache().find({ queryKey, exact: true });
+        if (!reader.active || readerRef.current !== reader || currentQuery !== capturedQuery) return false;
+        const state = currentQuery?.state;
+        if (
+          state?.status !== 'success' ||
+          state.data !== capturedState.data ||
+          state.errorUpdateCount !== capturedState.errorUpdateCount
+        )
+          return false;
+        if (!isRecord(state.data) || !Array.isArray(state.data.pages)) return false;
+        return (
+          completedPrivacyReadGeneration(
+            state.data.pages.map((page: unknown) => (isRecord(page) ? page.privacyReadProof : undefined)),
+          ) === authorizedPrivacyGeneration
+        );
+      },
+    };
+  }, [queryClient, reader, queryHash, query.data, authorizedPrivacyGeneration]);
+  return { ...query, authorizedPrivacyGeneration, readAuthorization };
 }
