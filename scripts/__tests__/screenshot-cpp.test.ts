@@ -21,6 +21,8 @@ import {
 import {
   parseArgs,
   buildScreenshotEnv,
+  cppLogbookReadinessSelector,
+  cppQueueReadinessSelectors,
   renderCppMaestroFlow,
   renderMaestroFlowForIosDevice,
   deviceSlug,
@@ -32,6 +34,7 @@ import { parseFrameArguments } from '../frame-screenshots';
 import { buildReadinessServerScript } from '../lib/metro-dev-server';
 
 const directories: string[] = [];
+const LOGBOOK_ASCENT_ID = '543c1c0c-3a22-4640-b30d-6cab80738bc3';
 afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
@@ -75,7 +78,12 @@ function scenario(target: (typeof CPP_TARGETS)[number]) {
     scenes: Object.fromEntries(
       ['search', 'logbook', 'led', 'queue', 'workout', 'status', 'island'].map((scene) => [
         scene,
-        { boardId: primaryId, readyText: `Ready ${scene}`, sessionId: scene === 'queue' ? 'crew-session' : undefined },
+        {
+          boardId: primaryId,
+          readyText: `Ready ${scene}`,
+          sessionId: scene === 'queue' ? 'crew-session' : undefined,
+          ascentId: scene === 'logbook' ? LOGBOOK_ASCENT_ID : undefined,
+        },
       ]),
     ),
   };
@@ -135,6 +143,146 @@ function readinessCommandTransport() {
 }
 
 describe('custom product page captures', () => {
+  it('matches genuine composite Logbook accessibility rows without weakening other scene gates', () => {
+    const actualLabel =
+      "Sent Drawing the Priest, community grade V6, 1 try, Kilter Original · 40°, Test User's Kilter Original 12×12 with kickboard, 5:40\u202fAM";
+    const actualSelector = cppLogbookReadinessSelector('Drawing the Priest', 'en-US', LOGBOOK_ASCENT_ID);
+    expect(new RegExp(actualSelector.text).test(actualLabel)).toBe(true);
+    expect(new RegExp('Drawing the Priest').test(actualLabel)).toBe(true);
+    expect(new RegExp('^Drawing the Priest$').test(actualLabel)).toBe(false);
+    const statusesByLocale = {
+      'en-US': ['Sent', 'Flashed', 'Project'],
+      es: ['Encadenada', 'Flasheada', 'Proyecto'],
+      fr: ['Enchaîné', 'Flashé', 'Projet'],
+      de: ['Getoppt', 'Geflasht', 'Projekt'],
+    } as const;
+    const title = 'Priest (left)+[1].';
+    const { coverage } = scenario('kilter');
+    coverage.scenes.logbook.readyText = title;
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const documents = parseAllDocuments(renderCppMaestroFlow('kilter', IOS_SCREENSHOT_DEVICES[0], coverage, locale));
+      const steps = documents[1].toJS() as {
+        extendedWaitUntil?: { visible?: { id?: string; text?: string } | string };
+      }[];
+      const rowGate = steps.find(
+        (step) =>
+          typeof step.extendedWaitUntil?.visible === 'object' &&
+          step.extendedWaitUntil.visible.id === `logbook-entry-${LOGBOOK_ASCENT_ID}`,
+      )?.extendedWaitUntil?.visible;
+      if (typeof rowGate !== 'object' || !rowGate?.id || !rowGate.text) throw new Error('Missing native row gate');
+      expect(steps).toContainEqual({ extendedWaitUntil: { visible: { id: 'logbook-screen' }, timeout: 90000 } });
+      const matches = (id: string, label: string) =>
+        new RegExp(rowGate.id!).test(id) && new RegExp(rowGate.text!).test(label);
+      for (const status of statusesByLocale[locale]) {
+        const label = `${status} ${title}, V6, Kilter Original · 40°, 5:40\u202fAM`;
+        expect(matches(`logbook-entry-${LOGBOOK_ASCENT_ID}`, label)).toBe(true);
+        expect(matches('climb-row-genuine-ascent', label)).toBe(false);
+        expect(matches('logbook-entry-', label)).toBe(false);
+        expect(matches(`logbook-entry-${LOGBOOK_ASCENT_ID}`, `${status} Another climb, note: ${title}, V6`)).toBe(
+          false,
+        );
+        expect(matches(`logbook-entry-${LOGBOOK_ASCENT_ID}`, `${status} A ${title}, V6`)).toBe(false);
+        expect(matches(`logbook-entry-${LOGBOOK_ASCENT_ID}`, `${status} ${title} Extended, V6`)).toBe(false);
+        expect(matches(`logbook-entry-${LOGBOOK_ASCENT_ID}`, `${status} ${title} V6`)).toBe(false);
+        expect(matches(`logbook-entry-${LOGBOOK_ASCENT_ID}`, `${status} Priest left1, V6`)).toBe(false);
+        expect(matches('logbook-entry-11111111-1111-4111-8111-111111111111', `${status} ${title}, Extended, V6`)).toBe(
+          false,
+        );
+      }
+      expect(steps).toContainEqual({ extendedWaitUntil: { visible: 'Ready led', timeout: 90000 } });
+    }
+    for (const ascentId of [undefined, '', 'invented-entry', 'bad.*']) {
+      expect(() => cppLogbookReadinessSelector(title, 'en-US', ascentId)).toThrow('genuine ascent UUID');
+      expect(() =>
+        renderCppMaestroFlow('kilter', IOS_SCREENSHOT_DEVICES[0], {
+          ...coverage,
+          scenes: { ...coverage.scenes, logbook: { ...coverage.scenes.logbook, ascentId } },
+        }),
+      ).toThrow('genuine ascent UUID');
+    }
+  });
+  it('matches the genuine queue row prefix and localized header after opening the sheet', () => {
+    const labelsByLocale = {
+      'en-US': { header: 'Up next', position: 'position 1', addedBy: 'Added by a genuine climber' },
+      es: { header: 'Cola', position: 'posición 1', addedBy: 'Añadido por una persona' },
+      fr: { header: "File d'attente", position: 'position 1', addedBy: 'Ajouté par une personne' },
+      de: { header: 'Als Nächstes', position: 'Position 1', addedBy: 'Hinzugefügt von einer Person' },
+    } as const;
+    const title = 'Wax (left)+[1].';
+    const { coverage } = scenario('kilter');
+    coverage.scenes.queue.readyText = title;
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const labels = labelsByLocale[locale];
+      const selectors = cppQueueReadinessSelectors(title, locale);
+      const matches = (label: string) => new RegExp(selectors.row).test(label);
+      expect(matches(`${title}, ${labels.position}`)).toBe(true);
+      expect(matches(`${title}, ${labels.position}, ${labels.addedBy}`)).toBe(true);
+      expect(matches(`A ${title}, ${labels.position}`)).toBe(false);
+      expect(matches(`${title} Extended, ${labels.position}`)).toBe(false);
+      expect(matches(`${title}, Extended, ${labels.position}`)).toBe(false);
+      expect(matches(`${title}, ${labels.position}, ${labels.position}`)).toBe(false);
+      expect(matches(`${title} ${labels.position}`)).toBe(false);
+      expect(matches(`Another climb, ${labels.position}, added by ${title}`)).toBe(false);
+      expect(matches(`Wax left1, ${labels.position}`)).toBe(false);
+      expect(new RegExp(selectors.header).test(labels.header)).toBe(true);
+      expect(new RegExp(selectors.header).test(`${labels.header}, 3 climbs`)).toBe(true);
+      expect(new RegExp(selectors.header).test('Other sheet')).toBe(false);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        const steps = parseAllDocuments(renderCppMaestroFlow('kilter', device, coverage, locale))[1].toJS() as Record<
+          string,
+          unknown
+        >[];
+        const openQueue = steps.findIndex((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}');
+        const rowGate = steps.findIndex((step) => {
+          const gate = step.extendedWaitUntil as { visible?: unknown } | undefined;
+          return gate?.visible === selectors.row;
+        });
+        expect(openQueue).toBeGreaterThan(0);
+        expect(rowGate).toBeGreaterThan(openQueue);
+        expect(steps.slice(openQueue + 1, rowGate)).toContainEqual({
+          extendedWaitUntil: { visible: selectors.header, timeout: 60000 },
+        });
+        expect(steps[rowGate]).toEqual({ extendedWaitUntil: { visible: selectors.row, timeout: 90000 } });
+      }
+    }
+  });
+  it('searches offscreen Logbook ascents with at most five swipes inside the existing list', () => {
+    for (const target of CPP_TARGETS) {
+      const { coverage } = scenario(target);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+          const steps = parseAllDocuments(renderCppMaestroFlow(target, device, coverage, locale))[1].toJS() as Record<
+            string,
+            unknown
+          >[];
+          const rowSelector = cppLogbookReadinessSelector(coverage.scenes.logbook.readyText, locale, LOGBOOK_ASCENT_ID);
+          const scrollIndex = steps.findIndex((step) => {
+            const repeat = step.repeat as { times?: number } | undefined;
+            return repeat?.times === 5;
+          });
+          expect(scrollIndex).toBeGreaterThan(0);
+          expect(steps[scrollIndex - 1]).toEqual({
+            extendedWaitUntil: { visible: { id: 'logbook-screen' }, timeout: 90000 },
+          });
+          expect(steps[scrollIndex]).toEqual({
+            repeat: {
+              times: 5,
+              // An already visible row causes zero swipes; an offscreen row
+              // triggers only the bounded search for this exact ascent.
+              while: { notVisible: rowSelector },
+              commands: [
+                { swipe: { from: { id: 'logbook-screen' }, direction: 'UP', duration: 700 } },
+                { waitForAnimationToEnd: { timeout: 30000 } },
+              ],
+            },
+          });
+          expect(rowSelector.id).toBe(`logbook-entry-${LOGBOOK_ASCENT_ID}`);
+          expect(steps[scrollIndex + 1]).toEqual({ extendedWaitUntil: { visible: rowSelector, timeout: 90000 } });
+          expect(steps.slice(scrollIndex + 2)).toContainEqual({ takeScreenshot: '03-logbook' });
+        }
+      }
+    }
+  });
   it('resolves every emitted command through the actual Metro registry for all 64 CPP recipes', () => {
     let checkedDocuments = 0;
     const readinessRequest = readinessCommandTransport();

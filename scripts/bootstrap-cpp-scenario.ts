@@ -7,7 +7,7 @@ import { getOperationAST, parse } from 'graphql';
 import WebSocket from 'ws';
 import { CREATE_BOARD, GET_MY_BOARDS, UPDATE_BOARD } from '../packages/shared/graphql/src/operations/boards';
 import { SEARCH_CLIMBS } from '../packages/shared/graphql/src/operations/climb-search';
-import { GET_USER_ASCENTS_FEED, SAVE_TICK } from '../packages/shared/graphql/src/operations/ticks';
+import { GET_USER_GROUPED_ASCENTS_FEED, SAVE_TICK } from '../packages/shared/graphql/src/operations/ticks';
 import { BOARD_LIVE_SESSIONS } from '../packages/shared/graphql/src/operations/live-sessions';
 import { CREATE_SESSION } from '../packages/shared/graphql/src/operations/create-session';
 import { JOIN_SESSION, SET_QUEUE_WITH_BASELINE } from '../packages/shared/graphql/src/operations/queue-session';
@@ -33,10 +33,20 @@ import { mapPhotoHoldToCanonical } from '../packages/mobile/src/lib/spray/spray-
 import { BACKEND_URL } from '../packages/mobile/src/lib/env';
 import { MAX_SPRAY_WALLS_PER_USER } from '../packages/shared/board-config/src/spray-config';
 import { parseBoardPath, parseNamedBoardPath } from '../packages/shared/board-config/src/board-path';
+import { pickBestGroupEntry, type GroupableEntry } from '../packages/shared/logbook/src/group-units';
+import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '../packages/shared/logbook/src/defaults';
+import { toAscentFeedInput } from '../packages/shared/logbook/src/to-ascent-feed-input';
 import type { SprayDetectionView } from '../packages/shared-schema/src/spray-detection';
 import type { ClimbInput, ClimbQueueItemInput } from '../packages/shared-schema/src/generated/types';
 import type { ScreenshotCaptureScenario } from './lib/screenshot-fixtures';
-import { readCppPage, isCppTarget, type CppBoard, type CppTarget, type CppSceneCoverage } from './lib/screenshot-cpp';
+import {
+  readCppPage,
+  isCppTarget,
+  isCppAscentId,
+  type CppBoard,
+  type CppTarget,
+  type CppSceneCoverage,
+} from './lib/screenshot-cpp';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
@@ -81,6 +91,15 @@ interface BootstrapSession {
   isActive: boolean;
   isPublic: boolean;
   isPermanent: boolean;
+}
+export interface BootstrapAscent extends GroupableEntry {
+  climbUuid: string;
+  climbName: string;
+  boardType: string;
+  layoutId: number | null;
+  angle: number;
+  isMirror: boolean;
+  renderBoard?: { sizeId: number; setIds: number[] } | null;
 }
 export interface BootstrapCheckpoint {
   version: 1;
@@ -224,6 +243,78 @@ function describeSessionBinding(
 ): string {
   const lifecycle = status === 'active' || status === 'ended' ? status : status === null ? 'missing' : 'unknown';
   return `reason=${reason}, lifecycle=${lifecycle}, permanent=${session ? String(session.isPermanent === true) : 'not_returned'}, expected=${diagnosticSessionPath(expected)}, actual=${diagnosticSessionPath(session?.boardPath)}`;
+}
+
+/** Select an actual row that remains a native representative in every device timezone. */
+function ascentMatchesPrimaryGeometry(item: BootstrapAscent, board: BootstrapBoard): boolean {
+  return (
+    item.boardType === board.boardType &&
+    item.layoutId === board.layoutId &&
+    item.angle === board.angle &&
+    item.renderBoard?.sizeId === board.sizeId &&
+    [...item.renderBoard.setIds].sort((left, right) => left - right).join(',') ===
+      board.setIds
+        .split(',')
+        .map(Number)
+        .sort((left, right) => left - right)
+        .join(',')
+  );
+}
+
+export function selectCppLogbookAscent(
+  groups: readonly { items: readonly BootstrapAscent[] }[],
+  board: BootstrapBoard,
+): BootstrapAscent | undefined {
+  const buckets = new Map<string, BootstrapAscent[]>();
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (seen.has(item.uuid)) continue;
+      seen.add(item.uuid);
+      const key = `${item.climbUuid}|${item.angle}|${item.isMirror}`;
+      const bucket = buckets.get(key);
+      if (bucket) bucket.push(item);
+      else buckets.set(key, [item]);
+    }
+  }
+  // Native splits these supersets by LOCAL day before using the same picker.
+  // A best entry in the larger set is also best in its local-day subset. Do
+  // not prefilter geometry: a preferred entry on another configuration must
+  // not be silently replaced with a primary-board attempt that native hides.
+  const representatives = [...buckets.values()].map((items) => pickBestGroupEntry(items));
+  representatives.sort((left, right) => right.climbedAt.localeCompare(left.climbedAt));
+  return representatives.find(
+    (item) =>
+      isCppAscentId(item.uuid) &&
+      item.climbUuid?.trim() &&
+      item.climbName?.trim() &&
+      item.climbedAt &&
+      ascentMatchesPrimaryGeometry(item, board),
+  );
+}
+
+async function readCppLogbookAscent(options: BootstrapOptions, board: BootstrapBoard) {
+  const grouped = await options.transport.request<{
+    userGroupedAscentsFeed: { groups: Array<{ items: BootstrapAscent[] }> };
+  }>(GET_USER_GROUPED_ASCENTS_FEED, {
+    userId: options.accountUserId,
+    input: {
+      ...toAscentFeedInput({
+        filters: DEFAULT_LOGBOOK_FILTERS,
+        sort: DEFAULT_LOGBOOK_SORT,
+        name: '',
+        boardTypes: [board.boardType],
+      }),
+      limit: 20,
+      offset: 0,
+    },
+  });
+  return {
+    ascent: selectCppLogbookAscent(grouped.userGroupedAscentsFeed.groups, board),
+    primaryEntries: grouped.userGroupedAscentsFeed.groups
+      .flatMap((group) => group.items)
+      .filter((item) => ascentMatchesPrimaryGeometry(item, board)),
+  };
 }
 
 /** JPEG generations differ; compare oriented, downsized real pixels rather than pretending byte hashes match. */
@@ -670,48 +761,17 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
   let scenario: ScreenshotCaptureScenario | undefined;
   if (primary && climbsByBoard.get(primary.uuid)?.length) {
     const climbs = climbsByBoard.get(primary.uuid)!;
-    let ascentResult = await options.transport.request<{
-      userAscentsFeed: {
-        items: Array<{
-          climbName: string;
-          boardType: string;
-          layoutId: number;
-          angle: number;
-          renderBoard?: { sizeId: number; setIds: number[] } | null;
-        }>;
-      };
-    }>(GET_USER_ASCENTS_FEED, {
-      userId: options.accountUserId,
-      input: {
-        boardType: primary.boardType,
-        layoutIds: [primary.layoutId],
-        minAngle: primary.angle,
-        maxAngle: primary.angle,
-        limit: 50,
-      },
-    });
-    let ascent = ascentResult.userAscentsFeed.items.find(
-      (item) =>
-        item.climbName?.trim() &&
-        item.boardType === primary.boardType &&
-        item.layoutId === primary.layoutId &&
-        item.angle === primary.angle &&
-        item.renderBoard?.sizeId === primary.sizeId &&
-        [...item.renderBoard.setIds].sort((left, right) => left - right).join(',') ===
-          primary.setIds
-            .split(',')
-            .map(Number)
-            .sort((left, right) => left - right)
-            .join(','),
-    );
-    if (!ascent && options.apply && options.seedDemoContent) {
+    let logbook = await readCppLogbookAscent(options, primary);
+    let ascent = logbook.ascent;
+    if (!ascent && options.apply && options.seedDemoContent && logbook.primaryEntries.length === 0) {
       const privacy = await options.transport.request<{
         privacySettings: { enabled: boolean; privacyRevision: number };
       }>(GET_PRIVACY_SETTINGS);
       if (!privacy.privacySettings.enabled)
         blockers.push(`${options.target}: private demo tick requires backend publication privacy support`);
       else {
-        const tickUuid = options.checkpoint.demoTicks?.[options.target] ?? randomUUID();
+        const previousDemoTick = options.checkpoint.demoTicks?.[options.target];
+        const tickUuid = previousDemoTick ?? randomUUID();
         options.checkpoint.demoTicks = { ...options.checkpoint.demoTicks, [options.target]: tickUuid };
         options.saveCheckpoint(options.checkpoint);
         await options.transport.request(SAVE_TICK, {
@@ -733,26 +793,25 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
             privacy: { audience: 'only_me', privacyRevision: privacy.privacySettings.privacyRevision },
           },
         });
-        ascentResult = await options.transport.request(GET_USER_ASCENTS_FEED, {
-          userId: options.accountUserId,
-          input: {
-            boardType: primary.boardType,
-            layoutIds: [primary.layoutId],
-            minAngle: primary.angle,
-            maxAngle: primary.angle,
-            limit: 50,
-          },
-        });
-        ascent = ascentResult.userAscentsFeed.items.find(
-          (item) => item.climbName && item.layoutId === primary.layoutId && item.angle === primary.angle,
+        logbook = await readCppLogbookAscent(options, primary);
+        ascent = logbook.ascent;
+        actions.push(
+          previousDemoTick
+            ? `${options.target}: resumed checkpointed private example attempt ${tickUuid} through UUID-idempotent SaveTick`
+            : `${options.target}: created one explicitly private illustrative attempt through SaveTick`,
         );
-        actions.push(`${options.target}: created one explicitly private illustrative attempt through SaveTick`);
       }
     }
-    if (!ascent)
+    if (!ascent) {
+      const demoTick = options.checkpoint.demoTicks?.[options.target];
       blockers.push(
-        `${options.target}: primary configuration has no logbook entry; --apply --seed-demo-content can create an explicitly private example attempt`,
+        demoTick
+          ? `${options.target}: checkpointed demo attempt ${demoTick} has no guaranteed rendered representative in the first grouped family page; existing records and UUID retained`
+          : logbook.primaryEntries.length > 0
+            ? `${options.target}: primary logbook entries exist but have no guaranteed rendered representative in the first grouped family page; existing records preserved and no demo attempt added`
+            : `${options.target}: primary configuration has no genuine rendered logbook representative in the first grouped family page; --apply --seed-demo-content can create an explicitly private example attempt`,
       );
+    }
     const boardPath = `/${primary.boardType}/${primary.layoutId}/${primary.sizeId}/${primary.setIds}/${primary.angle}`;
     let sessionId = options.checkpoint.sessions[options.target];
     let rejectedSession = false;
@@ -865,7 +924,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
     const workoutLabels = localized('session', 'mobile.session.headerStart');
     const scenes: Record<string, CppSceneCoverage> = {
       search: makeScene(searchLabels['en-US'], searchLabels),
-      logbook: makeScene(ascent?.climbName ?? ''),
+      logbook: { ...makeScene(ascent?.climbName ?? ''), ...(ascent ? { ascentId: ascent.uuid } : {}) },
       led: makeScene(firstClimb),
       queue: { ...makeScene(queueClimbName ?? ''), ...(sessionId ? { sessionId } : {}) },
       workout: makeScene(workoutLabels['en-US'], workoutLabels),

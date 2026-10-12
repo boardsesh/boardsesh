@@ -50,8 +50,14 @@ results, logged sessions, a shared queue, and workout content. A CPP fixture
 manifest includes `capture.cpp.target`, board readiness text indexed by variant
 ID, and scene identity/readiness for search, logbook, LED/setting, queue, workout,
 status/playlist, and Island/kiosk/hold editor. Scene board IDs identify the target
-board; the queue also supplies its actual recorded session ID. Readiness text
-must identify real captured content. Do not invent records or readiness labels.
+board; the queue also supplies its actual recorded session ID. The logbook scene
+also requires `ascentId`: the genuine displayed row UUID selected from the first
+native family page using the shared grouped-logbook representative rules. A
+newer attempt can group under an older send or flash, so copying the first raw
+ascent UUID is insufficient. Capture verifies the exact entry and localized
+row label, using at most five scrolls within the recorded first page if needed.
+Readiness text must identify real captured content. Do not invent records or
+readiness labels.
 
 CPP recording verifies the authenticated owner, private session, and primary board
 configuration before maintaining real upstream session membership. This makes a
@@ -99,8 +105,11 @@ sessions; this does not claim ownership of that inaccessible row. An owned,
 private, matching nonpermanent checkpoint session may also receive a permanent
 replacement. Both IDs are tracked and the old record remains unchanged. Missing
 active, foreign, public, or mismatched bindings stop before creating a replacement. Existing logbook entries are reused; a missing entry can be
-seeded as one explicitly private example attempt. No send is invented. Cherry
-and Bowlo can appear in the real new-climb editor before either wall has climbs.
+seeded as one explicitly private example attempt. Existing primary-board entries
+without a guaranteed displayed representative stop bootstrap before example
+attempt creation. A resumed demo attempt keeps its checkpointed UUID and uses
+the backend’s idempotent tick operation. No send is invented. Cherry and Bowlo
+can appear in the real new-climb editor before either wall has climbs.
 The checkpoint is bound to the authenticated account and backend and cached for
 resuming interrupted recognition or queue setup.
 

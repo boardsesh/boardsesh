@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   boardMatchesConfig,
   sessionPathMatchesBoard,
+  selectCppLogbookAscent,
   bootstrapCppScenario,
   photosMatch,
   ensureSprayPhoto,
@@ -16,6 +17,7 @@ import {
   CPP_BOOTSTRAP_PROFILE_QUERY,
   createTransport,
   type BootstrapBoard,
+  type BootstrapAscent,
   type BootstrapCheckpoint,
   type BootstrapOptions,
   type BootstrapTransport,
@@ -53,7 +55,7 @@ const INPUT_SCHEMAS = {
   CreateBoard: CreateBoardInputSchema,
   UpdateBoard: UpdateBoardInputSchema,
   SearchClimbs: ClimbSearchInputSchema,
-  GetUserAscentsFeed: AscentFeedInputSchema,
+  GetUserGroupedAscentsFeed: AscentFeedInputSchema,
   SaveTick: SaveTickInputSchema,
   CreateSession: CreateSessionInputSchema,
   GetSmartPlaylist: GetSmartPlaylistInputSchema,
@@ -85,6 +87,24 @@ function genuineClimb(board: BootstrapBoard): ClimbInput {
     difficulty_error: '0',
     quality_average: '3',
     stars: 3,
+  };
+}
+
+function genuineAscent(board: BootstrapBoard, overrides: Partial<BootstrapAscent> = {}): BootstrapAscent {
+  return {
+    uuid: testUuid(910),
+    climbUuid: genuineClimb(board).uuid,
+    climbName: genuineClimb(board).name,
+    boardType: board.boardType,
+    layoutId: board.layoutId,
+    angle: board.angle,
+    isMirror: false,
+    climbedAt: '2026-10-12T10:00:00',
+    status: 'attempt',
+    attemptCount: 1,
+    difficulty: null,
+    renderBoard: { sizeId: board.sizeId, setIds: board.setIds.split(',').map(Number) },
+    ...overrides,
   };
 }
 
@@ -134,6 +154,7 @@ function manufacturerHarness(): {
     persistPermanent: true,
   };
   let recordedAscent = true;
+  let recordedAscentId = testUuid(910);
   const join = vi.fn(async () => ({
     queue: [{ uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', climb: genuineClimb(owned[0]) }],
   }));
@@ -162,20 +183,10 @@ function manufacturerHarness(): {
           response = { searchClimbs: { climbs: [genuineClimb(board)] } };
           break;
         }
-        case 'GetUserAscentsFeed':
+        case 'GetUserGroupedAscentsFeed':
           response = {
-            userAscentsFeed: {
-              items: recordedAscent
-                ? [
-                    {
-                      climbName: genuineClimb(owned[0]).name,
-                      boardType: owned[0].boardType,
-                      layoutId: owned[0].layoutId,
-                      angle: owned[0].angle,
-                      renderBoard: { sizeId: owned[0].sizeId, setIds: owned[0].setIds.split(',').map(Number) },
-                    },
-                  ]
-                : [],
+            userGroupedAscentsFeed: {
+              groups: recordedAscent ? [{ items: [genuineAscent(owned[0], { uuid: recordedAscentId })] }] : [],
             },
           };
           break;
@@ -228,6 +239,7 @@ function manufacturerHarness(): {
           break;
         case 'SaveTick':
           recordedAscent = true;
+          recordedAscentId = (variables.input as { uuid: string }).uuid;
           response = { saveTick: { uuid: (variables.input as { uuid: string }).uuid } };
           break;
         default:
@@ -665,22 +677,9 @@ describe('CPP account/bootstrap safety', () => {
       query: string,
       variables: Record<string, unknown> = {},
     ): Promise<T> => {
-      if (getOperationAST(parse(query))?.name?.value === 'GetUserAscentsFeed') {
-        validateActualInput('GetUserAscentsFeed', variables);
-        const board = activePrimary();
-        return {
-          userAscentsFeed: {
-            items: [
-              {
-                climbName: genuineClimb(board).name,
-                boardType: board.boardType,
-                layoutId: board.layoutId,
-                angle: board.angle,
-                renderBoard: { sizeId: board.sizeId, setIds: board.setIds.split(',').map(Number) },
-              },
-            ],
-          },
-        } as T;
+      if (getOperationAST(parse(query))?.name?.value === 'GetUserGroupedAscentsFeed') {
+        validateActualInput('GetUserGroupedAscentsFeed', variables);
+        return { userGroupedAscentsFeed: { groups: [{ items: [genuineAscent(activePrimary())] }] } } as T;
       }
       return previousRequest<T>(query, variables);
     };
@@ -808,7 +807,22 @@ describe('CPP account/bootstrap safety', () => {
         ]),
       ),
     );
-    expect(result.scenario?.cpp?.scenes.logbook.readyText).toBe(genuineClimb(harness.owned[0]).name);
+    expect(result.scenario?.cpp?.scenes.logbook).toMatchObject({
+      readyText: genuineClimb(harness.owned[0]).name,
+      ascentId: testUuid(910),
+    });
+    expect(harness.operations.find((entry) => entry.name === 'GetUserGroupedAscentsFeed')?.variables).toEqual({
+      userId: ACCOUNT,
+      input: {
+        boardType: 'kilter',
+        statusMode: 'both',
+        flashOnly: false,
+        sortBy: 'recent',
+        sortOrder: 'desc',
+        limit: 20,
+        offset: 0,
+      },
+    });
     expect(result.scenario?.cpp?.scenes.queue.sessionId).toBe(SESSION);
     expect(result.scenario?.cpp?.scenes.search.readyTextByLocale?.fr).toBeTruthy();
     expect(harness.join).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION, initializeEmpty: true }));
@@ -973,7 +987,7 @@ describe('CPP account/bootstrap safety', () => {
     Object.assign(harness.options, { testRecordedAscent: false });
     harness.options.apply = true;
     let result = await bootstrapCppScenario(harness.options);
-    expect(result.blockers).toContainEqual(expect.stringContaining('no logbook entry'));
+    expect(result.blockers).toContainEqual(expect.stringContaining('no genuine rendered logbook representative'));
     expect(harness.operations.some((operation) => operation.name === 'SaveTick')).toBe(false);
     harness.options.seedDemoContent = true;
     result = await bootstrapCppScenario(harness.options);
@@ -984,7 +998,7 @@ describe('CPP account/bootstrap safety', () => {
       comment: expect.stringContaining('example attempt'),
     });
     expect(result.blockers).toEqual([]);
-    expect(result.scenario).toBeDefined();
+    expect(result.scenario?.cpp?.scenes.logbook.ascentId).toBe((tick.variables.input as { uuid: string }).uuid);
   });
 
   it('refuses to invent fields missing from the real queue climb', () => {
@@ -996,6 +1010,196 @@ describe('CPP account/bootstrap safety', () => {
     expect(() => queueClimb({ ...genuineClimb(owned[0]), stars: undefined } as unknown as ClimbInput)).toThrow(
       'refusing invented fields',
     );
+  });
+});
+
+describe('genuine grouped logbook coverage', () => {
+  it('uses the older flash UUID that native renders instead of a newer attempt UUID', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    const board = harness.owned[0];
+    const flash = genuineAscent(board, { uuid: testUuid(911), status: 'flash', climbedAt: '2026-10-12T09:00:00' });
+    const attempt = genuineAscent(board, { uuid: testUuid(912), status: 'attempt', climbedAt: '2026-10-12T11:00:00' });
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'GetUserGroupedAscentsFeed') {
+        expect(validate(API_SCHEMA, parse(query))).toEqual([]);
+        validateActualInput('GetUserGroupedAscentsFeed', variables);
+        expect(variables).toEqual({
+          userId: ACCOUNT,
+          input: {
+            boardType: 'kilter',
+            statusMode: 'both',
+            flashOnly: false,
+            sortBy: 'recent',
+            sortOrder: 'desc',
+            limit: 20,
+            offset: 0,
+          },
+        });
+        return { userGroupedAscentsFeed: { groups: [{ items: [attempt, flash] }] } } as T;
+      }
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toEqual([]);
+    expect(result.scenario?.cpp?.scenes.logbook).toMatchObject({ ascentId: flash.uuid, readyText: flash.climbName });
+    expect(result.scenario?.cpp?.scenes.logbook.ascentId).not.toBe(attempt.uuid);
+  });
+
+  it('keeps graded-over-ungraded and time tie-breaks from the shared native picker', () => {
+    const board = manufacturerHarness().owned[0];
+    const newestUngraded = genuineAscent(board, {
+      uuid: testUuid(913),
+      status: 'send',
+      climbedAt: '2026-10-12T12:00:00',
+    });
+    const olderGraded = genuineAscent(board, {
+      uuid: testUuid(914),
+      status: 'send',
+      difficulty: 17,
+      climbedAt: '2026-10-12T09:00:00',
+    });
+    const newerGraded = genuineAscent(board, {
+      uuid: testUuid(915),
+      status: 'send',
+      difficulty: 17,
+      climbedAt: '2026-10-12T10:00:00',
+    });
+    expect(selectCppLogbookAscent([{ items: [newestUngraded, olderGraded, newerGraded] }], board)?.uuid).toBe(
+      newerGraded.uuid,
+    );
+  });
+
+  it('selects a genuine superset-best row across backend UTC days so local-day boundaries cannot hide it', () => {
+    const board = manufacturerHarness().owned[0];
+    const flash = genuineAscent(board, { uuid: testUuid(916), status: 'flash', climbedAt: '2026-10-11T23:30:00' });
+    const attempt = genuineAscent(board, { uuid: testUuid(917), climbedAt: '2026-10-12T01:00:00' });
+    expect(selectCppLogbookAscent([{ items: [attempt] }, { items: [flash] }], board)?.uuid).toBe(flash.uuid);
+  });
+
+  it('preserves mirror and angle bucket identities before choosing primary geometry', () => {
+    const board = manufacturerHarness().owned[0];
+    const primary = genuineAscent(board, { uuid: testUuid(918) });
+    const mirrored = genuineAscent(board, {
+      uuid: testUuid(919),
+      isMirror: true,
+      status: 'flash',
+      climbedAt: '2026-10-11T10:00:00',
+    });
+    const differentAngle = genuineAscent(board, {
+      uuid: testUuid(920),
+      angle: 50,
+      status: 'flash',
+      climbedAt: '2026-10-12T12:00:00',
+    });
+    expect(selectCppLogbookAscent([{ items: [differentAngle, primary, mirrored] }], board)?.uuid).toBe(primary.uuid);
+  });
+
+  it('does not invent a preferred primary row by dropping the better entry on another configuration', () => {
+    const board = manufacturerHarness().owned[0];
+    const primaryAttempt = genuineAscent(board, { uuid: testUuid(921) });
+    const otherSizeFlash = genuineAscent(board, {
+      uuid: testUuid(922),
+      status: 'flash',
+      renderBoard: { sizeId: 999, setIds: [1, 20] },
+    });
+    expect(selectCppLogbookAscent([{ items: [primaryAttempt, otherSizeFlash] }], board)).toBeUndefined();
+  });
+
+  it('does not seed a needless attempt when real primary rows exist but the rendered global winner is another size', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    harness.options.seedDemoContent = true;
+    const primaryAttempt = genuineAscent(harness.owned[0], { uuid: testUuid(923) });
+    const otherSizeFlash = genuineAscent(harness.owned[0], {
+      uuid: testUuid(924),
+      status: 'flash',
+      renderBoard: { sizeId: 999, setIds: [1, 20] },
+    });
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'GetUserGroupedAscentsFeed')
+        return { userGroupedAscentsFeed: { groups: [{ items: [primaryAttempt, otherSizeFlash] }] } } as T;
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(
+      expect.stringContaining('primary logbook entries exist but have no guaranteed rendered representative'),
+    );
+    expect(harness.operations.some((operation) => operation.name === 'SaveTick')).toBe(false);
+    expect(harness.options.checkpoint.demoTicks).toBeUndefined();
+    expect(result.scenario).toBeUndefined();
+    harness.options.checkpoint.demoTicks = { kilter: primaryAttempt.uuid };
+    const resumed = await bootstrapCppScenario(harness.options);
+    expect(resumed.blockers).toContainEqual(
+      expect.stringContaining(`checkpointed demo attempt ${primaryAttempt.uuid}`),
+    );
+    expect(harness.operations.some((operation) => operation.name === 'SaveTick')).toBe(false);
+    expect(resumed.actions.some((action) => action.includes('created one'))).toBe(false);
+    expect(harness.options.checkpoint.demoTicks.kilter).toBe(primaryAttempt.uuid);
+  });
+
+  it('resumes a saved-before-write UUID without claiming a fresh creation when its grouped readback stays unavailable', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    harness.options.seedDemoContent = true;
+    const demoId = testUuid(925);
+    harness.options.checkpoint.demoTicks = { kilter: demoId };
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'GetUserGroupedAscentsFeed')
+        return { userGroupedAscentsFeed: { groups: [] } } as T;
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining(`checkpointed demo attempt ${demoId}`));
+    expect(result.actions).toContainEqual(expect.stringContaining('resumed checkpointed private example attempt'));
+    expect(result.actions.some((action) => action.includes('created one'))).toBe(false);
+    expect(harness.operations.find((operation) => operation.name === 'SaveTick')?.variables.input).toMatchObject({
+      uuid: demoId,
+    });
+    expect(harness.options.checkpoint.demoTicks.kilter).toBe(demoId);
+    expect(result.scenario).toBeUndefined();
+  });
+
+  it('blocks a missing first-page primary representative and never fabricates an ascent ID', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'GetUserGroupedAscentsFeed')
+        return {
+          userGroupedAscentsFeed: {
+            groups: [{ items: [genuineAscent(harness.owned[0], { renderBoard: { sizeId: 999, setIds: [1, 20] } })] }],
+          },
+        } as T;
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('first grouped family page'));
+    expect(result.scenario).toBeUndefined();
+    expect(harness.operations.some((operation) => operation.name === 'SaveTick')).toBe(false);
+  });
+
+  it('rejects a malformed API ascent UUID and deduplicates repeated real entries', () => {
+    const board = manufacturerHarness().owned[0];
+    const invalid = genuineAscent(board, { uuid: 'fabricated-id' });
+    expect(selectCppLogbookAscent([{ items: [invalid] }], board)).toBeUndefined();
+    const genuine = genuineAscent(board);
+    expect(selectCppLogbookAscent([{ items: [genuine] }, { items: [genuine] }], board)?.uuid).toBe(genuine.uuid);
   });
 });
 

@@ -82,6 +82,7 @@ import {
   isCppTarget,
   readCppPage,
   cppNavigationCommands,
+  isCppAscentId,
   cppReadinessSelector,
   assertCppCaptureReady,
   resolveCppRecipes,
@@ -1945,6 +1946,42 @@ export function renderMaestroFlowForIosDevice(flowSource: string, screenshotDevi
   return flowSource.replaceAll(MAESTRO_DEVICE_ORIENTATION_PLACEHOLDER, screenshotDevice.orientation);
 }
 
+/** Match the genuine native row's localized status, literal title and metadata. */
+export function cppLogbookReadinessSelector(
+  climbName: string,
+  locale: Locale,
+  ascentId: unknown,
+): { id: string; text: string } {
+  if (!isCppAscentId(ascentId)) throw new Error('CPP logbook readiness requires a genuine ascent UUID');
+  const catalog = JSON.parse(
+    readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'you.json'), 'utf8'),
+  ) as { mobile: { logbook: { row: { a11yFlashed: string; a11ySent: string; project: string } } } };
+  const row = catalog.mobile.logbook.row;
+  const statuses = [row.a11yFlashed, row.a11ySent, row.project].map(cppReadinessSelector).join('|');
+  // LogbookRow groups its title into one accessible button with this prefix and
+  // comma-delimited metadata. The verified ascent UUID identifies this row;
+  // comma-containing climb titles cannot select a different ascent by prefix.
+  return {
+    id: `logbook-entry-${cppReadinessSelector(ascentId)}`,
+    text: `^(?:${statuses}) ${cppReadinessSelector(climbName)}, .+$`,
+  };
+}
+
+/** Native queue rows announce the exact climb title followed by their position. */
+export function cppQueueReadinessSelectors(climbName: string, locale: Locale): { row: string; header: string } {
+  const catalog = JSON.parse(
+    readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
+  ) as { queueDrawer: { title: string }; mobile: { queue: { positionLabel: string; addedByAria: string } } };
+  const position = catalog.mobile.queue.positionLabel.split('{{position}}').map(cppReadinessSelector).join('[0-9]+');
+  const addedBy = catalog.mobile.queue.addedByAria.split('{{name}}').map(cppReadinessSelector).join('.+');
+  return {
+    row: `^${cppReadinessSelector(climbName)}, ${position}(?:, ${addedBy})?$`,
+    // The native header also contains the localized climb count. Its composite
+    // announcement can include that text alongside the real queue title.
+    header: `.*${cppReadinessSelector(catalog.queueDrawer.title)}.*`,
+  };
+}
+
 /** Strict target fixture text supplies content gates; no default campaign scenes are reused. */
 export function renderCppMaestroFlow(
   target: CppTarget,
@@ -2011,7 +2048,17 @@ export function renderCppMaestroFlow(
       `- evalScript: \${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=${scene.command}').body).sequence}`,
       "- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: ${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}\n      - assertTrue: ${output.cppAcknowledged == output.cppSequence}",
     );
-    if (scene.command !== 'queue')
+    if (scene.command === 'logbook') {
+      const rowSelector = cppLogbookReadinessSelector(scene.ready, locale, coverage.scenes.logbook.ascentId);
+      commands.push(
+        '- extendedWaitUntil:\n    visible:\n      id: logbook-screen\n    timeout: 90000',
+        // Maestro 2.6.1 has no scrollUntilVisible parent/max-swipes options.
+        // A bounded loop swipes only from the real FlashList and stops once
+        // this verified ascent's composite accessibility row is visible.
+        `- repeat:\n    times: 5\n    while:\n      notVisible:\n        id: ${JSON.stringify(rowSelector.id)}\n        text: ${JSON.stringify(rowSelector.text)}\n    commands:\n      - swipe:\n          from:\n            id: logbook-screen\n          direction: UP\n          duration: 700\n      - waitForAnimationToEnd:\n          timeout: 30000`,
+        `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(rowSelector.id)}\n      text: ${JSON.stringify(rowSelector.text)}\n    timeout: 90000`,
+      );
+    } else if (scene.command !== 'queue')
       commands.push(
         `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppReadinessSelector(scene.ready))}\n    timeout: 90000`,
       );
@@ -2031,14 +2078,16 @@ export function renderCppMaestroFlow(
       commands.push('- extendedWaitUntil:\n    visible:\n      id: create-climb-editor\n    timeout: 60000');
     if (scene.command === 'search')
       commands.push('- extendedWaitUntil:\n    visible:\n      id: climb-filter-column\n    timeout: 60000');
-    if (scene.command === 'queue')
+    if (scene.command === 'queue') {
+      const selectors = cppQueueReadinessSelectors(scene.ready, locale);
       commands.push(
         '- tapOn: ${SCREENSHOT_QUEUE_LABEL}',
         '- swipe:\n    start: "50%,54%"\n    end: "50%,15%"\n    duration: 700',
-        '- extendedWaitUntil:\n    visible: ${SCREENSHOT_QUEUE_TITLE}\n    timeout: 60000',
-        `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppReadinessSelector(scene.ready))}\n    timeout: 90000`,
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(selectors.header)}\n    timeout: 60000`,
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(selectors.row)}\n    timeout: 90000`,
         '- waitForAnimationToEnd:\n    timeout: 30000',
       );
+    }
     if (scene.command === 'island' && target !== 'spray')
       commands.push(
         '- tapOn:\n    point: "87%,84%"',

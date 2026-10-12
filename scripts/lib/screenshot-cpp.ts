@@ -38,8 +38,15 @@ export interface CppPage {
 export interface CppSceneCoverage {
   boardId: string;
   readyText: string;
+  /** Actual rendered LogbookRow ascent UUID, selected from the genuine feed. */
+  ascentId?: string;
   readyTextByLocale?: Record<'en-US' | 'es' | 'fr' | 'de', string>;
   sessionId?: string;
+}
+export function isCppAscentId(candidate: unknown): candidate is string {
+  return (
+    typeof candidate === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)
+  );
 }
 export interface CppCaptureCoverage {
   target: CppTarget;
@@ -263,6 +270,8 @@ export function assertCppCaptureReady(
   );
   for (const scene of ['search', 'logbook', 'led', 'queue', 'workout', 'status', 'island']) {
     const entry = coverage.scenes[scene];
+    if (scene === 'logbook' && !isCppAscentId(entry?.ascentId))
+      throw new Error(`CPP ${target} lacks a genuine logbook ascent UUID`);
     if (
       entry?.readyTextByLocale &&
       ['en-US', 'es', 'fr', 'de'].some(
