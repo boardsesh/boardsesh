@@ -31,8 +31,12 @@
  *
  * and `updated`, the rows this run wrote (0 in a dry run).
  *
- * Safe to re-run and to interrupt: each batch is one statement, an assigned
+ * Safe to re-run and to interrupt: each batch is one transaction, an assigned
  * climb stops matching, and a second run reports `matched: 0`.
+ *
+ * Apply batches briefly fence writes to both account-link tables while checking
+ * the current unique owner. Link/unlink operations wait until that batch commits;
+ * no lock is held between batches. Dry runs take no such locks.
  *
  * Each assigned row moves its `updated_at` and `sync_seq`, which is how it
  * reaches its owner's devices on their next sync. Nobody else is sent it, and no
