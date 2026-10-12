@@ -785,6 +785,18 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       );
     });
 
+    it('hides foreign and deleted-owner drafts while retaining board aggregates', async () => {
+      for (const viewer of [STRANGER, FOLLOWER, null]) {
+        for (const climbUuid of [DRAFT, DELETED_DRAFT]) {
+          const redacted = await redactBoardStats(statsWithHardest(climbUuid), viewer);
+          expect(redacted.hardestSend ?? null).toBeNull();
+          expect(redacted).toMatchObject({ climbsSentCount: 3, distinctClimbersCount: 2, hardestGrade: 'V8' });
+        }
+      }
+      expect((await redactBoardStats(statsWithHardest(DRAFT), PRIVATE_AUTHOR)).hardestSend?.climbUuid).toBe(DRAFT);
+      expect((await redactBoardStats(statsWithHardest(DELETED_DRAFT), PRIVATE_AUTHOR)).hardestSend ?? null).toBeNull();
+    });
+
     it('never picks a climb the community hid', async () => {
       const [board] = await db
         .insert(schema.userBoards)

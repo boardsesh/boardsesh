@@ -27,7 +27,16 @@ const { mockDb } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../db/client', () => ({ db: mockDb, dbRead: mockDb }));
+vi.mock('../db/client', async () => {
+  const { playlistOwnership } = await import('@boardsesh/db/schema');
+  const mockClient = {
+    ...mockDb,
+    select: (selection?: Record<string, unknown>) =>
+      // These payload/format tests use a public-playlist visitor; membership authorization has real-DB matrix coverage.
+      selection?.id === playlistOwnership.id ? makeChain([]) : mockDb.select(selection),
+  };
+  return { db: mockClient, dbRead: mockClient };
+});
 
 // `userClimbs` resolves which board to draw each climb on via its own helper,
 // which runs its own queries — stub it out so these tests keep driving only the
@@ -93,9 +102,8 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
 }
 
 function makeChain(rows: unknown[]): Record<string, unknown> {
-  const chain: Record<string, unknown> = {};
+  const chain = Object.assign(Promise.resolve(rows), {} as Record<string, unknown>);
   const methods = ['from', 'innerJoin', 'leftJoin', 'where', 'orderBy', 'limit', 'offset', 'groupBy'];
-  chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(rows).then(resolve);
   for (const method of methods) {
     chain[method] = vi.fn(() => chain);
   }

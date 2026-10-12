@@ -85,6 +85,7 @@ vi.mock('@boardsesh/db/queries', () => ({
   // The spray wall visibility predicate. These tests mock the query builder, so the
   // fragment is never rendered — the module just has to export it.
   sprayClimbVisibilityCondition: () => ({ __sprayVisibility: true }),
+  ownedOrPublicReferenceClimbCondition: () => ({ __ownedOrPublicReference: true }),
   // …and its fail-closed half for a spray tick whose climb row is gone (#6031).
   sprayReferenceClimbExistsCondition: () => ({ __sprayClimbExists: true }),
   sprayReferenceVisibilityCondition: () => ({ __sprayReferenceVisibility: true }),
@@ -94,11 +95,13 @@ vi.mock('@boardsesh/db/queries', () => ({
 vi.mock('drizzle-orm', async (importOriginal) => ({
   eq: (..._args: unknown[]) => ({}),
   and: (..._args: unknown[]) => ({}),
+  or: (..._args: unknown[]) => ({}),
   inArray: (..._args: unknown[]) => ({}),
   sql: (await importOriginal<typeof import('drizzle-orm')>()).sql,
   count: (..._args: unknown[]) => ({}),
   desc: (..._args: unknown[]) => ({}),
   isNotNull: (..._args: unknown[]) => ({}),
+  isNull: (..._args: unknown[]) => ({}),
 }));
 
 describe('generateSessionSummary', () => {

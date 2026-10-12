@@ -56,7 +56,7 @@ async function insertClimb({
   holds,
   isDraft = false,
   isHidden = false,
-  isListed = null,
+  isListed = true,
   userId = null,
   publishedAt = null,
 }: ClimbSeed): Promise<void> {
@@ -467,12 +467,13 @@ describe('incremental runs on a busy group', () => {
       if (ticking) setImmediate(tick);
     };
     setImmediate(tick);
-    const original = ClimbNeighborIndex.prototype.neighborsOf;
+    const original = Object.getOwnPropertyDescriptor(ClimbNeighborIndex.prototype, 'neighborsOf')?.value as
+      | ClimbNeighborIndex['neighborsOf']
+      | undefined;
+    if (!original) throw new Error('Missing neighborsOf implementation');
     const seen: number[] = [];
-    const spy = vi.spyOn(ClimbNeighborIndex.prototype, 'neighborsOf').mockImplementation(function (
-      this: ClimbNeighborIndex,
-      ...args: Parameters<ClimbNeighborIndex['neighborsOf']>
-    ) {
+    const spy = vi.spyOn(ClimbNeighborIndex.prototype, 'neighborsOf');
+    spy.mockImplementation(function (this: ClimbNeighborIndex, ...args: Parameters<ClimbNeighborIndex['neighborsOf']>) {
       if (args.length === 1) seen.push(ticks);
       return original.apply(this, args);
     });

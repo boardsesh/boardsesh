@@ -48,7 +48,7 @@ function publish(audience: string | null, name: string) {
         name,
         description: '',
         isDraft: false,
-        frames: 'p1r12',
+        frames: audience === 'public' ? 'p2r12' : audience === null ? 'p3r12' : 'p1r12',
         angle: 40,
         ...(audience ? { privacy: { audience, privacyRevision: 1 } } : {}),
       },

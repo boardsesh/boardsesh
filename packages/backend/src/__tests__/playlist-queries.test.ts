@@ -14,9 +14,16 @@ const { mockDb } = vi.hoisted(() => {
   return { mockDb };
 });
 
-vi.mock('../db/client', () => ({
-  db: mockDb,
-}));
+vi.mock('../db/client', async () => {
+  const { playlistOwnership } = await import('@boardsesh/db/schema');
+  const mockClient = {
+    ...mockDb,
+    select: (selection?: Record<string, unknown>) =>
+      // These payload/format tests use a public-playlist visitor; membership authorization has real-DB matrix coverage.
+      selection?.id === playlistOwnership.id ? createMockChain([]) : mockDb.select(selection),
+  };
+  return { db: mockClient, dbRead: mockClient };
+});
 
 vi.mock('../events/index', () => ({
   publishSocialEvent: vi.fn().mockResolvedValue(undefined),
@@ -83,7 +90,7 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
 }
 
 function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
-  const chain: Record<string, unknown> = {};
+  const chain = Object.assign(Promise.resolve(resolveValue), {} as Record<string, unknown>);
   const methods = [
     'select',
     'from',
@@ -102,8 +109,6 @@ function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
     'update',
     'set',
   ];
-
-  chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
 
   for (const method of methods) {
     chain[method] = vi.fn((..._args: unknown[]) => chain);
