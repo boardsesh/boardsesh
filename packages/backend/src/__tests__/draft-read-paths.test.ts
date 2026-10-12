@@ -41,7 +41,10 @@ const STATS_ANGLES = [ANGLE, ANGLE + 5, ANGLE + 10];
 /** A public account: its published climbs are everyone's to read. */
 const DRAFT_OWNER = 'draft-read-owner';
 const STRANGER = 'draft-read-stranger';
-/** Linked to the manufacturer account that set the ownerless draft. Not its owner: it has none. */
+/**
+ * Linked, with a credential, to the manufacturer account that set the ownerless
+ * draft. Not its owner: it has none until the owner backfill runs.
+ */
 const LINKED_SETTER_ACCOUNT = 'draft-read-linked-setter';
 const USERS = [DRAFT_OWNER, STRANGER, LINKED_SETTER_ACCOUNT];
 const SETTER_ID = 660_001;
@@ -97,6 +100,12 @@ describeWithDatabase('draft climbs on the read paths outside sync (real DB)', ()
     }
     await db.execute(sql`
       INSERT INTO user_board_mappings (user_id, board_type, board_user_id)
+      VALUES (${LINKED_SETTER_ACCOUNT}, ${BOARD}, ${SETTER_ID})
+    `);
+    // The credential is what proves the account signed in to that setter, and
+    // what the owner backfill accepts by default.
+    await db.execute(sql`
+      INSERT INTO aurora_credentials (user_id, board_type, aurora_user_id)
       VALUES (${LINKED_SETTER_ACCOUNT}, ${BOARD}, ${SETTER_ID})
     `);
 

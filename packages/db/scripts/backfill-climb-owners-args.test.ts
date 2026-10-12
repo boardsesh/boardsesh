@@ -11,7 +11,16 @@ void test('no args is a dry run over both kinds and every board', () => {
     kinds: ['drafts', 'unlisted'],
     boardType: undefined,
     batchSize: 500,
+    includeMappingOnly: false,
   });
+});
+
+// A mapping row alone may have been written for an account that never signed
+// in to the setter, so assigning those is a separate, explicit choice.
+void test('--include-mapping-only is off unless named exactly', () => {
+  assert.equal(parseClimbOwnerBackfillArgs(['--apply']).includeMappingOnly, false);
+  assert.equal(parseClimbOwnerBackfillArgs(['--', '--apply', '--include-mapping-only']).includeMappingOnly, true);
+  assert.throws(() => parseClimbOwnerBackfillArgs(['--include-mapping']), /Unknown argument: --include-mapping/);
 });
 
 void test('--apply opts into writes, with or without the `--` separator vp forwards', () => {

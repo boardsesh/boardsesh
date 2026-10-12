@@ -98,6 +98,7 @@ export {
 export type {
   ClimbOwnerAssignment,
   ClimbOwnerBackfillCounts,
+  ClimbOwnerBackfillEvidence,
   ClimbOwnerBackfillKind,
   ClimbOwnerBackfillPlan,
   ClimbOwnerBackfillResult,

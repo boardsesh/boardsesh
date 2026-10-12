@@ -11,15 +11,28 @@ import { boardClimbs } from '../../schema/boards/unified';
  * owner to no one (`publicReferenceClimbSql`). The manufacturer draft import
  * stamps the importing account from now on; this is for the rows written before
  * it did, and for unlisted manufacturer climbs, which never had one. Each of
- * those carries the manufacturer account that set it (`setter_id`), and a
- * Boardsesh account that linked that manufacturer account proved control of it
- * by signing in to it. So a climb whose setter is linked by exactly ONE
- * Boardsesh account on that board belongs to that account.
+ * those carries the manufacturer account that set it (`setter_id`). A climb
+ * whose setter is linked by exactly ONE Boardsesh account on that board belongs
+ * to that account, when the link proves the account controls the setter.
+ *
+ * Two tables hold links, and they do not prove the same thing:
+ *  - `aurora_credentials`: written only by `saveAuroraCredential`, which signs
+ *    in to the manufacturer account server-side first. Proof. Such a match is
+ *    `matched`, and an apply run assigns it.
+ *  - `user_board_mappings`: not always. Until 2026-08-15 (fac5032af2),
+ *    `POST /api/internal/user-board-mapping` took the manufacturer user id from
+ *    the request body for any signed-in web account and stored it unchecked,
+ *    and those rows are still there. Unlinking deletes both rows, so a mapping
+ *    with no credential behind it was either never checked or outlived a manual
+ *    cleanup. Such a match is `matchedMappingOnly`: counted, and assigned only
+ *    when the run asks for it (`includeMappingOnly`). Assigning a forged row
+ *    would hand the forger another climber's drafts, readable and publishable.
  *
  * Everything else stays as it is, with no owner and so with no reader:
- *  - the setter id is linked by more than one Boardsesh account (links made
- *    before duplicate links were refused), where picking one would hand a climb
- *    to an account that may not be its setter's;
+ *  - the setter id is linked by more than one Boardsesh account, in either
+ *    table (links made before duplicate links were refused, or a forged
+ *    mapping beside a real link), where picking one would hand a climb to an
+ *    account that may not be its setter's;
  *  - no account links the setter id;
  *  - the climb has no setter id at all.
  *
@@ -34,10 +47,15 @@ export type ClimbOwnerBackfillKind = (typeof CLIMB_OWNER_BACKFILL_KINDS)[number]
 
 /** How the ownerless climbs of one kind divide up, for one board type or for all of them. */
 export type ClimbOwnerBackfillCounts = {
-  /** Climbs of this kind with no owner. The four counts below add up to this. */
+  /** Climbs of this kind with no owner. The five counts below add up to this. */
   ownerless: number;
-  /** Exactly one linked account: the rows an apply run assigns. */
+  /** Exactly one linked account, with a credential row: the rows an apply run assigns. */
   matched: number;
+  /**
+   * Exactly one linked account, through a mapping row alone. Assigned only when
+   * the run asks for it (`includeMappingOnly`); see the file header.
+   */
+  matchedMappingOnly: number;
   /** More than one linked account. Left alone. */
   ambiguous: number;
   /** No account links the climb's setter id. Left alone. */
@@ -60,11 +78,22 @@ export type ClimbOwnerBackfillScope = {
   boardType?: string;
 };
 
+/** Which links an apply run accepts as proof. */
+export type ClimbOwnerBackfillEvidence = {
+  /**
+   * Also assign `matchedMappingOnly` climbs: a single account linked through a
+   * mapping row with no credential behind it. Off unless asked for, because
+   * such a row may have been written for an account that never signed in.
+   */
+  includeMappingOnly?: boolean;
+};
+
 export const CLIMB_OWNER_BACKFILL_BATCH_SIZE = 500;
 
 const ZERO_COUNTS: ClimbOwnerBackfillCounts = {
   ownerless: 0,
   matched: 0,
+  matchedMappingOnly: 0,
   ambiguous: 0,
   noLinkedAccount: 0,
   noSetterId: 0,
@@ -72,12 +101,12 @@ const ZERO_COUNTS: ClimbOwnerBackfillCounts = {
 
 /**
  * One row per manufacturer account that any Boardsesh account links on a board:
- * how many distinct Boardsesh accounts link it, and one of them. The account is
+ * how many distinct Boardsesh accounts link it, one of them, and whether any of
+ * its links is a credential row. The account, and so the credential flag, is
  * only meaningful where the count is 1.
  *
- * Both link tables are read. A credential row goes when the account is
- * unlinked and the mapping row stays, and either one was written only after a
- * successful sign-in to the manufacturer account.
+ * Both link tables are read, so a second account in either one makes a setter
+ * ambiguous. Only a credential row is proof of sign-in; see the file header.
  */
 function setterOwners(db: BackfillDb) {
   const linkedAccounts = db
@@ -85,6 +114,7 @@ function setterOwners(db: BackfillDb) {
       boardType: auroraCredentials.boardType,
       boardUserId: sql<number>`${auroraCredentials.auroraUserId}`.as('board_user_id'),
       userId: auroraCredentials.userId,
+      viaCredential: sql<boolean>`true`.as('via_credential'),
     })
     .from(auroraCredentials)
     .where(isNotNull(auroraCredentials.auroraUserId))
@@ -94,6 +124,7 @@ function setterOwners(db: BackfillDb) {
           boardType: userBoardMappings.boardType,
           boardUserId: sql<number>`${userBoardMappings.boardUserId}`.as('board_user_id'),
           userId: userBoardMappings.userId,
+          viaCredential: sql<boolean>`false`.as('via_credential'),
         })
         .from(userBoardMappings)
         .where(isNotNull(userBoardMappings.boardUserId)),
@@ -106,10 +137,16 @@ function setterOwners(db: BackfillDb) {
       boardUserId: linkedAccounts.boardUserId,
       accountCount: countDistinct(linkedAccounts.userId).as('account_count'),
       userId: min(linkedAccounts.userId).as('owner_user_id'),
+      hasCredential: sql<boolean>`bool_or(${linkedAccounts.viaCredential})`.as('has_credential'),
     })
     .from(linkedAccounts)
     .groupBy(linkedAccounts.boardType, linkedAccounts.boardUserId)
     .as('setter_owner');
+}
+
+/** The single linked account counts as proof: a credential row, or a mapping when the run asks for those too. */
+function acceptedEvidence(owners: ReturnType<typeof setterOwners>, evidence: ClimbOwnerBackfillEvidence): SQL {
+  return evidence.includeMappingOnly === true ? sql`TRUE` : sql`${owners.hasCredential} IS TRUE`;
 }
 
 /**
@@ -154,7 +191,8 @@ export async function planClimbOwnerBackfill(
       boardType: boardClimbs.boardType,
       isDraft: sql<boolean>`${isDraft}`.as('is_draft_kind'),
       ownerless: sql<number>`count(*)::int`,
-      matched: sql<number>`count(*) FILTER (WHERE ${owners.accountCount} = 1)::int`,
+      matched: sql<number>`count(*) FILTER (WHERE ${owners.accountCount} = 1 AND ${owners.hasCredential} IS TRUE)::int`,
+      matchedMappingOnly: sql<number>`count(*) FILTER (WHERE ${owners.accountCount} = 1 AND ${owners.hasCredential} IS NOT TRUE)::int`,
       ambiguous: sql<number>`count(*) FILTER (WHERE ${owners.accountCount} > 1)::int`,
       noLinkedAccount: sql<number>`count(*) FILTER (WHERE ${boardClimbs.setterId} IS NOT NULL AND ${owners.accountCount} IS NULL)::int`,
       noSetterId: sql<number>`count(*) FILTER (WHERE ${boardClimbs.setterId} IS NULL)::int`,
@@ -174,6 +212,7 @@ export async function planClimbOwnerBackfill(
     for (const counts of [kindPlan.totals, boardCounts]) {
       counts.ownerless += row.ownerless;
       counts.matched += row.matched;
+      counts.matchedMappingOnly += row.matchedMappingOnly;
       counts.ambiguous += row.ambiguous;
       counts.noLinkedAccount += row.noLinkedAccount;
       counts.noSetterId += row.noSetterId;
@@ -189,7 +228,7 @@ export async function planClimbOwnerBackfill(
  */
 export async function selectClimbOwnerAssignments(
   db: BackfillDb,
-  params: { afterUuid: string | null; limit: number } & ClimbOwnerBackfillScope,
+  params: { afterUuid: string | null; limit: number } & ClimbOwnerBackfillScope & ClimbOwnerBackfillEvidence,
 ): Promise<ClimbOwnerAssignment[]> {
   const owners = setterOwners(db);
   const rows = await db
@@ -200,6 +239,7 @@ export async function selectClimbOwnerAssignments(
       and(
         ownerlessInScope(params),
         eq(owners.accountCount, 1),
+        acceptedEvidence(owners, params),
         params.afterUuid === null ? undefined : gt(boardClimbs.uuid, params.afterUuid),
       ),
     )
@@ -212,18 +252,23 @@ export async function selectClimbOwnerAssignments(
  * Assign one bounded batch in a transaction. Returns how many rows it wrote.
  *
  * The row is re-checked where it is written: still without an owner, still not
- * public, the account still exists, and it is still the one account that links
- * the climb's setter. So a row that gained an owner, was published, lost its
- * account, or whose setter was linked by a second account since the page was
- * read is skipped, and running the same batch twice writes nothing the second
- * time.
+ * public, the account still exists, it is still the one account that links the
+ * climb's setter, and that link is still accepted evidence (a credential row,
+ * unless `includeMappingOnly`). So a row that gained an owner, was published,
+ * lost its account, whose setter was linked by a second account, or whose
+ * credential went since the page was read is skipped, and running the same
+ * batch twice writes nothing the second time.
  *
  * Each written row fires `trg_board_climbs_set_sync_fields`, which moves its
  * `updated_at` and `sync_seq`. That is wanted: it is how the row reaches its
  * owner's devices on their next pull. No other device is sent it, and no
  * deletion marker is written: the row was not public before and is not after.
  */
-export async function applyClimbOwnerAssignments(db: BackfillDb, assignments: ClimbOwnerAssignment[]): Promise<number> {
+export async function applyClimbOwnerAssignments(
+  db: BackfillDb,
+  assignments: ClimbOwnerAssignment[],
+  evidence: ClimbOwnerBackfillEvidence = {},
+): Promise<number> {
   if (assignments.length === 0) return 0;
   return db.transaction(
     async (transaction) => {
@@ -249,6 +294,7 @@ export async function applyClimbOwnerAssignments(db: BackfillDb, assignments: Cl
         AND ${owners.boardUserId} = ${sql.raw('board_climbs.setter_id')}
         AND ${owners.accountCount} = 1
         AND ${owners.userId} = ${assignedOwner}
+        AND ${acceptedEvidence(owners, evidence)}
     )`;
       const written = await transaction
         .update(boardClimbs)
@@ -284,9 +330,15 @@ export type ClimbOwnerBackfillResult = {
  */
 export async function backfillClimbOwners(
   db: BackfillDb,
-  options: { apply: boolean; batchSize?: number; onBatch?: (updatedSoFar: number) => void } & ClimbOwnerBackfillScope,
+  options: {
+    apply: boolean;
+    batchSize?: number;
+    onBatch?: (updatedSoFar: number) => void;
+  } & ClimbOwnerBackfillScope &
+    ClimbOwnerBackfillEvidence,
 ): Promise<ClimbOwnerBackfillResult> {
   const scope: ClimbOwnerBackfillScope = { kinds: options.kinds, boardType: options.boardType };
+  const evidence: ClimbOwnerBackfillEvidence = { includeMappingOnly: options.includeMappingOnly === true };
   const plan = await planClimbOwnerBackfill(db, scope);
   if (!options.apply) return { plan, updated: 0 };
 
@@ -294,9 +346,9 @@ export async function backfillClimbOwners(
   let updated = 0;
   let afterUuid: string | null = null;
   for (;;) {
-    const assignments = await selectClimbOwnerAssignments(db, { ...scope, afterUuid, limit: batchSize });
+    const assignments = await selectClimbOwnerAssignments(db, { ...scope, ...evidence, afterUuid, limit: batchSize });
     if (assignments.length === 0) break;
-    updated += await applyClimbOwnerAssignments(db, assignments);
+    updated += await applyClimbOwnerAssignments(db, assignments, evidence);
     options.onBatch?.(updated);
     afterUuid = assignments[assignments.length - 1].uuid;
     if (assignments.length < batchSize) break;
