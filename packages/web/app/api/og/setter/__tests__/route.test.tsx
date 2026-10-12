@@ -151,6 +151,8 @@ describe('api/og/setter route', () => {
     const rendered = new PgDialect().sqlToQuery(query).sql.toLowerCase().replace(/\s+/g, ' ');
     expect(rendered).toContain('bc.is_listed = true');
     expect(rendered).toContain('bc.is_draft = false');
+    // A climb the community hid is out of the page, so its sends are out of the bars.
+    expect(rendered).toContain('bc.is_hidden = false');
     // The spray-wall predicate is the wall's own rule and stays.
     expect(rendered).toContain('spray_walls');
     // A published, listed climb is public whoever set it: no account privacy,

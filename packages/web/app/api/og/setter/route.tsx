@@ -66,6 +66,8 @@ export async function GET(request: NextRequest) {
             -- privacy applies; the spray predicate is the wall's own rule.
             AND bc.is_listed = true
             AND bc.is_draft = false
+            -- …and not the ones the community hid, which the page leaves out too.
+            AND bc.is_hidden = false
             AND ${sprayClimbVisibilityCondition({ boardType: sql`bc.board_type`, layoutId: sql`bc.layout_id` }, null)}
             AND bt.status IN ('flash', 'send')
             AND bt.difficulty IS NOT NULL
