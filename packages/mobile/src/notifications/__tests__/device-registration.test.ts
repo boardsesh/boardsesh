@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   platform: { OS: 'ios' },
   credentials: { generation: 1, bearer: 'account-one' as string | null },
+  getAuthToken: vi.fn(),
   getPermissions: vi.fn(),
   requestPermissions: vi.fn(),
   getExpoToken: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'installation-created' }));
 vi.mock('react-native', () => ({ Platform: mocks.platform }));
 vi.mock('../../lib/auth-store', () => ({
   captureAuthCredentialGeneration: () => mocks.credentials.generation,
-  getAuthToken: async () => mocks.credentials.bearer,
+  getAuthToken: mocks.getAuthToken,
   isAuthCredentialGenerationCurrent: (generation: number) => generation === mocks.credentials.generation,
 }));
 vi.mock('../../lib/graphql/client', () => ({ getGraphQLHttpUrl: () => 'https://backend.example/graphql' }));
@@ -50,6 +51,7 @@ describe('account notification device registration', () => {
     mocks.platform.OS = 'ios';
     mocks.credentials.generation = 1;
     mocks.credentials.bearer = 'account-one';
+    mocks.getAuthToken.mockImplementation(async () => mocks.credentials.bearer);
     mocks.getPermissions.mockResolvedValue({ status: 'granted' });
     mocks.requestPermissions.mockResolvedValue({ status: 'granted' });
     mocks.getExpoToken.mockResolvedValue({ data: 'ExpoPushToken[test]' });
@@ -200,6 +202,47 @@ describe('account notification device registration', () => {
     await expect(registerNotificationDevice(false, true, newerToken)).resolves.toBe(true);
     expect(mocks.transport).toHaveBeenCalledOnce();
     expect(sentRequest().body.variables).toMatchObject({ input: { token: 'ExpoPushToken[new]' } });
+  });
+
+  it('preserves native event order when the newer credential read resolves first', async () => {
+    const { registerNotificationDevice } = await import('../device-registration');
+    let resolveOlderCredentials!: (bearer: string) => void;
+    mocks.getAuthToken.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveOlderCredentials = resolve;
+        }),
+    );
+    const olderRegistration = registerNotificationDevice(false, true, { type: 'ios', data: 'old-native-token' });
+    const newerToken = { type: 'ios' as const, data: 'new-native-token' };
+    mocks.getExpoToken.mockResolvedValue({ data: 'ExpoPushToken[new]' });
+    await expect(registerNotificationDevice(false, true, newerToken)).resolves.toBe(true);
+    resolveOlderCredentials('account-one');
+    await expect(olderRegistration).resolves.toBe(false);
+    expect(mocks.getExpoToken).toHaveBeenCalledOnce();
+    expect(mocks.getExpoToken).toHaveBeenCalledWith({ projectId: 'test-project', devicePushToken: newerToken });
+    expect(mocks.transport).toHaveBeenCalledOnce();
+    expect(sentRequest().body.variables).toMatchObject({ input: { token: 'ExpoPushToken[new]' } });
+    await expect(registerNotificationDevice(false, true, newerToken)).resolves.toBe(true);
+    expect(mocks.getExpoToken).toHaveBeenCalledOnce();
+  });
+
+  it('still deduplicates identical events when their credential reads resolve out of order', async () => {
+    const { registerNotificationDevice } = await import('../device-registration');
+    let resolveFirstCredentials!: (bearer: string) => void;
+    mocks.getAuthToken.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveFirstCredentials = resolve;
+        }),
+    );
+    const devicePushToken = { type: 'ios' as const, data: 'same-native-token' };
+    const firstRegistration = registerNotificationDevice(false, true, devicePushToken);
+    await expect(registerNotificationDevice(false, true, devicePushToken)).resolves.toBe(true);
+    resolveFirstCredentials('account-one');
+    await expect(firstRegistration).resolves.toBe(true);
+    expect(mocks.getExpoToken).toHaveBeenCalledOnce();
+    expect(mocks.transport).toHaveBeenCalledOnce();
   });
 
   it('does not overwrite a newer native token with a delayed older exchange', async () => {

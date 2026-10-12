@@ -67,12 +67,10 @@ export async function registerNotificationDevice(
   const generation = captureAuthCredentialGeneration();
   const epoch = lifecycleEpoch;
   try {
-    const bearer = await getAuthToken();
-    if (!bearer || epoch !== lifecycleEpoch || !isAuthCredentialGenerationCurrent(generation)) return false;
-    const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
+    // Record native event order before credential storage can resolve out of order.
     let tokenRevision = nativeTokenRevision;
     if (devicePushToken) {
-      const context = JSON.stringify([generation, epoch, bearer]);
+      const context = JSON.stringify([generation, epoch]);
       const token = JSON.stringify(devicePushToken);
       if (latestNativeToken?.context !== context || latestNativeToken.token !== token) {
         latestNativeToken = { context, token };
@@ -80,6 +78,15 @@ export async function registerNotificationDevice(
       }
       tokenRevision = nativeTokenRevision;
     }
+    const bearer = await getAuthToken();
+    if (
+      !bearer ||
+      epoch !== lifecycleEpoch ||
+      !isAuthCredentialGenerationCurrent(generation) ||
+      (devicePushToken && tokenRevision !== nativeTokenRevision)
+    )
+      return false;
+    const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
     const requestKey = JSON.stringify([
       generation,
       epoch,
