@@ -114,9 +114,12 @@ export function ConsentGate(): null {
     };
     if (isAuthenticated) {
       serverWaitStartedAtRef.current ??= Date.now();
-      timer = setTimeout(ask, Math.max(0, CONSENT_SERVER_WAIT_MS - (Date.now() - serverWaitStartedAtRef.current)));
+      // The sync effect above reads the account. When that read lands,
+      // accountResolved runs this effect again; starting a read here would
+      // toggle accountResolved and trigger another read while the prompt is open.
       // The profile id may still be loading; the 5-second cap covers that too.
-      if (authenticatedUserId) void getConsentCoordinator()?.sync().then(ask);
+      if (authenticatedUserId !== null && consent.accountResolved) ask();
+      else timer = setTimeout(ask, Math.max(0, CONSENT_SERVER_WAIT_MS - (Date.now() - serverWaitStartedAtRef.current)));
     } else ask();
     return () => {
       cancelled = true;
@@ -126,6 +129,7 @@ export function ConsentGate(): null {
     launchReady,
     consent.loaded,
     consent.record,
+    consent.accountResolved,
     awaitingAccountAnswer,
     settled,
     killed,
