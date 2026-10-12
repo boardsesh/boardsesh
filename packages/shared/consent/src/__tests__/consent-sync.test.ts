@@ -694,6 +694,34 @@ describe('account consent synchronization', () => {
         expect(account.latest()).toEqual(phoneBGrant);
       },
     );
+    it('keeps a stored denial conditional when it replaces a newer pending Allow during recovery', async () => {
+      const account = fakeAccount(accountGrant);
+      const stored = new Map<string, PendingConsentDecision | null>();
+      const { coordinator } = phoneA(account, stored);
+      const recovered = deferred<ConsentRecord>();
+      account.write.mockReturnValueOnce(recovered.promise);
+
+      const syncing = coordinator.sync();
+      await vi.waitFor(() => expect(account.write).toHaveBeenCalledOnce());
+      const allowing = coordinator.decide('granted', 'ios');
+      // A foreground storage read started before Allow returns the old denial.
+      coordinator.replaceLocalRecord(lostDenial);
+      account.answerElsewhere(phoneBGrant);
+      recovered.resolve(phoneBGrant);
+      await Promise.all([syncing, allowing]);
+
+      expect(account.write).toHaveBeenCalledTimes(2);
+      expect(account.write).toHaveBeenLastCalledWith('account-a', {
+        analytics: 'denied',
+        version: 1,
+        source: 'ios',
+        basedOnDecidedAt: accountGrant.decidedAt,
+        conditional: true,
+      });
+      expect(account.rows).toEqual([accountGrant, phoneBGrant]);
+      expect(coordinator.getSnapshot()).toMatchObject({ record: lostDenial, pending: false });
+      expect(stored.get('account-a')).toBeNull();
+    });
     it('lands while the account still holds the answer it was made against', async () => {
       const account = fakeAccount(accountGrant);
       const stored = new Map<string, PendingConsentDecision | null>();

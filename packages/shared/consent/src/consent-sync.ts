@@ -401,10 +401,12 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         // Only this account's own unconfirmed decision is written to it. A
         // denial from the shared cookie, another sign-in, or a copy adopted
         // from the account stops tracking here and drops the superseded grant
-        // without touching the account.
+        // without touching the account. An owned denial restored from storage
+        // is recovered too: retain its compare-and-set token rather than
+        // turning a delayed foreground read into a fresh explicit withdrawal.
         pending =
           accountId && isConsentRecordOwnedBy(record, accountId) && record.basedOnDecidedAt !== undefined
-            ? { record, basedOnDecidedAt: record.basedOnDecidedAt }
+            ? { record, basedOnDecidedAt: record.basedOnDecidedAt, conditional: true }
             : null;
         explicitPendingGrant = null;
         publish({ record, pending: pending !== null });
