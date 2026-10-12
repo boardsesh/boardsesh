@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import { applyClimbOwnerAssignments, selectClimbOwnerAssignments } from '@boardsesh/db/queries';
 import type { BoardPresenceStats, ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { climbFieldResolvers } from '../graphql/resolvers/climbs/field-resolvers';
 import { climbQueries } from '../graphql/resolvers/climbs/queries';
 import { favoriteClimbsQuery } from '../graphql/resolvers/favorites/favorite-climbs-query';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
+import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { analyzeGradeOutlier } from '../graphql/resolvers/social/proposals/grade-analysis';
 import {
   canReadClimbContent,
@@ -326,6 +328,65 @@ describeWithDatabase('draft climbs on the read paths outside sync (real DB)', ()
       // These rows contain no sender identity: this check covers climb details.
       const redacted = await redactBoardClimbs(history, STRANGER);
       expect(redacted.map((climb) => climb.name)).toEqual([`Name of ${NULL_DRAFT_FLAG}`, `Name of ${PUBLISHED}`, null]);
+    });
+  });
+
+  // The cases above are the state between this release's deploy and the owner
+  // backfill: an imported draft that never got an owner is read by no one, its
+  // setter's linked account included. The release runbook runs the backfill
+  // before that deploy (it needs nothing from this release), so a setter never
+  // sees that state. This is what the backfill gives back, on the three paths a
+  // setter reads their own drafts through: the drafts list, the climb by link,
+  // and the board sync's pull with no audience, which every shipped app sends.
+  describe('after the owner backfill', () => {
+    const syncedClimbUuids = async (ctx: ConnectionContext) => {
+      const page = await syncQueries.syncClimbs(
+        undefined,
+        { boardType: BOARD, layoutId: LAYOUT_ID, cursor: null, limit: 50 },
+        ctx,
+      );
+      return page.documents.map((document) => String((document as { uuid: unknown }).uuid)).sort();
+    };
+    const listedDrafts = async (ctx: ConnectionContext) => {
+      const search = await climbQueries.searchClimbs(null, { input: { ...boardInput, onlyDrafts: true } }, ctx);
+      const drafts = await climbFieldResolvers.climbs(search as Parameters<typeof climbFieldResolvers.climbs>[0]);
+      return drafts.map((climb) => climb.uuid);
+    };
+
+    it('returns the linked setter their imported draft everywhere they read it, and nobody else', async () => {
+      // Before: nobody, the linked setter included.
+      expect(await listedDrafts(ctxFor(LINKED_SETTER_ACCOUNT))).toEqual([]);
+      expect(await syncedClimbUuids(ctxFor(LINKED_SETTER_ACCOUNT))).not.toContain(OWNERLESS_DRAFT);
+
+      // The backfill's own match and write, kept to this fixture's climb so no
+      // other file's rows are touched. The match is what decides: exactly one
+      // account links the draft's setter on this board.
+      const assignments = (
+        await selectClimbOwnerAssignments(db, { afterUuid: null, limit: 500, boardType: BOARD, kinds: ['drafts'] })
+      ).filter((assignment) => ALL_CLIMBS.includes(assignment.uuid));
+      expect(assignments).toEqual([{ uuid: OWNERLESS_DRAFT, userId: LINKED_SETTER_ACCOUNT }]);
+      try {
+        expect(await applyClimbOwnerAssignments(db, assignments)).toBe(1);
+
+        expect(await listedDrafts(ctxFor(LINKED_SETTER_ACCOUNT))).toEqual([OWNERLESS_DRAFT]);
+        const opened = await climbQueries.climb(
+          {},
+          { ...boardInput, climbUuid: OWNERLESS_DRAFT },
+          ctxFor(LINKED_SETTER_ACCOUNT),
+        );
+        expect(opened?.uuid).toBe(OWNERLESS_DRAFT);
+        expect(await syncedClimbUuids(ctxFor(LINKED_SETTER_ACCOUNT))).toContain(OWNERLESS_DRAFT);
+
+        for (const viewerId of [DRAFT_OWNER, STRANGER]) {
+          expect(await listedDrafts(ctxFor(viewerId))).not.toContain(OWNERLESS_DRAFT);
+          expect(
+            await climbQueries.climb({}, { ...boardInput, climbUuid: OWNERLESS_DRAFT }, ctxFor(viewerId)),
+          ).toBeNull();
+          expect(await syncedClimbUuids(ctxFor(viewerId))).not.toContain(OWNERLESS_DRAFT);
+        }
+      } finally {
+        await db.execute(sql`UPDATE board_climbs SET user_id = NULL WHERE uuid = ${OWNERLESS_DRAFT}`);
+      }
     });
   });
 });
