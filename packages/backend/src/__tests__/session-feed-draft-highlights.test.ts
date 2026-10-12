@@ -148,4 +148,54 @@ describe('a feed card never features an unlisted or community-hidden climb', () 
     expect(daily?.hardestSend?.climbName ?? null).toBeNull();
     expect(daily?.hardestSend?.frames ?? null).toBeNull();
   });
+
+  describe("the card's featured beta clip", () => {
+    const clipFor = (climbUuid: string) => `https://www.instagram.com/p/${climbUuid}-clip/`;
+    const PUBLIC_CLIP = clipFor(PUBLISHED);
+
+    /** A listed clip attached to `tick`, on `climbUuid`, posted by the climber who sent it. */
+    const attachClip = (tickUuid: string, climbUuid: string) =>
+      db.execute(sql`INSERT INTO board_beta_links
+        (board_type, climb_uuid, link, is_listed, tick_uuid, created_by_user_id, angle)
+        VALUES ('kilter', ${climbUuid}, ${clipFor(climbUuid)}, true, ${tickUuid}, ${CLIMBER}, 40)`);
+
+    const featuredFor = async (viewerId: string) => {
+      const feed = await sessionFeedQueries.sessionGroupedFeed(null, { input: { limit: 20 } }, context(viewerId));
+      return feed.sessions.find((session) => session.sessionId === SESSION)?.featuredBeta ?? null;
+    };
+
+    beforeEach(async () => {
+      await db.execute(
+        sql`DELETE FROM board_beta_links WHERE link LIKE 'https://www.instagram.com/p/draft-highlight-%'`,
+      );
+      await attachClip(PUBLIC_TICK, PUBLISHED);
+    });
+
+    // Each harder than the published climb, so a leak would be the clip featured.
+    it.each([
+      ['a draft', DRAFT_TICK, DRAFT],
+      ['an unlisted climb', UNLISTED_TICK, UNLISTED],
+      ['a community-hidden climb', HIDDEN_TICK, HIDDEN],
+    ])('never features a clip on %s to a stranger, and features the next one', async (_label, tickUuid, climbUuid) => {
+      await attachClip(tickUuid, climbUuid);
+      const featured = await featuredFor(VIEWER);
+      expect(featured?.betaLink.link).toBe(PUBLIC_CLIP);
+      expect(featured?.tick).toMatchObject({ climbUuid: PUBLISHED, climbName: 'Published climb' });
+    });
+
+    it.each([
+      ['their draft', DRAFT_TICK, DRAFT, 'Private draft'],
+      ['their unlisted climb', UNLISTED_TICK, UNLISTED, 'Unlisted climb'],
+    ])('features the clip on %s to the setter', async (_label, tickUuid, climbUuid, climbName) => {
+      await attachClip(tickUuid, climbUuid);
+      const featured = await featuredFor(SETTER);
+      expect(featured?.betaLink.link).toBe(clipFor(climbUuid));
+      expect(featured?.tick).toMatchObject({ climbUuid, climbName });
+    });
+
+    it('features a clip on a community-hidden climb to no one, its setter included', async () => {
+      await attachClip(HIDDEN_TICK, HIDDEN);
+      expect((await featuredFor(SETTER))?.betaLink.link).toBe(PUBLIC_CLIP);
+    });
+  });
 });

@@ -85,7 +85,10 @@ function dailyCardTickSql(tickAlias: string, viewerUserId: string | null | undef
  * feed card and the summary pick the same hardest send. The wall rule is
  * applied separately.
  */
-function listedUnhiddenClimbSql(alias: 'cf' | 'cf_rank' | 'cf_daily', viewerUserId: string | null | undefined): SQL {
+function listedUnhiddenClimbSql(
+  alias: 'cf' | 'cf_rank' | 'cf_daily' | 'cf_beta',
+  viewerUserId: string | null | undefined,
+): SQL {
   const column = (name: string) => sql.raw(`${alias}.${name}`);
   return sql`(${ownedOrPublicReferenceClimbCondition(
     { isDraft: column('is_draft'), isListed: column('is_listed'), userId: column('user_id') },
@@ -1594,11 +1597,10 @@ async function fetchTickHighlightsByUuid(
       -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
       -- feed already supports — instead of the row vanishing and shorting the page.
       AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
-      -- A draft is its owner's alone. Same shape as the spray rule above: for
-      -- anyone else the climb's name, frames and setter come back NULL.
-      AND ${climbDraftVisibilityCondition({ isDraft: sql`cf.is_draft`, userId: sql`cf.user_id` }, viewerUserId)}
-      -- A climb the community hid is not named on a feed card, to anyone.
-      AND cf.is_hidden IS NOT TRUE
+      -- A card names only a climb it may feature: the viewer's own, or
+      -- published, listed and not hidden. Same shape as the spray rule above:
+      -- for anyone else the climb's name, frames and setter come back NULL.
+      AND ${listedUnhiddenClimbSql('cf', viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
@@ -1899,7 +1901,20 @@ function betaCandidateJoinSql() {
       )
       AND bl.is_listed IS TRUE
       AND bl.link !~* '^https?://([a-z0-9-]+\\.)*kayaclimb\\.com/'
+    -- The climb the clip is on, for the card's climb rule (betaClimbFeaturableSql).
+    LEFT JOIN board_climbs cf_beta
+      ON cf_beta.uuid = COALESCE(bca_video.canonical_uuid, t.climb_uuid)
+      AND cf_beta.board_type = t.board_type
   `;
+}
+
+/**
+ * The card features a clip only on a climb it may name: the viewer's own, or
+ * published, listed and not hidden, the hardest send's rule. Otherwise the
+ * next clip is picked. A clip whose climb row has not arrived yet still counts.
+ */
+function betaClimbFeaturableSql(viewerUserId: string | null | undefined): SQL {
+  return sql`(cf_beta.uuid IS NULL OR ${listedUnhiddenClimbSql('cf_beta', viewerUserId)})`;
 }
 
 function betaCandidateRankSql(partitionExpression: SQL) {
@@ -1960,6 +1975,7 @@ async function fetchSessionFeaturedBetaRows(
         -- The row carries the beta link's url and climb uuid, so a link on a
         -- spray climb the viewer cannot see is not a candidate.
         AND ${sprayTickVisibleSql('t', viewerUserId)}
+        AND ${betaClimbFeaturableSql(viewerUserId)}
     )
     SELECT *
     FROM ranked
@@ -2013,8 +2029,9 @@ async function fetchDailyFeaturedBetaRows(
         AND bcs_beta.angle = t.angle
       WHERE t.status IN ('flash', 'send')
         ${batchTickFilter}
-        -- Same rule as the session query above.
+        -- Same rules as the session query above.
         AND ${sprayTickVisibleSql('t', viewerUserId)}
+        AND ${betaClimbFeaturableSql(viewerUserId)}
     )
     SELECT *
     FROM ranked
