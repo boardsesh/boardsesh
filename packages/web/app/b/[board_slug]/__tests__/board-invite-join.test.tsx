@@ -33,4 +33,19 @@ describe('board invite Join confirmation', () => {
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
+  it('treats the redirect a successful Join ends in as success, not a failure', async () => {
+    // Next rejects the action call with its redirect once the router has
+    // started navigating to the board.
+    joinBoardInvite.mockRejectedValue(
+      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;push;/b/friends-garage/40/list;303;' }),
+    );
+    render(createElement(BoardInviteJoin, { boardName: 'Friends Garage', inviteToken: TOKEN }));
+    const join = screen.getByRole('button', { name: 'boardShareLink.join' });
+    fireEvent.click(join);
+    await waitFor(() => expect(joinBoardInvite).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('alert')).toBeNull();
+    // Join stays disabled while the board page loads.
+    expect((join as HTMLButtonElement).disabled).toBe(true);
+  });
 });

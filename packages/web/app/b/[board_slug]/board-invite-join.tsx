@@ -6,8 +6,23 @@ import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
+import { unstable_rethrow } from 'next/navigation';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { joinBoardInvite } from './join-board-invite';
+
+/**
+ * Whether a rejected action call is Next's own navigation rather than a
+ * failure. A successful Join ends in `redirect()`, and Next rejects the call
+ * with it after its router has already started for the board page.
+ */
+function isNextNavigation(error: unknown): boolean {
+  try {
+    unstable_rethrow(error);
+    return false;
+  } catch {
+    return true;
+  }
+}
 
 /** Only a deliberate button tap sends the grant mutation. */
 export default function BoardInviteJoin({ boardName, inviteToken }: { boardName: string; inviteToken: string }) {
@@ -19,14 +34,15 @@ export default function BoardInviteJoin({ boardName, inviteToken }: { boardName:
     setJoining(true);
     setFailed(false);
     try {
+      // Resolving at all means no redirect: the join did not happen.
       await joinBoardInvite(inviteToken);
-      setFailed(true);
-    } catch {
-      // Server-action errors must not report the token argument.
-      setFailed(true);
-    } finally {
-      setJoining(false);
+    } catch (error) {
+      // Joined: keep Join disabled while the board page loads.
+      if (isNextNavigation(error)) return;
+      // Anything else is a failure; server-action errors must not report the token argument.
     }
+    setFailed(true);
+    setJoining(false);
   };
   return (
     <Container maxWidth="sm">
