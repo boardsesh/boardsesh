@@ -2022,22 +2022,28 @@ nothing about who gets it.
 
 #### Leaving the reference set
 
-`trg_board_climbs_reference_membership` (migration 0264) fires when an update changes a protected owner or moves a
+`trg_board_climbs_reference_membership` (introduced in 0265, guarded in 0269) fires when an update changes a protected owner or moves a
 climb across the line, in either direction, whichever writer made it.
 
 - **Leaving** writes one `sync_deletions` row for `board_climbs` with no user, so
-  every device applies it. No stream delivers the new row to anyone but its owner, and
+  every device without current read access applies it. No stream delivers the new row to anyone but its owner, and
   without the marker every other device would keep the published copy. Bulk imports
   that delete and recreate a board set `boardsesh.suppress_sync_tombstones`; the marker
   honours it like the delete triggers do.
-- **The marker is stamped one second before the row's new `updated_at`.** A device
-  deletes a row that is no newer than the marker, a tie included. The owner's device
-  can meet the marker after it has stored the re-delivered row (a replay of the
-  deletion stream does it), and a marker at the same instant would then delete the
-  owner's row for good, because their cursor is already past it. One second earlier it
-  can only match an older copy. Every older copy is at least a stability window older
-  than the new row, so none is missed while `SYNC_STABILITY_WINDOW_SECONDS` stays
-  above one second; it defaults to 30.
+- **The marker covers the old version, including a slow transaction.** Its guard
+  is the next whole UTC second after the old `updated_at` and the write clock.
+  Another device can fetch the old public MVCC row while privatization remains
+  uncommitted, even after that row is older than the stability window. Backdating
+  from the transaction's start would miss that copy. A whole-second guard also
+  orders correctly against variable-fraction ISO strings in installed SQLite.
+- **Current readers do not receive membership withdrawals.** These markers carry
+  `is_membership_withdrawal`; the page query checks current sync public/owner and
+  spray-wall access in the same snapshot and filters before pagination. This
+  preserves the current owner's or republished row on replay without advancing
+  document timestamps into the future. A later publication restriction or
+  protected-owner transfer writes a new marker. Wall/grant revocation still
+  uses its existing privacy invalidation protocol. Hard-delete markers retain
+  their original delivery behavior.
 - **Either direction** moves the climb's stats and grades rows to the climb's new
   cursor position (`updated_at` / `computed_at` and a new `sync_seq`). They changed
   stream with the climb and did not change themselves, so they sit behind every
@@ -2049,7 +2055,7 @@ climb across the line, in either direction, whichever writer made it.
   delete the owner's re-delivered grade. A device drops a climb's stats, grades and
   holds-index entries when it applies the climb's marker.
 
-An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a back-dated marker goes only to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
+An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a membership-withdrawal marker is scoped to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
 client engine against the real resolvers: other devices drop the climb, its owner
 keeps it on a device that had it and on a fresh install, a replay of the deletion
 stream does not remove it, and publishing it again delivers it to everyone.

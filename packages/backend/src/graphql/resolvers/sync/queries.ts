@@ -2,6 +2,7 @@ import {
   publicReferenceClimbSql,
   REFERENCE_EXCLUDED_BOARD_TYPES,
   referenceFirstAscentSql,
+  sprayClimbVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { sql, type SQL } from 'drizzle-orm';
 import type {
@@ -11,6 +12,7 @@ import type {
   SyncDeletionsResult,
   SyncCursorInput,
 } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -304,6 +306,18 @@ function climbAccessCondition(access: ClimbAccess, alias: 'board_climbs' | 'bc')
   const entitled = viewerEntitlementCondition(alias, access.viewerUserId);
   if (access.stream === 'union') return sql`(${reference} OR ${entitled})`;
   return sql`(${entitled} AND NOT ${reference})`;
+}
+
+/** The union a supported board's sync can deliver, including the spray wall gate. */
+function currentlyReadableSyncClimbCondition(viewerUserId: string): SQL {
+  return sql`(
+    bc.board_type IN (${sql.join(
+      SUPPORTED_BOARDS.map((boardType) => sql`${boardType}`),
+      sql`, `,
+    )})
+    AND ${climbAccessCondition({ stream: 'union', viewerUserId }, 'bc')}
+    AND ${sprayClimbVisibilityCondition({ boardType: sql`bc.board_type`, layoutId: sql`bc.layout_id` }, viewerUserId)}
+  )`;
 }
 
 /**
@@ -1039,12 +1053,19 @@ export const syncQueries = {
       WHERE (user_id = ${userId} OR user_id IS NULL)
         AND (COALESCE(stream_at, deleted_at), id) > (${ts}::timestamp, ${seq}::bigint)
         AND COALESCE(stream_at, deleted_at) < ${safeCutoff}::timestamp
+        AND NOT (is_membership_withdrawal AND table_name = 'board_climbs' AND EXISTS (
+          SELECT 1 FROM board_climbs bc
+          WHERE bc.uuid = sync_deletions.record_id AND ${currentlyReadableSyncClimbCondition(userId)}
+        ))
       ORDER BY COALESCE(stream_at, deleted_at) ASC, id ASC
       LIMIT ${lim}
     `);
 
     const rows = rowsFromResult<RawRow>(result);
 
+    // Filter before LIMIT: installed clients stop on an empty deletion array,
+    // even when hasMore is true, so an authorized marker must not consume a slot.
+    // Visibility uses this statement's snapshot; a later hide writes a new marker.
     const deletions = rows.map((row) => ({
       tableName: String(row.table_name),
       recordId: String(row.record_id),

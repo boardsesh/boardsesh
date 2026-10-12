@@ -37,29 +37,39 @@ const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip
 
 type ClimbState = { isDraft: boolean; isListed: boolean; ownerId?: string | null };
 
-async function seedClimb(uuid: string, state: ClimbState): Promise<void> {
+async function seedClimb(uuid: string, state: ClimbState, seededAt = SEEDED_AT): Promise<void> {
   await db.execute(sql`
     INSERT INTO board_climbs
       (uuid, board_type, layout_id, name, frames, is_draft, is_listed, compatible_size_ids, user_id, updated_at)
     VALUES
       (${uuid}, ${BOARD_TYPE}, ${LAYOUT_ID}, ${uuid}, 'p1145r12', ${state.isDraft}, ${state.isListed},
-       ARRAY[${SIZE_ID}]::int[], ${state.ownerId ?? null}, ${SEEDED_AT}::timestamp)
+       ARRAY[${SIZE_ID}]::int[], ${state.ownerId ?? null}, ${seededAt}::timestamp)
   `);
   await db.execute(sql`
     INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, updated_at)
-    VALUES (${BOARD_TYPE}, ${uuid}, 40, 21.5, 3, ${SEEDED_AT}::timestamp),
-           (${BOARD_TYPE}, ${uuid}, 45, 22.5, 1, ${SEEDED_AT}::timestamp)
+    VALUES (${BOARD_TYPE}, ${uuid}, 40, 21.5, 3, ${seededAt}::timestamp),
+           (${BOARD_TYPE}, ${uuid}, 45, 22.5, 1, ${seededAt}::timestamp)
   `);
   await db.execute(sql`
     INSERT INTO board_climb_grades
       (board_type, climb_uuid, angle, local_grade, confidence, ascensionist_count, model_version, coeff_version,
        computed_at)
-    VALUES (${BOARD_TYPE}, ${uuid}, 40, 20, 'low', 3, 'membership-model', 'membership-coeff', ${SEEDED_AT}::timestamp)
+    VALUES (${BOARD_TYPE}, ${uuid}, 40, 20, 'low', 3, 'membership-model', 'membership-coeff', ${seededAt}::timestamp)
   `);
 }
 
 type Marker = { deleted_at: string; user_id: string | null };
 type CursorPosition = { at: string; seq: string };
+
+function transactionSignal() {
+  let resolveSignal!: () => void;
+  let rejectSignal!: (reason: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolveSignal = resolvePromise;
+    rejectSignal = rejectPromise;
+  });
+  return { promise, resolve: resolveSignal, reject: rejectSignal };
+}
 
 async function markersOf(uuid: string): Promise<Marker[]> {
   return rowsFromResult<Marker>(
@@ -141,13 +151,11 @@ describeWithDatabase('a climb changing side of the publication rule (real DB)', 
       await setFlags(CLIMB, nextState);
 
       const markers = await markersOf(CLIMB);
-      // No user on the marker: it is for every device, the owner's included.
+      // The log is global; delivery omits it for a currently authorized owner.
       expect(markers.map((marker) => marker.user_id)).toEqual([null]);
-      // One second before the row's new position, never at it: a device deletes
-      // a row no newer than the marker, and the owner's re-delivered row is
-      // exactly as new as the change.
-      const climb = await climbCursor(CLIMB);
-      expect(await secondsBetween(markers[0].deleted_at, climb.at)).toBe(1);
+      // The withdrawal covers the old copy even when its transaction stays
+      // open while another device reads that copy through MVCC.
+      expect(await secondsBetween(SEEDED_AT, markers[0].deleted_at)).toBeGreaterThan(0);
     });
 
     it('writes the same marker for a climb nobody owns', async () => {
@@ -201,7 +209,7 @@ describeWithDatabase('a climb changing side of the publication rule (real DB)', 
         await db.execute(sql`UPDATE board_climbs SET user_id = ${nextOwner} WHERE uuid = ${CLIMB}`);
         const markers = await markersOf(CLIMB);
         expect(markers.map((marker) => marker.user_id)).toEqual([OWNER_ID]);
-        expect(await secondsBetween(markers[0].deleted_at, (await climbCursor(CLIMB)).at)).toBe(1);
+        expect(await secondsBetween(SEEDED_AT, markers[0].deleted_at)).toBeGreaterThan(0);
       },
     );
 
@@ -366,6 +374,101 @@ describeWithDatabase('a climb changing side of the publication rule (real DB)', 
     }
 
     const everything = { statsAngles: [40, 45], gradeAngles: [40] };
+
+    it('withdraws an old public copy read while privatization stays uncommitted', async () => {
+      const [timestamp] = rowsFromResult<{ at: string }>(
+        await db.execute(sql`SELECT (clock_timestamp() AT TIME ZONE 'UTC' - interval '50 milliseconds')::text AS at`),
+      );
+      await seedClimb(CLIMB, { ...PUBLISHED, ownerId: OWNER_ID }, timestamp.at);
+      const otherDevice = await installFor(OTHER_ID);
+      const ownerDevice = await installFor(OWNER_ID);
+      const writer = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+      const release = transactionSignal();
+      const ready = transactionSignal();
+      const transaction = writer.begin(async (connection) => {
+        await connection`UPDATE board_climbs SET is_draft = true, is_listed = false WHERE uuid = ${CLIMB}`;
+        // The old MVCC row is now eligible even with the minimum deployed
+        // two-second window. A window cannot prevent reads during a long write.
+        await connection`SELECT pg_sleep(2.1)`;
+        ready.resolve();
+        await release.promise;
+      });
+      void transaction.catch(ready.reject);
+      try {
+        await ready.promise;
+        await pull(otherDevice);
+        expect(await held(otherDevice, CLIMB)).toMatchObject({ climb: { is_draft: 0, is_listed: 1 }, ...everything });
+        release.resolve();
+        await transaction;
+        await pull(otherDevice);
+        // The installed engine here retires the climb. Dependent-row cleanup
+        // is part of the newer client change, independently covered in #6329.
+        expect((await held(otherDevice, CLIMB)).climb).toBeNull();
+        await pull(ownerDevice);
+        await forgetDeletionCursor(ownerDevice);
+        await pull(ownerDevice);
+        expect(await held(ownerDevice, CLIMB)).toMatchObject({
+          climb: { user_id: OWNER_ID, is_draft: 1 },
+          ...everything,
+        });
+      } finally {
+        release.resolve();
+        try {
+          await transaction;
+        } finally {
+          await writer.end();
+        }
+      }
+    }, 10_000);
+
+    it('covers a later public edit when privatization began in an earlier transaction', async () => {
+      await seedClimb(CLIMB, { ...PUBLISHED, ownerId: OWNER_ID });
+      const otherDevice = await installFor(OTHER_ID);
+      const writer = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+      try {
+        await writer`BEGIN`;
+        await db.execute(sql`UPDATE board_climbs SET name = 'A later public edit' WHERE uuid = ${CLIMB}`);
+        const edited = await climbCursor(CLIMB);
+        await pull(otherDevice);
+        expect((await held(otherDevice, CLIMB)).climb).not.toBeNull();
+        await writer`UPDATE board_climbs SET is_listed = false WHERE uuid = ${CLIMB}`;
+        await writer`COMMIT`;
+        // NOW() on the older transaction can put the new row behind OLD.
+        expect(await secondsBetween((await climbCursor(CLIMB)).at, edited.at)).toBeGreaterThan(0);
+        await pull(otherDevice);
+        expect((await held(otherDevice, CLIMB)).climb).toBeNull();
+      } finally {
+        try {
+          await writer`ROLLBACK`;
+        } finally {
+          await writer.end();
+        }
+      }
+    });
+
+    it('uses a withdrawal guard that orders after variable-fraction timestamps in real SQLite', async () => {
+      const [timestamp] = rowsFromResult<{ at: string }>(
+        await db.execute(sql`
+          SELECT (date_trunc('second', clock_timestamp() AT TIME ZONE 'UTC')
+                  - interval '3 seconds' + interval '100 milliseconds')::text AS at
+        `),
+      );
+      await seedClimb(CLIMB, { ...PUBLISHED, ownerId: OWNER_ID }, timestamp.at);
+      const device = await installFor(OTHER_ID);
+      await pull(device);
+      const oldTimestamp = String((await held(device, CLIMB)).climb?.updated_at);
+      expect(oldTimestamp).toMatch(/\.1Z$/);
+      // Within one second, numerically newer .100001Z sorts BEFORE .1Z.
+      const misleadingGuard = oldTimestamp.replace('.1Z', '.100001Z');
+      const comparison = await device.database.getFirstAsync<{ covered: number }>(
+        'SELECT updated_at <= ? AS covered FROM board_climbs WHERE uuid = ?',
+        [misleadingGuard, CLIMB],
+      );
+      expect(comparison?.covered).toBe(0);
+      await setFlags(CLIMB, UNLISTED);
+      await pull(device);
+      expect((await held(device, CLIMB)).climb).toBeNull();
+    });
 
     it.each([
       ['unpublished', DRAFT, { is_draft: 1, is_listed: 0 }],

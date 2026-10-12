@@ -113,6 +113,14 @@ const referenceMembershipSchema = readFileSync(
   new URL('../../../db/drizzle/0265_climb_reference_membership.sql', import.meta.url),
   'utf8',
 );
+// The generated discriminator and trigger replacement are the production guard
+// contract; replay both instead of maintaining a separate fixture copy.
+const membershipWithdrawalSchema = [
+  '0268_climb_membership_withdrawal_flag.sql',
+  '0269_climb_membership_withdrawal_guard.sql',
+]
+  .map((filename) => readFileSync(new URL(`../../../db/drizzle/${filename}`, import.meta.url), 'utf8'))
+  .join('\n');
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
@@ -2200,4 +2208,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${deletionCutoffFunction}
   DROP FUNCTION IF EXISTS public.stamp_sync_deletion_stream_at() CASCADE;
   ${deletionStreamTrigger}
+  ${membershipWithdrawalSchema}
 `;

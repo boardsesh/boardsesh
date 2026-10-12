@@ -179,8 +179,18 @@ via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`)
 `syncDeletions` additionally fences active writer transactions. A DB-owned
 `stream_at` insertion timestamp orders new markers; historical NULLs use
 `COALESCE(stream_at, deleted_at)` so installed cursors replay unchanged. The wire
-`deletedAt` still carries the original resurrection guard (including backdated
-publication markers), never `stream_at`. The resolver first reads a safe cutoff
+`deletedAt` carries the resurrection guard, never `stream_at`. Membership
+withdrawals guard the next whole UTC second after the old version and write
+clock, covering copies read during uncommitted privatization. Their internal
+`is_membership_withdrawal` flag lets the page query omit a withdrawal when the
+current climb remains readable to the viewer. This check shares the page's
+snapshot and runs before pagination; installed clients never receive an empty
+filtered page hiding later markers. Owners and republished climbs survive a
+replay, while a later publication restriction or protected-owner transfer
+creates a new marker. Hard-delete delivery
+and climb document timestamps retain their existing behavior.
+
+The resolver first reads a safe cutoff
 from a narrow primary helper, then runs a separate fresh READ COMMITTED page
 below it. The oldest active writer bounds the cutoff even with a zero-second
 stability window. Prepared writers, unavailable metadata, or missing helper
