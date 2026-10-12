@@ -23,6 +23,7 @@ const captured = vi.hoisted(() => ({
   actionArgs: null as Record<string, unknown> | null,
   pickerOnBack: undefined as undefined | (() => void),
   pickerOnDetachedFailure: undefined as undefined | ((message: string) => void),
+  pickerMaxHeight: undefined as number | undefined,
   modalOnRequestClose: undefined as undefined | (() => void),
   boardImageProps: null as Record<string, unknown> | null,
   ran: undefined as undefined | string,
@@ -43,8 +44,13 @@ type ScrollEventStub = {
   contentOffset: { y: number };
 };
 
-// The list's animated ref: flashScrollIndicators is the scroll hint under test.
-const listScrollRef = vi.hoisted(() => ({ current: { flashScrollIndicators: vi.fn() } }));
+// The list's animated ref, empty until the ScrollView mock attaches itself to it (so a
+// ScrollView that stops taking the ref leaves nothing to flash).
+// flashScrollIndicators is the scroll hint under test.
+const flashScrollIndicators = vi.hoisted(() => vi.fn());
+const listScrollRef = vi.hoisted(() => ({
+  current: null as null | { flashScrollIndicators: () => void },
+}));
 
 const showToast = vi.hoisted(() => vi.fn());
 
@@ -115,6 +121,7 @@ vi.mock('react-native-reanimated', async () => {
       },
       ScrollView: ({
         children,
+        ref,
         style,
         showsVerticalScrollIndicator,
         bounces,
@@ -122,12 +129,14 @@ vi.mock('react-native-reanimated', async () => {
         onContentSizeChange,
       }: {
         children?: ReactNode;
+        ref?: { current: unknown };
         style?: unknown;
         showsVerticalScrollIndicator?: boolean;
         bounces?: boolean;
         onScroll?: (event: ScrollEventStub) => void;
         onContentSizeChange?: (width: number, height: number) => void;
       }) => {
+        if (ref) ref.current = { flashScrollIndicators };
         captured.list = {
           maxHeight: flattenStyle(style).maxHeight,
           showsVerticalScrollIndicator,
@@ -201,11 +210,14 @@ vi.mock('../../playlist/InlinePlaylistPicker', () => ({
   InlinePlaylistPicker: ({
     onBack,
     onDetachedFailure,
+    maxHeight,
   }: {
     onBack?: () => void;
     onDetachedFailure?: (message: string) => void;
+    maxHeight?: number;
   }) => {
     captured.pickerOnBack = onBack;
+    captured.pickerMaxHeight = maxHeight;
     captured.pickerOnDetachedFailure = onDetachedFailure;
     return createElement('div', { 'data-picker': 'true' }, 'picker');
   },
@@ -542,10 +554,12 @@ describe('ClimbReactionMenu surface treatment', () => {
 // The menu is a quick peek at the climb: the list shows four rows and half of the
 // fifth, and the rest scroll under a fade and a flashed scroll bar.
 describe('ClimbReactionMenu action list window', () => {
-  // max(44, round(24 + body line height 22 × fontScale 1)), and 4pt of list padding.
-  const ROW = 46;
+  // 12pt of padding around the taller of the 22pt body line and the 24pt icon, and
+  // 4pt of list padding. The primary button row's first-frame estimate is 110.
+  const ROW = 48;
   const PADDING = 4;
-  const flash = listScrollRef.current.flashScrollIndicators;
+  const PRIMARY_ROW = 110;
+  const flash = flashScrollIndicators;
   const fadeIn = (container: HTMLElement) => container.querySelector('[data-testid="menu-fade"]');
 
   beforeEach(() => {
@@ -554,6 +568,8 @@ describe('ClimbReactionMenu action list window', () => {
     captured.ran = undefined;
     captured.boardImageProps = null;
     captured.pickerOnBack = undefined;
+    captured.pickerMaxHeight = undefined;
+    listScrollRef.current = null;
     flash.mockReset();
   });
   afterEach(() => {
@@ -589,9 +605,21 @@ describe('ClimbReactionMenu action list window', () => {
   it('re-cuts the window from the measured row height', () => {
     ctrl.listRows = 7;
     renderMenu();
-    // Material's 24pt body line makes 48pt rows, not the 46 the estimate assumed.
-    act(() => captured.list?.onContentSizeChange?.(352, 7 * 48 + PADDING * 2));
-    expect(captured.list?.maxHeight).toBeCloseTo(PADDING + 4.5 * 48);
+    // Rows laid out taller than the estimate: the measurement wins.
+    act(() => captured.list?.onContentSizeChange?.(352, 7 * 50 + PADDING * 2));
+    expect(captured.list?.maxHeight).toBeCloseTo(PADDING + 4.5 * 50);
+  });
+
+  // The case this layout is for: a portrait board on a phone takes its whole height
+  // budget, and the card under it lands on exactly four rows and a peek. The picker
+  // gets the same card height, so its cap pins the component to the sizing math.
+  it('lands on four rows and a peek under a board that takes its whole height budget', () => {
+    ctrl.board = { width: 60, height: 120 };
+    ctrl.listRows = 7;
+    const { getByLabelText } = renderMenu();
+    expect(captured.list?.maxHeight).toBeCloseTo(PADDING + 4.5 * ROW);
+    act(() => fireEvent.click(getByLabelText('Add to Playlist')));
+    expect((captured.pickerMaxHeight as number) - PRIMARY_ROW).toBeCloseTo(PADDING + 4.5 * ROW);
   });
 
   it('shows fewer rows, still cut mid-row, when a short screen floors the board', () => {
@@ -653,6 +681,27 @@ describe('ClimbReactionMenu action list window', () => {
     // The picker unmounts the list; it comes back at the top, so the fade does too.
     act(() => fireEvent.click(getByLabelText('Add to Playlist')));
     act(() => captured.pickerOnBack?.());
+    expect(fadeOpacity()).toBe('1');
+  });
+
+  // Play next comes and goes as the session's current climb changes, with no scroll
+  // to tell the fade. A row added below a list scrolled to its end must bring it back.
+  it('brings the fade back when a row lands below a list scrolled to its end', () => {
+    ctrl.listRows = 7;
+    const { container, rerenderMenu } = renderMenu();
+    const endOffset = 7 * ROW + PADDING * 2 - (captured.list?.maxHeight as number);
+    act(() =>
+      captured.list?.onScroll?.({
+        contentSize: { height: 0 },
+        layoutMeasurement: { height: 0 },
+        contentOffset: { y: endOffset },
+      }),
+    );
+    rerenderMenu();
+    const fadeOpacity = () => fadeIn(container)?.parentElement?.getAttribute('data-opacity');
+    expect(fadeOpacity()).toBe('0');
+    ctrl.listRows = 8;
+    rerenderMenu();
     expect(fadeOpacity()).toBe('1');
   });
 

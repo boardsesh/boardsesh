@@ -89,6 +89,10 @@ describe('fitReactionListViewport', () => {
     expect(fitReactionListViewport(4, 46, 4, 200)).toEqual({ maxHeight: 200, scrollable: false });
   });
 
+  it('shows a list whole when only its bottom padding is short of room', () => {
+    expect(fitReactionListViewport(7, 46, 4, 7 * 46 + 4)).toEqual({ maxHeight: 7 * 46 + 8, scrollable: false });
+  });
+
   it('lands an exact four-and-a-half-row budget on four rows and a peek, through float error', () => {
     const viewport = fitReactionListViewport(7, 46, 4, 4 + 4.5 * 46 - 1e-9);
     expect(viewport.scrollable).toBe(true);
@@ -113,9 +117,9 @@ describe('fitReactionListViewport', () => {
 
 describe('computeReactionBoardMaxSize', () => {
   // Approximate the reaction menu's reserves at fontScale 1: a 3-button row (~110),
-  // a 56pt title reserve, and 46pt list rows with 4pt of padding at each end.
-  // Screen-size + item count vary per case.
-  const ROW = 46;
+  // a 56pt title reserve, and 48pt list rows (12pt padding around the 24pt icon) with
+  // 4pt of padding at each end. Screen-size + item count vary per case.
+  const ROW = 48;
   const LIST_PADDING = 4;
   const PRIMARY_ROW = 110;
   const TEXT_RESERVE = 56;
@@ -191,9 +195,9 @@ describe('computeReactionBoardMaxSize', () => {
   });
 
   it('makes the Kilter board the hero on a 932pt phone with seven actions', () => {
-    // Was ~284pt tall when the whole seven-row list was reserved.
+    // Reserving the whole seven-row list left it ~270pt tall.
     const board = boardFor(430, 932, 7, { insetTop: 59, insetBottom: 34, aspect: 0.718 });
-    expect(board).toBeGreaterThanOrEqual(395);
+    expect(board).toBeGreaterThanOrEqual(390);
   });
 
   it('leaves the list exactly four rows and a peek when the board takes its budget', () => {

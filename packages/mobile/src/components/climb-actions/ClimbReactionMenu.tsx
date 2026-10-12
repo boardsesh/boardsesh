@@ -67,6 +67,8 @@ const PRIMARY_ACTION_IDS: readonly ClimbActionId[] = ['tick', 'playlist', 'share
 // on the way back from the playlist picker, which remounts the list) to say "this
 // scrolls" with the platform's own cue.
 export const SCROLL_HINT_FLASH_DELAY_MS = 350;
+// The leading icon in every list row and primary button.
+const ACTION_ICON_SIZE = 24;
 // Keep the scroll bar clear of the card's rounded bottom corner.
 const SCROLL_INDICATOR_INSETS = { bottom: spacing[2] };
 
@@ -220,12 +222,13 @@ export function ClimbReactionMenu({
     });
   }, [progress, reduceMotion, finishClose]);
 
-  // The list remounts at the top, so its fade comes back with it.
-  const menuFadeOpacity = useSharedValue(1);
+  // The action list's scroll position, written on the UI thread; it drives the bottom
+  // fade. The list remounts at the top, so coming back from the picker resets it.
+  const listScrollOffset = useSharedValue(0);
   const backToMenu = useCallback(() => {
-    menuFadeOpacity.value = 1;
+    listScrollOffset.value = 0;
     setView('menu');
-  }, [menuFadeOpacity]);
+  }, [listScrollOffset]);
   // Stable so useClimbActions' memo doesn't rebuild the action list every render.
   const openPlaylist = useCallback(() => setView('playlist'), []);
 
@@ -369,13 +372,19 @@ export function ClimbReactionMenu({
   // Small breathing room below the top safe area — the preview sits just under the
   // status bar so the top isn't wasted and the action list gets more room below.
   const contentTopOffset = Math.round(windowHeight * 0.02);
-  // Row height for the action list (ListRow: minHeight 44 + 12pt vertical padding around
-  // one line of `body` text growing with fontScale). Only a window of four rows and a
-  // peek is reserved when sizing the board, so this sets both the board and where the
-  // list's bottom edge cuts a row. Measured off the list's content height (every row is
-  // one line, so they're all the same height); the type-scale estimate stands in for the
-  // first frame. The rows' height never depends on the board, so this can't loop.
-  const actionRowHeightEstimate = Math.max(44, Math.round(24 + (textStyles.body.lineHeight ?? 22) * fontScale));
+  // Row height for the action list. A ListRow is 12pt of padding above and below the
+  // taller of one line of `body` text and the 24pt leading icon (Icon caps its own
+  // growth at 1.5× fontScale), floored at 44. Only a window of four rows and a peek is
+  // reserved when sizing the board, so this sets both the board and where the list's
+  // bottom edge cuts a row. Measured off the list's content height (every row is one
+  // line, so they're all the same height); the estimate stands in for the first frame,
+  // and matching it to the real row keeps the board from re-sizing as the menu opens.
+  // The rows' height never depends on the board, so this can't loop.
+  const actionRowContentEstimate = Math.max(
+    (textStyles.body.lineHeight ?? 22) * fontScale,
+    ACTION_ICON_SIZE * Math.min(fontScale, 1.5),
+  );
+  const actionRowHeightEstimate = Math.max(44, Math.round(24 + actionRowContentEstimate));
   const [measuredActionRowHeight, setMeasuredActionRowHeight] = useState(0);
   const actionRowHeight = measuredActionRowHeight || actionRowHeightEstimate;
   const listActionCount = listActions.length;
@@ -492,31 +501,33 @@ export function ClimbReactionMenu({
   );
 
   // The bottom fade cues "more below", then gets out of the way as the list reaches its
-  // end so the last row (Report, Delete) never reads as disabled. Driven on the UI
-  // thread off the scroll position: no JS work and no re-render per scroll frame.
+  // end so the last row (Report, Delete) never reads as disabled. The scroll offset is
+  // written on the UI thread (no JS work, no re-render per scroll frame); the content
+  // and window heights come from this render, so a row appearing or the window resizing
+  // without a scroll (Play next coming and going mid-session, a rotation) re-derives it.
   const listScrollRef = useAnimatedRef<Animated.ScrollView>();
+  const listContentHeight = listActionCount * actionRowHeight + spacing[1] * 2;
   const fadeOutDistance = actionRowHeight * REACTION_LIST_PEEK_ROWS;
-  const handleListScroll = useAnimatedScrollHandler(
-    {
-      onScroll: (event) => {
-        const distanceToEnd = event.contentSize.height - event.layoutMeasurement.height - event.contentOffset.y;
-        menuFadeOpacity.value = interpolate(distanceToEnd, [0, fadeOutDistance], [0, 1], Extrapolation.CLAMP);
-      },
+  const handleListScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      listScrollOffset.value = event.contentOffset.y;
     },
-    [fadeOutDistance],
-  );
-  const menuFadeStyle = useAnimatedStyle(() => ({ opacity: menuFadeOpacity.value }));
+  });
+  const menuFadeStyle = useAnimatedStyle(() => {
+    const distanceToEnd = listContentHeight - listMaxHeight - listScrollOffset.value;
+    return { opacity: interpolate(distanceToEnd, [0, fadeOutDistance], [0, 1], Extrapolation.CLAMP) };
+  });
 
   // Flash the scroll bar once the card has sprung in, and again whenever the list
   // remounts on the way back from the playlist picker. Straight away under Reduce
   // Motion, which skips the spring; it's the system's own fade, not decorative motion.
   useEffect(() => {
     if (view !== 'menu' || !menuScrollable) return;
-    const flash = setTimeout(
+    const flashTimer = setTimeout(
       () => listScrollRef.current?.flashScrollIndicators(),
       reduceMotion ? 0 : SCROLL_HINT_FLASH_DELAY_MS,
     );
-    return () => clearTimeout(flash);
+    return () => clearTimeout(flashTimer);
   }, [view, menuScrollable, reduceMotion, listScrollRef]);
   const isDark = colorScheme === 'dark';
   const menuFadeColors = useMemo<readonly [string, string]>(() => {
@@ -676,7 +687,7 @@ export function ClimbReactionMenu({
                       <ShowcaseAnchorView key={action.id} name="play-next" enabled={action.id === 'playNext'}>
                         <ListRow
                           title={action.title}
-                          leading={<Icon name={action.icon} size={24} color={action.color} />}
+                          leading={<Icon name={action.icon} size={ACTION_ICON_SIZE} color={action.color} />}
                           onPress={action.run}
                           showSeparator={false}
                         />
@@ -728,7 +739,7 @@ function PrimaryActionButton({ action, fillColor, labelColor }: PrimaryActionBut
         pressed && styles.primaryButtonPressed,
       ]}
     >
-      <Icon name={action.icon} size={24} color={action.color} />
+      <Icon name={action.icon} size={ACTION_ICON_SIZE} color={action.color} />
       <Text variant="caption1" numberOfLines={2} style={[styles.primaryButtonLabel, { color: labelColor }]}>
         {action.title}
       </Text>
