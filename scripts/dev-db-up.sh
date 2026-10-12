@@ -10,8 +10,9 @@
 #   3. Ensures pg_hba.conf allows Docker network and Tailscale connections
 #   4. Ensures the postgres user has a password set
 #   5. Syncs drizzle migration tracker (public → drizzle schema)
-#   6. Runs drizzle migrations (to pick up any newer migrations not yet in the image)
-#   7. Installs the pg-boss job queue schema the backend refuses to start without
+#   6. Installs the deletion-sync cutoff helper migration 0268 requires
+#   7. Runs drizzle migrations (to pick up any newer migrations not yet in the image)
+#   8. Installs the pg-boss job queue schema the backend refuses to start without
 
 set -e
 
@@ -158,10 +159,31 @@ ensure_job_queue_schema() {
   )
 }
 
+# Migration 0268 refuses to run until an administrator has installed the
+# deletion-sync cutoff helper and its NOLOGIN owner (docs/sync-deletions-cutoff.md):
+# the migration login cannot grant the statistics role the helper needs. A dev
+# volume created before that migration has neither, so install them first, with
+# the same development adapter CI, E2E and the dev-db image build use. It returns
+# early when the helper is already there and matches its contract, so every run
+# after the first is a no-op, and it refuses any host but a local one.
+ensure_sync_deletions_cutoff_helper() {
+  echo "Ensuring the deletion-sync cutoff helper is installed..."
+  (
+    cd "$REPO_ROOT/packages/db"
+    # Same reason as below: nothing from the developer's shell may pick the
+    # target, or the runtime role the helper grants to.
+    env -u DB_URL -u POSTGRES_URL -u DATABASE_URL -u SYNC_CUTOFF_RUNTIME_ROLE \
+      SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP=true \
+      SYNC_CUTOFF_ADMIN_DATABASE_URL="postgresql://postgres:password@localhost:5432/main" \
+      "$REPO_ROOT/node_modules/.bin/tsx" scripts/bootstrap-sync-deletions-cutoff-development.ts --apply
+  )
+}
+
 prepare_docker_postgres() {
   ensure_postgres_network_access
   ensure_postgres_password
   sync_drizzle_migration_tracker
+  ensure_sync_deletions_cutoff_helper
   run_pending_drizzle_sql_migrations
   ensure_job_queue_schema
   write_dev_db_env "localhost" "$1" "$(detect_local_redis_url)"
