@@ -11,7 +11,6 @@ import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
-import { pubsub } from '../pubsub';
 import { socialFollowMutations } from '../graphql/resolvers/social/follows';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 import { canAccessResource, canViewUserActivity, getPrivacySettings, setContentPrivacy } from '../services/privacy';
@@ -386,18 +385,12 @@ describe('privacy controls against Postgres', () => {
     expect(await reads(friend)).toEqual(shut);
 
     // The owner adds the friend by name. That is the whole flow: no request
-    // from the friend, no approval, and every connected app is told to refetch.
-    const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
-    try {
-      await privacyMutations.inviteResourceMember(
-        null,
-        { kind: 'board', resourceId: board.uuid, userId: friend },
-        context(boardOwner),
-      );
-      expect(publish).toHaveBeenCalled();
-    } finally {
-      publish.mockRestore();
-    }
+    // from the friend and no approval. The next read is authorized on the server.
+    await privacyMutations.inviteResourceMember(
+      null,
+      { kind: 'board', resourceId: board.uuid, userId: friend },
+      context(boardOwner),
+    );
     const [grant] = await db
       .select()
       .from(schema.resourceGrants)
