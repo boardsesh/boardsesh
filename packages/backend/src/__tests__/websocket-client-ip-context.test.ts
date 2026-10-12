@@ -292,24 +292,7 @@ describe('WebSocket connection context client IP', () => {
       ];
       try {
         for (const document of documents) {
-          const response = await new Promise<string>((resolve, reject) => {
-            const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS);
-            socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
-            socket.on('message', (message) => {
-              const messageText = decodeMessage(message);
-              const payload = JSON.parse(messageText) as { type?: unknown };
-              if (payload.type === 'connection_ack') {
-                socket.send(
-                  JSON.stringify({ id: 'board-share-token-operation', type: 'subscribe', payload: document }),
-                );
-              } else if (payload.type === 'error' || payload.type === 'next') {
-                socket.close(1000);
-                resolve(messageText);
-              }
-            });
-            socket.once('error', reject);
-            socket.once('close', () => reject(new Error('Socket closed before the sanitized board-share response')));
-          });
+          const response = await sendBoardShareOperation(document);
           expect(response).toContain('Board share link request could not be processed');
           expect(response).not.toContain(token);
         }
@@ -321,4 +304,37 @@ describe('WebSocket connection context client IP', () => {
       }
     },
   );
+  it("passes the share resolver's own error whole over real WebSockets", async () => {
+    // Signed out, so the resolver itself refuses: an execution error with a
+    // path, raised after the token parsed. It keeps its message and path.
+    const token = 'Ab3_dE-fGhIjKlMnOpQrSt';
+    const response = await sendBoardShareOperation({
+      query: 'mutation Share($token: String!) { redeemBoardShareLink(token: $token) { boardUuid slug } }',
+      variables: { token },
+    });
+    expect(response).toContain('Authentication required');
+    expect(response).toContain('"path":["redeemBoardShareLink"]');
+    expect(response).not.toContain('Board share link request could not be processed');
+    expect(response).not.toContain(token);
+  });
+
+  /** Subscribe once on a fresh signed-out socket and resolve the first error or result frame. */
+  function sendBoardShareOperation(document: { query: string; variables?: Record<string, unknown> }) {
+    return new Promise<string>((resolve, reject) => {
+      const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS);
+      socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
+      socket.on('message', (message) => {
+        const messageText = decodeMessage(message);
+        const payload = JSON.parse(messageText) as { type?: unknown };
+        if (payload.type === 'connection_ack') {
+          socket.send(JSON.stringify({ id: 'board-share-token-operation', type: 'subscribe', payload: document }));
+        } else if (payload.type === 'error' || payload.type === 'next') {
+          socket.close(1000);
+          resolve(messageText);
+        }
+      });
+      socket.once('error', reject);
+      socket.once('close', () => reject(new Error('Socket closed before the board-share response')));
+    });
+  }
 });
