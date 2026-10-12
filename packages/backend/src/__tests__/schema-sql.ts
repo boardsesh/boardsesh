@@ -84,7 +84,7 @@ const anonymousOnForeignBoardsSchema = readFileSync(
 // A home board's share link; straight from the generated migration, installed
 // after user_boards so its foreign key and partial unique index match production.
 const boardShareLinksSchema = readFileSync(
-  new URL('../../../db/drizzle/0266_board_share_links.sql', import.meta.url),
+  new URL('../../../db/drizzle/0267_board_share_links.sql', import.meta.url),
   'utf8',
 );
 

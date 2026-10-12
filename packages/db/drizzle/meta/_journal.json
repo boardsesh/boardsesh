@@ -1870,6 +1870,13 @@
       "when": 1791765691056,
       "tag": "0266_anonymous_on_foreign_boards",
       "breakpoints": true
+    },
+    {
+      "idx": 267,
+      "version": "7",
+      "when": 1791838287922,
+      "tag": "0267_board_share_links",
+      "breakpoints": true
     }
   ]
 }
