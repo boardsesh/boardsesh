@@ -1,5 +1,5 @@
 {
-  "id": "c9987c9f-52ca-442b-bb6b-85e9f4f2698a",
+  "id": "be9ff25b-946b-4acc-b21d-77135a48bdee",
   "prevId": "5d78b7cb-72d0-4a5e-a2b8-a4d081087c10",
   "version": "7",
   "dialect": "postgresql",
@@ -16582,6 +16582,109 @@
       },
       "isRLSEnabled": false
     },
+    "public.board_share_links": {
+      "name": "board_share_links",
+      "schema": "",
+      "columns": {
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "board_uuid": {
+          "name": "board_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "board_share_links_active_board_idx": {
+          "name": "board_share_links_active_board_idx",
+          "columns": [
+            {
+              "expression": "board_uuid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"board_share_links\".\"revoked_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "board_share_links_board_idx": {
+          "name": "board_share_links_board_idx",
+          "columns": [
+            {
+              "expression": "board_uuid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "board_share_links_board_uuid_user_boards_uuid_fk": {
+          "name": "board_share_links_board_uuid_user_boards_uuid_fk",
+          "tableFrom": "board_share_links",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "board_uuid"
+          ],
+          "columnsTo": [
+            "uuid"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "board_share_links_created_by_users_id_fk": {
+          "name": "board_share_links_created_by_users_id_fk",
+          "tableFrom": "board_share_links",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.user_activity_days": {
       "name": "user_activity_days",
       "schema": "",
@@ -16881,8 +16984,7 @@
         "new_climbs_synced",
         "gym_claim_approved",
         "proposal_on_your_climb",
-        "spray_wall_detection_completed",
-        "follow_request"
+        "spray_wall_detection_completed"
       ]
     },
     "public.feed_item_type": {

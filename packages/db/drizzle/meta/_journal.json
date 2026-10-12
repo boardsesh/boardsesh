@@ -1877,6 +1877,20 @@
       "when": 1791838287922,
       "tag": "0267_board_share_links",
       "breakpoints": true
+    },
+    {
+      "idx": 268,
+      "version": "7",
+      "when": 1791842577777,
+      "tag": "0268_follow_request_notification",
+      "breakpoints": true
+    },
+    {
+      "idx": 269,
+      "version": "7",
+      "when": 1791842577778,
+      "tag": "0269_privacy_public_defaults_backfill",
+      "breakpoints": true
     }
   ]
 }
