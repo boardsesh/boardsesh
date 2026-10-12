@@ -31,7 +31,10 @@ export const CAPTION_IDS = [
   'storeSpray',
   'storeMoreBoards',
   'storeIsland',
-  'cppBoards',
+  'cppKilterBoards',
+  'cppTensionBoards',
+  'cppMoonboardBoards',
+  'cppSprayBoards',
   'cppOtherBoards',
   'cppSearch',
   'cppLogbook',
@@ -207,7 +210,7 @@ export function resolveScreenshotRecipes(
   // frame is not worth shipping until it is fixed.
   if (platform === 'ios' && device.startsWith('ipad-') && matches(legacyNames)) {
     return [
-      { output: '00-wall-kiosk.png', caption: 'wallKiosk', layout: 'screen', sources: ['00-wall.png'] },
+      { output: '00-wall-kiosk.png', caption: 'storeBoards', layout: 'screen', sources: ['00-wall.png'] },
       // The wall column is part of this very capture, enlarged beside the screen
       // it came from — never a second screen standing in for it.
       { output: '01-wall-status.png', caption: 'wallStatus', layout: 'wall-column', sources: ['02-climbs.png'] },

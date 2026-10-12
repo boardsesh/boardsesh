@@ -299,7 +299,13 @@ describe('custom product page captures', () => {
         const names = cppCaptureNames(page, device);
         const recipes = resolveCppRecipes(page, device, names);
         expect(recipes).toHaveLength(9);
-        expect(recipes[0].sources).toEqual(['hero-1.png', 'hero-2.png', 'hero-3.png']);
+        expect(recipes[0].sources).toEqual(
+          target === 'kilter' ? ['hero-2.png', 'hero-1.png', 'hero-3.png'] : ['hero-1.png', 'hero-2.png', 'hero-3.png'],
+        );
+        if (target === 'kilter') {
+          const centerVariant = page.heroBoards[Number(recipes[0].sources[1].match(/hero-(\d+)/)?.[1]) - 1];
+          expect(centerVariant.id).toBe('kilter-original-12x12');
+        }
         expect(recipes[1].sources).toEqual(['other-1.png', 'other-2.png', 'other-3.png']);
         expect(() => resolveCppRecipes(page, device, names.slice(1))).toThrow('Incomplete CPP capture');
         expect(() => resolveCppRecipes(page, device, [...names, names[0]])).toThrow('Incomplete CPP capture');

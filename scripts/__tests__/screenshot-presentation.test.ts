@@ -656,6 +656,8 @@ describe('store screenshot presentation', () => {
     const recipes = resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', names);
     expect(resolveScreenshotRecipes('ios', 'ipad-pro-11-inch-m5', names)).toEqual(recipes);
     expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', [...names].reverse())).toEqual(recipes);
+    expect(recipes[0].caption).toBe('storeBoards');
+    expect(readCaptionCatalog('en-US')[recipes[0].caption].headline).toBe('One app for all your boards');
     expect(recipes.map(({ output }) => output)).toEqual([
       '00-wall-kiosk.png',
       '01-wall-status.png',

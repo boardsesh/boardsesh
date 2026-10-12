@@ -72,9 +72,8 @@
     "description": "Tes croix et tes séances réunies, sur toutes tes boards."
   },
   "storeBoards": {
-    "headline": "Tes boards.\nUne appli.",
-    "description": "Change de board sans changer d’appli.",
-    "emphasis": "appli."
+    "headline": "Une app pour toutes tes boards",
+    "description": "Tous tes carnets au même endroit."
   },
   "storeCrew": {
     "headline": "Ton crew.\nUne file.",
@@ -96,13 +95,25 @@
     "description": "Change de bloc sans ouvrir l’appli.",
     "emphasis": "Dynamic Island."
   },
-  "cppBoards": {
-    "headline": "Une app pour tes boards",
-    "description": "Découvre des blocs et rassemble tes séances."
+  "cppKilterBoards": {
+    "headline": "Compatible avec Kilter",
+    "description": "Importe ton carnet existant."
+  },
+  "cppTensionBoards": {
+    "headline": "Compatible avec Tension",
+    "description": "Importe ton carnet existant."
+  },
+  "cppMoonboardBoards": {
+    "headline": "Compatible avec MoonBoard",
+    "description": "Importe ton carnet existant."
+  },
+  "cppSprayBoards": {
+    "headline": "Compatible avec les murs spray",
+    "description": "Crée des blocs sur les photos de ton mur."
   },
   "cppOtherBoards": {
-    "headline": "Et tes autres boards aussi",
-    "description": "Change de board sans changer d’app."
+    "headline": "Une app pour toutes tes boards",
+    "description": "Tous tes carnets au même endroit."
   },
   "cppSearch": {
     "headline": "Trouve ton prochain projet",

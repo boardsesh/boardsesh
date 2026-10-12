@@ -72,9 +72,8 @@
     "description": "Deine Begehungen und Sessions von allen Boards an einem Ort."
   },
   "storeBoards": {
-    "headline": "Deine Boards.\nEine App.",
-    "description": "Wechsle das Board, ohne die App zu wechseln.",
-    "emphasis": "App."
+    "headline": "Eine App für alle deine Boards",
+    "description": "Alle deine Routenbücher an einem Ort."
   },
   "storeCrew": {
     "headline": "Deine Crew.\nEine Warteschlange.",
@@ -96,13 +95,25 @@
     "description": "Wechsle den Boulder, ohne die App zu öffnen.",
     "emphasis": "Dynamic Island."
   },
-  "cppBoards": {
-    "headline": "Eine App für deine Boards",
-    "description": "Entdecke Boulder und sammle deine Sessions."
+  "cppKilterBoards": {
+    "headline": "Unterstützt Kilter",
+    "description": "Importiere dein bisheriges Routenbuch."
+  },
+  "cppTensionBoards": {
+    "headline": "Unterstützt Tension",
+    "description": "Importiere dein bisheriges Routenbuch."
+  },
+  "cppMoonboardBoards": {
+    "headline": "Unterstützt MoonBoard",
+    "description": "Importiere dein bisheriges Routenbuch."
+  },
+  "cppSprayBoards": {
+    "headline": "Unterstützt Spraywalls",
+    "description": "Setze Boulder auf den Fotos deiner Wand."
   },
   "cppOtherBoards": {
-    "headline": "Und deine anderen Boards auch",
-    "description": "Wechsle das Board, ohne die App zu wechseln."
+    "headline": "Eine App für alle deine Boards",
+    "description": "Alle deine Routenbücher an einem Ort."
   },
   "cppSearch": {
     "headline": "Finde dein nächstes Projekt",

@@ -72,9 +72,8 @@
     "description": "Tus encadenes y sesiones de todos tus plafones, juntos."
   },
   "storeBoards": {
-    "headline": "Tus plafones.\nUna app.",
-    "description": "Cambia de plafón sin cambiar de app.",
-    "emphasis": "app."
+    "headline": "Una app para todos tus plafones",
+    "description": "Todos tus logbooks en un solo lugar."
   },
   "storeCrew": {
     "headline": "Tu grupo.\nUna cola.",
@@ -96,13 +95,25 @@
     "description": "Cambia de bloque sin abrir la app.",
     "emphasis": "Dynamic Island."
   },
-  "cppBoards": {
-    "headline": "Una app para tus plafones",
-    "description": "Descubre bloques y reúne tus sesiones."
+  "cppKilterBoards": {
+    "headline": "Compatible con Kilter",
+    "description": "Importa tu logbook actual."
+  },
+  "cppTensionBoards": {
+    "headline": "Compatible con Tension",
+    "description": "Importa tu logbook actual."
+  },
+  "cppMoonboardBoards": {
+    "headline": "Compatible con MoonBoard",
+    "description": "Importa tu logbook actual."
+  },
+  "cppSprayBoards": {
+    "headline": "Compatible con muros spray",
+    "description": "Crea bloques sobre las fotos de tu muro."
   },
   "cppOtherBoards": {
-    "headline": "Y para tus otros plafones también",
-    "description": "Cambia de plafón sin cambiar de app."
+    "headline": "Una app para todos tus plafones",
+    "description": "Todos tus logbooks en un solo lugar."
   },
   "cppSearch": {
     "headline": "Encuentra tu próximo proyecto",

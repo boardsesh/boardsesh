@@ -72,9 +72,8 @@
     "description": "Keep your sends and sessions together across boards."
   },
   "storeBoards": {
-    "headline": "Your boards.\nOne app.",
-    "description": "Switch boards without switching apps.",
-    "emphasis": "app."
+    "headline": "One app for all your boards",
+    "description": "All your logbooks in one place."
   },
   "storeCrew": {
     "headline": "Your crew.\nOne queue.",
@@ -96,13 +95,25 @@
     "description": "Change the climb without opening the app.",
     "emphasis": "Dynamic Island."
   },
-  "cppBoards": {
-    "headline": "One app for your boards",
-    "description": "Discover climbs and keep your sessions together."
+  "cppKilterBoards": {
+    "headline": "Supports Kilter",
+    "description": "Import your existing logbook."
+  },
+  "cppTensionBoards": {
+    "headline": "Supports Tension",
+    "description": "Import your existing logbook."
+  },
+  "cppMoonboardBoards": {
+    "headline": "Supports MoonBoard",
+    "description": "Import your existing logbook."
+  },
+  "cppSprayBoards": {
+    "headline": "Supports spray walls",
+    "description": "Set climbs on your wall photos."
   },
   "cppOtherBoards": {
-    "headline": "But your other boards too",
-    "description": "Switch boards without switching apps."
+    "headline": "One app for all your boards",
+    "description": "All your logbooks in one place."
   },
   "cppSearch": {
     "headline": "Find your next project",

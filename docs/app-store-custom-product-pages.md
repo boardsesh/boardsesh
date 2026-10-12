@@ -9,13 +9,20 @@ Caption copy lives in `app-stores/presentation/{en-US,es,fr,de}.json`.
 
 ## The nine-image story
 
-The first image always says **One app for your boards** and shows three distinct
-boards from the target family. The second says **But your other boards too** and
-shows three boards from other families. Both headlines are localized.
+The first image names compatibility: **Supports Kilter**, **Supports Tension**,
+**Supports MoonBoard**, or **Supports spray walls**, showing three distinct boards
+from that target family. Kilter Original is the centre phone in its opening trio.
+The manufacturer pages add **Import your existing logbook.** Spray walls instead
+say **Set climbs on your wall photos.**
+
+The second image says **One app for all your boards** and **All your logbooks in
+one place.**, showing three boards from other families. The regular Apple product
+page also opens with **One app for all your boards**, using its existing mixed-board
+phone trio and iPad first-screen layout. All captions are localized.
 
 | Target | First-image trio | Second-image trio |
 | --- | --- | --- |
-| Kilter | Original 12×12, Homewall 7×10, Homewall 10×10 | Tension 2 Mirror, MoonBoard 2024, Woods 12×12 |
+| Kilter | Homewall 7×10, Original 12×12 (centre), Homewall 10×10 | Tension 2 Mirror, MoonBoard 2024, Woods 12×12 |
 | Tension | Original, Tension 2 Mirror, Tension 2 Spray | Kilter Original 12×12, MoonBoard 2024, Woods 12×12 |
 | MoonBoard | 2016, Masters 2019, 2024 | Kilter Original 12×12, Tension 2 Mirror, Woods 12×12 |
 | Spray wall | Liz's Wall, Cherry's Wall, The Bowlo | Kilter Original 12×12, Tension 2 Mirror, MoonBoard 2024 |
