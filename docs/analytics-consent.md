@@ -65,7 +65,7 @@ GDPR) are not on it either; adding any of them is one line in
 `consent-region.ts`.
 
 **Where the country comes from.** The unauthenticated GraphQL query
-`consentRegion { countryCode promptRequired }`. The backend reads Cloudflare's
+`consentRegion { countryCode promptRequired globalPrivacyControl }`. The backend reads Cloudflare's
 `CF-IPCountry` through `resolveFlagCountry` (`packages/backend/src/utils/flag-country.ts`),
 the same trusted-hop check the PostHog proxy uses (see `docs/cloudflare.md`):
 a forged header from a direct-origin caller resolves as `XX` and asks. The HTTP
