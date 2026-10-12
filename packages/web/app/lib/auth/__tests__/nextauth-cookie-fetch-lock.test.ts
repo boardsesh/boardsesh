@@ -396,7 +396,7 @@ describe('NextAuth cookie fetch lock', () => {
     vi.stubGlobal('navigator', { locks: { request: requestLock } });
     installNextAuthCookieFetchLock();
 
-    await globalThis.fetch('/api/internal/profile');
+    await globalThis.fetch('/api/internal/ws-auth');
     await globalThis.fetch('https://example.com/api/auth/session');
     await globalThis.fetch('/api/auth/signout');
 
