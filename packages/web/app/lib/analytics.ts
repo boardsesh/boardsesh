@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/nextjs';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from './analytics-paths';
+import { searchCarriesBoardInvite } from './board-invite';
 import { getWebConsentRecord, hasAnalyticsConsent, subscribeWebConsent } from './consent';
 import {
   ANALYTICS_CONSENT_HEADER,
@@ -188,6 +189,9 @@ const shouldDebugAnalytics = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
 function getPosthog(): PostHog | null {
   if (typeof window === 'undefined') return null;
   if (isEmbedAnalyticsUrl(window.location.pathname) || isKioskAnalyticsUrl(window.location.pathname)) return null;
+  // A home board's share link, or the sign-in page carrying it back: the SDK
+  // stamps `location.href` on every event, and that URL holds a membership token.
+  if (searchCarriesBoardInvite(window.location.search)) return null;
   if (posthogClient) return posthogClient;
   if (posthogInitAttempted) return null;
   posthogInitAttempted = true;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { SearchRequestPagination } from '@/app/lib/types';
 import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
@@ -17,6 +17,7 @@ import {
 } from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
+import { BOARD_INVITE_PARAM, readBoardInviteToken } from '@/app/lib/board-invite';
 import SprayWallListPage, { buildSprayWallListMetadata } from './spray-wall-view';
 
 /**
@@ -32,7 +33,12 @@ type BoardSlugListPageProps = {
   // one of them, it is the share-link capability a spray wall arrives with, so
   // the raw string form rides alongside rather than being bolted onto the filter
   // type every other caller of that type shares.
-  searchParams: Promise<SearchRequestPagination & { [WALL_CAPABILITY_PARAM]?: string | string[] }>;
+  searchParams: Promise<
+    SearchRequestPagination & {
+      [WALL_CAPABILITY_PARAM]?: string | string[];
+      [BOARD_INVITE_PARAM]?: string | string[];
+    }
+  >;
 };
 
 export async function generateMetadata(props: BoardSlugListPageProps): Promise<Metadata> {
@@ -108,6 +114,11 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
 
 export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
+
+  // A home board's share link redeems in one place, the bare `/b/{slug}` page,
+  // which signs the visitor in or joins them and then lands here without it.
+  const inviteToken = readBoardInviteToken(searchParams[BOARD_INVITE_PARAM]);
+  if (inviteToken) redirect(`/b/${encodeURIComponent(params.board_slug)}?${BOARD_INVITE_PARAM}=${inviteToken}`);
 
   // The capability has to reach the backend: without it an anonymous caller gets
   // no row at all for an unlisted wall, because a slug alone is a guess.

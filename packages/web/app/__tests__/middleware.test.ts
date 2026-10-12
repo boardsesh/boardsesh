@@ -809,6 +809,30 @@ describe('middleware cache headers on a spray wall share link (?wall=)', () => {
   });
 });
 
+// A home board's share link makes whoever opens it a member. A reset has to
+// bite on the next request, and no shared cache may key on the token.
+describe('middleware cache headers on a home board share link (?invite=)', () => {
+  const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
+  it.each([
+    ['bare board hop', `/b/the-garage?invite=${TOKEN}`],
+    ['localized bare hop', `/es/b/the-garage?invite=${TOKEN}`],
+    ['list page', `/b/the-garage/40/list?invite=${TOKEN}`],
+    ['malformed token', '/b/the-garage/40/list?invite=x'],
+  ])('sends no-store on the %s', (_shape, url) => {
+    const response = middleware(makeRequest(url));
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+  });
+
+  it('gives the TTL helpers no window for a share link either', () => {
+    const withInvite = new URLSearchParams({ invite: TOKEN });
+    expect(getListPageCacheTTL('/b/the-garage/40/list', withInvite)).toBeNull();
+    expect(getClimbViewPageCacheTTL('/b/the-garage/40/view/some-climb', withInvite)).toBeNull();
+  });
+});
+
 // A crawler that persists cookies (observed in production logs) acquires
 // boardsesh-locale by crawling one /de|/es|/fr page, then bounces every
 // subsequent unprefixed URL through a locale twin — ~15k of these 307s/day,

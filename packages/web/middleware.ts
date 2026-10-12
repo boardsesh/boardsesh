@@ -2,6 +2,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getClimbViewPageCacheTTL, getListPageCacheTTL, isSprayWallCapabilityRequest } from './app/lib/list-page-cache';
+import { isBoardInviteRequest } from './app/lib/board-invite';
 import { isCrawlerUserAgent } from './app/lib/is-crawler';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
 import { PATHNAME_HEADER } from './app/lib/request-pathname-header';
@@ -280,13 +281,22 @@ export function middleware(request: NextRequest) {
   const cacheTTL =
     getListPageCacheTTL(strippedPath, request.nextUrl.searchParams) ??
     getClimbViewPageCacheTTL(strippedPath, request.nextUrl.searchParams);
-  if (isSprayWallCapabilityRequest(strippedPath, request.nextUrl.searchParams)) {
-    // An unlisted spray wall's share link. Said out loud rather than left to the
-    // missing CDN header: no shared cache may hold it, so a hide or a switch to
-    // private takes effect on the next request. See `isSprayWallCapabilityRequest`.
+  if (
+    isSprayWallCapabilityRequest(strippedPath, request.nextUrl.searchParams) ||
+    isBoardInviteRequest(strippedPath, request.nextUrl.searchParams)
+  ) {
+    // An unlisted spray wall's share link, or a home board's (`?invite=`). Said
+    // out loud rather than left to the missing CDN header: no shared cache may
+    // hold either, so a hide, a switch to private or a link reset takes effect on
+    // the next request, and a token never becomes part of a cache key. See
+    // `isSprayWallCapabilityRequest` and `isBoardInviteRequest`.
     response.headers.set('Cache-Control', 'private, no-store');
     response.headers.set('CDN-Cache-Control', 'no-store');
     response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
+    // The page URL holds the capability; its own asset requests must not echo it.
+    if (isBoardInviteRequest(strippedPath, request.nextUrl.searchParams)) {
+      response.headers.set('Referrer-Policy', 'no-referrer');
+    }
   } else if (cacheTTL !== null) {
     const cdnCacheValue = `s-maxage=${cacheTTL}, stale-while-revalidate=${cacheTTL * 7}`;
     response.headers.set('Vercel-CDN-Cache-Control', cdnCacheValue);

@@ -594,6 +594,16 @@ export const RSC_QUERY_PARAM = '_rsc';
  */
 export const SPRAY_WALL_CAPABILITY_QUERY = 'wall=';
 
+/**
+ * A home board's share link (`/b/{slug}?invite=<token>`, and the list page that
+ * hands it to that hop). The token makes whoever opens it a member, so no edge
+ * may hold a response keyed on one, and a reset has to take effect on the next
+ * request. The origin already answers with `no-store`; this is the same second
+ * lock the wall link has. `contains` also matches `uninvite=` and friends;
+ * bypassing those is harmless.
+ */
+export const BOARD_INVITE_QUERY = 'invite=';
+
 /** Every `{locale}{root}` path prefix the middleware decorates, as Cloudflare sees it. */
 export function buildWwwHtmlCachePathPrefixes(): string[] {
   return WWW_HTML_CACHE_LOCALE_PREFIXES.flatMap((localePrefix) =>
@@ -626,8 +636,8 @@ export function buildWwwHtmlCachePathPrefixes(): string[] {
  *    Cloudflare cannot strip. Enumerated rather than loosened so a future www
  *    route that happens to end in `/list` and sets its own public max-age
  *    cannot inherit this rule.
- * 4. Bypasses — session cookie, RSC header, `?_rsc`, a spray wall's `?wall=`.
- *    See the constants above.
+ * 4. Bypasses — session cookie, RSC header, `?_rsc`, a spray wall's `?wall=`,
+ *    a home board's `?invite=`. See the constants above.
  *    `Vary` is not a substitute for any of them: Cloudflare ignores it except
  *    for Accept-Encoding.
  * 5. `edge_ttl: bypass_by_default` on the rule itself, which is the real
@@ -652,7 +662,8 @@ export const WWW_HTML_CACHE_EXPRESSION =
   ` and not (http.cookie contains "${SESSION_COOKIE_NAME_SUBSTRING}")` +
   ` and not (any(http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] != ""))` +
   ` and not (http.request.uri.query contains "${RSC_QUERY_PARAM}")` +
-  ` and not (http.request.uri.query contains "${SPRAY_WALL_CAPABILITY_QUERY}"))`;
+  ` and not (http.request.uri.query contains "${SPRAY_WALL_CAPABILITY_QUERY}")` +
+  ` and not (http.request.uri.query contains "${BOARD_INVITE_QUERY}"))`;
 
 /**
  * The allow list lives in crawler-policy.ts beside the block list, so the

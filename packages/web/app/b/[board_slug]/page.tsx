@@ -1,8 +1,18 @@
+import React from 'react';
+import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import type { GymQrSearchParams } from '@boardsesh/analytics';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
+import { getServerAuthToken } from '@/app/lib/auth/server-auth';
+import { BOARD_INVITE_PARAM, readBoardInviteToken } from '@/app/lib/board-invite';
+import { previewBoardInvite, redeemBoardInvite } from '@/app/lib/board-invite.server';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
+import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getLocale } from '@/app/lib/i18n/get-locale';
+import { localeHref } from '@/app/lib/i18n/locale-href';
+import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
+import BoardInviteSignIn from './board-invite-sign-in';
 
 type BoardSlugPageParams = {
   board_slug: string;
@@ -10,8 +20,69 @@ type BoardSlugPageParams = {
 
 type BoardSlugPageProps = {
   params: Promise<BoardSlugPageParams>;
-  searchParams: Promise<GymQrSearchParams & { [WALL_CAPABILITY_PARAM]?: string | string[] }>;
+  searchParams: Promise<
+    GymQrSearchParams & {
+      [WALL_CAPABILITY_PARAM]?: string | string[];
+      [BOARD_INVITE_PARAM]?: string | string[];
+    }
+  >;
 };
+
+/**
+ * Only the share-link sign-in renders here; every other request redirects. That
+ * page is never indexed and names no board in its title: its URL carries a
+ * capability, and the title outlives the visit in history and tabs.
+ */
+export async function generateMetadata(props: BoardSlugPageProps): Promise<Metadata> {
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
+  if (searchParams[BOARD_INVITE_PARAM] === undefined) return {};
+  const { t, locale } = await getServerTranslation('boards');
+  return {
+    ...createNoIndexMetadata({
+      title: t('boardShareLink.metadataTitle'),
+      description: t('boardShareLink.body'),
+      path: `/b/${encodeURIComponent(params.board_slug)}`,
+      locale,
+    }),
+    // The URL holds the token; nothing this page loads may send it on.
+    referrer: 'no-referrer',
+  };
+}
+
+/**
+ * A home board's share link (`?invite=`), before the ordinary hop below.
+ *
+ * Signed in, the token is redeemed through the backend, which makes the viewer
+ * an approved member of the board it names, and the visitor lands on that
+ * board's clean list URL: the redirect drops the token, so nothing after this
+ * request carries it. Signed out, the page names the board and offers a sign-in
+ * that comes back to this exact URL. A link that opens nothing (reset, unknown,
+ * a board made Public or Only me since) falls through to the plain link, which
+ * renders or 404s on the board's own rules.
+ *
+ * Returns the sign-in page to render, or `null` to continue. Throws Next's
+ * redirect on a successful join.
+ */
+async function handleBoardInvite(boardSlug: string, inviteToken: string): Promise<React.ReactElement | null> {
+  const authToken = await getServerAuthToken();
+  if (authToken) {
+    const redemption = await redeemBoardInvite(inviteToken, authToken);
+    if (!redemption) return null;
+    // The board the token names, read as the member this request just made:
+    // the slug in the URL is cosmetic and may be stale after a rename.
+    const board = await resolveBoardBySlug(redemption.slug);
+    if (!board) return null;
+    redirect(`/b/${encodeURIComponent(board.slug)}/${board.angle}/list`);
+  }
+  const preview = await previewBoardInvite(inviteToken);
+  if (!preview) return null;
+  // Back in the visitor's language after sign-in: `/es/b/...` stays Spanish.
+  const returnPath = localeHref(
+    `/b/${encodeURIComponent(boardSlug)}?${BOARD_INVITE_PARAM}=${inviteToken}`,
+    await getLocale(),
+  );
+  return <BoardInviteSignIn boardName={preview.name} returnPath={returnPath} />;
+}
 
 /**
  * The share-link capability, re-emitted onto the redirect target.
@@ -57,6 +128,11 @@ function wallCapabilityQuery(wallUuid: string | undefined): string {
  */
 export default async function BoardSlugPage(props: BoardSlugPageProps) {
   const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
+  const inviteToken = readBoardInviteToken(searchParams[BOARD_INVITE_PARAM]);
+  if (inviteToken) {
+    const signIn = await handleBoardInvite(params.board_slug, inviteToken);
+    if (signIn) return signIn;
+  }
   // A single `?wall=` only, the same reading the page that redeems it applies. It
   // also has to reach the lookup: an unlisted wall has no row for an anonymous
   // caller on the slug alone, so without it this hop would 404 the share link.

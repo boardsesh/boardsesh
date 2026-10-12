@@ -8,6 +8,7 @@
  */
 
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@boardsesh/i18n';
+import { searchCarriesBoardInvite } from '../board-invite';
 
 /**
  * Sample rate for a server transaction that isn't explicitly zeroed or
@@ -252,6 +253,9 @@ export type RedactableSpan = {
  *                   is a single-use credential; it has no business sitting in a
  *                   span attribute that a Sentry seat can read.
  *   ?session=...  — a session identifier in any path.
+ *   ?invite=...   — a home board's share-link token, which makes whoever holds
+ *                   it a member of the board (`app/lib/board-invite.ts`). Also
+ *                   when it rides inside a sign-in page's encoded `callbackUrl`.
  */
 export function stripSensitiveQueryString(rawUrl: string): string {
   const queryStart = rawUrl.indexOf('?');
@@ -265,7 +269,7 @@ export function stripSensitiveQueryString(rawUrl: string): string {
   }
 
   const isAuthCallback = parsedUrl.pathname === '/api/auth' || parsedUrl.pathname.startsWith('/api/auth/');
-  if (isAuthCallback || parsedUrl.searchParams.has('session')) {
+  if (isAuthCallback || parsedUrl.searchParams.has('session') || searchCarriesBoardInvite(rawUrl.slice(queryStart))) {
     return rawUrl.slice(0, queryStart);
   }
 

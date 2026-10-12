@@ -44,6 +44,7 @@ import {
   RSC_REQUEST_HEADER_NAME,
   SESSION_COOKIE_NAME_SUBSTRING,
   SPRAY_WALL_CAPABILITY_QUERY,
+  BOARD_INVITE_QUERY,
   WWW_HOSTNAME,
   WWW_HTML_CACHE_EXCLUDED_BOARDS,
   WWW_HTML_CACHE_LOCALE_PREFIXES,
@@ -2312,6 +2313,13 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
     // private; an edge copy would keep serving it for a day plus SWR.
     expect(expression).toContain(`not (http.request.uri.query contains "${SPRAY_WALL_CAPABILITY_QUERY}")`);
     expect(expression).toContain('not (http.request.uri.query contains "wall=")');
+  });
+
+  it("bypasses a home board's ?invite= share link, whatever the origin header says", () => {
+    // The token makes whoever opens it a member; a reset must bite on the next
+    // request, and no edge entry may be keyed on one.
+    expect(expression).toContain(`not (http.request.uri.query contains "${BOARD_INVITE_QUERY}")`);
+    expect(expression).toContain('not (http.request.uri.query contains "invite=")');
   });
 
   it('reads the RSC header through the map accessor, not the field the plan rejects', () => {

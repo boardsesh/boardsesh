@@ -22,7 +22,21 @@ vi.mock('next/navigation', () => ({
 const resolveBoardBySlug = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/board-slug-utils', () => ({ resolveBoardBySlug }));
 
-const BoardSlugPage = (await import('../page')).default;
+const getServerAuthToken = vi.hoisted(() => vi.fn<() => Promise<string | undefined>>());
+vi.mock('@/app/lib/auth/server-auth', () => ({ getServerAuthToken }));
+const redeemBoardInvite = vi.hoisted(() => vi.fn());
+const previewBoardInvite = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/board-invite.server', () => ({ redeemBoardInvite, previewBoardInvite }));
+const BoardInviteSignIn = vi.hoisted(() => vi.fn(() => null));
+vi.mock('../board-invite-sign-in', () => ({ default: BoardInviteSignIn }));
+vi.mock('@/app/lib/i18n/server', () => ({
+  getServerTranslation: async () => ({ t: (key: string) => key, locale: 'en-US' }),
+}));
+const getLocale = vi.hoisted(() => vi.fn(async () => 'en-US'));
+vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale }));
+
+const pageModule = await import('../page');
+const BoardSlugPage = pageModule.default;
 
 async function redirectTargetFor(
   boardSlug: string,
@@ -44,6 +58,10 @@ beforeEach(() => {
   resolveBoardBySlug.mockReset();
   notFound.mockReset();
   resolveBoardBySlug.mockResolvedValue({ slug: 'main-kilter', angle: 40 });
+  getServerAuthToken.mockReset().mockResolvedValue(undefined);
+  redeemBoardInvite.mockReset().mockResolvedValue(null);
+  previewBoardInvite.mockReset().mockResolvedValue(null);
+  BoardInviteSignIn.mockClear();
 });
 
 describe('/b/[board_slug] redirect', () => {
@@ -128,5 +146,83 @@ describe('/b/[board_slug] redirect', () => {
     // mocked with a `permanentRedirect` export at all, so this test also fails
     // loudly (a missing-export error) if a future change reaches for it here.
     await expect(redirectTargetFor('main-kilter', {})).resolves.toBe('/b/main-kilter/40/list');
+  });
+});
+
+const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
+
+describe('/b/[board_slug] with a home board share link (?invite=)', () => {
+  it('joins a signed-in visitor and lands them on the clean list, token dropped', async () => {
+    getServerAuthToken.mockResolvedValue('session-token');
+    redeemBoardInvite.mockResolvedValue({ boardUuid: 'board-uuid', slug: 'friends-garage' });
+    resolveBoardBySlug.mockResolvedValue({ slug: 'friends-garage', angle: 35 });
+
+    await expect(redirectTargetFor('stale-slug', { invite: TOKEN })).resolves.toBe('/b/friends-garage/35/list');
+    expect(redeemBoardInvite).toHaveBeenCalledWith(TOKEN, 'session-token');
+    // Read by the slug the server redeemed, as the member the redemption just made.
+    expect(resolveBoardBySlug).toHaveBeenCalledWith('friends-garage');
+    expect(previewBoardInvite).not.toHaveBeenCalled();
+  });
+
+  it('serves a refused link as the plain board link, never carrying the token on', async () => {
+    getServerAuthToken.mockResolvedValue('session-token');
+    redeemBoardInvite.mockResolvedValue(null);
+
+    await expect(redirectTargetFor('main-kilter', { invite: TOKEN })).resolves.toBe('/b/main-kilter/40/list');
+  });
+
+  it('names the board for a signed-out visitor and returns them to this exact link after sign-in', async () => {
+    previewBoardInvite.mockResolvedValue({ name: 'Friends Garage' });
+
+    const rendered = (await BoardSlugPage({
+      params: Promise.resolve({ board_slug: 'friends-garage' }),
+      searchParams: Promise.resolve({ invite: TOKEN }),
+    })) as { type: unknown; props: { boardName: string; returnPath: string } };
+
+    expect(rendered.type).toBe(BoardInviteSignIn);
+    expect(rendered.props).toEqual({
+      boardName: 'Friends Garage',
+      returnPath: `/b/friends-garage?invite=${TOKEN}`,
+    });
+    expect(redeemBoardInvite).not.toHaveBeenCalled();
+    expect(resolveBoardBySlug).not.toHaveBeenCalled();
+  });
+
+  it('brings a visitor back in their own language after sign-in', async () => {
+    previewBoardInvite.mockResolvedValue({ name: 'Plafón de Ana' });
+    getLocale.mockResolvedValueOnce('es');
+
+    const rendered = (await BoardSlugPage({
+      params: Promise.resolve({ board_slug: 'friends-garage' }),
+      searchParams: Promise.resolve({ invite: TOKEN }),
+    })) as { props: { returnPath: string } };
+
+    expect(rendered.props.returnPath).toBe(`/es/b/friends-garage?invite=${TOKEN}`);
+  });
+
+  it('falls through to the plain link when a signed-out visitor holds a dead link', async () => {
+    previewBoardInvite.mockResolvedValue(null);
+
+    await expect(redirectTargetFor('main-kilter', { invite: TOKEN })).resolves.toBe('/b/main-kilter/40/list');
+  });
+
+  it('never sends a malformed or repeated token to the backend', async () => {
+    getServerAuthToken.mockResolvedValue('session-token');
+    for (const invite of ['short', [TOKEN, TOKEN]]) {
+      await expect(redirectTargetFor('main-kilter', { invite })).resolves.toBe('/b/main-kilter/40/list');
+    }
+    expect(redeemBoardInvite).not.toHaveBeenCalled();
+    expect(previewBoardInvite).not.toHaveBeenCalled();
+  });
+
+  it('keeps the share-link page out of the index and its title free of the board name', async () => {
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ board_slug: 'friends-garage' }),
+      searchParams: Promise.resolve({ invite: TOKEN }),
+    });
+    expect(metadata.robots).toMatchObject({ index: false });
+    expect(metadata.referrer).toBe('no-referrer');
+    expect(JSON.stringify(metadata)).not.toContain(TOKEN);
+    expect(JSON.stringify(metadata.title)).toContain('boardShareLink.metadataTitle');
   });
 });

@@ -2,6 +2,7 @@ import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
 import { USER_SPECIFIC_SEARCH_PARAMS } from '@boardsesh/shared-schema';
 import type { SearchRequestPagination } from '@/app/lib/types';
 import { WALL_CAPABILITY_PARAM } from '@/app/lib/spray/spray-visibility';
+import { isBoardInviteRequest } from '@/app/lib/board-invite';
 
 // List data tolerates a full day of staleness (a new/edited climb showing up a
 // little late in a list is harmless), so list pages cache for 24h.
@@ -95,7 +96,11 @@ export function getListPageCacheTTL(pathname: string, searchParams: URLSearchPar
     return null;
   }
 
-  if (hasUserSpecificQueryParams(searchParams) || isSprayWallCapabilityRequest(pathname, searchParams)) {
+  if (
+    hasUserSpecificQueryParams(searchParams) ||
+    isSprayWallCapabilityRequest(pathname, searchParams) ||
+    isBoardInviteRequest(pathname, searchParams)
+  ) {
     return null;
   }
 
@@ -127,7 +132,11 @@ export function getClimbViewPageCacheTTL(pathname: string, searchParams: URLSear
     return null;
   }
 
-  if (hasUserSpecificQueryParams(searchParams) || isSprayWallCapabilityRequest(pathname, searchParams)) {
+  if (
+    hasUserSpecificQueryParams(searchParams) ||
+    isSprayWallCapabilityRequest(pathname, searchParams) ||
+    isBoardInviteRequest(pathname, searchParams)
+  ) {
     return null;
   }
 
