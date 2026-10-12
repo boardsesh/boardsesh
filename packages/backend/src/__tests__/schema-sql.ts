@@ -8,6 +8,24 @@ import { socialEntityTypeEnum } from '@boardsesh/db/schema';
 
 const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
 
+const deletionStreamSchema = readFileSync(
+  new URL('../../../db/drizzle/0266_sync_deletions_stream.sql', import.meta.url),
+  'utf8',
+);
+const deletionCutoffFunction = readFileSync(
+  new URL('../../../db/scripts/sync-deletions-cutoff-function.sql', import.meta.url),
+  'utf8',
+);
+// Worker databases use the test superuser. Production's separate-owner admin
+// prerequisite is covered by its dedicated contract tests, not bypassed there.
+const deletionStreamTrigger = readFileSync(
+  new URL('../../../db/drizzle/0267_sync_deletions_cutoff_guard.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .slice(1)
+  .join('\n');
+
 // Install the real wall deletion triggers so resolver tests exercise offline
 // tombstones as well as the row's deleted_at flag. Install at the schema tail
 // after all referenced tables exist; trigger installation has no DDL ordering dependency.
@@ -2178,4 +2196,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
   ${referenceMembershipSchema}
+  ${deletionStreamSchema}
+  ${deletionCutoffFunction}
+  DROP FUNCTION IF EXISTS public.stamp_sync_deletion_stream_at() CASCADE;
+  ${deletionStreamTrigger}
 `;

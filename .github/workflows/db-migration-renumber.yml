@@ -211,6 +211,15 @@ jobs:
       # only thing between a bad renumber and main. VERIFY_MIGRATION_JOURNAL asserts
       # the journal tail actually landed — which is what catches a migration whose
       # `when` would make it silently skipped forever.
+      - name: Bootstrap the isolated deletion cutoff helper
+        if: steps.renumber.outputs.status == 'renumbered'
+        env:
+          SYNC_CUTOFF_ADMIN_DATABASE_URL: postgresql://postgres:password@localhost:5432/main
+          SYNC_CUTOFF_DEVELOPMENT_BOOTSTRAP: 'true'
+        run: |
+          if [[ -f packages/db/scripts/bootstrap-sync-deletions-cutoff-development.ts ]]; then
+            vp exec tsx packages/db/scripts/bootstrap-sync-deletions-cutoff-development.ts --apply
+          fi
       - name: Verify the migrations apply
         id: apply
         if: steps.renumber.outputs.status == 'renumbered'

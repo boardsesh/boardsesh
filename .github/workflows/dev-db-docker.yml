@@ -9,6 +9,10 @@ on:
       # migration/admin utility elsewhere in packages/db/scripts must not spend
       # two runners rebuilding PostgreSQL images it cannot affect.
       - 'packages/db/scripts/create-test-user.ts'
+      - 'packages/db/scripts/bootstrap-sync-deletions-cutoff.ts'
+      - 'packages/db/scripts/bootstrap-sync-deletions-cutoff-development.ts'
+      - 'packages/db/scripts/sync-deletions-cutoff-function.sql'
+      - 'packages/db/scripts/sync-deletions-cutoff-contract.sql'
       - 'packages/db/scripts/db-connection.ts'
       - 'packages/db/scripts/fixtures/**'
       - 'packages/db/scripts/load-board-snapshots.ts'
@@ -31,6 +35,7 @@ on:
       - 'scripts/dev-db-up.sh'
       - 'scripts/lib/postgres-credentials.sh'
       - 'scripts/lib/postgres-spatial-capability.sh'
+      - 'scripts/lib/postgres-sync-cutoff.sh'
       - 'scripts/postgres-logical-replication.sh'
       - 'scripts/postgres-logical-replication.test.sh'
       - 'scripts/postgres-credentials.test.sh'

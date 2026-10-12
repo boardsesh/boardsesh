@@ -1,0 +1,3 @@
+ALTER TABLE "sync_deletions" ADD COLUMN "stream_at" timestamp;--> statement-breakpoint
+CREATE INDEX "sync_deletions_user_stream_idx" ON "sync_deletions" USING btree ("user_id",COALESCE("stream_at", "deleted_at"),"id");--> statement-breakpoint
+CREATE INDEX "sync_deletions_null_stream_idx" ON "sync_deletions" USING btree (COALESCE("stream_at", "deleted_at"),"id") WHERE "sync_deletions"."user_id" IS NULL;
