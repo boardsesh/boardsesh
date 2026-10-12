@@ -221,7 +221,7 @@ describe('consentRegion', () => {
     ).resolves.toEqual({ countryCode: null, promptRequired: true });
   });
 
-  it.each(['XX', 'T1', 'us', ''])('asks when Cloudflare reports %j', async (country) => {
+  it.each(['XX', 'T1', 'AB', 'AP', 'us', ''])('asks when Cloudflare reports %j', async (country) => {
     await expect(askRegion(CLOUDFLARE_PEER, { 'cf-ipcountry': country })).resolves.toEqual({
       countryCode: null,
       promptRequired: true,

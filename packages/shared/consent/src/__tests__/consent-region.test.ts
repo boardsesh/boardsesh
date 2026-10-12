@@ -107,6 +107,10 @@ describe('consentPromptRequired', () => {
     ['ZZ'],
     ['T1'],
     ['AA'],
+    ['AB'],
+    ['AP'],
+    ['DY'],
+    ['WK'],
     ['QM'],
     ['XK'],
     ['EU'],
@@ -127,6 +131,7 @@ describe('normalizeConsentCountry', () => {
     expect(normalizeConsentCountry('US')).toBe('US');
     expect(normalizeConsentCountry('DE')).toBe('DE');
     expect(normalizeConsentCountry('XX')).toBeNull();
+    expect(normalizeConsentCountry('AB')).toBeNull();
     expect(normalizeConsentCountry('T1')).toBeNull();
     expect(normalizeConsentCountry('us')).toBeNull();
     expect(normalizeConsentCountry(null)).toBeNull();
