@@ -112,7 +112,7 @@
 - Thumbnail: pre-rendered image or `react-native-svg` inline
 - Haptic feedback on swipe threshold crossing via `expo-haptics`
 - The mobile `ClimbListRow` (`packages/mobile/src/components/ClimbListRow.tsx`) renders the shared `ClimbListItemContent`, which shows the user's ascent status as a monochrome glyph next to the grade (⚡ flash / ✓ sent / ✗ attempted — `ASCENT_STATUS_ICON`, tinted `secondaryLabel` so it never competes with the colour-coded grade), plus intrinsic-attribute glyphs inline after the name (© benchmark/classic, ⊘ no-match — the shared `ClimbAttributeIcons`). Ascent status is fed by the shared `BoardProvider` (`@boardsesh/board-react`): the climb-list screen calls `useBoardProvider().getLogbook(visibleUuids)` to incrementally fetch ticks for the climbs on screen via `GET_TICKS`, and `useAscentStatus` reads from `BoardProvider.logbook` filtered by climbUuid + active angle. The search query itself stays anonymous so it can be cached.
-- Ellipsis tap and long swipe-right open the shared `ClimbActionsSheet` mounted in `DrawerHostProvider`. Until a dedicated mobile playlist selector ships, the short swipe-right also opens the actions sheet rather than no-op'ing.
+- Ellipsis tap and long swipe-right open the shared climb actions (`ClimbReactionMenu`, mounted in `DrawerHostProvider`). Until a dedicated mobile playlist selector ships, the short swipe-right also opens the actions rather than no-op'ing.
 
 ### Climb Card (Grid Mode)
 

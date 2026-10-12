@@ -6,13 +6,14 @@
 // bare glyph instead (see `menuModifiers`). Each action is a `Button`; the selected
 // row shows a `checkmark` (the native active marker, replacing its scope glyph in the
 // single SF Symbol slot), destructive rows take the system destructive role, disabled
-// rows take SwiftUI's `.disabled`. SF Symbols come straight from `action.systemIcon`.
+// rows take SwiftUI's `.disabled`, and `dividerBefore` draws a SwiftUI `Divider` (a
+// UIMenu separator) above its row. SF Symbols come straight from `action.systemIcon`.
 //
 // The menu popup is always a native UIMenu, so this file is OS-split (iOS), not
 // variant-routed — a user who forces the Material variant on iOS still gets it.
 
 import { Host } from '@expo/ui';
-import { Menu, Button, HStack, Text, Image } from '@expo/ui/swift-ui';
+import { Menu, Button, Divider, HStack, Text, Image } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   clipShape,
@@ -26,7 +27,7 @@ import {
   accessibilityLabel as a11yLabel,
   accessibilityHint as a11yHint,
 } from '@expo/ui/swift-ui/modifiers';
-import { useMemo, type ComponentProps } from 'react';
+import { Fragment, useMemo, type ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -115,23 +116,26 @@ export function AppMenu(props: AppMenuProps) {
         }
       >
         {resolved.map((action, index) => (
-          <Button
-            // Composite key: scope entries can share a display name (two gyms named
-            // the same), so the label alone isn't unique — pair it with the position.
-            key={`${index}-${action.label}`}
-            label={action.label}
-            // `iosSystemImage` is a plain string; the Button's `systemImage` is the
-            // SFSymbol literal union. Derive the cast target from Button itself rather
-            // than importing `sf-symbols-typescript` (a transitive @expo/ui dep that
-            // isn't directly resolvable here).
-            systemImage={action.iosSystemImage as ComponentProps<typeof Button>['systemImage']}
-            role={action.isDestructive ? 'destructive' : undefined}
-            modifiers={action.isDisabled ? [disabledModifier(true)] : undefined}
-            onPress={() => {
-              if (!isMenuActionSelectable(resolved, index)) return;
-              onSelectIndex(index);
-            }}
-          />
+          // Composite key: scope entries can share a display name (two gyms named
+          // the same), so the label alone isn't unique — pair it with the position.
+          <Fragment key={`${index}-${action.label}`}>
+            {/* A UIMenu separator. Not a Button, so it takes no index. */}
+            {action.dividerBefore ? <Divider /> : null}
+            <Button
+              label={action.label}
+              // `iosSystemImage` is a plain string; the Button's `systemImage` is the
+              // SFSymbol literal union. Derive the cast target from Button itself rather
+              // than importing `sf-symbols-typescript` (a transitive @expo/ui dep that
+              // isn't directly resolvable here).
+              systemImage={action.iosSystemImage as ComponentProps<typeof Button>['systemImage']}
+              role={action.isDestructive ? 'destructive' : undefined}
+              modifiers={action.isDisabled ? [disabledModifier(true)] : undefined}
+              onPress={() => {
+                if (!isMenuActionSelectable(resolved, index)) return;
+                onSelectIndex(index);
+              }}
+            />
+          </Fragment>
         ))}
       </Menu>
     </Host>

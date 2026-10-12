@@ -51,6 +51,8 @@ import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
 import { useSwipeNavigation, useSwipePager, useSwipePages } from './use-swipe-pager';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
+import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
+import { resolveActionBarLayout } from './action-bar-layout';
 import { WallStatePill } from './WallStatePill';
 import { WallStateCallout } from './WallStateCallout';
 import { BrowseFrameOverlay } from './BrowseFrameOverlay';
@@ -76,8 +78,11 @@ import {
 } from './play-drawer-layout';
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
 import { useDeliberateScrollGesture } from './use-deliberate-scroll-gesture';
-import { usePlayDrawerSectionsPreference } from '../../lib/play-drawer-sections-preference';
-import { hasSwitchedOnPlayDrawerSection, visiblePlayDrawerSections } from './play-drawer-sections';
+import {
+  DEFAULT_PLAY_DRAWER_SECTIONS,
+  usePlayDrawerSectionsPreference,
+} from '../../lib/play-drawer-sections-preference';
+import { visiblePlayDrawerSections } from './play-drawer-sections';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
@@ -93,7 +98,7 @@ import {
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useSetting } from '../../settings';
 import { useAuth } from '../../providers/auth-provider';
-import { useClimbModerationEnabled, useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
+import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useClimb } from '../../lib/graphql/hooks';
 import {
@@ -129,6 +134,9 @@ export type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } fro
 function swipePageId(item: ClimbQueueItem | null | undefined): string {
   return item?.climb?.uuid || item?.uuid || 'unresolved';
 }
+// How far right of the centre line the top row's trailing cluster starts: half
+// the 36pt grabber plus an 8pt gap, so the timer can never reach the grabber.
+const TOP_TRAILING_CENTRE_CLEARANCE = 26;
 // Fallback used for the first-screen reserve before the Logbook header has
 // been measured, so the board fits without a visible jump on first open.
 // A collapsed section header is a single row (title + summary + chevron).
@@ -165,7 +173,6 @@ export function PlayCore({
   reachableBoardKeys,
   mismatchBoardLabel,
   onSwitchBoard,
-  onOpenClimbActions,
   dismissPlayerAndWait,
   openTarget,
   presentation = 'route',
@@ -179,12 +186,12 @@ export function PlayCore({
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
   const { t, i18n } = useTranslation('session');
-  const { sections, ready: sectionsReady } = usePlayDrawerSectionsPreference();
+  const storedSectionsPreference = usePlayDrawerSectionsPreference();
   const [sectionsSettingsOpen, setSectionsSettingsOpen] = useState(false);
   const handleOpenSectionsSettings = useCallback(() => setSectionsSettingsOpen(true), []);
   const handleCloseSectionsSettings = useCallback(() => setSectionsSettingsOpen(false), []);
-  // The copy/share affordance strings live in the `climbs` namespace alongside
-  // the climb-actions sheet's "Link copied" toast.
+  // The copy-name toast strings live in the `climbs` namespace, with the rest
+  // of the climb actions' copy.
   const { t: tClimbs } = useTranslation('climbs');
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
@@ -261,6 +268,12 @@ export function PlayCore({
     sanitizeClimbTarget,
   );
   const [reportClimbOpen, setReportClimbOpen] = useState(false);
+  // The playlist picker stays on the climb ⋯ was opened for, like the report.
+  const [playlistTarget, setPlaylistTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(
+    null,
+    sanitizeClimbTarget,
+  );
+  const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false);
   const {
     requested: belowFoldContentRequested,
     request: requestBelowFoldContent,
@@ -352,11 +365,16 @@ export function PlayCore({
   // one exists, else the legacy Aurora grade. `boardseshActive` also seeds the
   // tick picker's default grade below.
   const { boardseshActive } = useDisplayGrade();
-  const { isAuthenticated } = useAuth();
-
-  // Kill switch: unresolved reads as enabled, so the Report row never pops in a
-  // beat after the sheet opens. See useClimbModerationEnabled.
-  const moderationEnabled = useClimbModerationEnabled();
+  const { isAuthenticated, isLoading: authIsLoading } = useAuth();
+  // A signed-out reader (the web export's read-only climb view) gets the default
+  // sections, whatever this browser has stored. They have no ⋯ and no Settings,
+  // so a member's "Hide all" left on a shared computer would otherwise strand
+  // them with nothing below the board and no way back. The defaults need no
+  // read, so they are ready at once. While the session is still resolving, the
+  // stored choices stand.
+  const signedOut = !isAuthenticated && !authIsLoading;
+  const sections = signedOut ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
+  const sectionsReady = signedOut || storedSectionsPreference.ready;
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
   const displayedClimb = displayedQueueItem?.climb;
@@ -376,17 +394,6 @@ export function PlayCore({
         screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       }),
     [sections, isAuthenticated, drawerGradeSectionEnabled, displayedClimb?.description],
-  );
-  // The climber's saved choices alone, so it holds still across a swipe between
-  // a climb with setter notes and one without.
-  const hasSwitchedOnSection = useMemo(
-    () =>
-      hasSwitchedOnPlayDrawerSection({
-        sections,
-        isAuthenticated,
-        screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
-      }),
-    [sections, isAuthenticated],
   );
   const firstSectionId = visibleSectionIds[0];
   const hasVisibleSections = sectionsReady && visibleSectionIds.length > 0;
@@ -896,8 +903,6 @@ export function PlayCore({
     }
     handleLightbulb();
   }, [lightbulbPressAction, connectLightbulb, handleLightbulb]);
-  // With the pill up, the queue moves into ⋯ (share is already there).
-  const openQueueFromActions = showConnectPill ? onOpenQueue : undefined;
   // The latch as the board overlay sees it. It follows the latch itself, NOT the
   // commit row: on the wrong board the row stands down (its controls would be
   // dead under the switch-board scrim) while the climber is still very much
@@ -1172,7 +1177,7 @@ export function PlayCore({
     setAddBetaVideoOpen(true);
   }, [displayedClimb, boardName, layoutId, sizeId, setIds, angle, setBetaVideoTarget]);
 
-  // Reaction-menu beta: pin the climb/board the menu was opened for so a party-session
+  // ⋯ beta: pin the climb/board the menu was opened for so a party-session
   // queue/angle change mid-menu can't retarget the sheet (#3505).
   const handleOpenAddBetaVideoForClimb = useCallback(
     (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
@@ -1182,11 +1187,12 @@ export function PlayCore({
     [setBetaVideoTarget],
   );
 
-  // Reaction-menu tick: open the drawer's OWN in-tree tick sheet (it stacks above
-  // the `/play` modal) instead of the root LogAscent sheet, which mounts behind
-  // `/play` — presenting it dismisses `/play` and the tick sheet closes on its own.
-  // Pin the climb/board the menu was opened for so a mid-menu queue change can't
-  // retarget it. QuickTickOpened is tracked by useClimbActions (source climb_actions).
+  // ⋯ tick: open the drawer's OWN in-tree tick sheet (it stacks above the `/play`
+  // modal) instead of the root LogAscent sheet, which mounts behind `/play` —
+  // presenting it dismisses `/play` and the tick sheet closes on its own. Pin the
+  // climb/board the menu was opened for so a mid-menu queue change can't retarget
+  // it. ⋯ offers no tick row today (the hero button is always there), but the menu
+  // still takes the opener so a row added later can't fall back to the root sheet.
   const handleOpenTickForClimb = useCallback(
     (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
       resetZoomRef.current?.();
@@ -1196,16 +1202,9 @@ export function PlayCore({
     [setTickTarget],
   );
 
-  // The Android actions-sheet report pins the same target as the reaction menu.
-  const handleOpenReportClimb = useCallback(() => {
-    if (!displayedClimb) return;
-    setReportTarget({ climb: displayedClimb, boardConfig: { boardName, layoutId, sizeId, setIds, angle } });
-    setReportClimbOpen(true);
-  }, [displayedClimb, boardName, layoutId, sizeId, setIds, angle, setReportTarget]);
-
-  // Reaction-menu report: open the drawer's OWN in-tree sheet (it stacks above
-  // the `/play` modal) instead of the root one, and pin the climb/board the menu
-  // was opened for so a party-session queue/angle change can't retarget it (#3505).
+  // ⋯ report: open the drawer's OWN in-tree sheet (it stacks above the `/play`
+  // modal) instead of the root one, and pin the climb/board the menu was opened
+  // for so a party-session queue/angle change can't retarget it (#3505).
   const handleOpenReportClimbForClimb = useCallback(
     (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
       setReportTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
@@ -1218,6 +1217,19 @@ export function PlayCore({
   // sheet animates out, the next open overwrites it.
   const handleCloseReportClimb = useCallback(() => {
     setReportClimbOpen(false);
+  }, []);
+
+  // ⋯ add to playlist: the drawer's OWN picker sheet, for the reason the report
+  // has one (#3294 was the root picker flashing closed under `/play`).
+  const handleOpenAddToPlaylistForClimb = useCallback(
+    (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
+      setPlaylistTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
+      setAddToPlaylistOpen(true);
+    },
+    [setPlaylistTarget],
+  );
+  const handleCloseAddToPlaylist = useCallback(() => {
+    setAddToPlaylistOpen(false);
   }, []);
 
   // Don't clear betaVideoTarget here: the sheet is still animating out and reads
@@ -1255,33 +1267,6 @@ export function PlayCore({
   const handleFindClimbers = useCallback(() => {
     pushAfterPlayerDismiss(() => router.push('/users/search'));
   }, [pushAfterPlayerDismiss]);
-
-  const handleOpenActions = useCallback(() => {
-    // iOS: open the floating reaction menu (over the drawer) instead of the in-drawer
-    // bottom sheet. Android keeps the bottom sheet.
-    if (Platform.OS === 'ios' && onOpenClimbActions && displayedClimb) {
-      // Hand the reaction menu the drawer's OWN beta opener so the share-your-beta
-      // sheet presents inside the `/play` modal (above it) rather than the root
-      // sheet, which can't stack over the fullScreenModal (#3505).
-      onOpenClimbActions(displayedClimb, undefined, {
-        onAddBetaVideo: handleOpenAddBetaVideoForClimb,
-        onTick: handleOpenTickForClimb,
-        onReportClimb: handleOpenReportClimbForClimb,
-        onOpenQueue: openQueueFromActions,
-        onOpenViewOptions: handleOpenSectionsSettings,
-      });
-      return;
-    }
-    setActiveSubDrawer('actions');
-  }, [
-    onOpenClimbActions,
-    displayedClimb,
-    handleOpenAddBetaVideoForClimb,
-    handleOpenTickForClimb,
-    handleOpenReportClimbForClimb,
-    openQueueFromActions,
-    handleOpenSectionsSettings,
-  ]);
 
   // Arm (expand) / disarm (collapse) the scroll-into-view for the first section peek.
   const handleFirstSectionToggle = useCallback(
@@ -1443,8 +1428,22 @@ export function PlayCore({
 
   const ascentCount = displayedClimb?.userAscents ?? 0;
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
+  // The same layout the action bar resolves from the same inputs, read here for
+  // the buttons it has put away: ⋯ carries a row for each.
+  const hasBluetooth = bluetooth !== null;
+  const actionBarLayout = useMemo(
+    () =>
+      resolveActionBarLayout({
+        supportsMirroring,
+        isAnonymous,
+        connectPill: showConnectPill,
+        inCommitMode: commitBarModel.mode === 'commit',
+        showLightbulb: hasBluetooth,
+        hasShare: !displayedClimbIsDraft,
+      }),
+    [supportsMirroring, isAnonymous, showConnectPill, commitBarModel.mode, hasBluetooth, displayedClimbIsDraft],
+  );
 
-  const climbActionsVisible = activeSubDrawer === 'actions';
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const climberLogsOpen = climberLogsClimbUuid !== null && climberLogsClimbUuid === displayedClimbUuid;
   const showPanePlaceholder = shouldShowPanePlaceholder(isPane, displayedClimb != null);
@@ -1523,12 +1522,43 @@ export function PlayCore({
                             />
                           </>
                         ) : null}
-                        {/* The rest timer, mirrored across the grabber from the close
-                          chevron (#5378). Its own host — and so its own sheet — because
-                          a root-level sheet would present UNDER this transparent modal.
-                          The grabber stays centred: both flanks are absolute. */}
-                        <View style={styles.restTimerSlot}>
-                          <RestTimerPillHost compact />
+                        {/* Mirrored across the grabber from the close chevron: the rest
+                          timer (#5378), then ⋯. The timer has its own host — and so its
+                          own sheet — because a root-level sheet would present UNDER this
+                          transparent modal. The cluster runs from just right of the
+                          grabber to the edge, so the grabber stays centred and a long
+                          timer shrinks rather than sliding under it. It sits outside
+                          the commit bar and the switch-board scrim, so ⋯ stays in reach
+                          while browsing and on another board's climb. */}
+                        <View style={styles.topTrailing} pointerEvents="box-none">
+                          <View style={styles.restTimerSlot}>
+                            <RestTimerPillHost compact />
+                          </View>
+                          {/* Every row is an account action, and the signed-out reader's
+                            gate bounces most of their targets to login. Mounted a frame
+                            after the board, like the rest of the drawer's reads; the
+                            placeholder holds its place so the timer never jumps. */}
+                          {isAnonymous ? null : enhancementsReady ? (
+                            <PlayDrawerActionsMenu
+                              climb={displayedClimb}
+                              boardConfig={renderBoardConfig}
+                              currentUserId={currentUserId}
+                              isAuthenticated={isAuthenticated}
+                              hidden={actionBarLayout.hidden}
+                              boardMismatch={showBoardMismatch}
+                              isFavorited={isFavorited}
+                              onToggleFavorite={handleToggleFavoriteFromMenu}
+                              onTick={handleOpenTickForClimb}
+                              onAddBetaVideo={handleOpenAddBetaVideoForClimb}
+                              onReportClimb={handleOpenReportClimbForClimb}
+                              onSelectPlaylist={handleOpenAddToPlaylistForClimb}
+                              onOpenQueue={onOpenQueue}
+                              onOpenViewOptions={handleOpenSectionsSettings}
+                              dismissPlayerAndWait={dismissPlayerAndWait}
+                            />
+                          ) : (
+                            <View style={styles.menuPlaceholder} />
+                          )}
                         </View>
                       </View>
 
@@ -1752,16 +1782,6 @@ export function PlayCore({
                             lightbulbLabelKind={lightbulbLabelKind}
                             onLightbulb={handleLightbulb}
                             onLightbulbLongPress={handleLightbulbLongPress}
-                            onOpenActions={handleOpenActions}
-                            // Section choices live in ••• → View options. The bar's
-                            // own eye comes back only once nothing this climber could
-                            // see is switched on: it is the way back after Hide all for
-                            // a signed-out web reader, who has no ••• and no Settings.
-                            // It follows their choices, not the climb, so it never
-                            // blinks in and out (shifting the row) during a swipe.
-                            onEditSections={
-                              sectionsReady && !hasSwitchedOnSection ? handleOpenSectionsSettings : undefined
-                            }
                             onOpenQueue={onOpenQueue}
                             onShare={displayedClimbIsDraft ? undefined : handleShare}
                             onTickPress={handleTickFabPress}
@@ -1866,8 +1886,8 @@ export function PlayCore({
         activeAngle={activeAngle}
         climbBoardMismatch={climbBoardMismatch}
         sectionsSettingsOpen={sectionsSettingsOpen}
-        climbActionsVisible={climbActionsVisible}
         addBetaVideoOpen={addBetaVideoOpen}
+        addToPlaylistOpen={addToPlaylistOpen}
         fullLogbookClimbUuid={fullLogbookClimbUuid}
         climberLogsOpen={climberLogsOpen}
         reportClimbOpen={reportClimbOpen}
@@ -1876,29 +1896,17 @@ export function PlayCore({
         bleControlVisible={bleControlVisible}
         composerCredentialScope={composerCredentialScope}
         betaVideoTarget={betaVideoTarget}
+        playlistTarget={playlistTarget}
         reportTarget={reportTarget}
         tickTarget={tickTarget}
-        currentUserId={currentUserId}
-        isAuthenticated={isAuthenticated}
-        moderationEnabled={moderationEnabled}
-        showConnectPill={showConnectPill}
-        displayedClimbIsDraft={displayedClimbIsDraft}
         isMirrored={isMirrored}
         boardseshActive={boardseshActive}
         sessionId={sessionId}
-        addToQueue={addToQueue}
-        dismissPlayerAndWait={dismissPlayerAndWait}
         onAngleChange={onAngleChange}
-        handleOpenSectionsSettings={handleOpenSectionsSettings}
         handleCloseSectionsSettings={handleCloseSectionsSettings}
-        handleToggleFavoriteFromMenu={handleToggleFavoriteFromMenu}
-        handleOpenAddBetaVideo={handleOpenAddBetaVideo}
-        handleOpenReportClimb={handleOpenReportClimb}
-        openQueueFromActions={openQueueFromActions}
-        handleShare={handleShare}
-        handleDismiss={handleDismiss}
         handleCloseSubDrawer={handleCloseSubDrawer}
         handleCloseAddBetaVideo={handleCloseAddBetaVideo}
+        handleCloseAddToPlaylist={handleCloseAddToPlaylist}
         handleCloseFullLogbook={handleCloseFullLogbook}
         handleCloseClimberLogs={handleCloseClimberLogs}
         handleOpenClimberProfile={handleOpenClimberProfile}
@@ -1932,15 +1940,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Mirrors closeButton across the grabber. Absolute so the grabber stays
-  // centred on the row no matter how wide the pill's digits run.
-  restTimerSlot: {
+  // Mirrors closeButton across the grabber, and spans from just right of it
+  // (half the 36pt grabber plus a gap) to the edge. Absolute so the grabber stays
+  // centred on the row no matter how wide the timer's digits run; the timer
+  // shrinks inside it instead of crossing the middle.
+  topTrailing: {
     position: 'absolute',
     top: 0,
+    left: '50%',
+    marginLeft: TOP_TRAILING_CENTRE_CLEARANCE,
     right: spacing[2],
     height: 44,
     zIndex: 2,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing[2],
+  },
+  restTimerSlot: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  // ⋯'s 44pt circle, held while the menu waits for its first frame.
+  menuPlaceholder: {
+    width: 44,
+    height: 44,
   },
   closeButton: {
     position: 'absolute',

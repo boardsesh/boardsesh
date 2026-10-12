@@ -11,6 +11,7 @@
 // role / selection assertions. Component tests that assert AppMenu internals register
 // their own vi.mock, which takes precedence over this alias.
 
+import { Fragment } from 'react';
 import { Pressable, Text, View } from 'react-native';
 // The shared props type has no native imports, so it's safe to pull into the node-env
 // stub — keeps the stub's contract from drifting from the real component.
@@ -32,20 +33,24 @@ export function AppMenu(props: AppMenuProps) {
         <Text>{props.label}</Text>
       </Pressable>
       {actions.map((action, index) => (
-        <Pressable
-          key={`${index}-${action.label}`}
-          accessibilityRole="button"
-          accessibilityState={{ selected: action.selected, disabled: action.disabled }}
-          // Mirrors the real component's shared guard: a disabled row keeps its
-          // position (indices address actions) but never reports a selection.
-          disabled={action.disabled}
-          onPress={() => {
-            if (action.disabled) return;
-            onSelectIndex(index);
-          }}
-        >
-          <Text>{action.label}</Text>
-        </Pressable>
+        <Fragment key={`${index}-${action.label}`}>
+          {/* The real menus draw a separator here (never above the first row).
+              An `hr`, not a button, so it takes no index — same as theirs. */}
+          {action.dividerBefore && index > 0 ? <hr /> : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: action.selected, disabled: action.disabled }}
+            // Mirrors the real component's shared guard: a disabled row keeps its
+            // position (indices address actions) but never reports a selection.
+            disabled={action.disabled}
+            onPress={() => {
+              if (action.disabled) return;
+              onSelectIndex(index);
+            }}
+          >
+            <Text>{action.label}</Text>
+          </Pressable>
+        </Fragment>
       ))}
     </View>
   );

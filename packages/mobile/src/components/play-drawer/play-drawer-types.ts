@@ -1,7 +1,7 @@
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
-import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provider';
+import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import type { SwipeDismissAnimation } from './use-drawer-dismiss-gesture';
 
 // Matches DrawerHostProvider's string-backed route/preview configuration and
@@ -91,13 +91,8 @@ export type PlayDrawerProps = {
    *  mismatch was discovered from the climb rather than handed in as an
    *  override — the host has no override to read in that case. */
   onSwitchBoard?: (boardConfig?: BoardConfig) => void;
-  /** Opens the climb reaction menu (DrawerHostProvider's openClimbActions). On iOS
-   *  the ellipsis uses this instead of the in-drawer bottom sheet. The drawer passes
-   *  its own in-tree beta opener via `options.onAddBetaVideo` so the beta sheet
-   *  stacks above the `/play` modal (#3505). */
-  onOpenClimbActions?: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
   /** Supplied only by the `/play` route. The persistent iPad pane omits it. */
-  dismissPlayerAndWait?: OpenClimbActionsOptions['dismissPlayerAndWait'];
+  dismissPlayerAndWait?: DismissSurfaceAndWait;
   /** The climb to show; applied on mount and whenever `nonce` changes. */
   openTarget: PlayDrawerOpenTarget | null;
   /** Rendering context. `'route'` (default) is the full-screen `/play` modal — a

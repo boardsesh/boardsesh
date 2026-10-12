@@ -12,6 +12,7 @@ vi.mock('@expo/ui/swift-ui', () => ({
     createElement('div', { 'data-menu-modifiers': JSON.stringify(modifiers) }, label, children),
   Button: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement('button', { onClick: onPress }, label),
+  Divider: () => createElement('hr'),
   HStack: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
   Image: ({ systemName }: { systemName: string }) => createElement('i', { 'data-symbol': systemName }),
@@ -86,5 +87,28 @@ describe('AppMenu (iOS) icon surfaces', () => {
     const { container } = render(createElement(AppMenu, { label: 'My crew', actions, onSelectIndex: vi.fn() }));
     expect(modifiersOf(container)).toContainEqual({ kind: 'buttonStyle', params: 'glass' });
     expect(modifiersOf(container)).toContainEqual({ kind: 'controlSize', params: 'large' });
+  });
+});
+
+describe('AppMenu (iOS) dividers', () => {
+  it('draws a UIMenu separator above a row that opens a group, without taking an index', () => {
+    const onSelectIndex = vi.fn();
+    const { container, getByText } = render(
+      createElement(AppMenu, {
+        iconName: 'more',
+        accessibilityLabel: 'More actions',
+        actions: [
+          { label: 'Add to queue', dividerBefore: true },
+          { label: 'Share' },
+          { label: 'Report', dividerBefore: true },
+        ],
+        onSelectIndex,
+      }),
+    );
+    const rows = [...container.querySelectorAll('button, hr')].map((node) => node.tagName.toLowerCase());
+    // Never above the first row: there is no group above it to close.
+    expect(rows).toEqual(['button', 'button', 'hr', 'button']);
+    fireEvent.click(getByText('Report'));
+    expect(onSelectIndex).toHaveBeenCalledWith(2);
   });
 });

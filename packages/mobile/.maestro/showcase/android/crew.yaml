@@ -14,7 +14,7 @@ name: showcase take - a friend adds a climb (Android)
 # Coordinates (1080x2424 emulator, 411x923 dp, portrait):
 #   50%,52% -> 50%,95%  drag the invite sheet down to close it
 #   40%,86%             the now-playing bar above the tab bar -> play view
-#   90%,89%             the queue button, bottom right of the play view
+#   (the queue button is tapped by its label: see ../crew.yaml)
 #   50%,51% -> 50%,8%   drag the queue sheet from half to full height
 
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
@@ -35,8 +35,7 @@ name: showcase take - a friend adds a climb (Android)
     point: '40%,86%'
 - waitForAnimationToEnd
 
-- tapOn:
-    point: '90%,89%'
+- tapOn: 'Queue, .* climbs'
 - waitForAnimationToEnd
 # The queue sheet opens at half height, where the history rows above the
 # current climb can push the new row below the fold: drag it to full height.

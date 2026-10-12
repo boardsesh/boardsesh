@@ -5,17 +5,17 @@ import { PressableSurface } from './PressableSurface';
 // `Menu` anchored to a flat text + caret trigger (or a bare glyph trigger in icon
 // mode) — the Material counterpart to the Compose `DropdownMenu` in
 // AppMenu.android.tsx. The active row shows a leading ✓ (Paper's `check` glyph, no
-// SF Symbols on web), destructive rows take the `m3.error` text colour and disabled
-// rows use Paper's own `disabled`. Controlled `visible` state, closed on each select.
+// SF Symbols on web), destructive rows take the `m3.error` text colour, disabled
+// rows use Paper's own `disabled` and `dividerBefore` draws a Paper `Divider`. Controlled `visible` state, closed on each select.
 // The per-platform action resolution (which glyph, when to check) lives in
 // AppMenu.logic.ts, shared with the iOS file.
 //
 // `systemIcon` (an iOS SF Symbol name) is ignored here — it isn't a Material glyph
 // name, matching Android, which also drops it.
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { Menu } from 'react-native-paper';
+import { Divider, Menu } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { anchorGlyphForIcon, isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
@@ -77,22 +77,25 @@ export function AppMenu(props: AppMenuProps) {
   return (
     <Menu visible={visible} onDismiss={() => setVisible(false)} anchor={anchor}>
       {resolved.map((action, index) => (
-        <Menu.Item
-          // Composite key: scope entries can share a display name (two gyms named
-          // the same), so the label alone isn't unique — pair it with the position.
-          key={`${index}-${action.label}`}
-          title={action.label}
-          leadingIcon={action.showCheck ? 'check' : undefined}
-          disabled={action.isDisabled}
-          titleStyle={{
-            color: action.isDisabled ? disabledColor : action.isDestructive ? (m3.error as string) : labelColor,
-          }}
-          onPress={() => {
-            if (!isMenuActionSelectable(resolved, index)) return;
-            setVisible(false);
-            onSelectIndex(index);
-          }}
-        />
+        // Composite key: scope entries can share a display name (two gyms named
+        // the same), so the label alone isn't unique — pair it with the position.
+        <Fragment key={`${index}-${action.label}`}>
+          {/* A menu group divider. Not an item, so it takes no index. */}
+          {action.dividerBefore ? <Divider /> : null}
+          <Menu.Item
+            title={action.label}
+            leadingIcon={action.showCheck ? 'check' : undefined}
+            disabled={action.isDisabled}
+            titleStyle={{
+              color: action.isDisabled ? disabledColor : action.isDestructive ? (m3.error as string) : labelColor,
+            }}
+            onPress={() => {
+              if (!isMenuActionSelectable(resolved, index)) return;
+              setVisible(false);
+              onSelectIndex(index);
+            }}
+          />
+        </Fragment>
       ))}
     </Menu>
   );

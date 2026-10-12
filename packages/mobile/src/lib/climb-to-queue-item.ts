@@ -115,8 +115,8 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       frames: climb.frames,
       setter_username: climb.setter_username,
       // Owner identity, so the owner-only Edit action can be gated on a queued
-      // climb (use-climb-actions / ClimbActionsSheet read exactly this, and the
-      // play drawer feeds them the queue item's climb). Null for Aurora-synced
+      // climb (use-climb-actions reads exactly this, and the play drawer's ⋯
+      // feeds it the queue item's climb). Null for Aurora-synced
       // climbs that predate Boardsesh accounts.
       userId: climb.userId,
       // Carried so forking or editing a queued climb keeps its description.

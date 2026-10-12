@@ -20,6 +20,12 @@ export type AppMenuAction = {
    * iOS-only: the Android Compose menu has no SF Symbols, so it's ignored there.
    */
   systemIcon?: string;
+  /**
+   * Draws a separator above this row, opening a new group. A divider is not an
+   * action: it takes no index, so `onSelectIndex` still counts rows only. Ignored
+   * on the first row, where there is nothing above it to separate from.
+   */
+  dividerBefore?: boolean;
 };
 
 type AppMenuSharedProps = {

@@ -1,20 +1,16 @@
-import type { ComponentProps } from 'react';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { randomUUID } from 'expo-crypto';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { LogAscentSheet } from '../LogAscentSheet';
 import { PlayDrawerSectionsSheet } from './PlayDrawerSectionsSheet';
-import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
+import { AddToPlaylistSheet } from '../AddToPlaylistSheet';
 import { LogbookFullSheet } from './logbook/LogbookFullSheet';
 import { ClimberLogsSheet } from './ClimberLogsSheet';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
-import { canReportDisplayedClimb } from './can-report-climb';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
-import type { useQueueActions } from '../../providers/queue-provider';
 
 type ComposerTarget = { climb: Climb; boardConfig: BoardConfig } | null;
 
@@ -29,8 +25,8 @@ export type PlayCoreSheetHostsProps = {
   activeAngle: number;
   climbBoardMismatch: boolean;
   sectionsSettingsOpen: boolean;
-  climbActionsVisible: boolean;
   addBetaVideoOpen: boolean;
+  addToPlaylistOpen: boolean;
   fullLogbookClimbUuid: string | null;
   climberLogsOpen: boolean;
   reportClimbOpen: boolean;
@@ -39,29 +35,17 @@ export type PlayCoreSheetHostsProps = {
   bleControlVisible: boolean;
   composerCredentialScope: number;
   betaVideoTarget: ComposerTarget;
+  playlistTarget: ComposerTarget;
   reportTarget: ComposerTarget;
   tickTarget: ComposerTarget;
-  currentUserId: string | null;
-  isAuthenticated: boolean;
-  moderationEnabled: boolean;
-  showConnectPill: boolean;
-  displayedClimbIsDraft: boolean;
   isMirrored: boolean;
   boardseshActive: boolean;
   sessionId: string | null;
-  addToQueue: ReturnType<typeof useQueueActions>['addToQueue'];
-  dismissPlayerAndWait: PlayDrawerProps['dismissPlayerAndWait'];
   onAngleChange: PlayDrawerProps['onAngleChange'];
-  handleOpenSectionsSettings: () => void;
   handleCloseSectionsSettings: () => void;
-  handleToggleFavoriteFromMenu: () => void;
-  handleOpenAddBetaVideo: () => void;
-  handleOpenReportClimb: () => void;
-  openQueueFromActions: ComponentProps<typeof ClimbActionsSheet>['onOpenQueue'];
-  handleShare: ComponentProps<typeof ClimbActionsSheet>['onShare'];
-  handleDismiss: () => void;
   handleCloseSubDrawer: () => void;
   handleCloseAddBetaVideo: () => void;
+  handleCloseAddToPlaylist: () => void;
   handleCloseFullLogbook: () => void;
   handleCloseClimberLogs: () => void;
   handleOpenClimberProfile: (userId: string) => void;
@@ -86,8 +70,8 @@ export function PlayCoreSheetHosts({
   activeAngle,
   climbBoardMismatch,
   sectionsSettingsOpen,
-  climbActionsVisible,
   addBetaVideoOpen,
+  addToPlaylistOpen,
   fullLogbookClimbUuid,
   climberLogsOpen,
   reportClimbOpen,
@@ -96,29 +80,17 @@ export function PlayCoreSheetHosts({
   bleControlVisible,
   composerCredentialScope,
   betaVideoTarget,
+  playlistTarget,
   reportTarget,
   tickTarget,
-  currentUserId,
-  isAuthenticated,
-  moderationEnabled,
-  showConnectPill,
-  displayedClimbIsDraft,
   isMirrored,
   boardseshActive,
   sessionId,
-  addToQueue,
-  dismissPlayerAndWait,
   onAngleChange,
-  handleOpenSectionsSettings,
   handleCloseSectionsSettings,
-  handleToggleFavoriteFromMenu,
-  handleOpenAddBetaVideo,
-  handleOpenReportClimb,
-  openQueueFromActions,
-  handleShare,
-  handleDismiss,
   handleCloseSubDrawer,
   handleCloseAddBetaVideo,
+  handleCloseAddToPlaylist,
   handleCloseFullLogbook,
   handleCloseClimberLogs,
   handleOpenClimberProfile,
@@ -127,8 +99,8 @@ export function PlayCoreSheetHosts({
   handleCloseBleControl,
 }: PlayCoreSheetHostsProps) {
   const mountSectionsSettings = useMountedOnFirstOpen(sectionsSettingsOpen);
-  const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
+  const mountAddToPlaylist = useMountedOnFirstOpen(addToPlaylistOpen);
   const fullLogbookOpen = fullLogbookClimbUuid !== null;
   const mountFullLogbook = useMountedOnFirstOpen(fullLogbookOpen);
   const mountClimberLogs = useMountedOnFirstOpen(climberLogsOpen);
@@ -145,51 +117,11 @@ export function PlayCoreSheetHosts({
         <PlayDrawerSectionsSheet visible={sectionsSettingsOpen} onClose={handleCloseSectionsSettings} />
       )}
       {/* Sub-drawers: @expo/ui native .sheet()s presented from within the player
-          route's view controller, so they stack ABOVE it. On iOS the ellipsis
-          routes to ClimbReactionMenu via onOpenClimbActions, so activeSubDrawer
-          never becomes 'actions' there. Mounted on first open, then kept. */}
-      {mountClimbActions && (
-        <ClimbActionsSheet
-          visible={climbActionsVisible}
-          climb={displayedClimb ?? null}
-          boardName={boardName as BoardName}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          angle={angle}
-          currentUserId={currentUserId}
-          onAddToQueue={() => {
-            if (displayedClimb) {
-              void addToQueue({
-                uuid: randomUUID(),
-                climb: displayedClimb,
-              });
-            }
-          }}
-          onToggleFavorite={handleToggleFavoriteFromMenu}
-          onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-          onReportClimb={
-            canReportDisplayedClimb({
-              isAuthenticated,
-              moderationEnabled,
-              climb: displayedClimb,
-              currentUserId,
-              boardName,
-            })
-              ? handleOpenReportClimb
-              : undefined
-          }
-          onOpenQueue={openQueueFromActions}
-          onOpenViewOptions={handleOpenSectionsSettings}
-          onShare={showConnectPill && !displayedClimbIsDraft ? handleShare : undefined}
-          dismissPlayerAndWait={dismissPlayerAndWait}
-          onClimbDeleted={handleDismiss}
-          onClose={handleCloseSubDrawer}
-        />
-      )}
+          route's view controller, so they stack ABOVE it. Every one of them is
+          mounted on first open, then kept. */}
 
-      {/* Sub-drawer: Share your beta — opened from the action sheet's "Add beta
-          video" row or the Beta Videos section "+" button. Mounted on first open. */}
+      {/* Sub-drawer: Share your beta — opened from ⋯ → "Add beta video" or the
+          Beta Videos section "+" button. */}
       {mountAddBetaVideo && (
         <AddBetaVideoSheet
           key={`beta-${composerCredentialScope}`}
@@ -199,6 +131,25 @@ export function PlayCoreSheetHosts({
           layoutId={betaVideoTarget?.boardConfig.layoutId ?? layoutId}
           angle={betaVideoTarget?.boardConfig.angle ?? angle}
           onClose={handleCloseAddBetaVideo}
+        />
+      )}
+
+      {/* Sub-drawer: Add to playlist — opened from ⋯. The player's own host,
+          because the root one presents under `/play` and flashes closed (#3294).
+          Pinned to the climb ⋯ was opened on, and keyed on the credential scope
+          like the composers, so a sign-out can't carry a half-typed playlist name
+          into the next account. */}
+      {mountAddToPlaylist && (
+        <AddToPlaylistSheet
+          key={`playlist-${composerCredentialScope}`}
+          visible={addToPlaylistOpen}
+          climb={playlistTarget?.climb ?? displayedClimb ?? null}
+          boardName={(playlistTarget?.boardConfig.boardName ?? boardName) as BoardName}
+          layoutId={playlistTarget?.boardConfig.layoutId ?? layoutId}
+          sizeId={playlistTarget?.boardConfig.sizeId ?? sizeId}
+          setIds={playlistTarget?.boardConfig.setIds ?? setIds}
+          angle={playlistTarget?.boardConfig.angle ?? angle}
+          onClose={handleCloseAddToPlaylist}
         />
       )}
 
@@ -228,8 +179,7 @@ export function PlayCoreSheetHosts({
         />
       )}
 
-      {/* Sub-drawer: Report climb — opened from the reaction menu (iOS) or the
-          actions sheet's "Report climb" row (Android). Mounted on first open and
+      {/* Sub-drawer: Report climb — opened from ⋯. Mounted on first open and
           then kept, so it never unmounts between reports — which is why it
           resets its own form on each fresh open rather than on unmount. */}
       {mountReportClimb && (

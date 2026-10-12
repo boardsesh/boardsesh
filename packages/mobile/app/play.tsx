@@ -86,9 +86,10 @@ function PlayScreen() {
     () => dismissAndWait(waitForPlayerDismiss),
     [dismissAndWait, waitForPlayerDismiss],
   );
-  // Any actions menu opened from this route receives the route-owned transition
-  // waiter. That includes the root FullWindowOverlay and the route's QueueSheet;
-  // neither can safely discover the native-stack navigation object itself.
+  // A reaction menu opened from this route's QueueSheet (a row long-press)
+  // receives the route-owned transition waiter: the root FullWindowOverlay can't
+  // safely discover the native-stack navigation object itself. The player's own
+  // ⋯ is a native menu inside PlayDrawer and needs none of this.
   const openPlayerClimbActions = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => {
       openClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
@@ -182,7 +183,6 @@ function PlayScreen() {
               reachableBoardKeys={reachableBoardKeys}
               mismatchBoardLabel={mismatchBoardLabel}
               onSwitchBoard={onSwitchBoard}
-              onOpenClimbActions={openPlayerClimbActions}
               dismissPlayerAndWait={dismissPlayerAndWait}
               openTarget={playTarget}
             />

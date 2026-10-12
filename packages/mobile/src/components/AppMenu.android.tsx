@@ -4,13 +4,22 @@
 // motion for free. The anchor is a flat `Text` + caret trigger (the M3 app-bar
 // title-menu) or, in icon mode, an M3 IconButton (a 24dp more_vert in a 48dp
 // target) for the overflow family and a bare glyph for the rest; the active row shows a leading ✓
-// (no SF Symbols on Android), destructive rows take the `m3.error` text colour and
-// disabled rows are `enabled={false}`. Controlled `expanded` state, closed on each
+// (no SF Symbols on Android), destructive rows take the `m3.error` text colour,
+// disabled rows are `enabled={false}` and `dividerBefore` draws an M3
+// `HorizontalDivider` above its row. Controlled `expanded` state, closed on each
 // select.
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Host } from '@expo/ui';
-import { DropdownMenu, DropdownMenuItem, Icon, IconButton, Row, Text } from '@expo/ui/jetpack-compose';
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  HorizontalDivider,
+  Icon,
+  IconButton,
+  Row,
+  Text,
+} from '@expo/ui/jetpack-compose';
 import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
@@ -108,27 +117,30 @@ export function AppMenu(props: AppMenuProps) {
                 ? (m3.error as string)
                 : labelColor;
             return (
-              <DropdownMenuItem
-                // Composite key: scope entries can share a display name (two gyms named
-                // the same), so the label alone isn't unique — pair it with the position.
-                key={`${index}-${action.label}`}
-                enabled={!action.isDisabled}
-                elementColors={{ textColor: itemColor, disabledTextColor: disabledColor }}
-                onClick={() => {
-                  if (!isMenuActionSelectable(resolved, index)) return;
-                  setExpanded(false);
-                  onSelectIndex(index);
-                }}
-              >
-                {action.showCheck ? (
-                  <DropdownMenuItem.LeadingIcon>
-                    <Text color={brandAccentColor(brandColors)}>✓</Text>
-                  </DropdownMenuItem.LeadingIcon>
-                ) : null}
-                <DropdownMenuItem.Text>
-                  <Text color={itemColor}>{action.label}</Text>
-                </DropdownMenuItem.Text>
-              </DropdownMenuItem>
+              // Composite key: scope entries can share a display name (two gyms named
+              // the same), so the label alone isn't unique — pair it with the position.
+              <Fragment key={`${index}-${action.label}`}>
+                {/* An M3 menu group divider. Not an item, so it takes no index. */}
+                {action.dividerBefore ? <HorizontalDivider /> : null}
+                <DropdownMenuItem
+                  enabled={!action.isDisabled}
+                  elementColors={{ textColor: itemColor, disabledTextColor: disabledColor }}
+                  onClick={() => {
+                    if (!isMenuActionSelectable(resolved, index)) return;
+                    setExpanded(false);
+                    onSelectIndex(index);
+                  }}
+                >
+                  {action.showCheck ? (
+                    <DropdownMenuItem.LeadingIcon>
+                      <Text color={brandAccentColor(brandColors)}>✓</Text>
+                    </DropdownMenuItem.LeadingIcon>
+                  ) : null}
+                  <DropdownMenuItem.Text>
+                    <Text color={itemColor}>{action.label}</Text>
+                  </DropdownMenuItem.Text>
+                </DropdownMenuItem>
+              </Fragment>
             );
           })}
         </DropdownMenu.Items>

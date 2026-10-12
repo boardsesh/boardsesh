@@ -339,8 +339,10 @@ test.describe('expo-web smoke', () => {
         // The persistent detail pane embeds the same action bar as the mobile
         // route. Check both rows so a desktop-only gate cannot silently strip an
         // action while the main Log ascent button still makes the pane look live.
-        // The leading action is mirror on boards that support it and favorite
-        // otherwise. Both are the same capability-gated slot used on mobile.
+        // The leading action is mirror on boards that support it and the queue
+        // otherwise; the heart always leads the second row, so either way one of
+        // these names is on screen. "Climb actions" is the ⋯ menu in the pane's
+        // top row (a Paper menu anchor on web), not the bar.
         await expect(
           page
             .getByRole('button', {

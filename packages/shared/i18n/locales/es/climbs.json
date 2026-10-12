@@ -688,8 +688,6 @@
     "climbActions": {
       "preview": "Vista previa",
       "playNext": "Poner a continuación",
-      "copyLink": "Copiar enlace",
-      "linkCopied": "Enlace copiado",
       "nameCopied": "Nombre copiado",
       "copyNameError": "No se pudo copiar el nombre",
       "copyNameHint": "Mantén pulsado para copiar el nombre",

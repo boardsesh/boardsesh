@@ -35,7 +35,7 @@ on content such as a form or list when needed for readability.
 | **`Sheet`** (`src/components/Sheet.tsx`)           | `BottomSheet`      | declaratively — its presence in the tree shows it                                  | Its lifetime is tied to parent state.                                                                                             |
 
 Examples: `QueueSheet`, `BoardSheet`, `LogAscentSheet`, `AngleSelectorSheet`,
-`ClimbActionsSheet`, `AddBetaVideoSheet` (sheet surfaces), `HoldRoleSheet` (a declarative `Sheet`).
+`AddToPlaylistSheet`, `AddBetaVideoSheet` (sheet surfaces), `HoldRoleSheet` (a declarative `Sheet`).
 
 **Expo web implementation exception.** App and shared code still import
 `@expo/ui/community/bottom-sheet`, but Metro redirects that one module to
@@ -74,19 +74,21 @@ it renders inline in `ClimbReactionMenu`'s `FullWindowOverlay` (plain `TextInput
 `AddToPlaylistSheet`'s `ModalSheet` (`BottomSheetTextInput`), so add-to-playlist never stacks a
 second sheet. Feedback is inline, not a toast (a toast renders behind the overlay/sheet).
 
-**In-tree opener override — a root menu opening a sheet over a route.** `ClimbReactionMenu` is a
-`FullWindowOverlay` rendered at the **app root** (via `DrawerHostProvider`), but it floats over the
-player route too. If one of its actions opens a sheet through a **root-level** opener
-(`useDrawerHost().openAddBetaVideo` / `openLogAscent` → the sheets in `DrawerHostProvider`), that
-sheet presents off the root and lands **under** the `/play` fullScreenModal — so from the player it
-flashes open and vanishes (rule 1; #3505 was this, #3294 the playlist variant). The fix: when the
-menu is opened **from the player**, thread the player's **own in-tree opener** through
-`openClimbActions` → `ClimbReactionMenu` → `useClimbActions` (the `onAddBetaVideo` override, mirroring
-`onEditEntry` / `onSelectPlaylist`), so the action drives `PlayDrawer`'s local `AddBetaVideoSheet`
-(which presents inside the modal, above it) instead of the root one. `onTick`, `onReportClimb`,
-`onOpenQueue` and `onOpenViewOptions` (the sections sheet) take the same path. Off the player (climb list,
-logbook, board sheet) the override is omitted and the root sheet is correct — nothing covers it.
-**Any new ellipsis action that opens a native sheet needs this override**, or it re-hits the bug.
+**In-tree openers — a menu opening a sheet over a route.** `useClimbActions` falls back to
+**root-level** openers (`useDrawerHost().openAddBetaVideo` / `openLogAscent` / `openReportClimb` →
+the sheets in `DrawerHostProvider`). A sheet opened that way presents off the root, so from the
+`/play` modal it lands **under** the player and flashes open and vanishes (rule 1; #3505 was this,
+#3294 the playlist variant). The player's ⋯ is `PlayDrawerActionsMenu`, a native menu inside
+`PlayCore` (top row, see "Play drawer section controls" below). It hands `useClimbActions` the
+player's **own** opener for every row that opens a sheet: `onTick`, `onAddBetaVideo`,
+`onReportClimb`, `onSelectPlaylist` (the player's own `AddToPlaylistSheet` host), `onOpenQueue` and
+`onOpenViewOptions` (the sections sheet). Each drives a sheet mounted in `PlayCoreSheetHosts`, which
+presents inside the modal, above it. The props are **required** on `PlayDrawerActionsMenu`, so
+leaving one out fails typecheck instead of silently taking the root fallback. The favourite row
+goes through the bar heart's own toggle (`handleToggleFavoriteFromMenu`), so the two never
+disagree. Off the player (climb list, logbook, board sheet) the long-press `ClimbReactionMenu`
+omits the overrides and the root sheet is correct — nothing covers it. **Any new ⋯ row that opens
+a native sheet needs an in-tree opener**, or it re-hits the bug.
 
 **Every native sheet must go through the presentation coordinator.** `@expo/ui`
 sheets all present off the **same** root-window view controller, and the library
@@ -242,26 +244,28 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climb view and the player's ••• → View options use the same seven visibility
+Settings → Climb view and the player's ⋯ → View options use the same seven visibility
 switches. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
-as a managed `ModalSheet` mounted inside the player, above `/play`: on iOS from the
-reaction menu, on Android and web once the actions sheet has gone. ••• lives in the
-second row, which the commit bar replaces while browsing in commit mode, so there the
-way in is Settings → Climb view until the climber is back to live. Its bulk actions
-remain outside the list scroll. On iOS with the Apple variant, the header controls and
+as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
+(SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
+`[⌄] ━━━ [rest timer][⋯]`, in the route, the iPad pane and the web pane alike. The top
+row sits outside the commit bar and the switch-board scrim, so ⋯ (and View options)
+stays in reach while browsing in commit mode and on another board's climb. On another
+board's climb every ⋯ row that writes is disabled; Share, View options and Open in
+Aurora app stay live. The sheet's bulk actions remain outside the list scroll. On iOS with the Apple variant, the header controls and
 list leave their backgrounds unset so the native sheet material stays visible around
 the inset switch group. Only the grouped rows use an opaque semantic content surface;
 Material, Reduce Transparency, Android and web keep their grouped content background.
 Show all and Hide all
 stay together above the grouped switches, with 44-point targets and disabled states
 when every section already matches the action. Choices apply immediately; the close
-button dismisses the sheet without a save step. The player's second row shows an eye
-button, which opens the same sheet, only when nothing you can see is switched on
-(`hasSwitchedOnPlayDrawerSection`; Climber logs count only when signed in). It reads
-your choices, not the climb, so a swipe between a climb with setter notes and one
-without never slides it into the row. It is the way back after Hide all for a
-signed-out web reader, who has no ••• and no Settings. These device-local choices use AsyncStorage (IndexedDB
-in the browser) and keep each section's existing expansion preference and order.
+button dismisses the sheet without a save step. There is no eye button in the action bar
+any more. A signed-out web reader, who has no ⋯ and no Settings, ignores the stored
+choices and gets the default sections, ready at once (no read to wait for), so a
+member's Hide all left in the same browser can't strand them with nothing below the
+board. While the session is still resolving, the stored choices stand. These
+device-local choices use AsyncStorage (IndexedDB in the browser) and keep each
+section's existing expansion preference and order.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.
@@ -513,7 +517,7 @@ routes to the board picker — but copy the shape, not the code: it is **ungated
 iPad pane (where there is no `/play` route) it pops whatever is focused instead. The gated
 version is `useCreateClimbNavigation`
 (`src/components/create-climb/use-create-climb-navigation.ts`), and both remix/edit entry
-points (the reaction menu's `useClimbActions`, the in-player `ClimbActionsSheet`) go through
+points (`useClimbActions`, behind both the long-press reaction menu and the player's ⋯) go through
 it.
 
 Two things that are easy to get wrong:

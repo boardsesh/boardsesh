@@ -28,10 +28,9 @@ type ClimbPreviewCardProps = {
  * A hairline separator divides it from the action rows below, starting under
  * the text column like the list row's: at the gutter when thumbnails are off.
  *
- * Memoized: its host sheets subscribe to route info (`ClimbActionsSheet` reaches
- * `useSegments` through `useCreateClimbNavigation`), so the sheet re-renders on every
- * navigation in the app. Props here are the climb plus primitives, so a shallow compare
- * keeps the board thumbnail out of that churn.
+ * Memoized: its host sheets re-render far more often than the climb changes (the
+ * player's playlist host re-renders with the whole drawer). Props here are the climb
+ * plus primitives, so a shallow compare keeps the board thumbnail out of that churn.
  */
 function ClimbPreviewCardComponent({ climb, boardName, layoutId, sizeId, setIds, angle }: ClimbPreviewCardProps) {
   const { systemColors } = useTheme();

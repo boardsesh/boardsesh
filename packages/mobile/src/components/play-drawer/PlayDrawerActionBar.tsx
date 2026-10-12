@@ -10,6 +10,7 @@ import { LightbulbHolderBadge } from './LightbulbHolderBadge';
 import { FirstConnectPill } from './FirstConnectPill';
 import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import type { CommitBarMode, CommitButtonLabel } from './wall-state';
+import { resolveActionBarLayout, type ActionBarSecondaryItem } from './action-bar-layout';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../providers/theme-provider';
 // Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
@@ -18,7 +19,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
-import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
@@ -59,10 +59,10 @@ type PlayDrawerActionBarProps = {
   /**
    * The connect-step test's treatment (#5654, PR 7): the bulb leaves the first
    * row and comes back as a labelled "Light it on the board" pill at the right
-   * end of the second row. Share and queue move into ⋯ (the host adds the queue
-   * to that menu), the heart and angle stay, and the tick keeps the hero slot.
+   * end of the second row. Share (and the queue, on a mirror board) moves into
+   * the top row's ⋯, the heart and angle stay, and the tick keeps the hero slot.
    * The host decides it (`useFirstConnectPill`); commit mode and an anonymous
-   * viewer still win here, like every other row rule.
+   * viewer still win here, like every other row rule (`resolveActionBarLayout`).
    */
   connectPill?: boolean;
   /**
@@ -76,10 +76,11 @@ type PlayDrawerActionBarProps = {
    *  appears twice in the drawer (see `shouldShowHolderBadge` in wall-state.ts). */
   showHolderBadge?: boolean;
   /**
-   * What the SECOND row is doing. `'commit'` swaps the utilities (angle, heart,
-   * more, share, queue) for the browse latch's own controls — same 64pt row, no
-   * added height. Resolved by `resolveCommitBarModel`; an anonymous viewer is
-   * forced back to `'actions'` here, alongside the rest of the `viewer` rules.
+   * What the SECOND row is doing. `'commit'` swaps the utilities (heart, angle,
+   * share, and the queue on a mirror board) for the browse latch's own controls —
+   * same 64pt row, no added height. Resolved by `resolveCommitBarModel`; an
+   * anonymous viewer is forced back to `'actions'` here, alongside the rest of the
+   * `viewer` rules.
    */
   secondaryMode?: CommitBarMode;
   /** Commit-mode only: leave the latch and go back to the committed climb. */
@@ -110,8 +111,9 @@ type PlayDrawerActionBarProps = {
    * IN PLACE on the canonical `/…/view/{segment}` URL, and the anonymous gate
    * re-reads `window.location.pathname` on every navigation. Anything that
    * pushes a route outside the read-only allow-set (`/boards`, `/play`,
-   * `/climbs/{uuid}`) bounces the visitor to login mid-session, so the queue and
-   * climb-actions entries have to go whether or not their targets would 401.
+   * `/climbs/{uuid}`) bounces the visitor to login mid-session, so the queue
+   * has to go whether or not its target would 401. (The player's ⋯ menu, in the
+   * top row, is not rendered for them either.)
    */
   viewer?: 'member' | 'anonymous';
   /** Anonymous only: what the tick button does instead of opening the tick sheet. */
@@ -122,9 +124,6 @@ type PlayDrawerActionBarProps = {
   onToggleFavorite: () => void;
   onLightbulb: () => void;
   onLightbulbLongPress?: () => void;
-  onOpenActions: () => void;
-  /** Configure the sections below the rendered board. */
-  onEditSections?: () => void;
   onOpenQueue: () => void;
   /** Absent on a draft: only its setter can open it, so a link goes nowhere (#5960). */
   onShare?: () => void;
@@ -170,8 +169,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onToggleFavorite,
   onLightbulb,
   onLightbulbLongPress,
-  onOpenActions,
-  onEditSections,
   onOpenQueue,
   onShare,
   onTickPress,
@@ -181,7 +178,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
-  const { t: tCommon } = useTranslation('common');
   const theme = useTheme();
   // What the bulb says it does. Resolved here rather than inline in the JSX so
   // the four cases read as four cases. Callers that don't pass a kind fall back
@@ -204,9 +200,16 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   // suppression lives here with the rest of the `viewer` rules rather than only
   // in the resolver — the same shape as `showLightbulb` above.
   const inCommitMode = secondaryMode === 'commit' && !isAnonymous && onBackToLive != null && onCommit != null;
-  const showSectionsButton = Boolean(onEditSections) && !inCommitMode;
-  // The pill replaces the bulb only where the bulb would have been offered.
-  const showConnectPill = connectPill && showLightbulb && !isAnonymous && !inCommitMode;
+  // Which button sits where. The host resolves the same layout to learn which
+  // buttons ⋯ has to stand in for, so both read one rule.
+  const layout = resolveActionBarLayout({
+    supportsMirroring,
+    isAnonymous,
+    connectPill,
+    inCommitMode,
+    showLightbulb,
+    hasShare: onShare != null,
+  });
 
   // Haptics follow HIG "Playing haptics": plain buttons (prev / next / share /
   // sign in / angle) get none — the press itself is the feedback. The two
@@ -227,11 +230,12 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   return (
     <View style={[drawerActionBarStyles.container, { borderTopColor: theme.systemColors.separator }]}>
       <View style={drawerActionBarStyles.rowPrimary}>
-        {/* Mirror, or the heart where a board can't mirror. An anonymous reader
-            gets neither fallback — a favourite needs an account — so the slot
+        {/* Mirror, or the queue where a board can't mirror: the list ⏮ and ⏭
+            walk, and up here it survives commit mode and the connect pill. An
+            anonymous reader has no queue, so on a board without mirror the slot
             stays empty and the row keeps its five-slot spacing either way. */}
         <View style={drawerActionBarStyles.primarySlot}>
-          {supportsMirroring ? (
+          {layout.leadingSlot === 'mirror' ? (
             <ActionButton
               size="lg"
               iconName="mirror"
@@ -242,20 +246,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')
               }
             />
-          ) : isAnonymous ? null : (
-            // On boards without mirror support, the favorite (heart) takes the
-            // first slot — keeps the row visually balanced and gives heart a
-            // bigger tap target. It is removed from Row 2 below in that case.
-            <ActionButton
-              size="lg"
-              iconName={isFavorited ? 'favorite.fill' : 'favorite'}
-              onPress={handleFavorite}
-              iconColor={isFavorited ? theme.actionColors.favoriteSelected : undefined}
-              accessibilityLabel={
-                isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
-              }
-            />
-          )}
+          ) : layout.leadingSlot === 'queue' ? (
+            <QueueButton size="lg" remainingCount={remainingQueueCount} onPress={onOpenQueue} />
+          ) : null}
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
           <ActionButton
@@ -292,7 +285,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
         <View style={drawerActionBarStyles.primarySlot}>
           {/* With the connect pill up, this slot stays empty: the bulb is the
               pill in the row below, and the row keeps its five-slot spacing. */}
-          {showLightbulb && !isAnonymous && !showConnectPill ? (
+          {layout.trailingSlot === 'lightbulb' ? (
             <>
               <BleLightbulbButton
                 isConnected={lightbulbActive}
@@ -331,14 +324,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
       {/* Commit mode paints the row's own faint violet track edge-to-edge — a
           bottom "mode strip" that pairs with the header pill up top, and still
           0pt: it's a background on a row that already exists. */}
-      <View
-        style={[
-          drawerActionBarStyles.rowSecondary,
-          showSectionsButton && styles.compactSecondary,
-          inCommitMode && { backgroundColor: theme.systemColors.fill },
-        ]}
-      >
-        {inCommitMode ? (
+      <View style={[drawerActionBarStyles.rowSecondary, inCommitMode && { backgroundColor: theme.systemColors.fill }]}>
+        {/* `inCommitMode` already needs both handlers; restated so TS sees them. */}
+        {layout.secondaryRow === 'commit' && onBackToLive && onCommit ? (
           <PlayDrawerCommitBar
             showBackToLive={showBackToLive}
             showPutOnWall={showPutOnWall}
@@ -348,88 +336,101 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             onBackToLive={onBackToLive}
             onCommit={onCommit}
           />
-        ) : (
-          <>
-            {onOpenAngleSelector && currentAngle != null && (
-              <PressableSurface
-                onPress={onOpenAngleSelector}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.angleSelector.title')}
-                // A label-only mini pill (32pt); hit-slop lifts the tap target back to
-                // the 44pt floor without growing the visual chip.
-                hitSlop={8}
-                style={({ pressed }) => [
-                  styles.anglePill,
-                  { borderColor: theme.systemColors.separator },
-                  pressed && drawerActionBarStyles.actionButtonPressed,
-                ]}
-              >
-                <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.angleText}>
-                  {currentAngle}°
-                </Text>
-              </PressableSurface>
-            )}
-            {supportsMirroring && !isAnonymous && (
-              <ActionButton
-                size="sm"
-                iconName={isFavorited ? 'favorite.fill' : 'favorite'}
-                onPress={handleFavorite}
-                iconColor={isFavorited ? theme.actionColors.favoriteSelected : undefined}
-                accessibilityLabel={
-                  isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
-                }
-              />
-            )}
-            {/* The ellipsis opens queue / favourite / tick / playlist rows — every
-            one of them an account action. */}
-            {!isAnonymous && (
-              <ActionButton
-                size="sm"
-                iconName="more"
-                onPress={onOpenActions}
-                accessibilityLabel={t('playView.actionBar.climbActionsAria')}
-              />
-            )}
-            {showSectionsButton && onEditSections ? (
-              <ActionButton
-                testID="play-drawer-section-settings"
-                size="sm"
-                iconName="visibility"
-                onPress={onEditSections}
-                accessibilityLabel={tCommon('mobile.settings.climbDrawer.sheetTitle')}
-              />
-            ) : null}
-
-            <View style={drawerActionBarStyles.spacer} />
-
-            {showConnectPill ? (
-              // Share and queue live in ⋯ while the pill is up.
-              <FirstConnectPill pending={lightbulbPending} onPress={onConnectPill ?? onLightbulb} />
-            ) : (
-              <>
-                {/* Share is a pure client action and the whole point of a read-only
-                climb page, so it stays. */}
-                {onShare ? (
-                  <ShareButton size="sm" onPress={onShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
-                ) : null}
-                {/* A queue means nothing without a wall or a session, and the sheet it
-                opens is a write surface. */}
-                {!isAnonymous && (
-                  <ActionButton
+        ) : layout.secondaryRow === 'commit' ? null : (
+          layout.secondaryRow.map((item: ActionBarSecondaryItem) => {
+            switch (item) {
+              case 'favorite':
+                return <FavoriteButton key={item} size="sm" isFavorited={isFavorited} onPress={handleFavorite} />;
+              case 'angle':
+                return onOpenAngleSelector && currentAngle != null ? (
+                  <PressableSurface
+                    key={item}
+                    onPress={onOpenAngleSelector}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('mobile.angleSelector.title')}
+                    // A label-only mini pill (32pt); hit-slop lifts the tap target back to
+                    // the 44pt floor without growing the visual chip.
+                    hitSlop={8}
+                    style={({ pressed }) => [
+                      styles.anglePill,
+                      { borderColor: theme.systemColors.separator },
+                      pressed && drawerActionBarStyles.actionButtonPressed,
+                    ]}
+                  >
+                    <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.angleText}>
+                      {currentAngle}°
+                    </Text>
+                  </PressableSurface>
+                ) : null;
+              case 'spacer':
+                return <View key={item} style={drawerActionBarStyles.spacer} />;
+              case 'connectPill':
+                return (
+                  <FirstConnectPill key={item} pending={lightbulbPending} onPress={onConnectPill ?? onLightbulb} />
+                );
+              // Share is a pure client action and the whole point of a read-only
+              // climb page, so an anonymous reader keeps it.
+              case 'share':
+                return onShare ? (
+                  <ShareButton
+                    key={item}
                     size="sm"
-                    iconName="queue"
-                    onPress={onOpenQueue}
-                    accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
+                    onPress={onShare}
+                    accessibilityLabel={tClimbs('mobile.climbRow.share')}
                   />
-                )}
-              </>
-            )}
-          </>
+                ) : null;
+              case 'queue':
+                return <QueueButton key={item} size="sm" remainingCount={remainingQueueCount} onPress={onOpenQueue} />;
+            }
+          })
         )}
       </View>
     </View>
   );
 });
+
+type FavoriteButtonProps = {
+  size: ButtonSize;
+  isFavorited: boolean;
+  onPress: () => void;
+};
+
+function FavoriteButton({ size, isFavorited, onPress }: FavoriteButtonProps) {
+  const { t } = useTranslation('session');
+  const { actionColors } = useTheme();
+  return (
+    <ActionButton
+      size={size}
+      iconName={isFavorited ? 'favorite.fill' : 'favorite'}
+      onPress={onPress}
+      iconColor={isFavorited ? actionColors.favoriteSelected : undefined}
+      accessibilityLabel={
+        isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
+      }
+    />
+  );
+}
+
+type QueueButtonProps = {
+  size: ButtonSize;
+  /** Climbs a forward swipe can still reach; spoken, never drawn. */
+  remainingCount: number;
+  onPress: () => void;
+};
+
+// A queue means nothing without a wall or a session, and the sheet it opens is
+// a write surface, so an anonymous reader never gets one (see `viewer`).
+function QueueButton({ size, remainingCount, onPress }: QueueButtonProps) {
+  const { t } = useTranslation('session');
+  return (
+    <ActionButton
+      size={size}
+      iconName="queue"
+      onPress={onPress}
+      accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingCount })}
+    />
+  );
+}
 
 type ShareButtonProps = {
   size: ButtonSize;
@@ -510,12 +511,6 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
 }
 
 const styles = StyleSheet.create({
-  // The extra visibility control fits on a 320pt screen without reducing any
-  // button's touch target; the spare space still belongs to the row's spacer.
-  compactSecondary: {
-    gap: spacing[1],
-    paddingHorizontal: spacing[2],
-  },
   // Holder avatar overlaid on the lightbulb's top-right corner.
   connectionBadge: {
     position: 'absolute',

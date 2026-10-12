@@ -15,6 +15,8 @@ export type ResolvedMenuAction = {
   isDestructive: boolean;
   /** Row is shown but unselectable — SwiftUI `.disabled`, Compose `enabled={false}`, Paper `disabled`. */
   isDisabled: boolean;
+  /** A separator renders above this row: SwiftUI `Divider`, Compose `HorizontalDivider`, Paper `Divider`. */
+  dividerBefore: boolean;
 };
 
 export function resolveMenuAction(action: AppMenuAction): ResolvedMenuAction {
@@ -24,10 +26,16 @@ export function resolveMenuAction(action: AppMenuAction): ResolvedMenuAction {
     showCheck: action.selected === true,
     isDestructive: action.destructive === true,
     isDisabled: action.disabled === true,
+    dividerBefore: action.dividerBefore === true,
   };
 }
 
-export const resolveMenuActions = (actions: AppMenuAction[]): ResolvedMenuAction[] => actions.map(resolveMenuAction);
+/** The first row never carries a divider: there is no group above it to close. */
+export const resolveMenuActions = (actions: AppMenuAction[]): ResolvedMenuAction[] =>
+  actions.map((action, index) => {
+    const resolved = resolveMenuAction(action);
+    return index === 0 && resolved.dividerBefore ? { ...resolved, dividerBefore: false } : resolved;
+  });
 
 /**
  * Whether a press on row `index` may reach `onSelectIndex`. Every native menu already

@@ -41,13 +41,13 @@ const recorded = vi.hoisted(() => ({
   scroll: [] as Props[],
   firstScreen: [] as Props[],
   sectionsSheet: [] as Props[],
-  actionsSheet: [] as Props[],
+  actionsMenu: [] as Props[],
   scrollGate: [] as Props[],
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
   boardLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
 const viewport = vi.hoisted(() => ({ width: 390, height: 844, fontScale: 1 }));
-// Web unless a case says otherwise: ⋯ opens the reaction menu only on iOS.
+// Web: the content gesture skips the native scroll-intent composition.
 const platform = vi.hoisted(() => ({ OS: 'web' as 'web' | 'ios' }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
 const toggleFavorite = vi.hoisted(() => vi.fn());
@@ -297,9 +297,11 @@ vi.mock('../AngleSelectorSheet', () => ({
     return null;
   },
 }));
-vi.mock('../../ClimbActionsSheet', () => ({
-  ClimbActionsSheet: (props: Props) => {
-    recorded.actionsSheet.push(props);
+// The player's ⋯. Its rows have their own suite; here only what the drawer
+// hands it: the board, the gate and the player's own sheet openers.
+vi.mock('../PlayDrawerActionsMenu', () => ({
+  PlayDrawerActionsMenu: (props: Props) => {
+    recorded.actionsMenu.push(props);
     return null;
   },
 }));
@@ -311,6 +313,7 @@ vi.mock('../../create-climb/use-create-climb-navigation', () => ({
   useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
 }));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
+vi.mock('../../AddToPlaylistSheet', () => ({ AddToPlaylistSheet: () => null }));
 vi.mock('../logbook/LogbookFullSheet', () => ({ LogbookFullSheet: () => null }));
 vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
@@ -476,7 +479,7 @@ beforeEach(() => {
   recorded.boardLayout = undefined;
   recorded.firstScreen = [];
   recorded.sectionsSheet = [];
-  recorded.actionsSheet = [];
+  recorded.actionsMenu = [];
   platform.OS = 'web';
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
@@ -875,8 +878,9 @@ describe('PlayDrawer configurable sections', () => {
     renderDrawer();
     expect(recorded.deferredSections).toHaveLength(0);
     expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(false);
-    const editSections = recorded.actionBar.at(-1)?.onEditSections as () => void;
-    act(editSections);
+    // The way back after Hide all: ⋯ → View options.
+    const openViewOptions = recorded.actionsMenu.at(-1)?.onOpenViewOptions as () => void;
+    act(openViewOptions);
     expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
     const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
     const headerLayout = recorded.headerLayout;
@@ -983,114 +987,78 @@ describe('PlayDrawer configurable sections', () => {
     expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(false);
   });
 
-  // #6397: section choices live in ⋯ → View options. The bar's eye is only the
-  // way back once nothing the climber could see is switched on.
-  it('offers the action-bar eye only while every section is switched off', () => {
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    const rendered = renderDrawer();
-    const rerender = () =>
-      rendered.rerender(
-        createElement(PlayDrawer, {
-          presentation: 'pane' as const,
-          boardConfig: TWELVE_BY_TWELVE,
-          onOpenQueue: vi.fn(),
-          openTarget: null,
-        }),
-      );
-    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
-
-    hideEverySection();
-    rerender();
-    expect(recorded.actionBar.at(-1)?.onEditSections).toBeTypeOf('function');
-
-    drawerSections.sections = { ...drawerSections.sections, community: true };
-    rerender();
-    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
-  });
-
-  // The eye follows the climber's choices, not the climb: with only Setter notes
-  // on, a climb without notes shows nothing below the board, yet a swipe to it
-  // must not slide the eye into the row and shift every button beside it.
-  it('keeps the eye away across climbs with and without setter notes', () => {
-    drawerSections.sections = {
-      logbook: false,
-      climberLogs: false,
-      setterNotes: true,
-      betaVideos: false,
-      boardseshGrade: false,
-      community: false,
-      similarClimbs: false,
-    };
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    const rendered = renderDrawer();
-    expect(recorded.deferredSections).toHaveLength(0);
-    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
-
-    queueState.currentClimbQueueItem = queueItem(
-      { ...TWELVE_CLIMB, description: 'Match the start, then cut loose.' } as Climb,
-      'queue-twelve',
-    );
-    rendered.rerender(
-      createElement(PlayDrawer, {
-        presentation: 'pane' as const,
-        boardConfig: TWELVE_BY_TWELVE,
-        onOpenQueue: vi.fn(),
-        openTarget: null,
-      }),
-    );
-    expect(recorded.deferredSections.at(-1)?.sections).toEqual(drawerSections.sections);
-    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
-  });
-
-  it('offers no eye while the section choices are still loading', () => {
-    hideEverySection();
-    drawerSections.ready = false;
+  // ⋯ → View options opens the sections sheet mounted in the player, which
+  // presents above `/play`; a root-level sheet would land under it.
+  it("opens View options from ⋯ through the player's own sections sheet", () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     renderDrawer();
-    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
-  });
-
-  // Off iOS, ⋯ opens the player's own actions sheet, whose View options row must
-  // open the sections sheet mounted in the player.
-  it('opens View options from the actions sheet behind ⋯', () => {
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    renderDrawer();
-    const openActions = recorded.actionBar.at(-1)?.onOpenActions as () => void;
-    act(openActions);
-    expect(recorded.actionsSheet.at(-1)?.visible).toBe(true);
     expect(recorded.sectionsSheet).toHaveLength(0);
 
-    const openViewOptions = recorded.actionsSheet.at(-1)?.onOpenViewOptions as () => void;
+    const openViewOptions = recorded.actionsMenu.at(-1)?.onOpenViewOptions as () => void;
     act(openViewOptions);
     expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
   });
 
-  // On iOS ⋯ opens the reaction menu at the app root instead. Its View options
-  // row must still open the sections sheet mounted here, which presents above
-  // `/play`; a root-level sheet would land under it.
-  it("hands the iOS reaction menu the player's own sections opener", () => {
-    platform.OS = 'ios';
-    const onOpenClimbActions =
-      vi.fn<(climb: Climb, boardConfig?: unknown, options?: { onOpenViewOptions?: () => void }) => void>();
+  // The eye is gone from the bar; with every section hidden, ⋯ is still there.
+  it('keeps ⋯ when every section is switched off, and hands the bar no eye', () => {
+    hideEverySection();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    render(
-      createElement(PlayDrawer, {
-        presentation: 'pane' as const,
-        boardConfig: TWELVE_BY_TWELVE,
-        openTarget: null,
-        onOpenQueue: vi.fn(),
-        onOpenClimbActions,
-      }),
-    );
-    const openActions = recorded.actionBar.at(-1)?.onOpenActions as () => void;
-    act(openActions);
-    expect(onOpenClimbActions).toHaveBeenCalledTimes(1);
-    expect(recorded.actionsSheet).toHaveLength(0);
-    expect(recorded.sectionsSheet).toHaveLength(0);
+    renderDrawer();
+    expect(recorded.actionsMenu.at(-1)).toBeDefined();
+    expect(recorded.actionBar.at(-1)).not.toHaveProperty('onEditSections');
+    expect(recorded.actionBar.at(-1)).not.toHaveProperty('onOpenActions');
+  });
+});
 
-    const openViewOptions = onOpenClimbActions.mock.calls[0]?.[2]?.onOpenViewOptions;
-    if (!openViewOptions) throw new Error('The reaction menu got no View options opener');
-    act(openViewOptions);
-    expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
+describe('PlayDrawer ⋯ menu', () => {
+  // #5099: a climb from another board is queued, shared and reported against ITS
+  // board, and every row that writes stands down behind the switch-board gate.
+  it('builds ⋯ on the board the climb is drawn on, and gates it like the scrim', () => {
+    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
+    renderDrawer(vi.fn());
+
+    const menuProps = recorded.actionsMenu.at(-1);
+    expect(menuProps?.climb).toBe(HOMEWALL_CLIMB);
+    expect(menuProps?.boardConfig).toMatchObject({ boardName: 'kilter', layoutId: 8, angle: 30 });
+    expect(menuProps?.boardMismatch).toBe(true);
+  });
+
+  it('opens nothing ahead of a mismatch on the climber own board', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+
+    const menuProps = recorded.actionsMenu.at(-1);
+    expect(menuProps?.boardConfig).toMatchObject({ boardName: 'kilter', layoutId: 1 });
+    expect(menuProps?.boardMismatch).toBe(false);
+  });
+
+  // Each sheet row opens the player's OWN sheet, pinned to the climb ⋯ was opened
+  // for. A root opener presents under `/play` and flashes closed (#3505, #3294).
+  it('pins each sheet ⋯ opens to the climb and board it was opened for', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    const menuProps = recorded.actionsMenu.at(-1);
+    const board = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
+
+    act(() => (menuProps?.onTick as (climb: Climb, boardConfig: unknown) => void)(TWELVE_CLIMB, board));
+    expect(recorded.logAscent.at(-1)).toMatchObject({ visible: true, climbUuid: TWELVE_CLIMB.uuid });
+    expect(typeof menuProps?.onAddBetaVideo).toBe('function');
+    expect(typeof menuProps?.onReportClimb).toBe('function');
+    expect(typeof menuProps?.onSelectPlaylist).toBe('function');
+  });
+
+  // The menu flips the bar heart, so the two can never disagree.
+  it("hands ⋯ the bar heart's favourite state and toggle", () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.actionsMenu.at(-1)?.isFavorited).toBe(recorded.actionBar.at(-1)?.isFavorited);
+    expect(typeof recorded.actionsMenu.at(-1)?.onToggleFavorite).toBe('function');
+  });
+
+  // Nothing on the bar is hidden outside commit mode and the connect pill.
+  it('tells ⋯ which bar buttons are put away', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.actionsMenu.at(-1)?.hidden).toEqual({ favorite: false, share: false, queue: false });
   });
 });

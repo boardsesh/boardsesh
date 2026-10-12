@@ -30,7 +30,9 @@ name: showcase take - a friend adds a climb
 # Coordinates (iPhone 16 Pro Max portrait):
 #   50%,47% -> 50%,95%  drag the invite sheet down to close it
 #   40%,88%             the now-playing bar above the tab bar -> play view
-#   91%,90%             the queue button, bottom right of the play view
+#   (the queue button is tapped by its label, not a point: it moved to the
+#   first slot of the action bar on boards without mirror, and stays bottom
+#   right on mirror boards)
 #   50%,<y>%            the second phone's new row, y from the recorder (see below)
 #   50%,7%              the backdrop above the reaction menu
 
@@ -53,8 +55,7 @@ name: showcase take - a friend adds a climb
     point: '40%,88%'
 - waitForAnimationToEnd
 
-- tapOn:
-    point: '91%,90%'
+- tapOn: 'Queue, .* climbs'
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/queue-open')}
 

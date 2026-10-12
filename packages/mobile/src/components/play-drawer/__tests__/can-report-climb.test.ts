@@ -1,36 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { canReportDisplayedClimb } from '../can-report-climb';
+import { describe, expect, it } from 'vitest';
+import { ownClimbIsReportable } from '../can-report-climb';
 
-const base = { isAuthenticated: true, moderationEnabled: true, currentUserId: 'me' };
-
-describe('canReportDisplayedClimb', () => {
-  it("offers Report on somebody else's published climb", () => {
-    expect(canReportDisplayedClimb({ ...base, climb: { is_draft: false, userId: 'other' } })).toBe(true);
-  });
-  it('hides Report on your own published climb', () => {
-    expect(canReportDisplayedClimb({ ...base, climb: { is_draft: false, userId: 'me' } })).toBe(false);
-  });
-  it('offers Report on your own published spray climb: its grade changes through a proposal (#5971)', () => {
-    expect(canReportDisplayedClimb({ ...base, boardName: 'spray', climb: { is_draft: false, userId: 'me' } })).toBe(
-      true,
-    );
-    expect(canReportDisplayedClimb({ ...base, boardName: 'spray', climb: { is_draft: true, userId: 'me' } })).toBe(
-      false,
-    );
-    expect(canReportDisplayedClimb({ ...base, boardName: 'kilter', climb: { is_draft: false, userId: 'me' } })).toBe(
-      false,
-    );
-  });
-  it('hides Report on a draft', () => {
-    expect(canReportDisplayedClimb({ ...base, climb: { is_draft: true, userId: 'other' } })).toBe(false);
-  });
-  it('hides Report when signed out, moderation is off, or there is no climb', () => {
-    const climb = { is_draft: false, userId: 'other' };
-    expect(canReportDisplayedClimb({ ...base, isAuthenticated: false, climb })).toBe(false);
-    expect(canReportDisplayedClimb({ ...base, moderationEnabled: false, climb })).toBe(false);
-    expect(canReportDisplayedClimb({ ...base, climb: null })).toBe(false);
-  });
-  it('still offers Report when the viewer id is unknown', () => {
-    expect(canReportDisplayedClimb({ ...base, currentUserId: null, climb: { userId: 'other' } })).toBe(true);
+describe('ownClimbIsReportable', () => {
+  it('lets a setter report their own climb only on a spray wall, where the report changes its grade', () => {
+    expect(ownClimbIsReportable('spray')).toBe(true);
+    expect(ownClimbIsReportable('kilter')).toBe(false);
+    expect(ownClimbIsReportable(null)).toBe(false);
+    expect(ownClimbIsReportable(undefined)).toBe(false);
   });
 });

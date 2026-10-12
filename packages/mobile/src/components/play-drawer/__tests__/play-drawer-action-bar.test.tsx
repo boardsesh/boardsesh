@@ -185,7 +185,6 @@ const baseProps = {
   onMirror: vi.fn(),
   onToggleFavorite: vi.fn(),
   onLightbulb: vi.fn(),
-  onOpenActions: vi.fn(),
   onOpenQueue: vi.fn(),
   onShare: vi.fn(),
   onTickPress: vi.fn(),
@@ -200,7 +199,6 @@ const ACTION_ICONS = {
   next: 'skip.next',
   favorite: 'favorite',
   favoriteFilled: 'favorite.fill',
-  ellipsis: 'more',
   queue: 'queue',
 } as const;
 
@@ -208,56 +206,49 @@ function actions(container: HTMLElement): string[] {
   return [...container.querySelectorAll('[data-action]')].map((node) => node.getAttribute('data-action') ?? '');
 }
 
+/** Every labelled control, in the order a screen reader meets them. */
+function labels(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('[data-label]')].map((node) => node.getAttribute('data-label') ?? '');
+}
+
+const QUEUE_LABEL = 'playView.actionBar.queueCountAria';
+const FAVORITE_LABEL = 'playView.actionBar.addFavoriteAria';
+const ANGLE_LABEL = 'mobile.angleSelector.title';
+const SHARE_LABEL = 'mobile.climbRow.share';
+
 describe('PlayDrawerActionBar', () => {
-  // The host offers the eye only once every section is hidden (#6397); the rest
-  // of the time section choices live in ⋯ → View options.
-  it('opens section choices from an eye button immediately right of the ellipsis', () => {
-    const onEditSections = vi.fn();
-    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections }));
-    const ellipsis = container.querySelector('[data-action="more"]');
-    const edit = container.querySelector('[data-testid="play-drawer-section-settings"]');
-    expect(ellipsis?.nextElementSibling).toBe(edit);
-    expect(edit?.getAttribute('data-action')).toBe('visibility');
-    expect(edit?.getAttribute('data-size')).toBe('sm');
-    expect(edit?.getAttribute('data-label')).toBe('mobile.settings.climbDrawer.sheetTitle');
-    if (!edit) throw new Error('Expected section edit button');
-    fireEvent.click(edit);
-    expect(onEditSections).toHaveBeenCalledTimes(1);
+  // ⋯ moved to the drawer's top row, and section choices live there and in
+  // Settings → Climb view, so neither ⋯ nor the eye belongs to the bar any more.
+  it('draws neither ⋯ nor the section eye', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, baseProps));
+
+    expect(actions(container)).not.toContain('more');
+    expect(actions(container)).not.toContain('visibility');
+    expect(container.querySelector('[data-label="playView.actionBar.climbActionsAria"]')).toBeNull();
   });
 
-  it('keeps six secondary controls within 320 points by tightening only gaps and gutters', () => {
-    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections: vi.fn() }));
-    const eye = container.querySelector('[data-testid="play-drawer-section-settings"]');
-    const row = eye?.parentElement;
-    expect(row?.getAttribute('data-row-gap')).toBe('4');
-    expect(row?.getAttribute('data-horizontal-padding')).toBe('8');
-    const gap = Number(row?.getAttribute('data-row-gap'));
-    const gutter = Number(row?.getAttribute('data-horizontal-padding'));
-    // Angle plus five 44pt action targets (including the eye), with
-    // the spacer's two neighboring gaps included even when it reaches zero.
-    expect(44 + 5 * 44 + 6 * gap + 2 * gutter).toBeLessThanOrEqual(320);
+  // Where a board can't mirror, the queue takes the first slot: it is the list
+  // ⏮ and ⏭ walk. The heart leads the second row and share closes it.
+  it('puts the queue in the first slot and the heart first in the second row on a board without mirror', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, supportsMirroring: false }));
+    const order = labels(container);
+
+    expect(order[0]).toBe(QUEUE_LABEL);
+    expect(container.querySelector(`[data-label="${QUEUE_LABEL}"]`)?.getAttribute('data-size')).toBe('lg');
+    expect(actions(container)).not.toContain(ACTION_ICONS.mirror);
+    expect(order.slice(order.indexOf(FAVORITE_LABEL))).toEqual([FAVORITE_LABEL, ANGLE_LABEL, SHARE_LABEL]);
+    expect(order.filter((label) => label === QUEUE_LABEL)).toHaveLength(1);
   });
 
-  it('gives a signed-out reader, who has no ⋯, the eye as the way back, and keeps commit rows dedicated', () => {
-    const onEditSections = vi.fn();
-    const anonymous = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections, viewer: 'anonymous' }));
-    const anonymousEye = anonymous.container.querySelector('[data-testid="play-drawer-section-settings"]');
-    expect(anonymousEye).toBeTruthy();
-    expect(anonymous.container.querySelector('[data-action="more"]')).toBeNull();
-    if (!anonymousEye) throw new Error('Expected anonymous section settings');
-    fireEvent.click(anonymousEye);
-    expect(onEditSections).toHaveBeenCalledTimes(1);
-    anonymous.unmount();
-    const commit = render(
-      createElement(PlayDrawerActionBar, {
-        ...baseProps,
-        onEditSections,
-        secondaryMode: 'commit',
-        onBackToLive: vi.fn(),
-        onCommit: vi.fn(),
-      }),
-    );
-    expect(commit.container.querySelector('[data-testid="play-drawer-section-settings"]')).toBeNull();
+  // Mirror keeps the first slot because it changes what's lit; the queue stays
+  // at the right of the second row, where it has always been.
+  it('keeps mirror first and the queue last in the second row on a mirror board', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, baseProps));
+    const order = labels(container);
+
+    expect(order[0]).toBe('playView.actionBar.mirrorAria');
+    expect(order.slice(order.indexOf(FAVORITE_LABEL))).toEqual([FAVORITE_LABEL, ANGLE_LABEL, SHARE_LABEL, QUEUE_LABEL]);
+    expect(container.querySelector(`[data-label="${QUEUE_LABEL}"]`)?.getAttribute('data-size')).toBe('sm');
   });
 
   it('renders the tick as a green glyph (colour on the icon, not a solid fill)', () => {
@@ -407,12 +398,22 @@ describe('PlayDrawerActionBar (secondary row swap)', () => {
 
     expect(container.querySelector('[data-commit-bar="true"]')).toBeTruthy();
     // The row's own contents are gone for the duration — that's the trade the
-    // spec makes to keep the row at 64pt.
+    // spec makes to keep the row at 64pt. The host's ⋯ picks them up.
     expect(container.querySelector('[data-label="mobile.angleSelector.title"]')).toBeNull();
     expect(actions(container)).not.toContain(ACTION_ICONS.queue);
+    expect(actions(container)).not.toContain(ACTION_ICONS.favorite);
     expect(container.querySelector('[data-icon="share"]')).toBeNull();
     // The primary row still acts on the displayed climb.
     expect(container.querySelector('[data-icon="tick.outline"]')).toBeTruthy();
+  });
+
+  // Up in the first slot the queue survives the swap: browsing never takes away
+  // the list the climber is browsing.
+  it('keeps the queue in the first slot on a board without mirror', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...commitProps, supportsMirroring: false }));
+
+    expect(container.querySelector('[data-commit-bar="true"]')).toBeTruthy();
+    expect(labels(container)[0]).toBe(QUEUE_LABEL);
   });
 
   it('keeps the utilities when the latch is down', () => {
@@ -457,25 +458,26 @@ describe('PlayDrawerActionBar (secondary row swap)', () => {
 describe('PlayDrawerActionBar (anonymous viewer)', () => {
   const anonymousProps = { ...baseProps, viewer: 'anonymous' as const, onSignInPress: vi.fn() };
 
-  it('removes the queue, favourite, lightbulb and climb-actions affordances', () => {
+  it('removes the queue, favourite and lightbulb affordances', () => {
     const { container } = render(createElement(PlayDrawerActionBar, anonymousProps));
     const rendered = actions(container);
 
     expect(rendered).not.toContain(ACTION_ICONS.queue);
     expect(rendered).not.toContain(ACTION_ICONS.favorite);
     expect(rendered).not.toContain(ACTION_ICONS.favoriteFilled);
-    expect(rendered).not.toContain(ACTION_ICONS.ellipsis);
     expect(container.querySelector('[data-ble="true"]')).toBeNull();
     expect(container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeNull();
   });
 
-  // On a board with no mirror support the heart normally takes the first primary
-  // slot; anonymously that fallback has to go too, or the removal above is only
-  // half true.
-  it('does not fall back to the heart in the first slot on a fixed-mirror board', () => {
+  // On a board with no mirror support the queue normally takes the first primary
+  // slot; anonymously that has to go too, or the removal above is only half true.
+  // The slot stays empty and the row keeps its spacing.
+  it('leaves the first slot empty on a board without mirror', () => {
     const { container } = render(createElement(PlayDrawerActionBar, { ...anonymousProps, supportsMirroring: false }));
 
+    expect(actions(container)).not.toContain(ACTION_ICONS.queue);
     expect(actions(container)).not.toContain(ACTION_ICONS.favorite);
+    expect(labels(container)[0]).toBe('playView.actionBar.previousAria');
   });
 
   it('keeps the reads: mirror, prev/next, share and the angle pill', () => {
@@ -520,19 +522,18 @@ describe('PlayDrawerActionBar (anonymous viewer)', () => {
 
     expect(rendered).toContain(ACTION_ICONS.queue);
     expect(rendered).toContain(ACTION_ICONS.favorite);
-    expect(rendered).toContain(ACTION_ICONS.ellipsis);
     expect(container.querySelector('[data-ble="true"]')).toBeTruthy();
     expect(container.querySelector('[data-label="playView.tickFab.logAscentAria"]')).toBeTruthy();
   });
 });
 
 // #5654, PR 7: the connect-step treatment turns the bulb into a labelled pill at
-// the right end of the second row. Share and queue go to ⋯ (the host adds them
-// to that menu); the tick keeps its slot.
+// the right end of the second row. Share (and the queue, on a mirror board) goes
+// to the host's ⋯; the tick keeps its slot.
 describe('PlayDrawerActionBar (connect-step pill)', () => {
   const pillProps = { ...baseProps, connectPill: true };
 
-  it('moves the bulb into the second row as the pill, and share and queue out of it', () => {
+  it('moves the bulb into the second row as the pill, and share and queue out of it on a mirror board', () => {
     const onLightbulb = vi.fn();
     const { container } = render(createElement(PlayDrawerActionBar, { ...pillProps, onLightbulb }));
     const pill = container.querySelector('[data-connect-pill="true"]') as HTMLElement;
@@ -543,6 +544,15 @@ describe('PlayDrawerActionBar (connect-step pill)', () => {
     expect(container.querySelector('[data-icon="share"]')).toBeNull();
     pill.click();
     expect(onLightbulb).toHaveBeenCalledTimes(1);
+  });
+
+  // Without mirror the queue already sits in the first slot, so only share goes.
+  it('keeps the queue in the first slot on a board without mirror', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...pillProps, supportsMirroring: false }));
+
+    expect(container.querySelector('[data-connect-pill="true"]')).toBeTruthy();
+    expect(labels(container)[0]).toBe(QUEUE_LABEL);
+    expect(container.querySelector('[data-icon="share"]')).toBeNull();
   });
 
   it('gives the pill its own tap when the host passes one, so its connects log as the pill', () => {
@@ -556,13 +566,12 @@ describe('PlayDrawerActionBar (connect-step pill)', () => {
     expect(onLightbulb).not.toHaveBeenCalled();
   });
 
-  it('keeps the tick, the heart, the angle and ⋯', () => {
+  it('keeps the tick, the heart and the angle', () => {
     const { container } = render(createElement(PlayDrawerActionBar, pillProps));
     const rendered = actions(container);
 
     expect(container.querySelector('[data-icon="tick.outline"]')).toBeTruthy();
     expect(rendered).toContain(ACTION_ICONS.favorite);
-    expect(rendered).toContain(ACTION_ICONS.ellipsis);
     expect(container.querySelector('[data-label="mobile.angleSelector.title"]')).toBeTruthy();
   });
 

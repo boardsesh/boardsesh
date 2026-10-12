@@ -53,9 +53,13 @@ const recorded = vi.hoisted(() => ({
   deferredSections: [] as Props[],
   favoriteStatus: [] as Props[],
   navigationBoardConfigs: [] as unknown[],
+  actionsMenu: [] as Props[],
   browseFrame: 0,
   panePlaceholder: 0,
 }));
+// Signed out unless a case says otherwise: both viewers here render without a
+// session, which is what the web export's read-only climb view is.
+const auth = vi.hoisted(() => ({ isAuthenticated: false, isLoading: false }));
 // The board the climber is STANDING at, deliberately different from the
 // boardConfig prop the drawer renders with (see the navigation-board case).
 const activeBoard = vi.hoisted(() => ({
@@ -308,7 +312,14 @@ vi.mock('../SwipeableHeader', () => ({
 vi.mock('../SwitchBoardOverlay', () => ({ SwitchBoardOverlay: () => null }));
 vi.mock('../AngleSelectorSheet', () => ({ AngleSelectorSheet: () => null }));
 vi.mock('../../LogAscentSheet', () => ({ LogAscentSheet: () => null }));
-vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
+// The player's ⋯: whether it is there at all, and what the drawer hands it.
+vi.mock('../PlayDrawerActionsMenu', () => ({
+  PlayDrawerActionsMenu: (props: Props) => {
+    recorded.actionsMenu.push(props);
+    return null;
+  },
+}));
+vi.mock('../../AddToPlaylistSheet', () => ({ AddToPlaylistSheet: () => null }));
 // The lost-hold banner and the Remix handoff behind it, stubbed like every
 // other collaborator above. Both reach native modules this suite has no runtime
 // for: the banner through the design-system Button, the handoff through Sentry.
@@ -359,7 +370,7 @@ vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothCo
 // Board presence, read continuously so the pill can say "On the wall" after any
 // navigation and the confirm has a before-and-after to compare.
 vi.mock('../use-wall-climb', () => ({ useWallClimb: () => wall }));
-vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: false }) }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => auth }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: undefined }),
@@ -506,6 +517,7 @@ beforeEach(() => {
   recorded.deferredSections = [];
   recorded.favoriteStatus = [];
   recorded.navigationBoardConfigs = [];
+  recorded.actionsMenu = [];
   recorded.browseFrame = 0;
   recorded.panePlaceholder = 0;
   queueActions.addToQueue.mockResolvedValue('added');
@@ -524,6 +536,9 @@ beforeEach(() => {
   resetAllSettings();
   _resetJoinedBrowseNoticeForTests();
   drawerSections.sections = { ...drawerSections.defaults };
+  drawerSections.ready = true;
+  auth.isAuthenticated = false;
+  auth.isLoading = false;
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -1442,8 +1457,8 @@ describe('PlayDrawer — the anonymous joins', () => {
     const props = lastActionBarProps();
     // Hardcoding `viewer="member"` here is invisible to every action-bar test,
     // which passes `viewer` in directly: it would restore the queue button, the
-    // heart, the lightbulb, the ellipsis and the tick sheet for a signed-out
-    // reader with the whole suite green.
+    // heart, the lightbulb and the tick sheet for a signed-out reader with the
+    // whole suite green.
     expect(props.viewer).toBe('anonymous');
     // The tick is the only conversion prompt on the surface. With the prop
     // dropped in the middle, the bar calls `onSignInPress?.()` on undefined and
@@ -1453,14 +1468,10 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(onSignIn).toHaveBeenCalledTimes(1);
   });
 
-  // A signed-out reader has no ⋯ and no Settings, so after Hide all the bar's
-  // eye is the only way back to the sections. While something they could see is
-  // switched on, it stays away.
-  it('hands a signed-out reader the eye only once nothing they could see is switched on', () => {
-    const shown = renderDrawer('anonymous');
-    expect(lastActionBarProps().onEditSections).toBeUndefined();
-    shown.unmount();
-
+  // A signed-out reader has no ⋯ and no Settings, so a member's "Hide all" left
+  // in this browser would strand them with nothing below the board and no way
+  // back. They get the defaults instead, ready at once: there is nothing to read.
+  it('gives a signed-out reader the default sections, whatever this device stored', () => {
     drawerSections.sections = {
       logbook: false,
       climberLogs: false,
@@ -1470,14 +1481,46 @@ describe('PlayDrawer — the anonymous joins', () => {
       community: false,
       similarClimbs: false,
     };
-    const allOff = renderDrawer('anonymous');
-    expect(lastActionBarProps().onEditSections).toBeTypeOf('function');
-    allOff.unmount();
-
-    // Climber logs need an account, so for this reader that is still nothing.
-    drawerSections.sections = { ...drawerSections.sections, climberLogs: true };
+    drawerSections.ready = false;
     renderDrawer('anonymous');
-    expect(lastActionBarProps().onEditSections).toBeTypeOf('function');
+
+    expect(recorded.deferredSections.at(-1)?.sections).toEqual(drawerSections.defaults);
+  });
+
+  it("keeps a member's stored Hide all", () => {
+    auth.isAuthenticated = true;
+    drawerSections.sections = {
+      logbook: false,
+      climberLogs: false,
+      setterNotes: false,
+      betaVideos: false,
+      boardseshGrade: false,
+      community: false,
+      similarClimbs: false,
+    };
+    renderDrawer('member');
+
+    expect(recorded.deferredSections).toHaveLength(0);
+  });
+
+  // A session still resolving is not a signed-out reader yet.
+  it('keeps the stored choices while the session is still resolving', () => {
+    auth.isLoading = true;
+    drawerSections.sections = { ...drawerSections.defaults, logbook: false };
+    renderDrawer('member');
+
+    expect(recorded.deferredSections.at(-1)?.sections).toEqual(drawerSections.sections);
+  });
+
+  // Every ⋯ row is an account action, and the reader's route gate bounces most
+  // of their targets to login.
+  it('gives a signed-out reader no ⋯, and a member one', () => {
+    const anonymous = renderDrawer('anonymous');
+    expect(recorded.actionsMenu).toHaveLength(0);
+    anonymous.unmount();
+
+    renderDrawer('member');
+    expect(recorded.actionsMenu.at(-1)).toBeDefined();
   });
 
   it('passes the member viewer through unchanged', () => {
@@ -1545,31 +1588,15 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(props.commitLabel).toBe('setActive');
   });
 
-  // #6397: the commit bar takes the whole second row, ⋯ included, and the eye
-  // that used to sit beside the rest timer is gone. Settings → Climb view is
-  // the way in until the climber is back to live.
-  it('shows no section-settings button anywhere while the commit row is up', () => {
-    drawerSections.sections = {
-      logbook: false,
-      climberLogs: false,
-      setterNotes: false,
-      betaVideos: false,
-      boardseshGrade: false,
-      community: false,
-      similarClimbs: false,
-    };
+  // The commit bar takes the whole second row. ⋯ lives in the top row, outside
+  // it, so it stays in reach and carries what the row put away.
+  it('keeps ⋯ while the commit row is up, holding the heart and share', () => {
     setSetting('lightOnSwipe', false);
-    const { container } = renderDrawer('member');
+    renderDrawer('member');
 
-    // The bar is in commit mode with both commit handlers, which is the bar's
-    // own rule for dropping its eye (play-drawer-action-bar.test.tsx).
     const props = lastActionBarProps();
     expect(props.secondaryMode).toBe('commit');
-    expect(props.onBackToLive).toBeTypeOf('function');
-    expect(props.onCommit).toBeTypeOf('function');
-    // And nothing in the player's own chrome stands in for it.
-    expect(container.querySelector('[data-testid="play-drawer-section-settings"]')).toBeNull();
-    expect(container.querySelector('[data-icon="visibility"]')).toBeNull();
+    expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({ favorite: true, share: true });
   });
 
   // The chrome's whole premise is that it never claims more than it can keep.

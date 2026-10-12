@@ -15,7 +15,8 @@ vi.mock('@expo/ui/jetpack-compose', () => {
   DropdownMenu.Trigger = ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-trigger': true }, children);
   DropdownMenu.Items = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
-  const DropdownMenuItem = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
+  const DropdownMenuItem = ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
+    createElement('div', { 'data-item': true, onClick }, children);
   DropdownMenuItem.LeadingIcon = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
   DropdownMenuItem.Text = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
   return {
@@ -27,6 +28,7 @@ vi.mock('@expo/ui/jetpack-compose', () => {
       createElement('button', { 'data-icon-button': true, onClick }, children),
     Icon: ({ size, tint }: { size?: number; tint?: string }) =>
       createElement('i', { 'data-compose-icon': true, 'data-size': size, 'data-tint': tint }),
+    HorizontalDivider: () => createElement('hr'),
   };
 });
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
@@ -94,5 +96,28 @@ describe('AppMenu (Android) overflow anchor', () => {
     );
     expect(container.querySelector('[data-trigger] [data-icon-button]')).toBeNull();
     expect(container.querySelector('[data-trigger]')?.textContent).toContain('My crew');
+  });
+});
+
+describe('AppMenu (Android) dividers', () => {
+  it('draws an M3 divider above a row that opens a group, without taking an index', () => {
+    const onSelectIndex = vi.fn();
+    const { container } = render(
+      createElement(AppMenu, {
+        iconName: 'more',
+        accessibilityLabel: 'More',
+        actions: [
+          { label: 'Add to queue', dividerBefore: true },
+          { label: 'Share' },
+          { label: 'Report', dividerBefore: true },
+        ],
+        onSelectIndex,
+      }),
+    );
+    const rows = [...container.querySelectorAll('[data-item], hr')].map((node) => node.tagName.toLowerCase());
+    expect(rows).toEqual(['div', 'div', 'hr', 'div']);
+    const items = container.querySelectorAll('[data-item]');
+    fireEvent.click(items[2] as Element);
+    expect(onSelectIndex).toHaveBeenCalledWith(2);
   });
 });

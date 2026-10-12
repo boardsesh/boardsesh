@@ -172,7 +172,6 @@ export type PlayDrawerPaneProps = {
    *  instead of raising the blocking scrim. */
   reachableBoardKeys: ReadonlySet<string>;
   onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
-  onOpenClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
   /** The climb to show in the pane, with a bumped nonce per selection so the pane
    *  re-applies even when the same climb is re-tapped. Set by `openPlayDrawer` on
    *  iPad regular width (where it drives the pane instead of the `/play` route). */
@@ -1164,7 +1163,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             mismatchBoardLabel,
             reachableBoardKeys,
             onSwitchBoard: handleSwitchBoardFromDrawer,
-            onOpenClimbActions: openClimbActions,
             openTarget: paneTarget,
           }
         : null,
@@ -1177,7 +1175,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       mismatchBoardLabel,
       reachableBoardKeys,
       handleSwitchBoardFromDrawer,
-      openClimbActions,
       paneTarget,
     ],
   );

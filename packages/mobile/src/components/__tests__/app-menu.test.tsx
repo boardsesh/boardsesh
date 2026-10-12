@@ -79,6 +79,22 @@ describe('AppMenu.logic — resolveMenuActions', () => {
   });
 });
 
+describe('AppMenu.logic — dividers', () => {
+  it('opens a group with a divider above the row that asks for one', () => {
+    const resolved = resolveMenuActions([{ label: 'Queue' }, { label: 'Playlist', dividerBefore: true }]);
+    expect(resolved.map((action) => action.dividerBefore)).toEqual([false, true]);
+  });
+
+  it('never draws one above the first row, where there is no group to close', () => {
+    expect(resolveMenuActions([{ label: 'Queue', dividerBefore: true }])[0]?.dividerBefore).toBe(false);
+  });
+
+  it('adds no row: a divider takes no index', () => {
+    const actions: AppMenuAction[] = [{ label: 'A' }, { label: 'B', dividerBefore: true }, { label: 'C' }];
+    expect(resolveMenuActions(actions)).toHaveLength(actions.length);
+  });
+});
+
 describe('AppMenu.logic — isMenuActionSelectable', () => {
   const RESOLVED = resolveMenuActions([{ label: 'Undo' }, { label: 'Save', disabled: true }]);
 
@@ -169,6 +185,25 @@ describe('AppMenu stub — interaction contract', () => {
     fireEvent.click(getByText('Everyone'));
     expect(onSelectIndex).toHaveBeenCalledWith(1);
     fireEvent.click(getByText('Find a gym'));
+    expect(onSelectIndex).toHaveBeenCalledWith(2);
+  });
+
+  it('draws a divider between groups and still reports each row by its own index', () => {
+    const onSelectIndex = vi.fn();
+    const { container, getByText } = render(
+      createElement(AppMenu, {
+        label: 'My crew',
+        actions: [
+          { label: 'Queue', dividerBefore: true },
+          { label: 'Playlist', dividerBefore: true },
+          { label: 'Share' },
+        ],
+        onSelectIndex,
+      }),
+    );
+    expect(container.querySelectorAll('hr')).toHaveLength(1);
+    expect(container.querySelector('hr')?.nextElementSibling?.textContent).toBe('Playlist');
+    fireEvent.click(getByText('Share'));
     expect(onSelectIndex).toHaveBeenCalledWith(2);
   });
 

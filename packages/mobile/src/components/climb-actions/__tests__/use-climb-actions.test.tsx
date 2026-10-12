@@ -79,6 +79,7 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../use-delete-climb-action', () => ({ useDeleteClimbAction: () => openers.requestDelete }));
 
 import { useClimbActions } from '../use-climb-actions';
+import { track } from '../../../lib/analytics';
 
 const climb = {
   uuid: 'climb-1',
@@ -134,8 +135,8 @@ describe('useClimbActions gating', () => {
     ]);
   });
 
-  // #5654: the play drawer passes this while the connect-step pill has the
-  // queue button's place; everywhere else the queue has its own button.
+  // The player's ⋯ passes this (and shows the row while its bar has put the
+  // queue button away); everywhere else the queue has its own button.
   it('adds "Open the queue" right after "Add to queue" only when onOpenQueue is provided', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('openQueue');
 
@@ -158,7 +159,7 @@ describe('useClimbActions gating', () => {
     expect(order).toEqual(['closed', 'queue opened']);
   });
 
-  // #6397: the player's section choices moved off its action bar into this menu.
+  // #6397: the player's section choices moved off its action bar into its ⋯.
   // Only the play drawer passes the opener.
   it('adds "View options" right before Share only when onOpenViewOptions is provided', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('viewOptions');
@@ -711,5 +712,67 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
     result.current.find((action) => action.id === 'fork')?.run();
 
     expect(openers.push).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The player's ⋯ owns its own favourite (the bar heart's optimistic state) and
+// reports its own analytics surface. The long-press menu keeps both as they were.
+describe('useClimbActions for the player menu', () => {
+  it('reads and toggles a caller-owned favourite instead of its own mutation', () => {
+    vi.mocked(track).mockClear();
+    const onToggle = vi.fn();
+    const onAfterAction = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ isFavorited }: { isFavorited: boolean }) =>
+        useClimbActions({
+          climb,
+          boardConfig: kilterBoard,
+          isAuthenticated: true,
+          onSelectPlaylist: noopSelectPlaylist,
+          onAfterAction,
+          favoriteControl: { isFavorited, onToggle },
+        }),
+      { initialProps: { isFavorited: false } },
+    );
+    const favorite = () => result.current.find((action) => action.id === 'favorite');
+
+    expect(favorite()).toMatchObject({ title: 'session:playView.actionBar.addFavoriteAria', icon: 'favorite' });
+    act(() => favorite()?.run());
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onAfterAction).toHaveBeenCalledTimes(1);
+    expect(openers.toggleFavoriteMutate).not.toHaveBeenCalled();
+    // The caller tracks its own toggle; a second event here would double-count.
+    expect(track).not.toHaveBeenCalled();
+
+    rerender({ isFavorited: true });
+    expect(favorite()).toMatchObject({
+      title: 'session:playView.actionBar.removeFavoriteAria',
+      icon: 'favorite.fill',
+    });
+  });
+
+  it('keeps the toggle label and its own mutation without a caller-owned favourite', () => {
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true });
+    const favorite = result.current.find((action) => action.id === 'favorite');
+
+    expect(favorite?.title).toBe('mobile.climbRow.toggleFavorite');
+    act(() => favorite?.run());
+    expect(openers.toggleFavoriteMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports share from the surface it was opened on', () => {
+    vi.mocked(track).mockClear();
+    const player = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: true,
+      analyticsSource: 'play_drawer_menu',
+    });
+    act(() => player.result.current.find((action) => action.id === 'share')?.run());
+    expect(track).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ source: 'play_drawer_menu' }));
+
+    const longPress = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true });
+    act(() => longPress.result.current.find((action) => action.id === 'share')?.run());
+    expect(track).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ source: 'climb_actions_menu' }));
   });
 });

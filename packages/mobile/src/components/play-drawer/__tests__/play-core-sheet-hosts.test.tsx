@@ -9,7 +9,6 @@ import { sanitizeClimbTarget } from '../../../lib/queue-privacy';
 import { PlayCoreSheetHosts, type PlayCoreSheetHostsProps } from '../PlayCoreSheetHosts';
 
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
-vi.mock('expo-crypto', () => ({ randomUUID: () => 'new-queue-item' }));
 
 const recorded = vi.hoisted(() => ({
   props: new Map<string, Record<string, unknown>>(),
@@ -30,11 +29,11 @@ function SheetStub({ name, ...props }: Record<string, unknown> & { name: string 
 vi.mock('../PlayDrawerSectionsSheet', () => ({
   PlayDrawerSectionsSheet: (props: Record<string, unknown>) => <SheetStub name="sections" {...props} />,
 }));
-vi.mock('../../ClimbActionsSheet', () => ({
-  ClimbActionsSheet: (props: Record<string, unknown>) => <SheetStub name="actions" {...props} />,
-}));
 vi.mock('../../AddBetaVideoSheet', () => ({
   AddBetaVideoSheet: (props: Record<string, unknown>) => <SheetStub name="beta" {...props} />,
+}));
+vi.mock('../../AddToPlaylistSheet', () => ({
+  AddToPlaylistSheet: (props: Record<string, unknown>) => <SheetStub name="playlist" {...props} />,
 }));
 vi.mock('../logbook/LogbookFullSheet', () => ({
   LogbookFullSheet: (props: Record<string, unknown>) => <SheetStub name="logbook" {...props} />,
@@ -80,8 +79,8 @@ function props(open: boolean): PlayCoreSheetHostsProps {
     activeAngle: 40,
     climbBoardMismatch: false,
     sectionsSettingsOpen: open,
-    climbActionsVisible: open,
     addBetaVideoOpen: open,
+    addToPlaylistOpen: open,
     fullLogbookClimbUuid: open ? pinnedClimb.uuid : null,
     climberLogsOpen: open,
     reportClimbOpen: open,
@@ -90,29 +89,17 @@ function props(open: boolean): PlayCoreSheetHostsProps {
     bleControlVisible: open,
     composerCredentialScope: 0,
     betaVideoTarget: null,
+    playlistTarget: null,
     reportTarget: null,
     tickTarget: null,
-    currentUserId: 'viewer',
-    isAuthenticated: true,
-    moderationEnabled: true,
-    showConnectPill: true,
-    displayedClimbIsDraft: false,
     isMirrored: true,
     boardseshActive: false,
     sessionId: 'session',
-    addToQueue: vi.fn(),
-    dismissPlayerAndWait: undefined,
     onAngleChange: vi.fn(),
-    handleOpenSectionsSettings: noAction,
     handleCloseSectionsSettings: noAction,
-    handleToggleFavoriteFromMenu: noAction,
-    handleOpenAddBetaVideo: noAction,
-    handleOpenReportClimb: noAction,
-    openQueueFromActions: noAction,
-    handleShare: noAction,
-    handleDismiss: noAction,
     handleCloseSubDrawer: noAction,
     handleCloseAddBetaVideo: noAction,
+    handleCloseAddToPlaylist: noAction,
     handleCloseFullLogbook: noAction,
     handleCloseClimberLogs: noAction,
     handleOpenClimberProfile: noAction,
@@ -130,6 +117,7 @@ function ScopedHosts({ open }: { open: boolean }) {
       {...props(open)}
       composerCredentialScope={credentialScope}
       betaVideoTarget={target}
+      playlistTarget={target}
       reportTarget={target}
       tickTarget={target}
     />
@@ -144,6 +132,7 @@ beforeEach(() => {
 
 describe('PlayCoreSheetHosts lifetime and ownership', () => {
   it('mounts no sheets on opening, then retains all nine hosts through closing and reopening', () => {
+    // Sections, beta, playlist, logbook, climber logs, report, angle, tick, BLE.
     const { container, rerender, getByLabelText, unmount } = render(<PlayCoreSheetHosts {...props(false)} />);
     expect(container.childElementCount).toBe(0);
     expect(recorded.mounts).not.toHaveBeenCalled();
@@ -165,14 +154,14 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
   it('withdraws pinned metadata without remounting drafts, but remounts only composers for new credentials', () => {
     const { container, getByLabelText, rerender } = render(<ScopedHosts open />);
     const originalInputs = [...container.children];
-    for (const name of ['beta', 'report', 'tick']) {
+    for (const name of ['beta', 'playlist', 'report', 'tick']) {
       fireEvent.change(getByLabelText(name), { target: { value: `Draft ${name}` } });
       expect(recorded.props.get(name)).toMatchObject({ climb: pinnedClimb, boardName: 'tension', angle: 35 });
     }
     rerender(<ScopedHosts open={false} />);
     act(() => invalidatePrivacySnapshots());
     expect([...container.children]).toEqual(originalInputs);
-    for (const name of ['beta', 'report', 'tick']) {
+    for (const name of ['beta', 'playlist', 'report', 'tick']) {
       expect(getByLabelText(name)).toHaveProperty('value', `Draft ${name}`);
       expect(recorded.props.get(name)).toMatchObject({
         climb: { uuid: 'pinned-climb', name: '', frames: '' },
@@ -182,9 +171,11 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
     }
     expect(recorded.unmounts).not.toHaveBeenCalled();
     act(() => invalidatePrivacySnapshots('credential'));
-    expect(recorded.unmounts.mock.calls.map(([name]) => name).sort()).toEqual(['beta', 'report', 'tick']);
-    expect(recorded.mounts).toHaveBeenCalledTimes(12);
-    for (const name of ['beta', 'report', 'tick']) expect(getByLabelText(name)).toHaveProperty('value', '');
+    expect(recorded.unmounts.mock.calls.map(([name]) => name).sort()).toEqual(['beta', 'playlist', 'report', 'tick']);
+    expect(recorded.mounts).toHaveBeenCalledTimes(13);
+    for (const name of ['beta', 'playlist', 'report', 'tick']) {
+      expect(getByLabelText(name)).toHaveProperty('value', '');
+    }
     expect(recorded.props.get('tick')).toMatchObject({ climbUuid: 'current-climb', boardName: 'kilter' });
   });
 
@@ -221,11 +212,26 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  // Android and web reach View options through the actions sheet, which must open
-  // the sections sheet mounted here, inside the player, so it presents above `/play`.
-  it("hands the actions sheet the player's own sections opener for View options", () => {
-    const openSections = vi.fn();
-    render(<PlayCoreSheetHosts {...props(true)} handleOpenSectionsSettings={openSections} />);
-    expect(recorded.props.get('actions')?.onOpenViewOptions).toBe(openSections);
+  // ⋯ → Add to playlist opens THIS host, inside the player, so the picker
+  // presents above `/play`; the root one lands under it (#3294).
+  it('hosts the playlist picker in the player, on the climb and board ⋯ was opened for', () => {
+    const close = vi.fn();
+    render(
+      <PlayCoreSheetHosts
+        {...props(true)}
+        handleCloseAddToPlaylist={close}
+        playlistTarget={{ climb: pinnedClimb, boardConfig: pinnedBoard }}
+      />,
+    );
+    expect(recorded.props.get('playlist')).toMatchObject({
+      visible: true,
+      climb: pinnedClimb,
+      boardName: 'tension',
+      layoutId: 2,
+      sizeId: 20,
+      setIds: '2',
+      angle: 35,
+      onClose: close,
+    });
   });
 });

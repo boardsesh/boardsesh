@@ -3793,9 +3793,9 @@ nothing left to star, and a Retry could never succeed. A refused tick still
 dead-letters.
 `packages/backend/src/__tests__/spray-climb-delete.test.ts` drives both orders.
 
-**In the app.** "Delete climb" is the last row of the climb actions, in both the
-long-press menu (`use-climb-actions.ts`, which is also the iOS play drawer's
-menu) and the Android play drawer's sheet (`ClimbActionsSheet.tsx`). It shows
+**In the app.** "Delete climb" is the last row of the climb actions
+(`use-climb-actions.ts`), behind both the long-press menu and the play drawer's
+⋯ on every platform, where it is the one destructive row. It shows
 on the setter's own published spray climb on a live wall; drafts keep their
 delete in the drafts list. The app never guesses at ticks: the server's
 `CLIMB_HAS_TICKS` comes back as "Someone has logged this climb, so it stays on
@@ -3893,7 +3893,7 @@ admin included, and there is no "who can edit climbs" setting. The server
 enforces the same rule (see [Editing a climb](#editing-a-climb)).
 
 The rule is `canEditClimb` in `@boardsesh/create-climb-react`, used by both
-menus (`ClimbActionsSheet` and `use-climb-actions.ts`). The editor's lock reads
+climb-action menus (both built by `use-climb-actions.ts`). The editor's lock reads
 `computeCanUpdate` and `computeEditLocked` from the same file, with no spray
 exemption. Edit and Fork stay hidden on an archived wall. The app no longer
 reads `viewerCanEditClimbs` or `climbEditPolicy`; the server still serves both, as
@@ -4054,7 +4054,7 @@ Everything else is unchanged and deliberately so: the duplicate gate surfaces
 through the existing `isDuplicateClimbError` + `DuplicateBanner` (the server
 computes `hold_fingerprint` per wall, so an identical hold set on ANOTHER wall is
 not a duplicate), drafts keep their per-wall-version slot from SW-07, there is no
-benchmark toggle, and Remix / Edit in `ClimbActionsSheet` were already gated on
+benchmark toggle, and Remix / Edit in the climb actions were already gated on
 `climbCreation`.
 
 One screen-level difference: a wall reached cold — a share link, a fork of

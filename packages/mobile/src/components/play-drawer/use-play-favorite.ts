@@ -79,8 +79,8 @@ export function usePlayFavorite({
     );
   }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
 
-  // The climb-actions sheet's heart is the same toggle as the action bar's, so
-  // it gets the same selection tick (HIG "Playing haptics").
+  // ⋯'s favourite row is the same toggle as the action bar's heart, so it gets
+  // the same selection tick (HIG "Playing haptics").
   const handleToggleFavoriteFromMenu = useCallback(() => {
     hapticSelection();
     handleToggleFavorite();

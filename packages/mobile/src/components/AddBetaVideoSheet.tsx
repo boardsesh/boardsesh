@@ -11,7 +11,7 @@ import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
 // brings the link back. A manual "already have a link?" paste field is kept at
 // the bottom as a fallback (reuses the attachBetaLink mutation).
 //
-// Driven by a controlled `visible` prop (mirrors ClimbActionsSheet): the
+// Driven by a controlled `visible` prop (mirrors AddToPlaylistSheet): the
 // ModalSheet coordinator presents it above the play drawer's own native modal.
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
