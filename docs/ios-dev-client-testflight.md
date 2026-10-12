@@ -104,7 +104,7 @@ Dev bundle ID, so the backend sends updates and ends to the appropriate topic.
 
 For ordinary notifications delivered through Expo's push service, register the
 Dev bundle's APNs credentials under the existing Expo project too. Run
-`vp dlx eas-cli@16 credentials --platform ios`, choose the Dev TestFlight profile,
+`BOARDSESH_IOS_APP_VARIANT=dev vp dlx eas-cli@16 credentials --platform ios`, choose the Dev TestFlight profile,
 and configure its push key. Local/GitHub distribution signing does not by itself
 configure Expo's push service.
 
