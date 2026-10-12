@@ -20,6 +20,7 @@ import type { NativeStackNavigationOptions } from 'expo-router';
 import type { ScrollEdgeBackdrop } from '../../../../src/hooks/use-scroll-edge-backdrop';
 import type { ClimbFilterSheet } from '../../../../src/components/ClimbFilterSheet';
 import type { ClimbFilters } from '../../../../src/lib/climb-filter-types';
+import type { LastSearch } from '../../../../src/lib/last-search-store';
 import type { BoardSearchConfig, ClimbBoardFilterState } from '@boardsesh/climb-filters';
 import { hasActiveClimbFilters } from '@boardsesh/climb-filters';
 
@@ -120,6 +121,7 @@ const mocks = vi.hoisted(() => ({
   dismissGradePopover: undefined as (() => void) | undefined,
   focusSearch: undefined as (() => void) | undefined,
   openFilters: undefined as (() => void) | undefined,
+  openFiltersFromChips: undefined as (() => void) | undefined,
   // Whether the chrome was told to draw its own (Material) grade rail.
   chromeGradeRailVisible: undefined as boolean | undefined,
   // The chrome's height report: the controls block under the UIKit header, or the
@@ -520,17 +522,21 @@ vi.mock('../../../../src/components/search/FilterChipRow', () => ({
   FilterChipRow: ({
     gradeRailOpen,
     gradePopoverContent,
+    onOpenFilters,
   }: {
     gradeRailOpen: boolean;
     gradePopoverContent?: ReactNode;
-  }) =>
-    createElement(
+    onOpenFilters: () => void;
+  }) => {
+    mocks.openFiltersFromChips = onOpenFilters;
+    return createElement(
       'div',
       { 'data-testid': 'chip-row', 'data-grade-open': String(gradeRailOpen) },
       gradePopoverContent && gradeRailOpen
         ? createElement('div', { 'data-testid': 'grade-popover' }, gradePopoverContent)
         : null,
-    ),
+    );
+  },
 }));
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
 vi.mock('../../../../src/components/search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));
@@ -835,6 +841,7 @@ beforeEach(() => {
   mocks.dismissGradePopover = undefined;
   mocks.focusSearch = undefined;
   mocks.openFilters = undefined;
+  mocks.openFiltersFromChips = undefined;
   mocks.chromeGradeRailVisible = undefined;
   mocks.reportChromeHeight = undefined;
   mocks.chromeScrollEdge = undefined;
@@ -1997,8 +2004,10 @@ describe('ClimbList grade row', () => {
       ['the screen loses focus', () => mocks.dismissGradePopover?.()],
       ['search takes focus', () => mocks.focusSearch?.()],
       ['Filters opens', () => mocks.openFilters?.()],
-    ])('closes the popover when %s', (_cause, trigger) => {
-      const { getByTestId, queryByTestId } = render(<ClimbList />);
+    ])('closes the popover when %s', async (_cause, trigger) => {
+      const { findByText, getByTestId, queryByTestId } = render(<ClimbList />);
+      // Filters becomes available after the current board's search restores.
+      await findByText('Moonage');
       act(() => mocks.openGrade?.());
 
       act(trigger);
@@ -2171,6 +2180,75 @@ describe('ClimbList live filter session integration', () => {
   };
 
   afterEach(() => vi.useRealTimers());
+
+  it.each(['board arrival', 'board switch'] as const)(
+    'blocks both Filters entry points until a deferred restore finishes after %s',
+    async (arrival) => {
+      mocks.statefulSearch = true;
+      mocks.renderFilterChrome = true;
+      const savedSearch: LastSearch = {
+        filters: { ...selectedFilters, minGrade: 8 },
+        boardFilters: {},
+        searchText: 'saved climb',
+        updatedAt: 1,
+      };
+      let resolveRestore: (saved: LastSearch) => void = () => {
+        throw new Error('Expected the restore promise to be initialized');
+      };
+      const pendingRestore = new Promise<LastSearch>((resolve) => {
+        resolveRestore = resolve;
+      });
+      if (arrival === 'board arrival') mocks.getLastSearch.mockReturnValueOnce(pendingRestore);
+      const view = render(<ClimbList />);
+      let previousBoardOpen: (() => void) | undefined;
+      if (arrival === 'board switch') {
+        await view.findByText('Moonage');
+        previousBoardOpen = mocks.openFilters;
+        mocks.getLastSearch.mockReturnValueOnce(pendingRestore);
+        mocks.activeBoard = { boardType: 'tension', layoutId: 10, sizeId: 7, setIds: '4', angle: 35 };
+        view.rerender(<ClimbList />);
+      }
+      mocks.replaceSearch.mockClear();
+      expect(mocks.openFilters).toBeDefined();
+      expect(mocks.openFiltersFromChips).toBeDefined();
+      act(() => {
+        mocks.openFilters?.();
+        mocks.openFiltersFromChips?.();
+        previousBoardOpen?.();
+      });
+      expect(view.queryByTestId('filter-sheet')).toBeNull();
+      expect(mocks.filterSheetProps).toBeUndefined();
+      expect(mocks.replaceSearch).not.toHaveBeenCalled();
+      expect(mocks.addRecentFilter).not.toHaveBeenCalled();
+
+      await act(async () => resolveRestore(savedSearch));
+      expect(mocks.searchState).toEqual({
+        filters: savedSearch.filters,
+        boardFilters: savedSearch.boardFilters,
+        name: savedSearch.searchText,
+      });
+      act(() => mocks.openFiltersFromChips?.());
+      expect(view.getByTestId('filter-sheet')).toBeDefined();
+      expect(latestSheet().currentFilters).toEqual(savedSearch.filters);
+      const finalFilters = { ...selectedFilters, minGrade: 20 };
+      await act(async () => {
+        latestSheet().onSelectionChange(finalFilters, selectedBoardFilters);
+        latestSheet().onDismiss();
+      });
+      expect(view.queryByTestId('filter-sheet')).toBeNull();
+      expect(mocks.searchState).toEqual({
+        filters: finalFilters,
+        boardFilters: selectedBoardFilters,
+        name: 'saved climb',
+      });
+      expect(mocks.searchInput).toEqual({
+        filters: finalFilters,
+        boardFilters: selectedBoardFilters,
+        name: 'saved climb',
+      });
+      expect(mocks.addRecentFilter).toHaveBeenCalledExactlyOnceWith('', finalFilters, 'saved climb');
+    },
+  );
 
   it('flushes the raw name and latest pair on a quick close, recording one final recent', async () => {
     const view = await openSheet();

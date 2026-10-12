@@ -445,11 +445,6 @@ function ClimbListInner() {
   const handleDismissGradePopover = useCallback(() => {
     setGradePopoverOpen(false);
   }, []);
-  const handleOpenFilters = useCallback(() => {
-    blurSearchInputs();
-    setGradePopoverOpen(false);
-    openFilters();
-  }, [blurSearchInputs, openFilters]);
   // The Grade chip. On a regular-width iPad it presents and dismisses the
   // popover. Everywhere else it shows and hides the grade row, and the setting
   // remembers which.
@@ -741,6 +736,17 @@ function ClimbListInner() {
 
   // Search is "ready" once this board's restore has landed — gate queries on it.
   const searchReady = hasBoardConfig && restoredKey === boardKey;
+  const searchReadyRef = useRef(searchReady);
+  searchReadyRef.current = searchReady;
+  const handleOpenFilters = useCallback(() => {
+    // Live edits must start after this board's saved search has landed; otherwise
+    // the pending restore could replace the climber's new selection. A ref also
+    // gates native callbacks retained from the previous board's ready render.
+    if (!searchReadyRef.current) return;
+    blurSearchInputs();
+    setGradePopoverOpen(false);
+    openFilters();
+  }, [blurSearchInputs, openFilters]);
 
   useEffect(() => {
     if (!boardConfig || !searchReady) return;
