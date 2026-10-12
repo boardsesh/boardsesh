@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { getClimb } from '../queries';
 import type { Climb } from '@/app/lib/types';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 /** `getClimb` resolves `null` for a genuinely missing row; these cases all expect a hit. */
 function assertClimb(climb: Climb | null): Climb {
@@ -9,13 +11,13 @@ function assertClimb(climb: Climb | null): Climb {
   return climb;
 }
 
-const { mockSqlTag, rowsFromResultMock } = vi.hoisted(() => {
+const { mockSqlTag, rowsFromResultMock, executeRowsMock, dbzSentinel } = vi.hoisted(() => {
   const mockSqlTag = vi.fn();
   const rowsFromResultMock = <T>(result: unknown): T[] => {
     if (Array.isArray(result)) return result as T[];
     throw new TypeError('Expected postgres-js query result to be a row array');
   };
-  return { mockSqlTag, rowsFromResultMock };
+  return { mockSqlTag, rowsFromResultMock, executeRowsMock: vi.fn(), dbzSentinel: { __sentinel: 'dbz' } };
 });
 
 vi.mock('server-only', () => ({}));
@@ -30,6 +32,8 @@ vi.mock('next/cache', () => ({
 vi.mock('@/app/lib/db/db', () => ({
   sql: mockSqlTag,
   rowsFromResult: rowsFromResultMock,
+  dbz: dbzSentinel,
+  executeRows: executeRowsMock,
 }));
 
 /** A MoonBoard canonical climb that an older, delisted uuid aliases onto. */
@@ -268,5 +272,79 @@ describe('getClimb', () => {
     // rejection means "could not read" (500). Before this, dereferencing the
     // undefined row threw, and the page turned that throw into a 404 as well.
     expect(climb).toBeNull();
+  });
+
+  it('never selects a draft: the read has no viewer, so no owner to return one to', async () => {
+    mockSqlTag.mockResolvedValueOnce([{ ...canonicalRow9, uuid: 'published-uuid' }]);
+
+    await getClimb({
+      board_name: 'moonboard',
+      layout_id: 3,
+      size_id: 1,
+      set_ids: [1],
+      angle: 40,
+      climb_uuid: 'published-uuid',
+    });
+
+    const [queryStrings] = mockSqlTag.mock.calls[0];
+    const climbQueryText = Array.from(queryStrings as TemplateStringsArray).join(' ');
+    // On the selected row, after the alias hop, so an alias cannot lead to a
+    // draft either. NULL-safe: a NULL flag is not a draft and still resolves.
+    const selectedRowScope = climbQueryText.slice(climbQueryText.indexOf('INNER JOIN board_climbs climbs'));
+    expect(selectedRowScope).toContain('AND climbs.is_draft IS NOT TRUE');
+  });
+
+  it('never sends the author account id: the page has no viewer and a shared cache', async () => {
+    mockSqlTag.mockResolvedValueOnce([{ ...canonicalRow9, uuid: 'published-uuid' }]);
+
+    await getClimb({
+      board_name: 'moonboard',
+      layout_id: 3,
+      size_id: 1,
+      set_ids: [1],
+      angle: 40,
+      climb_uuid: 'published-uuid',
+    });
+
+    const [queryStrings] = mockSqlTag.mock.calls[0];
+    const climbQueryText = Array.from(queryStrings as TemplateStringsArray).join(' ');
+    expect(climbQueryText).toContain('NULL::text as "userId"');
+    expect(climbQueryText).not.toContain('climbs.user_id');
+  });
+});
+
+describe('getClimbStatsForAllAngles', () => {
+  beforeEach(() => {
+    executeRowsMock.mockReset();
+  });
+
+  async function renderedStatsQuery(): Promise<string> {
+    executeRowsMock.mockResolvedValueOnce([]);
+    await getClimbStatsForAllAngles('kilter', 'some-climb-uuid');
+    const [database, query] = executeRowsMock.mock.calls[0] as [unknown, SQL];
+    // On the primary: the first ascent below is decided by tick audiences.
+    expect(database).toBe(dbzSentinel);
+    return new PgDialect().sqlToQuery(query).sql.replace(/\s+/g, ' ');
+  }
+
+  it('returns no stats for a draft climb, and still returns a stats row that has no climb row', async () => {
+    // NOT EXISTS rather than a join: only a climb row that IS a draft removes
+    // the stats, so stats whose climb row is missing read as they did.
+    expect(await renderedStatsQuery()).toContain(
+      'AND NOT EXISTS ( SELECT 1 FROM board_climbs draft_climb WHERE draft_climb.board_type = climb_stats.board_type AND draft_climb.uuid = climb_stats.climb_uuid AND draft_climb.is_draft IS TRUE )',
+    );
+  });
+
+  it('credits the first ascent through the tick projection, never the stored name or date alone', async () => {
+    const query = await renderedStatsQuery();
+    // A Boardsesh-authored climb is credited to the earliest send an anonymous
+    // visitor may read, and dated by that same send. The stored values are the
+    // ELSE branch, for manufacturer climbs only.
+    expect(query).toContain('privacy_fa_tick');
+    expect(query).toContain('ELSE climb_stats.fa_username END as fa_username');
+    expect(query).toContain('ELSE climb_stats.fa_at END as fa_at');
+    expect(query).toContain('SELECT privacy_fa_tick.climbed_at FROM boardsesh_ticks privacy_fa_tick');
+    expect(query).not.toMatch(/climb_stats\.fa_username,/);
+    expect(query).not.toMatch(/climb_stats\.fa_at,/);
   });
 });

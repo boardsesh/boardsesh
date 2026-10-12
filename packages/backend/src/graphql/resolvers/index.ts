@@ -99,6 +99,7 @@ import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import'
 import { syncQueries } from './sync/queries';
 import { resolveClimbNoMatch } from './shared/helpers';
 import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
+import { resolveClimbAuthorId } from './climbs/climb-author';
 
 export const resolvers = {
   // Scalar types
@@ -255,6 +256,12 @@ export const resolvers = {
     // climb's own row with the viewer this request actually has.
     lostHolds: (climb: ClimbLostHoldsParent, _args: unknown, ctx: ConnectionContext) =>
       resolveClimbLostHolds(climb, ctx),
+
+    // The author's account id goes only to a viewer who may see that account's
+    // activity — see resolveClimbAuthorId. Every Climb producer passes through
+    // here, after any shared cache.
+    userId: (climb: { userId?: string | null }, _args: unknown, ctx: ConnectionContext) =>
+      resolveClimbAuthorId(climb, ctx),
   },
 
   // Union type resolvers

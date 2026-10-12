@@ -1,4 +1,4 @@
-import { privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import { privateSafeFirstAscentAt, privateSafeFirstAscentName } from '@boardsesh/db/queries';
 import { randomUUID } from 'crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -138,7 +138,16 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
                 },
                 null,
               ),
-              faAt: dbSchema.boardClimbStats.faAt,
+              // The date of the same send the name credits, never the stored date.
+              faAt: privateSafeFirstAscentAt(
+                {
+                  boardType: dbSchema.boardClimbStats.boardType,
+                  climbUuid: dbSchema.boardClimbStats.climbUuid,
+                  angle: dbSchema.boardClimbStats.angle,
+                  at: dbSchema.boardClimbStats.faAt,
+                },
+                null,
+              ),
               // Preserve the bigint exactly across the JS boundary.
               syncSeq: sql<string>`${dbSchema.boardClimbStats.syncSeq}::text`,
             })

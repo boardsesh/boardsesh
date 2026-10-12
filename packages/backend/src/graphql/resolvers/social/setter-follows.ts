@@ -560,24 +560,25 @@ export const setterFollowQueries = {
     const validatedInput = validateInput(UserClimbsInputSchema, input, 'input');
     const { userId, sortBy, limit, offset } = validatedInput;
 
-    // A published, listed climb is public whoever set it, so a private
-    // account's own climbs list for everyone. Two things stay theirs: the
-    // climbs under a linked board username, because listing them tells a
-    // stranger which setter name is this account, and their unlisted climbs,
-    // which go to the owner alone.
+    // A published, listed climb is public whoever set it, everywhere else: in
+    // search, on its page, on the setter page under its setter name. What a
+    // private account keeps is the link from those climbs to itself. This list
+    // IS that link (these climbs, under this account), so a viewer who may not
+    // see the account's activity gets an empty list, the same answer an account
+    // with no climbs gives. Followers and the owner get the full list.
     const isSelf = !!ctx.userId && ctx.userId === userId;
-    const showLinkedIdentities = isSelf || (await canViewUserActivity(ctx.userId, userId));
+    if (!isSelf && !(await canViewUserActivity(ctx.userId, userId))) {
+      return { climbs: [], totalCount: 0, hasMore: false };
+    }
 
     // 1. Look up linked Aurora usernames
-    const mappings = showLinkedIdentities
-      ? await db
-          .select({
-            boardType: dbSchema.userBoardMappings.boardType,
-            boardUsername: dbSchema.userBoardMappings.boardUsername,
-          })
-          .from(dbSchema.userBoardMappings)
-          .where(eq(dbSchema.userBoardMappings.userId, userId))
-      : [];
+    const mappings = await db
+      .select({
+        boardType: dbSchema.userBoardMappings.boardType,
+        boardUsername: dbSchema.userBoardMappings.boardUsername,
+      })
+      .from(dbSchema.userBoardMappings)
+      .where(eq(dbSchema.userBoardMappings.userId, userId));
 
     const linkedMappings = mappings.filter(
       (mapping): mapping is { boardType: string; boardUsername: string } =>
@@ -601,10 +602,11 @@ export const setterFollowQueries = {
       ? sql`(${tables.climbs.userId} = ${userId} OR ${linkedOwnershipCondition})`
       : eq(tables.climbs.userId, userId);
 
-    // No is_hidden predicate, deliberately: this is the setter's own climbs list.
-    // Someone whose climb was hidden by the community has to be able to see that
-    // it happened — the row carries `is_hidden` so the UI can say so — rather than
-    // watching it vanish from their profile with no explanation.
+    // No is_hidden predicate for the setter themselves: this is their own climbs
+    // list. Someone whose climb was hidden by the community has to be able to see
+    // that it happened — the row carries `is_hidden` so the UI can say so — rather
+    // than watching it vanish from their profile with no explanation. For anyone
+    // else it is a browse surface, and moderation `hide` keeps hiding there.
     // Scoped to no board type at all, so a spray climb rides along with every
     // other board a climber has set on — including the layout id of their private
     // wall. The condition is a no-op on the other eight board types.
@@ -612,6 +614,7 @@ export const setterFollowQueries = {
       ownershipCondition,
       eq(tables.climbs.isDraft, false),
       isSelf ? undefined : eq(tables.climbs.isListed, true),
+      isSelf ? undefined : eq(tables.climbs.isHidden, false),
       sprayClimbVisibilityCondition(
         { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
         ctx.userId,
@@ -694,7 +697,7 @@ export const setterFollowQueries = {
           c.created_at
         FROM board_climbs c
         WHERE ${ownershipSql} AND c.is_draft = false
-          ${isSelf ? sql`` : sql`AND c.is_listed = true`}
+          ${isSelf ? sql`` : sql`AND c.is_listed = true AND c.is_hidden = false`}
           -- The row list is built by this CTE, not by the drizzle whereCondition
           -- used for the count above — so the spray rule has to be stated here too
           -- or the count hides a private wall's climbs while the list returns them.

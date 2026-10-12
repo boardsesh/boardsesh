@@ -2,6 +2,7 @@ import {
   climbDraftVisibilityCondition,
   climbReferenceReadableCondition,
   privateSafeFirstAscentName,
+  privateSafeFirstAscentAt,
 } from '@boardsesh/db/queries';
 import { createHash } from 'crypto';
 import { storedWoodsSizeId } from './woods-authoring';
@@ -723,7 +724,16 @@ export const climbQueries = {
           },
           ctx.isAuthenticated ? ctx.userId : null,
         ),
-        faAt: dbSchema.boardClimbStats.faAt,
+        // The date of the same send the name credits, never the stored date.
+        faAt: privateSafeFirstAscentAt(
+          {
+            boardType: dbSchema.boardClimbStats.boardType,
+            climbUuid: dbSchema.boardClimbStats.climbUuid,
+            angle: dbSchema.boardClimbStats.angle,
+            at: dbSchema.boardClimbStats.faAt,
+          },
+          ctx.isAuthenticated ? ctx.userId : null,
+        ),
         // The schema's historical Drizzle mapping uses JS number mode. Cast in
         // PostgreSQL so revisions above MAX_SAFE_INTEGER reach the client intact.
         syncSeq: sql<string>`${dbSchema.boardClimbStats.syncSeq}::text`,
@@ -799,7 +809,16 @@ export const climbQueries = {
           },
           ctx.isAuthenticated ? ctx.userId : null,
         ),
-        faAt: dbSchema.boardClimbStats.faAt,
+        // The date of the same send the name credits, never the stored date.
+        faAt: privateSafeFirstAscentAt(
+          {
+            boardType: dbSchema.boardClimbStats.boardType,
+            climbUuid: dbSchema.boardClimbStats.climbUuid,
+            angle: dbSchema.boardClimbStats.angle,
+            at: dbSchema.boardClimbStats.faAt,
+          },
+          ctx.isAuthenticated ? ctx.userId : null,
+        ),
         syncSeq: sql<string>`${dbSchema.boardClimbStats.syncSeq}::text`,
       })
       .from(dbSchema.boardClimbStats)

@@ -7,6 +7,8 @@ import {
   climbReferenceReadableCondition,
   ownedOrPublicReferenceClimbCondition,
   privateSafeFirstAscentName,
+  privateSafeFirstAscentAt,
+  climbReferenceListedCondition,
   publicReferenceClimbCondition,
 } from '../privacy';
 
@@ -116,6 +118,42 @@ void describe('privateSafeFirstAscentName', () => {
     assert.doesNotMatch(rendered, /THEN COALESCE\(privacy_fa_profile\.display_name, privacy_fa_user\.name\) ELSE NULL/);
     // The stored credit is still distrusted for a climb that has, or once had, a Boardsesh author.
     assert.match(rendered, /privacy_fa_owned\.user_id IS NOT NULL OR privacy_fa_owned\.is_boardsesh_authored/);
+  });
+
+  void it('dates the same send it names: the twin subqueries pick one tick', () => {
+    const stats = {
+      boardType: boardClimbStats.boardType,
+      climbUuid: boardClimbStats.climbUuid,
+      angle: boardClimbStats.angle,
+    };
+    const name = dialect.sqlToQuery(
+      privateSafeFirstAscentName({ ...stats, username: boardClimbStats.faUsername }, 'viewer-1'),
+    );
+    const at = dialect.sqlToQuery(privateSafeFirstAscentAt({ ...stats, at: boardClimbStats.faAt }, 'viewer-1'));
+    // Same tick filter, order and limit; only the picked column and the stored
+    // fallback differ, so the date is never the stored date of a hidden send.
+    const fromTicks = (rendered: string) => rendered.slice(rendered.indexOf('FROM boardsesh_ticks privacy_fa_tick'));
+    assert.equal(fromTicks(at.sql), fromTicks(name.sql).replace('"fa_username"', '"fa_at"'));
+    assert.deepEqual(at.params, name.params);
+    assert.match(at.sql, /SELECT privacy_fa_tick\.climbed_at\s+FROM boardsesh_ticks privacy_fa_tick/);
+    assert.match(at.sql, /ELSE "board_climb_stats"\."fa_at" END$/);
+  });
+});
+
+void describe('climbReferenceListedCondition', () => {
+  void it('shows a referenced climb in a list only when it is published and listed, or the viewer owns it', () => {
+    const rendered = new PgDialect().sqlToQuery(
+      climbReferenceListedCondition(
+        { boardType: boardClimbStats.boardType, climbUuid: boardClimbStats.climbUuid },
+        'viewer-1',
+      ),
+    );
+    assert.match(
+      rendered.sql,
+      /privacy_listed_climb\.is_draft IS NOT TRUE AND privacy_listed_climb\.is_listed IS TRUE\) OR COALESCE\(privacy_listed_climb\.user_id = \$\d+, false\)/,
+    );
+    assert.ok(rendered.params.includes('viewer-1'));
+    assert.doesNotMatch(rendered.sql, /content_privacy|user_profiles|user_follows/);
   });
 });
 

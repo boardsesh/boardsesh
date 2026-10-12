@@ -389,15 +389,45 @@ export function climbReferenceReadableCondition(
 }
 
 /**
- * First-ascent names are a tick projection, not a climb rule: public numeric
- * aggregates keep private ticks, but a send is only credited by name to a
- * viewer who may read that tick. The name is the earliest send THIS viewer may
- * read, so a hidden first send passes the credit to the next visible one
- * instead of leaving it blank.
+ * {@link ownedOrPublicReferenceClimbCondition} for a row keyed by a climb
+ * reference (a favourite, a playlist entry): shown in a list when the climb it
+ * belongs to is published and listed, or is the viewer's own. A list someone
+ * else curated never shows a viewer an unlisted climb. A reference to no climb
+ * at all is not shown.
  */
-export function privateSafeFirstAscentName(
-  stats: { boardType: SQLWrapper; climbUuid: SQLWrapper; angle: SQLWrapper; username: SQLWrapper },
+export function climbReferenceListedCondition(
+  reference: { boardType: SQLWrapper; climbUuid: SQLWrapper },
   viewerId: ViewerId,
+): SQL {
+  return sql`EXISTS (SELECT 1 FROM board_climbs privacy_listed_climb
+    WHERE privacy_listed_climb.board_type = ${reference.boardType} AND privacy_listed_climb.uuid = ${reference.climbUuid}
+    AND ${ownedOrPublicReferenceClimbCondition(
+      {
+        isDraft: sql`privacy_listed_climb.is_draft`,
+        isListed: sql`privacy_listed_climb.is_listed`,
+        userId: sql`privacy_listed_climb.user_id`,
+      },
+      viewerId,
+    )})`;
+}
+
+type FirstAscentStats = {
+  boardType: SQLWrapper;
+  climbUuid: SQLWrapper;
+  angle: SQLWrapper;
+  /** The stored `fa_username`, or `fa_at`: what a manufacturer-authored climb shows. */
+  stored: SQLWrapper;
+};
+
+/**
+ * One half of the first-ascent projection. The name and the date are twin
+ * correlated subqueries with the same WHERE, ORDER BY and LIMIT, so both come
+ * from the SAME picked tick: the earliest send this viewer may read.
+ */
+function privateSafeFirstAscentField(
+  stats: FirstAscentStats,
+  viewerId: ViewerId,
+  field: 'name' | 'at',
 ): SQL<string | null> {
   // Drizzle strips Column table qualifiers inside a single-table SELECT list.
   // These columns are correlated into nested queries, so keep their scope.
@@ -407,7 +437,7 @@ export function privateSafeFirstAscentName(
     boardType: qualify(stats.boardType),
     climbUuid: qualify(stats.climbUuid),
     angle: qualify(stats.angle),
-    username: qualify(stats.username),
+    stored: qualify(stats.stored),
   };
   // A first ascent is its author's activity: the session or wall it happened on
   // never hides the name, only the author's account and the tick's own audience.
@@ -417,8 +447,14 @@ export function privateSafeFirstAscentName(
     sql`privacy_fa_tick.user_id`,
     viewerId,
   );
-  // Never expose the stored Boardsesh FA string: it can outlive a deleted tick,
-  // account restriction or profile rename while asynchronous recomputation runs.
+  const picked =
+    field === 'name'
+      ? sql`COALESCE(privacy_fa_profile.display_name, privacy_fa_user.name)`
+      : sql`privacy_fa_tick.climbed_at`;
+  // Never expose the stored Boardsesh FA: it can outlive a deleted tick,
+  // account restriction or profile rename while asynchronous recomputation runs,
+  // and the stored date is the earliest send of ANY visibility, so pairing it
+  // with a fallback name would date a send the viewer cannot see.
   // `is_boardsesh_authored` is kept for this test alone: account deletion
   // stamps it before the author reference is cleared, so a climb whose author
   // left still has its credit recomputed from ticks instead of trusting a
@@ -428,7 +464,7 @@ export function privateSafeFirstAscentName(
       AND privacy_fa_owned.uuid = ${correlated.climbUuid}
       AND (privacy_fa_owned.user_id IS NOT NULL OR privacy_fa_owned.is_boardsesh_authored)
   ) THEN (
-    SELECT COALESCE(privacy_fa_profile.display_name, privacy_fa_user.name)
+    SELECT ${picked}
     FROM boardsesh_ticks privacy_fa_tick
     JOIN users privacy_fa_user ON privacy_fa_user.id = privacy_fa_tick.user_id
     LEFT JOIN user_profiles privacy_fa_profile ON privacy_fa_profile.user_id = privacy_fa_tick.user_id
@@ -437,7 +473,34 @@ export function privateSafeFirstAscentName(
       AND privacy_fa_tick.kilter_detached_at IS NULL
       AND ${tickVisible}
     ORDER BY privacy_fa_tick.climbed_at ASC, privacy_fa_tick.id ASC LIMIT 1
-  ) ELSE ${correlated.username} END`;
+  ) ELSE ${correlated.stored} END`;
+}
+
+/**
+ * First-ascent names are a tick projection, not a climb rule: public numeric
+ * aggregates keep private ticks, but a send is only credited by name to a
+ * viewer who may read that tick. The name is the earliest send THIS viewer may
+ * read, so a hidden first send passes the credit to the next visible one
+ * instead of leaving it blank. Pair it with {@link privateSafeFirstAscentAt},
+ * never with the stored `fa_at`.
+ */
+export function privateSafeFirstAscentName(
+  stats: { boardType: SQLWrapper; climbUuid: SQLWrapper; angle: SQLWrapper; username: SQLWrapper },
+  viewerId: ViewerId,
+): SQL<string | null> {
+  return privateSafeFirstAscentField({ ...stats, stored: stats.username }, viewerId, 'name');
+}
+
+/**
+ * The date of the send {@link privateSafeFirstAscentName} credits: the same
+ * picked tick, so the name and the date always describe one send. A
+ * manufacturer-authored climb keeps its stored `fa_at`, like its stored name.
+ */
+export function privateSafeFirstAscentAt(
+  stats: { boardType: SQLWrapper; climbUuid: SQLWrapper; angle: SQLWrapper; at: SQLWrapper },
+  viewerId: ViewerId,
+): SQL<string | null> {
+  return privateSafeFirstAscentField({ ...stats, stored: stats.at }, viewerId, 'at');
 }
 
 /** Owner/member grants survive account changes; only-me content is owner-only. */
