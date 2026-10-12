@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -23,6 +23,7 @@ import {
 } from '../../src/lib/graphql/extract-error-message';
 import { track } from '../../src/lib/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
+import { useConfirm } from '../../src/providers/dialog-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { BUILDER_PRESET_PARAM_VALUE, NO_BOARD_PICKER_SOURCE } from '../../src/lib/boards/first-board-mode';
@@ -96,7 +97,6 @@ function classifyCreateFailure(error: unknown): 'rate_limited' | 'auth' | 'board
 }
 
 export default function CreateBoard() {
-  const router = useRouter();
   const params = useLocalSearchParams<{
     returnTo?: string;
     source?: string;
@@ -114,6 +114,8 @@ export default function CreateBoard() {
   const fromOnboarding = params.source === 'onboarding';
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('boards');
+  const { t: tSettings } = useTranslation('settings');
+  const confirm = useConfirm();
 
   const createBoard = useCreateBoard();
   const followBoard = useFollowBoard();
@@ -147,7 +149,7 @@ export default function CreateBoard() {
     (boardName: BoardName) => presetBoardConfig(boardName, popularConfigList),
     [popularConfigList],
   );
-  const { data: privacySettings } = usePrivacySettings();
+  const { data: privacySettings, refetch: refetchPrivacySettings } = usePrivacySettings();
   const builder = useBoardBuilder(seed, {
     preset: presetRequested ? presetForBoard : undefined,
     privacyEnabled: privacySettings?.enabled,
@@ -266,39 +268,59 @@ export default function CreateBoard() {
       setCreateError(null);
       hapticSelection();
 
-      // Pre-submit serial-reuse check: if another climber's wall already carries
-      // this serial WITH THE SAME CONFIG, steer the user onto it before creating
-      // a duplicate. A different-config match is legitimate reuse the backend
-      // allows — prompting there would send the user to an unrelated wall. A
-      // lookup failure is non-blocking — fall through to the normal create.
-      const serial = granted.allowDuplicateSerial ? null : input.serialNumber?.trim();
-      if (serial) {
-        const config = {
-          boardType: input.boardType,
-          layoutId: input.layoutId,
-          sizeId: input.sizeId,
-          setIds: input.setIds,
-        };
-        const sameConfigBoard = await fetchBoardsBySerialNumbers([serial])
-          .then(
-            (boards) =>
-              selectForeignSerialBoards(boards, config).find((board) => boardConfigMatches(board, config)) ?? null,
-          )
-          .catch(() => null);
-        if (sameConfigBoard) {
-          // Authenticated serial lookup intentionally returns private matches so
-          // the create guard can identify a collision. Do not carry that private
-          // entity into UI state: its name, location, and owner are not ours to
-          // reveal, and the identity-free sheet must not offer a jump to it.
-          const disclosure = serialReuseDisclosure(sameConfigBoard);
-          setSerialReuse({ board: disclosure.kind === 'public' ? disclosure.board : null, input, granted });
+      try {
+        const currentPrivacySettings = privacySettings ?? (await refetchPrivacySettings()).data;
+        if (!currentPrivacySettings) throw new Error(t('mobile.create.createError'));
+        const publicBoard = input.audience
+          ? input.audience === 'public'
+          : input.isPublic !== false && input.isUnlisted !== true;
+        if (
+          currentPrivacySettings.isPrivate &&
+          publicBoard &&
+          !(await confirm({
+            title: tSettings('privacy.publishPublicTitle'),
+            message: tSettings('privacy.publishResourceMessage'),
+            confirmLabel: tSettings('privacy.publishPublic'),
+            cancelLabel: tSettings('privacy.cancel'),
+          }))
+        ) {
           inFlightRef.current = false;
           setSubmitting(false);
           return;
         }
-      }
 
-      try {
+        // Pre-submit serial-reuse check: if another climber's wall already carries
+        // this serial WITH THE SAME CONFIG, steer the user onto it before creating
+        // a duplicate. A different-config match is legitimate reuse the backend
+        // allows — prompting there would send the user to an unrelated wall. A
+        // lookup failure is non-blocking — fall through to the normal create.
+        const serial = granted.allowDuplicateSerial ? null : input.serialNumber?.trim();
+        if (serial) {
+          const config = {
+            boardType: input.boardType,
+            layoutId: input.layoutId,
+            sizeId: input.sizeId,
+            setIds: input.setIds,
+          };
+          const sameConfigBoard = await fetchBoardsBySerialNumbers([serial])
+            .then(
+              (boards) =>
+                selectForeignSerialBoards(boards, config).find((board) => boardConfigMatches(board, config)) ?? null,
+            )
+            .catch(() => null);
+          if (sameConfigBoard) {
+            // Authenticated serial lookup intentionally returns private matches so
+            // the create guard can identify a collision. Do not carry that private
+            // entity into UI state: its name, location, and owner are not ours to
+            // reveal, and the identity-free sheet must not offer a jump to it.
+            const disclosure = serialReuseDisclosure(sameConfigBoard);
+            setSerialReuse({ board: disclosure.kind === 'public' ? disclosure.board : null, input, granted });
+            inFlightRef.current = false;
+            setSubmitting(false);
+            return;
+          }
+        }
+
         const board = await createBoard.mutateAsync({ ...input, ...granted });
         boardSecuredRef.current = true;
         track(SHARED_EVENTS.BoardCreated, {
@@ -358,7 +380,19 @@ export default function CreateBoard() {
         setSubmitting(false);
       }
     },
-    [builder, defaultName, createBoard, finish, source, presetRequested, t],
+    [
+      builder,
+      defaultName,
+      createBoard,
+      finish,
+      source,
+      presetRequested,
+      t,
+      tSettings,
+      confirm,
+      privacySettings,
+      refetchPrivacySettings,
+    ],
   );
 
   const handleUseExistingDuplicate = useCallback(async () => {

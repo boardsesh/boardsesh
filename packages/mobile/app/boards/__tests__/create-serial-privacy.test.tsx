@@ -81,6 +81,8 @@ vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
 }));
 vi.mock('../../../src/lib/error-reporting', () => ({ reportError: vi.fn() }));
 
+vi.mock('../../../src/providers/dialog-provider', () => ({ useConfirm: () => async () => true }));
+
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true }),
 }));
@@ -224,5 +226,5 @@ describe('create-board serial reuse privacy', () => {
 });
 
 vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({
-  usePrivacySettings: () => ({ data: undefined }),
+  usePrivacySettings: () => ({ data: { enabled: false, isPrivate: false } }),
 }));

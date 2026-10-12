@@ -28,10 +28,17 @@ const fetchBoardsBySerialNumbersMock = vi.hoisted(() => vi.fn().mockResolvedValu
 const fetchBoardByUuidMock = vi.hoisted(() => vi.fn());
 const dismissToMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
+const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+const refetchPrivacySettingsMock = vi.hoisted(() => vi.fn());
 
 const state = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   privacyEnabled: undefined as boolean | undefined,
+  isPrivate: false,
+  settingsLoaded: true,
+  isPublic: undefined as boolean | undefined,
+  isUnlisted: undefined as boolean | undefined,
+  audience: undefined as string | undefined,
 }));
 const popularConfigs = vi.hoisted(() => ({ configs: [{ boardType: 'moonboard', layoutId: 3 }] }));
 const presetBoardConfigMock = vi.hoisted(() => vi.fn());
@@ -125,6 +132,8 @@ vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true }),
 }));
 
+vi.mock('../../../src/providers/dialog-provider', () => ({ useConfirm: () => confirmMock }));
+
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
 vi.mock('../../../src/lib/boards/board-config-preset', () => ({ presetBoardConfig: presetBoardConfigMock }));
@@ -150,6 +159,9 @@ const builderState = vi.hoisted(() => ({
     name: 'Klimmuur MoonBoard',
     angle: 25,
     locationName: 'Klimmuur',
+    audience: state.audience,
+    isPublic: state.isPublic,
+    isUnlisted: state.isUnlisted,
   }),
 }));
 
@@ -221,6 +233,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.params = {};
   state.privacyEnabled = undefined;
+  state.isPrivate = false;
+  state.settingsLoaded = true;
+  state.isPublic = undefined;
+  state.isUnlisted = undefined;
+  refetchPrivacySettingsMock.mockResolvedValue({ data: { isPrivate: false, enabled: state.privacyEnabled } });
+  state.audience = undefined;
+  confirmMock.mockResolvedValue(true);
   builderCalls.options = [];
   builderState.presetKept = false;
   createBoardMock.mockResolvedValue({ uuid: 'new-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
@@ -230,6 +249,83 @@ beforeEach(() => {
 });
 
 describe('CreateBoard', () => {
+  it.each([{ isPublic: false }, { isUnlisted: true }])(
+    'does not warn for legacy restricted boards: %o',
+    async (visibility) => {
+      state.isPrivate = true;
+      Object.assign(state, visibility);
+      render(createElement(CreateBoard));
+      fireEvent.click(screen.getByText('submit'));
+      await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+      expect(confirmMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('loads a private account before permitting default-public creation', async () => {
+    state.settingsLoaded = false;
+    refetchPrivacySettingsMock.mockResolvedValueOnce({ data: { isPrivate: true, enabled: true } });
+    confirmMock.mockResolvedValueOnce(false);
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+    expect(refetchPrivacySettingsMock).toHaveBeenCalledTimes(1);
+    expect(createBoardMock).not.toHaveBeenCalled();
+  });
+
+  it('shows a settings-load error without creating and unlocks another attempt', async () => {
+    state.settingsLoaded = false;
+    refetchPrivacySettingsMock.mockRejectedValueOnce(new Error('network down'));
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(createBoardMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('waits for a private account to confirm the default public board', async () => {
+    state.isPrivate = true;
+    let answerConfirm: (answer: boolean) => void = () => {};
+    confirmMock.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answerConfirm = resolve;
+        }),
+    );
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    fireEvent.click(screen.getByText('submit'));
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(confirmMock).toHaveBeenCalledWith(expect.objectContaining({ message: 'privacy.publishResourceMessage' }));
+    expect(createBoardMock).not.toHaveBeenCalled();
+    answerConfirm(true);
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps a cancelled public board unsaved and permits another attempt', async () => {
+    state.isPrivate = true;
+    confirmMock.mockResolvedValueOnce(false);
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+    expect(createBoardMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+    expect(confirmMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['followers', 'invite_only', 'unlisted'])(
+    'does not warn a private account creating a %s board',
+    async (audience) => {
+      state.isPrivate = true;
+      state.audience = audience;
+      render(createElement(CreateBoard));
+      fireEvent.click(screen.getByText('submit'));
+      await waitFor(() => expect(createBoardMock).toHaveBeenCalledTimes(1));
+      expect(confirmMock).not.toHaveBeenCalled();
+    },
+  );
+
   it('enables the builder privacy defaults when server settings arrive', () => {
     const rendered = render(createElement(CreateBoard));
     expect(builderCalls.options.at(-1)?.privacyEnabled).toBeUndefined();
@@ -516,5 +612,8 @@ describe('Board Builder Abandoned', () => {
 });
 
 vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({
-  usePrivacySettings: () => ({ data: { enabled: state.privacyEnabled } }),
+  usePrivacySettings: () => ({
+    data: state.settingsLoaded ? { enabled: state.privacyEnabled, isPrivate: state.isPrivate } : undefined,
+    refetch: refetchPrivacySettingsMock,
+  }),
 }));
