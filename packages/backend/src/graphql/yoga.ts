@@ -21,6 +21,11 @@ import { recordUserActivity, resolveActivityPlatform } from '../services/user-ac
 import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usage';
 import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple-ads-token-privacy';
 import { resolveEdgeRegionCode, resolveFlagCountry } from '../utils/flag-country';
+import { boardShareTokenPrivacyPlugin, sanitizeBoardShareLogArgument } from './board-share-token-privacy';
+
+function sanitizeTokenLogArgument(argument: unknown): unknown {
+  return sanitizeBoardShareLogArgument(sanitizeAppleAdsLogArgument(argument));
+}
 
 async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
   if (!authHeader) return null;
@@ -132,6 +137,7 @@ export function createYogaInstance() {
       responseCompressionPlugin(),
       clientUsagePlugin(),
       appleAdsTokenPrivacyPlugin(),
+      boardShareTokenPrivacyPlugin(),
     ],
     // Context function - extract auth and the trusted client IP from HTTP requests.
     // `req` is the Node request `server.ts` hands to `yoga.handle`; it carries the
@@ -149,10 +155,10 @@ export function createYogaInstance() {
     // Logging - suppress debug entirely (Yoga internals like "Parsing request" are noisy)
     logging: {
       debug: () => {},
-      info: (...args: unknown[]) => logger.info('[Yoga]', ...args.map(sanitizeAppleAdsLogArgument)),
-      warn: (...args: unknown[]) => logger.warn('[Yoga]', ...args.map(sanitizeAppleAdsLogArgument)),
+      info: (...args: unknown[]) => logger.info('[Yoga]', ...args.map(sanitizeTokenLogArgument)),
+      warn: (...args: unknown[]) => logger.warn('[Yoga]', ...args.map(sanitizeTokenLogArgument)),
       error: (...args: unknown[]) => {
-        const safeArgs = args.map(sanitizeAppleAdsLogArgument);
+        const safeArgs = args.map(sanitizeTokenLogArgument);
         // Stringify any Error in the splat before handing to logger.error so
         // the SentryWinstonTransport doesn't fire — this handler runs its own
         // noise-filtered capture loop below for client-input GraphQLErrors,

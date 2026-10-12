@@ -38,11 +38,11 @@ export function isBoardInviteRequest(pathname: string, searchParams: URLSearchPa
 }
 
 /**
- * An `invite=` pair, raw or percent-encoded once (a sign-in page's
+ * An `invite=` pair, raw or percent-encoded in nested return URLs (a sign-in page's
  * `callbackUrl`). The value runs to the next separator, so inside an encoded
  * return URL the rest of that URL goes too; over-redacting is the safe side.
  */
-const INVITE_PAIR = /(invite(?:=|%3D))[^&#\s"']*/gi;
+const INVITE_PAIR = /(invite(?:=|%(?:25)*3D))[^&#\s"']*/gi;
 
 /**
  * Whether a query string carries a share link's token, either as its own param

@@ -2,7 +2,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getClimbViewPageCacheTTL, getListPageCacheTTL, isSprayWallCapabilityRequest } from './app/lib/list-page-cache';
-import { isBoardInviteRequest } from './app/lib/board-invite';
+import { BOARD_INVITE_PARAM, isBoardInviteRequest, searchCarriesBoardInvite } from './app/lib/board-invite';
 import { isCrawlerUserAgent } from './app/lib/is-crawler';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
 import { PATHNAME_HEADER } from './app/lib/request-pathname-header';
@@ -45,6 +45,19 @@ function isExpoWebProxyEnabled(): boolean {
 }
 
 export function middleware(request: NextRequest) {
+  const response = routeRequest(request);
+  // The capability survives sign-in inside callbackUrl, and can cross locale
+  // redirects. Protect every response branch carrying it, regardless of path.
+  if (request.nextUrl.searchParams.has(BOARD_INVITE_PARAM) || searchCarriesBoardInvite(request.nextUrl.search)) {
+    response.headers.set('Referrer-Policy', 'no-referrer');
+    response.headers.set('Cache-Control', 'private, no-store');
+    response.headers.set('CDN-Cache-Control', 'no-store');
+    response.headers.set('Vercel-CDN-Cache-Control', 'no-store');
+  }
+  return response;
+}
+
+function routeRequest(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Cheap origin fallback for crawlers that bypass Cloudflare's public hostname.

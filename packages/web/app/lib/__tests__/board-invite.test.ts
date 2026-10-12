@@ -37,6 +37,9 @@ describe('token redaction', () => {
   it('finds the token as its own param and inside an encoded sign-in return URL', () => {
     expect(searchCarriesBoardInvite(`?invite=${TOKEN}`)).toBe(true);
     expect(searchCarriesBoardInvite(`?callbackUrl=${encodeURIComponent(`/b/the-garage?invite=${TOKEN}`)}`)).toBe(true);
+    const nested = `?callbackUrl=${encodeURIComponent(`/auth/login?callbackUrl=${encodeURIComponent(`/b/the-garage?invite=${TOKEN}`)}`)}`;
+    expect(searchCarriesBoardInvite(nested)).toBe(true);
+    expect(redactBoardInviteTokens(nested)).not.toContain(TOKEN);
     expect(searchCarriesBoardInvite('?src=qr&medium=kiosk')).toBe(false);
   });
 

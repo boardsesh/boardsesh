@@ -809,7 +809,7 @@ describe('middleware cache headers on a spray wall share link (?wall=)', () => {
   });
 });
 
-// A home board's share link makes whoever opens it a member. A reset has to
+// A home board's share link carries an explicit-Join capability. A reset has to
 // bite on the next request, and no shared cache may key on the token.
 describe('middleware cache headers on a home board share link (?invite=)', () => {
   const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
@@ -818,12 +818,30 @@ describe('middleware cache headers on a home board share link (?invite=)', () =>
     ['localized bare hop', `/es/b/the-garage?invite=${TOKEN}`],
     ['list page', `/b/the-garage/40/list?invite=${TOKEN}`],
     ['malformed token', '/b/the-garage/40/list?invite=x'],
+    ['sign-in callback', `/auth/login?callbackUrl=${encodeURIComponent(`/b/the-garage?invite=${TOKEN}`)}`],
+    [
+      'localized sign-in callback',
+      `/es/auth/login?callbackUrl=${encodeURIComponent(`/es/b/the-garage?invite=${TOKEN}`)}`,
+    ],
+    [
+      'nested auth callback',
+      `/auth/native-start?callbackUrl=${encodeURIComponent(`/auth/login?callbackUrl=${encodeURIComponent(`/b/the-garage?invite=${TOKEN}`)}`)}`,
+    ],
   ])('sends no-store on the %s', (_shape, url) => {
     const response = middleware(makeRequest(url));
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
     expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
     expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+  });
+
+  it('protects the sticky-locale redirect carrying an invite callback', () => {
+    const request = makeRequest(`/auth/login?callbackUrl=${encodeURIComponent(`/b/the-garage?invite=${TOKEN}`)}`);
+    request.cookies.set(LOCALE_COOKIE, 'es');
+    const response = middleware(request);
+    expect(response.status).toBe(307);
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+    expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
   });
 
   it('gives the TTL helpers no window for a share link either', () => {

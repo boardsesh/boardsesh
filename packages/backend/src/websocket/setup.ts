@@ -2,7 +2,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server as HttpServer, IncomingMessage } from 'http';
 import { useServer, type Extra as WsExtra } from 'graphql-ws/use/ws';
 import type { Context as GqlWsContext } from 'graphql-ws';
-import { GraphQLError, parse } from 'graphql';
+import { GraphQLError, parse, type DocumentNode } from 'graphql';
 import * as Sentry from '@sentry/node';
 import { schema } from '../graphql/index';
 import { createContext, removeContext, getContext } from '../graphql/context';
@@ -24,6 +24,11 @@ import { recordContextOperation, resolveClientIdentity } from '../services/clien
 import { logger } from '../utils/logger';
 import { recordUserActivity, resolveActivityPlatform, type ActivityPlatform } from '../services/user-activity';
 import { sanitizeAppleAdsGraphqlError } from '../graphql/apple-ads-token-privacy';
+import {
+  isBoardShareTokenDocument,
+  sanitizeBoardShareGraphqlError,
+  sanitizeBoardShareResult,
+} from '../graphql/board-share-token-privacy';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -408,15 +413,29 @@ export function setupWebSocketServer(httpServer: HttpServer): {
 
         // Validate query depth to prevent DoS via deeply nested subscriptions
         if (payload.query) {
-          const document = typeof payload.query === 'string' ? parse(payload.query) : payload.query;
+          let document: DocumentNode;
+          try {
+            document = typeof payload.query === 'string' ? parse(payload.query) : payload.query;
+          } catch (error: unknown) {
+            // A thrown parse error escapes into graphql-ws' generic server
+            // logger. Return a safe error before its token-bearing source does.
+            if (error instanceof GraphQLError && isBoardShareTokenDocument(payload.query)) {
+              return [sanitizeBoardShareGraphqlError(error, payload.query)];
+            }
+            throw error;
+          }
           const depthError = validateQueryDepth(document);
           if (depthError) {
             return [new GraphQLError(depthError)];
           }
         }
       },
-      onError: (_ctx: ServerContext, _id: string, _payload, errors) => {
-        const safeErrors = errors.map(sanitizeAppleAdsGraphqlError);
+      onNext: (_ctx: ServerContext, _id: string, payload, _executionArgs, result) =>
+        sanitizeBoardShareResult(result, payload.query),
+      onError: (_ctx: ServerContext, _id: string, payload, errors) => {
+        const safeErrors = errors.map((error) =>
+          sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),
+        );
         logger.error('GraphQL error:', safeErrors);
         // Only report errors that wrap an internal exception. GraphQLError
         // instances without `originalError` are validation/parse/auth/depth
@@ -425,6 +444,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           if (err instanceof GraphQLError && !err.originalError) continue;
           Sentry.captureException(err, { tags: { source: 'graphql-ws' } });
         }
+        return safeErrors;
       },
       onComplete: (_ctx: ServerContext, _id: string, payload) => {
         if (DEBUG) {
