@@ -161,7 +161,7 @@
       "publicHint": "Zeig sie auf der Karte, damit deine Crew sie findet",
       "unlisted": "Nicht gelistet",
       "hideLocation": "Genauen Standort verbergen",
-      "gymSharesLocation": "Hallen zeigen ihren Standort",
+      "gymLocationHint": "In einer öffentlichen Halle sehen andere stattdessen den Standort der Halle.",
       "location": "Standort",
       "locationPlaceholder": "Zuhause, Hallenname oder Stadt",
       "useMyLocation": "Meinen Standort nutzen",
@@ -469,6 +469,10 @@
       "publicHint": "Jede*r kann das Board finden. Es steht auf der Seite der Halle, seine Boulder landen im Feed, und das Foto vom Board geht ins offene Web.",
       "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer es sieht. Deine anderen Änderungen sind gespeichert.",
       "updateError": "Konnte nicht ändern, wer dieses Board sieht. Versuch es nochmal."
+    },
+    "publicGymWarning": {
+      "message": "Deine Halle {{name}} ist öffentlich, ihr Standort ist also für alle sichtbar. Wenn das dein Zuhause ist, stell die Halle auf privat.",
+      "openSettings": "Halleneinstellungen öffnen"
     }
   },
   "boardEntity": {

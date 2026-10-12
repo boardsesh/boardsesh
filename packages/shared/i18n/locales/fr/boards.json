@@ -161,7 +161,7 @@
       "publicHint": "Affiche-la sur la carte pour que ton crew la trouve",
       "unlisted": "Non listé",
       "hideLocation": "Masquer l'emplacement exact",
-      "gymSharesLocation": "Les salles partagent leur emplacement",
+      "gymLocationHint": "Dans une salle publique, les autres voient l'emplacement de la salle à la place.",
       "location": "Emplacement",
       "locationPlaceholder": "Maison, nom de la salle ou ville",
       "useMyLocation": "Utiliser ma position",
@@ -469,6 +469,10 @@
       "publicHint": "N'importe qui peut trouver le mur. Il apparaît sur la page de la salle, ses blocs arrivent dans le feed, et la photo du mur part sur le web ouvert.",
       "ownerOnlyError": "Seul le grimpeur qui a monté ce mur peut changer qui le voit. Tes autres modifications sont enregistrées.",
       "updateError": "Impossible de changer qui voit ce mur. Réessaie."
+    },
+    "publicGymWarning": {
+      "message": "Ta salle {{name}} est publique : son emplacement est visible par tout le monde. Si c'est chez toi, rends la salle privée.",
+      "openSettings": "Ouvrir les réglages de la salle"
     }
   },
   "boardEntity": {

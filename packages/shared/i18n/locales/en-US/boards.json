@@ -161,7 +161,7 @@
       "publicHint": "Show it on the map so your crew can find it",
       "unlisted": "Unlisted",
       "hideLocation": "Hide exact location",
-      "gymSharesLocation": "Gyms share their location",
+      "gymLocationHint": "At a public gym, people see the gym's location instead.",
       "location": "Location",
       "locationPlaceholder": "Home, gym name, or city",
       "useMyLocation": "Use my location",
@@ -469,6 +469,10 @@
       "publicHint": "Anyone can find the wall. It shows on the gym page, its climbs turn up in the feed, and the wall photo goes on the open web.",
       "ownerOnlyError": "Only the climber who set this wall up can change who sees it. Your other changes saved.",
       "updateError": "Couldn't change who can see this wall. Try again."
+    },
+    "publicGymWarning": {
+      "message": "Your gym {{name}} is public, so its location is visible to everyone. If it's your home, make the gym private.",
+      "openSettings": "Open gym settings"
     }
   },
   "boardEntity": {

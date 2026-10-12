@@ -161,7 +161,7 @@
       "publicHint": "Muéstralo en el mapa para que tu gente lo encuentre",
       "unlisted": "No listado",
       "hideLocation": "Ocultar ubicación exacta",
-      "gymSharesLocation": "Los rocódromos muestran su ubicación",
+      "gymLocationHint": "En un rocódromo público, la gente ve la ubicación del rocódromo.",
       "location": "Ubicación",
       "locationPlaceholder": "Casa, nombre del rocódromo o ciudad",
       "useMyLocation": "Usar mi ubicación",
@@ -469,6 +469,10 @@
       "publicHint": "Cualquiera puede encontrar el plafón. Aparece en la página del rocódromo, sus bloques salen en el feed y su foto se publica en la web abierta.",
       "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién lo ve. El resto de tus cambios se han guardado.",
       "updateError": "No se pudo cambiar quién ve este plafón. Inténtalo de nuevo."
+    },
+    "publicGymWarning": {
+      "message": "Tu rocódromo {{name}} es público, así que su ubicación es visible para todo el mundo. Si es tu casa, haz que el rocódromo sea privado.",
+      "openSettings": "Abrir ajustes del rocódromo"
     }
   },
   "boardEntity": {

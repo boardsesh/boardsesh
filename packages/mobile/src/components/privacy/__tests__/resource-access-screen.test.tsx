@@ -52,8 +52,12 @@ vi.mock('../../Text', () => ({ Text: ({ children }: { children: React.ReactNode 
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress: () => void }) => <button onClick={onPress}>{title}</button>,
 }));
+// The warning reads the gym over GraphQL; its own suite covers it.
+vi.mock('../../board-discovery/OwnPublicGymWarning', () => ({ OwnPublicGymWarning: () => null }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'owner-1' } }),
+  useBoard: () => ({ data: undefined }),
+  useGym: () => ({ data: undefined }),
   useSearchUsers: (_text: string, enabled: boolean) => ({
     data: enabled && search.pages ? { pages: search.pages } : undefined,
     isError: false,

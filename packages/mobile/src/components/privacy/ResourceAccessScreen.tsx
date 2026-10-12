@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
-import { useProfile, useSearchUsers } from '../../lib/graphql/hooks';
+import { useBoard, useProfile, useSearchUsers } from '../../lib/graphql/hooks';
 import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
 import {
   useResourceAccessAction,
@@ -15,6 +15,7 @@ import {
   useResourcePrivacy,
 } from '../../lib/graphql/hooks/use-resource-privacy';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
+import { OwnPublicGymWarning } from '../board-discovery/OwnPublicGymWarning';
 
 type AccessPerson = {
   userId: string;
@@ -66,6 +67,9 @@ export function ResourceAccessScreen() {
   const { data: settings } = usePrivacySettings();
   const { data: privacy } = useResourcePrivacy(kind, resourceId);
   const canManage = settings?.enabled === true && !!profile?.id && privacy?.ownerId === profile.id;
+  // A board in the owner's own public gym is shown at that gym's address to
+  // everyone its own location is hidden from: OwnPublicGymWarning says so.
+  const { data: board } = useBoard(kind === 'board' && canManage ? resourceId : null);
   const [searchText, setSearchText] = useState('');
   const isSearching = searchText.trim().length >= 2;
   const grants = useResourceAccessRequests(kind, resourceId, canManage);
@@ -126,6 +130,7 @@ export function ResourceAccessScreen() {
         ListHeaderComponent={
           <View style={{ padding: spacing[4], gap: spacing[3] }}>
             <Text variant="title2">{t('privacy.manageAccess')}</Text>
+            {canManage ? <OwnPublicGymWarning gymUuid={board?.gymUuid} /> : null}
             {canManage ? (
               <TextInput
                 value={searchText}

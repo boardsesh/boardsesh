@@ -75,29 +75,6 @@ function sameSetup(preset: BoardConfigPreset, layoutId: number | null, sizeId: n
   return normaliseSetIds(preset.setIds.join(',')) === normaliseSetIds(setIds.join(','));
 }
 
-type SelectedGym = {
-  uuid: string;
-  name: string;
-  isPublic: boolean;
-  latitude: number | null;
-  longitude: number | null;
-};
-
-/**
- * Whether the board's place is nothing more than the gym's own listing: no
- * coordinates or exactly the gym's, and no name or exactly the gym's. Mirrors
- * the server's `boardSitsAtGym`.
- */
-function sitsAtGymPlace(
-  coords: { latitude: number; longitude: number } | null,
-  locationName: string,
-  gym: SelectedGym,
-): boolean {
-  const coordsAtGym = coords == null || (coords.latitude === gym.latitude && coords.longitude === gym.longitude);
-  const name = locationName.trim();
-  return coordsAtGym && (name === '' || name === gym.name.trim());
-}
-
 /**
  * The cascading board-config state machine behind the create-board builder
  * (board → layout → size → sets → angle), plus the optional "more options" meta
@@ -153,33 +130,9 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const [timerName, setTimerName] = useState(seed?.timerName ?? '');
   // The gym this board sits in. Picking one is what gets the board onto the map
   // under a gym rather than as a lone pin (#4166).
-  // A seeded gym (edit) does not say whether it is public, so only a gym picked
-  // in this session can lock the location switch.
-  const [selectedGym, setSelectedGymState] = useState<SelectedGym | null>(
-    seed?.gymUuid && seed?.gymName
-      ? { uuid: seed.gymUuid, name: seed.gymName, isPublic: false, latitude: null, longitude: null }
-      : null,
+  const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string } | null>(
+    seed?.gymUuid && seed?.gymName ? { uuid: seed.gymUuid, name: seed.gymName } : null,
   );
-  // A board at a public gym's own place always shows where it is: the gym
-  // already lists that place, and the server ignores a request to hide it
-  // there. The hidden default is for home walls. "Its own place" is the server's
-  // rule too (boardSitsAtGym): the gym's coordinates and name, which a pick
-  // stamps on the board. Use my location or a typed name moves the board off
-  // it, and then the climber's own place is theirs to share. Spray walls keep
-  // their own rules, as on the server.
-  const gymSharesLocation =
-    selectedGym?.isPublic === true && boardName !== 'spray' && sitsAtGymPlace(coords, locationName, selectedGym);
-  // Moving off the gym's place makes the board a home wall again: hidden until
-  // the owner shares it, rather than keeping the "shown" the gym had set.
-  const sharedByGymRef = useRef(gymSharesLocation);
-  useEffect(() => {
-    const wasSharedByGym = sharedByGymRef.current;
-    sharedByGymRef.current = gymSharesLocation;
-    if (wasSharedByGym && !gymSharesLocation && boardName !== 'spray') {
-      setHideLocation(true);
-      setPrivacyLocationAudience(undefined);
-    }
-  }, [gymSharesLocation, boardName]);
 
   // Re-seed when the seed's VALUES change (opened from a different Popular
   // config). Keyed on the serialized seed, not its object identity, so an
@@ -290,59 +243,25 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
    * the back-fill sticky: pick gym A, switch to gym B, and the board ends up
    * linked to B but labelled A. Anything the user typed themselves is left alone.
    */
-  // An edited board whose location name is its gym's name took it from the gym,
-  // so switching gyms replaces it like any other back-fill.
-  const autoFilledLocationRef = useRef<string | null>(
-    seed?.gymName && seed.locationName === seed.gymName ? seed.gymName : null,
-  );
-  const locationNameRef = useRef(locationName);
-  locationNameRef.current = locationName;
-  const privacyEnabled = options?.privacyEnabled === true;
+  const autoFilledLocationRef = useRef<string | null>(null);
   const setSelectedGym = useCallback(
-    (
-      gym: {
-        uuid: string;
-        name: string;
-        isPublic?: boolean | null;
-        latitude?: number | null;
-        longitude?: number | null;
-      } | null,
-    ) => {
-      const picked: SelectedGym | null = gym
-        ? {
-            uuid: gym.uuid,
-            name: gym.name,
-            isPublic: gym.isPublic === true,
-            latitude: gym.latitude ?? null,
-            longitude: gym.longitude ?? null,
-          }
-        : null;
-      setSelectedGymState(picked);
-      // The place the board will have after this pick: the gym's coordinates,
-      // and its name unless the climber typed their own (kept below).
-      const previousName = locationNameRef.current;
-      const nameIsOurs = previousName.trim().length === 0 || previousName === autoFilledLocationRef.current;
-      const nextName = picked && nameIsOurs ? picked.name : previousName;
-      const nextCoords =
-        picked?.latitude != null && picked.longitude != null
-          ? { latitude: picked.latitude, longitude: picked.longitude }
-          : null;
-      // The location is shown only when the board will sit at a public gym's own
-      // place, the server's rule. A typed address kept beside a public gym, a
-      // private gym, or no gym puts back the home-wall default, hidden.
-      if (boardNameRef.current !== 'spray') {
-        const sharesLocation = picked?.isPublic === true && sitsAtGymPlace(nextCoords, nextName, picked);
-        setHideLocation(!sharesLocation);
-        setPrivacyLocationAudience(sharesLocation && privacyEnabled ? 'public' : undefined);
+    (gym: { uuid: string; name: string; latitude?: number | null; longitude?: number | null } | null) => {
+      setSelectedGymState(gym ? { uuid: gym.uuid, name: gym.name } : null);
+      if (!gym) return;
+      if (gym.latitude != null && gym.longitude != null) {
+        setCoords({ latitude: gym.latitude, longitude: gym.longitude });
+      } else {
+        // A gym with no coordinates can't vouch for the previous gym's, and a
+        // stale pair would aim the server's proximity check at the wrong place.
+        setCoords(null);
       }
-      if (!picked) return;
-      // A gym with no coordinates can't vouch for the previous gym's, and a stale
-      // pair would aim the server's proximity check at the wrong place.
-      setCoords(nextCoords);
-      setLocationName(nextName);
-      autoFilledLocationRef.current = picked.name;
+      setLocationName((previous) => {
+        const isOurs = previous.trim().length === 0 || previous === autoFilledLocationRef.current;
+        return isOurs ? gym.name : previous;
+      });
+      autoFilledLocationRef.current = gym.name;
     },
-    [privacyEnabled],
+    [],
   );
 
   /**
@@ -460,7 +379,6 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     serialNumber,
     timerName,
     selectedGym,
-    gymSharesLocation,
     // derived
     layouts,
     sizes,

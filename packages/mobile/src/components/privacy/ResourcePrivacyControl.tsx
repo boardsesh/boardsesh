@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { PrivacyLocationAudience } from '@boardsesh/graphql/operations/privacy';
 import { AudiencePicker, BOARD_AUDIENCES, SESSION_AUDIENCES } from './AudiencePicker';
 import { locationOptions } from './location-options';
+import { OwnPublicGymWarning } from '../board-discovery/OwnPublicGymWarning';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { SwitchRow } from '../SwitchRow';
@@ -13,7 +14,16 @@ import { useProfile } from '../../lib/graphql/hooks';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { useTheme } from '../../providers/theme-provider';
 
-export function ResourcePrivacyControl({ kind, resourceId }: { kind: 'board' | 'session'; resourceId: string }) {
+export function ResourcePrivacyControl({
+  kind,
+  resourceId,
+  gymUuid,
+}: {
+  kind: 'board' | 'session';
+  resourceId: string;
+  /** A board's gym: its location hint and the own-public-gym warning. */
+  gymUuid?: string | null;
+}) {
   const { t } = useTranslation('settings');
   const { t: tBoards } = useTranslation('boards');
   const { spacing, brandColors } = useTheme();
@@ -24,9 +34,6 @@ export function ResourcePrivacyControl({ kind, resourceId }: { kind: 'board' | '
   const { effectiveOffline } = useConnectivity();
   if (!settings?.enabled || !privacy || privacy.ownerId !== profile?.id) return null;
   const disabled = effectiveOffline || update.isPending;
-  // A board at a public gym's own place always shows it: the server keeps it
-  // shown whatever is picked, so the choice is locked rather than offered.
-  const locationLocked = kind === 'board' && privacy.locationSharedByGym === true;
   const locationLabels: Record<PrivacyLocationAudience, string> = {
     only_me: t('privacy.audiences.onlyMe'),
     followers: t('privacy.audiences.followers'),
@@ -55,20 +62,23 @@ export function ResourcePrivacyControl({ kind, resourceId }: { kind: 'board' | '
             }
           />
           <Text variant="subheadline">{t('privacy.locationAudience')}</Text>
-          {locationLocked ? <Text>{tBoards('mobile.create.gymSharesLocation')}</Text> : null}
+          {/* The choice always governs the board's own place. A viewer it is
+              hidden from still sees a public gym's listed location. */}
+          {gymUuid ? <Text>{tBoards('mobile.create.gymLocationHint')}</Text> : null}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }}>
             {locationOptions(privacy.locationAudience).map((option) => (
               <Button
                 key={option}
                 title={locationLabels[option]}
                 variant={privacy.locationAudience === option ? 'filled' : 'outlined'}
-                disabled={disabled || locationLocked}
+                disabled={disabled}
                 onPress={() =>
                   update.mutate({ kind, resourceId, audience: privacy.audience, locationAudience: option })
                 }
               />
             ))}
           </View>
+          <OwnPublicGymWarning gymUuid={gymUuid} />
         </>
       ) : null}
       <Button

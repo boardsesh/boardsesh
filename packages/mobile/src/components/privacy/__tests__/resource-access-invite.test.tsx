@@ -65,8 +65,12 @@ vi.mock('../../Button', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ spacing: [0, 4, 8, 12, 16], systemColors: {}, brandColors: {} }),
 }));
+// The warning reads the gym over GraphQL; its own suite covers it.
+vi.mock('../../board-discovery/OwnPublicGymWarning', () => ({ OwnPublicGymWarning: () => null }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'owner' } }),
+  useBoard: () => ({ data: undefined }),
+  useGym: () => ({ data: undefined }),
   useSearchUsers: () => ({
     data: { pages: [{ results: [{ user: { id: 'friend', displayName: 'Friend' } }] }] },
     hasNextPage: false,
@@ -83,7 +87,7 @@ vi.mock('../../../lib/connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => ({ effectiveOffline: false }),
 }));
 vi.mock('../../../lib/privacy/privacy-cache', () => ({
-  invalidatePrivacyQueries: (queryClient: QueryClient) => queryClient.invalidateQueries(),
+  refreshAfterOwnPrivacyChange: (queryClient: QueryClient) => queryClient.invalidateQueries(),
 }));
 vi.mock('../../../lib/graphql/client', () => ({
   getHttpClient: () => ({

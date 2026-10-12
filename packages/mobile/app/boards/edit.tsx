@@ -268,49 +268,13 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       setUpdateError(null);
       hapticSelection();
       try {
-        // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation,
-        // split around `updateBoard`. Leaving the old gym runs first, and if it
-        // fails the save stops here, before the new place is sent. The server
-        // keeps a moved board's place hidden in either order: leaving a public
-        // gym hides the location the gym was showing, and an edit that moves a
-        // board off its gym's place hides it too. Joining the new gym runs after
-        // `updateBoard`: for a gym the climber doesn't run, the server checks the
-        // board's stored coordinates, which `updateBoard` has just written from
-        // the picker. A board with no stored place could not join one before.
-        const currentGymUuid = board.gymUuid ?? null;
-        const nextGymUuid = builder.selectedGym?.uuid ?? null;
-        const gymChanged = nextGymUuid !== currentGymUuid;
-        if (gymChanged && currentGymUuid !== null) {
-          try {
-            await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: null });
-          } catch (error) {
-            setUpdateError(extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError'));
-            setSubmitting(false);
-            return;
-          }
-        }
-
         const updated = await updateBoard.mutateAsync({
           ...input,
           allowDuplicateConfig: options?.allowDuplicateConfig,
         });
 
-        // The new gym can be rejected on its own terms (too far from a gym the
-        // user doesn't run), so it's reported separately rather than failing the
-        // whole save. A cleared gym was already left above.
-        let gymLinkError: string | null = null;
-        let gymLinked = gymChanged && nextGymUuid === null;
-        if (gymChanged && nextGymUuid !== null) {
-          try {
-            await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
-            gymLinked = true;
-          } catch (error) {
-            gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
-          }
-        }
-
         // The wall's own mutation, reported on its own terms like the gym link
-        // above: the name and the gym DID save, and a moderator who may edit the
+        // below: the name and the gym DID save, and a moderator who may edit the
         // wall but not share it should see which half was refused rather than a
         // blanket failure.
         let visibilityError: string | null = null;
@@ -343,18 +307,33 @@ function EditBoardForm({ board }: { board: UserBoard }) {
             visibilityError = visibilityError ? `${visibilityError} ${backgroundError}` : backgroundError;
         }
 
+        // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
+        // It can be rejected on its own terms (too far from a gym the user doesn't
+        // run), so it's reported separately rather than failing the whole save.
+        const nextGymUuid = builder.selectedGym?.uuid ?? null;
+        let gymLinkError: string | null = null;
+        let gymLinked = false;
+        if (nextGymUuid !== (board.gymUuid ?? null)) {
+          try {
+            await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
+            gymLinked = true;
+          } catch (error) {
+            gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
+          }
+        }
+
         // The active board is a denormalised AsyncStorage copy — re-persist it so
         // the rename / angle / visibility change reaches BLE + the play drawer.
         // This runs even when the gym link failed: the rest of the edit DID save,
         // and bailing early left the stored copy stale against the server.
         //
-        // The gym link is its own mutation, and `linkBoardToGym` invalidates
-        // `['board']` / `['myBoards']` — never the `['activeBoard']` snapshot,
-        // whose query is `staleTime: Infinity`. The gym the climber picked is
-        // stamped on explicitly rather than trusted to `updated`, so the stored
-        // board never stays on the old venue across relaunches: the boards tab
-        // would show the new gym while the play drawer and every analytics event
-        // still named the old one.
+        // The gym link is its own mutation and runs AFTER `updateBoard`, so
+        // `updated` still answers with the pre-link gym, and `linkBoardToGym`
+        // invalidates `['board']` / `['myBoards']` — never the `['activeBoard']`
+        // snapshot, whose query is `staleTime: Infinity`. Persisting `updated`
+        // unchanged therefore leaves the stored board on the old venue until the
+        // user re-picks it, across relaunches: the boards tab shows the new gym
+        // while the play drawer and every analytics event still name the old one.
         if (activeBoard?.uuid === updated.uuid) {
           // `updated` answers with the PRE-visibility wall too — `updateBoard` no
           // longer carries those flags on spray — so a stored copy taken straight

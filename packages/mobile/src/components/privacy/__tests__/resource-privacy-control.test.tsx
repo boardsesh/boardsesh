@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// A board at a public gym's own place always shows its location: the server
-// stores and answers `public` whatever the owner picks. The control says so and
-// locks the location buttons instead of offering a choice that cannot hold.
+// The location choice always governs the board's own place, at a gym or not.
+// At a gym the control says what others see instead (the public gym's listed
+// location) and carries the own-public-gym warning; it never locks.
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,9 @@ vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({
   usePrivacySettings: () => ({ data: { enabled: true, isPrivate: false } }),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'owner-id' } }) }));
+vi.mock('../../board-discovery/OwnPublicGymWarning', () => ({
+  OwnPublicGymWarning: ({ gymUuid }: { gymUuid?: string | null }) => <span>{`warning:${gymUuid ?? 'none'}`}</span>,
+}));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivity: () => ({ effectiveOffline: false }) }));
 
 import { ResourcePrivacyControl } from '../ResourcePrivacyControl';
@@ -57,28 +60,26 @@ beforeEach(() => {
 });
 
 describe('ResourcePrivacyControl board location', () => {
-  it('locks the location buttons and says why for a board at a public gym', () => {
-    privacy.current = boardPrivacy({ locationSharedByGym: true });
-    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
+  it('keeps the location choice editable at a gym, says what others see, and carries the gym warning', () => {
+    privacy.current = boardPrivacy();
+    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" gymUuid="gym-uuid" />);
 
-    expect(view.getByText('mobile.create.gymSharesLocation')).toBeTruthy();
+    expect(view.getByText('mobile.create.gymLocationHint')).toBeTruthy();
+    expect(view.getByText('warning:gym-uuid')).toBeTruthy();
     const onlyMe = view.getByText('privacy.audiences.onlyMe') as HTMLButtonElement;
-    expect(onlyMe.disabled).toBe(true);
+    expect(onlyMe.disabled).toBe(false);
     fireEvent.click(onlyMe);
-    expect(mutate).not.toHaveBeenCalled();
-  });
-
-  it('offers the location choice for any other board', () => {
-    privacy.current = boardPrivacy({ locationSharedByGym: false });
-    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
-
-    expect(view.queryByText('mobile.create.gymSharesLocation')).toBeNull();
-    fireEvent.click(view.getByText('privacy.audiences.onlyMe'));
     expect(mutate).toHaveBeenCalledWith({
       kind: 'board',
       resourceId: 'board-uuid',
       audience: 'public',
       locationAudience: 'only_me',
     });
+  });
+
+  it('shows no gym hint for a board with no gym', () => {
+    privacy.current = boardPrivacy();
+    const view = render(<ResourcePrivacyControl kind="board" resourceId="board-uuid" />);
+    expect(view.queryByText('mobile.create.gymLocationHint')).toBeNull();
   });
 });

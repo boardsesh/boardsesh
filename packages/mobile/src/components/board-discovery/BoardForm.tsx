@@ -2,6 +2,7 @@ import { useHeaderHeight } from 'expo-router/react-navigation';
 import { PressableSurface } from '../PressableSurface';
 import { AudiencePicker, BOARD_AUDIENCES } from '../privacy/AudiencePicker';
 import { ResourcePrivacyControl } from '../privacy/ResourcePrivacyControl';
+import { OwnPublicGymWarning } from './OwnPublicGymWarning';
 import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
@@ -388,7 +389,7 @@ export function BoardForm({
         ) : null}
 
         {privacySettings?.enabled && currentBoardUuid ? (
-          <ResourcePrivacyControl kind="board" resourceId={currentBoardUuid} />
+          <ResourcePrivacyControl kind="board" resourceId={currentBoardUuid} gymUuid={builder.selectedGym?.uuid} />
         ) : null}
 
         {privacySettings?.enabled && !currentBoardUuid ? (
@@ -408,16 +409,15 @@ export function BoardForm({
             />
             <SwitchRow
               label={tSettings('privacy.locationAudience')}
-              description={
-                builder.gymSharesLocation ? t('mobile.create.gymSharesLocation') : tSettings('privacy.locationMembers')
-              }
+              description={tSettings('privacy.locationMembers')}
               value={builder.privacyLocationAudience === 'public'}
-              disabled={submitting || builder.gymSharesLocation}
+              disabled={submitting}
               onValueChange={(visible) => {
                 builder.setPrivacyLocationAudience(visible ? 'public' : 'only_me');
                 builder.setHideLocation(!visible);
               }}
             />
+            <OwnPublicGymWarning gymUuid={builder.selectedGym?.uuid} />
           </View>
         ) : null}
 

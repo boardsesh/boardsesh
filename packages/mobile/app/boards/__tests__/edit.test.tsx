@@ -369,12 +369,11 @@ describe('EditBoard', () => {
     expect(backMock).not.toHaveBeenCalled();
   });
 
-  // Joining a gym runs after `updateBoard` (leaving one runs before it), and
-  // `linkBoardToGym` invalidates `['board']` / `['myBoards']`, never the
-  // `['activeBoard']` snapshot (staleTime: Infinity). Re-persisting the
-  // `updateBoard` response verbatim would keep the stored copy on the old venue
-  // across relaunches — the play drawer and every analytics event stamped from
-  // it would still name the gym the user just left.
+  // `linkBoardToGym` runs after `updateBoard` and invalidates `['board']` /
+  // `['myBoards']`, never the `['activeBoard']` snapshot (staleTime: Infinity).
+  // Re-persisting the `updateBoard` response verbatim would keep the stored copy
+  // on the old venue across relaunches — the play drawer and every analytics
+  // event stamped from it would still name the gym the user just left.
   it('persists the gym the board was just linked to onto the active board', async () => {
     state.activeBoardUuid = 'board-uuid';
     state.selectedGym = { uuid: 'gym-uuid', name: 'Klimmuur Centrum' };
@@ -436,11 +435,9 @@ describe('EditBoard', () => {
     expect(backMock).not.toHaveBeenCalled();
   });
 
-  // The server shows the location of a board at a public gym's own place,
-  // judged from the gym the board is in when `updateBoard` lands. So the old gym
-  // is left before the edit (a board moved home is no longer in it), and the new
-  // one is joined after it (a gym the climber doesn't run is checked against the
-  // coordinates `updateBoard` just stored from the picker).
+  // A gym the climber doesn't run is checked against the board's stored
+  // coordinates, which `updateBoard` writes from the picker, so the gym change
+  // runs after it. A board with no stored place could not join one otherwise.
   const recordCallOrder = () => {
     const calls: string[] = [];
     linkBoardToGymMock.mockImplementation(async ({ gymUuid }: { gymUuid: string | null }) => {
@@ -454,19 +451,7 @@ describe('EditBoard', () => {
     return calls;
   };
 
-  it('leaves the old gym before updateBoard and joins the new one after it', async () => {
-    state.boardGymUuid = 'old-gym';
-    state.selectedGym = { uuid: 'new-gym', name: 'Klimmuur Centrum' };
-    const calls = recordCallOrder();
-
-    render(createElement(EditBoard));
-    fireEvent.click(screen.getByText('submit'));
-
-    await waitFor(() => expect(backMock).toHaveBeenCalled());
-    expect(calls).toEqual(['link:none', 'update', 'link:new-gym']);
-  });
-
-  it('joins a gym after updateBoard for a board that had none', async () => {
+  it('joins a gym after updateBoard', async () => {
     state.selectedGym = { uuid: 'gym-uuid', name: 'Klimmuur Centrum' };
     const calls = recordCallOrder();
 
@@ -477,7 +462,7 @@ describe('EditBoard', () => {
     expect(calls).toEqual(['update', 'link:gym-uuid']);
   });
 
-  it('leaves a cleared gym before updateBoard', async () => {
+  it('leaves a cleared gym after updateBoard', async () => {
     state.boardGymUuid = 'gym-uuid';
     const calls = recordCallOrder();
 
@@ -485,19 +470,7 @@ describe('EditBoard', () => {
     fireEvent.click(screen.getByText('submit'));
 
     await waitFor(() => expect(backMock).toHaveBeenCalled());
-    expect(calls).toEqual(['link:none', 'update']);
-  });
-
-  it('stops the save when leaving the gym fails, before the new place is sent', async () => {
-    state.boardGymUuid = 'gym-uuid';
-    linkBoardToGymMock.mockRejectedValueOnce(new Error('network down'));
-
-    render(createElement(EditBoard));
-    fireEvent.click(screen.getByText('submit'));
-
-    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
-    expect(updateBoardMock).not.toHaveBeenCalled();
-    expect(backMock).not.toHaveBeenCalled();
+    expect(calls).toEqual(['update', 'link:none']);
   });
 
   it('leaves the stored copy alone when the edited board is not the active one', async () => {
