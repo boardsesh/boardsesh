@@ -88,6 +88,17 @@ describe('classifyGenerate', () => {
     expect(outcome.detail).toContain('meta/ was not reset');
   });
 
+  it('keeps a snapshot collision blocked even when output also says no changes', () => {
+    const outcome = classifyGenerate(
+      before,
+      before,
+      'No schema changes\nSnapshots are pointing to a parent snapshot: collision',
+    );
+    expect(outcome.generated).toBeNull();
+    expect(outcome.detail).toContain('meta/ was not reset');
+    expect(outcome.detail).not.toBe('no schema delta versus main');
+  });
+
   it('reports a bare failure with no recognisable output', () => {
     expect(classifyGenerate(before, before, '').detail).toContain('produced nothing');
   });

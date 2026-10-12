@@ -218,7 +218,7 @@ describe('board history identity', () => {
         sentAt: display.sentAt,
       },
     };
-    provenance.climbs = [{ uuid: 'climb-1', userId: null, isListed: true, isDraft: false }];
+    readable.climbs = [{ uuid: 'climb-1', userId: null, isListed: true, isDraft: false }];
     expect((await redactBoardStats(stats, 'viewer', BOARD_ID)).hardestSend?.climbUuid).toBe('climb-1');
     expect((await redactBoardStats(stats, null, BOARD_ID)).hardestSend?.climbUuid).toBe('climb-1');
     // No climb audience is consulted.
