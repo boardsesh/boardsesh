@@ -4,6 +4,8 @@ import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { useProfile } from '../../lib/graphql/hooks';
 import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
 import { getWsClient } from '../../lib/graphql/ws-client';
+import { selectOfflineMode, useConnectivityField } from '../../lib/connectivity/use-connectivity';
+import { useAuthTransportRevision } from '../../lib/auth-transport-revision';
 import {
   getPrivacyCredentialGeneration,
   invalidatePrivacyQueries,
@@ -16,7 +18,7 @@ import {
   needsCatalogOutboxRepair,
   revalidatePrivateCatalog,
 } from '../../offline/privacy-revalidation';
-import { canReadPrivateCatalog, subscribeCatalogCredentialMismatch } from '../../offline/catalog-access';
+import { getAuthorizedCatalogViewerId, subscribeCatalogCredentialMismatch } from '../../offline/catalog-access';
 import { getDatabaseHandle, subscribeDatabaseHandle } from '../../db/connection';
 import { clearStoredSprayPhotos } from '../../lib/spray/spray-photo-store';
 import { reportHandledError } from '../../lib/error-reporting';
@@ -27,12 +29,40 @@ export function PrivacySyncBridge() {
   const queryClient = useQueryClient();
   const { data: profile } = useProfile();
   const { data: privacy } = usePrivacySettings();
+  const offlineMode = useConnectivityField(selectOfflineMode);
+  const authTransportRevision = useAuthTransportRevision();
+  const pendingConnectionRef = useRef(false);
+  const connectionRevalidationRef = useRef<(() => boolean) | null>(null);
   const [supported, setSupported] = useState(false);
   const viewerRef = useRef(profile?.id);
   viewerRef.current = profile?.id;
   useEffect(() => {
     if (privacy) setSupported(true);
   }, [privacy]);
+  // Watch from mount: profile/privacy queries may finish after the socket's
+  // first connection. Keep one pending repair while withdrawing access now.
+  useEffect(() => {
+    if (offlineMode) return;
+    let disposed = false;
+    const stopConnected = getWsClient().on('connected', () => {
+      if (disposed) return;
+      pendingConnectionRef.current = true;
+      if (connectionRevalidationRef.current?.()) {
+        pendingConnectionRef.current = false;
+        return;
+      }
+      clearSprayWallPrivateCaches();
+      clearStoredSprayPhotos();
+      requirePrivacyRevalidation();
+      void invalidatePrivacyQueries(queryClient, () => Promise.resolve()).catch((error: unknown) => {
+        reportHandledError(error, { tags: { source: 'privacy-revocation' } });
+      });
+    });
+    return () => {
+      disposed = true;
+      stopConnected();
+    };
+  }, [offlineMode, authTransportRevision, profile?.id, queryClient]);
   useEffect(() => {
     if (!supported || !profile?.id) return;
     const viewerId = profile.id;
@@ -50,7 +80,10 @@ export function PrivacySyncBridge() {
     };
     const currentViewer = () => !disposed && viewerRef.current === viewerId;
     const canAuthorize = () =>
-      onlineManager.isOnline() && AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
+      !offlineMode &&
+      onlineManager.isOnline() &&
+      AppState.currentState !== 'background' &&
+      AppState.currentState !== 'inactive';
     const repair = async (persistWithdrawal = false): Promise<void> => {
       if (running || !dirty || !currentViewer() || (!persistWithdrawal && !canAuthorize())) return;
       const database = getDatabaseHandle();
@@ -120,7 +153,11 @@ export function PrivacySyncBridge() {
       void repair();
     };
     const stopDatabase = subscribeDatabaseHandle(() => {
-      if (!currentViewer() || revision === 0) return;
+      if (!currentViewer()) return;
+      if (revision === 0) {
+        void checkViewerMarker(getDatabaseHandle());
+        return;
+      }
       // Supersede the previous handle even if it is still finishing a write.
       requirePrivacyRevalidation();
       revision += 1;
@@ -150,18 +187,37 @@ export function PrivacySyncBridge() {
     const foreground = AppState.addEventListener('change', (state) => {
       if (state === 'active') resume();
     });
-    const revokeSnapshots = () => {
-      if (!currentViewer()) return;
+    const revokeSnapshots = (): boolean => {
+      if (!currentViewer()) return false;
       void invalidatePrivacyQueries(queryClient).catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'privacy-revocation' } });
       });
+      return true;
     };
     const stopCredentialMismatch = subscribeCatalogCredentialMismatch(revokeSnapshots);
-    // Local reads may beat profile/privacy readiness. Probe again after installing
-    // the listener so a refresh mismatch observed during startup cannot be lost.
-    const database = getDatabaseHandle();
-    if (database) void canReadPrivateCatalog(database);
-    const unsubscribe = getWsClient().subscribe<{ privacyChanged: boolean }>(
+    async function checkViewerMarker(database: ReturnType<typeof getDatabaseHandle>): Promise<void> {
+      if (!database || !currentViewer() || revision !== 0) return;
+      const markerRevision = revision;
+      const credentialGeneration = getPrivacyCredentialGeneration();
+      const authorizedViewer = await getAuthorizedCatalogViewerId(database);
+      if (
+        !currentViewer() ||
+        getDatabaseHandle() !== database ||
+        getPrivacyCredentialGeneration() !== credentialGeneration ||
+        revision !== markerRevision
+      )
+        return;
+      // Missing, malformed and other-viewer markers all need a server check.
+      // A digest mismatch may already have notified the listener above; the
+      // revision guard avoids requesting that same withdrawal twice.
+      if (authorizedViewer !== viewerId) revokeSnapshots();
+    }
+    connectionRevalidationRef.current = revokeSnapshots;
+    if (pendingConnectionRef.current && revokeSnapshots()) pendingConnectionRef.current = false;
+    // Keep the server's first yield until shipped clients adopt these triggers.
+    // Mode and auth transport revisions rebind a replaced singleton.
+    const wsClient = offlineMode ? undefined : getWsClient();
+    const unsubscribe = wsClient?.subscribe<{ privacyChanged: boolean }>(
       { query: 'subscription PrivacyChanged { privacyChanged }' },
       {
         next: revokeSnapshots,
@@ -170,6 +226,9 @@ export function PrivacySyncBridge() {
         complete: () => {},
       },
     );
+    // Profile/privacy and schema readiness can arrive in either order. A
+    // published handle repeats this probe when mount had no usable database.
+    void checkViewerMarker(getDatabaseHandle());
     return () => {
       disposed = true;
       clearRetry();
@@ -179,8 +238,9 @@ export function PrivacySyncBridge() {
       stopMutationDelivery();
       foreground.remove();
       unregister();
-      unsubscribe();
+      if (connectionRevalidationRef.current === revokeSnapshots) connectionRevalidationRef.current = null;
+      unsubscribe?.();
     };
-  }, [supported, profile?.id, queryClient]);
+  }, [supported, profile?.id, queryClient, offlineMode, authTransportRevision]);
   return null;
 }
