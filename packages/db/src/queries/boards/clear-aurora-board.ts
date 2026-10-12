@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, isNotNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, isNotNull, notInArray, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   boardAttempts,
@@ -32,25 +32,17 @@ import {
 // replace the UPSTREAM catalog wholesale (so climbs removed from the dump vanish)
 // WITHOUT touching Boardsesh-owned rows, which the dump can never restore:
 //
-//   - Boardsesh-provenance climbs                  — user-created climbs (incl. drafts)
-//     (board_climbs.user_id IS NOT NULL              and JSON-import placeholders
-//      OR board_climbs.synced = false)
-//   - board_climb_holds / _stats / _stats_history — belonging to those climbs
-//   - board_beta_links with created_by_user_id     — links a Boardsesh user attached
-//     IS NOT NULL                                    (to ANY climb on the board)
+//   - Boardsesh-provenance climbs (synced = false), including local drafts,
+//     JSON-import placeholders and published climbs from deleted accounts
+//   - board_climb_holds / _stats / _stats_history belonging to those climbs
+//   - board_beta_links with created_by_user_id IS NOT NULL
+//     (links a Boardsesh user attached to any climb on the board)
 //
-// Provenance marker — why `user_id IS NOT NULL OR synced = false`, not `user_id`
-// alone: user_id is NOT a reliable ownership flag by itself. board_climbs.user_id
-// is `ON DELETE SET NULL` (schema unified.ts), and deleteAccount deliberately
-// preserves a departed user's PUBLISHED climbs by nulling their user_id (see the
-// resolver comment "published climbs will have their userId set to null
-// (preserved)"). Such a row is (user_id NULL, synced=false) — Boardsesh-owned but
-// invisible to a user_id check, so a re-run would delete it and the count-based
-// invariant (which also keys on user_id) could not catch it. `synced` is the
-// stable provenance marker: saveClimb / publishClimb and the JSON logbook import
-// write synced=false and nothing ever flips it to true (the Aurora user-sync
-// pull-back's onConflictDoUpdate touches neither synced nor user_id), while the
-// importer and Aurora catalog / user-sync inserts are always synced=true.
+// `synced` is the provenance marker: local save/publish and JSON-import writes
+// use false; Aurora catalog and account-import inserts use true. A linked
+// account can own an upstream draft, so user_id must not preserve that imported
+// row after it disappears from an authoritative dump. Conversely, deleted
+// accounts lose user_id while their local published climbs remain synced=false.
 //
 // The catalog metadata tables (products, sets, holes, placements, layouts, users,
 // walls, circuits, tags, syncs, …) carry no Boardsesh-text-user rows — circuits /
@@ -60,7 +52,7 @@ import {
 type Tx = PgDatabase<PgQueryResultHKT>;
 
 export type BoardseshOwnedCounts = {
-  /** Boardsesh-provenance board_climbs (user_id IS NOT NULL OR synced = false). */
+  /** Boardsesh-provenance board_climbs (synced = false). */
   ownedClimbs: number;
   /** board_climb_holds belonging to those owned climbs. */
   ownedHolds: number;
@@ -73,12 +65,10 @@ export type BoardseshOwnedCounts = {
 };
 
 /**
- * The Boardsesh-provenance climb filter for {@link boardName}: a climb a user
- * created (user_id set) OR any climb Boardsesh minted locally (synced = false,
- * which survives account deletion nulling user_id). See the module header.
+ * The stable Boardsesh-provenance filter: synced=false, independent of owner.
  */
 function boardseshOwnedClimbWhere(boardName: string) {
-  return and(eq(boardClimbs.boardType, boardName), or(isNotNull(boardClimbs.userId), eq(boardClimbs.synced, false)));
+  return and(eq(boardClimbs.boardType, boardName), eq(boardClimbs.synced, false));
 }
 
 /**
@@ -156,7 +146,7 @@ export async function clearAuroraBoardData(tx: Tx, boardName: string): Promise<B
   const preserved = await countBoardseshOwnedRows(tx, boardName);
 
   // The Boardsesh-owned climb uuids to preserve. These rows are never deleted
-  // (they fail the upstream `user_id IS NULL AND synced = true` predicate below),
+  // (they fail the upstream `synced = true` predicate below),
   // so this anti-join set is stable no matter the delete ordering. `uuid` is
   // board_climbs' non-nullable primary key, so the `NOT IN (subquery)`
   // three-valued-logic footgun cannot occur — reusing one named subquery across
@@ -195,11 +185,9 @@ export async function clearAuroraBoardData(tx: Tx, boardName: string): Promise<B
     .delete(boardClimbStats)
     .where(and(eq(boardClimbStats.boardType, boardName), notInArray(boardClimbStats.climbUuid, ownedClimbUuids)));
 
-  // Upstream climbs only — Boardsesh-provenance climbs (user_id set OR synced =
-  // false, incl. an account-deleted user's preserved published climb) survive.
-  await tx
-    .delete(boardClimbs)
-    .where(and(eq(boardClimbs.boardType, boardName), isNull(boardClimbs.userId), eq(boardClimbs.synced, true)));
+  // Replace upstream climbs, including account-owned drafts. Local provenance
+  // survives even after account deletion nulls its owner.
+  await tx.delete(boardClimbs).where(and(eq(boardClimbs.boardType, boardName), eq(boardClimbs.synced, true)));
 
   // Remaining catalog metadata: full board-wide clear.
   await tx.delete(boardCircuits).where(eq(boardCircuits.boardType, boardName));

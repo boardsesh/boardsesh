@@ -125,7 +125,7 @@ describe('aurora import — #3540 clear preserves Boardsesh-owned data', () => {
     await insertStats('u1', 40, 3, null, 3);
     await insertHistory('u1', 40);
 
-    await insertClimb('o1', OWNER_ID, true, 30);
+    await insertClimb('o1', OWNER_ID, true, 30, false);
     await insertHold('o1', 20);
     await insertHold('o1', 21);
     await insertStats('o1', 30, null, null, null);
@@ -178,6 +178,35 @@ describe('aurora import — #3540 clear preserves Boardsesh-owned data', () => {
     expect(
       await scalar(
         sql`SELECT count(*)::int AS n FROM board_climb_stats_history WHERE board_type = ${BOARD} AND climb_uuid = 'o1'`,
+      ),
+    ).toBe(1);
+  });
+
+  it.each([true, false])('replaces linked-account upstream climbs and their dependents (draft=%s)', async (isDraft) => {
+    await insertClimb('linked-upstream', OWNER_ID, isDraft, 40, true);
+    await insertHold('linked-upstream', 10);
+    await insertStats('linked-upstream', 40, 1, 0, 1);
+    await insertHistory('linked-upstream', 40);
+    await insertClimb('local-owned', OWNER_ID, false, 40, false);
+    await insertHold('local-owned', 20);
+    expect((await countBoardseshOwnedRows(db as unknown as ClearDb, BOARD)).ownedClimbs).toBe(1);
+    await runClear();
+    for (const table of ['board_climbs', 'board_climb_holds', 'board_climb_stats', 'board_climb_stats_history']) {
+      const column = table === 'board_climbs' ? 'uuid' : 'climb_uuid';
+      expect(
+        await scalar(
+          sql`SELECT count(*)::int AS n FROM ${sql.identifier(table)} WHERE board_type = ${BOARD} AND ${sql.identifier(column)} = 'linked-upstream'`,
+        ),
+      ).toBe(0);
+    }
+    expect(
+      await scalar(
+        sql`SELECT count(*)::int AS n FROM board_climbs WHERE board_type = ${BOARD} AND uuid = 'local-owned'`,
+      ),
+    ).toBe(1);
+    expect(
+      await scalar(
+        sql`SELECT count(*)::int AS n FROM board_climb_holds WHERE board_type = ${BOARD} AND climb_uuid = 'local-owned'`,
       ),
     ).toBe(1);
   });
