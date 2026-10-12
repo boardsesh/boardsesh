@@ -171,6 +171,14 @@ export async function computeBoardPresenceStats(boardId: number, boardType: stri
       FROM tick_difficulties
       WHERE status IN ('send', 'flash')
         AND difficulty IS NOT NULL
+        -- A climb the community hid is never featured. Moderation hide is its
+        -- own rule; the wall's counts and grades above still include it.
+        AND NOT EXISTS (
+          SELECT 1 FROM board_climbs hidden_climb
+          WHERE hidden_climb.board_type = tick_difficulties.board_type
+            AND hidden_climb.uuid = tick_difficulties.canonical_climb_uuid
+            AND hidden_climb.is_hidden IS TRUE
+        )
       ORDER BY difficulty DESC, climbed_at ASC, id ASC
       LIMIT 1
     )
