@@ -52,6 +52,7 @@ export type PlayCoreSheetHostsProps = {
   addToQueue: ReturnType<typeof useQueueActions>['addToQueue'];
   dismissPlayerAndWait: PlayDrawerProps['dismissPlayerAndWait'];
   onAngleChange: PlayDrawerProps['onAngleChange'];
+  handleOpenSectionsSettings: () => void;
   handleCloseSectionsSettings: () => void;
   handleToggleFavoriteFromMenu: () => void;
   handleOpenAddBetaVideo: () => void;
@@ -108,6 +109,7 @@ export function PlayCoreSheetHosts({
   addToQueue,
   dismissPlayerAndWait,
   onAngleChange,
+  handleOpenSectionsSettings,
   handleCloseSectionsSettings,
   handleToggleFavoriteFromMenu,
   handleOpenAddBetaVideo,
@@ -178,6 +180,7 @@ export function PlayCoreSheetHosts({
               : undefined
           }
           onOpenQueue={openQueueFromActions}
+          onOpenViewOptions={handleOpenSectionsSettings}
           onShare={showConnectPill && !displayedClimbIsDraft ? handleShare : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
           onClimbDeleted={handleDismiss}

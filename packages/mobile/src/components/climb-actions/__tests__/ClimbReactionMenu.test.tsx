@@ -296,6 +296,13 @@ describe('ClimbReactionMenu view switching', () => {
     expect(captured.actionArgs?.onReportClimb).toBe(onReportClimb);
   });
 
+  // The play drawer's own sections-sheet opener, so View options presents above `/play`.
+  it('forwards the onOpenViewOptions opener into useClimbActions', () => {
+    const onOpenViewOptions = vi.fn();
+    renderMenu(vi.fn(), { onOpenViewOptions });
+    expect(captured.actionArgs?.onOpenViewOptions).toBe(onOpenViewOptions);
+  });
+
   // A climb the crew voted down still opens from a queue item or a shared link,
   // and this byline is the only place that says so.
   it('marks a community-hidden climb in the byline', () => {

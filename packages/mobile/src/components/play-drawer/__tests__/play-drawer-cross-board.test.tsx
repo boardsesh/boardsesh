@@ -41,6 +41,7 @@ const recorded = vi.hoisted(() => ({
   scroll: [] as Props[],
   firstScreen: [] as Props[],
   sectionsSheet: [] as Props[],
+  actionsSheet: [] as Props[],
   scrollGate: [] as Props[],
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
   boardLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
@@ -287,7 +288,12 @@ vi.mock('../AngleSelectorSheet', () => ({
     return null;
   },
 }));
-vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
+vi.mock('../../ClimbActionsSheet', () => ({
+  ClimbActionsSheet: (props: Props) => {
+    recorded.actionsSheet.push(props);
+    return null;
+  },
+}));
 // The lost-hold banner and the Remix handoff behind it, stubbed like every
 // other collaborator above. Both reach native modules this suite has no runtime
 // for: the banner through the design-system Button, the handoff through Sentry.
@@ -461,6 +467,7 @@ beforeEach(() => {
   recorded.boardLayout = undefined;
   recorded.firstScreen = [];
   recorded.sectionsSheet = [];
+  recorded.actionsSheet = [];
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
   queueState.queue = [];
@@ -964,5 +971,53 @@ describe('PlayDrawer configurable sections', () => {
     expect(recorded.deferredSections).toHaveLength(0);
     expect(lastBoardProps()).toMatchObject({ open: true, currentFrames: TWELVE_CLIMB.frames });
     expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(false);
+  });
+
+  // #6397: section choices live in ⋯ → View options. The bar's eye is only the
+  // way back once nothing is left below the board.
+  it('offers the action-bar eye only while every section is hidden', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const rendered = renderDrawer();
+    const rerender = () =>
+      rendered.rerender(
+        createElement(PlayDrawer, {
+          presentation: 'pane' as const,
+          boardConfig: TWELVE_BY_TWELVE,
+          onOpenQueue: vi.fn(),
+          openTarget: null,
+        }),
+      );
+    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
+
+    hideEverySection();
+    rerender();
+    expect(recorded.actionBar.at(-1)?.onEditSections).toBeTypeOf('function');
+
+    drawerSections.sections = { ...drawerSections.sections, community: true };
+    rerender();
+    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
+  });
+
+  it('offers no eye while the section choices are still loading', () => {
+    hideEverySection();
+    drawerSections.ready = false;
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.actionBar.at(-1)?.onEditSections).toBeUndefined();
+  });
+
+  // Off iOS, ⋯ opens the player's own actions sheet, whose View options row must
+  // open the sections sheet mounted in the player.
+  it('opens View options from the actions sheet behind ⋯', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    const openActions = recorded.actionBar.at(-1)?.onOpenActions as () => void;
+    act(openActions);
+    expect(recorded.actionsSheet.at(-1)?.visible).toBe(true);
+    expect(recorded.sectionsSheet).toHaveLength(0);
+
+    const openViewOptions = recorded.actionsSheet.at(-1)?.onOpenViewOptions as () => void;
+    act(openViewOptions);
+    expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
   });
 });

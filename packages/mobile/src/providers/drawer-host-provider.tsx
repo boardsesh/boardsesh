@@ -99,6 +99,10 @@ export type OpenClimbActionsOptions = {
    *  the menu closes. The play drawer passes its own queue opener while the
    *  connect-step pill (#5654) has taken the queue button's place. */
   onOpenQueue?: () => void;
+  /** When set, the menu offers "View options", which runs this after the menu
+   *  closes. The play drawer passes its own sections-sheet opener, so the sheet
+   *  presents above `/play`. */
+  onOpenViewOptions?: () => void;
   /** Awaitable close for a native BoardSheet / QueueSheet underneath the custom
    * actions overlay. Omitted when the source is an inline iPad pane. */
   dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
@@ -499,6 +503,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
     onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
     onOpenQueue?: () => void;
+    onOpenViewOptions?: () => void;
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
@@ -806,6 +811,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         onTick: options?.onTick,
         onReportClimb: options?.onReportClimb,
         onOpenQueue: options?.onOpenQueue,
+        onOpenViewOptions: options?.onOpenViewOptions,
         dismissSourceSheet: options?.dismissSourceSheet,
         dismissPlayerAndWait: options?.dismissPlayerAndWait,
       });
@@ -1387,6 +1393,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               onTick={climbActions.onTick}
               onReportClimb={climbActions.onReportClimb}
               onOpenQueue={climbActions.onOpenQueue}
+              onOpenViewOptions={climbActions.onOpenViewOptions}
               dismissSourceSheet={climbActions.dismissSourceSheet}
               dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
               reduceMotion={reduceMotion}

@@ -1,6 +1,6 @@
 # Climb list rows
 
-Climbs → eye beside the filter chips opens `/settings/climb-list` in the current tab. Settings also links to it immediately above Climb view. The screen uses the same row visual as the lists, with staged personal leaves so the example works without signing in or loading a logbook.
+Settings → Climb list, immediately above Climb view, opens `/settings/climb-list`. The Climbs tab has no shortcut to it: the filter chips keep the whole row (#6397). The screen uses the same row visual as the lists, with staged personal leaves so the example works without signing in or loading a logbook.
 
 ## Fields and presets
 
@@ -47,4 +47,4 @@ Recency reads the clock inside a memo. It refreshes when the progress, locale or
 
 Analytics emit `Climb Row Display Changed` from controller interactions only, with `kind`, and either `field`/`value` or `preset`.
 
-Device QA covers each switch, Custom restoration, relaunch, legacy migration, small screens, large text, both themes, mirror boards and reorder rows. In particular inspect the current-climb pill at 375 pt, confirm the eye stays visible when the filter chips scroll, and check reserved empty lines on mirror boards.
+Device QA covers each switch, Custom restoration, relaunch, legacy migration, small screens, large text, both themes, mirror boards and reorder rows. In particular inspect the current-climb pill at 375 pt and check reserved empty lines on mirror boards.

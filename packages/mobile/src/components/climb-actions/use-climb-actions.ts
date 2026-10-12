@@ -46,6 +46,7 @@ export type ClimbActionId =
   | 'betaVideo'
   | 'edit'
   | 'fork'
+  | 'viewOptions'
   | 'share'
   | 'openInApp'
   | 'report'
@@ -129,6 +130,12 @@ type UseClimbActionsArgs = {
    * row; everywhere else the queue has its own button and this is omitted.
    */
   onOpenQueue?: () => void;
+  /**
+   * When provided, adds "View options", which runs this once the menu has
+   * started closing. Only the play drawer passes it, with its own sections-sheet
+   * opener, so the sheet presents above `/play`.
+   */
+  onOpenViewOptions?: () => void;
   /** Native BoardSheet / QueueSheet underneath the custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** `/play`-owned native-stack close waiter; absent for every inline surface. */
@@ -158,6 +165,7 @@ export function useClimbActions({
   onTick,
   onReportClimb,
   onOpenQueue,
+  onOpenViewOptions,
   dismissSourceSheet,
   dismissPlayerAndWait,
 }: UseClimbActionsArgs): ClimbActionItem[] {
@@ -429,6 +437,21 @@ export function useClimbActions({
       });
     }
 
+    if (onOpenViewOptions) {
+      items.push({
+        id: 'viewOptions',
+        title: t('common:mobile.settings.climbDrawer.sheetTitle'),
+        icon: 'view.options',
+        color: accentColor,
+        run: () => {
+          // Close the menu first, like the queue: the sections sheet opens from
+          // the play route, under an overlay that is already on its way out.
+          after();
+          onOpenViewOptions();
+        },
+      });
+    }
+
     // A draft is visible to its setter alone, so a link to it opens nowhere for
     // anyone it is sent to (#5960).
     const isDraft = climb.is_draft === true;
@@ -533,6 +556,7 @@ export function useClimbActions({
     onTick,
     onReportClimb,
     onOpenQueue,
+    onOpenViewOptions,
     moderationEnabled,
     dismissSourceSheet,
     dismissPlayerAndWait,

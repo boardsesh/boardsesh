@@ -178,7 +178,6 @@ export function PlayCore({
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
   const { t, i18n } = useTranslation('session');
-  const { t: tCommon } = useTranslation('common');
   const { sections, ready: sectionsReady } = usePlayDrawerSectionsPreference();
   const [sectionsSettingsOpen, setSectionsSettingsOpen] = useState(false);
   const handleOpenSectionsSettings = useCallback(() => setSectionsSettingsOpen(true), []);
@@ -1249,6 +1248,7 @@ export function PlayCore({
         onTick: handleOpenTickForClimb,
         onReportClimb: handleOpenReportClimbForClimb,
         onOpenQueue: openQueueFromActions,
+        onOpenViewOptions: handleOpenSectionsSettings,
       });
       return;
     }
@@ -1260,6 +1260,7 @@ export function PlayCore({
     handleOpenTickForClimb,
     handleOpenReportClimbForClimb,
     openQueueFromActions,
+    handleOpenSectionsSettings,
   ]);
 
   // Arm (expand) / disarm (collapse) the scroll-into-view for the first section peek.
@@ -1508,15 +1509,6 @@ export function PlayCore({
                           The grabber stays centred: both flanks are absolute. */}
                         <View style={styles.restTimerSlot}>
                           <RestTimerPillHost compact />
-                          {commitBarModel.mode === 'commit' && viewer !== 'anonymous' ? (
-                            <ChromeIconButton
-                              icon="visibility"
-                              role="action"
-                              onPress={handleOpenSectionsSettings}
-                              accessibilityLabel={tCommon('mobile.settings.climbDrawer.sheetTitle')}
-                              testID="play-drawer-section-settings"
-                            />
-                          ) : null}
                         </View>
                       </View>
 
@@ -1718,7 +1710,13 @@ export function PlayCore({
                             onLightbulb={handleLightbulb}
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
-                            onEditSections={handleOpenSectionsSettings}
+                            // Section choices live in ••• → View options. The bar's
+                            // own eye comes back only once no section is left to show:
+                            // it is the way back after Hide all for a signed-out web
+                            // reader, who has no ••• and no Settings.
+                            onEditSections={
+                              sectionsReady && !hasVisibleSections ? handleOpenSectionsSettings : undefined
+                            }
                             onOpenQueue={onOpenQueue}
                             onShare={displayedClimbIsDraft ? undefined : handleShare}
                             onTickPress={handleTickFabPress}
@@ -1846,6 +1844,7 @@ export function PlayCore({
         addToQueue={addToQueue}
         dismissPlayerAndWait={dismissPlayerAndWait}
         onAngleChange={onAngleChange}
+        handleOpenSectionsSettings={handleOpenSectionsSettings}
         handleCloseSectionsSettings={handleCloseSectionsSettings}
         handleToggleFavoriteFromMenu={handleToggleFavoriteFromMenu}
         handleOpenAddBetaVideo={handleOpenAddBetaVideo}

@@ -103,6 +103,7 @@ function props(open: boolean): PlayCoreSheetHostsProps {
     addToQueue: vi.fn(),
     dismissPlayerAndWait: undefined,
     onAngleChange: vi.fn(),
+    handleOpenSectionsSettings: noAction,
     handleCloseSectionsSettings: noAction,
     handleToggleFavoriteFromMenu: noAction,
     handleOpenAddBetaVideo: noAction,
@@ -218,5 +219,13 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
     angleChange(45);
     expect(onAngleChange).toHaveBeenCalledWith(45);
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  // Android and web reach View options through the actions sheet, which must open
+  // the sections sheet mounted here, inside the player, so it presents above `/play`.
+  it("hands the actions sheet the player's own sections opener for View options", () => {
+    const openSections = vi.fn();
+    render(<PlayCoreSheetHosts {...props(true)} handleOpenSectionsSettings={openSections} />);
+    expect(recorded.props.get('actions')?.onOpenViewOptions).toBe(openSections);
   });
 });

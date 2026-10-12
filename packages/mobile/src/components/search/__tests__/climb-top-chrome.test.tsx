@@ -2,17 +2,9 @@
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => nativeChrome.enabled }));
 vi.mock('../../chrome/NativeRootHeader', () => ({
-  NativeRootHeader: ({
-    scrollEdge,
-    children,
-    rightActions,
-  }: {
-    scrollEdge?: unknown;
-    children?: ReactNode;
-    rightActions?: ReactNode;
-  }) => {
+  NativeRootHeader: ({ scrollEdge }: { scrollEdge?: unknown }) => {
     nativeChrome.scrollEdge = scrollEdge;
-    return createElement('div', { 'data-native-header': true }, rightActions, children);
+    return null;
   },
 }));
 vi.mock('../../../hooks/use-device-layout', () => ({
@@ -50,7 +42,6 @@ const ctrl = vi.hoisted(() => ({
   board: null as BoardLabelFields | null,
   bluetooth: null as BluetoothCtx,
   setBoardAngle: vi.fn(),
-  push: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   wallClimb: null as { climbUuid: string; name: string } | null,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
@@ -63,20 +54,18 @@ type ViewMockProps = {
   children?: ReactNode;
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
   pointerEvents?: string;
-  testID?: string;
 };
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   Keyboard: { dismiss: vi.fn() },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'data-scrim': 'true' }, children),
-  View: ({ children, onLayout, pointerEvents, testID }: ViewMockProps) =>
+  View: ({ children, onLayout, pointerEvents }: ViewMockProps) =>
     createElement(
       'div',
       {
         'data-has-layout': onLayout ? 'true' : 'false',
         'data-pointer': pointerEvents ?? '',
-        'data-testid': testID,
         onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 88 } } }) : undefined,
       },
       children,
@@ -104,7 +93,6 @@ vi.mock('expo-router', () => ({
     ctrl.focusEffects.push(effect);
   },
 }));
-vi.mock('../../../lib/routing/scoped-navigation', () => ({ scopedRouter: { push: ctrl.push } }));
 vi.mock('expo-linear-gradient', () => ({
   LinearGradient: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-gradient': 'true' }, children),
@@ -397,7 +385,6 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
     createElement('div', { 'data-wall-capsule': climb.climbUuid }),
 }));
 
-import { ClimbListFilterRow } from '../ClimbListFilterRow';
 import { ClimbTopChrome } from '../ClimbTopChrome';
 import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
@@ -450,38 +437,6 @@ const namedBoard: BoardLabelFields = {
 };
 
 describe('ClimbTopChrome', () => {
-  it.each([
-    ['liquidGlass', false],
-    ['liquidGlass', true],
-    ['material', false],
-  ] as const)('opens settings beside the chips on %s (native header: %s)', (variant, nativeHeader) => {
-    ctrl.variant = variant;
-    ctrl.board = typedBoard;
-    ctrl.wallClimb = { climbUuid: 'wall-climb', name: 'A current climb' };
-    nativeChrome.enabled = nativeHeader;
-    const { container } = render(
-      <ClimbTopChrome
-        {...makeProps({
-          showPersistentChips: true,
-          searchMode: nativeHeader ? 'native' : 'custom',
-          filterChrome: (
-            <ClimbListFilterRow>
-              <div data-testid="scrolling-chips" />
-            </ClimbListFilterRow>
-          ),
-        })}
-      />,
-    );
-    const eye = container.querySelector('[data-label="mobile.settings.climbList.openLabel"]') as HTMLButtonElement;
-    expect(eye).not.toBeNull();
-    expect(eye.closest('[data-testid="climb-list-filter-row"]')).not.toBeNull();
-    expect(eye.closest('[data-testid="climb-list-filter-chips"]')).toBeNull();
-    expect(eye.closest('[data-appbar-header]')).toBeNull();
-    expect(container.querySelector('[data-pressable="mobile.settings.climbList.openLabel"]')).toBeNull();
-    fireEvent.click(eye);
-    expect(ctrl.push).toHaveBeenCalledWith('/settings/climb-list');
-  });
-
   beforeEach(() => {
     ctrl.board = null;
     ctrl.bluetooth = null;

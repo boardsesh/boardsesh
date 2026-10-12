@@ -1041,6 +1041,27 @@ describe('DrawerHostProvider climb actions', () => {
     await waitFor(() => expect(container.querySelector('[data-climb-actions]')).toBeNull());
   });
 
+  // Every option is copied into the menu's state one field at a time, and a
+  // missed copy drops the row without a sound. Only the player passes this one.
+  it("hands the player's View options opener to the reaction menu, and nothing to anyone else", async () => {
+    const hosts: Array<HostValue> = [];
+    const { container } = renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    const onOpenViewOptions = vi.fn();
+
+    act(() => hosts.at(-1)?.openClimbActions(climb, undefined, { onOpenViewOptions }));
+    await waitFor(() => expect(climbActions.props).not.toBeNull());
+    expect(climbActions.props?.onOpenViewOptions).toBe(onOpenViewOptions);
+
+    act(() => hosts.at(-1)?.closeClimbActions());
+    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).toBeNull());
+    act(() => hosts.at(-1)?.openClimbActions(climb));
+    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).not.toBeNull());
+    expect(climbActions.props).toMatchObject({ climb });
+    expect(climbActions.props?.onOpenViewOptions).toBeUndefined();
+  });
+
   it('opens add-to-playlist against the active board snapshot', async () => {
     // The reaction menu opens the playlist picker via the provider's openAddToPlaylist;
     // assert that opener directly.

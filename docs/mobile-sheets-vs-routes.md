@@ -83,7 +83,8 @@ flashes open and vanishes (rule 1; #3505 was this, #3294 the playlist variant). 
 menu is opened **from the player**, thread the player's **own in-tree opener** through
 `openClimbActions` → `ClimbReactionMenu` → `useClimbActions` (the `onAddBetaVideo` override, mirroring
 `onEditEntry` / `onSelectPlaylist`), so the action drives `PlayDrawer`'s local `AddBetaVideoSheet`
-(which presents inside the modal, above it) instead of the root one. Off the player (climb list,
+(which presents inside the modal, above it) instead of the root one. `onTick`, `onReportClimb`,
+`onOpenQueue` and `onOpenViewOptions` (the sections sheet) take the same path. Off the player (climb list,
 logbook, board sheet) the override is omitted and the root sheet is correct — nothing covers it.
 **Any new ellipsis action that opens a native sheet needs this override**, or it re-hits the bug.
 
@@ -241,9 +242,10 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climb view and the eye button beside the player's ellipsis use the same seven visibility
-switches. The eye opens the **View options** sheet (`PlayDrawerSectionsSheet`)
-as a managed `ModalSheet` mounted inside the player, above `/play`. Its bulk actions
+Settings → Climb view and the player's ••• → View options use the same seven visibility
+switches. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
+as a managed `ModalSheet` mounted inside the player, above `/play`: on iOS from the
+reaction menu, on Android and web once the actions sheet has gone. Its bulk actions
 remain outside the list scroll. On iOS with the Apple variant, the header controls and
 list leave their backgrounds unset so the native sheet material stays visible around
 the inset switch group. Only the grouped rows use an opaque semantic content surface;
@@ -251,8 +253,10 @@ Material, Reduce Transparency, Android and web keep their grouped content backgr
 Show all and Hide all
 stay together above the grouped switches, with 44-point targets and disabled states
 when every section already matches the action. Choices apply immediately; the close
-button dismisses the sheet without a save step. It remains reachable
-when every section is hidden. These device-local choices use AsyncStorage (IndexedDB
+button dismisses the sheet without a save step. Once no section is left to show, an eye
+button appears in the player's second row and opens the same sheet. It is the way back
+after Hide all for a signed-out web reader, who has no ••• and no Settings, and it
+leaves the row again when a section returns. These device-local choices use AsyncStorage (IndexedDB
 in the browser) and keep each section's existing expansion preference and order.
 
 The first eligible visible section supplies the header preview at the fold; its header
@@ -828,4 +832,4 @@ content are separate layout contracts. The production source guard follows multi
 
 ## Climb list display settings
 
-The Climbs header's eye opens `/settings/climb-list` through `scopedRouter`, so it stays in the originating tab's stack and Back returns to the list. This is a persistent preferences screen with several grouped switches, a staged row preview and preset chips; use a route, following Custom look. Mirrors exist in each tab and the account navigator. The root Settings stack registers the same route for its main navigation row. See [Climb list rows](climb-list-rows.md).
+Settings → Climb list opens `/settings/climb-list`; the Climbs tab has no shortcut of its own (#6397). This is a persistent preferences screen with several grouped switches, a staged row preview and preset chips; use a route, following Custom look. Like the rest of Settings, it has mirrors in each tab and the account navigator, and the root Settings stack registers the same route for its main navigation row. See [Climb list rows](climb-list-rows.md).

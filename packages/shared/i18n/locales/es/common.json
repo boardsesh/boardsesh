@@ -718,7 +718,6 @@
       },
       "climbList": {
         "title": "Lista de bloques",
-        "openLabel": "Cambiar la lista de bloques",
         "picture": "Imagen",
         "underName": "Bajo el nombre",
         "yourClimbing": "Tu escalada",

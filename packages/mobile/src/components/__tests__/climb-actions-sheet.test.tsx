@@ -464,6 +464,48 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
     expect(order).toEqual(['sheet dismissed', 'closed', 'queue opened']);
   });
 
+  // #6397: the play drawer's section choices, moved off its action bar.
+  const viewOptionsTitle = 'common:mobile.settings.climbDrawer.sheetTitle';
+
+  it('shows View options only when the host wires it, right above Share, with its own glyph', () => {
+    const { unmount } = render(<ClimbActionsSheet visible={true} {...baseProps} onShare={() => {}} />);
+    expect(screen.queryByText(viewOptionsTitle)).toBeNull();
+    unmount();
+
+    render(<ClimbActionsSheet visible={true} {...baseProps} onShare={() => {}} onOpenViewOptions={() => {}} />);
+    const rowTitles = [...document.querySelectorAll('[data-row]')].map((row) => row.getAttribute('data-row'));
+    expect(rowTitles.indexOf(viewOptionsTitle)).toBe(rowTitles.indexOf('share.actionLabel') - 1);
+    // Not the eye: that reads as Preview in the iOS menu for the same climb.
+    expect(screen.getByText(viewOptionsTitle).querySelector('[data-icon]')?.getAttribute('data-icon')).toBe(
+      'view.options',
+    );
+  });
+
+  it('opens View options only once this sheet has gone', async () => {
+    const order: string[] = [];
+    let finishDismiss: (result: DismissAndWaitResult) => void = () => {};
+    sheet.dismissAndWait.mockImplementationOnce(
+      () =>
+        new Promise<DismissAndWaitResult>((resolve) => {
+          finishDismiss = resolve;
+        }),
+    );
+    const onClose = vi.fn(() => order.push('closed'));
+    const onOpenViewOptions = vi.fn(() => order.push('view options opened'));
+    render(<ClimbActionsSheet visible={true} {...baseProps} onClose={onClose} onOpenViewOptions={onOpenViewOptions} />);
+
+    fireEvent.click(screen.getByText(viewOptionsTitle));
+    // Native sheets can't stack, so nothing opens while this one is still leaving.
+    await Promise.resolve();
+    expect(order).toEqual([]);
+
+    order.push('sheet dismissed');
+    finishDismiss({ status: 'dismissed' });
+
+    await waitFor(() => expect(onOpenViewOptions).toHaveBeenCalledTimes(1));
+    expect(order).toEqual(['sheet dismissed', 'closed', 'view options opened']);
+  });
+
   it('shares from the share row and closes', () => {
     const onShare = vi.fn();
     const onClose = vi.fn();

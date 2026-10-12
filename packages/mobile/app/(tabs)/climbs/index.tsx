@@ -62,7 +62,6 @@ import { Button } from '../../../src/components/Button';
 import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../src/components/ClimbFilterSheet';
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
 import { NativeRootHeader } from '../../../src/components/chrome/NativeRootHeader';
-import { ClimbListFilterRow } from '../../../src/components/search/ClimbListFilterRow';
 import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
 import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
@@ -1843,55 +1842,53 @@ function ClimbListInner() {
     if (!showFilterChips) return null;
     return (
       <>
-        <ClimbListFilterRow>
-          <FilterChipRow
-            pinnedChips={pinnedChips}
-            activeFilterCount={activeFilterCount}
-            onOpenFilters={handleOpenFilters}
-            recentFilters={recentFilters}
-            currentFilters={filters}
-            currentSearchText={name}
-            onApplyRecent={handleApplyRecentFilter}
-            onClearRecent={handleClearRecentFilters}
-            gradeLabel={gradeChip.label}
-            gradeActive={gradeChip.active}
-            onOpenGrade={handleOpenGrade}
-            gradeRailOpen={gradeUsesPopover ? gradePopoverOpen : gradeRowShown}
-            onCloseGrade={handleCloseGrade}
-            gradePopoverContent={
-              gradeUsesPopover ? (
-                <GradeRangeRail
-                  grades={grades}
-                  bound={gradeBound}
-                  lastUsedGradeId={lastUsedGrade}
-                  boardName={boardName}
-                  onChange={handleGradeRailChange}
-                />
-              ) : undefined
-            }
-            dimensionChips={dimensionChips}
-            minAscents={filters.minAscents}
-            onChangePopularity={handleChangePopularity}
-            minRating={filters.minRating}
-            onChangeRating={handleChangeRating}
-            progress={flagsToProgress(filters)}
-            onChangeProgress={handleChangeProgress}
-            canFilterProgress={isAuthenticated}
-            collection={getCollectionFilter(filters, boardFilters)}
-            onChangeCollection={handleChangeCollection}
-            canFilterDrafts={isAuthenticated}
-            isSprayWall={boardName === SPRAY_BOARD_NAME}
-            sortBy={filters.sortBy}
-            sortActive={sortActive}
-            onChangeSort={handleChangeSort}
-            accuracyValue={filters.gradeAccuracy ?? 'off'}
-            onChangeAccuracy={handleChangeAccuracy}
-            climbType={climbType}
-            onChangeClimbType={handleChangeClimbType}
-            betaActive={!!filters.onlyWithBetaVideos}
-            onToggleBeta={handleToggleBeta}
-          />
-        </ClimbListFilterRow>
+        <FilterChipRow
+          pinnedChips={pinnedChips}
+          activeFilterCount={activeFilterCount}
+          onOpenFilters={handleOpenFilters}
+          recentFilters={recentFilters}
+          currentFilters={filters}
+          currentSearchText={name}
+          onApplyRecent={handleApplyRecentFilter}
+          onClearRecent={handleClearRecentFilters}
+          gradeLabel={gradeChip.label}
+          gradeActive={gradeChip.active}
+          onOpenGrade={handleOpenGrade}
+          gradeRailOpen={gradeUsesPopover ? gradePopoverOpen : gradeRowShown}
+          onCloseGrade={handleCloseGrade}
+          gradePopoverContent={
+            gradeUsesPopover ? (
+              <GradeRangeRail
+                grades={grades}
+                bound={gradeBound}
+                lastUsedGradeId={lastUsedGrade}
+                boardName={boardName}
+                onChange={handleGradeRailChange}
+              />
+            ) : undefined
+          }
+          dimensionChips={dimensionChips}
+          minAscents={filters.minAscents}
+          onChangePopularity={handleChangePopularity}
+          minRating={filters.minRating}
+          onChangeRating={handleChangeRating}
+          progress={flagsToProgress(filters)}
+          onChangeProgress={handleChangeProgress}
+          canFilterProgress={isAuthenticated}
+          collection={getCollectionFilter(filters, boardFilters)}
+          onChangeCollection={handleChangeCollection}
+          canFilterDrafts={isAuthenticated}
+          isSprayWall={boardName === SPRAY_BOARD_NAME}
+          sortBy={filters.sortBy}
+          sortActive={sortActive}
+          onChangeSort={handleChangeSort}
+          accuracyValue={filters.gradeAccuracy ?? 'off'}
+          onChangeAccuracy={handleChangeAccuracy}
+          climbType={climbType}
+          onChangeClimbType={handleChangeClimbType}
+          betaActive={!!filters.onlyWithBetaVideos}
+          onToggleBeta={handleToggleBeta}
+        />
         {/* On Liquid Glass the grade row is a row of the chrome itself, so the
             native header can never cover it and the list insets by the taller
             chrome. The Grade chip opens it and it stays until the chip hides it.

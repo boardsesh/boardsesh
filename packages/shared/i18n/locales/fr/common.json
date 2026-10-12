@@ -443,7 +443,6 @@
       },
       "climbList": {
         "title": "Liste des blocs",
-        "openLabel": "Modifier la liste des blocs",
         "picture": "Image",
         "underName": "Sous le nom",
         "yourClimbing": "Ta grimpe",

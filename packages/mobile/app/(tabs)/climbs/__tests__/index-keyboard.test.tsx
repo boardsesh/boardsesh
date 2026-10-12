@@ -260,11 +260,6 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-vi.mock('../../../../src/lib/routing/scoped-navigation', () => ({ scopedRouter: { push: mocks.push } }));
-vi.mock('../../../../src/components/GlassIconButton', () => ({
-  GlassIconButton: ({ onPress, accessibilityLabel }: { onPress: () => void; accessibilityLabel: string }) =>
-    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }),
-}));
 vi.mock('expo-router', () => ({
   Stack: {
     Screen: ({ options }: { options: NativeStackNavigationOptions }) => {
@@ -1794,19 +1789,12 @@ describe('ClimbList row highlight', () => {
 describe('ClimbList grade row', () => {
   const gradeRowToggles = () => mocks.track.mock.calls.filter(([eventName]) => eventName === 'Grade Row Toggled');
 
-  it('keeps display settings outside the scrolling chips and grade rail', () => {
+  // The chips have the row to themselves: what a climb row shows is chosen in
+  // Settings → Climb list (#6397).
+  it('gives the chips the whole row, with nothing pinned beside them', () => {
     mocks.renderFilterChrome = true;
-    const { getByTestId, getByRole } = render(<ClimbList />);
-    const row = getByTestId('climb-list-filter-row');
-    const chips = getByTestId('climb-list-filter-chips');
-    const eye = getByRole('button', { name: 'mobile.settings.climbList.openLabel' });
-    expect(row.contains(eye)).toBe(true);
-    expect(chips.contains(eye)).toBe(false);
-    expect(chips.contains(getByTestId('chip-row'))).toBe(true);
-    act(() => mocks.openGrade?.());
-    expect(row.contains(getByTestId('grade-range-rail'))).toBe(false);
-    fireEvent.click(eye);
-    expect(mocks.push).toHaveBeenCalledWith('/settings/climb-list');
+    const { getByTestId } = render(<ClimbList />);
+    expect([...getByTestId('top-chrome').children]).toEqual([getByTestId('chip-row')]);
   });
 
   it('is hidden until the Grade chip is tapped, and the chip reads as closed', () => {

@@ -54,6 +54,11 @@ type ClimbActionsSheetProps = {
    * taken the queue button's place in its second row.
    */
   onOpenQueue?: () => void;
+  /**
+   * When provided, shows "View options", which opens the play drawer's sections
+   * sheet once this sheet has gone. Only the play drawer passes it.
+   */
+  onOpenViewOptions?: () => void;
   /** When provided, shows "Share" (the native share sheet); same condition as `onOpenQueue`. */
   onShare?: () => void;
   /** Supplied only by the `/play` route; omitted by the persistent iPad pane. */
@@ -93,6 +98,7 @@ function ClimbActionsSheet({
   onAddBetaVideo,
   onReportClimb,
   onOpenQueue,
+  onOpenViewOptions,
   onShare,
   dismissPlayerAndWait,
   onClimbDeleted,
@@ -158,6 +164,15 @@ function ClimbActionsSheet({
       onOpenQueue();
     });
   }, [dismissActionsSheetAndWait, onOpenQueue, onClose]);
+
+  // Same wait as the queue: the sections sheet is another native sheet.
+  const handleOpenViewOptions = useCallback(() => {
+    if (!onOpenViewOptions) return;
+    void dismissActionsSheetAndWait().then(() => {
+      onClose();
+      onOpenViewOptions();
+    });
+  }, [dismissActionsSheetAndWait, onOpenViewOptions, onClose]);
 
   const handleShare = useCallback(() => {
     onShare?.();
@@ -341,6 +356,14 @@ function ClimbActionsSheet({
             title={t('mobile.climbActions.fork')}
             leading={<Icon name="branch" size={22} color={accentActionIconColor} />}
             onPress={handleFork}
+            showSeparator
+          />
+        )}
+        {onOpenViewOptions && (
+          <ListRow
+            title={t('common:mobile.settings.climbDrawer.sheetTitle')}
+            leading={<Icon name="view.options" size={22} color={accentActionIconColor} />}
+            onPress={handleOpenViewOptions}
             showSeparator
           />
         )}

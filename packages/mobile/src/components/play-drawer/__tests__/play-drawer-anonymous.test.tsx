@@ -507,6 +507,7 @@ beforeEach(() => {
   ble.current = null;
   resetAllSettings();
   _resetJoinedBrowseNoticeForTests();
+  drawerSections.sections = { ...drawerSections.defaults };
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -1401,6 +1402,26 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(typeof props.onSignInPress).toBe('function');
     (props.onSignInPress as () => void)();
     expect(onSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  // A signed-out reader has no ⋯ and no Settings, so after Hide all the bar's
+  // eye is the only way back to the sections. While they show, it stays away.
+  it('hands a signed-out reader the eye only once every section is hidden', () => {
+    const shown = renderDrawer('anonymous');
+    expect(lastActionBarProps().onEditSections).toBeUndefined();
+    shown.unmount();
+
+    drawerSections.sections = {
+      logbook: false,
+      climberLogs: false,
+      setterNotes: false,
+      betaVideos: false,
+      boardseshGrade: false,
+      community: false,
+      similarClimbs: false,
+    };
+    renderDrawer('anonymous');
+    expect(lastActionBarProps().onEditSections).toBeTypeOf('function');
   });
 
   it('passes the member viewer through unchanged', () => {

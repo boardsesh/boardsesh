@@ -62,6 +62,9 @@ export const iconMap = {
   add: { ios: 'plus.circle', android: 'plus-circle-outline' },
   'add.fill': { ios: 'plus.circle.fill', android: 'plus-circle' },
   share: { ios: 'square.and.arrow.up', android: 'share-variant-outline' },
+  // The player's "View options": what shows below the board. Not the eye, which
+  // already means Preview in the same menu, and not a gear, which reads as Settings.
+  'view.options': { ios: 'slider.horizontal.3', android: 'tune-variant' },
   comment: { ios: 'bubble.left', android: 'comment-outline' },
   'comment.fill': { ios: 'bubble.left.fill', android: 'comment' },
   // The "someone liked this" cue on notification rows — a thumbs-up, matching

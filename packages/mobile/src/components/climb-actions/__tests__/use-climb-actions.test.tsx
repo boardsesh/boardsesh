@@ -158,6 +158,64 @@ describe('useClimbActions gating', () => {
     expect(order).toEqual(['closed', 'queue opened']);
   });
 
+  // #6397: the player's section choices moved off its action bar into this menu.
+  // Only the play drawer passes the opener.
+  it('adds "View options" right before Share only when onOpenViewOptions is provided', () => {
+    expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('viewOptions');
+
+    const withViewOptions = ids({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      onOpenViewOptions: () => {},
+    });
+    expect(withViewOptions.indexOf('viewOptions')).toBe(withViewOptions.indexOf('share') - 1);
+  });
+
+  it('keeps "View options" on a draft, which has no Share', () => {
+    const draft = ids({
+      climb: ownerClimb,
+      boardConfig: sprayBoard,
+      isAuthenticated: true,
+      currentUserId: 'user-1',
+      onOpenViewOptions: () => {},
+    });
+    expect(draft).not.toContain('share');
+    expect(draft).toContain('viewOptions');
+  });
+
+  it('closes the menu before it opens View options', () => {
+    const order: string[] = [];
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      onAfterAction: () => order.push('closed'),
+      onOpenViewOptions: () => order.push('view options opened'),
+    });
+
+    act(() => result.current.find((action) => action.id === 'viewOptions')?.run());
+
+    expect(order).toEqual(['closed', 'view options opened']);
+  });
+
+  // Preview already wears the eye in this menu.
+  it('labels View options with the sheet it opens, and gives it its own glyph', () => {
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      onOpenViewOptions: () => {},
+    });
+    const viewOptions = result.current.find((action) => action.id === 'viewOptions');
+
+    expect(viewOptions).toMatchObject({
+      title: 'common:mobile.settings.climbDrawer.sheetTitle',
+      icon: 'view.options',
+    });
+    expect(viewOptions?.icon).not.toBe(result.current.find((action) => action.id === 'preview')?.icon);
+  });
+
   it('adds "Edit entry" only when onEditEntry is provided', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false, onEditEntry: () => {} })).toContain(
       'editEntry',

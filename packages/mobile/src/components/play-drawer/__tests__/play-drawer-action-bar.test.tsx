@@ -209,6 +209,8 @@ function actions(container: HTMLElement): string[] {
 }
 
 describe('PlayDrawerActionBar', () => {
+  // The host offers the eye only once every section is hidden (#6397); the rest
+  // of the time section choices live in ⋯ → View options.
   it('opens section choices from an eye button immediately right of the ellipsis', () => {
     const onEditSections = vi.fn();
     const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections }));
@@ -236,7 +238,7 @@ describe('PlayDrawerActionBar', () => {
     expect(44 + 5 * 44 + 6 * gap + 2 * gutter).toBeLessThanOrEqual(320);
   });
 
-  it('allows anonymous viewers to choose sections and keeps commit rows dedicated', () => {
+  it('gives a signed-out reader, who has no ⋯, the eye as the way back, and keeps commit rows dedicated', () => {
     const onEditSections = vi.fn();
     const anonymous = render(createElement(PlayDrawerActionBar, { ...baseProps, onEditSections, viewer: 'anonymous' }));
     const anonymousEye = anonymous.container.querySelector('[data-testid="play-drawer-section-settings"]');
