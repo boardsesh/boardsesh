@@ -38,12 +38,12 @@ const viewer = (userId: string | null): ConnectionContext =>
 
 async function insertTick(
   uuid: string,
-  options: { userId?: string; sessionId?: string | null; boardId?: number; climbedAt?: string },
+  options: { userId?: string; sessionId?: string | null; boardId?: number; climbedAt?: string; climbUuid?: string },
 ) {
   await db.insert(dbSchema.boardseshTicks).values({
     uuid,
     userId: options.userId ?? CLIMBER,
-    climbUuid: CLIMB_UUID,
+    climbUuid: options.climbUuid ?? CLIMB_UUID,
     boardType: 'kilter',
     angle: 40,
     status: 'send',
@@ -480,6 +480,61 @@ describe('author decides across feeds', () => {
     expect(await recent(CLIMBER)).toMatchObject({ boardId: inviteOnlyBoardId });
     expect(await recent(GRANTEE)).toMatchObject({ boardId: inviteOnlyBoardId });
     dropRecentBetaLinksFallback();
+  });
+
+  it('names the board on a session card’s featured beta to the owner of that public board', async () => {
+    // Its own climb: an earlier test's tick-less clip on CLIMB_UUID would also
+    // match this tick and could be featured instead.
+    const climbUuid = 'author-decides-own-board-climb';
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: climbUuid,
+      boardType: 'kilter',
+      layoutId: 1,
+      name: 'Own board climb',
+      isListed: true,
+      isDraft: false,
+      frames: 'p1r1',
+    });
+    const [ownBoard] = await db
+      .insert(dbSchema.userBoards)
+      .values({
+        uuid: 'author-decides-own-public',
+        slug: 'author-decides-own-public',
+        ownerId: CLIMBER,
+        name: 'Own Public Wall',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1',
+        isPublic: true,
+      })
+      .returning({ id: dbSchema.userBoards.id });
+    await insertSession('author-decides-own-board-session', { createdBy: CLIMBER, boardId: ownBoard.id });
+    await insertTick('author-decides-own-board-tick', {
+      sessionId: 'author-decides-own-board-session',
+      boardId: ownBoard.id,
+      climbedAt: '2026-09-22T10:00:00Z',
+      climbUuid,
+    });
+    await db.insert(dbSchema.boardBetaLinks).values({
+      boardType: 'kilter',
+      climbUuid,
+      link: 'https://www.youtube.com/watch?v=author-decides-own-board-clip',
+      isListed: true,
+      createdByUserId: CLIMBER,
+      tickUuid: 'author-decides-own-board-tick',
+      boardId: ownBoard.id,
+      thumbnail: 'https://example.test/own-board-thumb.jpg',
+    });
+    type Card = { sessionId: string; featuredBeta: { betaLink: { boardId: number | null } } | null };
+    const card = (
+      (await sessionFeedQueries.sessionGroupedFeed(
+        undefined,
+        { input: { userId: CLIMBER, limit: 50 } },
+        viewer(CLIMBER),
+      )) as { sessions: Card[] }
+    ).sessions.find((session) => session.sessionId === 'author-decides-own-board-session');
+    expect(card?.featuredBeta?.betaLink.boardId).toBe(ownBoard.id);
   });
 
   it('gives a joiner who cannot see a named board its geometry instead of its slug', async () => {

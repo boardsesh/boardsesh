@@ -118,6 +118,21 @@ type FeaturedBetaRow = BetaLinkRow & {
   tickUuid: string;
 };
 
+/** A featured-beta row as raw `execute` returns it: `bl.board_id` is a bigint, so it arrives as a string. */
+type RawFeaturedBetaRow = Omit<FeaturedBetaRow, 'boardId'> & { boardId: number | string | null };
+
+/**
+ * Number the board id before `blankHiddenBetaBoards` looks it up: its visible
+ * set holds numbers, so a string id never matched and every reader, the board's
+ * owner included, lost the board.
+ */
+function featuredBetaRowsFromResult(result: unknown): FeaturedBetaRow[] {
+  return rowsFromResult<RawFeaturedBetaRow>(result).map((row) => ({
+    ...row,
+    boardId: row.boardId == null ? null : Number(row.boardId),
+  }));
+}
+
 function parseDailySessionId(sessionId: string): DailySessionId | null {
   const match = /^daily:([^:]+):(\d{4}-\d{2}-\d{2})$/.exec(sessionId);
   if (!match) return null;
@@ -1825,7 +1840,7 @@ async function fetchSessionFeaturedBetaRows(
     WHERE rank = 1
   `);
 
-  return rowsFromResult<FeaturedBetaRow>(result);
+  return featuredBetaRowsFromResult(result);
 }
 
 async function fetchDailyFeaturedBetaRows(
@@ -1880,5 +1895,5 @@ async function fetchDailyFeaturedBetaRows(
     WHERE rank = 1
   `);
 
-  return rowsFromResult<FeaturedBetaRow>(result);
+  return featuredBetaRowsFromResult(result);
 }

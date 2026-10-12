@@ -136,12 +136,24 @@ export function listedSessionCondition(sessionId: SQLWrapper, viewerId: string |
   });
 }
 
+/**
+ * Whether a board may surface for this viewer somewhere they did not open it by
+ * link. A board's UUID is its link, so an Unlisted board reaches a feed only for
+ * the people who already hold it: its owner, an approved grant, or follower
+ * inheritance. The same reading as `boardIdentityVisibleCondition`.
+ */
+function listedBoardCondition(boardUuid: SQLWrapper, viewerId: string | null | undefined): SQL {
+  return resourceAccessCondition('board', boardUuid, viewerId, { allowUnlistedLink: false });
+}
+
 export type SocialEntityReadOptions = {
   /**
    * The read surfaces entities the viewer did not ask for (the global comment
-   * feed, the activity feed). A session there needs `listedSessionCondition`;
-   * a direct read (a thread, a vote, a notification addressed to the viewer)
-   * keeps the unlisted link.
+   * feed, the activity feed). A session there needs `listedSessionCondition`
+   * and a board `listedBoardCondition`, since each one's id is its link; a
+   * direct read (a thread, a vote, a notification addressed to the viewer)
+   * keeps the unlisted link. Ticks, climbs, proposals and playlists have no
+   * link that widens their own rule, so both modes read them alike.
    */
   discovery?: boolean;
 };
@@ -203,7 +215,7 @@ function terminalSocialEntityPrivacyCondition(
         .where(and(eq(tick.uuid, entityId), tickPrivacyCondition(viewerId, tick))),
     )}
     WHEN ${entityType} = 'session' THEN ${discovery ? listedSessionCondition(entityId, viewerId) : resourceAccessCondition('session', entityId, viewerId)}
-    WHEN ${entityType} = 'board' THEN ${resourceAccessCondition('board', entityId, viewerId)}
+    WHEN ${entityType} = 'board' THEN ${discovery ? listedBoardCondition(entityId, viewerId) : resourceAccessCondition('board', entityId, viewerId)}
     WHEN ${entityType} = 'climb' THEN ${exists(
       queryBuilder
         .select({ uuid: climb.uuid })
