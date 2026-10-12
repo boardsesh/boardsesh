@@ -25,6 +25,7 @@ import {
   cppBoardHeaderReadinessSelector,
   cppWallStatusReadinessSelector,
   cppQueueReadinessSelectors,
+  cppClimbRowReadinessSelector,
   renderCppMaestroFlow,
   renderMaestroFlowForIosDevice,
   deviceSlug,
@@ -152,6 +153,71 @@ function readinessCommandTransport() {
 }
 
 describe('custom product page captures', () => {
+  it('admits only native localized multiframe badge prefixes and queue suffixes in their real order', () => {
+    const labels = {
+      'en-US': { frames: 'frames', position: 'position 1', attribution: 'Added by Doe, Jane' },
+      es: { frames: 'cuadros', position: 'posición 1', attribution: 'Añadido por Doe, Jane' },
+      fr: { frames: 'images', position: 'position 1', attribution: 'Ajouté par Doe, Jane' },
+      de: { frames: 'Bilder', position: 'Position 1', attribution: 'Hinzugefügt von Doe, Jane' },
+    } as const;
+    const title = 'Wax (left)+[1].';
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const { frames, position, attribution } = labels[locale];
+      const row = new RegExp(cppClimbRowReadinessSelector(title, locale));
+      const queue = new RegExp(cppQueueReadinessSelectors(title, locale).row);
+      expect(row.test(`${title}, rosette, V3`)).toBe(true);
+      expect(queue.test(`${title}, ${position}`)).toBe(true);
+      expect(queue.test(`${title}, ${position}, ${attribution}`)).toBe(true);
+      for (const count of [2, 9, 10, 12, 100]) {
+        const badge = `${count} ${frames}`;
+        expect(row.test(`${badge}, ${title}, rosette, V3`)).toBe(true);
+        expect(row.test(`${badge}, Another climb, rosette, V3`)).toBe(false);
+        expect(row.test(`${badge}, ${title} Extended, rosette, V3`)).toBe(false);
+        expect(row.test(`${badge}, Wax left1, rosette, V3`)).toBe(false);
+        expect(queue.test(`${title}, ${position}, ${badge}`)).toBe(true);
+        expect(queue.test(`${title}, ${position}, ${attribution}, ${badge}`)).toBe(true);
+        expect(queue.test(`${title}, Extended, ${position}, ${badge}`)).toBe(false);
+        expect(queue.test(`${title} Extended, ${position}, ${badge}`)).toBe(false);
+        expect(queue.test(`${badge}, ${title}, ${position}`)).toBe(false);
+        expect(queue.test(`${title}, ${position}, ${badge}, ${attribution}`)).toBe(false);
+        expect(queue.test(`${title}, ${position}, ${badge}, extra metadata`)).toBe(false);
+      }
+      for (const invalidBadge of [
+        `0 ${frames}`,
+        `1 ${frames}`,
+        `02 ${frames}`,
+        `2.5 ${frames}`,
+        `-2 ${frames}`,
+        '2 arbitrary tokens',
+        `2 ${frames} extra`,
+      ]) {
+        expect(row.test(`${invalidBadge}, ${title}, V3`)).toBe(false);
+        // With no attribution, a suffix can only be the native frame badge.
+        expect(queue.test(`${title}, ${position}, ${invalidBadge}`)).toBe(false);
+      }
+      expect(row.test(`Unrelated prefix, ${title}, V3`)).toBe(false);
+      expect(queue.test(`${title}, ${position}, unrelated suffix`)).toBe(false);
+      const { coverage } = scenario('kilter');
+      coverage.boardReadyText[readCppPage('kilter').heroBoards[0].id] = title;
+      coverage.scenes.queue.readyText = title;
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        const steps = parseAllDocuments(renderCppMaestroFlow('kilter', device, coverage, locale))[1].toJS() as Record<
+          string,
+          unknown
+        >[];
+        expect(steps).toContainEqual({
+          extendedWaitUntil: { visible: cppQueueReadinessSelectors(title, locale).row, timeout: 90000 },
+        });
+        if (device.name.startsWith('iPad'))
+          expect(steps).toContainEqual({
+            extendedWaitUntil: {
+              visible: { id: 'climb-row', text: cppClimbRowReadinessSelector(title, locale) },
+              timeout: 90000,
+            },
+          });
+      }
+    }
+  });
   it('gates wall status on the actual localized capsule, never ordinary rows or extended titles', () => {
     const title = 'Floats (left)+[1].';
     for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {

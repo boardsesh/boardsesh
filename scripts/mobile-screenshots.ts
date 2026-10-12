@@ -1975,6 +1975,22 @@ export function cppLogbookReadinessSelector(
   };
 }
 
+/** The native badge exists only for integer counts above one. */
+function cppFrameCountReadinessSelector(locale: Locale): string {
+  const catalog = JSON.parse(
+    readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'climbs.json'), 'utf8'),
+  ) as { mobile: { climbRow: { frameCount_other: string } } };
+  return catalog.mobile.climbRow.frameCount_other
+    .split('{{count}}')
+    .map(cppReadinessSelector)
+    .join('(?:[2-9]|[1-9][0-9]+)');
+}
+
+/** Native composed content can announce its frame badge before the title. */
+export function cppClimbRowReadinessSelector(climbName: string, locale: Locale): string {
+  return `^(?:${cppFrameCountReadinessSelector(locale)}, )?${cppReadinessSelector(climbName)}, .+$`;
+}
+
 /** Native queue rows announce the exact climb title followed by their position. */
 export function cppQueueReadinessSelectors(climbName: string, locale: Locale): { row: string; header: string } {
   const catalog = JSON.parse(
@@ -1983,7 +1999,7 @@ export function cppQueueReadinessSelectors(climbName: string, locale: Locale): {
   const position = catalog.mobile.queue.positionLabel.split('{{position}}').map(cppReadinessSelector).join('[0-9]+');
   const addedBy = catalog.mobile.queue.addedByAria.split('{{name}}').map(cppReadinessSelector).join('.+');
   return {
-    row: `^${cppReadinessSelector(climbName)}, ${position}(?:, ${addedBy})?$`,
+    row: `^${cppReadinessSelector(climbName)}, ${position}(?:, ${addedBy})?(?:, ${cppFrameCountReadinessSelector(locale)})?$`,
     // The native header also contains the localized climb count. Its composite
     // announcement can include that text alongside the real queue title.
     header: `.*${cppReadinessSelector(catalog.queueDrawer.title)}.*`,
@@ -2132,7 +2148,7 @@ export function renderCppMaestroFlow(
       commands.push(
         `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(cppReadinessSelector(`cpp-climb-list-${uuid}`))}\n    timeout: 90000`,
         `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppBoardHeaderReadinessSelector(scene.variant, coverage))}\n    timeout: 90000`,
-        `- extendedWaitUntil:\n    visible:\n      id: climb-row\n      text: ${JSON.stringify(`^${cppReadinessSelector(scene.ready)}, .+$`)}\n    timeout: 90000`,
+        `- extendedWaitUntil:\n    visible:\n      id: climb-row\n      text: ${JSON.stringify(cppClimbRowReadinessSelector(scene.ready, locale))}\n    timeout: 90000`,
         '- extendedWaitUntil:\n    visible:\n      id: play-drawer-board-overlay\n    timeout: 60000',
         '- waitForAnimationToEnd:\n    timeout: 30000',
       );
