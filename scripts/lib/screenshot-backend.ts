@@ -28,6 +28,7 @@ import {
 import { extname, join, resolve as resolvePath, sep } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import { Kind, parse } from 'graphql';
 import {
   isCampaignPushRegistration,
   isCampaignWallConfirmation,
@@ -232,6 +233,57 @@ export function jwtSubject(token: string): string | null {
   }
 }
 
+/** Native keychain sessions can skip /auth on a relaunch. Bind only the
+ * upstream's authenticated profile, never an arbitrary public profile or JWT.
+ */
+function authenticatedRecordingProfile(
+  query: string,
+  responseBody: unknown,
+  token: string | null,
+): { id: string; email: string } | null {
+  if (!token || typeof responseBody !== 'object' || responseBody === null) return null;
+  const response = responseBody as { errors?: unknown; data?: { profile?: { id?: unknown; email?: unknown } } };
+  if (response.errors !== undefined && (!Array.isArray(response.errors) || response.errors.length > 0)) return null;
+  const profile = response.data?.profile;
+  if (
+    !profile ||
+    typeof profile.id !== 'string' ||
+    profile.id !== jwtSubject(token) ||
+    typeof profile.email !== 'string' ||
+    !profile.email.trim()
+  )
+    return null;
+  try {
+    const document = parse(query);
+    const operation = document.definitions[0];
+    if (
+      document.definitions.length !== 1 ||
+      operation.kind !== Kind.OPERATION_DEFINITION ||
+      operation.operation !== 'query' ||
+      operation.name?.value !== 'GetProfile' ||
+      operation.selectionSet.selections.length !== 1
+    )
+      return null;
+    const selection = operation.selectionSet.selections[0];
+    if (
+      selection.kind !== Kind.FIELD ||
+      selection.name.value !== 'profile' ||
+      selection.alias ||
+      selection.arguments?.length ||
+      !['id', 'email'].every((fieldName) =>
+        selection.selectionSet?.selections.some(
+          (field) =>
+            field.kind === Kind.FIELD && field.name.value === fieldName && !field.alias && !field.arguments?.length,
+        ),
+      )
+    )
+      return null;
+    return { id: profile.id, email: profile.email };
+  } catch {
+    return null;
+  }
+}
+
 function shortHash(hash: string): string {
   return hash.slice(0, FIXTURE_HASH_DISPLAY_LENGTH);
 }
@@ -431,6 +483,15 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
    * git history.
    */
   const sensitiveTokens = new Set<string>();
+  // This only rejects mixed sessions. An unverified bearer subject never
+  // establishes manifest identity; the upstream auth/profile must do that.
+  let observedRecordingSubject = manifest.accountUserId || null;
+  const acceptRecordingSubject = (subject: string | null): boolean => {
+    if (!subject) return true;
+    if (observedRecordingSubject && observedRecordingSubject !== subject) return false;
+    observedRecordingSubject = subject;
+    return true;
+  };
 
   let hits = 0;
   let misses = 0;
@@ -495,6 +556,27 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     rawBody: Buffer,
     parsedBody: Record<string, unknown>,
   ): Promise<void> => {
+    const authorization = request.headers.authorization;
+    const bearerToken =
+      typeof authorization === 'string' ? (/^Bearer\s+(\S+)$/i.exec(authorization)?.[1] ?? null) : null;
+    if (bearerToken) {
+      sensitiveTokens.add(bearerToken);
+      const payload = bearerToken.split('.')[1];
+      if (payload) sensitiveTokens.add(payload);
+    }
+    const bearerSubject = bearerToken ? jwtSubject(bearerToken) : null;
+    if (
+      !acceptRecordingSubject(bearerSubject) ||
+      (manifest.accountUserId && bearerSubject && manifest.accountUserId !== bearerSubject)
+    ) {
+      emit({
+        event: 'upstream-error',
+        operationName: resolveOperationName(parsedBody) ?? 'anonymous',
+        detail: 'recording-account-mismatch',
+      });
+      sendJson(response, 200, { errors: [{ message: 'Screenshot recording is bound to a different account' }] });
+      return;
+    }
     const upstreamResponse = await fetch(`${upstreamUrl}/graphql`, {
       method: 'POST',
       headers: { ...forwardableHeaders(request.headers), 'content-type': 'application/json' },
@@ -512,6 +594,12 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
 
     const operationName = resolveOperationName(parsedBody);
     const loggedName = operationName ?? 'anonymous';
+    // Another request may have established the recording identity while this
+    // upstream request was in flight. Recheck before persisting any response.
+    if (manifest.accountUserId && bearerSubject && manifest.accountUserId !== bearerSubject) {
+      emit({ event: 'upstream-error', operationName: loggedName, detail: 'recording-account-mismatch' });
+      return;
+    }
     const responseBody: unknown = ((): unknown => {
       try {
         return JSON.parse(responseText);
@@ -548,6 +636,18 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     }
 
     const query = typeof parsedBody.query === 'string' ? parsedBody.query : '';
+    const profileIdentity = authenticatedRecordingProfile(query, responseBody, bearerToken);
+    if (profileIdentity) {
+      if (manifest.accountUserId && manifest.accountUserId !== profileIdentity.id) {
+        emit({ event: 'upstream-error', operationName: loggedName, detail: 'recording-account-mismatch' });
+        return;
+      }
+      if (manifest.accountUserId !== profileIdentity.id || manifest.accountEmail !== profileIdentity.email) {
+        manifest.accountUserId = profileIdentity.id;
+        manifest.accountEmail = profileIdentity.email;
+        rewriteManifest();
+      }
+    }
     const key = graphqlFixtureKey({ operationName, query, variables: parsedBody.variables }, sha256Hex);
     const indexKey = `${key.operationName}\n${key.variablesHash}`;
     if (graphqlIndex.has(indexKey)) {
@@ -1024,6 +1124,12 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       const token = (session as Record<string, unknown>)[field];
       if (typeof token === 'string' && token.length > 0) sensitiveTokens.add(token);
     }
+    const liveJwt = (session as Record<string, unknown>).jwt;
+    const subject = typeof liveJwt === 'string' ? jwtSubject(liveJwt) : null;
+    if (!acceptRecordingSubject(subject) || (manifest.accountUserId && subject && manifest.accountUserId !== subject)) {
+      emit({ event: 'upstream-error', operationName: 'NativeAuth', detail: 'recording-account-mismatch' });
+      return;
+    }
     const requestBody = parseJsonBody(rawBody);
     const email =
       typeof requestBody === 'object' && requestBody !== null ? (requestBody as { email?: unknown }).email : undefined;
@@ -1035,8 +1141,6 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     // The id, not the token: replay needs a jwt the app can read a `sub` out
     // of, and the live jwt itself must never reach disk. `/auth/native/refresh`
     // carries no email but does carry a jwt, so it fills this in too.
-    const liveJwt = (session as Record<string, unknown>).jwt;
-    const subject = typeof liveJwt === 'string' ? jwtSubject(liveJwt) : null;
     if (subject && manifest.accountUserId !== subject) {
       manifest.accountUserId = subject;
       manifestChanged = true;

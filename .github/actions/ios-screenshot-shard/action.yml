@@ -181,6 +181,7 @@ runs:
         ATTEMPTS_INPUT: ${{ inputs.attempts }}
         CPP_TARGET: ${{ inputs.cpp-target }}
         CPP_SCENARIO: ${{ inputs.cpp-scenario }}
+        SCREENSHOT_DEBUG_DIR: capture-debug
       run: |
         set -euo pipefail
         # Empty inputs mean "whatever the app pins" — Aura, and the store walls
@@ -253,7 +254,10 @@ runs:
       shell: bash
       run: |
         mkdir -p capture-debug
-        cp /tmp/boardsesh-screenshot-backend.log capture-debug/ 2>/dev/null || true
+        capture_temp_dir="$(vp exec node -e 'process.stdout.write(require("node:os").tmpdir())')"
+        for capture_log in boardsesh-screenshot-backend.log boardsesh-screenshot-metro.log boardsesh-screenshot-ready.log; do
+          cp "$capture_temp_dir/$capture_log" capture-debug/ 2>/dev/null || true
+        done
         cp -R "$HOME/.maestro/tests" capture-debug/maestro-tests 2>/dev/null || echo "no maestro tests dir"
         xcrun simctl spawn booted log show --last 10m --predicate 'process == "Boardsesh"' \
           > capture-debug/device-boardsesh.log 2>&1 || echo "device log capture skipped"

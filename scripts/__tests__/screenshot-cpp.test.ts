@@ -20,6 +20,7 @@ import {
   renderCppMaestroFlow,
   IOS_SCREENSHOT_DEVICES,
   screenshotFixtureReference,
+  waitForCppRecordedRoster,
 } from '../mobile-screenshots';
 import { parseFrameArguments } from '../frame-screenshots';
 
@@ -75,6 +76,70 @@ function scenario(target: (typeof CPP_TARGETS)[number]) {
 }
 
 describe('custom product page captures', () => {
+  it('waits for real roster responses after home rather than failing on an in-flight recording', () => {
+    const { page, boards, coverage, fixturesDir } = scenario('kilter');
+    const observed: CppRecordedBoard[][] = [[], boards.slice(0, 2), [...boards, ...boards]];
+    let polls = 0;
+    let pauses = 0;
+    expect(
+      waitForCppRecordedRoster(
+        'kilter',
+        page,
+        coverage,
+        fixturesDir,
+        () => observed[polls++],
+        () => {
+          pauses += 1;
+        },
+        3,
+      ),
+    ).toEqual(boards);
+    expect(polls).toBe(3);
+    expect(pauses).toBe(2);
+    expect(() =>
+      waitForCppRecordedRoster(
+        'kilter',
+        page,
+        coverage,
+        fixturesDir,
+        () => [],
+        () => {},
+        2,
+      ),
+    ).toThrow('recorded roster=0');
+  });
+
+  it('uses verified UUID/config identity when distinct real boards share the same name', () => {
+    const { page, boards, coverage, fixturesDir } = scenario('kilter');
+    const correct = boards[1];
+    const wrong = { ...correct, uuid: 'old-board', sizeId: 19, setIds: '27' };
+    const duplicateRoster = [wrong, ...boards];
+    expect(() => assertCppCaptureReady('kilter', page, coverage, duplicateRoster, fixturesDir)).not.toThrow();
+    const commands = cppNavigationCommands(page, coverage, duplicateRoster, false);
+    expect(commands['hero-2'].identity).toMatchObject({
+      uuid: correct.uuid,
+      layoutId: 8,
+      sizeId: 17,
+      setIds: [26, 27],
+    });
+    coverage.boardIds = Object.fromEntries(
+      [...page.heroBoards, ...page.otherBoards].map((board, index) => [board.id, boards[index].uuid]),
+    );
+    expect(() =>
+      assertCppCaptureReady(
+        'kilter',
+        page,
+        coverage,
+        [...duplicateRoster, { ...correct, uuid: 'same-config-copy' }],
+        fixturesDir,
+      ),
+    ).not.toThrow();
+    expect(cppNavigationCommands(page, coverage, [], false)['hero-2'].identity.uuid).toBe(correct.uuid);
+    coverage.boardIds[page.heroBoards[1].id] = wrong.uuid;
+    expect(() => assertCppCaptureReady('kilter', page, coverage, duplicateRoster, fixturesDir)).toThrow(
+      'same-name candidates=',
+    );
+  });
   it('selects iOS CPP replay and rejects incompatible inputs', () => {
     expect(parseArgs(['--cpp', 'all'])).toMatchObject({
       cpp: 'all',

@@ -75,8 +75,15 @@ resuming interrupted recognition or queue setup.
 Liz reuses the existing owned Home Spray Wall. The committed seed binding and
 approved stored-photo SHA are checked against the live owner and downloaded bytes;
 a changed photo stops the run. The original input hash remains separate from the
-stored processed photo hash. Only Cherry and Bowlo are added, avoiding a duplicate
-Liz wall and respecting the account's ten-wall limit.
+stored processed photo hash. Missing Cherry and Bowlo walls are added only after
+bootstrap reads the current owner-only wall lifecycle list and verifies that all
+required additions fit the ten-wall cap. Archived walls do not consume live-wall
+slots; unfinished non-archived walls do. The account's wall count can change
+between campaigns, so no fixed count is assumed. If the entire trio would exceed
+the cap, bootstrap stops before creating any demo data and reports the current
+count, missing walls, and required slots. It never deletes or repurposes an
+existing wall automatically. Use another authorized screenshot account or obtain
+explicit approval for changing an existing demo wall before retrying.
 
 For local bootstrap, first set `SCREENSHOT_USER_EMAIL` and
 `SCREENSHOT_USER_PASSWORD` to the dedicated test account, then run:

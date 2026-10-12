@@ -1,4 +1,5 @@
 import { SCREENSHOT_BOARDS } from './screenshot-mode';
+import { resolveScreenshotCppBoard, type ScreenshotCppBoardIdentity } from './screenshot-cpp-board-identity';
 
 /**
  * Which of the account's boards a screenshot slot renders.
@@ -19,12 +20,14 @@ import { SCREENSHOT_BOARDS } from './screenshot-mode';
 
 /** The `UserBoard` fields selection needs — kept structural so tests can pass literals. */
 export type ScreenshotSelectableBoard = {
+  uuid?: string;
   name: string;
   layoutName?: string | null;
   boardType: string;
   layoutId: number;
   sizeId: number;
   angle: number;
+  setIds?: string | null;
   createdAt: string;
 };
 
@@ -97,6 +100,21 @@ export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
   // callers re-run when it lands, and warning here would fail every capture on a
   // frame that was only ever going to be empty.
   if (boards.length === 0) return null;
+
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL) {
+    const commands = JSON.parse(process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS ?? '{}') as Record<
+      string,
+      { selector: string; identity: ScreenshotCppBoardIdentity }
+    >;
+    const scene = commands[`${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}`];
+    const matched = scene ? resolveScreenshotCppBoard(boards, scene.selector, scene.identity) : null;
+    if (!matched) {
+      console.log(`[screenshot] WARN CPP board[${index}] verified identity missing or ambiguous`);
+      return null;
+    }
+    console.log(`[screenshot] board[${index}] "${scene.selector}" -> "${matched.name}" ${describeBoard(matched)}`);
+    return matched;
+  }
 
   const selector = SCREENSHOT_BOARDS[index];
   if (selector) {

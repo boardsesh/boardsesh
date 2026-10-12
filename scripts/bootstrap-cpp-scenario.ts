@@ -15,6 +15,8 @@ import {
   CREATE_SPRAY_WALL,
   CREATE_SPRAY_WALL_VERSION,
   GET_MY_SPRAY_WALLS,
+  GET_MY_SPRAY_WALL_LIFECYCLE,
+  type SprayWallLifecycleRow,
   GET_SPRAY_WALL_WITH_VERSIONS,
   GET_SPRAY_WALL_DRAFT_RENDER_DATA,
   PUBLISH_SPRAY_WALL_VERSION,
@@ -28,6 +30,7 @@ import { GET_PRIVACY_SETTINGS } from '../packages/shared/graphql/src/operations/
 import { GET_SMART_PLAYLIST } from '../packages/shared/graphql/src/operations/playlists';
 import { mapPhotoHoldToCanonical } from '../packages/mobile/src/lib/spray/spray-hold-canonical';
 import { BACKEND_URL } from '../packages/mobile/src/lib/env';
+import { MAX_SPRAY_WALLS_PER_USER } from '../packages/shared/board-config/src/spray-config';
 import type { SprayDetectionView } from '../packages/shared-schema/src/spray-detection';
 import type { ClimbInput, ClimbQueueItemInput } from '../packages/shared-schema/src/generated/types';
 import type { ScreenshotCaptureScenario } from './lib/screenshot-fixtures';
@@ -317,6 +320,42 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
   const blockers: string[] = [];
   let owned = await listOwnedBoards(options);
   let walls = (await options.transport.request<{ mySprayWalls: Wall[] }>(GET_MY_SPRAY_WALLS)).mySprayWalls;
+  const sprayVariants = variants.filter((variant) => variant.family === 'spray');
+  if (sprayVariants.length) {
+    const lifecycle = await options.transport.request<{ mySprayWalls: SprayWallLifecycleRow[] }>(
+      GET_MY_SPRAY_WALL_LIFECYCLE,
+    );
+    const missingVariants = sprayVariants.filter((variant) => {
+      const boundId = options.bindings?.[variant.id] ?? options.checkpoint.boards[variant.id]?.uuid;
+      // A supplied but unavailable binding is handled by the ordinary identity guard;
+      // it never authorizes creating a replacement wall.
+      if (boundId) return false;
+      return !owned.some((board) => boardMatchesConfig(board, variant) && board.name === variant.selector);
+    });
+    if (lifecycle.mySprayWalls.some((wall) => wall.archivedAt !== null && typeof wall.archivedAt !== 'string')) {
+      return {
+        target: options.target,
+        boards: [],
+        actions: [],
+        blockers: [
+          'spray: live-wall capacity cannot be verified because lifecycle archive status was not returned; no demo data was created',
+        ],
+      };
+    }
+    const activeCount = new Set(
+      lifecycle.mySprayWalls.filter((wall) => wall.archivedAt === null).map((wall) => wall.uuid),
+    ).size;
+    if (missingVariants.length > 0 && activeCount + missingVariants.length > MAX_SPRAY_WALLS_PER_USER) {
+      return {
+        target: options.target,
+        boards: [],
+        actions: [],
+        blockers: [
+          `spray: account has ${activeCount} active walls; ${missingVariants.length} additional walls (${missingVariants.map((variant) => variant.selector).join(', ')}) would require ${activeCount + missingVariants.length} slots, exceeding the ${MAX_SPRAY_WALLS_PER_USER}-wall cap. No demo data was created. Use another authorized screenshot account or explicitly approve changing an existing demo wall; existing walls will not be deleted or repurposed automatically.`,
+        ],
+      };
+    }
+  }
   const selected = new Map<string, BootstrapBoard>();
   const boardReadyText: Record<string, string> = {};
   const boardPhotoSha256: Record<string, string> = {};
@@ -636,6 +675,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
         cpp: {
           target: options.target,
           boardReadyText,
+          boardIds: Object.fromEntries(variants.map((variant) => [variant.id, selected.get(variant.id)!.uuid])),
           boardPhotoSha256,
           scenes,
           boardHeroModes,

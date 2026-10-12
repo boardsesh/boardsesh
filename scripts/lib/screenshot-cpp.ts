@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { CAPTION_IDS, type ScreenshotRecipe } from './screenshot-presentation';
+import {
+  screenshotCppBoardMatches,
+  type ScreenshotCppBoardIdentity,
+} from '../../packages/mobile/src/lib/screenshot-cpp-board-identity';
 
 export const CPP_TARGETS = ['kilter', 'tension', 'moonboard', 'spray'] as const;
 export type CppTarget = (typeof CPP_TARGETS)[number];
@@ -39,6 +43,7 @@ export interface CppSceneCoverage {
 }
 export interface CppCaptureCoverage {
   target: CppTarget;
+  boardIds?: Record<string, string>;
   boardReadyText: Record<string, string>;
   boardReadyTextByLocale?: Record<string, Record<'en-US' | 'es' | 'fr' | 'de', string>>;
   boardHeroModes?: Record<string, 'climb' | 'wall-editor'>;
@@ -55,6 +60,22 @@ export interface CppRecordedBoard {
   sizeId: number;
   setIds: string | null;
   angle: number;
+}
+export interface CppNavigationCommand {
+  selector: string;
+  identity: ScreenshotCppBoardIdentity;
+  route: string;
+}
+
+function cppBoardIdentity(board: CppBoard, coverage: CppCaptureCoverage): ScreenshotCppBoardIdentity {
+  return {
+    uuid: coverage.boardIds?.[board.id],
+    boardType: board.boardType,
+    layoutId: board.layoutId,
+    sizeId: board.sizeId,
+    setIds: board.setIds,
+    angle: board.angle,
+  };
 }
 export function isCppTarget(candidate: unknown): candidate is CppTarget {
   return CPP_TARGETS.some((target) => target === candidate);
@@ -162,6 +183,12 @@ export function assertCppCaptureReady(
 ): void {
   if (!coverage || coverage.target !== target) throw new Error(`Missing verified CPP fixture coverage for ${target}`);
   const boards = [...page.heroBoards, ...page.otherBoards];
+  if (
+    coverage.boardIds &&
+    (boards.some((board) => !coverage.boardIds?.[board.id]) ||
+      new Set(boards.map((board) => coverage.boardIds?.[board.id])).size !== boards.length)
+  )
+    throw new Error(`CPP ${target} requires six distinct explicit board UUIDs`);
   for (const [boardId, mode] of Object.entries(coverage.boardHeroModes ?? {})) {
     const board = boards.find((variant) => variant.id === boardId);
     if (
@@ -178,20 +205,8 @@ export function assertCppCaptureReady(
       ['en-US', 'es', 'fr', 'de'].some((locale) => !translatedGate[locale as keyof typeof translatedGate]?.trim())
     )
       throw new Error(`CPP ${target} lacks localized board readiness for ${board.id}`);
-    const matches = recordedBoards.filter(
-      (recorded) =>
-        recorded.name === board.selector &&
-        recorded.boardType === board.boardType &&
-        (board.family === 'spray' ||
-          (recorded.layoutId === board.layoutId &&
-            recorded.sizeId === board.sizeId &&
-            (recorded.setIds ?? '')
-              .split(',')
-              .filter(Boolean)
-              .map(Number)
-              .sort((first, second) => first - second)
-              .join(',') === [...(board.setIds ?? [])].sort((first, second) => first - second).join(',') &&
-            recorded.angle === board.angle)),
+    const matches = recordedBoards.filter((recorded) =>
+      screenshotCppBoardMatches(recorded, board.selector, cppBoardIdentity(board, coverage)),
     );
     if (board.family === 'spray') {
       const sourceHash = createHash('sha256')
@@ -218,7 +233,23 @@ export function assertCppCaptureReady(
       new Set(matches.map((matched) => matched.uuid)).size !== 1 ||
       !coverage.boardReadyText[board.id]?.trim()
     )
-      throw new Error(`CPP ${target} lacks verified board capture ${board.id} (${board.selector})`);
+      throw new Error(
+        `CPP ${target} lacks verified board capture ${board.id} (${board.selector}); ` +
+          `expected ${JSON.stringify(cppBoardIdentity(board, coverage))}; ` +
+          `recorded roster=${recordedBoards.length}, same-name candidates=${JSON.stringify(
+            recordedBoards
+              .filter((recorded) => recorded.name === board.selector)
+              .map(({ uuid, name, boardType, layoutId, sizeId, setIds, angle }) => ({
+                uuid,
+                name,
+                boardType,
+                layoutId,
+                sizeId,
+                setIds,
+                angle,
+              })),
+          )}`,
+      );
   }
   const photoBoards = boards.filter((board) => board.family === 'spray');
   if (
@@ -227,7 +258,9 @@ export function assertCppCaptureReady(
       new Set(photoBoards.map((board) => coverage.boardPhotoAssets?.[board.id]?.file)).size !== photoBoards.length)
   )
     throw new Error(`CPP ${target} requires distinct recorded wall photos`);
-  const primary = recordedBoards.find((board) => board.name === page.primaryBoard.selector);
+  const primary = recordedBoards.find((board) =>
+    screenshotCppBoardMatches(board, page.primaryBoard.selector, cppBoardIdentity(page.primaryBoard, coverage)),
+  );
   for (const scene of ['search', 'logbook', 'led', 'queue', 'workout', 'status', 'island']) {
     const entry = coverage.scenes[scene];
     if (
@@ -248,12 +281,22 @@ export function cppNavigationCommands(
   coverage: CppCaptureCoverage,
   recordedBoards: readonly CppRecordedBoard[],
   ipad: boolean,
-): Record<string, { selector: string; route: string }> {
+): Record<string, CppNavigationCommand> {
   const boards = [...page.heroBoards, ...page.otherBoards];
-  const commands: Record<string, { selector: string; route: string }> = {};
+  const commands: Record<string, CppNavigationCommand> = {};
+  const identityFor = (board: CppBoard): ScreenshotCppBoardIdentity => ({
+    ...cppBoardIdentity(board, coverage),
+    uuid:
+      coverage.boardIds?.[board.id] ??
+      recordedBoards.find((recorded) =>
+        screenshotCppBoardMatches(recorded, board.selector, cppBoardIdentity(board, coverage)),
+      )?.uuid ??
+      (board.id === page.primaryBoard.id ? coverage.scenes.search.boardId : undefined),
+  });
   for (const [index, board] of boards.entries()) {
     commands[`${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}`] = {
       selector: board.selector,
+      identity: identityFor(board),
       route:
         coverage.boardHeroModes?.[board.id] === 'wall-editor'
           ? `/climbs/create?screenshotCppScene=${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}`
@@ -263,7 +306,7 @@ export function cppNavigationCommands(
   const primary = page.primaryBoard;
   const index = boards.findIndex((board) => board.id === primary.id);
   if (index < 0) throw new Error('CPP primary board must occur in the hero trio');
-  const boardId = recordedBoards.find((board) => board.name === primary.selector)?.uuid;
+  const boardId = identityFor(primary).uuid;
   const routes: Record<string, string> = {
     search: `/climbs?screenshotBoardIndex=${index}&screenshotOpenFilters=1`,
     logbook: `/profile?screenshotTab=logbook&screenshotBoardType=${primary.boardType}`,
@@ -285,6 +328,7 @@ export function cppNavigationCommands(
   for (const [scene, route] of Object.entries(routes))
     commands[scene] = {
       selector: primary.selector,
+      identity: identityFor(primary),
       route: `${route}${route.includes('?') ? '&' : '?'}screenshotCppScene=${scene}`,
     };
   return commands;

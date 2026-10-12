@@ -797,6 +797,16 @@ describe('ios-screenshot-shard composite action', () => {
     expect(source).toContain('vp run mobile:screenshots -- \\');
     expect(source).toContain('attempts="$ATTEMPTS_INPUT"');
   });
+
+  it('keeps pre-Maestro failure evidence using the actual OS temporary directory', () => {
+    const source = readYaml(SHARD_ACTION_PATH);
+    const action = parse(source) as { runs: { steps: WorkflowStep[] } };
+    const capture = action.runs.steps.find((step) => step.run?.includes('attempts="$ATTEMPTS_INPUT"'));
+    expect(capture?.env?.SCREENSHOT_DEBUG_DIR).toBe('capture-debug');
+    expect(source).toContain('require("node:os").tmpdir()');
+    expect(source).toContain('boardsesh-screenshot-metro.log boardsesh-screenshot-ready.log');
+    expect(source).not.toContain('cp /tmp/boardsesh-screenshot-backend.log');
+  });
 });
 
 describe('mobile-store-draft.yml screenshot attach', () => {

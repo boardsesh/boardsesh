@@ -724,15 +724,8 @@ export function buildScreenshotEnv(
     env.EXPO_PUBLIC_SCREENSHOT_CPP_URL = `http://localhost:${SCREENSHOT_READY_PORT}/cpp`;
     if (!options.cppCoverage) throw new Error('CPP capture requires explicit fixture coverage');
     const page = options.cppCapturePage ?? readCppPage(options.cpp);
-    const commands = cppNavigationCommands(
-      page,
-      options.cppCoverage,
-      options.cppRecordedBoards ?? [
-        { uuid: options.cppCoverage.scenes.search.boardId, name: page.primaryBoard.selector } as CppRecordedBoard,
-      ],
-      false,
-    );
-    commands.kiosk = { selector: page.primaryBoard.selector, route: '/wall?screenshotCppScene=kiosk' };
+    const commands = cppNavigationCommands(page, options.cppCoverage, options.cppRecordedBoards ?? [], false);
+    commands.kiosk = { ...commands.island, route: '/wall?screenshotCppScene=kiosk' };
     env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS = JSON.stringify(commands);
   }
   if (appLocale) {
@@ -2201,15 +2194,23 @@ function captureIosDevice(
     }
 
     if (options.cpp && options.cpp !== 'all' && backendSession?.mode === 'record') {
-      options.cppRecordedBoards = readIosCampaignBoards(backendSession.fixturesDir) as CppRecordedBoard[];
-      assertCppCaptureReady(
-        options.cpp,
-        options.cppCapturePage ?? readCppPage(options.cpp),
-        options.cppCoverage,
-        options.cppRecordedBoards,
-        backendSession.fixturesDir,
-        false,
-      );
+      console.log(`${LOG} Waiting for the six verified CPP roster identities before Maestro...`);
+      try {
+        options.cppRecordedBoards = waitForCppRecordedRoster(
+          options.cpp,
+          options.cppCapturePage ?? readCppPage(options.cpp),
+          options.cppCoverage,
+          backendSession.fixturesDir,
+        );
+        console.log(`${LOG} CPP roster preflight passed (${options.cppRecordedBoards.length} unique recorded boards).`);
+      } catch (error) {
+        console.error(
+          `${LOG} CPP pre-Maestro roster gate failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        console.error(`${LOG} Recording directory: ${backendSession.fixturesDir}`);
+        dumpMetroLogTail();
+        throw error;
+      }
     }
     const sourceFlowFile = iosSourceFlowFile(options, screenshotDevice);
     if (!existsSync(sourceFlowFile)) {
@@ -2343,7 +2344,11 @@ function captureIosDevice(
     captureSucceeded = true;
   } finally {
     deviceLogStream?.kill();
-    if (!captureSucceeded) preserveFailedRunArtifacts(captureDir);
+    if (!captureSucceeded) {
+      if (process.env.SCREENSHOT_DEBUG_DIR)
+        runCapture('xcrun', ['simctl', 'io', device.udid, 'screenshot', join(captureDir, 'failure-screen.png')]);
+      preserveFailedRunArtifacts(captureDir);
+    }
     rmSync(captureDir, { force: true, recursive: true });
     clearStatusBar(device.udid);
     if (options.shutdown) {
@@ -2487,6 +2492,34 @@ export function readIosCampaignBoards(fixturesDir: string): IosCampaignBoard[] {
       };
       return fixture.response?.data?.myBoards?.boards ?? [];
     });
+}
+
+/** Home mounting precedes its async roster query; do not validate an empty recording mid-flight. */
+export function waitForCppRecordedRoster(
+  target: CppTarget,
+  page: CppPage,
+  coverage: CppCaptureCoverage | undefined,
+  fixturesDir: string,
+  readBoards: () => CppRecordedBoard[] = () => readIosCampaignBoards(fixturesDir) as CppRecordedBoard[],
+  pause: () => void = () => {
+    runCapture('sleep', ['1']);
+  },
+  maxAttempts = 30,
+): CppRecordedBoard[] {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const recorded = [...new Map(readBoards().map((board) => [board.uuid, board])).values()];
+    try {
+      assertCppCaptureReady(target, page, coverage, recorded, fixturesDir, false);
+      return recorded;
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt + 1 < maxAttempts) pause();
+  }
+  throw new Error(
+    `CPP roster did not become ready within ${maxAttempts} checks: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
 }
 
 export function assertIosCampaignCaptureReady(
@@ -2844,11 +2877,15 @@ function preserveFailedRunArtifacts(captureDir: string): void {
     for (const png of pngs) copyFileSync(join(captureDir, png), join(target, png));
     console.error(`${LOG} kept ${pngs.length} capture(s) from the failed run in ${target}`);
   }
-  if (!existsSync(SCREENSHOT_BACKEND_LOG_PATH)) return;
   mkdirSync(debugDir, { recursive: true });
-  const backendLogTarget = join(debugDir, 'screenshot-backend.log');
-  copyFileSync(SCREENSHOT_BACKEND_LOG_PATH, backendLogTarget);
-  console.error(`${LOG} kept the screenshot backend log from the failed run in ${backendLogTarget}`);
+  for (const [source, filename] of [
+    [SCREENSHOT_BACKEND_LOG_PATH, 'screenshot-backend.log'],
+    [METRO_LOG_PATH, 'metro.log'],
+  ]) {
+    if (!existsSync(source)) continue;
+    copyFileSync(source, join(debugDir, filename));
+    console.error(`${LOG} kept ${filename} from the failed run in ${debugDir}`);
+  }
 }
 
 function resolveAndroidDeviceId(): string | null {

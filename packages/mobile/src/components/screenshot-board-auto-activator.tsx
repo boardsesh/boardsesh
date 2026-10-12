@@ -9,6 +9,7 @@ import {
 import { useSearchClimbs } from '../lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { resolveScreenshotBoard } from '../lib/screenshot-board-selection';
+import { resolveScreenshotCppBoard, type ScreenshotCppBoardIdentity } from '../lib/screenshot-cpp-board-identity';
 import { useScreenshotBoards } from '../hooks/use-screenshot-boards';
 import { useAuth } from '../providers/auth-provider';
 import { SCREENSHOT_NOW_MS } from '../lib/screenshot-mode';
@@ -90,7 +91,7 @@ export function ScreenshotBoardAutoActivator(): null {
     const endpoint = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
     const configuration = JSON.parse(process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS ?? '{}') as Record<
       string,
-      { selector: string; route: string }
+      { selector: string; identity: ScreenshotCppBoardIdentity; route: string }
     >;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -105,14 +106,18 @@ export function ScreenshotBoardAutoActivator(): null {
           command.sequence <= cppSequence.current
         )
           return;
-        cppSequence.current = command.sequence;
         const scene = configuration[command.scene];
-        if (!scene) return;
-        const matches = screenshotBoards.filter((board) => board.name === scene.selector);
-        if (matches.length !== 1) throw new Error(`CPP selector is ambiguous or missing: ${scene.selector}`);
-        await setActiveBoard(matches[0]);
+        if (!scene) {
+          cppSequence.current = command.sequence;
+          return;
+        }
+        const board = resolveScreenshotCppBoard(screenshotBoards, scene.selector, scene.identity);
+        if (!board) throw new Error(`CPP verified identity is ambiguous or missing: ${scene.selector}`);
+        const activated = await setActiveBoard(board, () => !stopped);
         if (stopped) return;
-        console.log(`[screenshot] CPP command ${command.sequence} ${command.scene}: ${matches[0].uuid}`);
+        if (!activated) throw new Error(`CPP verified board activation did not commit: ${scene.selector}`);
+        cppSequence.current = command.sequence;
+        console.log(`[screenshot] CPP command ${command.sequence} ${command.scene}: ${board.uuid}`);
         setCppPending({ sequence: command.sequence, route: scene.route });
         router.replace(scene.route as Href);
       } catch (error) {

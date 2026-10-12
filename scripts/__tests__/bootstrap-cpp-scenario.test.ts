@@ -222,6 +222,98 @@ function manufacturerHarness(): {
 }
 
 describe('CPP account/bootstrap safety', () => {
+  it('stops an entire spray trio before any writes when current capacity cannot fit both new walls', async () => {
+    const harness = manufacturerHarness();
+    harness.options.target = 'spray';
+    harness.options.apply = true;
+    harness.options.bindings = { 'spray-liz': testUuid(700) };
+    const sprayBoards = Array.from({ length: 9 }, (_, index): BootstrapBoard => ({
+      ...harness.owned[0],
+      uuid: testUuid(700 + index),
+      boardId: 700 + index,
+      boardType: 'spray',
+      layoutId: 47 + index,
+      sizeId: 47 + index,
+      setIds: '1',
+      name: index === 0 ? 'Home Spray Wall' : `Existing QA wall ${index}`,
+    }));
+    const calls: string[] = [];
+    harness.options.transport.request = async <T>(query: string): Promise<T> => {
+      expect(validate(API_SCHEMA, parse(query))).toEqual([]);
+      const name = getOperationAST(parse(query))?.name?.value ?? '';
+      calls.push(name);
+      if (name === 'GetMyBoards')
+        return { myBoards: { boards: [...harness.owned, ...sprayBoards], hasMore: false } } as T;
+      if (name === 'GetMySprayWalls')
+        return {
+          mySprayWalls: sprayBoards.map((board) => ({ uuid: board.uuid, board, currentVersion: null, holdCount: 0 })),
+        } as T;
+      if (name === 'GetMySprayWallLifecycle')
+        return {
+          mySprayWalls: sprayBoards.map((board) => ({
+            uuid: board.uuid,
+            archivedAt: null,
+            board: { uuid: board.uuid, name: board.name },
+          })),
+        } as T;
+      throw new Error(`Unexpected action after capacity preflight: ${name}`);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(
+      expect.stringContaining('9 active walls; 2 additional walls (Cherry, Bowlo) would require 11 slots'),
+    );
+    expect(result.scenario).toBeUndefined();
+    expect(calls).toEqual(['GetMyBoards', 'GetMySprayWalls', 'GetMySprayWallLifecycle']);
+    expect(harness.save).not.toHaveBeenCalled();
+    expect(harness.join).not.toHaveBeenCalled();
+  });
+
+  it('does not charge archived walls against the live-wall capacity preflight', async () => {
+    const harness = manufacturerHarness();
+    harness.options.target = 'spray';
+    harness.options.bindings = { 'spray-liz': testUuid(700) };
+    const sprayBoards = Array.from({ length: 9 }, (_, index): BootstrapBoard => ({
+      ...harness.owned[0],
+      uuid: testUuid(700 + index),
+      boardType: 'spray',
+      layoutId: 47 + index,
+      sizeId: 47 + index,
+      setIds: '1',
+      name: index === 0 ? 'Home Spray Wall' : `Existing QA wall ${index}`,
+    }));
+    const original = readFileSync(readCppPage('spray').primaryBoard.photo!);
+    const currentVersion = {
+      id: '47',
+      number: 1,
+      status: 'PUBLISHED',
+      homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      photo: { url: 'https://photo.example.test/liz', width: 100, height: 100 },
+    };
+    const walls = sprayBoards.map((board) => ({ uuid: board.uuid, board, currentVersion, holdCount: 4 }));
+    harness.options.transport.bytes = async () => original;
+    harness.options.transport.request = async <T>(query: string): Promise<T> => {
+      const name = getOperationAST(parse(query))?.name?.value ?? '';
+      if (name === 'GetMyBoards')
+        return { myBoards: { boards: [...harness.owned, ...sprayBoards], hasMore: false } } as T;
+      if (name === 'GetMySprayWalls') return { mySprayWalls: walls } as T;
+      if (name === 'GetMySprayWallLifecycle')
+        return {
+          mySprayWalls: sprayBoards.map((board, index) => ({
+            uuid: board.uuid,
+            archivedAt: index === 8 ? '2026-10-01T00:00:00Z' : null,
+            board: { uuid: board.uuid, name: board.name },
+          })),
+        } as T;
+      if (name === 'GetSprayWallWithVersions') return { sprayWall: walls[0] } as T;
+      if (name === 'SearchClimbs') return { searchClimbs: { climbs: [] } } as T;
+      throw new Error(`Unexpected action ${name}`);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers.some((blocker) => blocker.includes('wall cap'))).toBe(false);
+    expect(result.blockers).toContainEqual(expect.stringContaining('spray-cherry: missing owned board'));
+    expect(harness.save).not.toHaveBeenCalled();
+  });
+
   it('uses an actual schema-valid read-only HTTP authentication probe', () => {
     expect(validate(API_SCHEMA, parse(CPP_BOOTSTRAP_PROFILE_QUERY))).toEqual([]);
     expect(getOperationAST(parse(CPP_BOOTSTRAP_PROFILE_QUERY))?.operation).toBe('query');
@@ -432,6 +524,14 @@ describe('CPP account/bootstrap safety', () => {
     const result = await bootstrapCppScenario(harness.options);
     expect(result.blockers).toEqual([]);
     expect(result.scenario?.boards).toEqual(harness.owned.map((board) => board.name));
+    expect(result.scenario?.cpp?.boardIds).toEqual(
+      Object.fromEntries(
+        [...readCppPage('kilter').heroBoards, ...readCppPage('kilter').otherBoards].map((variant, index) => [
+          variant.id,
+          harness.owned[index].uuid,
+        ]),
+      ),
+    );
     expect(result.scenario?.cpp?.scenes.logbook.readyText).toBe(genuineClimb(harness.owned[0]).name);
     expect(result.scenario?.cpp?.scenes.queue.sessionId).toBe(SESSION);
     expect(result.scenario?.cpp?.scenes.search.readyTextByLocale?.fr).toBeTruthy();
