@@ -141,11 +141,11 @@ export function classifyGenerate(
   if (fresh.length > 1) {
     return { generated: null, detail: `generate wrote ${fresh.length} migrations (${fresh.join(', ')})` };
   }
-  if (stdout.includes('pointing to a parent snapshot')) {
-    return { generated: null, detail: 'snapshot parent collision — meta/ was not reset to main' };
-  }
   if (stdout.includes('No schema changes')) {
     return { generated: null, detail: 'no schema delta versus main' };
+  }
+  if (stdout.includes('pointing to a parent snapshot')) {
+    return { generated: null, detail: 'snapshot parent collision — meta/ was not reset to main' };
   }
   return { generated: null, detail: `generate produced nothing${stdout.trim() ? `: ${stdout.trim()}` : ''}` };
 }
@@ -589,13 +589,7 @@ function run(repoRoot: string, options: Options): RenumberResult {
     if (!tail) block('No migrations to renumber.');
 
     const outcome = runGenerate(repoRoot, tail.from.suffix);
-    if (outcome.generated === null && outcome.detail === 'no schema delta versus main') {
-      // TypeScript audience unions and comments can change without changing
-      // Drizzle's schema. Generate proved the existing snapshot is current;
-      // carry the reviewed data-only SQL without inventing a new snapshot.
-      placeMigration(repoRoot, tail, originals.get(tail.from.tag) ?? '', when);
-      result.notes.push(`\`${tail.toTag}\` has no schema delta; its SQL was carried over verbatim.`);
-    } else if (outcome.generated === null) {
+    if (outcome.generated === null) {
       // A schema migration MUST come with a regenerated snapshot. Placing it by
       // hand would leave main's older snapshot as the newest in the chain, so the
       // next `drizzle-kit generate` anyone runs would diff against a schema state
