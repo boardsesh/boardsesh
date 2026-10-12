@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,6 +12,8 @@ vi.mock('../../../lib/install-referrer', () => ({
 vi.mock('react-native', () => ({ Platform: platform }));
 
 import { InstallReferrerTracker } from '../InstallReferrerTracker';
+import { updateConsentState } from '../../../lib/consent-state';
+import { grantAnalyticsForTest, grantedConsent } from '../../../../test/consent-fixture';
 
 beforeEach(() => {
   installReferrer.maybeFetchAndAttachInstallReferrer.mockClear();
@@ -34,5 +36,17 @@ describe('InstallReferrerTracker', () => {
     // boundary (draining the mount effect) before asserting the negative.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(installReferrer.maybeFetchAndAttachInstallReferrer).not.toHaveBeenCalled();
+  });
+
+  it('runs again when an explicit Allow replaces the region default', async () => {
+    // Analytics already on outside the prompt regions; the referrer needs the climber's own Allow.
+    grantAnalyticsForTest();
+    updateConsentState({ record: { ...grantedConsent, basis: 'region_default' }, regionConfirmed: true });
+    render(createElement(InstallReferrerTracker));
+    await waitFor(() => expect(installReferrer.maybeFetchAndAttachInstallReferrer).toHaveBeenCalledTimes(1));
+
+    act(() => grantAnalyticsForTest());
+
+    await waitFor(() => expect(installReferrer.maybeFetchAndAttachInstallReferrer).toHaveBeenCalledTimes(2));
   });
 });

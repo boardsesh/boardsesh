@@ -308,7 +308,7 @@ it('reads nothing from Play before Allow, then reads and publishes once after a 
   expect(analytics.track).toHaveBeenCalledOnce();
   expect(analytics.setPersonProperties).toHaveBeenCalledOnce();
 });
-it('caches attribution on the region default and publishes only after an explicit Allow', async () => {
+it('reads nothing from Play on the region default, then reads and publishes after an explicit Allow', async () => {
   const { updateConsentState, getConsentSnapshot } = await import('../consent-state');
   // Analytics is on (outside the prompt regions, confirmed this launch), but not by the climber's own Allow.
   updateConsentState({ record: { ...getConsentSnapshot().record!, basis: 'region_default' }, regionConfirmed: true });
@@ -318,6 +318,10 @@ it('caches attribution on the region default and publishes only after an explici
     installBeginTimestampSeconds: 200,
   }));
   await maybeFetchAndAttachInstallReferrer(fetchNative);
+  // Reading the referrer is attribution access in its own right (ePrivacy Art. 5(3)).
+  expect(fetchNative).not.toHaveBeenCalled();
+  expect(getPreferenceMock).not.toHaveBeenCalled();
+  expect(preferenceStore.values.has('installReferrerFetched')).toBe(false);
   expect(analytics.track).not.toHaveBeenCalled();
   expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   expect(preferenceStore.values.has('installReferrerPublished')).toBe(false);
