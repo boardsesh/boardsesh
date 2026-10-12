@@ -7,6 +7,9 @@ import { MAX_KIOSKS_PER_GYM } from '@boardsesh/kiosk';
 import { db } from '../db/client';
 import { socialGymKioskQueries, socialGymKioskMutations } from '../graphql/resolvers/social/gym-kiosks';
 import { requireAnonReadableBoard, requireReadablePresenceBoard } from '../graphql/resolvers/board-presence/shared';
+import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
+import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions';
+import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 
 /**
  * Real-DB coverage for PR E's gym-kiosk CRUD + public read surface:
@@ -30,7 +33,8 @@ const ADMIN = 'gk-admin';
 const EDITOR = 'gk-editor';
 const MEMBER = 'gk-member';
 const RANDOM = 'gk-random';
-const ALL_USERS = [OWNER, ADMIN, EDITOR, MEMBER, RANDOM];
+const LEADER = 'gk-leader';
+const ALL_USERS = [OWNER, ADMIN, EDITOR, MEMBER, RANDOM, LEADER];
 
 let connectionCounter = 0;
 const authCtx = (userId: string): ConnectionContext =>
@@ -725,21 +729,85 @@ describe('gymKiosk public read', () => {
     expect(managed!.boards.map((b) => b.boardUuid)).toEqual([boardPub1.uuid, boardPriv.uuid]);
   });
 
-  it('lets verified same-public-gym editors read private presence and revokes it with membership or association', async () => {
-    for (const reader of [OWNER, ADMIN, EDITOR]) {
-      await expect(requireAnonReadableBoard(boardPriv.id, reader)).resolves.toBeUndefined();
-      await expect(requireReadablePresenceBoard(boardPriv.id, reader)).resolves.toMatchObject({
+  it('never lets gym edit authority open a linked board whose own policy denies the reader', async () => {
+    // A stranger's Invite-only home board, linked to the public gym by its owner.
+    const inviteOnly = await insertBoard({
+      gymId: publicGym.id,
+      ownerId: RANDOM,
+      name: 'Stranger Invite Wall',
+      isPublic: false,
+    });
+    await db.insert(resourcePrivacy).values({
+      kind: 'board',
+      resourceId: inviteOnly.uuid,
+      ownerId: RANDOM,
+      audience: 'invite_only',
+    });
+    // A Kilter community leader covers every public gym with a Kilter board.
+    await db.execute(sql`
+      INSERT INTO community_roles (user_id, role, board_type, created_at)
+      VALUES (${LEADER}, 'community_leader', 'kilter', now())
+    `);
+
+    for (const reader of [ADMIN, EDITOR, LEADER]) {
+      // The gym's own private board and the stranger's Invite-only board: id alone,
+      // or id plus uuid, open neither (their policy has no link reading).
+      for (const board of [boardPriv, inviteOnly]) {
+        await expect(requireAnonReadableBoard(board.id, reader)).rejects.toThrow('Board not found');
+        await expect(requireReadablePresenceBoard(board.id, reader)).rejects.toThrow('Board not found');
+        await expect(requireReadablePresenceBoard(board.id, reader, board.uuid)).rejects.toThrow('Board not found');
+      }
+      const ctx = authCtx(reader);
+      await expect(boardPresenceQueries.boardConnection(undefined, { boardId: inviteOnly.id }, ctx)).rejects.toThrow(
+        'Board not found',
+      );
+      await expect(
+        boardPresenceQueries.boardHistory(undefined, { boardId: inviteOnly.id, limit: 5 }, ctx),
+      ).rejects.toThrow('Board not found');
+      await expect(liveSessionQueries.boardLiveSessions(undefined, { boardId: inviteOnly.id }, ctx)).rejects.toThrow(
+        'Board not found',
+      );
+      await expect(
+        socialBoardQueries.boardLeaderboard(null, { input: { boardUuid: inviteOnly.uuid } }, ctx),
+      ).rejects.toThrow('Board not found');
+      // The same reader cannot open the board itself, so presence matches it.
+      expect(await socialBoardQueries.board(null, { boardUuid: inviteOnly.uuid }, ctx)).toBeNull();
+      // A Public gym board stays readable by its id alone.
+      await expect(requireReadablePresenceBoard(boardPub1.id, reader)).resolves.toMatchObject({
         anonReadableVerified: false,
       });
     }
-    for (const reader of [MEMBER, RANDOM, null]) {
-      await expect(requireAnonReadableBoard(boardPriv.id, reader)).rejects.toThrow('Board not found');
-      await expect(requireReadablePresenceBoard(boardPriv.id, reader)).rejects.toThrow('Board not found');
-    }
-    await db.execute(sql`DELETE FROM gym_members WHERE gym_id = ${publicGym.id} AND user_id = ${EDITOR}`);
-    await expect(requireReadablePresenceBoard(boardPriv.id, EDITOR)).rejects.toThrow('Board not found');
-    await db.update(userBoards).set({ gymId: null }).where(eq(userBoards.id, boardPriv.id));
-    await expect(requireReadablePresenceBoard(boardPriv.id, ADMIN)).rejects.toThrow('Board not found');
+
+    // Owners keep their own boards by the id alone.
+    await expect(requireReadablePresenceBoard(boardPriv.id, OWNER)).resolves.toMatchObject({
+      anonReadableVerified: false,
+    });
+    await expect(requireAnonReadableBoard(inviteOnly.id, RANDOM)).resolves.toBeUndefined();
+    // An approved grant is what opens it, gym role or not.
+    await db.execute(sql`
+      INSERT INTO resource_grants (kind, resource_id, user_id, status, invited_by)
+      VALUES ('board', ${inviteOnly.uuid}, ${EDITOR}, 'approved', ${RANDOM})
+    `);
+    await expect(requireAnonReadableBoard(inviteOnly.id, EDITOR)).resolves.toBeUndefined();
+  });
+
+  it('opens an Unlisted gym board to an editor only through its uuid, the way the kiosk preview sends it', async () => {
+    const unlisted = await insertBoard({
+      gymId: publicGym.id,
+      ownerId: RANDOM,
+      name: 'Stranger Unlisted Wall',
+      isPublic: false,
+    });
+    await db.insert(resourcePrivacy).values({
+      kind: 'board',
+      resourceId: unlisted.uuid,
+      ownerId: RANDOM,
+      audience: 'unlisted',
+    });
+    await expect(requireReadablePresenceBoard(unlisted.id, EDITOR)).rejects.toThrow('Board not found');
+    await expect(requireReadablePresenceBoard(unlisted.id, EDITOR, unlisted.uuid)).resolves.toMatchObject({
+      anonReadableVerified: false,
+    });
   });
 
   it('never trusts a kiosk slot or unrelated gym edit role to open a foreign home board', async () => {
