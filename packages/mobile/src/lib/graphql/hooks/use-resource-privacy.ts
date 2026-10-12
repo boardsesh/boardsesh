@@ -17,6 +17,7 @@ import { useProfile } from './index';
 import { usePrivacySettings } from './use-privacy';
 import { refreshAfterOwnPrivacyChange } from '../../privacy/privacy-cache';
 import { getConnectivitySnapshot } from '../../connectivity/connectivity-store';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 export function useContentAudience(entityType: PrivacyContentType, entityId?: string) {
   const { data: settings } = usePrivacySettings();
@@ -107,7 +108,10 @@ export function useResourceAccessRequests(kind: ResourceKind, resourceId: string
     initialPageParam: 0,
     queryFn: ({ pageParam, signal }) => requestResourceGrants({ kind, resourceId, offset: pageParam }, signal),
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.length < ACCESS_LIST_PAGE_SIZE ? undefined : allPages.reduce((sum, page) => sum + page.length, 0),
+      screenshotModeNextPageParam(
+        lastPage.length < ACCESS_LIST_PAGE_SIZE ? undefined : allPages.reduce((sum, page) => sum + page.length, 0),
+        allPages.length,
+      ),
     enabled: enabled && !!resourceId,
   });
 }
