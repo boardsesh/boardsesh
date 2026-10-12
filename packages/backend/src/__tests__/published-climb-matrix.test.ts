@@ -59,8 +59,14 @@ const LINKED_ONLY = 'matrix-linked-only';
 const DELETED_PUBLISHED = 'matrix-deleted-published';
 const DRAFT = 'matrix-draft';
 const UNLISTED = 'matrix-unlisted';
-/** The deleted author's draft: ownerless once the account is gone, so nobody's. */
+/** The deleted author's draft: account deletion deletes the row outright. */
 const DELETED_DRAFT = 'matrix-deleted-draft';
+/**
+ * A draft nobody owns, as an import from before imports stamped an owner left
+ * it. The row stays, so a by-uuid read reaches the draft rule, and the rule
+ * returns it to no one.
+ */
+const OWNERLESS_DRAFT = 'matrix-ownerless-draft';
 const ALL_CLIMBS = [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY, DELETED_PUBLISHED, DRAFT, UNLISTED];
 /** Published and listed, then hidden by the community: moderation, not privacy. */
 const HIDDEN = 'matrix-hidden';
@@ -158,6 +164,11 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       isListed: false,
       setterUsername: 'matrix-deleted-setter',
     });
+    await insertClimb(OWNERLESS_DRAFT, null, {
+      isDraft: true,
+      isListed: false,
+      setterUsername: 'matrix-ownerless-setter',
+    });
 
     // The first send is a private account's, explicitly followers-only; the
     // second is a public account's.
@@ -199,6 +210,15 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
         entityId: climbUuid,
       })),
     );
+    // One about the ownerless draft, with no actor, so only the climb decides it.
+    await db.insert(schema.notifications).values({
+      uuid: `matrix-n-${OWNERLESS_DRAFT}`,
+      recipientId: STRANGER,
+      actorId: null,
+      type: 'new_climb',
+      entityType: 'climb',
+      entityId: OWNERLESS_DRAFT,
+    });
 
     await userMutations.deleteAccount(null, { input: { removeSetterName: false } }, ctxFor(DELETED_AUTHOR));
   });
@@ -211,6 +231,12 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       .from(schema.boardClimbs)
       .where(eq(schema.boardClimbs.uuid, DELETED_PUBLISHED));
     expect(climb).toEqual({ userId: null, marked: true });
+    // Their draft did not lose its owner: it was deleted with the account.
+    const draftRows = await db
+      .select({ uuid: schema.boardClimbs.uuid })
+      .from(schema.boardClimbs)
+      .where(eq(schema.boardClimbs.uuid, DELETED_DRAFT));
+    expect(draftRows).toEqual([]);
   });
 
   describe.each([
@@ -393,11 +419,15 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     for (const viewerId of [STRANGER, FOLLOWER]) {
       // The account is gone, so the actor is cleared; the published climb stays public.
       expect(await allowed(`matrix-n-${DELETED_PUBLISHED}`, viewerId)).toEqual({ actorId: null, allowed: true });
-      // The draft has no owner left, so it goes to no one.
+      // The draft was deleted with the account, so nothing resolves it.
       expect(await allowed(`matrix-n-${DELETED_DRAFT}`, viewerId)).toEqual({ actorId: null, allowed: false });
+      // A draft nobody owns still exists, and the draft rule returns it to no one.
+      expect(await allowed(`matrix-n-${OWNERLESS_DRAFT}`, viewerId)).toEqual({ actorId: null, allowed: false });
     }
-    const draft = await climbQueries.climb({}, { ...boardInput, climbUuid: DELETED_DRAFT }, ctxFor(STRANGER));
-    expect(draft).toBeNull();
+    for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
+      expect(await climbQueries.climb({}, { ...boardInput, climbUuid: DELETED_DRAFT }, ctx)).toBeNull();
+      expect(await climbQueries.climb({}, { ...boardInput, climbUuid: OWNERLESS_DRAFT }, ctx)).toBeNull();
+    }
   });
 
   it("keeps an unlisted climb's logs out of both ascent feeds, and on its own page", async () => {
@@ -787,16 +817,18 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       );
     });
 
-    it('hides foreign and deleted-owner drafts while retaining board aggregates', async () => {
+    it('hides foreign and ownerless drafts while retaining board aggregates', async () => {
       for (const viewer of [STRANGER, FOLLOWER, null]) {
-        for (const climbUuid of [DRAFT, DELETED_DRAFT]) {
+        for (const climbUuid of [DRAFT, OWNERLESS_DRAFT]) {
           const redacted = await redactBoardStats(statsWithHardest(climbUuid), viewer);
           expect(redacted.hardestSend ?? null).toBeNull();
           expect(redacted).toMatchObject({ climbsSentCount: 3, distinctClimbersCount: 2, hardestGrade: 'V8' });
         }
       }
       expect((await redactBoardStats(statsWithHardest(DRAFT), PRIVATE_AUTHOR)).hardestSend?.climbUuid).toBe(DRAFT);
-      expect((await redactBoardStats(statsWithHardest(DELETED_DRAFT), PRIVATE_AUTHOR)).hardestSend ?? null).toBeNull();
+      expect(
+        (await redactBoardStats(statsWithHardest(OWNERLESS_DRAFT), PRIVATE_AUTHOR)).hardestSend ?? null,
+      ).toBeNull();
     });
 
     it('never picks a climb the community hid', async () => {
