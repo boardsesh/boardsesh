@@ -2005,7 +2005,7 @@ describe('large climb-list query and activation privacy lifecycle', () => {
     }
   });
 
-  it('restores fresh same-UUID taps after complete withdrawal while rejecting a canceled old next page', async () => {
+  it('restores fresh same-UUID taps after the in-place privacy refetch while rejecting a canceled old next page', async () => {
     const rows = Array.from({ length: 5000 }, (_, index) => makeClimb(`query-${index}`));
     let releasePage: (page: SearchClimbsQueryResponse) => void = () => {};
     mocks.searchRequest.mockImplementation(async (_query, { input: request }) => {
@@ -2030,7 +2030,12 @@ describe('large climb-list query and activation privacy lifecycle', () => {
       await act(async () => {
         await invalidatePrivacyQueries(client);
       });
-      await waitFor(() => expect(result.current.allClimbs).toHaveLength(100));
+      // An on-screen catalogue list stays up through the event and refetches
+      // every loaded page in place (#6346). The authorized response is identical,
+      // so only privacy-aware sharing turns it into new row objects.
+      await waitFor(() => expect(result.current.allClimbs[0]).not.toBe(capturedProjection));
+      expect(result.current.allClimbs).toHaveLength(5000);
+      expect(mocks.searchRequest).toHaveBeenCalledTimes(51);
       await act(async () => {
         releasePage(response([makeClimb('withdrawn-next-page')]));
         await nextPagePromise;

@@ -1,4 +1,4 @@
-import type { Query, QueryClient } from '@tanstack/react-query';
+import { replaceEqualDeep, type Query, type QueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { sanitizeActiveBoard } from '../active-board-snapshot';
 import { reportHandledError } from '../error-reporting';
@@ -46,8 +46,38 @@ const PRIVACY_NEUTRAL_QUERY_ROOTS = new Set([
 // for a change that rarely touches it. One that is off screen is withdrawn like
 // any other query: invalidation only refetches what is on screen, so it would
 // otherwise come back with its old rows. A spray wall's search stays fully
-// withdrawn: the whole wall's catalogue sits behind its privacy.
+// withdrawn: the whole wall's catalogue sits behind its privacy. The list hooks
+// share their data through `shareClimbSearchData` so the refetch hands back
+// rows a climb tap accepts again.
 const CATALOGUE_SEARCH_QUERY_ROOTS = new Set(['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount']);
+
+// Climb search data an on-screen list kept through a privacy event: the cache
+// entry and what each observer selected from it. usePlaylistActivation refuses
+// every row it saw before the event, and structural sharing would map an
+// identical authorized response back onto those rows, leaving the whole list
+// dead to taps until its search changed.
+const searchDataKeptThroughPrivacyEvent = new WeakSet<object>();
+
+function markKeptThroughPrivacyEvent(data: unknown): void {
+  if (typeof data === 'object' && data !== null) searchDataKeptThroughPrivacyEvent.add(data);
+}
+
+/**
+ * `structuralSharing` for the climb search lists a privacy event refetches in
+ * place. The first write over data kept through an event lands as the
+ * response's own objects; every other write shares as React Query does by
+ * default, so an ordinary refetch still keeps unchanged rows.
+ */
+export function shareClimbSearchData(previousData: unknown, nextData: unknown): unknown {
+  if (
+    typeof previousData === 'object' &&
+    previousData !== null &&
+    searchDataKeptThroughPrivacyEvent.has(previousData)
+  ) {
+    return nextData;
+  }
+  return replaceEqualDeep(previousData, nextData);
+}
 
 type PrivacyQueryTreatment = 'keep' | 'refetch' | 'withdraw';
 
@@ -137,6 +167,9 @@ export async function invalidatePrivacyQueries(
       return treatment === 'withdraw' || (treatment === 'refetch' && !query.isActive());
     },
   };
+  const keptFilters = {
+    predicate: (query: Query) => privacyQueryTreatment(query.queryKey) === 'refetch' && query.isActive(),
+  };
   // Keep the selected wall usable while catalogue withdrawal is in flight or
   // offline. Its reference and local hardware settings are independent of the
   // identifying projection; never replace the active board with a loading gap.
@@ -155,6 +188,12 @@ export async function invalidatePrivacyQueries(
     // resetQueries may restore initialData, which can itself hold withdrawn
     // content. Clear explicitly before any fresh authorization response.
     query.setState({ data: undefined, dataUpdatedAt: 0, error: null, status: 'pending' });
+  }
+  // After cancellation, so a request from before the event can no longer land:
+  // the next write over a kept list is the authorized answer.
+  for (const query of queryClient.getQueryCache().findAll(keptFilters)) {
+    markKeptThroughPrivacyEvent(query.state.data);
+    for (const observer of query.observers) markKeptThroughPrivacyEvent(observer.getCurrentResult().data);
   }
   await queryClient.invalidateQueries(filters);
 }

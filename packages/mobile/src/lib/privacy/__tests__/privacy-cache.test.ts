@@ -5,6 +5,7 @@ import {
   invalidatePrivacyQueries,
   subscribeToPrivacyRevocations,
   registerPrivacyRevalidation,
+  shareClimbSearchData,
 } from '../privacy-cache';
 
 vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
@@ -207,6 +208,35 @@ describe('privacy revocation', () => {
       // Nothing observes these, so invalidation would not refetch them.
       expect(queryClient.getQueryData(kilterCount)).toBeUndefined();
       expect(queryClient.getQueryData(followedSearch)).toBeUndefined();
+    } finally {
+      unsubscribe();
+      queryClient.clear();
+    }
+  });
+
+  it('lands the refetch of a kept climb list as new rows, then shares unchanged rows again', async () => {
+    const queryClient = new QueryClient();
+    const kilterSearch = ['infiniteSearchClimbs', { boardName: 'kilter', layoutId: 1 }];
+    const searchResponse = () => ({ searchClimbs: { climbs: [{ uuid: 'climb-1', name: 'Same name' }] } });
+    queryClient.setQueryData(kilterSearch, searchResponse());
+    const observer = new QueryObserver(queryClient, {
+      queryKey: kilterSearch,
+      staleTime: Infinity,
+      queryFn: async () => searchResponse(),
+      select: (response: ReturnType<typeof searchResponse>) => response.searchClimbs,
+      structuralSharing: shareClimbSearchData,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      const keptRow = observer.getCurrentResult().data?.climbs[0];
+      await invalidatePrivacyQueries(queryClient);
+      // The server answered with the same row. The climb-tap guard refuses rows
+      // seen before the event, so the selected row must be a new object.
+      const authorizedRow = observer.getCurrentResult().data?.climbs[0];
+      expect(authorizedRow).toEqual(keptRow);
+      expect(authorizedRow).not.toBe(keptRow);
+      await observer.refetch();
+      expect(observer.getCurrentResult().data?.climbs[0]).toBe(authorizedRow);
     } finally {
       unsubscribe();
       queryClient.clear();

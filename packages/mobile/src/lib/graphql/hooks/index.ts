@@ -48,6 +48,7 @@ import {
 } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
+import { shareClimbSearchData } from '../../privacy/privacy-cache';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
@@ -958,6 +959,8 @@ export function useSearchClimbs(
     queryKey: [...SEARCH_CLIMBS_QUERY_KEY, input, ...(input.onlyFollowedAuthors ? [userId] : [])],
     queryFn: () => offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
     select: (data) => data.searchClimbs,
+    // Rows a privacy event kept on screen come back as new objects.
+    structuralSharing: shareClimbSearchData,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
     // Preserve the provider's offlineFirst default for downloaded-board reads.
     ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),

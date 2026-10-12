@@ -4,6 +4,7 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { useFeatureFlag } from '../../../providers/feature-flags-provider';
 import { offlineAwareRequest } from '../offline-request';
+import { shareClimbSearchData } from '../../privacy/privacy-cache';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
@@ -123,6 +124,9 @@ export function useInfiniteSearchClimbs(
     getNextPageParam: (lastPage, allPages) =>
       screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),
     select: selectSearchClimbPages,
+    // Rows a privacy event kept on screen come back as new objects, so a climb
+    // tap accepts them once the authorized refetch lands.
+    structuralSharing: shareClimbSearchData,
     placeholderData,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
     // Preserve the provider's offlineFirst default for downloaded-board reads.
