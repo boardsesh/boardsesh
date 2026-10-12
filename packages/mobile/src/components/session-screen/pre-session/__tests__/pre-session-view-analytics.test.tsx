@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_VOLUME_OPTIONS } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
@@ -139,6 +140,24 @@ vi.mock('../../../Button', () => ({
 vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
+vi.mock('../../../PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    disabled,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    accessibilityLabel?: string;
+  }) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
+}));
+vi.mock('../../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../../hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({ formatGradeByDifficultyId: (difficultyId: number) => `G${difficultyId}` }),
+}));
 vi.mock('../../../Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -153,7 +172,12 @@ vi.mock('../../SessionStartFab', () => ({
   },
 }));
 vi.mock('../../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, features: { inBodyLargeTitle: false, filtersInTopChrome: false } }),
+  useTheme: () => ({
+    systemColors: {},
+    brandColors: {},
+    opacity: { disabled: 0.5 },
+    features: { inBodyLargeTitle: false, filtersInTopChrome: false },
+  }),
 }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => activeBoard }));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
@@ -185,7 +209,6 @@ vi.mock('../../../../hooks/use-native-glass', () => ({ useNativeGlass: () => fal
 vi.mock('../../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 }, borderRadius: { lg: 16 } }));
 vi.mock('../BoardSummaryCard', () => ({ BoardSummaryCard: () => null }));
 vi.mock('../WorkoutPreviewRow', () => ({ WorkoutPreviewRow: () => null }));
-vi.mock('../WorkoutPreviewSummary', () => ({ WorkoutPreviewSummary: () => null }));
 vi.mock('../WorkoutPreviewSectionHeading', () => ({ WorkoutPreviewSectionHeading: () => null }));
 vi.mock('../use-workout-preview', () => ({ useWorkoutPreview: () => preview.result }));
 vi.mock('../GeneratorPickerCard', () => ({
@@ -223,11 +246,87 @@ beforeEach(() => {
   preview.result.status = 'ready';
   preview.result.refreshingUuids = new Set<string>();
   preview.result.plannedSlots = previewRows.map((preview) => preview.slot);
+  preview.result.shuffle.mockReset();
   picker.onChange = null;
   startButton.onPress = null;
   visibilityRow.isPublic = null;
   visibilityRow.disabled = false;
   visibilityRow.onChange = null;
+});
+
+function selectWorkout() {
+  act(() => picker.onChange?.({ type: 'on', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 } }));
+}
+
+describe('PreSessionView Shuffle during Start', () => {
+  it('ignores Shuffle while creation is pending and queues the displayed climbs', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(PreSessionView));
+    selectWorkout();
+
+    const shuffleButton = screen.getByLabelText('mobile.session.preWorkoutPreviewShuffleAccessibilityLabel');
+    fireEvent.click(shuffleButton);
+    expect(preview.result.shuffle).toHaveBeenCalledTimes(1);
+    preview.result.shuffle.mockClear();
+
+    await act(async () => startButton.onPress?.());
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
+    fireEvent.click(shuffleButton);
+    expect(preview.result.shuffle).not.toHaveBeenCalled();
+    expect(shuffleButton).toHaveProperty('disabled', true);
+    expect(preview.result.items).toEqual(previewRows);
+
+    await act(async () => creation.resolve('session-1'));
+    expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems, { activateFirstWhenIdle: true });
+  });
+
+  it.each(['null', 'reject'] as const)('allows Shuffle again after a %s creation failure', async (failure) => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(PreSessionView));
+    selectWorkout();
+
+    await act(async () => startButton.onPress?.());
+    const shuffleButton = screen.getByLabelText('mobile.session.preWorkoutPreviewShuffleAccessibilityLabel');
+    expect(shuffleButton).toHaveProperty('disabled', true);
+    await act(async () => {
+      if (failure === 'null') creation.resolve(null);
+      else creation.reject(new Error('Session unavailable'));
+    });
+
+    expect(shuffleButton).toHaveProperty('disabled', false);
+    fireEvent.click(shuffleButton);
+    expect(preview.result.shuffle).toHaveBeenCalledTimes(1);
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps Shuffle disabled after creation until the native tab handoff', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(SessionScreen));
+    selectWorkout();
+
+    await act(async () => startButton.onPress?.());
+    screenState.sessionId = 'session-1';
+    screen.rerender(createElement(SessionScreen));
+    await act(async () => creation.resolve('session-1'));
+
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    const shuffleButton = screen.getByLabelText('mobile.session.preWorkoutPreviewShuffleAccessibilityLabel');
+    fireEvent.click(shuffleButton);
+    expect(preview.result.shuffle).not.toHaveBeenCalled();
+    expect(shuffleButton).toHaveProperty('disabled', true);
+    expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems, { activateFirstWhenIdle: true });
+
+    screenState.isFocused = false;
+    screen.rerender(createElement(SessionScreen));
+    screenState.isFocused = true;
+    screen.rerender(createElement(SessionScreen));
+    expect(screen.queryByLabelText('mobile.session.preWorkoutPreviewShuffleAccessibilityLabel')).toBeNull();
+    expect(screen.getByText('Live session settings')).toBeTruthy();
+  });
 });
 
 describe('PreSessionView analytics', () => {

@@ -15,7 +15,7 @@ type WorkoutPreviewSummaryProps = {
   summary: PlanFillSummary;
   boardName: BoardName;
   onShuffle: () => void;
-  /** While the preview rebuilds or a row regenerates. */
+  /** While the preview rebuilds, a row regenerates, or Start is pending. */
   shuffleDisabled: boolean;
 };
 

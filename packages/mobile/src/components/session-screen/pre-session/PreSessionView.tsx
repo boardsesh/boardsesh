@@ -442,7 +442,7 @@ export function PreSessionView({
                 summary={planSummary}
                 boardName={previewBoard.boardName}
                 onShuffle={shuffle}
-                shuffleDisabled={status !== 'ready' || isRefreshingAnyRow}
+                shuffleDisabled={status !== 'ready' || isRefreshingAnyRow || isStartPending}
               />
             ) : null}
             {previewStateMessage ? (
