@@ -1,6 +1,7 @@
-// CapsuleRow, iOS (Liquid Glass): one <Host> wrapping a horizontal SwiftUI
-// ScrollView + HStack of native @expo/ui controls, so every menu is a real iOS
-// menu. Each capsule descriptor maps to one control:
+// CapsuleRow, iOS: one <Host> wrapping a horizontal SwiftUI ScrollView + HStack
+// of native @expo/ui controls, so every menu is a real iOS menu. Liquid Glass
+// capsules on iOS 26, bordered ones below it (capsule-style.ios.ts). Each
+// capsule descriptor maps to one control:
 //   sheet      → Button (label + optional SF Symbol)
 //   rail       → Button with a trailing chevron (up while the rail is shown);
 //                with `popover`, the Button is a Popover trigger (regular-width iPad)
@@ -14,7 +15,7 @@
 // The Android counterpart is CapsuleRow.android.tsx; the descriptor types are in
 // CapsuleRow.types.ts.
 
-import { memo, type ComponentProps } from 'react';
+import { memo, useMemo, type ComponentProps } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
   Host,
@@ -38,10 +39,10 @@ import {
   accessibilityLabel,
   accessibilityAddTraits,
 } from '@expo/ui/swift-ui/modifiers';
+import { useGlassCapability } from '../../hooks/use-glass-capability';
 import { useTheme } from '../../providers/theme-provider';
-import type { BrandControlColors } from '../../theme/expo-ui-modifiers';
 import { spacing } from '../../theme/tokens';
-import { capsuleModifiers } from './capsule-style.ios';
+import { capsuleModifiers, type CapsuleStyleContext } from './capsule-style.ios';
 import { isCapsuleActive } from './CapsuleRow.logic';
 import type {
   Capsule,
@@ -96,13 +97,13 @@ function MenuActions({ actions }: { actions: readonly CapsuleMenuAction[] | unde
   );
 }
 
-function MenuControl({ capsule, brandColors }: { capsule: MenuCapsule; brandColors: BrandControlColors }) {
+function MenuControl({ capsule, look }: { capsule: MenuCapsule; look: CapsuleStyleContext }) {
   const { options, selected, onSelect } = capsule;
   return (
     <Menu
       label={capsule.label}
       systemImage={capsule.icon ? SF_SYMBOL[capsule.icon] : undefined}
-      modifiers={capsuleModifiers(capsule.active, brandColors)}
+      modifiers={capsuleModifiers(capsule.active, look)}
     >
       {capsule.optionStyle === 'commands' ? (
         options.map((option) => (
@@ -136,7 +137,7 @@ function MenuControl({ capsule, brandColors }: { capsule: MenuCapsule; brandColo
   );
 }
 
-function RailControl({ capsule, brandColors }: { capsule: RailCapsule; brandColors: BrandControlColors }) {
+function RailControl({ capsule, look }: { capsule: RailCapsule; look: CapsuleStyleContext }) {
   const { popover } = capsule;
   // No colour on the chevron: it takes the button's own, so it stays legible on
   // the filled active capsule. VoiceOver skips the glyph and reads the hint.
@@ -145,8 +146,8 @@ function RailControl({ capsule, brandColors }: { capsule: RailCapsule; brandColo
       onPress={capsule.onPress}
       modifiers={
         capsule.accessibilityHint
-          ? [...capsuleModifiers(capsule.active, brandColors), accessibilityHint(capsule.accessibilityHint)]
-          : capsuleModifiers(capsule.active, brandColors)
+          ? [...capsuleModifiers(capsule.active, look), accessibilityHint(capsule.accessibilityHint)]
+          : capsuleModifiers(capsule.active, look)
       }
     >
       <HStack spacing={spacing[1]}>
@@ -179,10 +180,10 @@ function RailControl({ capsule, brandColors }: { capsule: RailCapsule; brandColo
   );
 }
 
-function CapsuleControl({ capsule, brandColors }: { capsule: Capsule; brandColors: BrandControlColors }) {
+function CapsuleControl({ capsule, look }: { capsule: Capsule; look: CapsuleStyleContext }) {
   switch (capsule.kind) {
     case 'sheet': {
-      const styleModifiers = capsuleModifiers(isCapsuleActive(capsule), brandColors);
+      const styleModifiers = capsuleModifiers(isCapsuleActive(capsule), look);
       return (
         <Button
           label={capsule.label}
@@ -197,9 +198,9 @@ function CapsuleControl({ capsule, brandColors }: { capsule: Capsule; brandColor
       );
     }
     case 'rail':
-      return <RailControl capsule={capsule} brandColors={brandColors} />;
+      return <RailControl capsule={capsule} look={look} />;
     case 'menu':
-      return <MenuControl capsule={capsule} brandColors={brandColors} />;
+      return <MenuControl capsule={capsule} look={look} />;
     case 'toggle':
       // `isToggle` + `isSelected` makes VoiceOver read the capsule as a toggle
       // button that is on or off (iOS 17+; older iOS ignores `isToggle`).
@@ -208,7 +209,7 @@ function CapsuleControl({ capsule, brandColors }: { capsule: Capsule; brandColor
           label={capsule.label}
           onPress={capsule.onPress}
           modifiers={[
-            ...capsuleModifiers(capsule.active, brandColors),
+            ...capsuleModifiers(capsule.active, look),
             accessibilityAddTraits(capsule.active ? ['isToggle', 'isSelected'] : ['isToggle']),
           ]}
         />
@@ -219,7 +220,7 @@ function CapsuleControl({ capsule, brandColors }: { capsule: Capsule; brandColor
           label={capsule.label}
           systemImage={capsule.icon ? SF_SYMBOL[capsule.icon] : undefined}
           onPrimaryAction={capsule.onPress}
-          modifiers={capsuleModifiers(capsule.active, brandColors)}
+          modifiers={capsuleModifiers(capsule.active, look)}
         >
           {capsule.actions.map((action) => (
             <ActionButton key={action.key} action={action} />
@@ -231,6 +232,8 @@ function CapsuleControl({ capsule, brandColors }: { capsule: Capsule; brandColor
 
 function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
   const { brandColors } = useTheme();
+  const supportsGlass = useGlassCapability();
+  const look = useMemo<CapsuleStyleContext>(() => ({ brandColors, supportsGlass }), [brandColors, supportsGlass]);
   return (
     <Host matchContents={{ vertical: true }} style={styles.host}>
       <ScrollView axes="horizontal" showsIndicators={false}>
@@ -247,7 +250,7 @@ function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
           ]}
         >
           {capsules.map((capsule) => (
-            <CapsuleControl key={capsule.key} capsule={capsule} brandColors={brandColors} />
+            <CapsuleControl key={capsule.key} capsule={capsule} look={look} />
           ))}
         </HStack>
       </ScrollView>

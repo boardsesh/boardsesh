@@ -12,6 +12,7 @@ type ModifierRecord = { modifier: string; arg?: unknown };
 type RecordedProps = Record<string, unknown> & { children?: ReactNode; modifiers?: ModifierRecord[] };
 
 const captured = vi.hoisted(() => ({
+  supportsGlass: true,
   views: [] as {
     view: string;
     props: Record<string, unknown> & { modifiers?: { modifier: string; arg?: unknown }[] };
@@ -85,11 +86,16 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED', onPrimary: '#FFFFFF' } }),
 }));
 
+vi.mock('../../../hooks/use-glass-capability', () => ({
+  useGlassCapability: () => captured.supportsGlass,
+}));
+
 // Imported after the mocks so the module graph resolves against them.
 const { CapsuleRow } = await import('../CapsuleRow.ios');
 
 beforeEach(() => {
   captured.views = [];
+  captured.supportsGlass = true;
 });
 
 function viewsOf(name: string) {
@@ -113,6 +119,42 @@ const RESTING = [
   { modifier: 'buttonStyle', arg: 'glass' },
   { modifier: 'controlSize', arg: 'small' },
 ];
+
+describe('CapsuleRow.ios below iOS 26 (no Liquid Glass)', () => {
+  // @expo/ui degrades `glass` / `glassProminent` to a plain text button there, so
+  // the row must ask for bordered styles itself or a white active label vanishes.
+  const capsules: Capsule[] = [
+    { kind: 'sheet', key: 'filters', label: 'Filters · 2', count: 2, onPress: vi.fn() },
+    { kind: 'toggle', key: 'beta', label: 'Beta videos', active: false, onPress: vi.fn() },
+  ];
+
+  it('draws an active capsule as a solid brand fill with the on-fill label', () => {
+    captured.supportsGlass = false;
+    render(createElement(CapsuleRow, { capsules }));
+    expect(lastViewWithLabel('Button', 'Filters · 2').modifiers).toEqual([
+      { modifier: 'buttonStyle', arg: 'borderedProminent' },
+      { modifier: 'controlSize', arg: 'small' },
+      { modifier: 'tint', arg: '#7C3AED' },
+      { modifier: 'foregroundColor', arg: '#FFFFFF' },
+    ]);
+  });
+
+  it('draws a resting capsule as a neutral bordered capsule', () => {
+    captured.supportsGlass = false;
+    render(createElement(CapsuleRow, { capsules }));
+    expect(lastViewWithLabel('Button', 'Beta videos').modifiers?.slice(0, 3)).toEqual([
+      { modifier: 'buttonStyle', arg: 'bordered' },
+      { modifier: 'controlSize', arg: 'small' },
+      { modifier: 'tint', arg: { type: 'hierarchical', style: 'primary' } },
+    ]);
+  });
+
+  it('never asks for a glass style', () => {
+    captured.supportsGlass = false;
+    render(createElement(CapsuleRow, { capsules }));
+    expect(JSON.stringify(captured.views.map((entry) => entry.props.modifiers))).not.toMatch(/"glass/);
+  });
+});
 
 describe('CapsuleRow.ios', () => {
   it('fills an active capsule with primaryFill + onPrimary, never the text tint', () => {
