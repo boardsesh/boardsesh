@@ -7,7 +7,11 @@ import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { lockFollowRequestPair } from '../events/follow-request-notifications';
 import { schema as executableSchema } from '../graphql/index';
-import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
+import { notifyingPrivacyMutations, privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
+import { socialBoardQueries } from '../graphql/resolvers/social/boards';
+import { boardPresenceQueries } from '../graphql/resolvers/board-presence/queries';
+import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
+import { pubsub } from '../pubsub';
 import { socialFollowMutations } from '../graphql/resolvers/social/follows';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 import { canAccessResource, canViewUserActivity, getPrivacySettings, setContentPrivacy } from '../services/privacy';
@@ -323,6 +327,89 @@ describe('privacy controls against Postgres', () => {
     expect(
       await db.select().from(schema.boardseshTicks).where(eq(schema.boardseshTicks.uuid, 'privacy-stale-atomic')),
     ).toEqual([]);
+  });
+
+  it('lets a climber the owner invites to an Invite-only board read it, its presence and its sessions at once', async () => {
+    const boardOwner = 'privacy-flow-invite-owner';
+    const friend = 'privacy-flow-invite-friend';
+    const stranger = 'privacy-flow-invite-stranger';
+    await db.insert(schema.users).values([boardOwner, friend, stranger].map((id) => ({ id, email: `${id}@test.com` })));
+    const [board] = await db
+      .insert(schema.userBoards)
+      .values({
+        uuid: '7f1c6a52-5d0e-4c55-9a43-2b6f0e8d1a11',
+        slug: 'privacy-flow-invite-board',
+        ownerId: boardOwner,
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1',
+        name: 'Garage wall',
+        isPublic: false,
+      })
+      .returning();
+    await db
+      .insert(schema.resourcePrivacy)
+      .values({ kind: 'board', resourceId: board.uuid, ownerId: boardOwner, audience: 'invite_only' });
+    const sessionId = 'privacy-flow-invite-session';
+    await db.insert(schema.boardSessions).values({
+      id: sessionId,
+      createdByUserId: boardOwner,
+      boardPath: 'kilter/1/1/1/40',
+      boardId: board.id,
+      isPublic: true,
+    });
+    await db.insert(schema.sessionBoards).values({ sessionId, boardId: board.id });
+    // A session page needs something climbed in it to show.
+    await db.insert(schema.boardseshTicks).values({
+      uuid: 'privacy-flow-invite-tick',
+      userId: boardOwner,
+      climbUuid: 'catalog-climb',
+      boardType: 'kilter',
+      angle: 40,
+      status: 'send',
+      climbedAt: '2026-10-01 10:00:00',
+      sessionId,
+      boardId: board.id,
+    });
+
+    const reads = async (viewer: string) => ({
+      board: (await socialBoardQueries.board(null, { boardUuid: board.uuid }, context(viewer)))?.uuid ?? null,
+      presence: await boardPresenceQueries.boardConnection({}, { boardId: board.id }, context(viewer)).then(
+        () => 'readable',
+        (error: Error) => error.message,
+      ),
+      session: (await sessionFeedQueries.sessionDetail(null, { sessionId }, context(viewer)))?.sessionId ?? null,
+    });
+    const shut = { board: null, presence: 'Board not found', session: null };
+    expect(await reads(friend)).toEqual(shut);
+
+    // The owner adds the friend by name. That is the whole flow: no request
+    // from the friend, no approval, and every connected app is told to refetch.
+    const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
+    try {
+      await notifyingPrivacyMutations.inviteResourceMember(
+        null,
+        { kind: 'board', resourceId: board.uuid, userId: friend },
+        context(boardOwner),
+      );
+      expect(publish).toHaveBeenCalled();
+    } finally {
+      publish.mockRestore();
+    }
+    const [grant] = await db
+      .select()
+      .from(schema.resourceGrants)
+      .where(and(eq(schema.resourceGrants.resourceId, board.uuid), eq(schema.resourceGrants.userId, friend)));
+    expect(grant).toMatchObject({ kind: 'board', status: 'approved', invitedBy: boardOwner });
+
+    expect(await reads(friend)).toEqual({ board: board.uuid, presence: 'readable', session: sessionId });
+    expect(await reads(stranger)).toEqual(shut);
+    // There is no notification type for a board invite yet, so nothing lands
+    // in the friend's inbox; they find the board when they next open it.
+    expect(await db.select().from(schema.notifications).where(eq(schema.notifications.recipientId, friend))).toEqual(
+      [],
+    );
   });
 
   it('treats a forwarded private session link as a request, not a grant', async () => {
