@@ -392,6 +392,30 @@ describe('the erasure worker', () => {
     expect((await erasureRows(distinctId)).map((row) => row.data.stage)).toEqual([undefined]);
   });
 
+  it('still erases the account and its split person when the lookup returns an id longer than a job can carry', async () => {
+    const distinctId = randomUUID();
+    const boss = requireJobQueue();
+    const lateId = await boss.send(
+      POSTHOG_PERSON_DELETION_QUEUE,
+      { distinctId, reason: 'account_deleted', pass: 'late' },
+      { startAfter: LATE_PASS_DELAY_SECONDS },
+    );
+    if (!lateId) throw new Error('late pass not queued');
+    replies.anonymousIds = ['x'.repeat(300), 'sdk-anon-split'];
+
+    const first = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
+    expect(first).toMatchObject({ state: 'completed', output: { outcome: 'discovered' } });
+
+    await waitUntil(
+      () => erasureRows(distinctId),
+      (rows) => rows.some((row) => row.data.stage === 'delete' && row.state !== 'created' && row.state !== 'active'),
+    );
+    const rows = await erasureRows(distinctId);
+    expect(rows.find((row) => row.data.stage === 'delete')?.state).toBe('completed');
+    expect(deletedIds.get(distinctId)).toEqual([[distinctId, 'sdk-anon-split']]);
+    expect(rows.find((row) => row.id === lateId)?.data.anonymousIds).toEqual(['sdk-anon-split']);
+  });
+
   it('persists the ids before deleting, and the late pass deletes them after their $identify events are gone', async () => {
     const distinctId = randomUUID();
     const boss = requireJobQueue();

@@ -350,7 +350,11 @@ anything is deleted.
    erases another. Ids that are not accounts, such as the party UUID a
    signed-out install identified as before #6078, belong to the same install
    and go with it. At most 999 anonymous ids, the `bulk_delete` limit less the
-   account id.
+   account id. An id longer than 200 characters is dropped: no SDK mints one
+   (they are 36-character UUIDs), the capture endpoint takes any
+   `$anon_distinct_id` under the public project key, and a job cannot carry
+   it. The log (`posthog_person_deletion_invalid_ids_dropped`) has the count,
+   never the id.
 
    The ids found, plus any the job already carried, are then written, in one
    transaction, into `anonymousIds` on every erasure of this account still
@@ -388,6 +392,13 @@ Responses:
   lookup retries instead (above), so a broken query blocks erasures, visibly,
   until it is fixed and the failed jobs are replayed, rather than deleting the
   history it needs.
+- **A job it cannot read.** A bad entry in `anonymousIds` (not a string, empty,
+  over 200 characters, or the field not a list) is dropped at either step and
+  counted in `posthog_person_deletion_invalid_ids_dropped`; the account id is
+  still erased. A bad `distinctId`, `reason`, `pass` or `stage` fails the job
+  at once with `posthog_person_deletion_invalid_job`, which logs the `jobId`,
+  the `distinctId` (cut to 200 characters) and the names of the bad fields, so
+  it can be replayed by hand (below).
 
 Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
 26.5 to 32.5 hours in all; a job that runs out is `failed` and logs

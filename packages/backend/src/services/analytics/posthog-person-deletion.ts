@@ -81,14 +81,39 @@ const PASSES: ReadonlyArray<readonly [PosthogPersonDeletionPass, number]> = [
 
 /** `bulk_delete` takes at most 1000 distinct ids; one is the account's. */
 const MAX_ANONYMOUS_IDS = 999;
+/** Far above any id our SDKs mint (a 36-character UUID), and the most a job carries. */
+const MAX_DISTINCT_ID_LENGTH = 200;
 
+/**
+ * `distinctId`, `reason`, `pass` and `stage` must be exact: without them the job
+ * cannot say whose person to erase, or how. `anonymousIds` is checked id by id
+ * instead ({@link sanitizeAnonymousIds}): the lookup reads them from events
+ * anyone holding the public project key can send, and one bad id must never
+ * stop the account's own person from being erased.
+ */
 const jobSchema = z.object({
-  distinctId: z.string().min(1).max(200),
+  distinctId: z.string().min(1).max(MAX_DISTINCT_ID_LENGTH),
   reason: z.enum(['account_deleted', 'consent_withdrawn']),
   pass: z.enum(['first', 'late']).optional(),
-  anonymousIds: z.array(z.string().min(1).max(200)).max(MAX_ANONYMOUS_IDS).optional(),
+  anonymousIds: z.unknown().optional(),
   stage: z.literal('delete').optional(),
 });
+
+function isStorableAnonymousId(id: unknown): id is string {
+  return typeof id === 'string' && id.length > 0 && id.length <= MAX_DISTINCT_ID_LENGTH;
+}
+
+/**
+ * The ids a job may send: strings of 1 to {@link MAX_DISTINCT_ID_LENGTH}
+ * characters, deduplicated, at most {@link MAX_ANONYMOUS_IDS}. `dropped` counts
+ * the rest, for a log line that never carries them.
+ */
+function sanitizeAnonymousIds(raw: unknown): { ids: string[]; dropped: number } {
+  if (raw === undefined) return { ids: [], dropped: 0 };
+  if (!Array.isArray(raw)) return { ids: [], dropped: 1 };
+  const ids = [...new Set(raw.filter(isStorableAnonymousId))].slice(0, MAX_ANONYMOUS_IDS);
+  return { ids, dropped: raw.length - ids.length };
+}
 
 /** A drizzle transaction on the backend's primary pool. */
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -207,6 +232,8 @@ export type DeletePosthogPersonOptions = {
   database?: Database;
   /** Defaults to {@link persistDiscoveredIds} on the running queue. */
   persistDiscovery?: PersistDiscoveredIds;
+  /** The pg-boss job id, for log lines an operator replays from. */
+  jobId?: string;
 };
 
 /**
@@ -235,6 +262,7 @@ type RequestContext = {
   fetchImpl: typeof fetch;
   reason: PosthogPersonDeletionReason;
   pass: PosthogPersonDeletionPass | undefined;
+  jobId: string | undefined;
 };
 
 /** POST to the private API. A network error or a timeout throws a retryable error. */
@@ -273,6 +301,22 @@ function throwRetryable(context: RequestContext, path: string, status: number, d
     status,
   });
   throw new PosthogPersonDeletionRetryableError(`PostHog ${path} returned ${status}`, status);
+}
+
+/** Counts only: an id that failed the check is never logged. */
+function logDroppedAnonymousIds(
+  { reason, pass, jobId }: Pick<RequestContext, 'reason' | 'pass' | 'jobId'>,
+  dropped: number,
+  source: 'lookup' | 'job',
+): void {
+  logger.warn('[PostHogErasure] Dropped anonymous ids a deletion request cannot carry', {
+    event: 'posthog_person_deletion_invalid_ids_dropped',
+    reason,
+    pass,
+    jobId,
+    source,
+    dropped,
+  });
 }
 
 /**
@@ -327,13 +371,21 @@ async function findAnonymousIds(context: RequestContext, distinctId: string, dat
   if (!parsed.success) throwRetryable(context, path, response.status, 'answered the lookup with no result set');
 
   const candidates = new Map<string, string[]>();
+  let tooLong = 0;
   for (const [anonId, identifiedAs] of parsed.data.results) {
     if (typeof anonId !== 'string' || anonId === '' || anonId === distinctId) continue;
+    // A job could not carry it, and no SDK mints one: someone sent it with the
+    // public key. Persisting it would fail every later step of this erasure.
+    if (!isStorableAnonymousId(anonId)) {
+      tooLong += 1;
+      continue;
+    }
     const others = Array.isArray(identifiedAs)
       ? identifiedAs.filter((id): id is string => typeof id === 'string' && id !== distinctId)
       : [];
     candidates.set(anonId, others);
   }
+  if (tooLong > 0) logDroppedAnonymousIds(context, tooLong, 'lookup');
   if (candidates.size === 0) return [];
 
   // "Another account" is a live `users` row. The account being erased is never
@@ -414,9 +466,22 @@ export async function persistDiscoveredIds(
   });
 }
 
-/** Union, first-seen order, capped at what one `bulk_delete` takes beside the account id. */
-function mergeAnonymousIds(persisted: string[] | undefined, discovered: string[]): string[] {
-  return [...new Set([...(persisted ?? []), ...discovered])].slice(0, MAX_ANONYMOUS_IDS);
+/**
+ * Union, first-seen order, capped at what one `bulk_delete` takes beside the
+ * account id. `persisted` comes from a stored job, so it is checked again.
+ */
+function mergeAnonymousIds(persisted: unknown, discovered: string[]): string[] {
+  return sanitizeAnonymousIds([...sanitizeAnonymousIds(persisted).ids, ...discovered]).ids;
+}
+
+/**
+ * The distinct id of a job that failed the schema, for the replay log line:
+ * cut to the longest id a job carries, absent when it is not a string.
+ */
+function rawDistinctId(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null || !('distinctId' in payload)) return undefined;
+  const { distinctId } = payload;
+  return typeof distinctId === 'string' ? distinctId.slice(0, MAX_DISTINCT_ID_LENGTH) : undefined;
 }
 
 /**
@@ -429,6 +494,12 @@ function mergeAnonymousIds(persisted: string[] | undefined, discovered: string[]
  * - **Delete** (`stage: 'delete'`): `POST /api/projects/:id/persons/bulk_delete/`
  *   (`person:write`) with the account id and the persisted ids, events and
  *   recordings included.
+ *
+ * An anonymous id longer than {@link MAX_DISTINCT_ID_LENGTH}, or not a string,
+ * is dropped (counted in `posthog_person_deletion_invalid_ids_dropped`) at
+ * either step, never persisted, and never fails the job: the account id is
+ * always sent. A job whose `distinctId`, `reason`, `pass` or `stage` fails the
+ * schema is `rejected`, logged with its job id and distinct id for a replay.
  *
  * - 2xx with the documented body: done (no matching person is a 202 with
  *   `persons_found: 0`, with zero queued). Matched and queued counts must agree.
@@ -450,17 +521,25 @@ export async function deletePosthogPerson(
     fetchImpl = fetch,
     database = db,
     persistDiscovery = (job, anonymousIds) => persistDiscoveredIds(requireJobQueue(), job, anonymousIds),
+    jobId,
   }: DeletePosthogPersonOptions = {},
 ): Promise<PosthogPersonDeletionOutcome> {
   const parsed = jobSchema.safeParse(payload);
   if (!parsed.success) {
     logger.error('[PostHogErasure] Dropped a malformed person deletion job', {
       event: 'posthog_person_deletion_invalid_job',
+      jobId,
+      distinctId: rawDistinctId(payload),
+      invalidFields: [...new Set(parsed.error.issues.map((issue) => issue.path.join('.')))],
     });
     return 'rejected';
   }
-  const job = parsed.data;
+  const { anonymousIds: rawAnonymousIds, ...fields } = parsed.data;
+  const sanitized = sanitizeAnonymousIds(rawAnonymousIds);
+  const job: PosthogPersonDeletionJob =
+    rawAnonymousIds === undefined ? fields : { ...fields, anonymousIds: sanitized.ids };
   const { distinctId, reason, pass } = job;
+  if (sanitized.dropped > 0) logDroppedAnonymousIds({ reason, pass, jobId }, sanitized.dropped, 'job');
 
   const environment = getAnalyticsEnvironment();
   if (environment !== 'production') {
@@ -482,7 +561,7 @@ export async function deletePosthogPerson(
     });
     throw new PosthogPersonDeletionRetryableError(`${POSTHOG_ERASURE_API_KEY_ENV} is not set`);
   }
-  const context: RequestContext = { config, fetchImpl, reason, pass };
+  const context: RequestContext = { config, fetchImpl, reason, pass, jobId };
 
   if (job.stage !== 'delete') {
     // Step 1. Any lookup failure throws before anything is deleted.
@@ -577,6 +656,7 @@ async function settleErasureJob(
     const outcome = await deletePosthogPerson(job.data, {
       fetchImpl,
       persistDiscovery: (data, anonymousIds) => persistDiscoveredIds(boss, data, anonymousIds),
+      jobId: job.id,
     });
     // `deadletter` with no dead letter queue fails the job at once, skipping
     // retries a broken request would only repeat. It stays in `pgboss.job`

@@ -136,6 +136,32 @@ describe('deletePosthogPerson, discovery step', () => {
     expect(() => callTo(fetchImpl, '/persons/bulk_delete/')).toThrow('no call');
   });
 
+  it('drops an anonymous id longer than a job can carry, keeps the rest, and logs only the count', async () => {
+    const warnLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    // The capture endpoint takes any `$anon_distinct_id` under the public key; the SDKs send 36 characters.
+    const overlong = 'x'.repeat(300);
+    const fetchImpl = mockPosthog({
+      lookup: () =>
+        jsonResponse(200, {
+          results: [
+            [overlong, [DISTINCT_ID]],
+            ['sdk-anon-own', [DISTINCT_ID]],
+          ],
+        }),
+    });
+    const { persistDiscovery, run } = discover(fetchImpl);
+
+    await expect(run).resolves.toBe('discovered');
+
+    expect(persistDiscovery).toHaveBeenCalledWith(discoverJob, ['sdk-anon-own']);
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining('Dropped'),
+      expect.objectContaining({ event: 'posthog_person_deletion_invalid_ids_dropped', dropped: 1 }),
+    );
+    expect(JSON.stringify(warnLog.mock.calls)).not.toContain(overlong);
+    warnLog.mockRestore();
+  });
+
   it('keeps ids an earlier pass persisted when the $identify events are gone', async () => {
     const fetchImpl = mockPosthog({ lookup: () => jsonResponse(200, { results: [['sdk-anon-new', [DISTINCT_ID]]] }) });
     const latePass = { ...discoverJob, pass: 'late' as const, anonymousIds: ['sdk-anon-split'] };
@@ -225,6 +251,22 @@ describe('deletePosthogPerson, delete step', () => {
     });
     expect(deletion.body).toEqual({
       distinct_ids: [DISTINCT_ID, 'sdk-anon-a'],
+      delete_events: true,
+      delete_recordings: true,
+    });
+  });
+
+  it.each([
+    ['an id longer than a job can carry', ['x'.repeat(300), 'sdk-anon-a'], [DISTINCT_ID, 'sdk-anon-a']],
+    ['ids that are not ids', ['', 42, null, 'sdk-anon-a'], [DISTINCT_ID, 'sdk-anon-a']],
+    ['a list that is not a list', 'sdk-anon-a', [DISTINCT_ID]],
+  ])('still erases the account when the job carries %s', async (_label, anonymousIds, sent) => {
+    const fetchImpl = mockPosthog();
+
+    await expect(deletePosthogPerson({ ...deleteJob, anonymousIds }, { fetchImpl })).resolves.toBe('deleted');
+
+    expect(callTo(fetchImpl, '/persons/bulk_delete/').body).toEqual({
+      distinct_ids: sent,
       delete_events: true,
       delete_recordings: true,
     });
@@ -381,13 +423,34 @@ describe('deletePosthogPerson, either step', () => {
   it.each([
     { distinctId: '', reason: 'nope' },
     { ...deleteJob, stage: 'purge' },
-    { ...deleteJob, anonymousIds: 'sdk-anon-a' },
+    { ...deleteJob, distinctId: 'x'.repeat(201) },
   ])('drops a malformed job without calling PostHog', async (job) => {
     productionEnv();
     const fetchImpl = mockPosthog();
 
     await expect(deletePosthogPerson(job, { fetchImpl })).resolves.toBe('rejected');
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('logs the job id and the distinct id of a job it drops, so an operator can replay it', async () => {
+    productionEnv();
+    const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    const fetchImpl = mockPosthog();
+
+    await expect(
+      deletePosthogPerson({ ...deleteJob, reason: 'nope' }, { fetchImpl, jobId: 'job-1234' }),
+    ).resolves.toBe('rejected');
+
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        event: 'posthog_person_deletion_invalid_job',
+        jobId: 'job-1234',
+        distinctId: DISTINCT_ID,
+        invalidFields: ['reason'],
+      }),
+    );
+    errorLog.mockRestore();
   });
 });
 
