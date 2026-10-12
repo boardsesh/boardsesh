@@ -1,4 +1,4 @@
-/** Publication tombstones precede the replacement row by one second. */
+/** Keep a deployed document delay; membership withdrawals use their own guard. */
 const MINIMUM_STABILITY_WINDOW_SECONDS = 2;
 const DEFAULT_STABILITY_WINDOW_SECONDS = 30;
 
