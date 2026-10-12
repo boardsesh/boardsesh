@@ -318,6 +318,20 @@ const RuleFlagSchema = z.boolean().optional().nullable();
 // question, not a shape question.
 const ClimbSizeIdSchema = z.number().int().positive('Size ID must be positive').optional().nullable();
 
+// Deprecated: a climb has no audience, and the GraphQL field is kept, ignored,
+// only so installed builds that still send it are not rejected. Read here for
+// one thing. A climber on such a build, or with a publish queued offline before
+// the update, picked "Only me" or "Followers" a moment ago; publishing that
+// climb to everyone would silently widen what they chose. The nearest thing
+// that still exists is a draft (owner-only), so a restricted audience saves the
+// climb as a draft, and they publish it from the new app when they are ready.
+// The field is dropped from the parsed input either way.
+const DeprecatedClimbPrivacySchema = z.object({ audience: z.string() }).loose().optional().nullable();
+
+function asksForRestrictedAudience(privacy: { audience: string } | null | undefined): boolean {
+  return privacy?.audience === 'only_me' || privacy?.audience === 'followers';
+}
+
 export const SaveClimbInputSchema = z
   .object({
     boardType: BoardNameSchema,
@@ -356,11 +370,13 @@ export const SaveClimbInputSchema = z
     // `ClimbUuidSchema`, not `UUIDSchema`: a climb uuid is Aurora's 32-hex form,
     // not an RFC-4122 one, and every Boardsesh-authored climb follows it.
     remixOfClimbUuid: ClimbUuidSchema.optional(),
+    privacy: DeprecatedClimbPrivacySchema,
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
     path: ['angle'],
-  });
+  })
+  .transform(({ privacy, ...climb }) => ({ ...climb, isDraft: climb.isDraft || asksForRestrictedAudience(privacy) }));
 
 export const UpdateClimbInputSchema = z
   .object({
@@ -390,11 +406,16 @@ export const UpdateClimbInputSchema = z
     // wall. An edit needs it for the same reason a create does — the wall is
     // resolved from the stored climb's `layoutId`, which is not a secret.
     sprayWallUuid: UUIDSchema.optional(),
+    privacy: DeprecatedClimbPrivacySchema,
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
     path: ['angle'],
-  });
+  })
+  // On an edit, "stay a draft": a draft is not published with a restricted
+  // audience. A climb that is already published stays published (updateClimb
+  // never turns one back into a draft); its audience was already gone.
+  .transform(({ privacy, ...climb }) => (asksForRestrictedAudience(privacy) ? { ...climb, isDraft: true } : climb));
 
 export const MoonBoardHoldsInputSchema = z.object({
   start: z.array(z.string()).default([]),
@@ -402,28 +423,31 @@ export const MoonBoardHoldsInputSchema = z.object({
   finish: z.array(z.string()).default([]),
 });
 
-export const SaveMoonBoardClimbInputSchema = z.object({
-  boardType: z.literal('moonboard'),
-  layoutId: z.number().int().positive('Layout ID must be positive'),
-  name: z.string().min(1).max(200),
-  description: z.string().max(2000).optional().default(''),
-  holds: MoonBoardHoldsInputSchema,
-  angle: z.number().int().min(0).max(90),
-  isDraft: z.boolean().optional(),
-  userGrade: z.string().max(20).optional(),
-  isBenchmark: z.boolean().optional(),
-  // MoonBoard problem "method" as a characteristic token (mutually exclusive).
-  // Omitted = the "feet follow hands" default. Source of truth for the token set:
-  // CLIMB_CHARACTERISTICS in @boardsesh/shared-schema.
-  method: z
-    .enum([
-      CLIMB_CHARACTERISTICS.METHOD_FOOTLESS,
-      CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD,
-      CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD,
-    ])
-    .optional(),
-  setter: z.string().max(100).optional(),
-});
+export const SaveMoonBoardClimbInputSchema = z
+  .object({
+    boardType: z.literal('moonboard'),
+    layoutId: z.number().int().positive('Layout ID must be positive'),
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000).optional().default(''),
+    holds: MoonBoardHoldsInputSchema,
+    angle: z.number().int().min(0).max(90),
+    isDraft: z.boolean().optional(),
+    userGrade: z.string().max(20).optional(),
+    isBenchmark: z.boolean().optional(),
+    // MoonBoard problem "method" as a characteristic token (mutually exclusive).
+    // Omitted = the "feet follow hands" default. Source of truth for the token set:
+    // CLIMB_CHARACTERISTICS in @boardsesh/shared-schema.
+    method: z
+      .enum([
+        CLIMB_CHARACTERISTICS.METHOD_FOOTLESS,
+        CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD,
+        CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD,
+      ])
+      .optional(),
+    setter: z.string().max(100).optional(),
+    privacy: DeprecatedClimbPrivacySchema,
+  })
+  .transform(({ privacy, ...climb }) => (asksForRestrictedAudience(privacy) ? { ...climb, isDraft: true } : climb));
 
 export const CheckMoonBoardClimbDuplicatesInputSchema = z.object({
   layoutId: z.number().int().positive('Layout ID must be positive'),
