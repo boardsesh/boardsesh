@@ -75,6 +75,29 @@ function sameSetup(preset: BoardConfigPreset, layoutId: number | null, sizeId: n
   return normaliseSetIds(preset.setIds.join(',')) === normaliseSetIds(setIds.join(','));
 }
 
+type SelectedGym = {
+  uuid: string;
+  name: string;
+  isPublic: boolean;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+/**
+ * Whether the board's place is nothing more than the gym's own listing: no
+ * coordinates or exactly the gym's, and no name or exactly the gym's. Mirrors
+ * the server's `boardSitsAtGym`.
+ */
+function sitsAtGymPlace(
+  coords: { latitude: number; longitude: number } | null,
+  locationName: string,
+  gym: SelectedGym,
+): boolean {
+  const coordsAtGym = coords == null || (coords.latitude === gym.latitude && coords.longitude === gym.longitude);
+  const name = locationName.trim();
+  return coordsAtGym && (name === '' || name === gym.name.trim());
+}
+
 /**
  * The cascading board-config state machine behind the create-board builder
  * (board → layout → size → sets → angle), plus the optional "more options" meta
@@ -132,13 +155,31 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // under a gym rather than as a lone pin (#4166).
   // A seeded gym (edit) does not say whether it is public, so only a gym picked
   // in this session can lock the location switch.
-  const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string; isPublic: boolean } | null>(
-    seed?.gymUuid && seed?.gymName ? { uuid: seed.gymUuid, name: seed.gymName, isPublic: false } : null,
+  const [selectedGym, setSelectedGymState] = useState<SelectedGym | null>(
+    seed?.gymUuid && seed?.gymName
+      ? { uuid: seed.gymUuid, name: seed.gymName, isPublic: false, latitude: null, longitude: null }
+      : null,
   );
-  // A board in a public gym always shows where it is: the gym already lists its
-  // address, and the server ignores a request to hide it there. The hidden
-  // default is for home walls. Spray walls keep their own rules, as on the server.
-  const gymSharesLocation = selectedGym?.isPublic === true && boardName !== 'spray';
+  // A board at a public gym's own place always shows where it is: the gym
+  // already lists that place, and the server ignores a request to hide it
+  // there. The hidden default is for home walls. "Its own place" is the server's
+  // rule too (boardSitsAtGym): the gym's coordinates and name, which a pick
+  // stamps on the board. Use my location or a typed name moves the board off
+  // it, and then the climber's own place is theirs to share. Spray walls keep
+  // their own rules, as on the server.
+  const gymSharesLocation =
+    selectedGym?.isPublic === true && boardName !== 'spray' && sitsAtGymPlace(coords, locationName, selectedGym);
+  // Moving off the gym's place makes the board a home wall again: hidden until
+  // the owner shares it, rather than keeping the "shown" the gym had set.
+  const sharedByGymRef = useRef(gymSharesLocation);
+  useEffect(() => {
+    const wasSharedByGym = sharedByGymRef.current;
+    sharedByGymRef.current = gymSharesLocation;
+    if (wasSharedByGym && !gymSharesLocation && boardName !== 'spray') {
+      setHideLocation(true);
+      setPrivacyLocationAudience(undefined);
+    }
+  }, [gymSharesLocation, boardName]);
 
   // Re-seed when the seed's VALUES change (opened from a different Popular
   // config). Keyed on the serialized seed, not its object identity, so an
@@ -261,7 +302,17 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
         longitude?: number | null;
       } | null,
     ) => {
-      setSelectedGymState(gym ? { uuid: gym.uuid, name: gym.name, isPublic: gym.isPublic === true } : null);
+      setSelectedGymState(
+        gym
+          ? {
+              uuid: gym.uuid,
+              name: gym.name,
+              isPublic: gym.isPublic === true,
+              latitude: gym.latitude ?? null,
+              longitude: gym.longitude ?? null,
+            }
+          : null,
+      );
       // In a public gym the location is shown; anywhere else the board goes
       // back to the home-wall default, hidden.
       if (boardNameRef.current !== 'spray') {

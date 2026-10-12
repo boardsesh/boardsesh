@@ -54,6 +54,30 @@ describe('useBoardBuilder', () => {
     expect(result.current.hideLocation).toBe(true);
   });
 
+  it("unlocks and hides the location when the board leaves the public gym's own place", () => {
+    const { result } = renderHook(() => useBoardBuilder(null, { privacyEnabled: true }));
+    act(() => result.current.selectLayout(1));
+    const gym = { uuid: 'gym-1', name: 'Boulder Central', latitude: 47, longitude: 8, isPublic: true };
+
+    act(() => result.current.setSelectedGym(gym));
+    expect(result.current.gymSharesLocation).toBe(true);
+
+    // Use my location after the pick: the coordinates are the climber's now,
+    // so the gym rule no longer shows them and the home default comes back.
+    act(() => result.current.setCoords({ latitude: 47.00108, longitude: 8 }));
+    expect(result.current.gymSharesLocation).toBe(false);
+    expect(result.current.hideLocation).toBe(true);
+    expect(result.current.buildCreateInput()).toMatchObject({ gymUuid: 'gym-1', hideLocation: true });
+    expect(result.current.buildCreateInput()).not.toHaveProperty('locationAudience');
+
+    // Back at the gym's place, but with a typed address: still the climber's.
+    act(() => result.current.setSelectedGym(gym));
+    expect(result.current.gymSharesLocation).toBe(true);
+    act(() => result.current.setLocationName('12 Elm Street'));
+    expect(result.current.gymSharesLocation).toBe(false);
+    expect(result.current.hideLocation).toBe(true);
+  });
+
   it('auto-selects a size and all its sets when a layout is picked, satisfying canCreate', () => {
     const { result } = renderHook(() => useBoardBuilder());
     expect(result.current.canCreate).toBe(false);
