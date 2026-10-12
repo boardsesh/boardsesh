@@ -6,27 +6,24 @@ this when the transaction lasts longer. `syncDeletions` now uses a DB-stamped
 stream timestamp and waits for older writer transactions before delivering a
 page. This change does not alter the document-page stability window.
 
-`deleted_at` remains the client resurrection guard. In this release a
-membership withdrawal (migration `0270_climb_reference_membership`) is stamped one second before the climb's
-new `updated_at`. That is after every copy a device can have pulled, because a
-device only pulls a version once it is a stability window old and deployed
-windows are at least two seconds, and before the owner's re-delivered row, so a
-replay of the deletion stream never deletes it. One copy is not covered: an old
-public row read through MVCC while the privatizing transaction is still open,
-which can be newer than the guard when that transaction runs long. The guard
-migration that closes it ships one release later; see
-[The withdrawal guard, one release later](#the-withdrawal-guard-one-release-later).
+`deleted_at` remains the client resurrection guard. Membership withdrawals
+(`0274_climb_membership_withdrawal_guard`) use the next whole UTC second after
+both the old climb version and the write clock. This covers an old public copy
+fetched through MVCC while privatization remains uncommitted. A fixed stability
+window cannot prevent that read during a long transaction. Whole seconds also
+preserve the installed SQLite text comparison: within a second, `.100001Z` sorts
+before `.1Z` even though it is numerically newer.
 
-This release also adds the internal `is_membership_withdrawal` flag (migration
-`0273_climb_membership_withdrawal_flag`) and the filter that reads it. In the same page statement, the backend
-omits a flagged climb withdrawal if the current climb is readable to the viewer
-under the sync public/owner and spray-wall rules. Filtering precedes
+These markers carry the internal `is_membership_withdrawal` flag
+(`0273_climb_membership_withdrawal_flag`). In the same page statement, the
+backend omits a flagged climb withdrawal if the current climb is readable to the
+viewer under the sync public/owner and spray-wall rules. Filtering precedes
 pagination, so a page containing only omitted markers cannot hide later
-withdrawals from installed clients that stop on an empty page. Nothing in this
-release sets the flag: every withdrawal is an ordinary marker, delivered to
-every device, which the one-second backdate makes safe. Ordinary hard-delete
-markers keep their original behavior. No climb timestamp is moved into the
-future.
+withdrawals from installed clients that stop on an empty page. A later
+publication restriction or protected-owner transfer writes a new marker; a
+replay therefore preserves the current owner's or republished copy. Ordinary
+hard-delete markers keep their original behavior. No climb timestamp is moved
+into the future.
 
 A BEFORE INSERT
 trigger always stamps `stream_at` using UTC `clock_timestamp()`, including when
@@ -66,7 +63,9 @@ control this separately owned helper. Do not preinstall it and then run an
 older migrator. The coordinated order is updated tooling, admin bootstrap,
 this release's migrations, then this release's backend. The previous backend
 may keep serving sync while the migrations run: none of them writes a marker it
-cannot read. Installed app versions remain compatible.
+cannot read. Installed app versions remain compatible. The guard migration
+that follows has its own order; see
+[The withdrawal guard, one release later](#the-withdrawal-guard-one-release-later).
 
 1. Run `vp exec tsx packages/db/scripts/bootstrap-sync-deletions-cutoff.ts` to inspect the plan.
 2. Set `SYNC_CUTOFF_ADMIN_DATABASE_URL` and run that command with `--apply`.
@@ -117,9 +116,11 @@ ordinary routine ownership/ACL sweeps must not re-own it. The audit checks its
 canonical body, owner, membership, and runtime-only EXECUTE privileges.
 
 Leave the stream column, trigger, classification and helper in place when
-rolling back. A backend from before this release is a safe rollback target
-while no flagged marker exists, which holds until the guard migration below is
-applied. Do not remove the helper while the new backend is running. Delivery
+rolling back. Once the guard migration below is applied, roll back only to a
+backend that includes the membership-withdrawal readability filter (#6339 or
+later), or keep sync unavailable while rolling forward to one. Restoring the old
+producer function alone is insufficient: already-written flagged markers remain
+in the deletion log. Do not remove the helper while the new backend is running. Delivery
 stalls safely during a prepared transaction or loss of stats access; monitor
 paused polls and resolve that database condition.
 
@@ -131,22 +132,21 @@ accepts any nonnegative bound; deployed pull resolvers supply the guarded one.
 
 ## The withdrawal guard, one release later
 
-The guard migration replaces the membership trigger's function. It stamps a
-withdrawal at the next whole UTC second after both the old climb version and
-the write clock, which covers a copy read through MVCC while privatization is
-uncommitted, and it sets `is_membership_withdrawal`. Whole seconds also keep
-the installed SQLite text comparison right: within a second, `.100001Z` sorts
-before `.1Z` even though it is numerically newer.
+`0274_climb_membership_withdrawal_guard` replaces the membership trigger's
+function: the whole-second guard and the flag described at the top. Before it,
+a withdrawal was stamped one second before the climb's new row
+(`0270_climb_reference_membership`), which missed only a copy read through MVCC
+while privatization was uncommitted.
 
-That marker is at or after the owner's new `updated_at`, so only the flag
+The guarded marker is at or after the owner's new `updated_at`, so only the flag
 filter keeps it from the owner's device. A backend without the filter, serving
 sync while the migration runs or after a rollback, would deliver it and the
-owner's device would delete their own climb for good. So the guard ships one
-release after this one, as a separate PR stacked on it (expand, then contract):
+owner's device would delete their own climb for good. So the guard shipped one
+release after the filter (expand, then contract):
 
-1. This release ships the flag column and the filter, with nothing flagged.
-2. The guard migration merges only once this release's backend is live in
-   production. The backend still serving during that deploy then already
-   filters, and so does every rollback target from this release on.
-3. From then on, never roll the backend back to a build from before this
-   release.
+1. #6339 shipped the flag column and the filter, with nothing flagged.
+2. The guard merges only once a #6339 backend is live in production. The
+   backend still serving during its deploy then already filters, and so does
+   every rollback target from #6339 on.
+3. From then on, never roll the backend back to a build from before #6339
+   (see docs/production-deploy.md, "Migrations stay backward-compatible").

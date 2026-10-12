@@ -533,11 +533,14 @@ pull with no audience. See
 shared predicate and the query shapes.
 
 When a published climb becomes a draft or is unlisted, the server writes a
-global `board_climbs` deletion marker and moves the climb's stats and grades
-rows to the climb's new cursor position. The marker is stamped one second
-before the climb's new row, so every device drops the copies it pulled and the
-owner's device keeps the changed row it receives, on a replay too. Other
-devices delete their old copies. The server writes no marker for the stats or
+global `board_climbs` membership-withdrawal marker and moves the climb's stats
+and grades rows to the climb's new cursor position. The marker covers the next
+whole UTC second after the old version and write clock, including copies read
+while the change remains uncommitted. Before pagination, the same-snapshot
+deletion query omits flagged withdrawals for viewers who can currently read
+the climb. Its owner receives the changed row without a destructive replay;
+other devices delete their old copies. A later publication restriction or
+protected-owner transfer creates another marker. The server writes no marker for the stats or
 grades rows. An installed device drops the climb and its holds-index entry when
 it applies the marker; the climb's stats and grades rows stay on the device
 with no climb to show them against until the client in #6329 removes them with

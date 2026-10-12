@@ -684,6 +684,13 @@ policies to `unlisted`. Never roll the backend back to a build from before
 #6345: an older backend reads an `unlisted` session as open, so those sessions
 would be listed in Climbing, nearby discovery and the global comment feed.
 
+Once `0274_climb_membership_withdrawal_guard` has run, never roll the backend
+back to a build from before #6339. That migration writes climb withdrawals at or
+after the owner's new row, and only a backend with #6339's flag filter keeps
+them from the owner's phone; an older backend would hand them over and the phone
+would delete the owner's own climb for good. See
+[the withdrawal guard](sync-deletions-cutoff.md#the-withdrawal-guard-one-release-later).
+
 ## Required GitHub configuration
 
 Web-specific config lives in the **Production** GitHub environment alongside

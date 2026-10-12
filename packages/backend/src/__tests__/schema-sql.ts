@@ -113,14 +113,14 @@ const referenceMembershipSchema = readFileSync(
   new URL('../../../db/drizzle/0270_climb_reference_membership.sql', import.meta.url),
   'utf8',
 );
-// The generated discriminator column, replayed instead of a separate fixture
-// copy. Nothing in this release writes it as true: the trigger that flags a
-// withdrawal ships one release later, once every backend serving sync filters
-// flagged markers.
-const membershipWithdrawalSchema = readFileSync(
-  new URL('../../../db/drizzle/0273_climb_membership_withdrawal_flag.sql', import.meta.url),
-  'utf8',
-);
+// The generated discriminator and trigger replacement are the production guard
+// contract; replay both instead of maintaining a separate fixture copy.
+const membershipWithdrawalSchema = [
+  '0273_climb_membership_withdrawal_flag.sql',
+  '0274_climb_membership_withdrawal_guard.sql',
+]
+  .map((filename) => readFileSync(new URL(`../../../db/drizzle/${filename}`, import.meta.url), 'utf8'))
+  .join('\n');
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;

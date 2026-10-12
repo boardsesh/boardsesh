@@ -2030,24 +2030,27 @@ nothing about who gets it.
 
 #### Leaving the reference set
 
-`trg_board_climbs_reference_membership` (migration `0270_climb_reference_membership`) fires when an update changes a protected owner or moves a
+`trg_board_climbs_reference_membership` (`0270_climb_reference_membership`, guarded by `0274_climb_membership_withdrawal_guard`) fires when an update changes a protected owner or moves a
 climb across the line, in either direction, whichever writer made it.
 
 - **Leaving** writes one `sync_deletions` row for `board_climbs` with no user, so
-  every device applies it. No stream delivers the new row to anyone but its owner, and
+  every device without current read access applies it. No stream delivers the new row to anyone but its owner, and
   without the marker every other device would keep the published copy. Bulk imports
   that delete and recreate a board set `boardsesh.suppress_sync_tombstones`; the marker
   honours it like the delete triggers do.
-- **The marker is stamped one second before the new row.** A device deletes a
-  row when `updated_at <= deletedAt`, so the marker removes every copy a device
-  pulled (each is at least a stability window older, and deployed windows are at
-  least two seconds) and never the owner's re-delivered row, even when a replay
-  of the deletion stream hands it over again. A copy read through MVCC while the
-  privatizing transaction is still open can be newer than that; the guard
-  migration that covers it ships one release later, together with the
-  `is_membership_withdrawal` flag it sets. This release adds the flag column and
-  the filter that omits a flagged marker for a viewer who can still read the
-  climb, before anything flags one. See
+- **The marker covers the old version, including a slow transaction.** Its guard
+  is the next whole UTC second after the old `updated_at` and the write clock.
+  Another device can fetch the old public MVCC row while privatization remains
+  uncommitted, even after that row is older than the stability window. Backdating
+  from the transaction's start would miss that copy. A whole-second guard also
+  orders correctly against variable-fraction ISO strings in installed SQLite.
+- **Current readers do not receive membership withdrawals.** These markers carry
+  `is_membership_withdrawal`; the page query checks current sync public/owner and
+  spray-wall access in the same snapshot and filters before pagination. This
+  preserves the current owner's or republished row on replay without advancing
+  document timestamps into the future. A later publication restriction or
+  protected-owner transfer writes a new marker. The guard shipped a release after
+  the filter; see
   [sync-deletions-cutoff.md](sync-deletions-cutoff.md#the-withdrawal-guard-one-release-later).
 - **Losing access to a spray wall writes no marker.** A phone keeps the wall's
   climbs it already synced until sign-out or an account switch: the app stopped
@@ -2067,7 +2070,7 @@ climb across the line, in either direction, whichever writer made it.
   on the device with no climb to show them against, until the client in #6329
   removes them with the climb.
 
-An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a marker is scoped to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
+An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a membership-withdrawal marker is scoped to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
 client engine against the real resolvers: other devices drop the climb, its owner
 keeps it on a device that had it and on a fresh install, a replay of the deletion
 stream does not remove it, and publishing it again delivers it to everyone.

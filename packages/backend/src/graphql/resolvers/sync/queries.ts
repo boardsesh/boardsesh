@@ -63,11 +63,8 @@ const EPOCH_SEQ = '0';
 // be skipped forever. Excluding rows younger than the longest realistic write
 // transaction bounds that race: a skip is unrecoverable, a re-pull is a free
 // upsert. Tests set SYNC_STABILITY_WINDOW_SECONDS=0 to pull their own writes.
-// Deployed document windows retain a minimum delay of two seconds. A membership
-// withdrawal is stamped one second before the climb's new row
-// (0270_climb_reference_membership),
-// which covers every copy a device pulled only while this window stays above
-// one second.
+// Deployed document windows retain a minimum delay. Membership withdrawals
+// cover the old version directly and do not depend on this delay for their guard.
 // Invalid values use the default; only exact-zero test fixtures bypass it.
 const STABILITY_WINDOW_SECONDS = resolveSyncStabilityWindowSeconds(
   process.env.SYNC_STABILITY_WINDOW_SECONDS,

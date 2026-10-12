@@ -1,8 +1,4 @@
-/**
- * Keep a deployed document delay. A membership withdrawal is stamped one second
- * before the climb's new row, so it covers every older copy only while the
- * window stays above one second.
- */
+/** Keep a deployed document delay; membership withdrawals use their own guard. */
 const MINIMUM_STABILITY_WINDOW_SECONDS = 2;
 const DEFAULT_STABILITY_WINDOW_SECONDS = 30;
 

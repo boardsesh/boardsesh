@@ -78,13 +78,7 @@ describe('membership withdrawals retain only rows this viewer can currently sync
     expect((await pull()).deletions.map((deletion) => deletion.recordId)).toEqual(['withdrawal-recreated']);
   });
 
-  // The flag ships here with the filter that reads it, and nothing sets it yet:
-  // the trigger that flags a withdrawal comes one release later, once every
-  // backend serving sync filters flagged markers. Until then a withdrawal is an
-  // ordinary marker, stamped one second before the new row
-  // (0270_climb_reference_membership),
-  // which an older backend delivers safely.
-  it('leaves the real membership trigger and a later hard delete both unflagged in this release', async () => {
+  it('classifies the real membership trigger while leaving a subsequent hard delete ordinary', async () => {
     await climb('withdrawal-classification', OTHER);
     await db.execute(sql`UPDATE board_climbs SET is_draft = true WHERE uuid = 'withdrawal-classification'`);
     await db.execute(sql`DELETE FROM board_climbs WHERE uuid = 'withdrawal-classification'`);
@@ -94,7 +88,7 @@ describe('membership withdrawals retain only rows this viewer can currently sync
         WHERE table_name = 'board_climbs' AND record_id = 'withdrawal-classification' ORDER BY id
       `),
     );
-    expect(classificationRows.map((row) => row.is_membership_withdrawal)).toEqual([false, false]);
+    expect(classificationRows.map((row) => row.is_membership_withdrawal)).toEqual([true, false]);
   });
 
   it('does not classify another table or an unsupported board as a readable climb withdrawal', async () => {
