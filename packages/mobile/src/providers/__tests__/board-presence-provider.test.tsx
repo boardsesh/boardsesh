@@ -872,28 +872,30 @@ describe('MobileBoardPresenceProvider', () => {
     expect(sharedProvider.lastBoardUuid).toBe('held-link');
   });
 
-  it('retains only the exact picked candidate UUID after serial disambiguation', async () => {
-    transport.resolveBoardCandidatesForSerial.mockResolvedValue({
-      board: null,
-      candidates: [
-        {
-          boardId: 1,
-          boardUuid: 'held-home',
-          boardName: 'Home',
-          boardType: 'kilter',
-          isOwnedByMe: true,
-          isPublic: false,
-        },
-        {
-          boardId: 2,
-          boardUuid: 'held-gym',
-          boardName: 'Gym',
-          boardType: 'kilter',
-          isOwnedByMe: false,
-          isPublic: true,
-        },
-      ],
-    });
+  const twoCandidates = {
+    board: null,
+    candidates: [
+      {
+        boardId: 1,
+        boardUuid: 'held-home',
+        boardName: 'Home',
+        boardType: 'kilter',
+        isOwnedByMe: true,
+        isPublic: false,
+      },
+      {
+        boardId: 2,
+        boardUuid: 'candidate-gym',
+        boardName: 'Gym',
+        boardType: 'kilter',
+        isOwnedByMe: false,
+        isPublic: true,
+      },
+    ],
+  };
+
+  it('binds a picked serial candidate by its id alone, never with the candidate list uuid', async () => {
+    transport.resolveBoardCandidatesForSerial.mockResolvedValue(twoCandidates);
     transport.chooseBoardForSerial.mockResolvedValue({ boardId: 2 } as ResolvedBoard);
     renderProvider();
     let binding: Promise<BoardBindingIdentity | null> | undefined;
@@ -907,13 +909,49 @@ describe('MobileBoardPresenceProvider', () => {
       });
     });
     await waitFor(() => expect(disambiguationSheet.props?.visible).toBe(true));
+    let settled: BoardBindingIdentity | null | undefined;
     await act(async () => {
       await disambiguationSheet.props?.onPick(2);
-      await binding;
+      settled = await binding;
     });
     expect(sharedProvider.lastBoardId).toBe(2);
-    expect(sharedProvider.lastBoardUuid).toBe('held-gym');
+    // A serial is not a board's link: the candidate's uuid never reaches presence.
+    expect(sharedProvider.lastBoardUuid).toBeNull();
+    expect(settled).toEqual({ boardId: 2 });
+    expect(transport.resolveBoardForUuid).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['the chosen board', 2, 'held-link'],
+    ['another board', 7, null],
+  ] as const)(
+    'pairs a pick with a uuid the climber already held only when it verifies as %s',
+    async (_case, verifiedBoardId, expectedUuid) => {
+      transport.resolveBoardCandidatesForSerial.mockResolvedValue(twoCandidates);
+      transport.chooseBoardForSerial.mockResolvedValue({ boardId: 2 } as ResolvedBoard);
+      transport.resolveBoardForUuid.mockResolvedValue({ boardId: verifiedBoardId } as ResolvedBoard);
+      renderProvider();
+      let binding: Promise<BoardBindingIdentity | null> | undefined;
+      act(() => {
+        binding = capturedControls?.resolveAndBindBoard({
+          serial: 'shared',
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          selectedBoardUuid: 'held-link',
+        });
+      });
+      await waitFor(() => expect(disambiguationSheet.props?.visible).toBe(true));
+      await act(async () => {
+        await disambiguationSheet.props?.onPick(2);
+        await binding;
+      });
+      expect(transport.resolveBoardForUuid).toHaveBeenLastCalledWith({ boardUuid: 'held-link' });
+      expect(sharedProvider.lastBoardId).toBe(2);
+      expect(sharedProvider.lastBoardUuid).toBe(expectedUuid);
+    },
+  );
 
   it('automatically revalidates the settled UUID binding after credential rotation without changing callbacks', async () => {
     const view = renderProvider();

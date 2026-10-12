@@ -605,27 +605,24 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
           boardId: chosenBoardId,
           serial: pendingDisambiguationState.serial,
         });
-        const selectedCandidate = pendingDisambiguationState.candidates.find(
-          (candidate) => candidate.boardId === chosenBoardId,
-        );
+        // A serial is not a board's link, so a candidate's uuid is never paired
+        // with the binding. Only a uuid the climber already held (the board they
+        // had selected when they connected), verified to be the chosen board the
+        // same way the single-board branch verifies it, opens its presence.
         const intent = bindingIntentRef.current;
-        if (
-          pendingBoardBindingResolutionRef.current === pendingResolution &&
-          isAuthCredentialGenerationCurrent(pendingResolution.credentialGeneration) &&
-          resolved.boardId === chosenBoardId &&
-          selectedCandidate?.boardUuid &&
-          intent?.kind === 'serial'
-        ) {
-          bindingIntentRef.current = {
-            kind: 'serial',
-            args: { ...intent.args, selectedBoardUuid: selectedCandidate.boardUuid },
-          };
+        const heldBoardUuid = intent?.kind === 'serial' ? (intent.args.selectedBoardUuid ?? null) : null;
+        let verifiedBoardUuid: string | null = null;
+        if (heldBoardUuid && resolved.boardId === chosenBoardId && activeClient.resolveBoardForUuid) {
+          try {
+            const heldBoard = await activeClient.resolveBoardForUuid({ boardUuid: heldBoardUuid });
+            if (heldBoard.boardId === chosenBoardId) verifiedBoardUuid = heldBoardUuid;
+          } catch {
+            /* The chosen board stays bound by its numeric id alone. */
+          }
         }
         settleActiveResolution(pendingResolution, {
           boardId: resolved.boardId,
-          ...(resolved.boardId === chosenBoardId && selectedCandidate?.boardUuid
-            ? { boardUuid: selectedCandidate.boardUuid }
-            : {}),
+          ...(verifiedBoardUuid ? { boardUuid: verifiedBoardUuid } : {}),
         });
       } catch (error) {
         settleActiveResolution(pendingResolution, null);
