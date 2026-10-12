@@ -26,6 +26,9 @@ import {
 import { FlatList, RefreshControl, StyleSheet, View, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { screenshotPublishedBoardKey } from '../../lib/board-presence/screenshot-wall-seed';
+import { screenshotCppWallHeroTestId } from '../../lib/screenshot-board-selection';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
@@ -73,6 +76,13 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 
 const ACTION_CLIMB_CACHE_LIMIT = 50;
+
+// Like ShowcaseAnchorView, the capture-only hook is chosen once per JS bundle.
+// Ordinary builds add neither an active-board subscriber nor a capture host.
+const useCppActiveBoard =
+  process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL
+    ? useActiveBoard
+    : () => ({ data: null });
 
 type BoardSheetRowBoard = {
   boardName: BoardName;
@@ -268,6 +278,18 @@ function NowOnTheWallPanelComponent(
   const { history, stats } = useBoardPresenceFeed();
   const { refresh } = useBoardPresenceActions();
   const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
+  const { data: currentActiveBoard } = useCppActiveBoard();
+  const cppWallHeroTestID = screenshotCppWallHeroTestId({
+    captureEnabled: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL,
+    column: variant === 'column',
+    publishedBoardUuid:
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL
+        ? screenshotPublishedBoardKey()
+        : null,
+    activeBoard: currentActiveBoard,
+    panelConfig: boardConfig,
+    climbUuid: currentClimb?.climbUuid,
+  });
 
   // Pull-to-refresh: a manual catch-up for when a user notices the wall feed is
   // stale. `refresh()` is fire-and-forget (the durable history merges back in
@@ -649,7 +671,7 @@ function NowOnTheWallPanelComponent(
         ) : null}
         {/* Showcase anchors (screenshot mode): the board sheet only, never the
             iPad kiosk column or the Wall tab, so one panel reports each name. */}
-        <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'}>
+        <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'} testID={cppWallHeroTestID}>
           {canUseInteractiveRows && rowBoard && currentClimb ? (
             <InteractiveHeroRow
               climb={currentClimb}
@@ -753,6 +775,7 @@ function NowOnTheWallPanelComponent(
     );
   }, [
     currentClimb,
+    cppWallHeroTestID,
     boardConfig,
     stats,
     visibleHistory.length,

@@ -97,11 +97,32 @@ describe('useShowcaseAnchor outside screenshot mode', () => {
   it('renders ShowcaseAnchorView children untouched', async () => {
     const { ShowcaseAnchorView } = await loadShowcaseAnchor(false);
     const child = 'row';
-    expect(ShowcaseAnchorView({ name: 'play-next', children: child })).toBe(child);
+    expect(ShowcaseAnchorView({ name: 'play-next', testID: 'capture-only-host', children: child })).toBe(child);
   });
 });
 
 describe('useShowcaseAnchor in screenshot mode', () => {
+  it('identifies the actual existing hero host once without an empty or duplicate readiness view', async () => {
+    const { ShowcaseAnchorView } = await loadShowcaseAnchor(true);
+    const child = createElement('span', null, 'Actual wall climb');
+    const { container } = render(
+      createElement(ShowcaseAnchorView, {
+        name: 'now-on-wall',
+        enabled: false,
+        testID: 'cpp-wall-hero-owned-climb',
+        children: child,
+      }),
+    );
+    expect(container.textContent).toBe('Actual wall climb');
+    expect(container.querySelectorAll('span')).toHaveLength(1);
+    expect(renderedViews.props).toHaveLength(1);
+    expect(renderedViews.props[0]).toMatchObject({
+      testID: 'cpp-wall-hero-owned-climb',
+      collapsable: false,
+      children: child,
+    });
+    expect(renderedViews.props[0].onLayout).toBeUndefined();
+  });
   it('logs the measured rect on layout, re-measures once the sheet settles, and skips repeats', async () => {
     vi.useFakeTimers();
     const { useShowcaseAnchor, SHOWCASE_ANCHOR_SETTLE_DELAYS_MS } = await loadShowcaseAnchor(true);

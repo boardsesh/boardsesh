@@ -807,9 +807,21 @@ describe('CPP account/bootstrap safety', () => {
         ]),
       ),
     );
+    expect(result.scenario?.cpp?.boardNames).toEqual(
+      Object.fromEntries(
+        [...readCppPage('kilter').heroBoards, ...readCppPage('kilter').otherBoards].map((variant, index) => [
+          variant.id,
+          harness.owned[index].name,
+        ]),
+      ),
+    );
     expect(result.scenario?.cpp?.scenes.logbook).toMatchObject({
       readyText: genuineClimb(harness.owned[0]).name,
       ascentId: testUuid(910),
+    });
+    expect(result.scenario?.cpp?.scenes.status).toMatchObject({
+      readyText: genuineClimb(harness.owned[0]).name,
+      climbId: genuineClimb(harness.owned[0]).uuid,
     });
     expect(harness.operations.find((entry) => entry.name === 'GetUserGroupedAscentsFeed')?.variables).toEqual({
       userId: ACCOUNT,
@@ -957,6 +969,72 @@ describe('CPP account/bootstrap safety', () => {
     ]) {
       expect(sessionPathMatchesBoard(path, board)).toBe(false);
     }
+  });
+
+  it('keeps verified real board names distinct when two configured boards share a first-climb title', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    const seven = harness.owned[1];
+    const ten = harness.owned[2];
+    seven.name = "Alex's Kilter Homewall 7×10";
+    ten.name = "Alex's Kilter Homewall 10×10";
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'SearchClimbs') {
+        const input = variables.input as { boardName: string; layoutId: number; sizeId: number };
+        const actual = [seven, ten].find(
+          (board) =>
+            board.boardType === input.boardName && board.layoutId === input.layoutId && board.sizeId === input.sizeId,
+        );
+        if (actual) {
+          validateActualInput('SearchClimbs', variables);
+          return { searchClimbs: { climbs: [{ ...genuineClimb(actual), name: 'Moon Landing' }] } } as T;
+        }
+      }
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toEqual([]);
+    const variants = readCppPage('kilter').heroBoards;
+    expect(result.scenario?.cpp?.boardReadyText[variants[1].id]).toBe('Moon Landing');
+    expect(result.scenario?.cpp?.boardReadyText[variants[2].id]).toBe('Moon Landing');
+    expect(result.scenario?.cpp?.boardNames).toMatchObject({
+      [variants[1].id]: seven.name,
+      [variants[2].id]: ten.name,
+    });
+    expect(result.scenario?.cpp?.boardIds).toMatchObject({ [variants[1].id]: seven.uuid, [variants[2].id]: ten.uuid });
+    expect(result.scenario?.cpp?.boardNames?.[variants[1].id]).not.toBe(variants[1].selector);
+    expect(result.scenario?.cpp?.boardNames?.[variants[2].id]).not.toBe(variants[2].selector);
+  });
+
+  it('preserves the genuine Aurora compact first-climb identifier for tablet status proof', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    const actualPrimary = harness.owned[0];
+    const recordedAuroraId = 'D0E5387D5B974D38B4E93FC4DFD61EF6';
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const input = variables.input as { boardName?: string; layoutId?: number; sizeId?: number } | undefined;
+      if (
+        getOperationAST(parse(query))?.name?.value === 'SearchClimbs' &&
+        input?.boardName === actualPrimary.boardType &&
+        input.layoutId === actualPrimary.layoutId &&
+        input.sizeId === actualPrimary.sizeId
+      )
+        return { searchClimbs: { climbs: [{ ...genuineClimb(actualPrimary), uuid: recordedAuroraId }] } } as T;
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toEqual([]);
+    expect(result.scenario?.cpp?.scenes.status.climbId).toBe(recordedAuroraId);
+    expect(result.scenario?.cpp?.scenes.status.climbId).not.toBe(recordedAuroraId.toLowerCase());
+    expect(result.scenario?.cpp?.scenes.status.readyText).toBe(genuineClimb(actualPrimary).name);
   });
 
   it('resumes checkpoint-owned session initialization after a failed queue join', async () => {

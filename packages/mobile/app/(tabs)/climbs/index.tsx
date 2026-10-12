@@ -129,7 +129,11 @@ import {
   buildScreenshotWallSeed,
   publishScreenshotWallClimbs,
 } from '../../../src/lib/board-presence/screenshot-wall-seed';
-import { resolveScreenshotBoard, screenshotClimbMatchesBoard } from '../../../src/lib/screenshot-board-selection';
+import {
+  resolveScreenshotBoard,
+  screenshotClimbMatchesBoard,
+  screenshotCppClimbListTestId,
+} from '../../../src/lib/screenshot-board-selection';
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
@@ -2296,7 +2300,18 @@ function ClimbListInner() {
         <ClimbProgressProvider targets={progressTargets}>
           <FlashList
             ref={climbListRef}
-            testID="climb-list"
+            testID={screenshotCppClimbListTestId({
+              captureEnabled:
+                process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL,
+              scene: screenshotCppScene,
+              activeBoard,
+              targetUuid: screenshotTargetBoard?.uuid,
+              searchReady,
+              loading: isClimbsLoading,
+              resolving: isBoardResolving,
+              placeholder: isPlaceholderData,
+              firstClimb: visibleClimbs[0],
+            })}
             // Screen readers skip the tint, so announce the stale rows as loading.
             accessibilityState={{ busy: isPlaceholderData }}
             data={visibleClimbs}

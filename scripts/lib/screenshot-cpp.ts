@@ -40,6 +40,8 @@ export interface CppSceneCoverage {
   readyText: string;
   /** Actual rendered LogbookRow ascent UUID, selected from the genuine feed. */
   ascentId?: string;
+  /** Actual rendered climb identifier, preserving Aurora's compact UUID form. */
+  climbId?: string;
   readyTextByLocale?: Record<'en-US' | 'es' | 'fr' | 'de', string>;
   sessionId?: string;
 }
@@ -48,9 +50,14 @@ export function isCppAscentId(candidate: unknown): candidate is string {
     typeof candidate === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)
   );
 }
+export function isCppClimbId(candidate: unknown): candidate is string {
+  return isCppAscentId(candidate) || (typeof candidate === 'string' && /^[0-9a-f]{32}$/i.test(candidate));
+}
 export interface CppCaptureCoverage {
   target: CppTarget;
   boardIds?: Record<string, string>;
+  /** Actual visible names from the verified UUID/config-matched owned roster. */
+  boardNames?: Record<string, string>;
   boardReadyText: Record<string, string>;
   boardReadyTextByLocale?: Record<string, Record<'en-US' | 'es' | 'fr' | 'de', string>>;
   boardHeroModes?: Record<string, 'climb' | 'wall-editor'>;
@@ -196,6 +203,12 @@ export function assertCppCaptureReady(
       new Set(boards.map((board) => coverage.boardIds?.[board.id])).size !== boards.length)
   )
     throw new Error(`CPP ${target} requires six distinct explicit board UUIDs`);
+  if (
+    !coverage.boardNames ||
+    Object.keys(coverage.boardNames).length !== boards.length ||
+    boards.some((board) => typeof coverage.boardNames?.[board.id] !== 'string' || !coverage.boardNames[board.id].trim())
+  )
+    throw new Error(`CPP ${target} requires six genuine recorded board names`);
   for (const [boardId, mode] of Object.entries(coverage.boardHeroModes ?? {})) {
     const board = boards.find((variant) => variant.id === boardId);
     if (
@@ -257,6 +270,8 @@ export function assertCppCaptureReady(
               })),
           )}`,
       );
+    if (matches.some((matched) => matched.name !== coverage.boardNames?.[board.id]))
+      throw new Error(`CPP ${target} recorded board name differs for ${board.id} (${matches[0].uuid})`);
   }
   const photoBoards = boards.filter((board) => board.family === 'spray');
   if (
@@ -272,6 +287,8 @@ export function assertCppCaptureReady(
     const entry = coverage.scenes[scene];
     if (scene === 'logbook' && !isCppAscentId(entry?.ascentId))
       throw new Error(`CPP ${target} lacks a genuine logbook ascent UUID`);
+    if (scene === 'status' && target !== 'spray' && !isCppClimbId(entry?.climbId))
+      throw new Error(`CPP ${target} lacks a genuine status climb identifier`);
     if (
       entry?.readyTextByLocale &&
       ['en-US', 'es', 'fr', 'de'].some(

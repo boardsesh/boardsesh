@@ -2,8 +2,83 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   matchScreenshotBoard,
   screenshotClimbMatchesBoard,
+  screenshotCppClimbListTestId,
+  screenshotCppWallHeroTestId,
   type ScreenshotSelectableBoard,
 } from '../screenshot-board-selection';
+
+describe('genuine CPP surface readiness', () => {
+  const activeBoard = {
+    uuid: 'actual-home-10x10',
+    boardType: 'kilter',
+    layoutId: 8,
+    sizeId: 21,
+    setIds: '26,27',
+    angle: 40,
+  };
+  const list = {
+    captureEnabled: true,
+    scene: 'hero-3',
+    activeBoard,
+    targetUuid: activeBoard.uuid,
+    searchReady: true,
+    loading: false,
+    resolving: false,
+    placeholder: false,
+    firstClimb: { boardType: 'kilter', layoutId: 8 },
+  };
+  it('binds the actual loaded list to the requested UUID, not its repeated climb name', () => {
+    expect(screenshotCppClimbListTestId(list)).toBe('cpp-climb-list-actual-home-10x10');
+    for (const missingProof of [
+      { captureEnabled: false },
+      { scene: undefined },
+      { activeBoard: null },
+      { targetUuid: 'actual-home-7x10' },
+      { searchReady: false },
+      { loading: true },
+      { resolving: true },
+      { placeholder: true },
+      { firstClimb: undefined },
+      { firstClimb: { boardType: 'kilter', layoutId: 1 } },
+      { firstClimb: { boardType: 'tension', layoutId: 8 } },
+    ])
+      expect(screenshotCppClimbListTestId({ ...list, ...missingProof })).toBe('climb-list');
+    // Same layout/title can occur on both Homewalls. Current-input query
+    // readiness must hold after the actual requested UUID was activated.
+    const otherGeometry = { ...activeBoard, sizeId: 17 };
+    expect(screenshotCppClimbListTestId({ ...list, placeholder: true, activeBoard: otherGeometry })).toBe('climb-list');
+  });
+  it('binds the real wall hero to the published owned UUID, exact geometry and raw climb ID', () => {
+    const hero = {
+      captureEnabled: true,
+      column: true,
+      publishedBoardUuid: activeBoard.uuid,
+      activeBoard,
+      panelConfig: { boardName: 'kilter', layoutId: 8, sizeId: 21, setIds: '27,26', angle: 40 },
+      climbUuid: 'D0E5387D5B974D38B4E93FC4DFD61EF6',
+    };
+    expect(screenshotCppWallHeroTestId(hero)).toBe('cpp-wall-hero-actual-home-10x10-D0E5387D5B974D38B4E93FC4DFD61EF6');
+    for (const missingProof of [
+      { captureEnabled: false },
+      { column: false },
+      { activeBoard: null },
+      { publishedBoardUuid: null },
+      { publishedBoardUuid: 'actual-home-7x10' },
+      { publishedBoardUuid: '999000' },
+      { panelConfig: null },
+      { climbUuid: '' },
+      { panelConfig: { ...hero.panelConfig, sizeId: 17 } },
+      { panelConfig: { ...hero.panelConfig, layoutId: 1 } },
+      { panelConfig: { ...hero.panelConfig, boardName: 'tension' } },
+      { panelConfig: { ...hero.panelConfig, setIds: '27' } },
+      { panelConfig: { ...hero.panelConfig, angle: 35 } },
+    ])
+      expect(screenshotCppWallHeroTestId({ ...hero, ...missingProof })).toBeUndefined();
+    expect(screenshotCppWallHeroTestId({ ...hero, climbUuid: '62f43f16-9ac8-59d7-8803-794268fec151' })).toBe(
+      'cpp-wall-hero-actual-home-10x10-62f43f16-9ac8-59d7-8803-794268fec151',
+    );
+  });
+});
 
 function board(overrides: Partial<ScreenshotSelectableBoard> & { name: string }): ScreenshotSelectableBoard {
   return {

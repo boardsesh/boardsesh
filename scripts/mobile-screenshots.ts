@@ -83,6 +83,8 @@ import {
   readCppPage,
   cppNavigationCommands,
   isCppAscentId,
+  isCppClimbId,
+  type CppBoard,
   cppReadinessSelector,
   assertCppCaptureReady,
   resolveCppRecipes,
@@ -92,6 +94,7 @@ import {
   type CppCaptureCoverage,
   type CppPage,
 } from './lib/screenshot-cpp';
+import { formatActiveBoardLabel } from '../packages/mobile/src/lib/boards/active-board-label';
 import { captionLocaleForStore, IOS_CAMPAIGN_CAPTURE_NAMES } from './lib/screenshot-presentation';
 import { SUPPORTED_LOCALES, isSupportedLocale, type Locale } from '../packages/shared/i18n/src/config';
 import {
@@ -689,6 +692,11 @@ function cppRuntimeNavigationCommands(
   resultsRoute.searchParams.set('screenshotCppScene', 'search-results');
   commands['search-results'] = { ...commands.search, route: `${resultsRoute.pathname}${resultsRoute.search}` };
   if (coverage.target !== 'spray') commands.kiosk = { ...commands.island, route: '/wall?screenshotCppScene=kiosk' };
+  if (coverage.target !== 'spray') {
+    const tabletStatus = new URL(commands.island.route, 'http://localhost');
+    tabletStatus.searchParams.set('screenshotCppScene', 'status-ipad');
+    commands['status-ipad'] = { ...commands.island, route: `${tabletStatus.pathname}${tabletStatus.search}` };
+  }
   return commands;
 }
 
@@ -1982,6 +1990,32 @@ export function cppQueueReadinessSelectors(climbName: string, locale: Locale): {
   };
 }
 
+export function cppBoardHeaderReadinessSelector(board: CppBoard, coverage: CppCaptureCoverage): string {
+  const name = coverage.boardNames?.[board.id];
+  if (!name?.trim()) throw new Error(`CPP board ${board.id} needs its genuine recorded name`);
+  const label = formatActiveBoardLabel({ name, boardType: board.boardType, angle: board.angle ?? null });
+  return `^${cppReadinessSelector(label!)}${board.angle == null ? '(?: • -?[0-9]+(?:\\.[0-9]+)?°)?' : ''}$`;
+}
+
+/** The capsule announces the actual lit climb, never an arbitrary list row. */
+export function cppWallStatusReadinessSelector(climbName: string, locale: Locale): string {
+  const catalog = JSON.parse(
+    readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
+  ) as { mobile: { boardPresence: { stripA11yLabel: string; stripA11yLabelWithSender: string } } };
+  const expand = (template: string) =>
+    template
+      .split(/(\{\{(?:name|grade|sender)\}\})/)
+      .map((part) => {
+        if (part === '{{name}}') return cppReadinessSelector(climbName);
+        if (part === '{{grade}}') return '[^,\\r\\n]*';
+        if (part === '{{sender}}') return '[^\\r\\n]+';
+        return cppReadinessSelector(part);
+      })
+      .join('');
+  const labels = catalog.mobile.boardPresence;
+  return `^(?:${expand(labels.stripA11yLabel)}|${expand(labels.stripA11yLabelWithSender)})$`;
+}
+
 /** Strict target fixture text supplies content gates; no default campaign scenes are reused. */
 export function renderCppMaestroFlow(
   target: CppTarget,
@@ -1999,15 +2033,22 @@ export function renderCppMaestroFlow(
       filename: `hero-${index + 1}`,
       ready: coverage.boardReadyTextByLocale?.[board.id]?.[locale] ?? coverage.boardReadyText[board.id],
       wallEditor: coverage.boardHeroModes?.[board.id] === 'wall-editor',
+      variant: board,
     })),
     ...page.otherBoards.map((board, index) => ({
       command: `other-${index + 1}`,
       filename: `other-${index + 1}`,
       ready: coverage.boardReadyTextByLocale?.[board.id]?.[locale] ?? coverage.boardReadyText[board.id],
       wallEditor: coverage.boardHeroModes?.[board.id] === 'wall-editor',
+      variant: board,
     })),
-    ...['search', 'logbook', 'led', 'workout', 'status', 'queue', 'island'].map((scene) => ({
-      command: scene === 'island' && ipad && target !== 'spray' ? 'kiosk' : scene,
+    ...['search', 'workout', 'status', 'queue', 'logbook', 'led', 'island'].map((scene) => ({
+      command:
+        target !== 'spray' && ipad && scene === 'island'
+          ? 'kiosk'
+          : target !== 'spray' && ipad && scene === 'status'
+            ? 'status-ipad'
+            : scene,
       filename: [
         '02-search',
         '03-logbook',
@@ -2019,6 +2060,7 @@ export function renderCppMaestroFlow(
       ][['search', 'logbook', 'led', 'queue', 'workout', 'status', 'island'].indexOf(scene)],
       ready: coverage.scenes[scene].readyTextByLocale?.[locale] ?? coverage.scenes[scene].readyText,
       wallEditor: false,
+      variant: undefined,
     })),
   ];
   const commands: string[] = ipad ? ['- tapOn:\n    text: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}\n    optional: true'] : [];
@@ -2035,6 +2077,10 @@ export function renderCppMaestroFlow(
     }
     if (!scene.ready?.trim()) throw new Error(`Missing CPP ready text for ${scene.command}`);
     commands.push(dismiss);
+    if (scene.command === 'logbook') {
+      if (!ipad)
+        commands.push('- extendedWaitUntil:\n    notVisible:\n      id: play-drawer-board-overlay\n    timeout: 60000');
+    }
     if (scene.command === 'queue') {
       commands.push(
         "- evalScript: ${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=queue-join').body).sequence}",
@@ -2058,11 +2104,39 @@ export function renderCppMaestroFlow(
         `- repeat:\n    times: 5\n    while:\n      notVisible:\n        id: ${JSON.stringify(rowSelector.id)}\n        text: ${JSON.stringify(rowSelector.text)}\n    commands:\n      - swipe:\n          from:\n            id: logbook-screen\n          direction: UP\n          duration: 700\n      - waitForAnimationToEnd:\n          timeout: 30000`,
         `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(rowSelector.id)}\n      text: ${JSON.stringify(rowSelector.text)}\n    timeout: 90000`,
       );
+    } else if (scene.command === 'status' && target !== 'spray') {
+      commands.push(
+        '- extendedWaitUntil:\n    visible:\n      id: climbs-screen\n    timeout: 90000',
+        '- extendedWaitUntil:\n    notVisible:\n      id: play-drawer-board-overlay\n    timeout: 60000',
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppWallStatusReadinessSelector(scene.ready, locale))}\n    timeout: 90000`,
+      );
+    } else if (scene.command === 'status-ipad') {
+      const status = coverage.scenes.status;
+      if (!isCppClimbId(status.climbId)) throw new Error('CPP tablet wall status requires its genuine climb ID');
+      commands.push(
+        '- extendedWaitUntil:\n    visible:\n      id: climbs-screen\n    timeout: 90000',
+        `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(cppReadinessSelector(`cpp-climb-list-${status.boardId}`))}\n    timeout: 90000`,
+        '- extendedWaitUntil:\n    visible:\n      id: play-drawer-board-overlay\n    timeout: 60000',
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppBoardHeaderReadinessSelector(page.primaryBoard, coverage))}\n    timeout: 90000`,
+        '- extendedWaitUntil:\n    visible:\n      id: board-sheet-stats\n    timeout: 60000',
+        `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(cppReadinessSelector(`cpp-wall-hero-${status.boardId}-${status.climbId}`))}\n    timeout: 90000`,
+      );
     } else if (scene.command !== 'queue')
       commands.push(
         `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppReadinessSelector(scene.ready))}\n    timeout: 90000`,
       );
     commands.push('- waitForAnimationToEnd:\n    timeout: 30000');
+    if (ipad && scene.variant && !scene.wallEditor) {
+      const uuid = coverage.boardIds?.[scene.variant.id];
+      if (!uuid?.trim()) throw new Error(`CPP ${scene.variant.id} lacks its genuine board UUID`);
+      commands.push(
+        `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(cppReadinessSelector(`cpp-climb-list-${uuid}`))}\n    timeout: 90000`,
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppBoardHeaderReadinessSelector(scene.variant, coverage))}\n    timeout: 90000`,
+        `- extendedWaitUntil:\n    visible:\n      id: climb-row\n      text: ${JSON.stringify(`^${cppReadinessSelector(scene.ready)}, .+$`)}\n    timeout: 90000`,
+        '- extendedWaitUntil:\n    visible:\n      id: play-drawer-board-overlay\n    timeout: 60000',
+        '- waitForAnimationToEnd:\n    timeout: 30000',
+      );
+    }
     if (
       !ipad &&
       !scene.wallEditor &&

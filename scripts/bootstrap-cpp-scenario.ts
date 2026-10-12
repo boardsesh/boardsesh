@@ -928,7 +928,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       led: makeScene(firstClimb),
       queue: { ...makeScene(queueClimbName ?? ''), ...(sessionId ? { sessionId } : {}) },
       workout: makeScene(workoutLabels['en-US'], workoutLabels),
-      status: makeScene(firstClimb),
+      status: { ...makeScene(firstClimb), climbId: climbs[0].uuid },
       island: makeScene(firstClimb),
     };
     if (options.target === 'spray') {
@@ -953,7 +953,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       if (!project) blockers.push('spray: no real project in the primary-wall smart playlist');
       const settingLabels = localized('climbs', 'mobile.create.header.newClimb');
       scenes.led = makeScene(settingLabels['en-US'], settingLabels);
-      scenes.status = makeScene(project?.name ?? '');
+      scenes.status = { ...makeScene(project?.name ?? ''), ...(project ? { climbId: project.uuid } : {}) };
       const holdLabels = localized('boards', 'sprayMaintenance.publish');
       scenes.island = makeScene(holdLabels['en-US'], holdLabels);
     }
@@ -965,6 +965,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
           target: options.target,
           boardReadyText,
           boardIds: Object.fromEntries(variants.map((variant) => [variant.id, selected.get(variant.id)!.uuid])),
+          boardNames: Object.fromEntries(variants.map((variant) => [variant.id, selected.get(variant.id)!.name])),
           boardPhotoSha256,
           scenes,
           boardHeroModes,

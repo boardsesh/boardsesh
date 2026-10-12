@@ -88,6 +88,11 @@ let publishedClimbs: BoardPresenceClimb[] = [];
 let reportedClimbs: BoardPresenceClimb[] = [];
 /** The board the published climbs (and so the reports) belong to. */
 let publishedBoardKey: string | null = null;
+
+/** Read the owned board UUID attached to the existing published real-climb feed. */
+export function screenshotPublishedBoardKey(): string | null {
+  return publishedBoardKey;
+}
 /**
  * The highest `seq` handed out so far. The reducer drops any event at or below
  * the last seq it saw, so reports keep counting up from here even if a

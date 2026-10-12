@@ -22,6 +22,8 @@ import {
   parseArgs,
   buildScreenshotEnv,
   cppLogbookReadinessSelector,
+  cppBoardHeaderReadinessSelector,
+  cppWallStatusReadinessSelector,
   cppQueueReadinessSelectors,
   renderCppMaestroFlow,
   renderMaestroFlowForIosDevice,
@@ -66,6 +68,12 @@ function scenario(target: (typeof CPP_TARGETS)[number]) {
   const primaryId = boards.find((board) => board.name === page.primaryBoard.selector)!.uuid;
   const coverage: CppCaptureCoverage = {
     target,
+    boardIds: Object.fromEntries(
+      [...page.heroBoards, ...page.otherBoards].map((board, index) => [board.id, boards[index].uuid]),
+    ),
+    boardNames: Object.fromEntries(
+      [...page.heroBoards, ...page.otherBoards].map((board, index) => [board.id, boards[index].name]),
+    ),
     boardReadyText: Object.fromEntries(
       [...page.heroBoards, ...page.otherBoards].map((board) => [board.id, `Climb ${board.id}`]),
     ),
@@ -83,6 +91,7 @@ function scenario(target: (typeof CPP_TARGETS)[number]) {
           readyText: `Ready ${scene}`,
           sessionId: scene === 'queue' ? 'crew-session' : undefined,
           ascentId: scene === 'logbook' ? LOGBOOK_ASCENT_ID : undefined,
+          climbId: scene === 'status' ? 'D0E5387D5B974D38B4E93FC4DFD61EF6' : undefined,
         },
       ]),
     ),
@@ -143,6 +152,156 @@ function readinessCommandTransport() {
 }
 
 describe('custom product page captures', () => {
+  it('gates wall status on the actual localized capsule, never ordinary rows or extended titles', () => {
+    const title = 'Floats (left)+[1].';
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const catalog = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+        mobile: { boardPresence: { stripA11yLabel: string; stripA11yLabelWithSender: string } };
+      };
+      const selector = new RegExp(cppWallStatusReadinessSelector(title, locale));
+      for (const template of [
+        catalog.mobile.boardPresence.stripA11yLabel,
+        catalog.mobile.boardPresence.stripA11yLabelWithSender,
+      ]) {
+        for (const grade of ['V3', '']) {
+          const label = template
+            .replace('{{name}}', title)
+            .replace('{{grade}}', grade)
+            .replace('{{sender}}', 'Test User');
+          expect(selector.test(label)).toBe(true);
+          expect(selector.test(label.replace(title, `${title}, Extended`))).toBe(false);
+          expect(selector.test(label.replace(title, `${title} Extended`))).toBe(false);
+          expect(selector.test(label.replace(title, 'Another climb'))).toBe(false);
+          expect(selector.test(`Note: ${label}`)).toBe(false);
+        }
+      }
+      expect(selector.test(`${title}, rosette, 101k sends, V3`)).toBe(false);
+      expect(selector.test(`${title}, position 1`)).toBe(false);
+      expect(selector.test('On the wall: Floats left1, V3')).toBe(false);
+    }
+    const actual = 'On the wall: Floats Your Boat, V3, lit by Test User';
+    expect(new RegExp(cppWallStatusReadinessSelector('Floats Your Boat', 'en-US')).test(actual)).toBe(true);
+  });
+  it('uses genuine board names and fresh list/paint identity for tablet trios and real wall hero for status', () => {
+    const { page, boards, coverage } = scenario('kilter');
+    const variants = [...page.heroBoards, ...page.otherBoards];
+    // Both actual Homewall queries have the same title, but different owned
+    // UUIDs and geometry. Neither a manifest alias nor the old pane is proof.
+    coverage.boardReadyText[variants[1].id] = 'Moon Landing';
+    coverage.boardReadyText[variants[2].id] = 'Moon Landing';
+    coverage.boardNames![variants[1].id] = 'Actual Homewall (7×10)';
+    coverage.boardNames![variants[2].id] = 'Actual Homewall (10×10)';
+    for (const device of IOS_SCREENSHOT_DEVICES) {
+      const ipad = device.name.startsWith('iPad');
+      const steps = parseAllDocuments(renderCppMaestroFlow('kilter', device, coverage))[1].toJS() as Record<
+        string,
+        unknown
+      >[];
+      const captures = steps.flatMap((step) => (typeof step.takeScreenshot === 'string' ? [step.takeScreenshot] : []));
+      expect(captures.slice(6)).toEqual([
+        '02-search',
+        '06-workout',
+        '07-status',
+        '05-queue',
+        '03-logbook',
+        '04-led',
+        ipad ? '08-kiosk' : '08-island',
+      ]);
+      const statusStart = steps.findIndex(
+        (step) =>
+          typeof step.evalScript === 'string' &&
+          step.evalScript.includes(`/set?scene=${ipad ? 'status-ipad' : 'status'}'`),
+      );
+      const statusEnd = steps.findIndex((step) => step.takeScreenshot === '07-status');
+      const statusSteps = steps.slice(statusStart, statusEnd);
+      expect(statusSteps).toContainEqual({ extendedWaitUntil: { visible: { id: 'climbs-screen' }, timeout: 90000 } });
+      if (ipad) {
+        for (const [index, variant] of variants.entries()) {
+          const end = steps.findIndex(
+            (step) => step.takeScreenshot === `${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}`,
+          );
+          const start =
+            index === 0
+              ? 0
+              : steps.findIndex(
+                  (step) => step.takeScreenshot === `${index <= 3 ? 'hero' : 'other'}-${((index - 1) % 3) + 1}`,
+                ) + 1;
+          const gates = steps.slice(start, end);
+          expect(gates).toContainEqual({
+            extendedWaitUntil: { visible: { id: `cpp-climb-list-${boards[index].uuid}` }, timeout: 90000 },
+          });
+          expect(gates).toContainEqual({
+            extendedWaitUntil: { visible: cppBoardHeaderReadinessSelector(variant, coverage), timeout: 90000 },
+          });
+          expect(gates).toContainEqual({
+            extendedWaitUntil: { visible: { id: 'play-drawer-board-overlay' }, timeout: 60000 },
+          });
+        }
+        expect(statusSteps).toContainEqual({
+          extendedWaitUntil: { visible: { id: 'board-sheet-stats' }, timeout: 60000 },
+        });
+        expect(statusSteps).toContainEqual({
+          extendedWaitUntil: {
+            visible: { id: `cpp-wall-hero-${coverage.scenes.status.boardId}-${coverage.scenes.status.climbId}` },
+            timeout: 90000,
+          },
+        });
+      } else {
+        expect(statusSteps).toContainEqual({
+          extendedWaitUntil: { notVisible: { id: 'play-drawer-board-overlay' }, timeout: 60000 },
+        });
+        expect(statusSteps).toContainEqual({
+          extendedWaitUntil: { visible: cppWallStatusReadinessSelector('Ready status', 'en-US'), timeout: 90000 },
+        });
+      }
+    }
+    expect(
+      new RegExp(cppBoardHeaderReadinessSelector(variants[1], coverage)).test('Actual Homewall (7×10) • 40°'),
+    ).toBe(true);
+    expect(
+      new RegExp(cppBoardHeaderReadinessSelector(variants[1], coverage)).test(`${variants[1].selector} • 40°`),
+    ).toBe(false);
+    expect(
+      new RegExp(cppBoardHeaderReadinessSelector(variants[1], coverage)).test('Actual Homewall (10×10) • 40°'),
+    ).toBe(false);
+  });
+  it('dismisses real queue/player controls before Logbook without rejecting the persistent Spanish queue action', () => {
+    const { coverage } = scenario('kilter');
+    const persistentButton = 'Cola, 5 bloques';
+    for (const device of IOS_SCREENSHOT_DEVICES) {
+      const steps = parseAllDocuments(renderCppMaestroFlow('kilter', device, coverage, 'es'))[1].toJS() as Record<
+        string,
+        unknown
+      >[];
+      const queueCapture = steps.findIndex((step) => step.takeScreenshot === '05-queue');
+      const logbookRoute = steps.findIndex(
+        (step) => typeof step.evalScript === 'string' && step.evalScript.includes('/set?scene=logbook'),
+      );
+      const dismissal = steps.slice(queueCapture + 1, logbookRoute);
+      expect(dismissal[0]).toMatchObject({
+        repeat: {
+          times: 2,
+          commands: [
+            {
+              runFlow: {
+                when: { visible: '${SCREENSHOT_CLOSE_LABEL}' },
+                commands: [{ tapOn: '${SCREENSHOT_CLOSE_LABEL}' }, 'waitForAnimationToEnd'],
+              },
+            },
+          ],
+        },
+      });
+      for (const step of dismissal) {
+        const gate = step.extendedWaitUntil as { notVisible?: unknown } | undefined;
+        if (typeof gate?.notVisible === 'string')
+          expect(new RegExp(gate.notVisible).test(persistentButton)).toBe(false);
+      }
+      if (!device.name.startsWith('iPad'))
+        expect(dismissal).toContainEqual({
+          extendedWaitUntil: { notVisible: { id: 'play-drawer-board-overlay' }, timeout: 60000 },
+        });
+    }
+  });
   it('matches genuine composite Logbook accessibility rows without weakening other scene gates', () => {
     const actualLabel =
       "Sent Drawing the Priest, community grade V6, 1 try, Kilter Original · 40°, Test User's Kilter Original 12×12 with kickboard, 5:40\u202fAM";
@@ -318,12 +477,12 @@ describe('custom product page captures', () => {
             'other-3',
             'search',
             'search-results',
-            'logbook',
-            'led',
             'workout',
-            'status',
+            target !== 'spray' && ipad ? 'status-ipad' : 'status',
             'queue-join',
             'queue',
+            'logbook',
+            'led',
             finalScene,
           ]);
           for (const [index, scene] of requestedScenes.entries()) {
@@ -344,6 +503,14 @@ describe('custom product page captures', () => {
           expect(resultsRoute.searchParams.has('screenshotOpenFilters')).toBe(false);
           expect(resultsRoute.searchParams.get('screenshotBoardIndex')).toBe(
             new URL(registry.search.route, 'https://capture.invalid').searchParams.get('screenshotBoardIndex'),
+          );
+          const statusRoute = new URL(
+            registry[target !== 'spray' && ipad ? 'status-ipad' : 'status'].route,
+            'https://capture.invalid',
+          );
+          expect(statusRoute.searchParams.has('screenshotOpenFirst')).toBe(target !== 'spray' && ipad);
+          expect(registry[target !== 'spray' && ipad ? 'status-ipad' : 'status'].identity.uuid).toBe(
+            coverage.scenes.status.boardId,
           );
           const finalRoute = new URL(registry[finalScene].route, 'https://capture.invalid');
           expect(finalRoute.pathname).toBe(target === 'spray' ? '/boards/spray/holds' : ipad ? '/wall' : '/climbs');
@@ -603,6 +770,46 @@ describe('custom product page captures', () => {
     expect(() =>
       assertCppCaptureReady('spray', page, { ...coverage, boardPhotoSha256: {} }, boards, fixturesDir),
     ).toThrow('source photo');
+  });
+  it('requires genuine six-board names and wall status climb identity while allowing actual duplicate names', () => {
+    const { page, boards, coverage, fixturesDir } = scenario('kilter');
+    const variants = [...page.heroBoards, ...page.otherBoards];
+    for (const names of [
+      undefined,
+      {},
+      { ...coverage.boardNames, [variants[1].id]: '' },
+      { ...coverage.boardNames, [variants[1].id]: 'A manifest alias, not this real board' },
+    ]) {
+      expect(() =>
+        assertCppCaptureReady('kilter', page, { ...coverage, boardNames: names }, boards, fixturesDir),
+      ).toThrow();
+    }
+    const renamedBoards = boards.map((board, index) => ({
+      ...board,
+      name: index === 1 || index === 2 ? 'My Homewall' : `Actual ${board.name}`,
+    }));
+    const names = Object.fromEntries(variants.map((variant, index) => [variant.id, renamedBoards[index].name]));
+    const namedVariants = variants.map((variant, index) => ({ ...variant, selector: renamedBoards[index].name }));
+    const namedPage = {
+      ...page,
+      heroBoards: namedVariants.slice(0, 3),
+      otherBoards: namedVariants.slice(3),
+      primaryBoard: namedVariants.find((variant) => variant.id === page.primaryBoard.id)!,
+    };
+    expect(() =>
+      assertCppCaptureReady('kilter', namedPage, { ...coverage, boardNames: names }, renamedBoards, fixturesDir),
+    ).not.toThrow();
+    for (const climbId of [undefined, '', 'invented-climb', '999000']) {
+      expect(() =>
+        assertCppCaptureReady(
+          'kilter',
+          page,
+          { ...coverage, scenes: { ...coverage.scenes, status: { ...coverage.scenes.status, climbId } } },
+          boards,
+          fixturesDir,
+        ),
+      ).toThrow('climb identifier');
+    }
   });
   it('rejects changed photo provenance before generating any CPP', () => {
     const directory = mkdtempSync(join(tmpdir(), 'cpp-manifest-'));

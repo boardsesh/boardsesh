@@ -133,14 +133,14 @@ function useNoShowcaseAnchor(_name: ShowcaseAnchorName, _enabled?: boolean): Sho
 export const useShowcaseAnchor: (name: ShowcaseAnchorName, enabled?: boolean) => ShowcaseAnchorProps =
   process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? useScreenshotShowcaseAnchor : useNoShowcaseAnchor;
 
-type ShowcaseAnchorViewProps = { name: ShowcaseAnchorName; enabled?: boolean; children: ReactNode };
+type ShowcaseAnchorViewProps = { name: ShowcaseAnchorName; enabled?: boolean; testID?: string; children: ReactNode };
 
-function ScreenshotShowcaseAnchorView({ name, enabled = true, children }: ShowcaseAnchorViewProps) {
+function ScreenshotShowcaseAnchorView({ name, enabled = true, testID, children }: ShowcaseAnchorViewProps) {
   const anchor = useScreenshotShowcaseAnchor(name, enabled);
-  if (!anchor.onLayout) return children;
+  if (!anchor.onLayout && !testID) return children;
   // `collapsable: false` keeps Android from flattening the wrapper away, which
   // would leave nothing to measure.
-  return createElement(View, { ...anchor, collapsable: false }, children);
+  return createElement(View, { ...anchor, testID, collapsable: false }, children);
 }
 
 function PassThroughShowcaseAnchorView({ children }: ShowcaseAnchorViewProps) {

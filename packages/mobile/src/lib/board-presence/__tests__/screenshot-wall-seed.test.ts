@@ -6,6 +6,7 @@ import {
   createScreenshotBoardPresenceClient,
   _resetScreenshotWallSeedForTests,
   publishScreenshotWallClimbs,
+  screenshotPublishedBoardKey,
 } from '../screenshot-wall-seed';
 
 function makeClimb(overrides: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb {
@@ -50,6 +51,19 @@ function makeQueueItem(climbUuid: string): ClimbQueueItemInput {
 }
 
 describe('screenshot-wall-seed', () => {
+  it('reads the genuine published owned-board key without altering presence or seed data', async () => {
+    expect(screenshotPublishedBoardKey()).toBeNull();
+    const client = createScreenshotBoardPresenceClient();
+    const climbs = [makeClimb()];
+    publishScreenshotWallClimbs(climbs, null, 'actual-owned-kilter-uuid');
+    expect(screenshotPublishedBoardKey()).toBe('actual-owned-kilter-uuid');
+    expect(screenshotPublishedBoardKey()).toBe('actual-owned-kilter-uuid');
+    expect(await client.fetchRecentClimbs(SCREENSHOT_SEED_BOARD_ID)).toEqual(climbs);
+    publishScreenshotWallClimbs(climbs, null, 'actual-other-size-uuid');
+    expect(screenshotPublishedBoardKey()).toBe('actual-other-size-uuid');
+    _resetScreenshotWallSeedForTests();
+    expect(screenshotPublishedBoardKey()).toBeNull();
+  });
   const realClimb: Climb = {
     uuid: 'real-climb-id',
     name: 'Recorded climb',

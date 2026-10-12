@@ -158,3 +158,66 @@ export function screenshotClimbMatchesBoard(
 ): boolean {
   return climb.boardType === board.boardType && climb.layoutId === board.layoutId;
 }
+
+/** The real list exposes its capture identity only after its current query lands. */
+export function screenshotCppClimbListTestId(state: {
+  captureEnabled: boolean;
+  scene?: string;
+  activeBoard: { uuid: string; boardType: string; layoutId: number } | null | undefined;
+  targetUuid?: string;
+  searchReady: boolean;
+  loading: boolean;
+  resolving: boolean;
+  placeholder: boolean;
+  firstClimb: { boardType?: string | null; layoutId?: number | null } | undefined;
+}): string {
+  const { activeBoard, firstClimb } = state;
+  if (
+    !state.captureEnabled ||
+    !state.scene ||
+    !activeBoard ||
+    activeBoard.uuid !== state.targetUuid ||
+    !state.searchReady ||
+    state.loading ||
+    state.resolving ||
+    state.placeholder ||
+    !firstClimb ||
+    !screenshotClimbMatchesBoard(firstClimb, activeBoard)
+  )
+    return 'climb-list';
+  return `cpp-climb-list-${activeBoard.uuid}`;
+}
+
+/** Identify the real wall hero only when its published feed and panel geometry agree. */
+export function screenshotCppWallHeroTestId(state: {
+  captureEnabled: boolean;
+  column: boolean;
+  publishedBoardUuid: string | null;
+  activeBoard:
+    | { uuid: string; boardType: string; layoutId: number; sizeId: number; setIds: string | null; angle: number }
+    | null
+    | undefined;
+  panelConfig: { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number } | null;
+  climbUuid: string | null | undefined;
+}): string | undefined {
+  const { activeBoard, panelConfig } = state;
+  if (!state.captureEnabled || !state.column || !activeBoard || !panelConfig || !state.climbUuid?.trim())
+    return undefined;
+  const sets = (setIds: string | null) =>
+    (setIds ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number)
+      .sort((left, right) => left - right)
+      .join(',');
+  if (
+    state.publishedBoardUuid !== activeBoard.uuid ||
+    panelConfig.boardName !== activeBoard.boardType ||
+    panelConfig.layoutId !== activeBoard.layoutId ||
+    panelConfig.sizeId !== activeBoard.sizeId ||
+    sets(panelConfig.setIds) !== sets(activeBoard.setIds) ||
+    panelConfig.angle !== activeBoard.angle
+  )
+    return undefined;
+  return `cpp-wall-hero-${activeBoard.uuid}-${state.climbUuid}`;
+}

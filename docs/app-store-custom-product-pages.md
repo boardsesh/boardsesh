@@ -48,7 +48,8 @@ Use the existing [record/replay workflow](mobile-screenshot-fixtures.md) to prep
 a recording account with the named configurations, useful target-specific climb
 results, logged sessions, a shared queue, and workout content. A CPP fixture
 manifest includes `capture.cpp.target`, board readiness text indexed by variant
-ID, and scene identity/readiness for search, logbook, LED/setting, queue, workout,
+ID, `boardNames` with the six genuine UUID/config-matched roster names, and scene
+identity/readiness for search, logbook, LED/setting, queue, workout,
 status/playlist, and Island/kiosk/hold editor. Scene board IDs identify the target
 board; the queue also supplies its actual recorded session ID. The logbook scene
 also requires `ascentId`: the genuine displayed row UUID selected from the first
@@ -58,6 +59,22 @@ ascent UUID is insufficient. Capture verifies the exact entry and localized
 row label, using at most five scrolls within the recorded first page if needed.
 Readiness text must identify real captured content. Do not invent records or
 readiness labels.
+
+Manufacturer status scenes also require `climbId`, copied unchanged from the
+actual first primary-board climb. Both canonical UUIDs and Aurora's compact
+32-character hexadecimal identifiers are accepted, preserving their casing.
+The iPad's visible wall hero is checked against that climb and the actual owned
+board configuration. Its loaded-list gate also waits for the requested board's
+search results, rather than accepting a repeated title from a previous board.
+
+Capture order differs from the exported story. Workouts and wall status are
+captured before joining the genuine crew queue: joining changes the Session tab,
+and the wall-status capsule appears only when the lit climb differs from the
+selected climb. The manufacturer status gate checks the phone capsule's complete
+localized accessibility label, or the iPad's dedicated wall-status panel, on the
+Climbs screen; an ordinary climb-list row cannot satisfy it. Queue capture then
+precedes logbook and LED capture so their selected climb belongs to the target
+board. Exported filenames and the nine-image story remain unchanged.
 
 CPP recording verifies the authenticated owner, private session, and primary board
 configuration before maintaining real upstream session membership. This makes a
