@@ -54,6 +54,7 @@ import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
 import { consumeClimbHandoffIntent } from './climb-handoff-intent';
 import { useLaunchHoldReleased } from '../launch-hold';
 import { isWallUuidParam } from '../spray/use-spray-wall-link';
+import { isBoardInviteToken } from '../board-share/board-share-link';
 
 /**
  * What the entry route should draw.
@@ -206,6 +207,7 @@ function useAdoptedBoard(
   target: BoardRouteTarget | null,
   enabled: boolean,
   wallUuid?: string,
+  inviteToken?: string,
 ): { board: UserBoard | null; error: boolean } {
   const { isAuthenticated, isLoading: authIsLoading } = useAuth();
   const createBoard = useCreateBoard();
@@ -229,13 +231,13 @@ function useAdoptedBoard(
   // but that's the provider's invariant, not this hook's, and a cold deep-link
   // open is exactly where it would bite. The `/b/{slug}` form needs no session
   // at all (public `boardBySlug`, local `setActiveBoard`), so it stays eager.
-  const waitingForAuth = (needsOwnedBoards || !!wallUuid) && authIsLoading;
+  const waitingForAuth = (needsOwnedBoards || !!wallUuid || !!inviteToken) && authIsLoading;
   // Key the effect on the resolved path rather than the target object so a
   // re-render with an equivalent target doesn't re-run board creation.
   const boardPath = enabled && target && !waitingForAuth ? toBoardPath(target) : null;
   // Capability changes on the same slug are separate resolutions. A denied or
   // pending earlier link must not keep the next link's answer out of the route.
-  const resolutionKey = boardPath ? JSON.stringify([boardPath, wallUuid ?? null]) : null;
+  const resolutionKey = boardPath ? JSON.stringify([boardPath, wallUuid ?? null, inviteToken ?? null]) : null;
   const resolvedPathRef = useRef<string | null>(null);
 
   // Only a resolve that finished for THIS path may be read; see AdoptedBoardState.
@@ -297,6 +299,9 @@ function useAdoptedBoard(
         const capabilityModules = wallUuid
           ? await Promise.all([import('../spray/spray-wall-link-board'), import('../auth-store')])
           : null;
+        // A board share link (`?invite=`) joins the board before resolving it.
+        const shareLinkModule =
+          inviteToken && !wallUuid ? await import('../board-share/redeem-board-share-link') : null;
         if (cancelled) return;
         const credentialGeneration = capabilityModules?.[1].captureAuthCredentialGeneration() ?? null;
         const { createBoard: createBoardMutation, isAuthenticated: signedIn } = queriesRef.current;
@@ -356,7 +361,9 @@ function useAdoptedBoard(
             fetchBoardBySlug:
               wallUuid && capabilityModules
                 ? (slug) => capabilityModules[0].fetchSprayWallBoardFromLink(queryClient, wallUuid, slug)
-                : resolveBoardSlugLocalFirst,
+                : inviteToken && shareLinkModule
+                  ? (slug) => shareLinkModule.fetchBoardFromShareLink(inviteToken, slug, resolveBoardSlugLocalFirst)
+                  : resolveBoardSlugLocalFirst,
           }));
         if (cancelled) return;
         if (
@@ -389,7 +396,7 @@ function useAdoptedBoard(
     };
     // `retryNonce` is a dep purely so a reconnect re-enters this effect; nothing
     // in the body reads it.
-  }, [boardPath, needsOwnedBoards, queryClient, resolutionKey, retryNonce, setActiveBoard, wallUuid]);
+  }, [boardPath, inviteToken, needsOwnedBoards, queryClient, resolutionKey, retryNonce, setActiveBoard, wallUuid]);
 
   return { board, error };
 }
@@ -494,6 +501,8 @@ export function useBoardRouteTarget(
     mode?: BoardRouteMode;
     activationIntent?: string | string[];
     wallUuid?: string | string[];
+    /** A home board share link's token (`?invite=`); redeemed before board adoption. */
+    inviteToken?: string | string[];
     onHandedOff?: () => void;
     anonymousClimbEnabled?: boolean;
   },
@@ -549,7 +558,15 @@ export function useBoardRouteTarget(
     (target?.kind === 'slug-list' || target?.kind === 'slug-climb') && isWallUuidParam(wallParam)
       ? wallParam.toLowerCase()
       : undefined;
-  const { board: adoptedBoard, error: boardError } = useAdoptedBoard(target, adoptsBoard && !signedOutOnWeb, wallUuid);
+  const inviteParam = Array.isArray(options?.inviteToken) ? options.inviteToken[0] : options?.inviteToken;
+  // Only a board link carries one, and only a well-formed token is read at all.
+  const inviteToken = target?.kind === 'slug-list' && isBoardInviteToken(inviteParam) ? inviteParam : undefined;
+  const { board: adoptedBoard, error: boardError } = useAdoptedBoard(
+    target,
+    adoptsBoard && !signedOutOnWeb,
+    wallUuid,
+    inviteToken,
+  );
   const anonymousBoard = anonymousSlugBoard.state === 'resolved' ? anonymousSlugBoard.board : null;
   const board = adoptedBoard ?? anonymousBoard;
 

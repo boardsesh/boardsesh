@@ -15,13 +15,17 @@
 // - the first segment must be `b` or one of the nine board names;
 // - the rest must be one of the shapes the app has a route for (list, view,
 //   play), by the same matcher the browser app's auth gate uses;
-// - of the query, only `wall` survives, and only as a uuid.
+// - of the query, only `wall` (as a uuid) and `invite` (as a share-link token)
+//   survive. A home board's share link has to survive sign-in: it is how a
+//   new climber is meant to join a friend's board, so dropping the token would
+//   land them on a board they cannot open.
 // Pure and React-free so every rule is a unit test.
 
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { parseDeepLinkQueryParams } from '../deep-link-query';
 import { isReadOnlyAnonymousPath, isSafeReturnPath } from './read-only-routes';
 import { stripLocalePrefix } from './strip-locale-prefix';
+import { BOARD_INVITE_PARAM, isBoardInviteToken } from '../board-share/board-share-link';
 
 /** `https://www.boardsesh.com`, the apex, or the app's own scheme, up to where the path starts. */
 const BOARDSESH_LINK_PREFIX = /^(?:https:\/\/(?:www\.)?boardsesh\.com(?=[/?#]|$)|com\.boardsesh\.app:\/\/)/i;
@@ -53,8 +57,14 @@ export function parseBoardLinkPath(url: string | null | undefined): string | nul
   if (firstSegment === undefined || (firstSegment !== 'b' && !boardNames.has(firstSegment))) return null;
   if (!isReadOnlyAnonymousPath(path)) return null;
 
-  const wallUuid = queryIndex === -1 ? undefined : parseDeepLinkQueryParams(afterHost).get('wall');
-  const href = wallUuid !== undefined && WALL_UUID.test(wallUuid) ? `${path}?wall=${wallUuid}` : path;
+  const query = queryIndex === -1 ? undefined : parseDeepLinkQueryParams(afterHost);
+  const wallUuid = query?.get('wall');
+  const inviteToken = query?.get(BOARD_INVITE_PARAM);
+  const kept = [
+    wallUuid !== undefined && WALL_UUID.test(wallUuid) ? `wall=${wallUuid}` : null,
+    isBoardInviteToken(inviteToken) ? `${BOARD_INVITE_PARAM}=${inviteToken}` : null,
+  ].filter((part): part is string => part !== null);
+  const href = kept.length > 0 ? `${path}?${kept.join('&')}` : path;
   return isSafeReturnPath(href) ? href : null;
 }
 

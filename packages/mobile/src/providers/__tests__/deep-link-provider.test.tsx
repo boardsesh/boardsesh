@@ -188,6 +188,22 @@ describe('DeepLinkProvider — board and climb links', () => {
     await waitFor(() => expect(storedBoardLink()?.path).toBe(`/b/the-garage?wall=${WALL_UUID}`));
   });
 
+  it("keeps a board share link's token through sign-in, then opens it so the board can redeem it", async () => {
+    const token = 'Ab3_dE-fGhIjKlMnOpQrSt';
+    const { unmount } = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() => expect(linkState.listener).not.toBeNull());
+
+    linkState.listener?.({ url: `https://www.boardsesh.com/b/the-garage?invite=${token}&utm_source=share` });
+    await waitFor(() => expect(storedBoardLink()?.path).toBe(`/b/the-garage?invite=${token}`));
+
+    unmount();
+    authState.isAuthenticated = true;
+    render(createElement(DeepLinkProvider, { children: null }));
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(`/b/the-garage?invite=${token}`));
+    expect(store.has(PENDING_BOARD_LINK_KEY)).toBe(false);
+  });
+
   it('keeps the latest link when a second one is tapped before sign-in', async () => {
     render(createElement(DeepLinkProvider, { children: null }));
     await waitFor(() => expect(linkState.listener).not.toBeNull());

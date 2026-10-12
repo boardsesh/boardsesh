@@ -17,7 +17,12 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { BoardDetailSheet } from '../BoardDetailSheet';
-const state = vi.hoisted(() => ({ canReport: true }));
+const state = vi.hoisted(() => ({
+  canReport: true,
+  profileId: 'viewer-1' as string | undefined,
+  audience: undefined as string | undefined,
+  privacyResourceIds: [] as (string | undefined)[],
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('react-native', () => ({
@@ -68,6 +73,20 @@ vi.mock('../BoardShareSheet', () => ({
   BoardShareSheet: ({ wallName }: { wallName: string }) =>
     createElement('div', { 'data-testid': 'share-target' }, wallName),
 }));
+vi.mock('../HomeBoardShareSheet', () => ({
+  HomeBoardShareSheet: ({ target, boardName }: { target: { kind: string }; boardName: string }) =>
+    createElement('div', { 'data-testid': 'home-share-target' }, `${target.kind}:${boardName}`),
+}));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: state.profileId ? { id: state.profileId } : undefined }),
+}));
+vi.mock('../../../lib/graphql/hooks/use-resource-privacy', () => ({
+  useResourcePrivacy: (_kind: string, resourceId?: string) => {
+    state.privacyResourceIds.push(resourceId);
+    return { data: resourceId && state.audience ? { audience: state.audience } : undefined };
+  },
+}));
+vi.mock('../../../lib/env', () => ({ WEB_BASE_URL: 'https://www.boardsesh.com' }));
 const wall = {
   uuid: 'wall-a',
   name: 'Crew wall',
@@ -83,6 +102,9 @@ const wall = {
 } as unknown as UserBoard;
 beforeEach(() => {
   state.canReport = true;
+  state.profileId = 'viewer-1';
+  state.audience = undefined;
+  state.privacyResourceIds = [];
 });
 describe('BoardDetailSheet moderation handoff', () => {
   it('offers reporting to a signed-in non-editor and retains target after detail displacement', () => {
@@ -107,5 +129,51 @@ describe('BoardDetailSheet moderation handoff', () => {
     state.canReport = true;
     screen.rerender(<BoardDetailSheet board={{ ...wall, boardType: 'kilter' }} visible {...props} />);
     expect(screen.queryByLabelText('sprayModeration.reportTitle')).toBeNull();
+  });
+});
+
+const homeBoard = {
+  uuid: 'home-a',
+  name: 'Garage board',
+  slug: 'garage-board',
+  angle: 40,
+  boardType: 'kilter',
+  ownerId: 'viewer-1',
+  isPublic: false,
+  isUnlisted: false,
+  totalAscents: 0,
+  uniqueClimbers: 0,
+  followerCount: 0,
+} as unknown as UserBoard;
+
+describe('BoardDetailSheet home board share row', () => {
+  const props = { onClose: vi.fn(), onSetActive: vi.fn() };
+
+  it("offers the owner an Invite-only board's invite link", () => {
+    state.audience = 'invite_only';
+    const screen = render(<BoardDetailSheet board={homeBoard} visible {...props} />);
+    fireEvent.click(screen.getByLabelText('mobile.boardDetail.share.shareLink'));
+    expect(screen.getByTestId('home-share-target').textContent).toBe('invite:Garage board');
+  });
+
+  it('offers no row for an Only-me board', () => {
+    state.audience = 'only_me';
+    const screen = render(<BoardDetailSheet board={homeBoard} visible {...props} />);
+    expect(screen.queryByLabelText('mobile.boardDetail.share.shareLink')).toBeNull();
+  });
+
+  it("never asks for someone else's board audience, and offers them no row on a private board", () => {
+    state.profileId = 'stranger';
+    state.audience = 'followers';
+    const screen = render(<BoardDetailSheet board={homeBoard} visible {...props} />);
+    expect(screen.queryByLabelText('mobile.boardDetail.share.shareLink')).toBeNull();
+    expect(state.privacyResourceIds.every((resourceId) => resourceId === undefined)).toBe(true);
+  });
+
+  it("offers anyone a Public board's plain link", () => {
+    state.profileId = 'stranger';
+    const screen = render(<BoardDetailSheet board={{ ...homeBoard, isPublic: true }} visible {...props} />);
+    fireEvent.click(screen.getByLabelText('mobile.boardDetail.share.shareLink'));
+    expect(screen.getByTestId('home-share-target').textContent).toBe('plain:Garage board');
   });
 });

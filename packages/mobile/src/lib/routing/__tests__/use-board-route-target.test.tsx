@@ -17,6 +17,7 @@ const fetchAllMyOwnedBoards = vi.hoisted(() => vi.fn());
 const fetchBoardByUuid = vi.hoisted(() => vi.fn());
 const fetchBoardBySlug = vi.hoisted(() => vi.fn());
 const fetchSprayWallBoardFromLink = vi.hoisted(() => vi.fn());
+const fetchBoardFromShareLink = vi.hoisted(() => vi.fn());
 const routeQueryClient = vi.hoisted(() => ({}));
 const credentialState = vi.hoisted(() => ({ current: true }));
 const createBoardMutateAsync = vi.hoisted(() => vi.fn());
@@ -76,6 +77,7 @@ vi.mock('@tanstack/react-query', () => ({
   },
 }));
 vi.mock('../../spray/spray-wall-link-board', () => ({ fetchSprayWallBoardFromLink }));
+vi.mock('../../board-share/redeem-board-share-link', () => ({ fetchBoardFromShareLink }));
 vi.mock('../../auth-store', () => ({
   captureAuthCredentialGeneration: () => 0,
   isAuthCredentialGenerationCurrent: () => credentialState.current,
@@ -188,6 +190,7 @@ function Harness({
   onHandedOff,
   anonymousClimbEnabled,
   wallUuid,
+  inviteToken,
 }: {
   target: BoardRouteTarget | null;
   mode?: 'deep-link' | 'in-app';
@@ -195,6 +198,7 @@ function Harness({
   onHandedOff?: () => void;
   anonymousClimbEnabled?: boolean;
   wallUuid?: string | string[];
+  inviteToken?: string | string[];
 }) {
   const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
     mode,
@@ -202,6 +206,7 @@ function Harness({
     onHandedOff,
     anonymousClimbEnabled,
     wallUuid,
+    inviteToken,
   });
   return createElement('span', {
     'data-status': status,
@@ -244,6 +249,7 @@ beforeEach(() => {
   fetchBoardByUuid.mockResolvedValue(null);
   fetchBoardBySlug.mockResolvedValue(null);
   fetchSprayWallBoardFromLink.mockReset().mockResolvedValue(null);
+  fetchBoardFromShareLink.mockReset().mockResolvedValue(null);
   credentialState.current = true;
   getStoredActiveBoard.mockResolvedValue(null);
   getOfflineBoards.mockReturnValue([]);
@@ -259,6 +265,58 @@ beforeEach(() => {
 
 describe('useBoardRouteTarget', () => {
   const WALL_UUID = '11111111-2222-3333-4444-555555555555';
+  const INVITE_TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
+
+  it("redeems a board share link's token before adopting the board it names", async () => {
+    useRealResolver();
+    const memberBoard = board({ uuid: 'friends-board', slug: 'friends-garage', angle: 35 });
+    fetchBoardFromShareLink.mockResolvedValue(memberBoard);
+    render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'friends-garage', angle: null },
+        inviteToken: INVITE_TOKEN,
+      }),
+    );
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+    expect(fetchBoardFromShareLink).toHaveBeenCalledWith(INVITE_TOKEN, 'friends-garage', expect.any(Function));
+    expect(setActiveBoard).toHaveBeenCalledWith(memberBoard);
+    // The plain slug read is only the fallback the redeem step is handed.
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the plain board link when the share link opens nothing', async () => {
+    useRealResolver();
+    const publicBoard = board({ uuid: 'now-public', slug: 'friends-garage' });
+    fetchBoardBySlug.mockResolvedValue(publicBoard);
+    fetchBoardFromShareLink.mockImplementation(
+      async (_token: string, slug: string, fallback: (slug: string) => Promise<UserBoard | null>) => fallback(slug),
+    );
+    render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'friends-garage', angle: null },
+        inviteToken: INVITE_TOKEN,
+      }),
+    );
+
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(publicBoard));
+    expect(fetchBoardBySlug).toHaveBeenCalledWith('friends-garage');
+  });
+
+  it('never sends a malformed token to the server', async () => {
+    useRealResolver();
+    fetchBoardBySlug.mockResolvedValue(board({ uuid: 'garage', slug: 'garage' }));
+    render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'garage', angle: null },
+        inviteToken: 'not-a-token',
+      }),
+    );
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalled());
+    expect(fetchBoardFromShareLink).not.toHaveBeenCalled();
+    expect(fetchBoardBySlug).toHaveBeenCalledWith('garage');
+  });
 
   it('awaits a shared-wall capability and adopts its board without a slug lookup', async () => {
     useRealResolver();

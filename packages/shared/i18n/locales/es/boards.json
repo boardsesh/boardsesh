@@ -238,7 +238,13 @@
       },
       "details": "Detalles",
       "detailsAria": "Abrir los detalles de {{name}}",
-      "activeSprayDetails": "{{name}} · detalles del plafón"
+      "activeSprayDetails": "{{name}} · detalles del plafón",
+      "share": {
+        "shareLink": "Compartir enlace",
+        "publicHint": "Cualquiera puede abrir este plafón.",
+        "unlistedHint": "Solo quien reciba el enlace.",
+        "inviteHint": "Quien lo abra se une a tu plafón."
+      }
     },
     "disambiguation": {
       "title": "¿En qué plafón estás?",
@@ -436,6 +442,21 @@
       "share": "Compartir",
       "copied": "Enlace copiado",
       "qrLabel": "Código QR de {{name}}"
+    },
+    "boardShare": {
+      "title": "Comparte este plafón",
+      "publicBody": "Este plafón es público: cualquiera con el enlace puede abrirlo y escalar en él.",
+      "unlistedBody": "Solo quien reciba este enlace puede abrir el plafón. No aparece en ninguna lista.",
+      "inviteBody": "Quien abra este enlace se une a tu plafón.",
+      "loading": "Preparando tu enlace",
+      "loadFailed": "No pudimos preparar tu enlace. Cierra y vuelve a intentarlo.",
+      "resetLink": "Restablecer enlace",
+      "resetConfirmTitle": "¿Restablecer este enlace?",
+      "resetConfirmBody": "El enlace anterior deja de funcionar. Quien ya se haya unido conserva el acceso.",
+      "resetConfirm": "Restablecer",
+      "resetCancel": "Cancelar",
+      "resetDone": "Enlace nuevo listo. El anterior ya no funciona.",
+      "resetFailed": "No se pudo restablecer el enlace. Inténtalo de nuevo."
     },
     "sprayVisibility": {
       "label": "Quién puede verlo",
@@ -1245,5 +1266,11 @@
     "open": "Comprobar importación",
     "review": "Revisar presas",
     "unavailable": "Esta importación ya no existe: su foto se cambió o se descartó, o ya no puedes editar este muro."
+  },
+  "boardShareLink": {
+    "metadataTitle": "Te han invitado a un plafón | Boardsesh",
+    "heading": "Te han invitado a escalar en {{name}}",
+    "body": "Inicia sesión y te unes al plafón al momento. Sin esperar aprobación.",
+    "signIn": "Inicia sesión para unirte"
   }
 }

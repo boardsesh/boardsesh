@@ -8,12 +8,14 @@ type NamedBoardListRouteParams = {
   angle?: string;
   /** A spray share link's capability — resolved during the board handoff. */
   wall?: string;
+  /** A home board share link's token — redeemed during the board handoff. */
+  invite?: string;
 };
 
 /** `/b/{slug}/{angle}/list` — a named board's climb list at a given angle. */
 export default function NamedBoardListRoute() {
-  const { board_slug, angle, wall } = useLocalSearchParams<NamedBoardListRouteParams>();
+  const { board_slug, angle, wall, invite } = useLocalSearchParams<NamedBoardListRouteParams>();
   const target = useMemo(() => buildSlugListTarget(board_slug, angle), [board_slug, angle]);
 
-  return <BoardRouteHandoff target={target} wallUuid={wall} />;
+  return <BoardRouteHandoff target={target} wallUuid={wall} inviteToken={invite} />;
 }

@@ -53,8 +53,11 @@ vi.mock('../../Text', () => ({
     ),
 }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
+  Button: ({ title, onPress, disabled }: { title: string; onPress?: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: onPress, disabled }, title),
+}));
+vi.mock('../../ActivityIndicator', () => ({
+  ActivityIndicator: () => createElement('span', { 'data-testid': 'link-loading' }),
 }));
 type TopBarMockProps = { title: string; leading?: { kind: string; onPress: () => void } };
 vi.mock('../../SheetTopBar', () => ({
@@ -150,5 +153,88 @@ describe('BoardShareSheet text', () => {
     const url = renderSheet().getByText(URL);
     expect(url.getAttribute('data-color')).toBe('#SECONDARY');
     expect(Number(url.getAttribute('data-margin-bottom'))).toBeGreaterThan(0);
+  });
+});
+
+const INVITE_URL = 'https://www.boardsesh.com/b/the-garage?invite=Ab3_dE-fGhIjKlMnOpQrSt';
+
+describe('BoardShareSheet for a home board', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('says what each link does, in the board copy', () => {
+    const cases = [
+      ['public', 'mobile.boardShare.publicBody'],
+      ['unlisted', 'mobile.boardShare.unlistedBody'],
+      ['invite', 'mobile.boardShare.inviteBody'],
+    ] as const;
+    for (const [visibility, body] of cases) {
+      const { getByText, unmount } = render(
+        <BoardShareSheet
+          visible
+          onDismiss={vi.fn()}
+          shareUrl={INVITE_URL}
+          wallName="Garage"
+          visibility={visibility}
+          subject="board"
+        />,
+      );
+      expect(getByText('mobile.boardShare.title')).toBeTruthy();
+      expect(getByText(body)).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('shares the tokened link and offers Reset only when asked to', async () => {
+    const onResetLink = vi.fn();
+    const { getByText } = render(
+      <BoardShareSheet
+        visible
+        onDismiss={vi.fn()}
+        shareUrl={INVITE_URL}
+        wallName="Garage"
+        visibility="invite"
+        subject="board"
+        onResetLink={onResetLink}
+      />,
+    );
+    await act(async () => getByText('mobile.sprayShare.copyLink').click());
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(INVITE_URL);
+    act(() => getByText('mobile.boardShare.resetLink').click());
+    expect(onResetLink).toHaveBeenCalledOnce();
+  });
+
+  it('holds the QR space with a spinner while the link loads, and copies nothing', async () => {
+    const { getByTestId, getByText, queryByText } = render(
+      <BoardShareSheet
+        visible
+        onDismiss={vi.fn()}
+        shareUrl={null}
+        wallName="Garage"
+        visibility="invite"
+        subject="board"
+      />,
+    );
+    expect(getByTestId('link-loading')).toBeTruthy();
+    expect(queryByText('mobile.boardShare.resetLink')).toBeNull();
+    expect((getByText('mobile.sprayShare.copyLink') as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => getByText('mobile.sprayShare.copyLink').click());
+    expect(Clipboard.setStringAsync).not.toHaveBeenCalled();
+  });
+
+  it('says so when the link could not be fetched', () => {
+    const { getByText } = render(
+      <BoardShareSheet
+        visible
+        onDismiss={vi.fn()}
+        shareUrl={null}
+        linkFailed
+        wallName="Garage"
+        visibility="invite"
+        subject="board"
+      />,
+    );
+    expect(getByText('mobile.boardShare.loadFailed')).toBeTruthy();
   });
 });

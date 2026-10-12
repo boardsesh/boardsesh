@@ -238,7 +238,13 @@
       },
       "details": "Details",
       "detailsAria": "Details für {{name}} öffnen",
-      "activeSprayDetails": "{{name}} · Wanddetails"
+      "activeSprayDetails": "{{name}} · Wanddetails",
+      "share": {
+        "shareLink": "Link teilen",
+        "publicHint": "Jede*r kann dieses Board öffnen.",
+        "unlistedHint": "Nur die Leute, denen du den Link schickst.",
+        "inviteHint": "Wer ihn öffnet, hat sofort Zugriff."
+      }
     },
     "disambiguation": {
       "title": "An welchem Board bist du?",
@@ -436,6 +442,21 @@
       "share": "Teilen",
       "copied": "Link kopiert",
       "qrLabel": "QR-Code für {{name}}"
+    },
+    "boardShare": {
+      "title": "Teil dieses Board",
+      "publicBody": "Dieses Board ist öffentlich: Jede*r mit dem Link kann es öffnen und darauf klettern.",
+      "unlistedBody": "Nur wer diesen Link von dir bekommt, kann das Board öffnen. Gelistet ist es nirgends.",
+      "inviteBody": "Wer diesen Link öffnet, hat sofort Zugriff auf dein Board.",
+      "loading": "Dein Link wird erstellt",
+      "loadFailed": "Dein Link konnte nicht geladen werden. Schließ das Fenster und versuch es noch mal.",
+      "resetLink": "Link zurücksetzen",
+      "resetConfirmTitle": "Diesen Link zurücksetzen?",
+      "resetConfirmBody": "Der alte Link funktioniert dann nicht mehr. Wer schon dabei ist, behält den Zugriff.",
+      "resetConfirm": "Zurücksetzen",
+      "resetCancel": "Abbrechen",
+      "resetDone": "Neuer Link ist bereit. Der alte funktioniert nicht mehr.",
+      "resetFailed": "Der Link konnte nicht zurückgesetzt werden. Versuch es noch mal."
     },
     "sprayVisibility": {
       "label": "Wer es sehen kann",
@@ -1245,5 +1266,11 @@
     "open": "Import prüfen",
     "review": "Griffe prüfen",
     "unavailable": "Diesen Import gibt es nicht mehr: Sein Foto wurde ersetzt oder verworfen, oder du kannst diese Wand nicht mehr bearbeiten."
+  },
+  "boardShareLink": {
+    "metadataTitle": "Du bist zu einem Board eingeladen | Boardsesh",
+    "heading": "Du bist eingeladen, auf {{name}} zu klettern",
+    "body": "Melde dich an und du hast sofort Zugriff auf das Board. Ohne Freigabe.",
+    "signIn": "Anmelden und beitreten"
   }
 }

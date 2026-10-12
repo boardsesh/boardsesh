@@ -48,6 +48,23 @@ describe('parseBoardLinkPath', () => {
     );
   });
 
+  it("keeps a home board share link's token, so the join survives sign-in", () => {
+    const token = 'Ab3_dE-fGhIjKlMnOpQrSt';
+    expect(parseBoardLinkPath(`https://www.boardsesh.com/b/the-garage?invite=${token}`)).toBe(
+      `/b/the-garage?invite=${token}`,
+    );
+    expect(parseBoardLinkPath(`com.boardsesh.app://b/the-garage?utm_source=chat&invite=${token}`)).toBe(
+      `/b/the-garage?invite=${token}`,
+    );
+    expect(isBoardLinkPath(`/b/the-garage?invite=${token}`)).toBe(true);
+  });
+
+  it('drops an invite that is not shaped like a share-link token', () => {
+    for (const invite of ['short', 'Ab3_dE-fGhIjKlMnOpQrSt0', '../../auth/login', 'Ab3_dE-fGhIjKlMnOpQr%2F']) {
+      expect(parseBoardLinkPath(`https://www.boardsesh.com/b/the-garage?invite=${invite}`)).toBe('/b/the-garage');
+    }
+  });
+
   it('drops every other query param, and a wall that is not a uuid', () => {
     expect(
       parseBoardLinkPath(`https://www.boardsesh.com${CLIMB_PATH}?utm_source=reddit&next=https://evil.example`),

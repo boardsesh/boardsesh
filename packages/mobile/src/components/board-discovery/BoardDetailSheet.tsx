@@ -16,8 +16,12 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardDetailFields, isActiveBoard } from './board-detail-fields';
 import { sprayShareTarget, type SprayShareTarget } from './spray-detail-rows';
 import { BoardShareSheet } from './BoardShareSheet';
+import { HomeBoardShareSheet } from './HomeBoardShareSheet';
 import { ReportSprayWallSheet } from '../spray-wall/ReportSprayWallSheet';
 import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
+import { useProfile } from '../../lib/graphql/hooks';
+import { useResourcePrivacy } from '../../lib/graphql/hooks/use-resource-privacy';
+import { homeBoardShareTarget, type HomeBoardShareTarget } from '../../lib/board-share/board-share-link';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -46,6 +50,31 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
     if (board && shareTarget) setShareSnapshot({ target: shareTarget, wallName: board.name });
   }, [board, shareTarget]);
   const closeShare = useCallback(() => setShareSnapshot(null), []);
+
+  // A home board's share row. Followers and Invite-only boards need the owner's
+  // own audience to tell them from Only me, and only the owner may read it, so
+  // nobody else asks.
+  const { data: profile } = useProfile();
+  const viewerOwnsHomeBoard =
+    !!board &&
+    toBoardName(board.boardType) !== 'spray' &&
+    !board.isPublic &&
+    !board.isUnlisted &&
+    !!profile?.id &&
+    board.ownerId === profile.id;
+  const { data: ownerPrivacy } = useResourcePrivacy('board', viewerOwnsHomeBoard ? board.uuid : undefined);
+  const homeShareTarget = useMemo(
+    () => homeBoardShareTarget(board, profile?.id, ownerPrivacy?.audience),
+    [board, profile?.id, ownerPrivacy?.audience],
+  );
+  const [homeShareSnapshot, setHomeShareSnapshot] = useState<{
+    target: HomeBoardShareTarget;
+    boardName: string;
+  } | null>(null);
+  const openHomeShare = useCallback(() => {
+    if (board && homeShareTarget) setHomeShareSnapshot({ target: homeShareTarget, boardName: board.name });
+  }, [board, homeShareTarget]);
+  const closeHomeShare = useCallback(() => setHomeShareSnapshot(null), []);
 
   const isActive = board ? isActiveBoard(board, activeBoard?.uuid) : false;
   const header = board ? (
@@ -84,6 +113,8 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
             t={t}
             shareTarget={shareTarget}
             onOpenShare={openShare}
+            homeShareTarget={homeShareTarget}
+            onOpenHomeShare={openHomeShare}
             canReport={canReport && toBoardName(board.boardType) === 'spray'}
             onOpenReport={openReport}
           />
@@ -103,6 +134,13 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
           visibility={shareSnapshot.target.visibility}
         />
       ) : null}
+      {homeShareSnapshot ? (
+        <HomeBoardShareSheet
+          target={homeShareSnapshot.target}
+          boardName={homeShareSnapshot.boardName}
+          onDismiss={closeHomeShare}
+        />
+      ) : null}
     </>
   );
 }
@@ -117,6 +155,8 @@ function BoardDetailBody({
   t,
   shareTarget,
   onOpenShare,
+  homeShareTarget,
+  onOpenHomeShare,
   canReport,
   onOpenReport,
 }: {
@@ -126,6 +166,8 @@ function BoardDetailBody({
   t: TFn;
   shareTarget: SprayShareTarget | null;
   onOpenShare: () => void;
+  homeShareTarget: HomeBoardShareTarget | null;
+  onOpenHomeShare: () => void;
   canReport: boolean;
   onOpenReport: () => void;
 }) {
@@ -207,6 +249,19 @@ function BoardDetailBody({
         </View>
       ) : null}
 
+      {homeShareTarget ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          <WallRow
+            icon="share"
+            label={t('mobile.boardDetail.share.shareLink')}
+            hint={homeShareHint(homeShareTarget, t)}
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={onOpenHomeShare}
+          />
+        </View>
+      ) : null}
+
       {canReport ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
           <WallRow
@@ -221,6 +276,14 @@ function BoardDetailBody({
       ) : null}
     </>
   );
+}
+
+/** What the home board's link does, in the row's second line. */
+function homeShareHint(target: HomeBoardShareTarget, t: TFn): string {
+  if (target.kind === 'invite') return t('mobile.boardDetail.share.inviteHint');
+  return target.visibility === 'public'
+    ? t('mobile.boardDetail.share.publicHint')
+    : t('mobile.boardDetail.share.unlistedHint');
 }
 
 function WallRow({

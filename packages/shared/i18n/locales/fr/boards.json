@@ -238,7 +238,13 @@
       },
       "details": "Détails",
       "detailsAria": "Ouvrir les détails de {{name}}",
-      "activeSprayDetails": "{{name}} · détails du mur"
+      "activeSprayDetails": "{{name}} · détails du mur",
+      "share": {
+        "shareLink": "Partager le lien",
+        "publicHint": "N'importe qui peut ouvrir cette board.",
+        "unlistedHint": "Seulement les grimpeurs à qui tu l'envoies.",
+        "inviteHint": "Qui l'ouvre rejoint ta board."
+      }
     },
     "disambiguation": {
       "title": "Sur quel mur es-tu ?",
@@ -436,6 +442,21 @@
       "share": "Partager",
       "copied": "Lien copié",
       "qrLabel": "Code QR de {{name}}"
+    },
+    "boardShare": {
+      "title": "Partage cette board",
+      "publicBody": "Cette board est publique : n'importe qui avec le lien peut l'ouvrir et grimper dessus.",
+      "unlistedBody": "Seuls les grimpeurs à qui tu envoies ce lien peuvent ouvrir la board. Elle n'est listée nulle part.",
+      "inviteBody": "Toute personne qui ouvre ce lien rejoint ta board.",
+      "loading": "Préparation de ton lien",
+      "loadFailed": "Impossible de récupérer ton lien. Ferme et réessaie.",
+      "resetLink": "Réinitialiser le lien",
+      "resetConfirmTitle": "Réinitialiser ce lien ?",
+      "resetConfirmBody": "L'ancien lien ne marche plus. Les personnes qui ont déjà rejoint gardent leur accès.",
+      "resetConfirm": "Réinitialiser",
+      "resetCancel": "Annuler",
+      "resetDone": "Nouveau lien prêt. L'ancien ne marche plus.",
+      "resetFailed": "Impossible de réinitialiser le lien. Réessaie."
     },
     "sprayVisibility": {
       "label": "Qui peut le voir",
@@ -1245,5 +1266,11 @@
     "open": "Vérifier l’importation",
     "review": "Vérifier les prises",
     "unavailable": "Cette importation n’existe plus : sa photo a été remplacée ou abandonnée, ou tu ne peux plus modifier ce mur."
+  },
+  "boardShareLink": {
+    "metadataTitle": "Tu es invité·e sur une board | Boardsesh",
+    "heading": "Tu es invité·e à grimper sur {{name}}",
+    "body": "Connecte-toi et tu rejoins la board tout de suite. Sans attendre de validation.",
+    "signIn": "Se connecter pour rejoindre"
   }
 }

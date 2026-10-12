@@ -167,6 +167,7 @@ export function BoardRouteHandoff({
   mode,
   activationIntent,
   wallUuid,
+  inviteToken,
 }: {
   target: BoardRouteTarget | null;
   mode?: BoardRouteMode;
@@ -174,6 +175,8 @@ export function BoardRouteHandoff({
   activationIntent?: string | string[];
   /** A spray-wall UUID from a shared link; resolved before board adoption. */
   wallUuid?: string | string[];
+  /** A home board share link's token; redeemed before board adoption. */
+  inviteToken?: string | string[];
 }) {
   const report = useBoardRouteHandoffReporter(target, mode);
   const onHandedOff = useCallback(() => report('resolved'), [report]);
@@ -185,6 +188,7 @@ export function BoardRouteHandoff({
     mode,
     activationIntent,
     wallUuid,
+    inviteToken,
     onHandedOff,
     anonymousClimbEnabled,
   });
