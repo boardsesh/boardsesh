@@ -17,6 +17,7 @@ export type ConsentRegionAnswer = {
 };
 
 let lookup: Promise<ConsentRegionAnswer> | null = null;
+let lookupPending = false;
 
 /**
  * Whether this visitor's region gets the consent banner, and whether the
@@ -30,8 +31,20 @@ let lookup: Promise<ConsentRegionAnswer> | null = null;
  * default.
  */
 export function lookUpConsentRegion(): Promise<ConsentRegionAnswer> {
-  lookup ??= requestConsentRegion();
+  if (!lookup) {
+    lookupPending = true;
+    lookup = requestConsentRegion().finally(() => {
+      lookupPending = false;
+    });
+  }
   return lookup;
+}
+
+/** Refresh a completed answer on resume; simultaneous focus events share an in-flight lookup. */
+export function expireConsentRegionLookup(): boolean {
+  if (!lookup || lookupPending) return false;
+  lookup = null;
+  return true;
 }
 
 async function requestConsentRegion(): Promise<ConsentRegionAnswer> {

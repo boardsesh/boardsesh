@@ -30,6 +30,27 @@ describe('web lookUpConsentRegion', () => {
     expect(transport.request.mock.calls[0]?.[0]).toMatchObject({ document: GET_CONSENT_REGION });
   });
 
+  it('refreshes completed answers while preserving one in-flight lookup', async () => {
+    let answer!: (response: unknown) => void;
+    transport.request.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const { lookUpConsentRegion, expireConsentRegionLookup } = await import('../consent-region');
+    expect(expireConsentRegionLookup()).toBe(false);
+    const pending = lookUpConsentRegion();
+    expect(expireConsentRegionLookup()).toBe(false);
+    await Promise.resolve();
+    answer({ consentRegion: { countryCode: 'US', promptRequired: false } });
+    await pending;
+    expect(expireConsentRegionLookup()).toBe(true);
+
+    transport.request.mockResolvedValue({ consentRegion: { countryCode: 'DE', promptRequired: true } });
+    await expect(lookUpConsentRegion()).resolves.toEqual({ promptRequired: true, globalPrivacyControl: false });
+    expect(transport.request).toHaveBeenCalledTimes(2);
+  });
+
   it('reports unknown when the request fails', async () => {
     transport.request.mockRejectedValue(new Error('offline'));
     const { lookUpConsentRegion } = await import('../consent-region');

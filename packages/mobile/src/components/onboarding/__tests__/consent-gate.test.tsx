@@ -32,7 +32,7 @@ const posthog = vi.hoisted(() => ({ setFlagIdentity: vi.fn(), subscribeInitializ
 // promptRequired from the backend: true (e.g. DE), false (e.g. US), null (unknown or failed).
 const region = vi.hoisted(() => ({
   lookup: vi.fn<() => Promise<boolean | null>>(),
-  // True when a resume finds the last answer stale (a day old, or failed).
+  // True when a completed answer can be refreshed on foreground resume.
   expire: vi.fn<() => boolean>(),
   globalPrivacyControl: false,
 }));
@@ -497,7 +497,7 @@ describe('ConsentGate regions', () => {
     expect(isConsentAuthorityGranted()).toBe(true);
   });
 
-  it('re-checks the region on a resume once the last answer is stale, and asks in a prompt region', async () => {
+  it('re-checks a fresh region answer on resume, holding capture before asking in a prompt region', async () => {
     region.lookup.mockResolvedValue(false);
     updateConsentState({ record: createRegionDefaultConsent('ios') });
     render(<ConsentGate />);
@@ -505,14 +505,7 @@ describe('ConsentGate regions', () => {
     expect(region.lookup).toHaveBeenCalledTimes(1);
     expect(isConsentAuthorityGranted()).toBe(true);
 
-    // A resume within a day reuses the answer.
-    await act(async () => {
-      for (const listener of [...appState.listeners]) listener('active');
-    });
-    await flushEffects();
-    expect(region.lookup).toHaveBeenCalledTimes(1);
-
-    // A day later, now in Germany: capture holds while it asks, then the default goes.
+    // The next foreground resume is already in Germany: hold capture until it answers.
     let answer!: (promptRequired: boolean | null) => void;
     region.lookup.mockReturnValue(
       new Promise((resolve) => {

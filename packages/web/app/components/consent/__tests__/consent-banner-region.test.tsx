@@ -154,6 +154,8 @@ describe('consent banner by region', () => {
     await act(async () => {
       await Promise.resolve();
     });
+    fireEvent.focus(window);
+    fireEvent.online(window);
     expect(regionLookups()).toBe(0);
     expect(view.queryByTestId('consent-banner')).toBeNull();
     expect(consentCookie()).toBe(serializeConsentCookieValue(explicitDenial));
@@ -217,6 +219,50 @@ describe('consent banner by region', () => {
     });
     await waitFor(() => expect(view.getByTestId('analytics-authorized').textContent).toBe('on'));
     expect(await sendsAnalytics()).toBe(true);
+    expect(view.queryByTestId('consent-banner')).toBeNull();
+  });
+
+  it('holds capture on focus, deduplicates resume events, and asks after travel into a prompt region', async () => {
+    cookies = `boardsesh-consent=${serializeConsentCookieValue(createRegionDefaultConsent('web'))}`;
+    transport.region = false;
+    const view = await renderBanner();
+    await waitFor(() => expect(view.getByTestId('analytics-authorized').textContent).toBe('on'));
+    const { hasAnalyticsConsent } = await import('@/app/lib/consent');
+
+    let answer!: (promptRequired: boolean | null) => void;
+    transport.pendingRegion = new Promise((resolve) => {
+      answer = resolve;
+    });
+    act(() => {
+      fireEvent.focus(window);
+      expect(hasAnalyticsConsent()).toBe(false);
+      fireEvent(document, new Event('visibilitychange'));
+      fireEvent.online(window);
+    });
+    await waitFor(() => expect(regionLookups()).toBe(2));
+    expect(view.getByTestId('analytics-authorized').textContent).toBe('off');
+
+    await act(async () => {
+      answer(true);
+    });
+    expect(await view.findByTestId('consent-banner')).toBeTruthy();
+    expect(consentCookie()).toBeUndefined();
+    expect(hasAnalyticsConsent()).toBe(false);
+    expect(regionLookups()).toBe(2);
+  });
+
+  it('keeps a stored default disabled when a focus refresh fails', async () => {
+    cookies = `boardsesh-consent=${serializeConsentCookieValue(createRegionDefaultConsent('web'))}`;
+    transport.region = false;
+    const view = await renderBanner();
+    await waitFor(() => expect(view.getByTestId('analytics-authorized').textContent).toBe('on'));
+    const storedDefault = consentCookie();
+    transport.region = new Error('offline after travel');
+
+    fireEvent.focus(window);
+    await waitFor(() => expect(regionLookups()).toBe(2));
+    expect(consentCookie()).toBe(storedDefault);
+    expect(await sendsAnalytics()).toBe(false);
     expect(view.queryByTestId('consent-banner')).toBeNull();
   });
 

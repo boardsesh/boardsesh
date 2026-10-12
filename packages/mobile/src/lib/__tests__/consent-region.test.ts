@@ -10,7 +10,6 @@ vi.mock('../graphql/client', () => ({
 }));
 
 import {
-  CONSENT_REGION_MAX_AGE_MS,
   CONSENT_REGION_WAIT_MS,
   expireConsentRegionLookup,
   isGlobalPrivacyControlEnabled,
@@ -74,15 +73,10 @@ describe('lookUpConsentRegion', () => {
 });
 
 describe('expireConsentRegionLookup', () => {
-  it('keeps a fresh answer and asks again once it is a day old', async () => {
+  it('refreshes even a just-completed answer on foreground resume', async () => {
     request.mockResolvedValue({ consentRegion: { countryCode: 'US', promptRequired: false } });
-    const startedAt = Date.now();
     await lookUpConsentRegion();
-    expect(expireConsentRegionLookup(startedAt + CONSENT_REGION_MAX_AGE_MS - 1)).toBe(false);
-    await lookUpConsentRegion();
-    expect(request).toHaveBeenCalledOnce();
-
-    expect(expireConsentRegionLookup(startedAt + CONSENT_REGION_MAX_AGE_MS)).toBe(true);
+    expect(expireConsentRegionLookup()).toBe(true);
     request.mockResolvedValue({ consentRegion: { countryCode: 'DE', promptRequired: true } });
     await expect(lookUpConsentRegion()).resolves.toBe(true);
     expect(request).toHaveBeenCalledTimes(2);

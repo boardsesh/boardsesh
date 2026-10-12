@@ -93,9 +93,10 @@ takes `createRegionDefaultConsent(source)`: analytics granted, `basis:
   behind `hasAnalyticsConsent()` on the website). Before that answer, and when
   the lookup fails, it stays stored but sends nothing, and nothing is asked.
 - A prompt region drops it and the prompt asks (a climber who travels into the
-  EU). The app looks the region up once per launch, and again on a resume once
-  the last answer is 24 hours old or failed: a phone keeps a backgrounded
-  process for days.
+  EU). The app refreshes the region on each foreground resume while it holds
+  a default; the website refreshes it on focus, becoming visible or coming
+  online. Both stop capture synchronously until the new answer confirms a
+  non-prompt region. Simultaneous resume events share one in-flight lookup.
 - Install attribution (Apple Ads, the Play install referrer) never runs on it.
   See [Legal basis per tracker](#legal-basis-per-tracker).
 

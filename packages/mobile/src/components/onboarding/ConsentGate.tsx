@@ -118,8 +118,8 @@ export function ConsentGate(): null {
   // Region: the prompt is only shown in the prompt regions (and when the region
   // is unknown). Look it up as soon as the device turns out to have no answer,
   // so the answer is usually in by the time the prompt would open. A device that
-  // holds a region default re-checks once per launch, and again on a resume once
-  // that answer is a day old: a prompt region drops the default and asks (a
+  // holds a region default re-checks once per launch, and again on each foreground
+  // resume: a prompt region drops the default and asks (a
   // climber who travelled into the EU). The default sends nothing until this
   // launch's answer says the region needs no prompt (`regionConfirmed`), so a
   // failed or slow lookup keeps it stored but switched off.

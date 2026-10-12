@@ -4,14 +4,7 @@ import { getHttpClient } from './graphql/client';
 /** Same cap as the signed-in account read: past it, the prompt is shown. */
 export const CONSENT_REGION_WAIT_MS = 5000;
 
-/**
- * A backgrounded app keeps its process for days, and the climber can travel in
- * that time. Resuming after this long looks the region up again.
- */
-export const CONSENT_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
 type RegionLookup = {
-  startedAt: number;
   promise: Promise<boolean | null>;
   /** Undefined until the request settles. */
   promptRequired?: boolean | null;
@@ -29,7 +22,7 @@ let answeredGlobalPrivacyControl = false;
  */
 export function lookUpConsentRegion(): Promise<boolean | null> {
   if (!lookup) {
-    const started: RegionLookup = { startedAt: Date.now(), promise: Promise.resolve(null) };
+    const started: RegionLookup = { promise: Promise.resolve(null) };
     started.promise = requestConsentRegion().then((promptRequired) => {
       started.promptRequired = promptRequired;
       return promptRequired;
@@ -40,13 +33,12 @@ export function lookUpConsentRegion(): Promise<boolean | null> {
 }
 
 /**
- * Forget this launch's answer when it is older than {@link CONSENT_REGION_MAX_AGE_MS},
- * or when the lookup failed, so the next {@link lookUpConsentRegion} asks
- * again. True when it did. A lookup still in flight is kept.
+ * Forget a completed region answer on foreground resume. A traveller can cross
+ * into a prompt region within the same process, so no elapsed-time threshold
+ * makes that answer safe. Keep an in-flight lookup to deduplicate resume events.
  */
-export function expireConsentRegionLookup(now: number = Date.now()): boolean {
+export function expireConsentRegionLookup(): boolean {
   if (!lookup || lookup.promptRequired === undefined) return false;
-  if (lookup.promptRequired !== null && now - lookup.startedAt < CONSENT_REGION_MAX_AGE_MS) return false;
   lookup = null;
   return true;
 }
