@@ -69,6 +69,9 @@ the query, production upstream, committed Apple pin, and candidate output are
 fixed. A newly added workflow must first land on the default branch before its
 manual dispatch is available; a feature-branch workflow file alone is not a
 dispatchable entrypoint.
+The job runs only on protected `main` under the Production deployment policy.
+It checks out the dispatch's immutable main commit and verifies that checkout
+before exposing screenshot credentials; branch and tag dispatches cannot record.
 
 The helper verifies the original archive and authenticated account, records one
 real response into a new directory, and uses the existing merger's `newest`

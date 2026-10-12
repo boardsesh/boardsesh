@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { createServer, type Server } from 'node:http';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -208,6 +209,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   await new Promise<void>((resolve, reject) => upstream.close((error) => (error ? reject(error) : resolve())));
   rmSync(directory, { recursive: true, force: true });
 });
@@ -361,6 +363,26 @@ describe('genuine Apple campaign privacy extension', () => {
     }
   });
 
+  it.each(['refs/heads/feature', 'refs/tags/main', ''])(
+    'rejects CLI ref %s before fetching fixtures or exposing credentials',
+    async (selectedRef) => {
+      const originalArgs = process.argv;
+      const request = vi.spyOn(globalThis, 'fetch');
+      process.argv = ['node', 'record-ios-campaign-privacy.ts'];
+      vi.stubEnv('RUNNER_TEMP', directory);
+      vi.stubEnv('GITHUB_REF', selectedRef);
+      try {
+        await expect(main()).rejects.toThrow('requires the protected main workflow');
+        expect(request).not.toHaveBeenCalled();
+        expect(receivedCredentials).toEqual([]);
+        expect(existsSync(outputDirectory)).toBe(false);
+      } finally {
+        request.mockRestore();
+        process.argv = originalArgs;
+      }
+    },
+  );
+
   it('honors the normal recorder token-refusal gate without exporting or persisting a live token', async () => {
     graphqlResponse = { ...PRIVACY, debug: JWT };
     await expect(refresh()).rejects.toThrow('Record the genuine current PrivacySettings');
@@ -484,14 +506,51 @@ describe('fixed manual campaign extension workflow', () => {
       permissions: Record<string, string>;
       jobs: Record<
         string,
-        { steps: Array<{ run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, string> }> }
+        {
+          if: string;
+          environment: string;
+          steps: Array<{
+            name?: string;
+            run?: string;
+            uses?: string;
+            env?: Record<string, string>;
+            with?: Record<string, string | boolean>;
+          }>;
+        }
       >;
     };
     expect(workflow.on).toEqual({ workflow_dispatch: null });
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(Object.keys(workflow.jobs)).toEqual(['record-privacy']);
-    const steps = workflow.jobs['record-privacy'].steps;
+    const job = workflow.jobs['record-privacy'];
+    expect(job.if).toBe("${{ github.ref == 'refs/heads/main' && github.ref_protected }}");
+    expect(job.environment).toBe('Production');
+    const steps = job.steps;
+    expect(steps[0].with?.ref).toBe('${{ github.sha }}');
+    expect(steps[0].with?.['persist-credentials']).toBe(false);
+    const checkoutGuard = steps.findIndex(
+      (step) => step.name === 'Verify protected main checkout before exposing credentials',
+    );
+    const credentialStep = steps.findIndex((step) => step.env?.SCREENSHOT_USER_PASSWORD);
+    expect(checkoutGuard).toBeGreaterThan(0);
+    expect(checkoutGuard).toBeLessThan(credentialStep);
+    expect(steps[checkoutGuard].run).toContain('test "$GITHUB_REF" = refs/heads/main');
+    expect(steps[checkoutGuard].run).toContain('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"');
+    expect(steps[checkoutGuard].run).not.toContain('persist-credentials');
+    const guardScript = steps[checkoutGuard].run;
+    if (!guardScript) throw new Error('Checkout guard is missing');
+    const checkedOutCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const guardEnvironment = { ...process.env, GITHUB_REF: 'refs/heads/main', GITHUB_SHA: checkedOutCommit };
+    expect(execFileSync('bash', ['-c', guardScript], { env: guardEnvironment, encoding: 'utf8' })).toBe('');
+    for (const invalidEnvironment of [
+      { ...guardEnvironment, GITHUB_REF: 'refs/heads/feature' },
+      { ...guardEnvironment, GITHUB_REF: 'refs/tags/main' },
+      { ...guardEnvironment, GITHUB_SHA: '0'.repeat(40) },
+    ]) {
+      expect(() => execFileSync('bash', ['-c', guardScript], { env: invalidEnvironment, stdio: 'pipe' })).toThrow();
+    }
     expect(steps.filter((step) => step.run).map((step) => step.run)).toEqual([
+      steps[checkoutGuard].run,
       'vp install --frozen-lockfile',
       'vp exec node --import tsx scripts/record-ios-campaign-privacy.ts',
     ]);

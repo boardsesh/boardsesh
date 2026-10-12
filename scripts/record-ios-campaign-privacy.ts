@@ -318,6 +318,8 @@ export async function recordIosCampaignPrivacy(
 export async function main(): Promise<void> {
   if (process.argv.slice(2).length || !process.env.RUNNER_TEMP)
     throw new PrivacyRefreshError('This fixed CI helper accepts no arguments and requires RUNNER_TEMP.');
+  if (process.env.GITHUB_REF !== 'refs/heads/main')
+    throw new PrivacyRefreshError('This fixed CI helper requires the protected main workflow.');
   let baseDirectory: string;
   try {
     baseDirectory = await ensureScreenshotFixtures(readFixtureSnapshotReference(IOS_CAMPAIGN_FIXTURE_REFERENCE));

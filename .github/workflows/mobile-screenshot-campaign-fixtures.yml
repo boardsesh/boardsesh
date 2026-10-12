@@ -9,6 +9,8 @@ permissions:
 
 jobs:
   record-privacy:
+    if: ${{ github.ref == 'refs/heads/main' && github.ref_protected }}
+    environment: Production
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -16,6 +18,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Verify protected main checkout before exposing credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
