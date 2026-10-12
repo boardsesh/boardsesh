@@ -728,10 +728,12 @@ async function requireGymGrantAccess(gymUuid: string, userId: string): Promise<t
  * or contact details.
  *
  * Same `userCanEditGym` rule as `gymBoards` and `gymKiosk`, so all four gym
- * reads agree. Unlike the board reads this masks AUTHENTICATED non-editors too,
- * matching those two. `null` rather than a thrown NOT_FOUND because these fields
- * are nullable in the SDL — `null` already means "no such gym" here, so it is the
- * genuinely indistinguishable answer (see #3648).
+ * reads agree. Its SQL twin, `gymVisibleCondition`, gates the gym's comment
+ * thread, votes and feeds; change both together. Unlike the board reads this
+ * masks AUTHENTICATED non-editors too, matching those two. `null` rather than a
+ * thrown NOT_FOUND because these fields are nullable in the SDL — `null` already
+ * means "no such gym" here, so it is the genuinely indistinguishable answer (see
+ * #3648).
  *
  * Runs AFTER canonical resolution: privacy belongs to the surviving gym, not the
  * stale alias row a merged twin's uuid/slug points at.

@@ -8,6 +8,7 @@ import {
   sprayClimbVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
+import { gymVisibleCondition } from '../social/gym-visibility';
 import { contentVisibilityCondition, entityOwnerCondition, resourceAccessCondition } from '../../../services/privacy';
 
 // Predicate construction must not depend on a database connection or its mocks.
@@ -207,6 +208,7 @@ function terminalSocialEntityPrivacyCondition(
   const tick = alias(schema.boardseshTicks, 'privacy_entity_tick');
   const climb = alias(schema.boardClimbs, 'privacy_entity_climb');
   const proposal = alias(schema.climbProposals, 'privacy_entity_proposal');
+  const gym = alias(schema.gyms, 'privacy_entity_gym');
   return sql`CASE
     WHEN ${entityType} = 'tick' THEN ${exists(
       queryBuilder
@@ -302,9 +304,12 @@ function terminalSocialEntityPrivacyCondition(
     )}
     WHEN ${entityType} = 'gym' THEN ${exists(
       queryBuilder
-        .select({ id: schema.gyms.id })
-        .from(schema.gyms)
-        .where(and(eq(schema.gyms.uuid, entityId), isNull(schema.gyms.deletedAt))),
+        .select({ id: gym.id })
+        .from(gym)
+        // A gym's thread reads exactly when the gym does: a private gym's
+        // comments stay with the people `gym(gymUuid)` shows it to, for direct
+        // reads and discovery alike.
+        .where(and(eq(gym.uuid, entityId), isNull(gym.deletedAt), gymVisibleCondition(gym, viewerId))),
     )}
     ELSE false END`;
 }
