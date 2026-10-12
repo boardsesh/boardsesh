@@ -673,6 +673,18 @@ export function deviceSlug(deviceName: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+// Metro is reused across phone and iPad captures. Publish both real surfaces in
+// its registry; an iPad flow uses kiosk while a phone flow keeps island.
+function cppRuntimeNavigationCommands(
+  page: CppPage,
+  coverage: CppCaptureCoverage,
+  recordedBoards: readonly CppRecordedBoard[],
+) {
+  const commands = cppNavigationCommands(page, coverage, recordedBoards, false);
+  if (coverage.target !== 'spray') commands.kiosk = { ...commands.island, route: '/wall?screenshotCppScene=kiosk' };
+  return commands;
+}
+
 /**
  * Build the env Metro bundles with (EXPO_PUBLIC_* are inlined into the JS bundle
  * at bundle time, so these shape the dev-client's JS, not the native compile).
@@ -724,8 +736,7 @@ export function buildScreenshotEnv(
     env.EXPO_PUBLIC_SCREENSHOT_CPP_URL = `http://localhost:${SCREENSHOT_READY_PORT}/cpp`;
     if (!options.cppCoverage) throw new Error('CPP capture requires explicit fixture coverage');
     const page = options.cppCapturePage ?? readCppPage(options.cpp);
-    const commands = cppNavigationCommands(page, options.cppCoverage, options.cppRecordedBoards ?? [], false);
-    commands.kiosk = { ...commands.island, route: '/wall?screenshotCppScene=kiosk' };
+    const commands = cppRuntimeNavigationCommands(page, options.cppCoverage, options.cppRecordedBoards ?? []);
     env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS = JSON.stringify(commands);
   }
   if (appLocale) {
@@ -1938,6 +1949,7 @@ export function renderCppMaestroFlow(
   if (!coverage || coverage.target !== target) throw new Error(`Missing CPP content gates for ${target}`);
   const page = readCppPage(target);
   const ipad = isIpadScreenshotDevice(device);
+  const navigation = cppRuntimeNavigationCommands(page, coverage, []);
   const scenes = [
     ...page.heroBoards.map((board, index) => ({
       command: `hero-${index + 1}`,
@@ -1969,6 +1981,9 @@ export function renderCppMaestroFlow(
   const commands: string[] = ipad ? ['- tapOn:\n    text: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}\n    optional: true'] : [];
   const dismiss = `- repeat:\n    times: 2\n    commands:\n      - runFlow:\n          when:\n            visible: \${SCREENSHOT_CLOSE_LABEL}\n          commands:\n            - tapOn: \${SCREENSHOT_CLOSE_LABEL}\n            - waitForAnimationToEnd`;
   for (const scene of scenes) {
+    for (const command of scene.command === 'queue' ? ['queue-join', scene.command] : [scene.command]) {
+      if (!navigation[command]) throw new Error(`CPP ${target} has no native navigation command for ${command}`);
+    }
     if (!scene.ready?.trim()) throw new Error(`Missing CPP ready text for ${scene.command}`);
     commands.push(dismiss);
     if (scene.command === 'queue') {

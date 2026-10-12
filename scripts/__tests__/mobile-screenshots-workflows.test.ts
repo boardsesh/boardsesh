@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { CPP_MANIFEST_PATH, CPP_TARGETS, readCppPage } from '../lib/screenshot-cpp';
 
 /**
  * The screenshot runs gate themselves twice over: a `workflow_run` trigger plus a
@@ -48,6 +49,7 @@ interface WorkflowJob {
   needs?: string | string[];
   if?: string;
   environment?: string;
+  'timeout-minutes'?: number;
   permissions?: Record<string, string>;
   env?: Record<string, string>;
   strategy?: { 'max-parallel'?: number; matrix?: unknown; 'fail-fast'?: boolean };
@@ -718,6 +720,32 @@ describe('iOS CPP capture and publication isolation', () => {
     expect(flatten(plan.if)).toContain("inputs.cpp_action == 'plan'");
     expect(flatten(workflow.jobs['ios-build'].if)).toContain("inputs.cpp_action == 'plan'");
     expect(plan.steps?.find((step) => step.uses === './.github/actions/asc-cpp')?.with?.action).toBe('plan');
+  });
+
+  it('budgets serialized Apple processing for the complete CPP image matrix', () => {
+    const manifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8')) as {
+      locales: Record<string, string[]>;
+      devices: Record<string, string>;
+    };
+    const storefrontCount = Object.values(manifest.locales).flat().length;
+    const imageCount = CPP_TARGETS.reduce((total, target) => {
+      const page = readCppPage(target);
+      return (
+        total +
+        Object.keys(manifest.devices).reduce(
+          (deviceTotal, device) =>
+            deviceTotal + (device.startsWith('ipad-') ? page.recipes.ipad : page.recipes.phone).length,
+          0,
+        ) *
+          storefrontCount
+      );
+    }, 0);
+    expect(imageCount).toBe(720);
+    // Three five-second processing polls per image plus 30 minutes for transfer,
+    // API preflight, ordering, verification, and submission exceeds the old hour.
+    const processingAndTransferMinutes = Math.ceil((imageCount * 3 * 5) / 60) + 30;
+    expect(workflow.jobs['cpp-finalize']['timeout-minutes']).toBeGreaterThanOrEqual(processingAndTransferMinutes);
+    expect(workflow.jobs['cpp-finalize']['timeout-minutes']).toBeLessThanOrEqual(360);
   });
 
   it('validates complete exports after capture before Apple publication', () => {

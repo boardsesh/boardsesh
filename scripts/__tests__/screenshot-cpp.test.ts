@@ -15,9 +15,11 @@ import {
   cppReadinessSelector,
   type CppCaptureCoverage,
   type CppRecordedBoard,
+  type CppNavigationCommand,
 } from '../lib/screenshot-cpp';
 import {
   parseArgs,
+  buildScreenshotEnv,
   renderCppMaestroFlow,
   renderMaestroFlowForIosDevice,
   deviceSlug,
@@ -79,6 +81,76 @@ function scenario(target: (typeof CPP_TARGETS)[number]) {
 }
 
 describe('custom product page captures', () => {
+  it('resolves every emitted command through the actual Metro registry for all 64 CPP recipes', () => {
+    let checkedDocuments = 0;
+    for (const target of CPP_TARGETS) {
+      const { coverage, page, boards } = scenario(target);
+      coverage.boardIds = Object.fromEntries(
+        [...page.heroBoards, ...page.otherBoards].map((board, index) => [board.id, boards[index].uuid]),
+      );
+      const options = {
+        ...parseArgs(['--cpp', target, '--fixtures', 'record']),
+        cppCoverage: coverage,
+        cppRecordedBoards: boards,
+      };
+      for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+        const env = buildScreenshotEnv(options, { NODE_ENV: 'test' }, locale, '2026-10-12T00:00:00Z', 8090);
+        const registry = JSON.parse(env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS!) as Record<string, CppNavigationCommand>;
+        for (const device of IOS_SCREENSHOT_DEVICES) {
+          const ipad = device.name.startsWith('iPad');
+          const finalScene = target !== 'spray' && ipad ? 'kiosk' : 'island';
+          const source = renderMaestroFlowForIosDevice(renderCppMaestroFlow(target, device, coverage, locale), device);
+          const documents = parseAllDocuments(source);
+          expect(documents.flatMap((document) => document.errors)).toEqual([]);
+          const steps = documents[1].toJS() as Record<string, unknown>[];
+          const requestedScenes = steps.flatMap((step) => {
+            if (typeof step.evalScript !== 'string') return [];
+            const requested = step.evalScript.match(/\/set\?scene=([a-z0-9-]+)/);
+            return requested ? [requested[1]] : [];
+          });
+          // This list is the approved capture sequence, independently of the
+          // implementation's registry and scene builder (including the join).
+          expect(requestedScenes).toEqual([
+            'hero-1',
+            'hero-2',
+            'hero-3',
+            'other-1',
+            'other-2',
+            'other-3',
+            'search',
+            'logbook',
+            'led',
+            'workout',
+            'status',
+            'queue-join',
+            'queue',
+            finalScene,
+          ]);
+          for (const [index, scene] of requestedScenes.entries()) {
+            const board = index < 6 ? [...page.heroBoards, ...page.otherBoards][index] : page.primaryBoard;
+            expect(registry[scene], `${target}/${device.name}/${locale}: ${scene}`).toMatchObject({
+              selector: board.selector,
+              identity: { uuid: coverage.boardIds[board.id], boardType: board.boardType },
+            });
+            expect(
+              new URL(registry[scene].route, 'https://capture.invalid').searchParams.get('screenshotCppScene'),
+            ).toBe(scene);
+          }
+          const finalRoute = new URL(registry[finalScene].route, 'https://capture.invalid');
+          expect(finalRoute.pathname).toBe(target === 'spray' ? '/boards/spray/holds' : ipad ? '/wall' : '/climbs');
+          if (target === 'spray') expect(finalRoute.searchParams.get('wallUuid')).toBe(coverage.scenes.island.boardId);
+          if (!ipad && target !== 'spray') expect(finalRoute.searchParams.get('screenshotOpenFirst')).toBe('1');
+          const captures = steps.flatMap((step) =>
+            typeof step.takeScreenshot === 'string' ? [`${step.takeScreenshot}.png`] : [],
+          );
+          expect(captures.sort()).toEqual(cppCaptureNames(page, deviceSlug(device.name)));
+          expect(captures).toContain(target === 'spray' ? '08-holds.png' : ipad ? '08-kiosk.png' : '08-island.png');
+          checkedDocuments += 1;
+        }
+      }
+    }
+    expect(checkedDocuments).toBe(64);
+  });
   it('generates a valid Maestro command document rather than expanding the marker inside a comment', () => {
     for (const target of CPP_TARGETS) {
       const { coverage, page } = scenario(target);

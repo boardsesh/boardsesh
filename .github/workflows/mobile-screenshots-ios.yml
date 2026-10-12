@@ -1234,7 +1234,10 @@ jobs:
     needs: [setup, cpp-capture]
     if: ${{ needs.cpp-capture.result == 'success' && (inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 720 images are reconciled serially. One five-second Apple processing poll
+    # per image already consumes 60 minutes, before transfers and submission.
+    # Keep all-target preflight and serialized writes, with room for processing.
+    timeout-minutes: 360
     environment: Production
     permissions:
       contents: read
