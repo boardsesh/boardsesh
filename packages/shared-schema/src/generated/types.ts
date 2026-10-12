@@ -273,6 +273,7 @@ export type AppFeedbackReport = {
   id: Scalars['ID']['output'];
   platform: Scalars['String']['output'];
   rating?: Maybe<Scalars['Int']['output']>;
+  recordingUrls: Array<Scalars['String']['output']>;
   reporter?: Maybe<AppFeedbackReporter>;
   resolvedAt?: Maybe<Scalars['String']['output']>;
   resolvedBy?: Maybe<Scalars['String']['output']>;
@@ -316,7 +317,7 @@ export type AppFeedbackStatusCounts = {
 };
 
 /**
- * Type filter for the admin feedback list. `bugs` = shake-bug/drawer-bug
+ * Type filter for the admin feedback list. `bugs` = shake-bug/drawer-bug/share-bug
  * sources, `ratings` = prompt/drawer-feedback sources, `all` = everything.
  */
 export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
@@ -10185,6 +10186,11 @@ export type SubmitAppFeedbackInput = {
   /** 1–5 star rating. Null for bug reports. */
   rating?: InputMaybe<Scalars['Int']['input']>;
   /**
+   * Keys from POST /api/feedback-recordings. Bug reports allow four combined
+   * screenshots and recordings; excess recording keys are clipped.
+   */
+  recordingKeys?: InputMaybe<Array<Scalars['String']['input']>>;
+  /**
    * Object keys returned by `POST /api/feedback-screenshots`, at most
    * FEEDBACK_SCREENSHOT_MAX_COUNT of them. Bug reports only — they become
    * `<img>` tags in the GitHub issue, so a key that isn't one we minted is
@@ -10195,7 +10201,7 @@ export type SubmitAppFeedbackInput = {
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**
    * Where the feedback originated: 'prompt' | 'drawer-feedback' (rating flows)
-   * or 'shake-bug' | 'drawer-bug' (bug reports).
+   * or 'shake-bug' | 'drawer-bug' | 'share-bug' (bug reports).
    */
   source: Scalars['String']['input'];
 };
@@ -12414,6 +12420,7 @@ export type AppFeedbackReportResolvers<
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   platform?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   rating?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  recordingUrls?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   reporter?: Resolver<Maybe<ResolversTypes['AppFeedbackReporter']>, ParentType, ContextType>;
   resolvedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   resolvedBy?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

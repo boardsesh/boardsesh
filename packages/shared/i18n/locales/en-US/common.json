@@ -1017,5 +1017,23 @@
     "removed": "Entry removed",
     "undo": "Undo",
     "cancelled": "Deletion cancelled. Your entry was kept."
+  },
+  "feedbackAttachments": {
+    "addAria": "Add images or recordings",
+    "removeAria": "Remove {{name}}",
+    "attachedCount_one": "{{count}} file attached",
+    "attachedCount_other": "{{count}} files attached",
+    "fileSize": "{{size}} MiB",
+    "publicWarning": "Images and recordings you attach get posted publicly on GitHub. Check them for private information before submitting.",
+    "limits": "Up to 4 files. Each recording can be up to 95 MiB.",
+    "unsupported": "Choose an image or an MP4, MOV, or WebM recording.",
+    "tooLarge": "That recording exceeds 95 MiB. Trim it, then share it again.",
+    "tooMany": "You can attach 4 files. The first 4 have been kept.",
+    "pickFailed": "Could not read that file. Choose another one.",
+    "uploadFailed": "Could not upload your files. Your report is still here; try again.",
+    "saveFailed": "Could not save your draft. Keep this report open and try again.",
+    "cleanupFailed": "Your report was submitted. Tap Submit again to finish clearing this draft.",
+    "missingDraft": "This shared report is no longer available. Share your files again.",
+    "receiveFailed": "Couldn’t attach shared files. Share them again to retry."
   }
 }

@@ -25,6 +25,8 @@ describe('classifyKey', () => {
     ['avatars/0026f839-5579-4ebb-bf43-c0954ce7f80a.jpg', 'media'],
     ['gym-photos/6b641d7a-d456-4eda-8976-fc4bd3b247e8.jpg', 'media'],
     ['gym-logos/c9a61170-776b-49d3-9b5a-5f9679724ef5.png', 'media'],
+    ['feedback-screenshots/c9a61170-776b-49d3-9b5a-5f9679724ef5.jpg', 'media'],
+    ['feedback-recordings/c9a61170-776b-49d3-9b5a-5f9679724ef5.mov', 'media'],
     ['user-data-exports/1030b46e-3f31-4db9-95f8-2e09a542ce24/kilter/2026-W19.json', 'private'],
     ['moonboard-ocr-test-data/2026-05-01T00:00:00Z-abc/image.png', 'private'],
   ])('routes %s to %s', (key, expected) => {

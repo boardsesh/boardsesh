@@ -6,7 +6,7 @@ Where avatars, gym images, beta-video thumbnails, spray wall photos and user dat
 
 | Bucket | Handle | Provider | Access | Contents |
 | --- | --- | --- | --- | --- |
-| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
+| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `feedback-recordings/<uuid>.{mp4,mov,webm}`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
 | `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `spray-walls/<wallUuid>/<photoId>.jpg` (+ its `@<size>.jpg` variant and, for a photo over 2048 px, its `<photoId>-full.jpg` copy), `moonboard-ocr-test-data/<ts>-<uuid>/…` |
 | `boardsesh-board-snapshots` | `snapshots` | Cloudflare R2 | Public through `snapshots.boardsesh.com` after the gated publisher/reader cutover | `board-snapshots/**` — see `docs/board-snapshots.md` |
 | `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through `assets.boardsesh.com`; `assets-r2.boardsesh.com` remains available for staging | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
@@ -240,3 +240,9 @@ The source bucket is therefore listed in full on every run, including a `--prefi
 - Setting the `MEDIA_*` / `PRIVATE_*` variables on `boardsesh-backend` (Railway dashboard).
 
 Never attach a custom domain to `boardsesh-user-private`. It holds complete per-user tick histories.
+
+### Bug-report recordings
+
+`POST /api/feedback-recordings` accepts one authenticated multipart `recording`, preserving MP4, MOV, or WebM bytes up to 95 MiB. MIME and container headers must agree. Eight attempts per account per ten-minute process window limit abuse. The handler streams to temporary disk, uploads with a known Content-Length, and removes temporary files on success, parser failure, disconnect, or storage failure; local development stores immutable files under `feedback-recordings/`.
+
+Returned `{ success: true, key }` keys accompany `submitAppFeedback.recordingKeys`. Bug reports, including `share-bug`, permit four screenshots and recordings combined, with screenshots retained first if an incoming list exceeds the limit. Admin responses expose `recordingUrls`; public GitHub issues link to recordings. Recordings use the public media bucket: reporters must see the public-attachment warning before submitting. Deploy the additive `app_feedback.recording_keys` migration and backend before the native 2.6.0 build.

@@ -108,6 +108,7 @@ describe('root modal routes and the launch update gate', () => {
       'qa/pick',
       'send-recovery',
       'share-beta',
+      'share-bug',
       'user-drawer',
     ]);
   });

@@ -4,35 +4,24 @@ import { InlineSheetError } from '../InlineSheetError';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { memo, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
-import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
-import { Text } from '../Text';
-import { Icon } from '../Icon';
-import { Button } from '../Button';
-import { PressableSurface } from '../PressableSurface';
-import { ScreenshotPicker } from '../feedback/ScreenshotPicker';
-import { SessionRecordingSwitchRow } from '../settings/SessionRecordingSwitchRow';
-import { SwitchRow } from '../SwitchRow';
 import { useAuth } from '../../providers/auth-provider';
-import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import { FeedbackMetadataCollector, type FeedbackMetadataReader } from '../../lib/feedback/FeedbackMetadataCollector';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
-import { clearScreenshotUploadCache, uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
+import { uploadFeedbackAttachments } from '../../lib/feedback/attachment-upload';
+import type { FeedbackAttachment } from '../../lib/feedback/shared-bug-draft.types';
+import { readLocalUserId } from '../../lib/local-user-id';
+import { FeedbackForm, BUG_COMMENT_MIN_LENGTH } from '../feedback/FeedbackForm';
 import { runBleAdvertisementRecon } from '../../lib/ble/advertisement-recon';
-import { openDiscordInvite } from '../../lib/discord';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 
 export type FeedbackSheetMode = 'rating' | 'bug';
-
-const BUG_COMMENT_MIN_LENGTH = 10;
-const COMMENT_MAX_LENGTH = 2000;
-const STAR_RATING_VALUES = [1, 2, 3, 4, 5] as const;
 
 type FeedbackSheetProps = {
   sheetRef: RefObject<ManagedSheetHandle | null>;
@@ -54,11 +43,9 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   onClose,
   showDiscordLink = false,
 }: FeedbackSheetProps) {
-  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('settings');
   // The screenshot strings live in `common`, shared with the QA verdict sheet.
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const { isAuthenticated } = useAuth();
   const metadataReaderRef = useRef<FeedbackMetadataReader | null>(null);
@@ -67,21 +54,20 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   const [comment, setComment] = useState('');
   const [captureBleDiag, setCaptureBleDiag] = useState(false);
   const [contactConsent, setContactConsent] = useState(true);
-  const [screenshotUris, setScreenshotUris] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<FeedbackAttachment[]>([]);
+  const uploadedKeysRef = useRef<Record<string, string>>({});
+  const uploadAccountRef = useRef<string | undefined>(undefined);
   const [isUploading, setIsUploading] = useState(false);
+  const [isPickingAttachments, setIsPickingAttachments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
 
   const isBugReport = mode === 'bug';
-  // The upload endpoint needs a bearer token, so a signed-out reporter gets the
-  // existing text-only form rather than a picker that could only fail on submit.
-  const canAttachScreenshots = isBugReport && isAuthenticated;
   const trimmedComment = comment.trim();
   const remainingBugChars = Math.max(0, BUG_COMMENT_MIN_LENGTH - trimmedComment.length);
   const canSubmit = isBugReport ? remainingBugChars === 0 : selectedRating !== null;
   const title = isBugReport ? t('feedbackDialog.titleBug') : t('feedbackDialog.titleRating');
   const submitLabel = isBugReport ? t('feedbackDialog.submitBug') : t('feedbackDialog.submitRating');
-  const inputPlaceholder = isBugReport ? t('feedbackForm.bugPlaceholder') : t('feedbackForm.ratingPlaceholder');
 
   const { submitError, setSubmitError, clearError } = useScopedSheetError(mode, visible);
   const resetForm = useCallback(() => {
@@ -89,18 +75,20 @@ export const FeedbackSheet = memo(function FeedbackSheet({
     setComment('');
     setCaptureBleDiag(false);
     setContactConsent(true);
-    setScreenshotUris([]);
+    setAttachments([]);
+    uploadedKeysRef.current = {};
+    uploadAccountRef.current = undefined;
     clearError();
     reset();
   }, [reset, clearError]);
   useEffect(resetForm, [mode, resetForm]);
 
   const dirty =
-    selectedRating !== null || comment.length > 0 || captureBleDiag || !contactConsent || screenshotUris.length > 0;
+    selectedRating !== null || comment.length > 0 || captureBleDiag || !contactConsent || attachments.length > 0;
   const guard = useUnsavedSheetGuard({
     visible,
     dirty,
-    busy: isSubmitting || isPending || isUploading,
+    busy: isSubmitting || isPending || isUploading || isPickingAttachments,
     onClose,
     onDiscard: resetForm,
     scope: mode,
@@ -109,7 +97,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
 
   const handleSubmit = async () => {
-    if (!canSubmit || submittingRef.current) return;
+    if (!canSubmit || submittingRef.current || isPickingAttachments) return;
     submittingRef.current = true;
     setIsSubmitting(true);
     setSubmitError(null);
@@ -117,12 +105,23 @@ export const FeedbackSheet = memo(function FeedbackSheet({
       // Uploaded before the report so it carries keys the backend can resolve. A
       // failed upload leaves the typed report and the picked shots untouched.
       let screenshotKeys: string[] = [];
-      if (screenshotUris.length > 0) {
+      let recordingKeys: string[] = [];
+      if (attachments.length > 0) {
         setIsUploading(true);
         try {
-          screenshotKeys = await uploadFeedbackScreenshots(screenshotUris);
+          const accountId = await readLocalUserId();
+          if (!accountId) throw new Error('Sign in before attaching media');
+          if (accountId !== uploadAccountRef.current) uploadedKeysRef.current = {};
+          uploadAccountRef.current = accountId;
+          const uploaded = await uploadFeedbackAttachments(attachments, uploadedKeysRef.current, async (uri, key) => {
+            if ((await readLocalUserId()) !== accountId) throw new Error('Account changed during upload');
+            uploadedKeysRef.current = { ...uploadedKeysRef.current, [uri]: key };
+          });
+          if ((await readLocalUserId()) !== accountId) throw new Error('Account changed during upload');
+          screenshotKeys = uploaded.screenshotKeys;
+          recordingKeys = uploaded.recordingKeys;
         } catch {
-          setSubmitError(tCommon('screenshots.uploadFailed'));
+          setSubmitError(tCommon('feedbackAttachments.uploadFailed'));
           return;
         } finally {
           setIsUploading(false);
@@ -147,16 +146,18 @@ export const FeedbackSheet = memo(function FeedbackSheet({
           comment: trimmedComment.length > 0 ? trimmedComment : null,
           contactConsent: isBugReport ? contactConsent : null,
           screenshotKeys: screenshotKeys.length > 0 ? screenshotKeys : null,
+          recordingKeys: recordingKeys.length > 0 ? recordingKeys : null,
         });
         onClose();
         showToast(isBugReport ? t('feedbackDialog.successBug') : t('feedbackDialog.successRating'), 'success');
         setSelectedRating(null);
         setComment('');
         setContactConsent(true);
-        setScreenshotUris([]);
+        setAttachments([]);
         // The report is filed, so the uploaded objects now belong to it. The next
         // one must upload its own rather than reuse these.
-        clearScreenshotUploadCache();
+        uploadedKeysRef.current = {};
+        uploadAccountRef.current = undefined;
       } catch {
         setSubmitError(t('feedbackDialog.errorRating'));
       }
@@ -188,7 +189,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
               onPress: () => {
                 void handleSubmit();
               },
-              disabled: !canSubmit || isSubmitting || isPending || isUploading,
+              disabled: !canSubmit || isSubmitting || isPending || isUploading || isPickingAttachments,
               loading: isSubmitting || isPending || isUploading,
               prominent: true,
             }}
@@ -196,131 +197,34 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         }
       >
         <InlineSheetError message={submitError} visible={visible} scope={mode} />
-        {!isBugReport ? (
-          <View style={styles.starRow}>
-            {STAR_RATING_VALUES.map((starRating) => {
-              const selected = selectedRating !== null && starRating <= selectedRating;
-              return (
-                <PressableSurface
-                  key={starRating}
-                  onPress={() => setSelectedRating(starRating)}
-                  feedback="scale"
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('feedbackForm.starRating', { count: starRating })}
-                  accessibilityState={{ selected }}
-                  style={styles.starButton}
-                >
-                  <Icon name={selected ? 'star.fill' : 'star'} size={34} color={brandColors.warning} />
-                </PressableSurface>
-              );
-            })}
-          </View>
-        ) : null}
-
-        <BottomSheetTextInput
-          style={[
-            styles.input,
-            {
-              backgroundColor: systemColors.fill,
-              borderColor: systemColors.separator,
-              color: systemColors.label,
-            },
-          ]}
-          placeholder={inputPlaceholder}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          value={comment}
-          onChangeText={setComment}
-          multiline
-          maxLength={COMMENT_MAX_LENGTH}
-          textAlignVertical="top"
+        <FeedbackForm
+          mode={mode}
+          InputComponent={BottomSheetTextInput}
+          isAuthenticated={isAuthenticated}
+          disabled={isSubmitting || isPending || isUploading}
+          selectedRating={selectedRating}
+          onRatingChange={setSelectedRating}
+          comment={comment}
+          onCommentChange={setComment}
+          captureBleDiag={captureBleDiag}
+          onCaptureBleDiagChange={setCaptureBleDiag}
+          contactConsent={contactConsent}
+          onContactConsentChange={setContactConsent}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
+          onAttachmentPickingChange={setIsPickingAttachments}
+          showDiscordLink={showDiscordLink}
         />
-
-        {isBugReport && remainingBugChars > 0 ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.helperText}>
-            {t('feedbackForm.remainingChars', { count: remainingBugChars })}
-          </Text>
-        ) : null}
-
-        {isBugReport ? (
-          <View style={[styles.recordingCard, { backgroundColor: systemColors.secondaryBackground }]}>
-            <SessionRecordingSwitchRow
-              label={t('feedbackForm.sessionRecordingLabel')}
-              description={t('feedbackForm.sessionRecordingDescription')}
-            />
-            <SwitchRow
-              label={t('feedbackForm.bluetoothBugLabel')}
-              description={t('feedbackForm.bluetoothBugDescription')}
-              value={captureBleDiag}
-              onValueChange={setCaptureBleDiag}
-            />
-          </View>
-        ) : null}
-
-        {canAttachScreenshots ? (
-          <ScreenshotPicker uris={screenshotUris} onChange={setScreenshotUris} disabled={isPending || isUploading} />
-        ) : null}
-
-        {isBugReport && isAuthenticated ? (
-          <View style={[styles.recordingCard, { backgroundColor: systemColors.secondaryBackground }]}>
-            <SwitchRow
-              label={t('feedbackForm.contactConsentLabel')}
-              description={t('feedbackForm.contactConsentDescription')}
-              value={contactConsent}
-              onValueChange={setContactConsent}
-            />
-          </View>
-        ) : null}
-
-        {showDiscordLink ? (
-          <Button
-            title={t('feedbackDialog.joinDiscord')}
-            onPress={() => {
-              void openDiscordInvite('login');
-            }}
-            variant="text"
-            icon="open.external"
-            tintColor={brandColors.primary}
-          />
-        ) : null}
       </ModalSheet>
     </>
   );
 });
 
-const createStyles = (textStyles: TypographyScale) =>
-  StyleSheet.create({
-    content: {
-      paddingHorizontal: spacing[4],
-      paddingTop: spacing[4],
-      paddingBottom: spacing[6],
-      gap: spacing[4],
-    },
-    starRow: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      gap: spacing[2],
-    },
-    starButton: {
-      width: 44,
-      height: 44,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    input: {
-      minHeight: 116,
-      maxHeight: 220,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderRadius: borderRadius.lg,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[3],
-      fontSize: textStyles.callout.fontSize,
-    },
-    helperText: {
-      marginTop: -spacing[2],
-    },
-    recordingCard: {
-      overflow: 'hidden',
-      borderRadius: borderRadius.lg,
-    },
-  });
+const styles = StyleSheet.create({
+  content: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
+    paddingBottom: spacing[6],
+    gap: spacing[4],
+  },
+});

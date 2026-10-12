@@ -63,6 +63,7 @@ export const ADMIN_APP_FEEDBACK = gql`
           userAgent
         }
         screenshotUrls
+        recordingUrls
       }
       totalCount
       hasMore
@@ -94,6 +95,8 @@ export const UPDATE_APP_FEEDBACK_STATUS = gql`
       resolvedBy
       githubIssueNumber
       githubIssueUrl
+      screenshotUrls
+      recordingUrls
       reporter {
         userId
         email

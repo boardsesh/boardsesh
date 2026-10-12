@@ -14,6 +14,7 @@ import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
 import { handleGymPhotoDelete, handleGymPhotoUpload } from './handlers/gym-photos';
 import { handleSprayWallPhotoUpload } from './handlers/spray-wall-photos';
+import { handleFeedbackRecordingUpload } from './handlers/feedback-recordings';
 import { handleFeedbackScreenshotUpload } from './handlers/feedback-screenshots';
 import {
   handleStaticAvatar,
@@ -442,6 +443,11 @@ export async function startServer(): Promise<ServerResources> {
       }
 
       // Bug-report / QA-verdict screenshot upload (handle OPTIONS for CORS preflight)
+      if (pathname === '/api/feedback-recordings' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleFeedbackRecordingUpload(req, res);
+        return;
+      }
+
       if (pathname === '/api/feedback-screenshots' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleFeedbackScreenshotUpload(req, res);
         return;

@@ -1,81 +1,61 @@
 // @vitest-environment jsdom
-// Existing flow fixtures begin after the privacy choice has settled.
-vi.mock('../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
+import type { ShareReceiptState } from '../share-receipt-context';
 
-// Controllable share-intent state. Mutate fields per test; the mocked hook reads
-// them at call time.
-const shareState: { hasShareIntent: boolean; shareIntent: { webUrl: string | null; text: string | null } } = {
-  hasShareIntent: false,
-  shareIntent: { webUrl: null, text: null },
-};
-const resetShareIntentMock = vi.fn();
-vi.mock('expo-share-intent', () => ({
-  useShareIntent: () => ({ ...shareState, resetShareIntent: resetShareIntentMock }),
+const mocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  setParams: vi.fn(),
+  consumeLink: vi.fn(async () => {}),
+  consumeBugNavigation: vi.fn(),
+  clearNotice: vi.fn(),
+  showToast: vi.fn(),
+  segments: [] as string[],
+  authenticated: true,
+  consentSettled: true,
+  launchReady: true,
 }));
-
-const navigateMock = vi.fn();
-const setParamsMock = vi.fn();
-// Current route segments the provider reads to decide navigate vs setParams.
-const segmentsState: { value: string[] } = { value: [] };
+const receipt: ShareReceiptState = { draft: null, pendingLink: null, notice: null, revision: 0, destination: null };
+vi.mock('../share-receipt-provider', () => ({
+  useShareReceipt: () => ({
+    ...receipt,
+    consumeLink: mocks.consumeLink,
+    consumeBugNavigation: mocks.consumeBugNavigation,
+    clearNotice: mocks.clearNotice,
+  }),
+}));
+vi.mock('../../lib/consent-hooks', () => ({ useConsentSettled: () => mocks.consentSettled }));
+vi.mock('../launch-ready-context', () => ({ useLaunchReady: () => mocks.launchReady }));
+vi.mock('../auth-provider', () => ({ useAuth: () => ({ isAuthenticated: mocks.authenticated }) }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ navigate: navigateMock, setParams: setParamsMock }),
-  useSegments: () => segmentsState.value,
+  useRouter: () => ({ navigate: mocks.navigate, setParams: mocks.setParams }),
+  useSegments: () => mocks.segments,
 }));
-
-// In-memory AsyncStorage stand-in.
-const storage = new Map<string, string>();
-vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: vi.fn(async (key: string) => storage.get(key) ?? null),
-    setItem: vi.fn(async (key: string, value: string) => {
-      storage.set(key, value);
-    }),
-    removeItem: vi.fn(async (key: string) => {
-      storage.delete(key);
-    }),
-  },
-}));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-const authState = { isAuthenticated: true };
-vi.mock('../auth-provider', () => ({
-  useAuth: () => authState,
-}));
-
-const showToastMock = vi.fn();
-vi.mock('../toast-provider', () => ({
-  useToast: () => ({ showToast: showToastMock }),
-}));
-
-// Treat Instagram/TikTok URLs as valid beta links; everything else invalid.
-vi.mock('@boardsesh/shared-schema', () => ({
-  isBetaVideoUrl: (url: string) => /instagram\.com|tiktok\.com/.test(url),
-}));
-
+vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: mocks.showToast }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 import { ShareTargetProvider, extractSharedLink } from '../share-target-provider';
 
 const INSTAGRAM_LINK = 'https://instagram.com/reel/abc123';
-const PENDING_SHARE_KEY = 'boardsesh_pending_share_link';
-
 function renderProvider() {
   return render(<ShareTargetProvider>{null}</ShareTargetProvider>);
 }
-
+function stageBug() {
+  receipt.draft = {
+    id: 'draft-1',
+    attachments: [
+      { id: 'image-1', kind: 'image', uri: 'document/shot.jpg', name: 'shot.jpg', mimeType: 'image/jpeg', size: 100 },
+    ],
+    comment: '',
+    contactConsent: true,
+    uploadedKeysByUri: {},
+  };
+  receipt.destination = 'bug';
+  receipt.revision = 1;
+}
 beforeEach(() => {
-  navigateMock.mockReset();
-  setParamsMock.mockReset();
-  resetShareIntentMock.mockReset();
-  showToastMock.mockReset();
-  storage.clear();
-  segmentsState.value = [];
-  shareState.hasShareIntent = false;
-  shareState.shareIntent = { webUrl: null, text: null };
-  authState.isAuthenticated = true;
+  vi.clearAllMocks();
+  Object.assign(receipt, { draft: null, pendingLink: null, notice: null, revision: 0, destination: null });
+  Object.assign(mocks, { segments: [], authenticated: true, consentSettled: true, launchReady: true });
 });
 
 describe('extractSharedLink', () => {
@@ -121,91 +101,75 @@ describe('extractSharedLink', () => {
   });
 });
 
-describe('ShareTargetProvider', () => {
-  it('routes a shared beta link to the picker when authenticated', async () => {
-    authState.isAuthenticated = true;
-    shareState.hasShareIntent = true;
-    shareState.shareIntent = { webUrl: INSTAGRAM_LINK, text: null };
-
+describe('ShareTargetProvider durable navigation', () => {
+  it('opens a beta link and consumes it after navigation', async () => {
+    Object.assign(receipt, { pendingLink: INSTAGRAM_LINK, destination: 'beta' });
     renderProvider();
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({ pathname: '/share-beta', params: { link: INSTAGRAM_LINK } });
-    });
-    expect(resetShareIntentMock).toHaveBeenCalled();
-    expect(storage.has(PENDING_SHARE_KEY)).toBe(false);
+    await waitFor(() =>
+      expect(mocks.navigate).toHaveBeenCalledWith({ pathname: '/share-beta', params: { link: INSTAGRAM_LINK } }),
+    );
+    expect(mocks.consumeLink).toHaveBeenCalledWith(INSTAGRAM_LINK);
   });
-
-  it('swaps the link in place (setParams) when the share modal is already open', async () => {
-    authState.isAuthenticated = true;
-    segmentsState.value = ['share-beta'];
-    shareState.hasShareIntent = true;
-    shareState.shareIntent = { webUrl: INSTAGRAM_LINK, text: null };
-
+  it('reuses an already-open beta modal', async () => {
+    Object.assign(receipt, { pendingLink: INSTAGRAM_LINK, destination: 'beta' });
+    mocks.segments = ['share-beta'];
     renderProvider();
-
-    await waitFor(() => {
-      expect(setParamsMock).toHaveBeenCalledWith({ link: INSTAGRAM_LINK });
-    });
-    // No second modal pushed — the open one is reused.
-    expect(navigateMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.setParams).toHaveBeenCalledWith({ link: INSTAGRAM_LINK }));
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
-
-  it('stashes a shared link for replay when signed out', async () => {
-    authState.isAuthenticated = false;
-    shareState.hasShareIntent = true;
-    shareState.shareIntent = { webUrl: INSTAGRAM_LINK, text: null };
-
-    renderProvider();
-
-    await waitFor(() => {
-      expect(storage.get(PENDING_SHARE_KEY)).toBe(INSTAGRAM_LINK);
-    });
-    expect(navigateMock).not.toHaveBeenCalled();
+  it('keeps media pending through login, consent and launch readiness', async () => {
+    stageBug();
+    mocks.authenticated = false;
+    const view = renderProvider();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    mocks.authenticated = true;
+    mocks.consentSettled = false;
+    view.rerender(<ShareTargetProvider>{null}</ShareTargetProvider>);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    mocks.consentSettled = true;
+    mocks.launchReady = false;
+    view.rerender(<ShareTargetProvider>{null}</ShareTargetProvider>);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    mocks.launchReady = true;
+    view.rerender(<ShareTargetProvider>{null}</ShareTargetProvider>);
+    await waitFor(() =>
+      expect(mocks.navigate).toHaveBeenCalledWith({ pathname: '/share-bug', params: { draftId: 'draft-1' } }),
+    );
+    expect(mocks.consumeBugNavigation).toHaveBeenCalledTimes(1);
   });
-
-  it('rejects a non-beta URL with a toast and does not route', async () => {
-    authState.isAuthenticated = true;
-    shareState.hasShareIntent = true;
-    shareState.shareIntent = { webUrl: 'https://example.com/whatever', text: null };
-
+  it('does not consume a signed-out beta share', () => {
+    Object.assign(receipt, { pendingLink: INSTAGRAM_LINK, destination: 'beta' });
+    mocks.authenticated = false;
     renderProvider();
-
-    await waitFor(() => {
-      expect(showToastMock).toHaveBeenCalledWith('mobile.betaVideos.urlInvalid', 'error');
-    });
-    expect(navigateMock).not.toHaveBeenCalled();
-    expect(storage.has(PENDING_SHARE_KEY)).toBe(false);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.consumeLink).not.toHaveBeenCalled();
   });
-
-  it('replays a stashed link once authenticated and clears the stash', async () => {
-    storage.set(PENDING_SHARE_KEY, INSTAGRAM_LINK);
-    authState.isAuthenticated = true;
-    shareState.hasShareIntent = false;
-
+  it('reuses the bug modal for successive media shares', async () => {
+    stageBug();
+    mocks.segments = ['share-bug'];
     renderProvider();
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({ pathname: '/share-beta', params: { link: INSTAGRAM_LINK } });
-    });
-    expect(storage.has(PENDING_SHARE_KEY)).toBe(false);
+    await waitFor(() => expect(mocks.setParams).toHaveBeenCalledWith({ draftId: 'draft-1' }));
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
-
-  it('reuses the open modal (setParams) when a stashed link is replayed after login while share-beta is already open', async () => {
-    storage.set(PENDING_SHARE_KEY, INSTAGRAM_LINK);
-    authState.isAuthenticated = true;
-    segmentsState.value = ['share-beta'];
-    shareState.hasShareIntent = false;
-
+  it('does not reopen a report when its description changes', async () => {
+    stageBug();
+    const view = renderProvider();
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledTimes(1));
+    receipt.draft = { ...receipt.draft!, comment: 'The queue is stuck' };
+    view.rerender(<ShareTargetProvider>{null}</ShareTargetProvider>);
+    expect(mocks.navigate).toHaveBeenCalledTimes(1);
+  });
+  it('shows invalid-link feedback when no report modal owns it', () => {
+    receipt.notice = 'invalidLink';
     renderProvider();
-
-    await waitFor(() => {
-      expect(setParamsMock).toHaveBeenCalledWith({ link: INSTAGRAM_LINK });
-    });
-    expect(navigateMock).not.toHaveBeenCalled();
-    expect(storage.has(PENDING_SHARE_KEY)).toBe(false);
+    expect(mocks.showToast).toHaveBeenCalledWith('mobile.betaVideos.urlInvalid', 'error');
+    expect(mocks.clearNotice).toHaveBeenCalled();
+  });
+  it('leaves media receipt errors for inline display in the report', () => {
+    stageBug();
+    receipt.notice = 'overflow';
+    renderProvider();
+    expect(mocks.showToast).not.toHaveBeenCalled();
+    expect(mocks.clearNotice).not.toHaveBeenCalled();
   });
 });
-
-import { grantAnalyticsForTest } from '../../../test/consent-fixture';
-beforeEach(() => grantAnalyticsForTest());

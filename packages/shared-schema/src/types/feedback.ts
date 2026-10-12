@@ -1,5 +1,5 @@
 export type AppFeedbackPlatform = 'ios' | 'android' | 'web';
-export type AppFeedbackSource = 'prompt' | 'drawer-feedback' | 'shake-bug' | 'drawer-bug';
+export type AppFeedbackSource = 'prompt' | 'drawer-feedback' | 'shake-bug' | 'drawer-bug' | 'share-bug';
 /**
  * Free-form identifier of the board the user is climbing on. Capped to 100
  * chars by the backend zod validator so future board names work without a
@@ -50,6 +50,8 @@ export type SubmitAppFeedbackInput = {
    * key we minted is dropped before it can reach the public GitHub issue.
    */
   screenshotKeys?: string[] | null;
+  /** Recording keys, within the four combined attachment limit. Bug reports only. */
+  recordingKeys?: string[] | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -107,6 +109,8 @@ export type AppFeedbackReport = {
    * none were attached, and also when the media bucket has no public base URL.
    */
   screenshotUrls: string[];
+  /** Public recording URLs, empty when absent or storage is unconfigured. */
+  recordingUrls: string[];
 };
 
 export type AdminAppFeedbackInput = {

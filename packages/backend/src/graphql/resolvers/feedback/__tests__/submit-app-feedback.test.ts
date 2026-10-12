@@ -12,10 +12,10 @@
  * matching resolvers/feedback/__tests__/admin-feedback.test.ts.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import type { FeedbackIssuePayload } from '../../../../services/github-feedback';
+import type { FeedbackIssuePayload, FeedbackIssueOutcome } from '../../../../services/github-feedback';
 
 const { createFeedbackGithubIssueMock, sendBugReportIssueEmailMock } = vi.hoisted(() => ({
   createFeedbackGithubIssueMock: vi.fn(),
@@ -95,6 +95,7 @@ type StoredRow = {
   platform: string;
   contact_consent: boolean | null;
   screenshot_keys: string[] | null;
+  recording_keys: string[] | null;
   github_issue_number: number | null;
   github_issue_url: string | null;
 };
@@ -102,7 +103,7 @@ type StoredRow = {
 const readLatestRow = async (): Promise<StoredRow> => {
   const result = await db.execute(sql`
     SELECT id, user_id, source, comment, rating, platform, contact_consent,
-           screenshot_keys, github_issue_number, github_issue_url
+           screenshot_keys, recording_keys, github_issue_number, github_issue_url
     FROM app_feedback ORDER BY id DESC LIMIT 1
   `);
   return Array.from(result as Iterable<StoredRow>)[0];
@@ -122,6 +123,22 @@ beforeEach(async () => {
   await db.execute(sql`TRUNCATE TABLE "app_feedback", "community_roles", "users" RESTART IDENTITY CASCADE`);
   createFeedbackGithubIssueMock.mockReset().mockResolvedValue(ISSUE_CREATED);
   sendBugReportIssueEmailMock.mockReset().mockResolvedValue(undefined);
+});
+
+// The resolver intentionally returns before its GitHub/email side effect.
+// Wait for that test's expected writes before the next test truncates users.
+// Otherwise the outstanding reporter lookup can deadlock with TRUNCATE CASCADE.
+afterEach(async () => {
+  const result = createFeedbackGithubIssueMock.mock.results[0];
+  if (!result || result.type !== 'return') return;
+  const outcome = await Promise.resolve(result.value as FeedbackIssueOutcome | Promise<FeedbackIssueOutcome>).catch(
+    () => null,
+  );
+  if (outcome?.status !== 'created') return;
+  await vi.waitFor(async () => expect((await readLatestRow()).github_issue_number).toBe(outcome.issue.number));
+  const row = await readLatestRow();
+  if (row.user_id && row.contact_consent)
+    await vi.waitFor(() => expect(sendBugReportIssueEmailMock).toHaveBeenCalled());
 });
 
 describe('submitAppFeedback', () => {
@@ -189,7 +206,15 @@ describe('submitAppFeedback', () => {
 
     await feedbackMutations.submitAppFeedback(
       null,
-      { input: { rating: 5, platform: 'ios', source: 'prompt', contactConsent: true } },
+      {
+        input: {
+          rating: 5,
+          platform: 'ios',
+          source: 'prompt',
+          contactConsent: true,
+          recordingKeys: ['feedback-recordings/11111111-2222-4333-8444-555555555555.mp4'],
+        },
+      },
       authCtx(rater),
     );
 
@@ -198,6 +223,7 @@ describe('submitAppFeedback', () => {
     });
     const row = await readLatestRow();
     expect(row.rating).toBe(5);
+    expect(row.recording_keys).toBeNull();
     expect(row.github_issue_number).toBeNull();
     expect(row.github_issue_url).toBeNull();
     expect(sendBugReportIssueEmailMock).not.toHaveBeenCalled();
@@ -236,6 +262,37 @@ describe('submitAppFeedback', () => {
     // detail, so a CDN domain change must not strand the stored rows.
     expect((await readLatestRow()).screenshot_keys).toEqual(SCREENSHOT_KEYS);
     expect(issuePayload().screenshotUrls).toEqual(SCREENSHOT_URLS);
+  });
+
+  it('stores a shared mixed report and clips recordings after screenshots', async () => {
+    const reporter = await freshReporter();
+    const recordingKeys = ['mp4', 'mov', 'webm'].map(
+      (extension) => `feedback-recordings/11111111-2222-4333-8444-555555555555.${extension}`,
+    );
+    await feedbackMutations.submitAppFeedback(
+      null,
+      { input: bugInput({ source: 'share-bug', screenshotKeys: SCREENSHOT_KEYS, recordingKeys }) },
+      authCtx(reporter),
+    );
+    await vi.waitFor(() => expect(createFeedbackGithubIssueMock).toHaveBeenCalledTimes(1));
+    const row = await readLatestRow();
+    expect(row.source).toBe('share-bug');
+    expect(row.screenshot_keys).toEqual(SCREENSHOT_KEYS);
+    expect(row.recording_keys).toEqual(recordingKeys.slice(0, 2));
+    expect(issuePayload().recordingUrls).toEqual(
+      recordingKeys.slice(0, 2).map((key) => `https://media.boardsesh.com/${key}`),
+    );
+  });
+
+  it('preserves the shared report when recording keys are unsafe', async () => {
+    const reporter = await freshReporter();
+    await feedbackMutations.submitAppFeedback(
+      null,
+      { input: bugInput({ source: 'share-bug', recordingKeys: ['feedback-recordings/../../secret.mp4'] }) },
+      authCtx(reporter),
+    );
+    expect((await readLatestRow()).recording_keys).toBeNull();
+    expect(issuePayload().recordingUrls).toEqual([]);
   });
 
   it('files the report anyway when the screenshot keys are unusable', async () => {

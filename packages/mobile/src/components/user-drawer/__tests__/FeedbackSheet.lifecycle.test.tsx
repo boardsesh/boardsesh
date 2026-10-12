@@ -60,19 +60,39 @@ vi.mock('../../PressableSurface', () => ({
 
 // The picker owns the photo library + compression; the sheet only cares that it
 // hands back URIs and that the keys reach the mutation.
-type ScreenshotPickerMockProps = { uris: string[]; onChange: (uris: string[]) => void; disabled?: boolean };
-vi.mock('../../feedback/ScreenshotPicker', () => ({
-  ScreenshotPicker: ({ uris, onChange, disabled }: ScreenshotPickerMockProps) =>
+type AttachmentMock = { id: string; uri: string; kind: 'image'; name: string; mimeType: string; size: number };
+type AttachmentPickerMockProps = {
+  attachments: AttachmentMock[];
+  onChange: (attachments: AttachmentMock[]) => void;
+  disabled?: boolean;
+};
+vi.mock('../../feedback/FeedbackAttachmentPicker', () => ({
+  FeedbackAttachmentPicker: ({ attachments, onChange, disabled }: AttachmentPickerMockProps) =>
     createElement('button', {
-      'data-screenshot-picker': uris.join(','),
+      'data-screenshot-picker': attachments.map((attachment) => attachment.uri).join(','),
       disabled,
-      onClick: () => onChange([...uris, `file:///shot-${uris.length}.jpg`]),
+      onClick: () =>
+        onChange([
+          ...attachments,
+          {
+            id: `shot-${attachments.length}`,
+            uri: `file:///shot-${attachments.length}.jpg`,
+            kind: 'image',
+            name: 'shot.jpg',
+            mimeType: 'image/jpeg',
+            size: 100,
+          },
+        ]),
     }),
 }));
-
 const uploadFeedbackScreenshots = vi.hoisted(() => vi.fn());
-const clearScreenshotUploadCache = vi.hoisted(() => vi.fn());
-vi.mock('../../../lib/feedback/screenshot-upload', () => ({ uploadFeedbackScreenshots, clearScreenshotUploadCache }));
+vi.mock('../../../lib/feedback/attachment-upload', () => ({
+  uploadFeedbackAttachments: async (attachments: AttachmentMock[]) => ({
+    screenshotKeys: await uploadFeedbackScreenshots(attachments.map((attachment) => attachment.uri)),
+    recordingKeys: [],
+  }),
+}));
+vi.mock('../../../lib/local-user-id', () => ({ readLocalUserId: async () => 'test-user' }));
 
 vi.mock('../../settings/SessionRecordingSwitchRow', () => ({
   SessionRecordingSwitchRow: () => createElement('div', { 'data-testid': 'session-recording-switch' }),
@@ -294,7 +314,7 @@ it('reads current board, route, session, and queue after a dismissed screenshot 
   });
   fireEvent.click(container.querySelector('[data-screenshot-picker]')!);
   fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
-  expect(uploadFeedbackScreenshots).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(uploadFeedbackScreenshots).toHaveBeenCalledTimes(1));
   await act(async () => {
     await nativeSheet.close?.();
   });
@@ -335,8 +355,8 @@ it('retains attachments and draft after an upload failure and allows retry', asy
   });
   fireEvent.click(container.querySelector('[data-screenshot-picker]')!);
   fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
-  await vi.waitFor(() => expect(document.body.textContent).toContain('screenshots.uploadFailed'));
-  expect(showToast).not.toHaveBeenCalledWith('screenshots.uploadFailed', 'error');
+  await vi.waitFor(() => expect(document.body.textContent).toContain('feedbackAttachments.uploadFailed'));
+  expect(showToast).not.toHaveBeenCalledWith('feedbackAttachments.uploadFailed', 'error');
   expect(request).not.toHaveBeenCalled();
   expect(container.querySelector('[data-screenshot-picker="file:///shot-0.jpg"]')).not.toBeNull();
   fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);

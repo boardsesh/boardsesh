@@ -122,6 +122,18 @@ describe('buildFeedbackIssue', () => {
     expect(body!.indexOf('## Screenshots')).toBeLessThan(body!.indexOf('## Contact'));
   });
 
+  it('files share-bug with numbered recording links', () => {
+    const recordingUrls = [
+      'https://media.boardsesh.com/feedback-recordings/one.mp4',
+      'https://media.boardsesh.com/feedback-recordings/two.mov',
+    ];
+    const body = buildFeedbackIssue(bugPayload({ source: 'share-bug', recordingUrls }))?.body;
+    expect(body).toContain('## Recordings');
+    expect(body).toContain(`[Recording 1](${recordingUrls[0]})`);
+    expect(body).toContain(`[Recording 2](${recordingUrls[1]})`);
+    expect(buildFeedbackIssue(bugPayload({ recordingUrls: [] }))?.body).not.toContain('## Recordings');
+  });
+
   it('renders no screenshot heading when none were attached', () => {
     expect(buildFeedbackIssue(bugPayload())?.body).not.toContain('## Screenshots');
     expect(buildFeedbackIssue(bugPayload({ screenshotUrls: [] }))?.body).not.toContain('## Screenshots');

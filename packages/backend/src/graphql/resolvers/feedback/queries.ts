@@ -1,4 +1,9 @@
-import type { AppFeedbackReport, AppFeedbackStatus, ConnectionContext } from '@boardsesh/shared-schema';
+import {
+  FEEDBACK_ATTACHMENT_MAX_COUNT,
+  type AppFeedbackReport,
+  type AppFeedbackStatus,
+  type ConnectionContext,
+} from '@boardsesh/shared-schema';
 import { and, count, desc, eq, ilike, inArray, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../../db/client';
@@ -7,9 +12,10 @@ import type { FeedbackContext } from '@boardsesh/db/schema';
 import { requireAdmin } from '../social/roles';
 import { validateInput } from '../shared/helpers';
 import { AdminAppFeedbackInputSchema } from '../../../validation/schemas';
+import { recordingPublicUrls } from '../../../services/feedback-recording-urls';
 import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 
-const BUG_SOURCES = ['shake-bug', 'drawer-bug'];
+const BUG_SOURCES = ['shake-bug', 'drawer-bug', 'share-bug'];
 const RATING_SOURCES = ['prompt', 'drawer-feedback'];
 
 const feedback = dbSchema.appFeedback;
@@ -32,6 +38,7 @@ const reportColumns = {
   contactConsent: feedback.contactConsent,
   context: feedback.context,
   screenshotKeys: feedback.screenshotKeys,
+  recordingKeys: feedback.recordingKeys,
   createdAt: feedback.createdAt,
   status: feedback.status,
   resolvedAt: feedback.resolvedAt,
@@ -55,6 +62,7 @@ type FeedbackRow = {
   contactConsent: boolean | null;
   context: FeedbackContext | null;
   screenshotKeys: string[] | null;
+  recordingKeys: string[] | null;
   createdAt: string;
   status: AppFeedbackStatus;
   resolvedAt: string | null;
@@ -67,6 +75,7 @@ type FeedbackRow = {
 };
 
 function mapFeedbackRow(row: FeedbackRow): AppFeedbackReport {
+  const screenshotUrls = screenshotPublicUrls(row.screenshotKeys);
   return {
     id: String(row.id),
     source: row.source as AppFeedbackReport['source'],
@@ -90,7 +99,11 @@ function mapFeedbackRow(row: FeedbackRow): AppFeedbackReport {
     // The dashboard renders the pictures; the keys stay server-side. An
     // unmintable key, or a media bucket with no public base, resolves to no
     // screenshots rather than an error.
-    screenshotUrls: screenshotPublicUrls(row.screenshotKeys),
+    screenshotUrls,
+    recordingUrls: recordingPublicUrls(row.recordingKeys).slice(
+      0,
+      FEEDBACK_ATTACHMENT_MAX_COUNT - screenshotUrls.length,
+    ),
   };
 }
 

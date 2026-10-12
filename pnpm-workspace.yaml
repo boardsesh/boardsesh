@@ -65,6 +65,7 @@ patchedDependencies:
   'expo-image@57.0.5': patches/expo-image@57.0.5.patch
   'expo-updates@57.0.25': patches/expo-updates@57.0.25.patch
   'react-native-screens@4.26.2': patches/react-native-screens@4.26.2.patch
+  expo-share-intent@8.0.1: patches/expo-share-intent@8.0.1.patch
 
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only
 # add a package after reviewing what its build script does.

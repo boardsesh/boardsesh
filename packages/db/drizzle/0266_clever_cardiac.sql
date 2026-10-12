@@ -1,0 +1,1 @@
+ALTER TABLE "app_feedback" ADD COLUMN "recording_keys" jsonb;

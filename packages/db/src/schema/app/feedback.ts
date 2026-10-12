@@ -49,6 +49,7 @@ export const appFeedback = pgTable(
     // attached, in attachment order. Bug reports only. The keys are the record;
     // the public URLs embedded in the GitHub issue are derived at creation time.
     screenshotKeys: jsonb('screenshot_keys').$type<string[]>(),
+    recordingKeys: jsonb('recording_keys').$type<string[]>(),
     // The GitHub issue auto-opened for bug reports, persisted after creation so
     // the admin dashboard can link straight to it. Null for ratings and for
     // rows created before this was captured (or when GitHub sync is unconfigured).

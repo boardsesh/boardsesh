@@ -1017,5 +1017,23 @@
     "removed": "Eintrag gelöscht",
     "undo": "Rückgängig",
     "cancelled": "Löschen abgebrochen. Dein Eintrag bleibt erhalten."
+  },
+  "feedbackAttachments": {
+    "addAria": "Bilder oder Aufnahmen hinzufügen",
+    "removeAria": "{{name}} entfernen",
+    "attachedCount_one": "{{count}} Datei angehängt",
+    "attachedCount_other": "{{count}} Dateien angehängt",
+    "fileSize": "{{size}} MiB",
+    "publicWarning": "Deine angehängten Bilder und Aufnahmen werden öffentlich auf GitHub veröffentlicht. Prüfe sie vor dem Absenden auf private Informationen.",
+    "limits": "Bis zu 4 Dateien. Jede Aufnahme darf bis zu 95 MiB groß sein.",
+    "unsupported": "Wähle ein Bild oder eine Aufnahme im Format MP4, MOV oder WebM.",
+    "tooLarge": "Diese Aufnahme ist größer als 95 MiB. Kürze sie und teile sie erneut.",
+    "tooMany": "Du kannst 4 Dateien anhängen. Die ersten 4 wurden behalten.",
+    "pickFailed": "Diese Datei konnte nicht gelesen werden. Wähle eine andere.",
+    "uploadFailed": "Deine Dateien konnten nicht hochgeladen werden. Dein Bericht ist noch hier; versuche es erneut.",
+    "saveFailed": "Dein Entwurf konnte nicht gespeichert werden. Lass diesen Bericht offen und versuche es erneut.",
+    "cleanupFailed": "Dein Bericht wurde gesendet. Tippe erneut auf Senden, um diesen Entwurf zu löschen.",
+    "missingDraft": "Dieser geteilte Bericht ist nicht mehr verfügbar. Teile deine Dateien erneut.",
+    "receiveFailed": "Die geteilten Dateien konnten nicht angehängt werden. Teile sie erneut, um es noch einmal zu versuchen."
   }
 }

@@ -48,6 +48,8 @@ export const MIGRATION_ROUTES: readonly MigrationRoute[] = [
   { prefix: 'avatars/', destination: 'media', mutable: true },
   { prefix: 'gym-photos/', destination: 'media', mutable: true },
   { prefix: 'gym-logos/', destination: 'media', mutable: true },
+  { prefix: 'feedback-screenshots/', destination: 'media', mutable: false },
+  { prefix: 'feedback-recordings/', destination: 'media', mutable: false },
   // `<userId>/<boardType>/<isoWeek>.json` — rewritten within its own week.
   { prefix: 'user-data-exports/', destination: 'private', mutable: true },
   // Keyed by upload timestamp + uuid, so never revisited.

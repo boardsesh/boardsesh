@@ -7,7 +7,7 @@ import { isLegacyPreviewLink } from '../src/lib/legacy-preview-link';
 // dataUrl=<key>` URL; without this redirect Expo Router treats that as an
 // unmatched route and shows +not-found. Send it to the home route — the
 // ShareTargetProvider then reads the shared link from the native module and
-// routes on to /share-beta after auth + URL validation. Android delivers shares
+// routes on to /share-beta or /share-bug after auth + validation. Android delivers shares
 // through an ACTION_SEND intent (no deep-link path), so it falls through here
 // unchanged and the provider handles it the same way.
 
@@ -33,11 +33,11 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   try {
     if (path.includes(`dataUrl=${getShareExtensionKey()}`)) {
       // Cold start (initial): bootstrap to the home route — the ShareTargetProvider
-      // then opens /share-beta over it. Warm shares (the app already running): return
+      // then opens the appropriate share modal over it. Warm shares (the app already running): return
       // '' so Expo Router skips re-navigation. Returning '/' here re-fired the root
       // <Redirect href="/(tabs)/home">, re-mounting the whole Home tab tree (and its
       // feed queries) on EVERY share — the source of the sluggishness after a few
-      // shares. The provider drives /share-beta off the native module either way, so
+      // shares. The provider drives the share modal off the native module either way, so
       // warm shares don't need a path redirect at all.
       return initial ? '/' : '';
     }

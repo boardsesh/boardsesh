@@ -15,6 +15,7 @@ import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } fro
 import { redactSensitiveText } from '@boardsesh/text-redaction';
 import { GITHUB_API, ensureLabels, githubHeaders, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
 import { GithubRequestError, readGithubErrorDetail } from '../lib/github-error';
+import { recordingMarkdownSection } from './feedback-recording-urls';
 import { screenshotMarkdownSection } from './feedback-screenshot-urls';
 
 const TITLE_LIMIT = 120;
@@ -24,7 +25,7 @@ const TITLE_LIMIT = 120;
  * same set this builder does — a report the builder would skip must not collect
  * screenshots the issue will never show.
  */
-export const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
+export const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug', 'share-bug']);
 
 export type FeedbackIssuePayload = {
   feedbackId: string | number | bigint;
@@ -46,6 +47,7 @@ export type FeedbackIssuePayload = {
    * trust check lives in `services/feedback-screenshot-urls.ts`.
    */
   screenshotUrls?: string[] | null;
+  recordingUrls?: string[] | null;
 };
 
 export type FeedbackIssueDraft = {
@@ -146,6 +148,7 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
     '',
     buildMetadataTable(payload),
     ...screenshotMarkdownSection(payload.screenshotUrls ?? []),
+    ...recordingMarkdownSection(payload.recordingUrls ?? []),
     '',
     buildContactLine(payload),
   ].join('\n');
