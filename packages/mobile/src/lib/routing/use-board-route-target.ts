@@ -300,7 +300,7 @@ function useAdoptedBoard(
         const capabilityModules = wallUuid
           ? await Promise.all([import('../spray/spray-wall-link-board'), import('../auth-store')])
           : null;
-        // A board share link (`?invite=`) joins the board before resolving it.
+        // A board share link (`?invite=`) asks to Join, and joins before resolving the board only if confirmed.
         const shareLinkModule =
           inviteToken && !wallUuid ? await import('../board-share/redeem-board-share-link') : null;
         const inviteAuthStore = inviteToken && !wallUuid ? await import('../auth-store') : null;

@@ -253,8 +253,8 @@ export type RedactableSpan = {
  *                   is a single-use credential; it has no business sitting in a
  *                   span attribute that a Sentry seat can read.
  *   ?session=...  — a session identifier in any path.
- *   ?invite=...   — a home board's share-link token, which makes whoever holds
- *                   it a member of the board (`app/lib/board-invite.ts`). Also
+ *   ?invite=...   — a home board's share-link token, which lets whoever holds
+ *                   it join the board (`app/lib/board-invite.ts`). Also
  *                   when it rides inside a sign-in page's encoded `callbackUrl`.
  */
 export function stripSensitiveQueryString(rawUrl: string): string {

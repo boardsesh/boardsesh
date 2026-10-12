@@ -10,10 +10,11 @@ import { getPostgresErrorCode } from '../utils/postgres-errors';
  * A home board's share link: `/b/{slug}?invite={token}`.
  *
  * The owner's Share sheet hands it out for a Followers or Invite-only board.
- * Opening it signed in writes the same approved `resource_grants` row an
- * owner's name invite writes, with `invited_by` set to the owner, so the
- * climber reads the board, its presence and its sessions on the next request
- * and the owner can remove them from the access screen as before.
+ * A signed-in climber who opens it and then chooses Join gets the same approved
+ * `resource_grants` row an owner's name invite writes, with `invited_by` set to
+ * the owner, so they read the board, its presence and its sessions on the next
+ * request and the owner can remove them from the access screen as before.
+ * Opening, previewing or signing in through the link grants nothing.
  *
  * Rules, each one a test in `board-share-links.test.ts`:
  *  - Only Followers and Invite-only boards have a link. Public and Unlisted

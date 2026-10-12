@@ -596,7 +596,7 @@ export const SPRAY_WALL_CAPABILITY_QUERY = 'wall=';
 
 /**
  * A home board's share link (`/b/{slug}?invite=<token>`, and the list page that
- * hands it to that hop). The token makes whoever opens it a member, so no edge
+ * hands it to that hop). The token lets whoever holds it join, so no edge
  * may hold a response keyed on one, and a reset has to take effect on the next
  * request. The origin already answers with `no-store`; this is the same second
  * lock the wall link has. `contains` also matches `uninvite=` and friends;

@@ -243,7 +243,7 @@
         "shareLink": "Partager le lien",
         "publicHint": "N'importe qui peut ouvrir cette board.",
         "unlistedHint": "Seulement les grimpeurs à qui tu l'envoies.",
-        "inviteHint": "Qui l'ouvre rejoint ta board."
+        "inviteHint": "Qui l'ouvre peut choisir Rejoindre pour accéder à ta board."
       }
     },
     "disambiguation": {

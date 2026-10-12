@@ -6,9 +6,9 @@ import { userBoards } from './boards';
 /**
  * A home board's share link (`/b/{slug}?invite={token}`).
  *
- * Opening it signed in makes the climber an approved member of a Followers or
- * Invite-only board, the same `resource_grants` row an owner's name invite
- * writes. The token is 128 random bits in base64url, minted server-side only.
+ * A signed-in climber who opens it and chooses Join becomes an approved member
+ * of a Followers or Invite-only board, the same `resource_grants` row an
+ * owner's name invite writes. Opening it alone grants nothing. The token is 128 random bits in base64url, minted server-side only.
  * A board has at most one active link; "Reset link" stamps `revoked_at` on it
  * and mints a new one, so a forwarded old link stops working while the people
  * who already joined keep their access.

@@ -2316,7 +2316,7 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
   });
 
   it("bypasses a home board's ?invite= share link, whatever the origin header says", () => {
-    // The token makes whoever opens it a member; a reset must bite on the next
+    // The token lets whoever holds it join; a reset must bite on the next
     // request, and no edge entry may be keyed on one.
     expect(expression).toContain(`not (http.request.uri.query contains "${BOARD_INVITE_QUERY}")`);
     expect(expression).toContain('not (http.request.uri.query contains "invite=")');

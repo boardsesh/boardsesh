@@ -243,7 +243,7 @@
         "shareLink": "Share link",
         "publicHint": "Anyone can open this board.",
         "unlistedHint": "Only the climbers you send it to.",
-        "inviteHint": "Whoever opens it joins your board."
+        "inviteHint": "Whoever opens it can tap Join to get access."
       }
     },
     "disambiguation": {

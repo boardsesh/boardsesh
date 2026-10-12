@@ -243,7 +243,7 @@
         "shareLink": "Compartir enlace",
         "publicHint": "Cualquiera puede abrir este plafón.",
         "unlistedHint": "Solo quien reciba el enlace.",
-        "inviteHint": "Quien lo abra se une a tu plafón."
+        "inviteHint": "Quien lo abra puede pulsar Unirme para acceder a tu plafón."
       }
     },
     "disambiguation": {

@@ -18,7 +18,7 @@ import type { SprayWallVisibility } from '../../lib/spray/spray-share';
 /**
  * What the link grants. A private wall or an Only-me board never reaches this
  * sheet. `invite` is a Followers or Invite-only home board's tokened link:
- * opening it joins the board.
+ * whoever opens it can choose Join to become a member.
  */
 export type BoardShareVisibility = Exclude<SprayWallVisibility, 'private'> | 'invite';
 
@@ -57,7 +57,7 @@ const QR_TILE_BACKGROUND = '#FFFFFF';
  * the two never fight over a native transition. The one line of copy under the
  * title is the important part — an unlisted link is a capability, a public
  * wall is on the open web, and a home board's invite link lets whoever opens it
- * join; those are different promises. Only an invite link has a Reset: it is
+ * choose to join; those are different promises. Only an invite link has a Reset: it is
  * the one that grants something, so it is the one an owner needs to retire.
  */
 export function BoardShareSheet({
