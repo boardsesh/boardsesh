@@ -3,9 +3,9 @@
 // is driving the wall in a party session). It sits in the centre of the
 // top-header islands row (iOS) / a slim band under the app bar (Android).
 //
-// Material keeps the sender avatar; the compact glass pill reserves that space
-// for the climb name. Both include the sender in the screen-reader label and
-// open the wall preview, which retains the sender profile affordance.
+// Leads with the sender's avatar so the climb and whoever lit it are visible
+// together. The avatar is inert here; the whole pill opens the wall preview,
+// which retains the sender profile affordance. Anonymous senders use a person glyph.
 //
 // Two platform-native skins behind one stateful body (see selectByVariant below):
 //   - Liquid Glass (iOS): a NON-glass pill (HIG: no glass-on-glass over the
@@ -230,6 +230,20 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
         accessibilityHint={t('mobile.boardPresence.stripA11yHint')}
         style={styles.pressable}
       >
+        {/* One tap target and one spoken label; profile navigation lives in the preview. */}
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {hasSenderIdentity ? (
+            <BoardDriverAvatar
+              uri={climb.sentByAvatarUrl}
+              name={senderName}
+              userId={null}
+              size={AVATAR_SIZE}
+              status="none"
+            />
+          ) : (
+            <Icon maxFontSizeMultiplier={1} name="profile.fill" size={18} color={brandColors.warning} />
+          )}
+        </View>
         <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={styles.capsuleNameViewer}>
           <Text
             variant="footnote"
@@ -295,7 +309,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: '100%',
-    paddingStart: spacing[3],
+    paddingStart: spacing[1],
     paddingEnd: spacing[3],
     gap: spacing[2],
   },

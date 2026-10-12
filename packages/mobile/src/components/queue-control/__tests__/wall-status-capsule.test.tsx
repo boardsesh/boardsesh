@@ -19,10 +19,24 @@ const spies = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+  View: ({
+    children,
+    style,
+    accessibilityElementsHidden,
+    importantForAccessibility,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    accessibilityElementsHidden?: boolean;
+    importantForAccessibility?: string;
+  }) =>
     createElement(
       'div',
-      { 'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))) },
+      {
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        'data-a11y-hidden': accessibilityElementsHidden,
+        'data-important-for-a11y': importantForAccessibility,
+      },
       children,
     ),
   Pressable: ({
@@ -82,8 +96,27 @@ vi.mock('../../../lib/board-presence/presence-climb', () => ({
   boardPresenceClimbToClimb: (c: { climbUuid: string }) => ({ uuid: c.climbUuid, _converted: true }),
 }));
 vi.mock('../../board-presence/BoardDriverAvatar', () => ({
-  BoardDriverAvatar: ({ uri, name }: { uri?: string | null; name?: string | null }) =>
-    createElement('span', { 'data-driver-avatar': 'true', 'data-uri': uri ?? '', 'data-name': name ?? '' }),
+  BoardDriverAvatar: ({
+    uri,
+    name,
+    userId,
+    size,
+    status,
+  }: {
+    uri?: string | null;
+    name?: string | null;
+    userId?: string | null;
+    size?: number;
+    status?: string;
+  }) =>
+    createElement('span', {
+      'data-driver-avatar': 'true',
+      'data-uri': uri ?? '',
+      'data-name': name ?? '',
+      'data-user-id': userId === null ? 'null' : userId,
+      'data-size': size,
+      'data-status': status,
+    }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
@@ -231,13 +264,24 @@ describe('WallStatusCapsule', () => {
     const originalTitleView = container.firstElementChild;
     rerender(
       <NativeHeaderActionContext.Provider value={true}>
-        <WallStatusCapsule climb={makeClimb({ climbUuid: 'wall-2', name: 'The next long climb on the wall' })} />
+        <WallStatusCapsule
+          climb={makeClimb({
+            climbUuid: 'wall-2',
+            name: 'The next long climb on the wall',
+            sentByDisplayName: 'Alex',
+            sentByAvatarUrl: 'https://example.com/alex.jpg',
+            sentByUserId: 'u-alex',
+          })}
+        />
       </NativeHeaderActionContext.Provider>,
     );
 
     expect(container.firstElementChild).toBe(originalTitleView);
     expect(container.textContent).toContain('The next long climb on the wall');
-    fireEvent.click(container.querySelector('[data-pressable]')!);
+    const avatar = container.querySelector('[data-driver-avatar]')!;
+    expect(avatar.getAttribute('data-name')).toBe('Alex');
+    expect(avatar.getAttribute('data-uri')).toBe('https://example.com/alex.jpg');
+    fireEvent.click(avatar);
     expect(spies.openWallPreview).toHaveBeenCalledOnce();
     expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-2', _converted: true });
     expect(spies.enterAnimation).not.toHaveBeenCalled();
@@ -271,25 +315,51 @@ describe('WallStatusCapsule', () => {
     expect(getByText('V5 6C')).not.toBeNull();
   });
 
-  it('omits the grade text when the climb grade is null', () => {
+  it('omits the grade text when the climb grade is null (name and avatar kept)', () => {
     const { container, getByText } = render(<WallStatusCapsule climb={makeClimb({ grade: null })} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(getByText('Wax On')).not.toBeNull();
-    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+    expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
+    expect(container.textContent).not.toContain('V5 6C');
   });
 
-  it('reserves the glass sender avatar space for the climb name', () => {
+  it('leads with the sender avatar as decoration within the single preview button', () => {
     const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+    const avatar = container.querySelector('[data-driver-avatar]');
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute('data-uri')).toBe('https://example.com/casey.jpg');
+    expect(avatar?.getAttribute('data-name')).toBe('Casey');
+    expect(avatar?.getAttribute('data-size')).toBe('20');
+    expect(avatar?.getAttribute('data-user-id')).toBe('null');
+    expect(avatar?.getAttribute('data-status')).toBe('none');
+    expect(avatar?.parentElement?.getAttribute('data-a11y-hidden')).toBe('true');
+    expect(avatar?.parentElement?.getAttribute('data-important-for-a11y')).toBe('no-hide-descendants');
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('[data-pressable]')?.firstElementChild).toBe(avatar?.parentElement);
     expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain('Casey');
+    fireEvent.click(avatar!);
+    expect(spies.openWallPreview).toHaveBeenCalledOnce();
+    expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-1', _converted: true });
   });
 
-  it('keeps anonymous glass capsules free of a sender glyph', () => {
-    const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: null });
+  it('passes a name-only sender to the avatar for its initials fallback', () => {
+    const { container } = render(
+      <WallStatusCapsule climb={makeClimb({ sentByAvatarUrl: null, sentByDisplayName: '  Casey  ' })} />,
+    );
+    const avatar = container.querySelector('[data-driver-avatar]');
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute('data-uri')).toBe('');
+    expect(avatar?.getAttribute('data-name')).toBe('Casey');
+    expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
+  });
+
+  it.each([null, 'u-only'])('uses a person glyph without a photo or name (userId: %s)', (sentByUserId) => {
+    const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId });
     const { container } = render(<WallStatusCapsule climb={climb} />);
     expect(container.querySelector('[data-driver-avatar]')).toBeNull();
-    expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
+    expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
   });
 
   it('opens the read-only wall preview (converted climb) on tap', () => {
