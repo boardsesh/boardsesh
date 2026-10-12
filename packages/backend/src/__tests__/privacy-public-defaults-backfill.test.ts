@@ -417,6 +417,44 @@ describe('privacy public-defaults backfill', () => {
     expect(await boardPolicy(gpsFixWithPolicy.uuid)).toMatchObject({ locationAudience: 'only_me' });
   });
 
+  it('leaves a board minted together with its public gym hidden: #6254 made that gym public whatever the board hid', async () => {
+    const mintedAt = new Date('2026-10-09T10:00:00Z');
+    const insertOwnedGym = async (uuid: string, createdAt: Date) => {
+      const [gym] = await db
+        .insert(schema.gyms)
+        .values({
+          uuid,
+          slug: uuid,
+          ownerId: owner,
+          name: 'My Garage',
+          isPublic: true,
+          latitude: 47.5,
+          longitude: 8.5,
+          createdAt,
+          updatedAt: createdAt,
+        })
+        .returning({ id: schema.gyms.id });
+      return gym.id;
+    };
+    const atHome = { latitude: 47.5, longitude: 8.5, locationName: 'My Garage' };
+    // The mint transaction: one now() for the gym and the board.
+    const mintedGym = await insertOwnedGym('backfill-minted-gym', mintedAt);
+    const mintedBoard = await insertBoard({
+      gymId: mintedGym,
+      createdAt: mintedAt,
+      updatedAt: mintedAt,
+      ...atHome,
+    });
+    // The owner's own public gym, created on its own and joined later: the rule applies.
+    const ownGym = await insertOwnedGym('backfill-own-gym', new Date('2026-10-01T10:00:00Z'));
+    const joinedLater = await insertBoard({ gymId: ownGym, ...atHome });
+
+    await runBackfill();
+
+    expect((await boardRow(mintedBoard.uuid)).hideLocation).toBe(true);
+    expect((await boardRow(joinedLater.uuid)).hideLocation).toBe(false);
+  });
+
   it('runs once: a board made private after the backfill stays private on a second run', async () => {
     const board = await insertBoard();
     await runBackfill();
