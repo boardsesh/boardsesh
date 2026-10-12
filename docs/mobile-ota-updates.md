@@ -1759,16 +1759,19 @@ Healthy launches on an OTA'd bundle dedupe to one `ota-install:<uuid>` per phone
 per install in the window the install rate reads about k times the launch rate, and a normal 2–3% of
 emergency launches crosses 10%.
 
-**Switching to `--gate installs`.** Not before a store release whose embedded JS has the install id
-is what most of the fleet runs. Two conditions, both needed:
+**Switching to `--gate installs`.** Keep `--gate launches` until binary adoption says the fleet's
+emergency fallback sends the install id. The evidence is the store consoles, not the health check:
 
-1. The summary line `legacy launches (per-launch id, pre-change JS; healthy and emergency)` has read
-   0 for 7 days running. It counts every launch still on `ota-launch:`, healthy ones included, so a
-   quiet week with no emergencies does not read as zero on its own.
-2. App Store Connect and the Play Console show most installs on a binary built after the change.
-   Condition 1 cannot see this alone: an old binary that already runs the new OTA sends
-   `ota-install:` on every healthy launch, and shows up as legacy only on an emergency launch,
-   which is exactly when it would inflate the install rate.
+1. Note the first store release cut after the per-install id landed (October 2026) here: version
+   `(not yet released)`. Its embedded JS is the first whose emergency launch sends `ota-install:`.
+2. Switch when App Store Connect and the Play Console both show at least 95% of active installs on
+   that version or later.
+
+The summary line `legacy launches (per-launch id, pre-change JS; healthy and emergency)` is context
+only. It counts every launch still on `ota-launch:`, but an old binary that already runs the new OTA
+sends `ota-install:` on every healthy launch, so the line can read 0 for weeks while such binaries
+remain, and their next emergency launch still falls back to the per-launch id and inflates the install
+rate. A count reaching zero is not adoption.
 
 Then add `--gate installs` to the health-check steps in `.github/workflows/production-deploy.yml`
 and `.github/workflows/mobile-ota-production.yml`, and record the date here. Switched: not yet.

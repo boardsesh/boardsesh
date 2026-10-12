@@ -34,15 +34,16 @@
  *   counts as an install of its own while healthy launches dedupe per install,
  *   so this rate reads several times high and a normal day trips the gate.
  *
- * Switch to `--gate installs` once a store release with the per-install id in
- * its embedded JS has been adopted. Two conditions, both needed: the `legacy
- * launches` line (every launch, healthy or not, still on `ota-launch:`) has
- * read 0 for 7 days running, AND the store consoles show most installs on a
- * binary built after the change. The first alone is not enough: an old binary
- * that already runs the new OTA sends `ota-install:` on every healthy launch
- * and shows up as legacy only on an emergency, which is exactly when it would
- * inflate the install rate. The date of the switch goes in
- * docs/mobile-ota-updates.md ("The health check").
+ * Switch to `--gate installs` on binary adoption evidence only: App Store
+ * Connect and the Play Console show at least 95% of active installs on a store
+ * build whose EMBEDDED JS carries the per-install id (the first store release
+ * cut after the October 2026 change; its version goes in the docs). The
+ * `legacy launches` line (every launch still on `ota-launch:`) is context, not
+ * evidence: an old binary that already runs the new OTA sends `ota-install:`
+ * on every healthy launch, so the line can read 0 for weeks while such
+ * binaries remain, and their next emergency launch still falls back to the
+ * per-launch id. The date of the switch goes in docs/mobile-ota-updates.md
+ * ("The health check").
  *
  * Exit code is non-zero ONLY when the gated rate exceeds the threshold AND the
  * gated denominator reached `--min-samples` — so low-volume noise (the minutes
