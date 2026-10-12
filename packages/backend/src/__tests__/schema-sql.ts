@@ -81,9 +81,15 @@ const anonymousOnForeignBoardsSchema = readFileSync(
   new URL('../../../db/drizzle/0266_anonymous_on_foreign_boards.sql', import.meta.url),
   'utf8',
 );
+// A home board's share link; straight from the generated migration, installed
+// after user_boards so its foreign key and partial unique index match production.
+const boardShareLinksSchema = readFileSync(
+  new URL('../../../db/drizzle/0266_board_share_links.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
-  DROP TABLE IF EXISTS resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
+  DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;
@@ -2159,4 +2165,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sessionBoardsSchema}
   ${privacySchema}
   ${anonymousOnForeignBoardsSchema};
+  ${boardShareLinksSchema}
 `;
