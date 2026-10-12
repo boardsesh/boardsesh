@@ -489,8 +489,8 @@
         "label": "Sammlung",
         "any": "Beliebig"
       },
-      "pin": "An Schnellzugriff anpinnen",
-      "unpin": "Aus Schnellzugriff entfernen",
+      "pinChip": "{{name}} oben in der Leiste anpinnen",
+      "unpinChip": "{{name}} aus der oberen Leiste entfernen",
       "established2plus": "Etabliert 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "{{count}} Boulder zeigen",
@@ -598,6 +598,15 @@
       "setLogGradeAria": "Eingetragenen Grad auf {{grade}} setzen",
       "selectedLogGradeAria": "Eingetragener Grad {{grade}} ausgewählt",
       "consensusGradeAria": "{{grade}}, Konsens-Grad"
+    },
+    "angleRail": {
+      "any": "Beliebig",
+      "setFilterAria": "Winkel-Filter auf {{angle}} Grad setzen",
+      "selectedFilterAria": "Winkel-Filter {{angle}} Grad ausgewählt",
+      "rangeFilterAria": "{{angle}} Grad liegt im gewählten Winkel-Bereich",
+      "anyAngleAria": "Beliebiger Winkel ausgewählt",
+      "clearFilterAria": "Winkel-Filter zurücksetzen",
+      "rangeHoldHint": "Gedrückt halten, um mit dem gewählten Winkel einen Bereich zu bilden"
     },
     "climbRow": {
       "addToQueue": "Zur Warteschlange hinzufügen",

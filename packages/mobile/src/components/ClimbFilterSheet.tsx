@@ -1,21 +1,10 @@
-import { Pressable } from 'react-native';
-import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
-import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
-import { PressableSurface } from './PressableSurface';
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
-import {
-  View,
-  StyleSheet,
-  type ViewStyle,
-  type LayoutChangeEvent,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from 'react-native';
+import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
+import { useSheetSubRoute } from '../hooks/use-sheet-sub-route';
 import { useSheetKeyboardInset } from './sheet-keyboard-inset';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
   hasActiveClimbFilters,
@@ -39,14 +28,19 @@ import {
   type BoardSearchConfig,
   type ProgressFilter,
 } from '@boardsesh/climb-filters';
-import { Text } from './Text';
 import { Button } from './Button';
 import { SheetTopBar } from './SheetTopBar';
 import { SegmentedControl } from './SegmentedControl';
 import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
-import { Icon } from './Icon';
-import { PinToggle } from './search/PinToggle';
+import { FilterSheetSection } from './filter-sheet/FilterSheetSection';
+import { FilterLabelRow } from './filter-sheet/FilterLabelRow';
+import { FilterChip, FilterChipGroup } from './filter-sheet/FilterChip';
+import { FilterNameField } from './filter-sheet/FilterNameField';
+import { FilterTappableRow } from './filter-sheet/FilterTappableRow';
+import { filterSheetStyles } from './filter-sheet/filter-sheet-styles';
+import { usePinnedChips } from '../lib/pinned-chips-store';
+import { PINNABLE_CHIP_KINDS, type PinnableChipKind } from '../lib/pinnable-chips';
 import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
 import { getCollectionFilter, getClimbTypeFilter, type CollectionFilter } from '../lib/collection-filter';
 import { useTheme } from '../providers/theme-provider';
@@ -68,13 +62,7 @@ import { buildCountPreviewInput } from '../lib/climb-count-preview-input';
 import { visibleSearchTextNeedsSync } from '../lib/search-name';
 import { useAuth } from '../providers/auth-provider';
 import { hapticSelection } from '../lib/haptics';
-import { springs } from '../theme/animations';
-// Aliased: the active-filter label reads scheme-aware brand from `useTheme()`.
-// `staticBrandColors` is the static set, used only for the selected chip — a FILL
-// with white text that must stay legible in both schemes.
-import { brandColors as staticBrandColors } from '../theme/colors';
-import { iosSystemColors } from '../theme/ios-colors';
-import { opacity, spacing } from '../theme/tokens';
+import { spacing } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
 import type { ClimbFilters } from '../lib/climb-filter-types';
 import { DEFAULT_FILTERS, statusForAuth } from '../lib/climb-filter-types';
@@ -132,46 +120,6 @@ const POPULARITY_BUCKETS: ReadonlyArray<number | undefined> = [undefined, 2, 10,
 // lives in the shared useSheetColumnStyle hook (see the sheetColumnStyle below).
 const SHEET_DETENT_FRACTION = 0.9;
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  const styles = useTypographyStyles(createStyles);
-  const { systemColors } = useTheme();
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  // Filled rest state (no faint border) so unselected chips are legible on the
-  // near-black sheet, matching the search-pill language.
-  const chipStyle: ViewStyle = {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: 20,
-    // Selected chip is a FILL with white text (see `chipText` below) → static brand.
-    backgroundColor: selected ? staticBrandColors.primary : systemColors.fill,
-  };
-  return (
-    <AnimatedPressable
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
-      onPressIn={() => {
-        scale.value = withSpring(0.95, springs.snappy);
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, springs.snappy);
-      }}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={label}
-      style={[animatedStyle, chipStyle]}
-    >
-      <Text variant="footnote" color={selected ? iosSystemColors.white : undefined} style={styles.chipText}>
-        {label}
-      </Text>
-    </AnimatedPressable>
-  );
-}
-
 // A presentation belongs to one board and angle. Late native closes and
 // sub-picker results must not affect a search that replaced that scope.
 function boardKeyOf(config: BoardSearchConfig | null): string | null {
@@ -194,9 +142,7 @@ export function ClimbFilterSheet({
   onClearName,
   lockedDimensions = NO_LOCKED_DIMENSIONS,
 }: ClimbFilterSheetProps) {
-  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
-  const { t: tCommon } = useTranslation('common');
   const theme = useTheme();
   const { systemColors } = theme;
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
@@ -208,15 +154,6 @@ export function ClimbFilterSheet({
   // end of the scroll body, so the last row scrolls clear of the home indicator.
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetModal>(null);
-  const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
-  // Latest scroll offset, captured on scroll into a ref (no re-render).
-  const scrollOffsetRef = useRef(0);
-  // Snapshotted at suspend: the remounted ScrollView's initial onScroll (y=0) can
-  // land before onContentSizeChange, so a live read would restore to 0.
-  const pendingRestoreOffsetRef = useRef(0);
-  // The epoch whose offset has already been restored — makes the restore in
-  // onContentSizeChange one-shot per remount, not re-fire on later content growth.
-  const restoredScrollEpochRef = useRef(0);
   const presentationBoardKeyRef = useRef(boardKeyOf(boardConfig));
   const boardKeyRef = useRef(boardKeyOf(boardConfig));
   boardKeyRef.current = boardKeyOf(boardConfig);
@@ -264,27 +201,22 @@ export function ClimbFilterSheet({
     if (!visibleSearchTextNeedsSync(nameDraftRef.current, searchName ?? '')) return;
     setNameDraft(searchName ?? '');
   }, [searchName]);
-  // The sub-pickers (setters / holds / zone) are pushed routes, not stacked
-  // sheets (native sheets can't stack above this one). While a sub-route is open
-  // we suspend — dismiss the native sheet without unmounting, preserving its scroll
-  // position — and re-present on focus when the route pops. pendingResumeRef
-  // distinguishes "returned from a sub-route" from the initial focus-on-mount.
   const router = useRouter();
-  const [suspended, setSuspended] = useState(false);
-  const pendingResumeRef = useRef(false);
-  // A sub-picker round trip re-presents the native sheet host. On iOS a re-present
-  // of an ALREADY-MOUNTED SwiftUI sheet host loses the detent height bound, so the
-  // flex:1 column stops being clamped to the 90% detent — the ScrollView then grows
-  // to content height and stops scrolling, its lower rows off-screen (#3330). Bumping
-  // this epoch on resume remounts the host under a fresh key, so every re-present
-  // takes the same first-present path as the initial mount (Android already rebuilds
-  // its native host each present; this just makes the code path uniform).
-  const [presentEpoch, setPresentEpoch] = useState(0);
 
   const isCurrentPresentation = useCallback(
     () => isMountedRef.current && !dismissedRef.current && presentationBoardKeyRef.current === boardKeyRef.current,
     [],
   );
+  // The sub-pickers (setters / holds / zone) are pushed routes, not stacked
+  // sheets (native sheets can't stack above this one). While a sub-route is open
+  // the sheet suspends (its native host dismisses without unmounting) and
+  // re-presents under a fresh key, scroll restored, when the route pops. The
+  // fresh key matters on iOS: re-presenting an already-mounted SwiftUI host loses
+  // the detent height bound and the body stops scrolling (#3330).
+  const subRoute = useSheetSubRoute<ComponentRef<typeof BottomSheetScrollView>>({
+    canResume: isCurrentPresentation,
+  });
+  const { suspended, presentEpoch, isAwaitingReturn, suspend: beginSubPickerSuspend, cancelResume } = subRoute;
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -604,17 +536,17 @@ export function ClimbFilterSheet({
   // All selections are committed already. Closing only waits for the native
   // animation before releasing the parent, and can never discard a last edit.
   const handleClose = useCallback(() => {
-    if (!isCurrentPresentation() || closingRef.current || pendingResumeRef.current) return;
+    if (!isCurrentPresentation() || closingRef.current || isAwaitingReturn()) return;
     closingRef.current = true;
     sheetRef.current?.dismiss();
-  }, [isCurrentPresentation]);
+  }, [isCurrentPresentation, isAwaitingReturn]);
 
   const handleSheetDismiss = useCallback(() => {
-    if (!isCurrentPresentation() || pendingResumeRef.current || suspended) return;
+    if (!isCurrentPresentation() || isAwaitingReturn() || suspended) return;
     dismissedRef.current = true;
     closingRef.current = true;
     onDismissRef.current();
-  }, [isCurrentPresentation, suspended]);
+  }, [isCurrentPresentation, isAwaitingReturn, suspended]);
 
   // The parent mounts this sheet only while it should be open, so present/dismiss
   // route through the coordinator (serialized, no overlapping native
@@ -651,17 +583,11 @@ export function ClimbFilterSheet({
     });
   }, [boardConfig]);
 
-  // Shared suspend preamble for the sub-picker openers: snapshot the scroll
-  // offset for the post-remount restore, then dismiss the native sheet without
-  // unmounting (see the suspended/pendingResumeRef comment above).
-  const beginSubPickerSuspend = useCallback(() => {
-    pendingRestoreOffsetRef.current = scrollOffsetRef.current;
-    pendingResumeRef.current = true;
-    setSuspended(true);
-  }, []);
-
+  // Each sub-picker opener starts with beginSubPickerSuspend: it snapshots the
+  // scroll offset for the post-remount restore, then dismisses the native sheet
+  // without unmounting (see useSheetSubRoute).
   const openSetters = useCallback(() => {
-    if (!boardConfig || !isCurrentPresentation() || pendingResumeRef.current || closingRef.current) return;
+    if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/setters',
@@ -686,22 +612,10 @@ export function ClimbFilterSheet({
         ),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, isCurrentPresentation, router]);
-
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
-  }, []);
-
-  // One-shot per epoch: a repeat restore on later content growth (e.g. a section
-  // expanding) would yank the user's scroll position.
-  const handleScrollContentSizeChange = useCallback(() => {
-    if (restoredScrollEpochRef.current === presentEpoch) return;
-    restoredScrollEpochRef.current = presentEpoch;
-    scrollRef.current?.scrollTo({ y: pendingRestoreOffsetRef.current, animated: false });
-  }, [presentEpoch]);
+  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router]);
 
   const openHoldFilter = useCallback(() => {
-    if (!boardConfig || !isCurrentPresentation() || pendingResumeRef.current || closingRef.current) return;
+    if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/holds',
@@ -721,10 +635,10 @@ export function ClimbFilterSheet({
         }),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, isCurrentPresentation, router]);
+  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router]);
 
   const openZoneFilter = useCallback(() => {
-    if (!boardConfig || !isCurrentPresentation() || pendingResumeRef.current || closingRef.current) return;
+    if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/zone',
@@ -739,23 +653,12 @@ export function ClimbFilterSheet({
         holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, isCurrentPresentation, router]);
+  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router]);
 
-  // Re-present after a sub-picker route pops (back chevron OR swipe-back both
-  // re-focus this screen). On initial mount the screen is already focused with no
-  // pending resume, so this is a no-op until a sub-route has actually been pushed.
-  // The setters route's "Show N climbs" button never gets here: its apply handoff
-  // commits the picks and closes, so the parent unmounts this suspended sheet.
-  useFocusEffect(
-    useCallback(() => {
-      if (pendingResumeRef.current && isCurrentPresentation()) {
-        pendingResumeRef.current = false;
-        setSuspended(false);
-        // Remount the native sheet host so the re-present is a first present (#3330).
-        setPresentEpoch((epoch) => epoch + 1);
-      }
-    }, [isCurrentPresentation]),
-  );
+  // useSheetSubRoute re-presents the sheet when a sub-picker route pops (back
+  // chevron OR swipe-back both re-focus this screen). The setters route's "Show N
+  // climbs" button never gets there: its apply handoff commits the picks and
+  // closes, so the parent unmounts this suspended sheet.
 
   const handleSelectedSettersChange = useCallback(
     (selectedSetters: string[], options: SetterFilterHandoffOptions) => {
@@ -767,13 +670,13 @@ export function ClimbFilterSheet({
         // The route's existing "Show N climbs" affordance means return to the
         // list. Selection is already committed; the suspended sheet needs no
         // second commit or native close, and must not re-present on focus.
-        pendingResumeRef.current = false;
+        cancelResume();
         dismissedRef.current = true;
         closingRef.current = true;
         onDismissRef.current();
       }
     },
-    [isCurrentPresentation, updateFilters],
+    [cancelResume, isCurrentPresentation, updateFilters],
   );
 
   const handleHoldsFilterChange = useCallback(
@@ -827,6 +730,25 @@ export function ClimbFilterSheet({
   const holdFilterCount = countFilteredHolds(selectedBoardFilters.holdsFilter);
   const zoneActive = selectedBoardFilters.zoneBox != null;
 
+  // Value-based chip handlers, stable across renders, so the memoised chips only
+  // re-render when their own selected state flips.
+  const handleProgressChange = useCallback(
+    (progress: ProgressFilter) => setFiltersPatch(progressToFlags(progress)),
+    [setFiltersPatch],
+  );
+  const handleClearMyRating = useCallback(() => setFiltersPatch({ minUserRating: undefined }), [setFiltersPatch]);
+  const handleClearMinRating = useCallback(() => setFiltersPatch({ minRating: undefined }), [setFiltersPatch]);
+
+  // Each pin toggles its control's chip in the climbs chip row. One stable
+  // callback per kind, so a pin tap re-renders only the label rows.
+  const { isPinned, togglePin } = usePinnedChips();
+  const pinToggles = useMemo(() => {
+    const toggles = {} as Record<PinnableChipKind, () => void>;
+    for (const kind of PINNABLE_CHIP_KINDS) toggles[kind] = () => togglePin(kind);
+    return toggles;
+  }, [togglePin]);
+  const pinProps = (kind: PinnableChipKind) => ({ pinned: isPinned(kind), onTogglePin: pinToggles[kind] });
+
   const trackColor = systemColors.fill;
   const accuracyValue: GradeAccuracyValue | 'off' = selectedFilters.gradeAccuracy ?? 'off';
   // Reset greys out until there's actually something to reset.
@@ -878,13 +800,13 @@ export function ClimbFilterSheet({
         />
 
         <BottomSheetScrollView
-          ref={scrollRef}
+          ref={subRoute.scrollRef}
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={scrollContentStyle}
-          onScroll={handleScroll}
+          onScroll={subRoute.onScroll}
           scrollEventThrottle={32}
-          onContentSizeChange={handleScrollContentSizeChange}
+          onContentSizeChange={subRoute.onContentSizeChange}
           // This sheet never hosted a text input before the name field below —
           // without this, a first tap on Close/Reset/another row while the
           // keyboard is up over the field can be swallowed (standard RN
@@ -892,118 +814,81 @@ export function ClimbFilterSheet({
           keyboardShouldPersistTaps="handled"
         >
           {/* Flat, labeled sections — no accordions. The scroll body is one column
-              child (styles.body) so the native sheet scrolls. */}
-          <View style={styles.body}>
+              child (filterSheetStyles.body) so the native sheet scrolls. */}
+          <View style={filterSheetStyles.body}>
             {/* 1 · NAME — climb-name search term, first row so Reset has something
                 visible to reset (#3606). Committed live via onNameChange/onClearName,
                 same as the top-bar search field. */}
-            <View style={styles.sectionFirst}>
-              <Text variant="headline" style={styles.sectionHeader}>
-                {t('mobile.filter.section.name')}
-              </Text>
-              <View style={[styles.nameInputRow, { backgroundColor: systemColors.tertiaryBackground }]}>
-                <TextInput
-                  value={nameDraft}
-                  onChangeText={handleNameTextChange}
-                  placeholder={t('search.placeholders.climbs')}
-                  placeholderTextColor={systemColors.tertiaryLabel}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="search"
-                  accessibilityLabel={t('mobile.filter.section.name')}
-                  style={[styles.nameInput, { color: systemColors.label }]}
-                />
-                {nameDraft.length > 0 ? (
-                  <PressableSurface
-                    onPress={handleClearNameField}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel={tCommon('actions.clear')}
-                  >
-                    <Icon name="close" size={14} color={systemColors.tertiaryLabel} />
-                  </PressableSurface>
-                ) : null}
-              </View>
-            </View>
+            <FilterSheetSection title={t('mobile.filter.section.name')} first>
+              <FilterNameField
+                value={nameDraft}
+                onChangeText={handleNameTextChange}
+                onClear={handleClearNameField}
+                placeholder={t('search.placeholders.climbs')}
+                accessibilityLabel={t('mobile.filter.section.name')}
+              />
+            </FilterSheetSection>
 
             {/* 2 · DIFFICULTY — grade bound + grade accuracy. */}
-            <View style={styles.section}>
-              <Text variant="headline" style={styles.sectionHeader}>
-                {t('mobile.filter.section.difficulty')}
-              </Text>
+            <FilterSheetSection title={t('mobile.filter.section.difficulty')}>
               {/* The inline grade rail updates the live selection. Its own title
                 is replaced by a pinnable label row. */}
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.gradeRange')}
-                </Text>
-                <PinToggle kind="grade" />
-              </View>
+              <FilterLabelRow label={t('mobile.filter.gradeRange')} {...pinProps('grade')} />
               <GradeRangeRail
                 grades={grades ?? []}
                 bound={{ minGradeId: selectedFilters.minGrade, maxGradeId: selectedFilters.maxGrade }}
                 lastUsedGradeId={lastUsedGradeId}
                 boardName={boardName}
                 onChange={handleGradeChange}
-                style={styles.inlineGradeRail}
+                style={filterSheetStyles.inlineRail}
               />
 
-              <View style={styles.subsectionGap} />
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.accuracy.label')}
-                </Text>
-                <PinToggle kind="accuracy" />
-              </View>
-              <Text variant="footnote" style={styles.subsectionDescription}>
-                {t('mobile.filter.accuracy.description')}
-              </Text>
-              <View style={styles.controlGap} />
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow
+                label={t('mobile.filter.accuracy.label')}
+                description={t('mobile.filter.accuracy.description')}
+                {...pinProps('accuracy')}
+              />
+              <View style={filterSheetStyles.controlGap} />
               <SegmentedControl
                 options={accuracyOptions}
                 selectedKey={accuracyValue}
                 onSelect={handleAccuracyChange}
                 accessibilityLabel={t('mobile.filter.accuracy.label')}
               />
-            </View>
+            </FilterSheetSection>
 
             {/* 3 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
                 the "My drafts" toggle (old Status 'drafts', with its side-effects). */}
             {isAuthenticated ? (
-              <View style={styles.section}>
-                <View style={styles.pinnableLabelRow}>
-                  <Text variant="headline" style={styles.sectionHeader}>
-                    {t('mobile.filter.progress.label')}
-                  </Text>
-                  <PinToggle kind="progress" />
-                </View>
+              <FilterSheetSection title={t('mobile.filter.progress.label')} {...pinProps('progress')}>
                 {/* A single-select over the four per-user tick flags. "Projects" =
                   attempted-but-not-sent; "Unsent" = the old "hide climbs I've sent". */}
-                <View style={styles.chipRow}>
+                <FilterChipGroup>
                   {PROGRESS_FILTER_VALUES.map((value) => (
-                    <Chip
+                    <FilterChip
                       key={value}
                       label={progressLabels[value]}
+                      value={value}
                       selected={flagsToProgress(selectedFilters) === value}
-                      onPress={() => setFiltersPatch(progressToFlags(value))}
+                      onPress={handleProgressChange}
                     />
                   ))}
-                </View>
+                </FilterChipGroup>
 
                 {/* My rating — the stars you gave, at the angle you're browsing.
                     The star row keeps climbs you never rated; the switch drops them. */}
-                <View style={styles.subsectionGap} />
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.myRating')}
-                </Text>
-                <Text variant="footnote" style={styles.subsectionDescription}>
-                  {t('mobile.filter.myRatingDescription')}
-                </Text>
-                <View style={styles.ratingRow}>
-                  <Chip
+                <View style={filterSheetStyles.subsectionGap} />
+                <FilterLabelRow
+                  label={t('mobile.filter.myRating')}
+                  description={t('mobile.filter.myRatingDescription')}
+                />
+                <View style={filterSheetStyles.ratingRow}>
+                  <FilterChip
                     label={t('mobile.filter.anyRating')}
+                    value={undefined}
                     selected={selectedFilters.minUserRating == null}
-                    onPress={() => setFiltersPatch({ minUserRating: undefined })}
+                    onPress={handleClearMyRating}
                   />
                   <StarRating
                     value={selectedFilters.minUserRating}
@@ -1016,24 +901,16 @@ export function ClimbFilterSheet({
                   value={!!selectedFilters.onlyRatedByMe}
                   onValueChange={(value) => setFiltersPatch({ onlyRatedByMe: value || undefined })}
                 />
-              </View>
+              </FilterSheetSection>
             ) : null}
 
             {/* 4 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
-            <View style={styles.section}>
-              <Text variant="headline" style={styles.sectionHeader}>
-                {t('mobile.filter.section.quality')}
-              </Text>
+            <FilterSheetSection title={t('mobile.filter.section.quality')}>
               {/* Collection — Benchmarks (board filter) + My drafts (status) folded
                   into one single-select; they're mutually exclusive. My drafts is
                   offered only when signed in (auth-gated like the old drafts toggle). */}
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.collection.label')}
-                </Text>
-                <PinToggle kind="collection" />
-              </View>
-              <View style={styles.controlGap} />
+              <FilterLabelRow label={t('mobile.filter.collection.label')} {...pinProps('collection')} />
+              <View style={filterSheetStyles.controlGap} />
               <SegmentedControl
                 options={collectionOptions}
                 selectedKey={collectionFilter}
@@ -1041,18 +918,14 @@ export function ClimbFilterSheet({
                 accessibilityLabel={t('mobile.filter.collection.label')}
               />
 
-              <View style={styles.subsectionGap} />
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.minRating')}
-                </Text>
-                <PinToggle kind="rating" />
-              </View>
-              <View style={styles.ratingRow}>
-                <Chip
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow label={t('mobile.filter.minRating')} {...pinProps('rating')} />
+              <View style={filterSheetStyles.ratingRow}>
+                <FilterChip
                   label={t('mobile.filter.anyRating')}
+                  value={undefined}
                   selected={selectedFilters.minRating == null}
-                  onPress={() => setFiltersPatch({ minRating: undefined })}
+                  onPress={handleClearMinRating}
                 />
                 <StarRating
                   value={selectedFilters.minRating}
@@ -1061,48 +934,37 @@ export function ClimbFilterSheet({
                 />
               </View>
 
-              <View style={styles.subsectionGap} />
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.popularity')}
-                </Text>
-                <PinToggle kind="popularity" />
-              </View>
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow label={t('mobile.filter.popularity')} {...pinProps('popularity')} />
               {/* "Unrepeated" (status='projects') leads the group, then Any + the
                 numeric min-ascents buckets. The whole row reads as single-select:
                 picking any bucket clears projects (see handlePopularity), and the
                 Unrepeated chip is selected iff status==='projects'. */}
-              <View style={styles.chipRow}>
-                <Chip
+              <FilterChipGroup>
+                <FilterChip
                   label={t('mobile.filter.popularityUnrepeated')}
+                  value="projects"
                   selected={selectedFilters.status === 'projects'}
-                  onPress={() => handleStatusChange('projects')}
+                  onPress={handleStatusChange}
                 />
                 {POPULARITY_BUCKETS.map((bucket) => (
-                  <Chip
+                  <FilterChip
                     key={bucket ?? 'any'}
                     label={popularityLabel(bucket)}
+                    value={bucket}
                     selected={selectedFilters.minAscents === bucket && selectedFilters.status !== 'projects'}
-                    onPress={() => handlePopularity(bucket)}
+                    onPress={handlePopularity}
                   />
                 ))}
-              </View>
-            </View>
+              </FilterChipGroup>
+            </FilterSheetSection>
 
             {/* 5 · THE CLIMB — type, angle, shape, setters, holds, zones, beta. */}
-            <View style={styles.section}>
-              <Text variant="headline" style={styles.sectionHeader}>
-                {t('mobile.filter.section.theClimb')}
-              </Text>
+            <FilterSheetSection title={t('mobile.filter.section.theClimb')}>
               {showClimbTypeControl ? (
                 <>
-                  <View style={styles.pinnableLabelRow}>
-                    <Text variant="footnote" style={styles.subsectionLabel}>
-                      {t('mobile.filter.climbType.label')}
-                    </Text>
-                    <PinToggle kind="climbType" />
-                  </View>
-                  <View style={styles.controlGap} />
+                  <FilterLabelRow label={t('mobile.filter.climbType.label')} {...pinProps('climbType')} />
+                  <View style={filterSheetStyles.controlGap} />
                   <SegmentedControl
                     options={climbTypeOptions}
                     selectedKey={climbTypeKey}
@@ -1115,7 +977,7 @@ export function ClimbFilterSheet({
 
               {showOtherAnglesControl ? (
                 <>
-                  <View style={styles.subsectionGap} />
+                  <View style={filterSheetStyles.subsectionGap} />
                   <SwitchRow
                     label={t('mobile.filter.otherAngles')}
                     description={t('mobile.filter.otherAnglesDescription')}
@@ -1133,13 +995,8 @@ export function ClimbFilterSheet({
                   Beta videos layout), keeping the switches aligned with the rest. */}
               {showTallControl ? (
                 <>
-                  <View style={styles.subsectionGap} />
-                  <View style={styles.pinnableLabelRow}>
-                    <Text variant="footnote" style={styles.subsectionLabel}>
-                      {t('mobile.search.chips.tall')}
-                    </Text>
-                    <PinToggle kind="tall" />
-                  </View>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterLabelRow label={t('mobile.search.chips.tall')} {...pinProps('tall')} />
                   {/* A locked Tall (iOS chip-row lock) reads on and can't be switched
                       off here; its hint says how to unlock it from the chip. */}
                   <SwitchRow
@@ -1155,13 +1012,8 @@ export function ClimbFilterSheet({
               ) : null}
               {showWideControl ? (
                 <>
-                  <View style={styles.subsectionGap} />
-                  <View style={styles.pinnableLabelRow}>
-                    <Text variant="footnote" style={styles.subsectionLabel}>
-                      {t('mobile.search.chips.wide')}
-                    </Text>
-                    <PinToggle kind="wide" />
-                  </View>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterLabelRow label={t('mobile.search.chips.wide')} {...pinProps('wide')} />
                   <SwitchRow
                     label={t('mobile.filter.wide')}
                     description={
@@ -1174,29 +1026,17 @@ export function ClimbFilterSheet({
                 </>
               ) : null}
 
-              <View style={styles.subsectionGap} />
-              <PressableSurface
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterTappableRow
+                label={t('mobile.filter.setters')}
+                value={
+                  selectedFilters.setter && selectedFilters.setter.length > 0
+                    ? formatSetterSelection(selectedFilters.setter)
+                    : t('mobile.filter.none')
+                }
                 onPress={openSetters}
                 disabled={!boardConfig}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.filter.setters')}
-                style={({ pressed }) => [
-                  styles.tappableRow,
-                  { backgroundColor: systemColors.tertiaryBackground },
-                  pressed && styles.tappableRowPressed,
-                  !boardConfig && styles.tappableRowDisabled,
-                ]}
-              >
-                <Text variant="body">{t('mobile.filter.setters')}</Text>
-                <View style={styles.tappableRowTrailing}>
-                  <Text variant="footnote" style={styles.tappableRowValue}>
-                    {selectedFilters.setter && selectedFilters.setter.length > 0
-                      ? formatSetterSelection(selectedFilters.setter)
-                      : t('mobile.filter.none')}
-                  </Text>
-                  <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-                </View>
-              </PressableSurface>
+              />
 
               {isAuthenticated ? (
                 <View style={styles.followingSection}>
@@ -1208,99 +1048,61 @@ export function ClimbFilterSheet({
                 </View>
               ) : null}
 
-              <View style={styles.subsectionGap} />
-              <PressableSurface
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterTappableRow
+                label={t('mobile.holdFilter.title')}
+                value={
+                  holdFilterCount > 0
+                    ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
+                    : t('mobile.filter.none')
+                }
                 onPress={openHoldFilter}
                 disabled={!boardConfig}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.holdFilter.title')}
-                style={({ pressed }) => [
-                  styles.tappableRow,
-                  { backgroundColor: systemColors.tertiaryBackground },
-                  pressed && styles.tappableRowPressed,
-                  !boardConfig && styles.tappableRowDisabled,
-                ]}
-              >
-                <Text variant="body">{t('mobile.holdFilter.title')}</Text>
-                <View style={styles.tappableRowTrailing}>
-                  <Text variant="footnote" style={styles.tappableRowValue}>
-                    {holdFilterCount > 0
-                      ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
-                      : t('mobile.filter.none')}
-                  </Text>
-                  <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-                </View>
-              </PressableSurface>
+              />
 
-              <View style={styles.subsectionGap} />
-              <PressableSurface
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterTappableRow
+                label={t('mobile.zoneFilter.title')}
+                value={zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
                 onPress={openZoneFilter}
                 disabled={!boardConfig}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.zoneFilter.title')}
-                style={({ pressed }) => [
-                  styles.tappableRow,
-                  { backgroundColor: systemColors.tertiaryBackground },
-                  pressed && styles.tappableRowPressed,
-                  !boardConfig && styles.tappableRowDisabled,
-                ]}
-              >
-                <Text variant="body">{t('mobile.zoneFilter.title')}</Text>
-                <View style={styles.tappableRowTrailing}>
-                  <Text variant="footnote" style={styles.tappableRowValue}>
-                    {zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
-                  </Text>
-                  <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-                </View>
-              </PressableSurface>
+              />
 
               {/* Beta videos — a content property of the climb, not a quality signal.
                   A group header carries the pin; the switch uses the descriptive line
                   as its label so "Beta videos" isn't worded twice. */}
-              <View style={styles.subsectionGap} />
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.betaVideos')}
-                </Text>
-                <PinToggle kind="beta" />
-              </View>
+              <View style={filterSheetStyles.subsectionGap} />
+              <FilterLabelRow label={t('mobile.filter.betaVideos')} {...pinProps('beta')} />
               <SwitchRow
                 label={t('mobile.filter.betaVideosDescription')}
                 value={!!selectedFilters.onlyWithBetaVideos}
                 onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
               />
-            </View>
+            </FilterSheetSection>
 
             {/* 6 · SORT — sort key + direction (or reshuffle for random). */}
-            <View style={styles.section}>
-              <Text variant="headline" style={styles.sectionHeader}>
-                {t('mobile.filter.section.sort')}
-              </Text>
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.sortBy')}
-                </Text>
-                <PinToggle kind="sort" />
-              </View>
+            <FilterSheetSection title={t('mobile.filter.section.sort')}>
+              <FilterLabelRow label={t('mobile.filter.sortBy')} {...pinProps('sort')} />
               {/* Flex-wrap (matching the popularity/rating chip rows above), not a
                   horizontal ScrollView: a gesture-handler ScrollView nested in the
                   native bottom sheet collapsed the chip row's height on iOS and
                   clipped the labels. SORT_OPTIONS is short, so wrapping is fine. */}
-              <View style={styles.chipRow}>
+              <FilterChipGroup>
                 {SORT_OPTIONS.map((option) => (
-                  <Chip
+                  <FilterChip
                     key={option}
                     label={sortLabels[option]}
+                    value={option}
                     selected={selectedFilters.sortBy === option}
-                    onPress={() => handleSortByChange(option)}
+                    onPress={handleSortByChange}
                   />
                 ))}
-              </View>
+              </FilterChipGroup>
               {/* For random, direction is meaningless — swap the asc/desc control for
                   an explicit reshuffle button (re-tapping the Random chip also works). */}
               {selectedFilters.sortBy === 'random' ? (
                 <>
-                  <View style={styles.subsectionGap} />
+                  <View style={filterSheetStyles.subsectionGap} />
                   <Button
                     title={t('mobile.filter.sort.reshuffle')}
                     onPress={handleReshuffle}
@@ -1311,11 +1113,9 @@ export function ClimbFilterSheet({
                 </>
               ) : (
                 <>
-                  <View style={styles.subsectionGap} />
-                  <Text variant="footnote" style={styles.subsectionLabel}>
-                    {t('mobile.filter.sortOrderLabel')}
-                  </Text>
-                  <View style={styles.controlGap} />
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterLabelRow label={t('mobile.filter.sortOrderLabel')} />
+                  <View style={filterSheetStyles.controlGap} />
                   <SegmentedControl
                     options={sortOrderOptions}
                     selectedKey={selectedFilters.sortOrder}
@@ -1325,7 +1125,7 @@ export function ClimbFilterSheet({
                   />
                 </>
               )}
-            </View>
+            </FilterSheetSection>
           </View>
         </BottomSheetScrollView>
       </View>
@@ -1333,119 +1133,18 @@ export function ClimbFilterSheet({
   );
 }
 
-const createStyles = (textStyles: TypographyScale) =>
-  StyleSheet.create({
-    indicator: {
-      // Colour is themed at the call site (systemColors.separator adapts light/dark);
-      // only the static dimensions live here.
-      width: 36,
-      height: 5,
-      borderRadius: 3,
-    },
-    scrollView: {
-      flex: 1,
-    },
-    body: {
-      paddingHorizontal: spacing[4],
-    },
-    // Each top-level group. A generous top pad separates the six headers into
-    // distinct inset-style groups; the first group sits tighter under the sheet header.
-    section: {
-      paddingTop: spacing[5],
-    },
-    sectionFirst: {
-      paddingTop: spacing[2],
-    },
-    // The six group titles — more prominent than the muted footnote sub-labels so
-    // the flat sheet reads as six inset groups without accordions.
-    sectionHeader: {
-      marginBottom: spacing[3],
-    },
-    // The name field's row — same tertiaryBackground pill language as the
-    // tappable rows below (setters/holds/zone), so it reads as part of the family.
-    nameInputRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[2],
-      paddingHorizontal: spacing[4],
-      paddingVertical: spacing[3],
-      borderRadius: 10,
-      minHeight: 44,
-    },
-    nameInput: {
-      flex: 1,
-      fontSize: textStyles.body.fontSize,
-      paddingVertical: 0,
-    },
-    subsectionLabel: {
-      opacity: 0.55,
-      marginTop: spacing[1],
-      marginBottom: spacing[2],
-    },
-    // A one-line hint under a sub-label (e.g. what "Grade accuracy" means). Sits
-    // tight under the label (cancels its marginBottom) and more muted than it.
-    subsectionDescription: {
-      opacity: 0.4,
-      marginTop: -spacing[2],
-      marginBottom: spacing[1],
-    },
-    subsectionGap: {
-      height: spacing[4],
-    },
-    followingSection: {
-      marginTop: spacing[4],
-    },
-    // A control's label line with a trailing pin toggle (pin the control to the chip row).
-    pinnableLabelRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    // Breathing room between a footnote sub-label and a flush native SegmentedControl
-    // (which, unlike the chip rows, has no intrinsic top padding).
-    controlGap: {
-      height: spacing[2],
-    },
-    chipRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing[2],
-    },
-    chipText: {
-      fontWeight: '500',
-    },
-    ratingRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[4],
-    },
-    tappableRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing[4],
-      paddingVertical: spacing[3],
-      borderRadius: 10,
-      minHeight: 44,
-    },
-    tappableRowPressed: {
-      opacity: 0.6,
-    },
-    tappableRowDisabled: {
-      opacity: opacity.disabled,
-    },
-    tappableRowTrailing: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[2],
-    },
-    tappableRowValue: {
-      opacity: 0.55,
-    },
-    // Cancels the body's gutter so the grade strip scrolls out to the sheet's
-    // edges; the rail's own insets put its first and last chip back on it.
-    inlineGradeRail: {
-      marginTop: spacing[2],
-      marginHorizontal: -spacing[4],
-    },
-  });
+const styles = StyleSheet.create({
+  indicator: {
+    // Colour is themed at the call site (systemColors.separator adapts light/dark);
+    // only the static dimensions live here.
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  followingSection: {
+    marginTop: spacing[4],
+  },
+});

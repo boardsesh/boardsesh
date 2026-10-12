@@ -489,8 +489,8 @@
         "label": "Collection",
         "any": "Any"
       },
-      "pin": "Pin to shortcuts",
-      "unpin": "Remove from shortcuts",
+      "pinChip": "Pin {{name}} to the top row",
+      "unpinChip": "Unpin {{name}} from the top row",
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",
@@ -598,6 +598,15 @@
       "setLogGradeAria": "Set log grade to {{grade}}",
       "selectedLogGradeAria": "{{grade}} log grade selected",
       "consensusGradeAria": "{{grade}}, consensus grade"
+    },
+    "angleRail": {
+      "any": "Any",
+      "setFilterAria": "Set angle filter to {{angle}} degrees",
+      "selectedFilterAria": "{{angle}} degrees angle filter selected",
+      "rangeFilterAria": "{{angle}} degrees is in the selected angle range",
+      "anyAngleAria": "Any angle selected",
+      "clearFilterAria": "Clear angle filter",
+      "rangeHoldHint": "Touch and hold to make a range with the selected angle"
     },
     "climbRow": {
       "addToQueue": "Add to queue",

@@ -489,8 +489,8 @@
         "label": "Colección",
         "any": "Cualquiera"
       },
-      "pin": "Fijar como atajo",
-      "unpin": "Quitar de los atajos",
+      "pinChip": "Fijar {{name}} en la fila superior",
+      "unpinChip": "Quitar {{name}} de la fila superior",
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Ver {{count}} vía",
@@ -598,6 +598,15 @@
       "setLogGradeAria": "Guardar grado {{grade}} en el registro",
       "selectedLogGradeAria": "Grado {{grade}} seleccionado para el registro",
       "consensusGradeAria": "{{grade}}, grado de consenso"
+    },
+    "angleRail": {
+      "any": "Cualquiera",
+      "setFilterAria": "Filtrar por ángulo de {{angle}} grados",
+      "selectedFilterAria": "Filtro de ángulo de {{angle}} grados seleccionado",
+      "rangeFilterAria": "{{angle}} grados está en el rango de ángulos seleccionado",
+      "anyAngleAria": "Cualquier ángulo seleccionado",
+      "clearFilterAria": "Borrar filtro de ángulo",
+      "rangeHoldHint": "Mantén pulsado para crear un rango con el ángulo seleccionado"
     },
     "climbRow": {
       "addToQueue": "Añadir a la cola",

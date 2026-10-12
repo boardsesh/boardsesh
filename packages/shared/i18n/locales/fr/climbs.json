@@ -489,8 +489,8 @@
         "label": "Collection",
         "any": "Toutes"
       },
-      "pin": "Épingler comme raccourci",
-      "unpin": "Retirer des raccourcis",
+      "pinChip": "Épingler {{name}} dans la rangée du haut",
+      "unpinChip": "Retirer {{name}} de la rangée du haut",
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Voir {{count}} voie",
@@ -598,6 +598,15 @@
       "setLogGradeAria": "Enregistrer la cotation {{grade}}",
       "selectedLogGradeAria": "Cotation {{grade}} sélectionnée pour le carnet",
       "consensusGradeAria": "{{grade}}, cotation consensus"
+    },
+    "angleRail": {
+      "any": "Toutes",
+      "setFilterAria": "Filtrer par inclinaison de {{angle}} degrés",
+      "selectedFilterAria": "Filtre d'inclinaison de {{angle}} degrés sélectionné",
+      "rangeFilterAria": "{{angle}} degrés est dans la plage d'inclinaisons sélectionnée",
+      "anyAngleAria": "Toutes les inclinaisons sélectionnées",
+      "clearFilterAria": "Effacer le filtre d'inclinaison",
+      "rangeHoldHint": "Appuie longuement pour créer une plage avec l'inclinaison sélectionnée"
     },
     "climbRow": {
       "addToQueue": "Ajouter à la file",
