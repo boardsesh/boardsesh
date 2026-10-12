@@ -1891,13 +1891,6 @@
       "when": 1791788173549,
       "tag": "0269_climb_membership_withdrawal_flag",
       "breakpoints": true
-    },
-    {
-      "idx": 270,
-      "version": "7",
-      "when": 1791788173550,
-      "tag": "0270_climb_membership_withdrawal_guard",
-      "breakpoints": true
     }
   ]
 }

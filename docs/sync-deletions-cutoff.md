@@ -6,22 +6,27 @@ this when the transaction lasts longer. `syncDeletions` now uses a DB-stamped
 stream timestamp and waits for older writer transactions before delivering a
 page. This change does not alter the document-page stability window.
 
-`deleted_at` remains the client resurrection guard. Membership withdrawals use
-the next whole UTC second after both the old climb version and the write clock.
-This covers an old public copy fetched through MVCC while privatization remains
-uncommitted. A fixed stability window cannot prevent that read during a long
-transaction. Whole seconds also preserve the installed SQLite text comparison:
-within a second, `.100001Z` sorts before `.1Z` even though it is numerically newer.
+`deleted_at` remains the client resurrection guard. In this release a
+membership withdrawal (migration 0266) is stamped one second before the climb's
+new `updated_at`. That is after every copy a device can have pulled, because a
+device only pulls a version once it is a stability window old and deployed
+windows are at least two seconds, and before the owner's re-delivered row, so a
+replay of the deletion stream never deletes it. One copy is not covered: an old
+public row read through MVCC while the privatizing transaction is still open,
+which can be newer than the guard when that transaction runs long. The guard
+migration that closes it ships one release later; see
+[The withdrawal guard, one release later](#the-withdrawal-guard-one-release-later).
 
-These markers carry the internal `is_membership_withdrawal` flag. In the same
-page statement, the backend omits a flagged climb withdrawal if the current
-climb is readable to the viewer under the sync public/owner and spray-wall
-rules. Filtering precedes pagination, so a page containing only omitted markers
-cannot hide later withdrawals from installed clients that stop on an empty
-page. A later publication restriction or protected-owner transfer writes a new
-marker; a replay therefore preserves
-the current owner's or republished copy. Ordinary hard-delete markers keep
-their original behavior. No climb timestamp is moved into the future.
+This release also adds the internal `is_membership_withdrawal` flag (migration
+0269) and the filter that reads it. In the same page statement, the backend
+omits a flagged climb withdrawal if the current climb is readable to the viewer
+under the sync public/owner and spray-wall rules. Filtering precedes
+pagination, so a page containing only omitted markers cannot hide later
+withdrawals from installed clients that stop on an empty page. Nothing in this
+release sets the flag: every withdrawal is an ordinary marker, delivered to
+every device, which the one-second backdate makes safe. Ordinary hard-delete
+markers keep their original behavior. No climb timestamp is moved into the
+future.
 
 A BEFORE INSERT
 trigger always stamps `stream_at` using UTC `clock_timestamp()`, including when
@@ -59,12 +64,9 @@ release jobs during the bootstrap/migration window. Older runtime ACL sweeps
 try to re-grant every public routine as the ordinary DDL owner, which cannot
 control this separately owned helper. Do not preinstall it and then run an
 older migrator. The coordinated order is updated tooling, admin bootstrap,
-this release's migrations, then this release's backend. Before migration 0270
-installs the membership guard, stop every older backend instance serving sync
-requests. Keep those requests unavailable until this release's filter-aware
-backend serves them. The older backend cannot interpret the new flagged
-withdrawals and could erase an owner's authorized local copy. Installed app
-versions remain compatible; this is a backend deployment constraint.
+this release's migrations, then this release's backend. The previous backend
+may keep serving sync while the migrations run: none of them writes a marker it
+cannot read. Installed app versions remain compatible.
 
 1. Run `vp exec tsx packages/db/scripts/bootstrap-sync-deletions-cutoff.ts` to inspect the plan.
 2. Set `SYNC_CUTOFF_ADMIN_DATABASE_URL` and run that command with `--apply`.
@@ -90,9 +92,13 @@ not fall back to an unsafe clock. Runtime ACL reconciliation and infrastructure
 audits preserve only this exact validated function exception.
 
 The generated stream migration adds one nullable column without backfilling old
-rows and builds two expression indexes. Plan an appropriate migration window
-for index construction; ordinary transactional CREATE INDEX briefly conflicts
-with marker writes. The old cursor indexes remain for a backend rollback.
+rows and builds two expression indexes, inside the deploy's migration
+transaction. Every pending migration runs in that one transaction, so until it
+commits, deletion-log reads and marker writes (and so every delete on a synced
+table) wait for both index builds, and climb writes wait on the trigger lock
+the reference-membership migration took earlier in it. The stream migration's
+header records that decision and the table-size check to run before the deploy.
+The old cursor indexes remain for a backend rollback.
 
 Disposable CI services, E2E services, migration-renumber replay and the dev-db
 image invoke `bootstrap-sync-deletions-cutoff-development.ts` before migration.
@@ -111,14 +117,33 @@ ordinary routine ownership/ACL sweeps must not re-own it. The audit checks its
 canonical body, owner, membership, and runtime-only EXECUTE privileges.
 
 Leave the stream column, trigger, classification and helper in place when
-rolling back. After migration 0270, roll back only to a backend that includes
-the membership-withdrawal readability filter, or keep sync unavailable while
-rolling forward to that backend. Restoring the old producer function alone is
-insufficient: already-written flagged markers remain in the deletion log.
-Backend versions predating this filter are not a safe rollback target. Do not
-remove the helper while the new backend is running. Delivery stalls safely
-during a prepared transaction or loss of stats access; monitor paused polls and
-resolve that database condition.
+rolling back. A backend from before this release is a safe rollback target
+while no flagged marker exists, which holds until the guard migration below is
+applied. Do not remove the helper while the new backend is running. Delivery
+stalls safely during a prepared transaction or loss of stats access; monitor
+paused polls and resolve that database condition.
+
+## The withdrawal guard, one release later
+
+The guard migration replaces the membership trigger's function. It stamps a
+withdrawal at the next whole UTC second after both the old climb version and
+the write clock, which covers a copy read through MVCC while privatization is
+uncommitted, and it sets `is_membership_withdrawal`. Whole seconds also keep
+the installed SQLite text comparison right: within a second, `.100001Z` sorts
+before `.1Z` even though it is numerically newer.
+
+That marker is at or after the owner's new `updated_at`, so only the flag
+filter keeps it from the owner's device. A backend without the filter, serving
+sync while the migration runs or after a rollback, would deliver it and the
+owner's device would delete their own climb for good. So the guard ships one
+release after this one, as a separate PR stacked on it (expand, then contract):
+
+1. This release ships the flag column and the filter, with nothing flagged.
+2. The guard migration merges only once this release's backend is live in
+   production. The backend still serving during that deploy then already
+   filters, and so does every rollback target from this release on.
+3. From then on, never roll the backend back to a build from before this
+   release.
 
 Deployed `SYNC_STABILITY_WINDOW_SECONDS` values are clamped to at least two
 seconds. Invalid settings

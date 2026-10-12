@@ -179,16 +179,18 @@ via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`)
 `syncDeletions` additionally fences active writer transactions. A DB-owned
 `stream_at` insertion timestamp orders new markers; historical NULLs use
 `COALESCE(stream_at, deleted_at)` so installed cursors replay unchanged. The wire
-`deletedAt` carries the resurrection guard, never `stream_at`. Membership
-withdrawals guard the next whole UTC second after the old version and write
-clock, covering copies read during uncommitted privatization. Their internal
-`is_membership_withdrawal` flag lets the page query omit a withdrawal when the
-current climb remains readable to the viewer. This check shares the page's
-snapshot and runs before pagination; installed clients never receive an empty
-filtered page hiding later markers. Owners and republished climbs survive a
-replay, while a later publication restriction or protected-owner transfer
-creates a new marker. Hard-delete delivery
-and climb document timestamps retain their existing behavior.
+`deletedAt` carries the resurrection guard, never `stream_at`. A membership
+withdrawal is stamped one second before the climb's new row (migration 0266):
+it covers every copy a device pulled and never the owner's re-delivered row,
+so owners and republished climbs survive a replay. The internal
+`is_membership_withdrawal` flag and the page filter that reads it ship in the
+same release, with nothing flagged yet: a flagged withdrawal is omitted for a
+viewer who can currently read the climb, in the page's snapshot and before
+pagination, so installed clients never receive an empty filtered page hiding
+later markers. The guard migration that flags withdrawals ships one release
+later ([sync-deletions-cutoff.md](sync-deletions-cutoff.md#the-withdrawal-guard-one-release-later)).
+Hard-delete delivery and climb document timestamps retain their existing
+behavior.
 
 The resolver first reads a safe cutoff
 from a narrow primary helper, then runs a separate fresh READ COMMITTED page
