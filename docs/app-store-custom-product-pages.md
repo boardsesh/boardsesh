@@ -187,7 +187,20 @@ private permanent crew queue. Session creation uses `invite_only`,
 `isPublic: false`, `discoverable: true`, and `isPermanent: true`: the current backend
 stores permanence only through its discoverable-session path. The invite-only
 resource policy and board-access checks keep this queue out of other users'
-discovery. Bootstrap verifies the persisted owner, board configuration, private
+discovery. CPP queues use the actual private QA board's `/b/<slug>/<angle>` path:
+a manufacturer configuration tuple cannot distinguish that row from an older
+owned public board with the same layout. Bootstrap reads the real slug back and
+verifies its exact UUID, owner, private visibility, and configuration. An implicit
+legacy tuple checkpoint receives a fresh named private permanent session after
+its original owner, privacy, and configuration are verified. Both session IDs
+are tracked; the old session and public source board stay unchanged. A resumed
+named-session checkpoint is reused, including after interrupted queue setup.
+New scenarios also select a different drawable climb from the actual primary
+board's first ten results for the solo accessory preview. Its raw climb UUID,
+title, and displayed grade are recorded as `accessoryClimb`; the wall-status climb
+stays unchanged. Bootstrap stops if those results have no suitable different
+climb. Older scenarios without this field keep their existing capture behavior.
+Bootstrap verifies the persisted owner, named board identity, configuration, private
 visibility, permanence, and durable lifecycle before joining; live presence alone
 does not determine whether a saved session is reusable. An account/backend-bound checkpoint whose durable lifecycle is ended may receive
 a fresh permanent replacement even when the old row is absent from recent

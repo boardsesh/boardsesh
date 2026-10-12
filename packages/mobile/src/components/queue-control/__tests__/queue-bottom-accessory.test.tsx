@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 
 const cfg = vi.hoisted(() => ({
   placement: 'regular' as 'regular' | 'inline',
+  sessionId: null as string | null,
   currentClimbQueueItem: { climb: { uuid: 'c1', name: 'Tea Magic', angle: 40 } } as unknown as ClimbQueueItem | null,
 }));
 
@@ -18,7 +19,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
+  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem }, sessionId: cfg.sessionId }),
 }));
 vi.mock('../../../theme/layout', () => ({
   glassSize: { standard: 56, inline: 44, capsule: 52 },
@@ -32,16 +33,19 @@ vi.mock('../NativeAccessoryClimbRow', () => ({
     climb,
     placement,
     width,
+    testID,
   }: {
     climb: Climb;
     placement: 'regular' | 'inline';
     width: number;
+    testID?: string;
   }) =>
     createElement('div', {
       'data-native-row': 'true',
       'data-climb-name': climb.name,
       'data-placement': placement,
       'data-row-width': String(width),
+      'data-testid': testID,
     }),
 }));
 import { QueueBottomAccessory } from '../QueueBottomAccessory';
@@ -50,7 +54,36 @@ import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
 describe('QueueBottomAccessory', () => {
   beforeEach(() => {
     cfg.placement = 'regular';
+    cfg.sessionId = null;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', name: 'Tea Magic', angle: 40 } } as unknown as ClimbQueueItem;
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('binds the CPP marker to the actual solo head and withdraws it from retained/shared content', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost/cpp');
+    const { container, rerender } = render(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-testid="cpp-accessory-climb-c1"]')).not.toBeNull();
+    cfg.currentClimbQueueItem = null;
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')).not.toBeNull();
+    expect(container.querySelector('[data-testid]')).toBeNull();
+    cfg.currentClimbQueueItem = { climb: { uuid: 'primary-2', name: 'Actual primary' } } as unknown as ClimbQueueItem;
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-testid="cpp-accessory-climb-primary-2"]')).not.toBeNull();
+    cfg.sessionId = 'genuine-shared-session';
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-testid]')).toBeNull();
+  });
+
+  it.each([
+    ['0', 'http://localhost/cpp'],
+    ['1', ''],
+  ])('adds no CPP marker outside its capture scope', (mode, url) => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', mode);
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', url);
+    const { container } = render(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-testid]')).toBeNull();
   });
 
   it('renders the native accessory row with the resolved climb in regular placement', () => {

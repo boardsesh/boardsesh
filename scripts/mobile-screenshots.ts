@@ -70,6 +70,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
+  iosDiagnosticReportDirectories,
+  preserveIosCaptureDiagnostics,
+  snapshotIosDiagnosticReports,
+} from './lib/ios-capture-diagnostics';
+import {
   fixtureSnapshotDirectory,
   FIXTURE_SNAPSHOT_REFERENCE,
   IOS_CAMPAIGN_FIXTURE_REFERENCE,
@@ -2119,6 +2124,19 @@ export function renderCppMaestroFlow(
       wallEditor: coverage.boardHeroModes?.[board.id] === 'wall-editor',
       variant: board,
     })),
+    // Restore a real primary solo climb after the other-board trio. It differs
+    // from the lit wall climb, preserving the genuine wall-status capsule.
+    ...(coverage.accessoryClimb
+      ? [
+          {
+            command: 'accessory-prepare',
+            filename: '',
+            ready: coverage.accessoryClimb.readyText,
+            wallEditor: false,
+            variant: page.primaryBoard,
+          },
+        ]
+      : []),
     ...['search', 'workout', 'status', 'queue', 'logbook', 'led', 'island'].map((scene) => ({
       command:
         target !== 'spray' && ipad && scene === 'island'
@@ -2217,7 +2235,12 @@ export function renderCppMaestroFlow(
         `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppReadinessSelector(scene.ready))}\n    timeout: 90000`,
       );
     commands.push('- waitForAnimationToEnd:\n    timeout: 30000');
-    const selectedHero = scene.variant ? coverage.heroClimbs?.[scene.variant.id] : undefined;
+    const selectedHero =
+      scene.command === 'accessory-prepare'
+        ? coverage.accessoryClimb
+        : scene.variant
+          ? coverage.heroClimbs?.[scene.variant.id]
+          : undefined;
     if (selectedHero && !scene.wallEditor) {
       if (!isCppClimbId(selectedHero.climbId) || selectedHero.boardId !== coverage.boardIds?.[scene.variant!.id])
         throw new Error(`CPP ${scene.command} requires a genuine selected climb on its actual board`);
@@ -2228,6 +2251,22 @@ export function renderCppMaestroFlow(
         commands.push(
           `- extendedWaitUntil:\n    visible: ${JSON.stringify(`^${cppReadinessSelector(selectedHero.gradeLabel)}$`)}\n    timeout: 90000`,
         );
+    }
+    if (
+      !ipad &&
+      coverage.accessoryClimb &&
+      (!scene.filename || scene.command === 'workout' || scene.command === 'status')
+    ) {
+      const primary = coverage.accessoryClimb;
+      if (!scene.filename)
+        commands.push(
+          dismiss,
+          '- extendedWaitUntil:\n    notVisible:\n      id: play-drawer-board-overlay\n    timeout: 60000',
+          '- waitForAnimationToEnd:\n    timeout: 30000',
+        );
+      commands.push(
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify({ id: `^cpp-accessory-climb-${cppReadinessSelector(primary.climbId)}$`, text: `^${cppReadinessSelector(primary.readyText)}$` })}\n    timeout: 90000`,
+      );
     }
     if (ipad && scene.variant && !scene.wallEditor) {
       const uuid = coverage.boardIds?.[scene.variant.id];
@@ -2279,7 +2318,8 @@ export function renderCppMaestroFlow(
         '- waitForAnimationToEnd:\n    timeout: 30000',
       );
     }
-    const mirrorHero = target === 'tension' && scene.variant?.id === page.primaryBoard.id && !!selectedHero;
+    const mirrorHero =
+      target === 'tension' && !!scene.filename && scene.variant?.id === page.primaryBoard.id && !!selectedHero;
     const mirrorSelectors = mirrorHero ? cppMirrorSelectors(locale) : null;
     if (mirrorSelectors && selectedHero)
       commands.push(
@@ -2328,7 +2368,7 @@ export function renderCppMaestroFlow(
         '- waitForAnimationToEnd:\n    timeout: 30000',
       );
     }
-    commands.push(`- takeScreenshot: ${scene.filename}`);
+    if (scene.filename) commands.push(`- takeScreenshot: ${scene.filename}`);
     if (mirrorSelectors && selectedHero)
       commands.push(
         `- tapOn: ${JSON.stringify(mirrorSelectors.unmirror)}`,
@@ -2440,13 +2480,16 @@ function captureIosDevice(
   // Every exit below this point but the last is a failure, and the finally block
   // cannot see a return value — so the last statement of the try flips this.
   let captureSucceeded = false;
-  // The smoke watches the device log from before launch to the end of the flow.
-  const deviceLogStream = options.flow === 'smoke' ? startIosDeviceLogStream(device.udid) : null;
+  // CPP failures also need live process evidence; post-job collection runs after shutdown.
+  const deviceLogStream = options.flow === 'smoke' || options.cpp ? startIosDeviceLogStream(device.udid) : null;
+  const diagnosticReportDirectories = options.cpp ? iosDiagnosticReportDirectories(device.udid) : [];
+  const diagnosticReportBaseline = snapshotIosDiagnosticReports(diagnosticReportDirectories);
   const smokeCrashes = (): NativeCrash[] => findIosNativeCrashes(readTextIfPresent(IOS_DEVICE_LOG_PATH));
   // A dead process will not reach home, so stop waiting for it (smoke only).
-  const giveUpOnCrash = deviceLogStream
-    ? () => smokeCrashes().length > 0 || !deviceLogStreamAlive(deviceLogStream.pid)
-    : undefined;
+  const giveUpOnCrash =
+    options.flow === 'smoke' && deviceLogStream
+      ? () => smokeCrashes().length > 0 || !deviceLogStreamAlive(deviceLogStream.pid)
+      : undefined;
   try {
     // Metro is already up and pre-warmed by runIos (once per locale, before this
     // per-device loop), so this goes straight to launching the app.
@@ -2681,12 +2724,33 @@ function captureIosDevice(
     for (const file of saved) console.log(`${LOG}   ${file}`);
     captureSucceeded = true;
   } finally {
-    deviceLogStream?.kill();
     if (!captureSucceeded) {
+      if (options.cpp && process.env.SCREENSHOT_DEBUG_DIR) {
+        try {
+          preserveIosCaptureDiagnostics({
+            udid: device.udid,
+            debugDir: process.env.SCREENSHOT_DEBUG_DIR,
+            nativeLogPath: IOS_DEVICE_LOG_PATH,
+            reportDirectories: diagnosticReportDirectories,
+            baseline: diagnosticReportBaseline,
+            runCommand: (args) => {
+              const result = spawnSync('xcrun', args, {
+                encoding: 'utf8',
+                timeout: 15000,
+                maxBuffer: 1024 * 1024,
+              });
+              return { status: result.status ?? 1, stdout: result.stdout ?? '' };
+            },
+          });
+        } catch {
+          console.error(`${LOG} CPP native diagnostic collection did not complete.`);
+        }
+      }
       if (process.env.SCREENSHOT_DEBUG_DIR)
         runCapture('xcrun', ['simctl', 'io', device.udid, 'screenshot', join(captureDir, 'failure-screen.png')]);
       preserveFailedRunArtifacts(captureDir);
     }
+    deviceLogStream?.kill();
     rmSync(captureDir, { force: true, recursive: true });
     clearStatusBar(device.udid);
     if (options.shutdown) {

@@ -8,6 +8,7 @@ import {
   sessionPathMatchesBoard,
   selectCppLogbookAscent,
   selectCppHeroClimbs,
+  selectCppAccessoryClimb,
   ensureScreenshotProfileName,
   ensureScreenshotCatalogueName,
   selectScreenshotCatalogueBoard,
@@ -139,6 +140,7 @@ function manufacturerHarness(): {
   const owned = [...page.heroBoards, ...page.otherBoards].map((variant, index): BootstrapBoard => ({
     uuid: testUuid(index + 1),
     name: `My actual ${variant.selector}`,
+    slug: index === 0 ? 'owned-primary' : `owned-variant-${index}`,
     ownerId: ACCOUNT,
     canEdit: true,
     isPublic: false,
@@ -152,7 +154,7 @@ function manufacturerHarness(): {
   const operations: Array<{ name: string; variables: Record<string, unknown> }> = [];
   const session = {
     id: SESSION,
-    boardPath: '/kilter/1/10/1,20/40',
+    boardPath: '/b/owned-primary/40',
     createdByUserId: ACCOUNT,
     isActive: true,
     isPublic: false,
@@ -192,6 +194,9 @@ function manufacturerHarness(): {
         case 'GetMyBoards':
           response = { myBoards: { boards: owned, hasMore: false } };
           break;
+        case 'GetBoardBySlug':
+          response = { boardBySlug: owned.find((board) => board.slug === variables.slug) ?? null };
+          break;
         case 'GetMySprayWalls':
           response = { mySprayWalls: [] };
           break;
@@ -203,7 +208,18 @@ function manufacturerHarness(): {
               candidate.layoutId === input.layoutId &&
               candidate.sizeId === input.sizeId,
           )!;
-          response = { searchClimbs: { climbs: [genuineClimb(board)] } };
+          response = {
+            searchClimbs: {
+              climbs: [
+                genuineClimb(board),
+                {
+                  ...genuineClimb(board),
+                  uuid: testUuid(7000 + board.boardId),
+                  name: `Another climb on ${board.name}`,
+                },
+              ],
+            },
+          };
           break;
         }
         case 'GetUserGroupedAscentsFeed':
@@ -244,6 +260,7 @@ function manufacturerHarness(): {
           const board: BootstrapBoard = {
             ...input,
             uuid: testUuid(499 + operations.filter((operation) => operation.name === 'CreateBoard').length),
+            slug: `created-qa-${operations.filter((operation) => operation.name === 'CreateBoard').length}`,
             ownerId: ACCOUNT,
             canEdit: true,
             boardId: 500,
@@ -312,6 +329,7 @@ function sprayRenameHarness(variantIndex = 0) {
   let board: BootstrapBoard = {
     ...harness.owned[0],
     uuid: testUuid(700 + variantIndex),
+    slug: `actual-spray-${variantIndex}`,
     boardType: 'spray',
     layoutId: 47 + variantIndex,
     sizeId: 47 + variantIndex,
@@ -355,6 +373,7 @@ function sprayRenameHarness(variantIndex = 0) {
     const name = getOperationAST(parse(query))?.name?.value ?? '';
     validateActualInput(name, variables);
     calls.push({ name, variables });
+    if (name === 'GetBoardBySlug') return { boardBySlug: variables.slug === board.slug ? board : null } as T;
     if (name === 'GetSprayWallWithVersions') return { sprayWall: wall } as T;
     if (name === 'GetMyBoards') {
       if (behavior.failAfterSprayRename) {
@@ -391,9 +410,90 @@ function sprayRenameHarness(variantIndex = 0) {
 }
 
 describe('genuine marketing climb and account coverage', () => {
+  it('selects a different actual primary climb and preserves its raw ID, title and displayed grade', () => {
+    const board = manufacturerHarness().owned[0];
+    const wall = genuineClimb(board);
+    const accessory = {
+      ...wall,
+      uuid: 'ABCDEF1234567890ABCDEF1234567890',
+      name: 'Actual different problem',
+      difficulty: '6c/V5',
+    };
+    expect(selectCppAccessoryClimb(board, [wall, accessory], wall.uuid)).toEqual({
+      boardId: board.uuid,
+      climbId: accessory.uuid,
+      readyText: accessory.name,
+      gradeLabel: 'V5',
+    });
+  });
+
+  it.each([
+    'same-id',
+    'foreign-layout',
+    'foreign-family',
+    'wrong-angle',
+    'incompatible-size',
+    'missing-holds',
+    'no-frames',
+    'invalid-id',
+  ] as const)('refuses an accessory candidate with %s instead of using another wall or fabricated climb', (failure) => {
+    const board = manufacturerHarness().owned[0];
+    const wall = genuineClimb(board);
+    const candidate = { ...wall, uuid: testUuid(7900), name: 'Different problem' };
+    if (failure === 'same-id') candidate.uuid = wall.uuid;
+    if (failure === 'foreign-layout') candidate.layoutId = board.layoutId + 1;
+    if (failure === 'foreign-family') candidate.boardType = 'tension';
+    if (failure === 'wrong-angle') candidate.angle += 10;
+    if (failure === 'incompatible-size') candidate.compatibleSizeIds = [board.sizeId + 1];
+    if (failure === 'missing-holds') candidate.missingHoldCount = 1;
+    if (failure === 'no-frames') candidate.frames = '';
+    if (failure === 'invalid-id') candidate.uuid = 'invented-id';
+    expect(selectCppAccessoryClimb(board, [wall, candidate], wall.uuid)).toBeUndefined();
+  });
+
+  it('never searches beyond the first ten rows for an accessory and permits a genuine ungraded spray problem', () => {
+    const board = manufacturerHarness().owned[0];
+    const wall = genuineClimb(board);
+    const different = { ...wall, uuid: testUuid(7900), name: 'Different problem' };
+    expect(
+      selectCppAccessoryClimb(board, [...Array.from({ length: 10 }, () => wall), different], wall.uuid),
+    ).toBeUndefined();
+    const spray = { ...board, boardType: 'spray', layoutId: 47, sizeId: 47 };
+    const project = { ...genuineClimb(spray), uuid: testUuid(7901), difficulty: '' };
+    expect(selectCppAccessoryClimb(spray, [project], wall.uuid)).toMatchObject({
+      boardId: spray.uuid,
+      climbId: project.uuid,
+      gradeLabel: '',
+    });
+  });
+
+  it('blocks a new scenario if the genuine primary result page has no different drawable accessory climb', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const response = await request<T>(query, variables);
+      if (getOperationAST(parse(query))?.name?.value === 'SearchClimbs') {
+        const result = response as { searchClimbs: { climbs: ClimbInput[] } };
+        if (
+          (variables.input as { boardName: string; sizeId: number }).boardName === 'kilter' &&
+          (variables.input as { sizeId: number }).sizeId === harness.owned[0].sizeId
+        )
+          result.searchClimbs.climbs = result.searchClimbs.climbs.slice(0, 1);
+      }
+      return response;
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.scenario).toBeUndefined();
+    expect(result.blockers).toContainEqual(expect.stringContaining('no different drawable accessory preview'));
+  });
   it('creates a distinct private QA copy of a genuine owned public configuration and resumes its exact UUID', async () => {
     const harness = manufacturerHarness();
     harness.options.apply = true;
+    harness.session.boardPath = '/kilter/1/10/1,20/40';
     const variant = readCppPage('kilter').primaryBoard;
     const original = harness.owned[0];
     original.name = "Test User's Kilter Original 12×12 with kickboard";
@@ -433,11 +533,18 @@ describe('genuine marketing climb and account coverage', () => {
   it('selects an already verified Liz QA board and retains the public checkpoint source without another create', async () => {
     const harness = manufacturerHarness();
     harness.options.apply = true;
+    harness.session.boardPath = '/kilter/1/10/1,20/40';
     const variant = readCppPage('kilter').primaryBoard;
     const original = harness.owned[0];
     original.isPublic = true;
     harness.options.checkpoint.boards[variant.id] = { uuid: original.uuid };
-    const qa = { ...original, uuid: testUuid(510), name: "Liz's Kilter Original 12x12", isPublic: false };
+    const qa = {
+      ...original,
+      uuid: testUuid(510),
+      slug: 'actual-private-qa',
+      name: "Liz's Kilter Original 12x12",
+      isPublic: false,
+    };
     harness.owned.push(qa);
     const result = await bootstrapCppScenario(harness.options);
     expect(result.blockers).toEqual([]);
@@ -539,6 +646,7 @@ describe('genuine marketing climb and account coverage', () => {
   it('recovers the named private copy after a lost create response without using the duplicate bypass twice', async () => {
     const harness = manufacturerHarness();
     harness.options.apply = true;
+    harness.session.boardPath = '/kilter/1/10/1,20/40';
     const variant = readCppPage('kilter').primaryBoard;
     const original = harness.owned[0];
     original.isPublic = true;
@@ -1022,6 +1130,7 @@ describe('CPP account/bootstrap safety', () => {
       if (name === 'GetMyBoards')
         return { myBoards: { boards: [...harness.owned, ...sprayBoards], hasMore: false } } as T;
       if (name === 'GetMySprayWalls') return { mySprayWalls: walls } as T;
+      if (name === 'GetBoardBySlug') return { boardBySlug: sprayBoards[0] } as T;
       if (name === 'GetMySprayWallLifecycle')
         return {
           mySprayWalls: sprayBoards.map((board, index) => ({
@@ -1228,7 +1337,7 @@ describe('CPP account/bootstrap safety', () => {
     const harness = manufacturerHarness();
     harness.owned[0].ownerId = 'unapproved-real-user';
     const result = await bootstrapCppScenario(harness.options);
-    expect(result.blockers).toContainEqual(expect.stringContaining('missing owned board'));
+    expect(result.blockers).toContainEqual(expect.stringContaining('PRIMARY_BOARD_UNAVAILABLE'));
     expect(result.boards.find((board) => board.uuid === harness.owned[0].uuid)).toBeUndefined();
     expect(harness.save).not.toHaveBeenCalled();
   });
@@ -1263,6 +1372,12 @@ describe('CPP account/bootstrap safety', () => {
       readyText: genuineClimb(harness.owned[0]).name,
       climbId: genuineClimb(harness.owned[0]).uuid,
     });
+    expect(result.scenario?.cpp?.accessoryClimb).toEqual({
+      boardId: harness.owned[0].uuid,
+      climbId: testUuid(7000 + harness.owned[0].boardId),
+      readyText: `Another climb on ${harness.owned[0].name}`,
+      gradeLabel: 'V3',
+    });
     expect(harness.operations.find((entry) => entry.name === 'GetUserGroupedAscentsFeed')?.variables).toEqual({
       userId: ACCOUNT,
       input: {
@@ -1280,7 +1395,7 @@ describe('CPP account/bootstrap safety', () => {
     expect(harness.join).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION, initializeEmpty: true }));
   });
 
-  it.each(['/kilter/1/10/1,20/40', 'kilter/1/10/20,1/40', '/b/owned-primary/40'])(
+  it.each(['/b/owned-primary/40', 'b/owned-primary/40'])(
     'reuses a dormant private permanent session with equivalent actual path %s',
     async (boardPath) => {
       const harness = manufacturerHarness();
@@ -1330,6 +1445,147 @@ describe('CPP account/bootstrap safety', () => {
     },
   );
 
+  it.each(['/kilter/1/10/1,20/40', 'kilter/1/10/20,1/40'])(
+    'migrates an owned private tuple checkpoint %s to the exact named QA board once',
+    async (legacyPath) => {
+      const harness = manufacturerHarness();
+      harness.options.apply = true;
+      const primary = harness.owned[0];
+      const originalPublic = { ...primary, uuid: testUuid(990), slug: 'public-original', isPublic: true };
+      harness.owned.unshift(originalPublic);
+      harness.session.boardPath = legacyPath;
+      harness.session.createId = testUuid(991);
+      const oldSession = { ...harness.session };
+      const result = await bootstrapCppScenario(harness.options);
+      expect(result.blockers).toEqual([]);
+      expect(result.scenario?.cpp?.scenes.queue).toMatchObject({ boardId: primary.uuid, sessionId: testUuid(991) });
+      expect(harness.operations.find((operation) => operation.name === 'CreateSession')?.variables).toMatchObject({
+        input: {
+          boardPath: '/b/owned-primary/40',
+          boardIds: [primary.boardId],
+          isPublic: false,
+          isPermanent: true,
+          discoverable: true,
+          audience: 'invite_only',
+        },
+      });
+      expect(harness.join).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sessionId: testUuid(991), boardPath: '/b/owned-primary/40' }),
+      );
+      expect(harness.options.checkpoint.sessionReplacements).toEqual([
+        { target: 'kilter', previousSessionId: oldSession.id, newSessionId: testUuid(991), reason: 'board-identity' },
+      ]);
+      expect(originalPublic.isPublic).toBe(true);
+      expect(
+        harness.operations.every(
+          (operation) =>
+            !['SetSessionBoardPath', 'EndSession', 'DeleteSession', 'UpdateBoard'].includes(operation.name),
+        ),
+      ).toBe(true);
+      await bootstrapCppScenario(harness.options);
+      expect(harness.operations.filter((operation) => operation.name === 'CreateSession')).toHaveLength(1);
+    },
+  );
+
+  it.each(['missing-slug', 'other-uuid', 'foreign-owner', 'public', 'geometry'] as const)(
+    'rejects a %s named-board identity before any metadata, tick or queue write',
+    async (failure) => {
+      const harness = manufacturerHarness();
+      harness.options.apply = true;
+      const primary = harness.owned[0];
+      if (failure === 'missing-slug') primary.slug = undefined;
+      const request = harness.options.transport.request;
+      harness.options.transport.request = async <T>(
+        query: string,
+        variables: Record<string, unknown> = {},
+      ): Promise<T> => {
+        if (getOperationAST(parse(query))?.name?.value === 'GetBoardBySlug') {
+          const namedBoard = { ...primary };
+          if (failure === 'other-uuid') namedBoard.uuid = testUuid(989);
+          if (failure === 'foreign-owner') namedBoard.ownerId = testUuid(989);
+          if (failure === 'public') namedBoard.isPublic = true;
+          if (failure === 'geometry') namedBoard.sizeId += 1;
+          return { boardBySlug: namedBoard } as T;
+        }
+        return request<T>(query, variables);
+      };
+      const result = await bootstrapCppScenario(harness.options);
+      expect(result.scenario).toBeUndefined();
+      expect(result.blockers).toContainEqual(expect.stringContaining('PRIMARY_BOARD_SLUG_'));
+      expect(
+        harness.operations.some((operation) =>
+          ['CppBootstrapProfile', 'UpdateProfile', 'CreateBoard', 'UpdateBoard', 'SaveTick', 'CreateSession'].includes(
+            operation.name,
+          ),
+        ),
+      ).toBe(false);
+      expect(harness.join).not.toHaveBeenCalled();
+      expect(harness.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it('retains a migrated named-session checkpoint when queue initialization fails and resumes without a duplicate', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    harness.session.boardPath = '/kilter/1/10/1,20/40';
+    harness.session.createId = testUuid(991);
+    harness.join.mockRejectedValueOnce(new Error('Join interrupted'));
+    await expect(bootstrapCppScenario(harness.options)).rejects.toThrow('Join interrupted');
+    expect(harness.options.checkpoint.sessions.kilter).toBe(testUuid(991));
+    const resumed = await bootstrapCppScenario(harness.options);
+    expect(resumed.blockers).toEqual([]);
+    expect(harness.operations.filter((operation) => operation.name === 'CreateSession')).toHaveLength(1);
+  });
+
+  it('rejects actual spray geometry drift even when a slug still resolves the same owned UUID', async () => {
+    const harness = manufacturerHarness();
+    Object.assign(harness.options, { target: 'spray', apply: true });
+    const primary = harness.owned[0];
+    Object.assign(primary, { boardType: 'spray', layoutId: 47, sizeId: 47, setIds: '1' });
+    harness.options.bindings = { 'spray-liz': primary.uuid };
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const operation = getOperationAST(parse(query))?.name?.value;
+      if (operation === 'GetMySprayWallLifecycle') return { mySprayWalls: [] } as T;
+      if (operation === 'GetBoardBySlug') return { boardBySlug: { ...primary, sizeId: 48 } } as T;
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('PRIMARY_BOARD_SLUG_CONFIGURATION_MISMATCH'));
+    expect(harness.operations.some((operation) => operation.name === 'CppBootstrapProfile')).toBe(false);
+    expect(harness.save).not.toHaveBeenCalled();
+    expect(harness.join).not.toHaveBeenCalled();
+  });
+
+  it('rereads persisted named path and refuses queue setup when creation stored a different angle', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    harness.session.boardPath = '/kilter/1/10/1,20/40';
+    harness.session.createId = testUuid(991);
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const response = await request<T>(query, variables);
+      if (getOperationAST(parse(query))?.name?.value === 'CreateSession')
+        harness.session.boardPath = '/b/owned-primary/0';
+      return response;
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.scenario).toBeUndefined();
+    expect(result.blockers).toContainEqual(
+      expect.stringContaining('created session failed persisted verification (reason=BOARD_CONFIGURATION_MISMATCH'),
+    );
+    expect(harness.options.checkpoint.sessions.kilter).toBe(testUuid(991));
+    expect(harness.join).not.toHaveBeenCalled();
+    await bootstrapCppScenario(harness.options);
+    expect(harness.operations.filter((operation) => operation.name === 'CreateSession')).toHaveLength(1);
+  });
+
   it.each(['missing', 'foreign', 'configuration', 'public', 'unavailable'] as const)(
     'diagnoses a %s saved binding without creating a replacement',
     async (failure) => {
@@ -1348,6 +1604,11 @@ describe('CPP account/bootstrap safety', () => {
       );
       expect(harness.operations.some((operation) => operation.name === 'CppBootstrapSessionStatus')).toBe(true);
       expect(harness.operations.some((operation) => operation.name === 'CreateSession')).toBe(false);
+      expect(
+        harness.operations.some((operation) =>
+          ['CppBootstrapProfile', 'UpdateProfile', 'UpdateBoard', 'CreateBoard', 'SaveTick'].includes(operation.name),
+        ),
+      ).toBe(false);
       expect(harness.options.checkpoint.sessions.kilter).toBe(SESSION);
       expect(harness.join).not.toHaveBeenCalled();
     },
@@ -1478,7 +1739,14 @@ describe('CPP account/bootstrap safety', () => {
         input.layoutId === actualPrimary.layoutId &&
         input.sizeId === actualPrimary.sizeId
       )
-        return { searchClimbs: { climbs: [{ ...genuineClimb(actualPrimary), uuid: recordedAuroraId }] } } as T;
+        return {
+          searchClimbs: {
+            climbs: [
+              { ...genuineClimb(actualPrimary), uuid: recordedAuroraId },
+              { ...genuineClimb(actualPrimary), uuid: testUuid(7999), name: 'Actual accessory problem' },
+            ],
+          },
+        } as T;
       return request<T>(query, variables);
     };
     const result = await bootstrapCppScenario(harness.options);

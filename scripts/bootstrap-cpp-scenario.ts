@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { getOperationAST, parse } from 'graphql';
 import WebSocket from 'ws';
-import { CREATE_BOARD, GET_MY_BOARDS, UPDATE_BOARD } from '../packages/shared/graphql/src/operations/boards';
+import {
+  CREATE_BOARD,
+  GET_BOARD_BY_SLUG,
+  GET_MY_BOARDS,
+  UPDATE_BOARD,
+} from '../packages/shared/graphql/src/operations/boards';
 import { SEARCH_CLIMBS, SEARCH_CLIMBS_COUNT } from '../packages/shared/graphql/src/operations/climb-search';
 import { GET_GRADES, UPDATE_PROFILE } from '../packages/mobile/src/lib/graphql/operations';
 import { formatGrade } from '../packages/shared/play-view/src/grade-display';
@@ -132,7 +137,7 @@ export interface BootstrapCheckpoint {
     target: CppTarget;
     previousSessionId: string;
     newSessionId: string;
-    reason: 'ended-checkpoint' | 'nonpermanent';
+    reason: 'ended-checkpoint' | 'nonpermanent' | 'board-identity';
   }>;
   demoTicks?: Partial<Record<CppTarget, string>>;
   /** Preserved public catalogue rows while a separate private QA board is selected. */
@@ -246,6 +251,22 @@ export function selectCppHeroClimbs(
 
 export function screenshotCatalogueName(variant: CppBoard): string {
   return `Liz's ${variant.selector.replace(/^(Kilter|Tension) Board /, '$1 ')}`;
+}
+
+/** Keep the accessory local to the selected wall, using only its real first page. */
+export function selectCppAccessoryClimb(
+  board: BootstrapBoard,
+  climbs: readonly BootstrapClimb[],
+  wallClimbId: string,
+): CppHeroClimb | undefined {
+  if (!isCppClimbId(wallClimbId)) return undefined;
+  return selectCppHeroClimbs([
+    {
+      variantId: 'accessory',
+      board,
+      climbs: climbs.slice(0, 10).filter((climb) => climb.uuid !== wallClimbId),
+    },
+  ])?.accessory;
 }
 
 function catalogueBoardProof(variant: CppBoard, board: BootstrapBoard, accountUserId: string): string {
@@ -411,6 +432,39 @@ export function sessionPathMatchesBoard(path: string, board: BootstrapBoard): bo
   );
 }
 
+/** A config tuple cannot distinguish two owned catalogue rows with the same geometry. */
+function namedSessionBoardPath(board: BootstrapBoard): string | undefined {
+  if (!board.slug || board.slug.trim() !== board.slug) return undefined;
+  const path = `/b/${board.slug}/${board.angle}`;
+  const parsed = parseNamedBoardPath(path);
+  return parsed &&
+    path.split('/').filter(Boolean).length === 3 &&
+    parsed.slug === board.slug &&
+    parsed.angle === board.angle
+    ? path
+    : undefined;
+}
+
+async function verifyNamedSessionBoard(
+  options: BootstrapOptions,
+  board: BootstrapBoard,
+  variant: CppBoard,
+): Promise<string | null> {
+  if (!namedSessionBoardPath(board)) return 'PRIMARY_BOARD_SLUG_UNAVAILABLE';
+  const result = await options.transport.request<{ boardBySlug: BootstrapBoard | null }>(GET_BOARD_BY_SLUG, {
+    slug: board.slug,
+  });
+  const resolved = result.boardBySlug;
+  if (!resolved || resolved.uuid !== board.uuid || resolved.slug !== board.slug || resolved.boardId !== board.boardId)
+    return 'PRIMARY_BOARD_SLUG_IDENTITY_MISMATCH';
+  if (resolved.ownerId !== options.accountUserId || resolved.canEdit !== true || resolved.isPublic !== false)
+    return 'PRIMARY_BOARD_SLUG_NOT_PRIVATE_OWNED';
+  const selectedConfigPath = `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${board.angle}`;
+  if (!boardMatchesConfig(resolved, variant) || !sessionPathMatchesBoard(selectedConfigPath, resolved))
+    return 'PRIMARY_BOARD_SLUG_CONFIGURATION_MISMATCH';
+  return null;
+}
+
 function diagnosticSessionPath(path: string | undefined): string {
   if (!path) return 'not_returned';
   const named = parseNamedBoardPath(path);
@@ -445,7 +499,22 @@ function sessionBindingProblem(
   if (status === 'ended') return 'SESSION_ENDED';
   if (status !== 'active') return 'SESSION_UNAVAILABLE';
   if (session.isPermanent !== true) return 'SESSION_NOT_PERMANENT';
+  if (!parseNamedBoardPath(session.boardPath)) return 'SESSION_BOARD_IDENTITY_UNBOUND';
   return null;
+}
+
+function sessionReplacementReason(
+  options: BootstrapOptions,
+  sessionId: string,
+  binding: Awaited<ReturnType<typeof readSessionBinding>>,
+  reason: string,
+): 'ended-checkpoint' | 'nonpermanent' | 'board-identity' | undefined {
+  if (options.checkpoint.sessions[options.target] !== sessionId) return undefined;
+  if (binding.status === 'ended' && (reason === 'SESSION_ENDED' || reason === 'NOT_IN_OWNED_LIST'))
+    return 'ended-checkpoint';
+  if (reason === 'SESSION_NOT_PERMANENT') return 'nonpermanent';
+  if (reason === 'SESSION_BOARD_IDENTITY_UNBOUND') return 'board-identity';
+  return undefined;
 }
 
 function describeSessionBinding(
@@ -867,6 +936,48 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       return selectedCatalogue.problem ? [selectedCatalogue.problem] : [];
     });
   if (catalogueProblems.length) return { target: options.target, boards: [], actions: [], blockers: catalogueProblems };
+  const primarySelection =
+    page.primaryBoard.family !== 'spray'
+      ? selectScreenshotCatalogueBoard(options, page.primaryBoard, owned).board
+      : owned.find(
+          (board) =>
+            board.uuid ===
+              (options.bindings?.[page.primaryBoard.id] ?? options.checkpoint.boards[page.primaryBoard.id]?.uuid) &&
+            board.ownerId === options.accountUserId &&
+            boardMatchesConfig(board, page.primaryBoard),
+        );
+  if (primarySelection) {
+    const problem = await verifyNamedSessionBoard(options, primarySelection, page.primaryBoard);
+    if (problem)
+      return {
+        target: options.target,
+        boards: [],
+        actions: [],
+        blockers: [`${options.target}: ${problem}; no account metadata changed`],
+      };
+  }
+  const savedSessionId = options.checkpoint.sessions[options.target];
+  if (savedSessionId) {
+    // Check saved scope before profile, board-name, photo, or example-tick writes.
+    // A legacy tuple can migrate only after proving its owner/private/config scope.
+    const probe =
+      primarySelection ??
+      owned.find((board) => board.ownerId === options.accountUserId && boardMatchesConfig(board, page.primaryBoard));
+    const binding = await readSessionBinding(options, savedSessionId);
+    const reason = probe
+      ? sessionBindingProblem(binding.session, binding.status, options, probe)
+      : 'PRIMARY_BOARD_UNAVAILABLE';
+    const absentEnded = !binding.session && binding.status === 'ended';
+    if (reason && !absentEnded && !sessionReplacementReason(options, savedSessionId, binding, reason))
+      return {
+        target: options.target,
+        boards: [],
+        actions: [],
+        blockers: [
+          `${options.target}: saved session binding rejected (${describeSessionBinding(binding.session, binding.status, probe ? (namedSessionBoardPath(probe) ?? '') : '', reason)}); checkpoint retained and no replacement session created`,
+        ],
+      };
+  }
   const profileProblem = await ensureScreenshotProfileName(options, actions);
   if (profileProblem) return { target: options.target, boards: [], actions, blockers: [profileProblem] };
   const selected = new Map<string, BootstrapBoard>();
@@ -1053,6 +1164,16 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
   }
   const primary = selected.get(page.primaryBoard.id);
   let scenario: ScreenshotCaptureScenario | undefined;
+  if (primary) {
+    const namedProblem = await verifyNamedSessionBoard(options, primary, page.primaryBoard);
+    if (namedProblem)
+      return {
+        target: options.target,
+        boards: [],
+        actions,
+        blockers: [...blockers, `${options.target}: ${namedProblem}; session and logbook untouched`],
+      };
+  }
   if (primary && climbsByBoard.get(primary.uuid)?.length) {
     const climbs = climbsByBoard.get(primary.uuid)!;
     let logbook = await readCppLogbookAscent(options, primary);
@@ -1106,10 +1227,10 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
             : `${options.target}: primary configuration has no genuine rendered logbook representative in the first grouped family page; --apply --seed-demo-content can create an explicitly private example attempt`,
       );
     }
-    const boardPath = `/${primary.boardType}/${primary.layoutId}/${primary.sizeId}/${primary.setIds}/${primary.angle}`;
+    const boardPath = namedSessionBoardPath(primary)!;
     let sessionId = options.checkpoint.sessions[options.target];
     let rejectedSession = false;
-    let replacement: { sessionId: string; reason: 'ended-checkpoint' | 'nonpermanent' } | undefined;
+    let replacement: { sessionId: string; reason: 'ended-checkpoint' | 'nonpermanent' | 'board-identity' } | undefined;
     if (!sessionId) {
       const live = await options.transport.request<{
         boardLiveSessions: Array<{ sessionId: string; host: { userId: string } }>;
@@ -1120,14 +1241,12 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       const binding = await readSessionBinding(options, sessionId);
       const reason = sessionBindingProblem(binding.session, binding.status, options, primary);
       if (reason) {
-        const checkpointOwned = options.checkpoint.sessions[options.target] === sessionId;
-        const endedCheckpoint =
-          binding.status === 'ended' && (reason === 'SESSION_ENDED' || reason === 'NOT_IN_OWNED_LIST');
-        if (checkpointOwned && options.apply && (endedCheckpoint || reason === 'SESSION_NOT_PERMANENT')) {
+        const replacementReason = sessionReplacementReason(options, sessionId, binding, reason);
+        if (replacementReason && options.apply) {
           // An absent ended row cannot prove its old ownership or geometry.
           // The account/backend-bound checkpoint authorizes a fresh private
           // session; no operation touches or claims ownership of that old row.
-          replacement = { sessionId, reason: endedCheckpoint ? 'ended-checkpoint' : 'nonpermanent' };
+          replacement = { sessionId, reason: replacementReason };
         } else {
           blockers.push(
             `${options.target}: saved session binding rejected (${describeSessionBinding(binding.session, binding.status, boardPath, reason)}); checkpoint retained and no replacement session created`,
@@ -1182,6 +1301,14 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       }
     }
     let queueClimbName: string | undefined;
+    if (sessionId) {
+      const identityProblem = await verifyNamedSessionBoard(options, primary, page.primaryBoard);
+      if (identityProblem) {
+        blockers.push(`${options.target}: ${identityProblem}; checkpoint retained and queue untouched`);
+        rejectedSession = true;
+        sessionId = undefined;
+      }
+    }
     if (sessionId && options.apply) {
       const queue = climbs.slice(0, 5).map((climb) => ({ uuid: randomUUID(), climb: queueClimb(climb) }));
       const snapshot = await options.transport.join({
@@ -1292,6 +1419,11 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
       const holdLabels = localized('boards', 'sprayMaintenance.publish');
       scenes.island = makeScene(holdLabels['en-US'], holdLabels);
     }
+    const accessoryClimb = selectCppAccessoryClimb(primary, climbs, scenes.status.climbId!);
+    if (!accessoryClimb)
+      blockers.push(
+        `${options.target}: first ten genuine primary-board climbs contain no different drawable accessory preview; no selection invented`,
+      );
     if (!blockers.length && sessionId)
       scenario = {
         sharedSessionId: sessionId,
@@ -1299,6 +1431,7 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
         cpp: {
           target: options.target,
           heroClimbs,
+          accessoryClimb,
           boardReadyText,
           boardIds: Object.fromEntries(variants.map((variant) => [variant.id, selected.get(variant.id)!.uuid])),
           boardNames: Object.fromEntries(variants.map((variant) => [variant.id, selected.get(variant.id)!.name])),

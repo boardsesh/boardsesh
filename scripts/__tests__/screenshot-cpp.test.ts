@@ -122,6 +122,12 @@ function selectedScenario(target: (typeof CPP_TARGETS)[number]) {
     maxGradeId: 18,
     expectedCount: 12345,
   };
+  result.coverage.accessoryClimb = {
+    boardId: result.coverage.boardIds![result.page.primaryBoard.id],
+    climbId: 'AF08DF05598B46BFB404BEDCA07685A2',
+    readyText: 'Actual primary accessory (left)+[1].',
+    gradeLabel: 'V4',
+  };
   return result;
 }
 
@@ -919,6 +925,7 @@ describe('custom product page captures', () => {
               'other-1',
               'other-2',
               'other-3',
+              ...(coverage.accessoryClimb ? ['accessory-prepare'] : []),
               'search',
               ...(coverage.scenes.search.gradeFilter ? ['search-grade'] : []),
               'search-results',
@@ -986,6 +993,7 @@ describe('custom product page captures', () => {
   });
   it('keeps the readiness command transport restricted to known scenes and loopback clients', () => {
     const request = readinessCommandTransport();
+    expect(request('/cpp/set?scene=accessory-prepare').status).toBe(200);
     expect(request('/cpp/set?scene=search-grade').status).toBe(200);
     const accepted = request('/cpp/set?scene=search-results');
     expect(accepted.status).toBe(200);
@@ -994,6 +1002,7 @@ describe('custom product page captures', () => {
       '',
       'search-results-other-board',
       'search-grade-other-board',
+      'accessory-prepare-other-board',
       'unregistered',
       'search%26anything',
     ]) {
@@ -1351,6 +1360,52 @@ describe('custom product page captures', () => {
           'id: spray-hold-editor-board',
         );
       }
+    }
+  });
+  it('prepares a genuine distinct primary accessory before search and proves its actual solo phone host', () => {
+    for (const target of CPP_TARGETS) {
+      const { page, boards, coverage, fixturesDir } = selectedScenario(target);
+      const accessory = coverage.accessoryClimb!;
+      expect(() => assertCppCaptureReady(target, page, coverage, boards, fixturesDir)).not.toThrow();
+      const registry = cppNavigationCommands(page, coverage, boards, false);
+      const route = new URL(registry['accessory-prepare'].route, 'https://capture.invalid');
+      expect(route.searchParams.get('screenshotClimbId')).toBe(accessory.climbId);
+      expect(route.searchParams.get('screenshotBoardIndex')).toBe(
+        String(page.heroBoards.findIndex((board) => board.id === page.primaryBoard.id)),
+      );
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        const source = renderCppMaestroFlow(target, device, coverage);
+        const preparation = source.slice(source.indexOf('scene=accessory-prepare'), source.indexOf('scene=search'));
+        expect(preparation).toContain(`cpp-climb-painted-${accessory.boardId}-${accessory.climbId}`);
+        expect(preparation).toContain(JSON.stringify(cppReadinessSelector(accessory.readyText)));
+        expect(preparation).not.toContain('takeScreenshot:');
+        if (!device.name.startsWith('iPad')) {
+          const marker = `cpp-accessory-climb-${accessory.climbId}`;
+          expect(preparation.indexOf('notVisible:')).toBeLessThan(preparation.indexOf(marker));
+          expect(preparation.indexOf('play-drawer-board-overlay')).toBeLessThan(preparation.indexOf(marker));
+          for (const scene of ['workout', 'status']) {
+            const beginning = source.indexOf(`scene=${scene}`);
+            const ending = source.indexOf('takeScreenshot:', beginning);
+            expect(source.slice(beginning, ending)).toContain(marker);
+          }
+        }
+        expect(source.match(/takeScreenshot:/g)).toHaveLength(13);
+      }
+      for (const invalid of [
+        { boardId: 'different-board' },
+        { climbId: coverage.scenes.status.climbId! },
+        { climbId: 'invalid-id' },
+        { readyText: ' ' },
+      ])
+        expect(() =>
+          assertCppCaptureReady(
+            target,
+            page,
+            { ...coverage, accessoryClimb: { ...accessory, ...invalid } },
+            boards,
+            fixturesDir,
+          ),
+        ).toThrow('distinct primary accessory');
     }
   });
   it('shows genuine empty spray wall canvases only for explicitly verified zero-climb walls', () => {

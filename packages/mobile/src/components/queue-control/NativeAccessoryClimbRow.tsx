@@ -23,6 +23,7 @@ type NativeAccessoryClimbRowProps = {
   climb: Climb;
   placement: AccessoryPlacement;
   width: number;
+  testID?: string;
 };
 
 const ACCESSORY_LEADING_INSET = spacing[1];
@@ -88,7 +89,7 @@ function ClimbLabel({ climb, labelColor, formattedGrade, showThumbnail, boardCon
  * are tuned for the platter, so they intentionally differ from the floating
  * capsule's colorized grade.
  */
-export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAccessoryClimbRowProps) {
+export function NativeAccessoryClimbRow({ climb, placement, width, testID }: NativeAccessoryClimbRowProps) {
   const { boardConfig } = useDrawerHost();
   const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -103,6 +104,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
   return (
     <View style={[styles.row, { width, height: rowHeight }]}>
       <AccessoryPlayLink
+        testID={testID}
         style={styles.tapClip}
         accessibilityLabel={climb.name}
         onOpen={openPlay}

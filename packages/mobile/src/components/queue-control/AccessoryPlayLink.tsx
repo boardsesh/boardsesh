@@ -9,6 +9,7 @@ type AccessoryPlayLinkProps = {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel: string;
+  testID?: string;
   onOpen: () => void;
   onPrepare: () => boolean;
   /** Only native tab accessory hosts retain the source beneath /play. */
@@ -34,6 +35,7 @@ export function AccessoryPlayLink({
   children,
   style,
   accessibilityLabel,
+  testID,
   onOpen,
   onPrepare,
   zoomSourceRetained = false,
@@ -43,6 +45,7 @@ export function AccessoryPlayLink({
     zoomSourceRetained && Platform.OS === 'ios' && !Platform.isPad && Number(Platform.Version) >= 18 && !reduceMotion;
   const content = (
     <PlayPressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={supportsZoom ? undefined : onOpen}

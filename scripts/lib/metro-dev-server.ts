@@ -97,7 +97,7 @@ export function buildReadinessServerScript(): string {
     `const fs = require('fs');`,
     `let cppCommand = { sequence: 0, scene: 'reset' };`,
     `let cppAcknowledged = -1;`,
-    `const cppScenes = new Set(['reset', 'hero-1', 'hero-2', 'hero-3', 'other-1', 'other-2', 'other-3', 'search', 'search-grade', 'search-results', 'logbook', 'led', 'queue-join', 'queue', 'workout', 'status', 'status-ipad', 'island', 'kiosk']);`,
+    `const cppScenes = new Set(['reset', 'hero-1', 'hero-2', 'hero-3', 'other-1', 'other-2', 'other-3', 'accessory-prepare', 'search', 'search-grade', 'search-results', 'logbook', 'led', 'queue-join', 'queue', 'workout', 'status', 'status-ipad', 'island', 'kiosk']);`,
     `http.createServer((request, response) => {`,
     `  const url = new URL(request.url || '/', 'http://localhost');`,
     `  if (url.pathname.startsWith('/cpp/')) {`,

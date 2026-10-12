@@ -52,7 +52,7 @@ function useRetainedAccessoryClimb(currentClimb: Climb | null): Climb | null {
 export function QueueBottomAccessory() {
   const placement = NativeTabs.BottomAccessory.usePlacement();
   const { width: screenWidth } = useWindowDimensions();
-  const { state } = useQueue();
+  const { state, sessionId } = useQueue();
   // The accessory shows the local queue head only — never the wall's lit climb
   // (that lives in the top "On the wall" strip now). Retained across a presence
   // blip so the live platter never blanks while the host is held open.
@@ -68,5 +68,14 @@ export function QueueBottomAccessory() {
 
   if (!currentClimb) return null;
 
-  return <NativeAccessoryClimbRow climb={currentClimb} placement={placement} width={accessoryWidth} />;
+  // A retained row during rehydration cannot prove that the real solo queue
+  // currently contains this climb. Capture metadata belongs to the actual head.
+  const testID =
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+    process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
+    sessionId === null &&
+    resolvedClimb?.uuid === currentClimb.uuid
+      ? `cpp-accessory-climb-${currentClimb.uuid}`
+      : undefined;
+  return <NativeAccessoryClimbRow climb={currentClimb} placement={placement} width={accessoryWidth} testID={testID} />;
 }

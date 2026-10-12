@@ -53,14 +53,22 @@ vi.mock('../AccessoryPlayLink', () => ({
   AccessoryPlayLink: ({
     children,
     accessibilityLabel,
+    testID,
   }: {
     children: ReactNode;
     style?: unknown;
     accessibilityLabel: string;
+    testID?: string;
   }) =>
     createElement(
       'div',
-      { 'aria-label': accessibilityLabel, 'data-role': 'button', 'data-actions': '', 'data-accessory-play-link': true },
+      {
+        'aria-label': accessibilityLabel,
+        'data-role': 'button',
+        'data-actions': '',
+        'data-accessory-play-link': true,
+        'data-testid': testID,
+      },
       children,
     ),
 }));
@@ -352,6 +360,19 @@ function expectNumericAttribute(element: HTMLElement, attributeName: string, exp
 }
 
 describe('NativeAccessoryClimbRow', () => {
+  it('forwards an actual accessory host ID without introducing an additional wrapper', () => {
+    const { container } = render(
+      <NativeAccessoryClimbRow
+        climb={makeClimb()}
+        placement="regular"
+        width={344}
+        testID="cpp-accessory-climb-climb-1"
+      />,
+    );
+    expect(container.querySelector('[data-testid="cpp-accessory-climb-climb-1"]')?.getAttribute('aria-label')).toBe(
+      "Alvin's Nuts",
+    );
+  });
   beforeEach(() => {
     const currentItem = makeItem(makeClimb());
     queue.state.currentClimbQueueItem = currentItem;

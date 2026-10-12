@@ -79,6 +79,8 @@ export interface CppCaptureCoverage {
   target: CppTarget;
   /** Explicit real climb selections; absent on older fixture candidates. */
   heroClimbs?: Record<string, CppHeroClimb>;
+  /** Genuine different climb on the primary board for the solo accessory preview. */
+  accessoryClimb?: CppHeroClimb;
   boardIds?: Record<string, string>;
   /** Actual visible names from the verified UUID/config-matched owned roster. */
   boardNames?: Record<string, string>;
@@ -254,6 +256,22 @@ export function assertCppCaptureReady(
   verifyPhotoAssets = true,
 ): void {
   if (!coverage || coverage.target !== target) throw new Error(`Missing verified CPP fixture coverage for ${target}`);
+  const accessory = coverage.accessoryClimb;
+  if (
+    accessory &&
+    (accessory.boardId !== coverage.boardIds?.[page.primaryBoard.id] ||
+      !isCppClimbId(accessory.climbId) ||
+      accessory.climbId === coverage.scenes.status.climbId ||
+      typeof accessory.readyText !== 'string' ||
+      !accessory.readyText.trim() ||
+      typeof accessory.gradeLabel !== 'string' ||
+      (accessory.statsAngle !== undefined && !Number.isFinite(accessory.statsAngle)) ||
+      (accessory.benchmarkDifficulty !== undefined &&
+        (!Number.isFinite(accessory.benchmarkDifficulty) ||
+          accessory.benchmarkDifficulty <= 0 ||
+          accessory.statsAngle !== recordedBoards.find((board) => board.uuid === accessory.boardId)?.angle)))
+  )
+    throw new Error(`CPP ${target} requires a genuine distinct primary accessory climb`);
   const boards = [...page.heroBoards, ...page.otherBoards];
   if (
     coverage.boardIds &&
@@ -421,6 +439,11 @@ export function cppNavigationCommands(
   if (index < 0) throw new Error('CPP primary board must occur in the hero trio');
   const boardId = identityFor(primary).uuid;
   const routes: Record<string, string> = {
+    ...(coverage.accessoryClimb
+      ? {
+          'accessory-prepare': `/climbs?screenshotOpenFirst=1&screenshotBoardIndex=${index}&screenshotClimbId=${encodeURIComponent(coverage.accessoryClimb.climbId)}`,
+        }
+      : {}),
     search: `/climbs?screenshotBoardIndex=${index}&screenshotOpenFilters=1`,
     ...(coverage.scenes.search.gradeFilter
       ? {

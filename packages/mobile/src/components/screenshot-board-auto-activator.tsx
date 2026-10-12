@@ -122,6 +122,7 @@ export function ScreenshotBoardAutoActivator(): null {
     if (!pathnameMatches || mismatchedKeys.length > 0) return;
     void (async () => {
       try {
+        console.log(`[screenshot] CPP ACK request start ${JSON.stringify({ sequence: cppPending.sequence })}`);
         const response = await fetch(
           `${process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL}/ack?sequence=${cppPending.sequence}`,
         );

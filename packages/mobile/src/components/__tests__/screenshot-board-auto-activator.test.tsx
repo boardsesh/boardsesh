@@ -100,9 +100,11 @@ describe('ScreenshotBoardAutoActivator', () => {
       mismatchedCaptureParamKeys: [],
     });
     expect(fetchCommand.mock.calls.some(([endpoint]) => endpoint.includes('/ack'))).toBe(false);
+    expect(logs.mock.calls.flat().join('\n')).not.toContain('CPP ACK request start');
     boards.params = { ...boards.params, unknownSensitiveKey: 'private-value' };
     rerender();
     await waitFor(() => expect(fetchCommand).toHaveBeenCalledWith('http://localhost:19870/cpp/ack?sequence=13'));
+    expect(logs).toHaveBeenCalledWith('[screenshot] CPP ACK request start {"sequence":13}');
     await waitFor(() =>
       expect(logs).toHaveBeenCalledWith('[screenshot] CPP ACK response {"sequence":13,"status":200}'),
     );
@@ -116,6 +118,34 @@ describe('ScreenshotBoardAutoActivator', () => {
       'http://localhost',
     ])
       expect(logged).not.toContain(sensitive);
+    unmount();
+  });
+  it('distinguishes an ACK request that starts but never settles without pretending it completed', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
+    vi.stubEnv(
+      'EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS',
+      JSON.stringify({
+        queue: {
+          selector: 'Primary Wall',
+          identity: { uuid: 'primary', boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: [26], angle: 35 },
+          route: '/climbs?screenshotCppScene=queue',
+        },
+      }),
+    );
+    const fetchCommand = vi.fn((endpoint: string) =>
+      endpoint.includes('/ack')
+        ? new Promise<never>(() => {})
+        : Promise.resolve({ status: 200, json: async () => ({ sequence: 13, scene: 'queue' }) }),
+    );
+    vi.stubGlobal('fetch', fetchCommand);
+    const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+    boards.route = '/climbs';
+    boards.params = { screenshotCppScene: 'queue' };
+    const { unmount } = renderHook(() => ScreenshotBoardAutoActivator());
+    await waitFor(() => expect(logs).toHaveBeenCalledWith('[screenshot] CPP ACK request start {"sequence":13}'));
+    expect(logs.mock.calls.flat().join('\n')).not.toContain('CPP ACK response');
+    expect(fetchCommand.mock.calls.filter(([endpoint]) => endpoint.includes('/ack'))).toHaveLength(1);
     unmount();
   });
   it.each([
