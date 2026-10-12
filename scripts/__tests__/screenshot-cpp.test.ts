@@ -1362,12 +1362,21 @@ describe('custom product page captures', () => {
       }
     }
   });
-  it('selects the real tablet Climbs tab after joining before issuing the strict queue command', () => {
+  it('reopens the tablet sidebar and selects Climbs after joining before the strict queue command', () => {
     const expectedHandoff = [
       {
         runFlow: {
           when: { notVisible: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: true } },
-          commands: [{ tapOn: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: false } }],
+          commands: [
+            {
+              runFlow: {
+                when: { visible: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' },
+                commands: [{ tapOn: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' }],
+              },
+            },
+            { extendedWaitUntil: { visible: '${SCREENSHOT_SIDEBAR_HIDE_LABEL}', timeout: 15000 } },
+            { tapOn: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: false } },
+          ],
         },
       },
       {
