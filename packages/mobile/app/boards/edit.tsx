@@ -268,21 +268,25 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       setUpdateError(null);
       hapticSelection();
       try {
-        // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
-        // It can be rejected on its own terms (too far from a gym the user doesn't
-        // run), so it's reported separately rather than failing the whole save.
-        // It runs first: a board in a public gym always shows its location, and
-        // the server decides that from the gym the board is in when the edit
-        // lands, so leaving a gym must happen before a hide-location edit.
+        // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation,
+        // split around `updateBoard`. Leaving the old gym runs first: a board at a
+        // public gym's own place shows its location, and the server judges that
+        // from the gym the board is in when the edit lands, so a board moved home
+        // must already be out of the gym. If leaving fails, the save stops here,
+        // before the new place is sent. Joining the new gym runs after
+        // `updateBoard`: for a gym the climber doesn't run, the server checks the
+        // board's stored coordinates, which `updateBoard` has just written from
+        // the picker. A board with no stored place could not join one before.
+        const currentGymUuid = board.gymUuid ?? null;
         const nextGymUuid = builder.selectedGym?.uuid ?? null;
-        let gymLinkError: string | null = null;
-        let gymLinked = false;
-        if (nextGymUuid !== (board.gymUuid ?? null)) {
+        const gymChanged = nextGymUuid !== currentGymUuid;
+        if (gymChanged && currentGymUuid !== null) {
           try {
-            await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
-            gymLinked = true;
+            await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: null });
           } catch (error) {
-            gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
+            setUpdateError(extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError'));
+            setSubmitting(false);
+            return;
           }
         }
 
@@ -290,6 +294,20 @@ function EditBoardForm({ board }: { board: UserBoard }) {
           ...input,
           allowDuplicateConfig: options?.allowDuplicateConfig,
         });
+
+        // The new gym can be rejected on its own terms (too far from a gym the
+        // user doesn't run), so it's reported separately rather than failing the
+        // whole save. A cleared gym was already left above.
+        let gymLinkError: string | null = null;
+        let gymLinked = gymChanged && nextGymUuid === null;
+        if (gymChanged && nextGymUuid !== null) {
+          try {
+            await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
+            gymLinked = true;
+          } catch (error) {
+            gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
+          }
+        }
 
         // The wall's own mutation, reported on its own terms like the gym link
         // above: the name and the gym DID save, and a moderator who may edit the

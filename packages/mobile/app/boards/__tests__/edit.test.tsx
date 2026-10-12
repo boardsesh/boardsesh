@@ -240,6 +240,7 @@ beforeEach(() => {
   background.save.mockResolvedValue({ outcome: 'saved' });
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
   updateSprayWallMock.mockResolvedValue({ uuid: 'board-uuid', layoutId: 4242 });
+  linkBoardToGymMock.mockResolvedValue(true);
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
 });
 
@@ -368,11 +369,12 @@ describe('EditBoard', () => {
     expect(backMock).not.toHaveBeenCalled();
   });
 
-  // `linkBoardToGym` runs after `updateBoard` and invalidates `['board']` /
-  // `['myBoards']`, never the `['activeBoard']` snapshot (staleTime: Infinity).
-  // Re-persisting the `updateBoard` response verbatim would keep the stored copy
-  // on the old venue across relaunches — the play drawer and every analytics
-  // event stamped from it would still name the gym the user just left.
+  // Joining a gym runs after `updateBoard` (leaving one runs before it), and
+  // `linkBoardToGym` invalidates `['board']` / `['myBoards']`, never the
+  // `['activeBoard']` snapshot (staleTime: Infinity). Re-persisting the
+  // `updateBoard` response verbatim would keep the stored copy on the old venue
+  // across relaunches — the play drawer and every analytics event stamped from
+  // it would still name the gym the user just left.
   it('persists the gym the board was just linked to onto the active board', async () => {
     state.activeBoardUuid = 'board-uuid';
     state.selectedGym = { uuid: 'gym-uuid', name: 'Klimmuur Centrum' };
@@ -431,6 +433,70 @@ describe('EditBoard', () => {
 
     await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledTimes(1));
     expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ gymUuid: null, gymName: null }));
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  // The server shows the location of a board at a public gym's own place,
+  // judged from the gym the board is in when `updateBoard` lands. So the old gym
+  // is left before the edit (a board moved home is no longer in it), and the new
+  // one is joined after it (a gym the climber doesn't run is checked against the
+  // coordinates `updateBoard` just stored from the picker).
+  const recordCallOrder = () => {
+    const calls: string[] = [];
+    linkBoardToGymMock.mockImplementation(async ({ gymUuid }: { gymUuid: string | null }) => {
+      calls.push(`link:${gymUuid ?? 'none'}`);
+      return true;
+    });
+    updateBoardMock.mockImplementation(async () => {
+      calls.push('update');
+      return { uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard;
+    });
+    return calls;
+  };
+
+  it('leaves the old gym before updateBoard and joins the new one after it', async () => {
+    state.boardGymUuid = 'old-gym';
+    state.selectedGym = { uuid: 'new-gym', name: 'Klimmuur Centrum' };
+    const calls = recordCallOrder();
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    expect(calls).toEqual(['link:none', 'update', 'link:new-gym']);
+  });
+
+  it('joins a gym after updateBoard for a board that had none', async () => {
+    state.selectedGym = { uuid: 'gym-uuid', name: 'Klimmuur Centrum' };
+    const calls = recordCallOrder();
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    expect(calls).toEqual(['update', 'link:gym-uuid']);
+  });
+
+  it('leaves a cleared gym before updateBoard', async () => {
+    state.boardGymUuid = 'gym-uuid';
+    const calls = recordCallOrder();
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    expect(calls).toEqual(['link:none', 'update']);
+  });
+
+  it('stops the save when leaving the gym fails, before the new place is sent', async () => {
+    state.boardGymUuid = 'gym-uuid';
+    linkBoardToGymMock.mockRejectedValueOnce(new Error('network down'));
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(updateBoardMock).not.toHaveBeenCalled();
     expect(backMock).not.toHaveBeenCalled();
   });
 
