@@ -232,6 +232,26 @@ function resolveLockedTickBoardId(
 }
 
 /**
+ * Whether the board uuid a caller presented is still a link to the board a
+ * merge resolved it to. A uuid is its own board's link; across a merge it stays
+ * one only when one owner holds both boards (`findReachableActiveBoardByUuid`'s
+ * rule), so another owner's survivor gets the no-link reading.
+ */
+async function presentedUuidLinksCanonicalBoard(
+  readDb: Pick<typeof db, 'select'>,
+  requestedBoard: { id: number; ownerId: string },
+  canonicalBoardId: number,
+): Promise<boolean> {
+  if (canonicalBoardId === Number(requestedBoard.id)) return true;
+  const [canonical] = await readDb
+    .select({ ownerId: dbSchema.userBoards.ownerId })
+    .from(dbSchema.userBoards)
+    .where(eq(dbSchema.userBoards.id, canonicalBoardId))
+    .limit(1);
+  return canonical?.ownerId === requestedBoard.ownerId;
+}
+
+/**
  * Pin a tick's board association against the serial-board dedupe transaction.
  *
  * The maintenance merge locks every board in a serial cluster in id order,
@@ -820,7 +840,12 @@ async function lockUpdateTickMutationSurface(
   uuid: string,
   userId: string,
   boardUuid: string | null | undefined,
-): Promise<{ snapshotTicks: dbSchema.BoardseshTick[]; selectedBoard: typeof dbSchema.userBoards.$inferSelect | null }> {
+): Promise<{
+  snapshotTicks: dbSchema.BoardseshTick[];
+  selectedBoard: typeof dbSchema.userBoards.$inferSelect | null;
+  /** The selection was opened by the presented uuid as a link (see presentedUuidLinksCanonicalBoard). */
+  selectedByLink: boolean;
+}> {
   // Preserve the existing not-found contract for explicit board selections.
   // Omitted and null selections continue through the normal owner check below.
   if (boardUuid != null) {
@@ -881,12 +906,14 @@ async function lockUpdateTickMutationSurface(
     throw new TickMutationSurfaceChangedError();
   }
 
-  if (boardUuid == null) return { snapshotTicks, selectedBoard: null };
+  if (boardUuid == null) return { snapshotTicks, selectedBoard: null, selectedByLink: false };
   if (!requestedBoard) {
     throw new GraphQLError('Board is no longer available', { extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
   }
 
   const canonicalBoardId = resolveLockedTickBoardId(lockedBoardSurface, requestedBoard.id, 'updateTick');
+  const selectedByLink =
+    canonicalBoardId != null && (await presentedUuidLinksCanonicalBoard(tx, requestedBoard, canonicalBoardId));
   const [selectedBoard] =
     canonicalBoardId == null
       ? []
@@ -897,14 +924,14 @@ async function lockUpdateTickMutationSurface(
             and(
               eq(dbSchema.userBoards.id, canonicalBoardId),
               listableSprayWallCondition(userId),
-              resourceAccessCondition('board', dbSchema.userBoards.uuid, userId),
+              resourceAccessCondition('board', dbSchema.userBoards.uuid, userId, { allowUnlistedLink: selectedByLink }),
             ),
           )
           .limit(1);
   if (!selectedBoard) {
     throw new GraphQLError('Board is no longer available', { extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
   }
-  return { snapshotTicks, selectedBoard };
+  return { snapshotTicks, selectedBoard, selectedByLink };
 }
 
 function distinctTickStatsKeys(ticks: dbSchema.BoardseshTick[]): Array<{
@@ -1236,11 +1263,15 @@ export const tickMutations = {
     let boardId: number | null = null;
     let sharedConfigFeedBoardId: number | null = null;
     let boardAssociationSource: 'boardUuid' | 'explicitBoardId' | 'config' | null = null;
+    // The board the caller presented by uuid: the link reading below follows a
+    // merge from it only to a survivor with the same owner.
+    let presentedUuidBoard: { id: number; ownerId: string } | null = null;
     if (canResolveBoard && validatedInput.boardUuid) {
       boardAssociationSource = 'boardUuid';
       const [board] = await db
         .select({
           id: dbSchema.userBoards.id,
+          ownerId: dbSchema.userBoards.ownerId,
           boardType: dbSchema.userBoards.boardType,
           layoutId: dbSchema.userBoards.layoutId,
           sizeId: dbSchema.userBoards.sizeId,
@@ -1264,6 +1295,7 @@ export const tickMutations = {
       // wasn't on (#4219).
       if (board && boardConfigMatchesTick(board, validatedInput)) {
         boardId = board.id;
+        presentedUuidBoard = board;
       } else if (board) {
         // Two different reasons to land here, and they mean different things in
         // production triage: a client that sends no config at all is a client
@@ -1404,10 +1436,14 @@ export const tickMutations = {
         // Board resolution above intentionally stays outside this transaction so
         // its network/catalog work does not lengthen the row-lock hold time.
         const canonicalBoardId = boardId === null ? null : await lockCanonicalTickBoardId(tx, boardId);
+        const presentedLink =
+          canonicalBoardId != null &&
+          presentedUuidBoard !== null &&
+          (await presentedUuidLinksCanonicalBoard(tx, presentedUuidBoard, canonicalBoardId));
         const lockedBoardId =
           canonicalBoardId != null &&
           (await tickBoardFitsClimb(tx, canonicalBoardId, catalogClimb, userId, {
-            allowUnlistedLink: boardAssociationSource === 'boardUuid',
+            allowUnlistedLink: presentedLink,
           }))
             ? canonicalBoardId
             : null;
@@ -1718,7 +1754,7 @@ export const tickMutations = {
       db.transaction(async (tx) => {
         await acquireUserTickMutationLock(tx, userId);
         const lockContext = await lockUpdateTickMutationSurface(tx, uuid, userId, validatedInput.boardUuid);
-        const { selectedBoard } = lockContext;
+        const { selectedBoard, selectedByLink } = lockContext;
         const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');
         if (tickMutationGroupFingerprint(lockContext.snapshotTicks) !== tickMutationGroupFingerprint(existingTicks)) {
           throw new TickMutationSurfaceChangedError();
@@ -1835,8 +1871,9 @@ export const tickMutations = {
         }
 
         // Numeric historical attribution is not proof of a held board link.
-        // Only an explicit UUID verified for this edit can use link access;
-        // ordinary edits keep the current owner/grant/follower policy reading.
+        // Only an explicit UUID verified for this edit as its board's link can
+        // use link access; ordinary edits keep the current owner/grant/follower
+        // policy reading.
         const [attributedBoard] =
           updatedTarget.boardId == null
             ? []
@@ -1847,7 +1884,7 @@ export const tickMutations = {
                   and(
                     eq(dbSchema.userBoards.id, updatedTarget.boardId),
                     resourceAccessCondition('board', dbSchema.userBoards.uuid, userId, {
-                      allowUnlistedLink: selectedBoard?.id === updatedTarget.boardId,
+                      allowUnlistedLink: selectedByLink && selectedBoard?.id === updatedTarget.boardId,
                     }),
                     listableSprayWallCondition(userId),
                   ),
