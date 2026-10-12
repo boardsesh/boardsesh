@@ -1,4 +1,4 @@
-import { pubsub } from '../../../pubsub';
+import { pubsub, type PrivacyChangeSource } from '../../../pubsub';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { and, desc, eq, sql } from 'drizzle-orm';
@@ -269,6 +269,11 @@ async function requireResourceOwner(kind: PrivacyResourceKind, resourceId: strin
   if (!resource || resource.ownerId !== userId) notFound();
   return resource;
 }
+/**
+ * Refresh a resource's public previews. Callers publish privacyChanged BEFORE
+ * this: the write has committed, and this does its own reads and can fail, which
+ * must not leave other viewers holding copies they can no longer read.
+ */
 async function notifyResourceChanged(kind: PrivacyResourceKind, resourceId: string): Promise<void> {
   const { notifyResourcePrivacyChanged } = await import('../../../services/board-session-privacy');
   await notifyResourcePrivacyChanged(kind, resourceId);
@@ -299,6 +304,14 @@ async function lockedGrantStatus(
 async function invalidateBetaCache(): Promise<void> {
   const { invalidateRecentBetaLinksCache } = await import('../beta-videos/queries');
   await invalidateRecentBetaLinksCache();
+}
+/** Publish after the beta cache is cleared, and publish even when clearing it fails. */
+async function publishAfterBetaInvalidation(source: PrivacyChangeSource): Promise<void> {
+  try {
+    await invalidateBetaCache();
+  } finally {
+    pubsub.publishPrivacyChanged(source);
+  }
 }
 export const privacyQueries = {
   privacySettings: async (_: unknown, __: unknown, ctx: ConnectionContext) => getPrivacySettings(actor(ctx)),
@@ -548,9 +561,8 @@ export const privacyMutations = {
           },
           ctx,
         );
+        await publishAfterBetaInvalidation('updateResourcePrivacy');
         await notifyResourceChanged(update.kind, update.resourceId);
-        await invalidateBetaCache();
-        pubsub.publishPrivacyChanged('updateResourcePrivacy');
         return getResourcePrivacy(update.kind, update.resourceId);
       }
     }
@@ -618,9 +630,8 @@ export const privacyMutations = {
           })
           .where(eq(schema.userBoards.uuid, update.resourceId));
     });
+    await publishAfterBetaInvalidation('updateResourcePrivacy');
     await notifyResourceChanged(update.kind, update.resourceId);
-    await invalidateBetaCache();
-    pubsub.publishPrivacyChanged('updateResourcePrivacy');
     return getResourcePrivacy(update.kind, update.resourceId);
   },
   requestResourceAccess: async (
@@ -660,8 +671,8 @@ export const privacyMutations = {
         .returning({ userId: schema.resourceGrants.userId });
       return updated.length > 0;
     });
-    await notifyResourceChanged(input.kind, input.resourceId);
     if (approved) pubsub.publishPrivacyChanged('approveResourceAccess');
+    await notifyResourceChanged(input.kind, input.resourceId);
     return true;
   },
   revokeResourceAccess: async (
@@ -686,8 +697,8 @@ export const privacyMutations = {
         });
       return previous !== 'revoked';
     });
-    await notifyResourceChanged(input.kind, input.resourceId);
     if (revoked) pubsub.publishPrivacyChanged('revokeResourceAccess');
+    await notifyResourceChanged(input.kind, input.resourceId);
     return true;
   },
   inviteResourceMember: async (
@@ -715,8 +726,8 @@ export const privacyMutations = {
         });
       return previous !== 'approved';
     });
-    await notifyResourceChanged(input.kind, input.resourceId);
     if (invited) pubsub.publishPrivacyChanged('inviteResourceMember');
+    await notifyResourceChanged(input.kind, input.resourceId);
     return true;
   },
 };

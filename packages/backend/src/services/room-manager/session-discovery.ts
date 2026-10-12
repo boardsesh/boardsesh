@@ -107,8 +107,11 @@ export async function updateSessionBoardPathIfChanged(
     };
   });
   if (!transition) return null;
-  if (transition.parentChanged) await notifyResourcePrivacyChanged('session', sessionId);
+  // Publish first. The move has committed, and the preview refresh below does
+  // its own reads and can fail; a failure there must not leave other viewers
+  // holding copies of a session they can no longer read.
   if (transition.narrowsReaders) pubsub.publishPrivacyChanged('switchSessionWall');
+  if (transition.parentChanged) await notifyResourcePrivacyChanged('session', sessionId);
   return transition.previous;
 }
 

@@ -274,6 +274,47 @@ describe('privacyChanged publish sites', () => {
     expect(await switchTo(first)).toEqual([]);
   });
 
+  it('still publishes a restrictive wall switch and a revoke when the preview refresh fails', async () => {
+    const first = await insertBoard(true);
+    const home = await insertBoard(false);
+    const sessionId = randomUUID();
+    await ensureSessionRecordExists(sessionId, `/b/${first.slug}/40`, owner);
+    // The move and the revoke have committed before the public-preview refresh
+    // runs, so the publish must already be out when the refresh fails.
+    const publishedDespite = async (fault: { mockRestore: () => void }, action: () => Promise<unknown>) => {
+      let failure: unknown = null;
+      try {
+        const sources = await publishesDuring(() =>
+          action().catch((error: unknown) => {
+            failure = error;
+          }),
+        );
+        expect(failure).toBeInstanceOf(Error);
+        return sources;
+      } finally {
+        fault.mockRestore();
+      }
+    };
+    // The session preview refresh starts with a Redis read of the session's wall.
+    const redisDown = vi.spyOn(pubsub, 'getSessionBoard').mockRejectedValue(new Error('redis down'));
+    expect(
+      await publishedDespite(redisDown, () => updateSessionBoardPathIfChanged(sessionId, `/b/${home.slug}/40`, owner)),
+    ).toEqual(['switchSessionWall']);
+    // A board's preview refresh publishes a tombstone to the kiosks.
+    const tombstoneFails = vi.spyOn(pubsub, 'publishBoardQueuePreview').mockImplementation(() => {
+      throw new Error('preview publish failed');
+    });
+    expect(
+      await publishedDespite(tombstoneFails, () =>
+        privacyMutations.revokeResourceAccess(
+          null,
+          { kind: 'board', resourceId: first.uuid, userId: member },
+          context(owner),
+        ),
+      ),
+    ).toEqual(['revokeResourceAccess']);
+  });
+
   it('decides a wall switch after an edit to that wall that was still in flight', async () => {
     const start = await insertBoard(true);
     const target = await insertBoard(true);
