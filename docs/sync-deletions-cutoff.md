@@ -123,6 +123,12 @@ applied. Do not remove the helper while the new backend is running. Delivery
 stalls safely during a prepared transaction or loss of stats access; monitor
 paused polls and resolve that database condition.
 
+Deployed `SYNC_STABILITY_WINDOW_SECONDS` values are clamped to at least two
+seconds. Invalid settings
+retain the 30-second default. Exact zero is permitted only in `NODE_ENV=test`
+for immediate real-database fixture reads. The timestamp helper still safely
+accepts any nonnegative bound; deployed pull resolvers supply the guarded one.
+
 ## The withdrawal guard, one release later
 
 The guard migration replaces the membership trigger's function. It stamps a
@@ -144,9 +150,3 @@ release after this one, as a separate PR stacked on it (expand, then contract):
    filters, and so does every rollback target from this release on.
 3. From then on, never roll the backend back to a build from before this
    release.
-
-Deployed `SYNC_STABILITY_WINDOW_SECONDS` values are clamped to at least two
-seconds. Invalid settings
-retain the 30-second default. Exact zero is permitted only in `NODE_ENV=test`
-for immediate real-database fixture reads. The timestamp helper still safely
-accepts any nonnegative bound; deployed pull resolvers supply the guarded one.
