@@ -128,6 +128,18 @@ export type AscentFeedItem = {
   climbCurrentRevision?: number | null;
 };
 
+export type UserLoggedSettersInput = {
+  boardTypes?: string[];
+  layoutIds?: number[];
+  search?: string;
+  limit?: number;
+};
+
+export type LoggedSetter = {
+  setterUsername: string;
+  tickCount: number;
+};
+
 export type AscentFeedInput = {
   limit?: number;
   offset?: number;
@@ -142,6 +154,8 @@ export type AscentFeedInput = {
   minAngle?: number;
   maxAngle?: number;
   benchmarkOnly?: boolean;
+  minQuality?: number;
+  setterUsernames?: string[];
   sortBy?:
     | 'recent'
     | 'hardest'

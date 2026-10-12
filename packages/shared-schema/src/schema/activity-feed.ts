@@ -221,6 +221,30 @@ export const activityFeedTypeDefs = /* GraphQL */ `
   }
 
   """
+  Narrows userLoggedSetters to the same board scope as the logbook.
+  """
+  input UserLoggedSettersInput {
+    "Optional board type filter for multiple board types"
+    boardTypes: [String!]
+    "Optional layout filters within the selected board type"
+    layoutIds: [Int!]
+    "Optional case-insensitive partial match on the setter username"
+    search: String
+    "Maximum number of setters to return (default 50, max 200)"
+    limit: Int
+  }
+
+  """
+  A setter of climbs the user has logged.
+  """
+  type LoggedSetter {
+    "Setter username, as on the climb"
+    setterUsername: String!
+    "How many of the user's logged ascents are on this setter's climbs"
+    tickCount: Int!
+  }
+
+  """
   Pagination input for ascent feeds.
   """
   input AscentFeedInput {
@@ -252,6 +276,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     maxAngle: Int
     "When true, only include benchmark climbs"
     benchmarkOnly: Boolean
+    "Only include ascents the climber rated at least this many stars (1-5): the tick's own stars, else their synced rating, as the logbook row shows"
+    minQuality: Int
+    "Only include climbs by these setters (exact setter usernames)"
+    setterUsernames: [String!]
     "Primary sort field"
     sortBy: String
     "Primary sort order: desc (default) or asc"

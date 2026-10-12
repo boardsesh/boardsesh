@@ -261,6 +261,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     userAscentsFeed(userId: ID!, input: AscentFeedInput): AscentFeedResult!
 
     """
+    Setters of the climbs a user has logged, most-logged first. Uses the same
+    visibility rules as userAscentsFeed. Powers the logbook setter filter.
+    """
+    userLoggedSetters(userId: ID!, input: UserLoggedSettersInput): [LoggedSetter!]!
+
+    """
     Suggest the user's logged ascents that a shared reel caption is about, by
     matching the caption against their whole logbook's climb names. Returns full
     ascent rows (with board art) for the matched climbs, strongest match first.

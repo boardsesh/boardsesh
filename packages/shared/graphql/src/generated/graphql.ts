@@ -384,12 +384,16 @@ export type AscentFeedInput = {
   minAngle?: InputMaybe<Scalars['Int']['input']>;
   /** Optional minimum difficulty filter (difficulty_id) */
   minDifficulty?: InputMaybe<Scalars['Int']['input']>;
+  /** Only include ascents the climber rated at least this many stars (1-5): the tick's own stars, else their synced rating, as the logbook row shows */
+  minQuality?: InputMaybe<Scalars['Int']['input']>;
   /** Number of items to skip */
   offset?: InputMaybe<Scalars['Int']['input']>;
   /** Optional secondary sort field */
   secondarySortBy?: InputMaybe<Scalars['String']['input']>;
   /** Optional secondary sort order */
   secondarySortOrder?: InputMaybe<Scalars['String']['input']>;
+  /** Only include climbs by these setters (exact setter usernames) */
+  setterUsernames?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Primary sort field */
   sortBy?: InputMaybe<Scalars['String']['input']>;
   /** Primary sort order: desc (default) or asc */
@@ -3993,6 +3997,15 @@ export type LiveSessionUser = {
 
 export type LocationSyncEntityType = 'BOARD' | 'GYM';
 
+/** A setter of climbs the user has logged. */
+export type LoggedSetter = {
+  __typename?: 'LoggedSetter';
+  /** Setter username, as on the climb */
+  setterUsername: Scalars['String']['output'];
+  /** How many of the user's logged ascents are on this setter's climbs */
+  tickCount: Scalars['Int']['output'];
+};
+
 /** Input for merging duplicate gyms into a canonical survivor (admin only). */
 export type MergeGymsInput = {
   /** Explicit acknowledgement required to keep a SYSTEM listing as the survivor over a user-owned or claim-approved duplicate. Rejected without it. */
@@ -7246,6 +7259,11 @@ export type Query = {
    */
   userGroupedAscentsFeed: GroupedAscentFeedResult;
   /**
+   * Setters of the climbs a user has logged, most-logged first. Uses the same
+   * visibility rules as userAscentsFeed. Powers the logbook setter filter.
+   */
+  userLoggedSetters: Array<LoggedSetter>;
+  /**
    * Get current user's playlists for a board+layout.
    * Requires authentication.
    */
@@ -8103,6 +8121,12 @@ export type QueryUserFavoriteClimbsArgs = {
 /** Root query type for all read operations. */
 export type QueryUserGroupedAscentsFeedArgs = {
   input?: InputMaybe<AscentFeedInput>;
+  userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryUserLoggedSettersArgs = {
+  input?: InputMaybe<UserLoggedSettersInput>;
   userId: Scalars['ID']['input'];
 };
 
@@ -11165,6 +11189,18 @@ export type UserLeft = {
   __typename?: 'UserLeft';
   /** ID of the user who left */
   userId: Scalars['ID']['output'];
+};
+
+/** Narrows userLoggedSetters to the same board scope as the logbook. */
+export type UserLoggedSettersInput = {
+  /** Optional board type filter for multiple board types */
+  boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Optional layout filters within the selected board type */
+  layoutIds?: InputMaybe<Array<Scalars['Int']['input']>>;
+  /** Maximum number of setters to return (default 50, max 200) */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Optional case-insensitive partial match on the setter username */
+  search?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Event when a participant's realtime presence state changes. */
@@ -15367,6 +15403,16 @@ export type GetUserAscentsFeedQuery = {
       } | null;
     }>;
   };
+};
+
+export type GetUserLoggedSettersQueryVariables = Exact<{
+  userId: Scalars['ID']['input'];
+  input?: InputMaybe<UserLoggedSettersInput>;
+}>;
+
+export type GetUserLoggedSettersQuery = {
+  __typename?: 'Query';
+  userLoggedSetters: Array<{ __typename?: 'LoggedSetter'; setterUsername: string; tickCount: number }>;
 };
 
 export type GetUserAscentCaptionMatchesQueryVariables = Exact<{
@@ -25874,6 +25920,56 @@ export const GetUserAscentsFeedDocument = {
     },
   ],
 } as unknown as DocumentNode<GetUserAscentsFeedQuery, GetUserAscentsFeedQueryVariables>;
+export const GetUserLoggedSettersDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserLoggedSetters' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'UserLoggedSettersInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userLoggedSetters' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'tickCount' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserLoggedSettersQuery, GetUserLoggedSettersQueryVariables>;
 export const GetUserAscentCaptionMatchesDocument = {
   kind: 'Document',
   definitions: [

@@ -299,6 +299,8 @@ export type GetUserAscentsFeedQueryVariables = {
     minAngle?: number;
     maxAngle?: number;
     benchmarkOnly?: boolean;
+    minQuality?: number;
+    setterUsernames?: string[];
     fromDate?: string;
     toDate?: string;
   };
@@ -311,6 +313,31 @@ export type GetUserAscentsFeedQueryResponse = {
     totalCount: number;
     hasMore: boolean;
   };
+};
+
+// Setters of the climbs a user has logged, most-logged first. Feeds the
+// logbook's setter filter picker.
+export const GET_USER_LOGGED_SETTERS = gql`
+  query GetUserLoggedSetters($userId: ID!, $input: UserLoggedSettersInput) {
+    userLoggedSetters(userId: $userId, input: $input) {
+      setterUsername
+      tickCount
+    }
+  }
+`;
+
+export type GetUserLoggedSettersQueryVariables = {
+  userId: string;
+  input?: {
+    boardTypes?: string[];
+    layoutIds?: number[];
+    search?: string;
+    limit?: number;
+  };
+};
+
+export type GetUserLoggedSettersQueryResponse = {
+  userLoggedSetters: Array<{ setterUsername: string; tickCount: number }>;
 };
 
 // Caption → ascent matches for the share-beta picker. Returns full ascent rows
