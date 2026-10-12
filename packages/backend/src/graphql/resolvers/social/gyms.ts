@@ -26,7 +26,7 @@ import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
-import { gymSharesBoardLocation, shareGymBoardLocation } from './gym-board-location';
+import { moveBoardToGym } from './gym-board-location';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 
@@ -1102,28 +1102,6 @@ export const socialGymQueries = {
 // Mutations
 // ============================================
 
-/**
- * Put a board in a gym. A board that sits at a public gym's own place shows its
- * location from now on (see boardSitsAtGym), in the same transaction as the
- * link. One that carries its own coordinates or name keeps its owner's choice.
- */
-async function linkBoardRowToGym(
-  board: {
-    id: number;
-    uuid: string;
-    boardType: string;
-    latitude: number | null;
-    longitude: number | null;
-    locationName: string | null;
-  },
-  gymId: number,
-) {
-  await db.transaction(async (tx) => {
-    await tx.update(dbSchema.userBoards).set({ gymId }).where(eq(dbSchema.userBoards.id, board.id));
-    if (await gymSharesBoardLocation(tx, { ...board, gymId })) await shareGymBoardLocation(tx, board);
-  });
-}
-
 export const socialGymMutations = {
   createGym: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
@@ -1173,21 +1151,13 @@ export const socialGymMutations = {
     // Optionally link a board
     if (validatedInput.boardUuid) {
       const [board] = await db
-        .select({
-          id: dbSchema.userBoards.id,
-          uuid: dbSchema.userBoards.uuid,
-          ownerId: dbSchema.userBoards.ownerId,
-          boardType: dbSchema.userBoards.boardType,
-          latitude: dbSchema.userBoards.latitude,
-          longitude: dbSchema.userBoards.longitude,
-          locationName: dbSchema.userBoards.locationName,
-        })
+        .select({ id: dbSchema.userBoards.id, ownerId: dbSchema.userBoards.ownerId })
         .from(dbSchema.userBoards)
         .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
         .limit(1);
 
       if (board && board.ownerId === userId) {
-        await linkBoardRowToGym(board, gym.id);
+        await moveBoardToGym(db, board.id, gym.id);
       }
     }
 
@@ -1553,12 +1523,9 @@ export const socialGymMutations = {
     const [board] = await db
       .select({
         id: dbSchema.userBoards.id,
-        uuid: dbSchema.userBoards.uuid,
         ownerId: dbSchema.userBoards.ownerId,
-        boardType: dbSchema.userBoards.boardType,
         latitude: dbSchema.userBoards.latitude,
         longitude: dbSchema.userBoards.longitude,
-        locationName: dbSchema.userBoards.locationName,
       })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
@@ -1581,14 +1548,13 @@ export const socialGymMutations = {
         boardLongitude: board.longitude,
       });
 
-      await linkBoardRowToGym(board, gym.id);
+      await moveBoardToGym(db, board.id, gym.id);
     } else {
-      // Unlink from gym — always the board owner's own call. The location stays
-      // as it is: leaving a gym is not a choice to hide where the board was, and
-      // the gym rule only ever showed the gym's own listed place
-      // (boardSitsAtGym). A move away in the same save is handled by
-      // updateBoard, whichever order the client sends the two calls in.
-      await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.id, board.id));
+      // Unlink from gym — always the board owner's own call. A board that sat at
+      // its public gym's own place goes back to hidden (moveBoardToGym): the gym
+      // showed it, and whatever place the next edit sends is the climber's own.
+      // Any other board keeps its location as it is.
+      await moveBoardToGym(db, board.id, null);
     }
 
     return true;

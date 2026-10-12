@@ -849,10 +849,112 @@ describe("the gym rule only ever shows the gym's own place", () => {
     expect(await anonymousRead(board.uuid)).toEqual({ latitude: null, locationName: null });
   });
 
-  it('hides it when the move sends no hide choice, as the edit screen does with privacy controls on', async () => {
+  it('hides it when a move with no hide choice lands while the board is still in the gym (edit first)', async () => {
     const { board } = await boardAtGym();
     await updateBoard({ boardUuid: board.uuid, latitude: LAT_8KM, longitude: BASE.longitude });
     expect(await anonymousRead(board.uuid)).toEqual({ latitude: null, locationName: null });
+  });
+
+  it("keeps the home hidden in the edit screen's order: leave the gym, then move with no hide choice", async () => {
+    const { board } = await boardAtGym();
+    await unlink(board.uuid);
+    // The gym showed the board's place; out of the gym, it is hidden again.
+    expect(await anonymousRead(board.uuid)).toEqual({ latitude: null, locationName: null });
+    await updateBoard({
+      boardUuid: board.uuid,
+      latitude: LAT_8KM,
+      longitude: BASE.longitude,
+      locationName: '12 Elm Street',
+    });
+    expect(await anonymousRead(board.uuid)).toEqual({ latitude: null, locationName: null });
+  });
+
+  it("hides it on a switch to another gym until the board sits at the new gym's place", async () => {
+    const { board } = await boardAtGym();
+    const nextGym = await insertGym({
+      ownerId: SYSTEM_OWNER,
+      name: 'Boulder North',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+    });
+    await socialGymMutations.linkBoardToGym(
+      null,
+      { input: { boardUuid: board.uuid, gymUuid: nextGym.uuid } },
+      authCtx(QUERIER),
+    );
+    // Still on the old gym's place, which the new gym does not list.
+    expect(await anonymousRead(board.uuid)).toEqual({ latitude: null, locationName: null });
+
+    await updateBoard({
+      boardUuid: board.uuid,
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      locationName: 'Boulder North',
+    });
+    expect(await anonymousRead(board.uuid)).toEqual({ latitude: LAT_60M, locationName: 'Boulder North' });
+  });
+
+  describe('decides from the board row it locks', () => {
+    // A second editor's write that read the board before the owner's move home
+    // committed must not show the home. These hold the owner's move open in one
+    // transaction until the second write is queued on the row lock.
+    const waitForLockWaiter = async () => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const result = await db.execute(sql`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+           WHERE wait_event_type = 'Lock' AND datname = current_database()
+        `);
+        if (Number(Array.from(result as Iterable<{ waiting: number }>)[0].waiting) > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error('the second write never waited on the board row');
+    };
+    const moveHomeWhile = async (boardUuid: string, secondWrite: () => Promise<unknown>) => {
+      let releaseMove!: () => void;
+      const moveMayCommit = new Promise<void>((resolve) => {
+        releaseMove = resolve;
+      });
+      let markLocked!: () => void;
+      const moveHoldsLock = new Promise<void>((resolve) => {
+        markLocked = resolve;
+      });
+      const move = db.transaction(async (tx) => {
+        await tx.execute(sql`
+          UPDATE user_boards
+             SET latitude = ${LAT_8KM}, location_name = '12 Elm Street', hide_location = true
+           WHERE uuid = ${boardUuid}
+        `);
+        markLocked();
+        await moveMayCommit;
+      });
+      await moveHoldsLock;
+      const second = secondWrite();
+      await waitForLockWaiter();
+      releaseMove();
+      await move;
+      await second;
+    };
+
+    it('a rename queued behind a move home does not show the home', async () => {
+      const { board } = await boardAtGym();
+      await moveHomeWhile(board.uuid, () => updateBoard({ boardUuid: board.uuid, name: 'Renamed' }));
+      expect(await anonymousRead(board.uuid)).toEqual({ latitude: null, locationName: null });
+    });
+
+    it('a gym link queued behind a move home does not show the home', async () => {
+      // At the gym's place before the gym exists, so nothing attaches it.
+      const board = await createBoard({ name: 'Garage', ...BASE }, authCtx(QUERIER));
+      const gym = await publicGym();
+      await moveHomeWhile(board.uuid, () =>
+        socialGymMutations.linkBoardToGym(
+          null,
+          { input: { boardUuid: board.uuid, gymUuid: gym.uuid } },
+          authCtx(QUERIER),
+        ),
+      );
+      expect(await storedGymId(board.uuid)).toBe(gym.id);
+      expect(await anonymousRead(board.uuid)).toEqual({ latitude: null, locationName: null });
+    });
   });
 
   it('hides a typed home address even when the coordinates still point at the gym', async () => {

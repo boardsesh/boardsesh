@@ -41,10 +41,9 @@ import {
 import { generateUniqueGymSlug, requireBoardGymLinkAccess, userCanEditGym } from './gyms';
 import { resolveAutoGymForBoard } from './gym-matching';
 import {
-  boardSitsAtGym,
+  decideGymBoardLocation,
   gymSharesBoardLocation,
   hideBoardLocationLeavingGym,
-  publicGymPlace,
   shareGymBoardLocation,
 } from './gym-board-location';
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
@@ -2280,23 +2279,15 @@ export const socialBoardMutations = {
     // (boardSitsAtGym), so its hideLocation input is ignored and the location is
     // shared below on every save, whoever makes it: it is the server's rule, not
     // the editor's privacy choice. Clients resend hideLocation: true with a
-    // rename. The rule is judged on the place the board will have AFTER this
-    // edit, so it can never show a place the request itself sent.
-    //
-    // A board that sat at the gym's place and is moved off it (a home, a typed
-    // address) goes back to the home default, hidden, whatever the request says:
-    // its location was shown only by the rule, an installed client edits before
-    // it unlinks the gym, and the edit screen with privacy controls on sends no
-    // hideLocation at all. Showing the new place is a separate choice.
-    const gymPlace = await publicGymPlace(db, board.gymId, board.boardType);
-    const nextPlace = {
-      latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
-      longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
-      locationName: validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
-    };
-    const sharesGymLocation = gymPlace !== null && boardSitsAtGym(nextPlace, gymPlace);
-    const leavesGymPlace = gymPlace !== null && !sharesGymLocation && boardSitsAtGym(board, gymPlace);
-    const requestedHideLocation = sharesGymLocation || leavesGymPlace ? undefined : validatedInput.hideLocation;
+    // rename. A board moved off that place goes back to hidden whatever the
+    // request says (decideGymBoardLocation). This first decision, from the row
+    // read above, only gates the owner-only check; the transaction decides again
+    // from the row it locks, so a concurrent move cannot be undone by a stale read.
+    const preliminaryGymLocation = await decideGymBoardLocation(db, board, validatedInput);
+    const requestedHideLocation =
+      preliminaryGymLocation.sharesGymLocation || preliminaryGymLocation.leavesGymPlace
+        ? undefined
+        : validatedInput.hideLocation;
     // A spray wall's visibility is not an ordinary board flag: flipping it public
     // copies the wall photo into the world-readable bucket, and flipping it back
     // deletes that copy and retracts the climbs already fanned out to feeds
@@ -2470,6 +2461,10 @@ export const socialBoardMutations = {
           isPublic: boolean;
           isUnlisted: boolean;
           hideLocation: boolean;
+          gymId: number | string | null;
+          latitude: number | string | null;
+          longitude: number | string | null;
+          locationName: string | null;
         }>(
           await tx.execute(sql`
             SELECT serial_number AS "serialNumber",
@@ -2481,7 +2476,11 @@ export const socialBoardMutations = {
                    deleted_at AS "deletedAt",
                    is_public AS "isPublic",
                    is_unlisted AS "isUnlisted",
-                   hide_location AS "hideLocation"
+                   hide_location AS "hideLocation",
+                   gym_id AS "gymId",
+                   latitude,
+                   longitude,
+                   location_name AS "locationName"
               FROM user_boards
              WHERE id = ${board.id}
              FOR UPDATE
@@ -2490,6 +2489,24 @@ export const socialBoardMutations = {
         if (!lockedBoard) {
           throw new Error('Board not found');
         }
+        // The gym rule, decided from the locked row: a rename that read the board
+        // before the owner's move home committed must not show the home.
+        const toNumber = (value: number | string | null) => (value == null ? null : Number(value));
+        const gymLocation = await decideGymBoardLocation(
+          tx,
+          {
+            gymId: toNumber(lockedBoard.gymId),
+            boardType: lockedBoard.boardType,
+            latitude: toNumber(lockedBoard.latitude),
+            longitude: toNumber(lockedBoard.longitude),
+            locationName: lockedBoard.locationName,
+          },
+          validatedInput,
+        );
+        const lockedHideLocation =
+          gymLocation.sharesGymLocation || gymLocation.leavesGymPlace ? undefined : validatedInput.hideLocation;
+        if (lockedHideLocation === undefined) delete updateValues.hideLocation;
+        else updateValues.hideLocation = lockedHideLocation;
         // A staged edit must not restore or repopulate an account-deletion
         // tombstone after its owner has been detached.
         if (
@@ -2534,7 +2551,7 @@ export const socialBoardMutations = {
           );
         }
         const hasVisibility = validatedInput.isPublic !== undefined || validatedInput.isUnlisted !== undefined;
-        if (hasVisibility || requestedHideLocation !== undefined) {
+        if (hasVisibility || lockedHideLocation !== undefined) {
           const policyCondition = and(
             eq(dbSchema.resourcePrivacy.kind, 'board'),
             eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
@@ -2560,9 +2577,9 @@ export const socialBoardMutations = {
               if (audience !== policy.audience) privacyUpdates.audience = audience;
             }
           }
-          if (policy && requestedHideLocation !== undefined) {
+          if (policy && lockedHideLocation !== undefined) {
             const locationAudience =
-              requestedHideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
+              lockedHideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
             updateValues.hideLocation = locationAudience !== 'public';
             if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
           }
@@ -2585,10 +2602,10 @@ export const socialBoardMutations = {
               .where(policyCondition);
           }
         }
-        if (sharesGymLocation) {
+        if (gymLocation.sharesGymLocation) {
           await shareGymBoardLocation(tx, board);
           updateValues.hideLocation = false;
-        } else if (leavesGymPlace) {
+        } else if (gymLocation.leavesGymPlace) {
           await hideBoardLocationLeavingGym(tx, board);
           updateValues.hideLocation = true;
         }
