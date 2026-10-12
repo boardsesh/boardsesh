@@ -11,8 +11,11 @@ name: help clip - add to and remove from a playlist
 # Coordinates, not selectors: nothing in this overlay is exposed to Maestro's
 # accessibility tree on this RN Fabric build.
 #   50%,23%  first climb row
-#   50%,60%  "Add to Playlist" in the lifted action card
-#   50%,71%  the second playlist row ("Test list", the empty one)
+#   50%,67%  "Add to Playlist" in the lifted action card
+#   50%,78%  the second playlist row ("Test list", the empty one)
+#            Both moved down when the action list was cut to four rows and a
+#            peek and the board took the room (was 60% and 71%). Worked out from
+#            the layout math, not re-measured: check them on the next recording.
 #   50%,7%   the overlay scrim — one tap pops the playlist view back to the
 #            menu, a second tap closes the overlay
 #
@@ -37,7 +40,7 @@ name: help clip - add to and remove from a playlist
 
 # Add to Playlist -> the card swaps to the playlist list.
 - tapOn:
-    point: '50%,60%'
+    point: '50%,67%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 600
@@ -45,7 +48,7 @@ name: help clip - add to and remove from a playlist
 
 # Tick the list: the climb goes in (count up, check on).
 - tapOn:
-    point: '50%,71%'
+    point: '50%,78%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 1100
@@ -53,7 +56,7 @@ name: help clip - add to and remove from a playlist
 
 # Tick it again: the climb comes back out, so the account ends where it started.
 - tapOn:
-    point: '50%,71%'
+    point: '50%,78%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 1100

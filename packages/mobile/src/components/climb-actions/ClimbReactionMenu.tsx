@@ -8,12 +8,21 @@ import {
   type OpaqueColorValue,
   PixelRatio,
   Platform,
-  ScrollView,
   StyleSheet,
   View,
   useWindowDimensions,
 } from 'react-native';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  runOnJS,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { FullWindowOverlay } from 'react-native-screens';
@@ -40,13 +49,26 @@ import { withAlpha, type MaterialSurfaceContainers } from '../../theme/colors';
 import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { useClimbActions, type ClimbActionId, type ClimbActionItem } from './use-climb-actions';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
-import { fitBoardArt, computeReactionBoardMaxSize } from './board-art-fit';
+import {
+  fitBoardArt,
+  computeReactionBoardMaxSize,
+  fitReactionListViewport,
+  REACTION_LIST_PEEK_ROWS,
+} from './board-art-fit';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 
 // Log a tick / Add to playlist / Share get pulled out of the scrollable list into a
 // fixed horizontal button row at the top of the card — the most-reached actions,
 // one tap away. The rest stay in the list below. Order here is the row order.
 const PRIMARY_ACTION_IDS: readonly ClimbActionId[] = ['tick', 'playlist', 'share'];
+
+// The list shows four rows and a peek, so the rest sit below the fold. iOS only paints
+// the scroll bar during a drag, so it is flashed once the card has sprung in (and again
+// on the way back from the playlist picker, which remounts the list) to say "this
+// scrolls" with the platform's own cue.
+export const SCROLL_HINT_FLASH_DELAY_MS = 350;
+// Keep the scroll bar clear of the card's rounded bottom corner.
+const SCROLL_INDICATOR_INSETS = { bottom: spacing[2] };
 
 type ClimbReactionMenuProps = {
   climb: Climb;
@@ -170,7 +192,7 @@ export function ClimbReactionMenu({
   reduceMotion,
   onClose,
 }: ClimbReactionMenuProps) {
-  const { colorScheme, systemColors, m3SurfaceContainers } = useTheme();
+  const { colorScheme, systemColors, m3SurfaceContainers, textStyles } = useTheme();
   const { t } = useTranslation('climbs');
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
@@ -198,7 +220,12 @@ export function ClimbReactionMenu({
     });
   }, [progress, reduceMotion, finishClose]);
 
-  const backToMenu = useCallback(() => setView('menu'), []);
+  // The list remounts at the top, so its fade comes back with it.
+  const menuFadeOpacity = useSharedValue(1);
+  const backToMenu = useCallback(() => {
+    menuFadeOpacity.value = 1;
+    setView('menu');
+  }, [menuFadeOpacity]);
   // Stable so useClimbActions' memo doesn't rebuild the action list every render.
   const openPlaylist = useCallback(() => setView('playlist'), []);
 
@@ -342,11 +369,26 @@ export function ClimbReactionMenu({
   // Small breathing room below the top safe area — the preview sits just under the
   // status bar so the top isn't wasted and the action list gets more room below.
   const contentTopOffset = Math.round(windowHeight * 0.02);
-  // Row height for the action list (ListRow: minHeight 44 + 12pt vertical padding, text
-  // growing with fontScale). The whole list is shown without scrolling, so its full
-  // height is reserved up front and the board takes whatever space is left below it.
-  const actionRowHeight = Math.max(44, Math.round(24 + 22 * fontScale));
-  const listContentHeight = listActions.length * actionRowHeight + spacing[1] * 2;
+  // Row height for the action list (ListRow: minHeight 44 + 12pt vertical padding around
+  // one line of `body` text growing with fontScale). Only a window of four rows and a
+  // peek is reserved when sizing the board, so this sets both the board and where the
+  // list's bottom edge cuts a row. Measured off the list's content height (every row is
+  // one line, so they're all the same height); the type-scale estimate stands in for the
+  // first frame. The rows' height never depends on the board, so this can't loop.
+  const actionRowHeightEstimate = Math.max(44, Math.round(24 + (textStyles.body.lineHeight ?? 22) * fontScale));
+  const [measuredActionRowHeight, setMeasuredActionRowHeight] = useState(0);
+  const actionRowHeight = measuredActionRowHeight || actionRowHeightEstimate;
+  const listActionCount = listActions.length;
+  const handleListContentSizeChange = useCallback(
+    (_width: number, height: number) => {
+      if (listActionCount === 0) return;
+      const rowHeight = (height - spacing[1] * 2) / listActionCount;
+      if (!(rowHeight > 0)) return;
+      // Gate on a real change so a re-render can't loop through the callback.
+      setMeasuredActionRowHeight((previous) => (Math.abs(previous - rowHeight) < 0.5 ? previous : rowHeight));
+    },
+    [listActionCount],
+  );
   // Height of the fixed primary-action button row, reserved out of the card so the list
   // cap is accurate. Measured via onLayout (fires only on layout change, not per frame)
   // so a large Dynamic Type / RTL wrap can't over- or under-reserve; the fontScale-scaled
@@ -372,8 +414,8 @@ export function ClimbReactionMenu({
   // Dynamic Type setting reserves the taller text instead of overlapping the art.
   const previewTextReserve = Math.round(56 * fontScale);
   // Size the board the way the play drawer does — contain-fit into the space left after
-  // the title, button row and full list are reserved, so it renders SMALLER on smaller
-  // screens instead of crowding the actions off the bottom. Bounds/floor live in the pure
+  // the title, button row and the list's four-row window are reserved. Extra actions
+  // scroll rather than shrinking the climb. Bounds/floor live in the pure
   // computeReactionBoardMaxSize, which is unit-tested across device sizes.
   const largeArtMaxSize = computeReactionBoardMaxSize({
     windowWidth,
@@ -386,9 +428,10 @@ export function ClimbReactionMenu({
     previewMaxWidth: PREVIEW_MAX_WIDTH,
     aspect,
     primaryRowHeight,
-    listContentHeight,
     textReserve: previewTextReserve,
+    listRowCount: listActionCount,
     rowHeight: actionRowHeight,
+    listPadding: spacing[1],
   });
   // Rasterize the holds overlay at the large hero's displayed width × DPR — matching
   // the play drawer (SwipeBoardCarousel) instead of the list-thumbnail's fixed 400px,
@@ -437,12 +480,44 @@ export function ClimbReactionMenu({
     windowHeight - insets.top - contentTopOffset - spacing[5] - reservedForPreview - bottomReserve,
   );
 
-  // The list (below the fixed primary-button row) gets the card height minus that row.
-  // Its full height was reserved when sizing the board, so it normally shows every row
-  // without scrolling; only a floored board on a small phone leaves it short, in which
-  // case it scrolls and the bottom fade cues more. The playlist view owns its own scroll.
-  const listMaxHeight = Math.max(actionRowHeight, menuMaxHeight - primaryRowHeight);
-  const menuScrollable = listContentHeight > listMaxHeight + 0.5;
+  // The list (below the fixed primary-button row) gets the card height minus that row,
+  // snapped so a list that scrolls always cuts a row through the middle: four rows and a
+  // peek on a phone, more rows where the board stopped short of its budget, fewer on a
+  // floored small screen. The playlist view owns its own scroll.
+  const { maxHeight: listMaxHeight, scrollable: menuScrollable } = fitReactionListViewport(
+    listActionCount,
+    actionRowHeight,
+    spacing[1],
+    menuMaxHeight - primaryRowHeight,
+  );
+
+  // The bottom fade cues "more below", then gets out of the way as the list reaches its
+  // end so the last row (Report, Delete) never reads as disabled. Driven on the UI
+  // thread off the scroll position: no JS work and no re-render per scroll frame.
+  const listScrollRef = useAnimatedRef<Animated.ScrollView>();
+  const fadeOutDistance = actionRowHeight * REACTION_LIST_PEEK_ROWS;
+  const handleListScroll = useAnimatedScrollHandler(
+    {
+      onScroll: (event) => {
+        const distanceToEnd = event.contentSize.height - event.layoutMeasurement.height - event.contentOffset.y;
+        menuFadeOpacity.value = interpolate(distanceToEnd, [0, fadeOutDistance], [0, 1], Extrapolation.CLAMP);
+      },
+    },
+    [fadeOutDistance],
+  );
+  const menuFadeStyle = useAnimatedStyle(() => ({ opacity: menuFadeOpacity.value }));
+
+  // Flash the scroll bar once the card has sprung in, and again whenever the list
+  // remounts on the way back from the playlist picker. Straight away under Reduce
+  // Motion, which skips the spring; it's the system's own fade, not decorative motion.
+  useEffect(() => {
+    if (view !== 'menu' || !menuScrollable) return;
+    const flash = setTimeout(
+      () => listScrollRef.current?.flashScrollIndicators(),
+      reduceMotion ? 0 : SCROLL_HINT_FLASH_DELAY_MS,
+    );
+    return () => clearTimeout(flash);
+  }, [view, menuScrollable, reduceMotion, listScrollRef]);
   const isDark = colorScheme === 'dark';
   const menuFadeColors = useMemo<readonly [string, string]>(() => {
     if (surfaceMode !== 'material') return isDark ? MENU_FADE_COLORS.dark : MENU_FADE_COLORS.light;
@@ -576,13 +651,20 @@ export function ClimbReactionMenu({
                       ))}
                     </View>
                   ) : null}
-                  {/* The full list is reserved when sizing the board, so this normally
-                      shows every row without scrolling; maxHeight only bites (and scrolls)
-                      if a floored board on a small phone can't leave room. */}
-                  <ScrollView
+                  {/* Four rows and a peek; the rest scroll. The scroll bar and bounce
+                      only switch on when there is something below the fold, so a short
+                      list doesn't wobble. */}
+                  <Animated.ScrollView
+                    ref={listScrollRef}
                     style={{ maxHeight: listMaxHeight }}
-                    bounces={false}
-                    showsVerticalScrollIndicator={false}
+                    bounces={menuScrollable}
+                    showsVerticalScrollIndicator={menuScrollable}
+                    // The overlay is its own window on iOS; set the bar's tone rather
+                    // than trusting it to follow the app's colour scheme.
+                    indicatorStyle={isDark ? 'white' : 'black'}
+                    scrollIndicatorInsets={SCROLL_INDICATOR_INSETS}
+                    onScroll={handleListScroll}
+                    onContentSizeChange={handleListContentSizeChange}
                     keyboardShouldPersistTaps="handled"
                     contentContainerStyle={styles.menuContent}
                   >
@@ -600,11 +682,18 @@ export function ClimbReactionMenu({
                         />
                       </ShowcaseAnchorView>
                     ))}
-                  </ScrollView>
-                  {/* Bottom-edge fade cueing "more below" — only when the list is clipped.
-                      pointerEvents none so it never eats a tap on the peeking row. */}
+                  </Animated.ScrollView>
+                  {/* Bottom-edge fade over the peeking row, cueing "more below" — only when
+                      the list is clipped, and gone by the time it's scrolled to the end.
+                      One row tall so it scales with Dynamic Type. pointerEvents none so it
+                      never eats a tap on the peeking row. */}
                   {menuScrollable ? (
-                    <LinearGradient pointerEvents="none" colors={menuFadeColors} style={styles.menuScrollFade} />
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[styles.menuScrollFade, { height: actionRowHeight }, menuFadeStyle]}
+                    >
+                      <LinearGradient pointerEvents="none" colors={menuFadeColors} style={StyleSheet.absoluteFill} />
+                    </Animated.View>
                   ) : null}
                 </View>
               )}
@@ -755,6 +844,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 48,
   },
 });

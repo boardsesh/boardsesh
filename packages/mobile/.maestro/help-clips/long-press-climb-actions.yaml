@@ -26,7 +26,7 @@ name: help clip - long press a climb row
     point: '50%,23%'
 - waitForAnimationToEnd
 
-# Hold on the open action card long enough to read every item.
+# Hold on the open action card long enough to read the climb and the actions above the fold.
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 2600
