@@ -157,6 +157,21 @@ export const InstagramBetaScanInputSchema = z.object({
 // date into the query.
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+// Postgres has no year 0 and no zone displacement past ±15:59. Both would reach
+// it as an internal "out of range" error, so they are refused here instead.
+const DATE_BOUND_YEAR_MESSAGE = 'Date bounds start at year 0001';
+const MAX_OFFSET_HOURS = 15;
+
+function isAfterYearZero(value: string): boolean {
+  return !value.startsWith('0000');
+}
+
+// z.iso.datetime has already pinned the offset to `Z` or `±HH:MM`.
+function hasSupportedPostgresOffset(value: string): boolean {
+  const offset = /[+-](\d{2}):\d{2}$/.exec(value);
+  return offset === null || Number(offset[1]) <= MAX_OFFSET_HOURS;
+}
+
 /**
  * A logbook date bound. A calendar day is that whole UTC day, the contract
  * older clients rely on. An instant must carry `Z` or an offset: it is the edge
@@ -164,10 +179,13 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  * date-time is refused, because the server would have to guess the zone.
  */
 const LogbookDateBoundSchema = z.union([
-  z.string().regex(ISO_DATE_PATTERN),
+  // z.iso.date checks the calendar too (no 2026-13-45, no 2026-02-30).
+  z.iso.date().refine(isAfterYearZero, DATE_BOUND_YEAR_MESSAGE),
   z.iso
     .datetime({ offset: true })
-    .refine(hasSupportedPostgresTimestampPrecision, 'Date bounds support at most six fractional-second digits'),
+    .refine(isAfterYearZero, DATE_BOUND_YEAR_MESSAGE)
+    .refine(hasSupportedPostgresTimestampPrecision, 'Date bounds support at most six fractional-second digits')
+    .refine(hasSupportedPostgresOffset, 'Time zone offsets run from -15:59 to +15:59'),
 ]);
 
 /** True for the calendar-day form of a logbook date bound (YYYY-MM-DD). */

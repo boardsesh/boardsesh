@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vite-plus/test';
-import { sql } from 'drizzle-orm';
+import { and, sql } from 'drizzle-orm';
+import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { tickQueries } from '../graphql/resolvers/ticks/queries';
+import { buildAscentTickConditions, tickQueries } from '../graphql/resolvers/ticks/queries';
+import { AscentFeedInputSchema } from '../validation/schemas';
 import { parse, type FieldNode, type GraphQLResolveInfo, type OperationDefinitionNode } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
@@ -326,6 +328,7 @@ const cleanup = async () => {
   await db.execute(sql`DELETE FROM board_climb_ratings WHERE user_id IN (${TEST_USER_ID}, ${OTHER_USER_ID})`);
   await db.execute(sql`DELETE FROM board_beta_links WHERE climb_uuid LIKE ${CLIMB_PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id IN (${TEST_USER_ID}, ${OTHER_USER_ID})`);
+  await db.execute(sql`DELETE FROM spray_walls WHERE board_uuid LIKE ${CLIMB_PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM user_boards WHERE owner_id IN (${TEST_USER_ID}, ${OTHER_USER_ID})`);
   await db.execute(sql`DELETE FROM board_climb_grades WHERE climb_uuid LIKE ${CLIMB_PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${CLIMB_PREFIX + '%'}`);
@@ -2219,6 +2222,48 @@ describe('tickQueries — behavior fixes', () => {
         ).toEqual(['vis-open']);
       }
     });
+
+    it("userLoggedSetters never names the setter of a climb on a private spray wall the viewer can't see", async () => {
+      // Two spray walls the climber owns, one private and one public, written
+      // straight into the tables the wall-visibility predicate reads.
+      const seedWall = async (name: string, layoutId: number, isPublic: boolean, setterUsername: string) => {
+        const wallUuid = `${CLIMB_PREFIX}wall-${name}`;
+        const climbUuid = `${CLIMB_PREFIX}wall-climb-${name}`;
+        await db.execute(sql`
+          INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public, has_leds)
+          VALUES (${wallUuid}, ${wallUuid}, ${TEST_USER_ID}, 'spray', ${layoutId}, ${layoutId}, '1', ${name}, ${isPublic}, false)
+        `);
+        await db.execute(sql`INSERT INTO spray_walls (board_uuid, layout_id) VALUES (${wallUuid}, ${layoutId})`);
+        await insertClimb(climbUuid, `Wall climb ${name}`, { boardType: 'spray', layoutId, setterUsername });
+        await insertTick({
+          uuid: `wall-tick-${name}`,
+          climbUuid,
+          climbedAt: '2026-03-19 10:00:00',
+          status: 'send',
+          boardType: 'spray',
+        });
+      };
+      await seedWall('private', 566101, false, 'garage-setter');
+      await seedWall('public', 566102, true, 'shared-wall-setter');
+
+      const asOwner = await callUserLoggedSetters(TEST_USER_ID, {}, TEST_USER_ID);
+      expect(asOwner.map((row) => row.setterUsername)).toEqual(['garage-setter', 'shared-wall-setter']);
+
+      for (const viewer of [OTHER_USER_ID, null]) {
+        expect(await callUserLoggedSetters(TEST_USER_ID, {}, viewer), `viewer ${viewer}`).toEqual([
+          { setterUsername: 'shared-wall-setter', tickCount: 1 },
+        ]);
+        // Asking for the private wall's layout or setter by name finds nothing either.
+        expect(await callUserLoggedSetters(TEST_USER_ID, { layoutIds: [566101] }, viewer)).toEqual([]);
+        expect(await callUserLoggedSetters(TEST_USER_ID, { search: 'garage' }, viewer)).toEqual([]);
+        // The feed agrees.
+        const feed = await callUserAscentsFeedAs(TEST_USER_ID, { limit: 50 }, viewer);
+        expect(
+          feed.items.map((item) => item.uuid),
+          `viewer ${viewer}`,
+        ).toEqual(['wall-tick-public']);
+      }
+    });
   });
   // fromDate / toDate take a UTC calendar day (the original contract) or an exact
   // instant with a zone, so the app can filter by the climber's LOCAL day.
@@ -2317,10 +2362,90 @@ describe('tickQueries — behavior fixes', () => {
       await expectRange({ fromDate: '2026-10-31', toDate: '2026-10-31T11:00:00Z' }, ['date-oct31-1059']);
     });
 
-    it('refuses a zone-less date-time, an over-precise fraction, and free text', async () => {
-      await expect(callUserAscentsFeed(TEST_USER_ID, { fromDate: '2026-09-30T11:00:00' })).rejects.toThrow();
-      await expect(callUserAscentsFeed(TEST_USER_ID, { toDate: '2026-09-30T11:00:00.1234567Z' })).rejects.toThrow();
-      await expect(callUserGroupedAscentsFeed(TEST_USER_ID, { toDate: 'yesterday' })).rejects.toThrow();
+    it('converts an instant to UTC itself, whatever the session time zone', async () => {
+      await seedDateTicks();
+      // The test database runs in UTC, where a `timestamptz` and the stored UTC
+      // wall clock compare equal by accident. Under Auckland they differ by 13
+      // hours, so a bound that leaned on the session zone would move.
+      const uuidsInAuckland = (input: Record<string, unknown>) =>
+        db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT set_config('TimeZone', 'Pacific/Auckland', true)`);
+          const [zone] = (await tx.execute(sql`SHOW TimeZone`)) as unknown as Array<{ TimeZone: string }>;
+          expect(zone.TimeZone).toBe('Pacific/Auckland');
+          const rows = await tx
+            .select({ uuid: dbSchema.boardseshTicks.uuid })
+            .from(dbSchema.boardseshTicks)
+            .where(and(...buildAscentTickConditions(AscentFeedInputSchema.parse(input), TEST_USER_ID)));
+          return rows.map((row) => row.uuid).sort();
+        });
+
+      const octoberInAuckland = [
+        'date-oct01-0000',
+        'date-oct01-0659',
+        'date-oct01-0700',
+        'date-oct31-1059',
+        'date-sep30-1100',
+        'date-sep30-1115',
+      ];
+      expect(
+        await uuidsInAuckland({ fromDate: '2026-10-01T00:00:00+13:00', toDate: '2026-11-01T00:00:00+13:00' }),
+      ).toEqual(octoberInAuckland);
+      expect(await uuidsInAuckland({ fromDate: '2026-09-30T11:00:00Z', toDate: '2026-10-31T11:00:00Z' })).toEqual(
+        octoberInAuckland,
+      );
+      expect(
+        await uuidsInAuckland({ fromDate: '2026-10-01T00:00:00-07:00', toDate: '2026-11-01T00:00:00-07:00' }),
+      ).toEqual(['date-oct01-0700', 'date-oct31-1059', 'date-oct31-1100']);
+      // A calendar day stays a UTC day under any session zone too.
+      expect(await uuidsInAuckland({ fromDate: '2026-10-01', toDate: '2026-10-01' })).toEqual([
+        'date-oct01-0000',
+        'date-oct01-0659',
+        'date-oct01-0700',
+      ]);
+    });
+
+    it('refuses as bad input every bound Postgres would reject, and runs the edge cases it accepts', async () => {
+      const refused = [
+        '2026-09-30T11:00:00', // no zone
+        '2026-09-30T11:00:00.1234567Z', // seven fractional digits
+        'yesterday',
+        '2026-13-45', // not a calendar day
+        '2026-02-30',
+        '2026-02-30T00:00:00Z',
+        '0000-01-01', // Postgres has no year 0
+        '0000-01-01T00:00:00Z',
+        '2026-01-01T00:00:00+16:00', // past Postgres's ±15:59 displacement
+        '2026-01-01T00:00:00-23:59',
+      ];
+      for (const bound of refused) {
+        // Validation's own error, not a database error surfacing as a 500.
+        await expect(callUserAscentsFeed(TEST_USER_ID, { fromDate: bound }), bound).rejects.toThrow(/^Invalid input/);
+        await expect(callUserGroupedAscentsFeed(TEST_USER_ID, { toDate: bound }), bound).rejects.toThrow(
+          /^Invalid input/,
+        );
+      }
+
+      // The widest values that pass validation must also run.
+      const accepted = [
+        '0001-01-01',
+        '2028-02-29',
+        '9999-12-31',
+        '0001-01-01T00:00:00+15:59',
+        '9999-12-31T23:59:59.999999-15:59',
+        '2026-01-01T00:00Z',
+      ];
+      for (const bound of accepted) {
+        await expect(
+          callUserAscentsFeed(TEST_USER_ID, { fromDate: bound, toDate: bound }),
+          bound,
+        ).resolves.toMatchObject({
+          totalCount: 0,
+        });
+        await expect(
+          callUserGroupedAscentsFeed(TEST_USER_ID, { fromDate: bound, toDate: bound }),
+          bound,
+        ).resolves.toMatchObject({ totalCount: 0 });
+      }
     });
   });
 });

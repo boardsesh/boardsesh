@@ -611,7 +611,7 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.userTickCountsByBoard': "one count per board type, and the count is the climber's own",
   'Query.userClimbPercentile': 'a percentile over one climber; no climb is named',
   'Query.userLoggedSetters':
-    "setter usernames and tick counts over the climber's own logbook, never a climb name, frames or layout; it filters with the userAscentsFeed builders, and tick-queries.test.ts pins the private-climb and private-tick cases",
+    "setter usernames and tick counts over the climber's own logbook, never a climb name, frames or layout, and the seeded climb carries no sentinel setter; it filters with the userAscentsFeed builders, and tick-queries.test.ts pins the private-spray-wall, private-climb and private-tick cases for the owner, a stranger and an anonymous reader",
   'Query.userAscentCaptionMatches': "matches a caption against the climber's own ascents, and the sweep sends none",
   'Query.followers': 'the follow graph, users only',
   'Query.following': 'the follow graph, users only',

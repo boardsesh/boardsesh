@@ -126,8 +126,11 @@ type AscentFeedFilterInput = z.infer<typeof AscentFeedInputSchema>;
  * the two feeds can never disagree about what a filter means. The stars filter
  * needs no join of its own (see effectiveQualityAtLeastCondition), so the count
  * queries, which never join board_climb_ratings, apply it unchanged.
+ *
+ * Exported so a test can run it inside a transaction with a non-UTC session
+ * time zone, which the resolvers' pooled connections can't be pinned to.
  */
-function buildAscentTickConditions(validated: AscentFeedFilterInput, userId: string) {
+export function buildAscentTickConditions(validated: AscentFeedFilterInput, userId: string) {
   const legacyStatus = validated.status;
   let inferredStatusMode = 'both';
   if (legacyStatus === 'attempt') {
@@ -1112,11 +1115,11 @@ export const tickQueries = {
     const climbConditions = buildAscentClimbConditions(validatedInput, ctx?.userId);
     const groupFilterConditions = [...tickConditions, ...climbConditions];
 
-    // boardsesh_ticks.climbed_at is `timestamp without time zone` storing the
-    // climber's wall-clock time at the moment of the tick (the rest of the
-    // codebase reads it back via `dayjs(...).utc(true)` to preserve that wall
-    // clock — see ascents-feed.tsx). Group by the literal stored date so a
-    // session ending at 11pm local doesn't bleed into the next day.
+    // boardsesh_ticks.climbed_at is `timestamp without time zone` holding the
+    // tick's UTC wall-clock time (normalizeClimbedAt in ticks/mutations.ts
+    // converts every client timestamp to UTC before it is stored). Grouping by
+    // the stored date therefore makes each group one UTC calendar day, the same
+    // day the calendar-day form of fromDate/toDate means.
     const dayExpr = sql<string>`to_char(${dbSchema.boardseshTicks.climbedAt}, 'YYYY-MM-DD')`;
 
     // 1) Page of (climbUuid, day) keys, ordered by latest activity in that group.
