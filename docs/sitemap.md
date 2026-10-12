@@ -399,8 +399,7 @@ re-enabling the surface could not be done by changing an environment variable
 alone. #4648 restored publication together with both source diagnostics. The
 index must carry climb `<loc>` entries, `/sitemaps/climbs/1.xml` must be a 200 XML,
 and both must name a source. #6254 subsequently changed the rendered page
-response to `private, no-store` for publication revocation; that was reverted once
-published climbs became public whoever set them (see below). The tripwire still
+response to `private, no-store` for publication revocation. The tripwire still
 works in the other direction — an image that lost `CLIMB_SITEMAPS_ENABLED` turns the post-deploy smoke red instead
 of silently withdrawing 53,000 URLs. A `live` source is a WARN rather than a FAIL:
 correct, complete, and paying the scan the store exists to retire.
@@ -409,16 +408,20 @@ Since the privacy controls in #6254, climb and setter pages and the playlist
 shard recheck their cached URL candidates before rendering them. For climbs and
 setters the recheck keeps only listed, published, unhidden climbs that are not on
 a spray wall hidden from an anonymous reader: a published, listed climb is public
-whoever set it, so no account or item audience is consulted, and the two shards
-keep their public CDN window (`public, s-maxage=21600, stale-while-revalidate=604800`)
-again. The production smoke requires `public` plus a freshness directive and
-rejects `private` and `no-store` on the climb shard. The playlist shard still
-answers `private, no-store`, because a playlist keeps its owner's audience.
+whoever set it, so no account or item audience is consulted. These responses
+still use `private, no-store`, because unlisting a climb, a community hide or a
+spray wall going private can withdraw a URL, and neither browsers nor shared CDNs
+may reuse the XML after that. The playlist shard answers `private, no-store` too,
+because a playlist keeps its owner's audience. The materialised climb store still
+avoids the expensive grouped scan; response caching must not bypass the live
+visibility filter. The production smoke requires both directives and rejects
+`public` and freshness caching directives, while retaining the XML, nonempty URL,
+status and source checks.
 
 The index still uses `s-maxage=3600`, so its source and `X-Sitemap-Degraded`
 diagnostics can be up to an hour old when a CDN ignores the smoke's
-`Cache-Control: no-cache` request header, and so can the climb page's source
-diagnostic, under its six-hour window. Sentry events have no CDN lag.
+`Cache-Control: no-cache` request header. The climb page's source diagnostic is
+read on a fresh request under its no-store policy. Sentry events have no CDN lag.
 
 ### Who refreshes it
 
