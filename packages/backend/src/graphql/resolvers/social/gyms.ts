@@ -721,19 +721,32 @@ async function requireGymGrantAccess(gymUuid: string, userId: string): Promise<t
 // ============================================
 
 /**
- * Visibility gate shared by the `gym`/`gymBySlug` entity reads: a private gym is
- * enriched only for a viewer who can edit it, and reads as `null` — the exact
- * same response as a gym that doesn't exist — for everyone else, so holding a
- * uuid or slug can't confirm a private gym exists or disclose its name, address,
- * or contact details.
+ * Whether this viewer may see the gym at all: a public gym is visible to
+ * everyone, a private one only to a viewer who can edit it.
  *
- * Same `userCanEditGym` rule as `gymBoards` and `gymKiosk`, so all four gym
- * reads agree. Its SQL twin, `gymVisibleCondition`, gates the gym's comment
- * thread, votes and feeds; change both together. Unlike the board reads this
- * masks AUTHENTICATED non-editors too, matching those two. `null` rather than a
- * thrown NOT_FOUND because these fields are nullable in the SDL — `null` already
- * means "no such gym" here, so it is the genuinely indistinguishable answer (see
- * #3648).
+ * Same `userCanEditGym` rule as `gymBoards` and `gymKiosk`, so every gym read
+ * agrees. Its SQL twin, `gymVisibleCondition`, gates the gym's comment thread,
+ * votes and feeds; change both together. Unlike the board reads this masks
+ * AUTHENTICATED non-editors too.
+ */
+async function viewerCanSeeGym(
+  gym: typeof dbSchema.gyms.$inferSelect,
+  viewerId: string | null | undefined,
+): Promise<boolean> {
+  if (gym.isPublic) return true;
+  return viewerId ? userCanEditGym(gym, viewerId) : false;
+}
+
+/**
+ * Visibility gate shared by the `gym`/`gymBySlug` entity reads: a private gym is
+ * enriched only for a viewer who can see it (`viewerCanSeeGym`), and reads as
+ * `null` — the exact same response as a gym that doesn't exist — for everyone
+ * else, so holding a uuid or slug can't confirm a private gym exists or disclose
+ * its name, address, or contact details.
+ *
+ * `null` rather than a thrown NOT_FOUND because these fields are nullable in the
+ * SDL — `null` already means "no such gym" here, so it is the genuinely
+ * indistinguishable answer (see #3648).
  *
  * Runs AFTER canonical resolution: privacy belongs to the surviving gym, not the
  * stale alias row a merged twin's uuid/slug points at.
@@ -744,10 +757,7 @@ async function resolveViewableGym(
 ): Promise<Awaited<ReturnType<typeof enrichGym>> | null> {
   if (!gym) return null;
   const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
-  if (!gym.isPublic) {
-    const viewerCanEdit = viewerId ? await userCanEditGym(gym, viewerId) : false;
-    if (!viewerCanEdit) return null;
-  }
+  if (!(await viewerCanSeeGym(gym, viewerId))) return null;
   return enrichGym(gym, viewerId);
 }
 
@@ -1027,20 +1037,22 @@ export const socialGymQueries = {
     };
   },
 
-  gymMembers: async (_: unknown, { input }: { input: unknown }, _ctx: ConnectionContext) => {
+  gymMembers: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const validatedInput = validateInput(GymMembersInputSchema, input, 'input');
     const { gymUuid } = validatedInput;
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
 
-    // Verify gym exists
     const [gym] = await db
-      .select({ id: dbSchema.gyms.id, ownerId: dbSchema.gyms.ownerId })
+      .select()
       .from(dbSchema.gyms)
       .where(and(eq(dbSchema.gyms.uuid, gymUuid), isNull(dbSchema.gyms.deletedAt)))
       .limit(1);
 
-    if (!gym) {
+    // A private gym's staff list is the gym's own content: a viewer who cannot
+    // see the gym gets the answer a missing gym gets, so the uuid confirms nothing.
+    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
+    if (!gym || !(await viewerCanSeeGym(gym, viewerId))) {
       throw new Error('Gym not found');
     }
 

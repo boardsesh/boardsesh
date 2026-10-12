@@ -6,11 +6,16 @@
  * the activity feed, `addComment` and votes on a private gym's comments follow
  * that same rule; a public gym's comments read for everyone, as before.
  *
+ * The staff list (`gymMembers`) follows the same rule.
+ *
  * One viewer table drives every check, so `gym()`, `userCanEditGym` and the SQL
- * twin behind the comment reads (`gymVisibleCondition`) cannot drift apart.
+ * twin behind the comment reads (`gymVisibleCondition`) cannot drift apart. A
+ * plan check keeps that SQL uncorrelated: it sits inside every inbox and feed
+ * read, and a per-gym version pushed the inbox past `jit_above_cost`.
  */
 import { beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { rowsFromResult } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
@@ -22,7 +27,7 @@ import { socialCommentMutations, socialCommentQueries } from '../graphql/resolve
 import { activityFeedQueries } from '../graphql/resolvers/social/activity-feed';
 import { socialGymQueries, userCanEditGym } from '../graphql/resolvers/social/gyms';
 import { socialVoteMutations, socialVoteQueries } from '../graphql/resolvers/social/votes';
-import { canReadSocialEntity } from '../graphql/resolvers/shared/activity-privacy';
+import { canReadSocialEntity, socialEntityPrivacyCondition } from '../graphql/resolvers/shared/activity-privacy';
 
 const COMMENTER = 'private-gym-comments-commenter';
 const OWNER = 'private-gym-comments-owner';
@@ -109,7 +114,7 @@ beforeAll(async () => {
   const everyone = [COMMENTER, ...SIGNED_IN.map((viewer) => viewer.userId)];
   await db.insert(dbSchema.users).values(everyone.map((id) => ({ id, email: `${id}@test.com`, name: id })));
 
-  const [privateGym] = await db
+  const [privateGym, publicGym] = await db
     .insert(dbSchema.gyms)
     .values([
       { uuid: PRIVATE_GYM, slug: 'private-gym-comments-private', name: 'Garage wall', ownerId: OWNER, isPublic: false },
@@ -130,6 +135,7 @@ beforeAll(async () => {
     { gymId: privateGym.id, userId: GYM_EDITOR, role: 'editor' },
     { gymId: privateGym.id, userId: PLAIN_MEMBER, role: 'member' },
     { gymId: privateGym.id, userId: COMMENTER, role: 'editor' },
+    { gymId: publicGym.id, userId: PLAIN_MEMBER, role: 'member' },
   ]);
 
   // The private gym has a live Kilter board and a deleted Tension board, and no
@@ -346,5 +352,72 @@ describe('comments on a private gym follow the gym’s own visibility', () => {
       expect(await globalFeedCommentIds(viewer)).not.toContain(DELETED_GYM_COMMENT);
     }
     expect(await activityFeedCommentIds(OWNER)).not.toContain(DELETED_GYM_COMMENT);
+  });
+});
+
+describe('the staff list follows the gym’s visibility', () => {
+  async function staffOrError(gymUuid: string, userId: string | null): Promise<string[] | string> {
+    try {
+      const page = await socialGymQueries.gymMembers(null, { input: { gymUuid } }, context(userId));
+      return page.members.map((member) => member.userId).sort();
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  it('lists a private gym’s staff only to viewers who see it; everyone else gets the missing-gym answer', async () => {
+    const missingGym = await staffOrError(UNKNOWN_GYM, null);
+    expect(missingGym).toBe('Gym not found');
+    const staff: Record<string, string[]> = {
+      private: [COMMENTER, GYM_ADMIN, GYM_EDITOR, PLAIN_MEMBER].sort(),
+      public: [PLAIN_MEMBER],
+    };
+    const actual: Record<string, string[] | string> = {};
+    const expected: Record<string, string[] | string> = {};
+    for (const gym of GYMS) {
+      for (const viewer of VIEWERS) {
+        const key = `${gym.name} gym / ${viewer.label}`;
+        actual[key] = await staffOrError(gym.uuid, viewer.userId);
+        expected[key] = seesGym(viewer, gym) ? staff[gym.name] : missingGym;
+      }
+    }
+    expect(actual).toEqual(expected);
+    expect(await staffOrError(DELETED_GYM, OWNER)).toBe(missingGym);
+  });
+});
+
+describe('the gym arm’s query plan', () => {
+  type PlanNode = {
+    'Node Type': string;
+    'Relation Name'?: string;
+    Alias?: string;
+    Plans?: PlanNode[];
+    [field: string]: unknown;
+  };
+
+  it('checks who sees a private gym without reading the gym row, so each subquery runs once per statement', async () => {
+    const explained = await db.execute(
+      sql`EXPLAIN (FORMAT JSON) SELECT outer_gym.id FROM gyms outer_gym
+        WHERE ${socialEntityPrivacyCondition(sql`'gym'`, sql`outer_gym.uuid`, GYM_EDITOR)}`,
+    );
+    const root = rowsFromResult<{ 'QUERY PLAN': { Plan: PlanNode }[] }>(explained)[0]['QUERY PLAN'][0].Plan;
+    const flatten = (plan: PlanNode): PlanNode[] => [plan, ...(plan.Plans ?? []).flatMap(flatten)];
+    const plans = flatten(root);
+    const gymAliases = plans.flatMap((plan) => (plan['Relation Name'] === 'gyms' && plan.Alias ? [plan.Alias] : []));
+    const roleTables = ['gym_members', 'community_roles', 'user_boards'];
+    const roleScans = plans.filter((plan) => roleTables.includes(plan['Relation Name'] ?? ''));
+    // Not vacuous: the gym arm's staff and community-role lookups are in this plan.
+    expect(gymAliases).toContain('privacy_entity_gym');
+    expect(roleScans.map((plan) => plan['Relation Name'])).toEqual(
+      expect.arrayContaining(['gym_members', 'community_roles']),
+    );
+    // A condition naming a gyms row would make the lookup run once per gym.
+    const correlated = roleScans.flatMap((plan) => {
+      const text = JSON.stringify({ ...plan, Plans: undefined });
+      return gymAliases
+        .filter((alias) => new RegExp(`\\b${alias}\\.`).test(text))
+        .map((alias) => `${plan.Alias} -> ${alias}`);
+    });
+    expect(correlated).toEqual([]);
   });
 });
