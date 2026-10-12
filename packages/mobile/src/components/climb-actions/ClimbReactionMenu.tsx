@@ -57,28 +57,6 @@ type ClimbReactionMenuProps = {
   currentUserId?: string | null;
   isAuthenticated: boolean;
   onEditEntry?: () => void;
-  /** When provided, the "Add beta video" action runs this instead of opening the
-   *  root beta sheet — the play drawer passes its own in-tree opener so the sheet
-   *  stacks above the `/play` modal (#3505). Receives the climb/board snapshot the
-   *  menu was opened for. */
-  onAddBetaVideo?: (climb: Climb, boardConfig: BoardConfig) => void;
-  /** When provided, the "Tick" action runs this instead of opening the root
-   *  LogAscent sheet — the play drawer passes its own in-tree opener so the tick
-   *  sheet stacks above the `/play` modal. Without it, presenting the root sheet
-   *  forces UIKit to dismiss `/play` and the tick sheet closes immediately.
-   *  Receives the climb/board snapshot the menu was opened for. */
-  onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
-  /** When provided, the "Report climb" action runs this instead of opening the
-   *  root report sheet — the play drawer passes its own in-tree opener so the
-   *  sheet stacks above the `/play` modal (#3505). Receives the climb/board
-   *  snapshot the menu was opened for. */
-  onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
-  /** When provided, adds "Open the queue" (the play drawer, while the
-   *  connect-step pill has the queue button's place; #5654). */
-  onOpenQueue?: () => void;
-  /** When provided, adds "View options" (the play drawer's own sections-sheet
-   *  opener, so the sheet presents above `/play`). */
-  onOpenViewOptions?: () => void;
   /** Native sheet underneath this custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** Supplied only when this menu was opened from the `/play` route. */
@@ -160,11 +138,6 @@ export function ClimbReactionMenu({
   currentUserId,
   isAuthenticated,
   onEditEntry,
-  onAddBetaVideo,
-  onTick,
-  onReportClimb,
-  onOpenQueue,
-  onOpenViewOptions,
   dismissSourceSheet,
   dismissPlayerAndWait,
   reduceMotion,
@@ -262,11 +235,6 @@ export function ClimbReactionMenu({
     onEditEntry,
     onAfterAction: dismiss,
     onSelectPlaylist: openPlaylist,
-    onAddBetaVideo,
-    onTick,
-    onReportClimb,
-    onOpenQueue,
-    onOpenViewOptions,
     dismissSourceSheet,
     dismissPlayerAndWait,
   });

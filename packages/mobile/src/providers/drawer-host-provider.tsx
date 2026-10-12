@@ -78,31 +78,6 @@ export type OpenClimbActionsOptions = {
   /** When set, the climb actions sheet shows an "Edit entry" row wired to this
    *  callback (logbook rows pass it to open the tick editor). */
   onEditEntry?: () => void;
-  /** When set, the "Add beta video" action runs this instead of opening the root
-   *  beta sheet. The play drawer passes its own in-tree opener so the sheet stacks
-   *  above the `/play` fullScreenModal (a root-tree sheet can't — see #3505). It
-   *  receives the climb/board snapshot the menu was opened for. */
-  onAddBetaVideo?: (climb: Climb, boardConfig: BoardConfig) => void;
-  /** When set, the "Tick" action runs this instead of opening the root LogAscent
-   *  sheet. The play drawer passes its own in-tree opener so the tick sheet stacks
-   *  above the `/play` transparentModal — the root sheet mounts BEHIND it, and
-   *  presenting it forces UIKit to dismiss `/play`, dragging the tick sheet down
-   *  with it (the "tick sheet closes immediately" bug). Same fix shape as
-   *  `onAddBetaVideo` (#3505). Receives the climb/board snapshot the menu opened for. */
-  onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
-  /** When set, the "Report climb" action runs this instead of opening the root
-   *  report sheet. The play drawer passes its own in-tree opener so the sheet
-   *  stacks above the `/play` fullScreenModal (a root-tree sheet can't — see
-   *  #3505). It receives the climb/board snapshot the menu was opened for. */
-  onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
-  /** When set, the menu offers an "Open the queue" action that runs this after
-   *  the menu closes. The play drawer passes its own queue opener while the
-   *  connect-step pill (#5654) has taken the queue button's place. */
-  onOpenQueue?: () => void;
-  /** When set, the menu offers "View options", which runs this after the menu
-   *  closes. The play drawer passes its own sections-sheet opener, so the sheet
-   *  presents above `/play`. */
-  onOpenViewOptions?: () => void;
   /** Awaitable close for a native BoardSheet / QueueSheet underneath the custom
    * actions overlay. Omitted when the source is an inline iPad pane. */
   dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
@@ -498,11 +473,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     boardConfig: BoardConfig;
     queueItemUuid?: string;
     onEditEntry?: () => void;
-    onAddBetaVideo?: (climb: Climb, boardConfig: BoardConfig) => void;
-    onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
-    onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
-    onOpenQueue?: () => void;
-    onOpenViewOptions?: () => void;
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
@@ -806,11 +776,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         boardConfig,
         queueItemUuid: options?.queueItemUuid,
         onEditEntry: options?.onEditEntry,
-        onAddBetaVideo: options?.onAddBetaVideo,
-        onTick: options?.onTick,
-        onReportClimb: options?.onReportClimb,
-        onOpenQueue: options?.onOpenQueue,
-        onOpenViewOptions: options?.onOpenViewOptions,
         dismissSourceSheet: options?.dismissSourceSheet,
         dismissPlayerAndWait: options?.dismissPlayerAndWait,
       });
@@ -1386,11 +1351,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               currentUserId={profile?.id ?? null}
               isAuthenticated={isAuthenticated}
               onEditEntry={climbActions.onEditEntry}
-              onAddBetaVideo={climbActions.onAddBetaVideo}
-              onTick={climbActions.onTick}
-              onReportClimb={climbActions.onReportClimb}
-              onOpenQueue={climbActions.onOpenQueue}
-              onOpenViewOptions={climbActions.onOpenViewOptions}
               dismissSourceSheet={climbActions.dismissSourceSheet}
               dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
               reduceMotion={reduceMotion}

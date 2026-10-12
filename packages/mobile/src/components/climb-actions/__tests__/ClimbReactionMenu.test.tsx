@@ -17,10 +17,8 @@ import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 
-// Capture what ClimbReactionMenu passes into useClimbActions (so we can assert the
-// playlist action is wired to the inline view switch) and what the picker gets.
+// Capture what the picker gets.
 const captured = vi.hoisted(() => ({
-  actionArgs: null as Record<string, unknown> | null,
   pickerOnBack: undefined as undefined | (() => void),
   pickerOnDetachedFailure: undefined as undefined | ((message: string) => void),
   modalOnRequestClose: undefined as undefined | (() => void),
@@ -177,7 +175,6 @@ vi.mock('../../../theme/colors', () => ({
 // tapping it drives the view switch we want to test.
 vi.mock('../use-climb-actions', () => ({
   useClimbActions: (args: Record<string, unknown>) => {
-    captured.actionArgs = args;
     return [
       { id: 'preview', title: 'Preview', icon: 'visibility', color: '#00f', run: () => {} },
       { id: 'tick', title: 'Log a tick', icon: 'tick', color: '#0f0', run: () => (captured.ran = 'tick') },
@@ -217,7 +214,6 @@ function renderMenu(onClose = vi.fn(), extraProps: Record<string, unknown> = {})
 
 describe('ClimbReactionMenu view switching', () => {
   beforeEach(() => {
-    captured.actionArgs = null;
     captured.pickerOnBack = undefined;
     captured.pickerOnDetachedFailure = undefined;
     captured.modalOnRequestClose = undefined;
@@ -282,25 +278,6 @@ describe('ClimbReactionMenu view switching', () => {
     });
     expect(container.querySelector('[data-picker="true"]')).not.toBeNull();
     expect(queryByLabelText('Add to Playlist')).toBeNull();
-  });
-
-  it('forwards the onAddBetaVideo override into useClimbActions', () => {
-    const onAddBetaVideo = vi.fn();
-    renderMenu(vi.fn(), { onAddBetaVideo });
-    expect(captured.actionArgs?.onAddBetaVideo).toBe(onAddBetaVideo);
-  });
-
-  it('forwards the onReportClimb override into useClimbActions', () => {
-    const onReportClimb = vi.fn();
-    renderMenu(vi.fn(), { onReportClimb });
-    expect(captured.actionArgs?.onReportClimb).toBe(onReportClimb);
-  });
-
-  // The play drawer's own sections-sheet opener, so View options presents above `/play`.
-  it('forwards the onOpenViewOptions opener into useClimbActions', () => {
-    const onOpenViewOptions = vi.fn();
-    renderMenu(vi.fn(), { onOpenViewOptions });
-    expect(captured.actionArgs?.onOpenViewOptions).toBe(onOpenViewOptions);
   });
 
   // A climb the crew voted down still opens from a queue item or a shared link,
