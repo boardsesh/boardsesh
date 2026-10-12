@@ -64,7 +64,8 @@ const EPOCH_SEQ = '0';
 // transaction bounds that race: a skip is unrecoverable, a re-pull is a free
 // upsert. Tests set SYNC_STABILITY_WINDOW_SECONDS=0 to pull their own writes.
 // Deployed document windows retain a minimum delay of two seconds. A membership
-// withdrawal is stamped one second before the climb's new row (migration 0266),
+// withdrawal is stamped one second before the climb's new row
+// (0267_climb_reference_membership),
 // which covers every copy a device pulled only while this window stays above
 // one second.
 // Invalid values use the default; only exact-zero test fixtures bypass it.

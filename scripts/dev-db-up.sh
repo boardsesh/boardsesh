@@ -10,7 +10,7 @@
 #   3. Ensures pg_hba.conf allows Docker network and Tailscale connections
 #   4. Ensures the postgres user has a password set
 #   5. Syncs drizzle migration tracker (public → drizzle schema)
-#   6. Installs the deletion-sync cutoff helper migration 0268 requires
+#   6. Installs the deletion-sync cutoff helper that 0269_sync_deletions_cutoff_guard requires
 #   7. Runs drizzle migrations (to pick up any newer migrations not yet in the image)
 #   8. Installs the pg-boss job queue schema the backend refuses to start without
 
@@ -159,7 +159,7 @@ ensure_job_queue_schema() {
   )
 }
 
-# Migration 0268 refuses to run until an administrator has installed the
+# 0269_sync_deletions_cutoff_guard refuses to run until an administrator has installed the
 # deletion-sync cutoff helper and its NOLOGIN owner (docs/sync-deletions-cutoff.md):
 # the migration login cannot grant the statistics role the helper needs. A dev
 # volume created before that migration has neither, so install them first, with

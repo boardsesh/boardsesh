@@ -180,7 +180,8 @@ via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`)
 `stream_at` insertion timestamp orders new markers; historical NULLs use
 `COALESCE(stream_at, deleted_at)` so installed cursors replay unchanged. The wire
 `deletedAt` carries the resurrection guard, never `stream_at`. A membership
-withdrawal is stamped one second before the climb's new row (migration 0266):
+withdrawal is stamped one second before the climb's new row
+(`0267_climb_reference_membership`):
 it covers every copy a device pulled and never the owner's re-delivered row,
 so owners and republished climbs survive a replay. The internal
 `is_membership_withdrawal` flag and the page filter that reads it ship in the

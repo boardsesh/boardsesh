@@ -6,9 +6,9 @@
 -- commits. ADD COLUMN takes ACCESS EXCLUSIVE on sync_deletions and each CREATE
 -- INDEX scans it, so every read of the deletion log, every marker insert, and
 -- so every delete on a synced table (its trigger writes a marker) waits for
--- both builds. 0266, earlier in the same transaction, created a trigger on
--- board_climbs, whose SHARE ROW EXCLUSIVE lock blocks every climb write for
--- the same stretch.
+-- both builds. The reference-membership migration, earlier in the same
+-- transaction, created a trigger on board_climbs, whose SHARE ROW EXCLUSIVE
+-- lock blocks every climb write for the same stretch.
 --
 -- Accepted because the table is small: the daily prune keeps 90 days of
 -- markers (SYNC_DELETIONS_RETENTION_DAYS), and bulk imports write none. Check
