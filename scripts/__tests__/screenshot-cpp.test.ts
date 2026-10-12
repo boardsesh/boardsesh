@@ -1362,6 +1362,42 @@ describe('custom product page captures', () => {
       }
     }
   });
+  it('selects the real tablet Climbs tab after joining before issuing the strict queue command', () => {
+    const expectedHandoff = [
+      {
+        runFlow: {
+          when: { notVisible: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: true } },
+          commands: [{ tapOn: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: false } }],
+        },
+      },
+      {
+        extendedWaitUntil: {
+          visible: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: true },
+          timeout: 90000,
+        },
+      },
+    ];
+    for (const target of CPP_TARGETS) {
+      const { coverage } = scenario(target);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+          const documents = parseAllDocuments(renderCppMaestroFlow(target, device, coverage, locale));
+          expect(documents.flatMap((document) => document.errors)).toEqual([]);
+          const steps = documents[1].toJS() as Record<string, unknown>[];
+          const joinTap = steps.findIndex((step) => step.tapOn === '${SCREENSHOT_JOIN_LABEL}');
+          const queueCommand = steps.findIndex(
+            (step) => typeof step.evalScript === 'string' && step.evalScript.includes("'/set?scene=queue'"),
+          );
+          expect(joinTap).toBeGreaterThan(-1);
+          expect(queueCommand).toBeGreaterThan(joinTap);
+          expect(steps.slice(joinTap + 2, queueCommand)).toEqual(device.name.startsWith('iPad') ? expectedHandoff : []);
+          expect(steps[queueCommand + 1]).toMatchObject({
+            retry: { maxRetries: 3, commands: [{}, { assertTrue: '${output.cppAcknowledged == output.cppSequence}' }] },
+          });
+        }
+      }
+    }
+  });
   it('prepares a genuine distinct primary accessory before search and proves its actual solo phone host', () => {
     for (const target of CPP_TARGETS) {
       const { page, boards, coverage, fixturesDir } = selectedScenario(target);

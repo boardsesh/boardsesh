@@ -105,6 +105,14 @@ let seedClimbs: BoardPresenceClimb[] = [];
 let seedHolder: BoardConnectionHolder | null = null;
 const listeners = new Set<SeedListener>();
 
+/** Subscribe to publications so readers can scope their state to the real board UUID. */
+export function subscribeScreenshotPublishedBoardKey(listener: SeedListener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 /** How many lit climbs the seed keeps once reports start stacking up. */
 const SCREENSHOT_WALL_HISTORY_CAP = 20;
 

@@ -2194,6 +2194,13 @@ export function renderCppMaestroFlow(
         '- tapOn: ${SCREENSHOT_JOIN_LABEL}',
         '- waitForAnimationToEnd',
       );
+      if (ipad)
+        commands.push(
+          // Join returns to Session. Select the actual native tab before the
+          // acknowledged queue command changes Climbs' capture parameters.
+          '- runFlow:\n    when:\n      notVisible:\n        text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n        selected: true\n    commands:\n      - tapOn:\n          text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n          selected: false',
+          '- extendedWaitUntil:\n    visible:\n      text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n      selected: true\n    timeout: 90000',
+        );
     }
     commands.push(
       `- evalScript: \${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=${scene.command}').body).sequence}`,

@@ -41,6 +41,8 @@ import {
 import {
   createScreenshotBoardPresenceClient,
   SCREENSHOT_SEED_BOARD_ID,
+  screenshotPublishedBoardKey,
+  subscribeScreenshotPublishedBoardKey,
 } from '../lib/board-presence/screenshot-wall-seed';
 import { getWsClient } from '../lib/graphql/ws-client';
 import {
@@ -198,6 +200,8 @@ const BoardPresenceControlsContext = createContext<BoardPresenceControlsValue | 
 // this is a launch constant — which is also why the offline gate below can
 // treat "seed transport" as a fixed fact rather than a render input.
 const USES_SEED_TRANSPORT = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+const readNoScreenshotBoardKey = (): null => null;
+const subscribeNoScreenshotBoardKey = (): (() => void) => () => {};
 
 export function MobileBoardPresenceProvider({ children }: { children: ReactNode }) {
   // Always-on: presence shipped GA, so the provider is never inert. `enabled` is
@@ -221,6 +225,14 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   const [bindingGeneration, setBindingGeneration] = useState(credentialGeneration);
   const visibleBoardId = bindingGeneration === credentialGeneration ? boardId : null;
   const visibleBoardUuid = bindingGeneration === credentialGeneration ? boardUuid : null;
+  const publishedScreenshotBoardUuid = useSyncExternalStore(
+    USES_SEED_TRANSPORT ? subscribeScreenshotPublishedBoardKey : subscribeNoScreenshotBoardKey,
+    USES_SEED_TRANSPORT ? screenshotPublishedBoardKey : readNoScreenshotBoardKey,
+    readNoScreenshotBoardKey,
+  );
+  // The simulator uses one sentinel numeric ID. Its real published UUID gives
+  // existing readers a new scope when boards change, clearing prior-wall history.
+  const readerBoardUuid = USES_SEED_TRANSPORT ? publishedScreenshotBoardUuid : visibleBoardUuid;
   // When a serial maps to several boards the user must pick which wall they're
   // at. We hold the candidates + serial here and surface a picker; binding waits
   // for the choice.
@@ -705,7 +717,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
   return (
     <BoardPresenceControlsContext.Provider value={controls}>
-      <BoardPresenceProvider boardId={visibleBoardId} boardUuid={visibleBoardUuid} client={liveClient}>
+      <BoardPresenceProvider boardId={visibleBoardId} boardUuid={readerBoardUuid} client={liveClient}>
         <BoardPresenceForegroundSync />
         {children}
       </BoardPresenceProvider>

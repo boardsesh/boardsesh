@@ -205,6 +205,12 @@ accessory row: UIKit can omit its central Apple Zoom link from the accessibility
 tree. Only CPP captures group that row under its actual climb name; normal use
 keeps the controls' individual accessibility. The marker still rejects retained
 or shared-session content and requires the actual selected climb UUID.
+On tablets, joining returns to the Session tab. Capture selects the existing
+localized Climbs tab and verifies its selected state before issuing the queue
+command; the exact route, sequence, private-session and content gates still apply.
+Screenshot wall readers also use the actual published owned-board UUID as their
+scope. Switching capture boards starts a new local history from that board's
+recorded climbs, so previous families do not remain in the status or kiosk list.
 Bootstrap verifies the persisted owner, named board identity, configuration, private
 visibility, permanence, and durable lifecycle before joining; live presence alone
 does not determine whether a saved session is reusable. An account/backend-bound checkpoint whose durable lifecycle is ended may receive
