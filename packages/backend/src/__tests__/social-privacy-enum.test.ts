@@ -140,7 +140,10 @@ describe('social privacy queries with production PostgreSQL enum types', () => {
   it.each([
     { viewer: owner, visible: [publicClimb, privateClimb, draftClimb] },
     { viewer: approved, visible: [publicClimb, privateClimb] },
-    { viewer: stranger, visible: [publicClimb, privateClimb] },
+    // The private account's published climb is public, but each row names the
+    // account as its actor, so a stranger (whose follow request is pending)
+    // gets neither the notification nor the feed row.
+    { viewer: stranger, visible: [publicClimb] },
   ])('counts unread notifications within $viewer privacy access', async ({ viewer, visible }) => {
     expect(await socialNotificationQueries.unreadNotificationCount(null, {}, context(viewer))).toBe(visible.length);
   });
@@ -148,7 +151,7 @@ describe('social privacy queries with production PostgreSQL enum types', () => {
   it.each([
     { viewer: owner, visible: [publicClimb, privateClimb, draftClimb] },
     { viewer: approved, visible: [publicClimb, privateClimb] },
-    { viewer: stranger, visible: [publicClimb, privateClimb] },
+    { viewer: stranger, visible: [publicClimb] },
   ])('filters materialized feed rows within $viewer privacy access', async ({ viewer, visible }) => {
     const feed = await activityFeedQueries.activityFeed(null, {}, context(viewer));
     expect(feed.items.map((item) => item.entityId).sort()).toEqual([...visible].sort());
