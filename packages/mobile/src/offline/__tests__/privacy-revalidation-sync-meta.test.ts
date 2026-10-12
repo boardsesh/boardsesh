@@ -130,7 +130,7 @@ async function seedEverySyncMetaFamily(db: TestSqliteDb): Promise<void> {
   }
 }
 
-const PREPARED_FOR_VIEWER = `2:0:${VIEWER}`;
+const PREPARED_FOR_VIEWER = `3:0:${VIEWER}`;
 
 async function insertClimb(
   uuid: string,
@@ -581,7 +581,7 @@ describe('preparing the catalogue for an account, once', () => {
       JSON.stringify(REFERENCE_CURSOR),
     );
     expect(await isScopeDownloadComplete(database, 'kilter:1:10')).toBe(true);
-    expect((await syncMeta()).get(CATALOGUE_PREPARED_FOR_KEY)).toBe('2:0:next-climber');
+    expect((await syncMeta()).get(CATALOGUE_PREPARED_FOR_KEY)).toBe('3:0:next-climber');
   });
 
   it('runs again after an earlier bundle ran, which deletes the note that it was done', async () => {

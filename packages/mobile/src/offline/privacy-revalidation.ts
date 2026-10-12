@@ -201,7 +201,8 @@ async function withdrawWallRows(transaction: SqlExecutor, viewerId: string): Pro
 }
 
 /** Marks a preparation done by this version of the rule, for one account. */
-const PREPARED_RULE_VERSION = '2';
+// Re-run preparation after the prior mutable-outbox scan could skip a row.
+const PREPARED_RULE_VERSION = '3';
 /** Climbs deleted per transaction while preparing, so no single hold is long. */
 const PREPARE_BATCH_CLIMBS = 2000;
 /** Stats rows examined per transaction by the first-ascent scrub. */
@@ -275,13 +276,14 @@ async function prepareCatalogueForViewer(
 
   // Only its owner is sent a draft or an unlisted climb. NULL reads as the
   // server reads it: not a draft, and not listed. `rowid` keyset, so the table
-  // is walked once however many batches that takes.
+  // is walked once however many batches that takes. Candidate selection never
+  // depends on queued writes: delivery can make an already-passed row removable.
   const notThisClimbers = `(COALESCE(is_draft, 0) = 1 OR COALESCE(is_listed, 0) = 0) AND (user_id IS NULL OR user_id <> ?)`;
   let afterRowid = 0;
   for (;;) {
     const batch = await db.getAllAsync<RemovableClimb & { rowid: number }>(
       `SELECT rowid, uuid, board_type, layout_id FROM board_climbs
-       WHERE rowid > ? AND ${notThisClimbers} AND ${IS_REPLACEABLE}
+       WHERE rowid > ? AND ${notThisClimbers}
        ORDER BY rowid LIMIT ?`,
       [afterRowid, viewerId, PREPARE_BATCH_CLIMBS],
     );
@@ -311,8 +313,10 @@ async function prepareCatalogueForViewer(
     });
   }
 
+  // A passed row may become replaceable between batches. Count every foreign
+  // remainder so reads stay closed and the next attempt scans it from rowid 0.
   const kept = await db.getFirstAsync<{ kept: number }>(
-    `SELECT COUNT(*) AS kept FROM board_climbs WHERE ${notThisClimbers} AND NOT ${IS_REPLACEABLE}`,
+    `SELECT COUNT(*) AS kept FROM board_climbs WHERE ${notThisClimbers}`,
     [viewerId],
   );
   const keptForeignRows = kept?.kept ?? 0;

@@ -333,6 +333,58 @@ describe('downloaded catalogue privacy', () => {
     expect(needsCatalogOutboxRepair('viewer')).toBe(false);
   });
 
+  it('keeps reads closed when delivery makes a passed foreign row replaceable', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(`WITH RECURSIVE numbers(number) AS (
+      SELECT 1 UNION ALL SELECT number + 1 FROM numbers WHERE number < 2001
+    ) INSERT INTO board_climbs (uuid, board_type, layout_id, user_id, is_draft, is_listed, sync_seq)
+      SELECT 'foreign-' || number, 'kilter', 1, 'other', 1, 0, 42 FROM numbers`);
+    await database.runAsync(
+      "INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key) VALUES ('boardsesh_ticks', 'insert', ?, 'passed-reference')",
+      [JSON.stringify({ climbUuid: 'foreign-1' })],
+    );
+    const transact = database.withExclusiveTransactionAsync.bind(database);
+    let delivered = false;
+    const transactionSpy = vi.spyOn(database, 'withExclusiveTransactionAsync').mockImplementation(async (task) => {
+      const before = await database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM board_climbs');
+      await transact(task);
+      const after = await database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM board_climbs');
+      if (!delivered && after!.count < before!.count) {
+        delivered = true;
+        await database.runAsync("DELETE FROM pending_mutations WHERE idempotency_key = 'passed-reference'");
+      }
+    });
+    try {
+      await revalidatePrivateCatalog(database, 'viewer');
+      expect(delivered).toBe(true);
+      expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([{ uuid: 'foreign-1' }]);
+      expect(await canReadPrivateCatalog(database)).toBe(false);
+      expect(needsCatalogOutboxRepair('viewer')).toBe(true);
+      await revalidatePrivateCatalog(database, 'viewer');
+      expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+      expect(await canReadPrivateCatalog(database)).toBe(true);
+      expect(needsCatalogOutboxRepair('viewer')).toBe(false);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+  });
+
+  it('repairs an earlier cleanup marker that skipped a delivered foreign row', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    await database.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, sync_seq) VALUES ('previously-skipped', 'kilter', 'other', 1, 42)",
+    );
+    await database.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      CATALOGUE_PREPARED_FOR_KEY,
+      '2:0:viewer',
+    ]);
+    await revalidatePrivateCatalog(database, 'viewer');
+    expect(await database.getAllAsync('SELECT uuid FROM board_climbs')).toEqual([]);
+    expect(await canReadPrivateCatalog(database)).toBe(true);
+  });
+
   it('preserves another account drafts and queued climb references without granting catalogue access', async () => {
     database = createTestDatabase();
     await runMigrations(database);

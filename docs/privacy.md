@@ -107,3 +107,5 @@ Run the backend suites against their PostgreSQL/Redis test services. Do not run 
 Social test tables must use the production `social_entity_type` enum. Using text instead hides PostgreSQL comparison and recursive UNION errors. The shared privacy helpers normalize incoming entity types to text because `content_privacy` also covers non-social types such as playlists and beta links. Real resolver tests cover unread notification counts, materialized activity feeds and bulk session votes with these enum columns.
 
 The privacy matrix also covers empty inboxes, exact unread counts, read and other-recipient exclusions, aliased flat and grouped inboxes, private comment ancestors and retained ownerless policies.
+
+Catalogue preparation scans foreign draft and unlisted candidates independently of queued delivery, then rechecks removability under the write lock. Any foreign remainder keeps local reads closed and records a retryable preparation. Cleanup marker version 3 repairs markers from the earlier scan; artifact publication rule 2 and reference checkpoints stay unchanged.
