@@ -149,9 +149,10 @@ export async function setAnalyticsConsentForUser(
 
     const latest = await readLatestConsent(transaction, userId);
     if (input.conditional === true || input.analytics === 'granted') {
-      const stale = input.conditional === true
-        ? conditionalWriteIsStale(latest, input.basedOnDecidedAt)
-        : grantIsStale(latest, input.basedOnDecidedAt);
+      const stale =
+        input.conditional === true
+          ? conditionalWriteIsStale(latest, input.basedOnDecidedAt)
+          : grantIsStale(latest, input.basedOnDecidedAt);
       if (latest !== null && stale) return toAnalyticsConsent(latest);
     }
 

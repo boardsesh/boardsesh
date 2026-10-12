@@ -95,6 +95,21 @@ describe('account deletion', () => {
 });
 
 describe('consent withdrawal', () => {
+  it('does not erase a grant when an older conditional denial is recovered', async () => {
+    const userId = await createUser();
+    const granted = await setConsent(userId, grant());
+    const recovered = await setConsent(userId, { ...deny, conditional: true });
+    expect(recovered).toEqual(granted);
+    expect(await queuedErasures(userId)).toEqual([]);
+  });
+
+  it('queues both passes for a conditional denial against the current grant', async () => {
+    const userId = await createUser();
+    const granted = await setConsent(userId, grant());
+    await setConsent(userId, { ...deny, conditional: true, basedOnDecidedAt: granted.decidedAt });
+    expect(await queuedErasures(userId)).toEqual(bothPasses(userId, 'consent_withdrawn'));
+  });
+
   it('queues both passes when a denial replaces a grant', async () => {
     const userId = await createUser();
     await setConsent(userId, grant());

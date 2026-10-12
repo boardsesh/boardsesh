@@ -297,7 +297,6 @@ describe('web analytics consent lifecycle', () => {
     });
     const calls = harness.network.mock.calls as unknown as Array<[string, { body: string }]>;
     expect(JSON.parse(calls.at(-1)?.[1].body ?? '{}').distinct_id).toBe('account-a');
-
   });
   it('keeps the grant after identity reset on sign-out', async () => {
     harness.granted = true;
