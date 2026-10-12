@@ -57,8 +57,9 @@ describe('toAscentFeedInput', () => {
     expect(input.flashOnly).toBe(true);
     expect(input.minDifficulty).toBe(12);
     expect(input.maxDifficulty).toBe(20);
-    expect(input.fromDate).toBe('2026-01-01');
-    expect(input.toDate).toBe('2026-02-01');
+    // Local midnight of the From day; exclusive local midnight after the To day.
+    expect(input.fromDate).toBe(new Date(2026, 0, 1).toISOString());
+    expect(input.toDate).toBe(new Date(2026, 1, 2).toISOString());
     expect(input.minAngle).toBe(20);
     expect(input.maxAngle).toBe(50);
     expect(input.benchmarkOnly).toBe(true);
@@ -157,6 +158,11 @@ describe('sanitizeLogbookFilters', () => {
     expect(sanitizeLogbookFilters({ fromDate: 'not-a-date' }).fromDate).toBe('');
     expect(sanitizeLogbookFilters({ fromDate: '01/15/2026' }).fromDate).toBe('');
     expect(sanitizeLogbookFilters({ toDate: '2026-13-40' }).toDate).toBe('');
+    // Shape-valid, but no such day (Postgres would throw on it).
+    expect(sanitizeLogbookFilters({ fromDate: '2026-02-30' }).fromDate).toBe('');
+    expect(sanitizeLogbookFilters({ fromDate: '2026-02-29' }).fromDate).toBe('');
+    expect(sanitizeLogbookFilters({ fromDate: '2028-02-29' }).fromDate).toBe('2028-02-29');
+    expect(sanitizeLogbookFilters({ toDate: '2026-04-31' }).toDate).toBe('');
   });
 });
 

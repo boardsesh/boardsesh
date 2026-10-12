@@ -301,7 +301,15 @@ export type GetUserAscentsFeedQueryVariables = {
     benchmarkOnly?: boolean;
     minQuality?: number;
     setterUsernames?: string[];
+    /**
+     * Inclusive start. The logbook sends an ISO timestamp (the climber's local
+     * midnight); a bare `YYYY-MM-DD` still means that UTC day.
+     */
     fromDate?: string;
+    /**
+     * The logbook sends an ISO timestamp, EXCLUSIVE (local midnight after the
+     * last day); a bare `YYYY-MM-DD` still means through the end of that UTC day.
+     */
     toDate?: string;
   };
 };

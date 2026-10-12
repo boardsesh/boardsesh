@@ -22,6 +22,25 @@ function localIsoDate(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Local midnight of a `YYYY-MM-DD` calendar day, or null when the string isn't
+ * a real date (shape, month 13, Feb 30). `dayOffset` moves whole calendar days,
+ * so `parseLocalIsoDate(day, 1)` is the start of the next day even across DST.
+ */
+export function parseLocalIsoDate(value: string, dayOffset = 0): Date | null {
+  const match = ISO_DATE_PATTERN.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day);
+  // The Date constructor rolls Feb 30 over to Mar 2; a real date round-trips.
+  if (date.getFullYear() !== year || date.getMonth() !== monthIndex || date.getDate() !== day) return null;
+  return dayOffset === 0 ? date : new Date(year, monthIndex, day + dayOffset);
+}
+
 /** Days in a local calendar month; `monthIndex` may be out of 0-11 (it wraps years). */
 function daysInMonth(year: number, monthIndex: number): number {
   return new Date(year, monthIndex + 1, 0).getDate();

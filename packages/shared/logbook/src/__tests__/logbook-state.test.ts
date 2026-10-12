@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '../defaults';
 import { isLogbookDateFilterActive, LOGBOOK_DATE_WINDOWS, resolveLogbookDateRange } from '../date-window';
-import { MAX_LOGBOOK_SETTER_FILTERS, sanitizeLogbookFilters, sanitizeLogbookSort } from '../sanitize';
+import {
+  logbookFiltersForStorage,
+  MAX_LOGBOOK_SETTER_FILTERS,
+  sanitizeLogbookFilters,
+  sanitizeLogbookSort,
+} from '../sanitize';
 import { LOGBOOK_SORT_KEYS, logbookSortFor, logbookSortKeyOf } from '../sort-keys';
 import { filtersForStatusSegment, LOGBOOK_STATUS_SEGMENTS, statusSegmentFor } from '../status-segments';
 import { toAscentFeedInput } from '../to-ascent-feed-input';
@@ -49,8 +54,24 @@ describe('status segments', () => {
     expect(statusSegmentFor({ includeSends: false, includeAttempts: true, flashOnly: true })).toBe('attempts');
   });
 
-  it('reads the impossible neither-on state as All', () => {
-    expect(statusSegmentFor({ includeSends: false, includeAttempts: false, flashOnly: false })).toBe('all');
+  it('reads the impossible neither-on state the way the sanitizer repairs it', () => {
+    const neither = { includeSends: false, includeAttempts: false, flashOnly: false };
+    expect(sanitizeLogbookFilters(neither)).toMatchObject({ includeSends: true, includeAttempts: false });
+    expect(statusSegmentFor(neither)).toBe('sends');
+    expect(statusSegmentFor({ ...neither, flashOnly: true })).toBe('flashes');
+    expect(statusSegmentFor(sanitizeLogbookFilters({ ...neither, flashOnly: true }))).toBe('flashes');
+  });
+
+  it('the feed input queries the neither-on state as Sends / Flashes too', () => {
+    const neither = withFilters({ includeSends: false, includeAttempts: false, flashOnly: false });
+    expect(toAscentFeedInput({ filters: neither, sort: DEFAULT_LOGBOOK_SORT })).toMatchObject({
+      statusMode: 'send',
+      flashOnly: false,
+    });
+    expect(toAscentFeedInput({ filters: { ...neither, flashOnly: true }, sort: DEFAULT_LOGBOOK_SORT })).toMatchObject({
+      statusMode: 'send',
+      flashOnly: true,
+    });
   });
 
   it('defaults read as All', () => {
@@ -185,9 +206,9 @@ describe('toAscentFeedInput date windows', () => {
     expect(input.toDate).toBeUndefined();
   });
 
-  it('a rolling window sends its first day and no upper bound', () => {
+  it('a rolling window sends local midnight of its first day and no upper bound', () => {
     const input = toAscentFeedInput({ filters: withFilters({ dateWindow: 'last7' }), sort: DEFAULT_LOGBOOK_SORT, now });
-    expect(input.fromDate).toBe('2026-10-06');
+    expect(input.fromDate).toBe(new Date(2026, 9, 6).toISOString());
     expect(input).not.toHaveProperty('toDate');
   });
 
@@ -197,14 +218,89 @@ describe('toAscentFeedInput date windows', () => {
       sort: DEFAULT_LOGBOOK_SORT,
       now,
     });
-    expect(input.fromDate).toBe('2026-01-01');
-    expect(input.toDate).toBe('2026-02-01');
+    expect(input.fromDate).toBe(new Date(2026, 0, 1).toISOString());
+    // Exclusive: local midnight of the day AFTER the To day.
+    expect(input.toDate).toBe(new Date(2026, 1, 2).toISOString());
+  });
+
+  it('Custom with one bound sends only that bound', () => {
+    const fromOnly = toAscentFeedInput({
+      filters: withFilters({ dateWindow: 'custom', fromDate: '2026-01-01' }),
+      sort: DEFAULT_LOGBOOK_SORT,
+      now,
+    });
+    expect(fromOnly.fromDate).toBe(new Date(2026, 0, 1).toISOString());
+    expect(fromOnly).not.toHaveProperty('toDate');
+    const toOnly = toAscentFeedInput({
+      filters: withFilters({ dateWindow: 'custom', toDate: '2026-12-31' }),
+      sort: DEFAULT_LOGBOOK_SORT,
+      now,
+    });
+    expect(toOnly).not.toHaveProperty('fromDate');
+    expect(toOnly.toDate).toBe(new Date(2027, 0, 1).toISOString());
+  });
+
+  it('drops an impossible in-memory date instead of sending it', () => {
+    const input = toAscentFeedInput({
+      filters: withFilters({ dateWindow: 'custom', fromDate: '2026-02-30', toDate: 'soon' }),
+      sort: DEFAULT_LOGBOOK_SORT,
+      now,
+    });
+    expect(input).not.toHaveProperty('fromDate');
+    expect(input).not.toHaveProperty('toDate');
   });
 
   it('resolves against the real clock when no `now` is passed', () => {
     const today = new Date();
     const input = toAscentFeedInput({ filters: withFilters({ dateWindow: 'year' }), sort: DEFAULT_LOGBOOK_SORT });
-    expect(input.fromDate).toBe(`${today.getFullYear()}-01-01`);
+    expect(input.fromDate).toBe(new Date(today.getFullYear(), 0, 1).toISOString());
+  });
+
+  describe('on the device calendar in real timezones', () => {
+    const originalTz = process.env.TZ;
+    afterEach(() => {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    });
+    const feedFor = (filters: Partial<LogbookFilterState>, clock: Date) =>
+      toAscentFeedInput({ filters: withFilters(filters), sort: DEFAULT_LOGBOOK_SORT, now: clock });
+
+    it('Auckland (UTC+13): "This month" at 00:30 on Oct 1 starts at local midnight', () => {
+      process.env.TZ = 'Pacific/Auckland';
+      const input = feedFor({ dateWindow: 'month' }, localDate(2026, 10, 1, 0, 30));
+      expect(input.fromDate).toBe('2026-09-30T11:00:00.000Z');
+      // A tick logged at 00:15 local on Oct 1 is inside the window. As a bare
+      // '2026-10-01' (a UTC day) it would have been cut.
+      const tickAt = localDate(2026, 10, 1, 0, 15).toISOString();
+      expect(tickAt).toBe('2026-09-30T11:15:00.000Z');
+      expect(tickAt >= (input.fromDate ?? '')).toBe(true);
+    });
+
+    it('Los Angeles (UTC-7): "This month" starts at 07:00Z', () => {
+      process.env.TZ = 'America/Los_Angeles';
+      expect(feedFor({ dateWindow: 'month' }, localDate(2026, 10, 31, 23, 30)).fromDate).toBe(
+        '2026-10-01T07:00:00.000Z',
+      );
+    });
+
+    it('Custom ends at the exclusive local midnight after the To day', () => {
+      process.env.TZ = 'America/Los_Angeles';
+      const input = feedFor({ dateWindow: 'custom', fromDate: '2026-06-01', toDate: '2026-06-30' }, now);
+      expect(input.fromDate).toBe('2026-06-01T07:00:00.000Z');
+      expect(input.toDate).toBe('2026-07-01T07:00:00.000Z');
+    });
+
+    it('a DST day keeps its real length (23 h in spring, 25 h in autumn)', () => {
+      process.env.TZ = 'America/Los_Angeles';
+      const spring = feedFor({ dateWindow: 'custom', fromDate: '2026-03-08', toDate: '2026-03-08' }, now);
+      expect(spring.fromDate).toBe('2026-03-08T08:00:00.000Z');
+      expect(spring.toDate).toBe('2026-03-09T07:00:00.000Z');
+      const autumn = feedFor({ dateWindow: 'custom', fromDate: '2026-11-01', toDate: '2026-11-01' }, now);
+      expect(autumn.fromDate).toBe('2026-11-01T07:00:00.000Z');
+      expect(autumn.toDate).toBe('2026-11-02T08:00:00.000Z');
+      // A rolling window that reaches back across the change starts in PST.
+      expect(feedFor({ dateWindow: 'last7' }, localDate(2026, 3, 10)).fromDate).toBe('2026-03-04T08:00:00.000Z');
+    });
   });
 });
 
@@ -417,6 +513,24 @@ describe('sanitizeLogbookFilters back-compat and new fields', () => {
     expect(junk.boardType).toBe('');
     expect(junk.layoutIds).toEqual([]);
     expect(sanitizeLogbookFilters({ boardType: 42 }).boardType).toBe('');
+    // Board-shaped but not a board the app knows (the backend would reject it).
+    expect(sanitizeLogbookFilters({ boardType: 'notaboard' }).boardType).toBe('');
+  });
+
+  it('keeps every supported board type', () => {
+    for (const boardType of [
+      'kilter',
+      'tension',
+      'moonboard',
+      'decoy',
+      'touchstone',
+      'grasshopper',
+      'soill',
+      'woods',
+      'spray',
+    ]) {
+      expect(sanitizeLogbookFilters({ boardType }).boardType).toBe(boardType);
+    }
   });
 
   it('is idempotent on a fully populated state', () => {
@@ -434,5 +548,21 @@ describe('sanitizeLogbookFilters back-compat and new fields', () => {
 describe('sanitizeLogbookSort presets', () => {
   it('keeps the easiest preset', () => {
     expect(sanitizeLogbookSort({ mode: 'preset', preset: 'easiest' }).preset).toBe('easiest');
+  });
+});
+
+describe('logbookFiltersForStorage', () => {
+  it('blanks a leftover range under every non-Custom window', () => {
+    for (const dateWindow of LOGBOOK_DATE_WINDOWS.filter((window) => window !== 'custom')) {
+      const stored = logbookFiltersForStorage(
+        withFilters({ dateWindow, fromDate: '2026-01-01', toDate: '2026-02-01', minGrade: 12 }),
+      );
+      expect(stored).toMatchObject({ dateWindow, fromDate: '', toDate: '', minGrade: 12 });
+    }
+  });
+
+  it('keeps the range under Custom', () => {
+    const custom = withFilters({ dateWindow: 'custom', fromDate: '2026-01-01', toDate: '2026-02-01' });
+    expect(logbookFiltersForStorage(custom)).toEqual(custom);
   });
 });

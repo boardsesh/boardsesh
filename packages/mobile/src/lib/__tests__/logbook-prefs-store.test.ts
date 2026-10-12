@@ -198,7 +198,6 @@ describe('logbook-prefs-store', () => {
     const filters = {
       ...DEFAULT_LOGBOOK_FILTERS,
       dateWindow: 'month' as const,
-      fromDate: '2026-01-01',
       boardType: 'kilter',
       layoutIds: [1, 8],
       minQuality: 4,
@@ -208,5 +207,29 @@ describe('logbook-prefs-store', () => {
     store.get.mockResolvedValue({ version: 5, filters, sort });
     expect(await loadLogbookPrefs()).toEqual({ filters, sort });
     expect(store.set).not.toHaveBeenCalled();
+  });
+
+  it('writes a from/to only under the Custom window (older bundles have no window)', async () => {
+    store.set.mockResolvedValue(undefined);
+    const leftover = { fromDate: '2026-01-01', toDate: '2026-02-01' };
+    await saveLogbookPrefs({
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, ...leftover, dateWindow: 'month' },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    expect(store.set).toHaveBeenLastCalledWith(
+      'logbookSearchPrefs',
+      expect.objectContaining({
+        filters: expect.objectContaining({ dateWindow: 'month', fromDate: '', toDate: '' }),
+      }),
+    );
+
+    await saveLogbookPrefs({
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, ...leftover, dateWindow: 'custom' },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    expect(store.set).toHaveBeenLastCalledWith(
+      'logbookSearchPrefs',
+      expect.objectContaining({ filters: expect.objectContaining({ dateWindow: 'custom', ...leftover }) }),
+    );
   });
 });

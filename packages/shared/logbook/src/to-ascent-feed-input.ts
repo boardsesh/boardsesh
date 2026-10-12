@@ -1,6 +1,7 @@
 import type { GetUserAscentsFeedQueryVariables } from '@boardsesh/graphql/operations/ticks';
-import { isRollingLogbookDateWindow, resolveLogbookDateRange } from './date-window';
+import { isRollingLogbookDateWindow, parseLocalIsoDate, resolveLogbookDateRange } from './date-window';
 import { DEFAULT_LOGBOOK_ANGLE_RANGE } from './defaults';
+import { repairLogbookStatus } from './status-segments';
 import type { LogbookFilterState, LogbookSortState, LogbookStatusMode } from './types';
 
 /** The `input` object for the userAscentsFeed query, minus pagination. */
@@ -47,21 +48,29 @@ function boardScopeInput(
 
 type DateInput = Pick<AscentFeedInput, 'fromDate' | 'toDate'>;
 
+/**
+ * The date bounds as INSTANTS (ISO timestamps), cut on the device's calendar:
+ * `fromDate` is the inclusive start of the first local day, `toDate` the
+ * exclusive start of the local day after the last. A bare `YYYY-MM-DD` would be
+ * read as a UTC day by the backend, so a climber away from UTC would lose (or
+ * gain) the hours between their midnight and UTC's. The stored state keeps
+ * local `YYYY-MM-DD` strings; only the wire format is an instant.
+ */
 function dateInput(filters: LogbookFilterState, now: Date): DateInput {
   const { fromDate, toDate } = resolveLogbookDateRange(filters, now);
+  const fromInstant = fromDate ? parseLocalIsoDate(fromDate) : null;
   // A rolling window ends today, so it sends no upper bound: nothing is logged
-  // in the future, and the backend's `toDate` is the end of that day in UTC,
-  // which west of UTC would cut off this evening's ticks.
-  const sendToDate = Boolean(toDate) && !isRollingLogbookDateWindow(filters.dateWindow);
+  // in the future.
+  const toInstant = toDate && !isRollingLogbookDateWindow(filters.dateWindow) ? parseLocalIsoDate(toDate, 1) : null;
   return {
-    ...(fromDate ? { fromDate } : {}),
-    ...(sendToDate ? { toDate } : {}),
+    ...(fromInstant ? { fromDate: fromInstant.toISOString() } : {}),
+    ...(toInstant ? { toDate: toInstant.toISOString() } : {}),
   };
 }
 
-function statusModeFor(filters: LogbookFilterState): LogbookStatusMode {
-  if (filters.includeSends && filters.includeAttempts) return 'both';
-  if (filters.includeSends) return 'send';
+function statusModeFor(status: Pick<LogbookFilterState, 'includeSends' | 'includeAttempts'>): LogbookStatusMode {
+  if (status.includeSends && status.includeAttempts) return 'both';
+  if (status.includeSends) return 'send';
   return 'attempt';
 }
 
@@ -93,12 +102,15 @@ export function toAscentFeedInput(args: LogbookFeedInputArgs): AscentFeedInput {
   const { filters, sort, name, boardTypes, layoutIds, now = new Date() } = args;
   const trimmedName = name?.trim();
   const [minAngle, maxAngle] = filters.angleRange;
+  // Read the status the way the sanitizer repairs it, so an unsanitized state
+  // (neither half on) queries what the UI shows.
+  const status = repairLogbookStatus(filters);
 
   return {
     ...boardScopeInput(filters, boardTypes, layoutIds),
     ...(trimmedName ? { climbName: trimmedName } : {}),
-    statusMode: statusModeFor(filters),
-    flashOnly: filters.includeSends ? filters.flashOnly : false,
+    statusMode: statusModeFor(status),
+    flashOnly: status.flashOnly,
     ...(filters.minGrade !== '' ? { minDifficulty: filters.minGrade } : {}),
     ...(filters.maxGrade !== '' ? { maxDifficulty: filters.maxGrade } : {}),
     ...dateInput(filters, now),

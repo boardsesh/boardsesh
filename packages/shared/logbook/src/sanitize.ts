@@ -1,5 +1,7 @@
+import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
 import { DEFAULT_LOGBOOK_ANGLE_RANGE, DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from './defaults';
-import { LOGBOOK_DATE_WINDOWS } from './date-window';
+import { LOGBOOK_DATE_WINDOWS, parseLocalIsoDate } from './date-window';
+import { repairLogbookStatus } from './status-segments';
 import type {
   LogbookDateWindow,
   LogbookFilterState,
@@ -24,21 +26,18 @@ const VALID_SORT_PRESETS: LogbookSortPreset[] = ['recent', 'hardest', 'easiest']
 export const MAX_LOGBOOK_SETTER_FILTERS = 20;
 const MIN_QUALITY = 1;
 const MAX_QUALITY = 5;
-// Board types are lowercase slugs ('kilter', 'moonboard', 'spray'). The shape
-// check keeps junk out of the query without pinning the board list here.
-const BOARD_TYPE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
+// Every board type the app knows (the label map covers SUPPORTED_BOARDS; a
+// board-constants test pins that). The backend rejects any other value, so a
+// stale or corrupted board would otherwise break the whole feed.
+const KNOWN_BOARD_TYPES: ReadonlySet<string> = new Set(Object.keys(BOARD_TYPE_LABELS));
 
 const sanitizeDifficulty = (value: unknown): number | '' =>
   typeof value === 'number' && Number.isFinite(value) ? value : '';
 
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const sanitizeDate = (value: unknown): string => {
-  if (typeof value !== 'string' || !ISO_DATE_PATTERN.test(value)) return '';
-  // Reject shape-valid but impossible dates (e.g. month 13) — the picker never
-  // produces them, but a corrupted/hand-edited payload might, and they'd flow
-  // straight into the backend's date comparison.
-  return Number.isNaN(new Date(`${value}T00:00:00`).getTime()) ? '' : value;
-};
+// Reject shape-valid but impossible dates (month 13, Feb 30): the picker never
+// produces them, but a corrupted/hand-edited payload might, and Postgres throws
+// on them in the backend's date comparison.
+const sanitizeDate = (value: unknown): string => (typeof value === 'string' && parseLocalIsoDate(value) ? value : '');
 
 const sanitizeBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
 
@@ -55,7 +54,7 @@ function sanitizeDateWindow(value: unknown, fromDate: string, toDate: string): L
 }
 
 const sanitizeBoardType = (value: unknown): string =>
-  typeof value === 'string' && BOARD_TYPE_PATTERN.test(value) ? value : '';
+  typeof value === 'string' && KNOWN_BOARD_TYPES.has(value) ? value : '';
 
 /** Positive integer layout ids, deduped and ascending (a stable query key). */
 function sanitizeLayoutIds(value: unknown): number[] {
@@ -121,12 +120,7 @@ export function sanitizeLogbookFilters(value: unknown): LogbookFilterState {
     minQuality: sanitizeMinQuality(source.minQuality),
     setterUsernames: sanitizeSetterUsernames(source.setterUsernames),
   };
-  if (!sanitized.includeSends && !sanitized.includeAttempts) {
-    sanitized.includeSends = true;
-  }
-  if (!sanitized.includeSends) {
-    sanitized.flashOnly = false;
-  }
+  Object.assign(sanitized, repairLogbookStatus(sanitized));
   // Heal an inverted grade range (corrupted or migrated prefs). An un-swapped
   // min > max reaches the backend as `difficulty >= min AND <= max` and silently
   // returns nothing. (The angle range is already clamped to max >= min above.)
@@ -172,4 +166,15 @@ export function sanitizeLogbookSort(value: unknown): LogbookSortState {
         ? source.secondaryDirection
         : DEFAULT_LOGBOOK_SORT.secondaryDirection,
   };
+}
+
+/**
+ * The filters as they should be written to storage. A from/to only means
+ * something under the Custom window, so it is stored only there: an older app
+ * build (an OTA rollback) has no window and would apply a leftover range under
+ * "This month" or "Any time".
+ */
+export function logbookFiltersForStorage(filters: LogbookFilterState): LogbookFilterState {
+  if (filters.dateWindow === 'custom') return filters;
+  return { ...filters, fromDate: '', toDate: '' };
 }

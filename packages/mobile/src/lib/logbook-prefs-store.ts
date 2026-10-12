@@ -9,6 +9,7 @@
 import {
   sanitizeLogbookFilters,
   sanitizeLogbookSort,
+  logbookFiltersForStorage,
   DEFAULT_LOGBOOK_FILTERS,
   type LogbookFilterState,
   type LogbookSortState,
@@ -150,10 +151,18 @@ export async function loadLogbookPrefs(): Promise<StoredLogbookPrefs | null> {
   }
 }
 
-/** Persist the logbook filter/sort prefs so they survive an app restart. */
+/**
+ * Persist the logbook filter/sort prefs so they survive an app restart. A
+ * from/to is written only under the Custom window, so an older bundle (which
+ * has no window) never applies a leftover range under "This month".
+ */
 export async function saveLogbookPrefs(prefs: StoredLogbookPrefs): Promise<void> {
   try {
-    await setPreference(STORAGE_KEY, { version: LOGBOOK_PREFS_VERSION, ...prefs });
+    await setPreference(STORAGE_KEY, {
+      version: LOGBOOK_PREFS_VERSION,
+      filters: logbookFiltersForStorage(prefs.filters),
+      sort: prefs.sort,
+    });
   } catch {
     // Storage write failed (full disk, first-install permission race). Persisting
     // a UI preference is best-effort, so swallow rather than leak an unhandled
