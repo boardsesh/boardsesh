@@ -3,6 +3,11 @@
 Everything Cloudflare for the `boardsesh.com` zone: the config-as-code tooling,
 token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 
+The www origin-verification request-header rule has a separate, manual
+[web origin protection runbook](web-origin-protection.md). Its default dry run,
+staged activation, rollback and secret rotation do not run through normal zone
+convergence.
+
 
 ## R2 buckets
 
