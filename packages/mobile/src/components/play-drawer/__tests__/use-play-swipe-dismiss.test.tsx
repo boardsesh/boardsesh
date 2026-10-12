@@ -97,6 +97,46 @@ afterEach(() => {
 });
 
 describe('play swipe dismissal target ownership', () => {
+  it('rejects updates and release from a drag that began before a fresh opening', () => {
+    const scrollY = { value: 0 } as SharedValue<number>;
+    const { result, rerender } = renderHook(
+      ({ nonce }) => {
+        const motion = usePlaySwipeDismiss(nonce);
+        useDrawerDismissGesture({ onDismiss: motion.close, swipeDismiss: motion.swipeDismiss, scrollYSV: scrollY });
+        return motion;
+      },
+      { initialProps: { nonce: 1 } },
+    );
+    const oldDrag = bridge.gestures.at(-1);
+    if (!oldDrag) throw new Error('dismiss gesture was not mounted');
+    act(() => {
+      oldDrag.onBegin();
+      oldDrag.onUpdate({ translationY: 80 });
+    });
+    expect(result.current.swipeDismiss.translateY.value).toBe(80);
+    rerender({ nonce: 2 });
+    act(() => {
+      oldDrag.onUpdate({ translationY: 180 });
+      oldDrag.onEnd({ velocityY: 800 });
+      oldDrag.onFinalize({}, true);
+    });
+    expect(result.current.swipeDismiss.translateY.value).toBe(0);
+    expect(result.current.swipeDismiss.isDismissing.value).toBe(false);
+    expect(bridge.springs).toHaveLength(0);
+    expect(bridge.queued).toHaveLength(0);
+    flushFrame();
+    flushFrame();
+    expect(router.dismiss).not.toHaveBeenCalled();
+
+    releaseGesture();
+    expect(result.current.swipeDismiss.isDismissing.value).toBe(true);
+    act(() => bridge.springs[0](true));
+    flushBridge();
+    flushFrame();
+    flushFrame();
+    expect(router.dismiss).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects an old queued gesture completion even after the fresh target starts its own dismissal', () => {
     const scrollY = { value: 0 } as SharedValue<number>;
     const { result, rerender } = renderHook(

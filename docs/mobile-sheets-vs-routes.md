@@ -533,8 +533,9 @@ animation cancellation. A completion after unmount is ignored; if another modal
 has taken focus, the player restores itself underneath it instead of dismissing
 the newer modal. The route's existing programmatic close waiter stays native.
 
-Every opening advances a motion revision. The UI release captures it and carries
-it through the JavaScript completion and both removal frames. A fresh opening
+Every opening advances a motion revision. Touch-down captures it; updates,
+release and finalization reject a different revision. Release carries that
+ownership through the JavaScript completion and both removal frames. A fresh opening
 cancels pending motion; callbacks from the previous revision cannot close it.
 Native removal attempts have separate identities: an aborted attempt can restore
 itself, but cannot restore a later removal. Restoration also retires old motion.

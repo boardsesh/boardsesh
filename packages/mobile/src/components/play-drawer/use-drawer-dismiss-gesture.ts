@@ -44,7 +44,7 @@ export type SwipeDismissAnimation = {
   translateY: SharedValue<number>;
   height: SharedValue<number>;
   isDismissing: SharedValue<boolean>;
-  /** Opening ownership captured at release; absent for standalone hosts. */
+  /** Opening ownership captured at touch-down; absent for standalone hosts. */
   revision?: SharedValue<number>;
   /** Called after the surface has finished sliding offscreen. */
   onComplete: (revision?: number) => void;
@@ -102,6 +102,7 @@ export function useDrawerDismissGesture({
   // Captured at touch-down: only a gesture that STARTS at the top can dismiss, so
   // a scroll-up that reaches the top doesn't suddenly yank the drawer down.
   const startedAtTop = useSharedValue(false);
+  const startedRevision = useSharedValue<number | null>(null);
 
   // Captured ONCE by the gesture memo — must only close over the ref so a later
   // render's onDismiss is still reached (mirrors use-carousel-gesture).
@@ -126,11 +127,13 @@ export function useDrawerDismissGesture({
       .onBegin(() => {
         'worklet';
         if (isDismissing.value) return;
+        startedRevision.value = dismissRevision?.value ?? null;
         cancelAnimation(translateY);
         startedAtTop.value = scrollYSV.value <= 0;
       })
       .onUpdate((event) => {
         'worklet';
+        if (dismissRevision && startedRevision.value !== dismissRevision.value) return;
         if (isDismissing.value) return;
         // Once the carousel owns the gesture as a horizontal swipe (offset non-zero)
         // or is still settling a fling, block the vertical dismiss entirely — a
@@ -148,6 +151,7 @@ export function useDrawerDismissGesture({
       })
       .onEnd((event) => {
         'worklet';
+        if (dismissRevision && startedRevision.value !== dismissRevision.value) return;
         if (isDismissing.value) return;
         // Same guard as onUpdate, and it must run BEFORE the velocity check: a fast
         // horizontal flick carries vertical velocity, so without this an accidental
@@ -161,7 +165,7 @@ export function useDrawerDismissGesture({
           startedAtTop.value &&
           (translateY.value > DISMISS_DISTANCE_THRESHOLD || event.velocityY > DISMISS_VELOCITY_THRESHOLD);
         if (committed) {
-          const releasedRevision = dismissRevision?.value;
+          const releasedRevision = startedRevision.value ?? undefined;
           isDismissing.value = true;
           if (dismissHeight) {
             // Never pause at the release position waiting for navigation/JS.
@@ -192,6 +196,7 @@ export function useDrawerDismissGesture({
       // Cancellation (including a second finger) still returns an open drag home.
       .onFinalize((_event, success) => {
         'worklet';
+        if (dismissRevision && startedRevision.value !== dismissRevision.value) return;
         if (!dismissHeight) {
           isDismissing.value = false;
           return;
@@ -205,6 +210,7 @@ export function useDrawerDismissGesture({
     dismissHeight,
     dismissRevision,
     startedAtTop,
+    startedRevision,
     scrollYSV,
     scrollRef,
     swipeTranslateX,
