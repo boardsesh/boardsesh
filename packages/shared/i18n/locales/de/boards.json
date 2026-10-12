@@ -161,6 +161,7 @@
       "publicHint": "Zeig sie auf der Karte, damit deine Crew sie findet",
       "unlisted": "Nicht gelistet",
       "hideLocation": "Genauen Standort verbergen",
+      "gymSharesLocation": "Hallen zeigen ihren Standort",
       "location": "Standort",
       "locationPlaceholder": "Zuhause, Hallenname oder Stadt",
       "useMyLocation": "Meinen Standort nutzen",

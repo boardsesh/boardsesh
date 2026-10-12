@@ -408,9 +408,11 @@ export function BoardForm({
             />
             <SwitchRow
               label={tSettings('privacy.locationAudience')}
-              description={tSettings('privacy.locationMembers')}
+              description={
+                builder.gymSharesLocation ? t('mobile.create.gymSharesLocation') : tSettings('privacy.locationMembers')
+              }
               value={builder.privacyLocationAudience === 'public'}
-              disabled={submitting}
+              disabled={submitting || builder.gymSharesLocation}
               onValueChange={(visible) => {
                 builder.setPrivacyLocationAudience(visible ? 'public' : 'only_me');
                 builder.setHideLocation(!visible);

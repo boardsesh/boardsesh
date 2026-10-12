@@ -161,6 +161,7 @@
       "publicHint": "Show it on the map so your crew can find it",
       "unlisted": "Unlisted",
       "hideLocation": "Hide exact location",
+      "gymSharesLocation": "Gyms share their location",
       "location": "Location",
       "locationPlaceholder": "Home, gym name, or city",
       "useMyLocation": "Use my location",

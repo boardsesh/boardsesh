@@ -161,6 +161,7 @@
       "publicHint": "Affiche-la sur la carte pour que ton crew la trouve",
       "unlisted": "Non listé",
       "hideLocation": "Masquer l'emplacement exact",
+      "gymSharesLocation": "Les salles partagent leur emplacement",
       "location": "Emplacement",
       "locationPlaceholder": "Maison, nom de la salle ou ville",
       "useMyLocation": "Utiliser ma position",

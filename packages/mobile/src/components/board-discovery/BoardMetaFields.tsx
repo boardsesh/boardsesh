@@ -59,6 +59,8 @@ export type BoardVisibilityBuilder = {
   setIsUnlisted: (next: boolean) => void;
   hideLocation: boolean;
   setHideLocation: (next: boolean) => void;
+  /** The board is in a public gym, so its location is always shown. */
+  gymSharesLocation?: boolean;
   locationName: string;
   setLocationName: (next: string) => void;
   coords: { latitude: number; longitude: number } | null;
@@ -291,8 +293,10 @@ export function BoardVisibilityFields({
       )}
       <SwitchRow
         label={t('mobile.create.hideLocation')}
+        description={builder.gymSharesLocation ? t('mobile.create.gymSharesLocation') : undefined}
         value={builder.hideLocation}
         onValueChange={builder.setHideLocation}
+        disabled={builder.gymSharesLocation === true}
       />
 
       <SectionLabel>{t('mobile.create.location')}</SectionLabel>

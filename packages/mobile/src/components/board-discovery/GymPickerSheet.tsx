@@ -30,6 +30,8 @@ import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 export type PickedGym = {
   uuid: string;
   name: string;
+  /** A public gym lists its address, so a board in it always shows its location. */
+  isPublic?: boolean | null;
   latitude?: number | null;
   longitude?: number | null;
 };
@@ -128,7 +130,13 @@ export function GymPickerSheet({
 
   const handleSelectGym = useCallback(
     (gym: Gym) => {
-      onSelect({ uuid: gym.uuid, name: gym.name, latitude: gym.latitude, longitude: gym.longitude });
+      onSelect({
+        uuid: gym.uuid,
+        name: gym.name,
+        isPublic: gym.isPublic,
+        latitude: gym.latitude,
+        longitude: gym.longitude,
+      });
     },
     [onSelect],
   );

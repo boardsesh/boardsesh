@@ -52,7 +52,13 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../SwitchRow', () => ({
-  SwitchRow: ({ label }: { label: string }) => createElement('div', null, label),
+  SwitchRow: ({ label, description, disabled }: { label: string; description?: string; disabled?: boolean }) =>
+    createElement(
+      'div',
+      { 'data-testid': `switch-${label}`, 'data-disabled': String(!!disabled) },
+      createElement('span', null, label),
+      description ? createElement('span', null, description) : null,
+    ),
 }));
 vi.mock('../../Button', () => ({
   Button: ({ title, loading }: { title: string; loading?: boolean }) =>
@@ -129,6 +135,22 @@ describe('BoardIdentityFields name input', () => {
     const input = getByLabelText('mobile.custom.name');
     expect(input.getAttribute('data-autocorrect')).toBe('false');
     expect(input.getAttribute('data-spellcheck')).toBe('false');
+  });
+});
+
+describe('BoardVisibilityFields in a public gym', () => {
+  it('locks the hide-location switch and says why', () => {
+    const { getByTestId, getByText } = render(
+      <BoardVisibilityFields builder={{ ...visibilityBuilder, gymSharesLocation: true }} />,
+    );
+    expect(getByTestId('switch-mobile.create.hideLocation').getAttribute('data-disabled')).toBe('true');
+    expect(getByText('mobile.create.gymSharesLocation')).toBeTruthy();
+  });
+
+  it('leaves it to the owner anywhere else', () => {
+    const { getByTestId, queryByText } = render(<BoardVisibilityFields builder={visibilityBuilder} />);
+    expect(getByTestId('switch-mobile.create.hideLocation').getAttribute('data-disabled')).toBe('false');
+    expect(queryByText('mobile.create.gymSharesLocation')).toBeNull();
   });
 });
 

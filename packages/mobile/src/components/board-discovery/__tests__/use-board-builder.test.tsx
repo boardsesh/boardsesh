@@ -29,6 +29,31 @@ describe('useBoardBuilder', () => {
     rerender({ privacyEnabled: true });
     expect(result.current.buildCreateInput()?.audience).toBe('followers');
   });
+  it('shows the location of a board in a public gym and goes back to hidden when the gym is cleared', () => {
+    const { result } = renderHook(() => useBoardBuilder(null, { privacyEnabled: true }));
+    act(() => result.current.selectLayout(1));
+    const gym = { uuid: 'gym-1', name: 'Boulder Central', latitude: 47, longitude: 8 };
+
+    act(() => result.current.setSelectedGym({ ...gym, isPublic: true }));
+    expect(result.current.gymSharesLocation).toBe(true);
+    expect(result.current.hideLocation).toBe(false);
+    expect(result.current.buildCreateInput()).toMatchObject({
+      gymUuid: 'gym-1',
+      hideLocation: false,
+      locationAudience: 'public',
+    });
+
+    act(() => result.current.setSelectedGym(null));
+    expect(result.current.gymSharesLocation).toBe(false);
+    expect(result.current.hideLocation).toBe(true);
+    expect(result.current.buildCreateInput()).not.toHaveProperty('locationAudience');
+
+    // A private gym is a home wall in practice: the location stays hidden.
+    act(() => result.current.setSelectedGym({ ...gym, isPublic: false }));
+    expect(result.current.gymSharesLocation).toBe(false);
+    expect(result.current.hideLocation).toBe(true);
+  });
+
   it('auto-selects a size and all its sets when a layout is picked, satisfying canCreate', () => {
     const { result } = renderHook(() => useBoardBuilder());
     expect(result.current.canCreate).toBe(false);

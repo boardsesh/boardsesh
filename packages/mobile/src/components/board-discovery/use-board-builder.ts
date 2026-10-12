@@ -130,9 +130,15 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const [timerName, setTimerName] = useState(seed?.timerName ?? '');
   // The gym this board sits in. Picking one is what gets the board onto the map
   // under a gym rather than as a lone pin (#4166).
-  const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string } | null>(
-    seed?.gymUuid && seed?.gymName ? { uuid: seed.gymUuid, name: seed.gymName } : null,
+  // A seeded gym (edit) does not say whether it is public, so only a gym picked
+  // in this session can lock the location switch.
+  const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string; isPublic: boolean } | null>(
+    seed?.gymUuid && seed?.gymName ? { uuid: seed.gymUuid, name: seed.gymName, isPublic: false } : null,
   );
+  // A board in a public gym always shows where it is: the gym already lists its
+  // address, and the server ignores a request to hide it there. The hidden
+  // default is for home walls. Spray walls keep their own rules, as on the server.
+  const gymSharesLocation = selectedGym?.isPublic === true && boardName !== 'spray';
 
   // Re-seed when the seed's VALUES change (opened from a different Popular
   // config). Keyed on the serialized seed, not its object identity, so an
@@ -244,9 +250,25 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
    * linked to B but labelled A. Anything the user typed themselves is left alone.
    */
   const autoFilledLocationRef = useRef<string | null>(null);
+  const privacyEnabled = options?.privacyEnabled === true;
   const setSelectedGym = useCallback(
-    (gym: { uuid: string; name: string; latitude?: number | null; longitude?: number | null } | null) => {
-      setSelectedGymState(gym ? { uuid: gym.uuid, name: gym.name } : null);
+    (
+      gym: {
+        uuid: string;
+        name: string;
+        isPublic?: boolean | null;
+        latitude?: number | null;
+        longitude?: number | null;
+      } | null,
+    ) => {
+      setSelectedGymState(gym ? { uuid: gym.uuid, name: gym.name, isPublic: gym.isPublic === true } : null);
+      // In a public gym the location is shown; anywhere else the board goes
+      // back to the home-wall default, hidden.
+      if (boardNameRef.current !== 'spray') {
+        const sharesLocation = gym?.isPublic === true;
+        setHideLocation(!sharesLocation);
+        setPrivacyLocationAudience(sharesLocation && privacyEnabled ? 'public' : undefined);
+      }
       if (!gym) return;
       if (gym.latitude != null && gym.longitude != null) {
         setCoords({ latitude: gym.latitude, longitude: gym.longitude });
@@ -261,7 +283,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       });
       autoFilledLocationRef.current = gym.name;
     },
-    [],
+    [privacyEnabled],
   );
 
   /**
@@ -379,6 +401,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     serialNumber,
     timerName,
     selectedGym,
+    gymSharesLocation,
     // derived
     layouts,
     sizes,
