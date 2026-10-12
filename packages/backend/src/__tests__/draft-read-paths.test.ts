@@ -56,6 +56,11 @@ const NULL_DRAFT_FLAG = 'draft-read-null-flag';
 const ALL_CLIMBS = [PUBLISHED, ...DRAFTS];
 
 const PLAYLIST_UUID = 'draft-read-playlist';
+/**
+ * The board a presence read is for. No fixture send names a climber, so no
+ * identity is looked up on it; the climb rule is what these cases read.
+ */
+const PRESENCE_BOARD_ID = 99_782;
 
 const ctxFor = (userId: string): ConnectionContext =>
   ({ userId, isAuthenticated: true, connectionId: `draft-read-${userId}` }) as ConnectionContext;
@@ -269,7 +274,7 @@ describeWithDatabase('draft climbs on the read paths outside sync (real DB)', ()
           [DELETED_ACCOUNT_DRAFT, null],
         ] as const) {
           const stats = statsWithHardest(climbUuid, climbOwnerId);
-          const redacted = await redactBoardStats(stats, viewerId);
+          const redacted = await redactBoardStats(stats, viewerId, PRESENCE_BOARD_ID);
           expect(redacted.hardestSend?.climbUuid ?? null).toBe(
             readableBy(viewerId).includes(climbUuid) ? climbUuid : null,
           );
@@ -326,7 +331,7 @@ describeWithDatabase('draft climbs on the read paths outside sync (real DB)', ()
         seq: index + 1,
       }));
       // These rows contain no sender identity: this check covers climb details.
-      const redacted = await redactBoardClimbs(history, STRANGER);
+      const redacted = await redactBoardClimbs(history, STRANGER, PRESENCE_BOARD_ID);
       expect(redacted.map((climb) => climb.name)).toEqual([`Name of ${NULL_DRAFT_FLAG}`, `Name of ${PUBLISHED}`, null]);
     });
   });
