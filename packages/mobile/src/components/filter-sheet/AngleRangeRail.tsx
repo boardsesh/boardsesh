@@ -5,24 +5,10 @@ import { findGradeStop, isAnyGrade, type GradeBound } from '@boardsesh/climb-fil
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { RangeRail, type RangeRailChange, type RangeRailStop, type RangeRailStopState } from '../grade/RangeRail';
+import { DEFAULT_FILTER_ANGLES, formatAngleLabel } from './angle-labels';
 
 /** An angle filter: lowest and highest wall angle in degrees, ends included. */
 export type AngleRange = readonly [number, number];
-
-const ANGLE_STEP = 5;
-const MIN_FILTER_ANGLE = -5;
-const MAX_FILTER_ANGLE = 70;
-
-/** −5° to 70° in 5° steps: every angle the supported boards tilt to. */
-export const DEFAULT_FILTER_ANGLES: readonly number[] = Array.from(
-  { length: (MAX_FILTER_ANGLE - MIN_FILTER_ANGLE) / ANGLE_STEP + 1 },
-  (_, index) => MIN_FILTER_ANGLE + index * ANGLE_STEP,
-);
-
-/** "40°", and "−5°" with a true minus sign rather than a hyphen. */
-export function formatAngleLabel(angle: number): string {
-  return `${angle < 0 ? '−' : ''}${Math.abs(angle)}°`;
-}
 
 type AngleRangeRailProps = {
   /** The selected range, or null for Any. */

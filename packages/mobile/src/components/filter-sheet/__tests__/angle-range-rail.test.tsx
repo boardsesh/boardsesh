@@ -120,7 +120,8 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import { AngleRangeRail, DEFAULT_FILTER_ANGLES, formatAngleLabel, type AngleRange } from '../AngleRangeRail';
+import { AngleRangeRail, type AngleRange } from '../AngleRangeRail';
+import { DEFAULT_FILTER_ANGLES, formatAngleLabel } from '../angle-labels';
 
 const ANY_LABEL = 'mobile.angleRail.any';
 const HOLD_HINT = 'mobile.angleRail.rangeHoldHint';

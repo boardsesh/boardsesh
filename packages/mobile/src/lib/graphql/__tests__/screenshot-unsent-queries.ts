@@ -86,6 +86,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetUserClimbs',
   'GetUserDataExport',
   'GetUserDataExportDownload',
+  // The Logbook setter picker; no capture flow opens it.
+  'GetUserLoggedSetters',
   'HoldHeatmap',
   'HoldOutlines',
   'IncomingFollowRequests',
