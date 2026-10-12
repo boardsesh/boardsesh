@@ -2030,7 +2030,7 @@ nothing about who gets it.
 
 #### Leaving the reference set
 
-`trg_board_climbs_reference_membership` (migration `0267_climb_reference_membership`) fires when an update changes a protected owner or moves a
+`trg_board_climbs_reference_membership` (migration `0268_climb_reference_membership`) fires when an update changes a protected owner or moves a
 climb across the line, in either direction, whichever writer made it.
 
 - **Leaving** writes one `sync_deletions` row for `board_climbs` with no user, so

@@ -7,7 +7,7 @@ stream timestamp and waits for older writer transactions before delivering a
 page. This change does not alter the document-page stability window.
 
 `deleted_at` remains the client resurrection guard. In this release a
-membership withdrawal (migration `0267_climb_reference_membership`) is stamped one second before the climb's
+membership withdrawal (migration `0268_climb_reference_membership`) is stamped one second before the climb's
 new `updated_at`. That is after every copy a device can have pulled, because a
 device only pulls a version once it is a stability window old and deployed
 windows are at least two seconds, and before the owner's re-delivered row, so a
@@ -18,7 +18,7 @@ migration that closes it ships one release later; see
 [The withdrawal guard, one release later](#the-withdrawal-guard-one-release-later).
 
 This release also adds the internal `is_membership_withdrawal` flag (migration
-`0270_climb_membership_withdrawal_flag`) and the filter that reads it. In the same page statement, the backend
+`0271_climb_membership_withdrawal_flag`) and the filter that reads it. In the same page statement, the backend
 omits a flagged climb withdrawal if the current climb is readable to the viewer
 under the sync public/owner and spray-wall rules. Filtering precedes
 pagination, so a page containing only omitted markers cannot hide later

@@ -1,5 +1,5 @@
 {
-  "id": "bb2b2d36-4a91-4f9c-9c4f-b96ebe6864f8",
+  "id": "be9ff25b-946b-4acc-b21d-77135a48bdee",
   "prevId": "5d78b7cb-72d0-4a5e-a2b8-a4d081087c10",
   "version": "7",
   "dialect": "postgresql",
@@ -13931,19 +13931,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "stream_at": {
-          "name": "stream_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_membership_withdrawal": {
-          "name": "is_membership_withdrawal",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -13981,55 +13968,6 @@
               "expression": "deleted_at",
               "isExpression": false,
               "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"sync_deletions\".\"user_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sync_deletions_user_stream_idx": {
-          "name": "sync_deletions_user_stream_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(\"stream_at\", \"deleted_at\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sync_deletions_null_stream_idx": {
-          "name": "sync_deletions_null_stream_idx",
-          "columns": [
-            {
-              "expression": "COALESCE(\"stream_at\", \"deleted_at\")",
-              "asc": true,
-              "isExpression": true,
               "nulls": "last"
             },
             {
@@ -16642,6 +16580,109 @@
           "value": "\"user_follow_requests\".\"requester_id\" <> \"user_follow_requests\".\"recipient_id\""
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.board_share_links": {
+      "name": "board_share_links",
+      "schema": "",
+      "columns": {
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "board_uuid": {
+          "name": "board_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "board_share_links_active_board_idx": {
+          "name": "board_share_links_active_board_idx",
+          "columns": [
+            {
+              "expression": "board_uuid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"board_share_links\".\"revoked_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "board_share_links_board_idx": {
+          "name": "board_share_links_board_idx",
+          "columns": [
+            {
+              "expression": "board_uuid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "board_share_links_board_uuid_user_boards_uuid_fk": {
+          "name": "board_share_links_board_uuid_user_boards_uuid_fk",
+          "tableFrom": "board_share_links",
+          "tableTo": "user_boards",
+          "columnsFrom": [
+            "board_uuid"
+          ],
+          "columnsTo": [
+            "uuid"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "board_share_links_created_by_users_id_fk": {
+          "name": "board_share_links_created_by_users_id_fk",
+          "tableFrom": "board_share_links",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.user_activity_days": {
