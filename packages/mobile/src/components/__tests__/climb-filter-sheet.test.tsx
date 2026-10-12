@@ -212,14 +212,6 @@ vi.mock('react-native', () => ({
   },
 }));
 
-vi.mock('react-native-gesture-handler', () => ({
-  ScrollView: forwardRef<unknown, ScrollViewMockProps>(function GestureHandlerScrollView({ children, ...props }, ref) {
-    bottomSheetScrollViewProps.latest = props;
-    useImperativeHandle(ref, () => ({ scrollTo: bottomSheetScrollViewProps.scrollTo }), []);
-    return createElement('div', { 'data-testid': 'filter-scroll-view', 'data-adapter': 'gesture-handler' }, children);
-  }),
-}));
-
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: routerPush }),
   useFocusEffect: (cb: () => void) => {
@@ -303,7 +295,6 @@ vi.mock('@boardsesh/climb-filters', async (importOriginal) => ({
   DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
   hasActiveClimbFilters: filterActivityMocks.hasActiveClimbFilters,
   hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
-  applyStatusChange: (await importOriginal<typeof import('@boardsesh/climb-filters')>()).applyStatusChange,
   normalizeRetiredFilters: (filters: unknown) => filters,
   toClimbSearchInput: searchInputMocks.toClimbSearchInput,
   newSortSeed: () => '424242',
@@ -567,7 +558,7 @@ beforeEach(() => {
 
 describe('ClimbFilterSheet scroll adapters', () => {
   it.each([
-    ['ios', 'gesture-handler'],
+    ['ios', 'bottom-sheet'],
     ['android', 'bottom-sheet'],
     ['web', 'bottom-sheet'],
   ] as const)('uses the %s scroll adapter and keeps the keyboard tap contract', (platform, adapter) => {
@@ -582,7 +573,7 @@ describe('ClimbFilterSheet scroll adapters', () => {
   });
 });
 
-// These presses verify the draft, preview and Apply wiring with the actual
+// These presses verify live selections and count previews with the actual
 // progress mapping and StarRating. Native gesture delivery still needs device QA.
 describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interactions on %s (#6340)', (platform) => {
   beforeEach(() => {
@@ -598,10 +589,10 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
     });
   }
 
-  it('selects Sent, clears the previous progress flags and previews and applies the draft', () => {
-    const onApply = vi.fn();
+  it('selects Sent, clears the previous progress flags and previews and commits the selection immediately', () => {
+    const onSelectionChange = vi.fn();
     const { getByLabelText, getByText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       currentFilters: { ...currentFilters, showOnlyAttempted: true, hideCompleted: true },
     });
     const sentChip = getByLabelText('mobile.filter.progress.sent');
@@ -610,6 +601,7 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
     expect(sentChip.getAttribute('aria-pressed')).toBe('true');
     expect(getByLabelText('mobile.filter.progress.projects').getAttribute('aria-pressed')).toBe('false');
     expect(hapticSelection).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
     advanceCountPreview();
 
     const sentFilters = {
@@ -620,17 +612,15 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
       showOnlyCompleted: true,
     };
     expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(sentFilters);
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-    expect(onApply).not.toHaveBeenCalled();
-    simulateNativeClose();
-
-    expect(onApply).toHaveBeenCalledTimes(1);
-    expect(onApply).toHaveBeenCalledWith(sentFilters, currentBoardFilters);
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith(sentFilters, currentBoardFilters);
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
   });
 
-  it('selects different stars in My rating and Min rating and carries both into preview and Apply', () => {
-    const onApply = vi.fn();
-    const { getByText } = renderFilterSheet({ onApply });
+  it('selects different stars in My rating and Min rating and carries both into live selections and count previews', () => {
+    const onSelectionChange = vi.fn();
+    const { getByText } = renderFilterSheet({ onSelectionChange });
     const myRatingControls = within(getByText('mobile.filter.myRating').parentElement as HTMLElement);
     const qualityControls = within(getByText('mobile.filter.section.quality').parentElement as HTMLElement);
 
@@ -640,20 +630,22 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
     expect(myRatingControls.getByLabelText('3 stars').getAttribute('aria-pressed')).toBe('true');
     expect(qualityControls.getByLabelText('4 stars').getAttribute('aria-pressed')).toBe('true');
     expect(hapticSelection).toHaveBeenCalledTimes(2);
+    expect(onSelectionChange).toHaveBeenCalledTimes(2);
     advanceCountPreview();
 
     const ratedFilters = { ...currentFilters, minUserRating: 3, minRating: 4 };
     expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(ratedFilters);
-    expect(onApply).not.toHaveBeenCalled();
-    applyAndClose(getByText('mobile.filter.showCount12'));
+    const commitsBeforeClose = onSelectionChange.mock.calls.length;
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(commitsBeforeClose);
 
-    expect(onApply).toHaveBeenCalledWith(ratedFilters, currentBoardFilters);
+    expect(onSelectionChange).toHaveBeenCalledWith(ratedFilters, currentBoardFilters);
   });
 
-  it('clears each star filter with its own Any chip in preview and Apply', () => {
-    const onApply = vi.fn();
+  it('clears each star filter with its own Any chip in live selections and count previews', () => {
+    const onSelectionChange = vi.fn();
     const { getByText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       currentFilters: { ...currentFilters, minUserRating: 3, minRating: 4 },
     });
     const myRatingControls = within(getByText('mobile.filter.myRating').parentElement as HTMLElement);
@@ -666,36 +658,42 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
     expect(qualityControls.getByLabelText('mobile.filter.anyRating').getAttribute('aria-pressed')).toBe('true');
     expect(myRatingControls.getByLabelText('3 stars').getAttribute('aria-pressed')).toBe('false');
     expect(qualityControls.getByLabelText('4 stars').getAttribute('aria-pressed')).toBe('false');
+    expect(onSelectionChange).toHaveBeenCalledTimes(2);
     advanceCountPreview();
 
     const clearedRatings = { ...currentFilters, minUserRating: undefined, minRating: undefined };
     expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(clearedRatings);
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith(clearedRatings, currentBoardFilters);
+    const commitsBeforeClose = onSelectionChange.mock.calls.length;
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(commitsBeforeClose);
+    expect(onSelectionChange).toHaveBeenCalledWith(clearedRatings, currentBoardFilters);
   });
 
-  it('turns Only-rated off and clears its constraint from preview and Apply', () => {
-    const onApply = vi.fn();
+  it('turns Only-rated off and clears its constraint from live selections and count previews', () => {
+    const onSelectionChange = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       currentFilters: { ...currentFilters, onlyRatedByMe: true },
     });
 
     fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
     expect(getByTestId('switch-mobile.filter.onlyRatedByMe').getAttribute('data-value')).toBe('false');
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
     advanceCountPreview();
 
     const clearedOnlyRated = { ...currentFilters, onlyRatedByMe: undefined };
     expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(clearedOnlyRated);
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith(clearedOnlyRated, currentBoardFilters);
+    const commitsBeforeClose = onSelectionChange.mock.calls.length;
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(commitsBeforeClose);
+    expect(onSelectionChange).toHaveBeenCalledWith(clearedOnlyRated, currentBoardFilters);
   });
 
-  it('resets Sent and both ratings together and previews and applies the defaults', () => {
+  it('resets Sent and both ratings together and commits the defaults immediately', () => {
     filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
-    const onApply = vi.fn();
+    const onSelectionChange = vi.fn();
     const { getByText, getByLabelText } = renderFilterSheet({
-      onApply,
+      onSelectionChange,
       currentFilters: { ...currentFilters, showOnlyCompleted: true, minUserRating: 3, minRating: 4 },
     });
     const myRatingControls = within(getByText('mobile.filter.myRating').parentElement as HTMLElement);
@@ -707,23 +705,31 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
     expect(getByLabelText('mobile.filter.progress.sent').getAttribute('aria-pressed')).toBe('false');
     expect(myRatingControls.getByLabelText('mobile.filter.anyRating').getAttribute('aria-pressed')).toBe('true');
     expect(qualityControls.getByLabelText('mobile.filter.anyRating').getAttribute('aria-pressed')).toBe('true');
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
     advanceCountPreview();
 
     expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(DEFAULT_CLIMB_FILTER_STATE);
     expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({});
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith(DEFAULT_CLIMB_FILTER_STATE, {});
+    const commitsBeforeClose = onSelectionChange.mock.calls.length;
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(commitsBeforeClose);
+    expect(onSelectionChange).toHaveBeenCalledWith(DEFAULT_CLIMB_FILTER_STATE, {});
   });
 
-  it('previews mutually exclusive Collection choices and applies Any with both constraints cleared', () => {
-    const onApply = vi.fn();
-    const { getByText } = renderFilterSheet({ onApply });
+  it('previews mutually exclusive Collection choices and commits Any with both constraints cleared', () => {
+    const onSelectionChange = vi.fn();
+    const { getByText } = renderFilterSheet({ onSelectionChange });
     const collectionControls = within(getByText('mobile.filter.section.quality').parentElement as HTMLElement);
 
     fireEvent.click(collectionControls.getByTestId('segment-drafts'));
     expect(collectionControls.getByTestId('segment-drafts').getAttribute('data-selected')).toBe('true');
     advanceCountPreview();
-    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual({ ...currentFilters, status: 'drafts' });
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual({
+      ...currentFilters,
+      status: 'drafts',
+      sortBy: 'creation',
+      minAscents: undefined,
+    });
     expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
       ...currentBoardFilters,
       onlyBenchmarks: undefined,
@@ -733,7 +739,11 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
     expect(collectionControls.getByTestId('segment-drafts').getAttribute('data-selected')).toBe('false');
     expect(collectionControls.getByTestId('segment-benchmarks').getAttribute('data-selected')).toBe('true');
     advanceCountPreview();
-    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual(currentFilters);
+    expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual({
+      ...currentFilters,
+      sortBy: 'creation',
+      minAscents: undefined,
+    });
     expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
       ...currentBoardFilters,
       onlyBenchmarks: true,
@@ -741,11 +751,17 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
 
     fireEvent.click(collectionControls.getByTestId('segment-any'));
     expect(collectionControls.getByTestId('segment-any').getAttribute('data-selected')).toBe('true');
+    expect(onSelectionChange).toHaveBeenCalledTimes(3);
     advanceCountPreview();
     const clearedCollection = { ...currentBoardFilters, onlyBenchmarks: undefined };
     expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual(clearedCollection);
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect(onApply).toHaveBeenCalledWith(currentFilters, clearedCollection);
+    const commitsBeforeClose = onSelectionChange.mock.calls.length;
+    closeAndFinish(getByText('close'));
+    expect(onSelectionChange).toHaveBeenCalledTimes(commitsBeforeClose);
+    expect(onSelectionChange).toHaveBeenLastCalledWith(
+      { ...currentFilters, sortBy: 'creation', minAscents: undefined },
+      clearedCollection,
+    );
   });
 });
 

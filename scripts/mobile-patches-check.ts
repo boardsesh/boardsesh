@@ -429,6 +429,30 @@ export const RULES: readonly PatchRule[] = [
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
     patchedKey: '@expo/ui@57.0.22',
   },
+  // SwiftUI RNHostView owners can overlap for the same hosted React view.
+  // The shared native handler must survive until every owner releases its lease;
+  // JS typechecks and bundles cannot detect a missing native touch recognizer.
+  {
+    package: '@expo/ui',
+    file: 'ios/ExpoUITouchHandlerHelper.mm',
+    sentinels: [
+      'static char ExpoUITouchHandlerLeaseCountKey;',
+      'if (leaseCount == nil) {\n        return nil;\n      }',
+      '@(leaseCount.unsignedIntegerValue + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);\n      return recognizer;',
+      'objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, @1, OBJC_ASSOCIATION_RETAIN_NONATOMIC);',
+      'if (![touchHandler isKindOfClass:[RCTSurfaceTouchHandler class]] || touchHandler.view != view)',
+      'if (leaseCount == nil) {\n    return;\n  }',
+      'if (leaseCount.unsignedIntegerValue > 1)',
+      '@(leaseCount.unsignedIntegerValue - 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);\n    return;',
+      'objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);',
+    ],
+    orderedSentinels: [
+      'touchHandler.view != view',
+      'if (leaseCount.unsignedIntegerValue > 1)',
+      '[(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];',
+    ],
+    patchedKey: '@expo/ui@57.0.22',
+  },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
   // before the leading slash is stripped and `UIImage(named:)` synchronously

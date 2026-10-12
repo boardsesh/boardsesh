@@ -546,6 +546,54 @@ describe('the shipped @expo/ui iOS rule', () => {
   });
 });
 
+describe('the shipped @expo/ui shared native touch-handler leases', () => {
+  const helperFile = 'ios/ExpoUITouchHandlerHelper.mm';
+  const helperRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === helperFile);
+  const installedSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', helperFile),
+    'utf8',
+  );
+
+  function checkSource(source: string) {
+    if (!helperRule) throw new Error('no @expo/ui native touch-handler rule registered');
+    return checkPatchesApplied(
+      [helperRule],
+      makeEnv({
+        patchedDependencies: { [helperRule.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [helperRule.package]: versionFromKey(helperRule.patchedKey) },
+        files: { [`${helperRule.package}::${helperRule.file}`]: source },
+      }),
+    );
+  }
+
+  it('guards the installed native patch and ignores stale releases before changing leases', () => {
+    expect(checkSource(installedSource).errors).toEqual([]);
+    const releaseBody = extractObjCMethodBody(installedSource, 'detachTouchHandler');
+    if (releaseBody === null) throw new Error('native touch-handler release method missing');
+    const viewGuard = releaseBody.indexOf('touchHandler.view != view');
+    const readLease = releaseBody.indexOf('objc_getAssociatedObject');
+    const decrementLease = releaseBody.indexOf('leaseCount.unsignedIntegerValue - 1');
+    const detachHandler = releaseBody.indexOf('detachFromView:view');
+    expect(viewGuard).toBeGreaterThanOrEqual(0);
+    expect(readLease).toBeGreaterThan(viewGuard);
+    expect(decrementLease).toBeGreaterThan(readLease);
+    expect(detachHandler).toBeGreaterThan(decrementLease);
+  });
+
+  it.each([
+    ['overlapping owner acquisition', 'leaseCount.unsignedIntegerValue + 1'],
+    ['foreign handler acquisition guard', 'return nil;'],
+    ['stale-view release guard', ' || touchHandler.view != view'],
+    ['foreign handler release guard', 'if (leaseCount == nil) {\n    return;\n  }'],
+    ['shared owner release', 'leaseCount.unsignedIntegerValue - 1'],
+    ['final owner cleanup', 'objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, nil'],
+  ])('rejects losing %s', (_name, fragment) => {
+    const regressedSource = installedSource.replace(fragment, '__REMOVED_NATIVE_LEASE_GUARD__');
+    expect(regressedSource).not.toBe(installedSource);
+    expect(checkSource(regressedSource).errors).toContainEqual(expect.stringContaining('is missing'));
+  });
+});
+
 describe('the shipped expo-image local-asset guard', () => {
   const imageViewSource = readFileSync(
     resolve(import.meta.dirname, '../../packages/mobile/node_modules/expo-image/ios/ImageView.swift'),

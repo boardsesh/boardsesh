@@ -1,5 +1,5 @@
 diff --git a/build/community/bottom-sheet/types.d.ts b/build/community/bottom-sheet/types.d.ts
-index 72fc6becbc414c318799e28103d15484ed86f703..5a7de2dbd66a19851a8c4e83990ee9e1c6008c5d 100644
+index 72fc6becbc414c318799e28103d15484ed86f703..22618a29affa048f0518fe417f4adba0ecd0b3c4 100644
 --- a/build/community/bottom-sheet/types.d.ts
 +++ b/build/community/bottom-sheet/types.d.ts
 @@ -159,6 +159,11 @@ export interface BottomSheetProps {
@@ -14,8 +14,64 @@ index 72fc6becbc414c318799e28103d15484ed86f703..5a7de2dbd66a19851a8c4e83990ee9e1
      /**
       * Whether the sheet can be dismissed by panning down.
       * @default false
+diff --git a/ios/ExpoUITouchHandlerHelper.mm b/ios/ExpoUITouchHandlerHelper.mm
+index eb3442740e2c92364acef9a6fb4880b8a9c38fa4..28b0aa0271ad9953765c556b2949d7019d555e25 100644
+--- a/ios/ExpoUITouchHandlerHelper.mm
++++ b/ios/ExpoUITouchHandlerHelper.mm
+@@ -3,24 +3,48 @@
+ #import "ExpoUITouchHandlerHelper.h"
+ #import <ExpoModulesCore/Platform.h>
+ #import <React/RCTSurfaceTouchHandler.h>
++#import <objc/runtime.h>
++
++// RNHostView owners can overlap while SwiftUI replaces a host. Share only the
++// handler this helper created, so releasing one owner keeps the others tappable.
++// A React-owned handler has no lease count and must never be detached here.
++static char ExpoUITouchHandlerLeaseCountKey;
+ 
+ @implementation ExpoUITouchHandlerHelper
+ 
+ + (nullable UIGestureRecognizer *)createAndAttachTouchHandlerForView:(UIView *)view {
+   for (UIGestureRecognizer *recognizer in [view.gestureRecognizers copy]) {
+     if ([recognizer isKindOfClass:[RCTSurfaceTouchHandler class]]) {
+-      return nil;
++      NSNumber *leaseCount = objc_getAssociatedObject(recognizer, &ExpoUITouchHandlerLeaseCountKey);
++      if (leaseCount == nil) {
++        return nil;
++      }
++      objc_setAssociatedObject(recognizer, &ExpoUITouchHandlerLeaseCountKey,
++                               @(leaseCount.unsignedIntegerValue + 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++      return recognizer;
+     }
+   }
+   RCTSurfaceTouchHandler *touchHandler = [[RCTSurfaceTouchHandler alloc] init];
++  objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, @1, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+   [touchHandler attachToView:view];
+   return touchHandler;
+ }
+ 
+ + (void)detachTouchHandler:(UIGestureRecognizer *)touchHandler fromView:(UIView *)view {
+-  if ([touchHandler isKindOfClass:[RCTSurfaceTouchHandler class]]) {
+-    [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
++  if (![touchHandler isKindOfClass:[RCTSurfaceTouchHandler class]] || touchHandler.view != view) {
++    return;
++  }
++  NSNumber *leaseCount = objc_getAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey);
++  if (leaseCount == nil) {
++    return;
++  }
++  if (leaseCount.unsignedIntegerValue > 1) {
++    objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey,
++                             @(leaseCount.unsignedIntegerValue - 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++    return;
+   }
++  objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++  [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
+ }
+ 
+ @end
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..772f369cf121ca1a1fdd283f81f1326b8bfb4710 100644
+index ac8ae4af0a1fee8afbea2b9a5393d8eae271b108..c6a57521a582aa320cfc8ef0ff3d1c1cc531a003 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
@@ -102,7 +158,7 @@ index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..772f369cf121ca1a1fdd283f81f1326b
      return {
        snapToIndex,
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
-index edd61228b9881de7ab542e535124fef67fc0b6ec..575185c2de34fb09c20f5b40ab4575def0985f24 100644
+index 4c805f7effb3e278ddf6a12e02ee08264a64ac5e..7f223c8326e89e950ee5b62783ec96bcb9119518 100644
 --- a/src/community/bottom-sheet/BottomSheet.ios.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.ios.tsx
 @@ -87,6 +87,7 @@ export function BottomSheet(props: BottomSheetProps) {
@@ -122,7 +178,7 @@ index edd61228b9881de7ab542e535124fef67fc0b6ec..575185c2de34fb09c20f5b40ab4575de
  
    const detents = useMemo<PresentationDetent[]>(() => {
      if (!snapPointsProp || snapPointsProp.length === 0) return ['medium', 'large'];
-@@ -126,4 +129,8 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -126,6 +129,10 @@ export function BottomSheet(props: BottomSheetProps) {
      onCloseRef.current?.();
      onDismissRef.current?.();
      onChangeRef.current?.(-1);
@@ -131,6 +187,8 @@ index edd61228b9881de7ab542e535124fef67fc0b6ec..575185c2de34fb09c20f5b40ab4575de
 +    // settle window before the native post-animation signal resolves it.
 +    onFullyDismissedRef.current?.();
    }, []);
+ 
+   // Sync with external index prop changes
 diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
 index d7372fcb72e3717329ee8df4e27e2f537f17decb..ef095b2ab24003458c259b335f9f6aae137345bf 100644
 --- a/src/community/bottom-sheet/types.ts
