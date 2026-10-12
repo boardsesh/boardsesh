@@ -42,6 +42,8 @@ export function ConsentGate(): null {
       ? !consent.record?.ownerAccountId
       : !isConsentRecordOwnedBy(consent.record, authenticatedUserId));
 
+  const accountAnswerResolved = isAuthenticated && consent.accountResolved;
+
   useLayoutEffect(() => {
     updateConsentState({ killed, flagsResolved });
   }, [killed, flagsResolved]);
@@ -118,7 +120,7 @@ export function ConsentGate(): null {
       // accountResolved runs this effect again; starting a read here would
       // toggle accountResolved and trigger another read while the prompt is open.
       // The profile id may still be loading; the 5-second cap covers that too.
-      if (authenticatedUserId !== null && consent.accountResolved) ask();
+      if (authenticatedUserId !== null && accountAnswerResolved) ask();
       else timer = setTimeout(ask, Math.max(0, CONSENT_SERVER_WAIT_MS - (Date.now() - serverWaitStartedAtRef.current)));
     } else ask();
     return () => {
@@ -129,7 +131,7 @@ export function ConsentGate(): null {
     launchReady,
     consent.loaded,
     consent.record,
-    consent.accountResolved,
+    accountAnswerResolved,
     awaitingAccountAnswer,
     settled,
     killed,
