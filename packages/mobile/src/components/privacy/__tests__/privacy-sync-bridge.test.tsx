@@ -22,12 +22,14 @@ const mocks = vi.hoisted(() => ({
   mismatchListener: undefined as (() => void) | undefined,
   handler: undefined as (() => Promise<void>) | undefined,
   databaseListener: undefined as (() => void) | undefined,
+  databaseListeners: new Set<() => void>(),
   onlineListener: undefined as ((online: boolean) => void) | undefined,
   foreground: undefined as ((state: string) => void) | undefined,
   subscribe: vi.fn((_operation: unknown, _callbacks: unknown) => vi.fn()),
   revalidate: vi.fn<(...args: unknown[]) => Promise<void>>(),
   require: vi.fn(),
   report: vi.fn(),
+  persistWithdrawal: vi.fn<(...args: unknown[]) => Promise<void>>(),
   queryClient: {},
 }));
 vi.mock('react-native', () => ({
@@ -95,6 +97,7 @@ vi.mock('../../../offline/privacy-revalidation', () => ({
   PrivacyRevalidationDeferredError: class extends Error {},
   revalidatePrivateCatalog: mocks.revalidate,
   requirePrivacyRevalidation: mocks.require,
+  persistCatalogWithdrawal: mocks.persistWithdrawal,
   needsCatalogOutboxRepair: () => mocks.outboxRepairRequired,
 }));
 vi.mock('../../../offline/offline-sync-adapter', () => ({
@@ -144,6 +147,7 @@ beforeEach(() => {
   mocks.transportRevision = 0;
   mocks.authorizedViewer = 'viewer';
   mocks.connectedListener = undefined;
+  mocks.databaseListeners.clear();
   mocks.markerRead.mockReset().mockImplementation(async () => {
     if (mocks.mismatch) mocks.mismatchListener?.();
     return mocks.mismatch ? null : mocks.authorizedViewer;
@@ -153,6 +157,7 @@ beforeEach(() => {
   mocks.mismatch = false;
   mocks.outboxRepairRequired = false;
   mocks.revalidate.mockReset().mockResolvedValue();
+  mocks.persistWithdrawal.mockReset().mockResolvedValue();
 });
 afterEach(() => {
   cleanup();
@@ -311,6 +316,7 @@ describe('privacy revocation subscription', () => {
     const view = render(<PrivacySyncBridge />);
     await act(async () => mocks.connectedListener?.());
     expect(mocks.require).toHaveBeenCalledOnce();
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
     expect(mocks.revalidate).not.toHaveBeenCalled();
     mocks.privacy = { enabled: false };
     await act(async () => view.rerender(<PrivacySyncBridge />));
@@ -327,6 +333,53 @@ describe('privacy revocation subscription', () => {
     await act(async () => view.rerender(<PrivacySyncBridge />));
     expect(mocks.revalidate).toHaveBeenCalledOnce();
     expect(mocks.revalidate.mock.calls[0][1]).toBe('viewer');
+  });
+
+  it('persists an early withdrawal after late database readiness while offline', async () => {
+    mocks.database = null;
+    mocks.privacy = undefined;
+    const view = render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.persistWithdrawal).not.toHaveBeenCalled();
+    mocks.offlineMode = true;
+    await act(async () => view.rerender(<PrivacySyncBridge />));
+    mocks.database = { id: 2 };
+    await act(async () => mocks.databaseListener?.());
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    expect(mocks.persistWithdrawal.mock.calls[0][0]).toBe(mocks.database);
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+  });
+
+  it('bounds failed early withdrawal writes until a new handle notification', async () => {
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockRejectedValueOnce(new Error('locked'));
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => mocks.databaseListener?.());
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries an early withdrawal on the replacement handle after the old write rejects', async () => {
+    let rejectWrite: ((error: Error) => void) | undefined;
+    mocks.privacy = undefined;
+    mocks.persistWithdrawal.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectWrite = reject;
+        }),
+    );
+    render(<PrivacySyncBridge />);
+    await act(async () => mocks.connectedListener?.());
+    mocks.database = { id: 2 };
+    await act(async () => mocks.databaseListener?.());
+    expect(mocks.persistWithdrawal).toHaveBeenCalledOnce();
+    await act(async () => rejectWrite?.(new Error('old handle closed')));
+    expect(mocks.persistWithdrawal).toHaveBeenCalledTimes(2);
+    expect(mocks.persistWithdrawal.mock.calls[1][0]).toBe(mocks.database);
+    expect(mocks.report).not.toHaveBeenCalled();
   });
 
   it('rebinds the connection listener when the native viewer changes', async () => {

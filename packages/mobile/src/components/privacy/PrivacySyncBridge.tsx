@@ -15,6 +15,7 @@ import { clearSprayWallPrivateCaches } from '../../lib/spray/spray-privacy-clean
 import {
   PrivacyRevalidationDeferredError,
   requirePrivacyRevalidation,
+  persistCatalogWithdrawal,
   needsCatalogOutboxRepair,
   revalidatePrivateCatalog,
 } from '../../offline/privacy-revalidation';
@@ -40,27 +41,72 @@ export function PrivacySyncBridge() {
     if (privacy) setSupported(true);
   }, [privacy]);
   // Watch from mount: profile/privacy queries may finish after the socket's
-  // first connection. Keep one pending repair while withdrawing access now.
+  // first connection. Persist its withdrawal before handing off authorization.
   useEffect(() => {
-    if (offlineMode) return;
     let disposed = false;
-    const stopConnected = getWsClient().on('connected', () => {
-      if (disposed) return;
-      pendingConnectionRef.current = true;
-      if (connectionRevalidationRef.current?.()) {
-        pendingConnectionRef.current = false;
+    let withdrawalPending = pendingConnectionRef.current;
+    let withdrawalRunning = false;
+    let withdrawalRevision = 0;
+    const persistPendingWithdrawal = () => {
+      if (!pendingConnectionRef.current) {
+        withdrawalPending = false;
         return;
       }
-      clearSprayWallPrivateCaches();
-      clearStoredSprayPhotos();
-      requirePrivacyRevalidation();
-      void invalidatePrivacyQueries(queryClient, () => Promise.resolve()).catch((error: unknown) => {
-        reportHandledError(error, { tags: { source: 'privacy-revocation' } });
-      });
-    });
+      if (disposed || !withdrawalPending || withdrawalRunning) return;
+      const database = getDatabaseHandle();
+      if (!database) return;
+      const attemptRevision = withdrawalRevision;
+      const credentialGeneration = getPrivacyCredentialGeneration();
+      const current = () =>
+        !disposed && getDatabaseHandle() === database && getPrivacyCredentialGeneration() === credentialGeneration;
+      withdrawalPending = false;
+      withdrawalRunning = true;
+      let failed = false;
+      void persistCatalogWithdrawal(database, current)
+        .catch((error: unknown) => {
+          if (current() && pendingConnectionRef.current && withdrawalRevision === attemptRevision) {
+            failed = true;
+            withdrawalPending = true;
+            reportHandledError(error, { tags: { source: 'privacy-withdrawal' } });
+          }
+        })
+        .finally(() => {
+          withdrawalRunning = false;
+          // A later event or replacement handle may supersede an in-flight write.
+          if (!failed && withdrawalPending && !disposed) persistPendingWithdrawal();
+        });
+    };
+    const resumeWithdrawal = () => {
+      if (!pendingConnectionRef.current || disposed) return;
+      withdrawalRevision += 1;
+      withdrawalPending = true;
+      persistPendingWithdrawal();
+    };
+    const stopDatabase = subscribeDatabaseHandle(resumeWithdrawal);
+    const stopConnected = offlineMode
+      ? undefined
+      : getWsClient().on('connected', () => {
+          if (disposed) return;
+          pendingConnectionRef.current = true;
+          if (connectionRevalidationRef.current?.()) {
+            pendingConnectionRef.current = false;
+            return;
+          }
+          clearSprayWallPrivateCaches();
+          clearStoredSprayPhotos();
+          requirePrivacyRevalidation();
+          withdrawalRevision += 1;
+          withdrawalPending = true;
+          persistPendingWithdrawal();
+          void invalidatePrivacyQueries(queryClient, () => Promise.resolve()).catch((error: unknown) => {
+            reportHandledError(error, { tags: { source: 'privacy-revocation' } });
+          });
+        });
+    persistPendingWithdrawal();
     return () => {
       disposed = true;
-      stopConnected();
+      stopDatabase();
+      stopConnected?.();
     };
   }, [offlineMode, authTransportRevision, profile?.id, queryClient]);
   useEffect(() => {
