@@ -8,6 +8,7 @@ import { db } from '../db/client';
 import {
   analyticsConsentMutations,
   analyticsConsentQueries,
+  conditionalWriteIsStale,
   grantIsStale,
 } from '../graphql/resolvers/users/analytics-consent';
 import { resetAllRateLimits } from '../utils/rate-limiter';
@@ -18,7 +19,9 @@ import { resetAllRateLimits } from '../utils/rate-limiter';
  * The rule under test: a denial is always written, and a grant is dropped when
  * the account already holds an answer the client never saw. That is what stops
  * a device that last synced before "No thanks" on another device from turning
- * tracking back on.
+ * tracking back on. A recovered (`conditional`) write, denial included, is
+ * dropped the same way, so a retried lost "No thanks" never overwrites a newer
+ * "Allow" from another device.
  */
 
 let connectionCounter = 0;
@@ -179,6 +182,18 @@ describe('setAnalyticsConsent', () => {
     expect((await readConsent(userId))?.analytics).toBe('denied');
   });
 
+  it('writes an explicit denial with no token over a newer grant it never saw', async () => {
+    const userId = await createUser();
+    const firstGrant = await setConsent(userId, grantFromPhone(null));
+    await setConsent(userId, grantFromPhone(firstGrant.decidedAt));
+
+    const result = await setConsent(userId, { ...denyFromWeb(null), conditional: false });
+
+    expect(result.analytics).toBe('denied');
+    expect(await storedRows(userId)).toHaveLength(3);
+    expect((await readConsent(userId))?.analytics).toBe('denied');
+  });
+
   it('never loses a denial to a grant racing it', async () => {
     // Without the per-user lock both writes can read "no answer yet" and the
     // grant can land last. With it, either the grant goes first (then the
@@ -199,6 +214,7 @@ describe('setAnalyticsConsent', () => {
     ['a version this server never asked under', { analytics: 'denied', version: CONSENT_VERSION + 1, source: 'web' }],
     ['a non-date basedOnDecidedAt', { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: 'later' }],
     ['a non-ISO date', { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: 'October 2, 2026' }],
+    ['a non-boolean conditional', { analytics: 'denied', version: 1, source: 'web', conditional: 'yes' }],
     [
       'a timestamp without server precision',
       { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: '2026-10-02T08:00:00Z' },
@@ -213,6 +229,74 @@ describe('setAnalyticsConsent', () => {
       ),
     ).rejects.toThrow('Invalid input');
     expect(await storedRows(userId)).toHaveLength(0);
+  });
+});
+
+describe('setAnalyticsConsent with a recovered (conditional) write', () => {
+  const recovered = (input: SetAnalyticsConsentInput): SetAnalyticsConsentInput => ({ ...input, conditional: true });
+
+  it('refuses a denial based on an answer another device has since replaced, and writes nothing', async () => {
+    // Phone A said No against the 10:00 Allow; its write was lost. Phone B
+    // then said Allow. A retries without reading the account again.
+    const userId = await createUser();
+    const tenOClockGrant = await setConsent(userId, grantFromPhone(null));
+    const phoneBGrant = await setConsent(userId, grantFromPhone(tenOClockGrant.decidedAt));
+
+    const result = await setConsent(userId, recovered(denyFromWeb(tenOClockGrant.decidedAt)));
+
+    expect(result).toEqual(phoneBGrant);
+    expect(await storedRows(userId)).toHaveLength(2);
+    expect(await readConsent(userId)).toEqual(phoneBGrant);
+  });
+
+  it('refuses a first answer once the account has one', async () => {
+    const userId = await createUser();
+    const phoneBGrant = await setConsent(userId, grantFromPhone(null));
+
+    expect(await setConsent(userId, recovered(denyFromWeb(null)))).toEqual(phoneBGrant);
+    expect(await storedRows(userId)).toHaveLength(1);
+  });
+
+  it('writes a denial while the account still holds the answer it was made against', async () => {
+    const userId = await createUser();
+    const tenOClockGrant = await setConsent(userId, grantFromPhone(null));
+
+    const result = await setConsent(userId, recovered(denyFromWeb(tenOClockGrant.decidedAt)));
+
+    expect(result).toMatchObject({ analytics: 'denied', source: 'web' });
+    expect(await storedRows(userId)).toHaveLength(2);
+    expect(await readConsent(userId)).toEqual(result);
+  });
+
+  it('writes a first answer to an empty account', async () => {
+    const userId = await createUser();
+
+    expect(await setConsent(userId, recovered(denyFromWeb(null)))).toMatchObject({ analytics: 'denied' });
+    expect(await storedRows(userId)).toHaveLength(1);
+  });
+
+  it('refuses a grant that saw none even when the account already allows', async () => {
+    const userId = await createUser();
+    const phoneBGrant = await setConsent(userId, grantFromPhone(null));
+
+    expect(await setConsent(userId, recovered(grantFromPhone(null)))).toEqual(phoneBGrant);
+    expect(await storedRows(userId)).toHaveLength(1);
+  });
+});
+
+describe('conditionalWriteIsStale', () => {
+  const grant = { analytics: 'granted', version: 1, source: 'ios', decidedAt: new Date('2026-10-02T08:00:00.123Z') };
+
+  it('is never stale against an empty account', () => {
+    expect(conditionalWriteIsStale(null, null)).toBe(false);
+    expect(conditionalWriteIsStale(null, '2026-10-01T00:00:00.000Z')).toBe(false);
+  });
+
+  it('is stale unless the account holds exactly the answer it was made against', () => {
+    expect(conditionalWriteIsStale(grant, '2026-10-02T08:00:00.123Z')).toBe(false);
+    expect(conditionalWriteIsStale(grant, '2026-10-02T08:00:00.122Z')).toBe(true);
+    expect(conditionalWriteIsStale(grant, null)).toBe(true);
+    expect(conditionalWriteIsStale(grant, undefined)).toBe(true);
   });
 });
 

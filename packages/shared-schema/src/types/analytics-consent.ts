@@ -19,6 +19,8 @@ export type SetAnalyticsConsentInput = {
   source: 'web' | 'ios' | 'android';
   /** The `decidedAt` of the account answer this client last saw; null when it saw none. */
   basedOnDecidedAt?: string | null;
+  /** True for a recovered write: written, grant or denial, only while the account still holds `basedOnDecidedAt`. */
+  conditional?: boolean | null;
 };
 
 export type ActiveUsersPlatform = 'web' | 'ios' | 'android' | 'unknown';

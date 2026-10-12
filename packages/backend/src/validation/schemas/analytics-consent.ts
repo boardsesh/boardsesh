@@ -22,6 +22,9 @@ export const SetAnalyticsConsentInputSchema = z.object({
       return Number.isFinite(decidedAtMs) && new Date(decidedAtMs).toISOString() === candidate;
     }, 'basedOnDecidedAt must be the ISO 8601 timestamp returned by the server')
     .nullish(),
+  // A recovered write: compare-and-set on basedOnDecidedAt for a denial too.
+  // Older clients never send it, so their denials stay unconditional.
+  conditional: z.boolean().nullish(),
 });
 
 export type ValidatedSetAnalyticsConsentInput = z.infer<typeof SetAnalyticsConsentInputSchema>;

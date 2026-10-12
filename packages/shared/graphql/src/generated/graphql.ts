@@ -9137,9 +9137,17 @@ export type SetAnalyticsConsentInput = {
    * The decidedAt of the account answer this client last saw, or null when it saw
    * none. A grant must echo the exact current server stamp; a different stamp
    * returns the current answer without writing. With null, an existing grant
-   * may be recorded again but an existing denial wins. A denial is always written.
+   * may be recorded again but an existing denial wins. A denial is always written
+   * unless conditional is true.
    */
   basedOnDecidedAt?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * True for a write the client recovered rather than one the climber just made:
+   * it is written, grant or denial, only while the account still holds exactly
+   * basedOnDecidedAt (no answer when null); otherwise the current answer comes
+   * back and nothing is written. Omitted or false keeps a denial unconditional.
+   */
+  conditional?: InputMaybe<Scalars['Boolean']['input']>;
   /** web, ios or android. */
   source: Scalars['String']['input'];
   /** The CONSENT_VERSION the client asked under. A positive integer. */

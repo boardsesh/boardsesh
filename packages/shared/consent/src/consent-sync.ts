@@ -17,8 +17,24 @@ export type ConsentSyncInput = {
   version: number;
   source: ConsentSource;
   basedOnDecidedAt: string | null;
+  /**
+   * Sent only for a recovered decision (see {@link PendingConsentDecision}): the
+   * server writes it, grant or denial, only while the account still holds
+   * exactly `basedOnDecidedAt` (no answer when null), and otherwise returns the
+   * account's answer without writing.
+   */
+  conditional?: true;
 };
-export type PendingConsentDecision = { record: ConsentRecord; basedOnDecidedAt: string | null };
+/**
+ * A decision waiting to reach the account, with the account answer it was made
+ * against. `conditional` marks one this device recovered after an account read
+ * (a lost write of its own, found still based on the account's current answer)
+ * rather than one the climber just made. It keeps that guard on every retry and
+ * after a restart, because a retry does not read the account again and another
+ * device may have answered in between. An explicit decision has no marker: its
+ * denial is always written, so a climber's own "No thanks" always lands.
+ */
+export type PendingConsentDecision = { record: ConsentRecord; basedOnDecidedAt: string | null; conditional?: true };
 /**
  * Validate a stored pending decision. The record carries no owner on purpose:
  * pending decisions are stored per account, and a restored one is bound to the
@@ -45,6 +61,8 @@ export function parsePendingConsentDecision(candidate: unknown): PendingConsentD
     return null;
   const stamp = pendingDecision.basedOnDecidedAt;
   if (stamp !== null && (typeof stamp !== 'string' || !Number.isFinite(Date.parse(stamp)))) return null;
+  // A garbled marker could turn a recovered write unconditional: reject it.
+  if (pendingDecision.conditional !== undefined && pendingDecision.conditional !== true) return null;
   return {
     record: {
       analytics: record.analytics,
@@ -53,7 +71,22 @@ export function parsePendingConsentDecision(candidate: unknown): PendingConsentD
       decidedAt: record.decidedAt,
     },
     basedOnDecidedAt: stamp,
+    ...(pendingDecision.conditional === true ? { conditional: true } : {}),
   };
+}
+
+/**
+ * The wire input for a pending decision. A recovered decision asks the server
+ * to compare-and-set on its token whatever its answer. An explicit withdrawal
+ * carries no token and is always written. An explicit grant keeps its token,
+ * which the server checks for every grant.
+ */
+function syncInput(decision: PendingConsentDecision): ConsentSyncInput {
+  const { analytics, version, source } = decision.record;
+  if (decision.conditional) {
+    return { analytics, version, source, basedOnDecidedAt: decision.basedOnDecidedAt, conditional: true };
+  }
+  return { analytics, version, source, basedOnDecidedAt: analytics === 'denied' ? null : decision.basedOnDecidedAt };
 }
 export type ConsentSyncSnapshot = {
   record: DeviceConsentRecord | null;
@@ -231,20 +264,17 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
           await persistPending(identity, decision);
           if (!isCurrent()) return;
           if (pending !== decision) continue;
-          const result = await options.writeAccountConsent(identity, {
-            analytics: decision.record.analytics,
-            version: decision.record.version,
-            source: decision.record.source,
-            basedOnDecidedAt: decision.basedOnDecidedAt,
-          });
+          const result = await options.writeAccountConsent(identity, syncInput(decision));
           if (!isCurrent()) return;
           serverRecord = result;
           if (pending !== decision) {
             // A newer explicit Allow follows our own in-flight withdrawal.
             // Rebase only that grant onto the denial we just wrote, never onto
-            // a denial returned by a rejected grant or a later account read.
+            // a denial returned by a rejected grant, a refused recovered
+            // denial (another device's) or a later account read.
             if (
               decision.record.analytics === 'denied' &&
+              !decision.conditional &&
               result.analytics === 'denied' &&
               pending !== null &&
               pending === explicitPendingGrant
@@ -263,7 +293,12 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
           // Do not clear a newer decision that was made while the request was in flight.
           pending = null;
           explicitPendingGrant = null;
-          const record = accountCopy(result, identity);
+          // A refused recovered write returns the account's newer answer:
+          // merge it like a fresh read, so this device keeps its own No thanks
+          // against a newer Allow (rule 3) and takes a newer denial (rule 2).
+          const record = decision.conditional
+            ? mergeAccountConsent(snapshot.record, result, identity).record
+            : accountCopy(result, identity);
           publish({ record, pending: false, accountResolved: true });
           persistRecord(record);
           await persistPending(identity, null);
@@ -277,9 +312,10 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         const merged = mergeAccountConsent(snapshot.record, result, identity);
         publish({ record: merged.record, accountResolved: true });
         persistRecord(merged.record);
-        // Write only this account's own newer answer. Reads that agree append nothing.
+        // Write only this account's own newer answer. Reads that agree append
+        // nothing. The write stays conditional through retries and restarts.
         if (merged.push) {
-          pending = { record: merged.push, basedOnDecidedAt: result?.decidedAt ?? null };
+          pending = { record: merged.push, basedOnDecidedAt: result?.decidedAt ?? null, conditional: true };
           publish({ pending: true });
           continue;
         }

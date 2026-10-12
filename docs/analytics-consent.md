@@ -83,22 +83,29 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 
 - `myAnalyticsConsent: AnalyticsConsent` is the newest row, or null when the
   climber never answered. Signed-in only.
-- `setAnalyticsConsent(input: { analytics, version, source, basedOnDecidedAt })`
+- `setAnalyticsConsent(input: { analytics, version, source, basedOnDecidedAt, conditional })`
   appends a row and returns the account's current answer. `version` must be
   between 1 and the server's `CONSENT_VERSION`; deploy the backend first when
   bumping it.
   - The server stamps `decided_at`; a client clock is never trusted. The stamp
     is whole milliseconds and at least 1 ms after the user's previous row, so
     the ISO string a client echoes back names exactly one row.
-  - A **denial is always written**.
+  - A **denial is always written**, unless the client marks it `conditional`.
   - A **grant is compare-and-set**: `basedOnDecidedAt` must exactly equal the
     canonical ISO millisecond stamp of the latest account answer. A null stamp
     is accepted only when there is no answer or the current answer is already
     granted. Otherwise nothing is written and the current answer comes back. This stops a
     device that last synced before "No thanks" elsewhere from turning tracking
     back on.
+  - A **`conditional` write is compare-and-set whatever its answer**: it is
+    written only while the latest account answer is exactly `basedOnDecidedAt`
+    (no answer when null), and otherwise the current answer comes back. Clients
+    set it only on a recovered write (see Account synchronization). Older
+    clients never send it, so their denials stay unconditional. A backend that
+    predates the field rejects the input, so a recovered write stays pending
+    until the backend deploys and never lands unconditionally.
   - Writes for one user run under a transaction-scoped advisory lock, so a
-    racing grant and denial always end denied.
+    racing grant and explicit denial always end denied.
   - Rate limited to 20 a minute per user.
 
 ## Legal basis per tracker
@@ -207,7 +214,18 @@ Only two things are ever written to an account:
    made against (`basedOnDecidedAt`). It is written with that answer as its
    compare-and-set token. No clocks are compared, so a phone whose clock runs
    ahead cannot re-deny a newer answer, and a copy adopted from the account is
-   never written back.
+   never written back. The recovered write stays conditional all the way to
+   the database: its pending record carries `conditional: true` and the token,
+   and the server checks the token under the per-user lock for a denial too. A
+   retry or a restart sends it again without reading the account, so this is
+   what stops it overwriting an Allow another device wrote in between. When the
+   server refuses it, the device merges the answer it gets back like a fresh
+   read: a newer Allow leaves this device on its own No thanks (rule 3), a newer
+   denial is adopted (rule 2).
+
+An explicit No thanks and its durable retries are never conditional: they send
+`basedOnDecidedAt: null`, so the climber's own withdrawal always lands. An
+explicit Allow keeps its token, which the server checks for every grant.
 
 A stored answer is never pushed over a newer account answer. Say No thanks on
 phone A, later Allow on phone B: when A comes back, the account stays Allow and

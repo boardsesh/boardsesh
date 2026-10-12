@@ -69,7 +69,8 @@ async function readLatestConsent(executor: DrizzleExecutor, userId: string): Pro
  * tracking back on. A grant must echo the exact server stamp the client saw;
  * a made-up future stamp cannot stand in for reading the account's answer.
  * When the client saw none, an existing grant may be recorded again, but a
- * denial wins. A denial is never dropped: withdrawing must always work.
+ * denial wins. A denial is dropped only when it is a recovered write (see
+ * {@link conditionalWriteIsStale}); withdrawing must always work.
  *
  * The ISO echo is exact: {@link nextDecidedAt} stores whole
  * milliseconds and keeps each user's rows at least 1 ms apart, so the ISO string
@@ -79,6 +80,22 @@ export function grantIsStale(latest: ConsentEventRow | null, basedOnDecidedAt: s
   if (latest === null) return false;
   if (basedOnDecidedAt === null || basedOnDecidedAt === undefined) return latest.analytics !== 'granted';
   return latest.decidedAt.toISOString() !== basedOnDecidedAt;
+}
+
+/**
+ * Whether a recovered (`conditional`) write, grant or denial, should give way.
+ * The client wrote it once against the account answer `basedOnDecidedAt` and is
+ * retrying without reading the account again, so it is written only while the
+ * account still holds exactly that answer, or none when it was null. An empty
+ * account has nothing newer to protect. A denial the climber just made is never
+ * conditional: withdrawing must always work.
+ */
+export function conditionalWriteIsStale(
+  latest: ConsentEventRow | null,
+  basedOnDecidedAt: string | null | undefined,
+): boolean {
+  if (latest === null) return false;
+  return latest.decidedAt.toISOString() !== (basedOnDecidedAt ?? null);
 }
 
 /**
@@ -98,9 +115,10 @@ function nextDecidedAt(userId: string) {
 }
 
 /**
- * Append one answer, compare-and-set for grants. Runs under a per-user
- * transaction-scoped advisory lock so two devices answering at once can't both
- * read the same "latest" and interleave.
+ * Append one answer, compare-and-set for grants and for any `conditional`
+ * (recovered) write. Runs under a per-user transaction-scoped advisory lock so
+ * two devices answering at once can't both read the same "latest" and
+ * interleave.
  */
 export async function setAnalyticsConsentForUser(
   userId: string,
@@ -111,9 +129,13 @@ export async function setAnalyticsConsentForUser(
       sql`SELECT pg_advisory_xact_lock(${ANALYTICS_CONSENT_LOCK_NAMESPACE}, hashtext(${userId}))`,
     );
 
-    if (input.analytics === 'granted') {
+    if (input.conditional === true || input.analytics === 'granted') {
       const latest = await readLatestConsent(transaction, userId);
-      if (latest !== null && grantIsStale(latest, input.basedOnDecidedAt)) {
+      const stale =
+        input.conditional === true
+          ? conditionalWriteIsStale(latest, input.basedOnDecidedAt)
+          : grantIsStale(latest, input.basedOnDecidedAt);
+      if (latest !== null && stale) {
         return toAnalyticsConsent(latest);
       }
     }
