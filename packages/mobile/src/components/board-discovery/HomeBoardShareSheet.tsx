@@ -15,7 +15,7 @@ type HomeBoardShareSheetProps = {
 /**
  * The Share sheet for a home board. A Public or Unlisted board hands out its
  * plain link; a Followers or Invite-only board hands out the owner's invite
- * link, which joins whoever opens it (`board-share-link.ts`).
+ * link, which grants access after the recipient confirms Join (`board-share-link.ts`).
  */
 export function HomeBoardShareSheet({ target, boardName, onDismiss }: HomeBoardShareSheetProps) {
   if (target.kind === 'plain') {

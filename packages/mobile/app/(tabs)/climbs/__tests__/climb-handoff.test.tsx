@@ -35,6 +35,7 @@ vi.mock('../../../../src/providers/auth-provider', () => ({
 }));
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer }) }));
 vi.mock('../../../../src/providers/feature-flags-provider', () => ({ useAnonymousClimbViewEnabled: () => false }));
+vi.mock('../../../../src/providers/dialog-provider', () => ({ useConfirm: () => vi.fn(async () => true) }));
 vi.mock('../../../../src/providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
 vi.mock('../../../../src/lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../../src/lib/active-board-store', () => ({ getStoredActiveBoard: vi.fn() }));

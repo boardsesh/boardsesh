@@ -1,4 +1,8 @@
-import { REDEEM_BOARD_SHARE_LINK, type BoardShareLinkRedemption } from '@boardsesh/graphql/operations/privacy';
+import {
+  GET_BOARD_SHARE_LINK_PREVIEW,
+  REDEEM_BOARD_SHARE_LINK,
+  type BoardShareLinkRedemption,
+} from '@boardsesh/graphql/operations/privacy';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import { fetchBoardByUuid } from '../graphql/hooks/fetch-board-by-uuid';
@@ -22,8 +26,9 @@ async function requestRedemption(token: string): Promise<BoardShareLinkRedemptio
 }
 
 /** Redeem, with one retry for a refusal that is not the server's final word. `null` when it opens nothing. */
-async function redeemWithOneRetry(token: string): Promise<BoardShareLinkRedemption | null> {
+async function redeemWithOneRetry(token: string, canContinue: () => boolean): Promise<BoardShareLinkRedemption | null> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!canContinue()) return null;
     try {
       return await requestRedemption(token);
     } catch (redeemError) {
@@ -39,7 +44,7 @@ async function redeemWithOneRetry(token: string): Promise<BoardShareLinkRedempti
 
 /**
  * Open a board share link (`/b/{slug}?invite={token}`) for the signed-in
- * climber: join the board the token names, then read it as the member they now
+ * climber: preview its name, ask them to join, then read it as the member they now
  * are.
  *
  * The board comes back by the uuid the server redeemed, not by the URL's slug.
@@ -61,12 +66,39 @@ export async function fetchBoardFromShareLink(
   token: string,
   slug: string,
   fallback: (slug: string) => Promise<UserBoard | null>,
+  confirmJoin: ((boardName: string) => Promise<boolean>) | undefined,
+  routeIsCurrent: () => boolean = () => true,
 ): Promise<UserBoard | null> {
   const credentialGeneration = captureAuthCredentialGeneration();
-  const redemption = await redeemWithOneRetry(token);
+  const canContinue = () => routeIsCurrent() && isAuthCredentialGenerationCurrent(credentialGeneration);
+  const resolveFallback = async () => {
+    const board = await fallback(slug);
+    return canContinue() ? board : null;
+  };
+  if (!canContinue()) return null;
+  let preview: { name: string } | null;
+  try {
+    preview = (
+      await getHttpClient().request<{ boardShareLinkPreview: { name: string } | null }>(GET_BOARD_SHARE_LINK_PREVIEW, {
+        token,
+      })
+    ).boardShareLinkPreview;
+  } catch {
+    // graphql-request errors carry the token: never report them.
+    return canContinue() ? resolveFallback() : null;
+  }
+  if (!canContinue()) return null;
+  if (!preview || !confirmJoin) return resolveFallback();
+  const confirmed = await confirmJoin(preview.name);
+  // A delayed alert must never join under a different account or after the
+  // person navigated away. Every retry rechecks the same scope.
+  if (!canContinue()) return null;
+  if (!confirmed) return resolveFallback();
+  const redemption = await redeemWithOneRetry(token, canContinue);
   // Signed out or switched accounts mid-request: the grant belongs to whoever
   // sent it, and this route must not adopt a board for someone else.
   if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return null;
-  if (!redemption) return fallback(slug);
-  return fetchBoardByUuid(redemption.boardUuid);
+  if (!redemption) return resolveFallback();
+  const board = await fetchBoardByUuid(redemption.boardUuid);
+  return canContinue() ? board : null;
 }

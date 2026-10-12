@@ -29,6 +29,8 @@ const previewBoardInvite = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/board-invite.server', () => ({ redeemBoardInvite, previewBoardInvite }));
 const BoardInviteSignIn = vi.hoisted(() => vi.fn(() => null));
 vi.mock('../board-invite-sign-in', () => ({ default: BoardInviteSignIn }));
+const BoardInviteJoin = vi.hoisted(() => vi.fn(() => null));
+vi.mock('../board-invite-join', () => ({ default: BoardInviteJoin }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async () => ({ t: (key: string) => key, locale: 'en-US' }),
 }));
@@ -152,16 +154,17 @@ describe('/b/[board_slug] redirect', () => {
 const TOKEN = 'Ab3_dE-fGhIjKlMnOpQrSt';
 
 describe('/b/[board_slug] with a home board share link (?invite=)', () => {
-  it('joins a signed-in visitor and lands them on the clean list, token dropped', async () => {
+  it('only previews a signed-in GET and requires a Join action before granting access', async () => {
     getServerAuthToken.mockResolvedValue('session-token');
-    redeemBoardInvite.mockResolvedValue({ boardUuid: 'board-uuid', slug: 'friends-garage' });
-    resolveBoardBySlug.mockResolvedValue({ slug: 'friends-garage', angle: 35 });
-
-    await expect(redirectTargetFor('stale-slug', { invite: TOKEN })).resolves.toBe('/b/friends-garage/35/list');
-    expect(redeemBoardInvite).toHaveBeenCalledWith(TOKEN, 'session-token');
-    // Read by the slug the server redeemed, as the member the redemption just made.
-    expect(resolveBoardBySlug).toHaveBeenCalledWith('friends-garage');
-    expect(previewBoardInvite).not.toHaveBeenCalled();
+    previewBoardInvite.mockResolvedValue({ name: 'Friends Garage' });
+    const rendered = (await BoardSlugPage({
+      params: Promise.resolve({ board_slug: 'stale-slug' }),
+      searchParams: Promise.resolve({ invite: TOKEN }),
+    })) as { type: unknown; props: { boardName: string; inviteToken: string } };
+    expect(rendered.type).toBe(BoardInviteJoin);
+    expect(rendered.props).toEqual({ boardName: 'Friends Garage', inviteToken: TOKEN });
+    expect(redeemBoardInvite).not.toHaveBeenCalled();
+    expect(resolveBoardBySlug).not.toHaveBeenCalled();
   });
 
   it('serves a refused link as the plain board link, never carrying the token on', async () => {

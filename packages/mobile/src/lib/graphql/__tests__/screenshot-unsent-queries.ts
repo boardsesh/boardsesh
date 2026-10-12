@@ -29,6 +29,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'BoardRecentHistory',
   // The owner's invite link: only the Share sheet of a Followers or Invite-only board asks.
   'BoardShareLink',
+  'BoardShareLinkPreview', // Only incoming invite links; screenshot flows do not open one.
   'BoardseshGrade',
   'BoardseshGradesForAngles',
   'BrowseProposals',

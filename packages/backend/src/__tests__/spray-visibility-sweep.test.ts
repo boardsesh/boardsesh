@@ -580,7 +580,7 @@ function scannableSentinels(argumentValues: Record<string, unknown>): Sentinel[]
 const NOT_APPLICABLE: Record<string, string> = {
   // --- readers scoped to another board type entirely ---------------------------
   'Query.boardShareLink':
-    "home boards only: a spray wall has no share link (it keeps its own ?wall= link), so the owner gets null too, and a non-owner is refused before the board type is read",
+    'home boards only: a spray wall has no share link (it keeps its own ?wall= link), so the owner gets null too, and a non-owner is refused before the board type is read',
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
 

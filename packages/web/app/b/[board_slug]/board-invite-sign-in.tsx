@@ -8,7 +8,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 
 /**
  * What a signed-out visitor sees on a board's share link: the board's name and
- * a sign-in that comes straight back here, where the link then joins them.
+ * a sign-in that comes straight back here, where they can explicitly confirm Join.
  *
  * The name and nothing else. The board is Followers or Invite-only, so its
  * location, its climbers and everything else stay behind the sign-in.

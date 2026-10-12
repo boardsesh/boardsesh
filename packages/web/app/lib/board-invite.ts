@@ -2,8 +2,8 @@
  * A home board's share link: `/b/{slug}?invite={token}`.
  *
  * The owner hands it out from the app's Share sheet for a Followers or
- * Invite-only board. Opening it signed in makes the climber an approved member
- * at once (`redeemBoardShareLink`); signed out, the page names the board and
+ * Invite-only board. Confirming Join while signed in makes the climber an
+ * approved member (`redeemBoardShareLink`); signed out, the page names the board and
  * asks for a sign-in that comes back to the same URL.
  *
  * The token is a capability, so it is kept out of everything that outlives

@@ -5,7 +5,7 @@ import type { GymQrSearchParams } from '@boardsesh/analytics';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { BOARD_INVITE_PARAM, readBoardInviteToken } from '@/app/lib/board-invite';
-import { previewBoardInvite, redeemBoardInvite } from '@/app/lib/board-invite.server';
+import { previewBoardInvite } from '@/app/lib/board-invite.server';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -13,6 +13,7 @@ import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 import BoardInviteSignIn from './board-invite-sign-in';
+import BoardInviteJoin from './board-invite-join';
 
 type BoardSlugPageParams = {
   board_slug: string;
@@ -52,30 +53,21 @@ export async function generateMetadata(props: BoardSlugPageProps): Promise<Metad
 /**
  * A home board's share link (`?invite=`), before the ordinary hop below.
  *
- * Signed in, the token is redeemed through the backend, which makes the viewer
- * an approved member of the board it names, and the visitor lands on that
- * board's clean list URL: the redirect drops the token, so nothing after this
- * request carries it. Signed out, the page names the board and offers a sign-in
+ * Signed in, the visitor sees a Join confirmation. A GET only previews the
+ * board name; the explicit server action grants access and drops the token
+ * from the redirect URL. Signed out, the page names the board and offers a sign-in
  * that comes back to this exact URL. A link that opens nothing (reset, unknown,
  * a board made Public or Only me since) falls through to the plain link, which
  * renders or 404s on the board's own rules.
  *
  * Returns the sign-in page to render, or `null` to continue. Throws Next's
- * redirect on a successful join.
+ * redirect only on the ordinary no-invite path.
  */
 async function handleBoardInvite(boardSlug: string, inviteToken: string): Promise<React.ReactElement | null> {
   const authToken = await getServerAuthToken();
-  if (authToken) {
-    const redemption = await redeemBoardInvite(inviteToken, authToken);
-    if (!redemption) return null;
-    // The board the token names, read as the member this request just made:
-    // the slug in the URL is cosmetic and may be stale after a rename.
-    const board = await resolveBoardBySlug(redemption.slug);
-    if (!board) return null;
-    redirect(`/b/${encodeURIComponent(board.slug)}/${board.angle}/list`);
-  }
   const preview = await previewBoardInvite(inviteToken);
   if (!preview) return null;
+  if (authToken) return <BoardInviteJoin boardName={preview.name} inviteToken={inviteToken} />;
   // Back in the visitor's language after sign-in: `/es/b/...` stays Spanish.
   const returnPath = localeHref(
     `/b/${encodeURIComponent(boardSlug)}?${BOARD_INVITE_PARAM}=${inviteToken}`,

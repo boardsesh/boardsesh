@@ -447,7 +447,7 @@
       "title": "Comparte este plafón",
       "publicBody": "Este plafón es público: cualquiera con el enlace puede abrirlo y escalar en él.",
       "unlistedBody": "Solo quien reciba este enlace puede abrir el plafón. No aparece en ninguna lista.",
-      "inviteBody": "Quien abra este enlace se une a tu plafón.",
+      "inviteBody": "Cualquiera con este enlace puede pulsar Unirme para acceder a tu plafón.",
       "loading": "Preparando tu enlace",
       "loadFailed": "No pudimos preparar tu enlace. Cierra y vuelve a intentarlo.",
       "resetLink": "Restablecer enlace",
@@ -1270,7 +1270,12 @@
   "boardShareLink": {
     "metadataTitle": "Te han invitado a un plafón | Boardsesh",
     "heading": "Te han invitado a escalar en {{name}}",
-    "body": "Inicia sesión y te unes al plafón al momento. Sin esperar aprobación.",
-    "signIn": "Inicia sesión para unirte"
+    "body": "Inicia sesión y pulsa Unirme para acceder. No necesitas aprobación.",
+    "signIn": "Inicia sesión para unirte",
+    "joinHeading": "¿Unirte a {{name}}?",
+    "joinBody": "Al unirte podrás acceder a este plafón. Su propietario podrá ver tu nombre en la lista de miembros.",
+    "join": "Unirme",
+    "cancel": "Cancelar",
+    "joinFailed": "No se pudo acceder a este plafón. Inténtalo de nuevo o pide otro enlace a su propietario."
   }
 }

@@ -6,8 +6,8 @@
 //    already; Unlisted is reachable by anyone holding the link, so the slug is
 //    enough and nothing has to be minted.
 //  - Followers and Invite-only: `/b/{slug}?invite={token}`, owner only. The
-//    token is minted server-side (`boardShareLink`), and opening the link signed
-//    in makes the climber an approved member at once (`redeemBoardShareLink`).
+//    token is minted server-side (`boardShareLink`), and confirming Join while signed
+//    in makes the climber an approved member (`redeemBoardShareLink`).
 //    A follower passing on the plain link would only hand out a not-found, so a
 //    non-owner gets no share row on these boards.
 //  - Only me: no link. It is a private notebook.

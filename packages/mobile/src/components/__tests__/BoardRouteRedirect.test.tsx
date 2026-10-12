@@ -25,6 +25,8 @@ const router = vi.hoisted(() => ({ replace: vi.fn() }));
 // The hand-off callback the hook holds. A successful hand-off never becomes a
 // status — the real hook navigates the screen away in the same batch — so this
 // is the only handle a test has on the `resolved` leg.
+const joinConfirm = vi.hoisted(() => vi.fn(async () => true));
+const boardJoin = vi.hoisted(() => ({ current: null as ((boardName: string) => Promise<boolean>) | null }));
 const handoff = vi.hoisted(() => ({ current: null as (() => void) | null }));
 // Whatever `onlineManager` reports when the not-found lands. An offline
 // not-found is the transient state a reconnect heals, not a dead link.
@@ -45,6 +47,7 @@ vi.mock('expo-router', () => ({
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => joinConfirm }));
 vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { secondaryLabel: '#888' } }) }));
 
 vi.mock('../ActivityIndicator', () => ({
@@ -72,8 +75,16 @@ vi.mock('../AnonymousClimbView', () => ({
   },
 }));
 vi.mock('../../lib/routing/use-board-route-target', () => ({
-  useBoardRouteTarget: (_target: unknown, options?: { onHandedOff?: () => void; anonymousClimbEnabled?: boolean }) => {
+  useBoardRouteTarget: (
+    _target: unknown,
+    options?: {
+      onHandedOff?: () => void;
+      anonymousClimbEnabled?: boolean;
+      confirmBoardJoin?: (boardName: string) => Promise<boolean>;
+    },
+  ) => {
     handoff.current = options?.onHandedOff ?? null;
+    boardJoin.current = options?.confirmBoardJoin ?? null;
     anonymousClimbView.seen.push(options?.anonymousClimbEnabled);
     return routeStatus.current === 'anonymous-climb' && anonymousResult.climbHasLanded
       ? {
@@ -403,5 +414,24 @@ describe('BoardRouteHandoff dead end', () => {
     routeStatus.current = 'not-found';
     const { getByText } = render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
     expect(getByText('mobile.detail.notFound')).toBeTruthy();
+  });
+});
+
+describe('share link Join prompt', () => {
+  it('passes an explicit confirm showing the board name and member-name disclosure', async () => {
+    render(
+      createElement(BoardRouteHandoff, {
+        target: { kind: 'slug-list', slug: 'garage', angle: null },
+        inviteToken: 'Ab3_dE-fGhIjKlMnOpQrSt',
+      }),
+    );
+    expect(joinConfirm).not.toHaveBeenCalled();
+    await boardJoin.current!('Friends Garage');
+    expect(joinConfirm).toHaveBeenCalledWith({
+      title: 'boardShareLink.joinHeading',
+      message: 'boardShareLink.joinBody',
+      confirmLabel: 'boardShareLink.join',
+      cancelLabel: 'boardShareLink.cancel',
+    });
   });
 });

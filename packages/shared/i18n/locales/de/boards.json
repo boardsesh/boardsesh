@@ -447,7 +447,7 @@
       "title": "Teil dieses Board",
       "publicBody": "Dieses Board ist öffentlich: Jede*r mit dem Link kann es öffnen und darauf klettern.",
       "unlistedBody": "Nur wer diesen Link von dir bekommt, kann das Board öffnen. Gelistet ist es nirgends.",
-      "inviteBody": "Wer diesen Link öffnet, hat sofort Zugriff auf dein Board.",
+      "inviteBody": "Alle mit diesem Link können auf Beitreten tippen und Zugang zu deinem Board erhalten.",
       "loading": "Dein Link wird erstellt",
       "loadFailed": "Dein Link konnte nicht geladen werden. Schließ das Fenster und versuch es noch mal.",
       "resetLink": "Link zurücksetzen",
@@ -1270,7 +1270,12 @@
   "boardShareLink": {
     "metadataTitle": "Du bist zu einem Board eingeladen | Boardsesh",
     "heading": "Du bist eingeladen, auf {{name}} zu klettern",
-    "body": "Melde dich an und du hast sofort Zugriff auf das Board. Ohne Freigabe.",
-    "signIn": "Anmelden und beitreten"
+    "body": "Melde dich an und tippe dann auf Beitreten, um Zugang zu erhalten. Keine Freigabe nötig.",
+    "signIn": "Anmelden und beitreten",
+    "joinHeading": "{{name}} beitreten?",
+    "joinBody": "Wenn du beitrittst, erhältst du Zugang zu diesem Board. Die Person, der es gehört, sieht deinen Namen in der Mitgliederliste.",
+    "join": "Beitreten",
+    "cancel": "Abbrechen",
+    "joinFailed": "Du konntest diesem Board nicht beitreten. Versuch es erneut oder bitte um einen neuen Link."
   }
 }

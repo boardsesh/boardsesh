@@ -447,7 +447,7 @@
       "title": "Share this board",
       "publicBody": "This board is public, so anyone with the link can open it and climb on it.",
       "unlistedBody": "Only the climbers you send this link to can open the board. It isn't listed anywhere.",
-      "inviteBody": "Anyone who opens this link joins your board.",
+      "inviteBody": "Anyone with this link can choose Join to get access to your board.",
       "loading": "Getting your link",
       "loadFailed": "Couldn't get your link. Close this and try again.",
       "resetLink": "Reset link",
@@ -1270,7 +1270,12 @@
   "boardShareLink": {
     "metadataTitle": "You're invited to a board | Boardsesh",
     "heading": "You're invited to climb on {{name}}",
-    "body": "Sign in and you join the board straight away. No approval needed.",
-    "signIn": "Sign in to join"
+    "body": "Sign in, then choose Join to get access. No approval needed.",
+    "signIn": "Sign in to join",
+    "joinHeading": "Join {{name}}?",
+    "joinBody": "Joining gives you access to this board. Its owner can see your name in the member list.",
+    "join": "Join",
+    "cancel": "Cancel",
+    "joinFailed": "Couldn't join this board. Try again, or ask its owner for a new link."
   }
 }

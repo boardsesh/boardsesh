@@ -208,6 +208,7 @@ function useAdoptedBoard(
   enabled: boolean,
   wallUuid?: string,
   inviteToken?: string,
+  confirmBoardJoin?: (boardName: string) => Promise<boolean>,
 ): { board: UserBoard | null; error: boolean } {
   const { isAuthenticated, isLoading: authIsLoading } = useAuth();
   const createBoard = useCreateBoard();
@@ -248,9 +249,9 @@ function useAdoptedBoard(
   // The resolve effect deliberately runs once per path, so it must not close
   // over the first render's values — the session is exactly the one that lands
   // late on a cold deep-link open.
-  const queriesRef = useRef({ createBoard, isAuthenticated });
+  const queriesRef = useRef({ createBoard, isAuthenticated, confirmBoardJoin });
   useEffect(() => {
-    queriesRef.current = { createBoard, isAuthenticated };
+    queriesRef.current = { createBoard, isAuthenticated, confirmBoardJoin };
   });
 
   // Same trick for the reconnect watcher, which subscribes once and must not
@@ -302,8 +303,10 @@ function useAdoptedBoard(
         // A board share link (`?invite=`) joins the board before resolving it.
         const shareLinkModule =
           inviteToken && !wallUuid ? await import('../board-share/redeem-board-share-link') : null;
+        const inviteAuthStore = inviteToken && !wallUuid ? await import('../auth-store') : null;
         if (cancelled) return;
-        const credentialGeneration = capabilityModules?.[1].captureAuthCredentialGeneration() ?? null;
+        const credentialStore = capabilityModules?.[1] ?? inviteAuthStore;
+        const credentialGeneration = credentialStore?.captureAuthCredentialGeneration() ?? null;
         const { createBoard: createBoardMutation, isAuthenticated: signedIn } = queriesRef.current;
         // Local first, before anything can wait on the network. The deep-linked
         // board is nearly always the board this device is already on, and on a
@@ -362,17 +365,29 @@ function useAdoptedBoard(
               wallUuid && capabilityModules
                 ? (slug) => capabilityModules[0].fetchSprayWallBoardFromLink(queryClient, wallUuid, slug)
                 : inviteToken && shareLinkModule
-                  ? (slug) => shareLinkModule.fetchBoardFromShareLink(inviteToken, slug, resolveBoardSlugLocalFirst)
+                  ? (slug) =>
+                      shareLinkModule.fetchBoardFromShareLink(
+                        inviteToken,
+                        slug,
+                        resolveBoardSlugLocalFirst,
+                        queriesRef.current.confirmBoardJoin,
+                        () => !cancelled,
+                      )
                   : resolveBoardSlugLocalFirst,
           }));
         if (cancelled) return;
-        if (
-          credentialGeneration !== null &&
-          !capabilityModules?.[1].isAuthCredentialGenerationCurrent(credentialGeneration)
-        )
+        if (credentialGeneration !== null && !credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration))
           return;
-        await setActiveBoard(resolved);
-        if (cancelled) return;
+        const adoptionIsCurrent = () =>
+          !cancelled &&
+          (credentialGeneration === null || !!credentialStore?.isAuthCredentialGenerationCurrent(credentialGeneration));
+        // The storage write can queue behind another board choice. Its own
+        // guard must retain this credential scope until persistence commits.
+        const adoptedBoard =
+          credentialGeneration === null
+            ? await setActiveBoard(resolved)
+            : await setActiveBoard(resolved, adoptionIsCurrent);
+        if (!adoptionIsCurrent() || (credentialGeneration !== null && !adoptedBoard)) return;
         settledThisRun = true;
         setAdopted({ path: resolutionKey, board: resolved });
       } catch (resolveError) {
@@ -503,6 +518,7 @@ export function useBoardRouteTarget(
     wallUuid?: string | string[];
     /** A home board share link's token (`?invite=`); redeemed before board adoption. */
     inviteToken?: string | string[];
+    confirmBoardJoin?: (boardName: string) => Promise<boolean>;
     onHandedOff?: () => void;
     anonymousClimbEnabled?: boolean;
   },
@@ -561,11 +577,15 @@ export function useBoardRouteTarget(
   const inviteParam = Array.isArray(options?.inviteToken) ? options.inviteToken[0] : options?.inviteToken;
   // Only a board link carries one, and only a well-formed token is read at all.
   const inviteToken = target?.kind === 'slug-list' && isBoardInviteToken(inviteParam) ? inviteParam : undefined;
+  // A native Join dialog must wait for the launch update gate: a cold-open
+  // update could otherwise reload after the climber approved the invite.
+  const launchHoldReleased = useLaunchHoldReleased();
   const { board: adoptedBoard, error: boardError } = useAdoptedBoard(
     target,
-    adoptsBoard && !signedOutOnWeb,
+    adoptsBoard && !signedOutOnWeb && (!inviteToken || launchHoldReleased),
     wallUuid,
     inviteToken,
+    options?.confirmBoardJoin,
   );
   const anonymousBoard = anonymousSlugBoard.state === 'resolved' ? anonymousSlugBoard.board : null;
   const board = adoptedBoard ?? anonymousBoard;
@@ -628,7 +648,6 @@ export function useBoardRouteTarget(
   // presents above the launch update placeholder. Wait for launch to be ready,
   // so a cold-start climb link does not open a usable player the gate may then
   // reload out from under (#6006). This screen's own spinner covers the wait.
-  const launchHoldReleased = useLaunchHoldReleased();
   useEffect(() => {
     if (!launchHoldReleased) return;
     if (!target || !targetKey || handedOffRef.current === targetKey) return;
